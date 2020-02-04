@@ -39,3 +39,5 @@
       - wireshark
       - xournal
       - xserver-xorg-video-intel
+  - name: install dotfiles
+    command: rcup -B agentydragon

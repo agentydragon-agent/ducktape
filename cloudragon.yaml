@@ -54,3 +54,5 @@
   # - name: install worthy
   #   command: |
   #     go install github.com/agentydragon/worthy/worthy
+  - name: install dotfiles
+    command: rcup -B cloudragon
