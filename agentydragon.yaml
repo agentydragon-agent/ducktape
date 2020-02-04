@@ -10,6 +10,12 @@
   roles:
   - common
   tasks:
+  # Cannot be done for cloudragon because of OS Login. ugh.
+  - name: set zsh as login shell
+    become: yes
+    user:
+      name: "{{ my_user }}"
+      shell: /bin/zsh
   - name: install packages for laptop
     become: yes
     apt:
