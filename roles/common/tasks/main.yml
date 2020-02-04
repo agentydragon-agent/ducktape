@@ -23,7 +23,21 @@
   git:
     repo: https://github.com/agentydragon/scripts
     dest: "{{ scripts_path }}"
-- include_tasks: tasks/vim.yaml
+
+- name: set up vim
+  tags: vim
+  block:
+  - name: Clone Vundle
+    git:
+      repo: https://github.com/VundleVim/Vundle.vim.git
+      dest: "/home/{{ my_user }}/.vim/bundle/Vundle.vim"
+  - name: install vim plugins
+    command: "vim -E -s -c 'source ~/.vimrc' +PluginInstall +qall -V"
+    #command: "vim -E -s -c 'source /home/{{ my_user }}/.vimrc' -c PluginInstall -c qall"
+    #register: vim_plugins_installed
+    #changed_when: vim_plugins_installed.rc != 0
+  # TODO: update Vundle
+
 - name: gnome-terminal
   tags:
     - gnome-terminal
