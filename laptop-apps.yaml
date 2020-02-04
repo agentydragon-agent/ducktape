@@ -1,0 +1,36 @@
+# laptop:
+#  - acpi
+#  - alarm-clock-applet
+#  - android-tools-adb
+#  - blender
+#  - blueman
+#  - bolt   (for multiple graphic cards)
+#  - chrome-gnome-shell
+#  - dropbox
+#  - gnome-shell
+#  - gnome-tweaks
+#  - gnupg
+#  - gnupg-agent
+#  - gnupg-l10n
+#  - google-musicmanager-beta
+#  - gpgv
+#  - krita
+#  - openjdk-8-jdk
+#  - perl
+#  - playonlinux
+#  - qshutdown
+#  - rescuetime
+#  - slic3r
+#  - steam
+#  - transmission-gtk
+#  - tuxguitar
+#  - ubuntu-desktop
+#  - ubuntu-gnome-desktop
+#  - ubuntu-restricted-extras
+#  - virtualbox
+#  - virtualbox-dkms
+#  - wine-stable
+#  - wireshark
+#  - xournal
+#  - xserver-xorg-video-intel
+#  - zoom    --- for meetings
