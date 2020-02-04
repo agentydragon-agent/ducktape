@@ -22,24 +22,13 @@
   #    pkg:
   #    - docker-ce
   - include_tasks: tasks/chrome-remote-desktop.yaml
-    # TODO: maybe pull dotfiles to latest version?
-    # TODO: problem: this is interactive if the files already exist.
-    #  - set_fact:
-    #      # Running without -f, so existing dotfiles won't be overwritten.
-    #      rcup_args: "-x README.md -x LICENSE -d {{ dotfiles_path }} -B cloudragon"
-    #  - name: Run rcup to Deploy Dotfiles
-    #    command: "rcup {{ rcup_args }}"
 
   # TODO: configure anki with a password
 
   - name: set applets and favorite apps
     block:
-    - dconf:
-        key: /org/cinnamon/enabled-applets
-        value: "['panel1:right:0:systray@cinnamon.org:0', 'panel1:left:0:menu@cinnamon.org:1', 'panel1:left:1:show-desktop@cinnamon.org:2', 'panel1:left:2:grouped-window-list@cinnamon.org:3', 'panel1:right:1:keyboard@cinnamon.org:4', 'panel1:right:2:notifications@cinnamon.org:5', 'panel1:right:3:removable-drives@cinnamon.org:6', 'panel1:right:5:bluetooth@cinnamon.org:7', 'panel1:right:6:network@cinnamon.org:8', 'panel1:right:7:sound@cinnamon.org:9', 'panel1:right:8:power@cinnamon.org:10', 'panel1:right:9:calendar@cinnamon.org:11']"
-    - dconf:
-        key: /org/cinnamon/favorite-apps
-        value: "['cinnamon-settings.desktop', 'org.gnome.Terminal.desktop', 'nemo.desktop', 'google-chrome.desktop', 'telegram-desktop_telegramdesktop.desktop']"
+    # TODO: /org/cinnamon/enabled-applets
+    # TODO: /org/cinnamon/favorite-apps
 
     # TODO: set a scrollbar policy?
     # TODO: scrollback limit - not 10k?
@@ -47,11 +36,16 @@
     apt:
       name: blueman
       state: absent
+
+  # TODO: problem: this is interactive if the files already exist.
   - name: install dotfiles
     command: rcup -B cloudragon -x vim -x README.md
+
   - name: get worthy
     shell: "GOPATH={{ home_path }}/.go go get github.com/agentydragon/worthy/worthy"
   - name: install worthy
     shell: "GOPATH={{ home_path }}/.go go install github.com/agentydragon/worthy/worthy"
   - name: copy worthy to target
     shell: "mv '{{ home_path }}/.go/bin/worthy' '{{ home_path }}/.local/bin/worthy'"
+
+# TODO: install config
