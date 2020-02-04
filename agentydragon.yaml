@@ -49,6 +49,5 @@
       - wireshark
       - xournal
       - xserver-xorg-video-intel
-# TODO: run rcup?
-#- name: install dotfiles
-#  command: rcup -B agentydragon
+  - name: install dotfiles
+    command: rcup -B agentydragon -x vim -x README.md
