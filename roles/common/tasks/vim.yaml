@@ -1,7 +1,11 @@
-- name: Clone Vundle
-  git:
-    repo: https://github.com/VundleVim/Vundle.vim.git
-    dest: "/home/{{ my_user }}/.vim/bundle/Vundle.vim"
-- name: install vim plugins
-  shell: vim -E -c "source ~/.vimrc" -c PluginInstall -c qa
+- name: set up vim
+  tags:
+  - vim
+  block:
+  - name: Clone Vundle
+    git:
+      repo: https://github.com/VundleVim/Vundle.vim.git
+      dest: "/home/{{ my_user }}/.vim/bundle/Vundle.vim"
+  - name: install vim plugins
+    shell: vim -E -c "source ~/.vimrc" -c PluginInstall -c qa
 # TODO: update Vundle
