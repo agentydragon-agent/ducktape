@@ -16,6 +16,10 @@
     user:
       name: "{{ my_user }}"
       shell: /bin/zsh
+  - name: Clone oh-my-zsh
+    git:
+      repo: https://github.com/robbyrussell/oh-my-zsh
+      dest: "/home/{{ my_user }}/.oh-my-zsh"
   - name: install packages for laptop
     become: yes
     apt:
@@ -45,5 +49,6 @@
       - wireshark
       - xournal
       - xserver-xorg-video-intel
-  - name: install dotfiles
-    command: rcup -B agentydragon
+# TODO: run rcup?
+#- name: install dotfiles
+#  command: rcup -B agentydragon
