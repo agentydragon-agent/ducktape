@@ -50,6 +50,8 @@
   - name: install dotfiles
     command: rcup -B cloudragon -x vim -x README.md
   - name: get worthy
-    command: go get github.com/agentydragon/worthy/worthy
+    shell: "GOPATH={{ home_path }}/.go go get github.com/agentydragon/worthy/worthy"
   - name: install worthy
-    command: go install github.com/agentydragon/worthy/worthy
+    shell: "GOPATH={{ home_path }}/.go go install github.com/agentydragon/worthy/worthy"
+  - name: copy worthy to target
+    shell: "mv '{{ home_path }}/.go/bin/worthy' '{{ home_path }}/.local/bin/worthy'"
