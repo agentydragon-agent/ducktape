@@ -30,43 +30,9 @@
     get_url:
       url: https://yt-dl.org/downloads/latest/youtube-dl
       dest: "{{ local_scripts_path }}/youtube-dl"
-  - name: install packages
-    become: yes
-    apt:
-      pkg:
-      - cinnamon-desktop-environment
-      - curl
-      - diffutils
-      - fonts-powerline
-      - geeqie
-      - gimp
-      - git
-      - google-chrome-stable
-      - htop
-      - iotop
-      - iputils-ping
-      - libreoffice
-      - mc
-      - mmv
-      - mplayer
-      - mpv
-      - netcat-openbsd
-      - nethogs
-      - pkg-config
-      - pv
-      - pwgen
-      - rcm
-      - screen
-      - sed
-      - tree
-      - vim-gtk
-      - vinagre
-      - wget
-      - xclip
-      - zsh
+  - include_tasks: tasks/common-packages.yaml
   - include_tasks: tasks/anki.yaml
   - include_tasks: tasks/dev-env.yaml
-
   - include_tasks: tasks/chrome-remote-desktop.yaml
 
   - name: Set up dotfiles

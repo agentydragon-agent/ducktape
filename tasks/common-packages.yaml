@@ -1,0 +1,34 @@
+- name: install packages
+  become: yes
+  apt:
+    pkg:
+    - cinnamon-desktop-environment
+    - curl
+    - diffutils
+    - fonts-powerline
+    - geeqie
+    - gimp
+    - git
+    - google-chrome-stable
+    - htop
+    - iotop
+    - iputils-ping
+    - libreoffice
+    - mc
+    - mmv
+    - mplayer
+    - mpv
+    - netcat-openbsd
+    - nethogs
+    - pkg-config
+    - pv
+    - pwgen
+    - rcm
+    - screen
+    - sed
+    - tree
+    - vim-gtk
+    - vinagre
+    - wget
+    - xclip
+    - zsh
