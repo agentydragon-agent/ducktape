@@ -5,6 +5,11 @@
   apt:
     update_cache: yes
     upgrade: dist
+- name: set zsh as login shell
+  become: yes
+  user:
+    name: "{{ my_user }}"
+    shell: /bin/zsh
 - name: install youtube-dl
   # TODO: validate
   get_url:
