@@ -1,0 +1,13 @@
+#- name: Check Vundle
+#  stat:
+#    path: "/home/{{ my_user }}/.vim/bundle/Vundle.vim"
+#  register: stat_vundle
+- name: Clone Vundle
+  git:
+    repo: https://github.com/VundleVim/Vundle.vim.git
+    dest: "/home/{{ my_user }}/.vim/bundle/Vundle.vim"
+    #when: stat_vundle.stat.exists is not defined or stat_vundle.stat.exists == false
+- name: install vim plugins
+  # https://stackoverflow.com/questions/33672491/how-to-use-ansible-to-provision-vim-vundle-plugin
+  shell: vim -E -c "source ~/.vimrc" -c PluginInstall -c qa
+# TODO: update Vundle

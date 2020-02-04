@@ -1,0 +1,20 @@
+- name: add Bazel release key
+  become: yes
+  apt_key:
+    # TODO: integrity check
+    url: https://bazel.build/bazel-release.pub.gpg
+- name: add Bazel repo
+  become: yes
+  apt_repository:
+    repo: "deb [arch=amd64] https://storage.googleapis.com/bazel-apt stable jdk1.8"
+    filename: bazel
+- name: add Google release key
+  become: yes
+  apt_key:
+    # TODO: integrity check
+    url: https://dl-ssl.google.com/linux/linux_signing_key.pub
+- name: add Google Chrome repo
+  become: yes
+  apt_repository:
+    repo: "deb [arch=amd64] https://dl.google.com/linux/chrome/deb/ stable main"
+    filename: google-chrome

@@ -1,0 +1,36 @@
+- name: Download Java formatter
+  get_url:
+    url: https://github.com/google/google-java-format/releases/download/google-java-format-1.7/google-java-format-1.7-all-deps.jar
+    dest: "{{ local_scripts_path }}/google-java-format.jar"
+- name: install dev env
+  become: yes
+  apt:
+    pkg:
+    - ansible
+    - asciidoc
+    - bazel
+    - cabal-install
+    - clang
+    - clang-format
+    - cloc
+    - gcc
+    # broken: google-cloud-sdk
+    - ghc
+    - gitk
+    - gnuplot
+    - golang
+    - gradle
+    - jshon
+    - jupyter-nbconvert
+    - make
+    - markdown
+    - maven
+    - npm
+    - protobuf-compiler
+    - pyqt5-dev-tools
+    - python3
+    - python3-pip
+    - ruby
+    - silversearcher-ag
+    - sloccount
+    - tidy  # HTML tidy

@@ -1,0 +1,39 @@
+- name: Remove system-installed Anki
+  become: yes
+  apt:
+    name: anki
+    state: absent
+- name: install Anki dependencies
+  become: yes
+  apt:
+    pkg:
+    - dvipng        # for Anki cards
+    - fonts-roboto  # for Anki cards
+    - texlive-full  # for Anki cards
+    - youtube-dl    # for Anki cards
+- name: Install Anki from source
+  block:
+  - tempfile:
+      state: directory
+      suffix: gnome-terminal-solarized
+    register: temp_dir
+  - unarchive:
+      # TODO: would be nice to check integrity
+      src: https://apps.ankiweb.net/downloads/current/anki-2.1.19-linux-amd64.tar.bz2
+      remote_src: true
+      dest: "{{ temp_dir.path }}"
+  - name: make install
+    become: yes
+    command: make install
+    args:
+      chdir: "{{ temp_dir.path }}/anki-2.1.19-linux-amd64"
+# TODO: install Anki addons:
+# TODO: 291119185 - batch editing
+# TODO: 1788670778 - CrowdAnki
+# TODO: 1374772155 - Image Occlusion Enhanced for Anki 21
+# TODO: 1463041493 - Syntax Highlighting for Code
+#
+# TODO: BetterTags
+# TODO: cloze_overlapper_0_4_0_alpha0
+# TODO: mfp = micro formatting pack --- at my own commit
+# TODO: review-heatmap
