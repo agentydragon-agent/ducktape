@@ -48,11 +48,10 @@
       name: blueman
       state: absent
   # TODO:
-  # - name: get worthy
-  #   command: |
-  #     go get github.com/agentydragon/worthy/worthy
-  # - name: install worthy
-  #   command: |
-  #     go install github.com/agentydragon/worthy/worthy
+  - name: get worthy
+    command: go get github.com/agentydragon/worthy/worthy
+  - name: install worthy
+    command: go install github.com/agentydragon/worthy/worthy
+  # TODO: run rcup?
   - name: install dotfiles
-    command: rcup -B cloudragon
+    command: rcup -B cloudragon -x vim
