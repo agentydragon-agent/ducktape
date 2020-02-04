@@ -11,7 +11,15 @@
     - fonts-roboto  # for Anki cards
     - texlive-full  # for Anki cards
     - youtube-dl    # for Anki cards
+
+# Install Anki from source, but only if it's not present yet.
+# TODO(prvak): Check Anki version.
+- stat:
+    path: /usr/local/bin/anki
+  register: anki_binary
+
 - name: Install Anki from source
+  when: anki_binary.stat.exists == false
   block:
   - tempfile:
       state: directory

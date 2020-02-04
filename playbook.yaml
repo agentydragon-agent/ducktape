@@ -8,9 +8,7 @@
     dotfiles_path: "{{ home_path }}/.dotfiles"
   remote_user: "{{ my_user }}"
   tasks:
-  - file:
-      path: "{{ local_scripts_path }}"
-      state: directory
+
   # TODO: update when Docker works on Eoan
   #  - name: add Docker PPA
   #    become: yes
@@ -137,4 +135,10 @@
     apt:
       name: blueman
       state: absent
-  # TODO: worthy
+  # TODO:
+  # - name: get worthy
+  #   command: |
+  #     go get github.com/agentydragon/worthy/worthy
+  # - name: install worthy
+  #   command: |
+  #     go install github.com/agentydragon/worthy/worthy
