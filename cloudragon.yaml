@@ -49,6 +49,7 @@
     shell: "mv '{{ home_path }}/.go/bin/worthy' '{{ home_path }}/.local/bin/worthy'"
 
   # install anki addon
+  # TODO: make shared with agentydragon?
   - name: ensure dir
     tags:
     - anki
@@ -63,7 +64,6 @@
     unarchive:
       src: 3rdparty/bettertags-v1.0.3-anki21.ankiaddon
       dest: "/home/{{ my_user }}/.local/share/Anki2/addons21/138501288"
-
 
 
 # TODO: install config

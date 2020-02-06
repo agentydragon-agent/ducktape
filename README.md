@@ -14,8 +14,6 @@ ansible-playbook cloudragon.yaml
 
 - zoom (for meetings)
 - ubuntu-desktop
-- ubuntu-gnome-desktop
-- ubuntu-restricted-extras
 - slic3r
 - rescuetime
 - playonlinux
