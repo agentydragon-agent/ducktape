@@ -48,22 +48,50 @@
   - name: copy worthy to target
     shell: "mv '{{ home_path }}/.go/bin/worthy' '{{ home_path }}/.local/bin/worthy'"
 
-  # install anki addon
   # TODO: make shared with agentydragon?
-  - name: ensure dir
+  - name: install BetterTags
     tags:
     - anki
     - anki-addon
-    file:
-      path: "/home/{{ my_user }}/.local/share/Anki2/addons21/138501288"
-      state: directory
-  - name: extract bettertags
+    block:
+    - name: ensure dir
+      file:
+        path: "/home/{{ my_user }}/.local/share/Anki2/addons21/138501288"
+        state: directory
+    - name: extract bettertags
+      unarchive:
+        src: 3rdparty/bettertags-v1.0.3-anki21.ankiaddon
+        dest: "/home/{{ my_user }}/.local/share/Anki2/addons21/138501288"
+
+  # install mini-format-pack
+  - name: install mini-format-pack
     tags:
     - anki
     - anki-addon
-    unarchive:
-      src: 3rdparty/bettertags-v1.0.3-anki21.ankiaddon
-      dest: "/home/{{ my_user }}/.local/share/Anki2/addons21/138501288"
+    block:
+    - pip:
+        name: aab # https://github.com/glutanimate/anki-addon-builder/#usage
+    - tempfile:
+        state: directory
+        suffix: mini-format-pack
+      register: temp_dir
+    - git:
+        # note: my own fork
+        repo: https://github.com/agentydragon/mini-format-pack
+        dest: "{{ temp_dir.path }}"
+        # https://github.com/glutanimate/mini-format-pack/pull/13
+        version: 725bb8595631e4dbc56bf881427aeada848e43c9
+    - command: "/home/{{ my_user }}/.local/bin/aab build -d local -t anki21 725bb85"
+      args:
+        chdir: "{{ temp_dir.path }}"
+    - file:
+        path: "/home/{{ my_user }}/.local/share/Anki2/addons21/295889520"
+        state: directory
+    - unarchive:
+        remote_src: true
+        src: "{{ temp_dir.path }}/build/mini-format-pack-725bb85-anki21.ankiaddon"
+        dest: "/home/{{ my_user }}/.local/share/Anki2/addons21/295889520"
+
 
 
 # TODO: install config
