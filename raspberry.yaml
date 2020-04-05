@@ -8,10 +8,11 @@
     local_scripts_path: "{{ home_path }}/.local/bin"
     dotfiles_path: "{{ home_path }}/.dotfiles"
   remote_user: "{{ my_user }}"
-  roles:
-  - common
+  # TODO: this should not be installed, 'common' role includes huge latex
+  #roles:
+  #- common
   tasks:
-  - include_tasks: tasks/chrome-remote-desktop.yaml
+  # - include_tasks: tasks/chrome-remote-desktop.yaml
   - name: install packages
     become: yes
     apt:
@@ -23,7 +24,7 @@
     cron:
       name: speedtestin
       hour: "*"
-      minute: "*/2"
-      job: "speedtest-cli > /home/agentydragon/speedtest-measurements/$(date +%Y%m%d-%H%M%S).txt"
+      minute: "*/15"
+      job: "/usr/local/bin/speedtest-cli --csv >> /home/agentydragon/speedtest.csv"
   - name: install dotfiles
     command: rcup -B agentydragon -x vim -x README.md

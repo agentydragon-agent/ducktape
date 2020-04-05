@@ -3,14 +3,21 @@
   apt:
     name: anki
     state: absent
-- name: install Anki dependencies
+- name: install Anki card dependencies
   become: yes
   apt:
     pkg:
-    - dvipng        # for Anki cards
-    - fonts-roboto  # for Anki cards
-    - texlive-full  # for Anki cards
-    - youtube-dl    # for Anki cards
+    - dvipng
+    - fonts-roboto
+    - youtube-dl
+    # Instead of installing a big texlive-full.
+    - texlive
+    - texlive-lang-czechoslovak
+    - texlive-lang-english
+    - texlive-lang-german
+    - texlive-latex-extra
+    - texlive-latex-recommended
+    - texlive-science
 
 # Install Anki from source, but only if it's not present yet.
 # TODO(prvak): Check Anki version.
