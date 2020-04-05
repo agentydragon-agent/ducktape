@@ -22,3 +22,5 @@ Make worthy work, actually.
 - google-musicmanager-beta
 - dropbox
 - bolt   (for multiple graphic cards)
+
+TODO: minimize cinnamon desktop, texlive, etc.
