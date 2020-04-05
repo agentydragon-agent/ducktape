@@ -1,0 +1,13 @@
+---
+- hosts: dustinspacerpi
+  vars:
+    my_user: agentydragon
+  remote_user: agentydragon
+  tasks:
+  - name: install packages
+    become: yes
+    apt:
+      pkg:
+        python3-pip
+  - pip:
+      name: speedtest-cli
