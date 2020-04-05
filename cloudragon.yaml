@@ -95,24 +95,25 @@
 
 
 
-  - name: install worthy config
-    tags:
-    - worthy
-    block:
-    - file:
-        path: "/home/{{ my_user }}/.config/worthy"
-        state: directory
-    - file:
-        path: "/home/{{ my_user }}/.worthy-out"
-        state: directory
-    - copy:
-        remote_src: false
-        src: worthy-config.yaml
-        dest: "/home/{{ my_user }}/.config/worthy/config.yaml"
-    # TODO: this is soooo ugly
-    - replace:
-        path: "/home/{{ my_user }}/.config/worthy/config.yaml"
-        regexp: "~/drive/finance"
-        replace: "~/.worthy-out"
+        # TODO
+        #  - name: install worthy config
+        #    tags:
+        #    - worthy
+        #    block:
+        #    - file:
+        #        path: "/home/{{ my_user }}/.config/worthy"
+        #        state: directory
+        #    - file:
+        #        path: "/home/{{ my_user }}/.worthy-out"
+        #        state: directory
+        #    - copy:
+        #        remote_src: false
+        #        src: worthy-config.yaml
+        #        dest: "/home/{{ my_user }}/.config/worthy/config.yaml"
+        #    # TODO: this is soooo ugly
+        #    - replace:
+        #        path: "/home/{{ my_user }}/.config/worthy/config.yaml"
+        #        regexp: "~/drive/finance"
+        #        replace: "~/.worthy-out"
 
 # TODO: install config
