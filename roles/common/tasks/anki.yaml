@@ -23,7 +23,7 @@
   block:
   - tempfile:
       state: directory
-      suffix: gnome-terminal-solarized
+      suffix: anki-from-source
     register: temp_dir
   - unarchive:
       # TODO: would be nice to check integrity

@@ -1,10 +1,10 @@
 ---
-- include_tasks: tasks/google-repos.yaml
 - name: update everything
   become: yes
   apt:
     update_cache: yes
     upgrade: dist
+- include_tasks: tasks/google-repos.yaml
 - name: install youtube-dl
   # TODO: validate
   get_url:

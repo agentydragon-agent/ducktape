@@ -9,7 +9,6 @@
     - geeqie
     - gimp
     - git
-    - google-chrome-stable
     - htop
     - iotop
     - iputils-ping
@@ -32,3 +31,9 @@
     - wget
     - xclip
     - zsh
+- name: install amd64-specific packages
+  when: ansible_architecture == "amd64"
+  become: yes
+  apt:
+    pkg:
+    - google-chrome-stable

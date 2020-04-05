@@ -2,6 +2,7 @@
 # https://cloud.google.com/solutions/chrome-desktop-remote-on-compute-engine
 - name: install chrome remote desktop, chrome
   become: yes
+  when: ansible_architecture == "amd64"
   apt:
     deb: https://dl.google.com/linux/direct/chrome-remote-desktop_current_amd64.deb
 - name: set 2d cinnamon
