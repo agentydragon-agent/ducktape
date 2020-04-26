@@ -12,7 +12,6 @@
     - youtube-dl
     # Instead of installing a big texlive-full.
     - texlive
-    - texlive-lang-czechoslovak
     - texlive-lang-english
     - texlive-lang-german
     - texlive-latex-extra
