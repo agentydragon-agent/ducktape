@@ -5,11 +5,11 @@
     update_cache: yes
     upgrade: dist
 - include_tasks: tasks/google-repos.yaml
-- name: install youtube-dl
-  # TODO: validate
-  get_url:
-    url: https://yt-dl.org/downloads/latest/youtube-dl
-    dest: "{{ local_scripts_path }}/youtube-dl"
+# - name: install youtube-dl
+#   # TODO: validate
+#   get_url:
+#     url: https://yt-dl.org/downloads/latest/youtube-dl
+#     dest: "{{ local_scripts_path }}/youtube-dl"
 - include_tasks: tasks/common-packages.yaml
 - include_tasks: tasks/anki.yaml
 - include_tasks: tasks/dev-env.yaml
@@ -56,6 +56,7 @@
   snap:
     name:
     - telegram-desktop
+    - youtube-dl
 - become: true
   snap:
     classic: true
