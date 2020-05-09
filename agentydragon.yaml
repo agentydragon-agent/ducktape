@@ -13,10 +13,15 @@
   # Cannot be done for cloudragon because of OS Login. ugh.
   - name: set zsh as login shell
     become: yes
+    tags:
+    - zsh
     user:
       name: "{{ my_user }}"
       shell: /bin/zsh
   - name: Clone oh-my-zsh
+    tags:
+    - oh-my-zsh
+    - zsh
     git:
       repo: https://github.com/robbyrussell/oh-my-zsh
       dest: "/home/{{ my_user }}/.oh-my-zsh"
@@ -37,6 +42,7 @@
       - gnupg-l10n
       - gpgv
       - krita
+      - locate
       - openjdk-8-jdk
       - perl
       - qshutdown

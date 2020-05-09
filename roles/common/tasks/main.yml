@@ -14,12 +14,16 @@
 - include_tasks: tasks/anki.yaml
 - include_tasks: tasks/dev-env.yaml
 - name: Set up dotfiles
+  tags:
+  - dotfiles
   block:
   - name: clone dotfiles
     git:
       repo: https://github.com/agentydragon/dotfiles
       dest: "{{ dotfiles_path }}"
 - name: Set up custom scripts
+  tags:
+  - custom-scripts
   git:
     repo: https://github.com/agentydragon/scripts
     dest: "{{ scripts_path }}"
@@ -37,6 +41,7 @@
 - name: gnome-terminal
   tags:
     - gnome-terminal
+    - solarized
   block:
   - include_tasks: tasks/gnome-terminal-solarized.yaml
   - name: hide gnome-terminal menu
@@ -53,11 +58,13 @@
       value: "'Ubuntu Mono 14'"
 - include_tasks: tasks/datetime-format.yaml
 - become: true
+  tags: snap
   snap:
     name:
     - telegram-desktop
     - youtube-dl
 - become: true
+  tags: snap
   snap:
     classic: true
     name:
