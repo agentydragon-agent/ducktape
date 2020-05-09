@@ -1,12 +1,11 @@
 - name: Set gnome-terminal to Solarized Light
-  tags:
-    - solarized
+  tags: solarized
   block:
     - tempfile:
         state: directory
         suffix: gnome-terminal-solarized
       register: temp_dir
-    # TODO: would be nice to check integrity, with a particular commit
+      # TODO: would be nice to check integrity, with a particular commit
     - name: Clone gnome-terminal-colors-solarized
       git:
         repo: https://github.com/aruhier/gnome-terminal-colors-solarized
