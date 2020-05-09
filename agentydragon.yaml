@@ -51,3 +51,18 @@
       - xserver-xorg-video-intel
   - name: install dotfiles
     command: rcup -B agentydragon -x vim -x README.md
+# TODO: ~/.dotfiles should be a symlink to ~/repos/dotfiles
+  - name: google drive
+    tags: google-drive
+    block:
+    - name: install google drive
+      copy:
+        src: google-drive.service
+        dest: "{{ home_path }}/.config/systemd/user/google-drive.service"
+    # TODO: and maybe also add the binary to github? 3rdparty?
+    - name: enable google drive
+      systemd:
+        name: google-drive
+        state: started
+        enabled: yes
+        scope: user  # install as --user to depend on user session
