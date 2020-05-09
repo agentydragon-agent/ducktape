@@ -7,6 +7,7 @@
       register: temp_dir
       # TODO: would be nice to check integrity, with a particular commit
     - name: Clone gnome-terminal-colors-solarized
+      # TODO: --check stops here due to undefined directory.
       git:
         repo: https://github.com/aruhier/gnome-terminal-colors-solarized
         dest: "{{ temp_dir.path }}"
