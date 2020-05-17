@@ -72,3 +72,10 @@
         state: started
         enabled: yes
         scope: user  # install as --user to depend on user session
+  - name: syncplay
+    tags: snap
+    become: yes
+    snap:
+      classic: true
+      name:
+      - syncplay
