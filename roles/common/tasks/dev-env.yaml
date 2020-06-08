@@ -34,3 +34,5 @@
     - silversearcher-ag
     - sloccount
     - tidy  # HTML tidy
+- pip:
+    name: autopep8
