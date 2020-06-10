@@ -47,6 +47,7 @@
       - perl
       - qshutdown
       - steam
+      - torbrowser-launcher
       - transmission-gtk
       - tuxguitar
       - virtualbox
