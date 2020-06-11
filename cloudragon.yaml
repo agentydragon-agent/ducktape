@@ -71,6 +71,7 @@
     - anki-addon
     block:
     - pip:
+        executable: pip3
         name: aab # https://github.com/glutanimate/anki-addon-builder/#usage
     - tempfile:
         state: directory

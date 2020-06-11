@@ -19,6 +19,7 @@
       pkg:
         python3-pip
   - pip:
+      executable: pip3
       name: speedtest-cli
   - name: speedtest every 15 minutes
     cron:
@@ -28,3 +29,4 @@
       job: "/usr/local/bin/speedtest-cli --csv >> /home/agentydragon/speedtest.csv"
   - name: install dotfiles
     command: rcup -B agentydragon -x vim -x README.md
+
