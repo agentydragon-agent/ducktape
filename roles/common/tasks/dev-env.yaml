@@ -28,6 +28,7 @@
     - npm
     - protobuf-compiler
     - pyqt5-dev-tools
+    # TODO: - python-is-python3
     - python3
     - python3-pip
     - ruby
@@ -35,4 +36,5 @@
     - sloccount
     - tidy  # HTML tidy
 - pip:
+    executable: pip3
     name: autopep8
