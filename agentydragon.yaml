@@ -10,13 +10,20 @@
   # TODO:   - agentydragon_gitlab_token.yml
   remote_user: "{{ my_user }}"
   roles:
-  - common
+  - role: geerlingguy.docker
+    become: true
+    vars:
+      docker_service_state: started
+      docker_service_enabled: true
+      docker_users:
+      - agentydragon
   - role: lean_delivery.gitlab_runner
     vars:
       # See https://github.com/ansible-collections/community.general/issues/440
       # `sudo gitlab-runner register` needs to be done manually.
       - gitlab_runner_skip_registration: true
       # For debugging: - no_logs: False
+  - common
 
   tasks:
   # Cannot be done for cloudragon because of OS Login. ugh.
