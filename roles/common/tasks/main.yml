@@ -14,6 +14,8 @@
 #     dest: "{{ local_scripts_path }}/youtube-dl"
 - include_tasks: tasks/common-packages.yaml
 - include_tasks: tasks/anki.yaml
+  tags:
+  - anki
 - include_tasks: tasks/dev-env.yaml
 - name: Set up dotfiles
   tags:

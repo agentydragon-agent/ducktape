@@ -1,12 +1,18 @@
+## To update requirements
+
+```bash
+ansible-galaxy install -r requirements.yml
+```
+
 ## To deploy localhost
 
-```
+```bash
 ansible-playbook agentydragon.yaml --ask-become-pass
 ```
 
 ## To deploy agentydragon
 
-```
+```bash
 ansible-playbook cloudragon.yaml
 ```
 
@@ -19,8 +25,8 @@ Make worthy work, actually.
 - slic3r
 - rescuetime
 - playonlinux
-- google-musicmanager-beta
 - dropbox
-- bolt   (for multiple graphic cards)
+- `bolt`   (for multiple graphic cards)
+- `timekpr`
 
 TODO: minimize cinnamon desktop, texlive, etc.
