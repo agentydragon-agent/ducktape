@@ -24,7 +24,8 @@
     become: yes
     apt:
       pkg:
-        python3-pip
+      - python3-pip
+      - docker
   - pip:
       executable: pip3
       name: speedtest-cli
