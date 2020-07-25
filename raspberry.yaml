@@ -9,6 +9,14 @@
     dotfiles_path: "{{ home_path }}/.dotfiles"
   remote_user: "{{ my_user }}"
   roles:
+  - role: geerlingguy.docker
+    become: true
+    vars:
+      docker_service_state: started
+      docker_service_enabled: true
+      docker_users:
+      - pi
+      - agentydragon
   - role: lean_delivery.gitlab_runner
     vars:
       # See https://github.com/ansible-collections/community.general/issues/440
@@ -25,7 +33,30 @@
     apt:
       pkg:
       - python3-pip
-      - docker
+        #### TODO(agentydragon): install docker: https://www.docker.com/blog/happy-pi-day-docker-raspberry-pi/
+        ####   curl -fsSL get.docker.com -o get-docker.sh && sh get-docker.sh
+        ###- name: docker
+        ###  block:
+        ###  - name: add Docker release key
+        ###    become: yes
+        ###    apt_key:
+        ###      url: https://download.docker.com/linux/raspbian/gpg
+        ###  - name: add Docker repo
+        ###    become: yes
+        ###    apt_repository:
+        ###      repo: "deb https://download.docker.com/linux/raspbian/ stretch stable"
+        ###      filename: raspbian-docker
+        ###  - name: install Docker packages
+        ###    become: yes
+        ###    apt:
+        ###      pkg:
+        ###      - docker-ce
+        ####   usermod -aG docker pi
+  - name: update everything
+    become: yes
+    apt:
+      update_cache: yes
+      upgrade: dist
   - pip:
       executable: pip3
       name: speedtest-cli

@@ -1,7 +1,7 @@
 ## To update requirements
 
 ```bash
-ansible-galaxy install -r requirements.yml
+ansible-galaxy install -r requirements.yaml
 ```
 
 ## To deploy localhost

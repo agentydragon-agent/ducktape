@@ -19,7 +19,6 @@
       # For debugging: - no_logs: False
 
   tasks:
-  - debug: msg="{{ gitlab_api_token }} {{gitlab_ci_token}}"
   # Cannot be done for cloudragon because of OS Login. ugh.
   - name: set zsh as login shell
     become: yes
