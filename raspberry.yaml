@@ -33,25 +33,8 @@
     apt:
       pkg:
       - python3-pip
-        #### TODO(agentydragon): install docker: https://www.docker.com/blog/happy-pi-day-docker-raspberry-pi/
-        ####   curl -fsSL get.docker.com -o get-docker.sh && sh get-docker.sh
-        ###- name: docker
-        ###  block:
-        ###  - name: add Docker release key
-        ###    become: yes
-        ###    apt_key:
-        ###      url: https://download.docker.com/linux/raspbian/gpg
-        ###  - name: add Docker repo
-        ###    become: yes
-        ###    apt_repository:
-        ###      repo: "deb https://download.docker.com/linux/raspbian/ stretch stable"
-        ###      filename: raspbian-docker
-        ###  - name: install Docker packages
-        ###    become: yes
-        ###    apt:
-        ###      pkg:
-        ###      - docker-ce
-        ####   usermod -aG docker pi
+      - iftop
+      - nethogs
   - name: update everything
     become: yes
     apt:
