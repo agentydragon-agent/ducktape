@@ -55,7 +55,6 @@
     apt:
       pkg:
       - acpi
-      - alarm-clock-applet
       - android-tools-adb
       - blender
       - blueman
@@ -71,20 +70,37 @@
       - openjdk-8-jdk
       - perl
       - qshutdown
-      - steam
-      - timekpr-next
+      #- steam
       - torbrowser-launcher
       - transmission-gtk
       - tuxguitar
+      - vlc
       - virtualbox
       - virtualbox-dkms
       - wine-stable
       - wireshark
       - xournal
-      - xserver-xorg-video-intel
+      - xserver-xorg-video-amdgpu
+
+
+  - name: timekpr
+    block:
+    - apt_repository:
+        repo: ppa:mjasnik/ppa
+      become: yes
+    - apt:
+        pkg:
+          - timekpr-next
+      become: yes
+
   - name: google drive
     tags: google-drive
     block:
+    - name: create user systemd services folder
+      file:
+        path: "{{ home_path }}/.config/systemd/user"
+        state: directory
+        recurse: yes
     - name: install google drive
       copy:
         src: google-drive.service
