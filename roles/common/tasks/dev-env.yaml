@@ -1,6 +1,11 @@
+- name: create empty directory for local binaries
+  file:
+    path: "{{ local_scripts_path }}"
+    state: directory
+    recurse: yes
 - name: Download Java formatter
   get_url:
-    url: https://github.com/google/google-java-format/releases/download/google-java-format-1.7/google-java-format-1.7-all-deps.jar
+    url: https://github.com/google/google-java-format/releases/download/google-java-format-1.9/google-java-format-1.9-all-deps.jar
     dest: "{{ local_scripts_path }}/google-java-format.jar"
 - name: install dev env
   become: yes
@@ -8,7 +13,6 @@
     pkg:
     - ansible
     - asciidoc
-    - bazel
     - cabal-install
     - clang
     - clang-format

@@ -31,16 +31,17 @@
       state: directory
       suffix: anki-from-source
     register: temp_dir
-  - unarchive:
+  - name: Download and unpack Anki
+    unarchive:
       # TODO: would be nice to check integrity
-      src: https://apps.ankiweb.net/downloads/current/anki-2.1.19-linux-amd64.tar.bz2
+      src: https://github.com/ankitects/anki/releases/download/2.1.33/anki-2.1.33-linux-amd64.tar.bz2
       remote_src: true
       dest: "{{ temp_dir.path }}"
-  - name: make install
+  - name: Anki make install
     become: yes
     command: make install
     args:
-      chdir: "{{ temp_dir.path }}/anki-2.1.19-linux-amd64"
+      chdir: "{{ temp_dir.path }}/anki-2.1.33-linux-amd64"
 # TODO: install Anki addons:
 # TODO: 291119185 - batch editing
 # TODO: 1788670778 - CrowdAnki

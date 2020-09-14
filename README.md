@@ -27,6 +27,5 @@ Make worthy work, actually.
 - playonlinux
 - dropbox
 - `bolt`   (for multiple graphic cards)
-- `timekpr`
 
 TODO: minimize cinnamon desktop, texlive, etc.
