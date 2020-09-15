@@ -18,12 +18,16 @@
       docker_service_enabled: true
       docker_users:
       - agentydragon
+    tags:
+    - docker
   - role: lean_delivery.gitlab_runner
     vars:
       # See https://github.com/ansible-collections/community.general/issues/440
       # `sudo gitlab-runner register` needs to be done manually.
       - gitlab_runner_skip_registration: true
       # For debugging: - no_logs: False
+    tags:
+    - gitlab-runner
 
   # Install gTile.
   - role: jaredhocutt.gnome_extensions
@@ -50,6 +54,11 @@
     git:
       repo: https://github.com/robbyrussell/oh-my-zsh
       dest: "/home/{{ my_user }}/.oh-my-zsh"
+  - name: Install Steam
+    become: yes
+    # TODO(agentydragon): consistency check
+    apt:
+      deb: https://steamcdn-a.akamaihd.net/client/installer/steam.deb
   - name: install packages for laptop
     become: yes
     apt:
@@ -84,27 +93,37 @@
 
 
   - name: timekpr
+    tags:
+    - timekpr
     block:
-    - apt_repository:
+    - name: Add timekpr-next PPA
+      apt_repository:
         repo: ppa:mjasnik/ppa
       become: yes
-    - apt:
+    - name: Install timekpr-next
+      apt:
         pkg:
           - timekpr-next
       become: yes
+    - name: Set up timekpr allowed hours
+      become: yes
+      command: timekpra --setallowedhours agentydragon ALL "5[5-60];6[5-60];7[5-60];8[5-60];9[5-60];10[5-60];11[5-60];12[5-60];13[5-60];14[5-60];15[5-60];16[5-60];17[5-60];18[5-60];19[5-60];20[5-60];21[5-60];22[5-60];23[20-60]"
 
-  - name: google drive
+  - name: Google Drive
     tags: google-drive
+    vars:
+      user_systemd_services_dir: "{{ home_path }}/.config/systemd/user"
+      google_drive_mount_dir: "{{ home_path }}/.google-drive"
     block:
     - name: create user systemd services folder
       file:
-        path: "{{ home_path }}/.config/systemd/user"
+        path: "{{ user_systemd_services_dir }}"
         state: directory
         recurse: yes
     - name: install google drive
-      copy:
-        src: google-drive.service
-        dest: "{{ home_path }}/.config/systemd/user/google-drive.service"
+      template:
+        src: google-drive.service.j2
+        dest: "{{ user_systemd_services_dir }}/google-drive.service"
     # TODO: and maybe also add the binary to github? 3rdparty?
     - name: enable google drive
       systemd:
@@ -112,13 +131,16 @@
         state: started
         enabled: yes
         scope: user  # install as --user to depend on user session
-  - name: syncplay
+    - name: symlink to drive folder in home
+      file:
+        src: "{{ google_drive_mount_dir }}/My Drive"
+        dest: "{{ home_path }}/drive"
+        state: link
+
+  - name: Install Syncplay
     tags: snap
     become: yes
     snap:
       classic: true
       name:
       - syncplay
-  - name: timekpr setup
-    become: yes
-    command: timekpra --setallowedhours agentydragon ALL "5[5-60];6[5-60];7[5-60];8[5-60];9[5-60];10[5-60];11[5-60];12[5-60];13[5-60];14[5-60];15[5-60];16[5-60];17[5-60];18[5-60];19[5-60];20[5-60];21[5-60];22[5-60];23[20-60]"
