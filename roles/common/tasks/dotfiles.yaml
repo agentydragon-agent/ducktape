@@ -1,0 +1,17 @@
+---
+- name: Set up dotfiles
+  tags:
+  - dotfiles
+  block:
+  - name: create empty directory for dotfiles repo
+    file:
+      path: "{{ dotfiles_path }}"
+      state: directory
+      recurse: yes
+  - name: clone dotfiles
+    git:
+      repo: https://github.com/agentydragon/dotfiles
+      dest: "{{ dotfiles_path }}"
+  # TODO: problem: this is interactive if the files already exist.
+  - name: install dotfiles
+    command: rcup -B {{ rcup_computer }} -x vim -x README.md -d {{ dotfiles_path }}

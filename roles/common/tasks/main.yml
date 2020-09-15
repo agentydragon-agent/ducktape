@@ -17,22 +17,7 @@
   tags:
   - anki
 - include_tasks: tasks/dev-env.yaml
-- name: Set up dotfiles
-  tags:
-  - dotfiles
-  block:
-  - name: create empty directory for dotfiles repo
-    file:
-      path: "{{ dotfiles_path }}"
-      state: directory
-      recurse: yes
-  - name: clone dotfiles
-    git:
-      repo: https://github.com/agentydragon/dotfiles
-      dest: "{{ dotfiles_path }}"
-  # TODO: problem: this is interactive if the files already exist.
-  - name: install dotfiles
-    command: rcup -B {{ rcup_computer }} -x vim -x README.md -d {{ dotfiles_path }}
+- include_tasks: tasks/dotfiles.yaml
 - name: Set up custom scripts
   tags:
   - custom-scripts
@@ -82,3 +67,7 @@
     name:
     - slack
 - include_tasks: tasks/dev-env.yaml
+- name: set sloppy focus (focus follows mouse)
+  command: |
+    gsettings set
+      org.gnome.desktop.wm.preferences focus-mode 'sloppy'

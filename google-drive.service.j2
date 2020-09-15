@@ -5,7 +5,7 @@ After=network.target
 [Service]
 Type=simple
 Restart=no
-ExecStart=/opt/google/drive-file-stream/drive
+ExecStart=/opt/google/drive-file-stream/drive {{ google_drive_mount_dir }}
 StandardOutput=journal
 StandardError=journal
 
