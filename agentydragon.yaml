@@ -52,6 +52,7 @@
     - oh-my-zsh
     - zsh
     git:
+      # TODO(agentydragon): shallow clone
       repo: https://github.com/robbyrussell/oh-my-zsh
       dest: "/home/{{ my_user }}/.oh-my-zsh"
   - name: Install Steam
