@@ -137,6 +137,11 @@
         src: "{{ google_drive_mount_dir }}/My Drive"
         dest: "{{ home_path }}/drive"
         state: link
+    - name: symlink Worthy config to Drive
+      file:
+        src: "{{ home_path }}/drive/finance/worthy-config.yaml"
+        dest: "{{ home_path }}/.config/worthy/config.yaml"
+        state: link
 
   - name: Install Syncplay
     tags: snap
