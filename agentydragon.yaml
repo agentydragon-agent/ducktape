@@ -104,7 +104,9 @@
     - name: Install timekpr-next
       apt:
         pkg:
-          - timekpr-next
+          # TODO(agentydragon): As of 2020-09-24, mainline does not have suspend
+          # option yet.
+          - timekpr-next-beta
       become: yes
     - name: Set up timekpr allowed hours
       become: yes
