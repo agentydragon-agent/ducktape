@@ -42,3 +42,7 @@
 - pip:
     executable: pip3
     name: autopep8
+- pip:
+    executable: pip3
+    # Google Python formatter
+    name: yapf
