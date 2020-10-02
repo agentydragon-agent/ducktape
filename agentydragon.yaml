@@ -60,6 +60,8 @@
     # TODO(agentydragon): consistency check
     apt:
       deb: https://steamcdn-a.akamaihd.net/client/installer/steam.deb
+    tags:
+    - steam
   - name: install packages for laptop
     become: yes
     apt:
