@@ -9,7 +9,7 @@
     # TODO: integrity check
     url: https://dl-ssl.google.com/linux/linux_signing_key.pub
 - name: Bazel
-  when: ansible_architecture == "amd64"
+  when: ansible_architecture == "amd64" or ansible_architecture == "x86_64"
   block:
   - name: add Bazel repo
     become: yes
@@ -26,4 +26,4 @@
   apt_repository:
     repo: "deb [arch=amd64] https://dl.google.com/linux/chrome/deb/ stable main"
     filename: google-chrome
-  when: ansible_architecture == "amd64"
+  when: ansible_architecture == "amd64" or ansible_architecture == "x86_64"
