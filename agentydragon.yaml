@@ -155,3 +155,11 @@
       classic: true
       name:
       - syncplay
+
+  - name: install Rescuetime
+    tags:
+    - rescuetime
+    become: yes
+    when: ansible_architecture == "amd64" or ansible_architecture == "x86_64"
+    apt:
+      deb: https://www.rescuetime.com/installers/rescuetime_current_amd64.deb
