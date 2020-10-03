@@ -55,13 +55,6 @@
       # TODO(agentydragon): shallow clone
       repo: https://github.com/robbyrussell/oh-my-zsh
       dest: "/home/{{ my_user }}/.oh-my-zsh"
-  - name: Install Steam
-    become: yes
-    # TODO(agentydragon): consistency check
-    apt:
-      deb: https://steamcdn-a.akamaihd.net/client/installer/steam.deb
-    tags:
-    - steam
   - name: install packages for laptop
     become: yes
     apt:
@@ -83,13 +76,13 @@
       - perl
       - powertop
       - qshutdown
-      #- steam
+      - steam
       - torbrowser-launcher
       - transmission-gtk
       - tuxguitar
-      - vlc
       - virtualbox
       - virtualbox-dkms
+      - vlc
       - wine-stable
       - wireshark
       - xournal
