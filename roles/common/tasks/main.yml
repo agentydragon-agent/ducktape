@@ -71,3 +71,7 @@
   command: |
     gsettings set
       org.gnome.desktop.wm.preferences focus-mode 'sloppy'
+- name: minimize - maximize - close buttons
+  command: |
+    gsettings set
+      org.gnome.desktop.wm.preferences button-layout ":minimize,maximize,close"
