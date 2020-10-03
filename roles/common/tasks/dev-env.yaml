@@ -11,14 +11,18 @@
   become: yes
   apt:
     pkg:
+    # TODO: - python-is-python3
+    # broken: google-cloud-sdk
     - ansible
     - asciidoc
+    - bison
     - cabal-install
     - clang
     - clang-format
     - cloc
+    - cmake
+    - flex
     - gcc
-    # broken: google-cloud-sdk
     - ghc
     - gitk
     - gnuplot
@@ -32,7 +36,6 @@
     - npm
     - protobuf-compiler
     - pyqt5-dev-tools
-    # TODO: - python-is-python3
     - python3
     - python3-pip
     - ruby
