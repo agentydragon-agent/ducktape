@@ -1,8 +1,7 @@
 - name: Remove system-installed Anki
   become: yes
   apt:
-    name: anki
-    state: absent
+    pkg: anki
 - name: install Anki card dependencies
   become: yes
   apt:
@@ -18,30 +17,6 @@
     - texlive-latex-recommended
     - texlive-science
 
-# Install Anki from source, but only if it's not present yet.
-# TODO(prvak): Check Anki version.
-- stat:
-    path: /usr/local/bin/anki
-  register: anki_binary
-
-- name: Install Anki from source
-  when: anki_binary.stat.exists == false
-  block:
-  - tempfile:
-      state: directory
-      suffix: anki-from-source
-    register: temp_dir
-  - name: Download and unpack Anki
-    unarchive:
-      # TODO: would be nice to check integrity
-      src: https://github.com/ankitects/anki/releases/download/2.1.33/anki-2.1.33-linux-amd64.tar.bz2
-      remote_src: true
-      dest: "{{ temp_dir.path }}"
-  - name: Anki make install
-    become: yes
-    command: make install
-    args:
-      chdir: "{{ temp_dir.path }}/anki-2.1.33-linux-amd64"
 # TODO: install Anki addons:
 # TODO: 291119185 - batch editing
 # TODO: 1788670778 - CrowdAnki
