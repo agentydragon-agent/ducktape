@@ -163,3 +163,17 @@
     when: ansible_architecture == "amd64" or ansible_architecture == "x86_64"
     apt:
       deb: https://www.rescuetime.com/installers/rescuetime_current_amd64.deb
+
+  - name: enable Gnome Night Light
+    tags:
+    - nightlight
+    block:
+    - dconf:
+        key: /org/gnome/settings-daemon/plugins/color/night-light-enabled
+        value: "true"
+    - dconf:
+        key: /org/gnome/settings-daemon/plugins/color/night-light-last-coordinates
+        value: "(47.418755580057592, 8.5367799000000009)"
+    - dconf:
+        key: /org/gnome/settings-daemon/plugins/color/night-light-temperature
+        value: "uint32 2414"
