@@ -38,13 +38,6 @@
       name: blueman
       state: absent
 
-  - name: get worthy
-    shell: "GOPATH={{ home_path }}/.go go get github.com/agentydragon/worthy/worthy"
-  - name: install worthy
-    shell: "GOPATH={{ home_path }}/.go go install github.com/agentydragon/worthy/worthy"
-  - name: copy worthy to target
-    shell: "mv '{{ home_path }}/.go/bin/worthy' '{{ home_path }}/.local/bin/worthy'"
-
   # TODO: make shared with agentydragon?
   - name: install BetterTags
     tags:
@@ -92,26 +85,5 @@
         dest: "/home/{{ my_user }}/.local/share/Anki2/addons21/295889520"
 
 
-
-        # TODO
-        #  - name: install worthy config
-        #    tags:
-        #    - worthy
-        #    block:
-        #    - file:
-        #        path: "/home/{{ my_user }}/.config/worthy"
-        #        state: directory
-        #    - file:
-        #        path: "/home/{{ my_user }}/.worthy-out"
-        #        state: directory
-        #    - copy:
-        #        remote_src: false
-        #        src: worthy-config.yaml
-        #        dest: "/home/{{ my_user }}/.config/worthy/config.yaml"
-        #    # TODO: this is soooo ugly
-        #    - replace:
-        #        path: "/home/{{ my_user }}/.config/worthy/config.yaml"
-        #        regexp: "~/drive/finance"
-        #        replace: "~/.worthy-out"
 
 # TODO: install config
