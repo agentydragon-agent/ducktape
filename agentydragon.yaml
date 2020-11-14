@@ -88,6 +88,11 @@
       - xournal
       - xserver-xorg-video-amdgpu
 
+  - name: install pop os specific packages for laptop
+    become: yes
+    apt:
+      pkg:
+      - system76-cuda-latest
 
   - name: timekpr
     tags:
