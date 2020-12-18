@@ -184,3 +184,19 @@
     - dconf:
         key: /org/gnome/settings-daemon/plugins/color/night-light-temperature
         value: "uint32 2414"
+  - name: install Buildifier
+    tags:
+    - buildifier
+    block:
+    - tempfile:
+        state: directory
+        suffix: buildifier-build
+      register: temp_dir
+    - environment:
+        GOPATH: "{{ temp_dir.path }}"
+        GOBIN: "{{ local_scripts_path }}"
+      block:
+      - name: get Buildifier
+        shell: go get github.com/bazelbuild/buildtools/buildifier
+      - name: install Buildifier
+        shell: go install github.com/bazelbuild/buildtools/buildifier
