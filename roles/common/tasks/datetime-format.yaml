@@ -1,11 +1,14 @@
 - name: Set custom datetime indicator
   block:
-  - dconf:
+  - name: Set date format to custom
+    dconf:
       key: /com/canonical/indicator/datetime/time-format
       value: "'custom'"
-  - dconf:
+  - name: Set date format in datetime indicator
+    dconf:
       key: /com/canonical/indicator/datetime/custom-time-format
       value: "'%Y-%m-%d %H:%M:%S'"
-  - dconf:
+  - name: Do show week numbers in datetime indicator
+    dconf:
       key: /com/canonical/indicator/datetime/show-week-numbers
       value: "true"

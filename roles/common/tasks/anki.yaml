@@ -35,7 +35,8 @@
       url: https://api.github.com/repos/ankitects/anki/releases/latest
       dest: "{{ tmp_dir.path }}/latest-release.json"
 
-  - set_fact:
+  - name: Set temporary dir path
+    set_fact:
       tmp_path: "{{ tmp_dir.path }}"
 
   - name: get latest Anki release version
@@ -44,7 +45,8 @@
       jq --raw-output '.assets[] | select(.name | test("linux")) | .browser_download_url'
     register: latest_release
 
-  - set_fact:
+  - name: Set latest release URL
+    set_fact:
       latest_release_url: "{{ latest_release.stdout }}"
 
   - debug:
@@ -61,12 +63,13 @@
       src: "{{ latest_release_url }}"
       dest: "{{ tmp_path }}"
 
-  - set_fact:
+  - name: Set Anki dir
+    set_fact:
       anki_dir: "{{ tmp_path }}/{{ anki_dirname }}"
 
   - name: make install
     become: yes
-    shell:
+    command:
       cmd: ./install.sh
       chdir: "{{ anki_dir }}"
 

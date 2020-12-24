@@ -24,6 +24,7 @@
   git:
     repo: https://github.com/agentydragon/scripts
     dest: "{{ scripts_path }}"
+    version: master
 
 - name: set up vim
   tags: vim
@@ -32,6 +33,7 @@
     git:
       repo: https://github.com/VundleVim/Vundle.vim.git
       dest: "/home/{{ my_user }}/.vim/bundle/Vundle.vim"
+      version: master
   - name: install vim plugins
     command: "vim -E -s -c 'source /home/{{ my_user }}/.vimrc' -c PluginInstall -c PluginUpdate -c qall"
 
@@ -54,13 +56,15 @@
       key: "/org/gnome/terminal/legacy/profiles:/:{{ profile_uuid.stdout }}/font"
       value: "'Ubuntu Mono 14'"
 - include_tasks: tasks/datetime-format.yaml
-- become: true
+- name: Install Telegram Desktop, youtube-dl
+  become: true
   tags: snap
   snap:
     name:
     - telegram-desktop
     - youtube-dl
-- become: true
+- name: Install Slack
+  become: true
   tags: snap
   snap:
     classic: true
@@ -68,10 +72,10 @@
     - slack
 - include_tasks: tasks/dev-env.yaml
 - name: set sloppy focus (focus follows mouse)
-  command: |
-    gsettings set
-      org.gnome.desktop.wm.preferences focus-mode 'sloppy'
+  dconf:
+    key: /org/gnome/desktop/wm/preferences/focus-mode
+    value: sloppy
 - name: minimize - maximize - close buttons
-  command: |
-    gsettings set
-      org.gnome.desktop.wm.preferences button-layout ":minimize,maximize,close"
+  dconf:
+    key: /org/gnome/desktop/wm/preferences/button-layout
+    value: :minimize,maximize,close
