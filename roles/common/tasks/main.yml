@@ -40,7 +40,7 @@
     - gnome-terminal
     - solarized
   block:
-  - include_tasks: tasks/gnome-terminal-solarized.yaml
+  - include_tasks: gnome-terminal-solarized.yaml
   - name: hide gnome-terminal menu
     command: |
       gsettings set
