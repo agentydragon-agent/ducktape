@@ -3,6 +3,7 @@
     path: "{{ local_scripts_path }}"
     state: directory
     recurse: yes
+    mode: '0700'
 - name: Download Java formatter
   get_url:
     url: https://github.com/google/google-java-format/releases/download/google-java-format-1.9/google-java-format-1.9-all-deps.jar
@@ -42,10 +43,12 @@
     - silversearcher-ag
     - sloccount
     - tidy  # HTML tidy
-- pip:
+- name: Install autopep8
+  pip:
     executable: pip3
     name: autopep8
-- pip:
+- name: Install yapf
+  pip:
     executable: pip3
     # Google Python formatter
     name: yapf
