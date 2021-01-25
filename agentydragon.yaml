@@ -20,14 +20,18 @@
       - agentydragon
     tags:
     - docker
-  - role: lean_delivery.gitlab_runner
-    vars:
-      # See https://github.com/ansible-collections/community.general/issues/440
-      # `sudo gitlab-runner register` needs to be done manually.
-      - gitlab_runner_skip_registration: true
-      # For debugging: - no_logs: False
-    tags:
-    - gitlab-runner
+# TODO:
+#  - role: lean_delivery.gitlab_runner
+#    vars:
+#      gitlab_ci_token: 
+#      gitlab_api_token: 
+#    #vars:
+#      # See https://github.com/ansible-collections/community.general/issues/440
+#      # `sudo gitlab-runner register` needs to be done manually.
+#      #- gitlab_runner_skip_registration: true
+#      # For debugging: - no_logs: False
+#    tags:
+#    - gitlab-runner
 
   # Install gTile.
   - role: jaredhocutt.gnome_extensions
