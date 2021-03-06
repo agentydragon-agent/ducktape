@@ -47,14 +47,6 @@
     command: |
       gsettings set
         org.gnome.Terminal.Legacy.Settings default-show-menubar false
-  - name: do not use system font
-    dconf:
-      key: "/org/gnome/terminal/legacy/profiles:/:{{ profile_uuid.stdout }}/use-system-font"
-      value: "false"
-  - name: set terminal font
-    dconf:
-      key: "/org/gnome/terminal/legacy/profiles:/:{{ profile_uuid.stdout }}/font"
-      value: "'Ubuntu Mono 14'"
 - include_tasks: tasks/datetime-format.yaml
 - name: Install Telegram Desktop, youtube-dl
   become: true
