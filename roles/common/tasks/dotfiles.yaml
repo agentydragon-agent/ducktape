@@ -3,12 +3,12 @@
   tags:
   - dotfiles
   block:
-  - name: create empty directory for dotfiles repo
-    file:
-      path: "{{ dotfiles_path }}"
-      state: directory
-      recurse: yes
-      mode: '0755'
+    #- name: create empty directory for dotfiles repo
+    #  file:
+    #    path: "{{ dotfiles_path }}"
+    #    state: directory
+    #    recurse: yes
+    #    mode: '0755'
   - name: clone dotfiles
     git:
       repo: https://github.com/agentydragon/dotfiles
