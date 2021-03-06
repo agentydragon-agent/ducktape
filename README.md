@@ -23,10 +23,7 @@ Make worthy work, actually.
 - zoom (for meetings)
 - ubuntu-desktop
 - slic3r
-- rescuetime
-- playonlinux
 - dropbox
-- `bolt`   (for multiple graphic cards)
 
 TODO: minimize cinnamon desktop, texlive, etc.
 

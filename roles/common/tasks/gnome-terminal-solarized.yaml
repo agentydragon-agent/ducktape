@@ -1,3 +1,6 @@
+# TODO: would be nice to install both Solarized Light and Solarized Dark,
+# if they do not exist yet.
+
 - name: Set gnome-terminal to Solarized Light
   tags: solarized
   block:

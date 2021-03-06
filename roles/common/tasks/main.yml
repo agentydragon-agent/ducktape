@@ -26,16 +26,16 @@
     dest: "{{ scripts_path }}"
     version: master
 
-- name: set up vim
+- name: set up Neovim
   tags: vim
   block:
   - name: Clone Vundle
     git:
       repo: https://github.com/VundleVim/Vundle.vim.git
-      dest: "/home/{{ my_user }}/.vim/bundle/Vundle.vim"
+      dest: "/home/{{ my_user }}/.config/nvim/bundle/Vundle.vim"
       version: master
-  - name: install vim plugins
-    command: "vim -E -s -c 'source /home/{{ my_user }}/.vimrc' -c PluginInstall -c PluginUpdate -c qall"
+  - name: install plugins
+    command: "nvim -E -c PluginInstall -c PluginUpdate -c qall"
 
 - name: gnome-terminal
   tags:
