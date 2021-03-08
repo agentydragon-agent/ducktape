@@ -16,6 +16,40 @@
 - include_tasks: tasks/anki.yaml
   tags:
   - anki
+- name: install zprint
+  tags:
+  - zprint
+  block:
+  - name: create temp directory
+    tempfile:
+      state: directory
+      suffix: zprint
+    register: tmp_dir
+
+  - set_fact:
+      release_json_path: "{{ tmp_dir.path }}/latest-release.json"
+
+  - name: download latest release info
+    get_url:
+      url: https://api.github.com/repos/kkinnear/zprint/releases/latest
+      dest: "{{ release_json_path }}"
+
+  - name: get latest release
+    shell: |
+      cat {{ release_json_path }} | \
+      jq --raw-output '.assets[] | select(.name | test("zprintl")) | .browser_download_url'
+    register: latest_release_url
+
+  - name: download zprint
+    get_url:
+      url: "{{ latest_release_url.stdout }}"
+      dest: "{{ local_scripts_path }}/zprint"
+
+  - name: set zprint mode +x
+    file:
+      dest: "{{ local_scripts_path }}/zprint"
+      mode: "a+x"
+
 - include_tasks: tasks/dev-env.yaml
 - include_tasks: tasks/dotfiles.yaml
 - name: Set up custom scripts
