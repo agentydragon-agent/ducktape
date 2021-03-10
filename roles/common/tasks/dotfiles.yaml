@@ -11,7 +11,7 @@
     #    mode: '0755'
   - name: clone dotfiles
     git:
-      repo: https://github.com/agentydragon/dotfiles
+      repo: git@gitlab.com:agentydragon/dotfiles
       dest: "{{ dotfiles_path }}"
       version: master
   # TODO: problem: this is interactive if the files already exist.
