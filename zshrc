@@ -53,7 +53,7 @@ unsetopt auto_menu
 
 zstyle ':completion:*' completer _complete _ignored
 zstyle ':completion:*' group-name ''
-zstyle ':completion:*' list-colors ${(s.:.)LS_COLORS}
+#zstyle ':completion:*' list-colors ${(s.:.)LS_COLORS}
 zstyle ':completion:*' matcher-list ''
 
 #autoload -Uz compinit
@@ -76,31 +76,11 @@ bindkey -e
 # Record keystrokes
 # alias vim='vim -w ~/.vim-keylog "$@"'
 
-function set_custom_prompt {
-	if [ $UID -eq 0 ]; then
-		#DIR_COLOR="%F{160}"; # dark red
-		#PROMPT_COLOR="%F{001}"; # red
-		THE_PROMPT="#";
-	else
-		DIR_COLOR="%F{155}"; # medium green
-		PROMPT_COLOR="%F{033}"; # medium blue
-		THE_PROMPT="λ"; # lambda
-		# » (dvojsipka), → (sipka)
-	fi
-
-	PROMPT='$DIR_COLOR%~ $PROMPT_COLOR$THE_PROMPT %k'
-	PROMPT='%~ $THE_PROMPT '
-	RPROMPT='$(git_prompt_info) %*'
-}
-
-
-# set_custom_prompt
-
 ZSH_THEME_TERM_TITLE_IDLE="%n: %~ $"
 
 unsetopt share_history # Don't share command history between zsh's
 
-eval `dircolors ~/.dir_colors/dircolors`
+#eval `dircolors ~/.dir_colors/dircolors`
 export MC_SKIN=~/.config/mc/solarized.ini
 
 # for enca/enconv

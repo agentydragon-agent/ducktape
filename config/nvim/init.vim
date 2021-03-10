@@ -165,12 +165,12 @@ inoremap <S-Down> ⇓
 " Highlight column 80
 set colorcolumn=80,+0
 
-set t_Co=256
-set background=light
+" set t_Co=256
 
 " Silence if colorscheme not installed.
 set termguicolors
-silent! colorscheme NeoSolarized
+colorscheme NeoSolarized
+set background=light
 
 " Jump to last position on opening files (stolen from Destroy All Software)
 " ('\" == mark when last exiting buffer, g` = go to, jumplist-nondestructive)
@@ -202,6 +202,7 @@ augroup autoformat_settings
   " autocmd FileType html,css,json AutoFormatBuffer js-beautify
   autocmd FileType java AutoFormatBuffer google-java-format
   autocmd FileType python AutoFormatBuffer yapf
+  autocmd FileType clojure AutoFormatBuffer zprint
 augroup END
 
 set foldmethod=syntax
