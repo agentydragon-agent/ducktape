@@ -56,7 +56,7 @@
   tags:
   - custom-scripts
   git:
-    repo: https://github.com/agentydragon/scripts
+    repo: git@gitlab.com:agentydragon/scripts
     dest: "{{ scripts_path }}"
     version: master
 
