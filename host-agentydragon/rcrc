@@ -1,2 +1,2 @@
-EXCLUDES="README.md"
 DOTFILES_DIRS=/home/agentydragon/repos/dotfiles
+EXCLUDE=README.md
