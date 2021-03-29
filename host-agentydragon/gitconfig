@@ -41,5 +41,6 @@
 	dialog = /home/agentydragon/.githooks/bin/dialog
 	autoUpdateEnabled = true
 	deleteDetectedLFSHooks = 
+	autoUpdateCheckTimestamp = 1617029467
 [alias]
 	hooks = !\"/home/agentydragon/.githooks/bin/cli\"
