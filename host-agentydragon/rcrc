@@ -1,2 +1,3 @@
 DOTFILES_DIRS=/home/agentydragon/repos/dotfiles
 EXCLUDE=README.md
+HOSTNAME=agentydragon
