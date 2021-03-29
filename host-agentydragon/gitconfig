@@ -29,3 +29,17 @@
 	enabled = true
 [url "git@github.com:"]
 	insteadOf = https://github.com/
+[init]
+	defaultBranch = main
+	templateDir = /home/agentydragon/.githooks/templates
+[githooks]
+	installDir = /home/agentydragon/.githooks
+	cloneUrl = https://github.com/gabyx/githooks.git
+	cloneBranch = main
+	useCoreHooksPath = false
+	runner = /home/agentydragon/.githooks/bin/runner
+	dialog = /home/agentydragon/.githooks/bin/dialog
+	autoUpdateEnabled = true
+	deleteDetectedLFSHooks = 
+[alias]
+	hooks = !\"/home/agentydragon/.githooks/bin/cli\"
