@@ -100,8 +100,8 @@
 - name: set sloppy focus (focus follows mouse)
   dconf:
     key: /org/gnome/desktop/wm/preferences/focus-mode
-    value: sloppy
+    value: "'sloppy'"
 - name: minimize - maximize - close buttons
   dconf:
     key: /org/gnome/desktop/wm/preferences/button-layout
-    value: :minimize,maximize,close
+    value: "':minimize,maximize,close'"
