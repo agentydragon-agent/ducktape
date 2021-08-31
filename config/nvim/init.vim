@@ -93,6 +93,7 @@ Plugin 'google/vim-maktaba'  " dependency of vim-codefmt
 Plugin 'google/vim-codefmt'
 Plugin 'google/vim-glaive'  " used to configure codefmt's maktaba flags
 Plugin 'leafgarland/typescript-vim'
+Plugin 'cespare/vim-toml'
 call vundle#end()
 
 " Ignore error if Glaive not installed.
@@ -105,6 +106,11 @@ endif
 let g:airline#extensions#tabline#enabled = 1
 
 set textwidth=80
+
+" This is taken from: https://github.com/cespare/vim-toml/blob/master/ftdetect/toml.vim
+" TODO: Why is this necessary?
+autocmd BufNewFile,BufRead *.toml,Gopkg.lock,Cargo.lock,*/.cargo/config,*/.cargo/credentials,Pipfile setf toml
+
 autocmd Filetype html setlocal tabstop=2 softtabstop=2 shiftwidth=2 expandtab
 autocmd Filetype haskell setlocal tabstop=2 softtabstop=2 shiftwidth=2 expandtab
 
@@ -202,8 +208,9 @@ augroup autoformat_settings
   " autocmd FileType html,css,json AutoFormatBuffer js-beautify
   autocmd FileType java AutoFormatBuffer google-java-format
   autocmd FileType python AutoFormatBuffer yapf
-  " zprint
+  " cljstyle
   autocmd FileType clojure AutoFormatBuffer cljstyle
+  " autocmd FileType clojure AutoFormatBuffer zprint
 augroup END
 
 set foldmethod=syntax

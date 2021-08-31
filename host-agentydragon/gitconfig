@@ -5,8 +5,6 @@
 	autocrlf = false
 [color]
 	ui = auto
-[merge]
-	tool = vimdiff
 [push]
 	default = upstream
 [log]
@@ -41,6 +39,16 @@
 	dialog = /home/agentydragon/.githooks/bin/dialog
 	autoUpdateEnabled = true
 	deleteDetectedLFSHooks = 
-	autoUpdateCheckTimestamp = 1617029467
+	autoUpdateCheckTimestamp = 1630171847
 [alias]
 	hooks = !\"/home/agentydragon/.githooks/bin/cli\"
+[difftool "nbdime"]
+	cmd = git-nbdifftool diff \"$LOCAL\" \"$REMOTE\" \"$BASE\"
+[difftool]
+	prompt = false
+[mergetool "nbdime"]
+	cmd = git-nbmergetool merge \"$BASE\" \"$LOCAL\" \"$REMOTE\" \"$MERGED\"
+[mergetool]
+	prompt = false
+[merge]
+	tool = vimdiff

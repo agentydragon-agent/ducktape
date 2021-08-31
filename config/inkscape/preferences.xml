@@ -133,8 +133,8 @@
          id="rect"
          style="fill:blue;"
          usecurrent="1"
-         width="264.567"
-         height="140.315"
+         width="999.938"
+         height="530.324"
          rx="0"
          ry="0" />
       <eventcontext
@@ -172,8 +172,8 @@
          end="0"
          start="0"
          usecurrent="1"
-         rx="4.7395"
-         ry="4.7395" />
+         rx="17.9131"
+         ry="17.9131" />
       <eventcontext
          id="star"
          magnitude="5"
@@ -200,7 +200,8 @@
          selcue="1"
          style="stroke-width:1px;"
          usecurrent="0"
-         average_all_sketches="1" />
+         average_all_sketches="1"
+         pressure="0" />
       <eventcontext
          id="pen"
          mode="drag"
@@ -330,13 +331,14 @@
        style="fill:#ff0000;fill-opacity:1;fill-rule:nonzero;stroke:none;"
        unitid="3"
        show_bbox="1"
-       unit="mm" />
+       unit="px" />
     <eventcontext
        id="text"
        usecurrent="0"
        gradientdrag="1"
        font_sample="AaBbCcIiPpQq12369$€¢?.;/()"
        show_sample_in_list="1"
+       use_svg2="1"
        style="fill:black;fill-opacity:1;stroke:none;font-family:UnPenheulim;font-style:normal;font-weight:normal;font-size:10px;line-height:125%;letter-spacing:0px;word-spacing:0px;-inkscape-font-specification:UnPenheulim;font-stretch:normal;font-variant:normal"
        selcue="1"
        align_mode="0">
@@ -348,7 +350,6 @@
        id="nodes"
        selcue="1"
        gradientdrag="1"
-       highlight_color="4278190335"
        pathflash_enabled="1"
        pathflash_unselected="0"
        pathflash_timeout="500"
@@ -363,7 +364,8 @@
        x="0"
        y="0"
        edit_clipping_paths="0"
-       edit_masks="0" />
+       edit_masks="0"
+       highlight_color="4278190335" />
     <eventcontext
        id="tweak"
        selcue="0"
@@ -612,8 +614,8 @@
        id="spellcheck"
        w="200"
        h="250"
-       lang="en_US"
-       ignorenumbers="1" />
+       ignorenumbers="1"
+       lang="en_US" />
     <group
        id="documentoptions"
        state="1"
@@ -647,8 +649,8 @@
        path=""
        x="0"
        y="0"
-       w="680"
-       h="454"
+       w="571"
+       h="477"
        panel_size="1"
        panel_ratio="100"
        panel_mode="1"
@@ -659,7 +661,7 @@
        placement="1">
       <group
          id="exportarea"
-         value="drawing" />
+         value="page" />
       <group
          id="defaultxdpi"
          value="150" />
@@ -680,12 +682,13 @@
     <group
        id="open"
        enable_preview="1"
-       path="/home/agentydragon/drive/Dustin Space/Art/" />
+       path="/home/agentydragon/downloads/" />
     <group
        id="import"
        enable_preview="1"
        path="/home/prvak/"
        ask="1"
+       ask_svg="1"
        link="link"
        scale="optimizeSpeed" />
     <group
@@ -710,8 +713,8 @@
        shifty_per_j="0"
        x="0"
        y="0"
-       w="680"
-       h="522"
+       w="571"
+       h="539"
        visible="1"
        state="2"
        placement="2" />
@@ -1049,10 +1052,10 @@
          origin_y="0.0"
          spacing_x="1.0"
          spacing_y="1.0"
-         color="65312"
-         empcolor="65344"
          empspacing="5"
-         dotted="0" />
+         dotted="0"
+         color="65312"
+         empcolor="65344" />
       <group
          id="axonom"
          units="mm"
@@ -1061,9 +1064,9 @@
          spacing_y="1.0"
          angle_x="30.0"
          angle_z="30.0"
+         empspacing="5"
          color="65312"
-         empcolor="65344"
-         empspacing="5" />
+         empcolor="65344" />
     </group>
     <group
        id="workarounds"
@@ -1087,6 +1090,12 @@
        value="2" />
     <group
        id="rendering" />
+    <group
+       id="svgeditor"
+       value="inkscape" />
+    <group
+       id="dash"
+       scale="1" />
   </group>
   <group
      id="extensions"
@@ -1096,10 +1105,10 @@
      id="desktop"
      style="opacity:1;fill:#000000;fill-opacity:1;stroke-width:0.37795276;stroke-miterlimit:4;stroke-dasharray:none;stroke:#000000;stroke-opacity:1;font-size:32px;text-anchor:start;text-align:start;stroke-dashoffset:0;-inkscape-font-specification:'Latin Modern Mono Caps';font-family:'Latin Modern Mono Caps';font-weight:normal;font-style:normal;font-stretch:normal;font-variant:normal;line-height:125%">
     <group
-       width="1279"
-       height="1365"
-       x="1280"
-       y="0"
+       width="1013"
+       height="837"
+       x="611"
+       y="144"
        fullscreen="0"
        id="geometry"
        maximized="0" />
@@ -1212,4 +1221,13 @@
   <group
      id="ui"
      language="" />
+  <group
+     id="theme"
+     defaultTheme="Pop"
+     defaultIconTheme="ubuntu-mono-dark"
+     gtkTheme="Pop"
+     iconTheme="ubuntu-mono-dark"
+     menuIcons_canvas="0"
+     menuIcons_layers="0"
+     menuIcons_objects="0" />
 </inkscape>
