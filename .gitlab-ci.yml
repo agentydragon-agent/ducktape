@@ -1,0 +1,73 @@
+variables:
+  # https://docs.gitlab.com/ee/ci/docker/using_docker_build.html#tls-enabled
+  DOCKER_HOST: tcp://docker:2376
+  DOCKER_TLS_CERTDIR: "/certs"
+  DOCKER_DRIVER: overlay2
+
+stages:
+  - build_ci_image
+  - build_and_test
+  - deploy
+
+# Runs manually as part of CI on every commit.
+build_ci_image:
+  stage: build_ci_image
+  interruptible: true
+  image: docker:latest
+  services:
+    - docker:dind
+  script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+    - IMAGE=$CI_REGISTRY_IMAGE/cirunner
+    - docker pull $IMAGE:latest || true
+    - docker build --cache-from $IMAGE:latest --tag $IMAGE:$CI_COMMIT_SHA ci
+    - docker push $IMAGE:$CI_COMMIT_SHA
+
+# Tags and pushes CI image. Only runs on master.
+tag_latest:
+  stage: deploy
+  only:
+    refs:
+    - master
+  interruptible: true
+  image: docker:latest
+
+  services:
+    - docker:dind
+  script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+    - IMAGE=$CI_REGISTRY_IMAGE/cirunner
+    - docker pull $IMAGE:$CI_COMMIT_SHA
+    - docker tag $IMAGE:$CI_COMMIT_SHA $IMAGE:latest
+    - docker push $IMAGE:latest
+
+# TODO(agentydragon): should run after build_tag_push_ci_image on master.
+build_and_test:
+  stage: build_and_test
+  interruptible: true
+  image:
+    # See src/ci/README.md
+    name: $CI_REGISTRY_IMAGE/cirunner:$CI_COMMIT_SHA
+    # Disabled due to BulkTransferException related to Unicode file name
+    # in libminizinc tests.
+  before_script:
+    - |
+        if [ ! -z "${BAZEL_GOOGLE_CREDENTIALS}" ]; then
+          echo "build --remote_cache=${BAZEL_REMOTE_CACHE} --google_credentials=${BAZEL_GOOGLE_CREDENTIALS}" >> .bazelrc ;
+        fi
+  script:
+    - bazel version
+    - python --version
+    - bazel build ...
+    - bazel test ...
+
+  after_script:
+    # after_script is executed after both successful and failed runs, so it
+    # will always upload the testlogs.
+    - mkdir testlogs
+    - cp -R bazel-testlogs/* testlogs
+  artifacts:
+    paths:
+      - testlogs
+      - bazel-testlogs
+    when: always
