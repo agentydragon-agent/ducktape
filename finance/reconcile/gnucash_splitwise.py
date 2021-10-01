@@ -1,8 +1,11 @@
 """
-bazel run //gnucash_splitwise_reconciler:reconcile -- \
+bazel run //finance/reconcile:gnucash_splitwise -- \
   --group_id=<...> \
   --gnucash_book=/wherever/gnucash.gnucash \
   > x.txt
+
+TODO: the note should be associated with a given *split*, not with the whole
+transaction. that would support cross-Splitwise-group transactions.
 """
 
 # TODO: support for cross-Splitwise-group transactions in one GnuCash
@@ -69,24 +72,7 @@ def retrieve_get_params(port):
     return get_params
 
 
-def load_expenses():
-    config_dir = xdg.xdg_config_home() / 'gnucash_splitwise_reconciler'
-    cache_dir = xdg.xdg_cache_home() / 'gnucash_splitwise_reconciler'
-    splitwise_credentials_path = config_dir / 'splitwise_credentials.json'
-
-    if splitwise_credentials_path.exists():
-        with open(splitwise_credentials_path) as f:
-            splitwise_credentials = json.load(f)
-    else:
-        splitwise_credentials = {}
-
-    consumer_key = (_CONSUMER_KEY.value
-                    or splitwise_credentials['consumer_key'])
-    consumer_secret = (_CONSUMER_SECRET.value
-                       or splitwise_credentials['consumer_secret'])
-
-    client = splitwise.Splitwise(consumer_key, consumer_secret)
-
+def assign_token(client, cache_dir):
     token_path = cache_dir / 'splitwise_token.json'
     if token_path.exists():
         with open(token_path) as f:
@@ -106,8 +92,32 @@ def load_expenses():
         with open(token_path, 'w') as f:
             json.dump(access_token, f)
             logging.info("Access token saved to %s", access_token)
-
     client.setAccessToken(access_token)
+
+
+def make_client(splitwise_credentials_path):
+    if splitwise_credentials_path.exists():
+        with open(splitwise_credentials_path) as f:
+            splitwise_credentials = json.load(f)
+    else:
+        splitwise_credentials = {}
+
+    consumer_key = (_CONSUMER_KEY.value
+                    or splitwise_credentials['consumer_key'])
+    consumer_secret = (_CONSUMER_SECRET.value
+                       or splitwise_credentials['consumer_secret'])
+
+    return splitwise.Splitwise(consumer_key, consumer_secret)
+
+
+def load_expenses():
+    config_dir = xdg.xdg_config_home() / 'gnucash_splitwise_reconciler'
+    cache_dir = xdg.xdg_cache_home() / 'gnucash_splitwise_reconciler'
+    splitwise_credentials_path = config_dir / 'splitwise_credentials.json'
+
+    client = make_client(splitwise_credentials_path)
+
+    assign_token(client, cache_dir)
 
     my_user_id = client.getCurrentUser().getId()
     # group.name
@@ -206,6 +216,8 @@ def main(_):
 
         gnucash_unmatched_splits = []
 
+        # TODO: we should actually read the memo on the split, not note on the
+        # whole transaction.
         for split in account_of_interest.GetSplitList():
             notes = split.parent.GetNotes()
             if notes:
