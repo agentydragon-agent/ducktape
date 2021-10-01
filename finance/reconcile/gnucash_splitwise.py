@@ -187,9 +187,10 @@ def main(_):
         # TODO: we should actually read the memo on the split, not note on the
         # whole transaction.
         for split in account_of_interest.GetSplitList():
-            notes = split.parent.GetNotes()
-            if notes:
-                match = re.search(r"splitwise=(\d+)", notes)
+            # notes = split.parent.GetNotes()
+            memo = split.GetMemo()
+            if memo:
+                match = re.search(r"splitwise=(\d+)", memo)
                 if match:
                     splitwise_expense_id = int(match.group(1))
                     splitwise_expense = expenses_by_id[splitwise_expense_id]
