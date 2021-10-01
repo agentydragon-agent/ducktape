@@ -18,14 +18,16 @@ import json
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 import urllib.parse
 import re
-
+import decimal
 import math
+import code
+import readline
+
 import xdg
 import splitwise
 import gnucash
 
-import code
-import readline
+from ducktape.finance import gnucash_util
 
 # Register at: https://secure.splitwise.com/oauth_clients
 
@@ -153,46 +155,11 @@ def load_expenses():
     return expenses, my_user_id
 
 
-def account_from_path(top_account, account_path, original_path=None):
-    if original_path == None: original_path = account_path
-    account, account_path = account_path[0], account_path[1:]
-
-    account = top_account.lookup_by_name(account)
-    if account == None:
-        raise Exception("path " + ''.join(original_path) +
-                        " could not be found")
-    if len(account_path) > 0:
-        return account_from_path(account, account_path, original_path)
-    else:
-        return account
-
-
-from decimal import Decimal
-
-
-def gnc_numeric_to_python_Decimal(numeric):
-    negative = numeric.negative_p()
-    if negative:
-        sign = 1
-    else:
-        sign = 0
-    copy = gnucash.GncNumeric(numeric.num(), numeric.denom())
-    result = copy.to_decimal(None)
-    if not result:
-        raise Exception("gnc numeric value %s can't be converted to decimal" %
-                        copy.to_string())
-    digit_tuple = tuple(int(char) for char in str(copy.num()) if char != '-')
-    denominator = copy.denom()
-    exponent = int(math.log10(denominator))
-    assert ((10**exponent) == denominator)
-    return Decimal((sign, digit_tuple, -exponent))
-
-
 def get_splitwise_net(expense, user_id):
     for exp_user in expense.users:
         if exp_user.id == user_id:
-            owed = Decimal(exp_user.getOwedShare())
-            paid = Decimal(exp_user.getPaidShare())
+            owed = decimal.Decimal(exp_user.getOwedShare())
+            paid = decimal.Decimal(exp_user.getPaidShare())
             return paid - owed
     raise Exception()
 
@@ -212,7 +179,8 @@ def main(_):
         root_account = session.book.get_root_account()
         # TODO: make this a parameter
         account_path = ['Assets', 'Splitwise', 'Under the Roof']
-        account_of_interest = account_from_path(root_account, account_path)
+        account_of_interest = gnucash_util.account_from_path(
+            root_account, account_path)
 
         gnucash_unmatched_splits = []
 
@@ -228,7 +196,7 @@ def main(_):
                     splitwise_net = get_splitwise_net(splitwise_expense,
                                                       my_user_id)
 
-                    split_amount = gnc_numeric_to_python_Decimal(
+                    split_amount = gnucash_util.gnc_numeric_to_python_Decimal(
                         split.GetAmount())
                     if split_amount != splitwise_net:
                         logging.error(
@@ -272,7 +240,8 @@ def main(_):
 
         # Sort by descending net
         def get_abs_split_net(split):
-            return abs(gnc_numeric_to_python_Decimal(split.GetAmount()))
+            return abs(
+                gnucash_util.gnc_numeric_to_python_Decimal(split.GetAmount()))
 
         for split in sorted(gnucash_unmatched_splits,
                             key=get_abs_split_net,
@@ -281,14 +250,17 @@ def main(_):
             notes = transaction.GetNotes()
             print("transaction:", transaction.GetDescription(), transaction,
                   "notes=", notes, "date=", transaction.GetDate())
-            split_amount = gnc_numeric_to_python_Decimal(split.GetAmount())
+            split_amount = gnucash_util.gnc_numeric_to_python_Decimal(
+                split.GetAmount())
             print("split amount:", split_amount)
             transaction_splits = transaction.GetSplitList()
             print("other splits:")
             for s2 in transaction_splits:
-                print("  ", gnc_numeric_to_python_Decimal(s2.GetAmount()),
-                      s2.GetAccount().GetName(),
-                      s2.GetAccount().GetGUID().to_string())
+                print(
+                    "  ",
+                    gnucash_util.gnc_numeric_to_python_Decimal(s2.GetAmount()),
+                    s2.GetAccount().GetName(),
+                    s2.GetAccount().GetGUID().to_string())
 
         #variables = globals().copy()
         #variables.update(locals())

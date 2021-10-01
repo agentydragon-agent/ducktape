@@ -22,6 +22,8 @@ import decimal
 import xdg
 import gnucash
 
+from ducktape.finance import gnucash_util
+
 # ~/.config/gnucash_splitwise_reconciler/...
 
 _TRANSACTIONS_CSV = flags.DEFINE_string("transactions_csv", None, "")
@@ -37,38 +39,6 @@ def print_ubs_expense(expense):
     print(expense['id'], expense['trade_date'], expense['amount'],
           expense['description_1'], expense['description_2'],
           expense['description_3'])
-
-
-def account_from_path(top_account, account_path, original_path=None):
-    if original_path == None: original_path = account_path
-    account, account_path = account_path[0], account_path[1:]
-
-    account = top_account.lookup_by_name(account)
-    if account == None:
-        raise Exception("path " + ''.join(original_path) +
-                        " could not be found")
-    if len(account_path) > 0:
-        return account_from_path(account, account_path, original_path)
-    else:
-        return account
-
-
-def gnc_numeric_to_python_Decimal(numeric):
-    negative = numeric.negative_p()
-    if negative:
-        sign = 1
-    else:
-        sign = 0
-    copy = gnucash.GncNumeric(numeric.num(), numeric.denom())
-    result = copy.to_decimal(None)
-    if not result:
-        raise Exception("gnc numeric value %s can't be converted to decimal" %
-                        copy.to_string())
-    digit_tuple = tuple(int(char) for char in str(copy.num()) if char != '-')
-    denominator = copy.denom()
-    exponent = int(math.log10(denominator))
-    assert ((10**exponent) == denominator)
-    return decimal.Decimal((sign, digit_tuple, -exponent))
 
 
 _EXPECTED_CSV_COLUMNS = {
@@ -144,7 +114,7 @@ def load_csv():
 
 
 def get_split_amount(split):
-    return gnc_numeric_to_python_Decimal(split.GetAmount())
+    return gnucash_util.gnc_numeric_to_python_Decimal(split.GetAmount())
 
 
 def main(_):
@@ -158,7 +128,8 @@ def main(_):
         root_account = session.book.get_root_account()
         # TODO: make this a parameter
         account_path = _GNUCASH_ACCOUNT_PATH.value
-        account_of_interest = account_from_path(root_account, account_path)
+        account_of_interest = gnucash_util.account_from_path(
+            root_account, account_path)
 
         gnucash_unmatched_splits = []
 
@@ -171,7 +142,8 @@ def main(_):
                 transaction = ubs_transactions_by_ubs_transaction_no[
                     ubs_transaction_id]
 
-                split_amount = gnc_numeric_to_python_Decimal(split.GetAmount())
+                split_amount = gnucash_util.gnc_numeric_to_python_Decimal(
+                    split.GetAmount())
                 if split_amount != transaction['amount']:
                     logging.error(
                         f"Error with UBS transaction {ubs_transaction_id}: split in GnuCash is {split_amount}, but UBS says {transaction['amount']}"
