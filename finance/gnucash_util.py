@@ -1,3 +1,4 @@
+import contextlib
 import decimal
 import math
 
@@ -34,3 +35,16 @@ def gnc_numeric_to_python_Decimal(numeric):
     exponent = int(math.log10(denominator))
     assert ((10**exponent) == denominator)
     return decimal.Decimal((sign, digit_tuple, -exponent))
+
+
+def get_split_amount(split):
+    return gnc_numeric_to_python_Decimal(split.GetAmount())
+
+
+@contextlib.contextmanager
+def GnuCashSession(path):
+    session = gnucash.Session(path)
+    try:
+        yield session
+    finally:
+        session.end()
