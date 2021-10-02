@@ -124,7 +124,4 @@ def load_splitwise_expenses(
             break
         offset += limit
     logging.info("fetched %d expenses", len(expenses))
-    logging.info("useful locals: `client`, `expenses`.")
-
-    logging.info("done")
     return expenses
