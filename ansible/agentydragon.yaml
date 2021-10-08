@@ -1,0 +1,206 @@
+---
+- hosts: localhost
+  vars:
+    my_user: agentydragon
+    home_path: "/home/{{ my_user }}"
+    scripts_path: "{{ home_path }}/bin"
+    local_scripts_path: "{{ home_path }}/.local/bin"
+    dotfiles_path: "{{ home_path }}/repos/dotfiles"
+    rcup_computer: "agentydragon"
+  # TODO: vars_files:
+  # TODO:   - agentydragon_gitlab_token.yml
+  remote_user: "{{ my_user }}"
+  roles:
+  - role: geerlingguy.docker
+    become: true
+    vars:
+      docker_service_state: started
+      docker_service_enabled: true
+      docker_users:
+      - agentydragon
+    tags:
+    - docker
+# TODO:
+#  - role: lean_delivery.gitlab_runner
+#    vars:
+#      gitlab_ci_token: 
+#      gitlab_api_token: 
+#    #vars:
+#      # See https://github.com/ansible-collections/community.general/issues/440
+#      # `sudo gitlab-runner register` needs to be done manually.
+#      #- gitlab_runner_skip_registration: true
+#      # For debugging: - no_logs: False
+#    tags:
+#    - gitlab-runner
+
+  # Install gTile.
+  - role: jaredhocutt.gnome_extensions
+    vars:
+      gnome_extension_ids:
+        - 28    # gTile - https://extensions.gnome.org/extension/28/gtile/
+        - 1102  # Desaturate All - https://extensions.gnome.org/extension/1102/desaturate-all/
+
+  - common
+
+  tasks:
+  # Cannot be done for cloudragon because of OS Login. ugh.
+  - name: set zsh as login shell
+    become: yes
+    tags:
+    - zsh
+    user:
+      name: "{{ my_user }}"
+      shell: /bin/zsh
+  - name: Clone oh-my-zsh
+    tags:
+    - oh-my-zsh
+    - zsh
+    git:
+      # TODO(agentydragon): shallow clone
+      repo: https://github.com/robbyrussell/oh-my-zsh
+      dest: "/home/{{ my_user }}/.oh-my-zsh"
+  - name: install packages for laptop
+    become: yes
+    apt:
+      pkg:
+      - acpi
+      - android-tools-adb
+      - blender
+      - blueman
+      - chrome-gnome-shell
+      - gnome-shell
+      - gnome-tweaks
+      - gnupg
+      - gnupg-agent
+      - gnupg-l10n
+      - gpgv
+      - krita
+      - locate
+      - openjdk-8-jdk
+      - perl
+      - powertop
+      - qshutdown
+      - steam
+      - torbrowser-launcher
+      - transmission-gtk
+      - tuxguitar
+      - virtualbox
+      - virtualbox-dkms
+      - vlc
+      - wine-stable
+      - wireshark
+      - xournal
+      - xserver-xorg-video-amdgpu
+
+  - name: install pop os specific packages for laptop
+    become: yes
+    apt:
+      pkg:
+      - system76-cuda-latest
+
+  - name: timekpr
+    tags:
+    - timekpr
+    block:
+    - name: Add timekpr-next PPA
+      apt_repository:
+        repo: ppa:mjasnik/ppa
+      become: yes
+    - name: Install timekpr-next
+      apt:
+        pkg:
+          # TODO(agentydragon): As of 2020-09-24, mainline does not have suspend
+          # option yet.
+          - timekpr-next-beta
+      become: yes
+    - name: Set up timekpr allowed hours
+      become: yes
+      command: timekpra --setallowedhours agentydragon ALL "5[0-60];6[0-60];7[0-60];8[0-60];9[0-60];10[0-60];11[0-60];12[0-60];13[0-60];14[0-60];15[0-60];16[0-60];17[0-60];18[0-60];19[0-60];20[0-60];21[0-60];22[0-60];23[0-60]"
+      # with forced 5-minute pauses on start of every hour:
+      #   command: timekpra --setallowedhours agentydragon ALL "5[5-60];6[5-60];7[5-60];8[5-60];9[5-60];10[5-60];11[5-60];12[5-60];13[5-60];14[5-60];15[5-60];16[5-60];17[5-60];18[5-60];19[5-60];20[5-60];21[5-60];22[5-60];23[20-60]"
+    - name: Set up timekpr lockout to lock screen
+      become: yes
+      command: timekpra --setlockouttype agentydragon lock
+
+  - name: Google Drive
+    tags: google-drive
+    vars:
+      user_systemd_services_dir: "{{ home_path }}/.config/systemd/user"
+      google_drive_mount_dir: "{{ home_path }}/.google-drive"
+    block:
+    - name: create user systemd services folder
+      file:
+        path: "{{ user_systemd_services_dir }}"
+        state: directory
+        recurse: yes
+    - name: install google drive
+      template:
+        src: google-drive.service.j2
+        dest: "{{ user_systemd_services_dir }}/google-drive.service"
+    # TODO: and maybe also add the binary to github? 3rdparty?
+    - name: enable google drive
+      systemd:
+        name: google-drive
+        state: started
+        enabled: yes
+        scope: user  # install as --user to depend on user session
+    - name: symlink to drive folder in home
+      file:
+        src: "{{ google_drive_mount_dir }}/My Drive"
+        dest: "{{ home_path }}/drive"
+        state: link
+    - name: create Worthy config dir
+      file:
+        path: "{{ home_path }}/.config/worthy"
+        state: directory
+    - name: symlink Worthy config to Drive
+      file:
+        src: "{{ home_path }}/drive/finance/worthy-config.yaml"
+        dest: "{{ home_path }}/.config/worthy/config.yaml"
+        state: link
+
+  - name: Install Syncplay
+    tags: snap
+    become: yes
+    snap:
+      classic: true
+      name:
+      - syncplay
+
+  - name: install Rescuetime
+    tags:
+    - rescuetime
+    become: yes
+    when: ansible_architecture == "amd64" or ansible_architecture == "x86_64"
+    apt:
+      deb: https://www.rescuetime.com/installers/rescuetime_current_amd64.deb
+
+  - name: enable Gnome Night Light
+    tags:
+    - nightlight
+    block:
+    - dconf:
+        key: /org/gnome/settings-daemon/plugins/color/night-light-enabled
+        value: "true"
+    - dconf:
+        key: /org/gnome/settings-daemon/plugins/color/night-light-last-coordinates
+        value: "(47.418755580057592, 8.5367799000000009)"
+    - dconf:
+        key: /org/gnome/settings-daemon/plugins/color/night-light-temperature
+        value: "uint32 2414"
+  - name: install Buildifier
+    tags:
+    - buildifier
+    block:
+    - tempfile:
+        state: directory
+        suffix: buildifier-build
+      register: temp_dir
+    - environment:
+        GOPATH: "{{ temp_dir.path }}"
+        GOBIN: "{{ local_scripts_path }}"
+      block:
+      - name: get Buildifier
+        shell: go get github.com/bazelbuild/buildtools/buildifier
+      - name: install Buildifier
+        shell: go install github.com/bazelbuild/buildtools/buildifier

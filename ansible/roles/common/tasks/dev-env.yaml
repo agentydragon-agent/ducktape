@@ -1,0 +1,51 @@
+- name: create empty directory for local binaries
+  file:
+    path: "{{ local_scripts_path }}"
+    state: directory
+    recurse: yes
+    mode: '0700'
+- name: Download Java formatter
+  get_url:
+    url: https://github.com/google/google-java-format/releases/download/google-java-format-1.9/google-java-format-1.9-all-deps.jar
+    dest: "{{ local_scripts_path }}/google-java-format.jar"
+- name: install dev env
+  become: yes
+  apt:
+    pkg:
+    # TODO: - python-is-python3
+    # broken: google-cloud-sdk
+    - ansible
+    - asciidoc
+    - bison
+    - cabal-install
+    - clang
+    - clang-format
+    - cloc
+    - cmake
+    - flex
+    - gcc
+    - ghc
+    - gitk
+    - gnuplot
+    - golang
+    - jshon
+    - jupyter-nbconvert
+    - make
+    - markdown
+    - npm
+    - protobuf-compiler
+    - pyqt5-dev-tools
+    - python3
+    - python3-pip
+    - silversearcher-ag
+    - sloccount
+    - tidy  # HTML tidy
+- name: Install autopep8
+  pip:
+    executable: pip3
+    name: autopep8
+- name: Install yapf
+  pip:
+    executable: pip3
+    # Google Python formatter
+    name: yapf

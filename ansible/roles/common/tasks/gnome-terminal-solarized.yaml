@@ -1,0 +1,94 @@
+# TODO: would be nice to install both Solarized Light and Solarized Dark,
+# if they do not exist yet.
+- name: Set gnome-terminal to Solarized Light
+  tags: solarized
+  block:
+    - name: Create temp directory for gnome-terminal-solarized
+      tempfile:
+        state: directory
+        suffix: gnome-terminal-solarized
+      register: temp_dir
+      # TODO: would be nice to check integrity, with a particular commit
+    - name: Clone gnome-terminal-colors-solarized
+      # TODO: --check stops here due to undefined directory.
+      git:
+        repo: https://github.com/aruhier/gnome-terminal-colors-solarized
+        dest: "{{ temp_dir.path }}"
+        depth: 1
+        version: master
+
+    - name: Get current gnome-terminal profile UUIDs
+      dconf:
+        key: /org/gnome/terminal/legacy/profiles:/list
+        state: read
+      register: profile_uuids_out
+    - debug:
+        var: profile_uuids_out
+    - set_fact:
+        profile_uuids: "{{ profile_uuids_out.value or [] }}"
+    - debug:
+        var: profile_uuids
+    - name: Get profile names
+      # For some reason the dconf module returns the string escaped...
+      shell: "dconf read /org/gnome/terminal/legacy/profiles:/:{{ item }}/visible-name | tr -d \\'"
+      register: profile_names
+      loop: "{{ profile_uuids }}"
+    - when: not profile_uuids
+      set_fact:
+        profile_names:
+          results: []
+    - debug:
+        var: profile_names
+    # get profile name --> profile UUID map
+    - set_fact:
+        profile_name_to_uuid: {}
+    - set_fact:
+        profile_name_to_uuid: "{{ profile_name_to_uuid | combine({ item.stdout: item.item }) }}"
+      with_items: "{{ profile_names.results }}"
+    - debug:
+        var: profile_name_to_uuid
+
+    # TODO: deduplicate
+    - include_tasks: tasks/make-gnome-terminal-profile.yaml
+      vars:
+        visible_name: 'Solarized Light'
+    - include_tasks: tasks/make-gnome-terminal-profile.yaml
+      vars:
+        visible_name: 'Solarized Dark'
+
+    - include_tasks: tasks/gnome-terminal-profile-colors.yaml
+      vars:
+        uuid: "{{ profile_name_to_uuid['Solarized Light'] }}"
+        color_dir: "{{ temp_dir.path }}/colors/light"
+
+    - include_tasks: tasks/gnome-terminal-profile-colors.yaml
+      vars:
+        uuid: "{{ profile_name_to_uuid['Solarized Dark'] }}"
+        color_dir: "{{ temp_dir.path }}/colors/dark"
+
+# Set the Solarized Light profile to be the default one
+
+        #    - name: Set Solarized Light as default
+        #  dconf write $dconfdir/default "'$profile_id'"
+        #      command: dconf read /org/gnome/terminal/legacy/profiles:/list
+        #      register: profile_uuids_result
+    - name: Get new UUIDs
+      set_fact:
+        new_uuids: "{{ (new_uuids | default([])) + [item.value] }}"
+      with_dict: "{{ profile_name_to_uuid }}"
+    - debug:
+        var: new_uuids
+    - set_fact:
+        new_uuids_list: "{{ new_uuids | to_json }}"
+    - debug:
+        var: new_uuids_list
+    - name: Save new profile UUIDs
+      # https://github.com/jistr/ansible-dconf/blob/master/dconf.py
+      # does not properly support arrays
+      command: "dconf write /org/gnome/terminal/legacy/profiles:/list {{ new_uuids_list | to_json }}"
+    - name: Set Solarized Light as default
+      dconf:
+        key: /org/gnome/terminal/legacy/profiles:/default
+        value: "'{{ profile_name_to_uuid['Solarized Light'] }}'"
+
+# TODO: set gnome dark mode switcher to switch to those modes
