@@ -28,17 +28,18 @@
     shell: >-
       cat {{ color_dir }}/palette | tr '\n' '~' | sed -e "s#~\$#']\n#" -e "s#~#', '#g" -e "s#^#['#"
     register: dconfized_colors
-  - debug:
-      var: dconfized_colors
+  # - debug:
+  #     var: dconfized_colors
   - name: set palette color
     dconf:
       key: "{{ profile_dir }}/palette"
       value: "\"{{ dconfized_colors.stdout }}\""
-  - name: use theme colors
+  - name: do not use theme colors
     dconf:
       key: "{{ profile_dir }}/use-theme-colors"
       value: "false"
-  - dconf:
+  - name: bold color is not same as background
+    dconf:
       key: "{{ profile_dir }}/bold-color-same-as-fg"
       value: "false"
   - name: do not use system font

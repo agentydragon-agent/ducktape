@@ -71,3 +71,16 @@ build_and_test:
       - testlogs
       - bazel-testlogs
     when: always
+
+ansible_lint:
+  stage: build_and_test
+  interruptible: true
+  script:
+    - ansible-galaxy install -r ansible/requirements.yaml
+    - ansible-lint | tee ansible-lint-output.txt
+  image:
+    name: $CI_REGISTRY_IMAGE/cirunner:$CI_COMMIT_SHA
+  artifacts:
+    when: always
+    paths:
+      - ansible-lint-output.txt

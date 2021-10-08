@@ -26,7 +26,8 @@
       suffix: zprint
     register: tmp_dir
 
-  - set_fact:
+  - name: build up URL of zprint last release info
+    set_fact:
       release_json_path: "{{ tmp_dir.path }}/latest-release.json"
 
   - name: download latest release info

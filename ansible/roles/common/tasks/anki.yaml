@@ -49,8 +49,8 @@
     set_fact:
       latest_release_url: "{{ latest_release.stdout }}"
 
-  - debug:
-      var: latest_release_url
+  # - debug:
+  #     var: latest_release_url
 
   - name: get Anki dir from the path
     set_fact:
