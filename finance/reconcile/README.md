@@ -1,12 +1,35 @@
-# GnuCash-Splitwise reconciler
+# Reconciler
 
-Loads expenses from Splitwise and ensures they're matched up to your local
-GnuCash book. The matching is done by adding `splitwise=12345` into the notes
-field in GnuCash, where `12345` is the Splitwise expense ID.
+Helps reconciling GnuCash with external systems by matching them to transaction
+IDs in external systems.
+
+Currently can match GnuCash accounts to a user's part in a Splitwise group,
+or a checking account with UBS.
+
+The matching is done by adding `splitwise=12345` into the notes field in GnuCash,
+where `12345` is the Splitwise expense ID.
 
 ```bash
-bazel run //finance/reconcile:gnucash_splitwise -- \
-  --group_id=22423885 \
-  "--gnucash_book=/home/agentydragon/.google-drive/My Drive/finance/gnucash/gnucash.gnucash" \
-  > gnucash_splitwise.txt
+bazel run //finance/reconcile | tee output.txt
 ```
+
+Expects some configuration in `~/.config/ducktape/config.yaml`.
+
+## Downloading transaction CSV from UBS
+
+1. Accounts & Cards → Account transactions
+
+  ![](ubs1.png)
+
+2. Download CSV, PDF, SWIFT
+
+  ![](ubs2.png)
+
+3. Check that "Time period" is appropriate.
+   Click "Excel" icon.
+
+  ![](ubs3.png)
+
+4. Export (in CSV format)
+
+  ![](ubs4.png)
