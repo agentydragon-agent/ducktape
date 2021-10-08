@@ -22,46 +22,48 @@
         key: /org/gnome/terminal/legacy/profiles:/list
         state: read
       register: profile_uuids_out
-    - debug:
-        var: profile_uuids_out
-    - set_fact:
+    # - debug:
+    #     var: profile_uuids_out
+    - name: Load profile UUIDs into array
+      set_fact:
         profile_uuids: "{{ profile_uuids_out.value or [] }}"
-    - debug:
-        var: profile_uuids
+    # - debug:
+    #     var: profile_uuids
     - name: Get profile names
       # For some reason the dconf module returns the string escaped...
       shell: "dconf read /org/gnome/terminal/legacy/profiles:/:{{ item }}/visible-name | tr -d \\'"
       register: profile_names
       loop: "{{ profile_uuids }}"
-    - when: not profile_uuids
+    - name: Set default profile_names to empty array
+      when: not profile_uuids
       set_fact:
         profile_names:
           results: []
-    - debug:
-        var: profile_names
     # get profile name --> profile UUID map
-    - set_fact:
+    - name: Initialize profile_name_to_uuid with empty map
+      set_fact:
         profile_name_to_uuid: {}
-    - set_fact:
+    - name: Feed profile_name_to_uuid from dconf
+      set_fact:
         profile_name_to_uuid: "{{ profile_name_to_uuid | combine({ item.stdout: item.item }) }}"
       with_items: "{{ profile_names.results }}"
-    - debug:
-        var: profile_name_to_uuid
+    # - debug:
+    #     var: profile_name_to_uuid
 
     # TODO: deduplicate
-    - include_tasks: tasks/make-gnome-terminal-profile.yaml
+    - include_tasks: make-gnome-terminal-profile.yaml
       vars:
         visible_name: 'Solarized Light'
-    - include_tasks: tasks/make-gnome-terminal-profile.yaml
+    - include_tasks: make-gnome-terminal-profile.yaml
       vars:
         visible_name: 'Solarized Dark'
 
-    - include_tasks: tasks/gnome-terminal-profile-colors.yaml
+    - include_tasks: gnome-terminal-profile-colors.yaml
       vars:
         uuid: "{{ profile_name_to_uuid['Solarized Light'] }}"
         color_dir: "{{ temp_dir.path }}/colors/light"
 
-    - include_tasks: tasks/gnome-terminal-profile-colors.yaml
+    - include_tasks: gnome-terminal-profile-colors.yaml
       vars:
         uuid: "{{ profile_name_to_uuid['Solarized Dark'] }}"
         color_dir: "{{ temp_dir.path }}/colors/dark"
@@ -76,12 +78,13 @@
       set_fact:
         new_uuids: "{{ (new_uuids | default([])) + [item.value] }}"
       with_dict: "{{ profile_name_to_uuid }}"
-    - debug:
-        var: new_uuids
-    - set_fact:
+    # - debug:
+    #     var: new_uuids
+    - name: JSON-format new UUID list
+      set_fact:
         new_uuids_list: "{{ new_uuids | to_json }}"
-    - debug:
-        var: new_uuids_list
+    #- debug:
+    #    var: new_uuids_list
     - name: Save new profile UUIDs
       # https://github.com/jistr/ansible-dconf/blob/master/dconf.py
       # does not properly support arrays

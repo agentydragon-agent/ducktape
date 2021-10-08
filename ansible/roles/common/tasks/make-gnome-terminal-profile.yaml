@@ -2,19 +2,21 @@
 #   visible_name
 #   profile_name_to_uuid
 
-- debug:
-    var: profile_name_to_uuid
+#- debug:
+#    var: profile_name_to_uuid
 - name: "Ensure shell profile {{ visible_name }} exists"
   when: "visible_name not in profile_name_to_uuid"
   block:
   - name: Make UUID
     command: "python -c 'import uuid; print(uuid.uuid4())'"
     register: uuid_out
-  - set_fact:
+  - name: Bind returned UUID
+    set_fact:
       uuid: "{{ uuid_out.stdout }}"
   - name: 'Set name {{ visible_name }} for new profile'
     dconf:
       key: "/org/gnome/terminal/legacy/profiles:/:{{ uuid }}/visible-name"
       value: "'{{ visible_name }}'"
-  - set_fact:
+  - name: Append to profile_name_to_uuid
+    set_fact:
       profile_name_to_uuid: "{{ profile_name_to_uuid | combine({visible_name: uuid}) }}"

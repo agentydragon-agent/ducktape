@@ -24,3 +24,6 @@ RUN \
   apt remove -y \
     curl \
     gnupg2
+
+# For Ansible
+RUN pip3 install ansible ansible-lint

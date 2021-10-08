@@ -1,6 +1,6 @@
 # Installation steps for Chrome Remote Desktop.
 # https://cloud.google.com/solutions/chrome-desktop-remote-on-compute-engine
-- name: install chrome remote desktop, chrome
+- name: "install chrome remote desktop, chrome"
   become: yes
   when: ansible_architecture == "amd64"
   apt:
@@ -8,6 +8,7 @@
 - name: set 2d cinnamon
   become: yes
   copy:
+    mode: 0755
     content: "exec /etc/X11/Xsession /usr/bin/cinnamon-session-cinnamon2d"
     dest: /etc/chrome-remote-desktop-session
 
@@ -34,34 +35,44 @@
       dconf:
         key: /org/cinnamon/desktop-effects
         value: "false"
-    - dconf:
+    - name: set desktop close effect to traditional
+      dconf:
         key: /org/cinnamon/desktop-effects-close-effect
         value: "'traditional'"
-    - dconf:
+    - name: set desktop map effect to traditional
+      dconf:
         key: /org/cinnamon/desktop-effects-map-effect
         value: "'traditional'"
-    - dconf:
+    - name: turn off maximize effect
+      dconf:
         key: /org/cinnamon/desktop-effects-maximize-effect
         value: "'none'"
-    - dconf:
+    - name: set minimize effect to traditional
+      dconf:
         key: /org/cinnamon/desktop-effects-minimize-effect
         value: "'traditional'"
-    - dconf:
+    - name: turn off tile effect
+      dconf:
         key: /org/cinnamon/desktop-effects-tile-effect
         value: "'none'"
-    - dconf:
+    - name: turn off unmaximize effect
+      dconf:
         key: /org/cinnamon/desktop-effects-unmaximize-effect
         value: "'none'"
-    - dconf:
+    - name: turn off dialog desktop effects
+      dconf:
         key: /org/cinnamon/desktop-effects-on-dialogs
         value: "false"
-    - dconf:
+    - name: "no desktop effects on menus"
+      dconf:
         key: /org/cinnamon/desktop-effects-on-menus
         value: "false"
-    - dconf:
+    - name: "no vfade"
+      dconf:
         key: /org/cinnamon/enable-vfade
         value: "false"
-    - dconf:
+    - name: "no startup animation"
+      dconf:
         key: /org/cinnamon/startup-animation
         value: "false"
 # fails with "no such service"
