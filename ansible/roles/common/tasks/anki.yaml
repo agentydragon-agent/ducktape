@@ -1,0 +1,95 @@
+- name: Remove system-installed Anki
+  tags:
+  - anki
+  become: yes
+  apt:
+    pkg: anki
+- name: install Anki card dependencies
+  tags:
+  - anki
+  become: yes
+  apt:
+    pkg:
+    - dvipng
+    - fonts-roboto
+    - youtube-dl
+    # Instead of installing a big texlive-full.
+    - texlive
+    - texlive-lang-english
+    - texlive-lang-german
+    - texlive-latex-extra
+    - texlive-latex-recommended
+    - texlive-science
+- name: Install latest Anki
+  tags:
+  - anki
+  block:
+  - name: create temp directory
+    tempfile:
+      state: directory
+      suffix: anki-release
+    register: tmp_dir
+
+  - name: download anki latest release info
+    get_url:
+      url: https://api.github.com/repos/ankitects/anki/releases/latest
+      dest: "{{ tmp_dir.path }}/latest-release.json"
+
+  - name: Set temporary dir path
+    set_fact:
+      tmp_path: "{{ tmp_dir.path }}"
+
+  - name: get latest Anki release version
+    shell: |
+      cat {{ tmp_path }}/latest-release.json | \
+      jq --raw-output '.assets[] | select(.name | test("linux")) | .browser_download_url'
+    register: latest_release
+
+  - name: Set latest release URL
+    set_fact:
+      latest_release_url: "{{ latest_release.stdout }}"
+
+  - debug:
+      var: latest_release_url
+
+  - name: get Anki dir from the path
+    set_fact:
+      # https://github.com/ankitects/anki/releases/download/2.1.37/anki-2.1.37-linux.tar.bz2 -> anki-2.1.37-linux
+      anki_dirname: "{{ latest_release_url | regex_search('/(anki-[^/]*-linux).tar.bz2$', '\\1') | first }}"
+
+  - name: download Anki
+    unarchive:
+      remote_src: yes
+      src: "{{ latest_release_url }}"
+      dest: "{{ tmp_path }}"
+
+  - name: Set Anki dir
+    set_fact:
+      anki_dir: "{{ tmp_path }}/{{ anki_dirname }}"
+
+  - name: make install
+    become: yes
+    command:
+      cmd: ./install.sh
+      chdir: "{{ anki_dir }}"
+
+  - name: stat /usr/local/bin/anki
+    stat:
+      path: /usr/local/bin/anki
+    register: p
+
+  - name: check /usr/local/bin/anki now exists
+    assert:
+      that:
+        - p.stat.exists
+
+
+
+# TODO: install Anki addons:
+# TODO: 291119185 - batch editing
+# TODO: 1788670778 - CrowdAnki
+# TODO: 1374772155 - Image Occlusion Enhanced for Anki 21
+# TODO: 1463041493 - Syntax Highlighting for Code
+#
+# TODO: cloze_overlapper_0_4_0_alpha0
+# TODO: review-heatmap

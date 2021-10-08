@@ -1,0 +1,107 @@
+---
+# google-repos need to come before update - in case Google's keys changed.
+- include_tasks: tasks/google-repos.yaml
+
+- name: update everything
+  become: yes
+  apt:
+    update_cache: yes
+    upgrade: dist
+# - name: install youtube-dl
+#   # TODO: validate
+#   get_url:
+#     url: https://yt-dl.org/downloads/latest/youtube-dl
+#     dest: "{{ local_scripts_path }}/youtube-dl"
+- include_tasks: tasks/common-packages.yaml
+- include_tasks: tasks/anki.yaml
+  tags:
+  - anki
+- name: install zprint
+  tags:
+  - zprint
+  block:
+  - name: create temp directory
+    tempfile:
+      state: directory
+      suffix: zprint
+    register: tmp_dir
+
+  - set_fact:
+      release_json_path: "{{ tmp_dir.path }}/latest-release.json"
+
+  - name: download latest release info
+    get_url:
+      url: https://api.github.com/repos/kkinnear/zprint/releases/latest
+      dest: "{{ release_json_path }}"
+
+  - name: get latest release
+    shell: |
+      cat {{ release_json_path }} | \
+      jq --raw-output '.assets[] | select(.name | test("zprintl")) | .browser_download_url'
+    register: latest_release_url
+
+  - name: download zprint
+    get_url:
+      url: "{{ latest_release_url.stdout }}"
+      dest: "{{ local_scripts_path }}/zprint"
+
+  - name: set zprint mode +x
+    file:
+      dest: "{{ local_scripts_path }}/zprint"
+      mode: "a+x"
+
+- include_tasks: tasks/dev-env.yaml
+- include_tasks: tasks/dotfiles.yaml
+- name: Set up custom scripts
+  tags:
+  - custom-scripts
+  git:
+    repo: git@gitlab.com:agentydragon/scripts
+    dest: "{{ scripts_path }}"
+    version: master
+
+- name: set up Neovim
+  tags: vim
+  block:
+  - name: Clone Vundle
+    git:
+      repo: https://github.com/VundleVim/Vundle.vim.git
+      dest: "/home/{{ my_user }}/.config/nvim/bundle/Vundle.vim"
+      version: master
+  - name: install plugins
+    command: "nvim -E -c PluginInstall -c PluginUpdate -c qall"
+
+- name: gnome-terminal
+  tags:
+    - gnome-terminal
+    - solarized
+  block:
+  - include_tasks: gnome-terminal-solarized.yaml
+  - name: hide gnome-terminal menu
+    command: |
+      gsettings set
+        org.gnome.Terminal.Legacy.Settings default-show-menubar false
+- include_tasks: tasks/datetime-format.yaml
+- name: Install Telegram Desktop, youtube-dl
+  become: true
+  tags: snap
+  snap:
+    name:
+    - telegram-desktop
+    - youtube-dl
+- name: Install Slack
+  become: true
+  tags: snap
+  snap:
+    classic: true
+    name:
+    - slack
+- include_tasks: tasks/dev-env.yaml
+- name: set sloppy focus (focus follows mouse)
+  dconf:
+    key: /org/gnome/desktop/wm/preferences/focus-mode
+    value: "'sloppy'"
+- name: minimize - maximize - close buttons
+  dconf:
+    key: /org/gnome/desktop/wm/preferences/button-layout
+    value: "':minimize,maximize,close'"

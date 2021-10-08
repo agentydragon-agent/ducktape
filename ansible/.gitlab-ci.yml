@@ -1,0 +1,13 @@
+default:
+  image:
+    name: registry.gitlab.com/agentydragon/playbooks/cirunner
+
+ansible_lint:
+  interruptible: true
+  script:
+    - ansible-galaxy install -r requirements.yaml
+    - ansible-lint | tee ansible-lint-output.txt
+  artifacts:
+    when: always
+    paths:
+      - ansible-lint-output.txt

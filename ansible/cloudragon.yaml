@@ -1,0 +1,89 @@
+---
+- hosts: cloudragon
+  vars:
+    my_user: agentydragon_gmail_com
+    home_path: "/home/{{ my_user }}"
+    scripts_path: "{{ home_path }}/bin"
+    local_scripts_path: "{{ home_path }}/.local/bin"
+    dotfiles_path: "{{ home_path }}/repos/dotfiles"
+    rcup_computer: "cloudragon"
+  remote_user: "{{ my_user }}"
+  roles:
+  - common
+  tasks:
+
+  # TODO: update when Docker works on Eoan
+  #  - name: add Docker PPA
+  #    become: yes
+  #    shell: |
+  #      # TODO: integrity check
+  #      curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
+  #      echo "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" > /etc/apt/sources.list.d/docker.list
+  #  - apt:
+  #    pkg:
+  #    - docker-ce
+  - include_tasks: tasks/chrome-remote-desktop.yaml
+
+  # TODO: configure anki with a password
+
+    #- name: set applets and favorite apps
+    #  block:
+    # TODO: /org/cinnamon/enabled-applets
+    # TODO: /org/cinnamon/favorite-apps
+
+    # TODO: set a scrollbar policy?
+    # TODO: scrollback limit - not 10k?
+  - name: Remove Blueman for server
+    apt:
+      name: blueman
+      state: absent
+
+  # TODO: make shared with agentydragon?
+  - name: install BetterTags
+    tags:
+    - anki
+    - anki-addon
+    block:
+    - name: ensure dir
+      file:
+        path: "/home/{{ my_user }}/.local/share/Anki2/addons21/138501288"
+        state: directory
+    - name: extract bettertags
+      unarchive:
+        src: 3rdparty/bettertags-v1.0.3-anki21.ankiaddon
+        dest: "/home/{{ my_user }}/.local/share/Anki2/addons21/138501288"
+
+  # TODO: make shared with agentydragon?
+  # install mini-format-pack
+  - name: install mini-format-pack
+    tags:
+    - anki
+    - anki-addon
+    block:
+    - pip:
+        executable: pip3
+        name: aab # https://github.com/glutanimate/anki-addon-builder/#usage
+    - tempfile:
+        state: directory
+        suffix: mini-format-pack
+      register: temp_dir
+    - git:
+        # note: my own fork
+        repo: https://github.com/agentydragon/mini-format-pack
+        dest: "{{ temp_dir.path }}"
+        # https://github.com/glutanimate/mini-format-pack/pull/13
+        version: 725bb8595631e4dbc56bf881427aeada848e43c9
+    - command: "/home/{{ my_user }}/.local/bin/aab build -d local -t anki21 725bb85"
+      args:
+        chdir: "{{ temp_dir.path }}"
+    - file:
+        path: "/home/{{ my_user }}/.local/share/Anki2/addons21/295889520"
+        state: directory
+    - unarchive:
+        remote_src: true
+        src: "{{ temp_dir.path }}/build/mini-format-pack-725bb85-anki21.ankiaddon"
+        dest: "/home/{{ my_user }}/.local/share/Anki2/addons21/295889520"
+
+
+
+# TODO: install config
