@@ -10,10 +10,16 @@ ansible-galaxy install -r requirements.yaml
 ansible-playbook agentydragon.yaml --ask-become-pass
 ```
 
-## To deploy agentydragon
+## To deploy cloudragon
 
 ```bash
 ansible-playbook cloudragon.yaml
+```
+
+## To deploy linode
+
+```bash
+ansible-playbook vps.yaml
 ```
 
 ### TODO

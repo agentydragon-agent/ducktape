@@ -1,0 +1,5 @@
+---
+- hosts: linode
+  remote_user: root
+  roles:
+    - trilium-server

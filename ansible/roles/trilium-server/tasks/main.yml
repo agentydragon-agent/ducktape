@@ -1,0 +1,123 @@
+---
+# Needs to run before Docker, which tries to install gnupg2
+- name: update everything
+  become: yes
+  apt:
+    update_cache: yes
+    upgrade: dist
+
+- name: Create Trilium group
+  ansible.builtin.group:
+    name: trilium
+    state: present
+
+- name: Create Trilium user
+  ansible.builtin.user:
+    name: trilium
+    group: trilium
+
+- name: Include docker role for Trilium user
+  include_role:
+    name: geerlingguy.docker
+  vars:
+    docker_service_state: started
+    docker_service_enabled: true
+    docker_users:
+    - trilium
+  tags:
+  - docker
+
+- name: Create Trilium data directory
+  file:
+    path: /srv/trilium-data
+    state: directory
+    owner: trilium
+    group: trilium
+    mode: 0700
+
+- name: "Install pip"
+  apt:
+    pkg:
+    - python3-pip
+# - acl  # for setfacl
+
+
+# Python package 'docker' is a dependency of running the docker_container rule
+# on host.
+- name: Install docker Python package
+  pip:
+    name: docker
+
+- name: Let's Encrypt installation
+  include_role:
+    name: systemli.letsencrypt
+  vars:
+    # TODO: maybe remove this?
+    letsencrypt_opts_extra: "--register-unsafely-without-email"
+    letsencrypt: true
+
+# After every certificate renewal, copy over the certificate data into Trilium's
+# data directory.
+# TODO: according to:
+#   https://community.letsencrypt.org/t/best-practice-for-exposing-private-key-to-locally-installed-programs/88158
+# maybe this should work?
+#   $ setfacl -R -m u:trilium:rX /etc/letsencrypt/{live,archive}/vps.agentdragon.com
+- name: Set content of cert-post-hook.sh
+  copy:
+    dest: /etc/letsencrypt/renewal-hooks/deploy/trilium.sh
+    mode: 0755
+    content: |
+      #!/bin/sh
+      # TODO: should I check that the particular vps.agentydragon.com domain
+      # was renewed?
+      rm -rf /srv/trilium-data/cert
+      mkdir -p /srv/trilium-data/cert
+      cp --dereference --recursive /etc/letsencrypt/live/vps.agentydragon.com/* /srv/trilium-data/cert
+      chmod -R 700 /srv/trilium-data/cert
+      chown -R trilium:trilium /srv/trilium-data/cert
+      # TODO: do I maybe also need to restart the Trilium container?
+
+- name: Let's Encrypt certificate
+  include_role:
+    name: systemli.letsencrypt
+  vars:
+    letsencrypt_opts_extra: "--register-unsafely-without-email"
+    letsencrypt_cert:
+      name: vps.agentydragon.com
+      domains:
+        - vps.agentydragon.com
+      challenge: http
+      http_auth: standalone
+      users:
+      - trilium
+  tags:
+  - letsencrypt
+
+# certbot renew --force-renewal
+# certbot renew -q   <- quiet
+- name: Set content of Trilium config.ini
+  copy:
+    dest: /srv/trilium-data/config.ini
+    owner: trilium
+    mode: 0700
+    content: |
+      [Network]
+      port=8080
+      https=true
+      certPath=/home/node/trilium-data/cert/fullchain.pem
+      keyPath=/home/node/trilium-data/cert/privkey.pem
+
+- name: Create Trilium container
+  become: yes
+  become_user: trilium
+  docker_container:
+    name: trilium-server
+    image: zadam/trilium:0.48-latest
+    user: node
+    volumes:
+      - /srv/trilium-data:/home/node/trilium-data
+    published_ports:
+      # Publish Trilium's port 8080 as port 49153.
+      - "49153:8080"
+    state: started
+    restart: yes
