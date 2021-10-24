@@ -121,3 +121,4 @@
       - "49153:8080"
     state: started
     restart: yes
+    restart_policy: always
