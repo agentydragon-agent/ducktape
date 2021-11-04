@@ -31,10 +31,8 @@ function getIssuesInHotlist(hotlistId) {
   return searchIssues(hotlistId);
 }
 
-function makeIssueLink(note) {
-  return $('<a href="#">')
-      .text(note.title)
-      .click(() => api.activateNote(note.noteId));
+async function makeIssueLink(note) {
+  return await api.createNoteLink(note.noteId, {showTooltip: true});
 }
 
 async function populateHotlistTable() {
@@ -43,6 +41,7 @@ async function populateHotlistTable() {
   for (const note of await getAllHotlists()) {
     const item = $('<li>');
     item.attr('data-hotlist-id', note.noteId);
+
     const link = $('<a href="#">')
                      .text(note.title)
                      .click(() => activateHotlist(note.noteId));
@@ -59,7 +58,7 @@ async function populateAllIssues() {
   const list = $('<ul>');
   for (const note of await getAllIssues()) {
     const item = $('<li>');
-    item.append(makeIssueLink(note));
+    item.append(await makeIssueLink(note));
     list.append(item);
   }
   root.append(list);
@@ -74,7 +73,7 @@ async function activateHotlist(hotlistId) {
   const list = $('<ul>');
   for (const note of await getIssuesInHotlist(hotlistId)) {
     const item = $('<li>');
-    item.append(makeIssueLink(note));
+    item.append(await makeIssueLink(note));
     list.append(item);
   }
   root.append(list);
@@ -82,31 +81,3 @@ async function activateHotlist(hotlistId) {
 
 await populateHotlistTable();
 await populateAllIssues();
-
-/*
-const datasets = [
-    {
-        label: "Weight (kg)",
-        backgroundColor: 'red',
-        borderColor: 'red',
-        data: days.map(day => day.weight),
-        fill: false,
-        spanGaps: true,
-        datalabels: {
-            display: false
-        }
-    }
-];
-
-return {
-    datasets: datasets,
-    labels: days.map(day => day.date)
-};
-
-const ctx = $("#canvas")[0].getContext("2d");
-
-new chartjs.Chart(ctx, {
-    type: 'line',
-    data: await getChartData()
-});
-*/
