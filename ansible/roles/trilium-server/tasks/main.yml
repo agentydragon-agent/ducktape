@@ -122,3 +122,5 @@
     state: started
     restart: yes
     restart_policy: always
+    # Always pull latest version of the image.
+    pull: yes
