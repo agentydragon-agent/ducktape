@@ -1,0 +1,36 @@
+---
+- name: Install latest glab
+  tags:
+  - glab
+  block:
+  - name: create temp directory
+    tempfile:
+      state: directory
+      suffix: glab-release
+    register: tmp_dir
+
+  - name: download glab latest release info
+    get_url:
+      url: https://api.github.com/repos/profclems/glab/releases/latest
+      dest: "{{ tmp_dir.path }}/latest-release.json"
+
+  - name: Set temporary dir path
+    set_fact:
+      tmp_path: "{{ tmp_dir.path }}"
+
+  - name: get latest glab release version
+    shell: |
+      cat {{ tmp_path }}/latest-release.json | \
+      jq --raw-output '.assets[] | select(.name | test("Linux_x86_64.deb")) | .browser_download_url'
+    register: latest_release
+
+  - name: get glab
+    get_url:
+      url: "{{ latest_release.stdout }}"
+      dest: "{{ tmp_dir.path }}/glab.deb"
+
+  - name: install glab
+    become: yes
+    apt:
+      deb: "{{ tmp_dir.path }}/glab.deb"
+

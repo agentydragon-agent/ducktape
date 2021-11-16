@@ -1,4 +1,8 @@
 ---
+
+- name: Include glab
+  include_tasks: tasks/glab.yaml
+
 # google-repos need to come before update - in case Google's keys changed.
 - include_tasks: tasks/google-repos.yaml
 
