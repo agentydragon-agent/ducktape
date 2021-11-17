@@ -4,6 +4,7 @@
   become: yes
   apt:
     pkg: anki
+    state: absent
 - name: install Anki card dependencies
   tags:
   - anki
