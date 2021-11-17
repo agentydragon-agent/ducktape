@@ -101,3 +101,8 @@ export LESS="-F -X $LESS"
 # SDK for Remarkable
 #. /usr/local/oecore-x86_64/environment-setup-cortexa9hf-neon-oe-linux-gnueabi
 
+# Start Python with some imports already loaded (like NumPy, Tensorflow)
+export PYTHONSTARTUP=$HOME/.config/pythonstartup.py
+
+# MuJoCo
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/home/agentydragon/.mujoco/mujoco210/bin
