@@ -11,11 +11,6 @@
   apt:
     update_cache: yes
     upgrade: dist
-# - name: install youtube-dl
-#   # TODO: validate
-#   get_url:
-#     url: https://yt-dl.org/downloads/latest/youtube-dl
-#     dest: "{{ local_scripts_path }}/youtube-dl"
 - include_tasks: tasks/common-packages.yaml
 - include_tasks: tasks/anki.yaml
   tags:
