@@ -2,8 +2,7 @@ api.log(`api.originEntity: ${JSON.stringify(api.originEntity)}`);
 
 const note = api.originEntity.getNote();
 
-api.log(
-    `origin entity ${api.originEntity} ${JSON.stringify(api.originEntity)}`);
+api.log(`origin entity ${JSON.stringify(api.originEntity)}`);
 api.log(`issue attribute changed ${note.noteId}, ${api.originEntity.name}, ${
     api.originEntity.value}`);
 
