@@ -217,3 +217,6 @@ set foldmethod=syntax
 set foldcolumn=1
 let javaScript_fold=1 "activate folding by JS syntax
 set foldlevelstart=99
+
+" Map Alt-T to paste current datetime
+inoremap <A-t> <C-R>=strftime('%Y-%m-%d %H:%M:%S')<C-M>
