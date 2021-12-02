@@ -9,7 +9,6 @@ git-dirs:
 - /home/agentydragon/.vim/bundle/vim-toml/.git
 - /home/agentydragon/repos/mltrader/.git
 - /home/agentydragon/repos/rl-experiments/.git
-- /home/agentydragon/repos/gym/.git
 - /home/agentydragon/repos/agentydragon-logseq/.git
 - /home/agentydragon/repos/athens-export/.git
 - /home/agentydragon/repos/trilium/.git
@@ -17,3 +16,7 @@ git-dirs:
 - /home/agentydragon/repos/gnucash-splitwise-reconciler/.git
 - /home/agentydragon/repos/python-skeleton/.git
 - /home/agentydragon/repos/trilium-solarized-theme/.git
+- /home/agentydragon/repos/go/src/github.com/profclems/glab/.git
+- /home/agentydragon/repos/explainably-safe-gpt/.git
+- /home/agentydragon/repos/thesis/.git
+- /home/agentydragon/.cache/bazel/_bazel_agentydragon/353443e2e569ef15102421af85af5464/external/io_bazel_rules_go/.git
