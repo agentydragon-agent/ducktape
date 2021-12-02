@@ -2,6 +2,8 @@
 
 - name: Include glab
   include_tasks: tasks/glab.yaml
+- name: Include Trilium client
+  include_tasks: tasks/trilium_client.yaml
 
 # google-repos need to come before update - in case Google's keys changed.
 - include_tasks: tasks/google-repos.yaml
