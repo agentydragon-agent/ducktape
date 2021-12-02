@@ -1,10 +1,6 @@
 all:
   hosts:
-    dustinspacerpi:
-      ansible_host: 192.168.1.43
-      vars:
-        ansible_python_interpreter: /usr/bin/python3
-    cloudragon:
-      ansible_host: 34.65.94.207
+    linode:
+      ansible_host: 192.46.234.87
       vars:
         ansible_python_interpreter: /usr/bin/python3
