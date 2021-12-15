@@ -17,6 +17,14 @@ py_library(
 )
 
 py_library(
+    name = "ubs_credit_card_lib",
+    srcs = ["ubs_credit_card_lib.py"],
+    deps = [
+        ":external_system",
+    ],
+)
+
+py_library(
     name = "splitwise_lib",
     srcs = ["splitwise_lib.py"],
     deps = [
@@ -34,6 +42,7 @@ py_binary(
     visibility = ["//visibility:public"],
     deps = [
         ":splitwise_lib",
+        ":ubs_credit_card_lib",
         ":ubs_lib",
         requirement("absl-py"),
         requirement("xdg"),
