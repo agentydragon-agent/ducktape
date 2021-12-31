@@ -19,4 +19,6 @@ git-dirs:
 - /home/agentydragon/repos/go/src/github.com/profclems/glab/.git
 - /home/agentydragon/repos/explainably-safe-gpt/.git
 - /home/agentydragon/repos/thesis/.git
-- /home/agentydragon/.cache/bazel/_bazel_agentydragon/353443e2e569ef15102421af85af5464/external/io_bazel_rules_go/.git
+- /home/agentydragon/repos/webtesting-docker-test/.git
+- /home/agentydragon/repos/transformers/.git
+- /home/agentydragon/repos/pop-upgrade/apt-cmd/.git
