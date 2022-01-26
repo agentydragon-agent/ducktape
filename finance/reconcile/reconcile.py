@@ -40,9 +40,9 @@ def print_gnucash_split(split):
     print("transaction:", transaction.GetDate(), transaction.GetDescription(),
           "notes=", transaction.GetNotes())
     for s2 in transaction.GetSplitList():
-        heading = "  "
+        heading = " "
         if s2.GetGUID().to_string() == split.GetGUID().to_string():
-            heading = "->"
+            heading = "→"
 
         print(heading, gnucash_util.get_split_amount(s2),
               s2.GetAccount().GetName())
@@ -83,6 +83,8 @@ def match_to_account(external_transaction):
         return ['Expenses', 'Public Transportation']
     elif 'aws emea' in desc:
         return ['Expenses', 'Online Services', 'AWS']
+    elif 'google cloud emea' in desc:
+        return ['Expenses', 'Online Services', 'Google Cloud']
     elif ('surcharge abroad' in desc) or ('balance of service prices' in desc):
         return ['Expenses', 'Bank Service Charge', 'CHF']
     else:
@@ -161,10 +163,13 @@ def main(_):
                 session.book.get_root_account(), gnucash_account_path)
 
             if 'ubs_iban' in reconcile_config:
-                # TODO: instead of using a single pointer to a single CSV, just
-                # load the latest one. Make sure it is for the right IBAN.
-                external_transaction_by_external_id = ubs_lib.load_ubs_csv(
-                    reconcile_config['csv_path'])
+                # TODO: Make sure it is for the right IBAN.
+
+                external_transaction_by_external_id = {}
+                for csv_path in glob.glob(reconcile_config['csv_glob']):
+                    external_transaction_by_external_id.update(
+                        ubs_lib.load_ubs_csv(csv_path))
+                # TODO: assert same transactions if keys overlap
 
                 prefix = 'ubs_transaction_id'
                 id_regex = "([0-9A-Z]+)"
@@ -227,11 +232,12 @@ def main(_):
                         errors += 1
 
                     # TODO: also match the dates
-                    days = abs((transaction_date - transaction.trade_date) /
+                    days = int((transaction_date - transaction.trade_date) /
                                datetime.timedelta(days=1))
-                    if days >= 2:
-                        logging.warning("transaction %s has big delta: %s",
-                                        external_id, days)
+                    if abs(days) >= 2:
+                        logging.warning(
+                            "transaction %s has big delta (%s days)",
+                            external_id, days)
 
                     assert external_id not in matched_external_ids, f"{external_id} matched to 2 transactions in GnuCash"
                     matched_external_ids.add(external_id)
@@ -283,12 +289,27 @@ def main(_):
                 # add those:
 
             if _ADD_TO_GNUCASH.value:
-                for txid in _ADD_TO_GNUCASH.value:
-                    if txid not in unmatched_ids:
-                        logging.error("not unmatched: %s", txid)
+                # find _ADD_TO_GNUCASH that's for this system
+                prefix_with_equals = prefix + '='
+                # TODO: warn if there's some IDs that are not matched in any
+                # system
+                # TODO: warn on duplicates in _ADD_TO_GNUCASH
+                external_ids_for_this_system = {
+                    external_id
+                    for external_id in _ADD_TO_GNUCASH.value
+                    if external_id.startswith(prefix_with_equals)
+                }
+                # txids are 'system=...'
+                # TODO: warn - if txid not in unmatched_ids:
+                # TODO: warn -     logging.error("not unmatched: %s", txid)
+                # TODO: warn -     continue
+                # TODO: make sure IDs are not done multiple times...
+                for external_id in external_ids_for_this_system:
+                    txid = external_id.removeprefix(prefix_with_equals)
+                    if txid not in external_transaction_by_external_id:
+                        logging.warning("external system does not have %s",
+                                        txid)
                         continue
-                    # TODO: make sure IDs are not done multiple times...
-                    external_id = prefix + "=" + txid
                     external_transaction = external_transaction_by_external_id[
                         txid]
                     add_external_to_gnucash(external_transaction, session.book,

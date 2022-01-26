@@ -37,7 +37,7 @@
   - role: jaredhocutt.gnome_extensions
     vars:
       gnome_extension_ids:
-        - 28    # gTile - https://extensions.gnome.org/extension/28/gtile/
+        # - 28    # gTile - https://extensions.gnome.org/extension/28/gtile/
         - 1102  # Desaturate All - https://extensions.gnome.org/extension/1102/desaturate-all/
 
   - common
@@ -203,4 +203,4 @@
       - name: get Buildifier
         shell: go get github.com/bazelbuild/buildtools/buildifier
       - name: install Buildifier
-        shell: go install github.com/bazelbuild/buildtools/buildifier
+        shell: go install github.com/bazelbuild/buildtools/buildifier@latest
