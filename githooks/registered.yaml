@@ -21,4 +21,5 @@ git-dirs:
 - /home/agentydragon/repos/thesis/.git
 - /home/agentydragon/repos/webtesting-docker-test/.git
 - /home/agentydragon/repos/transformers/.git
-- /home/agentydragon/repos/pop-upgrade/apt-cmd/.git
+- /home/agentydragon/repos/telegram-finetune/.git
+- /home/agentydragon/openai/.git
