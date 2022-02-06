@@ -112,7 +112,7 @@
   become_user: trilium
   docker_container:
     name: trilium-server
-    image: zadam/trilium:0.48-latest
+    image: zadam/trilium:0.50-latest
     user: node
     volumes:
       - /srv/trilium-data:/home/node/trilium-data
