@@ -85,6 +85,16 @@ def match_to_account(external_transaction):
         return ['Expenses', 'Online Services', 'AWS']
     elif 'google cloud emea' in desc:
         return ['Expenses', 'Online Services', 'Google Cloud']
+    elif 'linode' in desc:
+        return ['Expenses', 'Online Services', 'Linode']
+    elif 'focusmate' in desc:
+        return ['Expenses', 'Subscriptions', 'Focusmate']
+    elif 'waking up' in desc:
+        return ['Expenses', 'Subscriptions', 'Waking Up']
+    elif 'kep - kompetenzzentrum fuer ernaehr' in desc:
+        return ['Expenses', 'Medical Expenses']
+    elif 'swica gesundheitsorganisation gener' in desc:
+        return ['Expenses', 'Insurance', 'Health Insurance']
     elif ('surcharge abroad' in desc) or ('balance of service prices' in desc):
         return ['Expenses', 'Bank Service Charge', 'CHF']
     else:
