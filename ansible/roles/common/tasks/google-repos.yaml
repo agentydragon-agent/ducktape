@@ -1,4 +1,6 @@
 - name: add Bazel release key
+  tags:
+  - bazel
   become: yes
   apt_key:
     # TODO: integrity check
@@ -10,6 +12,8 @@
     url: https://dl-ssl.google.com/linux/linux_signing_key.pub
 - name: Bazel
   when: ansible_architecture == "amd64" or ansible_architecture == "x86_64"
+  tags:
+  - bazel
   block:
   - name: add Bazel repo
     become: yes
