@@ -42,7 +42,7 @@
 
   - name: get latest Anki release version
     shell: |
-      jq --raw-output '.assets[] | select(.name | test("linux-qt5")) | .browser_download_url' {{ tmp_path }}/latest-release.json
+      jq --raw-output '.assets[] | select(.name | test("linux-qt6")) | .browser_download_url' {{ tmp_path }}/latest-release.json
     register: latest_release
 
   - name: Set latest release URL
@@ -55,7 +55,7 @@
   - name: get Anki dir from the path
     set_fact:
       # https://github.com/ankitects/anki/releases/download/2.1.37/anki-2.1.37-linux.tar.bz2 -> anki-2.1.37-linux
-      anki_dirname: "{{ latest_release_url | regex_search('/(anki-[^/]*-linux-qt5).tar.zst$', '\\1') | first }}"
+      anki_dirname: "{{ latest_release_url | regex_search('/(anki-[^/]*-linux-qt6).tar.zst$', '\\1') | first }}"
 
   - name: download Anki
     unarchive:
