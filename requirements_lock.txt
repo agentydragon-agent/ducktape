@@ -8,6 +8,10 @@ absl-py==0.14.0 \
     --hash=sha256:7675ddb70ffd0e37a2e69322f8f2cd37b19e03a27f43420bea5850597ded9504 \
     --hash=sha256:81409f8c5c1601f47d57eaa548a8516a967ab45a43ef75e5dfceab2ab4b69143
     # via -r requirements.in
+beautifulsoup4==4.11.1 \
+    --hash=sha256:58d5c3d29f5a36ffeb94f02f0d786cd53014cf9b3b3951d42e0080d8a9498d30 \
+    --hash=sha256:ad9aa55b65ef2808eb405f46cf74df7fcb7044d5cbc26487f96eb2ef2e436693
+    # via trilium-py
 certifi==2021.5.30 \
     --hash=sha256:2bbf76fd432960138b3ef6dda3dde0544f27cbf8546c458e60baf371917ba9ee \
     --hash=sha256:50b1e4f8446b06f41be7dd6338db18e0990601dce795c2b1686458aa7e8fa7d8
@@ -38,9 +42,16 @@ six==1.16.0 \
     --hash=sha256:1e61c37477a1626458e36f7b1d82aa5c9b094fa4802892072e49de9c60c4c926 \
     --hash=sha256:8abb2f1d86890a2dfb989f9a77cfcfd3e47c2a354b01111771326f8aa26e0254
     # via absl-py
+soupsieve==2.3.2.post1 \
+    --hash=sha256:3b2503d3c7084a42b1ebd08116e5f81aadfaea95863628c80a3b774a11b7c759 \
+    --hash=sha256:fc53893b3da2c33de295667a0e19f078c14bf86544af307354de5fcf12a3f30d
+    # via beautifulsoup4
 splitwise==2.3.0 \
     --hash=sha256:3fddce6dbcd898fbcee3f943c7cc8df73431ba1d30b5f1461b91d31f8f549429 \
     --hash=sha256:af5cd24d94875649a8e559067ad8d79bdae0f86bc306de9208a78e6de2561c97
+    # via -r requirements.in
+trilium-py==0.6.2 \
+    --hash=sha256:cc207af01e3604e8cceb236b3239fe7e041fe530cac9ea8a3e837d3a2a8a6ad7
     # via -r requirements.in
 urllib3==1.26.7 \
     --hash=sha256:4987c65554f7a2dbf30c18fd48778ef124af6fab771a377103da0585e2336ece \
