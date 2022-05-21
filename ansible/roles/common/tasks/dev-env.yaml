@@ -42,10 +42,18 @@
     - tidy  # HTML tidy
 - name: Install autopep8
   pip:
-    executable: pip3
     name: autopep8
 - name: Install yapf
   pip:
-    executable: pip3
-    # Google Python formatter
     name: yapf
+
+# TODO: add to specific "ML dev env"
+- name: Install Pandas
+  pip:
+    name: pandas
+- name: Install PyTorch
+  pip:
+    name: torch
+- name: Install NumPy
+  pip:
+    name: numpy
