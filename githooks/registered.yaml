@@ -22,4 +22,6 @@ git-dirs:
 - /home/agentydragon/repos/webtesting-docker-test/.git
 - /home/agentydragon/repos/transformers/.git
 - /home/agentydragon/repos/telegram-finetune/.git
-- /home/agentydragon/openai/.git
+- /home/agentydragon/repos/mlxi/.git
+- /home/agentydragon/repos/anki/.git
+- /home/agentydragon/.cache/bazel/_bazel_agentydragon/fe64e5ee4c5bb485ff638764b9ae6c0a/external/raze__oauth2__4_0_0_alpha_7/.git
