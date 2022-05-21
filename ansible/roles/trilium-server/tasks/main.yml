@@ -61,18 +61,18 @@
 # TODO: according to:
 #   https://community.letsencrypt.org/t/best-practice-for-exposing-private-key-to-locally-installed-programs/88158
 # maybe this should work?
-#   $ setfacl -R -m u:trilium:rX /etc/letsencrypt/{live,archive}/vps.agentdragon.com
+#   $ setfacl -R -m u:trilium:rX /etc/letsencrypt/{live,archive}/trilium.agentdragon.com
 - name: Set content of cert-post-hook.sh
   copy:
     dest: /etc/letsencrypt/renewal-hooks/deploy/trilium.sh
     mode: 0755
     content: |
       #!/bin/sh
-      # TODO: should I check that the particular vps.agentydragon.com domain
+      # TODO: should I check that the particular trilium.agentydragon.com domain
       # was renewed?
       rm -rf /srv/trilium-data/cert
       mkdir -p /srv/trilium-data/cert
-      cp --dereference --recursive /etc/letsencrypt/live/vps.agentydragon.com/* /srv/trilium-data/cert
+      cp --dereference --recursive /etc/letsencrypt/live/{{ trilium_host }}/* /srv/trilium-data/cert
       chmod -R 700 /srv/trilium-data/cert
       chown -R trilium:trilium /srv/trilium-data/cert
       # TODO: do I maybe also need to restart the Trilium container?
@@ -83,9 +83,9 @@
   vars:
     letsencrypt_opts_extra: "--register-unsafely-without-email"
     letsencrypt_cert:
-      name: vps.agentydragon.com
+      name: "{{ trilium_host }}"
       domains:
-        - vps.agentydragon.com
+        - "{{ trilium_host }}"
       challenge: http
       http_auth: standalone
       users:
@@ -112,13 +112,13 @@
   become_user: trilium
   docker_container:
     name: trilium-server
-    image: zadam/trilium:0.50-latest
+    image: zadam/trilium:0.51-latest
     user: node
     volumes:
       - /srv/trilium-data:/home/node/trilium-data
     published_ports:
-      # Publish Trilium's port 8080 as port 49153.
-      - "49153:8080"
+      # Publish Trilium's port 8080 as trilium_ssl_port.
+      - "{{ trilium_ssl_port }}:8080"
     state: started
     restart: yes
     restart_policy: always
