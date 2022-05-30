@@ -1,9 +1,9 @@
 ---
 # Needs to run before Docker, which tries to install gnupg2
 - name: update everything
-  become: yes
-  apt:
-    update_cache: yes
+  become: true
+  ansible.builtin.apt:
+    update_cache: true
     upgrade: dist
 
 - name: Create Trilium group
@@ -17,18 +17,18 @@
     group: trilium
 
 - name: Include docker role for Trilium user
-  include_role:
+  ansible.builtin.include_role:
     name: geerlingguy.docker
   vars:
     docker_service_state: started
     docker_service_enabled: true
     docker_users:
-    - trilium
+      - trilium
   tags:
-  - docker
+    - docker
 
 - name: Create Trilium data directory
-  file:
+  ansible.builtin.file:
     path: /srv/trilium-data
     state: directory
     owner: trilium
@@ -36,20 +36,19 @@
     mode: 0700
 
 - name: "Install pip"
-  apt:
+  ansible.builtin.apt:
     pkg:
-    - python3-pip
+      - python3-pip
 # - acl  # for setfacl
-
 
 # Python package 'docker' is a dependency of running the docker_container rule
 # on host.
 - name: Install docker Python package
-  pip:
+  ansible.builtin.pip:
     name: docker
 
 - name: Let's Encrypt installation
-  include_role:
+  ansible.builtin.include_role:
     name: systemli.letsencrypt
   vars:
     # TODO: maybe remove this?
@@ -63,7 +62,7 @@
 # maybe this should work?
 #   $ setfacl -R -m u:trilium:rX /etc/letsencrypt/{live,archive}/trilium.agentdragon.com
 - name: Set content of cert-post-hook.sh
-  copy:
+  ansible.builtin.copy:
     dest: /etc/letsencrypt/renewal-hooks/deploy/trilium.sh
     mode: 0755
     content: |
@@ -78,7 +77,7 @@
       # TODO: do I maybe also need to restart the Trilium container?
 
 - name: Let's Encrypt certificate
-  include_role:
+  ansible.builtin.include_role:
     name: systemli.letsencrypt
   vars:
     letsencrypt_opts_extra: "--register-unsafely-without-email"
@@ -89,14 +88,14 @@
       challenge: http
       http_auth: standalone
       users:
-      - trilium
+        - trilium
   tags:
-  - letsencrypt
+    - letsencrypt
 
 # certbot renew --force-renewal
 # certbot renew -q   <- quiet
 - name: Set content of Trilium config.ini
-  copy:
+  ansible.builtin.copy:
     dest: /srv/trilium-data/config.ini
     owner: trilium
     mode: 0700
@@ -108,9 +107,9 @@
       keyPath=/home/node/trilium-data/cert/privkey.pem
 
 - name: Create Trilium container
-  become: yes
+  become: true
   become_user: trilium
-  docker_container:
+  ansible.builtin.docker_container:
     name: trilium-server
     image: zadam/trilium:0.51-latest
     user: node
@@ -120,7 +119,7 @@
       # Publish Trilium's port 8080 as trilium_ssl_port.
       - "{{ trilium_ssl_port }}:8080"
     state: started
-    restart: yes
+    restart: true
     restart_policy: always
     # Always pull latest version of the image.
-    pull: yes
+    pull: true

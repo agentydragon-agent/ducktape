@@ -6,48 +6,48 @@
   vars:
     profile_dir: "/org/gnome/terminal/legacy/profiles:/:{{ uuid }}"
   block:
-  - name: set background color
-    dconf:
-      key: "{{ profile_dir }}/background-color"
-      value: "'{{ lookup('file', color_dir + '/bg_color') }}'"
-  - name: set foreground color
-    dconf:
-      key: "{{ profile_dir }}/foreground-color"
-      value: "'{{ lookup('file', color_dir + '/fg_color') }}'"
-  - name: set bold color
-    dconf:
-      key: "{{ profile_dir }}/bold-color"
-      value: "'{{ lookup('file', color_dir + '/bd_color') }}'"
-  # Do not set use custom cursor color, it's annoying
-  # (white for solarized light, on light background)
-  - name: do not use custom cursor color
-    dconf:
-      key: "{{ profile_dir }}/cursor-colors-set"
-      value: "false"
-  - name: get dconfized colors
-    shell: >-
-      cat {{ color_dir }}/palette | tr '\n' '~' | sed -e "s#~\$#']\n#" -e "s#~#', '#g" -e "s#^#['#"
-    register: dconfized_colors
-  # - debug:
-  #     var: dconfized_colors
-  - name: set palette color
-    dconf:
-      key: "{{ profile_dir }}/palette"
-      value: "\"{{ dconfized_colors.stdout }}\""
-  - name: do not use theme colors
-    dconf:
-      key: "{{ profile_dir }}/use-theme-colors"
-      value: "false"
-  - name: bold color is not same as background
-    dconf:
-      key: "{{ profile_dir }}/bold-color-same-as-fg"
-      value: "false"
-  - name: do not use system font
-    dconf:
-      key: "{{ profile_dir }}/use-system-font"
-      value: "false"
-  - name: set terminal font
-    dconf:
-      key: "{{ profile_dir }}/font"
-      value: "'Ubuntu Mono 14'"
-
+    - name: set background color
+      ansible.builtin.dconf:
+        key: "{{ profile_dir }}/background-color"
+        value: "'{{ lookup('file', color_dir + '/bg_color') }}'"
+    - name: set foreground color
+      ansible.builtin.dconf:
+        key: "{{ profile_dir }}/foreground-color"
+        value: "'{{ lookup('file', color_dir + '/fg_color') }}'"
+    - name: set bold color
+      ansible.builtin.dconf:
+        key: "{{ profile_dir }}/bold-color"
+        value: "'{{ lookup('file', color_dir + '/bd_color') }}'"
+    # Do not set use custom cursor color, it's annoying
+    # (white for solarized light, on light background)
+    - name: do not use custom cursor color
+      ansible.builtin.dconf:
+        key: "{{ profile_dir }}/cursor-colors-set"
+        value: "false"
+    - name: get dconfized colors
+      ansible.builtin.shell: >-
+        cat {{ color_dir }}/palette | tr '\n' '~' | sed -e "s#~\$#']\n#" -e "s#~#', '#g" -e "s#^#['#"
+      register: dconfized_colors
+      changed_when: false
+    # - debug:
+    #     var: dconfized_colors
+    - name: set palette color
+      ansible.builtin.dconf:
+        key: "{{ profile_dir }}/palette"
+        value: "\"{{ dconfized_colors.stdout }}\""
+    - name: do not use theme colors
+      ansible.builtin.dconf:
+        key: "{{ profile_dir }}/use-theme-colors"
+        value: "false"
+    - name: bold color is not same as background
+      ansible.builtin.dconf:
+        key: "{{ profile_dir }}/bold-color-same-as-fg"
+        value: "false"
+    - name: do not use system font
+      ansible.builtin.dconf:
+        key: "{{ profile_dir }}/use-system-font"
+        value: "false"
+    - name: set terminal font
+      ansible.builtin.dconf:
+        key: "{{ profile_dir }}/font"
+        value: "'Ubuntu Mono 14'"

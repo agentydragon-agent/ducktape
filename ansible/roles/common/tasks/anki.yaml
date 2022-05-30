@@ -1,88 +1,96 @@
 - name: Remove system-installed Anki
   tags:
-  - anki
-  become: yes
-  apt:
+    - anki
+  become: true
+  ansible.builtin.apt:
     pkg: anki
     state: absent
 - name: install Anki card dependencies
   tags:
-  - anki
-  become: yes
-  apt:
+    - anki
+  become: true
+  ansible.builtin.apt:
     pkg:
-    - dvipng
-    - fonts-roboto
-    - youtube-dl
-    # Instead of installing a big texlive-full.
-    - texlive
-    - texlive-lang-english
-    - texlive-lang-german
-    - texlive-latex-extra
-    - texlive-latex-recommended
-    - texlive-science
+      - dvipng
+      - fonts-roboto
+      - youtube-dl
+      # Instead of installing a big texlive-full.
+      - texlive
+      - texlive-lang-english
+      - texlive-lang-german
+      - texlive-latex-extra
+      - texlive-latex-recommended
+      - texlive-science
 - name: Install latest Anki
   tags:
-  - anki
+    - anki
   block:
-  - name: create temp directory
-    tempfile:
-      state: directory
-      suffix: anki-release
-    register: tmp_dir
+    - name: create temp directory
+      ansible.builtin.tempfile:
+        state: directory
+        suffix: anki-release
+      register: tmp_dir
+      changed_when: false
 
-  - name: download anki latest release info
-    get_url:
-      url: https://api.github.com/repos/ankitects/anki/releases/latest
-      dest: "{{ tmp_dir.path }}/latest-release.json"
+    - name: download anki latest release info
+      ansible.builtin.get_url:
+        url: https://api.github.com/repos/ankitects/anki/releases/latest
+        dest: "{{ tmp_dir.path }}/latest-release.json"
+        mode: 0644
+      changed_when: false
 
-  - name: Set temporary dir path
-    set_fact:
-      tmp_path: "{{ tmp_dir.path }}"
+    - name: Set temporary dir path
+      ansible.builtin.set_fact:
+        tmp_path: "{{ tmp_dir.path }}"
+      changed_when: false
 
-  - name: get latest Anki release version
-    shell: |
-      jq --raw-output '.assets[] | select(.name | test("linux-qt6")) | .browser_download_url' {{ tmp_path }}/latest-release.json
-    register: latest_release
+    - name: get latest Anki release version
+      ansible.builtin.shell: |
+        jq --raw-output '.assets[] | select(.name | test("linux-qt6")) | .browser_download_url' {{ tmp_path }}/latest-release.json
+      register: latest_release
+      changed_when: false
 
-  - name: Set latest release URL
-    set_fact:
-      latest_release_url: "{{ latest_release.stdout }}"
+    - name: Set latest release URL
+      ansible.builtin.set_fact:
+        latest_release_url: "{{ latest_release.stdout }}"
+      changed_when: false
 
-  - debug:
-      var: latest_release_url
+    # - ansible.builtin.debug:
+    #     var: latest_release_url
 
-  - name: get Anki dir from the path
-    set_fact:
-      # https://github.com/ankitects/anki/releases/download/2.1.37/anki-2.1.37-linux.tar.bz2 -> anki-2.1.37-linux
-      anki_dirname: "{{ latest_release_url | regex_search('/(anki-[^/]*-linux-qt6).tar.zst$', '\\1') | first }}"
+    - name: get Anki dir from the path
+      ansible.builtin.set_fact:
+        # https://github.com/ankitects/anki/releases/download/2.1.37/anki-2.1.37-linux.tar.bz2 -> anki-2.1.37-linux
+        anki_dirname: "{{ latest_release_url | regex_search('/(anki-[^/]*-linux-qt6).tar.zst$', '\\1') | first }}"
+      changed_when: false
 
-  - name: download Anki
-    unarchive:
-      remote_src: yes
-      src: "{{ latest_release_url }}"
-      dest: "{{ tmp_path }}"
+    - name: download Anki
+      ansible.builtin.unarchive:
+        remote_src: true
+        src: "{{ latest_release_url }}"
+        dest: "{{ tmp_path }}"
+      changed_when: false
 
-  - name: Set Anki dir
-    set_fact:
-      anki_dir: "{{ tmp_path }}/{{ anki_dirname }}"
+    - name: Set Anki dir
+      ansible.builtin.set_fact:
+        anki_dir: "{{ tmp_path }}/{{ anki_dirname }}"
+      changed_when: false
 
-  - name: make install
-    become: yes
-    command:
-      cmd: ./install.sh
-      chdir: "{{ anki_dir }}"
+    - name: make install
+      become: true
+      ansible.builtin.command:
+        cmd: ./install.sh
+        chdir: "{{ anki_dir }}"
 
-  - name: stat /usr/local/bin/anki
-    stat:
-      path: /usr/local/bin/anki
-    register: p
+    - name: stat /usr/local/bin/anki
+      ansible.builtin.stat:
+        path: /usr/local/bin/anki
+      register: p
 
-  - name: check /usr/local/bin/anki now exists
-    assert:
-      that:
-        - p.stat.exists
-
+    - name: check /usr/local/bin/anki now exists
+      ansible.builtin.assert:
+        that:
+          - p.stat.exists
 
 
 # TODO: install Anki addons:

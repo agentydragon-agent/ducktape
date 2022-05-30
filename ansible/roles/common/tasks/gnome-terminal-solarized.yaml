@@ -4,47 +4,49 @@
   tags: solarized
   block:
     - name: Create temp directory for gnome-terminal-solarized
-      tempfile:
+      ansible.builtin.tempfile:
         state: directory
         suffix: gnome-terminal-solarized
       register: temp_dir
       # TODO: would be nice to check integrity, with a particular commit
     - name: Clone gnome-terminal-colors-solarized
       # TODO: --check stops here due to undefined directory.
-      git:
+      ansible.builtin.git:
         repo: https://github.com/aruhier/gnome-terminal-colors-solarized
         dest: "{{ temp_dir.path }}"
         depth: 1
         version: master
 
     - name: Get current gnome-terminal profile UUIDs
-      dconf:
+      ansible.builtin.dconf:
         key: /org/gnome/terminal/legacy/profiles:/list
         state: read
       register: profile_uuids_out
     # - debug:
     #     var: profile_uuids_out
     - name: Load profile UUIDs into array
-      set_fact:
+      ansible.builtin.set_fact:
         profile_uuids: "{{ profile_uuids_out.value or [] }}"
     # - debug:
     #     var: profile_uuids
     - name: Get profile names
       # For some reason the dconf module returns the string escaped...
-      shell: "dconf read /org/gnome/terminal/legacy/profiles:/:{{ item }}/visible-name | tr -d \\'"
+      ansible.builtin.shell: >
+        dconf read /org/gnome/terminal/legacy/profiles:/:{{ item }}/visible-name | tr -d \\
       register: profile_names
       loop: "{{ profile_uuids }}"
+      changed_when: false
     - name: Set default profile_names to empty array
       when: not profile_uuids
-      set_fact:
+      ansible.builtin.set_fact:
         profile_names:
           results: []
     # get profile name --> profile UUID map
     - name: Initialize profile_name_to_uuid with empty map
-      set_fact:
+      ansible.builtin.set_fact:
         profile_name_to_uuid: {}
     - name: Feed profile_name_to_uuid from dconf
-      set_fact:
+      ansible.builtin.set_fact:
         profile_name_to_uuid: "{{ profile_name_to_uuid | combine({ item.stdout: item.item }) }}"
       with_items: "{{ profile_names.results }}"
     # - debug:
@@ -75,22 +77,23 @@
         #      command: dconf read /org/gnome/terminal/legacy/profiles:/list
         #      register: profile_uuids_result
     - name: Get new UUIDs
-      set_fact:
+      ansible.builtin.set_fact:
         new_uuids: "{{ (new_uuids | default([])) + [item.value] }}"
       with_dict: "{{ profile_name_to_uuid }}"
     # - debug:
     #     var: new_uuids
     - name: JSON-format new UUID list
-      set_fact:
+      ansible.builtin.set_fact:
         new_uuids_list: "{{ new_uuids | to_json }}"
-    #- debug:
-    #    var: new_uuids_list
+    #  - debug:
+    #      var: new_uuids_list
     - name: Save new profile UUIDs
       # https://github.com/jistr/ansible-dconf/blob/master/dconf.py
       # does not properly support arrays
-      command: "dconf write /org/gnome/terminal/legacy/profiles:/list {{ new_uuids_list | to_json }}"
+      ansible.builtin.command: >
+        dconf write /org/gnome/terminal/legacy/profiles:/list {{ new_uuids_list | to_json }}
     - name: Set Solarized Light as default
-      dconf:
+      ansible.builtin.dconf:
         key: /org/gnome/terminal/legacy/profiles:/default
         value: "'{{ profile_name_to_uuid['Solarized Light'] }}'"
 

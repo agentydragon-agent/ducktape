@@ -10,28 +10,29 @@
     rcup_computer: "raspberry"
   remote_user: "{{ my_user }}"
   # TODO: this should not be installed, 'common' role includes huge latex
-  #roles:
-  #- common
+  # roles:
+  # - common
   tasks:
   # - include_tasks: tasks/chrome-remote-desktop.yaml
-  - name: install packages
-    become: yes
-    apt:
-      pkg:
-      - python3-pip
-      - iftop
-      - nethogs
-  - name: update everything
-    become: yes
-    apt:
-      update_cache: yes
-      upgrade: dist
-  - pip:
-      executable: pip3
-      name: speedtest-cli
-  - name: speedtest every 15 minutes
-    cron:
-      name: speedtestin
-      hour: "*"
-      minute: "*/15"
-      job: "/usr/local/bin/speedtest-cli --csv >> /home/agentydragon/speedtest.csv"
+    - name: install packages
+      become: true
+      ansible.builtin.apt:
+        pkg:
+          - python3-pip
+          - iftop
+          - nethogs
+    - name: update everything
+      become: true
+      ansible.builtin.apt:
+        update_cache: true
+        upgrade: dist
+    - name: install speedtest-cli
+      ansible.builtin.pip:
+        executable: pip3
+        name: speedtest-cli
+    - name: speedtest every 15 minutes
+      ansible.builtin.cron:
+        name: speedtestin
+        hour: "*"
+        minute: "*/15"
+        job: "/usr/local/bin/speedtest-cli --csv >> /home/agentydragon/speedtest.csv"

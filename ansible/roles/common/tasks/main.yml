@@ -9,55 +9,57 @@
 - include_tasks: tasks/google-repos.yaml
 
 - name: update everything
-  become: yes
-  apt:
-    update_cache: yes
+  become: true
+  ansible.builtin.apt:
+    update_cache: true
     upgrade: dist
 - include_tasks: tasks/common-packages.yaml
 - include_tasks: tasks/anki.yaml
   tags:
-  - anki
+    - anki
 - name: install zprint
   tags:
-  - zprint
+    - zprint
   block:
-  - name: create temp directory
-    tempfile:
-      state: directory
-      suffix: zprint
-    register: tmp_dir
+    - name: create temp directory
+      ansible.builtin.tempfile:
+        state: directory
+        suffix: zprint
+      register: tmp_dir
+      changed_when: false
 
-  - name: build up URL of zprint last release info
-    set_fact:
-      release_json_path: "{{ tmp_dir.path }}/latest-release.json"
+    - name: build up URL of zprint last release info
+      ansible.builtin.set_fact:
+        release_json_path: "{{ tmp_dir.path }}/latest-release.json"
+      changed_when: false
 
-  - name: download latest release info
-    get_url:
-      url: https://api.github.com/repos/kkinnear/zprint/releases/latest
-      dest: "{{ release_json_path }}"
+    - name: download latest release info
+      ansible.builtin.get_url:
+        url: https://api.github.com/repos/kkinnear/zprint/releases/latest
+        dest: "{{ release_json_path }}"
+        mode: 0644
+      changed_when: false
 
-  - name: get latest release
-    shell: |
-      cat {{ release_json_path }} | \
-      jq --raw-output '.assets[] | select(.name | test("zprintl")) | .browser_download_url'
-    register: latest_release_url
+    - name: get latest release
+      ansible.builtin.shell: |
+        cat {{ release_json_path }} | \
+        jq --raw-output '.assets[] | select(.name | test("zprintl")) | .browser_download_url'
+      register: latest_release_url
+      changed_when: false
 
-  - name: download zprint
-    get_url:
-      url: "{{ latest_release_url.stdout }}"
-      dest: "{{ local_scripts_path }}/zprint"
-
-  - name: set zprint mode +x
-    file:
-      dest: "{{ local_scripts_path }}/zprint"
-      mode: "a+x"
+    - name: download zprint
+      ansible.builtin.get_url:
+        url: "{{ latest_release_url.stdout }}"
+        dest: "{{ local_scripts_path }}/zprint"
+        # Include executable bit.
+        mode: 0755
 
 - include_tasks: tasks/dev-env.yaml
 - include_tasks: tasks/dotfiles.yaml
 - name: Set up custom scripts
   tags:
-  - custom-scripts
-  git:
+    - custom-scripts
+  ansible.builtin.git:
     repo: git@gitlab.com:agentydragon/scripts
     dest: "{{ scripts_path }}"
     version: master
@@ -65,46 +67,48 @@
 - name: set up Neovim
   tags: vim
   block:
-  # sh -c 'curl -fLo "${XDG_DATA_HOME:-$HOME/.local/share}"/nvim/site/autoload/plug.vim --create-dirs \
-  #  https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim'
-  - name: get Plug
-    get_url:
-      url: https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim
-      dest: "/home/{{ my_user }}/.local/share/nvim/site/autoload/plug.vim"
-  - name: install plugins
-    command: "nvim -E -c PlugInstall -c PlugUpdate -c qall"
+    # sh -c 'curl -fLo "${XDG_DATA_HOME:-$HOME/.local/share}"/nvim/site/autoload/plug.vim --create-dirs \
+    #  https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim'
+    - name: get Plug
+      ansible.builtin.get_url:
+        url: https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim
+        dest: "/home/{{ my_user }}/.local/share/nvim/site/autoload/plug.vim"
+        mode: 0644
+    - name: install plugins
+      ansible.builtin.command: >
+        nvim -E -c PlugInstall -c PlugUpdate -c qall
 
 - name: gnome-terminal
   tags:
     - gnome-terminal
     - solarized
   block:
-  - include_tasks: gnome-terminal-solarized.yaml
-  - name: hide gnome-terminal menu
-    command: |
-      gsettings set
-        org.gnome.Terminal.Legacy.Settings default-show-menubar false
+    - ansible.builtin.include_tasks: gnome-terminal-solarized.yaml
+    - name: hide gnome-terminal menu
+      ansible.builtin.command: |
+        gsettings set
+          org.gnome.Terminal.Legacy.Settings default-show-menubar false
 - include_tasks: tasks/datetime-format.yaml
 - name: Install Telegram Desktop, youtube-dl
   become: true
   tags: snap
-  snap:
+  ansible.builtin.snap:
     name:
-    - telegram-desktop
-    - youtube-dl
+      - telegram-desktop
+      - youtube-dl
 - name: Install Slack
   become: true
   tags: snap
-  snap:
+  ansible.builtin.snap:
     classic: true
     name:
-    - slack
+      - slack
 - include_tasks: tasks/dev-env.yaml
 - name: set sloppy focus (focus follows mouse)
-  dconf:
+  ansible.builtin.dconf:
     key: /org/gnome/desktop/wm/preferences/focus-mode
     value: "'sloppy'"
 - name: minimize - maximize - close buttons
-  dconf:
+  ansible.builtin.dconf:
     key: /org/gnome/desktop/wm/preferences/button-layout
     value: "':minimize,maximize,close'"
