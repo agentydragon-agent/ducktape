@@ -1,0 +1,65 @@
+#!/usr/bin/python
+# Requirements: absl-py
+
+import json
+import re
+import subprocess
+import dbus
+from xml.etree import ElementTree
+from absl import app, flags
+
+_PROFILE = flags.DEFINE_string('profile', None,
+                               'UUID of profile to set everywhere')
+# solarized_dark = 'e451dfb9-1353-4407-ae2d-c136d77c1c11'
+# solarized_light = '90bdd513-cffc-4f0b-92cf-84a62186d9b2'
+
+
+def main(_):
+    base_path = '/org/gnome/terminal/legacy/profiles:/'
+    out = subprocess.check_output(["dconf", "list", base_path]).decode('utf-8')
+    uuids = set()
+    uuid_by_name = {}
+    for line in out.splitlines():
+        if ':' not in line:
+            continue  # not a profile
+        profile = re.fullmatch(r":(.+)/", line)[1]
+
+        name = subprocess.check_output([
+            "dconf", "read", base_path + ':' + profile + '/visible-name'
+        ]).decode('utf-8').strip()
+        # unquote. TODO: do nicer.
+        name = re.fullmatch(r"'(.+)'", name)[1]
+        uuid_by_name[name] = profile
+        uuids.add(profile)
+
+    if _PROFILE.value in uuids:
+        uuid = _PROFILE.value
+    elif _PROFILE.value in uuid_by_name:
+        uuid = uuid_by_name[_PROFILE.value]
+    else:
+        raise Exception("No such profile (by UUID or name)")
+
+    # Change default profile.
+    subprocess.check_output(
+        ["dconf", "write", base_path + 'default', f"'{uuid}'"]).decode('utf-8')
+
+    bus = dbus.SessionBus()
+
+    obj = bus.get_object('org.gnome.Terminal', '/org/gnome/Terminal/window')
+    iface = dbus.Interface(obj, 'org.freedesktop.DBus.Introspectable')
+
+    tree = ElementTree.fromstring(iface.Introspect())
+    windows = [child.attrib['name'] for child in tree if child.tag == 'node']
+
+    for window in windows:
+        window_path = f'/org/gnome/Terminal/window/{window}'
+
+        obj = bus.get_object('org.gnome.Terminal', window_path)
+        iface = dbus.Interface(obj, 'org.gtk.Actions')
+        iface.SetState('profile', uuid, [])
+        # TODO: this only includes currently active tabs, not background tabs :/
+
+
+if __name__ == '__main__':
+    flags.mark_flag_as_required(_PROFILE.name)
+    app.run(main)

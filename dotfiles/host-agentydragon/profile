@@ -17,7 +17,7 @@ if [ -n "$BASH_VERSION" ]; then
 fi
 
 # set PATH so it includes user's private bin directories
-PATH="$HOME/bin:$HOME/.local/bin:$HOME/bin/private-scripts:$PATH"
+PATH="$HOME/.local/bin:$PATH"
 
 # Ruby
 # PATH="$(ruby -rubygems -e 'puts Gem.user_dir')/bin:$PATH"
