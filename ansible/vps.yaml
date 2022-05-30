@@ -2,7 +2,7 @@
 - hosts: linode
   remote_user: root
   roles:
-    - role: trilium-server
+    - role: trilium_server
       vars:
         trilium_ssl_port: 443
         trilium_host: trilium.agentydragon.com

@@ -1,13 +1,13 @@
 # Installation steps for Chrome Remote Desktop.
 # https://cloud.google.com/solutions/chrome-desktop-remote-on-compute-engine
 - name: "install chrome remote desktop, chrome"
-  become: yes
+  become: true
   when: ansible_architecture == "amd64"
-  apt:
+  ansible.builtin.apt:
     deb: https://dl.google.com/linux/direct/chrome-remote-desktop_current_amd64.deb
 - name: set 2d cinnamon
-  become: yes
-  copy:
+  become: true
+  ansible.builtin.copy:
     mode: 0755
     content: "exec /etc/X11/Xsession /usr/bin/cinnamon-session-cinnamon2d"
     dest: /etc/chrome-remote-desktop-session
@@ -76,7 +76,7 @@
         key: /org/cinnamon/startup-animation
         value: "false"
 # fails with "no such service"
-#- name: disable display manager
-#  systemd:
-#    name: lightdm.service
-#    enabled: no
+# - name: disable display manager
+#   systemd:
+#     name: lightdm.service
+#     enabled: no

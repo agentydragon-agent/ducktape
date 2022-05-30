@@ -1,36 +1,36 @@
 - name: add Bazel release key
   tags:
   - bazel
-  become: yes
-  apt_key:
+  become: true
+  ansible.builtin.apt_key:
     # TODO: integrity check
     url: https://bazel.build/bazel-release.pub.gpg
     keyring: /etc/apt/trusted.gpg.d/bazel.gpg
 - name: add Google release key
-  become: yes
-  apt_key:
+  become: true
+  ansible.builtin.apt_key:
     # TODO: integrity check
     url: https://dl-ssl.google.com/linux/linux_signing_key.pub
     keyring: /etc/apt/trusted.gpg.d/google.gpg
 - name: Bazel
   when: ansible_architecture == "amd64" or ansible_architecture == "x86_64"
   tags:
-  - bazel
+    - bazel
 
   block:
-  - name: add Bazel repo
-    become: yes
-    apt_repository:
-      repo: "deb [arch=amd64] https://storage.googleapis.com/bazel-apt stable jdk1.8"
-      filename: bazel
-  - name: Install Bazel
-    become: yes
-    apt:
-      pkg:
-        - bazel
+    - name: add Bazel repo
+      become: true
+      ansible.builtin.apt_repository:
+        repo: "deb [arch=amd64] https://storage.googleapis.com/bazel-apt stable jdk1.8"
+        filename: bazel
+    - name: Install Bazel
+      become: true
+      ansible.builtin.apt:
+        pkg:
+          - bazel
 - name: add Google Chrome repo
-  become: yes
-  apt_repository:
+  become: true
+  ansible.builtin.apt_repository:
     repo: "deb [arch=amd64] https://dl.google.com/linux/chrome/deb/ stable main"
     filename: google-chrome
   when: ansible_architecture == "amd64" or ansible_architecture == "x86_64"

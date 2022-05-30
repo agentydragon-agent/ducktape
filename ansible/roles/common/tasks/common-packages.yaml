@@ -1,39 +1,40 @@
 - name: install packages
-  become: yes
-  apt:
+  become: true
+  ansible.builtin.apt:
     pkg:
-    - cinnamon-desktop-environment
-    - curl
-    - diffutils
-    - fonts-powerline
-    - geeqie
-    - gimp
-    - git
-    - htop
-    - iotop
-    - iputils-ping
-    - libreoffice
-    - mc
-    - mmv
-    - mplayer
-    - mpv
-    - netcat-openbsd
-    - nethogs
-    - pkg-config
-    - pv
-    - pwgen
-    - rcm
-    - screen
-    - sed
-    - tree
-    - neovim
-    - vinagre
-    - wget
-    - xclip
-    - zsh
+      # TODO: remove cinnamon
+      - cinnamon-desktop-environment
+      - curl
+      - diffutils
+      - fonts-powerline
+      - geeqie
+      - gimp
+      - git
+      - htop
+      - iotop
+      - iputils-ping
+      - libreoffice
+      - mc
+      - mmv
+      - mplayer
+      - mpv
+      - netcat-openbsd
+      - nethogs
+      - pkg-config
+      - pv
+      - pwgen
+      - rcm
+      - screen
+      - sed
+      - tree
+      - neovim
+      - vinagre
+      - wget
+      - xclip
+      - zsh
 - name: install amd64-specific packages
   when: ansible_architecture == "amd64"
-  become: yes
-  apt:
+  become: true
+  ansible.builtin.apt:
     pkg:
-    - google-chrome-stable
+      - google-chrome-stable
