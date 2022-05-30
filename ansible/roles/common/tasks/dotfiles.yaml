@@ -5,15 +5,15 @@
   block:
     #- name: create empty directory for dotfiles repo
     #  file:
-    #    path: "{{ dotfiles_path }}"
+    #    path: "{{ ducktape_path }}"
     #    state: directory
     #    recurse: yes
     #    mode: '0755'
-  - name: clone dotfiles
+  - name: clone ducktape
     git:
-      repo: git@gitlab.com:agentydragon/dotfiles
-      dest: "{{ dotfiles_path }}"
+      repo: git@gitlab.com:agentydragon/ducktape
+      dest: "{{ ducktape_path }}"
       version: master
   # TODO: problem: this is interactive if the files already exist.
-  - name: install dotfiles
-    command: rcup -B {{ rcup_computer }} -x vim -x README.md -d {{ dotfiles_path }}
+  - name: install ducktape dotfiles
+    command: rcup -B {{ rcup_computer }} -x vim -x README.md -d {{ ducktape_path }}/dotfiles

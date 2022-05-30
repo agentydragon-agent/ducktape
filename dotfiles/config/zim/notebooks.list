@@ -1,9 +1,0 @@
-[NotebookList]
-Default=
-~/zim
-
-[Notebook]
-uri=~/zim
-name=Notes
-interwiki=
-icon=None

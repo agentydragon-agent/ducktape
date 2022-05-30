@@ -33,11 +33,35 @@ DISABLE_UNTRACKED_FILES_DIRTY="true"
 # The optional three formats: "mm/dd/yyyy"|"dd.mm.yyyy"|"yyyy-mm-dd"
 HIST_STAMPS="yyyy-mm-dd"
 
-# gitfast
-# git: gc, gca, gs, ...
 # interesting plugins: 'z'
-#plugins=(git gpg-agent gem web-search colored-man)
-plugins=()
+
+# For alias-finder - automatically search for aliases for any commands I'm running
+ZSH_ALIAS_FINDER_AUTOMATIC=true
+# aliases: acs, acs <keyword> - list aliases
+# git: gst, gca, gp, ...
+# python: py alias
+#
+# isodate: https://github.com/ohmyzsh/ohmyzsh/tree/master/plugins/isodate
+#
+# interesting plugins not enabled:
+#   magic-enter https://github.com/ohmyzsh/ohmyzsh/tree/master/plugins/magic-enter
+#   colored-man-pages
+#   colorize (ccat)
+#   per-directory-history
+#   gitfast (alternative to git)
+#   systemd
+#   pip
+#   tig
+#   tmux
+#   ubuntu
+#   vscode
+#   web-search
+#   z
+#   zbell
+#   zsh-interactive-cd
+#   dirpersist
+#   dnote
+plugins=(ag alias-finder bazel aliases colored-man-pages command-not-found docker gcloud git gpg-agent isodate lein python rust screen)
 
 # Agnoster is a ZSH theme assuming Solarized and Powerline-patched fonts.
 # Right prompt: current time
@@ -94,7 +118,7 @@ source $HOME/.aliases
 
 # The next line enables shell command completion for gcloud.
 #if [ -f '/home/agentydragon/bin/google-cloud-sdk/completion.zsh.inc' ]; then source '/home/agentydragon/bin/google-cloud-sdk/completion.zsh.inc'; fi
-#
+
 # Do not paginate if less than 1 page.
 export LESS="-F -X $LESS"
 
