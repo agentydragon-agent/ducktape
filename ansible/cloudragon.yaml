@@ -39,21 +39,6 @@
       state: absent
 
   # TODO: make shared with agentydragon?
-  - name: install BetterTags
-    tags:
-    - anki
-    - anki-addon
-    block:
-    - name: ensure dir
-      file:
-        path: "/home/{{ my_user }}/.local/share/Anki2/addons21/138501288"
-        state: directory
-    - name: extract bettertags
-      unarchive:
-        src: 3rdparty/bettertags-v1.0.3-anki21.ankiaddon
-        dest: "/home/{{ my_user }}/.local/share/Anki2/addons21/138501288"
-
-  # TODO: make shared with agentydragon?
   # install mini-format-pack
   - name: install mini-format-pack
     tags:
