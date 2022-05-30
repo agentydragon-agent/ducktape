@@ -24,4 +24,15 @@ git-dirs:
 - /home/agentydragon/repos/telegram-finetune/.git
 - /home/agentydragon/repos/mlxi/.git
 - /home/agentydragon/repos/anki/.git
-- /home/agentydragon/.cache/bazel/_bazel_agentydragon/fe64e5ee4c5bb485ff638764b9ae6c0a/external/raze__oauth2__4_0_0_alpha_7/.git
+- /home/agentydragon/.local/share/nvim/plugged/vim-ft-bzl/.git
+- /home/agentydragon/.local/share/nvim/plugged/vim-toml/.git
+- /home/agentydragon/.local/share/nvim/plugged/vim-rdf/.git
+- /home/agentydragon/.local/share/nvim/plugged/typescript-vim/.git
+- /home/agentydragon/.local/share/nvim/plugged/vim-codefmt/.git
+- /home/agentydragon/.local/share/nvim/plugged/vim-glaive/.git
+- /home/agentydragon/.local/share/nvim/plugged/vim-scala/.git
+- /home/agentydragon/.local/share/nvim/plugged/vim-ruby/.git
+- /home/agentydragon/.local/share/nvim/plugged/vim-maktaba/.git
+- /home/agentydragon/.local/share/nvim/plugged/vim-airline/.git
+- /home/agentydragon/.local/share/nvim/plugged/Vundle.vim/.git
+- /home/agentydragon/.local/share/nvim/plugged/copilot.vim/.git

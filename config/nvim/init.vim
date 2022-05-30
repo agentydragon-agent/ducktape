@@ -73,28 +73,28 @@ let g:miniBufExplModSelTarget = 1
 set showcmd
 set laststatus=2
 
-" Vundle plugins
+" plugins
 " To install: vim +PluginInstall +qall, or run :PluginInstall
-set rtp+=~/.config/nvim/bundle/Vundle.vim
-call vundle#begin()
-Plugin 'VundleVim/Vundle.vim'
+call plug#begin()
+Plug 'VundleVim/Vundle.vim'
 
-" Plugin 'wincent/command-t'
-" Plugin 'tpope/vim-fugitive'
-Plugin 'niklasl/vim-rdf'
-" Plugin 'altercation/vim-colors-solarized'
-Plugin 'overcache/NeoSolarized'
-Plugin 'bling/vim-airline'
-Plugin 'derekwyatt/vim-scala'
-Plugin 'vim-ruby/vim-ruby'
-Plugin 'pbrisbin/vim-mkdir' " mkdir needed dirs before writing buffer
-Plugin 'bazelbuild/vim-ft-bzl'
-Plugin 'google/vim-maktaba'  " dependency of vim-codefmt
-Plugin 'google/vim-codefmt'
-Plugin 'google/vim-glaive'  " used to configure codefmt's maktaba flags
-Plugin 'leafgarland/typescript-vim'
-Plugin 'cespare/vim-toml'
-call vundle#end()
+" Plug 'wincent/command-t'
+" Plug 'tpope/vim-fugitive'
+Plug 'niklasl/vim-rdf'
+" Plug 'altercation/vim-colors-solarized'
+Plug 'overcache/NeoSolarized'
+Plug 'bling/vim-airline'
+Plug 'derekwyatt/vim-scala'
+Plug 'vim-ruby/vim-ruby'
+Plug 'pbrisbin/vim-mkdir' " mkdir needed dirs before writing buffer
+Plug 'bazelbuild/vim-ft-bzl'
+Plug 'google/vim-maktaba'  " dependency of vim-codefmt
+Plug 'google/vim-codefmt'
+Plug 'google/vim-glaive'  " used to configure codefmt's maktaba flags
+Plug 'leafgarland/typescript-vim'
+Plug 'cespare/vim-toml'
+Plug 'github/copilot.vim'
+call plug#end()
 
 " Ignore error if Glaive not installed.
 silent! call glaive#Install()
@@ -220,3 +220,10 @@ set foldlevelstart=99
 
 " Map Alt-T to paste current datetime
 inoremap <A-t> <C-R>=strftime('%Y-%m-%d %H:%M:%S')<C-M>
+
+" Copilot
+let g:copilot_filetypes = {
+\ 'yaml': v:true,
+\ 'markdown': v:true,
+\ }
+
