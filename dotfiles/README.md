@@ -2,16 +2,8 @@ Dotfiles
 ========
 
 This directory contains my dotfiles.
-I use [rcm](https://github.com/thoughtbot/rcm) to manage them.
-
-To install dotfiles:
-```
-# Clone to ~/.dotfiles
-git clone git@github.com:MichalPokorny/dotfiles .dotfiles
-
-# Apply symlinks
-rcup -x README.md
-```
+I use [rcm](https://github.com/thoughtbot/rcm) to manage them. Their
+installation is managed by Ansible.
 
 To list rc: `lsrc`
 
