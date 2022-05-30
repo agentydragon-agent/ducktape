@@ -1,0 +1,39 @@
+<?xml version="1.0"?>
+<gconf>
+	<entry name="overview_window_box" mtime="1383583693" type="list" ltype="string">
+		<li type="string">
+			<stringvalue>2018</stringvalue>
+		</li>
+		<li type="string">
+			<stringvalue>93</stringvalue>
+		</li>
+		<li type="string">
+			<stringvalue>1167</stringvalue>
+		</li>
+		<li type="string">
+			<stringvalue>502</stringvalue>
+		</li>
+	</entry>
+	<entry name="overview_window_maximized" mtime="1383583693" type="bool" value="false"/>
+	<entry name="workspace_tracking" mtime="1380888845" type="list" ltype="string">
+	</entry>
+	<entry name="enable_timeout" mtime="1380888802" type="bool" value="false"/>
+	<entry name="standalone_window_box" mtime="1383598636" type="list" ltype="string">
+		<li type="string">
+			<stringvalue>0</stringvalue>
+		</li>
+		<li type="string">
+			<stringvalue>0</stringvalue>
+		</li>
+		<li type="string">
+			<stringvalue>960</stringvalue>
+		</li>
+		<li type="string">
+			<stringvalue>1200</stringvalue>
+		</li>
+	</entry>
+	<entry name="standalone_window_maximized" mtime="1383598636" type="bool" value="false"/>
+	<entry name="activities_source" mtime="1380888976" type="string">
+		<stringvalue></stringvalue>
+	</entry>
+</gconf>
