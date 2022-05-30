@@ -1,0 +1,6 @@
+all:
+  hosts:
+    linode:
+      ansible_host: 192.46.234.87
+      vars:
+        ansible_python_interpreter: /usr/bin/python3

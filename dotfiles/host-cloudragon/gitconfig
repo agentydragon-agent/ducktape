@@ -1,0 +1,31 @@
+[user]
+	name = Michal Pokorný (Rai)
+	email = agentydragon@gmail.com
+[core]
+	autocrlf = false
+[color]
+	ui = auto
+[merge]
+	tool = vimdiff
+[push]
+	default = upstream
+[log]
+	abbrevCommit = true
+	decorate = short
+	date = local
+[format]
+	pretty = short
+[advice]
+	pushNonFastForwards = false
+	statusHints = false
+	commitBeforeMerge = false
+[clean]
+	requireForce = true
+[branch]
+	autosetuprebase = always
+[pull]
+	rebase = true
+[rerere]
+	enabled = true
+
+# NOTE: do NOT redirect https://github.com to git@github.com

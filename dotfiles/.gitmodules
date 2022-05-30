@@ -1,0 +1,12 @@
+[submodule ".oh-my-zsh"]
+	path = oh-my-zsh
+	url = git://github.com/robbyrussell/oh-my-zsh.git
+[submodule ".mutt-colors"]
+	path = mutt-colors
+	url = https://github.com/altercation/mutt-colors-solarized
+[submodule "vim/bundle/Vundle.vim"]
+	path = vim/bundle/Vundle.vim
+	url = https://github.com/gmarik/Vundle.vim.git
+[submodule "mc/lib"]
+	path = mc/lib
+	url = https://github.com/iwfmp/mc-solarized-skin.git
