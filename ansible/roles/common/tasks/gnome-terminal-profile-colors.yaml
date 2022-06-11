@@ -47,7 +47,9 @@
       ansible.builtin.dconf:
         key: "{{ profile_dir }}/use-system-font"
         value: "false"
-    - name: set terminal font
-      ansible.builtin.dconf:
-        key: "{{ profile_dir }}/font"
-        value: "'Ubuntu Mono 14'"
+# TODO: add powerlevel10k - plus MesloLGS NF font
+# https://github.com/romkatv/powerlevel10k#meslo-nerd-font-patched-for-powerlevel10k
+#    - name: set terminal font
+#      ansible.builtin.dconf:
+#        key: "{{ profile_dir }}/font"
+#        value: "'Ubuntu Mono 14'"

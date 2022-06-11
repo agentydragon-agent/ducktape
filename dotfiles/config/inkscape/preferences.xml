@@ -136,8 +136,8 @@
          id="rect"
          style="fill:blue;"
          usecurrent="1"
-         width="2112"
-         height="1440"
+         width="6240"
+         height="2880"
          rx="0"
          ry="0" />
       <eventcontext
@@ -175,8 +175,8 @@
          end="0"
          start="0"
          usecurrent="1"
-         rx="3114.89"
-         ry="2940.45" />
+         rx="11772.8"
+         ry="11113.5" />
       <eventcontext
          id="star"
          magnitude="5"
@@ -227,7 +227,7 @@
        usetilt="0"
        keep_selected="1"
        abs_width="1"
-       unit="in"
+       unit="mm"
        tremor="0"
        wiggle="0">
       <group
@@ -336,7 +336,7 @@
        style="fill:#ff0000;fill-opacity:1;fill-rule:nonzero;stroke:none;"
        unitid="3"
        show_bbox="1"
-       unit="in" />
+       unit="mm" />
     <eventcontext
        id="text"
        usecurrent="0"
@@ -603,7 +603,7 @@
        w="678"
        h="412"
        panel_border="0"
-       page="2" />
+       page="1" />
     <group
        id="textandfont"
        panel_size="1"
@@ -698,7 +698,7 @@
     <group
        id="open"
        enable_preview="1"
-       path="/home/agentydragon/downloads/" />
+       path="/home/agentydragon/drive/2303 Folsom/" />
     <group
        id="import"
        enable_preview="1"
@@ -707,7 +707,8 @@
        ask_svg="1"
        link="embed"
        scale="auto"
-       forcexdpi="0" />
+       forcexdpi="0"
+       import_mode_svg="include" />
     <group
        id="debug"
        redirect="0" />
@@ -1119,7 +1120,8 @@
        id="middlemousezoom"
        value="1" />
     <group
-       id="boot">
+       id="boot"
+       enabled="1">
       <group
          id="shown"
          ver1.1.2="1" />
@@ -1146,7 +1148,7 @@
        height="939"
        x="0"
        y="32"
-       maximized="0"
+       maximized="1"
        fullscreen="0"
        id="geometry" />
     <group
