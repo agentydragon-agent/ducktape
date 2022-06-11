@@ -95,6 +95,9 @@
           - xournal
           - xserver-xorg-video-amdgpu
 
+          # For getting background color for Vim background color auto-switch.
+          - xtermcontrol
+
     - name: install pop os specific packages for laptop
       become: true
       ansible.builtin.apt:

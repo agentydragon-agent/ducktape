@@ -94,6 +94,7 @@ Plug 'google/vim-glaive'  " used to configure codefmt's maktaba flags
 Plug 'leafgarland/typescript-vim'
 Plug 'cespare/vim-toml'
 Plug 'github/copilot.vim'
+Plug 'wellle/context.vim'
 call plug#end()
 
 " Ignore error if Glaive not installed.
