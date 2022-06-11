@@ -6,7 +6,7 @@ variables:
 
 stages:
   - build_ci_image
-  - build_and_test
+  - test
   - deploy
 
 # Runs manually as part of CI on every commit.
@@ -43,7 +43,7 @@ tag_latest:
 
 # TODO(agentydragon): should run after build_tag_push_ci_image on master.
 build_and_test:
-  stage: build_and_test
+  stage: test
   interruptible: true
   image:
     # See src/ci/README.md
@@ -73,7 +73,7 @@ build_and_test:
     when: always
 
 ansible_lint:
-  stage: build_and_test
+  stage: test
   interruptible: true
   script:
     - ansible-galaxy install -r ansible/requirements.yaml
@@ -84,3 +84,11 @@ ansible_lint:
     when: always
     paths:
       - ansible-lint-output.txt
+
+# Scan for secrets
+include:
+  - template: Security/Secret-Detection.gitlab-ci.yml
+
+secret_detection:
+  variables:
+    SECRET_DETECTION_HISTORIC_SCAN: "true"
