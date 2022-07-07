@@ -7,5 +7,6 @@ py_binary(
     visibility = ["//visibility:public"],
     deps = [
         requirement("trilium-py"),
+        requirement("feedparser"),
     ],
 )
