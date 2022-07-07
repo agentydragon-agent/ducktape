@@ -1,0 +1,42 @@
+[package]
+name = "ducktape"
+version = "0.0.1"
+authors = ["Rai <agentydragon@gmail.com>"]
+edition = "2021"
+resolver = "2"
+
+[dependencies]
+log = "*"
+env_logger = "*"
+rust_decimal = "*"
+#chrono = {features=["serde"], version="*"}
+#chrono-tz = {features=["serde"], version="*"}
+tokio = { version = "*", features = ["macros", "rt-multi-thread"] } #, features = ["full", "time"] }
+serde_path_to_error = "*"
+#warp = "*"
+#futures = "*"
+#rand = "*"
+#base64 = "*"
+reqwest = {version="*"} #, features=["json"]} # , "serde_json", "tokio-rustls"]}
+serde = {version="*", features=["derive"]}
+url = {version="*"} #, features=["serde"]}
+
+#structopt = "*"
+serde_json = "*"
+toml = "*"
+
+[[bin]]
+name = "ducktape_fake"
+path = "main.rs"
+
+[package.metadata.raze]
+workspace_path = "//remote"
+genmode = "Remote"
+package_aliases_dir = "remote"
+default_gen_buildrs = true
+rust_rules_workspace_name = "rules_rust"
+
+#[package.metadata.raze.crates.derive_builder.'*']
+#compile_data_attr = "glob([\"**/*.md\"])"
+
+# TODO: fix ../remote/remote/BUILD.mio-0.8.3.bazel
