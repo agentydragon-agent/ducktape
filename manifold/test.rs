@@ -12,4 +12,5 @@ fn main() -> Result<(), serde_json::Error> {
     let p: Person = serde_json::from_str(example)?;
     // Output: Person { nameRust: "John", age: 25 }
     println!("{:?}", p);
+    Ok(())
 }
