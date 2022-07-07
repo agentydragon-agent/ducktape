@@ -24,3 +24,27 @@ pip_parse(
 load("@my_deps//:requirements.bzl", "install_deps")
 
 install_deps()
+
+load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
+load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+# To find additional information on this release or newer ones visit:
+# https://github.com/bazelbuild/rules_rust/releases
+git_repository(
+    name = "rules_rust",
+    commit = "81590f4b6a423f5369bd060d26171289d71232ae",
+    remote = "https://github.com/bazelbuild/rules_rust",
+    shallow_since = "1654686539 -0700",
+)
+
+load("@rules_rust//rust:repositories.bzl", "rules_rust_dependencies", "rust_register_toolchains")
+
+rules_rust_dependencies()
+
+rust_register_toolchains()
+
+load("//remote:crates.bzl", "raze_fetch_remote_crates")
+
+raze_fetch_remote_crates()
+
+# TODO: maybe run cargo-raze via Bazel?

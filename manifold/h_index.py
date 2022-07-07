@@ -2,6 +2,7 @@
 import requests
 import urllib
 import pandas as pd
+from tqdm.auto import tqdm
 
 BASE_URI = 'http://manifold.markets/api/v0'
 
@@ -28,7 +29,7 @@ while True:
     markets.extend(j)
 
 recs = []
-for market in markets:
+for market in tqdm(markets, leave=False):
     # https://manifold.markets/agentydragon/what-will-be-my-10-m-impact-factor
     # at least N markets all of which have at least N bets of at least 10 M$
     if market['creatorUsername'] == 'agentydragon':
@@ -42,8 +43,11 @@ for market in markets:
                 num_bets += 1
         recs.append({
             'id': market['id'],
+            'url': market['url'],
             'num_bets': num_bets,
         })
+        # also:
+        #   - pool, probability, isResolved, ...
 
 df = pd.DataFrame(recs)
 df.sort_values('num_bets', ascending=False, inplace=True)
