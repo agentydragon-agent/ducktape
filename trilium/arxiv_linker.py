@@ -19,6 +19,7 @@ from absl import logging
 _ETAPI_TOKEN = flags.DEFINE_string("etapi_token", None, "Trilium ETAPI token")
 _SERVER_URL = flags.DEFINE_string("server_url", "http://127.0.0.1:37840",
                                   "Trilium ETAPI endpoint")
+_ADD = flags.DEFINE_list("add", [], "Papers to add (URLs or IDs)")
 
 _ARXIV_ENDPOINT = 'https://export.arxiv.org/api/query'
 _PAPER_TEMPLATE_NOTE_ID = 'WgCQiTGFyKV7'
@@ -237,6 +238,9 @@ def create_paper_if_not_exists(ea, paper_id):
     assert existing_paper is not None, "can't find just created paper"
 
 
+# TODO: populate citation graph?
+
+
 def get_papers_root_note_id(ea):
     res = ea.search_note(search='#papersRoot')
     assert len(res['results']) == 1
@@ -264,9 +268,19 @@ def find_note_id_by_title(ea, title):
 def main(_):
     # Token for my scripts:
     ea = ETAPI(_SERVER_URL.value, _ETAPI_TOKEN.value)
+    if _ADD.value:
+        logging.info("Adding papers from --add flag")
+        for paper in set(_ADD.value):
+            if re.fullmatch('\d{4}\.\d{5}', paper):
+                paper_id = paper
+            else:
+                m = re.fullmatch('https://arxiv.org/abs/(.*)(v\d+)?', paper)
+                if m:
+                    paper_id = m.group(1)
+                else:
+                    raise Exception(f"unhandled: {paper}")
 
-    #for paper_id in {'2205.14108', ...}:
-    #    create_paper_if_not_exists(ea, paper_id)
+            create_paper_if_not_exists(ea, paper_id)
 
     # TODO: does not work - unclear how to properly do this in ETAPI
     # upload_paper_pdf(ea, '2206.02231')
