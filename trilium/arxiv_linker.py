@@ -152,7 +152,10 @@ def get_paper_meta(paper_id):
     assert len(pdfs) == 1, str(pdfs)
     #print(f['entries'][0]['summary'])
 
-    return {'title': title, 'pdf': next(iter(pdfs))}
+    return {
+        'title': title,
+        'pdf': next(iter(pdfs)),
+    }
 
     # if paper does not exist: download its title, create new page under #papersRoot
 
@@ -274,7 +277,10 @@ def main(_):
             if re.fullmatch('\d{4}\.\d{5}', paper):
                 paper_id = paper
             else:
-                m = re.fullmatch('https://arxiv.org/abs/(.*)(v\d+)?', paper)
+                # https://arxiv.org/pdf/2206.01085.pdf -> 2206.01085
+                m = re.fullmatch(
+                    'https://arxiv.org/(?:abs|pdf)/(\d{4}\.\d{5})(?:v\d+)?(?:\.pdf)?',
+                    paper)
                 if m:
                     paper_id = m.group(1)
                 else:
