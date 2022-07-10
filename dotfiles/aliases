@@ -1,2 +1,5 @@
 alias ..='cd ..'
 alias suspend='systemctl suspend'
+
+# Quickly create a GitLab merge request
+alias gmrc='glab mr create --fill --remove-source-branch --yes'
