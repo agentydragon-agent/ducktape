@@ -26,13 +26,13 @@ package(default_visibility = [
 ])
 
 licenses([
-    "notice",  # MIT from expression "MIT OR Apache-2.0"
+    "notice",  # MIT from expression "MIT"
 ])
 
 # Generated Targets
 
 rust_library(
-    name = "serde_path_to_error",
+    name = "tower_service",
     srcs = glob(["**/*.rs"]),
     crate_features = [
     ],
@@ -44,16 +44,11 @@ rust_library(
     ],
     tags = [
         "cargo-raze",
-        "crate-name=serde_path_to_error",
+        "crate-name=tower-service",
         "manual",
     ],
-    version = "0.1.7",
+    version = "0.3.2",
     # buildifier: leave-alone
     deps = [
-        "@raze__serde__1_0_139//:serde",
     ],
 )
-
-# Unsupported target "deserialize" with type "test" omitted
-
-# Unsupported target "serialize" with type "test" omitted

@@ -32,9 +32,12 @@ licenses([
 # Generated Targets
 
 rust_library(
-    name = "serde_path_to_error",
+    name = "tokio_rustls",
     srcs = glob(["**/*.rs"]),
     crate_features = [
+        "default",
+        "logging",
+        "tls12",
     ],
     crate_root = "src/lib.rs",
     data = [],
@@ -44,16 +47,22 @@ rust_library(
     ],
     tags = [
         "cargo-raze",
-        "crate-name=serde_path_to_error",
+        "crate-name=tokio-rustls",
         "manual",
     ],
-    version = "0.1.7",
+    version = "0.23.4",
     # buildifier: leave-alone
     deps = [
-        "@raze__serde__1_0_139//:serde",
+        "@raze__rustls__0_20_6//:rustls",
+        "@raze__tokio__1_19_2//:tokio",
+        "@raze__webpki__0_22_0//:webpki",
     ],
 )
 
-# Unsupported target "deserialize" with type "test" omitted
+# Unsupported target "badssl" with type "test" omitted
 
-# Unsupported target "serialize" with type "test" omitted
+# Unsupported target "early-data" with type "test" omitted
+
+# Unsupported target "test" with type "test" omitted
+
+# Unsupported target "utils" with type "test" omitted

@@ -31,10 +31,14 @@ licenses([
 
 # Generated Targets
 
+# Unsupported target "bench" with type "bench" omitted
+
 rust_library(
-    name = "serde_path_to_error",
+    name = "unicode_normalization",
     srcs = glob(["**/*.rs"]),
     crate_features = [
+        "default",
+        "std",
     ],
     crate_root = "src/lib.rs",
     data = [],
@@ -44,16 +48,12 @@ rust_library(
     ],
     tags = [
         "cargo-raze",
-        "crate-name=serde_path_to_error",
+        "crate-name=unicode-normalization",
         "manual",
     ],
-    version = "0.1.7",
+    version = "0.1.21",
     # buildifier: leave-alone
     deps = [
-        "@raze__serde__1_0_139//:serde",
+        "@raze__tinyvec__1_6_0//:tinyvec",
     ],
 )
-
-# Unsupported target "deserialize" with type "test" omitted
-
-# Unsupported target "serialize" with type "test" omitted
