@@ -214,3 +214,8 @@
     #           shell: go get github.com/bazelbuild/buildtools/buildifier
     #         - name: install Buildifier
     #           shell: go install github.com/bazelbuild/buildtools/buildifier@latest
+    - name: update githooks
+      tags:
+      - githooks
+      # should only succeed if we don't need to update
+      ansible.builtin.shell: git hooks update --no

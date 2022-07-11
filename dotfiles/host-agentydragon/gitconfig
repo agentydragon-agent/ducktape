@@ -37,9 +37,13 @@
 	useCoreHooksPath = false
 	runner = /home/agentydragon/.githooks/bin/runner
 	dialog = /home/agentydragon/.githooks/bin/dialog
-	autoUpdateEnabled = true
+	# Do not autoupdate scripts.
+	# See: https://github.com/rycus86/githooks#updates=
+	# Prevents ultra annoying always changing timestamp below in ducktape
+	# repo.
+	autoUpdateEnabled = false
 	deleteDetectedLFSHooks = 
-	autoUpdateCheckTimestamp = 1657411495
+	autoUpdateCheckTimestamp = 1657544737
 	maintainedHooks = all
 [alias]
 	hooks = !\"/home/agentydragon/.githooks/bin/cli\"
@@ -53,3 +57,5 @@
 	prompt = false
 [merge]
 	tool = vimdiff
+[githooks "autoupdate"]
+	enabled = false
