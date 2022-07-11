@@ -26,13 +26,15 @@ package(default_visibility = [
 ])
 
 licenses([
-    "notice",  # MIT from expression "MIT OR Apache-2.0"
+    "notice",  # Apache-2.0 from expression "Apache-2.0 OR (ISC OR MIT)"
 ])
 
 # Generated Targets
 
+# Unsupported target "benchmark" with type "bench" omitted
+
 rust_library(
-    name = "serde_path_to_error",
+    name = "rustls_pemfile",
     srcs = glob(["**/*.rs"]),
     crate_features = [
     ],
@@ -44,16 +46,14 @@ rust_library(
     ],
     tags = [
         "cargo-raze",
-        "crate-name=serde_path_to_error",
+        "crate-name=rustls-pemfile",
         "manual",
     ],
-    version = "0.1.7",
+    version = "1.0.0",
     # buildifier: leave-alone
     deps = [
-        "@raze__serde__1_0_139//:serde",
+        "@raze__base64__0_13_0//:base64",
     ],
 )
 
-# Unsupported target "deserialize" with type "test" omitted
-
-# Unsupported target "serialize" with type "test" omitted
+# Unsupported target "integration" with type "test" omitted

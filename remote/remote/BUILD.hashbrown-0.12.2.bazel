@@ -31,29 +31,37 @@ licenses([
 
 # Generated Targets
 
+# Unsupported target "bench" with type "bench" omitted
+
+# Unsupported target "insert_unique_unchecked" with type "bench" omitted
+
 rust_library(
-    name = "serde_path_to_error",
+    name = "hashbrown",
     srcs = glob(["**/*.rs"]),
     crate_features = [
+        "raw",
     ],
     crate_root = "src/lib.rs",
     data = [],
-    edition = "2018",
+    edition = "2021",
     rustc_flags = [
         "--cap-lints=allow",
     ],
     tags = [
         "cargo-raze",
-        "crate-name=serde_path_to_error",
+        "crate-name=hashbrown",
         "manual",
     ],
-    version = "0.1.7",
+    version = "0.12.2",
     # buildifier: leave-alone
     deps = [
-        "@raze__serde__1_0_139//:serde",
     ],
 )
 
-# Unsupported target "deserialize" with type "test" omitted
+# Unsupported target "hasher" with type "test" omitted
 
-# Unsupported target "serialize" with type "test" omitted
+# Unsupported target "rayon" with type "test" omitted
+
+# Unsupported target "serde" with type "test" omitted
+
+# Unsupported target "set" with type "test" omitted

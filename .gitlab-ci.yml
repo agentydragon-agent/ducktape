@@ -1,8 +1,22 @@
+workflow:
+  rules:
+    # run a merged result CI pipeline if MR is open, otherwise a branch pipeline.
+    # https://docs.gitlab.com/ee/ci/yaml/workflow.html#switch-between-branch-pipelines-and-merge-request-pipelines
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS
+      when: never
+    - if: $CI_COMMIT_BRANCH
+
 variables:
   # https://docs.gitlab.com/ee/ci/docker/using_docker_build.html#tls-enabled
   DOCKER_HOST: tcp://docker:2376
   DOCKER_TLS_CERTDIR: "/certs"
   DOCKER_DRIVER: overlay2
+
+  # shallow clone is the default.
+  # https://docs.gitlab.com/ee/ci/large_repositories/#shallow-cloning
+  # this checks out some recent history to make ansible-lint --progressive work.
+  GIT_DEPTH: 10
 
 stages:
   - build_ci_image
@@ -77,7 +91,7 @@ ansible_lint:
   interruptible: true
   script:
     - ansible-galaxy install -r ansible/requirements.yaml
-    - ansible-lint | tee ansible-lint-output.txt
+    - ansible-lint --progressive | tee ansible-lint-output.txt
   image:
     name: $CI_REGISTRY_IMAGE/cirunner:$CI_COMMIT_SHA
   artifacts:
