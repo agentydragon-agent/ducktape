@@ -274,12 +274,12 @@ def main(_):
     if _ADD.value:
         logging.info("Adding papers from --add flag")
         for paper in set(_ADD.value):
-            if re.fullmatch('\d{4}\.\d{5}', paper):
+            if re.fullmatch('\d{4}\.\d{4,5}', paper):
                 paper_id = paper
             else:
                 # https://arxiv.org/pdf/2206.01085.pdf -> 2206.01085
                 m = re.fullmatch(
-                    'https://arxiv.org/(?:abs|pdf)/(\d{4}\.\d{5})(?:v\d+)?(?:\.pdf)?',
+                    'https://arxiv.org/(?:abs|pdf)/(\d{4}\.\d{4,5})(?:v\d+)?(?:\.pdf)?',
                     paper)
                 if m:
                     paper_id = m.group(1)
