@@ -197,6 +197,7 @@ def create_paper_if_not_exists(ea, paper_id):
     # try to find paper by title
     meta = get_paper_meta(paper_id)
     title = meta['title']
+    # TODO: the search by title should be fuzzy - ignore special characters etc.
     existing_paper = find_note_id_by_title(ea, title)
     if existing_paper is not None:
         logging.info("paper %s already in Trilium as %s", paper_id,
