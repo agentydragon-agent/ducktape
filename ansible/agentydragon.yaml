@@ -20,7 +20,9 @@
           - agentydragon
         # Replaces ansible_distribution with ubuntu, because pop!_os is not
         # generally separately supported, apparently.
-        docker_apt_repository: "deb [arch={{ docker_apt_arch }}] {{ docker_repo_url }}/ubuntu {{ ansible_distribution_release }} {{ docker_apt_release_channel }}"
+        docker_apt_repository: >
+          deb [arch={{ docker_apt_arch }}] {{ docker_repo_url }}/ubuntu
+          {{ ansible_distribution_release }} {{ docker_apt_release_channel }}
       tags:
         - docker
 # TODO:
@@ -216,6 +218,6 @@
     #           shell: go install github.com/bazelbuild/buildtools/buildifier@latest
     - name: update githooks
       tags:
-      - githooks
+        - githooks
       # should only succeed if we don't need to update
       ansible.builtin.shell: git hooks update --no

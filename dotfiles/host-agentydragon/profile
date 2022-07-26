@@ -39,3 +39,6 @@ export PATH="$HOME/.cargo/bin:$PATH"
 
 # CUDA for Tensorflow
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/cuda-11.2/targets/x86_64-linux/lib
+
+# Radare2
+export PATH="$HOME/.r2env/bin:$PATH"

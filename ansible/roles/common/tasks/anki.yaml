@@ -25,6 +25,12 @@
   tags:
     - anki
   block:
+    - name: check /usr/local/bin/anki presence
+      tags: anki
+      ansible.builtin.stat:
+        path: /usr/local/bin/anki
+      register: installed_anki_stat
+
     - name: create temp directory
       ansible.builtin.tempfile:
         state: directory
@@ -76,7 +82,15 @@
         anki_dir: "{{ tmp_path }}/{{ anki_dirname }}"
       changed_when: false
 
+    - name: check new anki binary sha256
+      tags: anki
+      ansible.builtin.stat:
+        path: "{{ anki_dir }}/anki"
+      register: new_anki_stat
+
     - name: make install
+      when: "(!installed_anki_stat.stat.exists) || (new_anki_stat.stat.checksum != installed_anki_stat.stat.checksum)"
+      changed_when: true
       become: true
       ansible.builtin.command:
         cmd: ./install.sh
