@@ -1,0 +1,67 @@
+"""
+@generated
+cargo-raze crate build file.
+
+DO NOT EDIT! Replaced on runs of cargo-raze
+"""
+
+# buildifier: disable=load
+load("@bazel_skylib//lib:selects.bzl", "selects")
+
+# buildifier: disable=load
+load(
+    "@rules_rust//rust:defs.bzl",
+    "rust_binary",
+    "rust_library",
+    "rust_proc_macro",
+    "rust_test",
+)
+
+package(default_visibility = [
+    # Public for visibility by "@raze__crate__version//" targets.
+    #
+    # Prefer access through "//remote", which limits external
+    # visibility to explicit Cargo.toml dependencies.
+    "//visibility:public",
+])
+
+licenses([
+    "restricted",  # CECILL-B from expression "CECILL-B"
+])
+
+# Generated Targets
+
+# Unsupported target "main" with type "bench" omitted
+
+# Unsupported target "convert" with type "example" omitted
+
+rust_library(
+    name = "sophia",
+    srcs = glob(["**/*.rs"]),
+    crate_features = [
+        "default",
+    ],
+    crate_root = "src/lib.rs",
+    data = [],
+    edition = "2021",
+    rustc_flags = [
+        "--cap-lints=allow",
+    ],
+    tags = [
+        "cargo-raze",
+        "crate-name=sophia",
+        "manual",
+    ],
+    version = "0.7.2",
+    # buildifier: leave-alone
+    deps = [
+        "@raze__resiter__0_4_0//:resiter",
+        "@raze__sophia_api__0_7_2//:sophia_api",
+        "@raze__sophia_indexed__0_7_2//:sophia_indexed",
+        "@raze__sophia_inmem__0_7_2//:sophia_inmem",
+        "@raze__sophia_iri__0_7_2//:sophia_iri",
+        "@raze__sophia_rio__0_7_2//:sophia_rio",
+        "@raze__sophia_term__0_7_2//:sophia_term",
+        "@raze__sophia_turtle__0_7_2//:sophia_turtle",
+    ],
+)

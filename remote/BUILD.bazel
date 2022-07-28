@@ -13,6 +13,96 @@ licenses([
 
 # Aliased targets
 alias(
+    name = "alphavantage",
+    actual = "@raze__alphavantage__0_7_0//:alphavantage",
+    tags = [
+        "cargo-raze",
+        "manual",
+    ],
+)
+
+alias(
+    name = "async_trait",
+    actual = "@raze__async_trait__0_1_56//:async_trait",
+    tags = [
+        "cargo-raze",
+        "manual",
+    ],
+)
+
+alias(
+    name = "base64",
+    actual = "@raze__base64__0_13_0//:base64",
+    tags = [
+        "cargo-raze",
+        "manual",
+    ],
+)
+
+alias(
+    name = "bigdecimal",
+    actual = "@raze__bigdecimal__0_3_0//:bigdecimal",
+    tags = [
+        "cargo-raze",
+        "manual",
+    ],
+)
+
+alias(
+    name = "biscuit",
+    actual = "@raze__biscuit__0_5_0//:biscuit",
+    tags = [
+        "cargo-raze",
+        "manual",
+    ],
+)
+
+alias(
+    name = "chrono",
+    actual = "@raze__chrono__0_4_19//:chrono",
+    tags = [
+        "cargo-raze",
+        "manual",
+    ],
+)
+
+alias(
+    name = "chrono_tz",
+    actual = "@raze__chrono_tz__0_6_3//:chrono_tz",
+    tags = [
+        "cargo-raze",
+        "manual",
+    ],
+)
+
+alias(
+    name = "coinbase_rs",
+    actual = "@raze__coinbase_rs__0_3_0//:coinbase_rs",
+    tags = [
+        "cargo-raze",
+        "manual",
+    ],
+)
+
+alias(
+    name = "csv",
+    actual = "@raze__csv__1_1_6//:csv",
+    tags = [
+        "cargo-raze",
+        "manual",
+    ],
+)
+
+alias(
+    name = "currency_layer",
+    actual = "@raze__currency_layer__0_1_2//:currency_layer",
+    tags = [
+        "cargo-raze",
+        "manual",
+    ],
+)
+
+alias(
     name = "env_logger",
     actual = "@raze__env_logger__0_9_0//:env_logger",
     tags = [
@@ -22,8 +112,98 @@ alias(
 )
 
 alias(
+    name = "ftx",
+    actual = "@raze__ftx__0_5_0//:ftx",
+    tags = [
+        "cargo-raze",
+        "manual",
+    ],
+)
+
+alias(
+    name = "futures",
+    actual = "@raze__futures__0_3_21//:futures",
+    tags = [
+        "cargo-raze",
+        "manual",
+    ],
+)
+
+alias(
+    name = "glob",
+    actual = "@raze__glob__0_3_0//:glob",
+    tags = [
+        "cargo-raze",
+        "manual",
+    ],
+)
+
+alias(
+    name = "headless_chrome",
+    actual = "@raze__headless_chrome__0_9_0//:headless_chrome",
+    tags = [
+        "cargo-raze",
+        "manual",
+    ],
+)
+
+alias(
+    name = "jwt",
+    actual = "@raze__jwt__0_16_0//:jwt",
+    tags = [
+        "cargo-raze",
+        "manual",
+    ],
+)
+
+alias(
     name = "log",
     actual = "@raze__log__0_4_17//:log",
+    tags = [
+        "cargo-raze",
+        "manual",
+    ],
+)
+
+alias(
+    name = "oauth2",
+    actual = "@raze__oauth2__4_2_3//:oauth2",
+    tags = [
+        "cargo-raze",
+        "manual",
+    ],
+)
+
+alias(
+    name = "openssl",
+    actual = "@raze__openssl__0_10_41//:openssl",
+    tags = [
+        "cargo-raze",
+        "manual",
+    ],
+)
+
+alias(
+    name = "petgraph",
+    actual = "@raze__petgraph__0_6_2//:petgraph",
+    tags = [
+        "cargo-raze",
+        "manual",
+    ],
+)
+
+alias(
+    name = "rand",
+    actual = "@raze__rand__0_8_5//:rand",
+    tags = [
+        "cargo-raze",
+        "manual",
+    ],
+)
+
+alias(
+    name = "regex",
+    actual = "@raze__regex__1_6_0//:regex",
     tags = [
         "cargo-raze",
         "manual",
@@ -49,8 +229,35 @@ alias(
 )
 
 alias(
+    name = "rust_decimal_macros",
+    actual = "@raze__rust_decimal_macros__1_25_0//:rust_decimal_macros",
+    tags = [
+        "cargo-raze",
+        "manual",
+    ],
+)
+
+alias(
+    name = "rusty_money",
+    actual = "@raze__rusty_money__0_4_1//:rusty_money",
+    tags = [
+        "cargo-raze",
+        "manual",
+    ],
+)
+
+alias(
+    name = "scraper",
+    actual = "@raze__scraper__0_13_0//:scraper",
+    tags = [
+        "cargo-raze",
+        "manual",
+    ],
+)
+
+alias(
     name = "serde",
-    actual = "@raze__serde__1_0_139//:serde",
+    actual = "@raze__serde__1_0_140//:serde",
     tags = [
         "cargo-raze",
         "manual",
@@ -76,8 +283,71 @@ alias(
 )
 
 alias(
+    name = "serde_xml_rs",
+    actual = "@raze__serde_xml_rs__0_5_1//:serde_xml_rs",
+    tags = [
+        "cargo-raze",
+        "manual",
+    ],
+)
+
+alias(
+    name = "serde_yaml",
+    actual = "@raze__serde_yaml__0_8_26//:serde_yaml",
+    tags = [
+        "cargo-raze",
+        "manual",
+    ],
+)
+
+alias(
+    name = "shellexpand",
+    actual = "@raze__shellexpand__2_1_0//:shellexpand",
+    tags = [
+        "cargo-raze",
+        "manual",
+    ],
+)
+
+alias(
+    name = "sophia",
+    actual = "@raze__sophia__0_7_2//:sophia",
+    tags = [
+        "cargo-raze",
+        "manual",
+    ],
+)
+
+alias(
+    name = "sophia_term",
+    actual = "@raze__sophia_term__0_7_2//:sophia_term",
+    tags = [
+        "cargo-raze",
+        "manual",
+    ],
+)
+
+alias(
+    name = "structopt",
+    actual = "@raze__structopt__0_3_26//:structopt",
+    tags = [
+        "cargo-raze",
+        "manual",
+    ],
+)
+
+alias(
+    name = "term_table",
+    actual = "@raze__term_table__1_3_2//:term_table",
+    tags = [
+        "cargo-raze",
+        "manual",
+    ],
+)
+
+alias(
     name = "tokio",
-    actual = "@raze__tokio__1_19_2//:tokio",
+    actual = "@raze__tokio__1_20_1//:tokio",
     tags = [
         "cargo-raze",
         "manual",
@@ -96,6 +366,33 @@ alias(
 alias(
     name = "url",
     actual = "@raze__url__2_2_2//:url",
+    tags = [
+        "cargo-raze",
+        "manual",
+    ],
+)
+
+alias(
+    name = "uuid",
+    actual = "@raze__uuid__1_1_2//:uuid",
+    tags = [
+        "cargo-raze",
+        "manual",
+    ],
+)
+
+alias(
+    name = "warp",
+    actual = "@raze__warp__0_3_2//:warp",
+    tags = [
+        "cargo-raze",
+        "manual",
+    ],
+)
+
+alias(
+    name = "xdg",
+    actual = "@raze__xdg__2_4_1//:xdg",
     tags = [
         "cargo-raze",
         "manual",

@@ -78,11 +78,15 @@ rust_library(
     srcs = glob(["**/*.rs"]),
     crate_features = [
         "client",
+        "default",
+        "full",
         "h2",
         "http1",
         "http2",
         "runtime",
+        "server",
         "socket2",
+        "stream",
         "tcp",
     ],
     crate_root = "src/lib.rs",
@@ -99,7 +103,7 @@ rust_library(
     version = "0.14.20",
     # buildifier: leave-alone
     deps = [
-        "@raze__bytes__1_1_0//:bytes",
+        "@raze__bytes__1_2_0//:bytes",
         "@raze__futures_channel__0_3_21//:futures_channel",
         "@raze__futures_core__0_3_21//:futures_core",
         "@raze__futures_util__0_3_21//:futures_util",
@@ -111,7 +115,7 @@ rust_library(
         "@raze__itoa__1_0_2//:itoa",
         "@raze__pin_project_lite__0_2_9//:pin_project_lite",
         "@raze__socket2__0_4_4//:socket2",
-        "@raze__tokio__1_19_2//:tokio",
+        "@raze__tokio__1_20_1//:tokio",
         "@raze__tower_service__0_3_2//:tower_service",
         "@raze__tracing__0_1_35//:tracing",
         "@raze__want__0_3_0//:want",

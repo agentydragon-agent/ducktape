@@ -68,7 +68,7 @@ cargo_build_script(
         (
             "@rules_rust//rust/platform:wasm32-unknown-unknown",
         ): [
-            "@raze__web_sys__0_3_58//:web_sys",
+            "@raze__web_sys__0_3_59//:web_sys",
         ],
         "//conditions:default": [],
     }) + selects.with_or({
@@ -158,7 +158,7 @@ rust_library(
         (
             "@rules_rust//rust/platform:wasm32-unknown-unknown",
         ): [
-            "@raze__web_sys__0_3_58//:web_sys",
+            "@raze__web_sys__0_3_59//:web_sys",
         ],
         "//conditions:default": [],
     }) + selects.with_or({

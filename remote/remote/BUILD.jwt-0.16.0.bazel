@@ -1,0 +1,67 @@
+"""
+@generated
+cargo-raze crate build file.
+
+DO NOT EDIT! Replaced on runs of cargo-raze
+"""
+
+# buildifier: disable=load
+load("@bazel_skylib//lib:selects.bzl", "selects")
+
+# buildifier: disable=load
+load(
+    "@rules_rust//rust:defs.bzl",
+    "rust_binary",
+    "rust_library",
+    "rust_proc_macro",
+    "rust_test",
+)
+
+package(default_visibility = [
+    # Public for visibility by "@raze__crate__version//" targets.
+    #
+    # Prefer access through "//remote", which limits external
+    # visibility to explicit Cargo.toml dependencies.
+    "//visibility:public",
+])
+
+licenses([
+    "notice",  # MIT from expression "MIT"
+])
+
+# Generated Targets
+
+# Unsupported target "custom_claims" with type "example" omitted
+
+# Unsupported target "hs256" with type "example" omitted
+
+rust_library(
+    name = "jwt",
+    srcs = glob(["**/*.rs"]),
+    crate_features = [
+        "openssl",
+    ],
+    crate_root = "src/lib.rs",
+    data = [],
+    edition = "2018",
+    rustc_flags = [
+        "--cap-lints=allow",
+    ],
+    tags = [
+        "cargo-raze",
+        "crate-name=jwt",
+        "manual",
+    ],
+    version = "0.16.0",
+    # buildifier: leave-alone
+    deps = [
+        "@raze__base64__0_13_0//:base64",
+        "@raze__crypto_common__0_1_6//:crypto_common",
+        "@raze__digest__0_10_3//:digest",
+        "@raze__hmac__0_12_1//:hmac",
+        "@raze__openssl__0_10_41//:openssl",
+        "@raze__serde__1_0_140//:serde",
+        "@raze__serde_json__1_0_82//:serde_json",
+        "@raze__sha2__0_10_2//:sha2",
+    ],
+)
