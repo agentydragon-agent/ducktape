@@ -92,7 +92,7 @@ rust_library(
         ":rust_decimal_build_script",
         "@raze__arrayvec__0_7_2//:arrayvec",
         "@raze__num_traits__0_2_15//:num_traits",
-        "@raze__serde__1_0_139//:serde",
+        "@raze__serde__1_0_140//:serde",
     ],
 )
 

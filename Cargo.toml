@@ -13,18 +13,49 @@ rust_decimal = "*"
 #chrono-tz = {features=["serde"], version="*"}
 tokio = { version = "*", features = ["macros", "rt-multi-thread"], default-features=false} #, features = ["full", "time"] }
 serde_path_to_error = "*"
-#warp = "*"
-#futures = "*"
-#rand = "*"
-#base64 = "*"
 # native-tls makes trouble
-reqwest = {version="*", features=["rustls-tls"], default-features=false} #, features=["json"]} # , "serde_json", "tokio-rustls"]}
+reqwest = {version="*", features=["json", "rustls-tls"], default-features=false} #, features=["json"]} # , "serde_json", "tokio-rustls"]}
 serde = {version="*", features=["derive"]}
-url = {version="*"} #, features=["serde"]}
+url = {version="*", features=["serde"]}
 
-#structopt = "*"
 serde_json = "*"
 toml = "*"
+
+# worthy
+chrono = {features=["serde"], version="*"}
+petgraph = "*"
+chrono-tz = {features=["serde"], version="*"}
+#tokio = { version = "*", features = ["full", "time"] }
+warp = "*"
+futures = "*"
+rand = "*"
+base64 = "*"
+openssl = "*"
+jwt = {version="*", features=["openssl"]}
+sophia = "*"
+sophia_term = "*"
+rusty-money = "*"
+serde_yaml = "*"
+structopt = "*"
+xdg = "*"
+alphavantage = "*"
+shellexpand = "*"
+coinbase-rs = {git="https://github.com/agentydragon/coinbase-rs", rev="01cabaa6fdd0fed87b44b38f218b1068f4914b39"}
+bigdecimal = "*" # needs to be matched to coinbase-rs
+currency_layer = {git="https://github.com/agentydragon/currency-layer-rs", rev="1f2f9af4dfb569808ca195f673452337b5e5d0be"}
+serde-xml-rs = "*"
+async-trait = "*"
+rust_decimal_macros = "*"
+regex = "*"
+term-table = "*"
+uuid = { version="*", features=["v4"] }
+glob = "*"
+csv = "*"
+oauth2 = "*"
+biscuit = "*"
+ftx = "*"
+headless_chrome = "*"
+scraper = "*"
 
 [[bin]]
 name = "ducktape_fake"
@@ -41,6 +72,18 @@ rust_rules_workspace_name = "rules_rust"
 compile_data_attr = "glob([\"**/*\"])"
 
 [package.metadata.raze.crates.webpki.'*']
+compile_data_attr = "glob([\"**/*\"])"
+
+[package.metadata.raze.crates.oxiri.'*']
+compile_data_attr = "glob([\"**/*\"])"
+
+[package.metadata.raze.crates.oxilangtag.'*']
+compile_data_attr = "glob([\"**/*\"])"
+
+[package.metadata.raze.crates.derive_builder.'*']
+compile_data_attr = "glob([\"**/*\"])"
+
+[package.metadata.raze.crates.bstr.'*']
 compile_data_attr = "glob([\"**/*\"])"
 
 # TODO: fix ../remote/remote/BUILD.mio-0.8.3.bazel

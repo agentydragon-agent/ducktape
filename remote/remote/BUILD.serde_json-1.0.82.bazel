@@ -44,6 +44,8 @@ cargo_build_script(
     },
     crate_features = [
         "default",
+        "indexmap",
+        "preserve_order",
         "std",
     ],
     crate_root = "build.rs",
@@ -67,6 +69,8 @@ rust_library(
     srcs = glob(["**/*.rs"]),
     crate_features = [
         "default",
+        "indexmap",
+        "preserve_order",
         "std",
     ],
     crate_root = "src/lib.rs",
@@ -84,9 +88,10 @@ rust_library(
     # buildifier: leave-alone
     deps = [
         ":serde_json_build_script",
+        "@raze__indexmap__1_9_1//:indexmap",
         "@raze__itoa__1_0_2//:itoa",
         "@raze__ryu__1_0_10//:ryu",
-        "@raze__serde__1_0_139//:serde",
+        "@raze__serde__1_0_140//:serde",
     ],
 )
 

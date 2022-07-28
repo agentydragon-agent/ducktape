@@ -1,0 +1,6 @@
+# Trying to see if this might fix the issues with errors in
+# cargo-raze-generated platform-specific dependencies in BUILD files
+build --platforms //:linux_x64
+
+# TODO: auto-clippy (once i figure out how to disable)
+#build --aspects @rules_rulst//rust:defs.bzl%rust_clippy_aspect --output_groups=clippy_checks

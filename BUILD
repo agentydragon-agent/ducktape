@@ -7,3 +7,11 @@ compile_pip_requirements(
     requirements_in = "requirements.in",
     requirements_txt = "requirements_lock.txt",
 )
+
+platform(
+    name = "linux_x64",
+    constraint_values = [
+        "@platforms//os:linux",
+        "@platforms//cpu:x86_64",
+    ],
+)

@@ -57,7 +57,7 @@ rust_library(
         "@raze__http__0_2_8//:http",
         "@raze__hyper__0_14_20//:hyper",
         "@raze__rustls__0_20_6//:rustls",
-        "@raze__tokio__1_19_2//:tokio",
+        "@raze__tokio__1_20_1//:tokio",
         "@raze__tokio_rustls__0_23_4//:tokio_rustls",
     ],
 )

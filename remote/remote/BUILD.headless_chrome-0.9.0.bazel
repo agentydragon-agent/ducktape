@@ -1,0 +1,101 @@
+"""
+@generated
+cargo-raze crate build file.
+
+DO NOT EDIT! Replaced on runs of cargo-raze
+"""
+
+# buildifier: disable=load
+load("@bazel_skylib//lib:selects.bzl", "selects")
+
+# buildifier: disable=load
+load(
+    "@rules_rust//rust:defs.bzl",
+    "rust_binary",
+    "rust_library",
+    "rust_proc_macro",
+    "rust_test",
+)
+
+package(default_visibility = [
+    # Public for visibility by "@raze__crate__version//" targets.
+    #
+    # Prefer access through "//remote", which limits external
+    # visibility to explicit Cargo.toml dependencies.
+    "//visibility:public",
+])
+
+licenses([
+    "notice",  # MIT from expression "MIT"
+])
+
+# Generated Targets
+
+# Unsupported target "print_to_pdf" with type "example" omitted
+
+# Unsupported target "query_wikipedia" with type "example" omitted
+
+# Unsupported target "take_screenshot" with type "example" omitted
+
+rust_library(
+    name = "headless_chrome",
+    srcs = glob(["**/*.rs"]),
+    aliases = {
+    },
+    crate_features = [
+        "default",
+    ],
+    crate_root = "src/lib.rs",
+    data = [],
+    edition = "2018",
+    proc_macro_deps = [
+        "@raze__derive_builder__0_7_2//:derive_builder",
+        "@raze__serde_derive__1_0_140//:serde_derive",
+    ],
+    rustc_flags = [
+        "--cap-lints=allow",
+    ],
+    tags = [
+        "cargo-raze",
+        "crate-name=headless_chrome",
+        "manual",
+    ],
+    version = "0.9.0",
+    # buildifier: leave-alone
+    deps = [
+        "@raze__base64__0_10_1//:base64",
+        "@raze__env_logger__0_6_2//:env_logger",
+        "@raze__failure__0_1_8//:failure",
+        "@raze__log__0_4_17//:log",
+        "@raze__rand__0_7_3//:rand",
+        "@raze__regex__1_6_0//:regex",
+        "@raze__serde__1_0_140//:serde",
+        "@raze__serde_json__1_0_82//:serde_json",
+        "@raze__tempfile__3_3_0//:tempfile",
+        "@raze__websocket__0_23_0//:websocket",
+        "@raze__which__2_0_1//:which",
+    ] + selects.with_or({
+        # cfg(windows)
+        (
+            "@rules_rust//rust/platform:i686-pc-windows-msvc",
+            "@rules_rust//rust/platform:x86_64-pc-windows-msvc",
+        ): [
+            "@raze__winreg__0_6_2//:winreg",
+        ],
+        "//conditions:default": [],
+    }),
+)
+
+# Unsupported target "coverage" with type "test" omitted
+
+# Unsupported target "events_listeners" with type "test" omitted
+
+# Unsupported target "extension" with type "test" omitted
+
+# Unsupported target "logging" with type "test" omitted
+
+# Unsupported target "logs" with type "test" omitted
+
+# Unsupported target "server" with type "test" omitted
+
+# Unsupported target "simple" with type "test" omitted

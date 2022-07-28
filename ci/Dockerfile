@@ -7,6 +7,7 @@ ADD bazel.gpg /etc/apt/trusted.gpg.d/
 RUN echo "deb [arch=amd64] https://storage.googleapis.com/bazel-apt stable jdk1.8" | tee /etc/apt/sources.list.d/bazel.list
 
 # Install build dependencies and Bazel.
+# pkg-config: needed to configure SSL. libssl-dev: native SSL
 RUN apt update && \
   apt full-upgrade -y && \
   DEBIAN_FRONTEND=noninteractive apt install -y \
@@ -14,6 +15,8 @@ RUN apt update && \
     git \
     python-is-python3 \
     python3-pip \
+    pkg-config \
+    libssl-dev \
     && \
   apt clean && \
   apt autoremove -y

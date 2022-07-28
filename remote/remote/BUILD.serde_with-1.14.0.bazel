@@ -1,0 +1,91 @@
+"""
+@generated
+cargo-raze crate build file.
+
+DO NOT EDIT! Replaced on runs of cargo-raze
+"""
+
+# buildifier: disable=load
+load("@bazel_skylib//lib:selects.bzl", "selects")
+
+# buildifier: disable=load
+load(
+    "@rules_rust//rust:defs.bzl",
+    "rust_binary",
+    "rust_library",
+    "rust_proc_macro",
+    "rust_test",
+)
+
+package(default_visibility = [
+    # Public for visibility by "@raze__crate__version//" targets.
+    #
+    # Prefer access through "//remote", which limits external
+    # visibility to explicit Cargo.toml dependencies.
+    "//visibility:public",
+])
+
+licenses([
+    "notice",  # MIT from expression "MIT OR Apache-2.0"
+])
+
+# Generated Targets
+
+rust_library(
+    name = "serde_with",
+    srcs = glob(["**/*.rs"]),
+    aliases = {
+        "@raze__chrono__0_4_19//:chrono": "chrono_crate",
+    },
+    crate_features = [
+        "chrono",
+        "chrono_crate",
+        "default",
+        "macros",
+        "serde_with_macros",
+    ],
+    crate_root = "src/lib.rs",
+    data = [],
+    edition = "2018",
+    proc_macro_deps = [
+        "@raze__serde_with_macros__1_5_2//:serde_with_macros",
+    ],
+    rustc_flags = [
+        "--cap-lints=allow",
+    ],
+    tags = [
+        "cargo-raze",
+        "crate-name=serde_with",
+        "manual",
+    ],
+    version = "1.14.0",
+    # buildifier: leave-alone
+    deps = [
+        "@raze__chrono__0_4_19//:chrono",
+        "@raze__serde__1_0_140//:serde",
+    ],
+)
+
+# Unsupported target "base64" with type "test" omitted
+
+# Unsupported target "chrono" with type "test" omitted
+
+# Unsupported target "derives" with type "test" omitted
+
+# Unsupported target "hex" with type "test" omitted
+
+# Unsupported target "indexmap" with type "test" omitted
+
+# Unsupported target "json" with type "test" omitted
+
+# Unsupported target "rust" with type "test" omitted
+
+# Unsupported target "serde_as" with type "test" omitted
+
+# Unsupported target "time_0_3" with type "test" omitted
+
+# Unsupported target "utils" with type "test" omitted
+
+# Unsupported target "version_numbers" with type "test" omitted
+
+# Unsupported target "with_prefix" with type "test" omitted
