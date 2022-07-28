@@ -108,11 +108,13 @@
 
 - name: Create Trilium container
   become: true
-  become_user: trilium
+  # TODO: this should be possible to run without root...
+  # Assumes that the trilium user has UID = GID = 1000.
+  # See https://github.com/zadam/trilium/wiki/Docker-server-installation#note-about---user-directive=.
   ansible.builtin.docker_container:
     name: trilium-server
-    image: zadam/trilium:0.51-latest
-    user: node
+    image: zadam/trilium:0.53-latest
+    user: root  # TODO: argh
     volumes:
       - /srv/trilium-data:/home/node/trilium-data
     published_ports:
@@ -123,3 +125,6 @@
     restart_policy: always
     # Always pull latest version of the image.
     pull: true
+
+    # TODO: get rid of this one
+    container_default_behavior: compatibility
