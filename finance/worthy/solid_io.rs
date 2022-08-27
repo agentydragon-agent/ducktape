@@ -1,20 +1,5 @@
 // TODO(agentydragon): renewing tokens
 // TODO(agentydragon): revoking tokens
-extern crate base64;
-extern crate biscuit;
-extern crate chrono;
-extern crate env_logger;
-extern crate jwt;
-extern crate log;
-extern crate rand;
-extern crate reqwest;
-extern crate serde;
-extern crate serde_json;
-extern crate sophia;
-extern crate sophia_term;
-extern crate tokio;
-extern crate url;
-extern crate warp;
 
 use chrono::{serde::ts_seconds, DateTime, Utc};
 use dpop_http_client::DPoPSigningHttpClient;
@@ -69,6 +54,7 @@ fn get_redirect_uri() -> String {
 }
 
 #[derive(Deserialize, Debug, Serialize)]
+#[allow(dead_code)]  // TODO: should I be checking anything that I'm not checking yet?
 struct OpenIDConfiguration {
     registration_endpoint: Url,
     authorization_endpoint: Url,
@@ -215,6 +201,7 @@ fn check_http_status(
 // }
 
 #[derive(Deserialize, Debug)]
+#[allow(dead_code)]  // TODO: should I be checking anything that I'm not checking yet?
 struct AccessTokenClaims {
     /// Example: https://agentydragon.solidcommunity.net/profile/card#me
     webid: String,
