@@ -2,9 +2,12 @@
 li[data-hotlist-id].active a::before {
   content: "→";
 }
+li[data-hotlist-id].excluded a::before {
+  content: "-";
+}
+li[data-state-id].active a::before {
+  content: "→";
+}
 </style>
 
-<h2>Hotlists</h2>
-<output id="hotlist-table"></output>
-<h2>Issues</h2>
-<output id="issue-table"></output>
+<output id="issue-table-root"></output>
