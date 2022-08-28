@@ -1,50 +1,54 @@
-// Hotlist sidebar widget.
+/**
+ * Hotlist sidebar widget.
+ *
+ * To install, add as a note of type "JS frontend" and add #widget label.
+ */
 
 const TPL = `
-<div style="contain: none; padding: 10px; border-top: 1px solid var(--main-border-color);">
+<div>
   Open issues in this hotlist:
   <ul class="hotlist-issue-list">
   </ul>
 </div>`;
 
-class HotlistSidebarWidget extends api.TabAwareWidget {
+class HotlistSidebarWidget extends api.CollapsibleWidget {
   get position() {
-    // higher value means position towards the bottom/right
-    // 10 in right pane seems to put it just below "Note info"
     return 10;
   }
-
   get parentWidget() {
     return 'right-pane';
   }
+  get widgetTitle() {
+    return 'Issue';
+  }
 
-  doRender() {
-    this.$widget = $(TPL);
-    this.$issueList = this.$widget.find('.hotlist-issue-list');
-    return this.$widget;
+  async doRenderBody() {
+    this.$body.empty().append($(TPL));
+    this.$issueList = this.$body.find('.hotlist-issue-list');
+    return this.$body;
+  }
+
+  isEnabled() {
+    return super.isEnabled() && this.note.type === 'text' &&
+        this.note.hasLabel('hotlist');
   }
 
   async refreshWithNote(note) {
-    if (note.type !== 'text' || !note.hasLabel('hotlist')) {
-      this.toggleInt(false);  // hide
-      return;
-    }
-    this.toggleInt(true);
     let searchString = '#issue';
-    // open issues only
     searchString += ' ~state.title=Open';
     searchString += ' ~hotlist.noteId=' + note.noteId;
 
-    console.log('search string:', searchString);
     let issueNotes = await api.searchForNotes(searchString);
     this.$issueList.empty();
+    // TODO: sort them nicely
+    // TODO: some more info - also show done issues etc.; generally group by
+    // state
     for (const issueNote of issueNotes) {
       const bullet = $('<li>');
       bullet.append(
           await api.createNoteLink(issueNote.noteId, {showTooltip: true}));
       this.$issueList.append(bullet);
     }
-    // const {content} = await note.getNoteComplement();
   }
 
   async entitiesReloadedEvent({loadResults}) {

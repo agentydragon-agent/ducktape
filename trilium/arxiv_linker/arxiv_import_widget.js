@@ -2,48 +2,58 @@
  * To install, add as frontend script and add #widget.
  */
 
-const TPL = `
-<div style="contain: none; padding: 10px; border-top: 1px solid var(--main-border-color);">
-  Add arXiv paper:
-  <input type="text" id="arxiv-input" placeholder="Enter arXiv ID or URL" style="width: 80%;">
+const TPL = `<div>
+  <input type="text" id="arxiv-input" placeholder="arXiv ID or URL" style="width: 80%;">
   <button id="arxiv-submit">Add</button>
-  <div id="arxiv-message" style="color: var(--main-text-color);"></div>
+  <output id="arxiv-message" style="color: var(--main-text-color);"></output>
 </div>`;
 
 const ARXIV_ENDPOINT = 'https://export.arxiv.org/api/query';
 const PAPER_TEMPLATE_NOTE_ID = 'WgCQiTGFyKV7';
 const PAPERS_ROOT_LABEL = 'papersRoot';
 
-class ArxivSidebarWidget extends api.TabAwareWidget {
+class ArxivWidget extends api.CollapsibleWidget {
   get position() {
     return 20;
   }
   get parentWidget() {
     return 'right-pane';
   }
+  get widgetTitle() {
+    return 'Add arXiv paper';
+  }
 
-  doRender() {
-    this.$widget = $(TPL);
-    this.$input = this.$widget.find('#arxiv-input');
-    this.$submit = this.$widget.find('#arxiv-submit');
-    this.$message = this.$widget.find('#arxiv-message');
+  async doRenderBody() {
+    this.$body.empty().append($(TPL));
+    this.$input = this.$body.find('#arxiv-input');
+    this.$submit = this.$body.find('#arxiv-submit');
+    this.$message = this.$body.find('#arxiv-message');
+
+    // Make message disappear when URL is updated.
+    this.$input.on('input', () => this.$message.text(''));
 
     this.$submit.on('click', async () => {
       const paper = this.$input.val().trim();
-      if (paper) {
-        try {
-          this.$message.text('Adding paper...');
-          await this.addPaper(paper);
-          this.$message.text('Paper added successfully.');
-        } catch (e) {
-          this.$message.text('Error: ' + e.message);
-        }
-      } else {
+      if (!paper) {
         this.$message.text('Please enter a valid arXiv ID or URL.');
+        return;
+      }
+      try {
+        this.$message.text('Adding paper...');
+        const {note, created} = await this.addPaper(paper);
+        this.$message.html(await api.createNoteLink(
+            note.noteId, {showTooltip: true, showNoteIcon: true}));
+        if (created) {
+          this.$message.prepend('Paper added as: ');
+        } else {
+          this.$message.prepend('Paper already exists as: ');
+        }
+        this.$input.val('');
+      } catch (e) {
+        this.$message.text('Error: ' + e.message);
       }
     });
-
-    return this.$widget;
+    return this.$body;
   }
 
   async addPaper(paper) {
@@ -64,8 +74,7 @@ class ArxivSidebarWidget extends api.TabAwareWidget {
     // check if the paper already exists in Trilium
     const existingPaper = await this.findNoteByPaperId(paperId);
     if (existingPaper) {
-      throw new Error(
-          'Paper already exists in Trilium as ' + existingPaper.title);
+      return {note: existingPaper, created: false};
     }
 
     // fetch the paper metadata from arXiv
@@ -73,7 +82,7 @@ class ArxivSidebarWidget extends api.TabAwareWidget {
 
     // create a new note for the paper on the backend
     const papersRoot = await this.getPapersRootNoteId();
-    await api.runOnBackend(
+    return await api.runOnBackend(
         function(papersRootNoteId, title, paperId, paperTemplateNoteId) {
           const newNote = api.createTextNote(
                                  papersRootNoteId, title,
@@ -81,15 +90,14 @@ class ArxivSidebarWidget extends api.TabAwareWidget {
                               .note;
           newNote.addAttribute('relation', 'template', paperTemplateNoteId);
           newNote.addAttribute('label', 'arxivId', paperId);
+          return {note: newNote, created: true};
         },
-        [
-          papersRoot.noteId, meta.title, paperId, PAPER_TEMPLATE_NOTE_ID
-        ]);  // pass the papers root note ID as a parameter
+        [papersRoot.noteId, meta.title, paperId, PAPER_TEMPLATE_NOTE_ID]);
   }
 
   async findNoteByPaperId(paperId) {
     // search for notes with the arxivId label
-    const results = await api.searchForNotes('#arxivId = ' + paperId);
+    const results = await api.searchForNotes('#arxivId = "' + paperId + '"');
     if (results.length > 0) {
       return results[0];
     } else {
@@ -127,4 +135,4 @@ class ArxivSidebarWidget extends api.TabAwareWidget {
   }
 }
 
-module.exports = new ArxivSidebarWidget();
+module.exports = new ArxivWidget();
