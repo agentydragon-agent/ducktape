@@ -61,23 +61,12 @@ cargo_build_script(
         "@raze__autocfg__1_1_0//:autocfg",
         "@raze__cc__1_0_73//:cc",
         "@raze__pkg_config__0_3_25//:pkg_config",
-    ] + selects.with_or({
-        # cfg(target_env = "msvc")
-        (
-            "@rules_rust//rust/platform:i686-pc-windows-msvc",
-            "@rules_rust//rust/platform:x86_64-pc-windows-msvc",
-        ): [
-            "@raze__vcpkg__0_2_15//:vcpkg",
-        ],
-        "//conditions:default": [],
-    }),
+    ],
 )
 
 rust_library(
     name = "openssl_sys",
     srcs = glob(["**/*.rs"]),
-    aliases = {
-    },
     crate_features = [
     ],
     crate_root = "src/lib.rs",
@@ -96,13 +85,5 @@ rust_library(
     deps = [
         ":openssl_sys_build_script",
         "@raze__libc__0_2_126//:libc",
-    ] + selects.with_or({
-        # cfg(target_env = "msvc")
-        (
-            "@rules_rust//rust/platform:i686-pc-windows-msvc",
-            "@rules_rust//rust/platform:x86_64-pc-windows-msvc",
-        ): [
-        ],
-        "//conditions:default": [],
-    }),
+    ],
 )

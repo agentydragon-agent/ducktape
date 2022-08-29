@@ -36,8 +36,6 @@ licenses([
 rust_library(
     name = "fastrand",
     srcs = glob(["**/*.rs"]),
-    aliases = {
-    },
     crate_features = [
     ],
     crate_root = "src/lib.rs",
@@ -54,16 +52,7 @@ rust_library(
     version = "1.8.0",
     # buildifier: leave-alone
     deps = [
-    ] + selects.with_or({
-        # cfg(target_arch = "wasm32")
-        (
-            "@rules_rust//rust/platform:wasm32-unknown-unknown",
-            "@rules_rust//rust/platform:wasm32-wasi",
-        ): [
-            "@raze__instant__0_1_12//:instant",
-        ],
-        "//conditions:default": [],
-    }),
+    ],
 )
 
 # Unsupported target "char" with type "test" omitted

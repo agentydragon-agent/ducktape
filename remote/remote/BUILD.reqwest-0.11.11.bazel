@@ -94,24 +94,7 @@ rust_library(
     ] + selects.with_or({
         # cfg(not(target_arch = "wasm32"))
         (
-            "@rules_rust//rust/platform:i686-apple-darwin",
-            "@rules_rust//rust/platform:i686-pc-windows-msvc",
-            "@rules_rust//rust/platform:i686-unknown-linux-gnu",
-            "@rules_rust//rust/platform:x86_64-apple-darwin",
-            "@rules_rust//rust/platform:x86_64-pc-windows-msvc",
             "@rules_rust//rust/platform:x86_64-unknown-linux-gnu",
-            "@rules_rust//rust/platform:aarch64-apple-darwin",
-            "@rules_rust//rust/platform:aarch64-apple-ios",
-            "@rules_rust//rust/platform:aarch64-linux-android",
-            "@rules_rust//rust/platform:aarch64-unknown-linux-gnu",
-            "@rules_rust//rust/platform:arm-unknown-linux-gnueabi",
-            "@rules_rust//rust/platform:i686-linux-android",
-            "@rules_rust//rust/platform:i686-unknown-freebsd",
-            "@rules_rust//rust/platform:powerpc-unknown-linux-gnu",
-            "@rules_rust//rust/platform:s390x-unknown-linux-gnu",
-            "@rules_rust//rust/platform:x86_64-apple-ios",
-            "@rules_rust//rust/platform:x86_64-linux-android",
-            "@rules_rust//rust/platform:x86_64-unknown-freebsd",
         ): [
             "@raze__encoding_rs__0_8_31//:encoding_rs",
             "@raze__futures_core__0_3_21//:futures_core",
@@ -134,27 +117,6 @@ rust_library(
             "@raze__tokio_native_tls__0_3_0//:tokio_native_tls",
             "@raze__tokio_rustls__0_23_4//:tokio_rustls",
             "@raze__webpki_roots__0_22_4//:webpki_roots",
-        ],
-        "//conditions:default": [],
-    }) + selects.with_or({
-        # cfg(target_arch = "wasm32")
-        (
-            "@rules_rust//rust/platform:wasm32-unknown-unknown",
-            "@rules_rust//rust/platform:wasm32-wasi",
-        ): [
-            "@raze__js_sys__0_3_59//:js_sys",
-            "@raze__wasm_bindgen__0_2_82//:wasm_bindgen",
-            "@raze__wasm_bindgen_futures__0_4_32//:wasm_bindgen_futures",
-            "@raze__web_sys__0_3_59//:web_sys",
-        ],
-        "//conditions:default": [],
-    }) + selects.with_or({
-        # cfg(windows)
-        (
-            "@rules_rust//rust/platform:i686-pc-windows-msvc",
-            "@rules_rust//rust/platform:x86_64-pc-windows-msvc",
-        ): [
-            "@raze__winreg__0_10_1//:winreg",
         ],
         "//conditions:default": [],
     }),

@@ -38,8 +38,6 @@ licenses([
 rust_library(
     name = "chrono",
     srcs = glob(["**/*.rs"]),
-    aliases = {
-    },
     crate_features = [
         "clock",
         "default",
@@ -69,16 +67,7 @@ rust_library(
         "@raze__num_traits__0_2_15//:num_traits",
         "@raze__serde__1_0_140//:serde",
         "@raze__time__0_1_44//:time",
-    ] + selects.with_or({
-        # cfg(windows)
-        (
-            "@rules_rust//rust/platform:i686-pc-windows-msvc",
-            "@rules_rust//rust/platform:x86_64-pc-windows-msvc",
-        ): [
-            "@raze__winapi__0_3_9//:winapi",
-        ],
-        "//conditions:default": [],
-    }),
+    ],
 )
 
 # Unsupported target "wasm" with type "test" omitted

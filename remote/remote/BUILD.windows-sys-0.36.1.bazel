@@ -34,8 +34,6 @@ licenses([
 rust_library(
     name = "windows_sys",
     srcs = glob(["**/*.rs"]),
-    aliases = {
-    },
     crate_features = [
         "Win32",
         "Win32_Foundation",
@@ -71,21 +69,5 @@ rust_library(
     version = "0.36.1",
     # buildifier: leave-alone
     deps = [
-    ] + selects.with_or({
-        # i686-pc-windows-msvc
-        (
-            "@rules_rust//rust/platform:i686-pc-windows-msvc",
-        ): [
-            "@raze__windows_i686_msvc__0_36_1//:windows_i686_msvc",
-        ],
-        "//conditions:default": [],
-    }) + selects.with_or({
-        # x86_64-pc-windows-msvc
-        (
-            "@rules_rust//rust/platform:x86_64-pc-windows-msvc",
-        ): [
-            "@raze__windows_x86_64_msvc__0_36_1//:windows_x86_64_msvc",
-        ],
-        "//conditions:default": [],
-    }),
+    ],
 )
