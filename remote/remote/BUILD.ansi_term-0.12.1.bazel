@@ -40,8 +40,6 @@ licenses([
 rust_library(
     name = "ansi_term",
     srcs = glob(["**/*.rs"]),
-    aliases = {
-    },
     crate_features = [
     ],
     crate_root = "src/lib.rs",
@@ -58,14 +56,5 @@ rust_library(
     version = "0.12.1",
     # buildifier: leave-alone
     deps = [
-    ] + selects.with_or({
-        # cfg(target_os = "windows")
-        (
-            "@rules_rust//rust/platform:i686-pc-windows-msvc",
-            "@rules_rust//rust/platform:x86_64-pc-windows-msvc",
-        ): [
-            "@raze__winapi__0_3_9//:winapi",
-        ],
-        "//conditions:default": [],
-    }),
+    ],
 )

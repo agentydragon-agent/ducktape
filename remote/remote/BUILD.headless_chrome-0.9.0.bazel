@@ -40,8 +40,6 @@ licenses([
 rust_library(
     name = "headless_chrome",
     srcs = glob(["**/*.rs"]),
-    aliases = {
-    },
     crate_features = [
         "default",
     ],
@@ -74,16 +72,7 @@ rust_library(
         "@raze__tempfile__3_3_0//:tempfile",
         "@raze__websocket__0_23_0//:websocket",
         "@raze__which__2_0_1//:which",
-    ] + selects.with_or({
-        # cfg(windows)
-        (
-            "@rules_rust//rust/platform:i686-pc-windows-msvc",
-            "@rules_rust//rust/platform:x86_64-pc-windows-msvc",
-        ): [
-            "@raze__winreg__0_6_2//:winreg",
-        ],
-        "//conditions:default": [],
-    }),
+    ],
 )
 
 # Unsupported target "coverage" with type "test" omitted

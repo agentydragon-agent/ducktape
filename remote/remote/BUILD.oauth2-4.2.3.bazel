@@ -48,8 +48,6 @@ licenses([
 rust_library(
     name = "oauth2",
     srcs = glob(["**/*.rs"]),
-    aliases = {
-    },
     crate_features = [
         "default",
         "reqwest",
@@ -80,14 +78,5 @@ rust_library(
         "@raze__sha2__0_10_2//:sha2",
         "@raze__thiserror__1_0_31//:thiserror",
         "@raze__url__2_2_2//:url",
-    ] + selects.with_or({
-        # cfg(target_arch = "wasm32")
-        (
-            "@rules_rust//rust/platform:wasm32-unknown-unknown",
-            "@rules_rust//rust/platform:wasm32-wasi",
-        ): [
-            "@raze__getrandom__0_2_7//:getrandom",
-        ],
-        "//conditions:default": [],
-    }),
+    ],
 )
