@@ -40,9 +40,8 @@ build_ci_image:
 # Tags and pushes CI image. Only runs on default branch.
 tag_latest:
   stage: deploy
-  only:
-    refs:
-    - $CI_DEFAULT_BRANCH
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
   interruptible: true
   image: docker:latest
 
