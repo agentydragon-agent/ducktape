@@ -37,12 +37,12 @@ build_ci_image:
     - docker build --cache-from $IMAGE:latest --tag $IMAGE:$CI_COMMIT_SHA ci
     - docker push $IMAGE:$CI_COMMIT_SHA
 
-# Tags and pushes CI image. Only runs on master.
+# Tags and pushes CI image. Only runs on default branch.
 tag_latest:
   stage: deploy
   only:
     refs:
-    - master
+    - $CI_DEFAULT_BRANCH
   interruptible: true
   image: docker:latest
 
