@@ -8,7 +8,7 @@
 # google-repos need to come before update - in case Google's keys changed.
 - include_tasks: tasks/google-repos.yaml
 
-- name: update everything
+- name: Update everything
   become: true
   ansible.builtin.apt:
     update_cache: true
@@ -17,37 +17,37 @@
 - include_tasks: tasks/anki.yaml
   tags:
     - anki
-- name: install zprint
+- name: Install zprint
   tags:
     - zprint
   block:
-    - name: create temp directory
+    - name: Create temp directory
       ansible.builtin.tempfile:
         state: directory
         suffix: zprint
       register: tmp_dir
       changed_when: false
 
-    - name: build up URL of zprint last release info
+    - name: Build up URL of zprint last release info
       ansible.builtin.set_fact:
         release_json_path: "{{ tmp_dir.path }}/latest-release.json"
       changed_when: false
 
-    - name: download latest release info
+    - name: Download latest release info
       ansible.builtin.get_url:
         url: https://api.github.com/repos/kkinnear/zprint/releases/latest
         dest: "{{ release_json_path }}"
         mode: 0644
       changed_when: false
 
-    - name: get latest release
+    - name: Get latest release
       ansible.builtin.shell: |
         cat {{ release_json_path }} | \
         jq --raw-output '.assets[] | select(.name | test("zprintl")) | .browser_download_url'
       register: latest_release_url
       changed_when: false
 
-    - name: download zprint
+    - name: Download zprint
       ansible.builtin.get_url:
         url: "{{ latest_release_url.stdout }}"
         dest: "{{ local_scripts_path }}/zprint"
@@ -64,7 +64,7 @@
     dest: "{{ scripts_path }}"
     version: master
 
-- name: set up Neovim
+- name: Set up Neovim
   tags: vim
   block:
     # sh -c 'curl -fLo "${XDG_DATA_HOME:-$HOME/.local/share}"/nvim/site/autoload/plug.vim --create-dirs \
@@ -78,7 +78,7 @@
       ansible.builtin.command: >
         nvim -E -c PlugInstall -c PlugUpdate -c qall
 
-- name: gnome-terminal
+- name: Gnome-terminal
   tags:
     - gnome-terminal
     - solarized
@@ -104,11 +104,11 @@
     name:
       - slack
 - include_tasks: tasks/dev-env.yaml
-- name: set sloppy focus (focus follows mouse)
+- name: Set sloppy focus (focus follows mouse)
   ansible.builtin.dconf:
     key: /org/gnome/desktop/wm/preferences/focus-mode
     value: "'sloppy'"
-- name: minimize - maximize - close buttons
+- name: Minimize - maximize - close buttons
   ansible.builtin.dconf:
     key: /org/gnome/desktop/wm/preferences/button-layout
     value: "':minimize,maximize,close'"
