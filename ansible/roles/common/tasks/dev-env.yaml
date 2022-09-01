@@ -1,4 +1,4 @@
-- name: create empty directory for local binaries
+- name: Create empty directory for local binaries
   ansible.builtin.file:
     path: "{{ local_scripts_path }}"
     state: directory
@@ -9,7 +9,7 @@
     url: https://github.com/google/google-java-format/releases/download/google-java-format-1.9/google-java-format-1.9-all-deps.jar
     dest: "{{ local_scripts_path }}/google-java-format.jar"
     mode: 0755
-- name: install dev env
+- name: Install dev env
   become: true
   ansible.builtin.apt:
     pkg:

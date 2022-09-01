@@ -1,4 +1,4 @@
-- name: install packages
+- name: Install packages
   become: true
   ansible.builtin.apt:
     pkg:
@@ -32,7 +32,7 @@
       - wget
       - xclip
       - zsh
-- name: install amd64-specific packages
+- name: Install amd64-specific packages
   when: ansible_architecture == "amd64"
   become: true
   ansible.builtin.apt:

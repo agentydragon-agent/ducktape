@@ -3,18 +3,18 @@
   tags:
     - dotfiles
   block:
-    # - name: create empty directory for dotfiles repo
+    # - name: Create empty directory for dotfiles repo
     #   file:
     #     path: "{{ ducktape_path }}"
     #     state: directory
     #     recurse: yes
     #     mode: '0755'
-    - name: clone ducktape
+    - name: Clone ducktape
       ansible.builtin.git:
         repo: git@gitlab.com:agentydragon/ducktape
         dest: "{{ ducktape_path }}"
         version: master
     # TODO: problem: this is interactive if the files already exist.
-    - name: install ducktape dotfiles
+    - name: Install ducktape dotfiles
       ansible.builtin.command: >
         rcup -B {{ rcup_computer }} -x vim -x README.md -d {{ ducktape_path }}/dotfiles

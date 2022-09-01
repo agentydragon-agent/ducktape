@@ -49,7 +49,7 @@
 
   tasks:
     # Cannot be done for cloudragon because of OS Login. ugh.
-    - name: set zsh as login shell
+    - name: Set zsh as login shell
       become: true
       tags:
         - zsh
@@ -64,7 +64,7 @@
         # TODO(agentydragon): shallow clone
         repo: https://github.com/robbyrussell/oh-my-zsh
         dest: "/home/{{ my_user }}/.oh-my-zsh"
-    - name: install packages for laptop
+    - name: Install packages for laptop
       become: true
       ansible.builtin.apt:
         pkg:
@@ -100,13 +100,13 @@
           # For getting background color for Vim background color auto-switch.
           - xtermcontrol
 
-    - name: install pop os specific packages for laptop
+    - name: Install pop os specific packages for laptop
       become: true
       ansible.builtin.apt:
         pkg:
           - system76-cuda-latest
 
-    - name: timekpr
+    - name: Timekpr
       tags:
         - timekpr
       block:
@@ -142,32 +142,32 @@
         user_systemd_services_dir: "{{ home_path }}/.config/systemd/user"
         google_drive_mount_dir: "{{ home_path }}/.google-drive"
       block:
-        - name: create user systemd services folder
+        - name: Create user systemd services folder
           file:
             path: "{{ user_systemd_services_dir }}"
             state: directory
             recurse: true
-        - name: install google drive
+        - name: Install google drive
           template:
             src: google-drive.service.j2
             dest: "{{ user_systemd_services_dir }}/google-drive.service"
         # TODO: and maybe also add the binary to github? 3rdparty?
-        - name: enable google drive
+        - name: Enable google drive
           systemd:
             name: google-drive
             state: started
             enabled: true
             scope: user  # install as --user to depend on user session
-        - name: symlink to drive folder in home
+        - name: Symlink to drive folder in home
           file:
             src: "{{ google_drive_mount_dir }}/My Drive"
             dest: "{{ home_path }}/drive"
             state: link
-        - name: create Worthy config dir
+        - name: Create Worthy config dir
           file:
             path: "{{ home_path }}/.config/worthy"
             state: directory
-        - name: symlink Worthy config to Drive
+        - name: Symlink Worthy config to Drive
           file:
             src: "{{ home_path }}/drive/finance/worthy-config.yaml"
             dest: "{{ home_path }}/.config/worthy/config.yaml"
@@ -181,7 +181,7 @@
         name:
           - syncplay
 
-    - name: install Rescuetime
+    - name: Install Rescuetime
       tags:
         - rescuetime
       become: true
@@ -189,7 +189,7 @@
       ansible.builtin.apt:
         deb: https://www.rescuetime.com/installers/rescuetime_current_amd64.deb
 
-    - name: enable Gnome Night Light
+    - name: Enable Gnome Night Light
       tags:
         - nightlight
       block:
@@ -200,7 +200,7 @@
             key: /org/gnome/settings-daemon/plugins/color/night-light-temperature
             value: "uint32 2414"
     # TODO: broken as of 2022-05-29
-    # - name: install Buildifier
+    # - name: Install Buildifier
     #   tags:
     #     - buildifier
     #   block:
@@ -216,7 +216,7 @@
     #           shell: go get github.com/bazelbuild/buildtools/buildifier
     #         - name: install Buildifier
     #           shell: go install github.com/bazelbuild/buildtools/buildifier@latest
-    - name: update githooks
+    - name: Update githooks
       tags:
         - githooks
       # should only succeed if we don't need to update

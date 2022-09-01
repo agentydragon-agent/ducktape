@@ -14,23 +14,23 @@
   # - common
   tasks:
   # - include_tasks: tasks/chrome-remote-desktop.yaml
-    - name: install packages
+    - name: Install packages
       become: true
       ansible.builtin.apt:
         pkg:
           - python3-pip
           - iftop
           - nethogs
-    - name: update everything
+    - name: Update everything
       become: true
       ansible.builtin.apt:
         update_cache: true
         upgrade: dist
-    - name: install speedtest-cli
+    - name: Install speedtest-cli
       ansible.builtin.pip:
         executable: pip3
         name: speedtest-cli
-    - name: speedtest every 15 minutes
+    - name: Speedtest every 15 minutes
       ansible.builtin.cron:
         name: speedtestin
         hour: "*"
