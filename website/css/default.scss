@@ -66,7 +66,9 @@ $green:     #859900;
   }
 }
 
-html { @include rebase($base3,$base2,$base1,$base0,$base00,$base01,$base02,$base03)}
+html {
+  @include rebase($base3,$base2,$base1,$base0,$base00,$base01,$base02,$base03);
+}
 
 @media (prefers-color-scheme: dark) {
   html { @include rebase($base03,$base02,$base01,$base00,$base0,$base1,$base2,$base3)}
@@ -82,6 +84,11 @@ body {
   margin: 0 auto;
   padding: 0;
   max-width: 800px;
+
+  // Automatically hyphenate according to language-specific hyphenation rules
+  // if supported by browser. See:
+  // https://developer.mozilla.org/en-US/docs/Web/CSS/hyphens#suggesting_line_break_opportunities
+  hyphens: auto;
 }
 
 header {
@@ -176,4 +183,5 @@ a[href] {
 #articles article {
   margin-top: 10em;
   padding-top: 10em;
+  line-height: 1.6;
 }

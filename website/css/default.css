@@ -87,6 +87,7 @@ body {
   margin: 0 auto;
   padding: 0;
   max-width: 800px;
+  hyphens: auto;
 }
 
 header {
@@ -180,4 +181,5 @@ a[href] {
 #articles article {
   margin-top: 10em;
   padding-top: 10em;
+  line-height: 1.6;
 }
