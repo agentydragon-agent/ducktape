@@ -2,13 +2,20 @@ My homepage. Everything is CC BY-NC-SA 3.0.
 
 To build:
 
-    $ sass css/default.scss > css/default.css
-    $ stack build
-    $ stack exec site build
+```bash
+sass css/default.scss > css/default.css
+stack build
+stack exec site build
+```
 
 To push:
 
-    $ git subtree push --prefix _site origin master
+```bash
+# from repo root
+git subtree push \
+  --prefix website/_site \
+  git@github.com:agentydragon/agentydragon.github.io master
+```
 
 To convert a Jupyter notebook into Markdown:
 
@@ -23,15 +30,15 @@ See: https://pandoc.org/MANUAL.html#syntax-highlighting
 
 It uses [skylighting](https://github.com/jgm/skylighting) library under the hood.
 
-```
+```bash
 pandoc --list-highlighted-languages
 ```
 
-```
+```bash
 stack install --flag skylighting-core:executable skylighting-core
 ```
 
-```
+```bash
 skylighting --help
 ```
 
@@ -40,7 +47,7 @@ skylighting --help
 Might need:
 
 ```bash
-$ stack upgrade
+stack upgrade
 ```
 
 Maybe try to upgrade resolver in `stack.yaml`.
