@@ -48,7 +48,7 @@ environments](https://github.com/bulletphysics/bullet3/blob/master/examples/pybu
 ### Sidenote 2: Actually MuJoCo is now open-source
 
 So, later on the same day I wrote this post, turns out DeepMind bought MuJoCo
-and made it open-source and free (at https://mujoco.org/). Good stuff :)
+and made it open-source and free (at <https://mujoco.org/>). Good stuff :)
 
 ## TD3 description
 
