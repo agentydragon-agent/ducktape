@@ -122,7 +122,7 @@ ansible_lint:
   interruptible: true
   script:
     - ansible-galaxy install -r ansible/requirements.yaml
-    - ansible-lint --progressive | tee ansible-lint-output.txt
+    - ansible-lint --progressive ansible | tee ansible-lint-output.txt
   image:
     name: $CI_REGISTRY_IMAGE/cirunner:$CI_COMMIT_SHA
   artifacts:
