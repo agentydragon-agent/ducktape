@@ -69,12 +69,12 @@
   block:
     # sh -c 'curl -fLo "${XDG_DATA_HOME:-$HOME/.local/share}"/nvim/site/autoload/plug.vim --create-dirs \
     #  https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim'
-    - name: get Plug
+    - name: Get Plug
       ansible.builtin.get_url:
         url: https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim
         dest: "/home/{{ my_user }}/.local/share/nvim/site/autoload/plug.vim"
         mode: 0644
-    - name: install plugins
+    - name: Install plugins
       ansible.builtin.command: >
         nvim -E -c PlugInstall -c PlugUpdate -c qall
 
@@ -84,7 +84,7 @@
     - solarized
   block:
     - ansible.builtin.include_tasks: gnome-terminal-solarized.yaml
-    - name: hide gnome-terminal menu
+    - name: Hide gnome-terminal menu
       ansible.builtin.command: |
         gsettings set
           org.gnome.Terminal.Legacy.Settings default-show-menubar false

@@ -1,6 +1,6 @@
 ---
 # Needs to run before Docker, which tries to install gnupg2
-- name: update everything
+- name: Update everything
   become: true
   ansible.builtin.apt:
     update_cache: true

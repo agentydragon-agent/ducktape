@@ -1,4 +1,4 @@
-- name: add Bazel release key
+- name: Add Bazel release key
   tags:
   - bazel
   become: true
@@ -6,7 +6,7 @@
     # TODO: integrity check
     url: https://bazel.build/bazel-release.pub.gpg
     keyring: /etc/apt/trusted.gpg.d/bazel.gpg
-- name: add Google release key
+- name: Add Google release key
   become: true
   ansible.builtin.apt_key:
     # TODO: integrity check
@@ -18,7 +18,7 @@
     - bazel
 
   block:
-    - name: add Bazel repo
+    - name: Add Bazel repo
       become: true
       ansible.builtin.apt_repository:
         repo: "deb [arch=amd64] https://storage.googleapis.com/bazel-apt stable jdk1.8"
@@ -28,7 +28,7 @@
       ansible.builtin.apt:
         pkg:
           - bazel
-- name: add Google Chrome repo
+- name: Add Google Chrome repo
   become: true
   ansible.builtin.apt_repository:
     repo: "deb [arch=amd64] https://dl.google.com/linux/chrome/deb/ stable main"

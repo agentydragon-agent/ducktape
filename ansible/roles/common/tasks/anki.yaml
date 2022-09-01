@@ -5,7 +5,7 @@
   ansible.builtin.apt:
     pkg: anki
     state: absent
-- name: install Anki card dependencies
+- name: Install Anki card dependencies
   tags:
     - anki
   become: true
@@ -25,7 +25,7 @@
   tags:
     - anki
   block:
-    - name: check /usr/local/share/anki/anki presence
+    - name: Check /usr/local/share/anki/anki presence
       tags: anki
       ansible.builtin.stat:
         path: /usr/local/share/anki/anki
@@ -33,14 +33,14 @@
         checksum_algorithm: sha256
       register: installed_anki_stat
 
-    - name: create temp directory
+    - name: Create temp directory
       ansible.builtin.tempfile:
         state: directory
         suffix: anki-release
       register: tmp_dir
       changed_when: false
 
-    - name: download anki latest release info
+    - name: Download anki latest release info
       ansible.builtin.get_url:
         url: https://api.github.com/repos/ankitects/anki/releases/latest
         dest: "{{ tmp_dir.path }}/latest-release.json"
@@ -52,7 +52,7 @@
         tmp_path: "{{ tmp_dir.path }}"
       changed_when: false
 
-    - name: get latest Anki release version
+    - name: Get latest Anki release version
       ansible.builtin.shell: |
         jq --raw-output '.assets[] | select(.name | test("linux-qt6")) | .browser_download_url' {{ tmp_path }}/latest-release.json
       register: latest_release
@@ -66,13 +66,13 @@
     # - ansible.builtin.debug:
     #     var: latest_release_url
 
-    - name: get Anki dir from the path
+    - name: Get Anki dir from the path
       ansible.builtin.set_fact:
         # https://github.com/ankitects/anki/releases/download/2.1.37/anki-2.1.37-linux.tar.bz2 -> anki-2.1.37-linux
         anki_dirname: "{{ latest_release_url | regex_search('/(anki-[^/]*-linux-qt6).tar.zst$', '\\1') | first }}"
       changed_when: false
 
-    - name: download Anki
+    - name: Download Anki
       ansible.builtin.unarchive:
         remote_src: true
         src: "{{ latest_release_url }}"
@@ -84,7 +84,7 @@
         anki_dir: "{{ tmp_path }}/{{ anki_dirname }}"
       changed_when: false
 
-    - name: check new anki binary sha256
+    - name: Check new anki binary sha256
       tags: anki
       ansible.builtin.stat:
         path: "{{ anki_dir }}/anki"
@@ -92,7 +92,7 @@
         checksum_algorithm: sha256
       register: new_anki_stat
 
-    - name: make install
+    - name: Make install
       when: (not installed_anki_stat.stat.exists) or (new_anki_stat.stat.checksum != installed_anki_stat.stat.checksum)
       changed_when: true
       become: true
@@ -100,12 +100,12 @@
         cmd: ./install.sh
         chdir: "{{ anki_dir }}"
 
-    - name: stat /usr/local/bin/anki
+    - name: Stat /usr/local/bin/anki
       ansible.builtin.stat:
         path: /usr/local/bin/anki
       register: p
 
-    - name: check /usr/local/bin/anki now exists
+    - name: Check /usr/local/bin/anki now exists
       ansible.builtin.assert:
         that:
           - p.stat.exists

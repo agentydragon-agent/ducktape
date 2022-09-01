@@ -18,7 +18,7 @@
         name: blueman
         state: absent
     # TODO: make shared with agentydragon?
-    - name: install mini-format-pack
+    - name: Install mini-format-pack
       tags:
         - anki
         - anki-addon
