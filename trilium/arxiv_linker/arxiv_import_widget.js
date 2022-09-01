@@ -40,17 +40,9 @@ class ArxivWidget extends api.CollapsibleWidget {
       }
       try {
         this.$message.text('Adding paper...');
-        const {note, created} = await this.addPaper(paper);
-        this.$message.html(await api.createNoteLink(
-            note.noteId, {showTooltip: true, showNoteIcon: true}));
-        if (created) {
-          this.$message.prepend('Paper added as: ');
-        } else {
-          this.$message.prepend('Paper already exists as: ');
-        }
-        this.$input.val('');
+        await this.addPaper(paper);
       } catch (e) {
-        this.$message.text('Error: ' + e.message);
+        this.$message.text('Error: ' + e.message + ' ' + e.stack);
       }
     });
     return this.$body;
@@ -58,41 +50,105 @@ class ArxivWidget extends api.CollapsibleWidget {
 
   async addPaper(paper) {
     // parse the paper ID from the input
-    let paperId;
-    if (/^\d{4}\.\d{4,5}$/.test(paper)) {
-      paperId = paper;
-    } else {
-      const match = paper.match(
-          /arxiv\.org\/(?:abs|pdf)\/(\d{4}\.\d{4,5})(?:v\d+)?(?:\.pdf)?/);
-      if (match) {
-        paperId = match[1];
-      } else {
-        throw new Error('Invalid arXiv ID or URL.');
-      }
-    }
+    let paperId = this.parsePaperId(paper);
 
     // check if the paper already exists in Trilium
     const existingPaper = await this.findNoteByPaperId(paperId);
     if (existingPaper) {
-      return {note: existingPaper, created: false};
+      await this.showExistingPaperMessage(existingPaper);
+      return;
     }
 
     // fetch the paper metadata from arXiv
     const meta = await this.getPaperMeta(paperId);
 
+    // search for notes with similar titles
+    const title = meta.title;
+    // TODO: maybe show links to all similar pages, not just one
+    // TODO: maybe search fuzzily, skipping individual words
+    const results = await api.searchForNotes(title);
+    if (results.length > 0) {
+      // show a message with a link to the note and a confirmation button
+      await this.showSimilarNotesMessage(title, results, paperId);
+      return;
+    }
+
     // create a new note for the paper on the backend
+    let newNote = await this.addNoteToBackend(title, paperId);
+    await this.showNewPaperMessage(newNote);
+  }
+
+  parsePaperId(paper) {
+    if (/^\d{4}\.\d{4,5}$/.test(paper)) {
+      return paper;
+    } else {
+      const match = paper.match(
+          /arxiv\.org\/(?:abs|pdf)\/(\d{4}\.\d{4,5})(?:v\d+)?(?:\.pdf)?/);
+      if (match) {
+        return match[1];
+      } else {
+        throw new Error('Invalid arXiv ID or URL.');
+      }
+    }
+  }
+
+  async showExistingPaperMessage(existingPaper) {
+    this.$message.text('Paper already exists as: ');
+    const noteLink = await api.createNoteLink(
+        existingPaper.noteId, {showTooltip: true, showNoteIcon: true});
+    this.$message.append(noteLink);
+  }
+
+  async showSimilarNotesMessage(title, results, paperId) {
+    this.$message.text(
+        results.length + ' notes with similar title found, first one is: ');
+    this.$message.append(await api.createNoteLink(
+        results[0].noteId, {showTooltip: true, showNoteIcon: true}));
+    this.$message.append(
+        '<button id="arxiv-add-to-existing">Link existing page to ArXiv</button>');
+    this.$body.find('#arxiv-add-to-existing').on('click', async () => {
+      // add the paper ID attribute to the existing note
+      await api.runOnBackend(function(noteId, paperId) {
+        const note = api.getNote(noteId);
+        note.addLabel('arxivId', paperId);
+      }, [results[0].noteId, paperId]);
+      this.$message.html(await api.createNoteLink(
+          results[0].noteId, {showTooltip: true, showNoteIcon: true}));
+      this.$message.prepend('Paper ID added to: ');
+      this.$input.val('');
+    });
+    this.$message.append(
+        '<br>Confirm to create a new note anyway: ' +
+        '<button id="arxiv-confirm">Confirm</button>');
+    this.$body.find('#arxiv-confirm').on('click', async () => {
+      // create the note as usual
+      let newNote = await this.addNoteToBackend(title, paperId);
+      this.showNewPaperMessage(newNote);
+    });
+  }
+
+  async showNewPaperMessage(newNote) {
+    this.$message.text('Paper added as: ');
+    this.$message.append(await api.createNoteLink(
+        newNote.noteId, {showTooltip: true, showNoteIcon: true}));
+  }
+
+  async addNoteToBackend(title, paperId) {
     const papersRoot = await this.getPapersRootNoteId();
-    return await api.runOnBackend(
-        function(papersRootNoteId, title, paperId, paperTemplateNoteId) {
+    // Will run on backend
+    const backendFn =
+        (papersRootNoteId, title, paperId, paperTemplateNoteId) => {
           const newNote = api.createTextNote(
                                  papersRootNoteId, title,
                                  'auto-created for paper ID ' + paperId)
                               .note;
-          newNote.addAttribute('relation', 'template', paperTemplateNoteId);
-          newNote.addAttribute('label', 'arxivId', paperId);
-          return {note: newNote, created: true};
-        },
-        [papersRoot.noteId, meta.title, paperId, PAPER_TEMPLATE_NOTE_ID]);
+          newNote.addRelation('template', paperTemplateNoteId);
+          newNote.addLabel('arxivId', paperId);
+          return newNote;
+        };
+    const newNote = await api.runOnBackend(
+        backendFn, [papersRoot.noteId, title, paperId, PAPER_TEMPLATE_NOTE_ID]);
+    return newNote;
   }
 
   async findNoteByPaperId(paperId) {
