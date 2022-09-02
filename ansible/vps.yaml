@@ -27,7 +27,7 @@
     user:
       name: agentydragon
       createhome: yes
-    # TODO: ssh-copy-id
+      # NOTE: still need to ssh-copy-id over to the user manually.
 
   - name: Let's Encrypt installation
     ansible.builtin.include_role:
@@ -37,7 +37,7 @@
       letsencrypt_opts_extra: "--register-unsafely-without-email"
       letsencrypt: true
 
-  # TODO: maybe use with-items?
+  # TODO: maybe use with_items for those let's encrypt certs?
   - name: Let's Encrypt certificate for trilium.agentydragon.com
     ansible.builtin.include_role:
       name: systemli.letsencrypt
