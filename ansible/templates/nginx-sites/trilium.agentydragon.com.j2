@@ -6,14 +6,10 @@ server {
     ssl_certificate_key /etc/letsencrypt/live/trilium.agentydragon.com/privkey.pem;
 
     location / {
-	# TODO: Trilium port
+        # TODO: Trilium internal port is still exposed. hopefully that's OK
+        # cause it's still over HTTPS.
         proxy_pass https://localhost:{{ trilium_ssl_port }};
         proxy_http_version 1.1;
-
-        #proxy_set_header Upgrade $http_upgrade;
-        #proxy_set_header Connection 'upgrade';
-        #proxy_set_header Host $host;
-        #proxy_cache_bypass $http_upgrade;
 
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -21,7 +17,8 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
 
         proxy_ssl_session_reuse off;
-        #proxy_ssl_protocols TLSv1.2;
+        # As of 2022-09-01, seems like TLSv1.2 is the latest SSL protocol.
+        proxy_ssl_protocols TLSv1.2;
         proxy_ssl_ciphers HIGH:!aNULL:!MD5;
     }
 }
