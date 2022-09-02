@@ -17,9 +17,13 @@ git subtree push \
   git@github.com:agentydragon/agentydragon.github.io master
 ```
 
+```bash
+rsync -av --progress _site/ vps.agentydragon.com:/var/www/agentydragon.com
+```
+
 To convert a Jupyter notebook into Markdown:
 
-```
+```bash
 sudo apt install jupyter-nbconvert
 jupyter-nbconvert --to markdown --template basic <...>.ipynb
 ```
