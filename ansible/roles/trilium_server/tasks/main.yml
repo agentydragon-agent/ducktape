@@ -47,14 +47,6 @@
   ansible.builtin.pip:
     name: docker
 
-- name: Let's Encrypt installation
-  ansible.builtin.include_role:
-    name: systemli.letsencrypt
-  vars:
-    # TODO: maybe remove this?
-    letsencrypt_opts_extra: "--register-unsafely-without-email"
-    letsencrypt: true
-
 # After every certificate renewal, copy over the certificate data into Trilium's
 # data directory.
 # TODO: according to:
@@ -75,22 +67,6 @@
       chmod -R 700 /srv/trilium-data/cert
       chown -R trilium:trilium /srv/trilium-data/cert
       # TODO: do I maybe also need to restart the Trilium container?
-
-- name: Let's Encrypt certificate
-  ansible.builtin.include_role:
-    name: systemli.letsencrypt
-  vars:
-    letsencrypt_opts_extra: "--register-unsafely-without-email"
-    letsencrypt_cert:
-      name: "{{ trilium_host }}"
-      domains:
-        - "{{ trilium_host }}"
-      challenge: http
-      http_auth: standalone
-      users:
-        - trilium
-  tags:
-    - letsencrypt
 
 # certbot renew --force-renewal
 # certbot renew -q   <- quiet
