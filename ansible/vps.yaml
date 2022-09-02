@@ -70,10 +70,19 @@
     tags:
       - letsencrypt
 
-  - name: Create nginx configuration files and enable with symlinks links
+  - name: Create nginx configuration files
     template:
       src: templates/nginx-sites/{{ item }}.j2
       dest: /etc/nginx/sites-available/{{ item }}
+    with_items:
+      - agentydragon.com
+      - trilium.agentydragon.com
+    tags:
+      - nginx
+    notify:
+      - Reload nginx
+
+  - name: Enable nginx websites
     file:
       state: link
       src: /etc/nginx/sites-available/{{ item }}
