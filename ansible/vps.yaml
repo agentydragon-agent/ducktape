@@ -1,8 +1,98 @@
 ---
 - hosts: linode
   remote_user: root
+
+  vars:
+    - trilium_ssl_port: 3000
+
   roles:
     - role: trilium_server
       vars:
-        trilium_ssl_port: 443
         trilium_host: trilium.agentydragon.com
+        # also uses trilium_ssl_port
+
+  tasks:
+  - name: Update apt cache
+    apt:
+      update_cache: yes
+
+  - name: Install nginx
+    apt:
+      name: nginx
+      state: latest
+    tags:
+      - nginx
+
+  - name: Create user
+    user:
+      name: agentydragon
+      createhome: yes
+    # TODO: ssh-copy-id
+
+  - name: Let's Encrypt installation
+    ansible.builtin.include_role:
+      name: systemli.letsencrypt
+    vars:
+      # TODO: maybe remove this?
+      letsencrypt_opts_extra: "--register-unsafely-without-email"
+      letsencrypt: true
+
+  # TODO: maybe use with-items?
+  - name: Let's Encrypt certificate for trilium.agentydragon.com
+    ansible.builtin.include_role:
+      name: systemli.letsencrypt
+    vars:
+      letsencrypt_opts_extra: "--register-unsafely-without-email"
+      letsencrypt_cert:
+        # TODO: move into a var
+        name: "trilium.agentydragon.com"
+        domains:
+          - "trilium.agentydragon.com"
+        challenge: http
+        http_auth: standalone
+    tags:
+      - letsencrypt
+
+  - name: Let's Encrypt certificate for (www.)?agentydragon.com
+    ansible.builtin.include_role:
+      name: systemli.letsencrypt
+    vars:
+      letsencrypt_opts_extra: "--register-unsafely-without-email"
+      letsencrypt_cert:
+        name: "agentydragon.com"
+        domains:
+          - agentydragon.com
+          - www.agentydragon.com
+        challenge: http
+        http_auth: standalone
+        users:
+          - trilium
+    tags:
+      - letsencrypt
+
+  - name: Create nginx configuration files and enable with symlinks links
+    template:
+      src: templates/nginx-sites/{{ item }}.j2
+      dest: /etc/nginx/sites-available/{{ item }}
+    file:
+      state: link
+      src: /etc/nginx/sites-available/{{ item }}
+      dest: /etc/nginx/sites-enabled/{{ item }}
+    with_items:
+      - agentydragon.com
+      - trilium.agentydragon.com
+    tags:
+      - nginx
+    notify:
+      - Reload nginx
+
+  handlers:
+  # Only triggers if nginx config files changed.
+  - name: Reload nginx
+    systemd:
+      state: reloaded
+      daemon_reload: yes
+      name: nginx
+      enabled: yes
+    tags:
+      - nginx
