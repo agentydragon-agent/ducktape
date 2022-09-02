@@ -1,5 +1,11 @@
 My homepage. Everything is CC BY-NC-SA 3.0.
 
+It's hosted on my VPS. (Used to be on GitHub pages until ~2022-09-01.)
+
+TODO: There is still a CI job building the site for GitLab pages. Maybe
+sometime I'll figure out how to set up GitLab to deploy the website to
+my webserver...
+
 To build:
 
 ```bash
@@ -11,15 +17,12 @@ stack exec site build
 To push:
 
 ```bash
-# from repo root
-git subtree push \
-  --prefix website/_site \
-  git@github.com:agentydragon/agentydragon.github.io master
+rsync -av --progress _site/ vps.agentydragon.com:/var/www/agentydragon.com
 ```
 
 To convert a Jupyter notebook into Markdown:
 
-```
+```bash
 sudo apt install jupyter-nbconvert
 jupyter-nbconvert --to markdown --template basic <...>.ipynb
 ```
