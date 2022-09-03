@@ -3,8 +3,8 @@ title: Making Neovim's color scheme follow system light/dark preference on GNOME
 ---
 
 GNOME has a feature where there's a system-level setting for whether user
-prefers light or dark theme. This got added relatively recently (in the last
-~year or so). Its intended use is so that apps can automatically adjust to match
+prefers light or dark theme. This got added relatively recently (in [GNOME
+42][gnome-42]). Its intended use is so that apps can automatically adjust to match
 the user's preferences without hacks. Hacks like "read the current GTK theme
 and try to figure out whether it's light or dark based on some heuristic".
 
@@ -71,9 +71,10 @@ endfunction
 UpdateThemeFromGnome()
 ```
 
-### `update_nvim_theme_from_gnome.py`
+### `update_nvim_theme_from_gnome`
 
-Create this script somewhere. I named it `update_nvim_theme_from_gnome.py`.
+Create this script somewhere and `chmod +x` it.
+I named it `update_nvim_theme_from_gnome`.
 It'll use `pynvim` to connect to running Neovim instances and run the function
 we made above to update the background.
 
@@ -105,6 +106,8 @@ and burn if there were Neovim running as any user other than you. Cause it would
 probably not let you write into that socket.
 
 ## `gnome-terminal`
+
+TODO: add d-feet screenshot
 
 I have another script for `gnome-terminal` doing something similar.
 
@@ -246,3 +249,4 @@ Cheers, have a nice long weekend if you're in the US.
 [ducktape]: https://gitlab.com/agentydragon/ducktape
 [copilot]: https://github.com/features/copilot/
 [openai]: https://openai.com/
+[gnome-42]: https://release.gnome.org/42/
