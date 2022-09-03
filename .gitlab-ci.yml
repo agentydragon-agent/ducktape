@@ -91,6 +91,10 @@ build_and_test:
   stage: test
   needs:
     - job: build_ci_image
+  cache:
+    key: bazel_cache
+    paths:
+      - .cache/
   interruptible: true
   image:
     # See src/ci/README.md
@@ -98,6 +102,7 @@ build_and_test:
     # Disabled due to BulkTransferException related to Unicode file name
     # in libminizinc tests.
   before_script:
+    - echo "build --disk_cache=$CI_PROJECT_DIR/.cache" >> .bazelrc
     - |
         if [ ! -z "${BAZEL_GOOGLE_CREDENTIALS}" ]; then
           echo "build --remote_cache=${BAZEL_REMOTE_CACHE} --google_credentials=${BAZEL_GOOGLE_CREDENTIALS}" >> .bazelrc ;
@@ -134,62 +139,65 @@ ansible_lint:
     paths:
       - ansible-lint-output.txt
 
-# Hakyll setup based on:
-#   * https://sakshamsharma.com/2018/03/docker-hakyll-builds/
-#   * https://gitlab.com/pages/hakyll/-/blob/master/.gitlab-ci.yml
-#   * https://docs.gitlab.com/ee/user/project/pages/getting_started/pages_from_scratch.html
-#
-# Hakyll build and executing the actual website is separated so that the first
-# step will be cached even if the website build step fails.
-hakyll_build:
-  image:
-    name: $CI_REGISTRY_IMAGE/cirunner:$CI_COMMIT_SHA
-  needs:
-    - job: build_ci_image
-
-  interruptible: true
-  script:
-    - cd website
-    - stack --no-nix build
-  cache:
-    key: website-build-cache
-    paths:
-      - .stack-root
-      - website/.stack-work
-      - website/_cache
-    # Cache intermediate artifacts even if the build fails to speed up
-    # follow-up CI runs.
-    when: always
-  variables:
-    # maximum runtime: 10 hours
-    # (as of 2022-08-31, 1 hour doesn't seem to be enough for a fresh build)
-    CI_JOB_MANUAL_ALLOWED_RUNTIME: 600
-
-# Runs the built site executable to actually build the website.
-pages:
-  image:
-    name: $CI_REGISTRY_IMAGE/cirunner:$CI_COMMIT_SHA
-  needs:
-    - job: hakyll_build
-
-  interruptible: true
-  script:
-    - cd website
-    - stack exec site build --no-nix
-    - cd ..
-    - mv website/_site public
-  artifacts:
-    paths:
-      - public
-  cache:
-    key: website-build-cache
-    paths:
-      - .stack-root
-      - website/.stack-work
-      - website/_cache
-    # Cache intermediate artifacts even if the build fails to speed up
-    # follow-up CI runs.
-    when: always
+### Hakyll setup based on:
+###   * https://sakshamsharma.com/2018/03/docker-hakyll-builds/
+###   * https://gitlab.com/pages/hakyll/-/blob/master/.gitlab-ci.yml
+###   * https://docs.gitlab.com/ee/user/project/pages/getting_started/pages_from_scratch.html
+###
+### Hakyll build and executing the actual website is separated so that the first
+### step will be cached even if the website build step fails.
+##hakyll_build:
+##  image:
+##    name: $CI_REGISTRY_IMAGE/cirunner:$CI_COMMIT_SHA
+##  needs:
+##    - job: build_ci_image
+##
+##  interruptible: true
+##  script:
+##    - cd website
+##    - stack --no-nix build
+##  cache:
+##    - paths:
+##        - .stack-root
+##        - website/.stack-work
+##      # Cache intermediate artifacts even if the build fails to speed up
+##      # follow-up CI runs.
+##      when: always
+##  variables:
+##    # maximum runtime: 10 hours
+##    # (as of 2022-08-31, 1 hour doesn't seem to be enough for a fresh build)
+##    CI_JOB_MANUAL_ALLOWED_RUNTIME: 600
+##
+### Runs the built site executable to actually build the website.
+##pages:
+##  image:
+##    name: $CI_REGISTRY_IMAGE/cirunner:$CI_COMMIT_SHA
+##  needs:
+##    - job: hakyll_build
+##
+##  interruptible: true
+##  script:
+##    - cd website
+##    - stack exec site build --no-nix
+##    - cd ..
+##    - mv website/_site public
+##  artifacts:
+##    paths:
+##      - public
+##  cache:
+##    - paths:
+##        - .stack-root
+##        - website/.stack-work
+##      # Cache intermediate artifacts even if the build fails to speed up
+##      # follow-up CI runs.
+##      when: always
+##    - paths:
+##        - .stack-root
+##        - website/.stack-work
+##        - website/_cache
+##      # Cache intermediate artifacts even if the build fails to speed up
+##      # follow-up CI runs.
+##      when: always
 
 # Scan for secrets
 include:
