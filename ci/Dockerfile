@@ -18,7 +18,7 @@ RUN apt update && \
     python3-pip \
     pkg-config \
     libssl-dev \
-    haskell-stack \
+    libtinfo5 \
     && \
   apt clean && \
   apt autoremove -y
