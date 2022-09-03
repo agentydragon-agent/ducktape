@@ -77,9 +77,36 @@ load(
     "stack_snapshot",
 )
 
+# xml-conduit fix pulled from:
+# https://github.com/digital-asset/daml/blob/db4de4e8c54e5ca5c482ecc0f855e14d4e89f6b2/bazel-haskell-deps.bzl
+XML_CONDUIT_VERSION = "1.9.1.1"
+
+http_archive(
+    name = "xml-conduit",
+    build_file_content = """
+load("@rules_haskell//haskell:cabal.bzl", "haskell_cabal_library")
+load("@stackage//:packages.bzl", "packages")
+haskell_cabal_library(
+    name = "xml-conduit",
+    version = packages["xml-conduit"].version,
+    srcs = glob(["**"]),
+    haddock = False,
+    deps = packages["xml-conduit"].deps,
+    # For some reason we need to manually add the setup dep here.
+    setup_deps = ["@stackage//:cabal-doctest"],
+    verbose = False,
+    visibility = ["//visibility:public"],
+)
+""",
+    sha256 = "bdb117606c0b56ca735564465b14b50f77f84c9e52e31d966ac8d4556d3ff0ff",
+    strip_prefix = "xml-conduit-{}".format(XML_CONDUIT_VERSION),
+    urls = ["http://hackage.haskell.org/package/xml-conduit-{version}/xml-conduit-{version}.tar.gz".format(version = XML_CONDUIT_VERSION)],
+)
+
 stack_snapshot(
     name = "stackage",
-    # For some reason required to make attoparsec work.
+    # For some reason required to make attoparsec work. Fix pulled from:
+    # https://github.com/digital-asset/daml/blob/db4de4e8c54e5ca5c482ecc0f855e14d4e89f6b2/bazel-haskell-deps.bzl
     components = {
         "attoparsec": [
             "lib:attoparsec",
@@ -94,4 +121,7 @@ stack_snapshot(
         "hakyll",
     ],
     snapshot = "lts-19.17",
+    vendored_packages = {
+        "xml-conduit": "@xml-conduit//:xml-conduit",
+    },
 )
