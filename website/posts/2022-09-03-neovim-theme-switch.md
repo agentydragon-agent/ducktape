@@ -252,8 +252,8 @@ if __name__ == '__main__':
 ```
 
 This script expects a profile name or UUID in `--profile`, and when called,
-it'll update GNOME Terminal's `dconf` setting to have that profile be
-the default. That will make any new terminal windows/tabs use that profile.
+it'll update GNOME Terminal's settings to have that profile be the default.
+That will make any new terminal windows/tabs use that profile.
 
 Then it'll talk to GNOME Terminal over [dbus][dbus] and update the profile
 of each window. Unfortunately, this only updates the theme on windows that
