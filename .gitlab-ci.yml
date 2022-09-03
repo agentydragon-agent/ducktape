@@ -24,6 +24,7 @@ variables:
 
 stages:
   - build_ci_image
+  - build
   - test
   - deploy
 
@@ -86,9 +87,8 @@ tag_latest_master:
     - docker tag $IMAGE:$CI_COMMIT_SHA $IMAGE:latest
     - docker push $IMAGE:latest
 
-# TODO(agentydragon): should run after build_tag_push_ci_image on master.
-build_and_test:
-  stage: test
+build:
+  stage: build
   needs:
     - job: build_ci_image
   cache:
@@ -99,8 +99,6 @@ build_and_test:
   image:
     # See src/ci/README.md
     name: $CI_REGISTRY_IMAGE/cirunner:$CI_COMMIT_SHA
-    # Disabled due to BulkTransferException related to Unicode file name
-    # in libminizinc tests.
   before_script:
     - echo "build --disk_cache=$CI_PROJECT_DIR/.cache" >> .bazelrc
     - |
@@ -111,6 +109,57 @@ build_and_test:
     - bazel version
     - python --version
     - bazel build ...
+
+  after_script:
+    - mkdir binaries
+    - cp bazel-bin/website/site binaries
+  artifacts:
+    paths:
+      - binaries/site
+
+#test:
+#  script: ["echo 'test' > file.txt"]
+#  artifacts:
+#    expose_as: 'artifact 1'
+#    paths: ['file.txt']
+pages:
+  image:
+    name: $CI_REGISTRY_IMAGE/cirunner:$CI_COMMIT_SHA
+  needs:
+    - job: build
+  dependencies: # TODO: is this needed if we already have a 'needs'?
+    - build
+  interruptible: true
+  script:
+    - cd website
+    - ../binaries/site build
+    - cd ..
+    - mv website/_site public
+  artifacts:
+    paths:
+      - public
+  cache:
+    - paths:
+        - website/_cache
+
+      # TODO
+
+# TODO(agentydragon): should run after build_tag_push_ci_image on master.
+test:
+  stage: test
+  needs:
+    - job: build
+  cache:
+    key: bazel_cache
+    paths:
+      - .cache/
+  interruptible: true
+  image:
+    # See src/ci/README.md
+    name: $CI_REGISTRY_IMAGE/cirunner:$CI_COMMIT_SHA
+  before_script:
+    - echo "build --disk_cache=$CI_PROJECT_DIR/.cache" >> .bazelrc
+  script:
     - bazel test ...
 
   after_script:
