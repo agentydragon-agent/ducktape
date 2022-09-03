@@ -116,12 +116,12 @@ care because I rarely run Neovim as `root`, but I expect this would crash
 and burn if there were Neovim running as any user other than you. Cause it would
 probably not let you write into that socket.
 
-## `gnome-terminal`
+## GNOME Terminal
 
-I have another script for `gnome-terminal` doing something similar.
+I have another script for GNOME Terminal doing something similar.
 
-It assumes that you have a light and dark profile set up in `gnome-terminal`.
-Open Preferences and note down the names of the profiles you wanna use in
+It assumes that you have a light and dark profile set up. Open GNOME Terminal
+preferences and note down the names of the profiles you wanna use in
 light/dark configurations
 
 ### `switch_gnome_terminal_profile`
@@ -194,7 +194,7 @@ def dbus_update_profile_on_all_windows(uuid: str) -> None:
     def _get_window_profile_uuid(window_actions_iface):
         # gnome-terminal source code pointer:
         # https://gitlab.gnome.org/GNOME/gnome-terminal/-/blob/f85f2a381e5ba9904d00236e46fc72ae31253ff0/src/terminal-window.cc#L402
-        # d-feet (https://wiki.gnome.org/action/show/Apps/DFeet) is useful for
+        # D-Feet (https://wiki.gnome.org/action/show/Apps/DFeet) is useful for
         # manual poking.
         description = window_actions_iface.Describe('profile')
         profile_uuid = description[2][0]
@@ -252,10 +252,10 @@ if __name__ == '__main__':
 ```
 
 This script expects a profile name or UUID in `--profile`, and when called,
-it'll update `gnome-terminal`'s `dconf` setting to have that profile be
+it'll update GNOME Terminal's `dconf` setting to have that profile be
 the default. That will make any new terminal windows/tabs use that profile.
 
-Then it'll talk to `gnome-terminal` over [dbus][dbus] and update the profile
+Then it'll talk to GNOME Terminal over [dbus][dbus] and update the profile
 of each window. Unfortunately, this only updates the theme on windows that
 are currently active - i.e., not on background tabs. I've not yet figured out
 how to fix this - I've looked into [`gnome-terminal`'s source
@@ -263,10 +263,10 @@ code][gnome-terminal-source] when I originally wrote the script, and I even
 faintly remember reporting this as an issue. Basically that the dbus interface
 should be a bit extended. If you know how to fix this, let me know.
 
-Figuring this out took a while. [d-feet][d-feet] has been useful for it.
+Figuring this out took a while. [D-Feet][d-feet] has been useful for it.
 
 <figure>
-  <img src="/static/2022-09-02-d-feet.png" alt="Screenshot of using d-feet to poke gnome-terminal" style="max-width: 100%">
+  <img src="/static/2022-09-02-d-feet.png" alt="Screenshot of using D-Feet to poke GNOME Terminal" style="max-width: 100%">
 </figure>
 
 Generally, it's very questionable and broke for me at least once (because of
