@@ -1,8 +1,12 @@
 " Set color theme to light/dark based on current system preferences.
 " Done early to prefer flashing of the wrong theme before this runs.
 " Will later be picked up when setting up Solarized colors.
-" TODO: this should also work if gsettings isn't on the system
-if executable('gsettings')
+" Called on theme switches by set_light_theme, set_dark_theme scripts.
+function! UpdateThemeFromGnome()
+  if !executable('gsettings')
+    return
+  endif
+
   let color_scheme = system('gsettings get org.gnome.desktop.interface color-scheme')
   " remove newline character from color_scheme
   let color_scheme = substitute(color_scheme, "\n", "", "")
@@ -12,8 +16,9 @@ if executable('gsettings')
   else
     set background=dark
   endif
-endif
+endfunction
 
+call UpdateThemeFromGnome()
 
 " filetypes
 filetype plugin on
