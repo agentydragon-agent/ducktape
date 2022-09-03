@@ -251,6 +251,3 @@ let g:copilot_filetypes = {
 \ 'yaml': v:true,
 \ 'markdown': v:true,
 \ }
-
-
-
