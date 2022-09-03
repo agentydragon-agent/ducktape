@@ -14,8 +14,8 @@ I've made [Neovim][neovim] also do that. To celebrate, I wanted to share how
 this works.
 
 <figure>
-<video controls loop autoplay>
-<source src="/static/2020-12-31-cartpole.mp4" type="video/mp4">
+<video controls loop autoplay style="max-width: 100%">
+<source src="/static/2022-09-02-themes.mp4" type="video/mp4">
 </video>
 <figcaption>GNOME Terminal and Neovim both following system theme</figcaption>
 </figure>
@@ -70,15 +70,18 @@ function! UpdateThemeFromGnome()
   let color_scheme = system('gsettings get org.gnome.desktop.interface color-scheme')
   " remove newline character from color_scheme
   let color_scheme = substitute(color_scheme, "\n", "", "")
+  " Remove quote marks
+  let color_scheme = substitute(color_scheme, "'", "", "g")
 
-  if color_scheme == 'prefers-light'
-    set background=light
-  else
+  if color_scheme == 'prefer-dark'
     set background=dark
+  else
+    " With disabled night mode, value seems to be to 'default' on my system.
+    set background=light
   endif
 endfunction
 
-UpdateThemeFromGnome()
+call UpdateThemeFromGnome()
 ```
 
 ### `update_nvim_theme_from_gnome`
@@ -114,8 +117,6 @@ and burn if there were Neovim running as any user other than you. Cause it would
 probably not let you write into that socket.
 
 ## `gnome-terminal`
-
-TODO: add d-feet screenshot
 
 I have another script for `gnome-terminal` doing something similar.
 
@@ -262,11 +263,18 @@ code][gnome-terminal-source] when I originally wrote the script, and I even
 faintly remember reporting this as an issue. Basically that the dbus interface
 should be a bit extended. If you know how to fix this, let me know.
 
+Figuring this out took a while. [d-feet][d-feet] has been useful for it.
+
+<figure>
+  <img src="/static/2022-09-02-d-feet.png" alt="Screenshot of using d-feet to poke gnome-terminal" style="max-width: 100%">
+</figure>
+
 Generally, it's very questionable and broke for me at least once (because of
 something having to do with which particular knobs are in `gconf` vs `dconf`
-vs `gsettings`). Caveat emptor.
+vs `gsettings`). Works for me on gnome-terminal 3.44.0. Caveat emptor.
 
-TODO: add link to current version
+As with the other scripts in here, it's currently [in my ducktape
+repo][ducktape-switch] and if I update it later, it'll be reflected there.
 
 ## Putting it together
 
@@ -298,6 +306,7 @@ Still, over time, I've made it a project to make the duct tape holding together
 my computer have a better CI setup than many commercial software projects :P
 
 <figure>
+  <!-- TODO: technically a <video>. oh well. -->
   <img src="/static/im-not-proud-of-it.gif" alt="I'm not proud of it. I am a bit." />
 </figure>
 
@@ -317,8 +326,10 @@ Cheers, have a nice long weekend if you're in the US.
 [solarized]: https://ethanschoonover.com/solarized/
 [dbus]: https://dbus.freedesktop.org/doc/dbus-python/tutorial.html
 [gnome-terminal-source]: https://gitlab.gnome.org/GNOME/gnome-terminal/-/tree/master
-[ducktape]: https://gitlab.com/agentydragon/ducktape
 [copilot]: https://github.com/features/copilot/
 [openai]: https://openai.com/
 [gnome-42]: https://release.gnome.org/42/
+[d-feet]: https://wiki.gnome.org/Apps/DFeet
+[ducktape]: https://gitlab.com/agentydragon/ducktape
 [ducktape-local-bin]: https://gitlab.com/agentydragon/ducktape/-/blob/master/ducktape/dotfiles/local/bin
+[ducktape-switch]: https://gitlab.com/agentydragon/ducktape/-/blob/master/ducktape/dotfiles/local/bin/switch_gnome_terminal_profile
