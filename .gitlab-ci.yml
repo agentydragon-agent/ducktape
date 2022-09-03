@@ -95,6 +95,8 @@ build:
     key: bazel_cache
     paths:
       - .cache/
+    # TODO: this should be cached *always*
+  when: always
   interruptible: true
   image:
     # See src/ci/README.md
@@ -112,10 +114,12 @@ build:
 
   after_script:
     - mkdir binaries
-    - cp bazel-bin/website/site binaries
+    # store site binary if the build was successful; after_script also runs
+    # on unsuccessful builds, so we shouldn't fail, so that caching still works
+    - test -e bazel-bin/website/site && cp bazel-bin/website/site binaries
   artifacts:
     paths:
-      - binaries/site
+      - binaries
 
 #test:
 #  script: ["echo 'test' > file.txt"]
