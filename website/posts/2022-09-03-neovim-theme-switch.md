@@ -13,6 +13,17 @@ I've had `gnome-terminal` sorta-following the setting for a while, and tonight
 I've made [Neovim][neovim] also do that. To celebrate, I wanted to share how
 this works.
 
+<figure>
+<video controls loop autoplay>
+<source src="/static/2020-12-31-cartpole.mp4" type="video/mp4">
+</video>
+<figcaption>GNOME Terminal and Neovim both following system theme</figcaption>
+</figure>
+
+All scripts copied here are in my [ducktape][ducktape] repo in
+[`dotfiles/local/bin`][ducktape-local-bin], where you can copy fork and improve
+to your heart's content.
+
 Those are the dependencies:
 
 ```bash
@@ -29,8 +40,7 @@ This extension lets you attach scripts to when the theme is changed.
 ### Light/dark scripts
 
 Create a pair of scripts, `set_light_theme` and `set_dark_theme`, put them
-wherever. Mine are currently in `~/bin` (with `PATH` set to point there), but
-it doesn't matter.
+wherever. Mine are currently in `~/.local/bin`.
 
 Point Night Theme Switcher to run those when the theme is changed.
 
@@ -87,8 +97,6 @@ import os
 
 from pynvim import attach
 
-background = "dark"
-
 # TODO: should probably only try to do this to *my* neovim instances
 for dir in glob.glob('/tmp/nvim*'):
     socket = os.path.join(dir, '0')
@@ -115,54 +123,64 @@ It assumes that you have a light and dark profile set up in `gnome-terminal`.
 Open Preferences and note down the names of the profiles you wanna use in
 light/dark configurations
 
-### `switch_gnome_terminal_profile.py`
+### `switch_gnome_terminal_profile`
 
-Let's call our script `switch_gnome_terminal_profile.py`:
+Let's call our script `switch_gnome_terminal_profile`:
 
 ```python
 #!/usr/bin/python
-# Requirements: absl-py
+# Works on gnome-terminal 3.44.0 as of 2022-09-03.
+# Requirements: absl-py, dbus-python
 
+from typing import List
 import json
 import re
 import subprocess
+import ast
 import dbus
 from xml.etree import ElementTree
-from absl import app, flags
+from absl import app, flags, logging
 
 _PROFILE = flags.DEFINE_string('profile', None,
-                               'Name of profile to set everywhere')
+                               'Name or UUID of profile to set everywhere')
 
 
-def main(_):
-    base_path = '/org/gnome/terminal/legacy/profiles:/'
-    out = subprocess.check_output(["dconf", "list", base_path]).decode('utf-8')
-    uuids = set()
-    uuid_by_name = {}
-    for line in out.splitlines():
-        if ':' not in line:
-            continue  # not a profile
-        profile = re.fullmatch(r":(.+)/", line)[1]
+def gsettings_get_profile_uuid_list() -> List[str]:
+    out = subprocess.check_output(
+        ["gsettings", "get", "org.gnome.Terminal.ProfilesList",
+         "list"]).decode('utf-8')
+    return ast.literal_eval(out)
 
-        name = subprocess.check_output([
-            "dconf", "read", base_path + ':' + profile + '/visible-name'
-        ]).decode('utf-8').strip()
-        # unquote. TODO: do nicer.
-        name = re.fullmatch(r"'(.+)'", name)[1]
-        uuid_by_name[name] = profile
-        uuids.add(profile)
 
-    if _PROFILE.value in uuids:
-        uuid = _PROFILE.value
-    elif _PROFILE.value in uuid_by_name:
-        uuid = uuid_by_name[_PROFILE.value]
-    else:
-        raise Exception("No such profile (by UUID or name)")
+def gsettings_get_default_profile_uuid() -> str:
+    out = subprocess.check_output(
+        ["gsettings", "get", "org.gnome.Terminal.ProfilesList",
+         "default"]).decode('utf-8')
+    return ast.literal_eval(out)
 
-    # Change default profile.
-    subprocess.check_output(
-        ["dconf", "write", base_path + 'default', f"'{uuid}'"]).decode('utf-8')
 
+def gsettings_set_default_profile_uuid(uuid: str) -> None:
+    out = subprocess.check_output([
+        "gsettings", "set", "org.gnome.Terminal.ProfilesList", "default",
+        f"'{uuid}'"
+    ]).decode('utf-8')
+    assert out == ''
+
+
+def dconf_get_profile_visible_name(uuid: str) -> str:
+    # As of 2022-09-03 (gnome-terminal 3.44.0), somehow the visible-name only
+    # seems to propagate correctly into dconf, not into gsettings...
+    # but the list of profiles (ProfileList) is up in gsettings.
+    # dconf list /org/gnome/terminal/legacy/profiles:/ returns a lot of profiles
+    # which I've deleted a long time back.
+    name = subprocess.check_output([
+        "dconf", "read",
+        f"/org/gnome/terminal/legacy/profiles:/:{uuid}/visible-name"
+    ]).decode('utf-8').strip()
+    return ast.literal_eval(name)
+
+
+def dbus_update_profile_on_all_windows(uuid: str) -> None:
     bus = dbus.SessionBus()
 
     obj = bus.get_object('org.gnome.Terminal', '/org/gnome/Terminal/window')
@@ -170,14 +188,61 @@ def main(_):
 
     tree = ElementTree.fromstring(iface.Introspect())
     windows = [child.attrib['name'] for child in tree if child.tag == 'node']
+    logging.info("requesting new uuid: %s", uuid)
+
+    def _get_window_profile_uuid(window_actions_iface):
+        # gnome-terminal source code pointer:
+        # https://gitlab.gnome.org/GNOME/gnome-terminal/-/blob/f85f2a381e5ba9904d00236e46fc72ae31253ff0/src/terminal-window.cc#L402
+        # d-feet (https://wiki.gnome.org/action/show/Apps/DFeet) is useful for
+        # manual poking.
+        description = window_actions_iface.Describe('profile')
+        profile_uuid = description[2][0]
+        return profile_uuid
 
     for window in windows:
         window_path = f'/org/gnome/Terminal/window/{window}'
+        # TODO: if there's other windows open - like Gnome Terminal preferences,
+        # About dialog etc. - this will also catch those windows and fail
+        # because they do not have the 'profile' action.
 
         obj = bus.get_object('org.gnome.Terminal', window_path)
-        iface = dbus.Interface(obj, 'org.gtk.Actions')
-        iface.SetState('profile', uuid, [])
+        logging.info("talking to: %s", obj)
+        window_actions_iface = dbus.Interface(obj, 'org.gtk.Actions')
+        logging.info("current uuid: %s",
+                     _get_window_profile_uuid(window_actions_iface))
+        #res = window_actions_iface.Activate('about', [], [])
+        res = window_actions_iface.SetState(
+            # https://wiki.gnome.org/Projects/GLib/GApplication/DBusAPI#Overview-2
+            # https://gitlab.gnome.org/GNOME/gnome-terminal/-/blob/f85f2a381e5ba9904d00236e46fc72ae31253ff0/src/terminal-window.cc#L2132
+            'profile',
+            # Requested new state
+            # https://gitlab.gnome.org/GNOME/gnome-terminal/-/blob/f85f2a381e5ba9904d00236e46fc72ae31253ff0/src/terminal-window.cc#L1319
+            uuid,
+            # "Platform data" - `a{sv}`
+            [])
+        logging.info("window_actions_iface.SetState result: %s", res)
+        uuid_after = _get_window_profile_uuid(window_actions_iface)
+        logging.info("new uuid: %s", uuid_after)
+        assert new_uuid == uuid
         # TODO: this only includes currently active tabs, not background tabs :/
+
+
+def main(_):
+    profile_uuids = set(gsettings_get_profile_uuid_list())
+    uuid_by_name = {}
+    for uuid in profile_uuids:
+        name = dconf_get_profile_visible_name(uuid)
+        uuid_by_name[name] = uuid
+
+    if _PROFILE.value in profile_uuids:
+        uuid = _PROFILE.value
+    elif _PROFILE.value in uuid_by_name:
+        uuid = uuid_by_name[_PROFILE.value]
+    else:
+        raise Exception("No such profile (by UUID or name)")
+
+    gsettings_set_default_profile_uuid(uuid)
+    dbus_update_profile_on_all_windows(uuid)
 
 
 if __name__ == '__main__':
@@ -185,9 +250,9 @@ if __name__ == '__main__':
     app.run(main)
 ```
 
-This script expects a profile name in `--profile`, and when called, it'll
-update `gnome-terminal`'s `dconf` setting to have that profile be the default.
-That will make any new terminal windows/tabs use that profile.
+This script expects a profile name or UUID in `--profile`, and when called,
+it'll update `gnome-terminal`'s `dconf` setting to have that profile be
+the default. That will make any new terminal windows/tabs use that profile.
 
 Then it'll talk to `gnome-terminal` over [dbus][dbus] and update the profile
 of each window. Unfortunately, this only updates the theme on windows that
@@ -196,6 +261,12 @@ how to fix this - I've looked into [`gnome-terminal`'s source
 code][gnome-terminal-source] when I originally wrote the script, and I even
 faintly remember reporting this as an issue. Basically that the dbus interface
 should be a bit extended. If you know how to fix this, let me know.
+
+Generally, it's very questionable and broke for me at least once (because of
+something having to do with which particular knobs are in `gconf` vs `dconf`
+vs `gsettings`). Caveat emptor.
+
+TODO: add link to current version
 
 ## Putting it together
 
@@ -208,7 +279,7 @@ me:
 ```bash
 #!/bin/bash
 switch_gnome_terminal_profile --profile='Solarized Dark'
-python ~/repos/ducktape/update_nvim_theme_from_gnome.py
+update_nvim_theme_from_gnome
 ```
 
 ### `set_light_theme`
@@ -216,7 +287,7 @@ python ~/repos/ducktape/update_nvim_theme_from_gnome.py
 ```bash
 #!/bin/bash
 switch_gnome_terminal_profile --profile='Solarized Light'
-python ~/repos/ducktape/update_nvim_theme_from_gnome.py
+update_nvim_theme_from_gnome
 ```
 
 Why is one on `PATH` and not the other? Tech debt in my personal infra.
@@ -250,3 +321,4 @@ Cheers, have a nice long weekend if you're in the US.
 [copilot]: https://github.com/features/copilot/
 [openai]: https://openai.com/
 [gnome-42]: https://release.gnome.org/42/
+[ducktape-local-bin]: https://gitlab.com/agentydragon/ducktape/-/blob/master/ducktape/dotfiles/local/bin
