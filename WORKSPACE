@@ -48,3 +48,50 @@ load("//remote:crates.bzl", "raze_fetch_remote_crates")
 raze_fetch_remote_crates()
 
 # TODO: maybe run cargo-raze via Bazel?
+
+http_archive(
+    name = "rules_haskell",
+    strip_prefix = "rules_haskell-0.15",
+    urls = ["https://github.com/tweag/rules_haskell/archive/v0.15.tar.gz"],
+)
+
+load(
+    "@rules_haskell//haskell:repositories.bzl",
+    "rules_haskell_dependencies",
+)
+
+# Setup rules_haskell.
+rules_haskell_dependencies()
+
+load(
+    "@rules_haskell//haskell:toolchain.bzl",
+    "rules_haskell_toolchains",
+)
+
+# Download a GHC binary distribution from haskell.org
+# and register it as an available toolchain.
+rules_haskell_toolchains(version = "9.0.2")
+
+load(
+    "@rules_haskell//haskell:cabal.bzl",
+    "stack_snapshot",
+)
+
+stack_snapshot(
+    name = "stackage",
+    # For some reason required to make attoparsec work.
+    components = {
+        "attoparsec": [
+            "lib:attoparsec",
+            "lib:attoparsec-internal",
+        ],
+    },
+    components_dependencies = {
+        "attoparsec": """{"lib:attoparsec": ["lib:attoparsec-internal"]}""",
+    },
+    packages = [
+        "base",
+        "hakyll",
+    ],
+    snapshot = "lts-19.17",
+)
