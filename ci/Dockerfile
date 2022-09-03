@@ -8,7 +8,7 @@ RUN echo "deb [arch=amd64] https://storage.googleapis.com/bazel-apt stable jdk1.
 
 # Install build dependencies and Bazel.
 # pkg-config: needed to configure SSL. libssl-dev: native SSL
-# haskell-stack: for my website
+# libtinfo5, libgmp-dev: needed for Haskell
 RUN apt update && \
   apt full-upgrade -y && \
   DEBIAN_FRONTEND=noninteractive apt install -y \
@@ -19,6 +19,7 @@ RUN apt update && \
     pkg-config \
     libssl-dev \
     libtinfo5 \
+    libgmp-dev \
     && \
   apt clean && \
   apt autoremove -y
