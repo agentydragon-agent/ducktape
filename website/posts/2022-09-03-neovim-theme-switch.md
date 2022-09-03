@@ -331,5 +331,5 @@ Cheers, have a nice long weekend if you're in the US.
 [gnome-42]: https://release.gnome.org/42/
 [d-feet]: https://wiki.gnome.org/Apps/DFeet
 [ducktape]: https://gitlab.com/agentydragon/ducktape
-[ducktape-local-bin]: https://gitlab.com/agentydragon/ducktape/-/blob/master/ducktape/dotfiles/local/bin
-[ducktape-switch]: https://gitlab.com/agentydragon/ducktape/-/blob/master/ducktape/dotfiles/local/bin/switch_gnome_terminal_profile
+[ducktape-local-bin]: https://gitlab.com/agentydragon/ducktape/-/blob/master/dotfiles/local/bin
+[ducktape-switch]: https://gitlab.com/agentydragon/ducktape/-/blob/master/dotfiles/local/bin/switch_gnome_terminal_profile
