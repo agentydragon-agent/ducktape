@@ -48,7 +48,7 @@ Point Night Theme Switcher to run those when the theme is changed.
 
 In my particular case, I like [Solarized colors][solarized], which I have
 everywhere I can (VSCode, Neovim, `gnome-terminal`, even this site - as of now).
-I use the `[vim-colors-solarized][vim-colors-solarized]` plugin which adds
+I use the [`vim-colors-solarized`][vim-colors-solarized] plugin which adds
 both light and dark variants, toggled by `set background=light` or `dark`.
 
 ### `init.vim`
