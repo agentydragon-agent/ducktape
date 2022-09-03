@@ -1,3 +1,20 @@
+" Set color theme to light/dark based on current system preferences.
+" Done early to prefer flashing of the wrong theme before this runs.
+" Will later be picked up when setting up Solarized colors.
+" TODO: this should also work if gsettings isn't on the system
+if executable('gsettings')
+  let color_scheme = system('gsettings get org.gnome.desktop.interface color-scheme')
+  " remove newline character from color_scheme
+  let color_scheme = substitute(color_scheme, "\n", "", "")
+
+  if color_scheme == 'prefers-light'
+    set background=light
+  else
+    set background=dark
+  endif
+endif
+
+
 " filetypes
 filetype plugin on
 filetype indent on
@@ -177,7 +194,6 @@ set colorcolumn=80,+0
 " Silence if colorscheme not installed.
 set termguicolors
 colorscheme NeoSolarized
-set background=light
 
 " Jump to last position on opening files (stolen from Destroy All Software)
 " ('\" == mark when last exiting buffer, g` = go to, jumplist-nondestructive)
@@ -227,4 +243,6 @@ let g:copilot_filetypes = {
 \ 'yaml': v:true,
 \ 'markdown': v:true,
 \ }
+
+
 
