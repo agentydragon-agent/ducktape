@@ -14,7 +14,7 @@
   tasks:
     - name: Update apt cache
       apt:
-        update_cache: yes
+        update_cache: true
 
     - name: Install nginx
       apt:
@@ -26,7 +26,7 @@
     - name: Create user
       user:
         name: agentydragon
-        createhome: yes
+        createhome: true
         # NOTE: still need to ssh-copy-id over to the user manually.
 
     - name: Let's Encrypt installation
@@ -100,8 +100,8 @@
     - name: Reload nginx
       systemd:
         state: reloaded
-        daemon_reload: yes
+        daemon_reload: true
         name: nginx
-        enabled: yes
+        enabled: true
       tags:
         - nginx
