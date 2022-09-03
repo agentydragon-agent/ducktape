@@ -22,12 +22,12 @@
       apt:
         update_cache: true
 
-    - name: Install nginx
+    - name: Install packages
       apt:
-        name: nginx
+        name:
+          - ncdu
+          - nginx
         state: latest
-      tags:
-        - nginx
 
     - name: Create user
       user:
