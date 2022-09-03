@@ -12,6 +12,12 @@
         # also uses trilium_ssl_port
 
   tasks:
+    - name: Enable Fail2Ban role
+      ansible.builtin.include_role:
+        name: nbigot.ansible-fail2ban
+      tags:
+        - fail2ban
+
     - name: Update apt cache
       apt:
         update_cache: true
