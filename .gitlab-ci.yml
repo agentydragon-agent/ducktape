@@ -18,9 +18,9 @@ variables:
   # this checks out some recent history to make ansible-lint --progressive work.
   GIT_DEPTH: 10
 
-  # Allows caching of intermediate stack artifacts
-  # https://stackoverflow.com/a/59056148/12038028
-  STACK_ROOT: "${CI_PROJECT_DIR}/.stack-root"
+#  # Allows caching of intermediate stack artifacts
+#  # https://stackoverflow.com/a/59056148/12038028
+#  STACK_ROOT: "${CI_PROJECT_DIR}/.stack-root"
 
 stages:
   - build_ci_image

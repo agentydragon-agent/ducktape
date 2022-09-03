@@ -25,12 +25,3 @@ RUN apt update && \
 
 # For Ansible
 RUN pip3 install ansible ansible-lint
-
-# Set up Haskell Stack for website.
-RUN stack upgrade
-
-# TODO: actually caching won't work - since we change the path where
-# Stack root is to allow gitlab CI to cache it
-# NOTE: should be set to match the website's stack resolver, in
-# website/stack.yaml.
-RUN stack setup ghc-9.0.2
