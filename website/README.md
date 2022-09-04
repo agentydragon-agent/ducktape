@@ -10,8 +10,9 @@ To build:
 
 ```bash
 sass css/default.scss > css/default.css
-stack build
-stack exec site build
+bazel build //website:site
+cd website
+../bazel-bin/website/site build
 ```
 
 To push:
