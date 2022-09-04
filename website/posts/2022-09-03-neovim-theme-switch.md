@@ -22,7 +22,7 @@ this works.
 
 All scripts copied here are in my [ducktape][ducktape] repo in
 [`dotfiles/local/bin`][ducktape-local-bin], where you can copy fork and improve
-to your heart's content.
+to your heart's content. The Neovim part was added in [MR #81][mr-81].
 
 Those are the dependencies:
 
@@ -331,5 +331,6 @@ Cheers, have a nice long weekend if you're in the US.
 [gnome-42]: https://release.gnome.org/42/
 [d-feet]: https://wiki.gnome.org/Apps/DFeet
 [ducktape]: https://gitlab.com/agentydragon/ducktape
-[ducktape-local-bin]: https://gitlab.com/agentydragon/ducktape/-/blob/master/dotfiles/local/bin
-[ducktape-switch]: https://gitlab.com/agentydragon/ducktape/-/blob/master/dotfiles/local/bin/switch_gnome_terminal_profile
+[ducktape-local-bin]: https://gitlab.com/agentydragon/ducktape/-/tree/main/dotfiles/local/bin
+[ducktape-switch]: https://gitlab.com/agentydragon/ducktape/-/blob/main/dotfiles/local/bin/switch_gnome_terminal_profile
+[mr-81]: https://gitlab.com/agentydragon/ducktape/-/merge_requests/81
