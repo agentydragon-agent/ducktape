@@ -49,6 +49,7 @@ raze_fetch_remote_crates()
 
 # TODO: maybe run cargo-raze via Bazel?
 
+# Haskell setup taken from https://www.tweag.io/blog/2020-05-06-convert-haskell-project-to-bazel/
 http_archive(
     name = "rules_haskell",
     sha256 = "aba3c16015a2363b16e2f867bdc5c792fa71c68cb97d8fe95fddc41e409d6ba8",
