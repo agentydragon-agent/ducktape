@@ -8,7 +8,7 @@ RUN echo "deb [arch=amd64] https://storage.googleapis.com/bazel-apt stable jdk1.
 
 # Install build dependencies and Bazel.
 # pkg-config: needed to configure SSL. libssl-dev: native SSL
-# haskell-stack: for my website
+# libtinfo5, libgmp-dev: needed for Haskell
 RUN apt update && \
   apt full-upgrade -y && \
   DEBIAN_FRONTEND=noninteractive apt install -y \
@@ -18,19 +18,11 @@ RUN apt update && \
     python3-pip \
     pkg-config \
     libssl-dev \
-    haskell-stack \
+    libtinfo5 \
+    libgmp-dev \
     && \
   apt clean && \
   apt autoremove -y
 
 # For Ansible
 RUN pip3 install ansible ansible-lint
-
-# Set up Haskell Stack for website.
-RUN stack upgrade
-
-# TODO: actually caching won't work - since we change the path where
-# Stack root is to allow gitlab CI to cache it
-# NOTE: should be set to match the website's stack resolver, in
-# website/stack.yaml.
-RUN stack setup ghc-9.0.2
