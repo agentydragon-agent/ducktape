@@ -1,8 +1,4 @@
 absl-py
 splitwise
 xdg
-
-# https://github.com/Nriver/trilium-py
-trilium-py
-feedparser
 requests
