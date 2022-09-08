@@ -101,6 +101,14 @@
       notify:
         - Reload nginx
 
+    - name: Start and enable nginx
+      service:
+        name: nginx
+        state: started
+        enabled: true
+      tags:
+        - nginx
+
   handlers:
     # Only triggers if nginx config files changed.
     - name: Reload nginx
