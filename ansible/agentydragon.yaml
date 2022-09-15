@@ -100,6 +100,10 @@
           # For getting background color for Vim background color auto-switch.
           - xtermcontrol
 
+          # nice screenshot tool
+          - flameshot
+          # TODO: add Ubuntu startup programs, like Flameshot etc.
+
     - name: Install pop os specific packages for laptop
       become: true
       ansible.builtin.apt:
