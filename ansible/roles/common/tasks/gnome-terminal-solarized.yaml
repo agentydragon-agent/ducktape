@@ -47,7 +47,7 @@
         profile_name_to_uuid: {}
     - name: Feed profile_name_to_uuid from dconf
       ansible.builtin.set_fact:
-        profile_name_to_uuid: "{{ profile_name_to_uuid | combine({ item.stdout: item.item }) }}"
+        profile_name_to_uuid: "{{ profile_name_to_uuid | combine({item.stdout: item.item}) }}"
       with_items: "{{ profile_names.results }}"
     # - debug:
     #     var: profile_name_to_uuid

@@ -1,32 +1,4 @@
 ---
-# Needs to run before Docker, which tries to install gnupg2
-- name: Update everything
-  become: true
-  ansible.builtin.apt:
-    update_cache: true
-    upgrade: dist
-
-- name: Create Trilium group
-  ansible.builtin.group:
-    name: trilium
-    state: present
-
-- name: Create Trilium user
-  ansible.builtin.user:
-    name: trilium
-    group: trilium
-
-- name: Include docker role for Trilium user
-  ansible.builtin.include_role:
-    name: geerlingguy.docker
-  vars:
-    docker_service_state: started
-    docker_service_enabled: true
-    docker_users:
-      - trilium
-  tags:
-    - docker
-
 - name: Create Trilium data directory
   ansible.builtin.file:
     path: /srv/trilium-data
@@ -34,6 +6,8 @@
     owner: trilium
     group: trilium
     mode: 0700
+  tags:
+    - trilium
 
 - name: "Install pip"
   ansible.builtin.apt:
@@ -67,6 +41,8 @@
       chmod -R 700 /srv/trilium-data/cert
       chown -R trilium:trilium /srv/trilium-data/cert
       # TODO: do I maybe also need to restart the Trilium container?
+  tags:
+    - trilium
 
 # certbot renew --force-renewal
 # certbot renew -q   <- quiet
@@ -81,6 +57,8 @@
       https=true
       certPath=/home/node/trilium-data/cert/fullchain.pem
       keyPath=/home/node/trilium-data/cert/privkey.pem
+  tags:
+    - trilium
 
 - name: Create Trilium container
   become: true
@@ -104,3 +82,5 @@
 
     # TODO: get rid of this one
     container_default_behavior: compatibility
+  tags:
+    - trilium
