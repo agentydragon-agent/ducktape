@@ -87,22 +87,21 @@ build:
   stage: build
   needs:
     - job: build_ci_image
-    # TODO: this should be cached *always*
-  cache:
-    # Hat-tip: https://about.gitlab.com/blog/2020/09/01/using-bazel-to-speed-up-gitlab-ci-builds/
-    key: bazel_cache
-    paths:
-      - .cache/
   when: always
   interruptible: true
   image:
     # See src/ci/README.md
     name: $CI_REGISTRY_IMAGE/cirunner:$CI_COMMIT_SHA
   before_script:
-    - echo "build --disk_cache=$CI_PROJECT_DIR/.cache" >> .bazelrc
+    # TODO: this setup script is duplicated with another place in this file
     - |
-        if [ ! -z "${BAZEL_GOOGLE_CREDENTIALS}" ]; then
-          echo "build --remote_cache=${BAZEL_REMOTE_CACHE} --google_credentials=${BAZEL_GOOGLE_CREDENTIALS}" >> .bazelrc ;
+        if [ ! -z "${BAZEL_CACHE_PASSWORD}" ]; then
+          echo "BAZEL_CACHE_PASSWORD is available, using remote cache"
+          echo "build --remote_cache=https://gitlab-runner:${BAZEL_CACHE_PASSWORD}@bazel-cache.agentydragon.com:9090" >> .bazelrc
+        else
+          echo "BAZEL_CACHE_PASSWORD is not available, will use remote cache read-only"
+          echo "build --remote_cache=https://bazel-cache.agentydragon.com:9090" >> .bazelrc
+          echo "build --remote_upload_local_results=false" >> .bazelrc
         fi
   script:
     - bazel version
@@ -145,16 +144,21 @@ test:
   stage: test
   needs:
     - job: build
-  cache:
-    key: bazel_cache
-    paths:
-      - .cache/
   interruptible: true
   image:
     # See src/ci/README.md
     name: $CI_REGISTRY_IMAGE/cirunner:$CI_COMMIT_SHA
   before_script:
-    - echo "build --disk_cache=$CI_PROJECT_DIR/.cache" >> .bazelrc
+    # TODO: this setup script is duplicated with another place in this file
+    - |
+        if [ ! -z "${BAZEL_CACHE_PASSWORD}" ]; then
+          echo "BAZEL_CACHE_PASSWORD is available, using remote cache"
+          echo "build --remote_cache=https://gitlab-runner:${BAZEL_CACHE_PASSWORD}@bazel-cache.agentydragon.com:9090" >> .bazelrc
+        else
+          echo "BAZEL_CACHE_PASSWORD is not available, will use remote cache read-only"
+          echo "build --remote_cache=https://bazel-cache.agentydragon.com:9090" >> .bazelrc
+          echo "build --remote_upload_local_results=false" >> .bazelrc
+        fi
   script:
     - bazel test ...
 
