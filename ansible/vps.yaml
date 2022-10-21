@@ -75,6 +75,8 @@
         name:
           - ncdu
           - nginx
+          # certbot nginx plugin for autorenewing certs nicely
+          - python3-certbot-nginx
         state: latest
 
     - name: Create user
@@ -266,6 +268,12 @@
         enabled: true
       tags:
         - nginx
+
+    - name: Create a cron job to renew Let's Encrypt certificates
+      cron:
+        name: "Renew Let's Encrypt certificates"
+        special_time: daily
+        job: "certbot renew --quiet --nginx --reloadcmd \"nginx -s reload\""
 
   handlers:
     # Only triggers if nginx config files changed.
