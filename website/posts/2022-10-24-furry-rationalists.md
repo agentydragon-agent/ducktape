@@ -6,6 +6,10 @@ title: Furry Rationalists & Effective Anthropomorphism both exist
 
 Hi!
 
+<figure>
+<img src="/static/2022-sticker-hello.png" style="max-width: 8cm">
+</figure>
+
 I’m Rai and I’m a furry (specifically, dragon). The last couple years, I’ve been
 running a Furry Rationalists Telegram group. It looks like we exist, and not
 everyone who should know we exist does yet, so I wanted to just write this to
@@ -13,7 +17,7 @@ advertise that this furry+EA/rationality corner exists, and if you’re
 furry-adjacent & rationality-adjacent and nice, you’re invited to join us :)
 
 Here’s the invite link for the Furry Rationalists group:
-https://t.me/+KTmU37JO3Wk0OTQ0
+<https://t.me/+KTmU37JO3Wk0OTQ0>
 
 There’s ~50 of us and we’re chill - we have self-improvement, science, and cute
 animal GIFs. If you’d like a preview, here’s the [guidelines + meta doc][guidelines].
@@ -23,11 +27,11 @@ let me know, we might update this.
 
 If you’re reading this a while later, and the link expired, contact me (via
 some method on this website), or look us up on
-https://www.furry-telegram-groups.net/, a search for “rationality” should find
+<https://www.furry-telegram-groups.net/>, a search for “rationality” should find
 us.
 
 There’s also a smaller Effective Anthropomorphism Discord server, run by
-[bird][bird]: https://discord.gg/98XbX726
+[bird][bird]: <https://discord.gg/98XbX726>
 
 Come say hi, and feel free to share if you know anyone who’d be interested!
 
