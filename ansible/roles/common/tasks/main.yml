@@ -56,13 +56,6 @@
 
 - include_tasks: tasks/dev-env.yaml
 - include_tasks: tasks/dotfiles.yaml
-- name: Set up custom scripts
-  tags:
-    - custom-scripts
-  ansible.builtin.git:
-    repo: git@gitlab.com:agentydragon/scripts
-    dest: "{{ scripts_path }}"
-    version: master
 
 - name: Set up Neovim
   tags: vim
