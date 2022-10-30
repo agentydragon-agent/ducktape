@@ -202,6 +202,17 @@
       notify:
         - Reload nginx
 
+    # The nginx default website takes priority over my http://agentydragon.com
+    # redirect, so disable it.
+    - name: Disable nginx default website
+      file:
+        state: absent
+        dest: /etc/nginx/sites-enabled/default
+      tags:
+        - nginx
+      notify:
+        - Reload nginx
+
     - name: Copy Bazel remote cache htpasswd on server
       ansible.builtin.copy:
         src: bazel_remote_cache.htpasswd
