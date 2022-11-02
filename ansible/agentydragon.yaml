@@ -229,7 +229,9 @@
     # See 'Laptop does not stay suspended' Trilium note.
     # XHC = 0000:00:14.0; something having to do with USB
     - name: Disable XHC wakeups
-      file:
-        path: /etc/tmpfiles.d/disable-xhc-wakeups.conf
-        state: touch
+      tags:
+        - quirks
+      become: true
+      copy:
+        dest: /etc/tmpfiles.d/disable-xhc-wakeups.conf
         content: "w /sys/bus/pci/devices/0000:00:14.0/power/wakeup - - - - disabled"
