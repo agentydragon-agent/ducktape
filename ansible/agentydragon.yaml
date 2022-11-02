@@ -226,12 +226,16 @@
       # should only succeed if we don't need to update
       ansible.builtin.shell: git hooks update --no
 
-    # See 'Laptop does not stay suspended' Trilium note.
-    # XHC = 0000:00:14.0; something having to do with USB
-    - name: Disable XHC wakeups
-      tags:
-        - quirks
-      become: true
-      copy:
-        dest: /etc/tmpfiles.d/disable-xhc-wakeups.conf
-        content: "w /sys/bus/pci/devices/0000:00:14.0/power/wakeup - - - - disabled"
+    # TODO: does not seem to work. getting this on trying to suspend, plus
+    # freeze:
+    #   usb usb-port14: disabled by hub (EMI?), re-enabling...
+    #
+    # # See 'Laptop does not stay suspended' Trilium note.
+    # # XHC = 0000:00:14.0; something having to do with USB
+    # - name: Disable XHC wakeups
+    #   tags:
+    #     - quirks
+    #   become: true
+    #   copy:
+    #     dest: /etc/tmpfiles.d/disable-xhc-wakeups.conf
+    #     content: "w /sys/bus/pci/devices/0000:00:14.0/power/wakeup - - - - disabled"
