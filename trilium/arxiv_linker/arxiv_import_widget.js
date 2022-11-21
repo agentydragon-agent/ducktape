@@ -126,14 +126,14 @@ class ArxivWidget extends api.CollapsibleWidget {
             // clear the input field
             this.$input.val('');
           })));
-      this.$message.append(
-          '<br>Confirm to create a new note anyway: ' +
-          '<button id="arxiv-confirm">Confirm</button>');
-      this.$body.find('#arxiv-confirm').on('click', async () => {
-        // create the note as usual
-        let newNote = await this.addNoteToBackend(title, paperId);
-        this.showNewPaperMessage(newNote);
-      });
+    });
+    this.$message.append(
+        '<br>Confirm to create a new note anyway: ' +
+        '<button id="arxiv-confirm">Confirm</button>');
+    this.$body.find('#arxiv-confirm').on('click', async () => {
+      // create the note as usual
+      let newNote = await this.addNoteToBackend(title, paperId);
+      this.showNewPaperMessage(newNote);
     });
   }
 
