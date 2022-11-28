@@ -3,8 +3,10 @@
  */
 
 const TPL = `<div>
-  <input type="text" id="arxiv-input" placeholder="arXiv ID or URL" style="width: 80%;">
-  <button id="arxiv-submit" type="submit">Add</button>
+  <form id="arxiv-form">
+    <input type="text" id="arxiv-input" placeholder="arXiv ID or URL" style="width: 80%;">
+    <button type="submit">Add</button>
+  </form>
   <output id="arxiv-message" style="color: var(--main-text-color);"></output>
 </div>`;
 
@@ -26,13 +28,13 @@ class ArxivWidget extends api.CollapsibleWidget {
   async doRenderBody() {
     this.$body.empty().append($(TPL));
     this.$input = this.$body.find('#arxiv-input');
-    this.$submit = this.$body.find('#arxiv-submit');
+    this.$form = this.$body.find('#arxiv-form');
     this.$message = this.$body.find('#arxiv-message');
 
     // Make message disappear when URL is updated.
     this.$input.on('input', () => this.$message.text(''));
 
-    this.$submit.on('click', async () => {
+    this.$form.on('click', async () => {
       const paper = this.$input.val().trim();
       if (!paper) {
         this.$message.text('Please enter a valid arXiv ID or URL.');
