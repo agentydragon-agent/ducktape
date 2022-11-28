@@ -4,7 +4,7 @@
 
 const TPL = `<div>
   <input type="text" id="arxiv-input" placeholder="arXiv ID or URL" style="width: 80%;">
-  <button id="arxiv-submit">Add</button>
+  <button id="arxiv-submit" type="submit">Add</button>
   <output id="arxiv-message" style="color: var(--main-text-color);"></output>
 </div>`;
 
