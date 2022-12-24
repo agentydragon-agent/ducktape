@@ -43,12 +43,12 @@
       ansible.builtin.dconf:
         key: "{{ profile_dir }}/bold-color-same-as-fg"
         value: "false"
-    - name: Do not use system font
-      ansible.builtin.dconf:
-        key: "{{ profile_dir }}/use-system-font"
-        value: "false"
 # TODO: add powerlevel10k - plus MesloLGS NF font
 # https://github.com/romkatv/powerlevel10k#meslo-nerd-font-patched-for-powerlevel10k
+#    - name: Do not use system font
+#      ansible.builtin.dconf:
+#        key: "{{ profile_dir }}/use-system-font"
+#        value: "false"
 #    - name: set terminal font
 #      ansible.builtin.dconf:
 #        key: "{{ profile_dir }}/font"
