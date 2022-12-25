@@ -2,7 +2,8 @@ const TPL = `
   <h2>Papers</h2>
   sort by ascending priority<br>
   TODO: show associated topics, allow filtering<br>
-  TODO: show number of papers that cite this paper
+  TODO: show number of papers that cite this paper<br>
+  TODO: show date published (or just year if not known exactly)<br>
   <output class="controls"></output>
   <table>
   <thead>

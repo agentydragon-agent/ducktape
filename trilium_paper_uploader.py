@@ -61,7 +61,20 @@ def main(_):
     )
     results = response.json()
 
-    for result in tqdm(results['results']):
+    # Sort results by ascending priority.
+    def get_result_priority(result):
+        for attribute in result['attributes']:
+            if attribute['name'] == 'readingPriority':
+                try:
+                    return int(attribute['value'])
+                except:
+                    return 200
+        return 200  # unprioritized go last
+
+    results = list(sorted(results['results'], key=get_result_priority))
+
+    for result in tqdm(results):
+        print(get_result_priority(result))
         note_id = result['noteId']
         title = result['title']
         arxiv_id = None
