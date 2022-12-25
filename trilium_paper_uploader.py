@@ -83,9 +83,9 @@ def main(_):
 
         if arxiv_id is None:
             print(note_id, title, 'no arxiv id, skip...')
-            found_arxiv_id = search_for_arxiv_id(title)
-            if found_arxiv_id:
-                raise Exception("aa, found arxiv id. implement.")
+            #found_arxiv_id = search_for_arxiv_id(title)
+            #if found_arxiv_id:
+            #    raise Exception("aa, found arxiv id. implement.")
             continue
 
         # print(result['attributes'])
