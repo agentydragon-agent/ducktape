@@ -2,6 +2,8 @@ import requests
 from absl import app
 from absl import flags
 from tqdm.auto import tqdm
+import re
+import feedparser
 
 from typing import Optional
 
@@ -29,25 +31,32 @@ def get_arxiv_pdf_bytes(arxiv_id):
 
 def search_for_arxiv_id(title) -> Optional[str]:
     # TODO: do not repeat search if we tried to look it up before and it failed
-    import feedparser
     response = requests.get(
         'https://export.arxiv.org/api/query',
         params={
-            'search_query': title.lower(),  # 'interpretability',
-            'max_results': 3,
+            'search_query': title.lower(),
+            'max_results': 10,
         },
     )
     assert response.status_code == 200
     #print(response.text)
     feed = feedparser.parse(response.text)
     #print(feed)
+    matches = []
     for entry in feed['entries']:
         #print(f'{entry = }')
-        print(entry['id'], entry['title'])  # , entry['links'])
         if entry['title'].lower() == title.lower():
-            raise Exception("FOUND - now we should interlink")
+            match = re.fullmatch(r"http://arxiv.org/abs/(\d+\.\d+)(v\d+)?",
+                                 entry['id'])
+            matches.append(match.group(1))
         # entry['summary']
-    return None
+    if len(matches) == 0:
+        print("no match on arxiv")
+        return None
+    elif len(matches) == 1:
+        print("found by exact title", matches[0], title)
+        return matches[0]
+    raise Exception("UNHANDLED: multiple matches found on arxiv!")
 
 
 def main(_):
@@ -74,7 +83,7 @@ def main(_):
     results = list(sorted(results['results'], key=get_result_priority))
 
     for result in tqdm(results):
-        print(get_result_priority(result))
+        priority = get_result_priority(result)
         note_id = result['noteId']
         title = result['title']
         arxiv_id = None
@@ -95,11 +104,31 @@ def main(_):
             # TODO: migrate arxivLink -> arxivId
 
         if arxiv_id is None:
-            print(note_id, title, 'no arxiv id, skip...')
-            #found_arxiv_id = search_for_arxiv_id(title)
-            #if found_arxiv_id:
-            #    raise Exception("aa, found arxiv id. implement.")
-            continue
+            found_arxiv_id = search_for_arxiv_id(title)
+            if not found_arxiv_id:
+                print(priority, note_id, title,
+                      'no arxiv id and not found on arxiv, skip...')
+                continue
+
+            url = f'{root}/etapi/attributes'
+            response = requests.post(
+                url,
+                json={
+                    "noteId": note_id,
+                    "type": 'label',
+                    "name": 'arxivId',
+                    "value": found_arxiv_id,
+                    "isInheritable": False,
+                },
+                headers=headers | {
+                    'content-type': 'application/json',
+                },
+            )
+            assert response.status_code == 201
+            print(
+                f'{priority} {note_id} {title} interlinked to {found_arxiv_id}...'
+            )
+            arxiv_id = found_arxiv_id
 
         # print(result['attributes'])
         # find: 'arxivLink', 'arxivId'
@@ -120,10 +149,11 @@ def main(_):
                 pass
 
         if paper_found:
-            print(note_id, arxiv_id, title, 'skipping, PDF already in Trilium')
+            print(priority, note_id, arxiv_id, title,
+                  'skipping, PDF already in Trilium')
             continue
 
-        print(result['noteId'], result['title'], arxiv_id,
+        print(priority, result['noteId'], result['title'], arxiv_id,
               '-> upload the PDF to Trilium')
 
         # const ARXIV_ENDPOINT = 'https://export.arxiv.org/api/query';
