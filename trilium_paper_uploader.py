@@ -3,18 +3,51 @@ from absl import app
 from absl import flags
 from tqdm.auto import tqdm
 
+from typing import Optional
+
 _ROOT = flags.DEFINE_string('root', 'http://localhost:37840', "ETAPI root URL")
 _TOKEN = flags.DEFINE_string('token', None, 'ETAPI token')
 
-# response = requests.patch(
-#     f'{root}/etapi/notes/{note_id}',
-#     json={
-#         'type': 'file',
-#         'mime': 'application/pdf',
-#         # 'type': 'image',
-#         # 'mime': 'image/png',
-#     },
-# )
+
+def get_arxiv_pdf_bytes(arxiv_id):
+    filename = f'{arxiv_id}.pdf'
+    url = f'https://arxiv.org/pdf/{filename}'
+    with requests.get(url, stream=True) as response:
+        assert response.status_code == 200
+
+        total_length = int(response.headers.get("Content-Length"))
+        pdf_bytes = b''
+        block_size = 1024
+
+        with tqdm(total=total_length, unit='iB',
+                  unit_scale=True) as progress_bar:
+            for chunk in response.iter_content(block_size):
+                progress_bar.update(len(chunk))
+                pdf_bytes += chunk
+    return pdf_bytes
+
+
+def search_for_arxiv_id(title) -> Optional[str]:
+    # TODO: do not repeat search if we tried to look it up before and it failed
+    import feedparser
+    response = requests.get(
+        'https://export.arxiv.org/api/query',
+        params={
+            'search_query': title.lower(),  # 'interpretability',
+            'max_results': 3,
+        },
+    )
+    assert response.status_code == 200
+    #print(response.text)
+    feed = feedparser.parse(response.text)
+    #print(feed)
+    for entry in feed['entries']:
+        #print(f'{entry = }')
+        print(entry['id'], entry['title'])  # , entry['links'])
+        if entry['title'].lower() == title.lower():
+            raise Exception("FOUND - now we should interlink")
+        # entry['summary']
+    return None
 
 
 def main(_):
@@ -38,6 +71,9 @@ def main(_):
             continue
 
         for attribute in result['attributes']:
+            # TODO: do not download paper if it's already finished reading -
+            # might want to skip those to save space in Trilium db
+
             # print(attribute)
             if attribute['name'] == 'arxivId':
                 arxiv_id = attribute['value']
@@ -46,7 +82,10 @@ def main(_):
             # TODO: migrate arxivLink -> arxivId
 
         if arxiv_id is None:
-            print(note_id, title, 'skipping, no arxiv id')
+            print(note_id, title, 'no arxiv id, skip...')
+            found_arxiv_id = search_for_arxiv_id(title)
+            if found_arxiv_id:
+                raise Exception("aa, found arxiv id. implement.")
             continue
 
         # print(result['attributes'])
@@ -76,12 +115,7 @@ def main(_):
 
         # const ARXIV_ENDPOINT = 'https://export.arxiv.org/api/query';
         filename = f'{arxiv_id}.pdf'
-        url = f'https://arxiv.org/pdf/{filename}'
-        print(url)
-        response = requests.get(url)
-        assert response.status_code == 200
-        pdf_bytes = response.content
-
+        pdf_bytes = get_arxiv_pdf_bytes(arxiv_id)
         url = f'{root}/etapi/create-note'
         response = requests.post(
             url,
