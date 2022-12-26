@@ -149,8 +149,8 @@ def main(_):
                 pass
 
         if paper_found:
-            print(priority, note_id, arxiv_id, title,
-                  'skipping, PDF already in Trilium')
+            #print(priority, note_id, arxiv_id, title,
+            #      'skipping, PDF already in Trilium')
             continue
 
         print(priority, result['noteId'], result['title'], arxiv_id,
