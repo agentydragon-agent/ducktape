@@ -151,13 +151,17 @@ def upload_synced_dir():
         _marker, filename = line.split('\t')
         existing_filenames.add(filename)
 
+    print(existing_filenames)
+
     # TODO: list the directory on remarkable side, skip entries that are already
     # uploaded
 
     # going through files in sorted order, will upload by priority
-    for p in sorted(os.listdir(SYNCED_DIR_PATH)):
-        if p.split('.')[0] in existing_filenames:
-            print(f'{p} already uploaded apparently')
+    for p in tqdm(list(sorted(os.listdir(SYNCED_DIR_PATH)))):
+        filename, _ext = os.path.splitext(p)
+        # print(filename)
+        if filename in existing_filenames:
+            # print(f'{p} already uploaded apparently')
             continue
         # TODO: skip those that already exist in Remarkable; warn if there are
         # items we don't know about.
