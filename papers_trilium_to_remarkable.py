@@ -5,6 +5,11 @@ On first run:
 This will pair the device to Remarkable API so that we can upload later.
 
 - create directory of synced papers (or maybe download based on Trilium db)
+
+commands (TODO):
+    --purge_remarkable
+    --populate_synced_dir --max_papers=10
+    --upload_synced_dir
 """
 
 import requests
@@ -35,7 +40,7 @@ def find_attribute_value_in_result(result, attribute_name):
     raise KeyError()
 
 
-def populate_synced_dir():
+def populate_synced_dir(max_papers=None):
     token = _TOKEN.value
     root = _ETAPI_URL.value
     headers = {'Authorization': token}
@@ -64,6 +69,8 @@ def populate_synced_dir():
             return 200  # badly prioritized, go last
 
     results = list(sorted(results['results'], key=get_result_priority))
+    if max_papers:
+        results = results[:max_papers]
 
     for result in tqdm(results):
         priority = get_result_priority(result)
@@ -97,6 +104,8 @@ def populate_synced_dir():
         )
         # TODO: split apart stuff I finished reading / did not finish reading
         filename = ''
+        priority = get_result_priority(result)
+        filename += f'{priority:03d} '
         try:
             arxiv_id = find_attribute_value_in_result(result,
                                                       attribute_name='arxivId')
@@ -104,8 +113,10 @@ def populate_synced_dir():
         except KeyError:
             pass
         filename += title
+        filename = filename.replace(':', '_')
         filename = (filename.replace('/', '-').replace('?', '-').replace(
-            ' ', '_').replace('(', '_').replace(')', '_'))
+            '(', '_').replace(')', '_'))
+        # filename = filename.replace(' ', '_')
         filename += '.pdf'
         path = SYNCED_DIR_PATH / filename
         response = requests.get(
@@ -121,8 +132,9 @@ def populate_synced_dir():
 def make_args(*args):
     return [
         'docker', 'run', '-v',
-        '/home/agentydragon/.config/rmapi/:/home/app/.config/rmapi/', 'rmapi',
-        *args
+        '/home/agentydragon/.config/rmapi/:/home/app/.config/rmapi/', '-v',
+        '/home/agentydragon/.cache/papers_trilium_to_remarkable/synced_dir:/home/app/synced_dir/',
+        'rmapi', *args
     ]
 
 
@@ -141,7 +153,9 @@ def upload_synced_dir():
 
     # TODO: list the directory on remarkable side, skip entries that are already
     # uploaded
-    for p in os.listdir(SYNCED_DIR_PATH):
+
+    # going through files in sorted order, will upload by priority
+    for p in sorted(os.listdir(SYNCED_DIR_PATH)):
         if p.split('.')[0] in existing_filenames:
             print(f'{p} already uploaded apparently')
             continue
@@ -154,16 +168,6 @@ def upload_synced_dir():
             f'/home/app/synced_dir/{p}',
             REMARKABLE_SIDE_PATH,
         )
-        #args = [
-        #    'bash',
-        #    '-c',
-        #    (
-        #        # TODO: compose command with shlex
-        #        'docker run '
-        #        '-v /home/agentydragon/.config/rmapi/:/home/app/.config/rmapi/ '  # TODO hardcoded xdg path
-        #        f'-v {SYNCED_DIR_PATH}:/home/app/synced_dir/ '
-        #        f'rmapi put /home/app/synced_dir/{p} {REMARKABLE_SIDE_PATH}'),
-        #]
         # this seems to work:
         # docker run -v /home/agentydragon/.config/rmapi/:/home/app/.config/rmapi/ -v /home/agentydragon/.cache/papers_trilium_to_remarkable/synced_dir:/home/app/synced_dir/ rmapi put /home/app/synced_dir/2205.12910_NaturalProver:_Grounded_Mathematical_Proof_Generation_with_Language_Models.pdf /papers_trilium_to_remarkable
         print(args)
@@ -198,9 +202,10 @@ def purge_remarkable_synced_dir():
 
 
 def main(_):
-    purge_remarkable_synced_dir()
+    # purge_remarkable_synced_dir()
+    # populate_synced_dir(max_papers=10)
     # populate_synced_dir()
-    # upload_synced_dir()
+    upload_synced_dir()
 
 
 if __name__ == '__main__':
