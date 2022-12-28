@@ -108,40 +108,62 @@ def populate_synced_dir():
             ' ', '_').replace('(', '_').replace(')', '_'))
         filename += '.pdf'
         path = SYNCED_DIR_PATH / filename
+        response = requests.get(
+            f'{root}/etapi/notes/{child_id}/content',
+            headers=headers,
+        )
+        assert response.status_code == 200
         with open(path, 'wb') as f:
             f.write(response.content)
         print(f'{title} {child_id} written to {path}')
 
 
+def make_args(*args):
+    return [
+        'docker', 'run', '-v',
+        '/home/agentydragon/.config/rmapi/:/home/app/.config/rmapi/', 'rmapi',
+        *args
+    ]
+
+
 def upload_synced_dir():
-    subprocess.check_call([
-        'docker',
-        'run',
-        '-v',
-        '/home/agentydragon/.config/rmapi/:/home/app/.config/rmapi/',
-        'rmapi',
-        'mkdir',
-        f'{REMARKABLE_SIDE_PATH}',
-    ])
+    subprocess.check_call(make_args('mkdir', REMARKABLE_SIDE_PATH))
     # TODO: if 'entry already exists' in stdout -> ok, skip it
     print('mkdir ok')
+
+    existing = subprocess.check_output(make_args(
+        'ls', REMARKABLE_SIDE_PATH)).decode('utf-8')
+    existing_filenames = set()
+    for line in existing.splitlines():
+        assert line.startswith('[f]\t')
+        _marker, filename = line.split('\t')
+        existing_filenames.add(filename)
+
     # TODO: list the directory on remarkable side, skip entries that are already
     # uploaded
     for p in os.listdir(SYNCED_DIR_PATH):
+        if p.split('.')[0] in existing_filenames:
+            print(f'{p} already uploaded apparently')
+            continue
         # TODO: skip those that already exist in Remarkable; warn if there are
         # items we don't know about.
         #print(p)
         # uploading: [/home/app/synced_dir/2110.01548_Uncertainty-Based_Offline_Reinforcement_Learning_with_Diversified_Q-Ensemble.pdf]...OK
-        args = [
-            'bash',
-            '-c',
-            (
-                # TODO: compose command with shlex
-                'docker run '
-                '-v /home/agentydragon/.config/rmapi/:/home/app/.config/rmapi/ '  # TODO hardcoded xdg path
-                f'-v {SYNCED_DIR_PATH}:/home/app/synced_dir/ '
-                f'rmapi put /home/app/synced_dir/{p} {REMARKABLE_SIDE_PATH}'),
-        ]
+        args = make_args(
+            'put',
+            f'/home/app/synced_dir/{p}',
+            REMARKABLE_SIDE_PATH,
+        )
+        #args = [
+        #    'bash',
+        #    '-c',
+        #    (
+        #        # TODO: compose command with shlex
+        #        'docker run '
+        #        '-v /home/agentydragon/.config/rmapi/:/home/app/.config/rmapi/ '  # TODO hardcoded xdg path
+        #        f'-v {SYNCED_DIR_PATH}:/home/app/synced_dir/ '
+        #        f'rmapi put /home/app/synced_dir/{p} {REMARKABLE_SIDE_PATH}'),
+        #]
         # this seems to work:
         # docker run -v /home/agentydragon/.config/rmapi/:/home/app/.config/rmapi/ -v /home/agentydragon/.cache/papers_trilium_to_remarkable/synced_dir:/home/app/synced_dir/ rmapi put /home/app/synced_dir/2205.12910_NaturalProver:_Grounded_Mathematical_Proof_Generation_with_Language_Models.pdf /papers_trilium_to_remarkable
         print(args)
@@ -160,9 +182,25 @@ def upload_synced_dir():
         raise "unhandled"
 
 
+def purge_remarkable_synced_dir():
+    existing = subprocess.check_output(make_args(
+        'ls', REMARKABLE_SIDE_PATH)).decode('utf-8')
+    for line in existing.splitlines():
+        assert line.startswith('[f]\t')
+        print(line)
+        _, p = line.split('\t')
+        args = make_args(
+            'rm',
+            f'{REMARKABLE_SIDE_PATH}/{p}',  #.pdf',
+        )
+        print(args)
+        subprocess.check_call(args)
+
+
 def main(_):
+    purge_remarkable_synced_dir()
     # populate_synced_dir()
-    upload_synced_dir()
+    # upload_synced_dir()
 
 
 if __name__ == '__main__':
