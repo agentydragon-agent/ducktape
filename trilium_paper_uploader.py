@@ -100,8 +100,6 @@ def main(_):
             if attribute['name'] == 'arxivId':
                 arxiv_id = attribute['value']
                 continue
-            # TODO: also accept arxivLink attribute
-            # TODO: migrate arxivLink -> arxivId
 
         if arxiv_id is None:
             found_arxiv_id = search_for_arxiv_id(title)
@@ -131,7 +129,7 @@ def main(_):
             arxiv_id = found_arxiv_id
 
         # print(result['attributes'])
-        # find: 'arxivLink', 'arxivId'
+        # find: 'arxivId'
         children = result['childNoteIds']
 
         paper_found = False
