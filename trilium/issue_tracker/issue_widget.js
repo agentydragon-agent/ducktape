@@ -1,6 +1,9 @@
 /**
  * Issue widget. For issue notes, allows changing state and shows attached
  * hotlists.
+ *
+ * Expects OPENAI_API_KEY saved in a plaintext code note with #openaiApiKey
+ * label.
  */
 
 const TPL = `<div>
@@ -139,7 +142,6 @@ Existing hotlists:
     const prefix = '["';
     const openaiPrompt = (await this.makePrompt()) + prefix;
 
-    // TODO: SAVE API KEY SOMEWHERE
     const OPENAI_API_KEY = await api.runOnBackend(() => {
       return api.searchForNote('#openaiApiKey').getContent();
     }, []);
