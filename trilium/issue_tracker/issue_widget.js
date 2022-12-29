@@ -2,16 +2,15 @@
  * Issue widget. For issue notes, allows changing state and shows attached
  * hotlists.
  *
- * Expects OPENAI_API_KEY saved in a plaintext code note with #openaiApiKey
+ * Expects OpenAI API key saved in a plaintext code note with #openaiApiKey
  * label.
  */
 
 const TPL = `<div>
   <div id="issue-state-buttons"></div>
   <ul id="issue-hotlists"></ul>
-  <button id="suggest-hotlists-button">Suggest hotlists</output>
-  <button id="show-prompt-button">Show prompt</button>
-  <pre><output id="issue-debug-output"></output></pre>
+  <button id="suggest-hotlists-button">Suggest hotlists</button>
+  <details><summary>Prompt</summary><output id="prompt-output"></output></details>
   <ul id="suggested-hotlists"></ul>
 </div>`;
 
@@ -35,10 +34,14 @@ class IssueWidget extends api.CollapsibleWidget {
     this.$body.empty().append($(TPL));
     this.$stateButtons = this.$body.find('#issue-state-buttons');
     this.$hotlists = this.$body.find('#issue-hotlists');
-    this.$debugOutput = this.$body.find('#issue-debug-output');
+    this.$promptOutput = this.$body.find('#prompt-output');
     this.$suggestHotlistsButton = this.$body.find('#suggest-hotlists-button');
-    this.$showPromptButton = this.$body.find('#show-prompt-button');
     this.$suggestedHotlists = this.$body.find('#suggested-hotlists');
+
+    this.$suggestHotlistsButton.click(() => {
+      this.suggestHotlists();
+    });
+
     return this.$body;
   }
 
@@ -76,7 +79,8 @@ Existing hotlists:
       openaiPrompt += `${i}: ${hotlistNote.title}\n`;
       // TODO: also fetch parent hotlists, for OpenAI
     }
-    openaiPrompt += `\nIssue title: ${this.note.title}`;
+    openaiPrompt += '\n';
+    openaiPrompt += `Issue title: ${this.note.title}\n`;
     const hotlistRelations = this.note.getRelations('hotlist');
     if (hotlistRelations.length > 0) {
       openaiPrompt +=
@@ -87,7 +91,6 @@ Existing hotlists:
         titles.push(hotlistNote.title);
       }
       openaiPrompt += titles.join(', ');
-      openaiPrompt += '\n';
     }
     openaiPrompt += '\n';
     openaiPrompt +=
@@ -139,44 +142,42 @@ Existing hotlists:
     // TODO: also show OpenAI the existing hierarchy of hotlists
     // TODO: also include hotlist description if available
     // TODO: fetch all hotlists
-    const prefix = '["';
-    const openaiPrompt = (await this.makePrompt()) + prefix;
 
+    // TODO: should instead show the thing
+  }
+
+  async suggestHotlists() {
     const OPENAI_API_KEY = await api.runOnBackend(() => {
       return api.searchForNote('#openaiApiKey').getContent();
     }, []);
-    // console.log('OPENAI API KEY:', content);
+    console.log('OPENAI API KEY:', OPENAI_API_KEY);
+    const prefix = '["';
+    const openaiPrompt = (await this.makePrompt()) + prefix;
 
-    // TODO: should instead show the thing
-    this.$showPromptButton.click(() => {
-      this.$debugOutput.empty();
-      this.$debugOutput.append(openaiPrompt);
-    });
+    this.$promptOutput.text(openaiPrompt);
 
-    this.$suggestHotlistsButton.click(() => {
-      $.ajax({
-        url: 'https://api.openai.com/v1/completions',
-        type: 'POST',
-        data: JSON.stringify({
-          prompt: openaiPrompt,
-          max_tokens: 2048,
-          temperature: 0.5,
-          model: 'text-davinci-003',
-        }),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ` + OPENAI_API_KEY,
-        },
-        success: async (response) => {
-          // console.log(response.choices[0].text);
-          await this.showSuggestions(
-              JSON.parse(prefix + response.choices[0].text));
-        },
-        error: (error) => {
-          alert('error, see console');
-          console.log(error);
-        },
-      });
+    $.ajax({
+      url: 'https://api.openai.com/v1/completions',
+      type: 'POST',
+      data: JSON.stringify({
+        prompt: openaiPrompt,
+        max_tokens: 2048,
+        temperature: 0.5,
+        model: 'text-davinci-003',
+      }),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ` + OPENAI_API_KEY,
+      },
+      success: async (response) => {
+        // console.log(response.choices[0].text);
+        await this.showSuggestions(
+            JSON.parse(prefix + response.choices[0].text));
+      },
+      error: (error) => {
+        alert('error, see console');
+        console.log(error);
+      },
     });
     // TODO: have an OpenAI prompt -> response cache somewhere
   }
@@ -228,7 +229,7 @@ Existing hotlists:
     for (const hotlistTitle of jsonObject) {
       if (!hotlistTitleToIdMap.has(hotlistTitle)) {
         const bullet = $('<li>');
-        bullet.text(`Suggested: ${hotlistTitle}`);
+        bullet.text(` Suggested: ${hotlistTitle}`);
         this.$suggestedHotlists.append(bullet);
       }
     }
