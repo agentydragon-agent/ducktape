@@ -55,6 +55,8 @@ seminar for high school students by Charles University.
 ### Other
 
 * Telegram: [@agentydragon][telegram]. Trying to migrate off it to Matrix.
+* BookWyrm: [agentydragon@bookwyrm.social][bookwyrm]. It's got my book reviews,
+  reading list etc.
 * GitHub: [agentydragon][github]. Trying to migrate off it because I am not
   happy with GitHub, owned by Microsoft, being a critical dependency of
   many open-source projects.
@@ -67,6 +69,7 @@ seminar for high school students by Charles University.
 
 [gitlab]: https://gitlab.com/agentydragon
 [matrix]: https://matrix.to/#/@agentydragon:matrix.org
+[bookwyrm]: https://bookwyrm.social/user/agentydragon
 [mastodon]: https://mastodon.social/web/@agentydragon
 [ea]: https://www.effectivealtruism.org/
 [ea-cz]: http://www.efektivni-altruismus.cz/
