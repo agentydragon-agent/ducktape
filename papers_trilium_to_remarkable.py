@@ -199,7 +199,8 @@ def sync():
     # Sort by priority.
     ids_to_upload = sorted(
         ids_to_upload,
-        key=lambda id: should_exist[id].priority or 200,
+        key=lambda id: should_exist[id].priority
+        if should_exist[id].priority is not None else 200,
     )
 
     SYNCED_DIR_PATH.mkdir(exist_ok=True, parents=True)
