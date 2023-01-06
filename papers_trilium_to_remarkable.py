@@ -43,6 +43,7 @@ class PaperInTrilium:
     title: str
     pdf_note_id: Optional[str]
     priority: Optional[int]
+    finished_reading: bool
 
 
 def get_result_priority(result):
@@ -102,12 +103,27 @@ def get_trilium_papers():
         except KeyError:
             arxiv_id = None
 
+        try:
+            finished_reading = find_attribute_value_in_result(
+                result,
+                attribute_name='finishedReading',
+            )
+            if finished_reading == 'true':
+                finished_reading = True
+            elif finished_reading == 'false':
+                finished_reading = False
+            else:
+                raise Exception(f"{finished_reading=}")
+        except KeyError:
+            finished_reading = False
+
         yield PaperInTrilium(
             arxiv_id=arxiv_id,
             note_id=note_id,
             title=title,
             pdf_note_id=pdf_note_id,
             priority=priority,
+            finished_reading=finished_reading,
         )
 
 
@@ -158,6 +174,10 @@ def sync():
     should_exist = {}
     no_arxiv_id = []
     for paper in get_trilium_papers():
+        if paper.finished_reading:
+            print(f'finished reading: {paper.title}')
+            continue
+
         if not paper.arxiv_id:
             no_arxiv_id.append(paper)
             # print('no arxiv id')
