@@ -3,18 +3,13 @@ On first run:
     docker run -v $HOME/.config/rmapi/:/home/app/.config/rmapi/ -it rmapi
 
 This will pair the device to Remarkable API so that we can upload later.
-
-- create directory of synced papers (or maybe download based on Trilium db)
-
-commands (TODO):
-    --purge_remarkable
-    --populate_synced_dir --max_papers=10
-    --upload_synced_dir
 """
 
+import dataclasses
 import requests
 from absl import app
 from absl import flags
+import re
 from tqdm.auto import tqdm
 import subprocess
 import os
@@ -25,8 +20,9 @@ from xdg import xdg_cache_home
 
 # put book.pdf /books
 
-_ETAPI_URL = flags.DEFINE_string('etapi_url', 'http://localhost:37840',
-                                 "ETAPI root URL")
+_ETAPI_ROOT_URL = flags.DEFINE_string('etapi_root_url',
+                                      'http://localhost:37840',
+                                      "ETAPI root URL")
 _TOKEN = flags.DEFINE_string('token', None, 'ETAPI token')
 SYNCED_DIR_PATH = (xdg_cache_home() / 'papers_trilium_to_remarkable' /
                    'synced_dir')
@@ -40,38 +36,38 @@ def find_attribute_value_in_result(result, attribute_name):
     raise KeyError()
 
 
-def populate_synced_dir(max_papers=None):
+@dataclasses.dataclass
+class PaperInTrilium:
+    arxiv_id: Optional[str]
+    note_id: str
+    title: str
+    pdf_note_id: Optional[str]
+    priority: Optional[int]
+
+
+def get_result_priority(result):
+    try:
+        priority = find_attribute_value_in_result(
+            result, attribute_name='readingPriority')
+    except KeyError:
+        return None  # unprioritized go last
+
+    try:
+        return int(priority)
+    except ValueError:
+        return None  # badly prioritized, go last
+
+
+def get_trilium_papers():
     token = _TOKEN.value
-    root = _ETAPI_URL.value
+    root = _ETAPI_ROOT_URL.value
     headers = {'Authorization': token}
-
-    SYNCED_DIR_PATH.mkdir(exist_ok=True, parents=True)
-
-    # Search for all papers in Trilium, and their attached PDFs.
     response = requests.get(
         f'{root}/etapi/notes',
         params={'search': '~type.title = Paper'},
         headers=headers,
     )
-    results = response.json()
-
-    # Sort results by ascending priority.
-    def get_result_priority(result):
-        try:
-            priority = find_attribute_value_in_result(
-                result, attribute_name='readingPriority')
-        except KeyError:
-            return 200  # unprioritized go last
-
-        try:
-            return int(priority)
-        except ValueError:
-            return 200  # badly prioritized, go last
-
-    results = list(sorted(results['results'], key=get_result_priority))
-    if max_papers:
-        results = results[:max_papers]
-
+    results = response.json()['results']
     for result in tqdm(results):
         priority = get_result_priority(result)
         note_id = result['noteId']
@@ -92,41 +88,27 @@ def populate_synced_dir(max_papers=None):
             child_note = response.json()
             if (child_note['type'] == 'file'
                     and child_note['mime'] == 'application/pdf'):
+                pdf_note_id = child_id
                 break
         else:
-            print('no PDF found, skip')
+            pdf_note_id = None
             continue
 
-        print(f'found: ')
-        response = requests.get(
-            f'{root}/etapi/notes/{child_id}',
-            headers=headers,
-        )
-        # TODO: split apart stuff I finished reading / did not finish reading
-        filename = ''
-        priority = get_result_priority(result)
-        filename += f'{priority:03d} '
         try:
-            arxiv_id = find_attribute_value_in_result(result,
-                                                      attribute_name='arxivId')
-            filename += f'{arxiv_id} '
+            arxiv_id = find_attribute_value_in_result(
+                result,
+                attribute_name='arxivId',
+            )
         except KeyError:
-            pass
-        filename += title
-        filename = filename.replace(':', '_')
-        filename = (filename.replace('/', '-').replace('?', '-').replace(
-            '(', '_').replace(')', '_'))
-        # filename = filename.replace(' ', '_')
-        filename += '.pdf'
-        path = SYNCED_DIR_PATH / filename
-        response = requests.get(
-            f'{root}/etapi/notes/{child_id}/content',
-            headers=headers,
+            arxiv_id = None
+
+        yield PaperInTrilium(
+            arxiv_id=arxiv_id,
+            note_id=note_id,
+            title=title,
+            pdf_note_id=pdf_note_id,
+            priority=priority,
         )
-        assert response.status_code == 200
-        with open(path, 'wb') as f:
-            f.write(response.content)
-        print(f'{title} {child_id} written to {path}')
 
 
 def make_args(*args):
@@ -138,51 +120,111 @@ def make_args(*args):
     ]
 
 
-def upload_synced_dir():
-    subprocess.check_call(make_args('mkdir', REMARKABLE_SIDE_PATH))
-    # TODO: if 'entry already exists' in stdout -> ok, skip it
-    print('mkdir ok')
+# def purge_remarkable_synced_dir():
+#     for p in get_existing_filenames():
+#         args = make_args(
+#             'rm',
+#             f'{REMARKABLE_SIDE_PATH}/{p}',  #.pdf',
+#         )
+#         print(args)
+#         subprocess.check_call(args)
 
+
+def get_existing_filenames():
+    """Yields filenames uploaded in shared folder sans .pdf extension."""
     existing = subprocess.check_output(make_args(
         'ls', REMARKABLE_SIDE_PATH)).decode('utf-8')
-    existing_filenames = set()
     for line in existing.splitlines():
-        assert line.startswith('[f]\t')
-        _marker, filename = line.split('\t')
-        existing_filenames.add(filename)
+        FILE_PREFIX = '[f]\t'
+        assert line.startswith(FILE_PREFIX)
+        yield line.removeprefix(FILE_PREFIX)
 
-    print(existing_filenames)
 
-    # TODO: list the directory on remarkable side, skip entries that are already
-    # uploaded
-
-    # going through files in sorted order, will upload by priority
-    for p in tqdm(list(sorted(os.listdir(SYNCED_DIR_PATH)))):
-        filename, _ext = os.path.splitext(p)
-        # print(filename)
-        if filename in existing_filenames:
-            # print(f'{p} already uploaded apparently')
+def sync():
+    token = _TOKEN.value
+    root = _ETAPI_ROOT_URL.value
+    # TODO:
+    # Look at papers that are uploaded in synced dir. Parse out their format:
+    # priority, arXiv ID, name.
+    existing_arxiv_id_to_filename = {}
+    for filename in get_existing_filenames():
+        regex = r'(?P<priority>\d+) (?P<arxiv_id>\d+\.\d+) (?P<name>.+)'
+        # TODO: if no arxiv_id -> save ... how? note ID? let's just skip
+        if not (match := re.fullmatch(regex, filename)):
+            print(f'no match: {filename}')
             continue
-        # TODO: skip those that already exist in Remarkable; warn if there are
-        # items we don't know about.
-        #print(p)
-        # uploading: [/home/app/synced_dir/2110.01548_Uncertainty-Based_Offline_Reinforcement_Learning_with_Diversified_Q-Ensemble.pdf]...OK
+        existing_arxiv_id_to_filename[match.group('arxiv_id')] = filename
+    # Look at papers that ought to be uploaded.
+    should_exist = {}
+    no_arxiv_id = []
+    for paper in get_trilium_papers():
+        if not paper.arxiv_id:
+            no_arxiv_id.append(paper)
+            # print('no arxiv id')
+            continue
+        # TODO: try to download the pdf here
+        if not paper.pdf_note_id:
+            print('no PDF')
+            continue
+        should_exist[paper.arxiv_id] = paper
+    print(f'no arxiv id: {len(no_arxiv_id)}')
+    # TODO: split apart stuff I finished reading / did not finish reading
+    # TODO: Existing papers: make sure their name is correct according to priority.
+    # (for now leaving at existing priority)
+
+    # Look at papers we want to have uploaded.
+    # Papers not yet uploaded: upload them.
+    ids_to_upload = set(should_exist.keys()) - set(
+        existing_arxiv_id_to_filename.keys())
+    # Sort by priority.
+    ids_to_upload = sorted(
+        ids_to_upload,
+        key=lambda id: should_exist[id].priority or 200,
+    )
+
+    SYNCED_DIR_PATH.mkdir(exist_ok=True, parents=True)
+
+    for arxiv_id in (t := tqdm(ids_to_upload)):
+        t.set_description(f'{paper.priority} {paper.title}')
+        headers = {'Authorization': token}
+        paper = should_exist[arxiv_id]
+        filename = f'{paper.priority:03d} '
+        if paper.arxiv_id:
+            filename += f'{arxiv_id} '
+        filename += paper.title
+        filename = filename.replace(':', '_')
+        filename = (filename.replace('/', '-').replace('?', '-').replace(
+            '(', '_').replace(')', '_'))
+        # filename = filename.replace(' ', '_')
+        filename += '.pdf'
+
+        path = SYNCED_DIR_PATH / filename
+        response = requests.get(
+            f'{root}/etapi/notes/{paper.pdf_note_id}/content',
+            headers=headers,
+        )
+        assert response.status_code == 200
+        with open(path, 'wb') as f:
+            f.write(response.content)
+
         args = make_args(
             'put',
-            f'/home/app/synced_dir/{p}',
+            f'/home/app/synced_dir/{filename}',
             REMARKABLE_SIDE_PATH,
         )
         # this seems to work:
         # docker run -v /home/agentydragon/.config/rmapi/:/home/app/.config/rmapi/ -v /home/agentydragon/.cache/papers_trilium_to_remarkable/synced_dir:/home/app/synced_dir/ rmapi put /home/app/synced_dir/2205.12910_NaturalProver:_Grounded_Mathematical_Proof_Generation_with_Language_Models.pdf /papers_trilium_to_remarkable
-        print(args)
         sp = subprocess.run(args, capture_output=True)
 
         if sp.returncode == 0:
-            print('ok')
+            # ok
             continue
         if sp.returncode == 1 and b'entry already exists' in sp.stderr:
             print('already exists')
             continue
+        print(f'{paper.title} {paper.note_id} written to {path}')
+        print(args)
+        print(f'{sp.returncode = }')
         # Print the standard output of the command
         print(f'{sp.stdout = }')
         # Print the standard error of the command
@@ -190,26 +232,8 @@ def upload_synced_dir():
         raise "unhandled"
 
 
-def purge_remarkable_synced_dir():
-    existing = subprocess.check_output(make_args(
-        'ls', REMARKABLE_SIDE_PATH)).decode('utf-8')
-    for line in existing.splitlines():
-        assert line.startswith('[f]\t')
-        print(line)
-        _, p = line.split('\t')
-        args = make_args(
-            'rm',
-            f'{REMARKABLE_SIDE_PATH}/{p}',  #.pdf',
-        )
-        print(args)
-        subprocess.check_call(args)
-
-
 def main(_):
-    # purge_remarkable_synced_dir()
-    # populate_synced_dir(max_papers=10)
-    # populate_synced_dir()
-    upload_synced_dir()
+    sync()
 
 
 if __name__ == '__main__':
