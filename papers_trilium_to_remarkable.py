@@ -156,6 +156,18 @@ def get_existing_filenames():
         yield line.removeprefix(FILE_PREFIX)
 
 
+def build_filename(paper):
+    filename = f'{paper.priority:03d} '
+    if paper.arxiv_id:
+        filename += f'{paper.arxiv_id} '
+    filename += paper.title
+    filename = filename.replace(':', '_')
+    filename = (filename.replace('/', '-').replace('?', '-').replace(
+        '(', '_').replace(')', '_'))
+    # filename = filename.replace(' ', '_')
+    return filename
+
+
 def sync():
     token = _TOKEN.value
     root = _ETAPI_ROOT_URL.value
@@ -177,6 +189,9 @@ def sync():
         if paper.finished_reading:
             print(f'finished reading: {paper.title}')
             continue
+
+        if paper.priority is None:
+            paper.priority = 999
 
         if not paper.arxiv_id:
             no_arxiv_id.append(paper)
@@ -203,23 +218,34 @@ def sync():
         if should_exist[id].priority is not None else 200,
     )
 
+    # Rename existing ones:
+    for arxiv_id, paper in (t := tqdm(should_exist.items())):
+        filename = build_filename(paper)
+
+        if arxiv_id not in existing_arxiv_id_to_filename:
+            continue
+        existing_filename = existing_arxiv_id_to_filename[arxiv_id]
+        print('already exists')
+
+        if existing_filename == filename:
+            print('correctly named')
+            continue
+
+        before = REMARKABLE_SIDE_PATH + '/' + existing_filename
+        after = REMARKABLE_SIDE_PATH + '/' + filename
+        args = make_args('mv', before, after)
+        subprocess.check_call(args)
+        print('renamed {before} -> {after}')
+
     SYNCED_DIR_PATH.mkdir(exist_ok=True, parents=True)
 
-    for arxiv_id in (t := tqdm(ids_to_upload)):
-        t.set_description(f'{paper.priority} {paper.title}')
-        headers = {'Authorization': token}
+    new_arxiv_ids = set(should_exist.keys()) - set(
+        existing_arxiv_id_to_filename.keys())
+    # TODO: WTF why is it adding new ones?
+    for arxiv_id in (t := tqdm(new_arxiv_ids)):
         paper = should_exist[arxiv_id]
-        filename = f'{paper.priority:03d} '
-        if paper.arxiv_id:
-            filename += f'{arxiv_id} '
-        filename += paper.title
-        filename = filename.replace(':', '_')
-        filename = (filename.replace('/', '-').replace('?', '-').replace(
-            '(', '_').replace(')', '_'))
-        # filename = filename.replace(' ', '_')
-        filename += '.pdf'
-
-        path = SYNCED_DIR_PATH / filename
+        path = SYNCED_DIR_PATH / (filename + '.pdf')
+        headers = {'Authorization': token}
         response = requests.get(
             f'{root}/etapi/notes/{paper.pdf_note_id}/content',
             headers=headers,
@@ -230,7 +256,7 @@ def sync():
 
         args = make_args(
             'put',
-            f'/home/app/synced_dir/{filename}',
+            f'/home/app/synced_dir/{filename}.pdf',
             REMARKABLE_SIDE_PATH,
         )
         # this seems to work:
