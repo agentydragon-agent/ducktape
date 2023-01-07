@@ -13,6 +13,8 @@ import re
 from tqdm.auto import tqdm
 import subprocess
 import os
+import click
+import sys
 
 from typing import Optional
 
@@ -24,6 +26,7 @@ _ETAPI_ROOT_URL = flags.DEFINE_string('etapi_root_url',
                                       'http://localhost:37840',
                                       "ETAPI root URL")
 _TOKEN = flags.DEFINE_string('token', None, 'ETAPI token')
+_PURGE = flags.DEFINE_bool('purge', False, 'Purge RM side?')
 SYNCED_DIR_PATH = (xdg_cache_home() / 'papers_trilium_to_remarkable' /
                    'synced_dir')
 REMARKABLE_SIDE_PATH = '/papers_trilium_to_remarkable'
@@ -136,14 +139,14 @@ def make_args(*args):
     ]
 
 
-# def purge_remarkable_synced_dir():
-#     for p in get_existing_filenames():
-#         args = make_args(
-#             'rm',
-#             f'{REMARKABLE_SIDE_PATH}/{p}',  #.pdf',
-#         )
-#         print(args)
-#         subprocess.check_call(args)
+def purge_remarkable_synced_dir():
+    for p in get_existing_filenames():
+        args = make_args(
+            'rm',
+            f'{REMARKABLE_SIDE_PATH}/{p}',  #.pdf',
+        )
+        print(args)
+        subprocess.check_call(args)
 
 
 def get_existing_filenames():
@@ -244,6 +247,7 @@ def sync():
     # TODO: WTF why is it adding new ones?
     for arxiv_id in (t := tqdm(new_arxiv_ids)):
         paper = should_exist[arxiv_id]
+        filename = build_filename(paper)
         path = SYNCED_DIR_PATH / (filename + '.pdf')
         headers = {'Authorization': token}
         response = requests.get(
@@ -280,6 +284,13 @@ def sync():
 
 
 def main(_):
+    if _PURGE.value:
+        if not click.confirm('Purge RM?'):
+            sys.exit(1)
+
+        purge_remarkable_synced_dir()
+        sys.exit(0)
+
     sync()
 
 
