@@ -3,8 +3,10 @@
  */
 
 const TPL = `<div>
-  <input type="text" id="arxiv-input" placeholder="arXiv ID or URL" style="width: 80%;">
-  <button id="arxiv-submit">Add</button>
+  <form id="arxiv-form">
+    <input type="text" id="arxiv-input" placeholder="arXiv ID or URL" style="width: 80%;">
+    <button type="submit">Add</button>
+  </form>
   <output id="arxiv-message" style="color: var(--main-text-color);"></output>
 </div>`;
 
@@ -26,13 +28,13 @@ class ArxivWidget extends api.CollapsibleWidget {
   async doRenderBody() {
     this.$body.empty().append($(TPL));
     this.$input = this.$body.find('#arxiv-input');
-    this.$submit = this.$body.find('#arxiv-submit');
+    this.$form = this.$body.find('#arxiv-form');
     this.$message = this.$body.find('#arxiv-message');
 
     // Make message disappear when URL is updated.
     this.$input.on('input', () => this.$message.text(''));
 
-    this.$submit.on('click', async () => {
+    this.$form.on('click', async () => {
       const paper = this.$input.val().trim();
       if (!paper) {
         this.$message.text('Please enter a valid arXiv ID or URL.');
@@ -65,6 +67,9 @@ class ArxivWidget extends api.CollapsibleWidget {
     // search for notes with similar titles
     const title = meta.title;
     // TODO: maybe show links to all similar pages, not just one
+
+    // Do not offer to auto-link to stuff that already has an arxiv ID
+    const query = title + ' #-arxivId'
     // TODO: maybe search fuzzily, skipping individual words
     const results = await api.searchForNotes(title);
     if (results.length > 0) {
@@ -100,22 +105,29 @@ class ArxivWidget extends api.CollapsibleWidget {
   }
 
   async showSimilarNotesMessage(title, results, paperId) {
-    this.$message.text(
-        results.length + ' notes with similar title found, first one is: ');
-    this.$message.append(await api.createNoteLink(
-        results[0].noteId, {showTooltip: true, showNoteIcon: true}));
-    this.$message.append(
-        '<button id="arxiv-add-to-existing">Link existing page to ArXiv</button>');
-    this.$body.find('#arxiv-add-to-existing').on('click', async () => {
-      // add the paper ID attribute to the existing note
-      await api.runOnBackend(function(noteId, paperId) {
-        const note = api.getNote(noteId);
-        note.addLabel('arxivId', paperId);
-      }, [results[0].noteId, paperId]);
-      this.$message.html(await api.createNoteLink(
-          results[0].noteId, {showTooltip: true, showNoteIcon: true}));
-      this.$message.prepend('Paper ID added to: ');
-      this.$input.val('');
+    this.$message.text(results.length + ' notes with similar title found:');
+
+    // add a button for each similar note
+    results.forEach(async result => {
+      const noteLink = await api.createNoteLink(
+          result.noteId, {showTooltip: true, showNoteIcon: true});
+      this.$message.append($('<div>').append(
+          noteLink,
+          $('<button>').text('Link to ArXiv').on('click', async () => {
+            // add the paper ID attribute to the existing note
+            await api.runOnBackend(function(noteId, paperId) {
+              const note = api.getNote(noteId);
+              note.addLabel('arxivId', paperId);
+            }, [result.noteId, paperId]);
+            // show a message indicating that the note was linked
+            this.$message.append($('<div>').append(
+                'Paper ID added to: ',
+                await api.createNoteLink(
+                    result.noteId, {showTooltip: true, showNoteIcon: true}),
+                ));
+            // clear the input field
+            this.$input.val('');
+          })));
     });
     this.$message.append(
         '<br>Confirm to create a new note anyway: ' +
