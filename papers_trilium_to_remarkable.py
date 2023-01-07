@@ -61,10 +61,10 @@ def get_result_priority(result):
 
     try:
         priority = int(priority)
-        assert priority > 0
+        assert priority >= 0
         return priority
     except Exception as e:
-        raise ValueError(f"failed to process {result = }") from e
+        raise ValueError(f"failed to process {result['noteId'] = }") from e
 
 
 def get_trilium_papers():
@@ -215,17 +215,6 @@ def sync():
     # TODO: Existing papers: make sure their name is correct according to priority.
     # (for now leaving at existing priority)
 
-    # Look at papers we want to have uploaded.
-    # Papers not yet uploaded: upload them.
-    ids_to_upload = set(should_exist.keys()) - set(
-        existing_arxiv_id_to_filename.keys())
-    # Sort by priority.
-    ids_to_upload = sorted(
-        ids_to_upload,
-        key=lambda id: should_exist[id].priority
-        if should_exist[id].priority is not None else 200,
-    )
-
     # Rename existing ones:
     for arxiv_id, paper in (t := tqdm(should_exist.items())):
         filename = build_filename(paper)
@@ -249,6 +238,12 @@ def sync():
 
     new_arxiv_ids = set(should_exist.keys()) - set(
         existing_arxiv_id_to_filename.keys())
+    # Sort by priority.
+    new_arxiv_ids = sorted(
+        new_arxiv_ids,
+        key=lambda id: should_exist[id].priority
+        if should_exist[id].priority is not None else 200,
+    )
     # TODO: WTF why is it adding new ones?
     for arxiv_id in (t := tqdm(new_arxiv_ids)):
         paper = should_exist[arxiv_id]
