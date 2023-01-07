@@ -56,9 +56,15 @@ def get_result_priority(result):
     except KeyError:
         return None  # unprioritized go last
 
-    priority = int(priority)
-    assert priority > 0, f"{result = }"
-    return priority
+    if priority == '':
+        return None
+
+    try:
+        priority = int(priority)
+        assert priority > 0
+        return priority
+    except Exception as e:
+        raise ValueError(f"failed to process {result = }") from e
 
 
 def get_trilium_papers():
