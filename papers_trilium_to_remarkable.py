@@ -222,17 +222,16 @@ def sync():
         if arxiv_id not in existing_arxiv_id_to_filename:
             continue
         existing_filename = existing_arxiv_id_to_filename[arxiv_id]
-        print('already exists')
 
         if existing_filename == filename:
-            print('correctly named')
+            print('{paper.title} already exists, correctly named')
             continue
 
         before = REMARKABLE_SIDE_PATH + '/' + existing_filename
         after = REMARKABLE_SIDE_PATH + '/' + filename
         args = make_args('mv', before, after)
         subprocess.check_call(args)
-        print('renamed {before} -> {after}')
+        print('{paper.title} renamed {before} -> {after}')
 
     SYNCED_DIR_PATH.mkdir(exist_ok=True, parents=True)
 
