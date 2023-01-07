@@ -56,10 +56,9 @@ def get_result_priority(result):
     except KeyError:
         return None  # unprioritized go last
 
-    try:
-        return int(priority)
-    except ValueError:
-        return None  # badly prioritized, go last
+    priority = int(priority)
+    assert priority > 0, f"{result = }"
+    return priority
 
 
 def get_trilium_papers():
@@ -247,6 +246,7 @@ def sync():
     # TODO: WTF why is it adding new ones?
     for arxiv_id in (t := tqdm(new_arxiv_ids)):
         paper = should_exist[arxiv_id]
+        t.set_description(f"{paper.priority} {paper.title}")
         filename = build_filename(paper)
         path = SYNCED_DIR_PATH / (filename + '.pdf')
         headers = {'Authorization': token}
