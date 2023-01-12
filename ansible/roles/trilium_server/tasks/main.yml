@@ -67,7 +67,7 @@
   # See https://github.com/zadam/trilium/wiki/Docker-server-installation#note-about---user-directive=.
   ansible.builtin.docker_container:
     name: trilium-server
-    image: zadam/trilium:0.55-latest
+    image: zadam/trilium:0.57-latest
     user: root  # TODO: argh
     volumes:
       - /srv/trilium-data:/home/node/trilium-data
