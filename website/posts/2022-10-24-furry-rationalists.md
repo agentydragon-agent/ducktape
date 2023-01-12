@@ -31,7 +31,7 @@ some method on this website), or look us up on
 us.
 
 There’s also a smaller Effective Anthropomorphism Discord server, run by
-[bird][bird]: <https://discord.gg/98XbX726>
+[bird][bird]: <https://discord.gg/JBeKs5qZ>
 
 Come say hi, and feel free to share if you know anyone who’d be interested!
 
