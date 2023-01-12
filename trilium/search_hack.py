@@ -115,6 +115,8 @@ def index():
             content = f"Note title: {title}\n"
 
             for attribute in result['attributes']:
+                # TODO: combine relations/labels of the same type, like:
+                # internalLink: A internalLink: B internalLink: C
                 if attribute['type'] == 'relation' and attribute['name'] in {
                         'runOnAttributeChange',
                         'runOnNoteCreation',
@@ -140,6 +142,7 @@ def index():
                     continue
 
                 if attribute['type'] == 'label' and attribute['name'] in {
+                        'bookmarked',
                         'iconClass',
                         'template',
                         'readingPriority',
@@ -160,6 +163,7 @@ def index():
                 if attribute['type'] == 'label' and attribute['name'] in {
                         'finishedReading',
                         'arxivId',
+                        'hotlist',
                 }:
                     content += f"{attribute['name']}: {attribute['value']}\n"
                     continue
