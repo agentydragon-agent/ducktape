@@ -18,6 +18,7 @@ class IssueTable {
   constructor() {
     this.hotlistIncludeIds = [];
     this.hotlistExcludeIds = [];
+    // TODO: by default only show open issues
     this.stateIds = [];
     this.$issueList = null;
     this.$hotlistList = null;
