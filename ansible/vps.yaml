@@ -139,6 +139,8 @@
     # TODO: this also needs to be run if certificate is already in /etc, but
     # not yet in /srv/bazel-remote-cache.
     - name: Set Bazel remote cache certificate post hook
+      tags:
+        - bazel-remote-cache
       ansible.builtin.copy:
         dest: /etc/letsencrypt/renewal-hooks/post/bazel-remote-cache.sh
         mode: 0755
@@ -172,10 +174,14 @@
     - stat:
         path: /etc/letsencrypt/live/bazel-cache.agentydragon.com/fullchain.pem
       register: bazel_cache_cert
+      tags:
+        - bazel-remote-cache
 
     - assert:
         that:
           - bazel_cache_cert.stat.exists
+      tags:
+        - bazel-remote-cache
 
     - name: Create nginx configuration files
       template:
