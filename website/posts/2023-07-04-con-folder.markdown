@@ -5,7 +5,7 @@ title: "Furry life-hack: Per-con/per-event messenger folders"
 This is just to spread a small life-hack I came up with for furry conventions.
 I'll probably post a couple more of those small life-hacks next couple days, if
 things go well. (Coming back from [Anthrocon][anthrocon] with some sorta
-con-crud so I'm a little dead.)
+con-crud so I'm a little dead. Probably [kissed too many boys][boy-kisser].)
 
 When you're at a con (or an event of any sort), in your messenger app (mine is
 Telegram), make a folder with everyone you know at that event, or any event
@@ -28,3 +28,4 @@ list, which makes sense if you're at a con - then you probably want to mostly
 chat with other people at the con anyway.)
 
 [anthrocon]: https://www.anthrocon.org/
+[boy-kisser]: https://knowyourmeme.com/memes/oooooo-you-like-boys-ur-a-boykisser
