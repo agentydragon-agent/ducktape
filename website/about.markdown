@@ -12,8 +12,9 @@ Hi!
 
 My chosen name is Rai, and my given name is Michal Pokorný. I'm 29, I grew up
 in Czech Republic. I've worked as a software engineer at Google Zurich since
-March 2016, then took a year-long break roughly May 2021 - May 2022 and now
-I'm a resident at OpenAI on the reinforcement learning team.
+March 2016, then took a year-long break roughly May 2021 - May 2022. Then I
+joined OpenAI, first as a resident on the reinforcement learning team, then on
+alignment.
 
 I have a bachelor's in general CS from the [Faculty of Mathematics and Physics][mff]
 of the Charles University in Prague. I started a master's in AI at the very same,
