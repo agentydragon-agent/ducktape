@@ -1,0 +1,135 @@
+- name: Remove system-installed Anki
+  tags:
+    - anki
+  become: true
+  ansible.builtin.apt:
+    pkg: anki
+    state: absent
+- name: Install Anki card dependencies
+  tags:
+    - anki
+  become: true
+  ansible.builtin.apt:
+    pkg:
+      - dvipng
+      - fonts-roboto
+      - youtube-dl
+      # Instead of installing a big texlive-full.
+      - texlive
+      - texlive-lang-english
+      - texlive-lang-german
+      - texlive-latex-extra
+      - texlive-latex-recommended
+      - texlive-science
+- name: Install latest Anki
+  tags:
+    - anki
+  block:
+    - name: Install Anki dependencies
+      # See https://docs.ankiweb.net/platform/linux/installing.html
+      become: true
+      ansible.builtin.apt:
+        pkg:
+          - libxcb-xinerama0
+          - libxcb-cursor0
+    - name: Create temp directory
+      ansible.builtin.tempfile:
+        state: directory
+        suffix: anki-release
+      register: tmp_dir
+      changed_when: false
+
+    - name: Set temporary dir path
+      ansible.builtin.set_fact:
+        tmp_path: "{{ tmp_dir.path }}"
+      changed_when: false
+
+    - name: Download anki latest release info
+      ansible.builtin.get_url:
+        url: https://api.github.com/repos/ankitects/anki/releases/latest
+        dest: "{{ tmp_path }}/latest-release.json"
+        mode: 0644
+      changed_when: false
+
+    - name: Get latest Anki release version
+      ansible.builtin.shell: |
+        jq --raw-output '.tag_name' {{ tmp_path }}/latest-release.json
+      register: latest_release_version
+      changed_when: false
+
+    - name: Get latest Anki release URL
+      ansible.builtin.shell: |
+        jq --raw-output '.assets[] | select(.name | test("linux-qt6")) | .browser_download_url' {{ tmp_path }}/latest-release.json
+      register: latest_release_url
+      changed_when: false
+
+    - name: Set latest release URL
+      ansible.builtin.set_fact:
+        latest_release_url: "{{ latest_release_url.stdout }}"
+      changed_when: false
+
+    - name: Check if Anki is installed already
+      stat:
+        path: /usr/local/bin/anki
+      register: anki_binary_stat
+
+    # If we already have Anki installed, check whether it's the latest version.
+    - name: Get version of installed Anki
+      ansible.builtin.script: get_anki_version.py
+      args:
+        executable: python3
+      when: anki_binary_stat.stat.exists
+      register: installed_anki_version
+
+   # - ansible.builtin.debug:
+   #     var: installed_anki_version
+
+   # - ansible.builtin.debug:
+   #     var: latest_release_version
+
+    - name: Install latest Anki
+      when: (not anki_binary_stat.stat.exists) or (installed_anki_version is defined and installed_anki_version.stdout != latest_release_version.stdout)
+      block:
+
+      # - ansible.builtin.debug:
+      #     var: latest_release_url
+
+      - name: Get Anki dir from the path
+        ansible.builtin.set_fact:
+          # https://github.com/ankitects/anki/releases/download/2.1.37/anki-2.1.37-linux.tar.bz2 -> anki-2.1.37-linux
+          anki_dirname: "{{ latest_release_url | regex_search('/(anki-[^/]*-linux-qt6).tar.zst$', '\\1') | first }}"
+        changed_when: false
+
+      - name: Download Anki
+        ansible.builtin.unarchive:
+          remote_src: true
+          src: "{{ latest_release_url }}"
+          dest: "{{ tmp_path }}"
+        changed_when: false
+
+      - name: Run ./install.sh
+        changed_when: true
+        become: true
+        ansible.builtin.command:
+          cmd: ./install.sh
+          chdir: "{{ tmp_path }}/{{ anki_dirname }}"
+
+    - name: Stat /usr/local/bin/anki
+      ansible.builtin.stat:
+        path: /usr/local/bin/anki
+      register: installed_anki_binary
+
+    - name: Check /usr/local/bin/anki now exists
+      ansible.builtin.assert:
+        that:
+          - installed_anki_binary.stat.exists
+
+
+# TODO: install Anki addons:
+# TODO: 291119185 - batch editing
+# TODO: 1788670778 - CrowdAnki
+# TODO: 1374772155 - Image Occlusion Enhanced for Anki 21
+# TODO: 1463041493 - Syntax Highlighting for Code
+#
+# TODO: cloze_overlapper_0_4_0_alpha0
+# TODO: review-heatmap

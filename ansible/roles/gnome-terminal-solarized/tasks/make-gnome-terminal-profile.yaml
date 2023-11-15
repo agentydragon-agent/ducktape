@@ -4,9 +4,14 @@
 - name: "Ensure shell profile {{ visible_name }} exists"
   when: "visible_name not in profile_name_to_uuid"
   block:
+    - name: Make sure Python is set up for Gnome Terminal theme setup
+      become: true
+      ansible.builtin.apt:
+        pkg:
+        - python3
     - name: Make UUID
       ansible.builtin.command: >
-        python -c 'import uuid; print(uuid.uuid4())'
+        python3 -c 'import uuid; print(uuid.uuid4())'
       register: uuid_out
       changed_when: false
     - name: Bind returned UUID

@@ -1,3 +1,14 @@
+---
+# Dependencies of dconf module.
+# https://docs.ansible.com/ansible/latest/collections/community/general/dconf_module.html#notes
+- ansible.builtin.apt:
+    pkg:
+      - python3-pip
+- ansible.builtin.pip:
+    name:
+      - psutil
+
+
 - name: Set custom datetime indicator
   block:
   - name: Set date format to custom

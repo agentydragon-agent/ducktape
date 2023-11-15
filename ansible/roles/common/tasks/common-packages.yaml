@@ -3,10 +3,10 @@
   ansible.builtin.apt:
     pkg:
       # TODO: remove cinnamon
-      - cinnamon-desktop-environment
+      #- cinnamon-desktop-environment
       - curl
       - diffutils
-      - fonts-powerline
+      #- fonts-powerline
       - geeqie
       - gimp
       - git
