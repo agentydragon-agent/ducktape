@@ -1,0 +1,7 @@
+# TODO: add to specific "ML dev env"
+- name: Install ML PyPI packages
+  ansible.builtin.pip:
+    name:
+      - pandas
+      - torch
+      - numpy

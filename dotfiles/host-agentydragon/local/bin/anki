@@ -1,3 +1,0 @@
-#!/bin/bash
-# Launch Anki under my Anki dir
-/usr/local/bin/anki -b $HOME/drive/anki

@@ -1,0 +1,41 @@
+---
+- vars:
+    user_systemd_services_dir: "{{ home_path }}/.config/systemd/user"
+    google_drive_mount_dir: "{{ home_path }}/.google-drive"
+
+  block:
+  - name: Create user systemd services folder
+    file:
+      path: "{{ user_systemd_services_dir }}"
+      state: directory
+      recurse: true
+  - name: Install google drive
+    template:
+      src: google-drive.service.j2
+      dest: "{{ user_systemd_services_dir }}/google-drive.service"
+  # TODO: and maybe also add the binary to github? 3rdparty?
+  - name: Enable google drive
+    systemd:
+      name: google-drive
+      state: started
+      enabled: true
+      scope: user  # install as --user to depend on user session
+
+  # On first setup, the service needs to be started manually by commandline to
+  # authenticate. Just run the command in the service file manually first.
+
+  - name: Symlink to drive folder in home
+    file:
+      src: "{{ google_drive_mount_dir }}/My Drive"
+      dest: "{{ home_path }}/drive"
+      state: link
+      force: true
+  - name: Create Worthy config dir
+    file:
+      path: "{{ home_path }}/.config/worthy"
+      state: directory
+  - name: Symlink Worthy config to Drive
+    file:
+      src: "{{ home_path }}/drive/finance/worthy-config.yaml"
+      dest: "{{ home_path }}/.config/worthy/config.yaml"
+      state: link

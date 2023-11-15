@@ -1,0 +1,85 @@
+---
+- hosts: localhost
+  vars:
+    my_user: agentydragon
+    home_path: "/home/{{ my_user }}"
+    scripts_path: "{{ home_path }}/bin"
+    local_scripts_path: "{{ home_path }}/.local/bin"
+    ducktape_path: "{{ home_path }}/code/ducktape"
+    rcup_computer: gpd
+  remote_user: "{{ my_user }}"
+  roles:
+    - role: jaredhocutt.gnome_extensions
+      vars:
+        gnome_extension_ids:
+          # gTile - https://extensions.gnome.org/extension/28/gtile/
+          # Not needed on Pop! OS
+          # Install gTile.
+          # - 28
+
+          # Desaturate All - https://extensions.gnome.org/extension/1102/desaturate-all/
+          - 1102  
+
+    - common
+    - anki
+    - gnome-terminal-solarized
+    - google-drive-client
+    - timekpr
+
+  tasks:
+    - name: Set zsh as login shell
+      become: true
+      tags:
+        - zsh
+      user:
+        name: "{{ my_user }}"
+        shell: /bin/zsh
+    - name: Install packages for laptop
+      become: true
+      ansible.builtin.apt:
+        pkg:
+          - acpi
+          # - locate
+          - powertop
+          - steam
+          - torbrowser-launcher
+          - transmission-gtk
+          # - virtualbox
+          # - virtualbox-dkms
+          - vlc
+          - wine-stable
+          - wireshark
+          - xournal
+
+          # For getting background color for Vim background color auto-switch.
+          - xtermcontrol
+
+          # nice screenshot tool
+          - flameshot
+          # TODO: add Ubuntu startup programs, like Flameshot etc.
+
+
+    - name: Install Rescuetime
+      tags:
+        - rescuetime
+      become: true
+      when: ansible_architecture == "amd64" or ansible_architecture == "x86_64"
+      ansible.builtin.apt:
+        deb: https://www.rescuetime.com/installers/rescuetime_current_amd64.deb
+
+    - name: Enable Gnome Night Light
+      tags:
+        - nightlight
+      block:
+        - dconf:
+            key: /org/gnome/settings-daemon/plugins/color/night-light-enabled
+            value: "true"
+        - dconf:
+            key: /org/gnome/settings-daemon/plugins/color/night-light-temperature
+            value: "uint32 2414"
+
+    - name: Update githooks
+      tags:
+        - githooks
+      # should only succeed if we don't need to update
+      ansible.builtin.shell: git hooks update --no
