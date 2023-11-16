@@ -38,12 +38,21 @@
 #    tags:
 #    - gitlab-runner
 
-    # Install gTile.
     - role: jaredhocutt.gnome_extensions
       vars:
         gnome_extension_ids:
-          # - 28    # gTile - https://extensions.gnome.org/extension/28/gtile/
-          - 1102  # Desaturate All - https://extensions.gnome.org/extension/1102/desaturate-all/
+          ## gTile - https://extensions.gnome.org/extension/28/gtile/
+          # Not needed on Pop! OS
+          # - 28
+
+          ## Desaturate All
+          # https://extensions.gnome.org/extension/1102/desaturate-all/
+          - 1102
+
+          ## Panel Date Format
+          # https://extensions.gnome.org/extension/1462/panel-date-format/
+          # https://github.com/KEIII/gnome-shell-panel-date-format
+          - 1462
 
     - common
     - anki
@@ -54,6 +63,13 @@
     # - dev-clojure
 
   tasks:
+    - name: Set Gnome top panel datetime format
+      ansible.builtin.dconf:
+        key: "/org/gnome/shell/extensions/panel-date-format/format"
+        value: "'%a %Y-%m-%d %H:%M'"  # e.g.: "Wed 2023-11-15 22:49"
+      tags:
+        - gnome-shell-datetime-format
+
     # Cannot be done for cloudragon because of OS Login. ugh.
     - name: Set zsh as login shell
       become: true
@@ -79,6 +95,7 @@
           - blender
           - blueman
           - chrome-gnome-shell
+          - flameshot  # Nice screenshot tool.
           - gnome-shell
           - gnome-tweaks
           - gnupg
@@ -88,7 +105,6 @@
           - krita
           - locate
           - openjdk-8-jdk
-          - perl
           - powertop
           - qshutdown
           - steam
@@ -106,8 +122,6 @@
           # For getting background color for Vim background color auto-switch.
           - xtermcontrol
 
-          # nice screenshot tool
-          - flameshot
           # TODO: add Ubuntu startup programs, like Flameshot etc.
 
     - name: Install pop os specific packages for laptop
