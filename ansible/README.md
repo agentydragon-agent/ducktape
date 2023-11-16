@@ -3,6 +3,23 @@
 * The `rcup` command asks for confirmation before overwriting existing dotfiles.
   Which we can't give from an Ansible playbook. Which sucks.
 
+* Githooks need to be installed manually for now.
+  <https://github.com/gabyx/githooks#installation>
+  * find latest release on github:
+    <https://github.com/gabyx/Githooks/releases/tag/v2.5.0>, download the
+    `linux.amd64` one
+  * check checksums
+  * in temporary dir, execute
+    ```
+    ./cli installer \
+      --non-interactive \
+      --skip-install-into-existing
+    ```
+  * todo: i should check it's gonna be installed into dotfiles repo!
+
+* TODO: add git hooks update into regular update flow; should be possible to do
+  unattended
+
 ## To update requirements
 
 ```bash
