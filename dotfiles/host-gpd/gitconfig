@@ -41,10 +41,12 @@
 	# See: https://github.com/rycus86/githooks#updates=
 	# Prevents ultra annoying always changing timestamp below in ducktape
 	# repo.
-	autoUpdateEnabled = false
+	autoUpdateEnabled = true
 	deleteDetectedLFSHooks = 
-	autoUpdateCheckTimestamp = 1657544737
+	autoUpdateCheckTimestamp = 1700116192
 	maintainedHooks = all
+	useManual = false
+	previousSearchDir = /home/agentydragon
 [alias]
 	hooks = !\"/home/agentydragon/.githooks/bin/cli\"
 [difftool "nbdime"]
