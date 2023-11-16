@@ -43,8 +43,9 @@
 	# repo.
 	autoUpdateEnabled = false
 	deleteDetectedLFSHooks = 
-	autoUpdateCheckTimestamp = 1671059930
+	autoUpdateCheckTimestamp = 1700116530
 	maintainedHooks = all
+	useManual = false
 [alias]
 	hooks = !\"/home/agentydragon/.githooks/bin/cli\"
 [difftool "nbdime"]
