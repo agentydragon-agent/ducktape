@@ -63,7 +63,21 @@
     # - dev-clojure
 
   tasks:
+    - name: Set Night Theme Switcher to also switch gnome-terminal & nvim colors
+      # TODO: dedupe
+      block:
+        - ansible.builtin.dconf:
+            key: "/org/gnome/shell/extensions/nightthemeswitcher/commands/enabled"
+            value: "true"
+        - ansible.builtin.dconf:
+            key: "/org/gnome/shell/extensions/nightthemeswitcher/commands/sunrise"
+            value: "'set_light_theme'"
+        - ansible.builtin.dconf:
+            key: "/org/gnome/shell/extensions/nightthemeswitcher/commands/sunset"
+            value: "'set_dark_theme'"
+
     - name: Set Gnome top panel datetime format
+      # TODO: dedupe
       ansible.builtin.dconf:
         key: "/org/gnome/shell/extensions/panel-date-format/format"
         value: "'%a %Y-%m-%d %H:%M'"  # e.g.: "Wed 2023-11-15 22:49"
