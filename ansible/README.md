@@ -1,3 +1,8 @@
+## Caveats
+
+* The `rcup` command asks for confirmation before overwriting existing dotfiles.
+  Which we can't give from an Ansible playbook. Which sucks.
+
 ## To update requirements
 
 ```bash
@@ -25,6 +30,12 @@ ansible-playbook vps.yaml
 NOTE: running with `--skip-tags` might not work in any reasonable way. I didn't
 assign task particularly with that in mind... :/
 
+## To deploy gpd
+
+```bash
+ansible-playbook gpd.yaml --ask-become-pass
+```
+
 ### TODO
 
 Make worthy work, actually.
@@ -32,7 +43,7 @@ Make worthy work, actually.
 - zoom (for meetings)
 - ubuntu-desktop
 
-TODO: minimize cinnamon desktop, texlive, etc.
+TODO: minimize texlive, etc.
 
 TODO: refactor Let's Encrypt - this way it's invoking the role 3 times,
 repeating the same setup steps like reading users for the letsencrypt group and

@@ -10,10 +10,11 @@
     rcup_computer: "raspberry"
   remote_user: "{{ my_user }}"
   # TODO: this should not be installed, 'common' role includes huge latex
+  roles:
+    - gnome-terminal-solarized
   # roles:
   # - common
   tasks:
-  # - include_tasks: tasks/chrome-remote-desktop.yaml
     - name: Install packages
       become: true
       ansible.builtin.apt:
