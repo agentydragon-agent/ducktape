@@ -35,7 +35,7 @@
     - name: Set Gnome top panel datetime format
       ansible.builtin.dconf:
         key: "/org/gnome/shell/extensions/panel-date-format/format"
-        value: "'%Y-%m-%d %a %H:%M'"
+        value: "'%a %Y-%m-%d %H:%M'"  # e.g.: "Wed 2023-11-15 22:49"
       tags:
         - gnome-shell-datetime-format
 
