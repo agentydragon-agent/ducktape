@@ -10,6 +10,8 @@
   remote_user: "{{ my_user }}"
   roles:
     - common
+    - anki
+    - gnome-terminal-solarized
   tasks:
 
     - include_tasks: tasks/chrome-remote-desktop.yaml

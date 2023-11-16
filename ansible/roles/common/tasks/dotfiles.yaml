@@ -9,12 +9,21 @@
     #     state: directory
     #     recurse: yes
     #     mode: '0755'
-    - name: Clone ducktape
-      ansible.builtin.git:
-        repo: git@gitlab.com:agentydragon/ducktape
-        dest: "{{ ducktape_path }}"
-        version: master
-    # TODO: problem: this is interactive if the files already exist.
-    - name: Install ducktape dotfiles
-      ansible.builtin.command: >
-        rcup -B {{ rcup_computer }} -x vim -x README.md -d {{ ducktape_path }}/dotfiles
+    # - name: Clone ducktape
+    #   ansible.builtin.git:
+    #     repo: git@gitlab.com:agentydragon/ducktape
+    #     dest: "{{ ducktape_path }}"
+    #     version: master
+
+    # This is interactive if the files already exist.
+    # The uncommented script fails if that happens.
+    #
+    # - name: Install ducktape dotfiles
+    #   ansible.builtin.command: >
+    #     rcup -B {{ rcup_computer }} -x vim -x README.md -d {{ ducktape_path }}/dotfiles
+    #   register: rcup_result
+
+    - name: Install ducktape dotfiles, fail if would need overwrite
+      ansible.builtin.script: rcup_noninteractive.py -B {{ rcup_computer }} -x vim -x README.md -d {{ ducktape_path }}/dotfiles
+      args:
+        executable: python3
