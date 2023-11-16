@@ -18,7 +18,12 @@
           # - 28
 
           # Desaturate All - https://extensions.gnome.org/extension/1102/desaturate-all/
-          - 1102  
+          - 1102
+
+          ## Panel Date Format
+          # https://extensions.gnome.org/extension/1462/panel-date-format/
+          # https://github.com/KEIII/gnome-shell-panel-date-format
+          - 1462
 
     - common
     - anki
@@ -27,6 +32,13 @@
     - timekpr
 
   tasks:
+    - name: Set Gnome top panel datetime format
+      ansible.builtin.dconf:
+        key: "/org/gnome/shell/extensions/panel-date-format/format"
+        value: "'%Y-%m-%d %a %H:%M'"
+      tags:
+        - gnome-shell-datetime-format
+
     - name: Set zsh as login shell
       become: true
       tags:
@@ -39,13 +51,15 @@
       ansible.builtin.apt:
         pkg:
           - acpi
-          # - locate
+          - blender
+          - flameshot  # Nice screenshot tool.
+          - locate
           - powertop
           - steam
           - torbrowser-launcher
           - transmission-gtk
-          # - virtualbox
-          # - virtualbox-dkms
+          - virtualbox
+          - virtualbox-dkms
           - vlc
           - wine-stable
           - wireshark
@@ -54,8 +68,6 @@
           # For getting background color for Vim background color auto-switch.
           - xtermcontrol
 
-          # nice screenshot tool
-          - flameshot
           # TODO: add Ubuntu startup programs, like Flameshot etc.
 
 
