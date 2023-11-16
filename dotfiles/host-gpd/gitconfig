@@ -21,8 +21,6 @@
 	requireForce = true
 [branch]
 	autosetuprebase = always
-[pull]
-	rebase = true
 [rerere]
 	enabled = true
 [url "git@github.com:"]
@@ -43,7 +41,7 @@
 	# repo.
 	autoUpdateEnabled = true
 	deleteDetectedLFSHooks = 
-	autoUpdateCheckTimestamp = 1700116192
+	autoUpdateCheckTimestamp = 1700117977
 	maintainedHooks = all
 	useManual = false
 	previousSearchDir = /home/agentydragon
