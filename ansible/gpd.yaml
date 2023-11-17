@@ -108,3 +108,21 @@
         - githooks
       # should only succeed if we don't need to update
       ansible.builtin.shell: git hooks update --no
+
+    # GPD Win Max 2's right tracking stick pretends to be a mouse,
+    # which limits the maximum speed that libinput easily allows with it.
+    - name: Add udev rule GPD right tracking stick
+      become: true
+      tags:
+      - gpd-quirks
+      ansible.builtin.copy:
+        content: |
+          # This is a pointing stick pretending to be a mouse. Make libinput
+          # interpret it as a "pointing stick" (/ "trackpoint"). Keep
+          # ID_INPUT_MOUSE=1, because that makes Xorg's MatchIsPointer match
+          # it and direct it to libinput for handling.
+          ACTION=="add|change", SUBSYSTEMS=="input", ATTRS{id/vendor}=="2f24", ATTRS{id/product}=="0135", ENV{ID_INPUT_POINTINGSTICK}="1"
+        dest: /etc/udev/rules.d/99-gpd-trackpoint.rules
+        owner: root
+        group: root
+        mode: '0644'
