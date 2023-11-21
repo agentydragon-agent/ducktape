@@ -65,7 +65,10 @@
   ansible.builtin.dconf:
     key: /org/gnome/desktop/wm/preferences/button-layout
     value: "':minimize,maximize,close'"
+
 - name: Set Ctrl+Alt+T shortcut to open terminal
   ansible.builtin.dconf:
     key: /org/gnome/settings-daemon/plugins/media-keys/terminal
     value: "['<Primary><Alt>t']"
+
+- include_tasks: tasks/xorg_terminate.yaml
