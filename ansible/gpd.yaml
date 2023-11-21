@@ -60,13 +60,6 @@
         name: "{{ my_user }}"
         shell: /bin/zsh
 
-    # 2023-11-20: video game break
-    - name: Uninstall Steam
-      become: true
-      ansible.builtin.apt:
-        name: steam
-        state: absent
-
     - name: Install packages for laptop
       become: true
       ansible.builtin.apt:
