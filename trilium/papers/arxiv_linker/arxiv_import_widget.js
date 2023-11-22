@@ -35,24 +35,25 @@ class ArxivWidget extends api.CollapsibleWidget {
     this.$input.on('input', () => this.$message.text(''));
 
     this.$form.on('click', async () => {
-      const paper = this.$input.val().trim();
-      if (!paper) {
+      const urlToAdd = this.$input.val().trim();
+      if (!urlToAdd) {
         this.$message.text('Please enter a valid arXiv ID or URL.');
         return;
       }
       try {
         this.$message.text('Adding paper...');
-        await this.addPaper(paper);
+        await this.addPaper(urlToAdd);
       } catch (e) {
+        console.error(e, e.stack);
         this.$message.text('Error: ' + e.message + ' ' + e.stack);
       }
     });
     return this.$body;
   }
 
-  async addPaper(paper) {
+  async addPaper(urlToAdd) {
     // parse the paper ID from the input
-    let paperId = this.parsePaperId(paper);
+    let paperId = this.parsePaperId(urlToAdd);
 
     // check if the paper already exists in Trilium
     const existingPaper = await this.findNoteByPaperId(paperId);
@@ -83,11 +84,11 @@ class ArxivWidget extends api.CollapsibleWidget {
     await this.showNewPaperMessage(newNote);
   }
 
-  parsePaperId(paper) {
-    if (/^\d{4}\.\d{4,5}$/.test(paper)) {
-      return paper;
+  parsePaperId(arxivUrl) {
+    if (/^\d{4}\.\d{4,5}$/.test(arxivUrl)) {
+      return arxivUrl;
     } else {
-      const match = paper.match(
+      const match = arxivUrl.match(
           /arxiv\.org\/(?:abs|pdf)\/(\d{4}\.\d{4,5})(?:v\d+)?(?:\.pdf)?/);
       if (match) {
         return match[1];
