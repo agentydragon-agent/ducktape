@@ -6,4 +6,6 @@ alias suspend='systemctl suspend'
 alias gmrc='glab mr create --fill --remove-source-branch --yes'
 
 # "git ReCent Branches"
-alias grcb='git branch -v --sort=-committerdate'
+# TODO: slightly nicer version at https://stackoverflow.com/a/5188364 also
+# has colors, human-readable dates, authors, ahead/behind against master
+alias grcb='git for-each-ref --sort=-committerdate'
