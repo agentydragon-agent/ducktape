@@ -95,6 +95,7 @@
     - name: Install packages
       apt:
         name:
+          - mosh
           - ncdu
           - nginx
           # certbot nginx plugin for autorenewing certs nicely
