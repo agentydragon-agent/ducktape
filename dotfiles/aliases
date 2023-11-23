@@ -9,3 +9,8 @@ alias gmrc='glab mr create --fill --remove-source-branch --yes'
 # TODO: slightly nicer version at https://stackoverflow.com/a/5188364 also
 # has colors, human-readable dates, authors, ahead/behind against master
 alias grcb='git for-each-ref --sort=-committerdate'
+
+function bmosh() {
+  # Use like: bmosh root@agentydragon.com
+  mosh $1 -- tmux new-session -A -s bmosh
+}
