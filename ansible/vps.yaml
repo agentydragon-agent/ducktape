@@ -15,6 +15,10 @@
 #   https://github.com/certbot/certbot/blob/619654f3175687fc02dbbf34754e43c067303c3b/certbot-nginx/certbot_nginx/_internal/http_01.py#L237C9-L237C9
 #
 # TODO: check if the configurator does a good job too.
+#
+# Certbot comes with a built-in systemd timer: systemctl show certbot.timer.
+# That runs `certbot renew`. I can check in journalctl that it does the right
+# thing. It runs ~2x/day by default.
 
 ---
 - hosts: linode
@@ -270,17 +274,6 @@
         enabled: true
       tags:
         - nginx
-
-    # should not be needed - certbot has a systemd certbot.timer which
-    # should take care of running certbot --renew.
-    #
-    # - name: Create a cron job to renew Let's Encrypt certificates
-    #   tags:
-    #     - certbot-renew-cronjob
-    #   ansible.builtin.cron:
-    #     name: "Renew Let's Encrypt certificates"
-    #     special_time: daily
-    #     job: "certbot renew --quiet --nginx --reloadcmd \"nginx -s reload\""
 
   handlers:
     # Only triggers if nginx config files changed.
