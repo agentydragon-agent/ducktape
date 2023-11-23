@@ -73,20 +73,20 @@
 
 # This makes Ctrl+Alt+Up/Down switch workspaces and Ctrl+Alt+Shift+Up/Down
 # move windows between workspaces.
-# TODO: clean this up, this defines a tons of keybindings I don't use.
+# TODO: clean this up, I don't use some of those bindings
 - name: GNOME ctrl+alt+* for workspace stuff
   block:
     - ansible.builtin.dconf:
       key: /org/gnome/desktop/wm/keybindings/move-to-workspace-down
-      value: "['<Primary><Shift><Alt>j', '<Primary><Shift><Alt>Down']"
+      value: "['<Primary><Shift><Alt>Down']"
     - ansible.builtin.dconf:
       key: /org/gnome/desktop/wm/keybindings/move-to-workspace-up
       value: "['<Primary><Shift><Alt>Up']"
     - ansible.builtin.dconf:
       key: /org/gnome/desktop/wm/keybindings/switch-to-workspace-down
-      value: "['<Primary><Super>Down', '<Primary><Super>KP_Down', '<Primary><Super>j', '<Primary><Alt>Down']"
+      value: "['<Primary><Super>Down', '<Primary><Super>j', '<Primary><Alt>Down']"
     - ansible.builtin.dconf:
       key: /org/gnome/desktop/wm/keybindings/switch-to-workspace-up
-      value: "['<Primary><Super>Up', '<Primary><Super>KP_Up', '<Primary><Super>k', '<Primary><Alt>Up']
+      value: "['<Primary><Super>Up', '<Primary><Super>k', '<Primary><Alt>Up']"
 
 - include_tasks: tasks/xorg_terminate.yaml
