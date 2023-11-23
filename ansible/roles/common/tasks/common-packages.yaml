@@ -16,8 +16,10 @@
       - libreoffice
       - mc
       - mmv
+      - mosh
       - mplayer
       - mpv
+      - neovim
       - netcat-openbsd
       - nethogs
       - pkg-config
@@ -27,7 +29,6 @@
       - screen
       - sed
       - tree
-      - neovim
       - vinagre
       - wget
       - xclip
