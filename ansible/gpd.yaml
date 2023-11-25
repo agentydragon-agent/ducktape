@@ -89,6 +89,9 @@
 
           # TODO: add Ubuntu startup programs, like Flameshot etc.
 
+          # For offline Wikipedia etc.
+          - kiwix
+
 
     - name: Install Rescuetime
       tags:
