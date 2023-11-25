@@ -76,16 +76,16 @@
 # TODO: clean this up, I don't use some of those bindings
 - name: GNOME ctrl+alt+* for workspace stuff
   block:
-    - ansible.builtin.dconf:
+  - ansible.builtin.dconf:
       key: /org/gnome/desktop/wm/keybindings/move-to-workspace-down
       value: "['<Primary><Shift><Alt>Down']"
-    - ansible.builtin.dconf:
+  - ansible.builtin.dconf:
       key: /org/gnome/desktop/wm/keybindings/move-to-workspace-up
       value: "['<Primary><Shift><Alt>Up']"
-    - ansible.builtin.dconf:
+  - ansible.builtin.dconf:
       key: /org/gnome/desktop/wm/keybindings/switch-to-workspace-down
       value: "['<Primary><Super>Down', '<Primary><Super>j', '<Primary><Alt>Down']"
-    - ansible.builtin.dconf:
+  - ansible.builtin.dconf:
       key: /org/gnome/desktop/wm/keybindings/switch-to-workspace-up
       value: "['<Primary><Super>Up', '<Primary><Super>k', '<Primary><Alt>Up']"
 

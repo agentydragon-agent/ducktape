@@ -25,6 +25,12 @@
           # https://github.com/KEIII/gnome-shell-panel-date-format
           - 1462
 
+          ## Night Theme Switcher
+          # For auto-switching gnome-terminal themes following GNOME night theme.
+          #
+          # https://extensions.gnome.org/extension/2236/night-theme-switcher/
+          - 2236
+
     - common
     - anki
     - gnome-terminal-solarized
@@ -126,3 +132,20 @@
         owner: root
         group: root
         mode: '0644'
+
+    # trying out on 2023-11-24: install Telegram as snap
+    - name: Install Telegram as snap
+      tags:
+        - telegram
+      block:
+
+      - name: Install snapd for Telegram
+        become: true
+        ansible.builtin.apt:
+          pkg:
+            - snapd
+
+      - name: Install Telegram snap
+        become: true
+        snap:
+          name: telegram-desktop
