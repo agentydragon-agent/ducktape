@@ -54,6 +54,12 @@
           # https://github.com/KEIII/gnome-shell-panel-date-format
           - 1462
 
+          ## Night Theme Switcher
+          # For auto-switching gnome-terminal themes following GNOME night theme.
+          #
+          # https://extensions.gnome.org/extension/2236/night-theme-switcher/
+          - 2236
+
     - common
     - anki
     - gnome-terminal-solarized
