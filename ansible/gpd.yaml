@@ -134,6 +134,7 @@
         mode: '0644'
 
     # trying out on 2023-11-24: install Telegram as snap
+    # if it still works in a couple months, keep it like this
     - name: Install Telegram as snap
       tags:
         - telegram
