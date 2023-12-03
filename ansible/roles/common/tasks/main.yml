@@ -43,12 +43,11 @@
     gsettings set
       org.gnome.Terminal.Legacy.Settings default-show-menubar false
 - include_tasks: tasks/datetime-format.yaml
-# - name: Install Telegram Desktop, youtube-dl
+# - name: Install youtube-dl
 #   become: true
 #   tags: snap
 #   ansible.builtin.snap:
 #     name:
-#       - telegram-desktop
 #       - youtube-dl
 # - name: Install Slack
 #   become: true
