@@ -153,3 +153,10 @@
         become: true
         snap:
           name: telegram-desktop
+
+    - name: Install Slack
+      become: true
+      tags: snap
+      ansible.builtin.snap:
+        name:
+          - slack
