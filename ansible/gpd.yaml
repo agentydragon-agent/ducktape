@@ -92,6 +92,10 @@
           # For offline Wikipedia etc.
           - kiwix
 
+          # Some hacking stuff
+          - freecad
+          - kicad
+
 
     - name: Install Rescuetime
       tags:
