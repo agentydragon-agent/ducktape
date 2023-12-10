@@ -60,6 +60,21 @@
         - bazel-remote-cache
       register: bazel_remote_cache_user
 
+    - name: Create Grocy group
+      ansible.builtin.group:
+        name: grocy
+        state: present
+      tags:
+        - grocy
+
+    - name: Create Grocy user
+      ansible.builtin.user:
+        name: grocy
+        group: grocy
+      tags:
+        - grocy
+      register: grocy_user
+
     - name: Include docker role for Trilium user
       ansible.builtin.include_role:
         name: geerlingguy.docker
@@ -267,6 +282,52 @@
         pull: true
       tags:
         - bazel-remote-cache
+
+    - name: Create Grocy directory
+      ansible.builtin.file:
+        path: /srv/grocy
+        state: directory
+        owner: grocy
+        group: grocy
+        mode: 0700
+      tags:
+        - grocy
+
+    - name: Create Grocy container
+      tags:
+        - grocy
+      ansible.builtin.docker_container:
+        container_default_behavior: no_defaults
+        detach: true
+        init: false
+        interactive: false
+
+        # ugh, looks like linuxserver.io requires running as root...
+        # probably something having to do with permissions on files inside
+        # the container?
+        user: root
+
+        #memory: "512M"
+        #memory_swap: -1  # unlimited swap
+        paused: false
+        privileged: false
+        read_only: false
+        tty: false
+        auto_remove: false
+        name: grocy
+        # TODO: pin to specific version?
+        image: lscr.io/linuxserver/grocy:latest
+        env:
+          TZ: America/Los_Angeles
+          PUID: "{{ grocy_user.uid }}"
+          PGID: "{{ grocy_user.group }}"
+        published_ports:
+          # Expose internal port 80 as external port 9283.
+          - "9283:80"
+        volumes:
+          - /srv/grocy:/config
+        restart: true
+        restart_policy: unless-stopped
 
     - name: Start and enable nginx
       service:
