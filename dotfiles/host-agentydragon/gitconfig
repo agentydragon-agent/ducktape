@@ -35,13 +35,7 @@
 	useCoreHooksPath = false
 	runner = /home/agentydragon/.githooks/bin/runner
 	dialog = /home/agentydragon/.githooks/bin/dialog
-	# Do not autoupdate scripts.
-	# See: https://github.com/rycus86/githooks#updates=
-	# Prevents ultra annoying always changing timestamp below in ducktape
-	# repo.
-	autoUpdateEnabled = false
-	deleteDetectedLFSHooks = 
-	autoUpdateCheckTimestamp = 1700116530
+	autoUpdateEnabled = true
 	maintainedHooks = all
 	useManual = false
 [alias]
