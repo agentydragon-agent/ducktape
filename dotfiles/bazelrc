@@ -7,4 +7,6 @@ common --ui_actions_shown 256
 
 # Imports:
 # build --remote_cache=https://agentydragon-laptop:<PASSWORD>@bazel-cache.agentydragon.com:9090
-import /home/agentydragon/.config/bazelrc.secrets
+# Might not be present on other laptops, don't fail if it isn't.
+try-import /home/agentydragon/.config/bazelrc.secrets
+
