@@ -48,6 +48,9 @@ seminar for high school students by Charles University.
 
 ### Preferred
 
+<!-- TODO: unify with found.markdown? -->
+
+* Telegram: [@agentydragon][telegram]. Trying to migrate off it to Matrix.
 * Mastodon: [@agentydragon@mastodon.social][mastodon]
 * Matrix: [@agentydragon:matrix.org][matrix]
 * email: `agentydragon@gmail.com`
@@ -55,7 +58,6 @@ seminar for high school students by Charles University.
 
 ### Other
 
-* Telegram: [@agentydragon][telegram]. Trying to migrate off it to Matrix.
 * BookWyrm: [agentydragon@bookwyrm.social][bookwyrm]. It's got my book reviews,
   reading list etc.
 * GitHub: [agentydragon][github]. Trying to migrate off it because I am not
