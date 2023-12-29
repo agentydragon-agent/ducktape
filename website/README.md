@@ -6,6 +6,12 @@ TODO: There is still a CI job building the site for GitLab pages. Maybe
 sometime I'll figure out how to set up GitLab to deploy the website to
 my webserver...
 
+# Important linked URLs
+
+* http(s)://agentydragon.com/found.html
+
+# Develop
+
 To build:
 
 ```bash
