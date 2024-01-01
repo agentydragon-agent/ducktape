@@ -89,3 +89,5 @@
       value: "['<Primary><Super>Up', '<Primary><Super>k', '<Primary><Alt>Up']"
 
 - include_tasks: tasks/xorg_terminate.yaml
+- include_tasks: tasks/element.yaml
+  tags: element
