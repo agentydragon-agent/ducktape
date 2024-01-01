@@ -10,7 +10,7 @@ title: About
 
 Hi!
 
-My chosen name is Rai, and my given name is Michal Pokorný. I'm 29, I grew up
+My chosen name is Rai, and my given name is Michal Pokorný. I'm 30, I grew up
 in Czech Republic. I've worked as a software engineer at Google Zurich since
 March 2016, then took a year-long break roughly May 2021 - May 2022. Then I
 joined OpenAI, first as a resident on the reinforcement learning team, then on
