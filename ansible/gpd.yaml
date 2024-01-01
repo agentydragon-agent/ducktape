@@ -158,9 +158,27 @@
         snap:
           name: telegram-desktop
 
-    - name: Install Slack
-      become: true
-      tags: snap
-      ansible.builtin.snap:
-        name:
+      # Slack has to be installed as an APT package, not as a Snap.
+      #
+      # If Slack is installed as a Snap on Pop OS, it won't start because it's
+      # confined from reading Pop OS's bespoke /etc/os-release location -
+      # /etc/pop-os/os-release.
+      #
+      # See: https://forum.snapcraft.io/t/apparmor-blocking-the-opening-of-slack/29212
+
+      - name: Install slack-desktop as APT package
+        become: true
+        tags:
           - slack
+        ansible.builtin.apt:
+          pkg:
+            - slack-desktop
+
+      - name: Install VSCode as a Snap
+        become: true
+        tags:
+          - vscode
+        ansible.builtin.apt:
+          classic: true
+          pkg:
+            - code
