@@ -137,17 +137,24 @@
 
     - name: nginx website configs
       block:
-      - name: Create nginx configuration files
+      - name: Create trilium.agentydragon.com nginx configuration
         template:
-          src: templates/nginx-sites/{{ item }}.j2
-          dest: /etc/nginx/sites-available/{{ item }}
-        with_items:
-          - agentydragon.com
-          - trilium.agentydragon.com
+          src: nginx-sites/trilium.agentydragon.com.j2
+          dest: /etc/nginx/sites-available/trilium.agentydragon.com
         tags:
           - nginx
         notify:
           - Reload nginx
+
+      - name: Create agentydragon.com nginx config
+        ansible.builtin.copy:
+          src: nginx-sites/{{ item }}
+          dest: /etc/nginx/sites-available/{{ item }}
+        tags:
+          - nginx
+        with_items:
+          - agentydragon.com
+          - adgn.link
 
       # The nginx default website takes priority over my http://agentydragon.com
       # redirect, so disable it.
@@ -167,6 +174,7 @@
           dest: /etc/nginx/sites-enabled/{{ item }}
         with_items:
           - agentydragon.com
+          - adgn.link
           - trilium.agentydragon.com
         tags:
           - nginx
@@ -182,11 +190,12 @@
             - python3-certbot-nginx
           state: latest
 
-      - name: Obtain & install Let's Encrypt certificate for agentydragon.com & www.agentydragon.com
-        command: certbot run --non-interactive --agree-tos --nginx -d agentydragon.com,www.agentydragon.com
-
-      - name: Obtain & install Let's Encrypt certificate for trilium.agentydragon.com
-        command: certbot run --non-interactive --agree-tos --nginx -d trilium.agentydragon.com
+      - name: Obtain & install Let's Encrypt certificate for {{ item }}
+        command: certbot run --non-interactive --agree-tos --nginx -d {{ item }}
+        with_items:
+          - agentydragon.com,www.agentydragon.com
+          - trilium.agentydragon.com
+          - adgn.link,www.adgn.link
 
       # for mutual TLS with client certificates: --tls_ca_file
       # sudo apt install apache2-utils -- for htpasswd utility
