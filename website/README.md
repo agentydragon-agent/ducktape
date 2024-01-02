@@ -8,7 +8,10 @@ my webserver...
 
 # Important linked URLs
 
-* http(s)://agentydragon.com/found.html
+URL                                         | purpose
+--------------------------------------------|--------
+http(s)://agentydragon.com/found.html       | lost-and-found stickers
+http(s)://agentydragon.com/nfc-armband.html | NFC armband
 
 # Develop
 
