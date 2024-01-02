@@ -10,8 +10,12 @@ my webserver...
 
 URL                                     | purpose
 ----------------------------------------|--------
+http(s)://adgn.link/found               | lost-and-found stickers
 http(s)://agentydragon.com/found.html   | lost-and-found stickers
-http(s)://agentydragon.com/nfc.html     | NFC armband
+http(s)://adgn.link/nfc                 | NFC armband
+
+
+<!-- http(s)://agentydragon.com/nfc.html     | NFC armband -->
 
 # Develop
 
