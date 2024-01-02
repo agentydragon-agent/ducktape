@@ -46,7 +46,7 @@ main = do
       route idRoute
       compile copyFileCompiler
 
-    match ("about.markdown" .||. "found.markdown") $ do
+    match ("about.markdown" .||. "found.markdown" .||. "nfc-armband.markdown") $ do
       route $ setExtension "html"
       compile $ pandocCompiler
         >>= loadAndApplyTemplate "templates/default.html" defaultContext
