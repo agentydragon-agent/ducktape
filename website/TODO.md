@@ -4,5 +4,4 @@ Probably should have:
 
 Maybe one day:
 * Public resume
-* RSS feed
 * Disqus
