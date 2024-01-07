@@ -1,4 +1,10 @@
 server {
+    listen 80;
+    server_name trilium.agentydragon.com;
+    return 301 https://$host$request_uri;
+}
+
+server {
     listen 443 ssl;
     server_name trilium.agentydragon.com;
 
