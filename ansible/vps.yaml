@@ -141,12 +141,13 @@
         # Looks like certbot install doesn't take the same parameters,
         # if you request a certificate for multiple domains, it'll only
         # then be installable under one name... :(
-        letsencrypt_certificate_primary_names:
+        letsencrypt_certificate_names_to_install:
           - agentydragon.com
           - grocy.agentydragon.com
           - trilium.agentydragon.com
-          - bazel-cache.agentydragon.com
           - adgn.link
+          # bazel-cache.agentydragon.com deliberately not included,
+          # because it's not for installation in nginx.
 
     - name: Let's Encrypt certificates
       block:
@@ -185,12 +186,6 @@
             chmod -R 700 /srv/bazel-remote-cache/certs
             chown -R bazel-remote-cache:bazel-remote-cache /srv/bazel-remote-cache/certs
             # TODO: do I maybe also need to restart the bazel-remote-cache container?
-
-      - name: Obtain Let's Encrypt certificate for bazel-cache.agentydragon.com
-        # NOTE: here we do `certonly`, not a full `run`, because the certificate
-        # is actually not consumed by nginx, so installing it into nginx
-        # configuration would fail.
-        command: certbot certonly --non-interactive --agree-tos --nginx -d bazel-cache.agentydragon.com
 
       - name: Check that Bazel remote cache certificate exists
         tags:
@@ -257,7 +252,7 @@
     # servers that use them, install them.
     - name: Install Let's Encrypt certificates
       command: certbot install --non-interactive --agree-tos --nginx --cert-name {{ item }}
-      loop: "{{ letsencrypt_certificate_primary_names }}"
+      loop: "{{ letsencrypt_certificate_names_to_install }}"
 
     - name: Copy Bazel remote cache htpasswd on server
       ansible.builtin.copy:
