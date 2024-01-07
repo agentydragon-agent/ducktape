@@ -137,6 +137,17 @@
           - bazel-cache.agentydragon.com
           - adgn.link,www.adgn.link
 
+        # This seems to be what we need to present to certbot install.
+        # Looks like certbot install doesn't take the same parameters,
+        # if you request a certificate for multiple domains, it'll only
+        # then be installable under one name... :(
+        letsencrypt_certificate_primary_names:
+          - agentydragon.com
+          - grocy.agentydragon.com
+          - trilium.agentydragon.com
+          - bazel-cache.agentydragon.com
+          - adgn.link
+
     - name: Let's Encrypt certificates
       block:
       - name: Install & update certbot nginx plugin
@@ -149,6 +160,9 @@
       # We need to obtain these certificates before updating nginx
       # configuration in case the nginx configuration depends on certificates
       # we didn't obtain yet.
+      #
+      # TODO: only mark as "changed" if the cert was actually renewed.
+      # TODO: only trigger installing a cert if it was changed.
       - name: Obtain Let's Encrypt certificates
         command: certbot certonly --non-interactive --agree-tos --nginx -d {{ item }}
         loop: "{{ letsencrypt_certificate_names }}"
@@ -243,7 +257,7 @@
     # servers that use them, install them.
     - name: Install Let's Encrypt certificates
       command: certbot install --non-interactive --agree-tos --nginx --cert-name {{ item }}
-      loop: "{{ letsencrypt_certificate_names }}"
+      loop: "{{ letsencrypt_certificate_primary_names }}"
 
     - name: Copy Bazel remote cache htpasswd on server
       ansible.builtin.copy:
