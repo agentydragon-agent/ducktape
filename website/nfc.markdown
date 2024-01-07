@@ -5,6 +5,7 @@ title: Congratulations for scanning my NFC tag!
 
 Hi!
 
+<!-- TODO: float right -->
 <figure>
 <img src="/static/2022-sticker-hello.png" style="max-width: 6cm">
 </figure>
