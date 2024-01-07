@@ -705,8 +705,8 @@
        path="/home/agentydragon/code/ducktape/found/"
        ask="1"
        ask_svg="1"
-       link="embed"
-       scale="auto"
+       link="link"
+       scale="optimizeQuality"
        forcexdpi="0"
        import_mode_svg="link" />
     <group
@@ -1132,7 +1132,7 @@
   </group>
   <group
      id="extensions"
-     org.inkscape.input.gdkpixbuf.png.link="embed"
+     org.inkscape.input.gdkpixbuf.png.link="link"
      org.inkscape.input.gdkpixbuf.jpg.link="link"
      org.inkscape.visualise.measure_length.type="area"
      org.inkscape.visualise.measure_length.presetFormat="default"
@@ -1141,14 +1141,15 @@
      org.inkscape.visualise.measure_length.unit="mm"
      org.inkscape.visualise.measure_length.__live_effect__="0"
      org.inkscape.input.svg.scale="auto"
-     org.inkscape.input.svg.import_mode_svg="link" />
+     org.inkscape.input.svg.import_mode_svg="link"
+     org.inkscape.input.gdkpixbuf.png.scale="optimizeQuality" />
   <group
      id="desktop"
      style="fill:#000000;stroke-width:288;stroke:#000000;font-size:288px;-inkscape-font-specification:'Liberation Sans';font-family:'Liberation Sans';line-height:125%">
     <group
        width="875"
        height="659"
-       x="0"
+       x="640"
        y="32"
        maximized="1"
        fullscreen="0"
