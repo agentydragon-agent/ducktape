@@ -6,6 +6,16 @@ TODO: There is still a CI job building the site for GitLab pages. Maybe
 sometime I'll figure out how to set up GitLab to deploy the website to
 my webserver...
 
+# Important linked URLs
+
+URL                                     | purpose
+----------------------------------------|---------------
+http(s)://adgn.link/found               | lost-and-found stickers, v2
+http(s)://adgn.link/nfc                 | NFC armband
+http(s)://agentydragon.com/found.html   | lost-and-found stickers, v1 (legacy)
+
+# Develop
+
 To build:
 
 ```bash
