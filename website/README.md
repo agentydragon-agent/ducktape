@@ -9,13 +9,10 @@ my webserver...
 # Important linked URLs
 
 URL                                     | purpose
-----------------------------------------|--------
-http(s)://adgn.link/found               | lost-and-found stickers
-http(s)://agentydragon.com/found.html   | lost-and-found stickers
+----------------------------------------|---------------
+http(s)://adgn.link/found               | lost-and-found stickers, v2
 http(s)://adgn.link/nfc                 | NFC armband
-
-
-<!-- http(s)://agentydragon.com/nfc.html     | NFC armband -->
+http(s)://agentydragon.com/found.html   | lost-and-found stickers, v1 (legacy)
 
 # Develop
 
