@@ -3,3 +3,8 @@ alias suspend='systemctl suspend'
 
 # Quickly create a GitLab merge request
 alias gmrc='glab mr create --fill --remove-source-branch --yes'
+
+function bmosh() {
+  # Use like: bmosh root@agentydragon.com
+  mosh $1 -- tmux new-session -A -s bmosh
+}
