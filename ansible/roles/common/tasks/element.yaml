@@ -1,0 +1,22 @@
+- name: Add Element.io archive key
+  tags:
+  - element
+  become: true
+  ansible.builtin.apt_key:
+    # TODO: integrity check
+    url: https://packages.element.io/debian/element-io-archive-keyring.gpg
+    keyring: /usr/share/keyrings/element-io-archive-keyring.gpg
+- name: Add Element.io repository
+  tags:
+  - element
+  become: true
+  ansible.builtin.apt_repository:
+    repo: "deb [signed-by=/usr/share/keyrings/element-io-archive-keyring.gpg] https://packages.element.io/debian/ default main"
+    filename: element-io
+- name: Install Element
+  tags:
+  - element
+  become: true
+  ansible.builtin.apt:
+    pkg:
+      - element-desktop
