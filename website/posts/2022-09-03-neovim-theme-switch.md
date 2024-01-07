@@ -318,6 +318,8 @@ a thing and has surprised me very strongly by how good and useful it is.
 Sometime I'll be writing some sorta summary of last year or two, but today is
 not the day and this is not that blogpost.
 
+EDIT (2023-01-16): [How I got to OpenAI](/posts/2023-01-11-how-i-got-to-openai.html) is that blogpost.
+
 Cheers, have a nice long weekend if you're in the US.
 
 [neovim]: https://neovim.io/
