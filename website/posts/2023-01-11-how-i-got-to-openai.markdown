@@ -90,7 +90,7 @@ I continued on with a master's, keeping the Google offer in my back pocket.
 It was easy to do all the required courses but I ended up getting stuck on the
 last master's requirement - the thesis.
 I tried to work on knowledge base completion with
-[Pasky](https://github.com/pasky) as my supervisor (who ended up (co-?)foundinG
+[Pasky](https://github.com/pasky) as my supervisor (who ended up (co-?)founding
 [Rossum](https://rossum.ai/) where he's currently CTO).
 This was roughly at the time when the seminal Transformers paper
 [Attention is All You Need](https://arxiv.org/abs/1706.03762), maybe +/- half
