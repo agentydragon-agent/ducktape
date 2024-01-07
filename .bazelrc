@@ -1,3 +1,5 @@
+common --noenable_bzlmod
+
 # Trying to see if this might fix the issues with errors in
 # cargo-raze-generated platform-specific dependencies in BUILD files
 build --platforms //:linux_x64
