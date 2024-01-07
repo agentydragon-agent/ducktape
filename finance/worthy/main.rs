@@ -75,7 +75,8 @@ async fn get_source_snapshots(
         .flat_map(|(source_id, source_config)| {
             process_source(source_config)
                 .map(move |result| {
-                    let assets = result.unwrap();
+                    let assets =
+                        result.expect(&format!("getting result from source {source_id} failed"));
                     info!("{} {} {:?}", source_id, source_config.name, assets);
                     use config::SourceType::*;
                     SourceSnapshot {
