@@ -3,6 +3,7 @@
 import Control.Applicative ((<$>))
 import Data.Monoid (mappend)
 import Hakyll
+import Hakyll.Core.Identifier.Pattern ((.||.))
 import qualified GHC.IO.Encoding as E
 
 config :: Configuration
@@ -45,7 +46,7 @@ main = do
       route idRoute
       compile copyFileCompiler
 
-    match "about.markdown" $ do
+    match ("about.markdown" .||. "found.markdown" .||. "nfc.markdown") $ do
       route $ setExtension "html"
       compile $ pandocCompiler
         >>= loadAndApplyTemplate "templates/default.html" defaultContext
