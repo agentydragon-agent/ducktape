@@ -21,8 +21,6 @@
 	requireForce = true
 [branch]
 	autosetuprebase = always
-[pull]
-	rebase = true
 [rerere]
 	enabled = true
 [url "git@github.com:"]
@@ -37,14 +35,9 @@
 	useCoreHooksPath = false
 	runner = /home/agentydragon/.githooks/bin/runner
 	dialog = /home/agentydragon/.githooks/bin/dialog
-	# Do not autoupdate scripts.
-	# See: https://github.com/rycus86/githooks#updates=
-	# Prevents ultra annoying always changing timestamp below in ducktape
-	# repo.
-	autoUpdateEnabled = false
-	deleteDetectedLFSHooks = 
-	autoUpdateCheckTimestamp = 1657544737
+	autoUpdateEnabled = true
 	maintainedHooks = all
+	useManual = false
 [alias]
 	hooks = !\"/home/agentydragon/.githooks/bin/cli\"
 [difftool "nbdime"]
