@@ -16,6 +16,7 @@
   vars:
     - trilium_ssl_port: 3000
     - grocy_localhost_http_port: 9283
+    - pygmy_localhost_http_port: 9284
 
   tasks:
     # Needs to run before Docker, which tries to install gnupg2
@@ -26,11 +27,15 @@
         upgrade: dist
 
     - name: Create Trilium group
+      tags:
+        - trilium-server
       ansible.builtin.group:
         name: trilium
         state: present
 
     - name: Create Trilium user
+      tags:
+        - trilium-server
       ansible.builtin.user:
         name: trilium
         group: trilium
@@ -65,13 +70,29 @@
         - grocy
       register: grocy_user
 
-    - name: Include docker role for Trilium user
+    - name: Create Pygmy group
+      ansible.builtin.group:
+        name: pygmy
+        state: present
+      tags:
+        - pygmy
+
+    - name: Create Pygmy user
+      ansible.builtin.user:
+        name: pygmy
+        group: pygmy
+      tags:
+        - pygmy
+      register: pygmy_user
+
+    - name: Include docker role for Docker users
       ansible.builtin.include_role:
         name: geerlingguy.docker
       vars:
         docker_service_state: started
         docker_service_enabled: true
         docker_users:
+          - pygmy
           - trilium
           - bazel-remote-cache
       tags:
@@ -211,6 +232,7 @@
         loop:
           - trilium.agentydragon.com
           - grocy.agentydragon.com
+          - adgn.link
 
       - name: "Create static nginx configuration"
         ansible.builtin.copy:
@@ -220,7 +242,6 @@
           - nginx
         with_items:
           - agentydragon.com
-          - adgn.link
 
       # The nginx default website takes priority over my http://agentydragon.com
       # redirect, so disable it.
@@ -357,6 +378,46 @@
           - "127.0.0.1:{{ grocy_localhost_http_port }}:80"
         volumes:
           - /srv/grocy:/config
+        restart: true
+        restart_policy: unless-stopped
+
+    - name: Create Pygmy directory
+      ansible.builtin.file:
+        path: /srv/pygmy
+        state: directory
+        owner: pygmy
+        group: pygmy
+        mode: 0700
+      tags:
+        - pygmy
+
+    # Link shortener for adgn.link
+    #
+    # https://github.com/amitt001/pygmy
+    - name: Create Pygmy container
+      tags:
+        - pygmy
+      ansible.builtin.docker_container:
+        container_default_behavior: no_defaults
+        detach: true
+        init: false
+        interactive: false
+        user: pygmy
+
+        #memory: "512M"
+        #memory_swap: -1  # unlimited swap
+        paused: false
+        privileged: false
+        read_only: false
+        tty: false
+        auto_remove: false
+        name: pygmy
+        image: amit19/pygmy:latest
+        published_ports:
+          # Only expose to localhost, not externally.
+          - "127.0.0.1:{{ pygmy_localhost_http_port }}:8000"
+        volumes:
+          - /srv/pygmy:/pygmy
         restart: true
         restart_policy: unless-stopped
 
