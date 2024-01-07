@@ -13,16 +13,16 @@ server {
 
     # TODO: what's this for?
     location / {
-	return 301 https://www.agentydragon.com;
+        return 301 https://www.agentydragon.com;
     }
 
     location /nfc {
-	# 302 = temporary redirect (301 is permanent)
-	return 302 https://www.agentydragon.com/nfc.html;
+        # 302 = temporary redirect (301 is permanent)
+        return 302 https://www.agentydragon.com/nfc.html;
     }
 
     location /found {
-	# 302 = temporary redirect (301 is permanent)
-	return 302 https://www.agentydragon.com/found.html;
+        # 302 = temporary redirect (301 is permanent)
+        return 302 https://www.agentydragon.com/found.html;
     }
 }
