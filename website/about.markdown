@@ -10,10 +10,11 @@ title: About
 
 Hi!
 
-My chosen name is Rai, and my given name is Michal Pokorný. I'm 29, I grew up
+My chosen name is Rai, and my given name is Michal Pokorný. I'm 30, I grew up
 in Czech Republic. I've worked as a software engineer at Google Zurich since
-March 2016, then took a year-long break roughly May 2021 - May 2022 and now
-I'm a resident at OpenAI on the reinforcement learning team.
+March 2016, then took a year-long break roughly May 2021 - May 2022. Then I
+joined OpenAI, first as a resident on the reinforcement learning team, then on
+alignment.
 
 I have a bachelor's in general CS from the [Faculty of Mathematics and Physics][mff]
 of the Charles University in Prague. I started a master's in AI at the very same,
@@ -47,6 +48,9 @@ seminar for high school students by Charles University.
 
 ### Preferred
 
+<!-- TODO: unify with found.markdown? -->
+
+* Telegram: [@agentydragon][telegram]. Trying to migrate off it to Matrix.
 * Mastodon: [@agentydragon@mastodon.social][mastodon]
 * Matrix: [@agentydragon:matrix.org][matrix]
 * email: `agentydragon@gmail.com`
@@ -54,7 +58,6 @@ seminar for high school students by Charles University.
 
 ### Other
 
-* Telegram: [@agentydragon][telegram]. Trying to migrate off it to Matrix.
 * BookWyrm: [agentydragon@bookwyrm.social][bookwyrm]. It's got my book reviews,
   reading list etc.
 * GitHub: [agentydragon][github]. Trying to migrate off it because I am not
