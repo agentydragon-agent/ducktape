@@ -65,3 +65,5 @@
   ansible.builtin.dconf:
     key: /org/gnome/desktop/wm/preferences/button-layout
     value: "':minimize,maximize,close'"
+- include_tasks: tasks/element.yaml
+  tags: element
