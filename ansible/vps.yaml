@@ -1,9 +1,21 @@
+# Certbot renewal is done via the nginx *authenticator*.
+# See https://eff-certbot.readthedocs.io/en/latest/using.html#getting-certificates-and-choosing-plugins.
+# Looks like the authenticator does this via /.well-known/acme-challenge:
+#   https://github.com/certbot/certbot/blob/619654f3175687fc02dbbf34754e43c067303c3b/certbot-nginx/certbot_nginx/_internal/http_01.py#L237C9-L237C9
+#
+# TODO: check if the configurator does a good job too.
+#
+# Certbot comes with a built-in systemd timer: systemctl show certbot.timer.
+# That runs `certbot renew`. I can check in journalctl that it does the right
+# thing. It runs ~2x/day by default.
+
 ---
 - hosts: linode
   remote_user: root
 
   vars:
     - trilium_ssl_port: 3000
+    - grocy_localhost_http_port: 9283
 
   tasks:
     # Needs to run before Docker, which tries to install gnupg2
@@ -14,11 +26,15 @@
         upgrade: dist
 
     - name: Create Trilium group
+      tags:
+        - trilium-server
       ansible.builtin.group:
         name: trilium
         state: present
 
     - name: Create Trilium user
+      tags:
+        - trilium-server
       ansible.builtin.user:
         name: trilium
         group: trilium
@@ -38,7 +54,22 @@
         - bazel-remote-cache
       register: bazel_remote_cache_user
 
-    - name: Include docker role for Trilium user
+    - name: Create Grocy group
+      ansible.builtin.group:
+        name: grocy
+        state: present
+      tags:
+        - grocy
+
+    - name: Create Grocy user
+      ansible.builtin.user:
+        name: grocy
+        group: grocy
+      tags:
+        - grocy
+      register: grocy_user
+
+    - name: Include docker role for Docker users
       ansible.builtin.include_role:
         name: geerlingguy.docker
       vars:
@@ -73,6 +104,7 @@
     - name: Install packages
       apt:
         name:
+          - mosh
           - ncdu
           - nginx
           # certbot nginx plugin for autorenewing certs nicely
@@ -85,133 +117,146 @@
         createhome: true
         # NOTE: still need to ssh-copy-id over to the user manually.
 
-    - name: Let's Encrypt installation
-      ansible.builtin.include_role:
-        name: systemli.letsencrypt
-      vars:
-        # TODO: maybe remove this?
-        letsencrypt_opts_extra: "--register-unsafely-without-email"
-        letsencrypt: true
+    - name: Install & update convenience use packages
+      apt:
+        name:
+          - ncdu
+        state: latest
 
-    - name: Stop nginx before obtaining certificates
-      systemd:
-        state: stopped
-        name: nginx
+    - name: Install & update nginx
+      apt:
+        name:
+          - nginx
+        state: latest
 
-    # TODO: maybe instead use: https://docs.ansible.com/ansible/2.9/modules/acme_certificate_module.html#acme-certificate-module
-    # TODO: maybe use with_items for those let's encrypt certs?
-    # TODO: https://github.com/systemli/ansible-role-letsencrypt  --  does this
-    # allow multiple certs at once or something like that? would be nice.
-    - name: Let's Encrypt certificate for trilium.agentydragon.com
-      ansible.builtin.include_role:
-        name: systemli.letsencrypt
-      vars:
-        letsencrypt_opts_extra: "--register-unsafely-without-email"
-        letsencrypt_cert:
-          # TODO: move into a var
-          name: "trilium.agentydragon.com"
-          domains:
-            - "trilium.agentydragon.com"
-          challenge: http
-          http_auth: standalone
-      tags:
-        - letsencrypt
+    - set_fact:
+        letsencrypt_certificate_names:
+          # Presented by nginx to serve my website from static files.
+          - agentydragon.com,www.agentydragon.com
+          - grocy.agentydragon.com
+          # Presented by nginx to proxy requests to the Trilium server.
+          - trilium.agentydragon.com
+          # Presented by Bazel cache Docker container which has ports
+          # exposed to public internet.
+          - bazel-cache.agentydragon.com
+          - adgn.link,www.adgn.link
 
-    - name: Let's Encrypt certificate for (www.)?agentydragon.com
-      ansible.builtin.include_role:
-        name: systemli.letsencrypt
-      vars:
-        letsencrypt_opts_extra: "--register-unsafely-without-email"
-        letsencrypt_cert:
-          name: "agentydragon.com"
-          domains:
-            - agentydragon.com
-            - www.agentydragon.com
-          challenge: http
-          http_auth: standalone
-          users:
-            - trilium
-      tags:
-        - letsencrypt
+        # This seems to be what we need to present to certbot install.
+        # Looks like certbot install doesn't take the same parameters,
+        # if you request a certificate for multiple domains, it'll only
+        # then be installable under one name... :(
+        letsencrypt_certificate_names_to_install:
+          - agentydragon.com
+          - grocy.agentydragon.com
+          - trilium.agentydragon.com
+          - adgn.link
+          # bazel-cache.agentydragon.com deliberately not included,
+          # because it's not for installation in nginx.
 
-    # for mutual TLS with client certificates: --tls_ca_file
-    # sudo apt install apache2-utils -- for htpasswd utility
-    # TODO: this also needs to be run if certificate is already in /etc, but
-    # not yet in /srv/bazel-remote-cache.
-    - name: Set Bazel remote cache certificate post hook
-      ansible.builtin.copy:
-        dest: /etc/letsencrypt/renewal-hooks/post/bazel-remote-cache.sh
-        mode: 0755
-        content: |
-          #!/bin/sh
-          rm -rf /srv/bazel-remote-cache/certs
-          mkdir -p /srv/bazel-remote-cache/certs
-          cp --dereference --recursive /etc/letsencrypt/live/bazel-cache.agentydragon.com/* /srv/bazel-remote-cache/certs
-          chmod -R 700 /srv/bazel-remote-cache/certs
-          chown -R bazel-remote-cache:bazel-remote-cache /srv/bazel-remote-cache/certs
-          # TODO: do I maybe also need to restart the bazel-remote-cache container?
+    - name: Let's Encrypt certificates
+      block:
+      - name: Install & update certbot nginx plugin
+        apt:
+          name:
+            # certbot nginx plugin for autorenewing certs nicely
+            - python3-certbot-nginx
+          state: latest
 
-    # probably this role is getting skipped cause of the tag...
-    - name: Let's Encrypt certificate for bazel-cache.agentydragon.com
-      ansible.builtin.include_role:
-        name: systemli.letsencrypt
-      vars:
-        letsencrypt_opts_extra: "--register-unsafely-without-email"
-        letsencrypt_cert:
-          name: "bazel-cache.agentydragon.com"
-          domains:
-            - bazel-cache.agentydragon.com
-          challenge: http
-          http_auth: standalone
-          users:
-            - bazel-remote-cache
-      tags:
-        - letsencrypt
-        - bazel-remote-cache
+      # We need to obtain these certificates before updating nginx
+      # configuration in case the nginx configuration depends on certificates
+      # we didn't obtain yet.
+      #
+      # TODO: only mark as "changed" if the cert was actually renewed.
+      # TODO: only trigger installing a cert if it was changed.
+      - name: Obtain Let's Encrypt certificates
+        command: certbot certonly --non-interactive --agree-tos --nginx -d {{ item }}
+        loop: "{{ letsencrypt_certificate_names }}"
 
-    - stat:
-        path: /etc/letsencrypt/live/bazel-cache.agentydragon.com/fullchain.pem
-      register: bazel_cache_cert
+      # for mutual TLS with client certificates: --tls_ca_file
+      # sudo apt install apache2-utils -- for htpasswd utility
+      # TODO: this also needs to be run if certificate is already in /etc, but
+      # not yet in /srv/bazel-remote-cache.
+      - name: Set Bazel remote cache certificate post hook
+        tags:
+          - bazel-remote-cache
+        ansible.builtin.copy:
+          dest: /etc/letsencrypt/renewal-hooks/post/bazel-remote-cache.sh
+          mode: 0755
+          content: |
+            #!/bin/sh
+            rm -rf /srv/bazel-remote-cache/certs
+            mkdir -p /srv/bazel-remote-cache/certs
+            cp --dereference --recursive /etc/letsencrypt/live/bazel-cache.agentydragon.com/* /srv/bazel-remote-cache/certs
+            chmod -R 700 /srv/bazel-remote-cache/certs
+            chown -R bazel-remote-cache:bazel-remote-cache /srv/bazel-remote-cache/certs
+            # TODO: do I maybe also need to restart the bazel-remote-cache container?
 
-    - assert:
-        that:
-          - bazel_cache_cert.stat.exists
+      - name: Check that Bazel remote cache certificate exists
+        tags:
+          - bazel-remote-cache
+        block:
+          - stat:
+              path: /etc/letsencrypt/live/bazel-cache.agentydragon.com/fullchain.pem
+            register: bazel_cache_cert
+          - assert:
+              that:
+                - bazel_cache_cert.stat.exists
 
-    - name: Create nginx configuration files
-      template:
-        src: templates/nginx-sites/{{ item }}.j2
-        dest: /etc/nginx/sites-available/{{ item }}
-      with_items:
-        - agentydragon.com
-        - trilium.agentydragon.com
-      tags:
-        - nginx
-      notify:
-        - Reload nginx
+    - name: nginx website configs
+      block:
+      - name: "Create nginx configuration from template"
+        template:
+          src: "nginx-sites/{{ item }}.j2"
+          dest: "/etc/nginx/sites-available/{{ item }}"
+        tags:
+          - nginx
+        notify:
+          - Reload nginx
+        loop:
+          - trilium.agentydragon.com
+          - grocy.agentydragon.com
 
-    - name: Enable nginx websites
-      file:
-        state: link
-        src: /etc/nginx/sites-available/{{ item }}
-        dest: /etc/nginx/sites-enabled/{{ item }}
-      with_items:
-        - agentydragon.com
-        - trilium.agentydragon.com
-      tags:
-        - nginx
-      notify:
-        - Reload nginx
+      - name: "Create static nginx configuration"
+        ansible.builtin.copy:
+          src: nginx-sites/{{ item }}
+          dest: /etc/nginx/sites-available/{{ item }}
+        tags:
+          - nginx
+        with_items:
+          - agentydragon.com
+          - adgn.link
 
-    # The nginx default website takes priority over my http://agentydragon.com
-    # redirect, so disable it.
-    - name: Disable nginx default website
-      file:
-        state: absent
-        dest: /etc/nginx/sites-enabled/default
-      tags:
-        - nginx
-      notify:
-        - Reload nginx
+      # The nginx default website takes priority over my http://agentydragon.com
+      # redirect, so disable it.
+      - name: Disable nginx default website
+        file:
+          state: absent
+          dest: /etc/nginx/sites-enabled/default
+        tags:
+          - nginx
+        notify:
+          - Reload nginx
+
+      - name: Enable nginx websites
+        file:
+          state: link
+          src: /etc/nginx/sites-available/{{ item }}
+          dest: /etc/nginx/sites-enabled/{{ item }}
+        with_items:
+          - agentydragon.com
+          - grocy.agentydragon.com
+          - trilium.agentydragon.com
+          - adgn.link
+        tags:
+          - nginx
+        notify:
+          - Reload nginx
+
+    # Now that we obtained the certificates and have configurations for
+    # servers that use them, install them.
+    - name: Install Let's Encrypt certificates
+      command: certbot install --non-interactive --agree-tos --nginx --cert-name {{ item }}
+      loop: "{{ letsencrypt_certificate_names_to_install }}"
 
     - name: Copy Bazel remote cache htpasswd on server
       ansible.builtin.copy:
@@ -272,6 +317,53 @@
       tags:
         - bazel-remote-cache
 
+    - name: Create Grocy directory
+      ansible.builtin.file:
+        path: /srv/grocy
+        state: directory
+        owner: grocy
+        group: grocy
+        mode: 0700
+      tags:
+        - grocy
+
+    - name: Create Grocy container
+      tags:
+        - grocy
+      ansible.builtin.docker_container:
+        container_default_behavior: no_defaults
+        detach: true
+        init: false
+        interactive: false
+
+        # ugh, looks like linuxserver.io requires running as root...
+        # probably something having to do with permissions on files inside
+        # the container?
+        user: root
+
+        #memory: "512M"
+        #memory_swap: -1  # unlimited swap
+        paused: false
+        privileged: false
+        read_only: false
+        tty: false
+        auto_remove: false
+        name: grocy
+        # TODO: pin to specific version?
+        image: lscr.io/linuxserver/grocy:latest
+        env:
+          TZ: America/Los_Angeles
+          PUID: "{{ grocy_user.uid }}"
+          PGID: "{{ grocy_user.group }}"
+        published_ports:
+          # Expose internal port 80 as external port 9283 on localhost.
+          # Only expose to localhost, not externally.
+          - "127.0.0.1:{{ grocy_localhost_http_port }}:80"
+        volumes:
+          - /srv/grocy:/config
+        restart: true
+        restart_policy: unless-stopped
+
     - name: Start and enable nginx
       service:
         name: nginx
@@ -279,12 +371,6 @@
         enabled: true
       tags:
         - nginx
-
-    - name: Create a cron job to renew Let's Encrypt certificates
-      cron:
-        name: "Renew Let's Encrypt certificates"
-        special_time: daily
-        job: "certbot renew --quiet --nginx --reloadcmd \"nginx -s reload\""
 
   handlers:
     # Only triggers if nginx config files changed.
