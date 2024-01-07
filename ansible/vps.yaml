@@ -1,14 +1,3 @@
-# Certificate setup:
-#   - certificates I need:
-#       #1: agentydragon.com, www.agentydragon.com
-#       #2: trilium.agentydragon.com
-#       #3: bazel-remote-cache.agentydragon.com
-#
-#   - #1 is presented by nginx to serve my website from static files
-#   - #2 is presented by nginx to proxy requests to the Trilium server
-#   - #3 is presented by Bazel cache Docker container which has ports
-#     exposed to public internet
-#
 # Certbot renewal is done via the nginx *authenticator*.
 # See https://eff-certbot.readthedocs.io/en/latest/using.html#getting-certificates-and-choosing-plugins.
 # Looks like the authenticator does this via /.well-known/acme-challenge:
@@ -26,6 +15,7 @@
 
   vars:
     - trilium_ssl_port: 3000
+    - grocy_localhost_http_port: 9283
 
   tasks:
     # Needs to run before Docker, which tries to install gnupg2
@@ -135,51 +125,17 @@
           - nginx
         state: latest
 
-    - name: nginx website configs
-      block:
-      - name: Create trilium.agentydragon.com nginx configuration
-        template:
-          src: nginx-sites/trilium.agentydragon.com.j2
-          dest: /etc/nginx/sites-available/trilium.agentydragon.com
-        tags:
-          - nginx
-        notify:
-          - Reload nginx
-
-      - name: Create agentydragon.com nginx config
-        ansible.builtin.copy:
-          src: nginx-sites/{{ item }}
-          dest: /etc/nginx/sites-available/{{ item }}
-        tags:
-          - nginx
-        with_items:
-          - agentydragon.com
-          - adgn.link
-
-      # The nginx default website takes priority over my http://agentydragon.com
-      # redirect, so disable it.
-      - name: Disable nginx default website
-        file:
-          state: absent
-          dest: /etc/nginx/sites-enabled/default
-        tags:
-          - nginx
-        notify:
-          - Reload nginx
-
-      - name: Enable nginx websites
-        file:
-          state: link
-          src: /etc/nginx/sites-available/{{ item }}
-          dest: /etc/nginx/sites-enabled/{{ item }}
-        with_items:
-          - agentydragon.com
-          - adgn.link
+    - set_fact:
+        letsencrypt_certificate_names:
+          # Presented by nginx to serve my website from static files.
+          - agentydragon.com,www.agentydragon.com
+          - grocy.agentydragon.com
+          # Presented by nginx to proxy requests to the Trilium server.
           - trilium.agentydragon.com
-        tags:
-          - nginx
-        notify:
-          - Reload nginx
+          # Presented by Bazel cache Docker container which has ports
+          # exposed to public internet.
+          - bazel-cache.agentydragon.com
+          - adgn.link,www.adgn.link
 
     - name: Let's Encrypt certificates
       block:
@@ -190,12 +146,12 @@
             - python3-certbot-nginx
           state: latest
 
-      - name: Obtain & install Let's Encrypt certificate for {{ item }}
-        command: certbot run --non-interactive --agree-tos --nginx -d {{ item }}
-        with_items:
-          - agentydragon.com,www.agentydragon.com
-          - trilium.agentydragon.com
-          - adgn.link,www.adgn.link
+      # We need to obtain these certificates before updating nginx
+      # configuration in case the nginx configuration depends on certificates
+      # we didn't obtain yet.
+      - name: Obtain Let's Encrypt certificates
+        command: certbot certonly --non-interactive --agree-tos --nginx -d {{ item }}
+        loop: "{{ letsencrypt_certificate_names }}"
 
       # for mutual TLS with client certificates: --tls_ca_file
       # sudo apt install apache2-utils -- for htpasswd utility
@@ -232,6 +188,62 @@
           - assert:
               that:
                 - bazel_cache_cert.stat.exists
+
+    - name: nginx website configs
+      block:
+      - name: "Create nginx configuration from template"
+        template:
+          src: "nginx-sites/{{ item }}.j2"
+          dest: "/etc/nginx/sites-available/{{ item }}"
+        tags:
+          - nginx
+        notify:
+          - Reload nginx
+        loop:
+          - trilium.agentydragon.com
+          - grocy.agentydragon.com
+
+      - name: "Create static nginx configuration"
+        ansible.builtin.copy:
+          src: nginx-sites/{{ item }}
+          dest: /etc/nginx/sites-available/{{ item }}
+        tags:
+          - nginx
+        with_items:
+          - agentydragon.com
+          - adgn.link
+
+      # The nginx default website takes priority over my http://agentydragon.com
+      # redirect, so disable it.
+      - name: Disable nginx default website
+        file:
+          state: absent
+          dest: /etc/nginx/sites-enabled/default
+        tags:
+          - nginx
+        notify:
+          - Reload nginx
+
+      - name: Enable nginx websites
+        file:
+          state: link
+          src: /etc/nginx/sites-available/{{ item }}
+          dest: /etc/nginx/sites-enabled/{{ item }}
+        with_items:
+          - agentydragon.com
+          - grocy.agentydragon.com
+          - trilium.agentydragon.com
+          - adgn.link
+        tags:
+          - nginx
+        notify:
+          - Reload nginx
+
+    # Now that we obtained the certificates and have configurations for
+    # servers that use them, install them.
+    - name: Install Let's Encrypt certificates
+      command: certbot install --non-interactive --agree-tos --nginx --cert-name {{ item }}
+      loop: "{{ letsencrypt_certificate_names }}"
 
     - name: Copy Bazel remote cache htpasswd on server
       ansible.builtin.copy:
@@ -331,8 +343,9 @@
           PUID: "{{ grocy_user.uid }}"
           PGID: "{{ grocy_user.group }}"
         published_ports:
-          # Expose internal port 80 as external port 9283.
-          - "9283:80"
+          # Expose internal port 80 as external port 9283 on localhost.
+          # Only expose to localhost, not externally.
+          - "127.0.0.1:{{ grocy_localhost_http_port }}:80"
         volumes:
           - /srv/grocy:/config
         restart: true
