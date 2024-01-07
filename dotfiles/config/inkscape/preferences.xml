@@ -680,7 +680,7 @@
          value="page" />
       <group
          id="defaultxdpi"
-         value="150" />
+         value="299.794" />
     </group>
     <group
        id="save_as"
@@ -702,13 +702,13 @@
     <group
        id="import"
        enable_preview="1"
-       path="/home/prvak/"
+       path="/home/agentydragon/code/ducktape/found/"
        ask="1"
        ask_svg="1"
        link="embed"
        scale="auto"
        forcexdpi="0"
-       import_mode_svg="include" />
+       import_mode_svg="link" />
     <group
        id="debug"
        redirect="0" />
@@ -1139,13 +1139,15 @@
      org.inkscape.visualise.measure_length.anchor="start"
      org.inkscape.visualise.measure_length.position="start"
      org.inkscape.visualise.measure_length.unit="mm"
-     org.inkscape.visualise.measure_length.__live_effect__="0" />
+     org.inkscape.visualise.measure_length.__live_effect__="0"
+     org.inkscape.input.svg.scale="auto"
+     org.inkscape.input.svg.import_mode_svg="link" />
   <group
      id="desktop"
      style="fill:#000000;stroke-width:288;stroke:#000000;font-size:288px;-inkscape-font-specification:'Liberation Sans';font-family:'Liberation Sans';line-height:125%">
     <group
-       width="1124"
-       height="939"
+       width="875"
+       height="659"
        x="0"
        y="32"
        maximized="1"
@@ -1263,7 +1265,7 @@
   <group
      id="theme"
      defaultTheme="Pop"
-     defaultIconTheme="ubuntu-mono-dark"
+     defaultIconTheme="Pop"
      gtkTheme="Pop"
      menuIcons_canvas="0"
      menuIcons_layers="0"
