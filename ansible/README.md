@@ -47,6 +47,9 @@ ansible-playbook vps.yaml
 NOTE: running with `--skip-tags` might not work in any reasonable way. I didn't
 assign task particularly with that in mind... :/
 
+On GPD: `--skip-tags bazel-remote-cache` -- because I don't have the Bazel
+remote cache `htpasswd` on GPD.
+
 ## To deploy gpd
 
 ```bash
