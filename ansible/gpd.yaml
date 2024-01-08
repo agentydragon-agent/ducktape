@@ -178,7 +178,6 @@
         become: true
         tags:
           - vscode
-        ansible.builtin.apt:
+        snap:
           classic: true
-          pkg:
-            - code
+          name: code
