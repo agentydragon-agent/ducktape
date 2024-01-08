@@ -11,6 +11,7 @@
       - gimp
       - git
       - htop
+      - iftop
       - iotop
       - iputils-ping
       - libreoffice
