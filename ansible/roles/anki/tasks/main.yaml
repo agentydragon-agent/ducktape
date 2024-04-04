@@ -58,8 +58,9 @@
       changed_when: false
 
     - name: Get latest Anki release URL
+      # 2024-04-03: qt6 version does not work, switching to qt5 which does.
       ansible.builtin.shell: |
-        jq --raw-output '.assets[] | select(.name | test("linux-qt6")) | .browser_download_url' {{ tmp_path }}/latest-release.json
+        jq --raw-output '.assets[] | select(.name | test("linux-qt5")) | .browser_download_url' {{ tmp_path }}/latest-release.json
       register: latest_release_url
       changed_when: false
 
