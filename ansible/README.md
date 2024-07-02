@@ -78,6 +78,8 @@ These parts aren't yet done by Ansible:
 * `htpasswd` for `bazel-remote-cache` is not stored in the repo - but that
   should be fine, those creds are cheap to rotate.
   It's expected to be in `$(repo root)/ansible/bazel_remote_cache.htpasswd`.
+* Setup steps for Inventree - see https://docs.inventree.org/en/latest/start/docker_install/#initial-database-setup
+  (making databases etc)
 
 ## Manual laptop installation steps
 
@@ -91,3 +93,5 @@ These parts can't be done by Ansible:
 * Add `~/.config/bazelrc.secrets` - see the `bazelrc` dotfile. The global
   `bazelrc` imports this file, it's supposed to contain the path (and
   password) to the Bazel cache on the VPS.
+
+

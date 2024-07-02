@@ -5,3 +5,5 @@ roles:
   - src: systemli.letsencrypt
   - src: nbigot.ansible-fail2ban
   - src: diodonfrost.p10k
+collections:
+  - community.docker
