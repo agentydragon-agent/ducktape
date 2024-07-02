@@ -69,18 +69,20 @@
         - grocy
       register: grocy_user
 
-    - name: Include docker role for Docker users
-      ansible.builtin.include_role:
-        name: geerlingguy.docker
-      vars:
-        docker_service_state: started
-        docker_service_enabled: true
-        docker_users:
-          - trilium
-          - bazel-remote-cache
-      tags:
-        - bazel-remote-cache
-        - docker
+    # 2024-07-01 deleted -- adds wrong repo entry
+    #
+    # - name: Include docker role for Docker users
+    #   ansible.builtin.include_role:
+    #     name: geerlingguy.docker
+    #   vars:
+    #     docker_service_state: started
+    #     docker_service_enabled: true
+    #     docker_users:
+    #       - trilium
+    #       - bazel-remote-cache
+    #   tags:
+    #     - bazel-remote-cache
+    #     - docker
 
     # TODO: maybe we should restart Docker server if we added users here
 
@@ -134,6 +136,7 @@
           # Presented by nginx to serve my website from static files.
           - agentydragon.com,www.agentydragon.com
           - grocy.agentydragon.com
+          - inventree.agentydragon.com
           # Presented by nginx to proxy requests to the Trilium server.
           - trilium.agentydragon.com
           # Presented by Bazel cache Docker container which has ports
@@ -148,6 +151,7 @@
         letsencrypt_certificate_names_to_install:
           - agentydragon.com
           - grocy.agentydragon.com
+          - inventree.agentydragon.com
           - trilium.agentydragon.com
           - adgn.link
           # bazel-cache.agentydragon.com deliberately not included,
@@ -215,6 +219,7 @@
         loop:
           - trilium.agentydragon.com
           - grocy.agentydragon.com
+          - inventree.agentydragon.com
 
       - name: "Create static nginx configuration"
         ansible.builtin.copy:
@@ -245,6 +250,7 @@
         with_items:
           - agentydragon.com
           - grocy.agentydragon.com
+          - inventree.agentydragon.com
           - trilium.agentydragon.com
           - adgn.link
         tags:
@@ -371,6 +377,37 @@
         enabled: true
       tags:
         - nginx
+
+    - name: Create Inventree Docker Compose directory
+      ansible.builtin.file:
+        path: /srv/inventree/docker-compose
+        state: directory
+        mode: 0700
+      tags:
+        - inventree
+
+    - name: copy Docker Compose files
+      copy:
+        src: inventree/{{ item }}
+        dest: /srv/inventree/docker-compose/{{ item }}
+      loop:
+      - .env
+      - docker-compose.yml
+      tags:
+        - inventree
+
+    - name: docker compose up for inventree
+      community.docker.docker_compose_v2:
+        project_src: /srv/inventree/docker-compose
+      register: output
+      tags:
+        - inventree
+
+    - name: Show results
+      ansible.builtin.debug:
+        var: output
+      tags:
+        - inventree
 
   handlers:
     # Only triggers if nginx config files changed.
