@@ -144,6 +144,13 @@
 
           # TODO: add Ubuntu startup programs, like Flameshot etc.
 
+          # For offline Wikipedia etc.
+          - kiwix
+
+          # Some hacking stuff
+          - freecad
+          - kicad
+
     - name: Install pop os specific packages for laptop
       become: true
       ansible.builtin.apt:
@@ -154,9 +161,8 @@
       tags: snap
       become: true
       snap:
-        classic: true
         name:
-          - syncplay
+          - freecad
 
     - name: Install Rescuetime
       tags:
