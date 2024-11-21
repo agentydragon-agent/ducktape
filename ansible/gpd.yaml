@@ -96,6 +96,13 @@
           - freecad
           - kicad
 
+    - name: Install Freecad
+      tags: snap
+      become: true
+      snap:
+        name:
+          - freecad
+
 
     - name: Install Rescuetime
       tags:
