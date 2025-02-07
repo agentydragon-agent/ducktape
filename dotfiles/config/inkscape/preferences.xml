@@ -1,8 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <inkscape
    version="1"
-   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
-   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd">
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape">
   <group
      id="window">
     <group
@@ -107,9 +106,10 @@
   </group>
   <group
      id="template">
-    <sodipodi:namedview
+    <group
        id="base"
        pagecolor="#ffffff"
+       deskcolor="#d1d1d1"
        pageopacity="0.0"
        pagecheckerboard="0"
        bordercolor="#666666"
@@ -204,13 +204,15 @@
          style="stroke-width:1px;"
          usecurrent="0"
          average_all_sketches="1"
-         pressure="0" />
+         pressure="0"
+         freehand-mode="0" />
       <eventcontext
          id="pen"
          mode="drag"
          selcue="1"
          style="stroke-width:1px;"
-         usecurrent="0" />
+         usecurrent="0"
+         freehand-mode="0" />
     </group>
     <eventcontext
        id="calligraphic"
@@ -344,9 +346,16 @@
        font_sample="AaBbCcIiPpQq12369$€¢?.;/()"
        show_sample_in_list="1"
        use_svg2="1"
-       style="font-family:UnPenheulim;font-size:10px;line-height:125%;letter-spacing:0px;word-spacing:0px;-inkscape-font-specification:UnPenheulim"
+       style="font-family:UnPenheulim;font-size:10px;line-height:125%;letter-spacing:0px;word-spacing:0px;-inkscape-font-specification:UnPenheulim;text-orientation:auto"
        selcue="1"
+<<<<<<< Updated upstream
        align_mode="1">
+=======
+       align_mode="0"
+       writing_mode="0"
+       orientation_mode="0"
+       direction_mode="0">
+>>>>>>> Stashed changes
       <group
          id="lineheight"
          display_unit="9" />
@@ -366,10 +375,15 @@
        live_outline="1"
        live_objects="1"
        show_helperpath="0"
+<<<<<<< Updated upstream
        x="423.545"
        y="76.7988"
+=======
+>>>>>>> Stashed changes
        edit_clipping_paths="0"
        edit_masks="0"
+       x="3846.9"
+       y="13234.9"
        highlight_color="4278190335" />
     <eventcontext
        id="tweak"
@@ -406,19 +420,16 @@
        newgradient="1"
        newfillorstroke="1" />
     <eventcontext
-       id="zoom"
+       id="marker"
        selcue="1"
-       gradientdrag="0" />
-    <eventcontext
-       id="dropper"
-       selcue="1"
-       gradientdrag="1"
-       pick="1"
-       setalpha="1" />
+       gradientdrag="1" />
     <eventcontext
        id="select"
        selcue="1"
-       gradientdrag="0" />
+       gradientdrag="0"
+       changelayer="1"
+       changepage="1"
+       lock_aspect_ratio="1" />
     <eventcontext
        id="connector"
        style="fill:none;fill-rule:evenodd;stroke:black;stroke-opacity:1;stroke-linejoin:miter;stroke-width:1px;stroke-linecap:butt;"
@@ -429,9 +440,14 @@
        id="paintbucket"
        style="fill:#a0a0a0;stroke:none;"
        usecurrent="1"
-       offset="0"
-       offsetunits="pt"
-       threshold="5" />
+       offset="5"
+       offsetunits="mm"
+       threshold="20"
+       channels="7" />
+    <eventcontext
+       id="zoom"
+       selcue="1"
+       gradientdrag="0" />
     <eventcontext
        id="mesh"
        selcue="1"
@@ -448,13 +464,22 @@
        measure-end="0,0">
       <group
          id="measure-start"
-         x="-8933.48"
-         y="-7094.61" />
+         x="776.486039461634"
+         y="644.195825331133" />
       <group
          id="measure-end"
          x="18108.4"
          y="-3288.9" />
     </group>
+    <eventcontext
+       id="dropper"
+       selcue="1"
+       gradientdrag="1"
+       pick="1"
+       setalpha="1" />
+    <group
+       id="geometric"
+       mode="drag" />
   </group>
   <group
      id="palette">
@@ -490,6 +515,9 @@
       <dash
          id="dash-1-48"
          style="stroke-dasharray:1,48" />
+      <dash
+         id="dash-empty"
+         style="stroke-dasharray:0 11" />
       <dash
          id="dash-2-1"
          style="stroke-dasharray:2,1" />
@@ -568,14 +596,36 @@
       <dash
          id="dash-0110-0110"
          style="stroke-dasharray:0.1,0.1" />
-      <dash
-         id="dash-empty"
-         style="stroke-dasharray:0 11" />
     </group>
   </group>
   <group
      id="colorselector"
-     page="1" />
+     page="1"
+     switcher="1">
+    <group
+       id="RGB"
+       visible="1" />
+    <group
+       id="HSL"
+       visible="1" />
+    <group
+       id="CMYK"
+       visible="1" />
+    <group
+       id="HSV"
+       visible="1" />
+    <group
+       id="HSLuv"
+       visible="1" />
+    <group
+       id="OKLAB"
+       visible="1" />
+    <group
+       id="CMS"
+       visible="1" />
+    <group
+       id="OKHSL" />
+  </group>
   <group
      id="embedded">
     <group
@@ -585,10 +635,21 @@
        panel_ratio="100"
        panel_wrap="0"
        palette="Inkscape default"
-       panel_border="0" />
+       panel_border="0">
+      <group
+         id="pinned"
+         none="1"
+         rgb000000="1"
+         black="1"
+         rgb808080="1"
+         gray-50="1"
+         rgbffffff="1"
+         white="1" />
+    </group>
   </group>
   <group
-     id="dialogs">
+     id="dialogs"
+     traceliveUpdate="1">
     <group
        id="toolbox" />
     <group
@@ -616,6 +677,8 @@
        w="667"
        h="391" />
     <group
+       id="filtereffects" />
+    <group
        id="transformation"
        applyseparately="0" />
     <group
@@ -625,8 +688,6 @@
        h="500"
        w="300"
        panedpos="301" />
-    <group
-       id="find" />
     <group
        id="spellcheck"
        w="200"
@@ -645,8 +706,7 @@
        w="370"
        h="549" />
     <group
-       id="preferences"
-       state="1" />
+       id="find" />
     <group
        id="gradienteditor"
        x="1047"
@@ -682,14 +742,23 @@
       <group
          id="defaultxdpi"
          value="299.794" />
+      <group
+         id="batchexportarea"
+         value="layer" />
     </group>
     <group
        id="save_as"
        default="org.inkscape.output.svg.inkscape"
        append_extension="1"
        enable_preview="1"
+<<<<<<< Updated upstream
        path="/home/agentydragon/drive/Community/15 Leroy Place"
        use_current_dir="1" />
+=======
+       path="/home/agentydragon/drive/Dustin Space/Art"
+       use_current_dir="1"
+       enable_svgexport="0" />
+>>>>>>> Stashed changes
     <group
        id="save_copy"
        default="org.inkscape.output.svg.plain"
@@ -699,22 +768,31 @@
     <group
        id="open"
        enable_preview="1"
+<<<<<<< Updated upstream
        path="/home/agentydragon/" />
+=======
+       path="/home/agentydragon/downloads/" />
+>>>>>>> Stashed changes
     <group
        id="import"
        enable_preview="1"
-       path="/home/agentydragon/code/ducktape/found/"
+       path="/home/agentydragon/pcb-stencil-lasercut/SO12406206005/"
        ask="1"
        ask_svg="1"
+<<<<<<< Updated upstream
        link="link"
+=======
+       link="embed"
+>>>>>>> Stashed changes
        scale="auto"
        forcexdpi="0"
-       import_mode_svg="link" />
+       import_mode_svg="include" />
     <group
        id="debug"
        redirect="0" />
     <group
        id="clonetiler"
+       dotrace="0"
        panel_size="1"
        panel_ratio="100"
        panel_mode="1"
@@ -736,8 +814,10 @@
        h="539"
        visible="1"
        state="2"
-       placement="2"
-       dotrace="0" />
+       placement="2" />
+    <group
+       id="preferences"
+       state="1" />
     <group
        id="gridtiler" />
     <group
@@ -746,9 +826,8 @@
     <group
        id="memory" />
     <group
-       id="messages" />
-    <group
        id="swatches"
+       palette="Auto"
        panel_size="1"
        panel_ratio="100"
        panel_mode="1"
@@ -762,11 +841,11 @@
        state="2"
        placement="1" />
     <group
+       id="messages" />
+    <group
        id="iconpreview" />
     <group
        id="aboutextensions" />
-    <group
-       id="treeeditor" />
     <group
        id="layers"
        maxDepth="20"
@@ -782,6 +861,8 @@
     <group
        id="extensioneditor" />
     <group
+       id="treeeditor" />
+    <group
        id="trace"
        state="1" />
     <group
@@ -793,15 +874,14 @@
     <group
        id="undo-history" />
     <group
-       id="filtereffects" />
-    <group
        id="transparency"
        on-focus="1.0"
        on-blur="0.50"
        animate-time="100" />
     <group
        id="printing"
-       asbitmap="0" />
+       asbitmap="1"
+       dpi="300" />
     <group
        h="412"
        w="678"
@@ -813,6 +893,9 @@
        panel_ratio="100"
        panel_size="1"
        id="livepatheffect" />
+    <group
+       id="objects"
+       expand_to_layer="1" />
   </group>
   <group
      id="printing">
@@ -824,7 +907,9 @@
   </group>
   <group
      id="options"
-     onimport="0">
+     rotationlock="1"
+     onimport="0"
+     onungroup="0">
     <group
        id="useoldpdfexporter"
        value="0" />
@@ -835,35 +920,20 @@
        id="relinkclonesonduplicate"
        value="0" />
     <group
+       id="nudgedistance"
+       value="2" />
+    <group
        id="mapalt"
        value="1" />
     <group
        id="trackalt"
        value="0" />
     <group
+       id="cursortolerance"
+       value="8" />
+    <group
        id="switchonextinput"
        value="0" />
-    <group
-       id="useextinput"
-       value="1" />
-    <group
-       id="nudgedistance"
-       value="2" />
-    <group
-       id="rotationsnapsperpi"
-       value="12" />
-    <group
-       id="cursortolerance"
-       value="8.0" />
-    <group
-       id="dragtolerance"
-       value="4.0" />
-    <group
-       id="displayprofile"
-       enable="0"
-       from_display="0"
-       intent="0"
-       uri="" />
     <group
        id="softproof"
        enable="0"
@@ -871,17 +941,41 @@
        gamutcolor="#808080"
        gamutwarn="0"
        bpc="0"
-       preserveblack="0"
-       uri="" />
-    <group
-       id="savewindowgeometry"
-       value="1" />
+       uri=""
+       preserveblack="0" />
     <group
        id="defaultoffsetwidth"
        value="2" />
     <group
        id="defaultscale"
        value="2" />
+    <group
+       id="useextinput"
+       value="1" />
+    <group
+       id="rotationsnapsperpi"
+       value="12" />
+    <group
+       id="dragtolerance"
+       value="4.0" />
+    <group
+       value="0"
+       id="spacepans" />
+    <group
+       id="wheelzooms"
+       value="0" />
+    <group
+       id="displayprofile"
+       enable="0"
+       from_display="0"
+       intent="0"
+       uri="" />
+    <group
+       id="snapdelay"
+       value="150" />
+    <group
+       id="savewindowgeometry"
+       value="1" />
     <group
        id="maxrecentdocuments"
        value="36" />
@@ -899,20 +993,26 @@
        id="wheelscroll"
        value="40" />
     <group
-       value="0"
-       id="spacepans" />
+       value="1"
+       id="bitmapoversample" />
     <group
-       id="wheelzooms"
-       value="0" />
+       id="bitmapeditor"
+       value="0"
+       choices="gimp,krita,gpaint,kolourpaint,mtpaint,cinepaint" />
+    <group
+       id="spacebarpans"
+       value="1" />
     <group
        id="transientpolicy"
        value="1" />
     <group
+       id="dock"
+       cancenterdock="1"
+       dockbarstyle="2"
+       switcherstyle="2" />
+    <group
        id="scrollingacceleration"
        value="0.4" />
-    <group
-       id="snapdelay"
-       value="150" />
     <group
        id="snapweight"
        value="0.5" />
@@ -932,12 +1032,8 @@
        id="simplifythreshold"
        value="0.002" />
     <group
-       value="1"
-       id="bitmapoversample" />
-    <group
-       id="bitmapeditor"
-       value="0"
-       choices="gimp,krita,gpaint,kolourpaint,mtpaint,cinepaint" />
+       id="svgeditor"
+       value="inkscape" />
     <group
        id="bitmapautoreload"
        value="1" />
@@ -945,13 +1041,11 @@
        id="dialogtype"
        value="1" />
     <group
-       id="dock"
-       cancenterdock="1"
-       dockbarstyle="2"
-       switcherstyle="2" />
-    <group
        id="dialogsskiptaskbar"
        value="1" />
+    <group
+       id="defaultwindowsize"
+       value="2" />
     <group
        id="arenatilescachesize"
        value="8192" />
@@ -962,51 +1056,13 @@
        id="clonecompensation"
        value="1" />
     <group
+       id="showfiltersinfobox"
+       value="1" />
+    <group
        id="cloneorphans"
        value="0" />
     <group
        id="stickyzoom"
-       value="0" />
-    <group
-       id="selcue"
-       value="2" />
-    <group
-       id="transform"
-       stroke="1"
-       rectcorners="1"
-       pattern="1"
-       gradient="1" />
-    <group
-       id="kbselection"
-       inlayer="1"
-       onlyvisible="1"
-       onlysensitive="1" />
-    <group
-       id="selection"
-       layerdeselect="1" />
-    <group
-       id="createbitmap" />
-    <group
-       id="compassangledisplay"
-       value="0" />
-    <group
-       id="maskobject"
-       topmost="1"
-       remove="1" />
-    <group
-       id="blurquality"
-       value="0" />
-    <group
-       id="filterquality"
-       value="1" />
-    <group
-       id="showfiltersinfobox"
-       value="1" />
-    <group
-       id="startmode"
-       outline="0" />
-    <group
-       id="outlinemode"
        value="0" />
     <group
        id="ocalurl"
@@ -1018,12 +1074,8 @@
        id="ocalpassword"
        str="" />
     <group
-       id="wireframecolors"
-       onlight="255"
-       ondark="4294967295"
-       images="4278190335"
-       clips="16711935"
-       masks="65535" />
+       id="selcue"
+       value="2" />
     <group
        id="svgoutput"
        disable_optimizations="0"
@@ -1046,14 +1098,16 @@
        sort_attributes="0"
        allowrelativecoordinates="1" />
     <group
-       id="externalresources">
-      <group
-         id="xml"
-         allow_net_access="0" />
-    </group>
+       id="transform"
+       stroke="1"
+       rectcorners="1"
+       pattern="1"
+       gradient="1" />
     <group
-       id="forkgradientvectors"
-       value="1" />
+       id="maskobject"
+       topmost="1"
+       remove="1"
+       grouping="0" />
     <group
        id="iconrender"
        named_nodelay="0" />
@@ -1068,13 +1122,13 @@
        no_emphasize_when_zoomedout="0">
       <group
          id="xy"
-         units="px"
          origin_x="0.0"
          origin_y="0.0"
          spacing_x="1.0"
          spacing_y="1.0"
          empspacing="5"
          dotted="0"
+         units="px"
          color="65312"
          empcolor="65344" />
       <group
@@ -1088,52 +1142,138 @@
          empspacing="5"
          color="65312"
          empcolor="65344" />
+      <group
+         id="modular"
+         units="mm"
+         origin_x="0.0"
+         origin_y="0.0"
+         spacing_x="40.0"
+         spacing_y="40.0"
+         gapx="10"
+         gapy="10"
+         marginx="0"
+         marginy="0" />
     </group>
     <group
        id="workarounds"
-       colorsontop="0"
        partialdynamic="0"
+       colorsontop="0"
        floatallowed="0" />
     <group
        numthreads="1"
        id="threading" />
     <group
+       id="dash"
+       scale="1" />
+    <group
+       id="kbselection"
+       inlayer="1"
+       onlyvisible="1"
+       onlysensitive="1" />
+    <group
+       id="selection"
+       layerdeselect="1" />
+    <group
+       id="createbitmap" />
+    <group
        id="renderingcache"
        size="64" />
     <group
-       id="grabsize"
-       value="3" />
-    <group
-       id="spacebarpans"
-       value="1" />
-    <group
-       id="defaultwindowsize"
-       value="2" />
-    <group
-       id="rendering" />
-    <group
-       id="svgeditor"
-       value="inkscape" />
-    <group
-       id="dash"
-       scale="1" />
+       id="compassangledisplay"
+       value="0" />
     <group
        id="middlemousezoom"
        value="1" />
     <group
+       id="blurquality"
+       value="0" />
+    <group
+       id="filterquality"
+       value="1" />
+    <group
+       id="grabsize"
+       value="3" />
+    <group
+       id="startmode"
+       outline="0" />
+    <group
+       id="outlinemode"
+       value="0" />
+    <group
+       id="rendering" />
+    <group
+       id="wireframecolors"
+       onlight="255"
+       ondark="4294967295"
+       images="4278190335"
+       clips="16711935"
+       masks="65535" />
+    <group
+       id="externalresources">
+      <group
+         id="xml"
+         allow_net_access="0" />
+    </group>
+    <group
+       id="forkgradientvectors"
+       value="1" />
+    <group
        id="boot"
+       theme="classic"
        enabled="1">
       <group
          id="shown"
-         ver1.1.2="1" />
+         ver1.1.2="1"
+         ver1.4="1" />
     </group>
     <group
        id="font"
+<<<<<<< Updated upstream
        unitType="5" />
+=======
+       unitType="2" />
+    <group
+       id="ruler" />
+    <group
+       id="snapping"
+       snap-bbox="1"
+       snap-bbox-edge="1"
+       snap-bbox-corner="1"
+       snap-bbox-edge-midpoint="0"
+       snap-bbox-center="0"
+       simple-snap-bbox="1"
+       snap-node-category="1"
+       snap-path="1"
+       snap-path-intersection="0"
+       snap-node-cusp="1"
+       snap-node-smooth="1"
+       snap-line-midpoint="1"
+       snap-line-tangential="0"
+       snap-line-perpendicular="0"
+       simple-snap-nodes="1"
+       snap-alignment="0"
+       snap-alignment-self="0"
+       snap-distribution="0"
+       simple-snap-alignment="0"
+       snap-others="1"
+       snap-object-midpoint="0"
+       snap-rotation-center="0"
+       snap-text-baseline="1"
+       snap-path-mask="1"
+       snap-path-clip="1"
+       snap-page-border="1"
+       snap-page-margin="1"
+       snap-grid="1"
+       snap-grid-line="1"
+       snap-guide="1" />
+>>>>>>> Stashed changes
   </group>
   <group
      id="extensions"
-     org.inkscape.input.gdkpixbuf.png.link="link"
+     org.inkscape.output.png.inkscape.png_bitdepth="99"
+     org.inkscape.output.png.inkscape.png_compression="6"
+     org.inkscape.output.png.inkscape.png_antialias="2"
+     org.inkscape.input.gdkpixbuf.png.link="embed"
      org.inkscape.input.gdkpixbuf.jpg.link="link"
      org.inkscape.visualise.measure_length.type="area"
      org.inkscape.visualise.measure_length.presetFormat="default"
@@ -1142,16 +1282,46 @@
      org.inkscape.visualise.measure_length.unit="mm"
      org.inkscape.visualise.measure_length.__live_effect__="0"
      org.inkscape.input.svg.scale="auto"
-     org.inkscape.input.svg.import_mode_svg="link"
-     org.inkscape.input.gdkpixbuf.png.scale="optimizeQuality" />
+     org.inkscape.input.svg.import_mode_svg="include"
+     org.inkscape.input.gdkpixbuf.png.scale="optimizeQuality"
+     org.inkscape.input.dxf_input.encoding="latin_1"
+     org.inkscape.input.dxf_input.scalemethod="file"
+     com.github.fablabnbg.inkscape-silhouette.silhouette-regmarks.__live_effect__="0"
+     com.github.fablabnbg.inkscape-silhouette.sendto_silhouette.cuttingmat="cameo_12x12"
+     com.github.fablabnbg.inkscape-silhouette.sendto_silhouette.toolholder="1"
+     com.github.fablabnbg.inkscape-silhouette.sendto_silhouette.tool="autoblade"
+     com.github.fablabnbg.inkscape-silhouette.sendto_silhouette.media="133"
+     com.github.fablabnbg.inkscape-silhouette.sendto_silhouette.endposition="start"
+     com.github.fablabnbg.inkscape-silhouette.sendto_silhouette.strategy="zorder"
+     com.github.fablabnbg.inkscape-silhouette.sendto_silhouette.orient_paths="natural"
+     com.github.fablabnbg.inkscape-silhouette.sendto_silhouette.force_hardware="DETECT"
+     com.github.fablabnbg.inkscape-silhouette.sendto_silhouette.active-tab="silhouette"
+     com.github.fablabnbg.inkscape-silhouette.sendto_silhouette.regmark="1"
+     com.github.fablabnbg.inkscape-silhouette.sendto_silhouette.regsearch="1"
+     com.github.fablabnbg.inkscape-silhouette.sendto_silhouette.preview="1"
+     com.github.fablabnbg.inkscape-silhouette.sendto_silhouette.logfile="/home/agentydragon/inkscape-silhouette.log"
+     com.github.fablabnbg.inkscape-silhouette.sendto_silhouette.append_logs="1"
+     com.github.fablabnbg.inkscape-silhouette.sendto_silhouette.depth="-1"
+     com.github.fablabnbg.inkscape-silhouette.sendto_silhouette.speed="0"
+     com.github.fablabnbg.inkscape-silhouette.sendto_silhouette.pressure="0"
+     com.github.fablabnbg.inkscape-silhouette.sendto_silhouette.autocrop="0" />
   <group
      id="desktop"
+<<<<<<< Updated upstream
      style="fill:#ff0000;stroke-width:1.13385827;font-size:75.59055118px;-inkscape-font-specification:AmazDooMRight;font-family:AmazDooMRight;line-height:125%;text-anchor:middle;text-align:center">
     <group
        width="1216"
        height="1995"
        x="1408"
        y="56"
+=======
+     style="fill:none;stroke-width:0.75590551;font-size:9.33333333px;-inkscape-font-specification:'Liberation Sans';font-family:'Liberation Sans';line-height:125%;text-orientation:auto;stroke:#e20000">
+    <group
+       width="1101"
+       height="659"
+       x="0"
+       y="32"
+>>>>>>> Stashed changes
        maximized="1"
        fullscreen="0"
        id="geometry" />
@@ -1174,11 +1344,44 @@
      id="toolbox"
      icononly="1"
      secondary="1"
+     simplesnap="1"
      small="1">
     <group
        id="tools"
        icononly="1"
-       small="0" />
+       small="0"
+       iconsize="16"
+       width="26">
+      <group
+         id="buttons" />
+    </group>
+    <group
+       id="controlbars"
+       iconsize="16" />
+  </group>
+  <group
+     id="statusbar">
+    <group
+       id="visibility" />
+  </group>
+  <group
+     id="whiteboard">
+    <group
+       ssl="0"
+       username=""
+       port="5222"
+       name="jabber.org"
+       id="server" />
+    <group
+       server="gristle.org"
+       name="inkboard"
+       id="room" />
+  </group>
+  <group
+     id="debug">
+    <group
+       id="latency"
+       skew="1" />
   </group>
   <group
      id="iconpreview"
@@ -1243,39 +1446,32 @@
     </group>
   </group>
   <group
-     id="whiteboard">
-    <group
-       ssl="0"
-       username=""
-       port="5222"
-       name="jabber.org"
-       id="server" />
-    <group
-       server="gristle.org"
-       name="inkboard"
-       id="room" />
-  </group>
-  <group
-     id="debug">
-    <group
-       id="latency"
-       skew="1" />
-  </group>
-  <group
-     id="ui"
-     language="" />
-  <group
      id="theme"
+<<<<<<< Updated upstream
      defaultTheme="Pop"
      defaultIconTheme="ubuntu-mono-dark"
      gtkTheme="Pop"
+=======
+     defaultPreferDarkTheme="0"
+     defaultIconTheme="Pop"
+     defaultGtkTheme="Pop-dark"
+     narrowSpinButton="1"
+     preferDarkTheme="0"
+     darkTheme="0"
+     symbolicIcons="0"
+     symbolicDefaultBaseColors="1"
+     symbolicDefaultHighColors="1"
+     defaultTheme="Pop"
+>>>>>>> Stashed changes
      menuIcons_canvas="0"
      menuIcons_layers="0"
      menuIcons_objects="0"
-     defaultPreferDarkTheme="0"
-     defaultGtkTheme="Pop-dark"
-     preferDarkTheme="0"
-     darkTheme="0" />
+     gtkTheme="Adwaita"
+     iconTheme="Adwaita"
+     syntax-color-theme="inkscape-light" />
+  <group
+     id="ui"
+     language="" />
   <group
      id="live_effects"
      flattening="0" />

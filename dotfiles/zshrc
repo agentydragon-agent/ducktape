@@ -68,6 +68,9 @@ ZSH_ALIAS_FINDER_AUTOMATIC=true
 #   zsh-interactive-cd
 #   dirpersist
 #   dnote
+#
+# removed but I had them on:
+#   ag
 plugins=(alias-finder bazel aliases colored-man-pages command-not-found docker gcloud git gpg-agent isodate lein python rust screen)
 
 # Agnoster is a ZSH theme assuming Solarized and Powerline-patched fonts.
