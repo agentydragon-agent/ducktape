@@ -20,3 +20,4 @@ fi
 export PATH="$HOME/.local/bin:$PATH"
 
 export EDITOR=`which vim`
+. "$HOME/.cargo/env"
