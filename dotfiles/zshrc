@@ -71,7 +71,22 @@ ZSH_ALIAS_FINDER_AUTOMATIC=true
 #
 # removed but I had them on:
 #   ag
-plugins=(alias-finder bazel aliases colored-man-pages command-not-found docker gcloud git gpg-agent isodate lein python rust screen)
+plugins=(
+  alias-finder
+  bazel
+  aliases
+  colored-man-pages
+  command-not-found
+  docker
+  gcloud
+  git
+  gpg-agent
+  isodate
+  lein
+  python
+  rust
+  screen
+)
 
 # Agnoster is a ZSH theme assuming Solarized and Powerline-patched fonts.
 # Right prompt: current time
