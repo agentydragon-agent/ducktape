@@ -2,3 +2,5 @@ add to installation on small laptop:
 	rustc, rustup, cargo,
 	nmap,
 	other hacking tools
+
+merge agentydragon & gpd gitconfig dotfile

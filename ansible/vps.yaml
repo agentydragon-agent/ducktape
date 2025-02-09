@@ -14,8 +14,9 @@
   remote_user: root
 
   vars:
-    - trilium_ssl_port: 3000
-    - grocy_localhost_http_port: 9283
+    ## 2025-02-07 disable trilium
+    ## trilium_ssl_port: 3000
+    grocy_localhost_http_port: 9283
 
   tasks:
     # Needs to run before Docker, which tries to install gnupg2
@@ -25,34 +26,35 @@
         update_cache: true
         upgrade: dist
 
-    - name: Create Trilium group
-      tags:
-        - trilium-server
-      ansible.builtin.group:
-        name: trilium
-        state: present
-
-    - name: Create Trilium user
-      tags:
-        - trilium-server
-      ansible.builtin.user:
-        name: trilium
-        group: trilium
-
-    - name: Create Bazel remote cache group
-      ansible.builtin.group:
-        name: bazel-remote-cache
-        state: present
-      tags:
-        - bazel-remote-cache
-
-    - name: Create Bazel remote cache user
-      ansible.builtin.user:
-        name: bazel-remote-cache
-        group: bazel-remote-cache
-      tags:
-        - bazel-remote-cache
-      register: bazel_remote_cache_user
+    ## 2025-02-07 don't need bazel cache, trilium atm
+    ## - name: Create Trilium group
+    ##   tags:
+    ##     - trilium-server
+    ##   ansible.builtin.group:
+    ##     name: trilium
+    ##     state: present
+    ##
+    ## - name: Create Trilium user
+    ##   tags:
+    ##     - trilium-server
+    ##   ansible.builtin.user:
+    ##     name: trilium
+    ##     group: trilium
+    ##
+    ## - name: Create Bazel remote cache group
+    ##   ansible.builtin.group:
+    ##     name: bazel-remote-cache
+    ##     state: present
+    ##   tags:
+    ##     - bazel-remote-cache
+    ##
+    ## - name: Create Bazel remote cache user
+    ##   ansible.builtin.user:
+    ##     name: bazel-remote-cache
+    ##     group: bazel-remote-cache
+    ##   tags:
+    ##     - bazel-remote-cache
+    ##   register: bazel_remote_cache_user
 
     - name: Create Grocy group
       ansible.builtin.group:
@@ -86,12 +88,13 @@
 
     # TODO: maybe we should restart Docker server if we added users here
 
-    - name: Trilium role
-      ansible.builtin.include_role:
-        name: trilium_server
-      vars:
-        trilium_host: trilium.agentydragon.com
-        # also uses trilium_ssl_port
+    ## 2025-02-07 disable trilium
+    # - name: Trilium role
+    #   ansible.builtin.include_role:
+    #     name: trilium_server
+    #   vars:
+    #     trilium_host: trilium.agentydragon.com
+    #     # also uses trilium_ssl_port
 
     - name: Enable Fail2Ban role
       ansible.builtin.include_role:
@@ -137,11 +140,12 @@
           - agentydragon.com,www.agentydragon.com
           - grocy.agentydragon.com
           - inventree.agentydragon.com
-          # Presented by nginx to proxy requests to the Trilium server.
-          - trilium.agentydragon.com
-          # Presented by Bazel cache Docker container which has ports
-          # exposed to public internet.
-          - bazel-cache.agentydragon.com
+          # 2025-02-07 disable bazel-cache, trilium
+          ## Presented by nginx to proxy requests to the Trilium server.
+          ####- trilium.agentydragon.com
+          ## Presented by Bazel cache Docker container which has ports
+          ## exposed to public internet.
+          ####- bazel-cache.agentydragon.com
           - adgn.link,www.adgn.link
 
         # This seems to be what we need to present to certbot install.
@@ -152,7 +156,8 @@
           - agentydragon.com
           - grocy.agentydragon.com
           - inventree.agentydragon.com
-          - trilium.agentydragon.com
+          # 2025-02-07 disable bazel-cache, trilium
+          ###- trilium.agentydragon.com
           - adgn.link
           # bazel-cache.agentydragon.com deliberately not included,
           # because it's not for installation in nginx.
@@ -176,35 +181,36 @@
         command: certbot certonly --non-interactive --agree-tos --nginx -d {{ item }}
         loop: "{{ letsencrypt_certificate_names }}"
 
-      # for mutual TLS with client certificates: --tls_ca_file
-      # sudo apt install apache2-utils -- for htpasswd utility
-      # TODO: this also needs to be run if certificate is already in /etc, but
-      # not yet in /srv/bazel-remote-cache.
-      - name: Set Bazel remote cache certificate post hook
-        tags:
-          - bazel-remote-cache
-        ansible.builtin.copy:
-          dest: /etc/letsencrypt/renewal-hooks/post/bazel-remote-cache.sh
-          mode: 0755
-          content: |
-            #!/bin/sh
-            rm -rf /srv/bazel-remote-cache/certs
-            mkdir -p /srv/bazel-remote-cache/certs
-            cp --dereference --recursive /etc/letsencrypt/live/bazel-cache.agentydragon.com/* /srv/bazel-remote-cache/certs
-            chmod -R 700 /srv/bazel-remote-cache/certs
-            chown -R bazel-remote-cache:bazel-remote-cache /srv/bazel-remote-cache/certs
-            # TODO: do I maybe also need to restart the bazel-remote-cache container?
+      #### 2025-02-07 disable bazel-cache, trilium
+      #### for mutual TLS with client certificates: --tls_ca_file
+      #### sudo apt install apache2-utils -- for htpasswd utility
+      #### TODO: this also needs to be run if certificate is already in /etc, but
+      #### not yet in /srv/bazel-remote-cache.
+      ###- name: Set Bazel remote cache certificate post hook
+      ###  tags:
+      ###    - bazel-remote-cache
+      ###  ansible.builtin.copy:
+      ###    dest: /etc/letsencrypt/renewal-hooks/post/bazel-remote-cache.sh
+      ###    mode: 0755
+      ###    content: |
+      ###      #!/bin/sh
+      ###      rm -rf /srv/bazel-remote-cache/certs
+      ###      mkdir -p /srv/bazel-remote-cache/certs
+      ###      cp --dereference --recursive /etc/letsencrypt/live/bazel-cache.agentydragon.com/* /srv/bazel-remote-cache/certs
+      ###      chmod -R 700 /srv/bazel-remote-cache/certs
+      ###      chown -R bazel-remote-cache:bazel-remote-cache /srv/bazel-remote-cache/certs
+      ###      # TODO: do I maybe also need to restart the bazel-remote-cache container?
 
-      - name: Check that Bazel remote cache certificate exists
-        tags:
-          - bazel-remote-cache
-        block:
-          - stat:
-              path: /etc/letsencrypt/live/bazel-cache.agentydragon.com/fullchain.pem
-            register: bazel_cache_cert
-          - assert:
-              that:
-                - bazel_cache_cert.stat.exists
+      ###- name: Check that Bazel remote cache certificate exists
+      ###  tags:
+      ###    - bazel-remote-cache
+      ###  block:
+      ###    - stat:
+      ###        path: /etc/letsencrypt/live/bazel-cache.agentydragon.com/fullchain.pem
+      ###      register: bazel_cache_cert
+      ###    - assert:
+      ###        that:
+      ###          - bazel_cache_cert.stat.exists
 
     - name: nginx website configs
       block:
@@ -217,7 +223,8 @@
         notify:
           - Reload nginx
         loop:
-          - trilium.agentydragon.com
+          ## 2025-02-07 disable trilium server
+          # - trilium.agentydragon.com
           - grocy.agentydragon.com
           - inventree.agentydragon.com
 
@@ -250,8 +257,9 @@
         with_items:
           - agentydragon.com
           - grocy.agentydragon.com
+          ## 2025-02-07 disable trilium server
+          # - trilium.agentydragon.com
           - inventree.agentydragon.com
-          - trilium.agentydragon.com
           - adgn.link
         tags:
           - nginx
@@ -264,64 +272,65 @@
       command: certbot install --non-interactive --agree-tos --nginx --cert-name {{ item }}
       loop: "{{ letsencrypt_certificate_names_to_install }}"
 
-    - name: Copy Bazel remote cache htpasswd on server
-      ansible.builtin.copy:
-        src: bazel_remote_cache.htpasswd
-        dest: /srv/bazel-remote-cache/htpasswd
-        owner: bazel-remote-cache
-        group: bazel-remote-cache
-        mode: 0600
-      tags:
-        - bazel-remote-cache
+    # 2025-02-07 disable bazel cache
+    ###- name: Copy Bazel remote cache htpasswd on server
+    ###  ansible.builtin.copy:
+    ###    src: bazel_remote_cache.htpasswd
+    ###    dest: /srv/bazel-remote-cache/htpasswd
+    ###    owner: bazel-remote-cache
+    ###    group: bazel-remote-cache
+    ###    mode: 0600
+    ###  tags:
+    ###    - bazel-remote-cache
 
-    - name: Create Bazel remote cache directory
-      ansible.builtin.file:
-        path: /srv/bazel-remote-cache/data
-        state: directory
-        owner: bazel-remote-cache
-        group: bazel-remote-cache
-        mode: 0700
-      tags:
-        - bazel-remote-cache
+    ###- name: Create Bazel remote cache directory
+    ###  ansible.builtin.file:
+    ###    path: /srv/bazel-remote-cache/data
+    ###    state: directory
+    ###    owner: bazel-remote-cache
+    ###    group: bazel-remote-cache
+    ###    mode: 0700
+    ###  tags:
+    ###    - bazel-remote-cache
 
-    - name: Create Bazel remote cache container
-      ansible.builtin.docker_container:
-        name: bazel-remote-cache
-        user: "{{ bazel_remote_cache_user.uid }}"
-        # TODO: pin to a specific version of bazel-remote-server?
-        image: buchgr/bazel-remote-cache:latest
-        # TODO: BAZEL_REMOTE_CONFIG_FILE env variable can be set to a YAML
-        # configuration file. might be potentially easier than specifying
-        # command-line options.
-        entrypoint:
-          - /app/bazel-remote-base.binary
-          - --tls_cert_file=/data/certs/fullchain.pem
-          - --tls_key_file=/data/certs/privkey.pem
-          - --http_address=:9090
-          - --grpc_address=:9092
-          - --dir=/data/data
-          # Allow unauthenticated reads - just not unauthenticated writes.
-          # This assumes I'll be only using this for public projects.
-          - --allow_unauthenticated_reads
-          # Maximum size: 20 GB (default is 5 GB)
-          - --max_size=20
-          - --htpasswd_file=/data/htpasswd
-        volumes:
-          - /srv/bazel-remote-cache:/data
-        published_ports:
-          # Default ports: 9090 for HTTP, 9092 for gRPC.
-          # TODO: would be nice to set up reverse proxy, so I don't have
-          # to specify port in --remote_cache param. The syntax is:
-          # (container-internal port):(host port).
-          - "9090:9090"
-          - "9092:9092"
-        state: started
-        restart: true
-        restart_policy: always
-        # Always pull latest version of the image.
-        pull: true
-      tags:
-        - bazel-remote-cache
+    ###- name: Create Bazel remote cache container
+    ###  ansible.builtin.docker_container:
+    ###    name: bazel-remote-cache
+    ###    user: "{{ bazel_remote_cache_user.uid }}"
+    ###    # TODO: pin to a specific version of bazel-remote-server?
+    ###    image: buchgr/bazel-remote-cache:latest
+    ###    # TODO: BAZEL_REMOTE_CONFIG_FILE env variable can be set to a YAML
+    ###    # configuration file. might be potentially easier than specifying
+    ###    # command-line options.
+    ###    entrypoint:
+    ###      - /app/bazel-remote-base.binary
+    ###      - --tls_cert_file=/data/certs/fullchain.pem
+    ###      - --tls_key_file=/data/certs/privkey.pem
+    ###      - --http_address=:9090
+    ###      - --grpc_address=:9092
+    ###      - --dir=/data/data
+    ###      # Allow unauthenticated reads - just not unauthenticated writes.
+    ###      # This assumes I'll be only using this for public projects.
+    ###      - --allow_unauthenticated_reads
+    ###      # Maximum size: 20 GB (default is 5 GB)
+    ###      - --max_size=20
+    ###      - --htpasswd_file=/data/htpasswd
+    ###    volumes:
+    ###      - /srv/bazel-remote-cache:/data
+    ###    published_ports:
+    ###      # Default ports: 9090 for HTTP, 9092 for gRPC.
+    ###      # TODO: would be nice to set up reverse proxy, so I don't have
+    ###      # to specify port in --remote_cache param. The syntax is:
+    ###      # (container-internal port):(host port).
+    ###      - "9090:9090"
+    ###      - "9092:9092"
+    ###    state: started
+    ###    restart: true
+    ###    restart_policy: always
+    ###    # Always pull latest version of the image.
+    ###    pull: true
+    ###  tags:
+    ###    - bazel-remote-cache
 
     - name: Create Grocy directory
       ansible.builtin.file:
@@ -399,6 +408,12 @@
     - name: docker compose up for inventree
       community.docker.docker_compose_v2:
         project_src: /srv/inventree/docker-compose
+        # We're pinned to "stable" tag.
+        # If "stable" tag moved, do fetch its new value and fetch the updated
+        # container.
+        pull: always
+        # (recreate to make sure to pick up env changes)
+        recreate: always
       register: output
       tags:
         - inventree
