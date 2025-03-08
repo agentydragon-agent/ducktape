@@ -1,28 +1,8 @@
 #!/usr/bin/env python3
 """
-Dump a Python repo into one text blob, skipping certain files (similar to a .gitignore approach),
-using a global config that can be updated to include/exclude unknown file types.
-
-Features:
-  - Loads ~/.config/repodump.yaml (must exist or script exits)
-  - Skips known excludes (egg-info, pycache, images, etc.)
-  - Includes known code/docs (.py, .md, .rst, etc.)
-  - Strips repeated text snippets anywhere in each file (literal or regex)
-  - If any file isn't matched by include/exclude, it will list them and exit
-  - Finally prints total size & approximate OpenAI tokens
-
-Usage:
-  repodump [OPTIONS]
-
-Typical flow:
-  1) repodump
-     (if it complains about unknown files, add them in ~/.config/repodump.yaml, then rerun)
-  2) repodump -o
-     (dumps final output to stdout)
-  3) repodump -o mydump.txt
-     (writes final output to mydump.txt)
-  4) repodump -o mydump.txt -c
-     (writes final output to file and copies to clipboard)
+Dump a Python repo into one text blob, skipping certain files (similar to a .gitignore approach).
+Includes a 'strip_snippets' feature and uses Click for CLI, with a custom trick
+to allow '-o file' or '-o' with no file argument.
 """
 
 import os
@@ -42,7 +22,6 @@ DEFAULT_CONFIG = {
             "*.py",
             "*.md",
             "*.rst",
-            # etc.
         ],
         "exclude": [
             "*.egg-info*",
@@ -58,7 +37,6 @@ DEFAULT_CONFIG = {
             "*.webp",
             "*.ico",
             "*.svg",
-            # etc.
         ],
     },
 }
@@ -158,20 +136,21 @@ def remove_regex(text, pattern, flags_str):
     return re.sub(pattern, "", text, flags=combined_flags)
 
 
-@click.command()
+@click.command(
+    context_settings=dict(
+        allow_extra_args=True,  # let us handle leftover arguments manually
+        ignore_unknown_options=True
+    )
+)
 @click.option(
     "--output",
     "-o",
-    "output_file",
-    required=False,
-    default=None,
-    type=click.Path(writable=True, dir_okay=False, allow_dash=True),
-    flag_value="",  # if user specifies -o with no file => ""
-    nargs=1,        # allow a single optional argument
+    "output_flag",
+    is_flag=True,
+    default=False,
     help=(
-        "If omitted, no direct dump.\n"
-        "If used alone (`-o`), dump to stdout.\n"
-        "If used with an argument (`-o file`), write to that file."
+        "Enable output. If set with no extra argument => print to stdout. "
+        "If followed by a filename => write to that file. If not set => no output."
     ),
 )
 @click.option(
@@ -181,11 +160,40 @@ def remove_regex(text, pattern, flags_str):
     is_flag=True,
     help="Copy final output to clipboard (requires pyperclip)."
 )
-def main(output_file, copy_output):
+@click.pass_context
+def main(ctx, output_flag, copy_output):
     """
     Dump all matched repo files into a single text blob,
-    optionally removing repeated snippets, and either printing or writing to file.
+    optionally removing repeated snippets.
+
+    Usage examples:
+      repodump              # no dump
+      repodump -o           # dump to stdout
+      repodump -o somefile  # dump to 'somefile'
+      repodump -o somefile -c  # also copy to clipboard
     """
+    # leftover arguments are in ctx.args
+    leftover = ctx.args[:]  # copy the list
+    if output_flag:
+        # If user gave '-o', check if there's a leftover that doesn't start with '-'
+        # If so, we treat the first leftover as the output filename
+        if leftover and not leftover[0].startswith("-"):
+            output_file = leftover[0]
+            leftover = leftover[1:]
+        else:
+            # user gave -o but no filename => stdout
+            output_file = ""
+    else:
+        # user didn't give -o => no output
+        output_file = None
+
+    # Now we have leftover arguments that might be unknown or for future expansions.
+    if leftover:
+        # If we want to error out on leftover, we can do so:
+        # but let's just ignore them or show them:
+        click.echo(f"Warning: ignoring extra arguments: {leftover}")
+
+    # -------------- Normal processing --------------
     config = load_config()
     root_dir = os.getcwd()
 
@@ -242,24 +250,27 @@ def main(output_file, copy_output):
     click.echo(f"Files included: {len(all_files)}")
     click.echo(f"Total size: {byte_count} bytes, ~{token_est} tokens.")
 
-    # Decide how/where to output final text
-    # output_file is one of:
-    #   None => user didn't pass -o => print no content
-    #   "" => user passed -o with no argument => print to stdout
-    #   "some/path" => user passed -o some/path => write to file
+    # -------------- Output logic --------------
+    # output_file can be:
+    #   None => no output
+    #   "" => user typed -o with no filename => stdout
+    #   "filename" => write to file
 
-    if output_file is not None:
-        if output_file == "":
-            # means user gave -o with no arg => print to stdout
-            click.echo("=== BEGIN DUMP ===")
-            click.echo(final_text, nl=False)  # avoid extra blank line at the end
-            click.echo("\n=== END DUMP ===")
-        else:
-            # user gave a path
-            outpath = os.path.abspath(output_file)
-            with open(outpath, "w", encoding="utf-8") as wf:
-                wf.write(final_text)
-            click.echo(f"Dump written to: {outpath}")
+    if output_file is None:
+        # no output
+        return
+
+    if output_file == "":
+        # -o with no argument => stdout
+        click.echo("=== BEGIN DUMP ===")
+        click.echo(final_text, nl=False)  # avoid extra blank line at the end
+        click.echo("\n=== END DUMP ===")
+    else:
+        # -o somefile => write to somefile
+        outpath = os.path.abspath(output_file)
+        with open(outpath, "w", encoding="utf-8") as wf:
+            wf.write(final_text)
+        click.echo(f"Dump written to: {outpath}")
 
     # If --copy was given
     if copy_output:
