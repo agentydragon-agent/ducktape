@@ -348,14 +348,7 @@
        use_svg2="1"
        style="font-family:UnPenheulim;font-size:10px;line-height:125%;letter-spacing:0px;word-spacing:0px;-inkscape-font-specification:UnPenheulim;text-orientation:auto"
        selcue="1"
-<<<<<<< Updated upstream
        align_mode="1">
-=======
-       align_mode="0"
-       writing_mode="0"
-       orientation_mode="0"
-       direction_mode="0">
->>>>>>> Stashed changes
       <group
          id="lineheight"
          display_unit="9" />
@@ -375,15 +368,10 @@
        live_outline="1"
        live_objects="1"
        show_helperpath="0"
-<<<<<<< Updated upstream
        x="423.545"
        y="76.7988"
-=======
->>>>>>> Stashed changes
        edit_clipping_paths="0"
        edit_masks="0"
-       x="3846.9"
-       y="13234.9"
        highlight_color="4278190335" />
     <eventcontext
        id="tweak"
@@ -751,14 +739,8 @@
        default="org.inkscape.output.svg.inkscape"
        append_extension="1"
        enable_preview="1"
-<<<<<<< Updated upstream
        path="/home/agentydragon/drive/Community/15 Leroy Place"
        use_current_dir="1" />
-=======
-       path="/home/agentydragon/drive/Dustin Space/Art"
-       use_current_dir="1"
-       enable_svgexport="0" />
->>>>>>> Stashed changes
     <group
        id="save_copy"
        default="org.inkscape.output.svg.plain"
@@ -768,22 +750,14 @@
     <group
        id="open"
        enable_preview="1"
-<<<<<<< Updated upstream
        path="/home/agentydragon/" />
-=======
-       path="/home/agentydragon/downloads/" />
->>>>>>> Stashed changes
     <group
        id="import"
        enable_preview="1"
        path="/home/agentydragon/pcb-stencil-lasercut/SO12406206005/"
        ask="1"
        ask_svg="1"
-<<<<<<< Updated upstream
        link="link"
-=======
-       link="embed"
->>>>>>> Stashed changes
        scale="auto"
        forcexdpi="0"
        import_mode_svg="include" />
@@ -1228,10 +1202,7 @@
     </group>
     <group
        id="font"
-<<<<<<< Updated upstream
        unitType="5" />
-=======
-       unitType="2" />
     <group
        id="ruler" />
     <group
@@ -1307,21 +1278,12 @@
      com.github.fablabnbg.inkscape-silhouette.sendto_silhouette.autocrop="0" />
   <group
      id="desktop"
-<<<<<<< Updated upstream
      style="fill:#ff0000;stroke-width:1.13385827;font-size:75.59055118px;-inkscape-font-specification:AmazDooMRight;font-family:AmazDooMRight;line-height:125%;text-anchor:middle;text-align:center">
     <group
        width="1216"
        height="1995"
        x="1408"
        y="56"
-=======
-     style="fill:none;stroke-width:0.75590551;font-size:9.33333333px;-inkscape-font-specification:'Liberation Sans';font-family:'Liberation Sans';line-height:125%;text-orientation:auto;stroke:#e20000">
-    <group
-       width="1101"
-       height="659"
-       x="0"
-       y="32"
->>>>>>> Stashed changes
        maximized="1"
        fullscreen="0"
        id="geometry" />
@@ -1447,26 +1409,12 @@
   </group>
   <group
      id="theme"
-<<<<<<< Updated upstream
      defaultTheme="Pop"
      defaultIconTheme="ubuntu-mono-dark"
      gtkTheme="Pop"
-=======
-     defaultPreferDarkTheme="0"
-     defaultIconTheme="Pop"
-     defaultGtkTheme="Pop-dark"
-     narrowSpinButton="1"
-     preferDarkTheme="0"
-     darkTheme="0"
-     symbolicIcons="0"
-     symbolicDefaultBaseColors="1"
-     symbolicDefaultHighColors="1"
-     defaultTheme="Pop"
->>>>>>> Stashed changes
      menuIcons_canvas="0"
      menuIcons_layers="0"
      menuIcons_objects="0"
-     gtkTheme="Adwaita"
      iconTheme="Adwaita"
      syntax-color-theme="inkscape-light" />
   <group
