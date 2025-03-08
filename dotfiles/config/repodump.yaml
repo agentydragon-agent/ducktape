@@ -1,30 +1,30 @@
 global:
   exclude:
-    - .git
-    - .gitattributes
-    - .github
-    - .gitignore
+    - '**/.git'
+    - '**/.gitattributes'
+    - '**/.github'
+    - '**/.gitignore'
     - '**/.gitkeep'
-    - requirements*.txt
-    - .pre-commit-config.yaml
-    - 'CODE_OF_CONDUCT.*'
-    - 'LICENSE.*'
-    - 'CONTRIBUTING.*'
+    - '**/requirements*.txt'
+    - .**/pre-commit-config.yaml
+    - '**/CODE_OF_CONDUCT.*'
+    - '**/LICENSE.*'
+    - '**/CONTRIBUTING.*'
 
-    - '*.jpg'
-    - '*.png'
-    - '*.woff2'
-    - '*.sha256'
+    - '**/*.jpg'
+    - '**/*.png'
+    - '**/*.woff2'
+    - '**/*.sha256'
+    - '**/*.mo'
+    - '**/*.po'
+    - '**/*.egg'
+    - '**/*.odp'
     - '**/po/*.po'
     - '**/locale/**/*.mo'
-    - '*.egg-info*'
-    - '*__pycache__*'
-    - '*.mo'
-    - '*.po'
-    - '*LC_MESSAGES*'
-    - '*fonts*'
-    - '*.egg'
-    - '*.odp'
+    - '**/*.egg-info*'
+    - '**/*__pycache__*'
+    - '**/*LC_MESSAGES*'
+    - '**/*fonts*'
 repos:
   '/home/agentydragon/.google-drive/My Drive/mailrack/boxes':
     exclude:

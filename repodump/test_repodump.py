@@ -1,10 +1,9 @@
-# test_repodump.py
 import os
-import pytest
 from click.testing import CliRunner
 import repodump
-from .repodump import main as repodump_main
-from unittest.mock import patch
+from . import main
+import pytest
+
 
 @pytest.fixture
 def mock_config(monkeypatch):
@@ -19,7 +18,7 @@ def mock_config(monkeypatch):
             "lines": "REMOVE THIS",
         }]
     }
-    monkeypatch.setattr(repodump.repodump, "load_config", lambda: config)
+    monkeypatch.setattr(main, "load_config", lambda: config)
 
 
 @pytest.fixture
@@ -47,7 +46,7 @@ def test_no_output(mock_config, mock_repo):
         # cd into the mock_repo
         os.chdir(mock_repo)
 
-        result = runner.invoke(repodump_main, [])
+        result = runner.invoke(main.main, [])
         assert result.exit_code == 0
         # We see "Files included: 2" if it included only file1.py + file2.py
         assert "Files included: 2" in result.output
@@ -67,7 +66,7 @@ def test_output_stdout(mock_config, mock_repo):
     with runner.isolated_filesystem():
         os.chdir(mock_repo)
 
-        result = runner.invoke(repodump_main, ["-o"])
+        result = runner.invoke(main.main, ["-o"])
         assert result.exit_code == 0
         # Should see the big dump markers
         assert "=== BEGIN DUMP ===" in result.output
@@ -90,7 +89,7 @@ def test_output_file(mock_config, mock_repo, tmp_path):
         os.chdir(mock_repo)
         outpath = tmp_path / "dump_output.txt"
 
-        result = runner.invoke(repodump_main, ["-o", str(outpath)])
+        result = runner.invoke(main.main, ["-o", str(outpath)])
         assert result.exit_code == 0
         assert f"Dump written to: {outpath}" in result.output
 
@@ -113,11 +112,13 @@ def test_copy_flag(mock_config, mock_repo):
         os.chdir(mock_repo)
 
         # Also do -o so we actually produce a dump
-        result = runner.invoke(repodump_main, ["-o", "--copy"])
+        result = runner.invoke(main.main, ["-o", "--copy"])
 
         # The exit code might be 0 (success) or 0 with a note about pyperclip missing
         assert result.exit_code == 0
         # We either see "Dump copied to clipboard." or "pyperclip not installed"
         assert ("Dump copied to clipboard." in result.output
                 or "pyperclip not installed" in result.output)
+
+
 
