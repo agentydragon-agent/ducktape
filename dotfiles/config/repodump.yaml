@@ -70,9 +70,14 @@ repos:
       - documentation/src/make.bat
       - 'boxes/generators/frontpanel_test.json'
       - 'documentation/src/install/log-wsl-win11.txt'
+      - boxes/generators/*.py
     include:
       - boxes/*.py
-      - boxes/generators/*.py
+      - boxes/generators/_walltemplate.py
+      - boxes/generators/birdhouse.py
+      - boxes/generators/displayshelf.py
+      - boxes/generators/typetray.py
+      - boxes/generators/wallrack.py
       - documentation/src/*.rst
 
 strip_snippets:
