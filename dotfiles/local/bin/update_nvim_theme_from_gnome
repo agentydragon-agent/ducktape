@@ -1,13 +1,12 @@
-#!/usr/bin/python
-# Updates the theme on all running Neovim instances.
+#!/usr/bin/env python3
+"""Triggers color scheme update on running Neovim instances."""
 
-import glob
-import os
+from pathlib import Path
 
 from pynvim import attach
 
 # TODO: should probably only try to do this to *my* neovim instances
-for dir in glob.glob('/tmp/nvim*'):
-    socket = os.path.join(dir, '0')
+for dir in Path("/tmp").glob("nvim*"):
+    socket = dir / "0"
     nvim = attach("socket", path=socket)
     nvim.command("call UpdateThemeFromGnome()")

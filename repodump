@@ -1,0 +1,198 @@
+#!/usr/bin/env python3
+"""
+Dump a repo into one text blob, skipping certain files (similar to a .gitignore approach),
+using a global config that can be updated to include/exclude unknown file types.
+
+Usage:
+  repodump [--output] [--copy]
+
+  By default:
+    - Scans the current directory
+    - Loads ~/.config/repodump.yaml (creates default if missing)
+    - Skips known excludes (egg-info, pycache, images, fonts, translations, etc.)
+    - Includes known code/docs (.py, .md, .rst, setup.py, etc.)
+    - If any file isn't matched by include/exclude, it will list them and exit
+    - Finally prints total size & approximate OpenAI tokens
+    - If --output is given, prints the full concatenated blob to stdout
+    - If --copy is given, copies that blob to clipboard (requires 'pyperclip' installed)
+
+Example steps:
+  1) repodump
+     (check if it complains about unknown files, update config accordingly)
+  2) repodump --output
+     (now that config is set, it will dump everything to stdout)
+"""
+
+import fnmatch
+import glob
+import os
+import sys
+
+import yaml  # pip install pyyaml
+
+CONFIG_PATH = os.path.expanduser("~/.config/repodump.yaml")
+
+DEFAULT_CONFIG = {
+    "repos": {},
+    "global": {
+        "include": [
+            "*.py",
+            "*.md",
+            "*.rst",
+            # Add more as desired
+        ],
+        "exclude": [
+            "*.jpg",
+            "*.jpeg",
+            "*.png",
+            "*.gif",
+            "*.webp",
+            "*.ico",
+            "*.svg",
+            "*static/fonts*",
+            # "*documentation/src/install/*",  # adjust as needed
+            # etc.
+        ],
+    },
+}
+
+
+def load_config():
+    if os.path.isfile(CONFIG_PATH):
+        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+            return yaml.safe_load(f)
+    else:
+        return DEFAULT_CONFIG
+
+
+def save_config(cfg):
+    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+        yaml.dump(cfg, f, sort_keys=False)
+
+
+def pattern_match(path, patterns):
+    """Return True if path matches any pattern in patterns."""
+    return any(fnmatch.fnmatch(path, p) for p in patterns)
+
+
+def scan_directory(root_dir, cfg_includes, cfg_excludes):
+    """
+    Recursively gather text from files that match 'include' but not in 'exclude'.
+    Also track any unknown files if they're not matched by either.
+    """
+    all_files = []
+    uncertain_files = []
+
+    for dirpath, dirnames, filenames in os.walk(root_dir):
+        # Build a path from root_dir
+        rel_dir = os.path.relpath(dirpath, root_dir)
+        if rel_dir == ".":
+            rel_dir = ""
+
+        # Check if directory is excluded
+        full_dir_path = os.path.join(root_dir, rel_dir)
+        print(full_dir_path)
+        if pattern_match(full_dir_path, cfg_excludes):
+            dirnames[:] = []  # skip recursion inside
+            continue
+
+        # Might also skip if the dir is something we want excluded entirely
+        # We'll rely on the pattern_match for that
+
+        for f in filenames:
+            rel_file = os.path.join(rel_dir, f) if rel_dir else f
+            full_file_path = os.path.join(dirpath, f)
+
+            # Check exclude
+            if pattern_match(rel_file, cfg_excludes):
+                continue
+
+            # Check include
+            if pattern_match(rel_file, cfg_includes):
+                all_files.append(full_file_path)
+                continue
+
+            uncertain_files.append(rel_file)
+
+    return all_files, list(sorted(set(uncertain_files)))
+
+
+def approximate_tokens(byte_count):
+    # ~4 chars per token is a rough guess
+    return byte_count // 4
+
+
+def main():
+    config = load_config()
+    root_dir = os.getcwd()
+
+    # Decide which config chunk to use:
+    # We have "global" plus any repo-specific
+    if "repos" not in config:
+        config["repos"] = {}
+    if "global" not in config:
+        config["global"] = DEFAULT_CONFIG["global"]
+
+    repo_cfg = config["repos"].get(root_dir, {})
+    includes = repo_cfg.get("include", []) + config["global"].get("include", [])
+    excludes = repo_cfg.get("exclude", []) + config["global"].get("exclude", [])
+
+    all_files, uncertain_files = scan_directory(root_dir, includes, excludes)
+
+    if uncertain_files:
+        print("These files are not matched by include/exclude patterns:")
+        for u in uncertain_files:
+            print("  -", u)
+        print("\nAdd them to your config in:", CONFIG_PATH)
+        # Pre-fill to show user they can place them under 'include' or 'exclude'
+        # but don't actually modify anything automatically.
+        if root_dir not in config["repos"]:
+            config["repos"][root_dir] = {"include": [], "exclude": []}
+        # Just show an example snippet:
+        print("\nExample snippet to add:\n")
+        for u in uncertain_files:
+            print(f"    # - {u}")
+        print("")
+        print("Then rerun. Exiting now.")
+        return
+
+    # If we got here, all files are matched => let's load them
+    blob_lines = []
+    for fp in sorted(all_files):
+        try:
+            with open(fp, "r", encoding="utf-8", errors="ignore") as f:
+                content = f.read()
+                # Could add a separator
+                blob_lines.append(f"# FILE: {fp}\n{content}\n\n")
+        except Exception as e:
+            # If can't read, skip or note it
+            blob_lines.append(f"# Skipped unreadable file: {fp}\n\n")
+
+    final_text = "".join(blob_lines)
+    byte_count = len(final_text.encode("utf-8"))
+    token_est = approximate_tokens(byte_count)
+
+    print(f"Files included: {len(all_files)}")
+    print(f"Total size: {byte_count} bytes, ~{token_est} tokens.")
+
+    # by default we just exit after showing size
+    if "--output" in sys.argv or "-o" in sys.argv:
+        print("=== BEGIN DUMP ===")
+        print(final_text)
+        print("=== END DUMP ===")
+
+    if "--copy" in sys.argv or "-c" in sys.argv:
+        try:
+            import pyperclip
+        except ImportError:
+            raise Exception("pyperclip not installed, can't copy to clipboard")
+
+        pyperclip.copy(final_text)
+        print("Dump copied to clipboard")
+
+    # Save config if we possibly changed the structure
+    save_config(config)
+
+
+if __name__ == "__main__":
+    main()

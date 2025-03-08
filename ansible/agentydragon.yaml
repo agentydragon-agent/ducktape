@@ -157,7 +157,7 @@
         pkg:
           - system76-cuda-latest
 
-    - name: Install Syncplay
+    - name: Install Freecad
       tags: snap
       become: true
       snap:
