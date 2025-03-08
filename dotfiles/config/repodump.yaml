@@ -76,7 +76,7 @@ repos:
       - documentation/src/*.rst
 
 strip_snippets:
-  - type: "literal_top"
+  - type: "literal"
     lines: |
       # Copyright (C) 2020 Guillaume Collic
       #
