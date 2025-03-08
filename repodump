@@ -126,13 +126,12 @@ def scan_directory(root_dir, cfg_includes, cfg_excludes):
             # Include?
             if pattern_match(rel_file, cfg_includes):
                 all_files.append(os.path.join(dirpath, f))
-
             # Exclude?
-            if pattern_match(rel_file, cfg_excludes):
+            elif pattern_match(rel_file, cfg_excludes):
                 continue
-
-            # Not matched by either exclude or include => uncertain
-            uncertain_files.append(rel_file)
+            else:
+                # Not matched by either exclude or include => uncertain
+                uncertain_files.append(rel_file)
 
     return all_files, sorted(set(uncertain_files))
 
@@ -181,6 +180,11 @@ def main():
         try:
             with open(fp, "r", encoding="utf-8", errors="ignore") as f:
                 content = f.read()
+
+            # Apply any pattern stripping rules.
+            snippets = config.get("strip_snippets", [])
+            content = strip_snippets_from_text(content, snippets)
+
             blob_lines.append(f"# FILE: {os.path.relpath(fp, root_dir)}\n{content}\n\n")
         except Exception:
             blob_lines.append(
@@ -210,5 +214,74 @@ def main():
         print("Dump copied to clipboard")
 
 
+import re
+
+def strip_snippets_from_text(text, snippets):
+    """
+    snippets is a list of dicts, each dict might have:
+      - type: one of ["literal", "literal_top", "regex"]
+      - lines: str (for literal_top)
+      - pattern: str (for regex)
+      - flags: optional string describing re flags (e.g. "IGNORECASE|MULTILINE")
+
+    Returns text with each snippet removed accordingly.
+    """
+    # Process each snippet in turn
+    for snip in snippets:
+        stype = snip.get("type")
+        if stype == "literal_top":
+            text = remove_literal_top(text, snip["lines"])
+        if stype == "literal":
+            text = remove_literal(text, snip["lines"])
+        elif stype == "regex":
+            text = remove_regex(text, snip["pattern"], snip.get("flags", ""))
+        else:
+            # unrecognized snippet type
+            pass
+    return text
+
+def remove_literal(text, snippet):
+    """Remove 'snippet'."""
+    return text.replace(snippet, '')
+
+
+def remove_literal_top(text, snippet):
+    """
+    Remove 'snippet' if it matches *exactly* from line 0 onward,
+    ignoring any trailing blank lines in snippet or text.
+    """
+    # Convert to list of lines
+    file_lines = text.splitlines()
+    snippet_lines = snippet.splitlines()
+
+    # Trim trailing blank lines from snippet
+    while snippet_lines and not snippet_lines[-1].strip():
+        snippet_lines.pop()
+
+    # If the file starts exactly with snippet_lines (in order), remove them
+    if file_lines[:len(snippet_lines)] == snippet_lines:
+        return "\n".join(file_lines[len(snippet_lines):])
+    else:
+        return text
+
+
+def remove_regex(text, pattern, flags_str):
+    """
+    Remove all matches of 'pattern' (a regex) from text.
+    'flags_str' can be "IGNORECASE|MULTILINE", etc.
+    """
+    # Convert flags string to actual int flags
+    combined_flags = 0
+    if flags_str:
+        for f in flags_str.split("|"):
+            f = f.strip().upper()
+            if hasattr(re, f):
+                combined_flags |= getattr(re, f)
+
+    return re.sub(pattern, "", text, flags=combined_flags)
+
+
+
 if __name__ == "__main__":
     main()
+
