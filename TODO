@@ -4,3 +4,5 @@ add to installation on small laptop:
 	other hacking tools
 
 merge agentydragon & gpd gitconfig dotfile
+
+cargo install stylua (for lua formatting neovim)

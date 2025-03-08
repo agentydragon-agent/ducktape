@@ -46,5 +46,5 @@
   ansible.builtin.pip:
     name:
       - autopep8
-      - yapf
+      - ruff
 

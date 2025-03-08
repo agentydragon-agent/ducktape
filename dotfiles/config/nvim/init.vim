@@ -222,7 +222,7 @@ autocmd BufNewFile,BufRead *.textproto set filetype=proto
 " Silence if Glaive not installed.
 silent! Glaive codefmt google_java_executable="java -jar /home/agentydragon/bin/google-java-format.jar"
 
-" Set autoformatter settings
+" Set codefmt autoformatter settings
 augroup autoformat_settings
   autocmd FileType bzl AutoFormatBuffer buildifier
   autocmd FileType c,cpp,proto,javascript AutoFormatBuffer clang-format
@@ -232,7 +232,7 @@ augroup autoformat_settings
   autocmd FileType rust AutoFormatBuffer rustfmt
   " autocmd FileType html,css,json AutoFormatBuffer js-beautify
   autocmd FileType java AutoFormatBuffer google-java-format
-  autocmd FileType python AutoFormatBuffer yapf
+  autocmd FileType python AutoFormatBuffer ruff
   " cljstyle
   autocmd FileType clojure AutoFormatBuffer cljstyle
   " autocmd FileType clojure AutoFormatBuffer zprint
