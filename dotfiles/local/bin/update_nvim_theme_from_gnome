@@ -9,4 +9,4 @@ from pynvim import attach
 for dir in Path("/tmp").glob("nvim*"):
     socket = dir / "0"
     nvim = attach("socket", path=socket)
-    nvim.command("call UpdateThemeFromGnome()")
+    nvim.command("lua UpdateThemeFromGnome()")
