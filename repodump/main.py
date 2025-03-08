@@ -1,50 +1,24 @@
 #!/usr/bin/env python3
 """
-A script to dump a Python repo into one text blob, skipping certain files
-(similar to a .gitignore approach), and optionally removing repeated text
-snippets. Uses Click for CLI, including a trick to allow `-o` with or without a
-filename.
+Dump a Python repo into one text blob, skipping certain files (similar to a .gitignore approach).
+Uses a custom path-aware matching so that '*' does NOT cross directories by default.
+If you want subdirectories, use '**' in your pattern.
 
-It also shows how many tokens each file contributes, sorted descending, top 10.
+Examples:
+  - "boxes/*.py" => matches "boxes/foo.py", not "boxes/subdir/bar.py"
+  - "boxes/**/*.py" => matches "boxes/bar.py" plus deeper, "boxes/subdir/bar.py"
 """
 
 import os
 import sys
-import fnmatch
 import re
-
 import click
+from .patterns import path_pattern_to_regex, path_match
 import yaml
 
 CONFIG_PATH = os.path.expanduser("~/.config/repodump.yaml")
 
-DEFAULT_CONFIG = {
-    "repos": {},
-    "global": {
-        "include": [
-            "*.py",
-            "*.md",
-            "*.rst",
-        ],
-        "exclude": [
-            "*.egg-info*",
-            "*__pycache__*",
-            "*.mo",
-            "*.po",
-            "*LC_MESSAGES*",
-            "*fonts*",
-            "*.jpg",
-            "*.jpeg",
-            "*.png",
-            "*.gif",
-            "*.webp",
-            "*.ico",
-            "*.svg",
-        ],
-    },
-}
-
-
+ 
 def load_config():
     """Load YAML config from ~/.config/repodump.yaml or exit if missing."""
     if not os.path.isfile(CONFIG_PATH):
@@ -54,17 +28,21 @@ def load_config():
         return yaml.safe_load(f)
 
 
-def pattern_match(path, patterns):
-    """Return True if 'path' matches any pattern in 'patterns' (fnmatch)."""
-    return any(fnmatch.fnmatch(path, p) for p in patterns)
 
+
+
+#
+# -------------- The core scanning code --------------
+#
 
 def scan_directory(root_dir, cfg_includes, cfg_excludes):
     """
     Recursively gather text from files that match 'include' but not 'exclude',
     using relative paths from 'root_dir' for matching.
-    Track any unknown files not matched by either.
-    Returns: (all_files, uncertain_files).
+
+    This respects our custom path-based patterns:
+      - 'foo/*.py' won't match subdirs
+      - 'foo/**/*.py' will
     """
     all_files = []
     uncertain_files = []
@@ -74,39 +52,45 @@ def scan_directory(root_dir, cfg_includes, cfg_excludes):
         if rel_dir == ".":
             rel_dir = ""
 
-        # If this directory is excluded, skip subfolders:
-        if rel_dir and pattern_match(rel_dir, cfg_excludes):
+        # If this directory is excluded (by the entire dir path):
+        if rel_dir and path_match(rel_dir, cfg_excludes):
+            # skip subfolders
             dirnames[:] = []
             continue
 
         for f in filenames:
-            rel_file = os.path.join(rel_dir, f) if rel_dir else f
+            rel_file = f if not rel_dir else os.path.join(rel_dir, f)
 
-            if pattern_match(rel_file, cfg_includes):
-                all_files.append(os.path.join(dirpath, f))
-            elif pattern_match(rel_file, cfg_excludes):
+            # If it matches exclude, skip
+            if path_match(rel_file, cfg_excludes):
                 continue
+
+            # If it matches include, we want it
+            if path_match(rel_file, cfg_includes):
+                all_files.append(os.path.join(dirpath, f))
             else:
-                # Not matched => uncertain
+                # Not matched by either => uncertain
                 uncertain_files.append(rel_file)
 
     return all_files, sorted(set(uncertain_files))
 
 
 def approximate_tokens(byte_count):
-    """Roughly estimate tokens from bytes (1 token ~ 4 chars)."""
+    """Rough estimate: 1 token ~ 4 chars."""
     return byte_count // 4
 
 
+#
+# -------------- Snippet removal code --------------
+#
+
 def strip_snippets_from_text(text, snippets):
     """
-    snippets is a list of dicts, each dict might have:
+    snippets: list of dicts, each dict might have:
       - type: "literal" or "regex"
-      - lines: str (if type=literal)
-      - pattern: str (if type=regex)
-      - flags: optional string e.g. "IGNORECASE|MULTILINE"
-
-    Removes all occurrences found anywhere in the text.
+      - lines: str
+      - pattern: str
+      - flags: e.g. "IGNORECASE|MULTILINE"
     """
     for snip in snippets:
         stype = snip.get("type")
@@ -118,26 +102,28 @@ def strip_snippets_from_text(text, snippets):
 
 
 def remove_literal(text, snippet):
-    """Remove every occurrence of 'snippet' from text."""
+    """Remove all occurrences of snippet from text."""
     if not snippet:
         return text
     return text.replace(snippet, "")
 
 
 def remove_regex(text, pattern, flags_str):
-    """Remove all matches of 'pattern' from text. 'flags_str' e.g. 'IGNORECASE|MULTILINE'."""
     combined_flags = 0
     for f in flags_str.split("|"):
         f = f.strip().upper()
         if hasattr(re, f):
             combined_flags |= getattr(re, f)
-
     return re.sub(pattern, "", text, flags=combined_flags)
 
 
+#
+# -------------- CLI with Click --------------
+#
+
 @click.command(
     context_settings=dict(
-        allow_extra_args=True,  # let us parse leftover arguments
+        allow_extra_args=True,
         ignore_unknown_options=True
     )
 )
@@ -159,23 +145,24 @@ def remove_regex(text, pattern, flags_str):
 @click.pass_context
 def main(ctx, output_flag, copy_output):
     """
-    Dump all matched repo files into a single text blob, optionally removing repeated snippets.
-    Also shows top 10 files by token count.
-    """
-    leftover = ctx.args[:]  # leftover arguments not consumed by Click
+    Dump matched repo files into one blob, skipping certain files or dirs,
+    and removing repeated snippets if configured.
 
-    # Figure out if user gave -o, plus a file
+    Single '*' does not cross directories. Use '**' if you want to match subdirs.
+    """
+    leftover = ctx.args[:]
     if output_flag:
+        # If user gave '-o', see if leftover has a filename
         if leftover and not leftover[0].startswith("-"):
             output_file = leftover[0]
             leftover = leftover[1:]
         else:
-            output_file = ""  # signals "stdout"
+            output_file = ""
     else:
-        output_file = None  # signals "no dump"
+        output_file = None
 
     if leftover:
-        click.echo(f"Warning: ignoring extra arguments: {leftover}")
+        click.echo(f"Warning: ignoring extra args: {leftover}")
 
     # Load config
     config = load_config()
@@ -192,27 +179,27 @@ def main(ctx, output_flag, copy_output):
     excludes = repo_cfg.get("exclude", []) + config["global"].get("exclude", [])
     snippets = config.get("strip_snippets", [])  # optional snippet removal
 
-    # Find files
+    # Scan
     all_files, uncertain_files = scan_directory(root_dir, includes, excludes)
 
+    # If unknown => ask user to fix config
     if uncertain_files:
         click.echo("These files are not matched by include/exclude patterns:")
         for u in uncertain_files:
             click.echo(f"  - {u}")
-
         click.echo(f"\nAdd them to your config in: {CONFIG_PATH}")
-
         if root_dir not in config["repos"]:
             config["repos"][root_dir] = {"include": [], "exclude": []}
-
         click.echo("\nExample snippet to add:\n")
         for u in uncertain_files:
             click.echo(f"    # - {u}")
         click.echo("\nThen rerun. Exiting now.")
         sys.exit(0)
 
+    # Read + combine
     blob_lines = []
     file_token_counts = []
+
     for fp in sorted(all_files):
         relpath = os.path.relpath(fp, root_dir)
         try:
@@ -222,12 +209,9 @@ def main(ctx, output_flag, copy_output):
             blob_lines.append(f"# Skipped unreadable file: {relpath}\n\n")
             continue
 
-        # remove snippets
         content = strip_snippets_from_text(content, snippets)
-
-        # measure tokens
-        tcount = approximate_tokens(len(content.encode("utf-8")))
-        file_token_counts.append((relpath, tcount))
+        tokens_here = approximate_tokens(len(content.encode("utf-8")))
+        file_token_counts.append((relpath, tokens_here))
 
         blob_lines.append(f"# FILE: {relpath}\n{content}\n\n")
 
@@ -238,23 +222,24 @@ def main(ctx, output_flag, copy_output):
     click.echo(f"Files included: {len(all_files)}")
     click.echo(f"Total size: {byte_count} bytes, ~{total_tokens} tokens.")
 
-    # Sort desc by token count, show top 10
+    # Sort desc, show top 10
     file_token_counts.sort(key=lambda x: x[1], reverse=True)
+    top_10 = file_token_counts[:10]
     click.echo("\nTop 10 files by token count:")
-    for relpath, tcount in file_token_counts[:10]:
-        click.echo(f"  {tcount} tokens: {relpath}")
+    for path_, tcount_ in top_10:
+        click.echo(f"  {tcount_} tokens: {path_}")
 
     # Output logic
     if output_file is None:
         return  # no dump
 
     if output_file == "":
-        # user did -o with no filename => stdout
+        # -o => stdout
         click.echo("\n=== BEGIN DUMP ===")
         click.echo(final_text, nl=False)
         click.echo("\n=== END DUMP ===")
     else:
-        # user gave a filename
+        # -o somefile => write
         outpath = os.path.abspath(output_file)
         with open(outpath, "w", encoding="utf-8") as wf:
             wf.write(final_text)
@@ -271,3 +256,4 @@ def main(ctx, output_flag, copy_output):
 
 if __name__ == "__main__":
     main()
+
