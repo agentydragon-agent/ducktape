@@ -13,3 +13,8 @@ export PATH="$HOME/.local/bin:$PATH"
 
 export EDITOR=`which vim`
 . "$HOME/.cargo/env"
+
+# If present, load secrets from ~/.secret_env for local environment variables
+if [ -f "$HOME/.secret_env" ]; then
+    . "$HOME/.secret_env"
+fi
