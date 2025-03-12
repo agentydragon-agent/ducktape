@@ -36,3 +36,8 @@ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/cuda-11.2/targets/x86_64-linux/
 export PATH="$HOME/.r2env/bin:$PATH"
 
 export PATH="$HOME/.elan/bin:$PATH"
+
+# If present, load secrets from ~/.secret_env for local environment variables
+if [ -f "$HOME/.secret_env" ]; then
+    . "$HOME/.secret_env"
+fi
