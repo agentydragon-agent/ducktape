@@ -10,9 +10,6 @@
 --
 --set ttyfast
 --
---" mouse in every mode
---set mouse=a
---
 --" fold by syntax, open all by default
 --set foldmethod=syntax
 --set foldlevelstart=20
@@ -24,8 +21,6 @@
 --
 --" to byvalo <S-M>, ale to koliduje s 'vyber prostredni radku'
 --noremap <Leader>m :make<CR>
---
---noremap <C-l> :noh<CR>
 --
 --" no mistyped :w or :q...
 --:command W w
@@ -71,20 +66,6 @@
 --\',')
 --" Hide netrw banner
 --let g:netrw_banner=0
---
---" nechci intro
---" f: (3 of 5) misto (file 3 of 5)
---" i: [noeol]
---" l: 999L, 888C misto 999 lines, 888 characters
---" m: [+] misto modified
---" n: [New] misto [New File]
---" r: [RO]
---" x: [dos], [unix], [mac]
---" t: truncate file message zleva jestli je moc dlouha
---" T: truncate uprostred jestli je moc dlouha
---" o: overwrite message
---" I: intro
---set shortmess=filmnrxtToOI
 --
 --let g:matchparen_insert_timeout=5
 --
@@ -163,7 +144,6 @@ opt.tabstop = 4 -- Number of spaces tabs count for
 opt.smartindent = true -- Smart indenting on new lines
 -- opt.cursorline = true           -- Highlight the current line
 opt.termguicolors = true -- Enable true color support (recommended for modern UI)
--- (Add any other `vim.opt` settings from your init.vim as needed)
 
 -- (not mine, need to check:)
 -- opt.swapfile = false            -- Don't use swapfile
@@ -222,6 +202,12 @@ vim.g.maplocalleader = "\\"
 
 -- Setup lazy.nvim
 require("lazy").setup({
+	checker = {
+		enabled = true,
+		notify = true,
+		-- Check every 1 week
+		frequency = 7 * 24 * 60 * 60,
+	},
 	spec = {
 		-- 6. **LSP & Syntax (Treesitter)** - (Optional modern additions)
 		{
