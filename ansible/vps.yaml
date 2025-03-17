@@ -138,15 +138,15 @@
         letsencrypt_certificate_names:
           # Presented by nginx to serve my website from static files.
           - agentydragon.com,www.agentydragon.com
-          - grocy.agentydragon.com
-          - inventree.agentydragon.com
-          # 2025-02-07 disable bazel-cache, trilium
-          ## Presented by nginx to proxy requests to the Trilium server.
-          ####- trilium.agentydragon.com
-          ## Presented by Bazel cache Docker container which has ports
-          ## exposed to public internet.
-          ####- bazel-cache.agentydragon.com
           - adgn.link,www.adgn.link
+          - grocy.agentydragon.com
+          # 2025-02-07 disable bazel-cache, trilium
+          ## # Presented by nginx to proxy requests to the Trilium server.
+          ## - trilium.agentydragon.com
+          ## # Presented by Bazel cache Docker container which has ports
+          ## # exposed to public internet.
+          ## - bazel-cache.agentydragon.com
+          - inventree.agentydragon.com
 
         # This seems to be what we need to present to certbot install.
         # Looks like certbot install doesn't take the same parameters,
@@ -154,13 +154,14 @@
         # then be installable under one name... :(
         letsencrypt_certificate_names_to_install:
           - agentydragon.com
+          - adgn.link
           - grocy.agentydragon.com
           - inventree.agentydragon.com
           # 2025-02-07 disable bazel-cache, trilium
           ###- trilium.agentydragon.com
-          - adgn.link
           # bazel-cache.agentydragon.com deliberately not included,
           # because it's not for installation in nginx.
+          - inventree.agentydragon.com
 
     - name: Let's Encrypt certificates
       block:
@@ -223,9 +224,10 @@
         notify:
           - Reload nginx
         loop:
+          - grocy.agentydragon.com
           ## 2025-02-07 disable trilium server
           # - trilium.agentydragon.com
-          - grocy.agentydragon.com
+          - trilium.agentydragon.com
           - inventree.agentydragon.com
 
       - name: "Create static nginx configuration"
@@ -256,11 +258,11 @@
           dest: /etc/nginx/sites-enabled/{{ item }}
         with_items:
           - agentydragon.com
+          - adgn.link
           - grocy.agentydragon.com
           ## 2025-02-07 disable trilium server
           # - trilium.agentydragon.com
           - inventree.agentydragon.com
-          - adgn.link
         tags:
           - nginx
         notify:
@@ -386,43 +388,45 @@
         enabled: true
       tags:
         - nginx
+        
+    - name: InvenTree setup
+      block:
+      - name: Create Inventree Docker Compose directory
+        ansible.builtin.file:
+          path: /srv/inventree/docker-compose
+          state: directory
+          mode: 0700
+        tags:
+          - inventree
 
-    - name: Create Inventree Docker Compose directory
-      ansible.builtin.file:
-        path: /srv/inventree/docker-compose
-        state: directory
-        mode: 0700
-      tags:
-        - inventree
+      - name: copy Docker Compose files
+        copy:
+          src: inventree/{{ item }}
+          dest: /srv/inventree/docker-compose/{{ item }}
+        loop:
+        - .env
+        - docker-compose.yml
+        tags:
+          - inventree
 
-    - name: copy Docker Compose files
-      copy:
-        src: inventree/{{ item }}
-        dest: /srv/inventree/docker-compose/{{ item }}
-      loop:
-      - .env
-      - docker-compose.yml
-      tags:
-        - inventree
+      - name: docker compose up for inventree
+        community.docker.docker_compose_v2:
+          project_src: /srv/inventree/docker-compose
+          # We're pinned to "stable" tag.
+          # If "stable" tag moved, do fetch its new value and fetch the updated
+          # container.
+          pull: always
+          # (recreate to make sure to pick up env changes)
+          recreate: always
+        register: output
+        tags:
+          - inventree
 
-    - name: docker compose up for inventree
-      community.docker.docker_compose_v2:
-        project_src: /srv/inventree/docker-compose
-        # We're pinned to "stable" tag.
-        # If "stable" tag moved, do fetch its new value and fetch the updated
-        # container.
-        pull: always
-        # (recreate to make sure to pick up env changes)
-        recreate: always
-      register: output
-      tags:
-        - inventree
-
-    - name: Show results
-      ansible.builtin.debug:
-        var: output
-      tags:
-        - inventree
+      - name: Show results
+        ansible.builtin.debug:
+          var: output
+        tags:
+          - inventree
 
   handlers:
     # Only triggers if nginx config files changed.
