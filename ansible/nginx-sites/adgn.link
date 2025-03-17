@@ -11,18 +11,23 @@ server {
     ssl_certificate /etc/letsencrypt/live/adgn.link/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/adgn.link/privkey.pem;
 
-    # TODO: what's this for?
     location / {
         return 301 https://www.agentydragon.com;
     }
 
     location /nfc {
-        # 302 = temporary redirect (301 is permanent)
         return 302 https://www.agentydragon.com/nfc.html;
     }
 
     location /found {
-        # 302 = temporary redirect (301 is permanent)
         return 302 https://www.agentydragon.com/found.html;
+    }
+
+    location /furry-rationalists-telegram {
+        return 302 https://t.me/+KTmU37JO3Wk0OTQ0;
+    }
+
+    location /effective-anthropomorphism-discord {
+        return 302 https://discord.com/invite/Mcdsh757Ht;
     }
 }

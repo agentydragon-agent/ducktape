@@ -17,7 +17,7 @@ advertise that this furry+EA/rationality corner exists, and if you’re
 furry-adjacent & rationality-adjacent and nice, you’re invited to join us :)
 
 Here’s the invite link for the Furry Rationalists group:
-<https://t.me/+KTmU37JO3Wk0OTQ0>
+<https://adgn.link/furry-rationalists-telegram>
 
 There’s ~50 of us and we’re chill - we have self-improvement, science, and cute
 animal GIFs. If you’d like a preview, here’s the [guidelines + meta doc][guidelines].
@@ -31,7 +31,8 @@ some method on this website), or look us up on
 us.
 
 There’s also a smaller Effective Anthropomorphism Discord server, run by
-[bird][bird]: <https://discord.gg/JBeKs5qZ>
+[bird][bird]. For an invite link, go to
+<https://adgn.link/effective-anthropomorphism-discord>
 
 Come say hi, and feel free to share if you know anyone who’d be interested!
 
