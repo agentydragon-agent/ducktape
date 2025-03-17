@@ -6,26 +6,26 @@ global:
     - .gitignore
     - '.pytest_cache'
     - '**/.gitkeep'
-    - requirements*.txt
-    - .pre-commit-config.yaml
-    - 'CODE_OF_CONDUCT.*'
-    - 'LICENSE.*'
-    - 'CONTRIBUTING.*'
+    - '**/requirements*.txt'
+    - .**/pre-commit-config.yaml
+    - '**/CODE_OF_CONDUCT.*'
+    - '**/LICENSE.*'
+    - '**/CONTRIBUTING.*'
 
-    - '*.jpg'
-    - '*.png'
-    - '*.woff2'
-    - '*.sha256'
+    - '**/*.jpg'
+    - '**/*.png'
+    - '**/*.woff2'
+    - '**/*.sha256'
+    - '**/*.mo'
+    - '**/*.po'
+    - '**/*.egg'
+    - '**/*.odp'
     - '**/po/*.po'
     - '**/locale/**/*.mo'
-    - '*.egg-info*'
-    - '*__pycache__*'
-    - '*.mo'
-    - '*.po'
-    - '*LC_MESSAGES*'
-    - '*fonts*'
-    - '*.egg'
-    - '*.odp'
+    - '**/*.egg-info*'
+    - '**/*__pycache__*'
+    - '**/*LC_MESSAGES*'
+    - '**/*fonts*'
 repos:
   '/home/agentydragon/.google-drive/My Drive/mailrack/boxes':
     exclude:
@@ -65,9 +65,14 @@ repos:
       - documentation/src/make.bat
       - 'boxes/generators/frontpanel_test.json'
       - 'documentation/src/install/log-wsl-win11.txt'
+      - boxes/generators/*.py
     include:
       - boxes/*.py
-      - boxes/generators/*.py
+      - boxes/generators/_walltemplate.py
+      - boxes/generators/birdhouse.py
+      - boxes/generators/displayshelf.py
+      - boxes/generators/typetray.py
+      - boxes/generators/wallrack.py
       - documentation/src/*.rst
   '/home/agentydragon/.google-drive/My Drive/inventree-utils':
     exclude:

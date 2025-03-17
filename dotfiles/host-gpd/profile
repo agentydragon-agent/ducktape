@@ -8,16 +8,13 @@
 # for ssh logins, install and configure the libpam-umask package.
 #umask 022
 
-# if running bash
-if [ -n "$BASH_VERSION" ]; then
-    # include .bashrc if it exists
-    if [ -f "$HOME/.bashrc" ]; then
-	. "$HOME/.bashrc"
-    fi
-fi
-
 # set PATH so it includes user's private bin directories
 export PATH="$HOME/.local/bin:$PATH"
 
 export EDITOR=`which vim`
 . "$HOME/.cargo/env"
+
+# If present, load secrets from ~/.secret_env for local environment variables
+if [ -f "$HOME/.secret_env" ]; then
+    . "$HOME/.secret_env"
+fi
