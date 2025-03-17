@@ -25,6 +25,7 @@ Example steps:
 
 import fnmatch
 import os
+import re
 import sys
 
 import yaml  # pip install pyyaml
@@ -214,8 +215,6 @@ def main():
         print("Dump copied to clipboard")
 
 
-import re
-
 def strip_snippets_from_text(text, snippets):
     """
     snippets is a list of dicts, each dict might have:
@@ -240,9 +239,10 @@ def strip_snippets_from_text(text, snippets):
             pass
     return text
 
+
 def remove_literal(text, snippet):
     """Remove 'snippet'."""
-    return text.replace(snippet, '')
+    return text.replace(snippet, "")
 
 
 def remove_literal_top(text, snippet):
@@ -259,8 +259,8 @@ def remove_literal_top(text, snippet):
         snippet_lines.pop()
 
     # If the file starts exactly with snippet_lines (in order), remove them
-    if file_lines[:len(snippet_lines)] == snippet_lines:
-        return "\n".join(file_lines[len(snippet_lines):])
+    if file_lines[: len(snippet_lines)] == snippet_lines:
+        return "\n".join(file_lines[len(snippet_lines) :])
     else:
         return text
 
@@ -281,7 +281,5 @@ def remove_regex(text, pattern, flags_str):
     return re.sub(pattern, "", text, flags=combined_flags)
 
 
-
 if __name__ == "__main__":
     main()
-
