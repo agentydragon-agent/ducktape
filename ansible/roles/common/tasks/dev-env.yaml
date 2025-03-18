@@ -48,3 +48,8 @@
       - autopep8
       - ruff
 
+- name: Install stylua (Lua formatter for Neovim)
+  # ansible-galaxy collection install community.general
+  community.general.cargo:
+    name: stylua
+
