@@ -107,9 +107,6 @@
 --  autocmd FileType rust AutoFormatBuffer rustfmt
 --  " autocmd FileType html,css,json AutoFormatBuffer js-beautify
 --  autocmd FileType java AutoFormatBuffer google-java-format
---  " cljstyle
---  autocmd FileType clojure AutoFormatBuffer cljstyle
---  " autocmd FileType clojure AutoFormatBuffer zprint
 --augroup END
 --
 --set foldmethod=syntax
@@ -125,9 +122,6 @@
 --\ 'yaml': v:true,
 --\ 'markdown': v:true,
 --\ }
---
-
--- [[ General Settings (equivalent to your old vimscript settings) ]]
 local opt = vim.opt
 opt.number = true -- Show line numbers
 opt.hlsearch = true -- Highlight search matches
@@ -154,45 +148,26 @@ opt.termguicolors = true -- Enable true color support (recommended for modern UI
 -- opt.splitright = true           -- Split vertical windows to the right
 -- opt.splitbelow = true           -- Split horizontal windows to the bottom
 
--- todo: Solarized
-
 -- Set up color scheme updating
 -- Set color theme to light/dark based on current system preferences.
 -- Done early to prefer flashing of the wrong theme before this runs.
 -- Will later be picked up when setting up Solarized colors.
 -- Called on theme switches by set_light_theme, set_dark_theme scripts.
-_G.UpdateThemeFromGnome = function()
-	-- Run gsettings
-	local color_scheme = vim.fn.system("gsettings get org.gnome.desktop.interface color-scheme")
-	-- strip newline
-	color_scheme = color_scheme:gsub("\n", "")
-	-- remove quotes
-	color_scheme = color_scheme:gsub("'", "")
-
-	if color_scheme == "prefer-dark" then
-		vim.o.background = "dark"
-	else
-		vim.o.background = "light"
-	end
-end
-_G.UpdateThemeFromGnome()
-
--- Bootstrap lazy.nvim
-local lazypath = vim.fn.stdpath("data") .. "/lazy/lazy.nvim"
-if not (vim.uv or vim.loop).fs_stat(lazypath) then
-	local lazyrepo = "https://github.com/folke/lazy.nvim.git"
-	local out = vim.fn.system({ "git", "clone", "--filter=blob:none", "--branch=stable", lazyrepo, lazypath })
-	if vim.v.shell_error ~= 0 then
-		vim.api.nvim_echo({
-			{ "Failed to clone lazy.nvim:\n", "ErrorMsg" },
-			{ out, "WarningMsg" },
-			{ "\nPress any key to exit..." },
-		}, true, {})
-		vim.fn.getchar()
-		os.exit(1)
-	end
-end
-vim.opt.rtp:prepend(lazypath)
+---_G.UpdateThemeFromGnome = function()
+---	-- Run gsettings
+---	local color_scheme = vim.fn.system("gsettings get org.gnome.desktop.interface color-scheme")
+---	-- strip newline
+---	color_scheme = color_scheme:gsub("\n", "")
+---	-- remove quotes
+---	color_scheme = color_scheme:gsub("'", "")
+---
+---	if color_scheme == "prefer-dark" then
+---		vim.o.background = "dark"
+---	else
+---		vim.o.background = "light"
+---	end
+---end
+---_G.UpdateThemeFromGnome()
 
 -- Make sure to setup `mapleader` and `maplocalleader` before
 -- loading lazy.nvim so that mappings are correct.
@@ -200,82 +175,15 @@ vim.opt.rtp:prepend(lazypath)
 vim.g.mapleader = " "
 vim.g.maplocalleader = "\\"
 
--- Setup lazy.nvim
-require("lazy").setup({
-	checker = {
-		enabled = true,
-		notify = true,
-		-- Check every 1 week
-		frequency = 7 * 24 * 60 * 60,
-	},
-	spec = {
-		-- 6. **LSP & Syntax (Treesitter)** - (Optional modern additions)
-		{
-			"neovim/nvim-lspconfig",
-			event = "BufReadPre",
-			config = function()
-				-- Example: enable Pyright LSP for Python (add other language servers as needed)
-				require("lspconfig").pyright.setup({})
-			end,
-		},
-		{
-			"nvim-treesitter/nvim-treesitter",
-			build = ":TSUpdate",
-			event = { "BufReadPost", "BufNewFile" },
-			config = function()
-				require("nvim-treesitter.configs").setup({
-					ensure_installed = { "lua", "python", "javascript", "rust" }, -- install common parsers
-					highlight = { enable = true },
-				})
-			end,
-		},
-		{
-			"Tsuzat/NeoSolarized.nvim",
-			lazy = false, -- make sure we load this during startup if it is your main colorscheme
-			priority = 1000, -- make sure to load this before all the other start plugins
-			config = function()
-				vim.cmd([[ colorscheme NeoSolarized ]])
-			end,
-		},
-		{
-			"stevearc/conform.nvim",
-			opts = {
+require("config.lazy")
 
-				formatters_by_ft = {
-					lua = { "stylua" },
-					python = { "isort", "black" }, -- multiple formatters sequentially
-					-- You can customize some of the format options for the filetype (:help conform.format)
-					rust = { "rustfmt", lsp_format = "fallback" },
-					-- Conform will run the first available formatter
-					--javascript = { "prettierd", "prettier", stop_after_first = true },
-				},
-			},
-		},
-		-- status line, like airline
+-- NeoSolarized: status line not rendered with any usable color:
+-- {
+--   "Tsuzat/NeoSolarized.nvim",
+--   lazy = false, -- make sure we load this during startup if it is your main colorscheme
+--   priority = 1000, -- make sure to load this before all the other start plugins
+--   config = function() vim.cmd([[ colorscheme NeoSolarized ]]) end,
+-- }
 
-		{
-			"nvim-lualine/lualine.nvim",
-			dependencies = { "nvim-tree/nvim-web-devicons" },
-			opts = {
-				icons_enabled = true,
-				theme = "auto",
-			},
-		},
-
-		--- https://github.com/zbirenbaum/copilot-cmp maybe ?
-		{ "github/copilot.vim" },
-
-		-- TODO: Django template formatter?
-		-- { "yaegassy/coc-htmldjango" },
-	},
-	-- automatically check for plugin updates
-	checker = { enabled = true },
-})
-
--- format on save
-vim.api.nvim_create_autocmd("BufWritePre", {
-	pattern = "*",
-	callback = function(args)
-		require("conform").format({ bufnr = args.buf })
-	end,
-})
+-- Django template formatter:
+-- { "yaegassy/coc-htmldjango" }

@@ -1,0 +1,9 @@
+-- 6. **LSP & Syntax (Treesitter)** - (Optional modern additions)
+return {
+	"neovim/nvim-lspconfig",
+	event = "BufReadPre",
+	config = function()
+		-- Example: enable Pyright LSP for Python (add other language servers as needed)
+		require("lspconfig").pyright.setup({})
+	end,
+}
