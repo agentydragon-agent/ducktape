@@ -17,7 +17,7 @@
   tags:
   - bazel
   ansible.builtin.deb822_repository:
-    name: google
+    name: bazel
     types: [deb]
     uris:
       - https://storage.googleapis.com/bazel-apt
