@@ -16,3 +16,5 @@ nvim-treesitter: folding
     -- https://github.com/nvim-treesitter/nvim-treesitter?tab=readme-ov-file#folding
     vim.wo.foldmethod = 'expr'
     vim.wo.foldexpr = 'v:lua.vim.treesitter.foldexpr()'
+
+TODO: add apt-file
