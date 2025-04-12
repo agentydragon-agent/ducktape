@@ -8,13 +8,9 @@
 # google-repos need to come before update - in case Google's keys changed.
 - include_tasks: tasks/google-repos.yaml
 
-- name: Update everything
-  become: true
-  ansible.builtin.apt:
-    update_cache: true
-    upgrade: dist
 - include_tasks: tasks/common-packages.yaml
 
+- include_tasks: tasks/wezterm.yaml
 - include_tasks: tasks/dev-env.yaml
 - include_tasks: tasks/dotfiles.yaml
 
