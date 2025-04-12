@@ -12,10 +12,7 @@
     - role: jaredhocutt.gnome_extensions
       vars:
         gnome_extension_ids:
-          # gTile - https://extensions.gnome.org/extension/28/gtile/
-          # Not needed on Pop! OS
-          # Install gTile.
-          # - 28
+          # Not needed for Pop! OS: gTile
 
           # Desaturate All - https://extensions.gnome.org/extension/1102/desaturate-all/
           - 1102
@@ -27,7 +24,6 @@
 
           ## Night Theme Switcher
           # For auto-switching gnome-terminal themes following GNOME night theme.
-          #
           # https://extensions.gnome.org/extension/2236/night-theme-switcher/
           - 2236
 
@@ -36,6 +32,8 @@
     - gnome-terminal-solarized
     - google-drive-client
     - timekpr
+    - role: nerd_fonts
+      become: yes  # needed to write fonts system-wide
 
   tasks:
     - name: Set Night Theme Switcher to also switch gnome-terminal & nvim colors
@@ -51,20 +49,9 @@
             key: "/org/gnome/shell/extensions/nightthemeswitcher/commands/sunset"
             value: "'set_dark_theme'"
 
-    - name: Set Gnome top panel datetime format
-      ansible.builtin.dconf:
-        key: "/org/gnome/shell/extensions/panel-date-format/format"
-        value: "'%a %Y-%m-%d %H:%M'"  # e.g.: "Wed 2023-11-15 22:49"
-      tags:
-        - gnome-shell-datetime-format
-
-    - name: Set zsh as login shell
-      become: true
-      tags:
-        - zsh
-      user:
-        name: "{{ my_user }}"
-        shell: /bin/zsh
+    - include_tasks: tasks/gnome_panel_iso8601.yaml
+    - include_tasks: tasks/use_zsh_shell.yaml
+    - include_tasks: tasks/oh-my-zsh.yaml
 
     - name: Install packages for laptop
       become: true
