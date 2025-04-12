@@ -25,40 +25,22 @@
       Terminal=false
     mode: '0644'
 
-- name: Disable conflicting per-user Discord autostarts
+- name: Check no conflicting Discord autostarts
   block:
-  - name: List per-user autostarts
+  - name: List systemwide and per-user autostarts
     find:
-      paths: ["{{ ansible_env.HOME }}/.config/autostart"]
+      paths:
+        - "{{ ansible_env.HOME }}/.config/autostart"
+        - /etc/xdg/autostart
       patterns: "*.desktop"
     register: autostart_files
 
-  - name: Disable others that launch Discord
-    lineinfile:
-      path: "{{ item.path }}"
-      regexp: '^X-GNOME-Autostart-enabled='
-      line: 'X-GNOME-Autostart-enabled=false'
-      create: no
-      backup: yes
+  - name: Fail if any other autostart launches Discord
+    fail:
+      msg: "Conflicting Discord autostart found: {{ item.path }}"
     loop: "{{ autostart_files.files }}"
     loop_control:
-      label: "{{ item.path | basename }}"
-    when: >
-      item.path != discord_autostart_path and
-      (lookup('file', item.path) is search('^Exec=.*\bdiscord\b', multiline=True))
-
-- name: Assert no systemwide Discord autostarts
-  block:
-  - name: List systemwide autostarts
-    find:
-      paths: ["/etc/xdg/autostart"]
-      patterns: "*.desktop"
-    register: system_autostarts
-
-  - name: Fail if any systemwide autostart launches Discord
-    fail:
-      msg: "Discord found in systemwide autostart: {{ item.path }}"
-    loop: "{{ system_autostarts.files }}"
-    loop_control:
-      label: "{{ item.path | basename }}"
-    when: lookup('file', item.path) is search('^Exec=.*\bdiscord\b', multiline=True)
+      label: "{{ item.path }}"
+    when:
+      - item.path != discord_autostart_path
+      - lookup('file', item.path) is search('^Exec=.*\bdiscord\b', multiline=True)

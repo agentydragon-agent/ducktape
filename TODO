@@ -12,6 +12,7 @@ start Signal minimized
     there might be some tools to decrypt but looks quite annoying
     to do.
 
-
-discord start minimized:
-    flatpak run com.discordapp.Discord --start-minimized
+nvim-treesitter: folding
+    -- https://github.com/nvim-treesitter/nvim-treesitter?tab=readme-ov-file#folding
+    vim.wo.foldmethod = 'expr'
+    vim.wo.foldexpr = 'v:lua.vim.treesitter.foldexpr()'
