@@ -18,6 +18,22 @@
 - include_tasks: tasks/dev-env.yaml
 - include_tasks: tasks/dotfiles.yaml
 
+
+- name: Check Neovim is >= 0.11 (for DEC mode 2031 for auto color scheme switching)
+  block:
+  - name: Get Neovim version
+    command: nvim --version
+    register: nvim_version_output
+    changed_when: false
+  - name: Extract Neovim version number
+    set_fact:
+      nvim_version_string: "{{ nvim_version_output.stdout_lines[0].split()[1] }}"
+  - name: Assert Neovim is at least 0.11
+    assert:
+      that:
+        - "nvim_version_string is version('0.11', '>=')"
+      fail_msg: "Neovim must be at least 0.11, got {{ nvim_version_string }}"
+
 - name: Set up Neovim
   tags: vim
   block:

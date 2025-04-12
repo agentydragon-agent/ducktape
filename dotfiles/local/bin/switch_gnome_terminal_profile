@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 # Works on gnome-terminal 3.44.0 as of 2022-09-03.
 # Requirements: absl-py, dbus-python
 

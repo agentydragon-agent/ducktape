@@ -6,3 +6,12 @@ add to installation on small laptop:
 merge agentydragon & gpd gitconfig dotfile
 
 cargo install stylua (for lua formatting neovim)
+
+start Signal minimized
+    -> difficult; settings are stored in an encrypted sqlite,
+    there might be some tools to decrypt but looks quite annoying
+    to do.
+
+
+discord start minimized:
+    flatpak run com.discordapp.Discord --start-minimized
