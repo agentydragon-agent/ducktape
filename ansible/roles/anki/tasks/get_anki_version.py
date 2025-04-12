@@ -1,12 +1,24 @@
 import sys
-import pprint
 import re
 import subprocess
 
-anki_version_stdout = subprocess.check_output(
-    ["/usr/local/bin/anki", "--version"]).decode("utf-8")
-match = re.search("Anki ([0-9.]+)", anki_version_stdout)
-assert match
+PATTERN = re.compile("^Anki ([0-9.]+)$", flags=re.MULTILINE)
 
-# make sure to not print a \n
-sys.stdout.write(match.group(1))
+def extract_version(stdout):
+    if not (match := PATTERN.search(stdout)):
+         raise ValueError(f"{stdout!r} does not contain {match}")
+    return match.group(1)
+
+def test_extract_version():
+    input = 'Anki starting...\nInitial setup...\nStarting Anki 25.02...\nAnki 25.02\n'
+    assert extract_version(input) == "25.02"
+
+def main():
+    stdout = subprocess.check_output(
+        ["/usr/local/bin/anki", "--version"]).decode("utf-8")
+    # make sure to not print a \n
+    sys.stdout.write(extract_version(stdout))
+
+if __name__ == '__main__':
+    test_extract_version()
+    main()
