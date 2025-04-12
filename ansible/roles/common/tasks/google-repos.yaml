@@ -35,5 +35,5 @@
   tags:
   - bazel
   ansible.builtin.apt:
-    pkg:
-      - bazel
+    pkg: bazel
+    state: present

@@ -3,7 +3,7 @@ roles:
   - src: geerlingguy.docker
   - src: jaredhocutt.gnome_extensions
   - src: systemli.letsencrypt
-  - src: nbigot.ansible-fail2ban
-  - src: diodonfrost.p10k
+  - src: nbigot.ansible-fail2ban  # Fail2Ban
+  - src: diodonfrost.p10k         # Powerlevel10k
 collections:
   - community.docker
