@@ -8,6 +8,7 @@
     signed_by: https://dl-ssl.google.com/linux/linux_signing_key.pub
     suites: [stable]
     components: [main]
+    architectures: [amd64]  # no i386 included
     state: present
     enabled: yes
   when: ansible_architecture == "amd64" or ansible_architecture == "x86_64"
@@ -23,7 +24,7 @@
       - https://storage.googleapis.com/bazel-apt
     signed_by: https://bazel.build/bazel-release.pub.gpg
     suites: [stable]
-    components: [main]
+    components: [jdk1.8]
     state: present
     enabled: yes
   # when: ansible_architecture == "amd64" or ansible_architecture == "x86_64"
