@@ -188,3 +188,5 @@
         snap:
           classic: true
           name: code
+
+    - include_tasks: tasks/discord-minimized.yaml

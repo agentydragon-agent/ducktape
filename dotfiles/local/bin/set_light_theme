@@ -1,3 +1,2 @@
 #!/bin/bash
 switch_gnome_terminal_profile --profile='Solarized Light'
-update_nvim_theme_from_gnome

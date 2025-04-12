@@ -218,3 +218,5 @@
     #   copy:
     #     dest: /etc/tmpfiles.d/disable-xhc-wakeups.conf
     #     content: "w /sys/bus/pci/devices/0000:00:14.0/power/wakeup - - - - disabled"
+
+    - include_tasks: tasks/discord-minimized.yaml
