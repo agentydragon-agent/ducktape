@@ -38,10 +38,15 @@
       #- pyqt5-dev-tools
       - python3
       - python3-pip
-      - silversearcher-ag
+      - ripgrep
       - sloccount
       - tidy  # HTML tidy
       - jq
+- name: Remove unwanted pkgs
+  become: true
+  ansible.builtin.apt:
+    name: silversearcher-ag  # I replaced with rg
+    state: absent
 - name: Install dev env PyPI packages
   ansible.builtin.pip:
     name:

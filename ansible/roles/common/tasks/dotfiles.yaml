@@ -27,3 +27,12 @@
       ansible.builtin.script: rcup_noninteractive.py -B {{ rcup_computer }} -x vim -x README.md -d {{ ducktape_path }}/dotfiles
       args:
         executable: python3
+
+    # OrcaSlicer does not play well with its individual files being symlinks.
+    - name: Install OrcaSlicer config folder symlink
+      ansible.builtin.file:
+        src: "{{ ansible_env.HOME }}/.config/OrcaSlicer"
+        dest: "{{ ducktape_path }}/nonrcm-dotfiles/config/OrcaSlicer"
+        state: link
+      tags:
+      - orcaslicer
