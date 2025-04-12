@@ -25,6 +25,7 @@
     signed_by: https://bazel.build/bazel-release.pub.gpg
     suites: [stable]
     components: [jdk1.8]
+    architectures: [amd64]  # no i386 included
     state: present
     enabled: yes
   # when: ansible_architecture == "amd64" or ansible_architecture == "x86_64"
