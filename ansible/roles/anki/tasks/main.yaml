@@ -44,7 +44,7 @@
         tmp_path: "{{ tmp_dir.path }}"
       changed_when: false
 
-    - name: Download anki latest release info
+    - name: Download info about Anki's latest release
       ansible.builtin.get_url:
         url: https://api.github.com/repos/ankitects/anki/releases/latest
         dest: "{{ tmp_path }}/latest-release.json"
@@ -57,12 +57,25 @@
       register: latest_release_version
       changed_when: false
 
+    - ansible.builtin.debug:
+        var: latest_release_version
+
+    - name: Assert latest release version was found
+      assert:
+        that:
+          - latest_release_version != ""
+
     - name: Get latest Anki release URL
-      # 2024-04-03: qt6 version does not work, switching to qt5 which does.
+      # 2025-04-11: qt5 versions seem to be no longer released
       ansible.builtin.shell: |
-        jq --raw-output '.assets[] | select(.name | test("linux-qt5")) | .browser_download_url' {{ tmp_path }}/latest-release.json
+        jq --raw-output '.assets[] | select(.name | test("linux-qt6")) | .browser_download_url' {{ tmp_path }}/latest-release.json
       register: latest_release_url
       changed_when: false
+
+    - name: Assert latest release URL found
+      assert:
+        that:
+          - latest_release_url != ""
 
     - name: Set latest release URL
       ansible.builtin.set_fact:
@@ -84,22 +97,21 @@
 
    # - ansible.builtin.debug:
    #     var: installed_anki_version
-
-   # - ansible.builtin.debug:
-   #     var: latest_release_version
+    - ansible.builtin.debug:
+        var: latest_release_url
 
     - name: Install latest Anki
       when: (not anki_binary_stat.stat.exists) or (installed_anki_version is defined and installed_anki_version.stdout != latest_release_version.stdout)
       block:
 
-      # - ansible.builtin.debug:
-      #     var: latest_release_url
-
-      - name: Get Anki dir from the path
+      - name: Get name of target Anki dir from latest release version path
         ansible.builtin.set_fact:
           # https://github.com/ankitects/anki/releases/download/2.1.37/anki-2.1.37-linux.tar.bz2 -> anki-2.1.37-linux
           anki_dirname: "{{ latest_release_url | regex_search('/(anki-[^/]*-linux-qt6).tar.zst$', '\\1') | first }}"
         changed_when: false
+
+      - ansible.builtin.debug:
+          var: anki_dirname
 
       - name: Download Anki
         ansible.builtin.unarchive:
