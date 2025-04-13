@@ -141,7 +141,7 @@ export LESS="-F -X $LESS"
 export PYTHONSTARTUP=$HOME/.config/pythonstartup.py
 
 # MuJoCo
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/home/agentydragon/.mujoco/mujoco210/bin
+# export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/home/agentydragon/.mujoco/mujoco210/bin
 
 # To customize prompt, run `p10k configure` or edit ~/.p10k.zsh.
 [[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh
