@@ -6,15 +6,16 @@
     --font "{{ font }}"
     {% if debug | default(False) %}--debug{% endif %}
   register: apply_result
+  failed_when: apply_result.rc != 0
   changed_when: (apply_result.stdout | from_json).changed
 
 - name: Debug stdout
   debug:
-    msg: "stdout: {{ apply_result.stdout }}"
+    var: apply_result.stdout_lines
   when: debug | default(False)
 
 - name: Debug stderr
   debug:
-    msg: "stderr: {{ apply_result.stderr_lines }}"
+    var: apply_result.stderr_lines
   when: debug | default(False)
 

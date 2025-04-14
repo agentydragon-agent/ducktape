@@ -3,14 +3,49 @@
   set_fact:
     font: "{{ font_family }} {{ font_size }}"
 
-- name: Install any missing dependencies of gnome-terminal theme update script
-  become: true
-  ansible.builtin.apt:
-    pkg:
+### One way to run this without requiring root -- but with slow fact-collecting:
+# - name: Collect installed package facts
+#   ansible.builtin.package_facts:
+#     manager: apt
+#
+# - name: Determine missing packages
+#   set_fact:
+#     missing_deps: >-
+#       {{ desired_deps | reject('in', ansible_facts.packages.keys()) | list }}
+#   vars:
+#     desired_deps:
+#       - python3-gi
+#       - gir1.2-glib-2.0
+#       - git  # for cloning the theme; TODO: use a submodule or something
+#
+# - name: Install missing dependencies
+#   become: true
+#   ansible.builtin.apt:
+#     name: "{{ missing_deps }}"
+#     state: present
+#   when: missing_deps | length > 0
+
+### A bit annoying but does not need full package state so faster
+- name: Check for required packages
+  register: pkg_check_results
+  changed_when: false
+  failed_when: false
+  loop:
     - python3-gi
     - gir1.2-glib-2.0
     - git  # for cloning the theme; TODO: use a submodule or something
+  loop_control:
+    label: "{{ item }}"
+  shell: "dpkg -s {{ item }}"
+  ignore_errors: true
+
+- name: Install missing dependencies
+  become: true
+  ansible.builtin.apt:
+    name: "{{ item.item }}"
     state: present
+  loop: "{{ pkg_check_results.results | rejectattr('rc', 'eq', 0) | list }}"
+
 
 # TODO: fontconfig is needed for fc-list
 # fonts-ubuntu

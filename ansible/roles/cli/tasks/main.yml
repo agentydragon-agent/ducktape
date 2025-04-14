@@ -13,12 +13,11 @@
     # removed 2024-04-13, defaults in pop os:
     #   curl diffutils git iputils-ping netcat-openbsd pkg-config sed wget
     pkg:
-      # TODO: remove cinnamon-desktop-environment
-      #- fonts-powerline
       - htop
       - iftop
       - iotop
       - iputils-ping
+      - jq
       - mc
       - mmv
       - mosh
@@ -28,10 +27,19 @@
       - nethogs
       - pv
       - pwgen
+      - python3
+      - python3-pip
       - rcm
+      - ripgrep
       - screen
       - tree
       - zsh
+
+- name: Remove retired pkgs
+  become: true
+  ansible.builtin.apt:
+    name: silversearcher-ag  # I replaced with rg
+    state: absent
 
 - include_tasks: tasks/dev-env.yaml
 - include_tasks: tasks/dotfiles.yaml
