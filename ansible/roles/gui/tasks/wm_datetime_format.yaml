@@ -8,6 +8,8 @@
     name:
       - psutil
 
+# TODO: hmm, what WM did I write this for again?
+
 - name: Set custom datetime indicator
   block:
   - name: Set date format to custom

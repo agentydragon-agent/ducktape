@@ -1,5 +1,5 @@
 ---
-- include_tasks: tasks/night-theme-switcher-gnome-terminal.yaml
+- include_tasks: tasks/night_theme_switcher_gnome_terminal.yaml
 - include_tasks: tasks/gnome_panel_iso8601.yaml
 - name: Ensure no retired packages
   become: true
@@ -9,7 +9,7 @@
       - xtermcontrol  # 2025-04-13: not needed anymore, was for Vim bg color auto-switch
       - qshutdown     # 2025-04-13: was trying as timekpr alrernative, no longer needed
 
-- name: Install packages for laptop
+- name: Install GUI packages
   become: true
   ansible.builtin.apt:
     pkg:
@@ -17,12 +17,18 @@
       - android-tools-adb
       - blender
       - chrome-gnome-shell
+      - dconf-editor
       - flameshot  # Nice screenshot tool.
+      - geeqie
+      - gimp
       - gnome-tweaks
       - gnupg-agent
       - kicad # Some hacking stuff
       - kiwix # For offline Wikipedia etc.
       - krita
+      - libreoffice
+      - mplayer
+      - mpv
       - openjdk-8-jdk
       - snapd # For Telegram etc.
       - torbrowser-launcher
@@ -33,20 +39,19 @@
       - vlc
       - wine-stable
       - wireshark
+      - xclip
       - xournal
 
       # TODO: add Ubuntu startup programs, like Flameshot etc.
 
 - name: VSCode
-  include_tasks: tasks/install-method-handler.yaml
-  vars:
+  install_handler:
     apt: code
     snap: { name: code, classic: true }
     use: snap
 
 - name: FreeCAD
-  include_tasks: tasks/install-method-handler.yaml
-  vars:
+  install_handler:
     apt: freecad
     snap: freecad
     use: snap
@@ -59,30 +64,22 @@
   ansible.builtin.apt:
     deb: https://www.rescuetime.com/installers/rescuetime_current_amd64.deb
 
-- name: Enable GNOME Night Light
-  block:
-    - dconf:
-        key: /org/gnome/settings-daemon/plugins/color/night-light-enabled
-        value: "true"
-    - dconf:
-        key: /org/gnome/settings-daemon/plugins/color/night-light-temperature
-        value: "uint32 2414"
-
 - name: Install snaps
+  become: true
   snap:
     name:
     - tio
-    - wnatsdesk
+    - whatsdesk
     - yt-dlp
 
 - name: Ensure no youtube-dl (deprecated)
+  become: true
   snap:
     name: youtube-dl
     state: absent
 
 - name: Telegram
-  include_tasks: tasks/install-method-handler.yaml
-  vars:
+  install_handler:
     apt: telegram-desktop
     snap: telegram-desktop
     # trying out on 2023-11-24: install Telegram as snap
@@ -91,8 +88,7 @@
     use: snap
 
 - name: Slack
-  include_tasks: tasks/install-method-handler.yaml
-  vars:
+  install_handler:
     apt: slack-desktop
     snap: slack
     # Slack has to be installed as an APT package, not as a Snap.
@@ -116,35 +112,15 @@
 - name: Hide gnome-terminal menu
   tags:
     - gnome-terminal
-    - solarized
   ansible.builtin.command: |
     gsettings set
       org.gnome.Terminal.Legacy.Settings default-show-menubar false
 
-- include_tasks: tasks/datetime-format.yaml
-- include_tasks: tasks/gnome-preferences.yaml
-- include_tasks: tasks/xorg-terminate.yaml
+- include_tasks: tasks/wm_datetime_format.yaml
+- include_tasks: tasks/gnome_preferences.yaml
+- include_tasks: tasks/xorg_terminate.yaml
 - include_tasks: tasks/element.yaml
   tags: element
-- name: Hide gnome-terminal menu
-  tags:
-    - gnome-terminal
-    - solarized
-  ansible.builtin.command: |
-    gsettings set
-      org.gnome.Terminal.Legacy.Settings default-show-menubar false
-
-- name: Install GUI packages
-  become: true
-  ansible.builtin.apt:
-    pkg:
-      - dconf-editor
-      - geeqie
-      - gimp
-      - libreoffice
-      - mplayer
-      - mpv
-      - xclip
 
 - name: Google Chrome
   when: ansible_architecture in ["amd64", "x86_64"]

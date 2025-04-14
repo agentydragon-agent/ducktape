@@ -22,6 +22,12 @@
 
 - name: Install selected method
   block:
+    - assert:
+        that:
+          - use in ['apt', 'snap']
+        # TODO: check that something did get installed
+        fail_msg: "Invalid install method: {{ use }}."
+
     - name: Install via apt
       become: true
       ansible.builtin.apt:
@@ -38,14 +44,14 @@
 
 - name: Ensure other methods are absent
   block:
-    - name: Remove APT if not used
+    - name: Remove unused {{ resolved.apt }} APT package
       become: true
       ansible.builtin.apt:
         name: "{{ resolved.apt }}"
         state: absent
       when: use != 'apt' and resolved.apt is defined
 
-    - name: Remove snap if not used
+    - name: Remove unused {{ resolved.snap_name }} snap
       become: true
       community.general.snap:
         name: "{{ resolved.snap_name }}"
