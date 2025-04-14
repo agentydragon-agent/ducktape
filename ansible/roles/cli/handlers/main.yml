@@ -1,0 +1,3 @@
+- name: Regenerate locales
+  command: locale-gen
+  listen: Regenerate locales

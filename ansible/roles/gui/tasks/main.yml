@@ -8,24 +8,26 @@
     pkg:
       - xtermcontrol  # 2025-04-13: not needed anymore, was for Vim bg color auto-switch
       - qshutdown     # 2025-04-13: was trying as timekpr alrernative, no longer needed
+      - xournal       # 2025-04-14: replace with xournalpp
+      - youtube-dl    # 2025-04-14: replace with yt-dlp
 
 - name: Install GUI packages
   become: true
   ansible.builtin.apt:
     pkg:
       # Already default in Pop! OS: gnome-shell  locate
-      - android-tools-adb
       - blender
+      - audacity
       - chrome-gnome-shell
       - dconf-editor
       - flameshot  # Nice screenshot tool.
       - geeqie
+      - vinagre  # VNC client
       - gimp
       - gnome-tweaks
-      - gnupg-agent
-      - kicad # Some hacking stuff
       - kiwix # For offline Wikipedia etc.
       - krita
+      - kdenlive  # Video editor
       - libreoffice
       - mplayer
       - mpv
@@ -38,11 +40,40 @@
       - virtualbox-dkms
       - vlc
       - wine-stable
+      - winetricks
       - wireshark
       - xclip
-      - xournal
-
+      - xournalpp
       # TODO: add Ubuntu startup programs, like Flameshot etc.
+
+      - fonts-bebas-neue
+      - fonts-roboto
+
+- name: OBS Studio
+  block:
+  - name: Add OBS Studio PPA
+    become: true
+    ansible.builtin.apt_repository:
+      repo: ppa:obsproject/obs-studio
+      state: present
+  - name: Install OBS Studio
+    become: true
+    ansible.builtin.apt:
+      name: obs-studio
+      state: present
+
+- name: KiCad
+  block:
+  - name: Add KiCad 8.0 PPA
+    become: true
+    ansible.builtin.apt_repository:
+      repo: ppa:kicad/kicad-8.0-releases
+      state: present
+  - name: Install KiCad
+    become: true
+    apt:
+      name: kicad
+      state: present
 
 - name: VSCode
   install_handler:
