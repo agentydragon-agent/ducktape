@@ -1,0 +1,50 @@
+#---
+#driver:
+#  name: default
+#platforms:
+#  - name: instance
+#    # you might want to add your own variables here based on what provisioning
+#    # you are doing like:
+#    # image: quay.io/centos/centos:stream8
+#    #
+#
+#- name: gnome-terminal-test
+
+# molecule/default/molecule.yml
+---
+dependency:
+  name: galaxy
+
+driver:
+  name: docker
+
+platforms:
+  - name: instance
+    privileged: true
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:ro
+
+    # image: geerlingguy/docker-centos7-ansible:latest
+    # command: /usr/sbin/init
+    # capabilities:
+    #   - SYS_ADMIN
+
+
+    image: ubuntu:22.04
+    # command: /sbin/init
+    pre_build_image: false
+    tmpfs:
+      - /run
+      - /tmp
+
+provisioner:
+  name: ansible
+  log: true
+  env:
+    ANSIBLE_ROLES_PATH: "${MOLECULE_PROJECT_DIRECTORY}/roles"
+
+verifier:
+  name: ansible
+  env:
+    ANSIBLE_ROLES_PATH: "${MOLECULE_PROJECT_DIRECTORY}/roles"
+
