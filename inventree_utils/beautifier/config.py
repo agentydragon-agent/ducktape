@@ -1,0 +1,68 @@
+import dataclasses
+import getpass
+from pathlib import Path
+
+import xdg
+import yaml
+from inventree.api import InvenTreeAPI
+
+CONFIG_DIR = Path(xdg.BaseDirectory.save_config_path("agentydragon_inventree_utils"))
+
+
+@dataclasses.dataclass
+class InstanceConfig:
+    server_url: str
+    username: str
+    password: str
+    # TODO: ... or token
+
+
+def prompt_for_config() -> InstanceConfig:
+    server_url = input(
+        "InvenTree instance (e.g. https://inventree.mycompany.com): "
+    ).strip()
+    if not server_url:
+        raise ValueError("No server URL provided.")
+
+    username = input("Username: ").strip()
+    if not username:
+        raise ValueError("No username provided.")
+
+    password = getpass.getpass("Password (input hidden): ")
+    if not password:
+        raise ValueError("No password provided.")
+
+    # Write to file
+    return InstanceConfig(server_url=server_url, username=username, password=password)
+
+
+def load_or_prompt_for_config() -> InstanceConfig:
+    """
+    Try to load config. If it doesn't exist, ask
+    user for server_url, username, password, then write it.
+    """
+    INSTANCE_FILE = CONFIG_DIR / "instance.yaml"
+
+    if INSTANCE_FILE.exists():
+        with open(INSTANCE_FILE) as f:
+            return InstanceConfig(**yaml.safe_load(f))
+
+    print(f"{INSTANCE_FILE} not found. Let's create it.\n")
+    # Write to file
+    cfg = prompt_for_config()
+    with open(INSTANCE_FILE, "w") as f:
+        yaml.safe_dump(dataclasses.asdict(cfg), f)
+
+    print(f"\nConfiguration saved.\n")
+    return cfg
+
+
+def api_from_config(config: InstanceConfig | None = None, **kwargs):
+    if config is None:
+        config = load_or_prompt_for_config()
+    return InvenTreeAPI(
+        config.server_url,
+        username=config.username,
+        password=config.password,
+        **kwargs,
+    )
