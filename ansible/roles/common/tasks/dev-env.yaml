@@ -33,7 +33,12 @@
       - jupyter-nbconvert
       - make
       - markdown
-      - npm
+      #- npm <- "you have requested an impossible situations"
+
+      # TODO: this seems to not provide tree-sitter cli though
+      # so does not provide latex higlihting
+      # - libtree-sitter0  # tree-sitter for neovim syntax stuff
+
       #- protobuf-compiler
       #- pyqt5-dev-tools
       - python3

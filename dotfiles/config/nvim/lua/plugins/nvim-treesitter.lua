@@ -43,7 +43,7 @@ local M = {
 				"jsdoc",
 				"json",
 				"jsonnet",
-				"latex",
+				-- "latex",  -- TODO: needs tree-sitter CLI, but not installed via Ansible
 				"lua",
 				"luadoc",
 				"make",
