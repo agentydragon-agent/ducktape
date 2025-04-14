@@ -1,0 +1,15 @@
+---
+- name: Add Solarized profiles to GNOME Terminal
+  hosts: all
+
+  environment:
+    # the ugliest fucking thing ever. gio -> ... will fail to launch
+    # dconf-service and persist anything unless it has a running x server.
+    DISPLAY: ":99"
+
+  roles:
+    - role: gnome-terminal-solarized
+      vars:
+        font_family: "Ubuntu Mono"
+        font_size: 14
+        debug: true

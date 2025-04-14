@@ -1,0 +1,21 @@
+- name: Verify GNOME Terminal profile configuration
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Dump dconf profiles
+      shell: dbus-launch dconf dump /org/gnome/terminal/legacy/profiles:/ | grep visible-name
+      register: dconf_out
+      changed_when: false
+
+    - name: Show visible names
+      debug:
+        var: dconf_out.stdout_lines
+
+    - name: Ensure Solarized Light profile exists
+      assert:
+        that: "'visible-name=\\'Solarized Light\\'' in dconf_out.stdout"
+
+    - name: Ensure Solarized Dark profile exists
+      assert:
+        that: "'visible-name=\\'Solarized Dark\\'' in dconf_out.stdout"
+
