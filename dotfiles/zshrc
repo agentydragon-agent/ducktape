@@ -150,8 +150,8 @@ export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
 [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"  # This loads nvm bash_completion
 
-# Set Aider OpenAI API key from OPENAI_API_KEY, if set.
-if [ -n "$OPENAI_API_KEY" ]; then
+# Set Aider OpenAI API key to OPENAI_API_KEY by default, if set.
+if [ -z "$AIDER_OPENAI_API_KEY" -a -n "$OPENAI_API_KEY" ]; then
     export AIDER_OPENAI_API_KEY=$OPENAI_API_KEY
 fi
 

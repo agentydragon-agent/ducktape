@@ -1,0 +1,5 @@
+# vim: set filetype=gitignore :
+
+.aider*
+__pycache__
+*.sw[op]
