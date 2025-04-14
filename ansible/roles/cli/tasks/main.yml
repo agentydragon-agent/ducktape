@@ -40,6 +40,12 @@
     name: silversearcher-ag  # I replaced with rg
     state: absent
 
+- name: Install snaps
+  become: true
+  snap:
+    name: tio
+    classic: true
+
 - include_tasks: tasks/dev-env.yaml
 - include_tasks: tasks/dotfiles.yaml
 

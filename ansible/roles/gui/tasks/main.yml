@@ -68,7 +68,6 @@
   become: true
   snap:
     name:
-    - tio
     - whatsdesk
     - yt-dlp
 
