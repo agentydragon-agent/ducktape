@@ -111,24 +111,22 @@
 - name: Hide gnome-terminal menu
   tags:
     - gnome-terminal
-  ansible.builtin.command: |
-    gsettings set
-      org.gnome.Terminal.Legacy.Settings default-show-menubar false
+  community.general.dconf:
+    key: "/org/gnome/terminal/legacy/default-show-menubar"
+    value: false
 
 - name: Set GNOME default terminal to gnome-terminal
   tags:
   - gnome-terminal
   block:
   - name: Set GNOME default terminal to gnome-terminal.wrapper
-    community.general.gsettings:
-      schema: org.gnome.desktop.default-applications.terminal
-      key: exec
+    community.general.dconf:
+      key: "/org/gnome/desktop/applications/terminal/exec"
       value: "'gnome-terminal.wrapper'"
   - name: Expicitly set GNOME default terminal exec-arg empty
-    community.general.gsettings:
-      schema: org.gnome.desktop.default-applications.terminal
-      key: exec-arg
-      value: "''"
+    community.general.dconf:
+      key: "/org/gnome/desktop/applications/terminal/exec-arg"
+      state: absent
 
 - include_tasks: tasks/wm_datetime_format.yaml
 - include_tasks: tasks/gnome_preferences.yaml
