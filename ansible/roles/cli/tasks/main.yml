@@ -10,29 +10,30 @@
 - name: Install CLI packages
   become: true
   ansible.builtin.apt:
-    # removed 2024-04-13, defaults in pop os:
-    #   curl diffutils git iputils-ping netcat-openbsd pkg-config sed wget
-    - htop
-    - iftop
-    - iotop
-    - iputils-ping
-    - jq
-    - mc
-    - mmv
-    - mosh
-    - ncdu
-    - neovim
-    - netcat-openbsd
-    - nethogs
-    - pv
-    - pwgen
-    - python3
-    - python3-pip
-    - rcm
-    - ripgrep
-    - screen
-    - tree
-    - zsh
+    pkg:
+      # removed 2024-04-13, defaults in pop os:
+      #   curl diffutils git iputils-ping netcat-openbsd pkg-config sed wget
+      - htop
+      - iftop
+      - iotop
+      - iputils-ping
+      - jq
+      - mc
+      - mmv
+      - mosh
+      - ncdu
+      - neovim
+      - netcat-openbsd
+      - nethogs
+      - pv
+      - pwgen
+      - python3
+      - python3-pip
+      - rcm
+      - ripgrep
+      - screen
+      - tree
+      - zsh
 - name: Remove retired pkgs
   become: true
   ansible.builtin.apt:
