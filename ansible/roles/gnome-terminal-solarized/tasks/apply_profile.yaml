@@ -1,0 +1,20 @@
+---
+- name: "Apply profile {{ name }}"
+  ansible.builtin.script: >
+    apply.py
+    apply '{{ name }}' "{{ dir }}"
+    --font "{{ font }}"
+    {% if debug | default(False) %}--debug{% endif %}
+  register: apply_result
+  changed_when: (apply_result.stdout | from_json).changed
+
+- name: Debug stdout
+  debug:
+    msg: "stdout: {{ apply_result.stdout }}"
+  when: debug | default(False)
+
+- name: Debug stderr
+  debug:
+    msg: "stderr: {{ apply_result.stderr_lines }}"
+  when: debug | default(False)
+

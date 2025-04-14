@@ -1,76 +1,67 @@
-- name: Set gnome-terminal to Solarized Light and Dark
-  tags: solarized
-  vars:
-    font_family: "FiraCode Nerd Font"
-    font_size: 12
+---
+- name: Set default variables
+  set_fact:
     font: "{{ font_family }} {{ font_size }}"
-    debug: true
 
-  block:
-    - name: Check {{ font_family }} is installed
-      ansible.builtin.shell: fc-list | grep -i '{{ font_family }}'
-      register: font_check
-      failed_when: font_check.rc != 0
-      changed_when: false
+- name: Gather package facts
+  ansible.builtin.package_facts:
+  become: false
 
-    - name: Create temp directory for gnome-terminal-solarized
-      ansible.builtin.tempfile:
-        state: directory
-        suffix: gnome-terminal-solarized
-      register: temp_dir
-      changed_when: false
+- name: Install any missing dependencies of gnome-terminal theme update script
+  become: true
+  ansible.builtin.apt:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - python3-gi
+    - gir1.2-glib-2.0
+    - git  # for cloning the theme; TODO: use a submodule or something
+  when: item not in ansible_facts.packages
 
-    - name: Clone gnome-terminal-colors-solarized
-      ansible.builtin.git:
-        repo: https://github.com/aruhier/gnome-terminal-colors-solarized
-        dest: "{{ temp_dir.path }}"
-        depth: 1
-        version: master
-      changed_when: false
+# TODO: fontconfig is needed for fc-list
+# fonts-ubuntu
 
-    - name: Apply Solarized Light profile
-      ansible.builtin.script: >
-        apply.py
-        apply 'Solarized Light' "{{ temp_dir.path }}/colors/light"
-        --font "{{ font }}"
-        {% if debug | default(False) %}--debug{% endif %}
-      register: apply_light
-      #changed_when: (apply_light.stdout | from_json).changed
+- name: Check {{ font_family }} is installed
+  ansible.builtin.shell: fc-list | grep -i '{{ font_family }}'
+  register: font_check
+  failed_when: font_check.rc != 0
+  changed_when: false
 
-    - debug:
-        msg: "stdout: {{ apply_light.stdout }}"
-      when: debug | default(False)
-    - debug:
-        msg: "stderr: {{ apply_light.stderr_lines }}"
-      when: debug | default(False)
+- name: Create temp directory for gnome-terminal-solarized
+  ansible.builtin.tempfile:
+    state: directory
+    suffix: gnome-terminal-solarized
+  register: temp_dir
+  changed_when: false
 
-    - name: Apply Solarized Dark profile
-      ansible.builtin.script: >
-        apply.py
-        apply 'Solarized Dark' "{{ temp_dir.path }}/colors/dark"
-        --font "{{ font }}"
-        {% if debug | default(False) %}--debug{% endif %}
-      register: apply_dark
-      #changed_when: (apply_dark.stdout | from_json).changed
+- name: Clone gnome-terminal-colors-solarized
+  ansible.builtin.git:
+    repo: https://github.com/aruhier/gnome-terminal-colors-solarized
+    dest: "{{ temp_dir.path }}"
+    depth: 1
+    version: master
+  changed_when: false
 
-    - debug:
-        msg: "stdout: {{ apply_dark.stdout }}"
-      when: debug | default(False)
-    - debug:
-        msg: "stderr: {{ apply_dark.stderr_lines }}"
-      when: debug | default(False)
+- name: Apply Solarized profiles
+  include_tasks: apply_profile.yaml
+  vars:
+    name: "{{ item.name }}"
+    dir: "{{ temp_dir.path }}/colors/{{ item.variant }}"
+  loop:
+    - { name: 'Solarized Light', variant: 'light' }
+    - { name: 'Solarized Dark',  variant: 'dark' }
 
-    - name: Set Solarized Light as the default profile
-      ansible.builtin.script: >
-        apply.py
-        set-default 'Solarized Light'
-        {% if debug | default(False) %}--debug{% endif %}
-      register: set_default
-      #changed_when: (set_default.stdout | from_json).changed
+- name: Set Solarized Light as the default profile
+  ansible.builtin.script: >
+    apply.py
+    set-default 'Solarized Light'
+    {% if debug | default(False) %}--debug{% endif %}
+  register: set_default
+  changed_when: (set_default.stdout | from_json).changed
 
-    - debug:
-        msg: "stdout: {{ set_default.stdout }}"
-      when: debug | default(False)
-    - debug:
-        msg: "stderr: {{ set_default.stderr_lines }}"
-      when: debug | default(False)
+- debug:
+    msg: "stdout: {{ set_default.stdout }}"
+  when: debug | default(False)
+- debug:
+    msg: "stderr: {{ set_default.stderr_lines }}"
+  when: debug | default(False)

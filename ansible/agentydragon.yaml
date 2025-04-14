@@ -61,29 +61,21 @@
 
     - common
     - anki
-    - gnome-terminal-solarized
+
+    # Needs to be before gnome-terminal-solarized because it uses the fonts.
+    - role: nerd_fonts
+      become: yes  # needed to write fonts system-wide
+
+    - role: gnome-terminal-solarized
+      tags: [solarized]
     - timekpr
     - google-drive-client
     - dev-ml
-    - role: nerd_fonts
-      become: yes  # needed to write fonts system-wide
 
     # - dev-clojure
 
   tasks:
-    - name: Set Night Theme Switcher to also switch gnome-terminal & nvim colors
-      # TODO: dedupe
-      block:
-        - ansible.builtin.dconf:
-            key: "/org/gnome/shell/extensions/nightthemeswitcher/commands/enabled"
-            value: "true"
-        - ansible.builtin.dconf:
-            key: "/org/gnome/shell/extensions/nightthemeswitcher/commands/sunrise"
-            value: "'set_light_theme'"
-        - ansible.builtin.dconf:
-            key: "/org/gnome/shell/extensions/nightthemeswitcher/commands/sunset"
-            value: "'set_dark_theme'"
-
+    - include_tasks: tasks/night-theme-switcher-gnome-terminal.yaml
     - include_tasks: tasks/gnome_panel_iso8601.yaml
     - include_tasks: tasks/use_zsh_shell.yaml
     - include_tasks: tasks/oh-my-zsh.yaml
