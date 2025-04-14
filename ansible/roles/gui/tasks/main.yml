@@ -116,6 +116,21 @@
     gsettings set
       org.gnome.Terminal.Legacy.Settings default-show-menubar false
 
+- name: Set GNOME default terminal to gnome-terminal
+  tags:
+  - gnome-terminal
+  block:
+  - name: Set GNOME default terminal to gnome-terminal.wrapper
+    community.general.gsettings:
+      schema: org.gnome.desktop.default-applications.terminal
+      key: exec
+      value: "'gnome-terminal.wrapper'"
+  - name: Expicitly set GNOME default terminal exec-arg empty
+    community.general.gsettings:
+      schema: org.gnome.desktop.default-applications.terminal
+      key: exec-arg
+      value: "''"
+
 - include_tasks: tasks/wm_datetime_format.yaml
 - include_tasks: tasks/gnome_preferences.yaml
 - include_tasks: tasks/xorg_terminate.yaml
