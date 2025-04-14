@@ -3,13 +3,12 @@
   vars:
     my_user: agentydragon_gmail_com
     home_path: "/home/{{ my_user }}"
-    scripts_path: "{{ home_path }}/bin"
     local_scripts_path: "{{ home_path }}/.local/bin"
     ducktape_path: "{{ home_path }}/repos/ducktape"
     rcup_computer: "cloudragon"
   remote_user: "{{ my_user }}"
   roles:
-    - common
+    - cli
     - anki
     - gnome-terminal-solarized
   tasks:

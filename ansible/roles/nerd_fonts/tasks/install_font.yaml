@@ -1,17 +1,4 @@
 ---
-- name: Get download URL for {{ item }}
-  ansible.builtin.shell: |
-    jq --raw-output '.assets[] 
-      | select(.name == "{{ item }}.tar.xz") 
-      | .browser_download_url' {{ latest_release_json_path }}
-  register: font_download_url
-  changed_when: false
-
-- name: Assert URL was found for {{ item }}
-  ansible.builtin.assert:
-    that:
-      - font_download_url.stdout != ""
-
 - name: Check installed version file for {{ item }}
   ansible.builtin.stat:
     path: "{{ installed_version_path }}"
@@ -42,7 +29,6 @@
 - name: Download & install {{ item }}
   when: need_install
   block:
-
     - name: Ensure dir exists for {{ item }}
       ansible.builtin.file:
         path: "{{ family_path }}"
@@ -50,6 +36,19 @@
         owner: root
         group: root
         mode: '0755'
+
+    - name: Get download URL for {{ item }}
+      ansible.builtin.shell: |
+        jq --raw-output '.assets[] 
+          | select(.name == "{{ item }}.tar.xz") 
+          | .browser_download_url' {{ latest_release_json_path }}
+      register: font_download_url
+      changed_when: false
+
+    - name: Assert URL was found for {{ item }}
+      ansible.builtin.assert:
+        that:
+          - font_download_url.stdout != ""
 
     - name: Download {{ item }}.tar.xz and extract into {{ family_path }}
       ansible.builtin.unarchive:

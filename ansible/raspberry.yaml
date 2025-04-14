@@ -4,24 +4,18 @@
   vars:
     my_user: agentydragon
     home_path: "/home/{{ my_user }}"
-    scripts_path: "{{ home_path }}/bin"
     local_scripts_path: "{{ home_path }}/.local/bin"
     ducktape_path: "{{ home_path }}/repos/ducktape"
     rcup_computer: "raspberry"
   remote_user: "{{ my_user }}"
-  # TODO: this should not be installed, 'common' role includes huge latex
   roles:
-    - gnome-terminal-solarized
-  # roles:
-  # - common
+    - cli
   tasks:
     - name: Install packages
       become: true
       ansible.builtin.apt:
         pkg:
           - python3-pip
-          - iftop
-          - nethogs
     - name: Update everything
       become: true
       ansible.builtin.apt:

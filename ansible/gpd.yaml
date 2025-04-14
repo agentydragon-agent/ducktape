@@ -3,109 +3,22 @@
   vars:
     my_user: agentydragon
     home_path: "/home/{{ my_user }}"
-    scripts_path: "{{ home_path }}/bin"
     local_scripts_path: "{{ home_path }}/.local/bin"
     ducktape_path: "{{ home_path }}/code/ducktape"
     rcup_computer: gpd
   remote_user: "{{ my_user }}"
   roles:
-    - role: jaredhocutt.gnome_extensions
-      vars:
-        gnome_extension_ids:
-          # Not needed for Pop! OS: gTile
-
-          # Desaturate All - https://extensions.gnome.org/extension/1102/desaturate-all/
-          - 1102
-
-          ## Panel Date Format
-          # https://extensions.gnome.org/extension/1462/panel-date-format/
-          # https://github.com/KEIII/gnome-shell-panel-date-format
-          - 1462
-
-          ## Night Theme Switcher
-          # For auto-switching gnome-terminal themes following GNOME night theme.
-          # https://extensions.gnome.org/extension/2236/night-theme-switcher/
-          - 2236
-
-    - common
-    - anki
-
-    # Needs to be before gnome-terminal-solarized because it uses the fonts.
-    - role: nerd_fonts
-      become: yes  # needed to write fonts system-wide
-
-    - role: gnome-terminal-solarized
-      tags: [solarized]
-    - google-drive-client
-    - timekpr
-
+    - cli
+    - gui
+    - laptop
   tasks:
-    - include_tasks: tasks/night-theme-switcher-gnome-terminal.yaml
-    - include_tasks: tasks/gnome_panel_iso8601.yaml
-    - include_tasks: tasks/use_zsh_shell.yaml
-    - include_tasks: tasks/oh-my-zsh.yaml
+    # TODO: add Ubuntu startup programs, like Flameshot etc.
 
-    - name: Install packages for laptop
+    - name: Install GPD-specific packages
       become: true
       ansible.builtin.apt:
         pkg:
-          - acpi
-          - blender
-          - flameshot  # Nice screenshot tool.
-          - locate
-          - powertop
-          - torbrowser-launcher
-          - transmission-gtk
-          - virtualbox
-          - virtualbox-dkms
-          - vlc
-          - wine-stable
-          - wireshark
-          - xournal
-
-          # For getting background color for Vim background color auto-switch.
-          - xtermcontrol
-
-          # TODO: add Ubuntu startup programs, like Flameshot etc.
-
-          # For offline Wikipedia etc.
-          - kiwix
-
-          # Some hacking stuff
-          - kicad
-
-    - name: Install Freecad
-      tags: snap
-      become: true
-      snap:
-        name:
-          - freecad
-
-
-    - name: Install Rescuetime
-      tags:
-        - rescuetime
-      become: true
-      when: ansible_architecture == "amd64" or ansible_architecture == "x86_64"
-      ansible.builtin.apt:
-        deb: https://www.rescuetime.com/installers/rescuetime_current_amd64.deb
-
-    - name: Enable Gnome Night Light
-      tags:
-        - nightlight
-      block:
-        - dconf:
-            key: /org/gnome/settings-daemon/plugins/color/night-light-enabled
-            value: "true"
-        - dconf:
-            key: /org/gnome/settings-daemon/plugins/color/night-light-temperature
-            value: "uint32 2414"
-
-    - name: Update githooks
-      tags:
-        - githooks
-      # should only succeed if we don't need to update
-      ansible.builtin.shell: git hooks update --no
+          - xserver-xorg-video-amdgpu
 
     # GPD Win Max 2's right tracking stick pretends to be a mouse,
     # which limits the maximum speed that libinput easily allows with it.
@@ -125,46 +38,3 @@
         group: root
         mode: '0644'
 
-    # trying out on 2023-11-24: install Telegram as snap
-    # if it still works in a couple months, keep it like this
-    - name: Install Telegram as snap
-      tags:
-        - telegram
-      block:
-
-      - name: Install snapd for Telegram
-        become: true
-        ansible.builtin.apt:
-          pkg:
-            - snapd
-
-      - name: Install Telegram snap
-        become: true
-        snap:
-          name: telegram-desktop
-
-      # Slack has to be installed as an APT package, not as a Snap.
-      #
-      # If Slack is installed as a Snap on Pop OS, it won't start because it's
-      # confined from reading Pop OS's bespoke /etc/os-release location -
-      # /etc/pop-os/os-release.
-      #
-      # See: https://forum.snapcraft.io/t/apparmor-blocking-the-opening-of-slack/29212
-
-      - name: Install slack-desktop as APT package
-        become: true
-        tags:
-          - slack
-        ansible.builtin.apt:
-          pkg:
-            - slack-desktop
-
-      - name: Install VSCode as a Snap
-        become: true
-        tags:
-          - vscode
-        snap:
-          classic: true
-          name: code
-
-    - include_tasks: tasks/discord-minimized.yaml
