@@ -11,20 +11,21 @@
   # TODO:   - agentydragon_gitlab_token.yml
   remote_user: "{{ my_user }}"
   roles:
-    - role: geerlingguy.docker
-      become: true
-      vars:
-        docker_service_state: started
-        docker_service_enabled: true
-        docker_users:
-          - agentydragon
-        # Replaces ansible_distribution with ubuntu, because pop!_os is not
-        # generally separately supported, apparently.
-        docker_apt_repository: >
-          deb [arch={{ docker_apt_arch }}] {{ docker_repo_url }}/ubuntu
-          {{ ansible_distribution_release }} {{ docker_apt_release_channel }}
-      tags:
-        - docker
+    # TODO: fix
+    #- role: geerlingguy.docker
+    #  become: true
+    #  vars:
+    #    docker_service_state: started
+    #    docker_service_enabled: true
+    #    docker_users:
+    #      - agentydragon
+    #    # Replaces ansible_distribution with ubuntu, because pop!_os is not
+    #    # generally separately supported, apparently.
+    #    docker_apt_repository: >
+    #      deb [arch={{ docker_apt_arch }}] {{ docker_repo_url }}/ubuntu
+    #      {{ ansible_distribution_release }} {{ docker_apt_release_channel }}
+    #  tags:
+    #    - docker
 # TODO:
 #  - role: lean_delivery.gitlab_runner
 #    vars:
