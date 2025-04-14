@@ -3,6 +3,7 @@
 	email = agentydragon@gmail.com
 [core]
 	autocrlf = false
+    excludesFile = ~/.config/git/gitignore-global
 [color]
 	ui = auto
 [push]
