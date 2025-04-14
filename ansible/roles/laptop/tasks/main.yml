@@ -1,0 +1,40 @@
+- name: Install packages for laptop
+  become: true
+  ansible.builtin.apt:
+    pkg:
+      - acpi
+      - android-tools-adb
+      - blender
+      - blueman
+      - chrome-gnome-shell
+      - flameshot  # Nice screenshot tool.
+      - gnome-shell
+      - gnome-tweaks
+      - gnupg
+      - gnupg-agent
+      - gnupg-l10n
+      - gpgv
+      - krita
+      - locate
+      - openjdk-8-jdk
+      - powertop
+      - qshutdown
+      - torbrowser-launcher
+      - transmission-gtk
+      - tuxguitar
+      - virtualbox
+      - virtualbox-dkms
+      - vlc
+      - wine-stable
+      - wireshark
+      - xournal
+      - xserver-xorg-video-amdgpu
+      - xtermcontrol
+      - kiwix
+      - kicad
+
+- name: Install pop os specific packages for laptop
+  become: true
+  ansible.builtin.apt:
+    pkg:
+      - system76-cuda-latest
