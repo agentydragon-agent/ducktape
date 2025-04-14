@@ -103,6 +103,7 @@
       en_DK.UTF-8 UTF-8
   notify: Regenerate locales
 
+# See .pam_environment dotfile
 - name: Set system-wide locale
   become: yes
   copy:
@@ -139,4 +140,5 @@
 
       # Metric system
       LC_MEASUREMENT=cs_CZ.UTF-8
+
 # TODO: hyphenation patterns? hyphen-cs hyphen-de
