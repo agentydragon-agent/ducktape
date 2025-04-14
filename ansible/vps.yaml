@@ -18,13 +18,18 @@
     ## trilium_ssl_port: 3000
     grocy_localhost_http_port: 9283
 
+  roles:
+    - cli
   tasks:
     # Needs to run before Docker, which tries to install gnupg2
-    - name: Update everything
+    - name: Update everything & install packages
       become: true
       ansible.builtin.apt:
         update_cache: true
         upgrade: dist
+        name:
+          - nginx
+        state: latest
 
     ## 2025-02-07 don't need bazel cache, trilium atm
     ## - name: Create Trilium group
@@ -102,37 +107,11 @@
       tags:
         - fail2ban
 
-    - name: Update apt cache
-      apt:
-        update_cache: true
-
-    - name: Install packages
-      apt:
-        name:
-          - mosh
-          - ncdu
-          - nginx
-          # certbot nginx plugin for autorenewing certs nicely
-          - python3-certbot-nginx
-        state: latest
-
     - name: Create user
       user:
         name: agentydragon
         createhome: true
         # NOTE: still need to ssh-copy-id over to the user manually.
-
-    - name: Install & update convenience use packages
-      apt:
-        name:
-          - ncdu
-        state: latest
-
-    - name: Install & update nginx
-      apt:
-        name:
-          - nginx
-        state: latest
 
     - set_fact:
         letsencrypt_certificate_names:
@@ -388,7 +367,7 @@
         enabled: true
       tags:
         - nginx
-        
+
     - name: InvenTree setup
       block:
       - name: Create Inventree Docker Compose directory

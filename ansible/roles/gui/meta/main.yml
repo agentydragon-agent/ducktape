@@ -1,0 +1,29 @@
+dependencies:
+  - role: jaredhocutt.gnome_extensions
+    vars:
+      gnome_extension_ids:
+        # Not needed for Pop! OS: gTile
+
+        # Desaturate All - https://extensions.gnome.org/extension/1102/desaturate-all/
+        - 1102
+
+        ## Panel Date Format
+        # https://extensions.gnome.org/extension/1462/panel-date-format/
+        # https://github.com/KEIII/gnome-shell-panel-date-format
+        - 1462
+
+        ## Night Theme Switcher
+        # For auto-switching gnome-terminal themes following GNOME night theme.
+        # https://extensions.gnome.org/extension/2236/night-theme-switcher/
+        - 2236
+
+  - role: anki
+  # Needs to be before gnome-terminal-solarized because it uses the fonts.
+  - role: nerd_fonts
+    become: yes  # needed to write fonts system-wide
+  - role: gnome-terminal-solarized
+    tags: [solarized]
+  - role: timekpr
+  - role: google-drive-client
+
+

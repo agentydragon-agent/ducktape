@@ -1,0 +1,171 @@
+---
+- include_tasks: tasks/night-theme-switcher-gnome-terminal.yaml
+- include_tasks: tasks/gnome_panel_iso8601.yaml
+- name: Ensure no retired packages
+  become: true
+  ansible.builtin.apt:
+    state: absent
+    pkg:
+      - xtermcontrol  # 2025-04-13: not needed anymore, was for Vim bg color auto-switch
+      - qshutdown     # 2025-04-13: was trying as timekpr alrernative, no longer needed
+
+- name: Install packages for laptop
+  become: true
+  ansible.builtin.apt:
+    pkg:
+      # Already default in Pop! OS: gnome-shell  locate
+      - android-tools-adb
+      - blender
+      - chrome-gnome-shell
+      - flameshot  # Nice screenshot tool.
+      - gnome-tweaks
+      - gnupg-agent
+      - kicad # Some hacking stuff
+      - kiwix # For offline Wikipedia etc.
+      - krita
+      - openjdk-8-jdk
+      - snapd # For Telegram etc.
+      - torbrowser-launcher
+      - transmission-gtk
+      - tuxguitar
+      - virtualbox
+      - virtualbox-dkms
+      - vlc
+      - wine-stable
+      - wireshark
+      - xournal
+
+      # TODO: add Ubuntu startup programs, like Flameshot etc.
+
+- name: VSCode
+  include_tasks: tasks/install-method-handler.yaml
+  vars:
+    apt: code
+    snap: { name: code, classic: true }
+    use: snap
+
+- name: FreeCAD
+  include_tasks: tasks/install-method-handler.yaml
+  vars:
+    apt: freecad
+    snap: freecad
+    use: snap
+
+- name: Install Rescuetime
+  tags:
+    - rescuetime
+  become: true
+  when: ansible_architecture in ["amd64", "x86_64"]
+  ansible.builtin.apt:
+    deb: https://www.rescuetime.com/installers/rescuetime_current_amd64.deb
+
+- name: Enable GNOME Night Light
+  block:
+    - dconf:
+        key: /org/gnome/settings-daemon/plugins/color/night-light-enabled
+        value: "true"
+    - dconf:
+        key: /org/gnome/settings-daemon/plugins/color/night-light-temperature
+        value: "uint32 2414"
+
+- name: Install snaps
+  snap:
+    name:
+    - tio
+    - wnatsdesk
+    - yt-dlp
+
+- name: Ensure no youtube-dl (deprecated)
+  snap:
+    name: youtube-dl
+    state: absent
+
+- name: Telegram
+  include_tasks: tasks/install-method-handler.yaml
+  vars:
+    apt: telegram-desktop
+    snap: telegram-desktop
+    # trying out on 2023-11-24: install Telegram as snap
+    # if it still works in a couple months, keep it like this
+    # 2025-04-13 seems to work at least on gpd?
+    use: snap
+
+- name: Slack
+  include_tasks: tasks/install-method-handler.yaml
+  vars:
+    apt: slack-desktop
+    snap: slack
+    # Slack has to be installed as an APT package, not as a Snap.
+    #
+    # Slack Snap on Pop OS won't start because it's confined from reading
+    # Pop OS's bespoke /etc/os-release location - /etc/pop-os/os-release.
+    # See: https://forum.snapcraft.io/t/apparmor-blocking-the-opening-of-slack/29212
+    use: apt
+
+- include_tasks: tasks/discord-minimized.yaml
+
+- name: Update githooks
+  tags:
+    - githooks
+  # should only succeed if we don't need to update
+  ansible.builtin.shell: git hooks update --no
+
+
+- include_tasks: tasks/wezterm.yaml
+
+- name: Hide gnome-terminal menu
+  tags:
+    - gnome-terminal
+    - solarized
+  ansible.builtin.command: |
+    gsettings set
+      org.gnome.Terminal.Legacy.Settings default-show-menubar false
+
+- include_tasks: tasks/datetime-format.yaml
+- include_tasks: tasks/gnome-preferences.yaml
+- include_tasks: tasks/xorg-terminate.yaml
+- include_tasks: tasks/element.yaml
+  tags: element
+- name: Hide gnome-terminal menu
+  tags:
+    - gnome-terminal
+    - solarized
+  ansible.builtin.command: |
+    gsettings set
+      org.gnome.Terminal.Legacy.Settings default-show-menubar false
+
+- name: Install GUI packages
+  become: true
+  ansible.builtin.apt:
+    pkg:
+      - dconf-editor
+      - geeqie
+      - gimp
+      - libreoffice
+      - mplayer
+      - mpv
+      - xclip
+
+- name: Google Chrome
+  when: ansible_architecture in ["amd64", "x86_64"]
+  block:
+  - name: Add google APT repository
+    become: true
+    ansible.builtin.deb822_repository:
+      name: google
+      types: [deb]
+      uris:
+        - http://dl.google.com/linux/chrome/deb
+      signed_by: https://dl-ssl.google.com/linux/linux_signing_key.pub
+      suites: [stable]
+      components: [main]
+      architectures: [amd64]  # no i386 included
+      state: present
+      enabled: yes
+
+  - name: Install Google Chrome apt package
+    become: true
+    ansible.builtin.apt:
+      pkg:
+        - google-chrome-stable
+

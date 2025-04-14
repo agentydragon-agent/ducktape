@@ -3,7 +3,6 @@
   vars:
     my_user: agentydragon
     home_path: "/home/{{ my_user }}"
-    scripts_path: "{{ home_path }}/bin"
     local_scripts_path: "{{ home_path }}/.local/bin"
     ducktape_path: "{{ home_path }}/repos/ducktape"
     rcup_computer: "agentydragon"
@@ -38,122 +37,19 @@
 #      # For debugging: - no_logs: False
 #    tags:
 #    - gitlab-runner
-
-    - role: jaredhocutt.gnome_extensions
-      vars:
-        gnome_extension_ids:
-          # Not needed for Pop! OS: gTile
-
-          ## Desaturate All
-          # https://extensions.gnome.org/extension/1102/desaturate-all/
-          - 1102
-
-          ## Panel Date Format
-          # https://extensions.gnome.org/extension/1462/panel-date-format/
-          # https://github.com/KEIII/gnome-shell-panel-date-format
-          - 1462
-
-          ## Night Theme Switcher
-          # For auto-switching gnome-terminal themes following GNOME night theme.
-          #
-          # https://extensions.gnome.org/extension/2236/night-theme-switcher/
-          - 2236
-
-    - common
-    - anki
-
-    # Needs to be before gnome-terminal-solarized because it uses the fonts.
-    - role: nerd_fonts
-      become: yes  # needed to write fonts system-wide
-
-    - role: gnome-terminal-solarized
-      tags: [solarized]
-    - timekpr
-    - google-drive-client
+    - cli
+    - gui
+    - laptop
     - dev-ml
-
     # - dev-clojure
 
   tasks:
-    - include_tasks: tasks/night-theme-switcher-gnome-terminal.yaml
-    - include_tasks: tasks/gnome_panel_iso8601.yaml
-    - include_tasks: tasks/use_zsh_shell.yaml
-    - include_tasks: tasks/oh-my-zsh.yaml
-
-    - name: Install packages for laptop
-      become: true
-      ansible.builtin.apt:
-        pkg:
-          - acpi
-          - android-tools-adb
-          - blender
-          - blueman
-          - chrome-gnome-shell
-          - flameshot  # Nice screenshot tool.
-          - gnome-shell
-          - gnome-tweaks
-          - gnupg
-          - gnupg-agent
-          - gnupg-l10n
-          - gpgv
-          - krita
-          - locate
-          - openjdk-8-jdk
-          - powertop
-          - qshutdown
-          - torbrowser-launcher
-          - transmission-gtk
-          - tuxguitar
-          - virtualbox
-          - virtualbox-dkms
-          - vlc
-          - wine-stable
-          - wireshark
-          - xournal
-          - xserver-xorg-video-amdgpu
-
-          # For getting background color for Vim background color auto-switch.
-          - xtermcontrol
-
-          # TODO: add Ubuntu startup programs, like Flameshot etc.
-
-          # For offline Wikipedia etc.
-          - kiwix
-
-          # Some hacking stuff
-          - kicad
-
-    - name: Install pop os specific packages for laptop
+    - name: Install CUDA (NVidia-specific)
       become: true
       ansible.builtin.apt:
         pkg:
           - system76-cuda-latest
 
-    - name: Install Freecad
-      tags: snap
-      become: true
-      snap:
-        name:
-          - freecad
-
-    - name: Install Rescuetime
-      tags:
-        - rescuetime
-      become: true
-      when: ansible_architecture == "amd64" or ansible_architecture == "x86_64"
-      ansible.builtin.apt:
-        deb: https://www.rescuetime.com/installers/rescuetime_current_amd64.deb
-
-    - name: Enable Gnome Night Light
-      tags:
-        - nightlight
-      block:
-        - dconf:
-            key: /org/gnome/settings-daemon/plugins/color/night-light-enabled
-            value: "true"
-        - dconf:
-            key: /org/gnome/settings-daemon/plugins/color/night-light-temperature
-            value: "uint32 2414"
     # TODO: broken as of 2022-05-29
     # - name: Install Buildifier
     #   tags:
@@ -171,11 +67,6 @@
     #           shell: go get github.com/bazelbuild/buildtools/buildifier
     #         - name: install Buildifier
     #           shell: go install github.com/bazelbuild/buildtools/buildifier@latest
-    - name: Update githooks
-      tags:
-        - githooks
-      # should only succeed if we don't need to update
-      ansible.builtin.shell: git hooks update --no
 
     # TODO: does not seem to work. getting this on trying to suspend, plus
     # freeze:
@@ -190,5 +81,3 @@
     #   copy:
     #     dest: /etc/tmpfiles.d/disable-xhc-wakeups.conf
     #     content: "w /sys/bus/pci/devices/0000:00:14.0/power/wakeup - - - - disabled"
-
-    - include_tasks: tasks/discord-minimized.yaml

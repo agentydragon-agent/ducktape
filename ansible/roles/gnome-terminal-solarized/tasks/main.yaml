@@ -3,20 +3,14 @@
   set_fact:
     font: "{{ font_family }} {{ font_size }}"
 
-- name: Gather package facts
-  ansible.builtin.package_facts:
-  become: false
-
 - name: Install any missing dependencies of gnome-terminal theme update script
   become: true
   ansible.builtin.apt:
-    name: "{{ item }}"
-    state: present
-  loop:
+    pkg:
     - python3-gi
     - gir1.2-glib-2.0
     - git  # for cloning the theme; TODO: use a submodule or something
-  when: item not in ansible_facts.packages
+    state: present
 
 # TODO: fontconfig is needed for fc-list
 # fonts-ubuntu
@@ -45,11 +39,11 @@
 - name: Apply Solarized profiles
   include_tasks: apply_profile.yaml
   vars:
-    name: "{{ item.name }}"
+    profile_name: "{{ item.profile_name }}"
     dir: "{{ temp_dir.path }}/colors/{{ item.variant }}"
   loop:
-    - { name: 'Solarized Light', variant: 'light' }
-    - { name: 'Solarized Dark',  variant: 'dark' }
+    - { profile_name: 'Solarized Light', variant: 'light' }
+    - { profile_name: 'Solarized Dark',  variant: 'dark' }
 
 - name: Set Solarized Light as the default profile
   ansible.builtin.script: >

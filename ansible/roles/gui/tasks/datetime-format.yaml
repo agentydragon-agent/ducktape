@@ -8,7 +8,6 @@
     name:
       - psutil
 
-
 - name: Set custom datetime indicator
   block:
   - name: Set date format to custom

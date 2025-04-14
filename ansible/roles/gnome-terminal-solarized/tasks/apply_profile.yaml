@@ -1,8 +1,8 @@
 ---
-- name: "Apply profile {{ name }}"
+- name: "Apply profile {{ profile_name }}"
   ansible.builtin.script: >
     apply.py
-    apply '{{ name }}' "{{ dir }}"
+    apply '{{ profile_name }}' "{{ dir }}"
     --font "{{ font }}"
     {% if debug | default(False) %}--debug{% endif %}
   register: apply_result
