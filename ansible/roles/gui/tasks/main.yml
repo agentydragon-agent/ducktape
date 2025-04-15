@@ -6,36 +6,58 @@
   ansible.builtin.apt:
     state: absent
     pkg:
-      - xtermcontrol  # 2025-04-13: not needed anymore, was for Vim bg color auto-switch
+      - firefox-locale-cs
+      - firefox-locale-de
+      - gnome-getting-started-docs-cs
+      - gnome-getting-started-docs-de
+      - gnome-user-docs-cs
+      - gnome-user-docs-de
+      - language-pack-cs
+      - language-pack-cs-base
+      - language-pack-de
+      - language-pack-gnome-cs
+      - language-pack-gnome-cs-base
+      - language-pack-gnome-de
+      - libreoffice-help-cs
+      - libreoffice-help-de
+      - libreoffice-help-en-gb
+      # libreoffice-help-en-us OK
+      - libreoffice-l10n-cs
+      - libreoffice-l10n-de
+      - libreoffice-l10n-en-gb
       - qshutdown     # 2025-04-13: was trying as timekpr alrernative, no longer needed
       - xournal       # 2025-04-14: replace with xournalpp
+      - xtermcontrol  # 2025-04-13: not needed anymore, was for Vim bg color auto-switch
       - youtube-dl    # 2025-04-14: replace with yt-dlp
+
 
 - name: Install GUI packages
   become: true
   ansible.builtin.apt:
     pkg:
-      # Already default in Pop! OS: gnome-shell  locate
-      - blender
+      # Already default in Pop! OS: gnome-shell
       - audacity
+      - blender
       - chrome-gnome-shell
       - dconf-editor
       - flameshot  # Nice screenshot tool.
       - geeqie
-      - vinagre  # VNC client
       - gimp
       - gnome-tweaks
+      - kdenlive  # Video editor
       - kiwix # For offline Wikipedia etc.
       - krita
-      - kdenlive  # Video editor
       - libreoffice
       - mplayer
+      - psensor
       - mpv
       - openjdk-8-jdk
+      - openscad
       - snapd # For Telegram etc.
       - torbrowser-launcher
       - transmission-gtk
       - tuxguitar
+      - vinagre  # VNC client
       - virtualbox
       - virtualbox-dkms
       - vlc
@@ -188,3 +210,5 @@
       pkg:
         - google-chrome-stable
 
+# TODO: install Tana from: https://github.com/tanainc/tana-desktop-releases
+# -> install 'tana_1.0.26_amd64.deb' from last release

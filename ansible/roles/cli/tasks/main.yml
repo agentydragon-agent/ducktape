@@ -12,50 +12,61 @@
   ansible.builtin.apt:
     pkg:
       # removed 2024-04-13, defaults in pop os:
-      #   curl diffutils git iputils-ping netcat-openbsd pkg-config sed wget
+      #   diffutils
       - android-tools-adb
-      - htop
+      - xxd
+      - curl
+      - esptool  # ESP8266/ESP32 flashing tool
       - ffmpeg
+      - gcc
+      - git
+      - gnupg
+      - gnupg-agent
+      - gnuplot
+      - golang
+      - grep
+      - gzip
+      - htop
       - iftop
       - iotop
       - iputils-ping
       - jq
+      - locate
       - mc
-      - grep
-      - gzip
-      - golang
-      - gnuplot
-      - gnupg
-      - gnupg-agent
-      - gcc
       - mmv
       - mosh
       - ncdu
       - neovim
       - netcat-openbsd
       - nethogs
+      - ninja-build
+      - nmap
+      - pkg-config
+      - postgresql
+      - postgresql-client
       - pv
-      - tmux
-      - esptool  # ESP8266/ESP32 flashing tool
       - pwgen
       - python3
       - python3-pip
       - rcm
       - ripgrep
       - screen
+      - sed
+      - sqlite3
+      - tmux
       - tree
       - unrar
+      - wget
       - yasm
       - zsh
-      - sqlite3
-      - postgresql
-      - ninja-build
-      - nmap
-      - postgresql-client
 - name: Remove retired pkgs
   become: true
   ansible.builtin.apt:
-    name: silversearcher-ag  # I replaced with rg
+    pkg:
+      - silversearcher-ag  # I replaced with rg
+
+      - hyphen-en-ca
+      - hyphen-en-gb
     state: absent
 
 - name: Install snaps
