@@ -6,15 +6,11 @@
   - name: Add WezTerm APT repository
     ansible.builtin.deb822_repository:
       name: wezterm
-      types: [deb]
-      uris:
-        - https://apt.fury.io/wez/
+      uris: https://apt.fury.io/wez/
       signed_by: https://apt.fury.io/wez/gpg.key
       # weird but that's what the commandline at https://wezterm.org/install/linux.html says
       suites: ["*"]
       components: ["*"]
-      state: present
-      enabled: yes
 
   - name: Update apt cache & install wezterm
     ansible.builtin.apt:

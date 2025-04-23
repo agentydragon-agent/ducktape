@@ -2,7 +2,6 @@
 - hosts: localhost
   vars_files:
     - vars/common_vars.yml
-    - vars/gpd_vars.yml
   vars:
     rcup_computer: gpd
     ducktape_path: "{{ ansible_user_dir }}/code/ducktape"

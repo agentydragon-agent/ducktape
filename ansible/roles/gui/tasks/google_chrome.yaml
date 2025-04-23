@@ -6,14 +6,10 @@
     become: true
     ansible.builtin.deb822_repository:
       name: google-chrome
-      types: [deb]
       uris: http://dl.google.com/linux/chrome/deb
       signed_by: https://dl-ssl.google.com/linux/linux_signing_key.pub
       suites: [stable]
       components: [main]
-      architectures: [" {{ ansible_architecture }}"]
-      state: present
-      enabled: yes
 
   - name: Install Google Chrome apt package
     become: true

@@ -25,6 +25,7 @@
 - name: Debug info about reinstall need
   ansible.builtin.debug:
     msg: "{{ item }}: reinstall needed? -> {{ need_install }}"
+    verbosity: 1
 
 - name: Download & install {{ item }}
   when: need_install
