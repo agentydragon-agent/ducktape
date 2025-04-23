@@ -108,7 +108,7 @@
         - fail2ban
 
     - name: Create user
-      user:
+      ansible.builtin.user:
         name: agentydragon
         createhome: true
         # NOTE: still need to ssh-copy-id over to the user manually.
@@ -145,7 +145,7 @@
     - name: Let's Encrypt certificates
       block:
       - name: Install & update certbot nginx plugin
-        apt:
+        ansible.builtin.apt:
           name:
             # certbot nginx plugin for autorenewing certs nicely
             - python3-certbot-nginx
@@ -158,7 +158,7 @@
       # TODO: only mark as "changed" if the cert was actually renewed.
       # TODO: only trigger installing a cert if it was changed.
       - name: Obtain Let's Encrypt certificates
-        command: certbot certonly --non-interactive --agree-tos --nginx -d {{ item }}
+        ansible.builtin.command: certbot certonly --non-interactive --agree-tos --nginx -d {{ item }}
         loop: "{{ letsencrypt_certificate_names }}"
 
       #### 2025-02-07 disable bazel-cache, trilium
@@ -195,7 +195,7 @@
     - name: nginx website configs
       block:
       - name: "Create nginx configuration from template"
-        template:
+        ansible.builtin.template:
           src: "nginx-sites/{{ item }}.j2"
           dest: "/etc/nginx/sites-available/{{ item }}"
         tags:
@@ -215,14 +215,14 @@
           dest: /etc/nginx/sites-available/{{ item }}
         tags:
           - nginx
-        with_items:
+        loop:
           - agentydragon.com
           - adgn.link
 
       # The nginx default website takes priority over my http://agentydragon.com
       # redirect, so disable it.
       - name: Disable nginx default website
-        file:
+        ansible.builtin.file:
           state: absent
           dest: /etc/nginx/sites-enabled/default
         tags:
@@ -231,11 +231,11 @@
           - Reload nginx
 
       - name: Enable nginx websites
-        file:
+        ansible.builtin.file:
           state: link
           src: /etc/nginx/sites-available/{{ item }}
           dest: /etc/nginx/sites-enabled/{{ item }}
-        with_items:
+        loop:
           - agentydragon.com
           - adgn.link
           - grocy.agentydragon.com
