@@ -1,11 +1,11 @@
 ---
 - hosts: localhost
+  vars_files:
+    - vars/common_vars.yml
+    - vars/gpd_vars.yml
   vars:
-    my_user: agentydragon
-    home_path: "/home/{{ my_user }}"
-    local_scripts_path: "{{ home_path }}/.local/bin"
-    ducktape_path: "{{ home_path }}/code/ducktape"
     rcup_computer: gpd
+    ducktape_path: "{{ ansible_user_dir }}/code/ducktape"
   remote_user: "{{ my_user }}"
   roles:
     - cli

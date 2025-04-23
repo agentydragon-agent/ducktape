@@ -1,13 +1,11 @@
 ---
 - hosts: localhost
+  vars_files:
+    - vars/common_vars.yml
   vars:
-    my_user: agentydragon
-    home_path: "/home/{{ my_user }}"
-    local_scripts_path: "{{ home_path }}/.local/bin"
-    ducktape_path: "{{ home_path }}/repos/ducktape"
-    rcup_computer: "agentydragon"
-  # TODO: vars_files:
-  # TODO:   - agentydragon_gitlab_token.yml
+    rcup_computer: agentydragon
+    ducktape_path: "{{ ansible_user_dir }}/repos/ducktape"
+  # TODO: vars_files: agentydragon_gitlab_token.yml
   remote_user: "{{ my_user }}"
   roles:
     # TODO: fix

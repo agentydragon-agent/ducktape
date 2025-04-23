@@ -1,5 +1,0 @@
-- name: Install Steam
-  become: true
-  ansible.builtin.apt:
-    pkg:
-      - steam

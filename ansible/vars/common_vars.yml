@@ -1,0 +1,4 @@
+---
+# Common defaults for personal playbooks
+my_user: agentydragon
+local_scripts_path: "{{ ansible_user_dir }}/.local/bin"

@@ -1,13 +1,11 @@
 - name: Remove system-installed Anki
-  tags:
-    - anki
+  tags: [anki]
   become: true
   ansible.builtin.apt:
     pkg: anki
     state: absent
 - name: Install Anki card dependencies
-  tags:
-    - anki
+  tags: [anki]
   become: true
   ansible.builtin.apt:
     pkg:
@@ -22,8 +20,9 @@
       - texlive-latex-recommended
       - texlive-science
 - name: Install latest Anki
-  tags:
-    - anki
+  vars:
+    anki_binary_path: /usr/local/bin/anki
+  tags: [anki]
   block:
     - name: Install Anki dependencies
       # See https://docs.ankiweb.net/platform/linux/installing.html
@@ -59,6 +58,7 @@
 
     - ansible.builtin.debug:
         var: latest_release_version
+        verbosity: 1
 
     - name: Assert latest release version was found
       assert:
@@ -84,7 +84,7 @@
 
     - name: Check if Anki is installed already
       stat:
-        path: /usr/local/bin/anki
+        path: {{ anki_binary_path }}
       register: anki_binary_stat
 
     # If we already have Anki installed, check whether it's the latest version.
@@ -95,8 +95,8 @@
       when: anki_binary_stat.stat.exists
       register: installed_anki_version
 
-   # - ansible.builtin.debug:
-   #     var: installed_anki_version
+    # - ansible.builtin.debug:
+    #     var: installed_anki_version
     - ansible.builtin.debug:
         var: latest_release_url
 
@@ -127,22 +127,22 @@
           cmd: ./install.sh
           chdir: "{{ tmp_path }}/{{ anki_dirname }}"
 
-    - name: Stat /usr/local/bin/anki
+    - name: Stat {{ anki_binary_path }}
       ansible.builtin.stat:
-        path: /usr/local/bin/anki
+        path: {{ anki_binary_path }}
       register: installed_anki_binary
 
-    - name: Check /usr/local/bin/anki now exists
+    - name: Check {{ anki_binary_path }} now exists
       ansible.builtin.assert:
         that:
           - installed_anki_binary.stat.exists
 
 
 # TODO: install Anki addons:
-# TODO: 291119185 - batch editing
-# TODO: 1788670778 - CrowdAnki
-# TODO: 1374772155 - Image Occlusion Enhanced for Anki 21
-# TODO: 1463041493 - Syntax Highlighting for Code
+#   291119185 - batch editing
+#   1788670778 - CrowdAnki
+#   1374772155 - Image Occlusion Enhanced for Anki 21
+#   1463041493 - Syntax Highlighting for Code
 #
-# TODO: cloze_overlapper_0_4_0_alpha0
-# TODO: review-heatmap
+#   cloze_overlapper_0_4_0_alpha0
+#   review-heatmap

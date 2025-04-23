@@ -1,8 +1,8 @@
 ---
 - vars:
-    user_systemd_services_dir: "{{ home_path }}/.config/systemd/user"
-    google_drive_mount_dir: "{{ home_path }}/.google-drive"
-    symlinked_my_drive_dir: "{{ home_path }}/drive"
+    user_systemd_services_dir: "{{ ansible_user_dir }}/.config/systemd/user"
+    google_drive_mount_dir: "{{ ansible_user_dir }}/.google-drive"
+    symlinked_my_drive_dir: "{{ ansible_user_dir }}/drive"
 
   block:
   - name: Create user systemd services folder
@@ -33,10 +33,10 @@
       force: true
   - name: Create Worthy config dir
     file:
-      path: "{{ home_path }}/.config/worthy"
+      path: "{{ ansible_user_dir }}/.config/worthy"
       state: directory
   - name: Symlink Worthy config to Drive
     file:
       src: "{{ symlinked_my_drive_dir }}/finance/worthy-config.yaml"
-      dest: "{{ home_path }}/.config/worthy/config.yaml"
+      dest: "{{ ansible_user_dir }}/.config/worthy/config.yaml"
       state: link
