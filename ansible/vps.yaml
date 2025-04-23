@@ -27,8 +27,7 @@
       ansible.builtin.apt:
         update_cache: true
         upgrade: dist
-        name:
-          - nginx
+        name: nginx
         state: latest
 
     ## 2025-02-07 don't need bazel cache, trilium atm
@@ -61,21 +60,6 @@
     ##     - bazel-remote-cache
     ##   register: bazel_remote_cache_user
 
-    - name: Create Grocy group
-      ansible.builtin.group:
-        name: grocy
-        state: present
-      tags:
-        - grocy
-
-    - name: Create Grocy user
-      ansible.builtin.user:
-        name: grocy
-        group: grocy
-      tags:
-        - grocy
-      register: grocy_user
-
     # 2024-07-01 deleted -- adds wrong repo entry
     #
     # - name: Include docker role for Docker users
@@ -104,8 +88,7 @@
     - name: Enable Fail2Ban role
       ansible.builtin.include_role:
         name: nbigot.ansible-fail2ban
-      tags:
-        - fail2ban
+      tags: [fail2ban]
 
     - name: Create user
       ansible.builtin.user:
@@ -144,11 +127,10 @@
 
     - name: Let's Encrypt certificates
       block:
+      # certbot nginx plugin for autorenewing certs nicely
       - name: Install & update certbot nginx plugin
         ansible.builtin.apt:
-          name:
-            # certbot nginx plugin for autorenewing certs nicely
-            - python3-certbot-nginx
+          name: python3-certbot-nginx
           state: latest
 
       # We need to obtain these certificates before updating nginx
@@ -193,13 +175,12 @@
       ###          - bazel_cache_cert.stat.exists
 
     - name: nginx website configs
+      tags: [nginx]
       block:
       - name: "Create nginx configuration from template"
         ansible.builtin.template:
           src: "nginx-sites/{{ item }}.j2"
           dest: "/etc/nginx/sites-available/{{ item }}"
-        tags:
-          - nginx
         notify:
           - Reload nginx
         loop:
@@ -213,8 +194,6 @@
         ansible.builtin.copy:
           src: nginx-sites/{{ item }}
           dest: /etc/nginx/sites-available/{{ item }}
-        tags:
-          - nginx
         loop:
           - agentydragon.com
           - adgn.link
@@ -225,8 +204,6 @@
         ansible.builtin.file:
           state: absent
           dest: /etc/nginx/sites-enabled/default
-        tags:
-          - nginx
         notify:
           - Reload nginx
 
@@ -242,8 +219,6 @@
           ## 2025-02-07 disable trilium server
           # - trilium.agentydragon.com
           - inventree.agentydragon.com
-        tags:
-          - nginx
         notify:
           - Reload nginx
 
@@ -313,80 +288,86 @@
     ###  tags:
     ###    - bazel-remote-cache
 
-    - name: Create Grocy directory
-      ansible.builtin.file:
-        path: /srv/grocy
-        state: directory
-        owner: grocy
-        group: grocy
-        mode: 0700
-      tags:
-        - grocy
+    - name: Grocy
+      tags: [grocy]
+      block:
+      - name: Create Grocy group
+        ansible.builtin.group:
+          name: grocy
+          state: present
 
-    - name: Create Grocy container
-      tags:
-        - grocy
-      ansible.builtin.docker_container:
-        container_default_behavior: no_defaults
-        detach: true
-        init: false
-        interactive: false
+      - name: Create Grocy user
+        ansible.builtin.user:
+          name: grocy
+          group: grocy
+        register: grocy_user
 
-        # ugh, looks like linuxserver.io requires running as root...
-        # probably something having to do with permissions on files inside
-        # the container?
-        user: root
+      - name: Create Grocy directory
+        ansible.builtin.file:
+          path: /srv/grocy
+          state: directory
+          owner: grocy
+          group: grocy
+          mode: 0700
 
-        #memory: "512M"
-        #memory_swap: -1  # unlimited swap
-        paused: false
-        privileged: false
-        read_only: false
-        tty: false
-        auto_remove: false
-        name: grocy
-        # TODO: pin to specific version?
-        image: lscr.io/linuxserver/grocy:latest
-        env:
-          TZ: America/Los_Angeles
-          PUID: "{{ grocy_user.uid }}"
-          PGID: "{{ grocy_user.group }}"
-        published_ports:
-          # Expose internal port 80 as external port 9283 on localhost.
-          # Only expose to localhost, not externally.
-          - "127.0.0.1:{{ grocy_localhost_http_port }}:80"
-        volumes:
-          - /srv/grocy:/config
-        restart: true
-        restart_policy: unless-stopped
+      - name: Create Grocy container
+        ansible.builtin.docker_container:
+          container_default_behavior: no_defaults
+          detach: true
+          init: false
+          interactive: false
+
+          # ugh, looks like linuxserver.io requires running as root...
+          # probably something having to do with permissions on files inside
+          # the container?
+          user: root
+
+          #memory: "512M"
+          #memory_swap: -1  # unlimited swap
+          paused: false
+          privileged: false
+          read_only: false
+          tty: false
+          auto_remove: false
+          name: grocy
+          # TODO: pin to specific version?
+          image: lscr.io/linuxserver/grocy:latest
+          env:
+            TZ: America/Los_Angeles
+            PUID: "{{ grocy_user.uid }}"
+            PGID: "{{ grocy_user.group }}"
+          published_ports:
+            # Expose internal port 80 as external port 9283 on localhost.
+            # Only expose to localhost, not externally.
+            - "127.0.0.1:{{ grocy_localhost_http_port }}:80"
+          volumes:
+            - /srv/grocy:/config
+          restart: true
+          restart_policy: unless-stopped
 
     - name: Start and enable nginx
       service:
         name: nginx
         state: started
         enabled: true
-      tags:
-        - nginx
+      tags: [nginx]
 
     - name: InvenTree setup
+      tags: [inventree]
       block:
       - name: Create Inventree Docker Compose directory
         ansible.builtin.file:
           path: /srv/inventree/docker-compose
           state: directory
           mode: 0700
-        tags:
-          - inventree
 
       - name: copy Docker Compose files
         copy:
           src: inventree/{{ item }}
           dest: /srv/inventree/docker-compose/{{ item }}
         loop:
-        - .env
-        - docker-compose.yml
-        tags:
-          - inventree
+          - .env
+          - docker-compose.yml
 
       - name: docker compose up for inventree
         community.docker.docker_compose_v2:
@@ -398,14 +379,11 @@
           # (recreate to make sure to pick up env changes)
           recreate: always
         register: output
-        tags:
-          - inventree
 
       - name: Show results
         ansible.builtin.debug:
           var: output
           verbosity: 1
-        tags: [inventree]
 
   handlers:
     # Only triggers if nginx config files changed.
@@ -415,5 +393,4 @@
         daemon_reload: true
         name: nginx
         enabled: true
-      tags:
-        - nginx
+      tags: [nginx]
