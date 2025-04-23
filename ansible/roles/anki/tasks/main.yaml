@@ -84,7 +84,7 @@
 
     - name: Check if Anki is installed already
       stat:
-        path: {{ anki_binary_path }}
+        path: "{{ anki_binary_path }}"
       register: anki_binary_stat
 
     # If we already have Anki installed, check whether it's the latest version.
@@ -129,7 +129,7 @@
 
     - name: Stat {{ anki_binary_path }}
       ansible.builtin.stat:
-        path: {{ anki_binary_path }}
+        path: "{{ anki_binary_path }}"
       register: installed_anki_binary
 
     - name: Check {{ anki_binary_path }} now exists
