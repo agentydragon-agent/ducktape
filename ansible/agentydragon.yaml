@@ -8,6 +8,8 @@
   # TODO: vars_files: agentydragon_gitlab_token.yml
   remote_user: "{{ my_user }}"
   roles:
+    - docker
+
     # TODO: fix
     #- role: geerlingguy.docker
     #  become: true
