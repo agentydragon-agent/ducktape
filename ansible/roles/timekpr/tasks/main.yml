@@ -4,24 +4,23 @@
   vars:
     timekpr_user: agentydragon
     allowed_defs:
-      # 22:00-01:00 throttle → 20 min credit / 10 min break
+      # 01:00-05:00 allow :00-:50
       - hours: [22, 23, 0]
-        ranges: ["0-20", "30-50"]
-      # 01:00-05:00 throttle → 5 min credit / 15 min break
+        # NOTE: timekpr expects two-digit minute counts!
+        range: "00-50"
+      # 01:00-05:00 allow :00-:15
       - hours: "{{ range(1, 5) | list }}"
-        ranges: ["0-5", "20-25", "40-45"]
+        range: "00-15"
       # 05:00-22:00 free run
       - hours: "{{ range(5, 22) | list }}"
-        ranges: ["0-60"]
+        range: "00-60"
 
     # Render to the monster string Timekpr expects
     allowed_hours: >-
       {%- set segs = [] -%}
       {%- for block in allowed_defs -%}
         {%- for h in block.hours -%}
-          {%- for r in block.ranges -%}
-            {%- set _ = segs.append(h|string ~ '[' ~ r ~ ']') -%}
-          {%- endfor -%}
+          {%- set _ = segs.append(h|string ~ '[' ~ block.range ~ ']') -%}
         {%- endfor -%}
       {%- endfor -%}
       {{ segs | join(';') }}
