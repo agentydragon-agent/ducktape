@@ -10,6 +10,7 @@
     - name: Show visible names
       debug:
         var: dconf_out.stdout_lines
+        verbosity: 1
 
     - name: Ensure Solarized Light profile exists
       assert:

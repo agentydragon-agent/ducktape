@@ -84,13 +84,14 @@
   ansible.builtin.script: >
     apply.py
     set-default 'Solarized Light'
-    {% if debug | default(False) %}--debug{% endif %}
+    {% if ansible_verbosity >= 1 | default(False) %}--debug{% endif %}
   register: set_default
   changed_when: (set_default.stdout | from_json).changed
 
-- debug:
-    msg: "stdout: {{ set_default.stdout }}"
-  when: debug | default(False)
-- debug:
-    msg: "stderr: {{ set_default.stderr_lines }}"
-  when: debug | default(False)
+- block:
+  - debug:
+      msg: "stdout: {{ set_default.stdout }}"
+  - debug:
+      msg: "stderr: {{ set_default.stderr_lines }}"
+  when: ansible_verbosity >= 1
+

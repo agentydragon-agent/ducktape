@@ -4,18 +4,16 @@
     apply.py
     apply '{{ profile_name }}' "{{ dir }}"
     --font "{{ font }}"
-    {% if debug | default(False) %}--debug{% endif %}
+    {% if ansible_verbosity >= 1 %}--debug{% endif %}
   register: apply_result
   failed_when: apply_result.rc != 0
   changed_when: (apply_result.stdout | from_json).changed
 
-- name: Debug stdout
-  debug:
-    var: apply_result.stdout_lines
-  when: debug | default(False)
-
-- name: Debug stderr
-  debug:
-    var: apply_result.stderr_lines
-  when: debug | default(False)
-
+- block:
+  - name: Debug stdout
+    debug:
+      var: apply_result.stdout_lines
+  - name: Debug stderr
+    debug:
+      var: apply_result.stderr_lines
+  when: ansible_verbosity >= 1 | default(False)

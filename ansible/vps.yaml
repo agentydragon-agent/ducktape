@@ -404,8 +404,8 @@
       - name: Show results
         ansible.builtin.debug:
           var: output
-        tags:
-          - inventree
+          verbosity: 1
+        tags: [inventree]
 
   handlers:
     # Only triggers if nginx config files changed.

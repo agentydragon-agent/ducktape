@@ -12,4 +12,3 @@
       vars:
         font_family: "Ubuntu Mono"
         font_size: 14
-        debug: true

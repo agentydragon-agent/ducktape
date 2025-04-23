@@ -17,8 +17,9 @@
       snap_classic: >-
         {{ false if snap is string else snap.classic | default(false) }}
 
-- debug:
+- ansible.builtin.debug:
     msg: "Resolved: {{ resolved }}"
+    verbosity: 1
 
 - name: Install selected method
   block:
