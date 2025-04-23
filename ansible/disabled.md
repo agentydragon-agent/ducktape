@@ -131,3 +131,47 @@ Disabled - seems I deleted my fork.
 #     name: lightdm.service
 #     enabled: no
 ```
+
+## Gitlab runner
+
+`requirements.yaml`:
+
+```yaml
+- src: lean_delivery.gitlab_runner
+```
+
+```yaml
+- role: lean_delivery.gitlab_runner
+  vars:
+    gitlab_ci_token:
+    gitlab_api_token:
+  #vars:
+    # See https://github.com/ansible-collections/community.general/issues/440
+    # `sudo gitlab-runner register` needs to be done manually.
+    #- gitlab_runner_skip_registration: true
+    # For debugging: - no_logs: False
+  tags:
+  - gitlab-runner
+```
+
+## Buildifier
+Broken as of 2022-05-29
+
+```yaml
+- name: Install Buildifier
+  tags:
+    - buildifier
+  block:
+    - tempfile:
+        state: directory
+        suffix: buildifier-build
+      register: temp_dir
+    - environment:
+        GOPATH: "{{ temp_dir.path }}"
+        GOBIN: "{{ local_scripts_path }}"
+      block:
+        - name: get Buildifier
+          shell: go get github.com/bazelbuild/buildtools/buildifier
+        - name: install Buildifier
+          shell: go install github.com/bazelbuild/buildtools/buildifier@latest
+```
