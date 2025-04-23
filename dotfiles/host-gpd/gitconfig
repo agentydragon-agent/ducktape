@@ -29,19 +29,6 @@
 [init]
 	defaultBranch = main
 	templateDir = /home/agentydragon/.githooks/templates
-[githooks]
-	installDir = /home/agentydragon/.githooks
-	cloneUrl = https://github.com/gabyx/githooks.git
-	cloneBranch = main
-	useCoreHooksPath = false
-	runner = /home/agentydragon/.githooks/bin/runner
-	dialog = /home/agentydragon/.githooks/bin/dialog
-	autoUpdateEnabled = true
-	maintainedHooks = all
-	useManual = false
-	autoUpdateCheckTimestamp = 1745367406
-[alias]
-	hooks = !\"/home/agentydragon/.githooks/bin/cli\"
 [difftool "nbdime"]
 	cmd = git-nbdifftool diff \"$LOCAL\" \"$REMOTE\" \"$BASE\"
 [difftool]
