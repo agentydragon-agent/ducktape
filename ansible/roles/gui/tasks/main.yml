@@ -158,7 +158,7 @@
 - include_tasks: tasks/xorg_terminate.yaml
 - include_tasks: tasks/element.yaml
   tags: element
-- include_tasks: tasks/google-chrome.yaml
+- include_tasks: tasks/google_chrome.yaml
 
 
 # TODO: install Tana from: https://github.com/tanainc/tana-desktop-releases
