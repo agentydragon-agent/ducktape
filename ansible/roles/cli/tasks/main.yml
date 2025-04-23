@@ -60,6 +60,11 @@
       - yasm
       - zsh
 
+- name: Install PyPI packages
+  ansible.builtin.pip:
+    name:
+      - speedtest-cli
+
 - name: Remove retired pkgs
   become: true
   ansible.builtin.apt:
