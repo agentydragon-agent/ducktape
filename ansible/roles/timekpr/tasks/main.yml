@@ -25,7 +25,7 @@
       {%- endfor -%}
       {{ segs | join(';') }}
   block:
-    - name: Add mjasnip PPA for timekpr-next
+    - name: Add mjasnik PPA for timekpr-next
       deb822_repository:
         name: mjasnik-ppa
         uris: https://ppa.launchpadcontent.net/mjasnik/ppa/ubuntu
