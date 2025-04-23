@@ -28,7 +28,6 @@
 	insteadOf = https://github.com/
 [init]
 	defaultBranch = main
-	templateDir = /home/agentydragon/.githooks/templates
 [difftool "nbdime"]
 	cmd = git-nbdifftool diff \"$LOCAL\" \"$REMOTE\" \"$BASE\"
 [difftool]
@@ -39,5 +38,3 @@
 	prompt = false
 [merge]
 	tool = vimdiff
-[githooks "autoupdate"]
-	enabled = false
