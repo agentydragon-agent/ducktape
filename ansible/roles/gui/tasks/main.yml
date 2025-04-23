@@ -71,31 +71,8 @@
       - fonts-bebas-neue
       - fonts-roboto
 
-- name: OBS Studio
-  block:
-  - name: Add OBS Studio PPA
-    become: true
-    ansible.builtin.apt_repository:
-      repo: ppa:obsproject/obs-studio
-      state: present
-  - name: Install OBS Studio
-    become: true
-    ansible.builtin.apt:
-      name: obs-studio
-      state: present
-
-- name: KiCad
-  block:
-  - name: Add KiCad 8.0 PPA
-    become: true
-    ansible.builtin.apt_repository:
-      repo: ppa:kicad/kicad-8.0-releases
-      state: present
-  - name: Install KiCad
-    become: true
-    apt:
-      name: kicad
-      state: present
+- include_tasks: tasks/obs_studio.yaml
+- include_tasks: tasks/kicad.yaml
 
 - name: VSCode
   install_handler:
@@ -110,12 +87,11 @@
     use: snap
 
 - name: Install Rescuetime
-  tags:
-    - rescuetime
+  tags: [rescuetime]
   become: true
   when: ansible_architecture in ["amd64", "x86_64"]
   ansible.builtin.apt:
-    deb: https://www.rescuetime.com/installers/rescuetime_current_amd64.deb
+    deb: "https://www.rescuetime.com/installers/rescuetime_current_{{ ansible_architecture }}.deb"
 
 - name: Install snaps
   become: true
@@ -151,14 +127,6 @@
     use: apt
 
 - include_tasks: tasks/discord-minimized.yaml
-
-# - name: Update githooks
-#   tags:
-#     - githooks
-#   # should only succeed if we don't need to update
-#   ansible.builtin.shell: git hooks update --no
-
-
 - include_tasks: tasks/wezterm.yaml
 
 - name: Hide gnome-terminal menu
@@ -169,8 +137,7 @@
     value: false
 
 - name: Set GNOME default terminal to gnome-terminal
-  tags:
-  - gnome-terminal
+  tags: [gnome-terminal]
   block:
   - name: Set GNOME default terminal to gnome-terminal.wrapper
     community.general.dconf:
@@ -186,29 +153,8 @@
 - include_tasks: tasks/xorg_terminate.yaml
 - include_tasks: tasks/element.yaml
   tags: element
+- include_tasks: tasks/google-chrome.yaml
 
-- name: Google Chrome
-  when: ansible_architecture in ["amd64", "x86_64"]
-  block:
-  - name: Add google APT repository
-    become: true
-    ansible.builtin.deb822_repository:
-      name: google
-      types: [deb]
-      uris:
-        - http://dl.google.com/linux/chrome/deb
-      signed_by: https://dl-ssl.google.com/linux/linux_signing_key.pub
-      suites: [stable]
-      components: [main]
-      architectures: [amd64]  # no i386 included
-      state: present
-      enabled: yes
-
-  - name: Install Google Chrome apt package
-    become: true
-    ansible.builtin.apt:
-      pkg:
-        - google-chrome-stable
 
 # TODO: install Tana from: https://github.com/tanainc/tana-desktop-releases
 # -> install 'tana_1.0.26_amd64.deb' from last release

@@ -36,7 +36,6 @@
     name:
       - autopep8
       - ruff
-      - ansible
       - pre-commit
 
 # Ubuntu 22.04 ships with ancient Ansible. Get it from pip.
