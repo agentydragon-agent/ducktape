@@ -28,12 +28,10 @@
     - name: Add mjasnip PPA for timekpr-next
       deb822_repository:
         name: mjasnik-ppa
-        types: [deb]
         uris: https://ppa.launchpadcontent.net/mjasnik/ppa/ubuntu
         suites: [ "{{ ansible_distribution_release }}" ]
         components: [main]
-        signed_by: https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x54DDD393
-        state: present
+        signed_by: https://keyserver.ubuntu.com/pks/lookup?op=get&search=0xAF91A06147FA1307
       become: true
     - name: Install timekpr-next
       ansible.builtin.apt:

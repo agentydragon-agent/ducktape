@@ -3,12 +3,10 @@
   - name: Enable KiCad 8 PPA
     deb822_repository:
       name: kicad-8
-      types: [deb]
       uris: https://ppa.launchpadcontent.net/kicad/kicad-8.0-releases/ubuntu
       suites: [ "{{ ansible_distribution_release }}" ]
       components: [main]
       signed_by: https://keyserver.ubuntu.com/pks/lookup?op=get&search=0xFAD7A805
-      state: present
     become: true
 
   - name: Install KiCad

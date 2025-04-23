@@ -1,17 +1,22 @@
-# 1. Base deps
-- deb822_repository:
+# xxx: if architecture in deb822 below not specified -> tries to download i386, which isn't included.
+# if set to {{ ansible_architecture }} -> that resolves to "x86_64" instead, != "amd64".
+#
+# TODO: set once, reuse
+- command: dpkg --print-architecture
+  register: dpkg_arch
+  changed_when: false
+
+- ansible.builtin.deb822_repository:
     name: docker
-    types: [deb]
     uris: https://download.docker.com/linux/ubuntu
     suites: [ "{{ ansible_lsb.codename }}" ]
     components: [stable]
-    architectures: [ "{{ ansible_architecture }}" ]
     signed_by: https://download.docker.com/linux/ubuntu/gpg
-    state: present
+    architectures: ["{{ dpkg_arch.stdout }}"]
   become: true
 
 # 2. Engine + extras (compose v2 plugin, buildx)
-- apt:
+- ansible.builtin.apt:
     name:
       - docker-ce
       - docker-ce-cli
@@ -23,7 +28,7 @@
   become: true
 
 # 3. User convenience
-- user:
+- ansible.builtin.user:
     name: "{{ ansible_user_id }}"
     groups: docker
     append: true
