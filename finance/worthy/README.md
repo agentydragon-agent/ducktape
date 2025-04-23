@@ -39,11 +39,6 @@ current exchange rates from various *converters*:
 * Bazel: https://bazel.build
 * For Rust, `libopenssl-dev` and `pkg-config`.
 
-## Git hooks
-
-Install Githooks (https://github.com/gabyx/githooks) before cloning to get
-my Git hooks.
-
 ## Building
 
 ```bash

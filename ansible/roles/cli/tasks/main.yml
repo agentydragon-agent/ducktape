@@ -59,6 +59,7 @@
       - wget
       - yasm
       - zsh
+
 - name: Remove retired pkgs
   become: true
   ansible.builtin.apt:
