@@ -152,11 +152,11 @@
 
 - include_tasks: tasks/discord-minimized.yaml
 
-- name: Update githooks
-  tags:
-    - githooks
-  # should only succeed if we don't need to update
-  ansible.builtin.shell: git hooks update --no
+# - name: Update githooks
+#   tags:
+#     - githooks
+#   # should only succeed if we don't need to update
+#   ansible.builtin.shell: git hooks update --no
 
 
 - include_tasks: tasks/wezterm.yaml
