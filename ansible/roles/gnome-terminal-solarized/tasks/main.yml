@@ -72,7 +72,7 @@
   changed_when: false
 
 - name: Apply Solarized profiles
-  include_tasks: apply_profile.yaml
+  include_tasks: apply_profile.yml
   vars:
     profile_name: "{{ item.profile_name }}"
     dir: "{{ temp_dir.path }}/colors/{{ item.variant }}"

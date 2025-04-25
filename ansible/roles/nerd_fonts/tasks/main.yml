@@ -38,7 +38,7 @@
   changed_when: false
 
 - name: Install each requested Nerd Font
-  include_tasks: "install_font.yaml"
+  include_tasks: "install_font.yml"
   vars:
     family_path: "{{ install_dir }}/{{ item }}"
     installed_version_path: "{{ family_path }}/.nerdfont_version"

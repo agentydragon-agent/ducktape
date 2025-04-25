@@ -1,11 +1,11 @@
 ---
 
 # - name: Include glab
-#   include_tasks: tasks/glab.yaml
+#   include_tasks: tasks/glab.yml
 # - name: Include Trilium client
-#   include_tasks: tasks/trilium_client.yaml
+#   include_tasks: tasks/trilium_client.yml
 
-- include_tasks: tasks/bazel.yaml
+- include_tasks: tasks/bazel.yml
 
 - name: Install CLI packages
   become: true
@@ -13,24 +13,17 @@
     pkg:
       # removed 2024-04-13, defaults in pop os:
       #   diffutils
-      - android-tools-adb
-      - xxd
       - curl
-      - esptool  # ESP8266/ESP32 flashing tool
       - ffmpeg
-      - gcc
-      - git
       - gnupg
       - gnupg-agent
       - gnuplot
-      - golang
       - grep
       - gzip
       - htop
       - iftop
       - iotop
       - iputils-ping
-      - jq
       - locate
       - mc
       - mmv
@@ -39,11 +32,8 @@
       - neovim
       - netcat-openbsd
       - nethogs
-      - ninja-build
       - nmap
       - pkg-config
-      - postgresql
-      - postgresql-client
       - pv
       - pwgen
       - python3
@@ -57,6 +47,7 @@
       - tree
       - unrar
       - wget
+      - xxd
       - yasm
       - zsh
 
@@ -81,8 +72,11 @@
     name: tio
     classic: true
 
-- include_tasks: tasks/dev-env.yaml
-- include_tasks: tasks/dotfiles.yaml
+# needed for OpenAI Codex CLI, vim-copilot
+- include_tasks: tasks/nodejs.yml
+
+- include_tasks: tasks/dev-env.yml
+- include_tasks: tasks/dotfiles.yml
 
 - name: Check Neovim is >= 0.11 (for DEC mode 2031 for auto color scheme switching)
   block:
@@ -108,5 +102,6 @@
 
 # TODO: update Neovim Lazy plugins?
 
-- include_tasks: tasks/locale.yaml
+- include_tasks: tasks/locale.yml
+
 # TODO: hyphenation patterns? hyphen-cs hyphen-de
