@@ -13,6 +13,7 @@
 - hosts: linode
   remote_user: root
 
+
   vars:
     ## 2025-02-07 disable trilium
     ## trilium_ssl_port: 3000

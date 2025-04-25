@@ -6,6 +6,7 @@
     rcup_computer: gpd
     ducktape_path: "{{ ansible_user_dir }}/code/ducktape"
   remote_user: "{{ my_user }}"
+
   roles:
     - cli
     - gui

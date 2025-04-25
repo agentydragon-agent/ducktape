@@ -1,7 +1,3 @@
-# TODO: get once, reuse
-- command: dpkg --print-architecture
-  register: dpkg_arch
-  changed_when: false
 
 - name: Google Chrome
   # no i386 included
@@ -15,7 +11,7 @@
       signed_by: https://dl-ssl.google.com/linux/linux_signing_key.pub
       suites: [stable]
       components: [main]
-      architectures: ["{{ dpkg_arch.stdout }}"]
+      architectures: ["{{ dpkg_arch }}"]
 
   - name: Install Google Chrome apt package
     become: true
