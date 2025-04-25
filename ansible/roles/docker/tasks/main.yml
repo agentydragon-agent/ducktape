@@ -6,7 +6,8 @@
   register: dpkg_arch
   changed_when: false
 
-- ansible.builtin.deb822_repository:
+- name: Set up Docker repository
+  ansible.builtin.deb822_repository:
     name: docker
     uris: https://download.docker.com/linux/ubuntu
     suites: [ "{{ ansible_lsb.codename }}" ]
@@ -16,7 +17,8 @@
   become: true
 
 # 2. Engine + extras (compose v2 plugin, buildx)
-- ansible.builtin.apt:
+- name: Install Docker packages
+  ansible.builtin.apt:
     name:
       - docker-ce
       - docker-ce-cli

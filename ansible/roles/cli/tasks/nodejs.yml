@@ -10,7 +10,7 @@
     uris: https://deb.nodesource.com/node_23.x
     suites: "{{ ansible_distribution_release }}"
     components: [main]
-    architectures: [amd64]
+    architectures: ["{{ dpkg_arch.stdout }}"]
     signed_by: https://deb.nodesource.com/gpgkey/nodesource.gpg.key
     state: present
   become: true
