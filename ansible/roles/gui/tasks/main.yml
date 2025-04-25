@@ -1,6 +1,6 @@
 ---
-- include_tasks: tasks/night_theme_switcher_gnome_terminal.yaml
-- include_tasks: tasks/gnome_panel_iso8601.yaml
+- include_tasks: tasks/night_theme_switcher_gnome_terminal.yml
+- include_tasks: tasks/gnome_panel_iso8601.yml
 - name: Ensure no retired packages
   become: true
   ansible.builtin.apt:
@@ -71,8 +71,8 @@
       - fonts-bebas-neue
       - fonts-roboto
 
-- include_tasks: tasks/obs_studio.yaml
-- include_tasks: tasks/kicad.yaml
+- include_tasks: tasks/obs_studio.yml
+- include_tasks: tasks/kicad.yml
 
 - name: VSCode
   install_handler:
@@ -131,8 +131,8 @@
     # See: https://forum.snapcraft.io/t/apparmor-blocking-the-opening-of-slack/29212
     use: apt
 
-- include_tasks: tasks/discord-minimized.yaml
-- include_tasks: tasks/wezterm.yaml
+- include_tasks: tasks/discord-minimized.yml
+- include_tasks: tasks/wezterm.yml
 
 - name: Hide gnome-terminal menu
   tags:
@@ -153,12 +153,12 @@
       key: "/org/gnome/desktop/applications/terminal/exec-arg"
       state: absent
 
-- include_tasks: tasks/wm_datetime_format.yaml
-- include_tasks: tasks/gnome_preferences.yaml
-- include_tasks: tasks/xorg_terminate.yaml
-- include_tasks: tasks/element.yaml
+- include_tasks: tasks/wm_datetime_format.yml
+- include_tasks: tasks/gnome_preferences.yml
+- include_tasks: tasks/xorg_terminate.yml
+- include_tasks: tasks/element.yml
   tags: element
-- include_tasks: tasks/google_chrome.yaml
+- include_tasks: tasks/google_chrome.yml
 
 
 # TODO: install Tana from: https://github.com/tanainc/tana-desktop-releases

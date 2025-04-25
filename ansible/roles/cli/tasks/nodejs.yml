@@ -1,0 +1,23 @@
+# TODO: set once, reuse
+- command: dpkg --print-architecture
+  register: dpkg_arch
+  changed_when: false
+
+- name: Enable NodeSource 23.x repo
+  ansible.builtin.deb822_repository:
+    name: nodesource
+    types: [deb]
+    uris: https://deb.nodesource.com/node_23.x
+    suites: "{{ ansible_distribution_release }}"
+    components: [main]
+    architectures: [amd64]
+    signed_by: https://deb.nodesource.com/gpgkey/nodesource.gpg.key
+    state: present
+  become: true
+
+- name: Install Node.js (includes npm)
+  ansible.builtin.apt:
+    update_cache: true
+    name: nodejs
+    state: present
+  become: true

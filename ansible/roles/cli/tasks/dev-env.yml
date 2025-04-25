@@ -8,18 +8,29 @@
       #- bison
       #- cabal-install
       - clang
+      - ninja-build
+      - postgresql
+      - postgresql-client
+      - android-tools-adb
       - clang-format
       - cloc
       - cmake
+      - esptool  # ESP8266/ESP32 flashing tool
       - flex
       - gcc
+      - gcc
       - ghc
+      - git
       - gitk
       - gnuplot
       - golang
+      - golang
+      - jq
       - jupyter-nbconvert
       - make
       - markdown
+      - sloccount
+      - tidy  # HTML tidy
       #- npm <- "you have requested an impossible situations"
 
       # TODO: this seems to not provide tree-sitter cli though
@@ -28,8 +39,6 @@
 
       #- protobuf-compiler
       #- pyqt5-dev-tools
-      - sloccount
-      - tidy  # HTML tidy
 
 - name: Install dev env PyPI packages
   ansible.builtin.pip:
@@ -49,3 +58,8 @@
   community.general.cargo:
     name: stylua
 
+- name: Install OpenAI Codex CLI
+  community.general.npm:
+    name: '@openai/codex'
+    global: yes
+  become: true
