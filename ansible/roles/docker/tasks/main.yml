@@ -1,10 +1,6 @@
 # xxx: if architecture in deb822 below not specified -> tries to download i386, which isn't included.
 # if set to {{ ansible_architecture }} -> that resolves to "x86_64" instead, != "amd64".
 #
-# TODO: set once, reuse
-- command: dpkg --print-architecture
-  register: dpkg_arch
-  changed_when: false
 
 - name: Set up Docker repository
   ansible.builtin.deb822_repository:
@@ -13,7 +9,7 @@
     suites: [ "{{ ansible_lsb.codename }}" ]
     components: [stable]
     signed_by: https://download.docker.com/linux/ubuntu/gpg
-    architectures: ["{{ dpkg_arch.stdout }}"]
+    architectures: ["{{ dpkg_arch }}"]
   become: true
 
 # 2. Engine + extras (compose v2 plugin, buildx)

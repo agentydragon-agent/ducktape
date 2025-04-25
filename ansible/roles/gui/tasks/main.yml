@@ -86,17 +86,13 @@
     snap: freecad
     use: snap
 
-# TODO: get once, reuse
-- command: dpkg --print-architecture
-  register: dpkg_arch
-  changed_when: false
 
 - name: Install Rescuetime
   tags: [rescuetime]
   become: true
   when: ansible_architecture in ["amd64", "x86_64"]
   ansible.builtin.apt:
-    deb: "https://www.rescuetime.com/installers/rescuetime_current_{{ dpkg_arch.stdout }}.deb"
+    deb: "https://www.rescuetime.com/installers/rescuetime_current_{{ dpkg_arch }}.deb"
 
 - name: Install snaps
   become: true

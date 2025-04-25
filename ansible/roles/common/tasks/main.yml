@@ -1,0 +1,9 @@
+---
+- name: Get raw dpkg architecture
+  command: dpkg --print-architecture
+  register: raw_dpkg_arch
+  changed_when: false
+
+- name: Set dpkg_arch fact to architecture string
+  set_fact:
+    dpkg_arch: "{{ raw_dpkg_arch.stdout }}"

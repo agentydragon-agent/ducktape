@@ -7,6 +7,7 @@
     ducktape_path: "{{ ansible_user_dir }}/repos/ducktape"
   # TODO: vars_files: agentydragon_gitlab_token.yml
   remote_user: "{{ my_user }}"
+
   roles:
     - docker
     - cli

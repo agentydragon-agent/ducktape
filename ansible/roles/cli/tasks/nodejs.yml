@@ -1,7 +1,3 @@
-# TODO: set once, reuse
-- command: dpkg --print-architecture
-  register: dpkg_arch
-  changed_when: false
 
 - name: Enable NodeSource 22.x repo
   deb822_repository:
@@ -10,7 +6,7 @@
     uris: https://deb.nodesource.com/node_22.x
     suites: [nodistro]
     components: [main]
-    architectures: ["{{ dpkg_arch.stdout }}"]
+    architectures: ["{{ dpkg_arch }}"]
     signed_by: /usr/share/keyrings/nodesource.gpg
     state: present
   become: true
