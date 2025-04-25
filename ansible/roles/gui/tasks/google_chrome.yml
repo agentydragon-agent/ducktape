@@ -15,7 +15,7 @@
       signed_by: https://dl-ssl.google.com/linux/linux_signing_key.pub
       suites: [stable]
       components: [main]
-      architectures: ["{{ dkgp_arch.stdout }}"]
+      architectures: ["{{ dpkg_arch.stdout }}"]
 
   - name: Install Google Chrome apt package
     become: true

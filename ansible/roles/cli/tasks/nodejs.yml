@@ -3,15 +3,15 @@
   register: dpkg_arch
   changed_when: false
 
-- name: Enable NodeSource 23.x repo
-  ansible.builtin.deb822_repository:
+- name: Enable NodeSource 22.x repo
+  deb822_repository:
     name: nodesource
     types: [deb]
-    uris: https://deb.nodesource.com/node_23.x
-    suites: "{{ ansible_distribution_release }}"
+    uris: https://deb.nodesource.com/node_22.x
+    suites: [nodistro]
     components: [main]
     architectures: ["{{ dpkg_arch.stdout }}"]
-    signed_by: https://deb.nodesource.com/gpgkey/nodesource.gpg.key
+    signed_by: /usr/share/keyrings/nodesource.gpg
     state: present
   become: true
 
