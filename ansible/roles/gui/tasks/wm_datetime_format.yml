@@ -10,17 +10,11 @@
 
 # TODO: hmm, what WM did I write this for again?
 
-- name: Set custom datetime indicator
-  block:
-  - name: Set date format to custom
-    dconf:
-      key: /com/canonical/indicator/datetime/time-format
-      value: "'custom'"
-  - name: Set date format in datetime indicator
-    dconf:
-      key: /com/canonical/indicator/datetime/custom-time-format
-      value: "'%Y-%m-%d %H:%M:%S'"
-  - name: Do show week numbers in datetime indicator
-    dconf:
-      key: /com/canonical/indicator/datetime/show-week-numbers
-      value: "true"
+- name: Configure custom datetime indicator
+  ansible.builtin.dconf:
+    key: "/com/canonical/indicator/datetime/{{ item.suffix }}"
+    value: "{{ item.value }}"
+  loop:
+    - { suffix: "time-format",        value: "'custom'" }
+    - { suffix: "custom-time-format", value: "'%Y-%m-%d %H:%M:%S'" }
+    - { suffix: "show-week-numbers",  value: "true" }
