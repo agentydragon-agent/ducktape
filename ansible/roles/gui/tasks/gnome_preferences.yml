@@ -17,25 +17,19 @@
 # move windows between workspaces.
 # TODO: clean this up, I don't use some of those bindings
 - name: GNOME ctrl+alt+* for workspace stuff
-  block:
-  - ansible.builtin.dconf:
-      key: /org/gnome/desktop/wm/keybindings/move-to-workspace-down
-      value: "['<Primary><Shift><Alt>Down']"
-  - ansible.builtin.dconf:
-      key: /org/gnome/desktop/wm/keybindings/move-to-workspace-up
-      value: "['<Primary><Shift><Alt>Up']"
-  - ansible.builtin.dconf:
-      key: /org/gnome/desktop/wm/keybindings/switch-to-workspace-down
-      value: "['<Primary><Super>Down', '<Primary><Super>j', '<Primary><Alt>Down']"
-  - ansible.builtin.dconf:
-      key: /org/gnome/desktop/wm/keybindings/switch-to-workspace-up
-      value: "['<Primary><Super>Up', '<Primary><Super>k', '<Primary><Alt>Up']"
+  ansible.builtin.dconf:
+    key: "/org/gnome/desktop/wm/keybindings/{{ item.suffix }}"
+    value: "{{ item.value }}"
+  loop:
+    - { suffix: "move-to-workspace-down",   value: "['<Primary><Shift><Alt>Down']" }
+    - { suffix: "move-to-workspace-up",     value: "['<Primary><Shift><Alt>Up']" }
+    - { suffix: "switch-to-workspace-down", value: "['<Primary><Super>Down', '<Primary><Super>j', '<Primary><Alt>Down']" }
+    - { suffix: "switch-to-workspace-up",   value: "['<Primary><Super>Up', '<Primary><Super>k', '<Primary><Alt>Up']" }
 
 - name: Enable GNOME Night Light
-  block:
-    - ansible.builtin.dconf:
-        key: /org/gnome/settings-daemon/plugins/color/night-light-enabled
-        value: "true"
-    - ansible.builtin.dconf:
-        key: /org/gnome/settings-daemon/plugins/color/night-light-temperature
-        value: "uint32 2414"
+  ansible.builtin.dconf:
+    key: "/org/gnome/settings-daemon/plugins/color/{{ item.suffix }}"
+    value: "{{ item.value }}"
+  loop:
+    - { suffix: "night-light-enabled",     value: "true" }
+    - { suffix: "night-light-temperature", value: "uint32 2414" }
