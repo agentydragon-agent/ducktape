@@ -83,10 +83,71 @@ class PipInstall:
             return {**args, "state": "absent"}
 
 
+@dataclass
+class FlatpakInstall:
+    """Handle installing applications with Flatpak via community.general.flatpak.
+
+    The syntax accepted mirrors the *snap* handler in this module:
+
+        flatpak: app-id-or-ref
+
+    or::
+
+        flatpak:
+          name: app-id-or-ref
+          remote: flathub
+          method: user
+
+    Additional keyword arguments are passed through to the *community.general.flatpak* module.
+    """
+
+    name: str
+    kwargs: dict
+
+    @property
+    def module_name(self):
+        return "community.general.flatpak"
+
+    @classmethod
+    def parse(cls, val):
+        """Parse the YAML value given for the *flatpak* key.
+
+        Accept a string (treated as the application id/reference) or a mapping with at
+        least a *name* key.  Mapping variant allows the caller to specify additional
+        arguments such as *remote* or *method*.
+        """
+
+        match val:
+            case str():
+                return cls(name=val, kwargs={})
+
+            case {"name": str() as name, **kwargs}:
+                return cls(name=name, kwargs=kwargs)
+
+            case _:
+                raise AnsibleError("Invalid flatpak value")
+
+    def module_args(self, installed):
+        """Return the argument dict for *community.general.flatpak*."""
+
+        args = {"name": self.name}
+
+        if installed:
+            # Install or ensure present.
+            return args | {"state": "present", **self.kwargs}
+        else:
+            # Ensure absent – additional kwargs are typically not needed when
+            # uninstalling but they *are* accepted by the underlying module
+            # (they will just be ignored).  Keep the behaviour consistent with
+            # the *snap* handler and drop them for clarity.
+            return args | {"state": "absent"}
+
+
 METHODS = {
     "apt": AptInstall,
     "snap": SnapInstall,
     "pip": PipInstall,
+    "flatpak": FlatpakInstall,
 }
 
 
