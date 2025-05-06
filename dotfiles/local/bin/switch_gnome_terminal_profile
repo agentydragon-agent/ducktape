@@ -53,7 +53,10 @@ def dconf_get_profile_visible_name(uuid: str) -> str:
         .decode("utf-8")
         .strip()
     )
-    return ast.literal_eval(name)
+    try:
+        return ast.literal_eval(name)
+    except (SyntaxError, ValueError):
+        raise ValueError(f"Failed to parse name of profile {uuid}: {name=!r}")
 
 
 def dbus_update_profile_on_all_windows(uuid: str) -> None:

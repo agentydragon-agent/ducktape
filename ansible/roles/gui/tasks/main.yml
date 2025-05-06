@@ -159,3 +159,10 @@
 
 # TODO: install Tana from: https://github.com/tanainc/tana-desktop-releases
 # -> install 'tana_1.0.26_amd64.deb' from last release
+#
+
+- import_tasks: tasks/syncthing.yml
+  tags: syncthing
+
+- import_tasks: tasks/pop_extension_bug_workaround.yml
+  tags: pop_extension_bug_workaround
