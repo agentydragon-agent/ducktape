@@ -62,5 +62,7 @@
 - name: Install OpenAI Codex CLI
   community.general.npm:
     name: '@openai/codex'
-    global: false
-  become: true
+    # Seems to mean "install user-globally"
+    global: true
+
+  # become: true
