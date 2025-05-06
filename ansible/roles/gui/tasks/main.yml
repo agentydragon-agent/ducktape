@@ -49,11 +49,12 @@
       - krita
       - libreoffice
       - mplayer
-      - psensor
       - mpv
       - openjdk-8-jdk
       - openscad
+      - psensor
       - snapd # For Telegram etc.
+      - syncthing-gtk
       - torbrowser-launcher
       - transmission-gtk
       - tuxguitar
@@ -111,9 +112,13 @@
   install_handler:
     apt: telegram-desktop
     snap: telegram-desktop
+    flatpak: com.telegram.desktop
     # trying out on 2023-11-24: install Telegram as snap
     # if it still works in a couple months, keep it like this
     # 2025-04-13 seems to work at least on gpd?
+    #
+    # 2025-05-05: bug in snap: https://github.com/telegramdesktop/tdesktop/issues/29208
+    # (missing tray icon due to AppArmor)
     use: snap
 
 - name: Slack
@@ -160,6 +165,10 @@
 # TODO: install Tana from: https://github.com/tanainc/tana-desktop-releases
 # -> install 'tana_1.0.26_amd64.deb' from last release
 #
+# TODO: install AppImageLauncher:
+#   release on GPD: https://github.com/TheAssassin/AppImageLauncher/releases/tag/v3.0.0-alpha-4
+#       appimagelauncher_3.0.0-alpha-4-gha253.36951ec_amd64.deb
+# would be sure nice if someone made a functioning PPA :(
 
 - import_tasks: tasks/syncthing.yml
   tags: syncthing
