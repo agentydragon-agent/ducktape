@@ -1,5 +1,5 @@
 dependencies:
-  - common
+  - role: common
   - role: petermosmans.customize-gnome
     vars:
       gnome_extensions:
