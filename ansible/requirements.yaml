@@ -1,9 +1,10 @@
 roles:
-  - src: community.general        # cargo
   - src: geerlingguy.docker
-  - src: jaredhocutt.gnome_extensions
   - src: systemli.letsencrypt
   - src: nbigot.ansible-fail2ban  # Fail2Ban
   - src: diodonfrost.p10k         # Powerlevel10k
+  - src: petermosmans.customize-gnome
+  - src: rolehippie.syncthing
 collections:
   - community.docker
+  - community.general        # cargo
