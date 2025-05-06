@@ -1730,7 +1730,7 @@
                 "intro": "The cutter is stuck. Please make sure the cutter handle is out and check the filament sensor cable connection."
             }
         ],
-        "ver": 202504201200
+        "ver": 202504280000
     },
     "device_hms": {
         "en": [
@@ -1849,6 +1849,198 @@
             {
                 "ecode": "0581040000010045",
                 "intro": "The firmware of AMS-HT B does not match the printer. Please update it on the \"Firmware\" page."
+            },
+            {
+                "ecode": "1805230000020006",
+                "intro": "PTFE tube disconnection detected during filament loading. Please check if the PTFE tube from AMS-HT F to the extruder is properly connected."
+            },
+            {
+                "ecode": "1806220000020006",
+                "intro": "PTFE tube disconnection detected during filament loading. Please check if the PTFE tube from AMS-HT G to the extruder is properly connected."
+            },
+            {
+                "ecode": "1801220000020006",
+                "intro": "PTFE tube disconnection detected during filament loading. Please check if the PTFE tube from AMS-HT B to the extruder is properly connected."
+            },
+            {
+                "ecode": "0705220000020006",
+                "intro": "PTFE tube disconnection detected during filament loading. Please check if the PTFE tube from AMS F to the extruder is properly connected."
+            },
+            {
+                "ecode": "1804220000020006",
+                "intro": "PTFE tube disconnection detected during filament loading. Please check if the PTFE tube from AMS-HT E to the extruder is properly connected."
+            },
+            {
+                "ecode": "1806230000020006",
+                "intro": "PTFE tube disconnection detected during filament loading. Please check if the PTFE tube from AMS-HT G to the extruder is properly connected."
+            },
+            {
+                "ecode": "0705230000020006",
+                "intro": "PTFE tube disconnection detected during filament loading. Please check if the PTFE tube from AMS F to the extruder is properly connected."
+            },
+            {
+                "ecode": "1802230000020006",
+                "intro": "PTFE tube disconnection detected during filament loading. Please check if the PTFE tube from AMS-HT C to the extruder is properly connected."
+            },
+            {
+                "ecode": "0707210000020006",
+                "intro": "PTFE tube disconnection detected during filament loading. Please check if the PTFE tube from AMS H to the extruder is properly connected."
+            },
+            {
+                "ecode": "1807230000020006",
+                "intro": "PTFE tube disconnection detected during filament loading. Please check if the PTFE tube from AMS-HT H to the extruder is properly connected."
+            },
+            {
+                "ecode": "1802210000020006",
+                "intro": "PTFE tube disconnection detected during filament loading. Please check if the PTFE tube from AMS-HT C to the extruder is properly connected."
+            },
+            {
+                "ecode": "1803210000020006",
+                "intro": "PTFE tube disconnection detected during filament loading. Please check if the PTFE tube from AMS-HT D to the extruder is properly connected."
+            },
+            {
+                "ecode": "0700230000020006",
+                "intro": "PTFE tube disconnection detected during filament loading. Please check if the PTFE tube from AMS A to the extruder is properly connected."
+            },
+            {
+                "ecode": "0703210000020006",
+                "intro": "PTFE tube disconnection detected during filament loading. Please check if the PTFE tube from AMS D to the extruder is properly connected."
+            },
+            {
+                "ecode": "1802220000020006",
+                "intro": "PTFE tube disconnection detected during filament loading. Please check if the PTFE tube from AMS-HT C to the extruder is properly connected."
+            },
+            {
+                "ecode": "0706230000020006",
+                "intro": "PTFE tube disconnection detected during filament loading. Please check if the PTFE tube from AMS G to the extruder is properly connected."
+            },
+            {
+                "ecode": "1807210000020006",
+                "intro": "PTFE tube disconnection detected during filament loading. Please check if the PTFE tube from AMS-HT H to the extruder is properly connected."
+            },
+            {
+                "ecode": "1800230000020006",
+                "intro": "PTFE tube disconnection detected during filament loading. Please check if the PTFE tube from AMS-HT A to the extruder is properly connected."
+            },
+            {
+                "ecode": "0706220000020006",
+                "intro": "PTFE tube disconnection detected during filament loading. Please check if the PTFE tube from AMS G to the extruder is properly connected."
+            },
+            {
+                "ecode": "0704230000020006",
+                "intro": "PTFE tube disconnection detected during filament loading. Please check if the PTFE tube from AMS E to the extruder is properly connected."
+            },
+            {
+                "ecode": "0707230000020006",
+                "intro": "PTFE tube disconnection detected during filament loading. Please check if the PTFE tube from AMS H to the extruder is properly connected."
+            },
+            {
+                "ecode": "0700210000020006",
+                "intro": "PTFE tube disconnection detected during filament loading. Please check if the PTFE tube from AMS A to the extruder is properly connected."
+            },
+            {
+                "ecode": "1805210000020006",
+                "intro": "PTFE tube disconnection detected during filament loading. Please check if the PTFE tube from AMS-HT F to the extruder is properly connected."
+            },
+            {
+                "ecode": "1800220000020006",
+                "intro": "PTFE tube disconnection detected during filament loading. Please check if the PTFE tube from AMS-HT A to the extruder is properly connected."
+            },
+            {
+                "ecode": "1801230000020006",
+                "intro": "PTFE tube disconnection detected during filament loading. Please check if the PTFE tube from AMS-HT B to the extruder is properly connected."
+            },
+            {
+                "ecode": "0701230000020006",
+                "intro": "PTFE tube disconnection detected during filament loading. Please check if the PTFE tube from AMS B to the extruder is properly connected."
+            },
+            {
+                "ecode": "0702220000020006",
+                "intro": "PTFE tube disconnection detected during filament loading. Please check if the PTFE tube from AMS C to the extruder is properly connected."
+            },
+            {
+                "ecode": "0707220000020006",
+                "intro": "PTFE tube disconnection detected during filament loading. Please check if the PTFE tube from AMS H to the extruder is properly connected."
+            },
+            {
+                "ecode": "0700220000020006",
+                "intro": "PTFE tube disconnection detected during filament loading. Please check if the PTFE tube from AMS A to the extruder is properly connected."
+            },
+            {
+                "ecode": "1804230000020006",
+                "intro": "PTFE tube disconnection detected during filament loading. Please check if the PTFE tube from AMS-HT E to the extruder is properly connected."
+            },
+            {
+                "ecode": "0704220000020006",
+                "intro": "PTFE tube disconnection detected during filament loading. Please check if the PTFE tube from AMS E to the extruder is properly connected."
+            },
+            {
+                "ecode": "1807220000020006",
+                "intro": "PTFE tube disconnection detected during filament loading. Please check if the PTFE tube from AMS-HT H to the extruder is properly connected."
+            },
+            {
+                "ecode": "0704210000020006",
+                "intro": "PTFE tube disconnection detected during filament loading. Please check if the PTFE tube from AMS E to the extruder is properly connected."
+            },
+            {
+                "ecode": "1803220000020006",
+                "intro": "PTFE tube disconnection detected during filament loading. Please check if the PTFE tube from AMS-HT D to the extruder is properly connected."
+            },
+            {
+                "ecode": "0706210000020006",
+                "intro": "PTFE tube disconnection detected during filament loading. Please check if the PTFE tube from AMS G to the extruder is properly connected."
+            },
+            {
+                "ecode": "0701210000020006",
+                "intro": "PTFE tube disconnection detected during filament loading. Please check if the PTFE tube from AMS B to the extruder is properly connected."
+            },
+            {
+                "ecode": "1800210000020006",
+                "intro": "PTFE tube disconnection detected during filament loading. Please check if the PTFE tube from AMS-HT A to the extruder is properly connected."
+            },
+            {
+                "ecode": "1803230000020006",
+                "intro": "PTFE tube disconnection detected during filament loading. Please check if the PTFE tube from AMS-HT D to the extruder is properly connected."
+            },
+            {
+                "ecode": "0705210000020006",
+                "intro": "PTFE tube disconnection detected during filament loading. Please check if the PTFE tube from AMS F to the extruder is properly connected."
+            },
+            {
+                "ecode": "0703220000020006",
+                "intro": "PTFE tube disconnection detected during filament loading. Please check if the PTFE tube from AMS D to the extruder is properly connected."
+            },
+            {
+                "ecode": "0702230000020006",
+                "intro": "PTFE tube disconnection detected during filament loading. Please check if the PTFE tube from AMS C to the extruder is properly connected."
+            },
+            {
+                "ecode": "1805220000020006",
+                "intro": "PTFE tube disconnection detected during filament loading. Please check if the PTFE tube from AMS-HT F to the extruder is properly connected."
+            },
+            {
+                "ecode": "0703230000020006",
+                "intro": "PTFE tube disconnection detected during filament loading. Please check if the PTFE tube from AMS D to the extruder is properly connected."
+            },
+            {
+                "ecode": "1801210000020006",
+                "intro": "PTFE tube disconnection detected during filament loading. Please check if the PTFE tube from AMS-HT B to the extruder is properly connected."
+            },
+            {
+                "ecode": "0701220000020006",
+                "intro": "PTFE tube disconnection detected during filament loading. Please check if the PTFE tube from AMS B to the extruder is properly connected."
+            },
+            {
+                "ecode": "0702210000020006",
+                "intro": "PTFE tube disconnection detected during filament loading. Please check if the PTFE tube from AMS C to the extruder is properly connected."
+            },
+            {
+                "ecode": "1804210000020006",
+                "intro": "PTFE tube disconnection detected during filament loading. Please check if the PTFE tube from AMS-HT E to the extruder is properly connected."
+            },
+            {
+                "ecode": "1806210000020006",
+                "intro": "PTFE tube disconnection detected during filament loading. Please check if the PTFE tube from AMS-HT G to the extruder is properly connected."
             },
             {
                 "ecode": "0300960000010003",
@@ -14951,7 +15143,7 @@
                 "intro": "External disturbance was detected on the heatbed acceleeration sensor. The sensor signal wire may not be affixed."
             }
         ],
-        "ver": 202504201200
+        "ver": 202504280000
     },
-    "version": "202504201200"
+    "version": "202504280000"
 }
