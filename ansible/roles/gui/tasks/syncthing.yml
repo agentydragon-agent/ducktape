@@ -14,7 +14,7 @@
       [Desktop Entry]
       Type=Application
       Name=Syncthing-GTK
-      Exec=syncthing-gtk --minimized --no-daemon
+      Exec=syncthing-gtk --minimized
       Icon=syncthing-gtk
       X-GNOME-Autostart-enabled=true
 
