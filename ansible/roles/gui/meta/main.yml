@@ -1,22 +1,20 @@
 dependencies:
   - common
-  - role: jaredhocutt.gnome_extensions
+  - role: petermosmans.customize-gnome
     vars:
-      gnome_extension_ids:
-        # Not needed for Pop! OS: gTile
+      gnome_extensions:
+        # Desaturate All – https://extensions.gnome.org/extension/1102/desaturate-all/
+        - id: 1102
 
-        # Desaturate All - https://extensions.gnome.org/extension/1102/desaturate-all/
-        - 1102
+        # Panel Date Format – https://extensions.gnome.org/extension/1462/panel-date-format/
+        - id: 1462
 
-        ## Panel Date Format
-        # https://extensions.gnome.org/extension/1462/panel-date-format/
-        # https://github.com/KEIII/gnome-shell-panel-date-format
-        - 1462
+        # Night Theme Switcher – https://extensions.gnome.org/extension/2236/night-theme-switcher/
+        - id: 2236
 
-        ## Night Theme Switcher
-        # For auto-switching gnome-terminal themes following GNOME night theme.
-        # https://extensions.gnome.org/extension/2236/night-theme-switcher/
-        - 2236
+        # V-Shell - https://extensions.gnome.org/extension/5177/vertical-workspaces/
+        # (Replace vertical workspaces of Cosmic UI from Pop!_OS; it tends to freeze up)
+        - id: 5177
 
   - role: anki
   # Needs to be before gnome-terminal-solarized because it uses the fonts.

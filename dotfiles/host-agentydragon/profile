@@ -2,46 +2,49 @@
 # This file is not read by bash(1), if ~/.bash_profile or ~/.bash_login
 # exists.
 # see /usr/share/doc/bash/examples/startup-files for examples.
-# the files are located in the bash-doc package.
 
-# the default umask is set in /etc/profile; for setting the umask
-# for ssh logins, install and configure the libpam-umask package.
-#umask 022
+# prepend $1 to $PATH once (if dir exists)
+add_path() {
+    [ -d "$1" ] || return
+    case ":$PATH:" in *":$1:"*) ;; *) PATH="$1:$PATH" ;; esac
+}
 
-# set PATH so it includes user's private bin directories
-PATH="$HOME/.local/bin:$PATH"
+add_path "$HOME/.local/bin"  # user's private binaries
+add_path "$HOME/.cargo/bin"  # Rust
+add_path "$HOME/.cabal/bin"  # Haskell
+add_path "$HOME/.r2env/bin"  # Radare2
+add_path "$HOME/.elan/bin"   # Elan, for Lean theorem prover
 
 # Ruby
 # PATH="$(ruby -rubygems -e 'puts Gem.user_dir')/bin:$PATH"
 
-# Haskell
-PATH="$HOME/.cabal/bin:$PATH"
-
-# Go
-export GOPATH=$HOME/repos/go
-PATH="$GOPATH/bin:$PATH"
-EDITOR=`which vim`
-
-# Flutter
-export PATH="$HOME/.flutter-install/flutter/bin:$PATH"
-# Android Studio
-export PATH="/opt/android-studio/bin:$PATH"
-
-export PATH="$HOME/.cargo/bin:$PATH"
+# Go. default GOPATH is ~/go.
+export GOPATH=$HOME/.local/go
+add_path "$GOPATH/bin"
 
 # CUDA for Tensorflow
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/cuda-11.2/targets/x86_64-linux/lib
+if [ -d /usr/lib/cuda/targets/x86_64-linux/lib ]; then
+    export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:+$LD_LIBRARY_PATH:}/usr/lib/cuda/targets/x86_64-linux/lib"
+fi
 
-# Radare2
-export PATH="$HOME/.r2env/bin:$PATH"
-
-export PATH="$HOME/.elan/bin:$PATH"
-
-# If present, load secrets from ~/.secret_env for local environment variables
+# If present, load secrets env vars from ~/.secret_env
 if [ -f "$HOME/.secret_env" ]; then
     . "$HOME/.secret_env"
 fi
 
 # dotnet
-export DOTNET_ROOT=$HOME/.dotnet
-export PATH=$PATH:$DOTNET_ROOT:$DOTNET_ROOT/tools
+if [ -d $HOME/.dotnet ]; then
+    export DOTNET_ROOT=$HOME/.dotnet
+    add_path "$DOTNET_ROOT"
+    add_path "$DOTNET_ROOT/tools"
+fi
+
+# pyenv - if installed
+if [ -d $HOME/.pyenv ]; then
+    export PYENV_ROOT="$HOME/.pyenv"
+    add_path "$PYENV_ROOT/bin"
+    eval "$(pyenv init --path)"
+fi
+
+# tidy-up: drop helper, compatible with zsh+Bash and POSIX shells
+unset -f add_path 2>/dev/null || unset add_path

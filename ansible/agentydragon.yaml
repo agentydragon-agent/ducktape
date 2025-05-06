@@ -4,7 +4,7 @@
     - vars/common_vars.yml
   vars:
     rcup_computer: agentydragon
-    ducktape_path: "{{ ansible_user_dir }}/repos/ducktape"
+    ducktape_path: "{{ ansible_user_dir }}/code/ducktape"
   # TODO: vars_files: agentydragon_gitlab_token.yml
   remote_user: "{{ my_user }}"
 

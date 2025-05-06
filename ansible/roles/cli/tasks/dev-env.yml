@@ -54,12 +54,13 @@
     pip: ansible
     use: pip
 
-- name: Install stylua (Lua formatter for Neovim)
-  community.general.cargo:
-    name: stylua
+# TODO: cargo broken
+#- name: Install stylua (Lua formatter for Neovim)
+#  community.general.cargo:
+#    name: stylua
 
 - name: Install OpenAI Codex CLI
   community.general.npm:
     name: '@openai/codex'
-    global: yes
+    global: false
   become: true
