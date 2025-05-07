@@ -1,0 +1,38 @@
+- name: Install Flameshot
+  become: true
+  ansible.builtin.apt:
+    pkg: flameshot
+
+# Unbind screenshot keys from default GNOME tools
+- name: Unbind GNOME screenshot keys
+  ansible.builtin.dconf:
+    key: "/org/gnome/shell/keybindings/{{ item }}"
+    value: "@as []"
+    loop:
+      - show-screenshot-ui  # Screenshot UI, default = PrnSc
+      - screenshot          # Full-screen screenshot, default = Shift+PrnSc
+      - screenshot-window   # Window screenshot, default = Alt+PrnSc
+
+- name: Define path variable for convenience
+  set_fact:
+    custom_keybindings_path: "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/"
+    flameshot_path: "{{ custom_keybindings_path }}/flameshot-gui/"
+
+- name: Ensure Flameshot path present in custom-keybindings
+  dconf_append:
+    key: "{{ custom_keybindings_path }}"
+    value: "{{ flameshot_path }}"
+
+- name: Set Flameshot keybinding metadata
+  ansible.builtin.dconf:
+    key: "{{ flameshot_path }}{{ item.key }}"
+    value: "'{{ item.value }}'" # (TODO: kinda sucky escaping)
+  loop:
+    - { key: "name",    value: "Flameshot GUI" }
+    - { key: "command", value: "flameshot gui" }
+    - { key: "binding", value: "Print" }
+
+- name: Autostart Flameshot
+  import_tasks: autostart_entry.yml
+  vars:
+    exec: flameshot

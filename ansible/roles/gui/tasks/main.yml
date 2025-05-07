@@ -40,7 +40,6 @@
       - blender
       - chrome-gnome-shell
       - dconf-editor
-      - flameshot  # Nice screenshot tool.
       - geeqie
       - gimp
       - gnome-tweaks
@@ -132,7 +131,7 @@
     # See: https://forum.snapcraft.io/t/apparmor-blocking-the-opening-of-slack/29212
     use: apt
 
-- include_tasks: tasks/discord-minimized.yml
+- include_tasks: tasks/discord_minimized.yml
 - include_tasks: tasks/wezterm.yml
 
 - name: Hide gnome-terminal menu

@@ -17,6 +17,7 @@ dependencies:
         - id: 5177
 
   - role: anki
+    tags: [anki]
   # Needs to be before gnome-terminal-solarized because it uses the fonts.
   - role: nerd_fonts
     become: yes  # needed to write fonts system-wide

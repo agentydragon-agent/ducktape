@@ -1,5 +1,4 @@
 - name: Install SyncThing
-  tags: syncthing
   become: true
   ansible.builtin.apt:
     pkg:
@@ -7,14 +6,8 @@
       - syncthing-gtk
 
 - name: Autostart Syncthing-GTK
-  copy:
-    dest: "{{ ansible_env.HOME }}/.config/autostart/syncthing-gtk.desktop"
-    mode: "0644"
-    content: |
-      [Desktop Entry]
-      Type=Application
-      Name=Syncthing-GTK
-      Exec=syncthing-gtk --minimized
-      Icon=syncthing-gtk
-      X-GNOME-Autostart-enabled=true
-
+  import_tasks: autostart_entry.yml
+  vars:
+    exec: "syncthing-gtk --minimized"
+    name: "Syncthing-GTK"
+    icon: "syncthing-gtk"

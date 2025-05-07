@@ -1,0 +1,25 @@
+- set_fact:
+    autostart_dir: "{{ ansible_env.HOME }}/.config/autostart"
+
+- name: Ensure XDG autostart dir exists
+  file:
+    path: "{{ autostart_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Install autostart .desktop file
+  copy:
+    dest: "{{ autostart_dir }}/{{ item.desktop_file_name | default(item.name | default(item.exec) | lower) }}.desktop"
+    mode: "0644"
+    content: |
+      [Desktop Entry]
+      Type=Application
+      Name={{ item.name | default(item.exec) }}
+      Exec={{ item.exec }}
+      {% if item.icon is defined %}
+      Icon={{ item.icon }}
+      {% endif %}
+      X-GNOME-Autostart-enabled={{ (item.enabled | default(true)) | ternary('true','false') }}
+  loop: "{{ entries }}"
+  loop_control:
+    label: "{{ item.name }}"
