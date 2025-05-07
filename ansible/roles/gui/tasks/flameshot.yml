@@ -19,7 +19,7 @@
     flameshot_path: "{{ custom_keybindings_path }}/flameshot-gui/"
 
 - name: Ensure Flameshot path present in custom-keybindings
-  dconf_append:
+  dconf_array_edit:
     key: "{{ custom_keybindings_path }}"
     add: "{{ flameshot_path }}"
 

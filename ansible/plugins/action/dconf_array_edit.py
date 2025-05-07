@@ -7,19 +7,19 @@ PARAMETERS
 
 EXAMPLES
   # Ensure an item is present
-  - dconf_array_modify:
+  - dconf_array_edit:
       key: /org/gnome/shell/favorite-apps
       add: firefox.desktop
 
   # Ensure multiple items are present
-  - dconf_array_modify:
+  - dconf_array_edit:
       key: /org/gnome/shell/favorite-apps
       add:
         - org.gnome.Terminal.desktop
         - firefox.desktop
 
   # Remove one item and add another in a single call
-  - dconf_array_modify:
+  - dconf_array_edit:
       key: /org/gnome/shell/favorite-apps
       add: firefox.desktop
       remove: org.gnome.Nautilus.desktop
@@ -32,9 +32,8 @@ from __future__ import annotations
 from typing import Iterable
 
 from ansible.errors import AnsibleError
-from gi.repository import GLib
-
 from ansible.plugins.action import ActionBase
+from gi.repository import GLib
 
 
 def _array_to_list(raw: str | None) -> list[str]:
