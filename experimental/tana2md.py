@@ -41,7 +41,14 @@ logging.basicConfig(
 
 TAG_RE        = re.compile(r"<[^>]*>")
 INLINE_REF_RE = re.compile(r'<span[^>]+data-inlineref-node="([^"]+)"[^>]*></span>')
-SYSTEM_TYPES  = {"tagDef","attributeDef","field-definition","workspace","view"}
+SYSTEM_TYPES  = {
+    "tagDef",
+    "attributeDef",
+    "field-definition",
+    "workspace",
+    "view",
+    "viewDef",  # observed in real exports
+}
 
 # ─── Node / Graph ────────────────────────────────────────────────────
 @dataclass
@@ -140,11 +147,93 @@ def meta_lines(n:Node, g:Graph, tag_ids:Dict[str,str])->List[str]:
     return out
 
 # ─── root detection ─────────────────────────────────────────────────
-def has_direct_tag(n:Node, tag_set:set[str])->bool:
+# ─── tagging helpers ---------------------------------------------------------
+# A node can be marked with a super-tag (#day, #page, …) in two slightly
+# different ways that appear in real-world Tana exports:
+#
+# 1. A *direct* tuple is placed under the node itself. Example hierarchy:
+#        - My Page
+#          - tuple (#page)
+#
+# 2. A tuple lives inside the node’s *meta* shell referenced via the
+#    `_metaNodeId` field. This is the structure produced by the current Tana
+#    export pipeline when you tag an existing node with a super-tag from the
+#    UI.
+#
+# Earlier versions of this script only looked at the direct children which
+# meant that nodes tagged according to variant (2) were missed and therefore
+# ended up in `zzz_misc.md`. We now consider **both** locations.
+
+
+# We only consider tuples that explicitly modify the *Node supertags(s)*
+# attribute. In real exports that attribute is materialised with id
+# `SYS_A13`.  We check for the id either in the children list *or* (less
+# frequently) in the `_sourceId` property.
+
+def _discover_super_attr_ids(g: "Graph") -> set[str]:
+    """Return ids of attributes named *Node supertags(s)* found in *g*."""
+    ids = {
+        n.id
+        for n in g.values()
+        if n.doc_type == "attributeDef" and str(n.props.get("name", "")).lower().startswith("node supertags")
+    }
+    # Fallback to the historical constant if nothing was found.
+    return ids or {"SYS_A13"}
+
+
+# will be initialised lazily the first time `_tuple_has_tag` is executed
+SUPERTAG_ATTR_IDS: set[str] | None = None
+
+
+def _tuple_has_tag(t: Node, tag_set: set[str]) -> bool:
+    """Return *True* when *tuple* references any tag in *tag_set* **and** the
+    tuple is attached to the *Node supertags(s)* attribute (id in
+    ``SUPERTAG_ATTR_IDS``).
+    """
+
+    global SUPERTAG_ATTR_IDS
+
+    if SUPERTAG_ATTR_IDS is None:
+        SUPERTAG_ATTR_IDS = _discover_super_attr_ids(t.graph)
+
+    if t.doc_type != "tuple":
+        return False
+
+    if not any(cid in tag_set for cid in t.children_ids):
+        return False
+
+    # The tuple *must* relate to the super-tag attribute.
+    if t.props.get("_sourceId") in SUPERTAG_ATTR_IDS:
+        return True
+    if any(cid in SUPERTAG_ATTR_IDS for cid in t.children_ids):
+        return True
+
+    return False
+
+
+def has_tag(n: Node, tag_set: set[str]) -> bool:
+    """Detect whether *n* is marked with one of *tag_set*.
+
+    We inspect both
+      • direct tuple children and
+      • tuple children of the optional meta-node.
+    """
+
+    # 1) direct tuple under the node itself
     for t in n.children:
-        if t.doc_type=="tuple" and any(cid in tag_set for cid in t.children_ids):
-            n.debug("direct tag via tuple " + t.id)
+        if _tuple_has_tag(t, tag_set):
+            n.debug("tag via direct tuple " + t.id)
             return True
+
+    # 2) tuple inside meta shell
+    mid = n.props.get("_metaNodeId")
+    if mid and mid in n.graph:
+        meta = n.graph[mid]
+        for t in meta.children:
+            if _tuple_has_tag(t, tag_set):
+                n.debug("tag via meta-tuple " + t.id)
+                return True
+
     return False
 
 def find_roots(g:Graph, tag_ids:Dict[str,str])->List[Node]:
@@ -157,7 +246,7 @@ def find_roots(g:Graph, tag_ids:Dict[str,str])->List[Node]:
         if not title or title.lower() in {"default","calendar"}: continue
         non_tuple=[c for c in n.children if c.doc_type!="tuple"]
         if len(non_tuple)<MIN_CHILDREN: continue
-        tagged=has_direct_tag(n,tag_set)
+        tagged=has_tag(n, tag_set)
         orphan=n.id not in parents
         root = (STRICT_ROOTS and tagged) or (not STRICT_ROOTS and (orphan or tagged))
         if root and tagged:
@@ -168,21 +257,58 @@ def find_roots(g:Graph, tag_ids:Dict[str,str])->List[Node]:
     return roots
 
 # ─── outline ----------------------------------------------------------------
-def outline(node:Node, emitted:Set[str], tag_ids:Dict[str,str],
-            depth:int=0)->List[str]:
-    if node.id in emitted or depth>MAX_DEPTH: return []
+def outline(
+    node: Node,
+    emitted: Set[str],
+    tag_ids: Dict[str, str],
+    depth: int = 0,
+    root_ids: Set[str] | None = None,
+) -> List[str]:
+    """Render *node* (recursively) to a Markdown bullet list.
+
+    *emitted* keeps track of nodes that have already been expanded so we do not
+    duplicate content in different files.  *root_ids* is the set of nodes that
+    will be rendered as **separate** Markdown roots.  When we encounter a child
+    that is in *root_ids* (and is *not* the current node) we include a single
+    bullet with its title but do **not** descend any further. This prevents the
+    situation where a future root gets consumed by an earlier, higher-level
+    outline (which previously happened for page-tagged nodes nested under a
+    “Calendar” page).
+    """
+
+    if node.id in emitted or depth > MAX_DEPTH:
+        return []
+
     emitted.add(node.id)
-    indent="  "*depth
-    lines=[]
-    if node.doc_type=="tuple":
-        lines.append(indent+"- "+tuple_line(node,node.graph,tag_ids))
+    indent = "  " * depth
+    lines: List[str] = []
+
+    # ── tuple ────────────────────────────────────────────────────────────
+    if node.doc_type == "tuple":
+        lines.append(indent + "- " + tuple_line(node, node.graph, tag_ids))
         return lines
-    title=node.title()
-    if title: lines.append(indent+"- "+title)
-    for ml in meta_lines(node,node.graph,tag_ids):
-        lines.append(indent+"  - "+ml)
+
+    # ── regular node ─────────────────────────────────────────────────────
+    title = node.title()
+    if title:
+        lines.append(indent + "- " + title)
+
+    # meta-information lines (tuples etc.)
+    for ml in meta_lines(node, node.graph, tag_ids):
+        lines.append(indent + "  - " + ml)
+
     for c in node.children:
-        lines.extend(outline(c,emitted,tag_ids,depth+1))
+        # Skip descending into children that are scheduled to become their own
+        # Markdown roots. Still include the reference bullet so the link is
+        # visible from the parent context.
+        if root_ids and c.id in root_ids and c.id != node.id:
+            t = c.title()
+            if t:
+                lines.append(indent + "  - " + t)
+            continue
+
+        lines.extend(outline(c, emitted, tag_ids, depth + 1, root_ids))
+
     return lines
 
 def slugify(t:str,L:int=50)->str:
@@ -201,17 +327,19 @@ def main(argv=None):
     roots=find_roots(g,tag_ids)
     if args.top: roots=roots[:args.top]
 
-    emitted:Set[str]=set()
+    emitted: Set[str] = set()
+    root_ids = {r.id for r in roots}
     misc=[]
     for idx,r in enumerate(roots,1):
-        lines=outline(r,emitted,tag_ids)
+        lines = outline(r, emitted, tag_ids, root_ids=root_ids)
         if not lines: continue
-        # figure bucket
-        bucket=None
-        if has_direct_tag(r,set([tag_ids.get("issue","")])): bucket="issue"
-        elif has_direct_tag(r,set([tag_ids.get("day","")])): bucket="day"
-        elif has_direct_tag(r,set([tag_ids.get("page","")])): bucket="page"
-        elif has_direct_tag(r,set([tag_ids.get("event","")])): bucket="event"
+        # --- determine bucket (issue/day/page/event) --------------------------------
+        bucket = None
+        for name in ("issue", "day", "page", "event"):
+            tid = tag_ids.get(name)
+            if tid and has_tag(r, {tid}):
+                bucket = name
+                break
         target=args.dst/(bucket if bucket else "")
         target.mkdir(parents=True,exist_ok=True)
         path=target/f"{idx:03d}-{slugify(r.title())}.md"
@@ -220,7 +348,7 @@ def main(argv=None):
     if MISC_MODE:
         for n in g.values():
             if n.id not in emitted and not n.is_system and n.children_ids:
-                misc.extend(outline(n,emitted,tag_ids))
+                misc.extend(outline(n, emitted, tag_ids, root_ids=root_ids))
         if misc:
             (args.dst/"zzz_misc.md").write_text("\n".join(misc)+"\n",encoding="utf-8")
 
