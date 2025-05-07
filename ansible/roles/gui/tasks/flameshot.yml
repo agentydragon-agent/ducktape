@@ -33,6 +33,5 @@
     - { key: "binding", value: "Print" }
 
 - name: Autostart Flameshot
-  import_tasks: autostart_entry.yml
-  vars:
+  autostart_entry:
     exec: flameshot
