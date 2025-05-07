@@ -21,7 +21,7 @@
 - name: Ensure Flameshot path present in custom-keybindings
   dconf_append:
     key: "{{ custom_keybindings_path }}"
-    value: "{{ flameshot_path }}"
+    add: "{{ flameshot_path }}"
 
 - name: Set Flameshot keybinding metadata
   ansible.builtin.dconf:
