@@ -1,40 +1,11 @@
 ---
-- name: Install latest glab
-  tags:
-  - glab
-  block:
-  - name: Create temp directory
-    ansible.builtin.tempfile:
-      state: directory
-      suffix: glab-release
-    register: tmp_dir
-    changed_when: false
-
-  - name: Download glab latest release info
-    ansible.builtin.get_url:
-      url: https://api.github.com/repos/profclems/glab/releases/latest
-      dest: "{{ tmp_dir.path }}/latest-release.json"
-      mode: 0644
-    changed_when: false
-
-  - name: Set temporary dir path
-    ansible.builtin.set_fact:
-      tmp_path: "{{ tmp_dir.path }}"
-
-  - name: Get latest glab release version
-    ansible.builtin.shell: |
-      cat {{ tmp_path }}/latest-release.json | \
-      jq --raw-output '.assets[] | select(.name | test("Linux_x86_64.deb")) | .browser_download_url'
-    register: latest_release
-    changed_when: false
-
-  - name: Get glab
-    ansible.builtin.get_url:
-      url: "{{ latest_release.stdout }}"
-      dest: "{{ tmp_dir.path }}/glab.deb"
-      mode: 0644
-
-  - name: Install glab
-    become: true
-    ansible.builtin.apt:
-      deb: "{{ tmp_dir.path }}/glab.deb"
+# Install GitLab CLI (glab) using GitHub release plugins
+- name: Install GitLab CLI
+  github_release_install:
+    repo: "profclems/glab"
+    version: "latest"
+    asset_pattern: ".*Linux_x86_64\\.deb$"
+    method: deb
+  become: true
+  when: dpkg_arch == "amd64"
+  tags: glab

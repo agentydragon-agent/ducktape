@@ -1,0 +1,9 @@
+- name: Install Tana desktop
+  github_release_install:
+    repo: "tanainc/tana-desktop-releases"
+    version: "latest"
+    acknowledged_version: "1.0.29"
+    asset_pattern: "tana_.*_{{ dpkg_arch }}\\.deb$"
+    method: deb
+  become: true
+  when: dpkg_arch == "amd64"

@@ -1,41 +1,11 @@
 ---
-- name: Install latest trilium client
-  tags:
-  - trilium
-  block:
-  - name: Create temp directory
-    ansible.builtin.tempfile:
-      state: directory
-      suffix: trilium-release
-    register: tmp_dir
-    changed_when: false
-
-  - name: Download trilium latest release info
-    ansible.builtin.get_url:
-      url: https://api.github.com/repos/zadam/trilium/releases/latest
-      dest: "{{ tmp_dir.path }}/latest-release.json"
-      mode: 0644
-    changed_when: false
-
-  - name: Set temporary dir path
-    ansible.builtin.set_fact:
-      tmp_path: "{{ tmp_dir.path }}"
-    changed_when: false
-
-  - name: Get latest trilium release version
-    ansible.builtin.shell: |
-      cat {{ tmp_path }}/latest-release.json | \
-      jq --raw-output '.assets[] | select(.name | test("_amd64.deb")) | .browser_download_url'
-    register: latest_release
-    changed_when: false
-
-  - name: Get trilium
-    ansible.builtin.get_url:
-      url: "{{ latest_release.stdout }}"
-      dest: "{{ tmp_dir.path }}/trilium.deb"
-      mode: 0644
-
-  - name: Install trilium
-    become: true
-    ansible.builtin.apt:
-      deb: "{{ tmp_dir.path }}/trilium.deb"
+# Install Trilium client using GitHub release plugins
+- name: Install Trilium client
+  github_release_install:
+    repo: "zadam/trilium"
+    version: "latest"
+    asset_pattern: ".*_amd64\\.deb$"
+    method: deb
+  become: true
+  when: dpkg_arch == "amd64"
+  tags: trilium

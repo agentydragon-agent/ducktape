@@ -1,6 +1,6 @@
 ---
-- include_tasks: tasks/night_theme_switcher_gnome_terminal.yml
-- include_tasks: tasks/gnome_panel_iso8601.yml
+- include_tasks: night_theme_switcher_gnome_terminal.yml
+- include_tasks: gnome_panel_iso8601.yml
 - name: Ensure no retired packages
   become: true
   ansible.builtin.apt:
@@ -71,8 +71,8 @@
       - fonts-bebas-neue
       - fonts-roboto
 
-- include_tasks: tasks/obs_studio.yml
-- include_tasks: tasks/kicad.yml
+- include_tasks: obs_studio.yml
+- include_tasks: kicad.yml
 
 - name: VSCode
   install_handler:
@@ -131,8 +131,8 @@
     # See: https://forum.snapcraft.io/t/apparmor-blocking-the-opening-of-slack/29212
     use: apt
 
-- include_tasks: tasks/discord_minimized.yml
-- include_tasks: tasks/wezterm.yml
+- include_tasks: discord_minimized.yml
+- include_tasks: wezterm.yml
 
 - name: Hide gnome-terminal menu
   tags:
@@ -153,31 +153,33 @@
       key: "/org/gnome/desktop/applications/terminal/exec-arg"
       state: absent
 
-- include_tasks: tasks/wm_datetime_format.yml
-- include_tasks: tasks/gnome_preferences.yml
-- include_tasks: tasks/xorg_terminate.yml
-- include_tasks: tasks/element.yml
+- include_tasks: wm_datetime_format.yml
+- include_tasks: gnome_preferences.yml
+- include_tasks: xorg_terminate.yml
+- include_tasks: element.yml
   tags: element
-- include_tasks: tasks/google_chrome.yml
+- include_tasks: google_chrome.yml
 
 
-# TODO: install Tana from: https://github.com/tanainc/tana-desktop-releases
-# -> install 'tana_1.0.29_amd64.deb' from last release
+# Install Tana desktop application
+- import_tasks: tana.yml
+  tags: tana
 
 # AppImageLauncher installation with version acknowledgment
 - name: Install AppImageLauncher
-  github_release_handler:
+  github_release_install:
     repo: "TheAssassin/AppImageLauncher"
     method: deb
     version: "v3.0.0-alpha-4"
     acknowledged_version: "v3.0.0-alpha-4"
     asset_pattern: ".*_{{ dpkg_arch }}\\.deb$"
+    method: deb
   become: true
   when: dpkg_arch == "amd64"
   tags: appimagelauncher
 
-- import_tasks: tasks/syncthing.yml
+- import_tasks: syncthing.yml
   tags: syncthing
 
-- import_tasks: tasks/pop_extension_bug_workaround.yml
+- import_tasks: pop_extension_bug_workaround.yml
   tags: pop_extension_bug_workaround
