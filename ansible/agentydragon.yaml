@@ -9,11 +9,12 @@
   remote_user: "{{ my_user }}"
 
   roles:
-    - docker
-    - cli
-    - gui
-    - laptop
-    - dev-ml
+    - role: docker
+    - role: cli
+    - role: gui
+    - role: laptop
+    - role: dev-ml
+    - role: scanbox
 
   tasks:
     - name: Install CUDA (NVidia-specific)
