@@ -1,3 +1,6 @@
+# dconf does not require a dbus session. not sure if that really buys us anything here.
+# maybe only on headless use or such.
+
 - name: read enabled / disabled
   community.general.dconf:
     key: "/org/gnome/shell/{{ item }}"

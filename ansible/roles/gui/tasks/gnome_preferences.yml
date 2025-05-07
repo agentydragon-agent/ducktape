@@ -13,19 +13,6 @@
     key: /org/gnome/settings-daemon/plugins/media-keys/terminal
     value: "['<Primary><Alt>t']"
 
-# This makes Ctrl+Alt+Up/Down switch workspaces and Ctrl+Alt+Shift+Up/Down
-# move windows between workspaces.
-# TODO: clean this up, I don't use some of those bindings
-- name: GNOME ctrl+alt+* for workspace stuff
-  ansible.builtin.dconf:
-    key: "/org/gnome/desktop/wm/keybindings/{{ item.suffix }}"
-    value: "{{ item.value }}"
-  loop:
-    - { suffix: "move-to-workspace-down",   value: "['<Primary><Shift><Alt>Down']" }
-    - { suffix: "move-to-workspace-up",     value: "['<Primary><Shift><Alt>Up']" }
-    - { suffix: "switch-to-workspace-down", value: "['<Primary><Super>Down', '<Primary><Super>j', '<Primary><Alt>Down']" }
-    - { suffix: "switch-to-workspace-up",   value: "['<Primary><Super>Up', '<Primary><Super>k', '<Primary><Alt>Up']" }
-
 - name: Enable GNOME Night Light
   ansible.builtin.dconf:
     key: "/org/gnome/settings-daemon/plugins/color/{{ item.suffix }}"

@@ -1,0 +1,7 @@
+- name: reload pop-shell
+  listen: reload pop-shell extension
+  # GNOME 42+: one-shot reload
+  command: gnome-extensions reload pop-shell@system76.com
+  register: _reload
+  failed_when: _reload.rc != 0
+  changed_when: _reload.rc == 0

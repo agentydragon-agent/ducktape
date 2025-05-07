@@ -1,11 +1,9 @@
 - name: Remove system-installed Anki
-  tags: [anki]
   become: true
   ansible.builtin.apt:
     pkg: anki
     state: absent
 - name: Install Anki card dependencies
-  tags: [anki]
   become: true
   ansible.builtin.apt:
     pkg:
@@ -22,7 +20,6 @@
 - name: Install latest Anki
   vars:
     anki_binary_path: /usr/local/bin/anki
-  tags: [anki]
   block:
     - name: Install Anki dependencies
       # See https://docs.ankiweb.net/platform/linux/installing.html
