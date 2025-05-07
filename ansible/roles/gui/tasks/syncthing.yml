@@ -6,8 +6,7 @@
       - syncthing-gtk
 
 - name: Autostart Syncthing-GTK
-  import_tasks: autostart_entry.yml
-  vars:
+  autostart_entry:
     exec: "syncthing-gtk --minimized"
     name: "Syncthing-GTK"
     icon: "syncthing-gtk"

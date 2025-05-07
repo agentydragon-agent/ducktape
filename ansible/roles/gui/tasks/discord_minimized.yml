@@ -6,18 +6,12 @@
       name: discord
       state: present
 
-  - name: Set paths for managed Discord autostart
-    ansible.builtin.set_fact:
-      discord_desktop_file_name: discord-minimized
-      discord_autostart_path: "{{ ansible_env.HOME }}/.config/autostart/{{ discord_desktop_file_name }}.desktop"
-
   - name: Install minimized Discord autostart entry
-    import_tasks: autostart_entry.yml
-    vars:
-      desktop_file_name: "{{ discord_desktop_file_name }}"
+    autostart_entry:
+      desktop_file_name: discord-minimized
       name: "Discord (minimized)"
       exec: "discord --start-minimized"
-      mode: '0644'
+    register: discord_autostart_result
 
   - name: Check no conflicting Discord autostarts
     block:
@@ -36,5 +30,5 @@
       loop_control:
         label: "{{ item.path }}"
       when:
-        - item.path != discord_autostart_path
+        - item.path != discord_autostart_result.desktop_file_path
         - lookup('file', item.path) is search('^Exec=.*\bdiscord\b', multiline=True)
