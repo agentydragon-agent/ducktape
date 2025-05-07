@@ -1,0 +1,69 @@
+---
+- name: Test GitHub release handler and AppImageLauncher installation
+  hosts: all
+  gather_facts: true
+  tasks:
+    # Test 1: Check GitHub release handler with check_only mode
+    - name: Test GitHub release handler check_only mode
+      github_release_handler:
+        repo: "TheAssassin/AppImageLauncher"
+        method: deb
+        version: "latest"
+        check_only: true
+        asset_pattern: ".*_{{ dpkg_arch }}\\.deb$"
+      register: release_check
+
+    - name: Verify release_check results
+      assert:
+        that:
+          - release_check.latest_version is defined
+          - release_check.check_only is defined
+          - release_check.check_only
+        success_msg: "GitHub release handler check_only mode works correctly"
+        fail_msg: "GitHub release handler check_only mode failed"
+
+    # Test 2: Install with pinned version
+    - name: Set test version
+      set_fact:
+        test_version: "v3.0.0-alpha-4"
+
+    - name: Install AppImageLauncher with pinned version
+      github_release_handler:
+        repo: "TheAssassin/AppImageLauncher"
+        method: deb
+        version: "{{ test_version }}"
+        asset_pattern: ".*_{{ dpkg_arch }}\\.deb$"
+      register: install_result
+      become: true
+
+    - name: Verify installation success
+      assert:
+        that:
+          - install_result.latest_version is defined
+          - install_result.asset_url is defined
+          - install_result.asset_url is search(".*_" + dpkg_arch + "\\.deb$")
+        success_msg: "GitHub release handler installed AppImageLauncher correctly"
+        fail_msg: "GitHub release handler failed to install AppImageLauncher"
+
+    # Test 3: Version acknowledgment test (should be skipped in test environment)
+    - name: Test version acknowledgment (expected to be skipped)
+      block:
+        - name: Try installing with old acknowledged version
+          github_release_handler:
+            repo: "TheAssassin/AppImageLauncher"
+            method: deb
+            version: "{{ test_version }}"
+            acknowledged_version: "v2.0.0"  # An old version
+            asset_pattern: ".*_{{ dpkg_arch }}\\.deb$"
+          register: ack_result
+          become: true
+      rescue:
+        - name: Verify version acknowledgment failed as expected
+          set_fact:
+            version_ack_test_passed: true
+
+    - name: Assert version acknowledgment test passed
+      assert:
+        that: version_ack_test_passed is defined and version_ack_test_passed
+        success_msg: "Version acknowledgment correctly detected new version"
+        fail_msg: "Version acknowledgment test failed"

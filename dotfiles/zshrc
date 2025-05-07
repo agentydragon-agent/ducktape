@@ -153,8 +153,8 @@ export PYTHONSTARTUP=$HOME/.config/pythonstartup.py
 [[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh
 
 export NVM_DIR="$HOME/.nvm"
-[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
-[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"  # This loads nvm bash_completion
+[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # Load nvm
+[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"  # Load nvm bash_completion
 
 # Set Aider OpenAI API key to OPENAI_API_KEY by default, if set.
 if [ -z "$AIDER_OPENAI_API_KEY" -a -n "$OPENAI_API_KEY" ]; then
@@ -169,3 +169,6 @@ export AIDER_MODEL=o1
 # bun
 export BUN_INSTALL="$HOME/.bun"
 export PATH="$BUN_INSTALL/bin:$PATH"
+
+# Loads reload-env etc.
+source ~/.config/shell/lib.sh

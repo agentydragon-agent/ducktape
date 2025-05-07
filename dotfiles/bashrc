@@ -147,3 +147,6 @@ man() {
 # No flow control (Ctrl-S / Q) - this is pretty much useless.
 stty -ixon
 . "$HOME/.cargo/env"
+
+# Loads reload-env etc.
+source ~/.config/shell/lib.sh

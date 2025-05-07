@@ -1,0 +1,32 @@
+---
+- name: Prepare
+  hosts: all
+  gather_facts: true
+  tasks:
+    - name: Update apt cache
+      become: true
+      apt:
+        update_cache: true
+        cache_valid_time: 3600
+      
+    - name: Install required packages
+      become: true
+      apt:
+        name:
+          - wget
+          - gnupg
+          - apt-transport-https
+          - ca-certificates
+          - software-properties-common
+          - jq
+        state: present
+        
+    # Set up dpkg_arch for testing
+    - name: Get dpkg architecture
+      command: dpkg --print-architecture
+      register: dpkg_arch_cmd
+      changed_when: false
+      
+    - name: Set dpkg_arch fact
+      set_fact:
+        dpkg_arch: "{{ dpkg_arch_cmd.stdout }}"
