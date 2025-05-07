@@ -162,12 +162,19 @@
 
 
 # TODO: install Tana from: https://github.com/tanainc/tana-desktop-releases
-# -> install 'tana_1.0.26_amd64.deb' from last release
-#
-# TODO: install AppImageLauncher:
-#   release on GPD: https://github.com/TheAssassin/AppImageLauncher/releases/tag/v3.0.0-alpha-4
-#       appimagelauncher_3.0.0-alpha-4-gha253.36951ec_amd64.deb
-# would be sure nice if someone made a functioning PPA :(
+# -> install 'tana_1.0.29_amd64.deb' from last release
+
+# AppImageLauncher installation with version acknowledgment
+- name: Install AppImageLauncher
+  github_release_handler:
+    repo: "TheAssassin/AppImageLauncher"
+    method: deb
+    version: "v3.0.0-alpha-4"
+    acknowledged_version: "v3.0.0-alpha-4"
+    asset_pattern: ".*_{{ dpkg_arch }}\\.deb$"
+  become: true
+  when: dpkg_arch == "amd64"
+  tags: appimagelauncher
 
 - import_tasks: tasks/syncthing.yml
   tags: syncthing
