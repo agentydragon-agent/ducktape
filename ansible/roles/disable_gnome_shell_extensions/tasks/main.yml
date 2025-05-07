@@ -1,27 +1,17 @@
-# dconf does not require a dbus session. not sure if that really buys us anything here.
-# maybe only on headless use or such.
+- name: Ensure extensions are disabled via dconf arrays
+  block:
+    # Remove requested extensions from the *enabled-extensions* list
+    - name: Remove extensions from GNOME Shell enabled list
+      dconf_append:
+        key: /org/gnome/shell/enabled-extensions
+        remove: "{{ gnome_shell_disable_extensions }}"
+      notify: Restart GNOME Shell
 
-- name: read enabled / disabled
-  community.general.dconf:
-    key: "/org/gnome/shell/{{ item }}"
-    state: read
-  loop: [enabled-extensions, disabled-extensions]
-  register: raw
+    # Add requested extensions to the *disabled-extensions* list
+    - name: Add extensions to GNOME Shell disabled list
+      dconf_append:
+        key: /org/gnome/shell/disabled-extensions
+        add: "{{ gnome_shell_disable_extensions }}"
+      notify: Restart GNOME Shell
 
-- set_fact:
-    enabled: "{{ (raw.results[0].value | default('[]') | regex_replace(\"'\", '\"') | from_json) }}"
-    disabled: "{{ (raw.results[1].value | default('[]') | regex_replace(\"'\", '\"') | from_json) }}"
-- set_fact:
-    enabled_new: "{{ enabled | difference(gnome_shell_disable_extensions) }}"
-    disabled_new: "{{ (disabled + gnome_shell_disable_extensions) | unique }}"
-
-- name: write both keys
-  community.general.dconf:
-    key: "/org/gnome/shell/{{ item.key }}"
-    value: "{{ item.value | to_json | regex_replace('\"', \"'\") }}"
-  loop:
-    - { key: enabled-extensions,  value: "{{ enabled_new }}" }
-    - { key: disabled-extensions, value: "{{ disabled_new }}" }
-  loop_control:
-    label: "{{ item.key }}"
-  notify: Restart GNOME Shell
+  when: gnome_shell_disable_extensions | length > 0
