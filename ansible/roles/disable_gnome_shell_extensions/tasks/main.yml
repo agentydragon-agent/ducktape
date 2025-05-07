@@ -1,17 +1,13 @@
-- name: Ensure extensions are disabled via dconf arrays
+- name: Ensure GNOME Shell extensions are disabled
   block:
-    # Remove requested extensions from the *enabled-extensions* list
-    - name: Remove extensions from GNOME Shell enabled list
-      dconf_append:
+    - name: Remove extensions from enabled list
+      dconf_array_edit:
         key: /org/gnome/shell/enabled-extensions
         remove: "{{ gnome_shell_disable_extensions }}"
       notify: Restart GNOME Shell
 
-    # Add requested extensions to the *disabled-extensions* list
-    - name: Add extensions to GNOME Shell disabled list
-      dconf_append:
+    - name: Add extensions to disabled list
+      dconf_array_edit:
         key: /org/gnome/shell/disabled-extensions
         add: "{{ gnome_shell_disable_extensions }}"
       notify: Restart GNOME Shell
-
-  when: gnome_shell_disable_extensions | length > 0
