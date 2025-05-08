@@ -2,11 +2,12 @@
 GitHub Release Utility Module
 
 This module provides shared functionality for GitHub release actions and modules.
-It contains common classes and functions used by the GitHub release action 
+It contains common classes and functions used by the GitHub release action
 plugins.
 """
 
 from __future__ import absolute_import, division, print_function
+
 __metaclass__ = type
 
 import json
@@ -52,84 +53,87 @@ def get_github_release_info(
     """
     result = {}
 
-    repo = params.get('repo')
+    # Validate required parameters
+    repo = params.get("repo")
     if not repo:
-        return {'failed': True, 'msg': 'Missing required parameter: repo'}
+        return {"failed": True, "msg": "Missing required parameter: repo"}
 
-    version = params.get('version', 'latest')
-    asset_pattern = params.get('asset_pattern')
-    arch_map = params.get('arch_map') or {}
-    acknowledged_version = params.get('acknowledged_version')
+    # Create a GitHubReleaseInfo instance
+    release_info = GitHubReleaseInfo(
+        repo=repo,
+        version=params.get("version", "latest"),
+        asset_pattern=params.get("asset_pattern"),
+        arch_map=params.get("arch_map") or {},
+    )
+
+    acknowledged_version = params.get("acknowledged_version")
 
     # Build GitHub API URL
-    if version and version != 'latest':
-        url = f"https://api.github.com/repos/{repo}/releases/tags/{version}"
-    else:
-        url = f"https://api.github.com/repos/{repo}/releases/latest"
+    url = release_info.get_api_url()
 
     # Make API request
     try:
         headers = {
-            'Accept': 'application/json',
-            'User-Agent': 'Ansible GitHub Release Handler',
+            "Accept": "application/json",
+            "User-Agent": "Ansible GitHub Release Handler",
         }
         req = urllib.request.Request(url, headers=headers)
         with urllib.request.urlopen(req) as response:
-            content = response.read().decode('utf-8')
+            content = response.read().decode("utf-8")
             release_data = json.loads(content)
     except Exception as e:
-        return {'failed': True, 'msg': f"Failed to fetch release information: {str(e)}"}
+        return {"failed": True, "msg": f"Failed to fetch release information: {str(e)}"}
 
-    # Process release data
-    latest_version = release_data.get('tag_name', '')
+    # Process release data using the release_info instance
+    latest_version = release_info.get_version_from_json(release_data)
     if not latest_version:
-        return {'failed': True, 'msg': "Failed to extract version information from release data"}
+        return {
+            "failed": True,
+            "msg": "Failed to extract version information from release data",
+        }
 
-    result['latest_version'] = latest_version
+    result["latest_version"] = latest_version
 
     # Handle acknowledged version if provided
     if acknowledged_version:
         # Normalize versions by removing 'v' prefix for comparison
-        normalized_latest = latest_version.lstrip('v')
-        normalized_acknowledged = acknowledged_version.lstrip('v')
+        normalized_latest = latest_version.lstrip("v")
+        normalized_acknowledged = acknowledged_version.lstrip("v")
 
         # Check if acknowledged version is outdated
         if normalized_acknowledged != normalized_latest:
-            result['has_new_version'] = True
-            result['acknowledged_version'] = acknowledged_version
+            result["has_new_version"] = True
+            result["acknowledged_version"] = acknowledged_version
 
             # Fail task when new version available and acknowledged version set
             return {
-                'failed': True,
-                'msg': (
+                "failed": True,
+                "msg": (
                     f"New version available: {latest_version}. "
                     f"Last acknowledged version: {acknowledged_version}. "
                     f"Please update the acknowledged version if you want to upgrade."
-                )
+                ),
             }
 
-    result['has_new_version'] = False
+    result["has_new_version"] = False
 
     # Get architecture from facts
-    arch = task_vars.get('ansible_architecture', 'amd64')
-    if arch_map and arch in arch_map:
-        arch = arch_map[arch]
+    arch = task_vars.get("ansible_architecture", "amd64")
+    if release_info.arch_map and arch in release_info.arch_map:
+        arch = release_info.arch_map[arch]
 
-    # Find matching asset
-    pattern = asset_pattern or f".*{arch}.*"
-    regex = re.compile(pattern)
-
-    for asset in release_data.get('assets', []):
-        if regex.search(asset.get('name', '')):
-            result['asset_url'] = asset.get('browser_download_url', '')
-            break
+    # Find matching asset using the release_info instance
+    result["asset_url"] = release_info.get_asset_url_from_json(release_data, arch)
 
     # Make sure we found an asset
-    if 'asset_url' not in result:
-        return {'failed': True, 'msg': f"No matching asset found for architecture: {arch}"}
+    if not result["asset_url"]:
+        return {
+            "failed": True,
+            "msg": f"No matching asset found for architecture: {arch}",
+        }
 
     # Add release data for reference
-    result['release_data'] = release_data
+    result["release_data"] = release_data
 
     return result
 
@@ -188,7 +192,7 @@ def parse_release_data(
 class GitHubReleaseInfo:
     """Base class for GitHub release information."""
 
-    repo: str
+    repo: Optional[str] = None
     version: Optional[str] = None
     asset_pattern: Optional[str] = None
     arch_map: Optional[Dict[str, str]] = None
@@ -237,7 +241,9 @@ class GitHubInstaller(GitHubReleaseInfo):
         """Return arguments for installing the asset."""
         raise NotImplementedError("Installation method must define install_module_args")
 
-    def get_additional_info(self, asset_url: str, install_result: Dict[str, Any]) -> Dict[str, Any]:
+    def get_additional_info(
+        self, asset_url: str, install_result: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """Get additional information about the installed asset.
 
         This method is called after installation to get any additional information
@@ -252,6 +258,15 @@ class GitHubInstaller(GitHubReleaseInfo):
         """
         return {}  # Default implementation returns no additional info
 
+    def validate(self) -> None:
+        """Validate that all required parameters are present.
+
+        Raises:
+            ActionError: If any required parameters are missing
+        """
+        if not self.repo:
+            raise ActionError("Missing required parameter: repo")
+
 
 @dataclass
 class DebInstall(GitHubInstaller):
@@ -265,17 +280,16 @@ class DebInstall(GitHubInstaller):
         """Return arguments for installing the deb package."""
         return {"deb": asset_url}
 
+    def validate(self) -> None:
+        """Validate that all required parameters are present for deb installation."""
+        super().validate()  # Check common parameters
+
 
 @dataclass
 class BinaryInstall(GitHubInstaller):
     """Install a GitHub release as a binary executable."""
 
     dest_path: Optional[str] = None
-
-    def __post_init__(self):
-        """Validate required parameters after initialization."""
-        if not self.dest_path:
-            raise ActionError("dest_path is required for binary installation")
 
     @property
     def module_name(self) -> str:
@@ -289,6 +303,12 @@ class BinaryInstall(GitHubInstaller):
             "mode": "0755",
         }
 
+    def validate(self) -> None:
+        """Validate that all required parameters are present for binary installation."""
+        super().validate()  # Check common parameters
+        if not self.dest_path:
+            raise ActionError("dest_path is required for binary installation")
+
 
 @dataclass
 class ArchiveInstall(GitHubInstaller):
@@ -296,11 +316,6 @@ class ArchiveInstall(GitHubInstaller):
 
     dest_path: Optional[str] = None
     creates_file: Optional[str] = None
-
-    def __post_init__(self):
-        """Validate required parameters after initialization."""
-        if not self.dest_path:
-            raise ActionError("dest_path is required for archive installation")
 
     @property
     def module_name(self) -> str:
@@ -317,7 +332,15 @@ class ArchiveInstall(GitHubInstaller):
             args["creates"] = self.creates_file
         return args
 
-    def get_additional_info(self, asset_url: str, install_result: Dict[str, Any]) -> Dict[str, Any]:
+    def validate(self) -> None:
+        """Validate that all required parameters are present for archive installation."""
+        super().validate()  # Check common parameters
+        if not self.dest_path:
+            raise ActionError("dest_path is required for archive installation")
+
+    def get_additional_info(
+        self, asset_url: str, install_result: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """Get additional information about the installed archive."""
         # Only return extracted info if the installation was successful
         if install_result.get("failed", False):
@@ -345,8 +368,12 @@ class GitHubReleaseBaseActionModule(ActionBase):
     """Base action module for GitHub release plugins with common functionality."""
 
     def _handle_step(
-        self, result_dict: Dict[str, Any], step_name: str,
-        func: Callable[..., R], *args: Any, **kwargs: Any
+        self,
+        result_dict: Dict[str, Any],
+        step_name: str,
+        func: Callable[..., R],
+        *args: Any,
+        **kwargs: Any,
     ) -> R:
         """
         Execute a step function and handle errors consistently.
@@ -370,9 +397,7 @@ class GitHubReleaseBaseActionModule(ActionBase):
             if e.skip_install:
                 # For errors that should just skip installation but not fail
                 result_dict.update(
-                    skipped=True,
-                    msg=str(e),
-                    skip_reason="check_only_mode"
+                    skipped=True, msg=str(e), skip_reason="check_only_mode"
                 )
             else:
                 # For real errors that should fail the task
@@ -382,6 +407,19 @@ class GitHubReleaseBaseActionModule(ActionBase):
             error_msg = f"Failed in {step_name}: {str(e)}"
             result_dict.update(failed=True, msg=error_msg)
             raise ActionError(error_msg) from e
+
+    def _validate_common_args(self, args: Dict[str, Any]) -> None:
+        """Validate common arguments required by most GitHub release operations.
+
+        Args:
+            args: The task arguments
+
+        Raises:
+            ActionError: If validation fails
+        """
+        # Common validation that applies to all GitHub release plugins
+        if "repo" not in args:
+            raise ActionError("Missing required parameter: repo")
 
 
 def get_extracted_info(asset_url: str) -> Tuple[Optional[str], Optional[str]]:
@@ -417,4 +455,3 @@ def get_extracted_info(asset_url: str) -> Tuple[Optional[str], Optional[str]]:
             extracted_pattern = f"{parts[0]}-VERSION-{parts[2]}"
 
     return extracted_dir, extracted_pattern
-
