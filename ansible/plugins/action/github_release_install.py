@@ -78,8 +78,8 @@ from module_utils.github_release import (
 )
 
 # Constants
-ENSURE_ABSENT = 'absent'
-ENSURE_PRESENT = 'present'
+ENSURE_ABSENT = "absent"
+ENSURE_PRESENT = "present"
 
 
 class ActionModule(GitHubReleaseBaseActionModule):
@@ -91,11 +91,10 @@ class ActionModule(GitHubReleaseBaseActionModule):
         Raises:
             ActionError: If validation fails
         """
-        # When using release_info, repo is optional
-        if "release_info" not in args and "repo" not in args:
-            raise ActionError(
-                "Missing required parameter: either 'repo' or 'release_info' must be provided"
-            )
+        # When using release_info, repo validation is skipped
+        if "release_info" not in args:
+            # Use the common validation from the base class
+            self._validate_common_args(args)
 
         if "method" not in args:
             raise ActionError("Missing required parameter: method")
@@ -117,19 +116,20 @@ class ActionModule(GitHubReleaseBaseActionModule):
         try:
             installer_class = INSTALL_METHODS[method]
 
-            # Filter arguments to only include valid parameters for each installer type
-            if method == "binary":
-                installer_args = {"dest_path": args.get("dest_path")}
-            elif method == "archive":
-                installer_args = {
-                    "dest_path": args.get("dest_path"),
-                    "creates_file": args.get("creates_file")
-                }
-            else:  # deb
-                installer_args = {}
+            # Pass all arguments to the installer class, which will extract what it needs
+            # The installer class constructor is responsible for validating required params
 
-            # Parameter validation is now handled by the installer classes
-            installer = installer_class(**installer_args)
+            # Remove 'method' key as it's not needed by installer classes
+            args_copy = args.copy()
+            if "method" in args_copy:
+                args_copy.pop("method")
+
+            # Create installer instance
+            installer = installer_class(**args_copy)
+
+            # Validate the installer (calls the validate method which checks required params)
+            installer.validate()
+
             return cast(GitHubInstaller, installer)  # Ensure type safety
         except Exception as e:
             raise ActionError(f"Error creating {method} installer: {str(e)}")

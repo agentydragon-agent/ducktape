@@ -46,7 +46,7 @@ if plugins_dir not in sys.path:
 from module_utils.github_release import (
     ActionError,
     GitHubReleaseBaseActionModule,
-    get_github_release_info
+    get_github_release_info,
 )
 
 
@@ -64,8 +64,8 @@ class ActionModule(GitHubReleaseBaseActionModule):
         Raises:
             ActionError: If validation fails
         """
-        if "repo" not in args:
-            raise ActionError("Missing required parameter: repo")
+        # Use the common validation from the base class
+        self._validate_common_args(args)
 
     def run(self, tmp=None, task_vars=None):
         """Main entry point for the action plugin."""
