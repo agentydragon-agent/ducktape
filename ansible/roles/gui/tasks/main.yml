@@ -169,8 +169,7 @@
 - name: Install AppImageLauncher
   github_release_install:
     repo: "TheAssassin/AppImageLauncher"
-    method: deb
-    version: "v3.0.0-alpha-4"
+    version: "v3.0.0-alpha-4"  # Pinned version
     acknowledged_version: "v3.0.0-alpha-4"
     asset_pattern: ".*_{{ dpkg_arch }}\\.deb$"
     method: deb

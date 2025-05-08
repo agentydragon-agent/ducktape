@@ -1,5 +1,5 @@
 ---
-- name: Verify GitHub release handler and AppImageLauncher installation
+- name: Verify GitHub release plugins and AppImageLauncher installation
   hosts: all
   gather_facts: false
   tasks:
@@ -33,23 +33,21 @@
         - /usr/bin/appimagelauncherd
       failed_when: not binary_check.results[0].stat.exists or not binary_check.results[1].stat.exists
         
-    - name: Verify GitHub Release handler functionality
+    - name: Verify GitHub Release info functionality
       block:
-        - name: Check mock installation
-          github_release_handler:
+        - name: Check release information
+          github_release_info:
             repo: "TheAssassin/AppImageLauncher"
-            method: deb
             version: "v3.0.0-alpha-4"  # Using a known version
-            check_only: true
             asset_pattern: ".*_{{ dpkg_arch }}\\.deb$"
           register: verification_check
           
-        - name: Verify GitHub release handler returned correct metadata
+        - name: Verify GitHub release info returned correct metadata
           assert:
             that:
               - verification_check.latest_version is defined
               - verification_check.asset_url is defined
               - verification_check.release_data is defined
               - verification_check.release_data.version is defined
-            success_msg: "GitHub release handler returned correct metadata"
-            fail_msg: "GitHub release handler did not return expected metadata"
+            success_msg: "GitHub release info returned correct metadata"
+            fail_msg: "GitHub release info did not return expected metadata"
