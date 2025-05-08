@@ -3,7 +3,10 @@
     "allow": [
       "Bash(ansible-playbook:*)",
       "Bash(molecule test:*)",
-      "Bash(ansible:*)"
+      "Bash(ansible:*)",
+      "Bash(python3 -m pytest -xvs tests/test_github_release_install.py)",
+      "Bash(find:*)",
+      "Bash(ANSIBLE_LIBRARY=/home/agentydragon/code/ducktape/ansible/plugins/modules ansible-playbook test_clean.yml -v)"
     ],
     "deny": []
   }
