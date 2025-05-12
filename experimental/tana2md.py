@@ -18,8 +18,7 @@ Highlights
 
 Environment flags
 -----------------
-T2MD_MAX_DEPTH, LOG_INTERVAL, STRICT_ROOTS
-identical semantics to previous iterations.
+STRICT_ROOTS env var (legacy).
 """
 
 from __future__ import annotations
@@ -31,13 +30,26 @@ import os
 import pathlib
 import re
 from dataclasses import dataclass
-from typing import Any, Dict, List, Set
+from typing import Any, Dict, List
 
-# ─── env ─────────────────────────────────────────────────────────────
-SHOW_ID      = bool(int(os.getenv("SHOW_ID", "0")))
-MAX_DEPTH    = int(os.getenv("T2MD_MAX_DEPTH", "100"))
-STRICT_ROOTS = bool(int(os.getenv("STRICT_ROOTS", "0")))
-DEBUG_NODE   = os.getenv("DEBUG_NODE")
+# ---------------------------------------------------------------------------
+# Imports & basic types
+# ---------------------------------------------------------------------------
+
+
+
+# ---------------------------------------------------------------------------
+# Rendering configuration (view-level)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class RenderCfg:
+    show_id: bool = False
+    debug_node: str | None = None
+
+
+MAX_DEPTH = 100  # recursion safety limit, not user-configurable
 TAG_RE        = re.compile(r"<[^>]*>")
 INLINE_REF_RE = re.compile(r'<span[^>]+data-inlineref-node="([^"]+)"[^>]*></span>')
 SYSTEM_TYPES  = {
@@ -75,20 +87,25 @@ class Node:
     def children(self)->List["Node"]:
         return [self.graph[c] for c in self.children_ids if c in self.graph]
 
-    def title(self)->str:
-        raw = (self.props.get("name") or
-               self.raw.get("name") or
-               self.props.get("text") or
-               self.props.get("description") or "")
-        def repl(m):
-            rid=m.group(1)
-            return f"[[{self.graph[rid].title() or rid}|{rid}]]"
-        txt = INLINE_REF_RE.sub(repl, raw)
-        txt = TAG_RE.sub("", txt).replace("\\n"," ").strip()
-        return f"{txt} ‹{self.id}›" if SHOW_ID and txt else txt
+    def title(self, *, show_id: bool = False) -> str:
+        raw = (
+            self.props.get("name")
+            or self.raw.get("name")
+            or self.props.get("text")
+            or self.props.get("description")
+            or ""
+        )
 
-    def debug(self,msg:str):
-        if DEBUG_NODE and self.id==DEBUG_NODE:
+        def repl(m):
+            rid = m.group(1)
+            return f"[[{self.graph[rid].title(show_id=show_id) or rid}|{rid}]]"
+
+        txt = INLINE_REF_RE.sub(repl, raw)
+        txt = TAG_RE.sub("", txt).replace("\\n", " ").strip()
+        return f"{txt} ‹{self.id}›" if show_id and txt else txt
+
+    def debug(self, msg: str, *, debug_node: str | None = None):
+        if debug_node and self.id == debug_node:
             logging.debug(f"[{self.id}] {msg}")
 
     @property
@@ -145,14 +162,14 @@ class Node:
     # Rendering helpers
     # ------------------------------------------------------------------
 
-    def tuple_line(self) -> str:
+    def tuple_line(self, *, show_id: bool = False) -> str:
         src = self.props.get("_sourceId")
         tag_name = next((k for k, v in self.graph.tag_ids.items() if v == src), "tuple")
         vals = [c.title() for c in self.children if c.title()]
         txt = f"{tag_name}: {', '.join(vals)}" if vals else tag_name
-        return f"{txt} ‹{self.id}›" if SHOW_ID else txt
+        return f"{txt} ‹{self.id}›" if show_id else txt
 
-    def meta_lines(self) -> List[str]:
+    def meta_lines(self, *, show_id: bool = False) -> List[str]:
         mid = self.props.get("_metaNodeId")
         if not mid or mid not in self.graph:
             return []
@@ -165,7 +182,7 @@ class Node:
                 # skip tuples that merely assign super-tags (they’ll be shown inline)
                 if self._tuple_has_tag(c, all_tag_ids):
                     continue
-                out.append(c.tuple_line())
+                out.append(c.tuple_line(show_id=show_id))
             else:
                 t = c.title()
                 if t:
@@ -203,21 +220,8 @@ class Graph(dict):
         return tag_map
 
 # ─── load helpers ────────────────────────────────────────────────────
-def _from_list(lst:list)->Dict[str,Any]:
-    return {n["id"]:n for n in lst if isinstance(n,dict) and "id" in n}
-
 def detect_nodes(data:Any)->Dict[str,Any]:
-    if isinstance(data,list): return _from_list(data)
-    if not isinstance(data,dict): return {}
-    if isinstance(data.get("docs"),list): return _from_list(data["docs"])
-    n=data.get("nodes")
-    if isinstance(n,list): return _from_list(n)
-    if isinstance(n,dict): return {k:{"id":k,**v} for k,v in n.items() if isinstance(v,dict)}
-    for v in data.values():
-        if isinstance(v,list):
-            m=_from_list(v)
-            if m: return m
-    return {}
+    return {n["id"]:n for n in data["docs"]}
 
 def load_graph(path:pathlib.Path)->Graph:
     return Graph(detect_nodes(json.loads(path.read_text())))
@@ -241,17 +245,13 @@ def load_graph(path:pathlib.Path)->Graph:
 # `SYS_A13`.  We check for the id either in the children list *or* (less
 # frequently) in the `_sourceId` property.
 
-def _discover_super_attr_ids(g: "Graph") -> set[str]:
-    """Return ids of attributes named *Node supertags(s)* found in *g*."""
-    ids = {
-        n.id
-        for n in g.values()
-        if n.doc_type == "attributeDef" and str(n.props.get("name", "")).lower().startswith("node supertags")
-    }
-    # Fallback to the historical constant if nothing was found.
-    return ids or {"SYS_A13"}
-
-def find_roots(g:Graph, tag_ids:Dict[str,str])->List[Node]:
+def find_roots(
+    g: Graph,
+    tag_ids: Dict[str, str],
+    *,
+    strict_roots: bool = False,
+    debug_node: str | None = None,
+) -> List[Node]:
     parents={cid for n in g.values() for cid in n.children_ids}
     tag_set = {tag_ids[name] for name in ROOT_TAGS if name in tag_ids}
     roots=[]
@@ -262,12 +262,12 @@ def find_roots(g:Graph, tag_ids:Dict[str,str])->List[Node]:
         non_tuple=[c for c in n.children if c.doc_type!="tuple"]
         tagged=n.has_tag(tag_set)
         orphan=n.id not in parents
-        root = (STRICT_ROOTS and tagged) or (not STRICT_ROOTS and (orphan or tagged))
+        root = (strict_roots and tagged) or ((not strict_roots) and (orphan or tagged))
         if root and tagged:
             roots.append(n)
-            n.debug(f"ROOT {orphan=} {tagged=}")
+            n.debug(f"ROOT {orphan=} {tagged=}", debug_node=debug_node)
         else:
-            n.debug(f"skip {orphan=} {tagged=}")
+            n.debug(f"skip {orphan=} {tagged=}", debug_node=debug_node)
     return roots
 
 # ─── outline ----------------------------------------------------------------
@@ -277,6 +277,7 @@ def outline(
     *,
     depth: int = 0,
     root_ids: set[str] | None = None,
+    cfg: RenderCfg | None = None,
 ) -> List[str]:
     """Render *node* (recursively) to a Markdown bullet list.
 
@@ -304,17 +305,18 @@ def outline(
 
     # ── tuple ────────────────────────────────────────────────────────────
     if node.doc_type == "tuple":
-        lines.append(indent + "- " + node.tuple_line())
+        lines.append(indent + "- " + node.tuple_line(show_id=cfg.show_id))
         return lines
 
     # ── regular node ─────────────────────────────────────────────────────
-    title_text = node.title()
+    cfg = cfg or RenderCfg()
+    title_text = node.title(show_id=cfg.show_id)
     if title_text:
         tags_inline = "".join(f" #{name}" for name in node.super_tags())
         lines.append(indent + "- " + title_text + tags_inline)
 
     # meta-information lines (tuples etc.)
-    for ml in node.meta_lines():
+    for ml in node.meta_lines(show_id=cfg.show_id):
         lines.append(indent + "  - " + ml)
 
     for c in node.children:
@@ -322,7 +324,7 @@ def outline(
         # Markdown roots. Still include the reference bullet so the link is
         # visible from the parent context.
         if root_ids and c.id in root_ids and c.id != node.id:
-            t = c.title()
+            t = c.title(show_id=cfg.show_id)
             if t:
                 lines.append(indent + "  - " + t)
             continue
@@ -331,7 +333,7 @@ def outline(
             # skip rendering separate bullet for super-tag tuples (they are inline)
             continue
 
-        lines.extend(outline(c, emitted, depth=depth + 1, root_ids=root_ids))
+        lines.extend(outline(c, emitted, depth=depth + 1, root_ids=root_ids, cfg=cfg))
 
     return lines
 
@@ -351,9 +353,7 @@ def main(argv=None):
     )
     # replicate other env-flags as CLI overrides for convenience
     ap.add_argument("--show-id", action="store_true", help="include node ids inline")
-    ap.add_argument("--min-children", type=int, help="minimum non-tuple children for roots")
     ap.add_argument("--strict-roots", action="store_true", help="only tagged nodes are roots")
-    ap.add_argument("--misc", action="store_true", help="write unassigned nodes to zzz_misc.md")
     ap.add_argument("--debug-node", help="log decisions for a single node id")
 
     args = ap.parse_args(argv)
@@ -362,23 +362,19 @@ def main(argv=None):
     if args.log_level:
         logging.getLogger().setLevel(args.log_level.upper())
 
-    global SHOW_ID, STRICT_ROOTS, DEBUG_NODE
-    if args.show_id:
-        SHOW_ID = True
-    if args.strict_roots:
-        STRICT_ROOTS = True
-    if args.debug_node:
-        DEBUG_NODE = args.debug_node
 
-    g=load_graph(args.src)
-    roots = find_roots(g, g.tag_ids)
+    strict_roots_flag = args.strict_roots or bool(int(os.getenv("STRICT_ROOTS", "0")))
+    cfg = RenderCfg(show_id=args.show_id, debug_node=args.debug_node)
+
+    g = load_graph(args.src)
+    roots = find_roots(g, g.tag_ids, strict_roots=strict_roots_flag, debug_node=cfg.debug_node)
     if args.top: roots=roots[:args.top]
 
-    emitted: Set[str] = set()
+    emitted: set[str] = set()
     root_ids = {r.id for r in roots}
     misc=[]
     for idx,r in enumerate(roots,1):
-        lines = outline(r, emitted, root_ids=root_ids)
+        lines = outline(r, emitted, root_ids=root_ids, cfg=cfg)
         if not lines: continue
         # --- determine bucket (issue/day/page/event) --------------------------------
         bucket = None
@@ -394,7 +390,7 @@ def main(argv=None):
 
     for n in g.values():
         if n.id not in emitted and not n.is_system and n.children_ids:
-            misc.extend(outline(n, emitted, root_ids=root_ids))
+            misc.extend(outline(n, emitted, root_ids=root_ids, cfg=cfg))
     if misc:
         (args.dst/"zzz_misc.md").write_text("\n".join(misc)+"\n",encoding="utf-8")
 
