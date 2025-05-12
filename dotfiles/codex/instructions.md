@@ -150,3 +150,8 @@ Use `typing.Self` or `from __future__ import annotations` for referencing the sa
             return self
 
 Do not use name of class as a string for this.
+
+## Testing
+
+If you notice you'd like to test your changes (which is of course highly encouraged), rather than writing one-off
+blobs of throwaway Python, feel free to suggest creating a new actual test file.
