@@ -83,20 +83,5 @@ Give me your best suggestions for my next steps for the coming ~hour or two.
 ## Tana Paste (/tanapaste)
 
 Rewrite whatever I invoked this on in Tana Paste format, and put the Tana Paste
-into a fenced code block. Read https://tana.inc/docs/tana-paste to make sure you
-get the format right.
-Include the %%tana%% at the top.
-
-Example of a valid issue:
-
-```
-%%tana%%
-- #issue Buy milk
-  - Status:: [[Open]]
-  - Hotlists::
-    - [[Do next]]
-    - [[Buy]]
-    - [[15 Leroy Place]]
-```
-
-See http://adgn.link/llm/tana for details on my knowledge base.
+into a fenced code block.
+Required reading for important details: http://adgn.link/llm/tana
