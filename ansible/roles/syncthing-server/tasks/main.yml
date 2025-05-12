@@ -30,8 +30,13 @@
 
 - name: check if config.xml already exists
   stat:
-    path: /srv/syncthing/.config/syncthing/config.xml
+    path: /srv/syncthing/.local/state/syncthing/config.xml
   register: st_cfg
+
+- name: bail out if config.xml did not exist
+  when: not st_cfg.stat.exists
+  fail:
+    msg: Syncthing config not found. Generate one.
 
 - name: enable & start syncthing system service
   become: true
@@ -39,17 +44,6 @@
     name: syncthing@syncthing   # template instance for the “syncthing” user
     enabled: yes
     state: started
-
-- name: bail out if config.xml did not exist
-  when: not st_cfg.stat.exists
-  fail:
-    msg: |
-      Syncthing config not found. Generate one with:
-        sudo -u syncthing bash -c 'syncthing --generate /srv/syncthing/.config/syncthing'
-
-      Then copy your edited config.xml to roles/syncthing-lite/files/ and rerun
-      ansible-playbook.
-      (Remember to set GUI address to 127.0.0.1:8384 and add the logseq folder.)
 
 #- name: SyncThing server
 #  include_role:
