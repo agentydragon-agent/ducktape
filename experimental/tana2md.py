@@ -33,12 +33,6 @@ from dataclasses import dataclass
 from typing import Any, Dict, List
 
 # ---------------------------------------------------------------------------
-# Imports & basic types
-# ---------------------------------------------------------------------------
-
-
-
-# ---------------------------------------------------------------------------
 # Rendering configuration (view-level)
 # ---------------------------------------------------------------------------
 
@@ -49,10 +43,10 @@ class RenderCfg:
     debug_node: str | None = None
 
 
-MAX_DEPTH = 100  # recursion safety limit, not user-configurable
-TAG_RE        = re.compile(r"<[^>]*>")
+MAX_DEPTH = 100
+TAG_RE = re.compile(r"<[^>]*>")
 INLINE_REF_RE = re.compile(r'<span[^>]+data-inlineref-node="([^"]+)"[^>]*></span>')
-SYSTEM_TYPES  = {
+SYSTEM_TYPES = {
     "tagDef",
     "attributeDef",
     "field-definition",
@@ -64,27 +58,28 @@ SYSTEM_TYPES  = {
 # Super-tags that mark Markdown roots / buckets
 ROOT_TAGS: tuple[str, ...] = ("day", "page", "issue", "event")
 
+
 # ─── Node / Graph ────────────────────────────────────────────────────
 @dataclass
 class Node:
     id: str
-    raw: Dict[str,Any]
+    raw: Dict[str, Any]
     graph: "Graph"
 
     @property
-    def props(self)->Dict[str,Any]:
-        return self.raw.get("props",{})
+    def props(self) -> Dict[str, Any]:
+        return self.raw.get("props", {})
 
     @property
-    def doc_type(self)->str|None:
+    def doc_type(self) -> str | None:
         return self.props.get("_docType")
 
     @property
-    def children_ids(self)->List[str]:
-        return self.raw.get("children",[])
+    def children_ids(self) -> List[str]:
+        return self.raw.get("children", [])
 
     @property
-    def children(self)->List["Node"]:
+    def children(self) -> List["Node"]:
         return [self.graph[c] for c in self.children_ids if c in self.graph]
 
     def title(self, *, show_id: bool = False) -> str:
@@ -109,7 +104,7 @@ class Node:
             logging.debug(f"[{self.id}] {msg}")
 
     @property
-    def is_system(self)->bool:
+    def is_system(self) -> bool:
         return self.id.startswith("SYS_") or self.doc_type in SYSTEM_TYPES
 
     # ------------------------------------------------------------------
@@ -189,6 +184,7 @@ class Node:
                     out.append(t)
         return out
 
+
 class Graph(dict):
     """Graph mapping node id → Node with extra lookup helpers."""
 
@@ -219,12 +215,15 @@ class Graph(dict):
         self.tag_name_by_id = {v: k for k, v in tag_map.items()}
         return tag_map
 
-# ─── load helpers ────────────────────────────────────────────────────
-def detect_nodes(data:Any)->Dict[str,Any]:
-    return {n["id"]:n for n in data["docs"]}
 
-def load_graph(path:pathlib.Path)->Graph:
+# ─── load helpers ────────────────────────────────────────────────────
+def detect_nodes(data: Any) -> Dict[str, Any]:
+    return {n["id"]: n for n in data["docs"]}
+
+
+def load_graph(path: str) -> Graph:
     return Graph(detect_nodes(json.loads(path.read_text())))
+
 
 # ─── root detection ─────────────────────────────────────────────────
 # ─── tagging helpers ---------------------------------------------------------
@@ -245,6 +244,7 @@ def load_graph(path:pathlib.Path)->Graph:
 # `SYS_A13`.  We check for the id either in the children list *or* (less
 # frequently) in the `_sourceId` property.
 
+
 def find_roots(
     g: Graph,
     tag_ids: Dict[str, str],
@@ -252,16 +252,17 @@ def find_roots(
     strict_roots: bool = False,
     debug_node: str | None = None,
 ) -> List[Node]:
-    parents={cid for n in g.values() for cid in n.children_ids}
+    parents = {cid for n in g.values() for cid in n.children_ids}
     tag_set = {tag_ids[name] for name in ROOT_TAGS if name in tag_ids}
-    roots=[]
+    roots = []
     for n in g.values():
-        title=n.title()
-        if n.is_system or n.doc_type=="search": continue
-        if not title or title.lower() in {"default","calendar"}: continue
-        non_tuple=[c for c in n.children if c.doc_type!="tuple"]
-        tagged=n.has_tag(tag_set)
-        orphan=n.id not in parents
+        title = n.title()
+        if n.is_system or n.doc_type == "search":
+            continue
+        if not title or title.lower() in {"default", "calendar"}:
+            continue
+        tagged = n.has_tag(tag_set)
+        orphan = n.id not in parents
         root = (strict_roots and tagged) or ((not strict_roots) and (orphan or tagged))
         if root and tagged:
             roots.append(n)
@@ -269,6 +270,7 @@ def find_roots(
         else:
             n.debug(f"skip {orphan=} {tagged=}", debug_node=debug_node)
     return roots
+
 
 # ─── outline ----------------------------------------------------------------
 def outline(
@@ -329,7 +331,9 @@ def outline(
                 lines.append(indent + "  - " + t)
             continue
 
-        if c.doc_type == "tuple" and node._tuple_has_tag(c, set(node.graph.tag_ids.values())):
+        if c.doc_type == "tuple" and node._tuple_has_tag(
+            c, set(node.graph.tag_ids.values())
+        ):
             # skip rendering separate bullet for super-tag tuples (they are inline)
             continue
 
@@ -337,8 +341,10 @@ def outline(
 
     return lines
 
-def slugify(t:str,L:int=50)->str:
-    return (re.sub(r"[^A-Za-z0-9\-]+","-",t).strip("-") or "untitled")[:L]
+
+def slugify(t: str, L: int = 50) -> str:
+    return (re.sub(r"[^A-Za-z0-9\-]+", "-", t).strip("-") or "untitled")[:L]
+
 
 # ─── main ──────────────────────────────────────────────────────────
 def main(argv=None):
@@ -353,7 +359,9 @@ def main(argv=None):
     )
     # replicate other env-flags as CLI overrides for convenience
     ap.add_argument("--show-id", action="store_true", help="include node ids inline")
-    ap.add_argument("--strict-roots", action="store_true", help="only tagged nodes are roots")
+    ap.add_argument(
+        "--strict-roots", action="store_true", help="only tagged nodes are roots"
+    )
     ap.add_argument("--debug-node", help="log decisions for a single node id")
 
     args = ap.parse_args(argv)
@@ -362,20 +370,23 @@ def main(argv=None):
     if args.log_level:
         logging.getLogger().setLevel(args.log_level.upper())
 
-
     strict_roots_flag = args.strict_roots or bool(int(os.getenv("STRICT_ROOTS", "0")))
     cfg = RenderCfg(show_id=args.show_id, debug_node=args.debug_node)
 
     g = load_graph(args.src)
-    roots = find_roots(g, g.tag_ids, strict_roots=strict_roots_flag, debug_node=cfg.debug_node)
-    if args.top: roots=roots[:args.top]
+    roots = find_roots(
+        g, g.tag_ids, strict_roots=strict_roots_flag, debug_node=cfg.debug_node
+    )
+    if args.top:
+        roots = roots[: args.top]
 
     emitted: set[str] = set()
     root_ids = {r.id for r in roots}
-    misc=[]
-    for idx,r in enumerate(roots,1):
+    misc = []
+    for idx, r in enumerate(roots, 1):
         lines = outline(r, emitted, root_ids=root_ids, cfg=cfg)
-        if not lines: continue
+        if not lines:
+            continue
         # --- determine bucket (issue/day/page/event) --------------------------------
         bucket = None
         for name in ROOT_TAGS:
@@ -383,17 +394,21 @@ def main(argv=None):
             if tid and r.has_tag({tid}):
                 bucket = name
                 break
-        target=args.dst/(bucket if bucket else "")
-        target.mkdir(parents=True,exist_ok=True)
-        path=target/f"{idx:03d}-{slugify(r.title())}.md"
-        path.write_text(f"<!-- id: {r.id} -->\n"+"\n".join(lines)+"\n",encoding="utf-8")
+        target = args.dst / (bucket if bucket else "")
+        target.mkdir(parents=True, exist_ok=True)
+        path = target / f"{idx:03d}-{slugify(r.title())}.md"
+        path.write_text(
+            f"<!-- id: {r.id} -->\n" + "\n".join(lines) + "\n", encoding="utf-8"
+        )
 
     for n in g.values():
         if n.id not in emitted and not n.is_system and n.children_ids:
             misc.extend(outline(n, emitted, root_ids=root_ids, cfg=cfg))
     if misc:
-        (args.dst/"zzz_misc.md").write_text("\n".join(misc)+"\n",encoding="utf-8")
+        (args.dst / "zzz_misc.md").write_text("\n".join(misc) + "\n", encoding="utf-8")
 
     logging.info("wrote %d root files%s", len(roots), " + misc" if misc else "")
 
-if __name__=="__main__": main()
+
+if __name__ == "__main__":
+    main()
