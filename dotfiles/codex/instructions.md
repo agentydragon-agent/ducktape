@@ -1,9 +1,28 @@
-Read README.md for reference files to use.
+If the repository have a `README.md`, read it and refer to it.
+If there is `CLAUDE.md` or `CODEX.md`, read it and follow it.
+
+## References
 
 I am happy to allow you to fire HTTP queries for testing. If useful for testing etc., just fire them right away without asking.
+Also start servers, experiment, etc.
 
-Write targetting the Python version that's installed. Use its available features
-(e.g. `match` statement, assignment operator, ...) when appropriate.
+You might see a folder like `references/` in the repo. If you do, do not edit anything in the folder. But the folder will
+contain copied source code artifacts that may be useful to you to implement what you're doing. Look around and use `references/`
+for reference.
+
+## Python
+
+Write targetting the Python version that's installed. Use its available features to their full extent where they make sense and
+don't make code worse:
+
+* `match` statement
+* `:=` assignment operator
+* `X | Y` instead of `Union[X | Y]`
+* `X | None` instead of `Optional[X]`
+* `f"{var=}"` instead of `f"var={var}"` (use this one basically always whenever that's the string you are producing)
+* `str.removeprefix`, `str.removesuffix` instead of slicing - safer
+* `dict1 | dict2` (unino), `dict1 & dict2` (intersection) and ditto for `set`s
+* `zoneinfo` builtin library
 
 ## Style
 
@@ -11,18 +30,15 @@ Follow PEP 8.
 
 Imports go at the top of files. Not into functions etc.
 
-Avoid `getattr`/`setattr` unless absolutely necessary.
+Never use `getattr`/`setattr` unless absolutely necessary - as in there literally *is no way* to do things differenly.
 
 Use `pathlib` for manipulating paths, not `os.path`.
 
 Before finishing, clear up your code, remove unused imports, code etc. and run `black`.
 
-Use the new assignment-type f-strings: instead of e.g. f"foo var={var} bar", write f"foo {var=} bar".
-
 ## Not trailing whitespace
 
 Do not leave around trailing whitespace in files. If you have an empty line, that empty line should not contain indentation whitespace.
-
 Apply something like this to all your code files:
 
     sed -i 's/[[:space:]]\+$//' filename
