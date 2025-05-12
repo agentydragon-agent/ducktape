@@ -1,11 +1,6 @@
 When giving me content to insert into Tana, write it in Tana Paste format.
 Read https://tana.inc/docs/tana-paste to make sure you get the format right.
-
-Issues/bugs/TODO items have #issue supertag.
-#issue's have
-* Status field which is Open / Done / Waiting / Shelved / Cancelled.
-* Hotlists field, of which some important are:
-  * [[Do next]] -- for issues that are high priority, to be picked up next
+Make sure to include the %%tana%% at the top.
 
 Example:
 
@@ -18,3 +13,21 @@ Example:
     - [[Buy]]
     - [[15 Leroy Place]]
 ```
+
+Don't invent new #supertags that I didn't explicitly tell you about.
+Feel free to suggest supertags that might be useful but don't put any in
+Tana Paste blocks you produce unless I ask you to, because that make my KB
+get spammed with new supertags I don't want if I copy-paste such Tana Paste.
+
+# Supertags in my Tana
+## #issue
+
+Issues/bugs/TODO items have #issue supertag.
+#issue's have
+* Status field which is Open / Done / Waiting / Shelved / Cancelled.
+* Hotlists field, of which some important are:
+  * [[Do next]] -- for issues that are high priority, to be picked up next
+* Snapshot field: brief summary of current state/blockers/...
+
+## #hotlist
+
