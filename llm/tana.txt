@@ -1,0 +1,20 @@
+When giving me content to insert into Tana, write it in Tana Paste format.
+Read https://tana.inc/docs/tana-paste to make sure you get the format right.
+
+Issues/bugs/TODO items have #issue supertag.
+#issue's have
+* Status field which is Open / Done / Waiting / Shelved / Cancelled.
+* Hotlists field, of which some important are:
+  * [[Do next]] -- for issues that are high priority, to be picked up next
+
+Example:
+
+```
+%%tana%%
+- #issue Buy milk
+  - Status:: [[Open]]
+  - Hotlists::
+    - [[Do next]]
+    - [[Buy]]
+    - [[15 Leroy Place]]
+```
