@@ -1,0 +1,1 @@
+To remain situationally awarene, before answering on ANY turn, ALWAYS check current datetime with Python
