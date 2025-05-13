@@ -22,56 +22,8 @@ from pathlib import Path
 import pytest
 
 import tana2md as t2m
-
-# ---------------------------------------------------------------------------
-# helpers
-# ---------------------------------------------------------------------------
-
-
-def _minimal_export(*, super_tag: str = "page") -> list[dict]:
-    """Return a minimal Tana export payload as *list* of node dicts.
-
-    The resulting structure contains:
-
-    * `SYS_A13` – attributeDef *Node supertags(s)*
-    * tagDef nodes for the four recognised super-tags
-    * a root node titled *Root*, tagged with *super_tag*
-    """
-
-    attr_id = "SYS_A13"
-
-    attr_node = {
-        "id": attr_id,
-        "props": {"_docType": "attributeDef", "name": "Node supertags(s)"},
-        "children": [],
-    }
-
-    tags = ["day", "page", "issue", "event"]
-    tag_nodes = [
-        {
-            "id": tag.upper(),
-            "props": {"_docType": "tagDef", "name": tag},
-            "children": [],
-        }
-        for tag in tags
-    ]
-
-    tuple_id = "TUP1"
-    root_id = "ROOT"
-
-    tuple_node = {
-        "id": tuple_id,
-        "props": {"_docType": "tuple", "_sourceId": attr_id},
-        "children": [super_tag.upper()],
-    }
-
-    root_node = {
-        "id": root_id,
-        "props": {"name": "Root"},
-        "children": [tuple_id],
-    }
-
-    return [attr_node] + tag_nodes + [tuple_node, root_node]
+import tanalib as tl
+from test_utils import minimal_export, complex_node_export, load_test_graph, create_export_file
 
 
 # ---------------------------------------------------------------------------
@@ -80,7 +32,7 @@ def _minimal_export(*, super_tag: str = "page") -> list[dict]:
 
 
 def test_graph_initialisation():
-    g = t2m.Graph(t2m.detect_nodes(_minimal_export()))
+    g = load_test_graph(minimal_export())
 
     # super-tag attribute discovered eagerly
     assert "SYS_A13" in g.super_attr_ids
@@ -90,7 +42,7 @@ def test_graph_initialisation():
 
 
 def test_node_has_tag():
-    g = t2m.Graph(t2m.detect_nodes(_minimal_export(super_tag="day")))
+    g = load_test_graph(minimal_export(super_tag="day"))
     root = g["ROOT"]
 
     # root node is tagged with `day`
@@ -100,7 +52,7 @@ def test_node_has_tag():
 
 
 def test_outline_rendering():
-    g = t2m.Graph(t2m.detect_nodes(_minimal_export()))
+    g = load_test_graph(minimal_export())
     emitted: set[str] = set()
     lines = t2m.outline(g["ROOT"], emitted)
 
@@ -110,9 +62,85 @@ def test_outline_rendering():
     assert not any("tuple:" in ln for ln in lines[1:])
 
 
+def test_checkbox_rendering():
+    """Test that checkbox fields are rendered using Markdown checkbox format."""
+    # Create a simple graph with a checkbox field
+    g = tl.Graph({
+        "CHECKBOX_FIELD": {
+            "id": "CHECKBOX_FIELD",
+            "props": {"_docType": "attributeDef", "name": "Show done/not done with a checkbox"},
+        },
+        # Checked checkbox
+        "CHECKBOX_CHECKED": {
+            "id": "CHECKBOX_CHECKED",
+            "props": {"name": "Yes"},
+        },
+        "CHECKBOX_TUP_CHECKED": {
+            "id": "CHECKBOX_TUP_CHECKED",
+            "props": {"_docType": "tuple", "_sourceId": "CHECKBOX_FIELD"},
+            "children": ["CHECKBOX_CHECKED"],
+        },
+        "ITEM_CHECKED": {
+            "id": "ITEM_CHECKED",
+            "props": {"name": "Item with checked checkbox"},
+            "children": ["CHECKBOX_TUP_CHECKED"],
+        },
+        # Unchecked checkbox
+        "CHECKBOX_UNCHECKED": {
+            "id": "CHECKBOX_UNCHECKED",
+            "props": {"name": "No"},
+        },
+        "CHECKBOX_TUP_UNCHECKED": {
+            "id": "CHECKBOX_TUP_UNCHECKED",
+            "props": {"_docType": "tuple", "_sourceId": "CHECKBOX_FIELD"},
+            "children": ["CHECKBOX_UNCHECKED"],
+        },
+        "ITEM_UNCHECKED": {
+            "id": "ITEM_UNCHECKED",
+            "props": {"name": "Item with unchecked checkbox"},
+            "children": ["CHECKBOX_TUP_UNCHECKED"],
+        },
+        # Empty checkbox (should default to unchecked)
+        "CHECKBOX_TUP_EMPTY": {
+            "id": "CHECKBOX_TUP_EMPTY",
+            "props": {"_docType": "tuple", "_sourceId": "CHECKBOX_FIELD"},
+            "children": [],
+        },
+        "ITEM_EMPTY": {
+            "id": "ITEM_EMPTY",
+            "props": {"name": "Item with empty checkbox"},
+            "children": ["CHECKBOX_TUP_EMPTY"],
+        },
+    })
+    
+    # Set up tag_ids to make checkbox field detection work
+    g.tag_ids = {"Show done/not done with a checkbox": "CHECKBOX_FIELD"}
+    
+    # Test with checked item
+    emitted = set()
+    checked_lines = t2m.outline(g["ITEM_CHECKED"], emitted)
+    assert len(checked_lines) >= 2
+    assert "- Item with checked checkbox" in checked_lines[0]
+    assert "- [x]" in checked_lines[1]
+    
+    # Test with unchecked item
+    emitted = set()
+    unchecked_lines = t2m.outline(g["ITEM_UNCHECKED"], emitted)
+    assert len(unchecked_lines) >= 2
+    assert "- Item with unchecked checkbox" in unchecked_lines[0]
+    assert "- [ ]" in unchecked_lines[1]
+    
+    # Test with empty checkbox (should default to unchecked)
+    emitted = set()
+    empty_lines = t2m.outline(g["ITEM_EMPTY"], emitted)
+    assert len(empty_lines) >= 2
+    assert "- Item with empty checkbox" in empty_lines[0]
+    assert "- [ ]" in empty_lines[1]
+
+
 def test_find_roots():
-    g = t2m.Graph(t2m.detect_nodes(_minimal_export()))
-    roots = t2m.find_roots(g, g.tag_ids)
+    g = load_test_graph(minimal_export())
+    roots = tl.find_roots(g, g.tag_ids)
     assert [n.id for n in roots] == ["ROOT"]
 
 
@@ -124,11 +152,9 @@ def test_find_roots():
 @pytest.mark.integration
 def test_cli_generates_markdown(tmp_path: Path):
     """Run the full CLI against a minimal export and verify a file appears."""
-    export = _minimal_export(super_tag="page")
-
-    src = tmp_path / "export.json"
+    export_data = minimal_export(super_tag="page")
+    src = create_export_file(tmp_path, export_data)
     dst = tmp_path / "out"
-    src.write_text(json.dumps(export))
 
     # Execute the CLI as a subprocess so we exercise argument parsing too.
     result = subprocess.run(
@@ -148,4 +174,3 @@ def test_cli_generates_markdown(tmp_path: Path):
     md = files[0].read_text()
     assert "<!-- id: ROOT -->" in md
     assert "#page" in md
-
