@@ -4,7 +4,22 @@ Analogously to tana2md.py, read a Tana export file, but render it as Tana Paste 
 Use https://tana.inc/docs/tana-paste as a reference of the Tana Paste format.
 Fine to render the Tana JSON dump as one big block, not split into individual files.
 
-There's a Tana export in ~/downloads/tana-export-2025-05-12.json. Use it to iterate/test.
+There's a Tana export in ~/downloads/tana-export.json. Use it to iterate/test.
+
+There is also a Tana Paste copy-paste I got from the same workspace in ~/downloads/tana-paste.txt. Use it to compare your implementation
+against reference output. Make sure you cover and check your implemnetation on all node types - including but not limited to:
+
+* table views
+* supertag definition
+* saved queries and their definitions
+* attribute and values
+* URL links
+* embedded images
+
+You do not necessarily have to *exaclty* output this exact same file. The file might have some hard-to-replicate aspects, like how exaclty
+some things would be ordered, which entities exactly would be included, where they would be fully expanded vs. merely referenced, etc. --
+it's OK to not get those details *exactly* matching. But do check you get all relevant types of included content right. You'll probably also
+want to extend, refactor etc. the library code, and of course add relevant tests, like that specific little subgraphs are formatted correctly.
 
 Do not rewrite the whole thing from scratch. Build up some kind of shared representation/library for loading and such.
 In a separate format-independent file. Also write tests as appropriate, especially with smaller-size pieces of the input JSON dump.
