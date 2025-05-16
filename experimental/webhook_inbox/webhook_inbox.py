@@ -3,11 +3,11 @@ export WEBHOOK_INBOX_KEY='fgBWt1JKhqE6MbZAUntgZ7QBGJ0thPU1Su1qzU529l4='
 uvicorn webhook_inbox:app --host 0.0.0.0 --port 8000
 """
 
-import os, time, json, sqlite3, base64, binascii
+import os, time, json, sqlite3, base64, binascii, logging
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from fastapi import FastAPI, Request, HTTPException
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import RedirectResponse
 import textwrap
 from fastapi.templating import Jinja2Templates
 from cryptography.fernet import Fernet
@@ -21,6 +21,18 @@ PAGE_SIZE    = int(os.getenv("PAGE_SIZE", "50"))
 TZ = "America/Los_Angeles"
 PAC          = ZoneInfo(TZ)
 templates    = Jinja2Templates(directory="templates")
+
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+# Configure logging (avoid double config when uvicorn already set it up)
+if not logging.getLogger().handlers:
+    logging.basicConfig(
+        level=LOG_LEVEL,
+        format="%(asctime)s %(levelname)s %(name)s - %(message)s",
+        datefmt="%Y-%m-%dT%H:%M:%S%z",
+    )
+
+logger = logging.getLogger("webhook_inbox")
+logger.setLevel(LOG_LEVEL)
 
 class EncryptedEncoder:
     def __init__(self, key):
@@ -95,16 +107,44 @@ app = FastAPI()
 
 @app.middleware("http")
 async def log_all(req: Request, call_next):
+    """Log every HTTP request.
+
+    Two separate sinks are used:
+    1. A *database* row that also stores (truncated) request bodies for later
+       inspection in the web UI.
+    2. A *stdout* line for operators.  **Bodies are *not* included** here to
+       avoid leaking sensitive data into log aggregators.
+    """
+
     ts = int(time.time())
+
+    # We still capture at most MAX_PAYLOAD bytes for the DB, but *do not* emit
+    # them to stdout logs.
     body = (await req.body())[:MAX_PAYLOAD].decode(errors="replace")
+
+    # Forward the request downstream and capture the response.
     resp = await call_next(req)
+
+    # Store in DB for UI.
     CONN.execute(
         "INSERT INTO access_log(ts,path,method,query,payload,headers,status)"
         " VALUES(?,?,?,?,?,?,?)",
         (ts, req.url.path, req.method, req.url.query,
-         body, json.dumps(dict(req.headers.items())), resp.status_code)
+         body, json.dumps(dict(req.headers.items())), resp.status_code),
     )
     CONN.commit()
+
+    # Emit operator log (no body).
+    logger.info(
+        "handled_request",
+        extra={
+            "method": req.method,
+            "path": req.url.path,
+            "query": req.url.query,
+            "status": resp.status_code,
+        },
+    )
+
     return resp
 
 # ── POST /  → ingest event

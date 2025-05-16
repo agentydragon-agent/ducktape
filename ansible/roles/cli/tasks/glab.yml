@@ -2,9 +2,10 @@
 # Install GitLab CLI (glab) using GitHub release plugins
 - name: Install GitLab CLI
   github_release_install:
-    repo: "profclems/glab"
-    version: "latest"
-    asset_pattern: ".*Linux_x86_64\\.deb$"
+    release_spec:
+      repo: "profclems/glab"
+      version: "latest"
+      asset_pattern: ".*Linux_x86_64\\.deb$"
     method: deb
   become: true
   when: dpkg_arch == "amd64"
