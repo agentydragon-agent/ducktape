@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Webhook Inbox</title>
+</head>
+<body>
+  <h1>Webhook Inbox</h1>
+  {% if events_count %}
+    <p>Last {{ events_count }} events before {{ page_cutoff_iso }}:</p>
+    <pre>{{ encoding }}</pre>
+  {% else %}
+    <p>No events were captured before {{ page_cutoff_iso }}</p>
+  {% endif %}
+  <p>
+    {% if older_link %}| <a href="{{ older_link }}">← Older</a>{% endif %}
+    <a href="/">Latest →</a>
+  </p>
+</body>
+</html>
+
