@@ -55,9 +55,10 @@ class EncryptedEncoder:
         ciphertext = self.fernet.encrypt(plaintext.encode()).decode()
 
         # 3. break into ≤50-char chunks and tag each line “# line i/N”
-        chunks   = textwrap.wrap(ciphertext, 50)
-        total    = len(chunks)
-        body     = "\n".join(
+        width  = 50
+        chunks = [ciphertext[i:i+width] for i in range(0, len(ciphertext), width)]
+        total  = len(chunks)
+        body   = "\n".join(
             f'  {chunk!r}  # line {i+1}/{total}'
             for i, chunk in enumerate(chunks)
         )
