@@ -16,14 +16,81 @@
       TZ=UTC
       DB_PATH=/data/events.db
 
-- name: Build webhook-inbox image from remote Git sub-dir
-  community.docker.docker_image:
-    name: webhook-inbox            # local image name
-    tag: latest
-    source: build
-    build:
-      path: "https://gitlab.com/agentydragon/ducktape.git#devel:experimental/webhook_inbox"
-      pull: yes                    # always refresh base images
+  # 1) Git repo + branch / tag  (no :subdir suffix here)
+
+#- name: Build webhook-inbox image from remote Git sub-dir
+#  community.docker.docker_image:
+#    name: webhook-inbox            # local image name
+#    tag: latest
+#    source: build
+#    build:
+#      remote: "https://gitlab.com/agentydragon/ducktape.git#devel"
+#      dockerfile: "experimental/webhook_inbox/Dockerfile"
+#      pull: yes            # refresh base images
+#      nocache: no          # keep layer cache between runs
+
+#- name: Build (or rebuild) webhook-inbox image straight from Git
+#  community.docker.docker_image:
+#    name:  webhook-inbox
+#    tag:   latest
+#    source: build                 # ← tells the module we are *building*
+#    pull:   yes                   # refresh base images
+#
+#    # Build context comes from the Git repo / branch:
+#    remote: "https://gitlab.com/agentydragon/ducktape.git#devel"
+#
+#    # Dockerfile that lives **inside** that repo
+#    dockerfile: "experimental/webhook_inbox/Dockerfile"
+
+
+#- name: Build straight from a Git repo
+#  community.docker.docker_image:
+#    name: webhook-inbox
+#    tag: latest
+#    source: build
+#    push: false                      # keep it local
+#    build:
+#      #remote: "https://github.com/acme/super-app.git#main:services/api"
+#      remote: "https://gitlab.com/agentydragon/ducktape.git#devel:experimental/webhook_inbox"
+#      # ───────┬────────────────────────────────────────────────────────
+#      #        │ ⌁repo URL            ⌁ref   ⌁Docker-context subdir
+#      dockerfile: Dockerfile         # relative to that sub-dir
+#      pull: yes                      # refresh base layers
+#
+#- name: Build from Git without a checkout (Buildx)
+#  community.docker.docker_image_build:
+#    name: webhook-inbox
+#    tag: latest
+#    path: "https://gitlab.com/agentydragon/ducktape.git#devel:experimental/webhook_inbox"
+#    dockerfile: Dockerfile
+
+#- name: Build ducktape-webhook straight from Git
+#  community.docker.docker_image:
+#    name: webhook-inbox
+#    tag: latest
+#    source: build
+#    push: false
+#    build:
+#      path: "."                                     # must exist → '.' is fine
+#      remote: "https://gitlab.com/agentydragon/ducktape.git#devel:experimental/webhook_inbox"
+#      dockerfile: Dockerfile                        # relative to that sub-dir
+#      pull: yes
+- command: >
+    docker buildx build
+    -f Dockerfile
+    -t webhook-inbox:latest
+    https://gitlab.com/agentydragon/ducktape.git#devel:experimental/webhook_inbox
+  args:
+    chdir: /tmp
+  become: yes
+
+
+#- name: raw build
+#  ansible.builtin.command:
+#    cmd: docker build -t webhook-inbox:latest https://gitlab.com/agentydragon/ducktape.git#devel:experimental/webhook_inbox
+#    args:
+#      chdir: /tmp
+
 
 - name: Run (or update) the webhook-inbox container
   community.docker.docker_container:
@@ -31,8 +98,7 @@
     image: webhook-inbox:latest
     recreate: yes                  # pick up new image each play run
     restart_policy: unless-stopped
-    env_file:
-      - /opt/webhook-inbox/.env    # loads KEY=VALUE lines
+    env_file: /opt/webhook-inbox/.env  # loads KEY=VALUE lines
     volumes:
       - /opt/webhook-inbox/data:/data
     published_ports:               # hostPort:containerPort – public!

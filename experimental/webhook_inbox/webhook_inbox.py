@@ -45,16 +45,34 @@ class EncryptedEncoder:
 
         self.fernet = Fernet(key)
 
-    def encode(self, events):
-        data = pickle.dumps(events, 5)
+    def encode(self, events, tz="UTC"):
+        # 1. serialize → compress → ASCII-85
+        data = pickle.dumps(events, protocol=5)
         packed = zlib.compress(data, level=9)
         plaintext = base64.a85encode(packed).decode()
+
+        # 2. Fernet-encrypt plaintext
         ciphertext = self.fernet.encrypt(plaintext.encode()).decode()
+
+        # 3. break into ≤50-char chunks and tag each line “# line i/N”
+        chunks   = textwrap.wrap(ciphertext, 50)
+        total    = len(chunks)
+        body     = "\n".join(
+            f'  {chunk!r}  # line {i+1}/{total}'
+            for i, chunk in enumerate(chunks)
+        )
+
+        # 4. multiline literal + length assertion
+
+        # 5. final template
         return textwrap.dedent(f"""\
         # The events are encoded in this ciphertext:
-        CIPHERTEXT = {ciphertext!r}
+        CIPHERTEXT = (
+        {body}
+        )
+        assert len(CIPHERTEXT) == {len(ciphertext)}
 
-        # You should have a Fernet key. It's 32 base64-encoded bytes:
+        # You should have a Fernet key of 32 base64-encoded bytes:
         WEBHOOK_INBOX_KEY: str = ...
         assert len(WEBHOOK_INBOX_KEY) == 44
 
@@ -63,14 +81,14 @@ class EncryptedEncoder:
         from zoneinfo import ZoneInfo
         from cryptography.fernet import Fernet
 
-        def decode(ciphertext):
-            plain_b85 = Fernet(WEBHOOK_INBOX_KEY).decrypt(ciphertext.encode())
-            return pickle.loads(zlib.decompress(base64.a85decode(plain_b85)))
+        plain_b85 = Fernet(WEBHOOK_INBOX_KEY).decrypt(CIPHERTEXT.encode())
+        events = pickle.loads(zlib.decompress(base64.a85decode(plain_b85)))
 
         for ev in events:
-            iso = datetime.datetime.fromtimestamp(ev["ts"], ZoneInfo({TZ!r})).isoformat(timespec="seconds")
+            iso = datetime.datetime.fromtimestamp(ev["ts"], ZoneInfo({tz!r})).isoformat(timespec="seconds")
             print(ev["id"], iso, ev["payload"])
         """)
+
 
 class JsonEncoder:
     def encode(self, events):
