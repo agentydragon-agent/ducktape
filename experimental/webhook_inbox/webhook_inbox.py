@@ -61,15 +61,14 @@ class EncryptedEncoder:
             f'  {chunk!r}  # line {i+1}/{total}'
             for i, chunk in enumerate(chunks)
         )
+        body = "(\n" + body + "\n)"
 
         # 4. multiline literal + length assertion
 
         # 5. final template
         return textwrap.dedent(f"""\
         # The events are encoded in this ciphertext:
-        CIPHERTEXT = (
-        {body}
-        )
+        CIPHERTEXT = {body}
         assert len(CIPHERTEXT) == {len(ciphertext)}
 
         # You should have a Fernet key of 32 base64-encoded bytes:
