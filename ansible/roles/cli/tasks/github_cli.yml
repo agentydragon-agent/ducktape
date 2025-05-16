@@ -2,15 +2,11 @@
 # Install GitHub CLI (gh) using the new GitHub release plugins
 - name: Install GitHub CLI
   github_release_install:
-    repo: "cli/cli"
-    version: "latest"
-    asset_pattern: ".*linux_{{ dpkg_arch }}\\.deb$"
+    release_spec:
+      repo: "cli/cli"
+      version: "latest"
+      asset_pattern: ".*linux_{{ dpkg_arch }}\\.deb$"
     method: deb
   register: gh_install
   become: true
   when: dpkg_arch in ["amd64", "arm64"]
-
-- name: Show GitHub CLI installed version
-  ansible.builtin.debug:
-    msg: "GitHub CLI installed: {{ gh_install.latest_version }}"
-  when: gh_install.changed

@@ -26,10 +26,11 @@
 
     - name: Install AppImageLauncher with pinned version
       github_release_install:
-        repo: "TheAssassin/AppImageLauncher"
+        release_spec:
+          repo: "TheAssassin/AppImageLauncher"
+          version: "{{ test_version }}"
+          asset_pattern: ".*_{{ dpkg_arch }}\\.deb$"
         method: deb
-        version: "{{ test_version }}"
-        asset_pattern: ".*_{{ dpkg_arch }}\\.deb$"
       register: install_result
       become: true
 
