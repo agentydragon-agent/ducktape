@@ -64,9 +64,8 @@ class EncryptedEncoder:
         )
         body = "(\n" + body + "\n)"
 
-        # 4. multiline literal + length assertion
-
         # 5. final template
+        # TODO: fix the spaces
         return textwrap.dedent("""
         # The events are encoded in this ciphertext:
         CIPHERTEXT = {}
