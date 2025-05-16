@@ -67,7 +67,7 @@ class EncryptedEncoder:
         # 4. multiline literal + length assertion
 
         # 5. final template
-        return textwrap.dedent("""\
+        return textwrap.dedent("""
         # The events are encoded in this ciphertext:
         CIPHERTEXT = {}
         assert len(CIPHERTEXT) == {}
