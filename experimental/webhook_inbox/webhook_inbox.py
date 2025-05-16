@@ -67,10 +67,10 @@ class EncryptedEncoder:
         # 4. multiline literal + length assertion
 
         # 5. final template
-        return textwrap.dedent(f"""\
+        return textwrap.dedent("""\
         # The events are encoded in this ciphertext:
-        CIPHERTEXT = {body}
-        assert len(CIPHERTEXT) == {len(ciphertext)}
+        CIPHERTEXT = {}
+        assert len(CIPHERTEXT) == {}
 
         # You should have a Fernet key of 32 base64-encoded bytes:
         WEBHOOK_INBOX_KEY: str = ...
@@ -85,9 +85,9 @@ class EncryptedEncoder:
         events = pickle.loads(zlib.decompress(base64.a85decode(plain_b85)))
 
         for ev in events:
-            iso = datetime.datetime.fromtimestamp(ev["ts"], ZoneInfo({tz!r})).isoformat(timespec="seconds")
+            iso = datetime.datetime.fromtimestamp(ev["ts"], ZoneInfo({!r})).isoformat(timespec="seconds")
             print(ev["id"], iso, ev["payload"])
-        """)
+        """).format(body, len(ciphertext), tz)
 
 
 class JsonEncoder:
