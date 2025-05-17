@@ -62,8 +62,8 @@
 
 - name: "Certbot | obtain or renew certificate"
   ansible.builtin.command: >-
-    certbot --non-interactive --agree-tos --keep-until-expiring --redirect
-    --authenticator nginx --installer nginx
+    certbot certonly --non-interactive --agree-tos --keep-until-expiring
+    --authenticator nginx
     --cert-name {{ letsencrypt_cert_name }}
     {{ _certbot_email_arg }}
     {{ _certbot_domain_args }}
