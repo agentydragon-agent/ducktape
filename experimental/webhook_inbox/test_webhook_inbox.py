@@ -1,111 +1,86 @@
-"""Unit tests for webhook_inbox.py FastAPI application.
-
-The tests spin-up the app with an isolated SQLite database that lives in a
-temporary directory (one per test session). This is achieved by setting the
-``DB_PATH`` environment variable *before* importing the application module so
-that the global ``DB`` constant inside ``webhook_inbox`` points at the fresh
-database file.
-
-Only behaviour that can be reasoned about without starting an actual HTTP
-server is verified – a ``TestClient`` from ``fastapi`` is used to exercise the
-end-points.
-"""
-
 from __future__ import annotations
 
-import importlib
-import sys
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
+import webhook_inbox
+
 
 @pytest.fixture()
-def app_and_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    """Return a tuple **(client, module)** with an isolated database.
+def app_and_client(tmp_path: Path):
+    """Return (app_module, client) wired to test database."""
 
-    A brand-new SQLite file is created under *tmp_path* and its location is
-    exposed to the application via the ``DB_PATH`` environment variable.  The
-    application module is **re-imported** so that its module-level constants
-    take the new environment into account.
-    """
+    webhook_inbox.configure_db(tmp_path / "test.db")
 
-    # Point the application at a dedicated temporary database file.
-    db_path = tmp_path / "test.db"
-    monkeypatch.setenv("DB_PATH", str(db_path))
-
-    # (Re-)import the module *after* the environment variable is set so that
-    # webhook_inbox.DB picks up the correct path.  If the module has already
-    # been imported by another test we first remove it from ``sys.modules`` to
-    # force a clean import.
-    if "webhook_inbox" in sys.modules:
-        del sys.modules["webhook_inbox"]
-
-    app_module = importlib.import_module("webhook_inbox")
-
-    # The FastAPI TestClient opens the app in a background thread and handles
-    # requests entirely in-process – no actual sockets are touched.
-    client = TestClient(app_module.app)
-
-    # Yield to the test function and close the client afterwards to ensure a
-    # clean shutdown of the background thread.
+    client = TestClient(webhook_inbox.app)
     try:
-        yield client, app_module
+        yield webhook_inbox, client
     finally:
         client.close()
 
+@pytest.fixture()
+def client(app_and_client):
+    _, client = app_and_client
+    return client
+
+
+
+# Ingest endpoint
+# ---------------------------------------------------------------------------
 
 def test_ingest_persists_event(app_and_client):
-    """Posting a UTF-8 payload should be accepted and persisted in the DB."""
-
-    client, app = app_and_client
+    app, client = app_and_client
 
     payload = "Hello, webhook!"
-    response = client.post("/", data=payload)
+    resp = client.post("/", data=payload)
 
-    assert response.status_code == 200
-    assert response.json() == {"status": "ok"}
+    assert resp.status_code == 200
+    assert resp.json() == {"status": "ok"}
 
-    # The payload must now be stored in the *events* table.
     row = app.CONN.execute("SELECT payload FROM events").fetchone()
-    assert row is not None
-    assert row[0] == payload
+    assert row and row[0] == payload
 
 
 def test_payload_too_large(app_and_client):
-    """A payload that exceeds ``MAX_PAYLOAD`` must be rejected with 413."""
-
-    client, app = app_and_client
-
-    oversized = "x" * (app.MAX_PAYLOAD + 1)
-    response = client.post("/", data=oversized)
-
-    assert response.status_code == 413
+    app, client = app_and_client
+    oversize = "x" * (app.MAX_PAYLOAD + 1)
+    assert client.post("/", data=oversize).status_code == 413
 
 
-def test_invalid_utf8_payload(app_and_client):
-    """Binary garbage that is not UTF-8 should raise HTTP 400."""
-
-    client, _ = app_and_client
-
-    # 0x80 is not valid as a lone start byte in UTF-8.
-    binary_data = b"\x80\x80"
-    response = client.post("/", data=binary_data, headers={"Content-Type": "application/octet-stream"})
-
-    assert response.status_code == 400
+def test_invalid_utf8_payload(client):
+    garbage = b"\x80\x80"  # invalid UTF-8
+    resp = client.post("/", data=garbage)
+    assert resp.status_code == 400
 
 
-def test_root_redirect_and_before_param(app_and_client):
-    """``GET /`` should redirect and improper ``before`` parameters are invalid."""
+# Paging parameters
+# ---------------------------------------------------------------------------
 
-    client, _ = app_and_client
+def test_root_redirects(client):
+    r = client.get("/", follow_redirects=False)
+    assert r.status_code == 302 and r.headers["location"].startswith("/?before=")
 
-    # Without the *before* query parameter the root must redirect.
-    resp = client.get("/", follow_redirects=False)
-    assert resp.status_code == 302
-    assert resp.headers["location"].startswith("/?before=")
+def test_bad_before(client):
+    assert client.get("/?before=not_an_int").status_code == 400
 
-    # A non-integer *before* value should yield 400.
-    bad = client.get("/?before=not_an_int")
-    assert bad.status_code == 400
+def test_missing_count_redirects_to_default(app_and_client):
+    app, client = app_and_client
+
+    ts = 1111111111
+    r = client.get(f"/?before={ts}", follow_redirects=False)
+    assert r.status_code == 302
+    loc = r.headers["location"]
+    assert f"before={ts}" in loc and f"count={app.PAGE_SIZE}" in loc
+
+@pytest.mark.parametrize("bad", [0, -1])
+def test_too_low_counts_raise_400(client, bad):
+    assert client.get(f"/?before=123&count={bad}").status_code == 400
+
+def test_too_high_count_raises_400(app_and_client):
+    app, client = app_and_client
+    assert client.get(f"/?before=123&count={app.PAGE_SIZE + 1}").status_code == 400
+
+def test_smaller_count_is_accepted(count):
+    assert client.get("/?before=123&count=1").status_code == 200
