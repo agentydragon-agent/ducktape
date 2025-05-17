@@ -1,10 +1,12 @@
 server {
+    # TODO: http2?
     listen 80;
     server_name syncthing.agentydragon.com;
     return 301 https://$host$request_uri;
 }
 
 server {
+    # TODO: http2?
     listen 443 ssl;
     server_name syncthing.agentydragon.com;
 

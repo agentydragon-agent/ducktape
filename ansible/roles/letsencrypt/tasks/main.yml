@@ -1,0 +1,71 @@
+---
+# roles/letsencrypt/tasks/main.yml
+#
+# Idempotently obtain (or renew) a Let’s Encrypt TLS certificate for one or
+# more fully-qualified domain names.  The role uses the
+# Certbot is called with the **nginx** authenticator which injects a temporary
+# challenge location block and reloads nginx automatically – no need to stop
+# the web-server.
+#
+# ---------------------------------------------------------------------------
+# Required variables (supplied by the calling role):
+#   letsencrypt_domains    list[str]  – FQDNs to include in the certificate.
+#   letsencrypt_cert_name  str        – Name of the certificate lineage.
+# Optional variables:
+#   letsencrypt_email      str        – E-mail address for ACME account
+#                                        registration (omit to reuse an existing
+#                                        account on the host).
+# ---------------------------------------------------------------------------
+
+- name: "Validate input variables"
+  ansible.builtin.assert:
+    that:
+      - letsencrypt_domains is defined
+      - letsencrypt_domains | length > 0
+      - letsencrypt_cert_name is defined
+    fail_msg: "letsencrypt_domains (list) and letsencrypt_cert_name (str) are required"
+
+
+# ---------------------------------------------------------------------------
+# Ensure certbot with nginx plugin is installed
+# ---------------------------------------------------------------------------
+
+- name: "Install certbot and nginx plugin"
+  ansible.builtin.apt:
+    name:
+      - certbot
+      - python3-certbot-nginx
+    state: present
+    update_cache: yes
+
+# ---------------------------------------------------------------------------
+# Build command-line arguments
+# ---------------------------------------------------------------------------
+
+- name: "Derive effective e-mail address (may be empty)"
+  ansible.builtin.set_fact:
+    _letsencrypt_email_effective: "{{ letsencrypt_email | default(letsencrypt_admin_email | default('', true), true) }}"
+
+- name: "Set certbot email argument"
+  ansible.builtin.set_fact:
+    _certbot_email_arg: >-
+      {{ '--email ' + _letsencrypt_email_effective if _letsencrypt_email_effective | length > 0 else '--register-unsafely-without-email' }}
+
+- name: "Assemble certbot domain arguments"
+  ansible.builtin.set_fact:
+    _certbot_domain_args: >-
+      {{ letsencrypt_domains | map('regex_replace', '^(.*)$', '-d \1') | join(' ') }}
+
+# ---------------------------------------------------------------------------
+# Obtain / renew certificate (idempotent)
+# ---------------------------------------------------------------------------
+
+- name: "Certbot | obtain or renew certificate"
+  ansible.builtin.command: >-
+    certbot --non-interactive --agree-tos --keep-until-expiring --redirect
+    --authenticator nginx --installer nginx
+    --cert-name {{ letsencrypt_cert_name }}
+    {{ _certbot_email_arg }}
+    {{ _certbot_domain_args }}
+  args:
+    creates: "/etc/letsencrypt/live/{{ letsencrypt_cert_name }}/fullchain.pem"

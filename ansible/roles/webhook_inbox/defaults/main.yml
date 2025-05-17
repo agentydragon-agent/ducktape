@@ -1,0 +1,12 @@
+---
+# Default variables for the webhook inbox role.
+
+# Fully-qualified domain name under which the inbox is reachable.
+webhook_inbox_domain: "webhook.agentydragon.com"
+
+# Host port where the container’s HTTP interface is exposed.  Nginx will proxy
+# requests to this port on 127.0.0.1.
+webhook_inbox_host_port: 4473
+
+# Directory that holds the SQLite DB and the .env file.
+webhook_inbox_data_dir: "/opt/webhook-inbox"

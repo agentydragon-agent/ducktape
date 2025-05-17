@@ -1,0 +1,12 @@
+---
+# Disable Bazel remote cache – remove container and delete data (ephemeral).
+
+- name: Remove Bazel remote cache container if present
+  ansible.builtin.docker_container:
+    name: bazel-remote-cache
+    state: absent
+
+- name: Delete Bazel remote cache data directory (ephemeral)
+  ansible.builtin.file:
+    path: /srv/bazel-remote-cache
+    state: absent

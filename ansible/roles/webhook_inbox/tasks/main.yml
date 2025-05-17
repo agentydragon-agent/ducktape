@@ -1,0 +1,98 @@
+---
+# Idempotently deploy webhook-inbox behind nginx on its own sub-domain:
+#   1. Obtain / renew Let’s Encrypt certificate for the sub-domain.
+#   2. Build (or pull) the Docker image from Git.
+#   3. Run / update the container.
+#   4. Install nginx reverse-proxy site and reload nginx.
+
+# ---------------------------------------------------------------------------
+# Certificate (must exist before nginx site is enabled)
+# ---------------------------------------------------------------------------
+
+- name: "obtain Let’s Encrypt certificate"
+  ansible.builtin.import_role:
+    name: letsencrypt
+  vars:
+    letsencrypt_cert_name: "{{ webhook_inbox_domain }}"
+    letsencrypt_domains:
+      - "{{ webhook_inbox_domain }}"
+
+# ---------------------------------------------------------------------------
+# Persistent data dir & .env
+# ---------------------------------------------------------------------------
+
+- name: "Create data directory"
+  ansible.builtin.file:
+    path: "{{ webhook_inbox_data_dir }}/data"
+    state: directory
+    mode: "0755"
+
+- name: "Create /opt/webhook-inbox/.env if absent"
+  ansible.builtin.copy:
+    dest: "{{ webhook_inbox_data_dir }}/.env"
+    owner: root
+    mode: "0600"
+    force: no
+    content: |
+      WEBHOOK_INBOX_KEY=
+      TZ=UTC
+      DB_PATH=/data/events.db
+
+# ---------------------------------------------------------------------------
+# Build latest image from Git – crude but works without needing the Docker SDK
+# ---------------------------------------------------------------------------
+
+- name: "Build webhook-inbox image from Git"
+  ansible.builtin.command:
+    argv:
+      - docker
+      - buildx
+      - build
+      - "-f"
+      - Dockerfile
+      - "-t"
+      - webhook-inbox:latest
+      - "https://gitlab.com/agentydragon/ducktape.git#devel:experimental/webhook_inbox"
+    args:
+      chdir: /tmp
+  register: _build_result
+  changed_when: "_build_result.rc == 0"
+
+# ---------------------------------------------------------------------------
+# Run / update container
+# ---------------------------------------------------------------------------
+
+- name: "Run webhook-inbox container"
+  community.docker.docker_container:
+    name: webhook_inbox
+    image: webhook-inbox:latest
+    recreate: yes
+    restart_policy: unless-stopped
+    env_file: "{{ webhook_inbox_data_dir }}/.env"
+    volumes:
+      - "{{ webhook_inbox_data_dir }}/data:/data"
+    published_ports:
+      - "{{ webhook_inbox_host_port }}:8000"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+# ---------------------------------------------------------------------------
+# nginx reverse-proxy site
+# ---------------------------------------------------------------------------
+
+- name: "Install nginx site configuration (available)"
+  ansible.builtin.template:
+    src: webhook_inbox.nginx.j2
+    dest: "/etc/nginx/sites-available/{{ webhook_inbox_domain }}"
+    mode: "0644"
+  notify: Reload nginx
+
+- name: "Enable nginx site (symlink)"
+  ansible.builtin.file:
+    src: "/etc/nginx/sites-available/{{ webhook_inbox_domain }}"
+    dest: "/etc/nginx/sites-enabled/{{ webhook_inbox_domain }}"
+    state: link
+  notify: Reload nginx
