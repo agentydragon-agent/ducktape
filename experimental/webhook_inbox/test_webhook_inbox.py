@@ -82,5 +82,5 @@ def test_too_high_count_raises_400(app_and_client):
     app, client = app_and_client
     assert client.get(f"/?before=123&count={app.PAGE_SIZE + 1}").status_code == 400
 
-def test_smaller_count_is_accepted(count):
+def test_smaller_count_is_accepted(client):
     assert client.get("/?before=123&count=1").status_code == 200

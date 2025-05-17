@@ -5,16 +5,53 @@
   <title>Webhook Inbox</title>
 </head>
 <body>
-  <h1>Webhook Inbox</h1>
   {% if events_count %}
-    <h2>{{ events_count }} events seen in interval {{ interval_str }}</h2>
-    <pre>{{ encoding }}</pre>
+    <h2>{{ events_count }} events seen {{ interval_str }}</h2>
+    {% if error %}
+        <p><strong>⚠ Error:</strong> {{ error }}</p>
+    {% endif %}
+    {% if decrypt_link %}
+      <p><strong>Encrypted output.</strong></p>
+
+      Data is encrypted with a Fernet key (32 base64-encoded bytes) which you should have:
+      <pre>
+KEY: str = ...
+assert len(KEY) == 44
+      </pre>
+
+      <p>
+          To retrieve plain JSON, you can re-request the page with the key added:
+          <kbd>{{ decrypt_link }}</kbd>
+      </p>
+
+      Or with ciphertext in <kbd>CIPHERTEXT</kbd>, you can decrypt it with Python:
+      <pre>
+import zlib, base64, pickle, datetime
+from zoneinfo import ZoneInfo
+from cryptography.fernet import Fernet
+
+plain_b85 = Fernet(KEY).decrypt(CIPHERTEXT.encode())
+events = pickle.loads(zlib.decompress(base64.a85decode(plain_b85)))
+
+for ev in events:
+  iso = datetime.datetime.fromtimestamp(ev["ts"], ZoneInfo({{ tz }})).isoformat(timespec="seconds")
+  print(ev["id"], iso, ev["payload"])
+      </pre>
+
+      The events are encoded in this ciphertext:
+      <pre>
+CIPHERTEXT = {{ ciphertext_body }}
+assert len(CIPHERTEXT) == {{ ciphertext_len }}
+      </pre>
+    {% else %}
+      <pre>{{ plaintext }}</pre>
+    {% endif %}
   {% else %}
-    <h2>No events in interval {{ interval_str }}</h2>
+    <h2>No events in {{ interval_str }}</h2>
   {% endif %}
   <p>
-    {% if older_link %}| <a href="{{ older_link }}">← Older</a>{% endif %}
-    <a href="/">Latest →</a>
+    {% if older_link %}<a href="{{ older_link }}">← Older</a> | {% endif %}
+    <a href="{{ latest_link }}">Latest →</a>
   </p>
 </body>
 </html>
