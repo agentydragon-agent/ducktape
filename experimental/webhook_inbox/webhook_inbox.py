@@ -92,7 +92,7 @@ class EncryptedEncoder:
 class JsonEncoder:
     def encode(self, events):
         # return json.dumps(events, separators=(',', ':')).encode()  # Compact JSON
-        return json.dumps(events, indent=2).encode()  # pretty JSON
+        return json.dumps(events, indent=2)  # pretty JSON
 
 
 if WEBHOOK_INBOX_KEY:
