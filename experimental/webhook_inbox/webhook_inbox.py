@@ -4,6 +4,7 @@ uvicorn webhook_inbox:app --host 0.0.0.0 --port 8000
 """
 
 import os, time, json, sqlite3, base64, binascii, logging
+from urllib.parse import urlencode
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from fastapi import FastAPI, Request, HTTPException
@@ -14,13 +15,14 @@ from cryptography.fernet import Fernet
 import zlib
 import pickle
 
-WEBHOOK_INBOX_KEY = os.getenv("WEBHOOK_INBOX_KEY", "")  # 44-char url-safe b64, or unset → no crypto
-DB           = os.getenv("DB_PATH", "events.db")
-MAX_PAYLOAD  = int(os.getenv("MAX_PAYLOAD", "16384"))
-PAGE_SIZE    = int(os.getenv("PAGE_SIZE", "50"))
-TZ = "America/Los_Angeles"
-PAC          = ZoneInfo(TZ)
-templates    = Jinja2Templates(directory="templates")
+WEBHOOK_INBOX_KEY: str = os.getenv("WEBHOOK_INBOX_KEY", "")  # 44-char url-safe b64, or unset → no crypto
+
+MAX_PAYLOAD = int(os.getenv("MAX_PAYLOAD", "16384"))
+PAGE_SIZE   = int(os.getenv("PAGE_SIZE", "50"))
+TZ          = "America/Los_Angeles"
+PAC         = ZoneInfo(TZ)
+
+templates = Jinja2Templates(directory="templates")
 
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 # Configure logging (avoid double config when uvicorn already set it up)
@@ -101,23 +103,50 @@ else:
     ENCODER = JsonEncoder()
 
 
-def db():
-    c = sqlite3.connect(DB, check_same_thread=False)
-    c.execute("""CREATE TABLE IF NOT EXISTS events(
-                   id      INTEGER PRIMARY KEY,
-                   ts      INTEGER,
-                   payload TEXT)""")
-    c.execute("""CREATE TABLE IF NOT EXISTS access_log(
-                   id      INTEGER PRIMARY KEY,
-                   ts      INTEGER,
-                   path    TEXT,
-                   method  TEXT,
-                   query   TEXT,
-                   payload TEXT,
-                   headers TEXT,
-                   status  INTEGER)""")
-    return c
-CONN = db()
+def configure_db(path: str | os.PathLike):
+    """(Re-)initialise the global SQLite connection and schema.
+
+    Tests use this function to point the application at an isolated temporary
+    database **without** having to re-import the module. Production code can
+    simply rely on the implicit initialisation that happens on import.
+    """
+
+    global CONN
+
+    # Close previous connection (if any) to avoid file locks under Windows
+    # and to make sure commits hit the right file.
+    if "CONN" in globals():
+        try:
+            CONN.close()
+        except Exception:
+            # Ignore errors when connection already closed.
+            pass
+
+    # (Re-)create connection and ensure tables exist.
+    CONN = sqlite3.connect(str(path), check_same_thread=False)
+    CONN.execute(
+        """CREATE TABLE IF NOT EXISTS events(
+               id      INTEGER PRIMARY KEY,
+               ts      INTEGER,
+               payload TEXT)"""
+    )
+    CONN.execute(
+        """CREATE TABLE IF NOT EXISTS access_log(
+               id      INTEGER PRIMARY KEY,
+               ts      INTEGER,
+               path    TEXT,
+               method  TEXT,
+               query   TEXT,
+               payload TEXT,
+               headers TEXT,
+               status  INTEGER)"""
+    )
+    return CONN
+
+
+# Initial default connection on module import.
+# Database is configurable at runtime via `configure_db` for tests.
+configure_db(os.getenv("DB_PATH", "events.db"))
 
 # ── FastAPI + access-logging middleware
 app = FastAPI()
@@ -135,7 +164,7 @@ async def log_all(req: Request, call_next):
 
     ts = int(time.time())
 
-    # We still capture at most MAX_PAYLOAD bytes for the DB, but *do not* emit
+    # Capture at most MAX_PAYLOAD bytes for the database, but *do not* emit
     # them to stdout logs.
     body = (await req.body())[:MAX_PAYLOAD].decode(errors="replace")
 
@@ -183,34 +212,83 @@ async def ingest(req: Request):
 # ── GET /  → paged listing
 @app.get("/")
 def list_events(req: Request):
-    if "before" not in req.query_params:
-        return RedirectResponse(url=f"/?before={int(time.time())}", status_code=302)
+    # Ensure the paging parameters *before* and *count* exist.  Missing
+    # ones are added via redirect so the resulting URL is self-contained and shareable.
+    params: dict[str, str] = dict(req.query_params)
+
+    redirect_needed = False
+
+    if "before" not in params:
+        params["before"] = str(int(time.time()))
+        redirect_needed = True
+
+    if "count" not in params:
+        params["count"] = str(PAGE_SIZE)
+        redirect_needed = True
+
+    if redirect_needed:
+        return RedirectResponse(url="/?" + urlencode(params), status_code=302)
+
+    # ── Parse and validate parameters ────────────────────────────────────
+    try:
+        before_ts = int(params["before"])
+    except ValueError:
+        raise HTTPException(400, "Invalid 'before' parameter – must be integer timestamp")
 
     try:
-        before_ts = int(req.query_params["before"])
+        count = int(params["count"])
     except ValueError:
-        raise HTTPException(400, "Invalid 'before' parameter. Expecting timestamp integer.")
+        raise HTTPException(400, "Invalid 'count' parameter – must be positive integer")
+
+    if not (1 <= count <= PAGE_SIZE):
+        raise HTTPException(400, f"'count' must be between 1 and {PAGE_SIZE}")
 
     rows = CONN.execute(
         "SELECT id,ts,payload FROM events "
-        "WHERE ts < ? ORDER BY ts DESC LIMIT ?", (before_ts, PAGE_SIZE)
+        "WHERE ts < ? ORDER BY ts DESC LIMIT ?", (before_ts, count)
     ).fetchall()
 
-    events = [{"id": r[0], "ts": r[1], "payload": r[2]} for r in rows]
+    def _payload_entry(payload):
+        try:
+            # Try to decode JSON, return raw payload on failure.
+            return json.loads(payload)
+        except json.JSONDecodeError:
+            return payload
+
+    events = [{"id": r[0], "ts": r[1], "payload": _payload_entry(r[2])} for r in rows]
 
     older_link = None
     if rows:
         oldest_ts = rows[-1][1]
         if CONN.execute("SELECT 1 FROM events WHERE ts < ? LIMIT 1",
                         (oldest_ts,)).fetchone():
-            older_link = f"/?before={oldest_ts}"
+            older_link = f"/?before={oldest_ts}&count={count}"
 
     ctx = {
         "request": req,
         "events_count": len(events),
         "older_link": older_link,
-        "page_cutoff_iso": datetime.fromtimestamp(before_ts, PAC).isoformat(timespec="seconds"),
+        # Convenience string like "[2024-05-16T09:00:00, 2024-05-16T10:00:00)"
+        # that makes it obvious which side of the interval is closed and
+        # which is open.
+        "interval_str": None,  # filled in below
         "encoding": ENCODER.encode(events),
     }
+
+    # Build a human-friendly representation of the timestamp interval that the
+    # current page covers, e.g. "[2024-05-16T09:00:00, 2024-05-16T10:00:00)".
+    if events:
+        format_ts = lambda ts: datetime.fromtimestamp(ts, PAC).isoformat(timespec="seconds")
+        start_iso = format_ts(events[-1]["ts"]) if events else "-∞"
+
+        # If there are no earlier events (i.e. we're at the beginning of log
+        # history) we still use a closed left bracket but add a marker so user
+        # knows there is nothing before this page.
+        if not older_link:
+            start_iso = f"{start_iso} (beginning of history)"
+
+        # Oldest event is included. Upper bound is exclusive (ts < before).
+        ctx["interval_str"] = f"[{start_iso}, {format_ts(before_ts)})"
+
     return templates.TemplateResponse("events.html", ctx)
 
