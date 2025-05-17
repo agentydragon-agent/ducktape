@@ -234,6 +234,7 @@ def _print_startup_banner() -> None:
         "📬  Webhook Inbox ready",
         f"  UI → {index_url}",
     ]
+    # TODO: not great, logs the key! potentially into journal
     if WEBHOOK_INBOX_KEY:
         lines.append(f"  Unencrypted UI → {index_url}?key={WEBHOOK_INBOX_KEY}")
     lines.extend(

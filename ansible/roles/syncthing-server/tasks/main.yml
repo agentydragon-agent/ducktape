@@ -38,6 +38,19 @@
   fail:
     msg: Syncthing config not found. Generate one.
 
+# ---------------------------------------------------------------------------
+# TLS certificate required by nginx reverse-proxy site
+# ---------------------------------------------------------------------------
+
+- name: "Syncthing | Obtain Let’s Encrypt certificate"
+  ansible.builtin.import_role:
+    name: letsencrypt
+  vars:
+    letsencrypt_cert_name: "syncthing.agentydragon.com"
+    letsencrypt_domains:
+      - "syncthing.agentydragon.com"
+    # email handled inside letsencrypt role
+
 - name: enable & start syncthing system service
   become: true
   systemd:
@@ -66,4 +79,22 @@
 #   <address>0.0.0.0:8384</address>
 #
 # $ ssh -L 9090:127.0.0.1:8384 user@othercomputer.example.com
+
+# ---------------------------------------------------------------------------
+# nginx reverse-proxy site
+# ---------------------------------------------------------------------------
+
+- name: Install nginx site configuration for Syncthing (available)
+  ansible.builtin.copy:
+    src: syncthing.agentydragon.com
+    dest: /etc/nginx/sites-available/syncthing.agentydragon.com
+    mode: "0644"
+  notify: Reload nginx
+
+- name: Enable nginx site for Syncthing (create symlink)
+  ansible.builtin.file:
+    src: /etc/nginx/sites-available/syncthing.agentydragon.com
+    dest: /etc/nginx/sites-enabled/syncthing.agentydragon.com
+    state: link
+  notify: Reload nginx
 
