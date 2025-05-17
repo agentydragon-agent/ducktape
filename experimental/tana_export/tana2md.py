@@ -137,6 +137,9 @@ def main(argv=None):
         "--strict-roots", action="store_true", help="only tagged nodes are roots"
     )
     ap.add_argument("--debug-node", help="log decisions for a single node id")
+    ap.add_argument(
+        "--include-trash", action="store_true", help="include trash nodes in main export"
+    )
 
     args = ap.parse_args(argv)
 
@@ -177,7 +180,8 @@ def main(argv=None):
 
     # Collect miscellaneous nodes that haven't been emitted yet
     misc_nodes = [n for n in g.values() 
-                  if n.id not in emitted and not n.is_system and n.children_ids and n.title()]
+                  if n.id not in emitted and not n.is_system and n.children_ids and n.title()
+                  and (args.include_trash or not g.is_in_trash(n.id))]
     
     # Order nodes by hierarchy so parent nodes are processed before children
     ordered_misc_nodes = tl.order_nodes_by_hierarchy(g, misc_nodes)
@@ -191,6 +195,39 @@ def main(argv=None):
     
     if misc:
         (args.dst / "zzz_misc.md").write_text("\n".join(misc) + "\n", encoding="utf-8")
+
+    # Process trash nodes separately if there are any
+    if g.trash_node_id:
+        trash_emitted: set[str] = set()
+        trash_lines = []
+        
+        # Start with the trash node itself
+        if g.trash_node_id in g:
+            trash_node = g[g.trash_node_id]
+            trash_title = trash_node.title()
+            if trash_title:
+                trash_lines.append(f"# {trash_title}")
+                trash_lines.append("")
+            
+            # Process all nodes in trash
+            trash_nodes = [n for n in g.values() 
+                          if g.is_in_trash(n.id) and not n.is_system and n.title()]
+            
+            # Order trash nodes by hierarchy
+            ordered_trash_nodes = tl.order_nodes_by_hierarchy(g, trash_nodes)
+            
+            # Process each trash node
+            for n in ordered_trash_nodes:
+                if n.id not in trash_emitted:
+                    trash_node_lines = outline(n, trash_emitted, cfg=cfg)
+                    if trash_node_lines:
+                        trash_lines.extend(trash_node_lines)
+            
+            if trash_lines:
+                trash_dir = args.dst / "trash"
+                trash_dir.mkdir(parents=True, exist_ok=True)
+                (trash_dir / "deleted_nodes.md").write_text("\n".join(trash_lines) + "\n", encoding="utf-8")
+                logging.info("wrote trash nodes to trash/deleted_nodes.md")
 
     logging.info("wrote %d root files%s", len(roots), " + misc" if misc else "")
 
