@@ -50,7 +50,7 @@
       ansible.builtin.import_role:
         name: letsencrypt
       vars:
-        letsencrypt_cert_name: "agentydragon.com"
+        letsencrypt_cert_name: agentydragon.com
         letsencrypt_domains:
           - "agentydragon.com"
           - "www.agentydragon.com"
@@ -103,6 +103,8 @@
     - name: Grocy
       ansible.builtin.include_role:
         name: grocy
+        apply:
+          tags: grocy
       vars:
         grocy_state: present
       tags: [grocy]
@@ -110,6 +112,8 @@
     - name: InvenTree
       ansible.builtin.include_role:
         name: inventree
+        apply:
+          tags: inventree
       vars:
         inventree_state: present
       tags: [inventree]
@@ -117,6 +121,8 @@
     - name: Trilium server
       ansible.builtin.include_role:
         name: trilium_server
+        apply:
+          tags: trilium
       vars:
         trilium_state: absent
       tags: [trilium]
@@ -124,6 +130,8 @@
     - name: Bazel remote cache
       ansible.builtin.include_role:
         name: bazel_cache
+        apply:
+          tags: bazel-remote-cache
       vars:
         bazel_cache_state: absent
       tags: [bazel-remote-cache]
@@ -138,14 +146,17 @@
     - name: Syncthing server
       ansible.builtin.include_role:
         name: syncthing-server
+        apply:
+          tags: syncthing
 
     - name: Webhook inbox service
       ansible.builtin.include_role:
         name: webhook_inbox
+        apply:
+          tags: webhook-inbox
       vars:
         webhook_inbox_domain: webhook.agentydragon.com
         webhook_inbox_host_port: 4473
-      tags: [webhook-inbox]
 
   handlers:
     # Only triggers if nginx config files changed.
