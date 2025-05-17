@@ -14,12 +14,10 @@ SINCE = (datetime.datetime.utcnow() - datetime.timedelta(minutes=5)).isoformat()
 
 # TODO: also add URL watchers etc
 buckets = requests.get("http://localhost:5600/api/0/buckets").json()
-all_events = []
+all_events = {}
 for bid in buckets:
-    ev = requests.get(f"http://localhost:5600/api/0/buckets/{bid}/events",
-                      params={"start": SINCE}, timeout=3).json()
-    if ev:
-        all_events.extend([{"bucket": bid, "data": e} for e in ev])
+    ev = requests.get(f"http://localhost:5600/api/0/buckets/{bid}/events", params={"start": SINCE}, timeout=3).json()
+    all_events[bid] = ev
 
 payload = {"host": os.uname().nodename, "since": SINCE, "events": all_events}
 out = requests.post(WEBHOOK, json=payload, timeout=3)

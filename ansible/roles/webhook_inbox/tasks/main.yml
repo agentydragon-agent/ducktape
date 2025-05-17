@@ -48,15 +48,14 @@
       - docker
       - buildx
       - build
-      - "-f"
+      - -f
       - Dockerfile
-      - "-t"
+      - -t
       - webhook-inbox:latest
-      - "https://gitlab.com/agentydragon/ducktape.git#devel:experimental/webhook_inbox"
-    args:
-      chdir: /tmp
+      - https://gitlab.com/agentydragon/ducktape.git#devel:experimental/webhook_inbox
+    chdir: /tmp
   register: _build_result
-  changed_when: "_build_result.rc == 0"
+  changed_when: false
 
 # ---------------------------------------------------------------------------
 # Run / update container
