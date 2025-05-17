@@ -9,12 +9,14 @@ SQLite database and rendered via a bare-bones web UI.
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-export WEBHOOK_INBOX_KEY=$(python - <<'PY'
-from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())
-PY
-)
+# Generate an encryption key (optional but recommended)
+export WEBHOOK_INBOX_KEY=$(python gen_key.py)
+
 uvicorn webhook_inbox:app --reload
-# open http://127.0.0.1:8000
+# open http://127.0.0.1:8000 in your browser
+
+# Send a test webhook
+curl -X POST http://127.0.0.1:8000/ -d '{"hello": "world"}'
 ```
 
 ## Container deployment
@@ -24,10 +26,7 @@ uvicorn webhook_inbox:app --reload
 docker build -t webhook-inbox:latest .
 
 # Generate an encryption key (optional but recommended)
-KEY=$(python - <<'PY'
-from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())
-PY
-)
+KEY=$(python gen_key.py)
 
 # Persist database outside the container
 mkdir -p $(pwd)/data

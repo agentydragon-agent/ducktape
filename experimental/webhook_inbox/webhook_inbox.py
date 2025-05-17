@@ -5,6 +5,7 @@ uvicorn webhook_inbox:app --host 0.0.0.0 --port 8000
 
 import os, time, json, sqlite3, base64, binascii, logging
 from urllib.parse import urlencode
+from starlette.datastructures import URL
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from fastapi import FastAPI, Request, HTTPException
@@ -36,71 +37,135 @@ if not logging.getLogger().handlers:
 logger = logging.getLogger("webhook_inbox")
 logger.setLevel(LOG_LEVEL)
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Encoder
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# The main encoder class combines both encrypted and plain-JSON output modes.
+# It was formerly named ``Encoder`` but is exposed externally as
+# ``EncryptedEncoder`` to highlight its default behaviour when a
+# ``WEBHOOK_INBOX_KEY`` is configured.
+#
 class EncryptedEncoder:
-    def __init__(self, key):
+    """Encode events, optionally encrypting them.
+
+    Behaviour depends on three factors:
+
+    1. If ``WEBHOOK_INBOX_KEY`` is **unset** the encoder always returns plain JSON.
+    2. *Client-supplied key* – when a key is configured, clients can override
+       encryption by supplying the correct key in the query string
+       (``?key=…``).
+    """
+    key: str | None
+
+    @property
+    def fernet(self):
+        return Fernet(self.key) if self.key else None
+
+    @staticmethod
+    def _validate_key(key: str):
         try:
             key_bytes = base64.urlsafe_b64decode(key)
-            if len(key_bytes) != 32:
-                raise ValueError
-        except (binascii.Error, ValueError):
-            raise RuntimeError("Key must must be a 44-char url-safe base64 string.")
+        except binascii.Error:
+            raise RuntimeError("Key must be a url-safe base64 string.")
+        if len(key_bytes) != 32:
+            raise RuntimeError("Key has wrong length.")
 
-        self.fernet = Fernet(key)
+    def __init__(self, key: str | None):
+        # No key → encryption disabled.
+        if not key:
+            self.key = None
+            return
+        self._validate_key(key)
+        self.key = key
 
-    def encode(self, events, tz="UTC"):
-        # 1. serialize → compress → ASCII-85
+    def plain_encode(self, events):
+        # return json.dumps(events, separators=(',', ':')).encode()  # Compact JSON
+        return json.dumps(events, indent=2)  # pretty JSON
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+    def encode(
+        self,
+        events,
+        *,
+        provided_key: str | None = None,
+    ):
+        """Return a *dict* with encoded representation of *events*.
+
+        Return type is a mapping for unpacking into Jinja context.
+
+        Behaviour:
+
+        * No key configured → ``{"plaintext": <pretty JSON>}``
+
+        * Correct key supplied in the request (``?key=…``) → same – plaintext JSON.
+
+        * Key not passed or incorrect →
+          ``{"ciphertext_body": …, "ciphertext_len": …, "tz": …}``
+          plus ``error`` entry if wrong key was supplied.
+        """
+
+        # ── Plain JSON path -------------------------------------------------
+        # When no *server*-side key is configured **or** the caller supplied
+        # the correct key, return events as pretty-printed JSON.
+
+        # If the *server* is not configured with a key, encryption is entirely
+        # disabled and we always serve plaintext JSON irrespective of any
+        # client-supplied ``?key`` parameter.  This matches the behaviour
+        # documented in the function’s docstring and avoids runtime errors when
+        # attempting to instantiate ``Fernet(None)``.
+
+        if not self.key:
+            return {"plaintext": self.plain_encode(events)}
+
+        out = {}
+
+        # When a key *is* configured, but the caller supplied the correct key
+        # in the query string we again serve plaintext.  Any *incorrect* key is
+        # noted in the output so the user is aware the data are still
+        # encrypted.
+
+        if provided_key is not None:
+            if provided_key == self.key:
+                return {"plaintext": self.plain_encode(events)}
+
+            out["error"] = "Incorrect key in URL – data are still encrypted."
+
+        # ── Encrypted path --------------------------------------------------
+        # 1. serialize → compress → ASCII-85 to keep ciphertext URL-safe and
+        #    printable.
         data = pickle.dumps(events, protocol=5)
         packed = zlib.compress(data, level=9)
         plaintext = base64.a85encode(packed).decode()
 
         # 2. Fernet-encrypt plaintext
-        ciphertext = self.fernet.encrypt(plaintext.encode()).decode()
+        ciphertext = Fernet(self.key).encrypt(plaintext.encode()).decode()
 
-        # 3. break into ≤50-char chunks and tag each line “# line i/N”
-        width  = 50
-        chunks = [ciphertext[i:i+width] for i in range(0, len(ciphertext), width)]
-        total  = len(chunks)
-        body   = "\n".join(
-            f'  {chunk!r}  # line {i+1}/{total}'
+        # 3. break into ≤50-char chunks and tag each line “# line i/N” for
+        #    readability when embedded into documentation.
+        width = 60
+        chunks = [ciphertext[i : i + width] for i in range(0, len(ciphertext), width)]
+        total = len(chunks)
+        body = "\n".join(
+            f"  {chunk!r}  # line {i+1}/{total}"
             for i, chunk in enumerate(chunks)
         )
-        body = "(\n" + body + "\n)"
 
-        # 5. final template
-        # TODO: fix the spaces
-        return textwrap.dedent("""
-        # The events are encoded in this ciphertext:
-        CIPHERTEXT = {}
-        assert len(CIPHERTEXT) == {}
-
-        # You should have a Fernet key of 32 base64-encoded bytes:
-        WEBHOOK_INBOX_KEY: str = ...
-        assert len(WEBHOOK_INBOX_KEY) == 44
-
-        # Read the data by decrypting them first using something like this code:
-        import zlib, base64, pickle, datetime
-        from zoneinfo import ZoneInfo
-        from cryptography.fernet import Fernet
-
-        plain_b85 = Fernet(WEBHOOK_INBOX_KEY).decrypt(CIPHERTEXT.encode())
-        events = pickle.loads(zlib.decompress(base64.a85decode(plain_b85)))
-
-        for ev in events:
-            iso = datetime.datetime.fromtimestamp(ev["ts"], ZoneInfo({!r})).isoformat(timespec="seconds")
-            print(ev["id"], iso, ev["payload"])
-        """).format(body, len(ciphertext), tz)
+        return out | {
+            "ciphertext_body": "(\n" + body + "\n)",
+            "ciphertext_len": len(ciphertext),
+            "tz": TZ,
+        }
 
 
-class JsonEncoder:
-    def encode(self, events):
-        # return json.dumps(events, separators=(',', ':')).encode()  # Compact JSON
-        return json.dumps(events, indent=2)  # pretty JSON
+# ── Encoder setup ----------------------------------------------------------
+# A *single* encoder instance is sufficient – it decides at runtime whether to
+# encrypt or not based on the presence of a configured key and the client's
+# supplied `?key=` parameter.
 
-
-if WEBHOOK_INBOX_KEY:
-    ENCODER = EncryptedEncoder(WEBHOOK_INBOX_KEY)
-else:
-    ENCODER = JsonEncoder()
+ENCODER = EncryptedEncoder(WEBHOOK_INBOX_KEY)
 
 
 def configure_db(path: str | os.PathLike):
@@ -150,6 +215,40 @@ configure_db(os.getenv("DB_PATH", "events.db"))
 
 # ── FastAPI + access-logging middleware
 app = FastAPI()
+
+
+def _print_startup_banner() -> None:
+    """Emit helpful links to stdout once at startup."""
+
+    # Do not pollute pytest output.
+    import sys
+
+    if any(mod.startswith("pytest") for mod in sys.modules):
+        return
+
+    base_url = "http://127.0.0.1:8000"  # TODO
+
+    index_url = f"{base_url}/"
+
+    lines: list[str] = [
+        "📬  Webhook Inbox ready",
+        f"  UI → {index_url}",
+    ]
+    if WEBHOOK_INBOX_KEY:
+        lines.append(f"  Unencrypted UI → {index_url}?key={WEBHOOK_INBOX_KEY}")
+    lines.extend(
+        [
+            "",
+            "Send a test webhook:",
+            f"""   curl -X POST {index_url} -d '{json.dumps({'hello':'world'})}'""",
+        ]
+    )
+
+    print("\n".join(lines))
+
+
+# Trigger banner emission.
+_print_startup_banner()
 
 @app.middleware("http")
 async def log_all(req: Request, call_next):
@@ -227,7 +326,11 @@ def list_events(req: Request):
         redirect_needed = True
 
     if redirect_needed:
-        return RedirectResponse(url="/?" + urlencode(params), status_code=302)
+        # Build a new URL with the missing parameters added.  ``URL`` will take
+        # care of properly quoting values so we do not have to worry about
+        # edge-cases such as spaces or special characters.
+        redirect_target = str(URL("/").include_query_params(**params))
+        return RedirectResponse(url=redirect_target, status_code=302)
 
     # ── Parse and validate parameters ────────────────────────────────────
     try:
@@ -257,12 +360,33 @@ def list_events(req: Request):
 
     events = [{"id": r[0], "ts": r[1], "payload": _payload_entry(r[2])} for r in rows]
 
-    older_link = None
+    older_link: str | None = None
     if rows:
         oldest_ts = rows[-1][1]
-        if CONN.execute("SELECT 1 FROM events WHERE ts < ? LIMIT 1",
-                        (oldest_ts,)).fetchone():
-            older_link = f"/?before={oldest_ts}&count={count}"
+        if CONN.execute(
+            "SELECT 1 FROM events WHERE ts < ? LIMIT 1", (oldest_ts,)
+        ).fetchone():
+            older_link = str(
+                URL("/").include_query_params(before=oldest_ts, count=count)
+            )
+
+    # ── Key handling -------------------------------------------------------
+    key_param = params.get("key")
+
+    # Only propagate the key to paging links if the client supplied the *correct*
+    # one.  Manipulating the URL via ``URL.include_query_params`` guarantees the
+    # key is properly percent-encoded should it ever contain reserved
+    # characters (even though a valid Fernet key is URL-safe already).
+    if older_link and key_param == WEBHOOK_INBOX_KEY and key_param:
+        older_link = str(URL(older_link).include_query_params(key=key_param))
+
+    # Build link that jumps straight to the newest events (i.e. “Latest →”).
+    # Without a key this is simply the root path “/”.  When the *correct* key
+    # has been supplied we must forward it so users browsing plaintext JSON do
+    # not suddenly receive encrypted output again when following the link.
+    latest_link: str = "/"
+    if key_param == WEBHOOK_INBOX_KEY and key_param:
+        latest_link = str(URL(latest_link).include_query_params(key=key_param))
 
     ctx = {
         "request": req,
@@ -272,23 +396,36 @@ def list_events(req: Request):
         # that makes it obvious which side of the interval is closed and
         # which is open.
         "interval_str": None,  # filled in below
-        "encoding": ENCODER.encode(events),
+        "latest_link": latest_link,
+        **ENCODER.encode(events, provided_key=key_param),
     }
+
+    if WEBHOOK_INBOX_KEY and key_param != WEBHOOK_INBOX_KEY:
+        # Link to fetch unencrypted JSON (uses placeholder key so secret is never
+        # leaked).  Only shown when the current response is still encrypted.
+        ctx["decrypt_link"] = str(URL(str(req.url)).include_query_params(key="KEY"))
 
     # Build a human-friendly representation of the timestamp interval that the
     # current page covers, e.g. "[2024-05-16T09:00:00, 2024-05-16T10:00:00)".
+    format_ts = lambda ts: datetime.fromtimestamp(ts, PAC).isoformat(timespec="seconds")
+
     if events:
-        format_ts = lambda ts: datetime.fromtimestamp(ts, PAC).isoformat(timespec="seconds")
-        start_iso = format_ts(events[-1]["ts"]) if events else "-∞"
+        start_iso = format_ts(events[-1]["ts"])
 
         # If there are no earlier events (i.e. we're at the beginning of log
-        # history) we still use a closed left bracket but add a marker so user
-        # knows there is nothing before this page.
+        # history) we still use a closed left bracket but add a marker so the
+        # user knows there is nothing before this page.
         if not older_link:
             start_iso = f"{start_iso} (beginning of history)"
 
         # Oldest event is included. Upper bound is exclusive (ts < before).
         ctx["interval_str"] = f"[{start_iso}, {format_ts(before_ts)})"
+    else:
+        # When the page is empty we cannot derive a concrete start timestamp
+        # from the events themselves.  Indicate an open interval extending to
+        # negative infinity.  We still use a *closed* right bracket because
+        # the upper bound (``before_ts``) is *exclusive*.
+        ctx["interval_str"] = f"(-∞, {format_ts(before_ts)})"
 
     return templates.TemplateResponse("events.html", ctx)
 
