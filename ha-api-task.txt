@@ -1,4 +1,4 @@
-you will be working in:
+for this project, you will be working in:
   - experimental/webhook_inbox/
   - ansible/roles/webhook_inbox/
   - dotfiles/local/bin/, esp. login_event_webhook_reporter.py
@@ -101,6 +101,10 @@ OpenAI browsing constraints as of May 2025 (document in README):
   * For human convenience, once human is logged in, allow human to create
     a session just authed but their password and click through the UI as if
     they were the LLM. This is for testing purposes.
+
+    You do not have to write any sort of complicated UI, just barebones forms
+    are perfectly fine. Maybe add some minimal CSS to pages. LLM will ignore it,
+    human may find it nice.
 
 I think I like the "nonce auth" method the best. Let's implement that.
 
