@@ -1,0 +1,107 @@
+"""Configuration management for Gatelet server."""
+
+import logging
+import os
+import re
+from pathlib import Path
+from typing import Dict, List, Literal, Self, Union
+
+import toml
+from pydantic import BaseModel, Field, PostgresDsn, validator
+
+logger = logging.getLogger(__name__)
+
+
+class NoAuth(BaseModel):
+    """No authentication configuration."""
+    type: Literal["none"] = "none"
+
+
+class BearerAuth(BaseModel):
+    """Bearer token authentication configuration."""
+    type: Literal["bearer"] = "bearer"
+    token: str
+    
+    @validator("token")
+    def token_not_empty(cls, v):
+        if not v:
+            raise ValueError("Token must not be empty")
+        return v
+
+
+WebhookAuthConfig = Union[NoAuth, BearerAuth]
+
+
+class DatabaseSettings(BaseModel):
+    dsn: PostgresDsn = Field(
+        default="postgresql://postgres:postgres@localhost:5432/gatelet"
+    )
+
+
+class ServerSettings(BaseModel):
+    host: str = Field(default="0.0.0.0")
+    port: int = Field(default=8000)
+    log_level: str = Field(default="INFO")
+
+
+class KeyInUrlAuthSettings(BaseModel):
+    enabled: bool = Field(default=False)
+    key_valid_days: int = Field(default=365)
+
+
+class ChallengeResponseAuthSettings(BaseModel):
+    enabled: bool = Field(default=False)
+    num_options: int = Field(default=16)
+    session_extension_seconds: int = Field(default=300)  # 5 minutes
+    session_max_duration_seconds: int = Field(default=3600)  # 1 hour
+    nonce_validity_seconds: int = Field(default=300)  # 5 minutes
+
+
+class AuthSettings(BaseModel):
+    key_in_url: KeyInUrlAuthSettings = Field(default=KeyInUrlAuthSettings())
+    challenge_response: ChallengeResponseAuthSettings = Field(default=ChallengeResponseAuthSettings())
+
+
+class HomeAssistantSettings(BaseModel):
+    api_url: str = Field(...)  # Required field
+    api_token: str = Field(...)  # Required field
+    entities: List[str] = Field(default_factory=list)
+
+
+class WebhookIntegrationSettings(BaseModel):
+    auth_config: WebhookAuthConfig = Field()
+    enabled: bool = Field(default=False)
+
+
+class WebhookSettings(BaseModel):
+    integrations: Dict[str, WebhookIntegrationSettings] = Field(default_factory=dict)
+    
+    @validator("integrations")
+    def validate_integration_names(cls, v):
+        for name in v.keys():
+            # Check for URL-safe names
+            if not re.match(r'^[a-zA-Z0-9_-]+$', name):
+                raise ValueError(f"Integration name '{name}' contains invalid characters. Use only letters, numbers, underscores, and hyphens.")
+            if len(name) > 50:
+                raise ValueError(f"Integration name '{name}' is too long (max 50 characters)")
+        return v
+
+
+class Settings(BaseModel):
+    database: DatabaseSettings
+    server: ServerSettings
+    auth: AuthSettings
+    home_assistant: HomeAssistantSettings
+    webhook: WebhookSettings
+    
+    @classmethod
+    def from_file(cls, path: Path) -> Self:
+        """Load settings from file at path."""
+        logger.info(f"Loading settings from {path.absolute()}")
+        with open(path, "rb") as f:
+            config_dict = toml.load(f)
+        return cls.parse_obj(config_dict)
+
+
+# Load settings
+settings = Settings.from_file(Path(os.getenv("GATELET_CONFIG", "gatelet.toml")))
