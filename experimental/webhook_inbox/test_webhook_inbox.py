@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from cryptography.fernet import Fernet
 
 import webhook_inbox
 
@@ -84,3 +85,17 @@ def test_too_high_count_raises_400(app_and_client):
 
 def test_smaller_count_is_accepted(client):
     assert client.get("/?before=123&count=1").status_code == 200
+
+
+# Encryption / decryption round-trip -----------------------------------------
+def test_crypto_roundtrip():
+    key = Fernet.generate_key().decode()
+    events = [{"id": 1, "ts": 42, "payload": "x"}]
+    ciphertext = webhook_inbox.encrypt_events(events, key)
+
+    ns: dict[str, object] = {"KEY": key, "CIPHERTEXT": ciphertext}
+
+    # Snippet should define decrypt_events() *and* assign `events`.
+    exec(webhook_inbox._decrypt_code_snippet(), ns)
+
+    assert ns["events"] == events
