@@ -14,14 +14,16 @@ logger = logging.getLogger(__name__)
 
 class NoAuth(BaseModel):
     """No authentication configuration."""
+
     type: Literal["none"] = "none"
 
 
 class BearerAuth(BaseModel):
     """Bearer token authentication configuration."""
+
     type: Literal["bearer"] = "bearer"
     token: str
-    
+
     @validator("token")
     def token_not_empty(cls, v):
         if not v:
@@ -47,6 +49,11 @@ class ServerSettings(BaseModel):
 class KeyInUrlAuthSettings(BaseModel):
     enabled: bool = Field(default=False)
     key_valid_days: int = Field(default=365)
+    
+    @property
+    def key_validity(self) -> timedelta:
+        """Get key validity period as timedelta."""
+        return timedelta(days=self.key_valid_days)
 
 
 class ChallengeResponseAuthSettings(BaseModel):
@@ -55,11 +62,28 @@ class ChallengeResponseAuthSettings(BaseModel):
     session_extension_seconds: int = Field(default=300)  # 5 minutes
     session_max_duration_seconds: int = Field(default=3600)  # 1 hour
     nonce_validity_seconds: int = Field(default=300)  # 5 minutes
+    
+    @property
+    def session_extension(self) -> timedelta:
+        """Get session extension period as timedelta."""
+        return timedelta(seconds=self.session_extension_seconds)
+    
+    @property
+    def session_max_duration(self) -> timedelta:
+        """Get maximum session duration as timedelta."""
+        return timedelta(seconds=self.session_max_duration_seconds)
+    
+    @property
+    def nonce_validity(self) -> timedelta:
+        """Get nonce validity period as timedelta."""
+        return timedelta(seconds=self.nonce_validity_seconds)
 
 
 class AuthSettings(BaseModel):
     key_in_url: KeyInUrlAuthSettings = Field(default=KeyInUrlAuthSettings())
-    challenge_response: ChallengeResponseAuthSettings = Field(default=ChallengeResponseAuthSettings())
+    challenge_response: ChallengeResponseAuthSettings = Field(
+        default=ChallengeResponseAuthSettings()
+    )
 
 
 class HomeAssistantSettings(BaseModel):
@@ -75,15 +99,19 @@ class WebhookIntegrationSettings(BaseModel):
 
 class WebhookSettings(BaseModel):
     integrations: Dict[str, WebhookIntegrationSettings] = Field(default_factory=dict)
-    
+
     @validator("integrations")
     def validate_integration_names(cls, v):
         for name in v.keys():
             # Check for URL-safe names
-            if not re.match(r'^[a-zA-Z0-9_-]+$', name):
-                raise ValueError(f"Integration name '{name}' contains invalid characters. Use only letters, numbers, underscores, and hyphens.")
+            if not re.match(r"^[a-zA-Z0-9_-]+$", name):
+                raise ValueError(
+                    f"Integration name '{name}' not only letters, numbers, underscores, and hyphens."
+                )
             if len(name) > 50:
-                raise ValueError(f"Integration name '{name}' is too long (max 50 characters)")
+                raise ValueError(
+                    f"Integration name '{name}' too long (max 50 characters)"
+                )
         return v
 
 
@@ -93,7 +121,7 @@ class Settings(BaseModel):
     auth: AuthSettings
     home_assistant: HomeAssistantSettings
     webhook: WebhookSettings
-    
+
     @classmethod
     def from_file(cls, path: Path) -> Self:
         """Load settings from file at path."""
@@ -105,3 +133,4 @@ class Settings(BaseModel):
 
 # Load settings
 settings = Settings.from_file(Path(os.getenv("GATELET_CONFIG", "gatelet.toml")))
+
