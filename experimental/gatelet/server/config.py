@@ -3,6 +3,7 @@
 import logging
 import os
 import re
+from datetime import timedelta
 from pathlib import Path
 from typing import Dict, List, Literal, Self, Union
 
@@ -49,7 +50,7 @@ class ServerSettings(BaseModel):
 class KeyInUrlAuthSettings(BaseModel):
     enabled: bool = Field(default=False)
     key_valid_days: int = Field(default=365)
-    
+
     @property
     def key_validity(self) -> timedelta:
         """Get key validity period as timedelta."""
@@ -62,17 +63,17 @@ class ChallengeResponseAuthSettings(BaseModel):
     session_extension_seconds: int = Field(default=300)  # 5 minutes
     session_max_duration_seconds: int = Field(default=3600)  # 1 hour
     nonce_validity_seconds: int = Field(default=300)  # 5 minutes
-    
+
     @property
     def session_extension(self) -> timedelta:
         """Get session extension period as timedelta."""
         return timedelta(seconds=self.session_extension_seconds)
-    
+
     @property
     def session_max_duration(self) -> timedelta:
         """Get maximum session duration as timedelta."""
         return timedelta(seconds=self.session_max_duration_seconds)
-    
+
     @property
     def nonce_validity(self) -> timedelta:
         """Get nonce validity period as timedelta."""
@@ -133,4 +134,3 @@ class Settings(BaseModel):
 
 # Load settings
 settings = Settings.from_file(Path(os.getenv("GATELET_CONFIG", "gatelet.toml")))
-
