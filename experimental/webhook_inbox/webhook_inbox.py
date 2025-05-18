@@ -3,7 +3,8 @@ export WEBHOOK_INBOX_KEY='fgBWt1JKhqE6MbZAUntgZ7QBGJ0thPU1Su1qzU529l4='
 uvicorn webhook_inbox:app --host 0.0.0.0 --port 8000
 """
 
-import os, time, json, sqlite3, base64, binascii, logging, sys, inspect, textwrap, zlib, pickle
+from urllib.parse import urlencode
+import os, time, json, sqlite3, base64, binascii, logging, sys, zlib, pickle
 from starlette.datastructures import URL
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -251,7 +252,7 @@ def _print_startup_banner() -> None:
     if WEBHOOK_INBOX_KEY and sys.stdout.isatty():
         lines.append(f"  Unencrypted UI →")
         lines.append(f"    {index_url}?key={WEBHOOK_INBOX_KEY}")
-        lines.append(f"    {index_url}k/{WEBHOOK_INBOX_KEY}")
+        lines.append(f"    {index_url}k/{urlencode(WEBHOOK_INBOX_KEY)}")
     lines.extend(
         [
             "",
