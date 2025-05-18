@@ -148,6 +148,7 @@
         name: syncthing-server
         apply:
           tags: syncthing
+      tags: syncthing
 
     - name: Webhook inbox service
       ansible.builtin.include_role:
@@ -157,6 +158,7 @@
       vars:
         webhook_inbox_domain: webhook.agentydragon.com
         webhook_inbox_host_port: 4473
+      tags: webhook-inbox
 
   handlers:
     # Only triggers if nginx config files changed.
