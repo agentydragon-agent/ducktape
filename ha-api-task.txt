@@ -1,0 +1,139 @@
+you will be working in:
+  - experimental/webhook_inbox/
+  - ansible/roles/webhook_inbox/
+  - dotfiles/local/bin/, esp. login_event_webhook_reporter.py
+  - roles/gui/tasks/, esp. login_event_webhook_reporter.yml
+
+first:
+
+read up the current state of the code, build up an understanding.
+create a common file for a package with the client & server code
+(= the dotfiles/local/bin/ script plus experimental/webhook_inbox/).
+
+we will be reframing this more broadly than currently conceived.
+it's currently framed as a "key-protected service that receives webhooks
+and displays them".
+
+we will be reframing it as a "service that LLMs can access to get real-time
+and historical information relevant to the user".
+
+we will be keeping the generic "receive webhook & expose the inbox"
+functionality.
+
+but: rename the service to something more appropriate.
+
+it'll be in general service that's for letting current llms access realtime
+data relevant to the user and possibly do lightweight actions in the real world.
+in a way as secure as currently allowed with the flimsy scaffolding that e.g.
+openai has. one component: generic "receive webhooks & display them for llm to
+consume". but also: LLM-friendly presentation of data from Home Assistant using
+HA API. that functions via calls initiated from service to HA API, webhooks
+HA -> service. basically a service that a llm will go to and only via GET
+calls will be able to browse to get reelevant data (browsing to the parts
+it thinks are currently relevant), and maybe actually actuate some changes
+in the real world with a GET - like send a notification.
+
+Currently this is targeting *OpenAI scheduled tasks with the o3 model*.
+Those can use a basic text-only web browser and a Python container without
+web access.
+
+OpenAI browsing constraints as of May 2025 (document in README):
+  * LLM cannot navigate to URLs unless they're (a) given verbatim in user input,
+    (b) search results page links, (b) they are a link in a page it opened.
+    This seems to be a security constraint OpenAI places on the model. So
+    we cannot e.g. tell the model "take this base URL and then add this query
+    parameter" -- the model is perfectly capable of composing the URL, but
+    won't be allowed to navigate to it. Ditto with having the model compose
+    a URL in Python and navigate to it: won't work.
+  * They do not support cookies.
+  * Hence the whole UI must consist of basically a link graph that the LLM
+    can use just by clicking around. No <input> boxes, no buttons, no forms,
+    But this might easily change soon in the future with LLMs getting more
+    capable.
+  * Navigating to user-written URLs with query parameters seems to also fail.
+  * Model probably cannot send specific headers, answer auth challenges, etc.
+  * Hence, we have 2 options for auth:
+    * Have the model enter the key as part of the path
+    * Present information to the model encrypted and have it decrypt it
+      on its side with Python tool use (which it can do).
+      Unfortunately this does not solve how we'd authenticate the model
+      for the purpose of taking actions. (I eventually want to try this,
+      with giving the model normal GET links which will -- somewhat abusing
+      HTTP -- make things happen.)
+    * Have the model answer a basic challenge-response auth challenge and then
+      on success redirect it to a session upon passing it.
+
+      e.g.:
+        "you have a secret key, compute sha(key || [this long string]),
+         what are the last 2 hex digits?"
+        (32 options, each leading the model to /challenge/[nonce]/[xx].
+         each URL will tell the model if it succeeded or not, invalidate
+         the nonce and show a new challenge. and of course log what
+         happened in logs)
+
+      If the model answers correctly, we can leave it say 5 minutes to decide
+      what to do next. Links we render from this logged-in point will a secret
+      "session extension token" - same token for all links within the signed-in
+      session. Clicking any link prolongs the session by 5 minutes.
+      If session expires, then any GET to a link with that session's link will
+      give message saying that the session expired, and give a new challenge.
+      If the challenge is passed, it will direct the model to whatever it
+      was trying to do with the old link.
+
+      Lke current decryption, make the auth page be **self-describing** - tell
+      the model how to compute the right answer assuming it knows the PSK.
+  * Have a human admin page that can use any normal HTTP patterns - forms, GET,
+    etc.
+    Let the human sign in with a password (no username).
+    On sign-in, human will be able to view logs of what model sessions recently
+    happened, what they did, whether they're still active, etc.
+    The human will be able to invalidate any session.
+    Human will be able to *mint* and *revoke* model login keys (i.e. those shared
+    secrets that models use to authenticate themselves against the server).
+    Minting can be by *generating* a new key with a button (and we'll keep in db
+    and allow updating: description, time created, time revoked if revoked, time
+    revocation scheduled if any). Use standard HTML datetime pickers for those
+    datetimes (except time created).
+    This will replace the current one global KEY.
+    Have human use of their server follow the normal "sign in / have a session
+    with a cookie / sign out" pattern you'd use in normal web apps.
+
+  * For human convenience, once human is logged in, allow human to create
+    a session just authed but their password and click through the UI as if
+    they were the LLM. This is for testing purposes.
+
+I think I like the "nonce auth" method the best. Let's implement that.
+
+Do things in these phases:
+
+1. Write a README with plan of what we'll do.
+   We'll have client and server in same folder. With a real Python package that we'll
+   be installing on laptops with pip.
+
+   Present to me for checking.
+
+Then later:
+
+2. Implement the current *key in path* auth method. Design to have multiple
+   different auth methods enabled, including at least user session cookie, key in path
+   and challenge-response with session extend key in query string (should be OK,
+   accessing URLs with query string params that come from links seem OK).
+
+   With that method, implement the existing webhook inbox function.
+
+3. In config, maintain:
+   * Home Assistant API URL
+   * Home Assistant long-lived access token
+
+   When LLM logs in, present to it a simple "homepage" where it can se:
+   * current datetime
+   * current state of entities listed in configuration, freshly fetched from HA API
+   * plus, on discrete entities (like binary sensors, HVAC actuator, ...):
+     * last 5 state changes with datetime
+     * link to get pagination on that sensor last by 100;
+       initially linking to last page at end of history = current datetime.
+   * on continuous sensors (like temperature, humidity, ...):
+     * state 10 minutes ago, 1 hour ago, 8 hours ago (if available)
+     * link to pagination in history, with selectable interval (5 min, 30 min, 6 hr);
+       initially linking to last page at end of history = current datetime.
+
