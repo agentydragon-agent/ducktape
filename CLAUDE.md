@@ -98,11 +98,36 @@ pip install pre-commit
 pre-commit install
 ```
 
+### Python Code Conventions
+
+- Follow PEP 8
+- Use modern Python features when appropriate:
+  - `match` statement
+  - `:=` assignment operator
+  - `X | Y` instead of `Union[X | Y]`
+  - `X | None` instead of `Optional[X]`
+  - `f"{var=}"` instead of `f"var={var}"`
+  - `str.removeprefix`, `str.removesuffix` instead of slicing
+  - `dict1 | dict2` (union), `dict1 & dict2` (intersection) for dicts and sets
+  - `zoneinfo` builtin library
+- Do not leave trailing whitespace in files
+- Be aggressively DRY (Don't Repeat Yourself)
+- Use early bail-out pattern
+- Avoid broad try-catch blocks, catch specific exceptions only
+- Use `typing.Self` or `from __future__ import annotations` for self-references
+- Imports go at the top of files, not inside functions
+- Use `pathlib` for path manipulation, not `os.path`
+- Avoid `getattr`/`setattr` unless absolutely necessary
+
 ### Testing Conventions
 
 - Test files should be placed in the same directory as the code they test
 - Test files should be named `test_x.py` where `x.py` is the file being tested
 - Use pytest for running tests
+- Use the pytest-asyncio plugin for async tests (no need for explicit asyncio marks)
+- Create shared pytest fixtures for reusable components, but avoid fixtures for single-use objects
+- Use parameterized tests for similar test cases
+- Keep tests concise by removing redundancy
 
 ### Ansible Development
 
