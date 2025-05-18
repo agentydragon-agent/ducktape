@@ -26,12 +26,8 @@ Example:
       repo: "TheAssassin/AppImageLauncher"
       version: "latest"
       asset_pattern: ".*_{{ dpkg_arch }}\\.deb$"
-    register: release_info
+    register: release_data
 """
-
-# As with *github_release_install*, this action plugin must inherit from
-# ``ansible.plugins.action.ActionBase`` so that Ansible provides the
-# *self._task* attribute we rely on below.
 
 from __future__ import annotations
 
@@ -45,9 +41,7 @@ plugins_dir = str(Path(__file__).parent.parent)
 if plugins_dir not in sys.path:
     sys.path.insert(0, plugins_dir)
 
-from module_utils.github_release import (
-    ReleaseSpec,
-)
+from module_utils.github_release import ReleaseSpec
 
 
 class ActionModule(ActionBase):
@@ -59,4 +53,3 @@ class ActionModule(ActionBase):
     def run(self, tmp=None, task_vars=None):
         """Main entry point for the action plugin."""
         return ReleaseSpec(**self._task.args).resolve()
-

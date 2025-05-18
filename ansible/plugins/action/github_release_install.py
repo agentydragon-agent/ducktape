@@ -20,8 +20,8 @@ Usage:
       asset_pattern: ".*amd64\\.deb$"   # Regex pattern to select asset
       acknowledged_version: "v1.0.0"    # Last version seen/acknowledged by user
 
-    # Optional release info from previous task
-    release_info: "{{ release_info }}"
+    # Optional release data from previous task
+    release_data: "{{ release_data }}"
 
     method: deb  # Installation method (deb, binary, archive)
 
@@ -52,7 +52,7 @@ Example:
       method: deb
       version: "latest"
       asset_pattern: ".*_{{ dpkg_arch }}\\.deb$"
-    register: release_info
+    register: release_data
 """
 
 from __future__ import annotations
@@ -69,10 +69,10 @@ if plugins_dir not in sys.path:
     sys.path.insert(0, plugins_dir)
 
 from module_utils.github_release import (
+    INSTALL_METHODS,
     ActionError,
     GitHubInstaller,
     ReleaseSpec,
-    INSTALL_METHODS,
     _fail,
 )
 
@@ -102,7 +102,7 @@ class ActionModule(ActionBase):
             method_args.pop("name")
         else:
             raise ActionError(f"Invalid {type(method) = }.")
-
+        assert isinstance(method_name, str)
         if not (klass := INSTALL_METHODS.get(method_name)):
             raise ActionError(
                 f"Invalid {method = }. Expected one of: {', '.join(INSTALL_METHODS.keys())}"
@@ -121,22 +121,25 @@ class ActionModule(ActionBase):
 
         args = self._task.args.copy()
 
-        # Check if we have release_info from a previous task
-        if "release_info" not in args:
+        # Check if we have release_data from a previous task
+        if "release_data" not in args:
             # todo dedupe
             if "release_spec" not in args:
-                return _fail(result, "Missing required parameter: release_info xor release_spec")
-            release_info_result = ReleaseSpec(**args["release_spec"]).resolve()
-            result["release_info_result"] = release_info_result
-            if release_info_result.get("failed"):
-                return _fail(result, release_info_result["msg"])
-            release_info = release_info_result["release_info"]
+                return _fail(
+                    result, "Missing required parameter: release_data xor release_spec"
+                )
+            result["release_data"] = (
+                release_data := ReleaseSpec(**args["release_spec"]).resolve()
+            )
+            if release_data.get("failed"):
+                return _fail(result, release_data["msg"])
         else:
             # todo dedupe
-            if not (release_info := args.get("release_info")):
-                return _fail(result, "Missing required parameter: release_info xor release_spec")
-
-        if not (asset_url := release_info.get("asset_url")):
+            if not (release_data := args.get("release_data")):
+                return _fail(
+                    result, "Missing required parameter: release_data xor release_spec"
+                )
+        if not (asset_url := release_data.get("asset_url")):
             return _fail(result, "No asset URL in release info")
 
         # Install the release

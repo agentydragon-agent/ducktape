@@ -3,9 +3,9 @@ set tabstop=8
 set shiftwidth=8
 set softtabstop=8
 
--- fold by syntax, open all by default
-set foldmethod=syntax
-set foldlevelstart=20
+-- fold by treesitter, open all by default
+--set foldmethod=syntax
+--set foldlevelstart=20
 
 set omnifunc=syntaxcomplete#Complete
 
@@ -42,9 +42,9 @@ augroup autoformat_settings
   autocmd FileType java AutoFormatBuffer google-java-format
 augroup END
 
-set foldmethod=syntax
+--set foldmethod=syntax
 set foldcolumn=1
-let javaScript_fold=1 "activate folding by JS syntax
+--let javaScript_fold=1 "activate folding by JS syntax
 set foldlevelstart=99
 
 " Map Alt-T to paste current datetime

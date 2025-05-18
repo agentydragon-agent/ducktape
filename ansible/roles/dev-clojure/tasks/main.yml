@@ -7,17 +7,14 @@
       ansible.builtin.stat:
         path: "{{ local_scripts_path }}/zprint"
       register: zprint_binary
-      
-    - name: Check zprint latest release
-      github_release_info:
-        repo: "kkinnear/zprint"
-        version: "latest"
-        asset_pattern: "zprintl$"
-      register: zprint_info
 
     - name: Install or update zprint
       github_release_install:
-        method: binary
-        release_info: "{{ zprint_info }}"
-        dest_path: "{{ local_scripts_path }}/zprint"
+        spec:
+          repo: kkinnear/zprint
+          version: "latest"
+          asset_pattern: "zprintl$"
+        method:
+          name: binary
+          dest_path: "{{ local_scripts_path }}/zprint"
       when: not zprint_binary.stat.exists

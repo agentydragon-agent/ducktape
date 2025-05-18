@@ -16,6 +16,10 @@ dependencies:
         # (Replace vertical workspaces of Cosmic UI from Pop!_OS; it tends to freeze up)
         - id: 5177
 
+        # Cronomix - https://extensions.gnome.org/extension/6003/cronomix/
+        # (timer/stopwatch/Pomodoro/alarms/todo)
+        - id: 6003
+
   - role: anki
     tags: [anki]
   # Needs to be before gnome-terminal-solarized because it uses the fonts.
