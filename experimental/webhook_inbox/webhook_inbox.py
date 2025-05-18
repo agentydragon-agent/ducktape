@@ -3,23 +3,35 @@ export WEBHOOK_INBOX_KEY='fgBWt1JKhqE6MbZAUntgZ7QBGJ0thPU1Su1qzU529l4='
 uvicorn webhook_inbox:app --host 0.0.0.0 --port 8000
 """
 
-from urllib.parse import quote
-import os, time, json, sqlite3, base64, binascii, logging, sys, zlib, pickle
-from starlette.datastructures import URL
+import base64
+import binascii
+import json
+import logging
+import os
+import pickle
+import sqlite3
+import sys
+import time
+import zlib
 from datetime import datetime
+from urllib.parse import quote
 from zoneinfo import ZoneInfo
-from fastapi import FastAPI, Request, HTTPException
-from fastapi.responses import RedirectResponse, FileResponse
-from fastapi.templating import Jinja2Templates
-from cryptography.fernet import Fernet
-from compact_json import Formatter
 
-WEBHOOK_INBOX_KEY: str = os.getenv("WEBHOOK_INBOX_KEY", "")  # 44-char url-safe b64, or unset → no crypto
+from compact_json import Formatter
+from cryptography.fernet import Fernet
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.templating import Jinja2Templates
+from starlette.datastructures import URL
+
+WEBHOOK_INBOX_KEY: str = os.getenv(
+    "WEBHOOK_INBOX_KEY", ""
+)  # 44-char url-safe b64, or unset → no crypto
 
 MAX_PAYLOAD = int(os.getenv("MAX_PAYLOAD", "16384"))
-PAGE_SIZE   = int(os.getenv("PAGE_SIZE", "50"))
-TZ          = "America/Los_Angeles"
-PAC         = ZoneInfo(TZ)
+PAGE_SIZE = int(os.getenv("PAGE_SIZE", "50"))
+TZ = "America/Los_Angeles"
+PAC = ZoneInfo(TZ)
 
 templates = Jinja2Templates(directory="templates")
 
@@ -53,14 +65,12 @@ def encrypt_events(events, key: str) -> str:
     return Fernet(key).encrypt(packed).decode()
 
 
-def _decrypt_code_snippet() -> str:
-    """Return a ready-to-paste Python snippet that decrypts *CIPHERTEXT*."""
-    return (
-        "import zlib, pickle\n"
-        "from cryptography.fernet import Fernet\n"
-        "packed = Fernet(KEY).decrypt(CIPHERTEXT.encode())\n"
-        "events = pickle.loads(zlib.decompress(packed))\n"
-    )
+DECRYPT_CODE_SNIPPET = (
+    "import zlib, pickle\n"
+    "from cryptography.fernet import Fernet\n"
+    "packed = Fernet(KEY).decrypt(CIPHERTEXT.encode())\n"
+    "events = pickle.loads(zlib.decompress(packed))\n"
+)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -77,6 +87,7 @@ class EncryptedEncoder:
     2. *Client-supplied key* – when a key is set, clients can also
        get plain JSON by supplying correct key in URL (``?key=…``/``/k/…```).
     """
+
     key: str | None
 
     @property
@@ -163,15 +174,14 @@ class EncryptedEncoder:
         chunks = [ciphertext[i : i + width] for i in range(0, len(ciphertext), width)]
         total = len(chunks)
         body = "\n".join(
-            f"  {chunk!r}  # line {i+1}/{total}"
-            for i, chunk in enumerate(chunks)
+            f"  {chunk!r}  # line {i+1}/{total}" for i, chunk in enumerate(chunks)
         )
 
         return out | {
             "ciphertext_body": "(\n" + body + "\n)",
             "ciphertext_len": len(ciphertext),
             "tz": TZ,
-            "decrypt_code": _decrypt_code_snippet(),
+            "decrypt_code": DECRYPT_CODE_SNIPPET,
         }
 
 
@@ -267,6 +277,7 @@ def _print_startup_banner() -> None:
 # Trigger banner emission.
 _print_startup_banner()
 
+
 @app.middleware("http")
 async def log_all(req: Request, call_next):
     """Log every HTTP request.
@@ -321,6 +332,7 @@ async def log_all(req: Request, call_next):
 
     return resp
 
+
 # ── POST /  → ingest event (no key in path)
 @app.post("/")
 async def ingest(req: Request):
@@ -331,15 +343,15 @@ async def ingest(req: Request):
         payload = raw.decode()
     except UnicodeDecodeError:
         raise HTTPException(400, "Payload must be valid UTF-8")
-    CONN.execute("INSERT INTO events(ts,payload) VALUES(?,?)",
-                 (int(time.time()), payload))
+    CONN.execute(
+        "INSERT INTO events(ts,payload) VALUES(?,?)", (int(time.time()), payload)
+    )
     CONN.commit()
     return {"status": "ok"}
 
 
-
-
 # ── Helper: render event list (shared by both “/” and “/k/{key}/” routes) ──
+
 
 def _render_events_page(
     req: Request,
@@ -381,7 +393,9 @@ def _render_events_page(
         redirect_target = str(URL(base_path).include_query_params(**params))
         # Also propagate *query-style* key if that’s how it was supplied.
         if key_style == "query" and key_value:
-            redirect_target = str(URL(redirect_target).include_query_params(key=key_value))
+            redirect_target = str(
+                URL(redirect_target).include_query_params(key=key_value)
+            )
 
         return RedirectResponse(url=redirect_target, status_code=302)
 
@@ -391,7 +405,9 @@ def _render_events_page(
     try:
         before_ts = int(params["before"])
     except ValueError:
-        raise HTTPException(400, "Invalid 'before' parameter – must be integer timestamp")
+        raise HTTPException(
+            400, "Invalid 'before' parameter – must be integer timestamp"
+        )
 
     try:
         count = int(params["count"])
@@ -402,8 +418,8 @@ def _render_events_page(
         raise HTTPException(400, f"'count' must be between 1 and {PAGE_SIZE}")
 
     rows = CONN.execute(
-        "SELECT id,ts,payload FROM events "
-        "WHERE ts < ? ORDER BY ts DESC LIMIT ?", (before_ts, count)
+        "SELECT id,ts,payload FROM events " "WHERE ts < ? ORDER BY ts DESC LIMIT ?",
+        (before_ts, count),
     ).fetchall()
 
     def _payload_entry(payload):
@@ -438,11 +454,7 @@ def _render_events_page(
     # Propagate *query-style* key only when the correct key was provided and the
     # user is indeed using the query scheme.
     latest_link: str = base_path
-    if (
-        older_link
-        and key_style == "query"
-        and key_value == WEBHOOK_INBOX_KEY
-    ):
+    if older_link and key_style == "query" and key_value == WEBHOOK_INBOX_KEY:
         if older_link:
             older_link = str(URL(older_link).include_query_params(key=key_value))
         latest_link = str(URL(latest_link).include_query_params(key=key_value))
@@ -478,12 +490,16 @@ def _render_events_page(
 
 # ── GET /  → paged listing (no key in path) ───────────────────────────────
 
+
 @app.get("/")
 def list_events(req: Request):
-    return _render_events_page(req, key_value=req.query_params.get("key"), key_style="query")
+    return _render_events_page(
+        req, key_value=req.query_params.get("key"), key_style="query"
+    )
 
 
 # ── GET /k/{key}/  → paged listing with key embedded in path  ─────────────
+
 
 @app.get("/k/{key_value}/")
 def list_events_key_in_path(req: Request, key_value: str):
