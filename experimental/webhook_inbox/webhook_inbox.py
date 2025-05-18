@@ -4,17 +4,17 @@ uvicorn webhook_inbox:app --host 0.0.0.0 --port 8000
 """
 
 import os, time, json, sqlite3, base64, binascii, logging
-from urllib.parse import urlencode
 from starlette.datastructures import URL
 from datetime import datetime
 from zoneinfo import ZoneInfo
+import sys
 from fastapi import FastAPI, Request, HTTPException
-from fastapi.responses import RedirectResponse
-import textwrap
+from fastapi.responses import RedirectResponse, FileResponse
 from fastapi.templating import Jinja2Templates
 from cryptography.fernet import Fernet
 import zlib
 import pickle
+from compact_json import Formatter
 
 WEBHOOK_INBOX_KEY: str = os.getenv("WEBHOOK_INBOX_KEY", "")  # 44-char url-safe b64, or unset → no crypto
 
@@ -40,21 +40,14 @@ logger.setLevel(LOG_LEVEL)
 # ─────────────────────────────────────────────────────────────────────────────
 # Encoder
 # ─────────────────────────────────────────────────────────────────────────────
-#
-# The main encoder class combines both encrypted and plain-JSON output modes.
-# It was formerly named ``Encoder`` but is exposed externally as
-# ``EncryptedEncoder`` to highlight its default behaviour when a
-# ``WEBHOOK_INBOX_KEY`` is configured.
-#
 class EncryptedEncoder:
     """Encode events, optionally encrypting them.
 
     Behaviour depends on three factors:
 
-    1. If ``WEBHOOK_INBOX_KEY`` is **unset** the encoder always returns plain JSON.
-    2. *Client-supplied key* – when a key is configured, clients can override
-       encryption by supplying the correct key in the query string
-       (``?key=…``).
+    1. If key is not set, return plain JSON.
+    2. *Client-supplied key* – when a key is set, clients can also
+       get plain JSON by supplying correct key in URL (``?key=…``/``/k/…```).
     """
     key: str | None
 
@@ -81,7 +74,12 @@ class EncryptedEncoder:
 
     def plain_encode(self, events):
         # return json.dumps(events, separators=(',', ':')).encode()  # Compact JSON
-        return json.dumps(events, indent=2)  # pretty JSON
+        # return json.dumps(events, indent=2)  # pretty JSON
+        return Formatter(
+            indent_spaces=2,
+            max_inline_length=70,
+            max_inline_complexity=10,
+        ).serialize(events)
 
     # ------------------------------------------------------------------
     # Public API
@@ -122,11 +120,6 @@ class EncryptedEncoder:
 
         out = {}
 
-        # When a key *is* configured, but the caller supplied the correct key
-        # in the query string we again serve plaintext.  Any *incorrect* key is
-        # noted in the output so the user is aware the data are still
-        # encrypted.
-
         if provided_key is not None:
             if provided_key == self.key:
                 return {"plaintext": self.plain_encode(events)}
@@ -134,16 +127,12 @@ class EncryptedEncoder:
             out["error"] = "Incorrect key in URL – data are still encrypted."
 
         # ── Encrypted path --------------------------------------------------
-        # 1. serialize → compress → ASCII-85 to keep ciphertext URL-safe and
-        #    printable.
+        # 1. serialize → compress → ASCII-85 → encrypt
         data = pickle.dumps(events, protocol=5)
         packed = zlib.compress(data, level=9)
-        plaintext = base64.a85encode(packed).decode()
+        ciphertext = Fernet(self.key).encrypt(packed).decode()
 
-        # 2. Fernet-encrypt plaintext
-        ciphertext = Fernet(self.key).encrypt(plaintext.encode()).decode()
-
-        # 3. break into ≤50-char chunks and tag each line “# line i/N” for
+        # 2. break into ≤50-char chunks and tag each line “# line i/N” for
         #    readability when embedded into documentation.
         width = 60
         chunks = [ciphertext[i : i + width] for i in range(0, len(ciphertext), width)]
@@ -220,23 +209,24 @@ app = FastAPI()
 def _print_startup_banner() -> None:
     """Emit helpful links to stdout once at startup."""
 
-    # Do not pollute pytest output.
-    import sys
-
     if any(mod.startswith("pytest") for mod in sys.modules):
         return
 
-    base_url = "http://127.0.0.1:8000"  # TODO
-
-    index_url = f"{base_url}/"
+    index_url = f"http://127.0.0.1:8000/"
 
     lines: list[str] = [
         "📬  Webhook Inbox ready",
         f"  UI → {index_url}",
     ]
-    # TODO: not great, logs the key! potentially into journal
-    if WEBHOOK_INBOX_KEY:
-        lines.append(f"  Unencrypted UI → {index_url}?key={WEBHOOK_INBOX_KEY}")
+    # Expose plaintext link only when stdout is attached to a TTY.
+    # In typical production stdout is captured by supervisor (systemd, docker,
+    # kubernetes, …) or redirected into a log file and ``isatty()`` will be
+    # False. Running locally in a terminal (e.g. via ``uvicorn webhook_inbox:app
+    # --reload``) the call returns *True* so we show the convenience link.
+    if WEBHOOK_INBOX_KEY and sys.stdout.isatty():
+        lines.append(f"  Unencrypted UI →")
+        lines.append(f"    {index_url}?key={WEBHOOK_INBOX_KEY}")
+        lines.append(f"    {index_url}k/{WEBHOOK_INBOX_KEY}")
     lines.extend(
         [
             "",
@@ -275,8 +265,15 @@ async def log_all(req: Request, call_next):
     CONN.execute(
         "INSERT INTO access_log(ts,path,method,query,payload,headers,status)"
         " VALUES(?,?,?,?,?,?,?)",
-        (ts, req.url.path, req.method, req.url.query,
-         body, json.dumps(dict(req.headers.items())), resp.status_code),
+        (
+            ts,
+            req.url.path,
+            req.method,
+            req.url.query,
+            body,
+            json.dumps(dict(req.headers.items())),
+            resp.status_code,
+        ),
     )
     CONN.commit()
 
@@ -288,12 +285,17 @@ async def log_all(req: Request, call_next):
             "path": req.url.path,
             "query": req.url.query,
             "status": resp.status_code,
+            "ua": req.headers.get("user-agent", ""),
         },
     )
 
+    # Add security headers to response we return upstream.
+    resp.headers.setdefault("Referrer-Policy", "same-origin")
+    resp.headers.setdefault("X-Robots-Tag", "noindex, nofollow")
+
     return resp
 
-# ── POST /  → ingest event
+# ── POST /  → ingest event (no key in path)
 @app.post("/")
 async def ingest(req: Request):
     raw = await req.body()
@@ -309,11 +311,27 @@ async def ingest(req: Request):
     return {"status": "ok"}
 
 
-# ── GET /  → paged listing
-@app.get("/")
-def list_events(req: Request):
-    # Ensure the paging parameters *before* and *count* exist.  Missing
-    # ones are added via redirect so the resulting URL is self-contained and shareable.
+
+
+# ── Helper: render event list (shared by both “/” and “/k/{key}/” routes) ──
+
+def _render_events_page(
+    req: Request,
+    *,
+    key_value: str | None,
+    key_style: str | None,  # "query", "path", or None
+) -> RedirectResponse | object:
+    """Common implementation for the event listing page.
+
+    key_value: Key supplied by client or *None* if none was passed.
+    key_style: How the key has been conveyed – ``"query"`` for ``?key=…``,
+               ``"path"`` for ``/k/<key>/`` and *None* when no key is present.
+    """
+
+    # ------------------------------------------------------------------
+    # 1. Ensure *before* and *count* query params are present
+    # ------------------------------------------------------------------
+
     params: dict[str, str] = dict(req.query_params)
 
     redirect_needed = False
@@ -327,13 +345,23 @@ def list_events(req: Request):
         redirect_needed = True
 
     if redirect_needed:
-        # Build a new URL with the missing parameters added.  ``URL`` will take
-        # care of properly quoting values so we do not have to worry about
-        # edge-cases such as spaces or special characters.
-        redirect_target = str(URL("/").include_query_params(**params))
+        # Recreate original path (with key embedded if applicable) so sharing
+        # the resulting URL preserves the user’s chosen addressing scheme.
+        if key_style == "path" and key_value:
+            base_path = req.url.path  # already contains correct key prefix
+        else:
+            base_path = "/"
+
+        redirect_target = str(URL(base_path).include_query_params(**params))
+        # Also propagate *query-style* key if that’s how it was supplied.
+        if key_style == "query" and key_value:
+            redirect_target = str(URL(redirect_target).include_query_params(key=key_value))
+
         return RedirectResponse(url=redirect_target, status_code=302)
 
-    # ── Parse and validate parameters ────────────────────────────────────
+    # ------------------------------------------------------------------
+    # 2. Parse and validate paging parameters
+    # ------------------------------------------------------------------
     try:
         before_ts = int(params["before"])
     except ValueError:
@@ -354,12 +382,22 @@ def list_events(req: Request):
 
     def _payload_entry(payload):
         try:
-            # Try to decode JSON, return raw payload on failure.
             return json.loads(payload)
         except json.JSONDecodeError:
             return payload
 
     events = [{"id": r[0], "ts": r[1], "payload": _payload_entry(r[2])} for r in rows]
+
+    # ------------------------------------------------------------------
+    # 3. Build navigation links (older / latest)
+    # ------------------------------------------------------------------
+
+    # Determine base path *including* the embedded key when key-style is
+    # "path" so navigation retains the same addressing scheme the user chose.
+    if key_style == "path" and key_value:
+        base_path = req.url.path  # e.g. "/k/<key>/"
+    else:
+        base_path = "/"
 
     older_link: str | None = None
     if rows:
@@ -368,65 +406,66 @@ def list_events(req: Request):
             "SELECT 1 FROM events WHERE ts < ? LIMIT 1", (oldest_ts,)
         ).fetchone():
             older_link = str(
-                URL("/").include_query_params(before=oldest_ts, count=count)
+                URL(base_path).include_query_params(before=oldest_ts, count=count)
             )
 
-    # ── Key handling -------------------------------------------------------
-    key_param = params.get("key")
+    # Propagate *query-style* key only when the correct key was provided and the
+    # user is indeed using the query scheme.
+    latest_link: str = base_path
+    if (
+        older_link
+        and key_style == "query"
+        and key_value == WEBHOOK_INBOX_KEY
+    ):
+        if older_link:
+            older_link = str(URL(older_link).include_query_params(key=key_value))
+        latest_link = str(URL(latest_link).include_query_params(key=key_value))
 
-    # Only propagate the key to paging links if the client supplied the *correct*
-    # one.  Manipulating the URL via ``URL.include_query_params`` guarantees the
-    # key is properly percent-encoded should it ever contain reserved
-    # characters (even though a valid Fernet key is URL-safe already).
-    if older_link and key_param == WEBHOOK_INBOX_KEY and key_param:
-        older_link = str(URL(older_link).include_query_params(key=key_param))
-
-    # Build link that jumps straight to the newest events (i.e. “Latest →”).
-    # Without a key this is simply the root path “/”.  When the *correct* key
-    # has been supplied we must forward it so users browsing plaintext JSON do
-    # not suddenly receive encrypted output again when following the link.
-    latest_link: str = "/"
-    if key_param == WEBHOOK_INBOX_KEY and key_param:
-        latest_link = str(URL(latest_link).include_query_params(key=key_param))
+    # ------------------------------------------------------------------
+    # 4. Assemble template context
+    # ------------------------------------------------------------------
 
     ctx = {
         "request": req,
         "events_count": len(events),
         "older_link": older_link,
-        # Convenience string like "[2024-05-16T09:00:00, 2024-05-16T10:00:00)"
-        # that makes it obvious which side of the interval is closed and
-        # which is open.
-        "interval_str": None,  # filled in below
         "latest_link": latest_link,
-        **ENCODER.encode(events, provided_key=key_param),
+        **ENCODER.encode(events, provided_key=key_value),
     }
 
-    if WEBHOOK_INBOX_KEY and key_param != WEBHOOK_INBOX_KEY:
-        # Link to fetch unencrypted JSON (uses placeholder key so secret is never
-        # leaked).  Only shown when the current response is still encrypted.
+    if WEBHOOK_INBOX_KEY and key_value != WEBHOOK_INBOX_KEY:
         ctx["decrypt_link"] = str(URL(str(req.url)).include_query_params(key="KEY"))
 
-    # Build a human-friendly representation of the timestamp interval that the
-    # current page covers, e.g. "[2024-05-16T09:00:00, 2024-05-16T10:00:00)".
-    format_ts = lambda ts: datetime.fromtimestamp(ts, PAC).isoformat(timespec="seconds")
+    # Human-readable interval description ---------------------------------
+    fmt_ts = lambda ts: datetime.fromtimestamp(ts, PAC).isoformat(timespec="seconds")
 
     if events:
-        start_iso = format_ts(events[-1]["ts"])
-
-        # If there are no earlier events (i.e. we're at the beginning of log
-        # history) we still use a closed left bracket but add a marker so the
-        # user knows there is nothing before this page.
+        start_iso = fmt_ts(events[-1]["ts"])
         if not older_link:
             start_iso = f"{start_iso} (beginning of history)"
-
-        # Oldest event is included. Upper bound is exclusive (ts < before).
-        ctx["interval_str"] = f"[{start_iso}, {format_ts(before_ts)})"
+        ctx["interval_str"] = f"[{start_iso}, {fmt_ts(before_ts)})"
     else:
-        # When the page is empty we cannot derive a concrete start timestamp
-        # from the events themselves.  Indicate an open interval extending to
-        # negative infinity.  We still use a *closed* right bracket because
-        # the upper bound (``before_ts``) is *exclusive*.
-        ctx["interval_str"] = f"(-∞, {format_ts(before_ts)})"
+        ctx["interval_str"] = f"(-∞, {fmt_ts(before_ts)})"
 
     return templates.TemplateResponse("events.html", ctx)
 
+
+# ── GET /  → paged listing (no key in path) ───────────────────────────────
+
+@app.get("/")
+def list_events(req: Request):
+    return _render_events_page(req, key_value=req.query_params.get("key"), key_style="query")
+
+
+# ── GET /k/{key}/  → paged listing with key embedded in path  ─────────────
+
+@app.get("/k/{key_value}/")
+def list_events_key_in_path(req: Request, key_value: str):
+    """Same as ``/`` but with *key* encoded as part of the URL path."""
+    return _render_events_page(req, key_value=key_value, key_style="path")
+
+
+# ── robots.txt  → disallow crawling
+@app.get("/robots.txt", include_in_schema=False)
+async def robots_txt():
+    return FileResponse("robots.txt", media_type="text/plain")
