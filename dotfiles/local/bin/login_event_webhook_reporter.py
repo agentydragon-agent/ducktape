@@ -28,6 +28,12 @@ ENDPOINT = "https://webhook.agentydragon.com/"  # full URL
 TIMEOUT = timedelta(seconds=3)  # HTTP timeout
 FLUSH_INTERVAL = timedelta(minutes=10)  # retry cadence
 
+# Maximum allowed JSON body size for a single POST request (bytes).  If the
+# queue would result in a larger payload, it is split into multiple requests.
+# Events whose individual payload would exceed the limit are dropped with an
+# error logged.
+MAX_PAYLOAD = 16_384  # 16 KiB – enforced hard limit sent to the server
+
 # ActivityWatch
 AW_API = "http://localhost:5600/api/0"
 AW_PERIOD = timedelta(minutes=5)  # poll cadence
@@ -48,28 +54,89 @@ aw_cur = datetime.now() - timedelta(minutes=5)
 
 
 # ─ helpers ───────────────────────────────────────────────────────────────────
-def _flush() -> bool:
-    """Try to POST everything in *queue*; keep data if it fails."""
-    if not queue:
-        return True
-    body = json.dumps({"host": socket.gethostname(), "events": queue}).encode()
+def _make_body(events: list[dict]) -> bytes:
+    """Return JSON body bytes for *events* batch."""
+    return json.dumps(
+        {"host": socket.gethostname(), "events": events}, separators=(",", ":")
+    ).encode()
+
+
+def _post(body: bytes) -> bool:
+    """Send *body* to the endpoint.  Return True on success."""
     try:
         urllib.request.urlopen(
             ENDPOINT, data=body, timeout=TIMEOUT.total_seconds()
         ).read()
+        return True
     except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError):
         log.warning("send failed; will retry", exc_info=True)
         return False
-    log.info(
-        "sent %d payload(s) (%s), %.1f KiB total",
-        len(queue),
-        " ".join(
-            f"{v}×{k}" for k, v in Counter(ev["event"] for ev in queue).most_common()
-        ),
-        len(body) / 1024,
-    )
-    queue.clear()
-    return True
+
+
+def _flush() -> bool:
+    """Try to POST everything in *queue* adhering to MAX_PAYLOAD.
+
+    Splits the queue into multiple requests so that each JSON body is below
+    MAX_PAYLOAD bytes.  If a single event would exceed the limit by itself it
+    is dropped and logged as an error.  On the first failed POST, the
+    remaining (unsent) events are kept in *queue* for a later retry.
+    """
+
+    if not queue:
+        return True
+
+    sent_any = False  # did we manage to send at least one batch?
+    while queue:
+        batch: list[dict] = []
+
+        # Build a batch whose encoded size stays within MAX_PAYLOAD.
+        while queue:
+            next_ev = queue[0]
+            tentative_body = _make_body(batch + [next_ev])
+            if len(tentative_body) <= MAX_PAYLOAD:
+                batch.append(queue.pop(0))  # move from queue → batch
+            else:
+                # Adding next_ev would exceed limit.
+                break
+
+        if not batch:
+            # Single event is too large even on its own -> drop it.
+            oversized = queue.pop(0)
+            size = len(_make_body([oversized]))
+            log.error(
+                "dropping oversized event %s (%d bytes > %d)",
+                oversized.get("event", "?"),
+                size,
+                MAX_PAYLOAD,
+            )
+            continue  # try with remaining events
+
+        body = _make_body(batch)
+
+        if len(body) > MAX_PAYLOAD:
+            # Sanity guard; shouldn't happen because of the logic above.
+            log.error("internal error: constructed oversized payload – skipping batch")
+            queue[:0] = batch  # prepend back for retry
+            break
+
+        if not _post(body):
+            # Failed – prepend unsent events back to queue in original order.
+            queue[:0] = batch  # type: ignore[slice-assignment]
+            break
+
+        # Success.
+        sent_any = True
+        log.info(
+            "sent %d event(s) (%s), %.1f KiB",
+            len(batch),
+            " ".join(
+                f"{v}×{k}"
+                for k, v in Counter(ev["event"] for ev in batch).most_common()
+            ),
+            len(body) / 1024,
+        )
+
+    return not queue or sent_any
 
 
 def _q(event, **ev):

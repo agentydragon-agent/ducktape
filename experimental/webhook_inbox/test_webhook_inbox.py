@@ -3,8 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from fastapi.testclient import TestClient
 from cryptography.fernet import Fernet
+from fastapi.testclient import TestClient
 
 import webhook_inbox
 
@@ -21,15 +21,16 @@ def app_and_client(tmp_path: Path):
     finally:
         client.close()
 
+
 @pytest.fixture()
 def client(app_and_client):
     _, client = app_and_client
     return client
 
 
-
 # Ingest endpoint
 # ---------------------------------------------------------------------------
+
 
 def test_ingest_persists_event(app_and_client):
     app, client = app_and_client
@@ -59,12 +60,15 @@ def test_invalid_utf8_payload(client):
 # Paging parameters
 # ---------------------------------------------------------------------------
 
+
 def test_root_redirects(client):
     r = client.get("/", follow_redirects=False)
     assert r.status_code == 302 and r.headers["location"].startswith("/?before=")
 
+
 def test_bad_before(client):
     assert client.get("/?before=not_an_int").status_code == 400
+
 
 def test_missing_count_redirects_to_default(app_and_client):
     app, client = app_and_client
@@ -75,13 +79,16 @@ def test_missing_count_redirects_to_default(app_and_client):
     loc = r.headers["location"]
     assert f"before={ts}" in loc and f"count={app.PAGE_SIZE}" in loc
 
+
 @pytest.mark.parametrize("bad", [0, -1])
 def test_too_low_counts_raise_400(client, bad):
     assert client.get(f"/?before=123&count={bad}").status_code == 400
 
+
 def test_too_high_count_raises_400(app_and_client):
     app, client = app_and_client
     assert client.get(f"/?before=123&count={app.PAGE_SIZE + 1}").status_code == 400
+
 
 def test_smaller_count_is_accepted(client):
     assert client.get("/?before=123&count=1").status_code == 200
@@ -96,6 +103,6 @@ def test_crypto_roundtrip():
     ns: dict[str, object] = {"KEY": key, "CIPHERTEXT": ciphertext}
 
     # Snippet should define decrypt_events() *and* assign `events`.
-    exec(webhook_inbox._decrypt_code_snippet(), ns)
+    exec(webhook_inbox.DECRYPT_CODE_SNIPPET, ns)
 
     assert ns["events"] == events
