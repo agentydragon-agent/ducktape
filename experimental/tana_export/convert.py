@@ -1,26 +1,9 @@
 #!/usr/bin/env python3
 """
-tana_export.py – Convert a raw **Tana JSON dump** to
+convert.py – Convert Tana JSON dump to
 
 * Markdown  →  <dump>.converted.md
 * Tana-paste → <dump>.converted.tanapaste.txt
-
-Features
-========
-✓  Pydantic v2, frozen read-only models
-✓  ≤ 5 random validation failures printed with full JSON + traceback
-✓  Drops trash nodes *and* all top-level system nodes (`SYS_*`)
-✓  Suppresses the special “Node supertags(s)” tuple in body (but keeps #tags in headline)
-✓  Handles inline `<span data-inlineref-node>` / `…-date` → links / ISO strings
-✓  Prevents nodes referenced **only inline** from becoming stray top-level bullets
-✓  Renders ordinary tuples as
-
-        - Key::
-          - <value subtree>
-
-✓  Pretty “journal day” headings:
-        "2025-05-06 - Tuesday"  →  "Tue, May 6 #day"
-
 """
 
 from __future__ import annotations
@@ -38,14 +21,93 @@ from typing import Any, Dict, List, Mapping, Optional, Set
 from pydantic import BaseModel, ConfigDict, Field
 
 
-class Props(BaseModel):
+class Props(BaseModel, extra="forbid"):
     created: Optional[int] = None
     name: Optional[str] = None
-    _docType: str
-    _ownerId: str
-    # _ownerId: Optional[str] = None
-    _metaNodeId: Optional[str] = None
-    _sourceId: Optional[str] = None
+    doc_type: Optional[str] = Field(alias="_docType", default=None)
+    owner_id: Optional[str] = Field(alias="_ownerId", default=None)
+    meta_node_id: Optional[str] = Field(alias="_metaNodeId", default=None)
+    source_id: Optional[str] = Field(alias="_sourceId", default=None)
+    done: Optional[int] = Field(alias="_done", default=None)
+    description: Optional[str] = None # present in e.g. gc7H7gDG3Ce8
+
+    # e.g.:
+    # {
+    #   "id": "iHWY3SmZFu2C",
+    #   "children": [
+    #     "7PbP1R_CV2x_",
+    #     "JJB1UGrz2EgY",
+    #     "IbyIc3t04g44",
+    #     "BlKuPFBaBWGf"
+    #   ],
+    #   "props": {
+    #     "_docType": "journalPart",
+    #     "_flags": 64,
+    #     "_metaNodeId": "0S3tjyvVLiOU",
+    #     "_ownerId": "paAiLY7M-RDH",
+    #     "created": 1745295053475,
+    #     "name": "2025-04-21 - Monday"
+    #   },
+    #   "modifiedTs": [
+    #     1745520191840
+    #   ],
+    #   "touchCounts": [
+    #     13
+    #   ]
+    # }
+    flags: Optional[int] = Field(alias="_flags", default=None)
+
+    # e.g.:
+    # {
+    #   "id": "avLJUkTGxV00",
+    #   "props": {
+    #     "_docType": "visual",
+    #     "_imageHeight": 500,
+    #     "_imageWidth": 754,
+    #     "_metaNodeId": "TMDjmbZiD6Vf",
+    #     "_ownerId": "5bXtikRAjfQK",
+    #     "created": 1721944839775
+    #   },
+    #   "modifiedTs": [1721944840187],
+    #   "touchCounts": [7]
+    # }
+    imageWidth: Optional[int] = Field(alias="_imageWidth", default=None)
+    imageHeight: Optional[int] = Field(alias="_imageHeight", default=None)
+
+    # {
+    #   "id": "oxIi6At72Q-R",
+    #   "children": [
+    #     "UcmDPW21ODoU"
+    #   ],
+    #   "props": {
+    #     "_docType": "viewDef",
+    #     "_editMode": true,
+    #     "_ownerId": "tucdPrxIajt5",
+    #     "_view": "table",
+    #     "created": 1701150010598,
+    #     "name": "Default"
+    #   },
+    #   "modifiedTs": [1701150011150],
+    #   "touchCounts": [9]
+    # }
+    view: Optional[str] = Field(alias="_view", default=None)
+    editMode: Optional[bool] = Field(alias="_editMode", default=None)
+
+    # {
+    #   "id": "kgqfA9Zxzr66",
+    #   "props": {
+    #     "created": 1732767570400,
+    #     "_metaNodeId": "-AWjLEhOz2EW",
+    #     "_ownerId": "uA_iLd0SUk_TRASH",
+    #     "_sourceId": "hifkLFEEUc_J",
+    #     "searchContextNode": "C0EsOmtaxwVG"
+    #   },
+    #   "touchCounts": [5],
+    #   "modifiedTs": [1732767573651]
+    # }
+    searchContextNode: Optional[str] = None
+
+
 
     model_config = ConfigDict(extra="allow", frozen=True)
 
@@ -57,13 +119,16 @@ class Props(BaseModel):
 
     @property
     def is_trash(self) -> bool:
-        return bool(self._ownerId and self._ownerId.endswith("_TRASH"))
+        return bool(self.owner_id and self.owner_id.endswith("_TRASH"))
 
 
-class BaseNode(BaseModel):
+class BaseNode(BaseModel, extra="forbid"):
     id: str
     props: Props
     children: List[str] = Field(default_factory=list)
+    modifiedTs: Optional[List[int]] = None
+    touchCounts: Optional[List[int]] = None
+    associationMap: Optional[Dict[str, str]] = None
 
     model_config = ConfigDict(extra="allow", frozen=True)
 
@@ -93,7 +158,8 @@ _DOC_CLASS: Mapping[Optional[str], type[BaseNode]] = {
 
 
 def _make_node(raw: Dict[str, Any]) -> BaseNode:
-    return _DOC_CLASS.get(raw["props"]["_docType"], UnknownNode).model_validate(raw)
+    # There are some nodes with no _docType, e.g. hN3mU6IQqe.
+    return _DOC_CLASS.get(raw["props"].get("_docType"), UnknownNode).model_validate(raw)
 
 
 class NodeStore(Mapping[str, BaseNode]):
@@ -148,13 +214,33 @@ def _supertag_index(store: NodeStore) -> Dict[str, List[str]]:
         if isinstance(n, TupleNode) and len(n.children) >= 2:
             k, v = store.get(n.children[0]), store.get(n.children[1])
             if k and k.id == _SUPERTAG_KEY_ID and v and v.name:
-                out.setdefault(n.props._ownerId, []).append(v.name)
+                out.setdefault(n.props.owner_id, []).append(v.name)
     return out
 
 
-def attach_supertag_property(store: NodeStore):
-    idx = _supertag_index(store)
+def attach_supertag_property(store: NodeStore) -> None:
+    idx: Dict[str, List[str]] = _supertag_index(store)
+
+    # NEW: propagate tags via meta-node link
+    for n in store.values():
+        if (meta := n.props.meta_node_id) and (meta in idx):
+            tags_from_meta = idx[meta]
+            tgt = idx.setdefault(n.id, [])
+            for t in tags_from_meta:
+                if t not in tgt:
+                    tgt.append(t)
+
+    # propagate wrapper tags to visible children
+    for w in store.values():
+        if _is_wrapper(w) and (tags := idx.get(w.id)):
+            for cid in w.children:
+                idx.setdefault(cid, [])
+                for t in tags:
+                    if t not in idx[cid]:
+                        idx[cid].append(t)
+
     BaseNode.supertags = property(lambda self: idx.get(self.id, []))  # type: ignore[attr-defined]
+
 
 
 # ──────────────────────────  Inline refs  ────────────────────────── #
@@ -166,18 +252,26 @@ _DATE_SPAN = re.compile(r'<span data-inlineref-date="([^"]+)"></span>')
 def _inline_to_text(raw: str, store: NodeStore, style: str) -> str:
     def node_sub(m):
         nid = m.group(1)
-        target = store.get(nid)
-        nm = html.unescape((target.name if target else nid) or nid)
+        tgt = store.get(nid)
+        nm  = html.unescape((tgt.name if tgt else nid) or nid)
         return f"[[{nm}^{nid}]]" if style == "tana" else nm
 
     def date_sub(m):
         data = json.loads(html.unescape(m.group(1)))
-        iso = f'{data["dateTimeString"]}[{data.get("timezone","")}]'
+        iso  = f'{data["dateTimeString"]}[{data.get("timezone","")}]'
         return f"[[date:{iso}]]" if style == "tana" else iso
+
+    # ── keep verbatim code / image lines ───────────────────────
+    if raw.lstrip().startswith("```") or raw.lstrip().startswith("!"):
+        return raw                                              # no substitutions
+    # ───────────────────────────────────────────────────────────
 
     txt = _NODE_SPAN.sub(node_sub, raw)
     txt = _DATE_SPAN.sub(date_sub, txt)
-    return html.unescape(txt)
+    txt = html.unescape(txt)
+    txt = re.sub(r"</?strong>", "**", txt, flags=re.IGNORECASE)
+    return txt
+
 
 
 # ──────────────────────────  Headline  ────────────────────────── #
@@ -193,18 +287,27 @@ def _journal_headline(name: str) -> str | None:
     except Exception:
         return None
 
+def _is_wrapper(node: BaseNode) -> bool:
+    """Nodes that should *not* get their own bullet - just pass through."""
+    return node.props.doc_type in {"workspace", "viewDef", "layout"}
+
+
 
 def _headline(node: BaseNode, store: NodeStore, style: str) -> str:
     raw = node.name or node.id
-    if node.props._docType == "journalPart":
-        if pretty := _journal_headline(raw):
-            raw = pretty
+    if node.props.doc_type == "journalPart":
+        raw = _journal_headline(raw) or raw
+
     base = _inline_to_text(raw, store, style)
+
+    # ── NEW: description suffix ────────────────────────────────
+    if node.props.description:
+        desc = _inline_to_text(node.props.description, store, style)
+        base = f"{base} - {desc}"
 
     # supertags
     tags = getattr(node, "supertags", [])
-    # journal day gets #day automatically if not already tagged
-    if node.props._docType == "journalPart" and "day" not in tags:
+    if node.props.doc_type == "journalPart" and "day" not in tags:
         tags.append("day")
     if tags:
         base += " " + " ".join(f"#{t}" for t in tags)
@@ -222,21 +325,70 @@ def _is_supertag_tuple(t: TupleNode, store: NodeStore) -> bool:
     return k.id == _SUPERTAG_KEY_ID
 
 
-def _render_tuple(
-    t: TupleNode, store: NodeStore, vis: Set[str], write, ind: str, sty: str
-):
+
+# ──────────────────────────────────────────────────────────────
+# Helper: return a scalar text representation of a node
+#         or None if the node is actually a container.
+# ──────────────────────────────────────────────────────────────
+def _scalar_text(node: BaseNode, store: NodeStore, sty: str) -> str | None:
+    # regular leaf: has its own name
+    if node.name:
+        return _inline_to_text(node.name, store, sty)
+
+    # special case: a checkbox tuple
+    for cid in node.children:
+        tup = store.get(cid)
+        if isinstance(tup, TupleNode) and len(tup.children) >= 2:
+            key = store.get(tup.children[0])
+            val = store.get(tup.children[1])
+            if key and key.id == "SYS_A55" and val:
+                return "[X]" if val.id == "SYS_V03" else "[ ]" if val.id == "SYS_V04" else None
+
+    return None  # container, not a scalar
+
+
+# ──────────────────────────────────────────────────────────────
+# Tuple renderer
+# ──────────────────────────────────────────────────────────────
+def _render_tuple(t: TupleNode, store: NodeStore, vis: set[str],
+                  write, ind: str, sty: str) -> None:
+    # need at least key + value
     if len(t.children) < 2:
         return
-    key, val = store.get(t.children[0]), store.get(t.children[1])
-    if not key or not val:
+
+    key_node = store.get(t.children[0])
+    val_node = store.get(t.children[1])
+    if not key_node or not val_node:
         return
-    write(f"{ind}- {_inline_to_text(key.name or key.id, store, sty)}::")
-    _render_node(val, store, vis, write, ind + "  ", sty)
+
+    key_txt = _inline_to_text(key_node.name or key_node.id, store, sty)
+
+    # ── try to render value inline ────────────────────────────
+    val_txt = _scalar_text(val_node, store, sty)
+    if val_txt is not None:
+        write(f"{ind}- {key_txt}:: {val_txt}")
+
+        # still render value-node children (e.g., URL, tags) one level deeper
+        for cid in val_node.children:
+            if child := store.get(cid):
+                _render_node(child, store, vis, write, ind + "  ", sty)
+        return
+
+    # ── non-scalar: fall back to nested layout ────────────────
+    write(f"{ind}- {key_txt}::")
+    _render_node(val_node, store, vis, write, ind + "  ", sty)
+
 
 
 def _render_node(
     n: BaseNode, store: NodeStore, vis: Set[str], write, ind: str, sty: str
 ):
+    if _is_wrapper(n):
+        for cid in n.children:
+            if child := store.get(cid):
+                _render_node(child, store, vis, write, ind, sty)
+        return
+
     if n.id in vis:
         txt = _inline_to_text(n.name or n.id, store, sty)
         txt = f"[[{txt}^{n.id}]]" if sty == "tana" else txt
@@ -247,14 +399,12 @@ def _render_node(
 
     # tuples (skip supertag assignment)
     for cid in n.children:
-        c = store[cid]
-        if isinstance(c, TupleNode) and not _is_supertag_tuple(c, store):
+        if (c := store.get(cid)) and isinstance(c, TupleNode) and not _is_supertag_tuple(c, store):
             _render_tuple(c, store, vis, write, ind + "  ", sty)
 
     # non-tuple owned children
     for cid in n.children:
-        c = store[cid]
-        if c and not isinstance(c, TupleNode) and c.props._ownerId == n.id:
+        if (c := store.get(cid)) and not isinstance(c, TupleNode) and c.props.owner_id == n.id:
             _render_node(c, store, vis, write, ind + "  ", sty)
 
 
@@ -268,12 +418,12 @@ def _collect_inline_refs(store: NodeStore) -> Set[str]:
 
 
 def _roots(store: NodeStore) -> List[BaseNode]:
-    owned = {
-        n.props._ownerId for n in store.values() if n.props._ownerId and not n.is_trash
-    }
+    # nodes that *have* an owner (i.e. are children)
+    owned_nodes = {n.id for n in store.values() if n.props.owner_id and not n.is_trash}
+
     childed = {cid for n in store.values() if not n.is_trash for cid in n.children}
-    meta = {n.props._metaNodeId for n in store.values() if n.props._metaNodeId}
-    inline = _collect_inline_refs(store)
+    meta    = {n.props.meta_node_id for n in store.values() if n.props.meta_node_id}
+    inline  = _collect_inline_refs(store)
 
     return sorted(
         [
@@ -281,11 +431,14 @@ def _roots(store: NodeStore) -> List[BaseNode]:
             for n in store.values()
             if (
                 not n.is_trash
-                and not n.id.startswith("SYS_")  # drop system
-                and n.id not in owned  # owned by someone?
-                and n.id not in childed  # listed as child?
-                and n.id not in meta  # ← exclude pure meta‑nodes
-                and n.id not in inline  # only referenced inline?
+                and n.name                                   # ← NEW
+                and n.children                               # ← NEW
+                and not _is_wrapper(n)            # ← NEW
+                and not n.id.startswith("SYS_")   # drop system nodes
+                and n.id not in owned_nodes       # exclude nodes that are owned
+                and n.id not in childed           # referenced as child anywhere
+                and n.id not in meta              # pure meta-nodes
+                and n.id not in inline            # only inline-referenced
                 and not isinstance(n, TupleNode)  # tuples never roots
             )
         ],
@@ -312,7 +465,7 @@ def _export(store: NodeStore, style: str) -> str:
             vis.remove(r.id)  # show owned children again
             for cid in r.children:
                 c = store.get(cid)
-                if c and not isinstance(c, TupleNode) and c.props._ownerId == r.id:
+                if c and not isinstance(c, TupleNode) and c.props.owner_id == r.id:
                     _render_node(c, store, vis, write, "", style)
 
     return "\n".join(lines).rstrip() + "\n"
