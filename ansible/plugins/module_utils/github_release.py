@@ -55,14 +55,48 @@ class ReleaseSpec:
 
         # Make API request
         try:
-            req = urllib.request.Request(self.get_api_url(), headers={
-                "Accept": "application/json",
-                "User-Agent": "Ansible GitHub Release Handler",
-            })
+            req = urllib.request.Request(
+                self.get_api_url(),
+                headers={
+                    "Accept": "application/json",
+                    "User-Agent": "Ansible GitHub Release Handler",
+                },
+            )
             with urllib.request.urlopen(req) as response:
                 release_data = json.loads(response.read().decode("utf-8"))
         except Exception as e:
             return _fail(result, f"Error fetching release info: {str(e)}")
+
+        # Clear known-unused keys
+        for asset in release_data.get("assets", []):
+            # explicitly kept: 'label', 'name', 'url'
+            for key in [
+                "content_type",
+                "created_at",
+                "download_count",
+                "id",
+                "node_id",
+                "size",
+                "state",
+                "updated_at",
+                "uploader",
+            ]:
+                if key in asset:
+                    del asset[key]
+        for key in [
+            "author",
+            "body",
+            "created_at",
+            "draft",
+            "html_url",
+            "id",
+            "node_id",
+            "prerelease",
+            "published_at",
+            "reactions",
+        ]:
+            if key in release_data:
+                del release_data[key]
 
         result["release_data"] = release_data
 
@@ -70,14 +104,16 @@ class ReleaseSpec:
         if self.acknowledged_version:
             latest_version = release_data["tag_name"]
             if not latest_version:
-                return _fail(result, "Failed to extract version information of latest release.")
+                return _fail(
+                    result, "Failed to extract version information of latest release."
+                )
             result["latest_version"] = latest_version
 
             if self.acknowledged_version != latest_version:
                 return _fail(
                     result,
                     f"Please acknowledge new version {latest_version}. "
-                    f"Last acknowledged: {self.acknowledged_version}. "
+                    f"Last acknowledged: {self.acknowledged_version}. ",
                 )
 
         if not (assets := release_data.get("assets")):
@@ -85,17 +121,21 @@ class ReleaseSpec:
         if not self.asset_pattern:
             return _fail(result, "No asset pattern provided.")
         matches = [
-            asset for asset in assets
-            if re.search(self.asset_pattern, asset["name"])
+            asset for asset in assets if re.search(self.asset_pattern, asset["name"])
         ]
         if len(matches) > 1:
-            return _fail(result, f"{len(matches)} assets match {self.asset_pattern}. Use a more specific pattern.")
+            return _fail(
+                result,
+                f"{len(matches)} assets match {self.asset_pattern}. Use a more specific pattern.",
+            )
         if not matches:
-            return _fail(result, f"No assets match {self.asset_pattern}. Available: {', '.join(asset['name'] for asset in assets)}")
+            return _fail(
+                result,
+                f"No assets match {self.asset_pattern}. Available: {', '.join(asset['name'] for asset in assets)}",
+            )
         if not (url := matches[0].get("browser_download_url")):
             return _fail(result, "No download URL found for the asset.")
         return {"asset_url": url}
-
 
     def get_api_url(self) -> str:
         """Return GitHub API URL for the release."""
@@ -161,6 +201,7 @@ class BinaryInstall(GitHubInstaller):
 
 ARCHIVES = (".tar.gz", ".tgz", ".tar.bz2", ".tar.xz", ".tar.zst", ".zip")
 
+
 @dataclass
 class ArchiveInstall(GitHubInstaller):
     """Install a GitHub release from an archive file."""
@@ -195,10 +236,7 @@ class ArchiveInstall(GitHubInstaller):
         for ext in ARCHIVES:
             if filename.endswith(ext):
                 return {"extracted_dir": filename.removesuffix(ext)}
-        return _fail(
-            {},
-            f"Can't guess extracted directory from URL: {asset_url}"
-        )
+        return _fail({}, f"Can't guess extracted directory from URL: {asset_url}")
 
 
 # Maps method name to implementation.

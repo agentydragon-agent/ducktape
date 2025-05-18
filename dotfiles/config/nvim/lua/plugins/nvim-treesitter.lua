@@ -6,6 +6,14 @@ local M = {
 	--end,
 	event = { "BufReadPost", "BufNewFile" },
 	config = function()
+		-- Setup folding
+		-- (Start with all folds open, but allow closing them)
+		-- https://chatgpt.com/c/6829a714-cd44-8011-9607-bbcd1386db22
+		vim.opt.foldmethod = "expr"
+		vim.opt.foldexpr = "nvim_treesitter#foldexpr()"
+		vim.opt.foldlevelstart = 99
+		vim.opt.foldlevel = 99
+
 		require("nvim-treesitter.configs").setup({
 			-- List of parser name to always have installed, or "all"
 			ensure_installed = {

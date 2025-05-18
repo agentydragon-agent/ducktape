@@ -52,6 +52,7 @@
       - openjdk-8-jdk
       - openscad
       - psensor
+      - scrcpy # Android screen mirroring
       - snapd # For Telegram etc.
       - syncthing-gtk
       - torbrowser-launcher
@@ -183,3 +184,17 @@
 
 - import_tasks: pop_extension_bug_workaround.yml
   tags: pop_extension_bug_workaround
+
+- import_tasks: login_event_webhook_reporter.yml
+  tags: login_event_webhook_reporter
+
+# For reporting to webhook
+- name: ActivityWatch
+  become: true
+  github_release_install:
+    release_spec:
+      repo: ActivityWatch/activitywatch
+      version: v0.13.2
+      acknowledged_version: v0.13.2
+      asset_pattern: ".*-{{ ansible_architecture }}\\.deb$"
+    method: deb
