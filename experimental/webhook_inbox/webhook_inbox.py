@@ -3,17 +3,14 @@ export WEBHOOK_INBOX_KEY='fgBWt1JKhqE6MbZAUntgZ7QBGJ0thPU1Su1qzU529l4='
 uvicorn webhook_inbox:app --host 0.0.0.0 --port 8000
 """
 
-import os, time, json, sqlite3, base64, binascii, logging
+import os, time, json, sqlite3, base64, binascii, logging, sys, inspect, textwrap, zlib, pickle
 from starlette.datastructures import URL
 from datetime import datetime
 from zoneinfo import ZoneInfo
-import sys
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import RedirectResponse, FileResponse
 from fastapi.templating import Jinja2Templates
 from cryptography.fernet import Fernet
-import zlib
-import pickle
 from compact_json import Formatter
 
 WEBHOOK_INBOX_KEY: str = os.getenv("WEBHOOK_INBOX_KEY", "")  # 44-char url-safe b64, or unset → no crypto
@@ -40,6 +37,36 @@ logger.setLevel(LOG_LEVEL)
 # ─────────────────────────────────────────────────────────────────────────────
 # Encoder
 # ─────────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+# Shared crypto helpers
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def encrypt_events(events, key: str) -> str:
+    """Serialize *events* and return ciphertext string encrypted with *key*."""
+
+    # 1. pickle → compress for smaller payloads
+    packed = zlib.compress(pickle.dumps(events, protocol=5), level=9)
+
+    # 2. Fernet encrypt (key must already be validated elsewhere)
+    return Fernet(key).encrypt(packed).decode()
+
+
+def _decrypt_code_snippet() -> str:
+    """Return a ready-to-paste Python snippet that decrypts *CIPHERTEXT*."""
+    return (
+        "import zlib, pickle\n"
+        "from cryptography.fernet import Fernet\n"
+        "packed = Fernet(KEY).decrypt(CIPHERTEXT.encode())\n"
+        "events = pickle.loads(zlib.decompress(packed))\n"
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Encoder class (uses helpers above)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
 class EncryptedEncoder:
     """Encode events, optionally encrypting them.
 
@@ -127,10 +154,7 @@ class EncryptedEncoder:
             out["error"] = "Incorrect key in URL – data are still encrypted."
 
         # ── Encrypted path --------------------------------------------------
-        # 1. serialize → compress → ASCII-85 → encrypt
-        data = pickle.dumps(events, protocol=5)
-        packed = zlib.compress(data, level=9)
-        ciphertext = Fernet(self.key).encrypt(packed).decode()
+        ciphertext = encrypt_events(events, self.key)
 
         # 2. break into ≤50-char chunks and tag each line “# line i/N” for
         #    readability when embedded into documentation.
@@ -146,6 +170,7 @@ class EncryptedEncoder:
             "ciphertext_body": "(\n" + body + "\n)",
             "ciphertext_len": len(ciphertext),
             "tz": TZ,
+            "decrypt_code": _decrypt_code_snippet(),
         }
 
 
