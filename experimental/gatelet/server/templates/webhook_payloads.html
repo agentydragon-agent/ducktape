@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+
+{% block title %}Gatelet - {{ integration_name|default('All') }} Payloads{% endblock %}
+
+{% block nav %}
+<nav>
+    <a href="{{ auth.create_url('') }}">Home</a>
+    <a href="{{ auth.create_url('webhooks') }}">Webhooks</a>
+</nav>
+{% endblock %}
+
+{% block content %}
+<section>
+    <h2>{{ integration_name|default('All') }} Webhook Payloads</h2>
+    <p>Showing {{ payloads|length }} of {{ total_count }} payloads</p>
+    
+    {% if show_all_link %}
+    <p><a href="{{ auth.create_url('webhooks') }}">View all integrations</a></p>
+    {% endif %}
+    
+    {% if integrations and not integration_name %}
+    <div class="integrations-list">
+        <h3>Available Integrations</h3>
+        <ul>
+            {% for integration in integrations %}
+            <li>
+                <a href="{{ auth.create_url('webhooks/' + integration.name) }}">{{ integration.name }}</a>
+                {% if integration.description %}
+                - {{ integration.description }}
+                {% endif %}
+            </li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+</section>
+
+<section class="pagination">
+    {% if total_pages > 1 %}
+        {% if page > 6 %}
+        <a href="{{ auth.create_url_with_params('webhooks/' + integration_path, page=total_pages, page_size=page_size) }}">[{{ total_pages }} - Earliest]</a>
+        <span>...</span>
+        {% endif %}
+        
+        {% for p in range(max(1, page-5), page) %}
+        <a href="{{ auth.create_url_with_params('webhooks/' + integration_path, page=p, page_size=page_size) }}">[{{ p }}]</a>
+        {% endfor %}
+    {% endif %}
+    
+    <span>[{{ page }}]</span>
+    
+    {% if page < total_pages %}
+        {% for p in range(page+1, min(page+6, total_pages+1)) %}
+        <a href="{{ auth.create_url_with_params('webhooks/' + integration_path, page=p, page_size=page_size) }}">[{{ p }}]</a>
+        {% endfor %}
+        
+        {% if page < total_pages - 5 %}
+        <span>...</span>
+        <a href="{{ auth.create_url_with_params('webhooks/' + integration_path, page=1, page_size=page_size) }}">[1 - Latest]</a>
+        {% endif %}
+    {% endif %}
+</section>
+
+<section class="payload-table">
+    {% if payloads %}
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                {% if not integration_name %}
+                <th>Integration</th>
+                {% endif %}
+                <th>Received</th>
+                <th>Payload</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for payload in payloads %}
+            <tr>
+                <td>{{ payload.id }}</td>
+                {% if not integration_name %}
+                <td>{{ payload.integration_name }}</td>
+                {% endif %}
+                <td>{{ payload.received_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                <td><pre>{{ payload.payload_json }}</pre></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>No payloads received.</p>
+    {% endif %}
+</section>
+{% endblock %}
