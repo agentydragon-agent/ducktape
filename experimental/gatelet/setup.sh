@@ -38,7 +38,8 @@ PG_BIN="$(pg_config --bindir)"            # e.g. /usr/lib/postgresql/16/bin
 export PATH="$PG_BIN:$PATH"               # for the remainder of setup.sh
 
 # persist for all future shells
-echo "export PATH=$PG_BIN:\$PATH" | tee /etc/profile.d/pg-bin.sh /root/.bashrc ~postgres/.bashrc chmod +x /etc/profile.d/pg-bin.sh
+echo "export PATH=$PG_BIN:\$PATH" | tee /etc/profile.d/pg-bin.sh /root/.bashrc ~postgres/.bashrc
+chmod +x /etc/profile.d/pg-bin.sh
 
 # Initialise and launch a local Postgres that survives the sandbox
 ##############################################################################
@@ -58,7 +59,7 @@ su - postgres -c "
 # runtime auto-start hook (root & agent shells)
 cat >> /root/.bashrc <<'EOS'
   PGDATA=/workspace/pgdata
-  pg_ctl -D "$PGDATA" -l /tmp/pg.log -w start
+  pg_ctl -D "$PGDATA" status >/dev/null 2>&1 || pg_ctl -D "$PGDATA" -w start
   export DATABASE_URL="postgresql+psycopg://postgres@localhost/gatelet"
 EOS
 
@@ -75,7 +76,7 @@ python_env_setup() {
     pip install -e experimental/gatelet[dev]
 
     # Install browsers (headless mode)
-    python -m playwright install --with-deps chromium # firefox webkit
+    python -m playwright install --with-deps chromium-headless-shell # firefox webkit chromium
 }
 
 # pip install --upgrade pip setuptools wheel
@@ -88,4 +89,5 @@ python_env_setup
 # deactivate
 # echo "source $(realpath $VENV)/bin/activate" >> /root/.bashrc
 
-echo "✅ Bootstrap finished (errors above were ignored)."
+echo "Bootstrap finished"
+exit 0
