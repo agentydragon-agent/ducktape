@@ -1,0 +1,83 @@
+{
+    "values": {
+        "panel_position": {
+            "tag": "enum",
+            "value": "right",
+            "enum": [
+                "left",
+                "center",
+                "right"
+            ]
+        },
+        "open": {
+            "tag": "keymap",
+            "value": null
+        },
+        "add_task": {
+            "tag": "keymap",
+            "value": null
+        },
+        "search": {
+            "tag": "keymap",
+            "value": null
+        },
+        "open_tracker": {
+            "tag": "keymap",
+            "value": null
+        },
+        "open_todo_file": {
+            "tag": "keymap",
+            "value": null
+        },
+        "todo_file": {
+            "tag": "file",
+            "value": null
+        },
+        "active_filter": {
+            "tag": "custom",
+            "value": -1
+        },
+        "filters": {
+            "tag": "custom",
+            "value": []
+        },
+        "tracker_file": {
+            "tag": "custom",
+            "value": ""
+        },
+        "tracker_query": {
+            "tag": "custom",
+            "value": {
+                "filter": "",
+                "since": "",
+                "until": "",
+                "sort": "asc"
+            }
+        },
+        "sort": {
+            "tag": "custom",
+            "value": [
+                {
+                    "by": "pin",
+                    "direction": "desc"
+                },
+                {
+                    "by": "priority",
+                    "direction": "asc"
+                },
+                {
+                    "by": "due",
+                    "direction": "asc"
+                },
+                {
+                    "by": "done",
+                    "direction": "asc"
+                },
+                {
+                    "by": "hide",
+                    "direction": "asc"
+                }
+            ]
+        }
+    }
+}
