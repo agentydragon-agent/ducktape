@@ -66,7 +66,7 @@ pre-commit install
 # venv for gatelet
 VENV=experimental/gatelet/.venv
 python -m venv $VENV
-source /venv/bin/activate
+source $VENV/activate
 pip install --upgrade pip wheel
 pip install -e experimental/gatelet[dev]
 
@@ -79,9 +79,8 @@ python -m playwright install --with-deps chromium # firefox webkit
 # 4.  Persist app-visible env vars (agent runs in a NEW shell)
 ##############################################################################
 {
-  echo "export VIRTUAL_ENV=$VENV"
-  echo 'export PATH=$VIRTUAL_ENV/bin:$PATH'
   echo 'export DATABASE_URL=postgresql+psycopg://postgres@localhost/gatelet'
+  echo "source $VENV/activate"
 } >> /root/.bashrc
 
 
