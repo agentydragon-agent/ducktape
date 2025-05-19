@@ -181,8 +181,6 @@ async def list_integration_payloads(
     """List webhook payloads for a specific integration."""
     # Check if integration exists and is enabled
     integration = await get_webhook_integration(integration_name, db_session)
-    
-    # TODO: Add link back to showing all integrations in the template
 
     # Get payloads with pagination
     context = await get_webhook_payloads(db_session, integration_name, page, page_size)

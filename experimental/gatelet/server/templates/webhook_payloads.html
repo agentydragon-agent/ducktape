@@ -9,7 +9,7 @@
         {% set extra = " - Earliest" %}
     {% endif %}
     
-    <a href="{{ auth.create_url_with_params('webhooks/' + integration_name, page=page_num, page_size=page_size) }}">[{{ page_num }}{{ extra }}]</a>
+    <a href="{{ auth.create_url_with_params('webhooks/' + integration_name | default(''), page=page_num, page_size=page_size) }}">[{{ page_num }}{{ extra }}]</a>
 {% endmacro %}
 
 {% block title %}Gatelet - {{ integration_name|default('All') }} Payloads{% endblock %}
