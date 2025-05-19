@@ -1,5 +1,7 @@
 import logging
 from datetime import datetime, timedelta, timezone
+from dataclasses import dataclass
+from typing import Dict, List, Tuple
 
 from homeassistant.components.sensor import SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
@@ -19,79 +21,145 @@ _LOGGER = logging.getLogger(__name__)
 # Breakpoint tables: sorted list of (concentration, IAQI).
 # 100 = best (clean), 0 = worst (very polluted).
 
-BREAKPOINTS = {
-    "co2": [
-        (400, 100),
-        (600, 80),
-        (1000, 60),
-        (1500, 40),
-        (2500, 20),
-        (4000, 0),
-    ],
-    "voc": [
-        (1, 100),
-        (200, 80),
-        (250, 60),
-        (350, 40),
-        (400, 20),
-        (500, 0),
-    ],
-    "nox": [
-        (1, 100),
-        (50, 80),
-        (100, 60),
-        (300, 40),
-        (350, 20),
-        (500, 0),
-    ],
-    "ch2o": [
-        (0, 100),
-        (0.06, 80),
-        (0.11, 60),
-        (0.31, 40),
-        (0.76, 20),
-        (1.0, 0),
-    ],
-    "pm1": [
-        (0, 100),
-        (15, 80),
-        (35, 60),
-        (62, 40),
-        (96, 20),
-        (150, 0),
-    ],
-    "pm25": [
-        (0, 100),
-        (21, 80),
-        (51, 60),
-        (91, 40),
-        (141, 20),
-        (200, 0),
-    ],
-    "pm10": [
-        (0, 100),
-        (31, 80),
-        (76, 60),
-        (126, 40),
-        (201, 20),
-        (300, 0),
-    ],
-    "co": [
-        (0, 100),
-        (1.8, 80),
-        (8.8, 60),
-        (10.1, 40),
-        (15.1, 20),
-        (30, 0),
-    ],
-    "o3": [
-        (0, 100),
-        (0.026, 80),
-        (0.061, 60),
-        (0.076, 40),
-        (0.101, 20),
-        (0.3, 0),
-    ],
+@dataclass(frozen=True)
+class PollutantInfo:
+    """Metadata for a pollutant recognised by this integration.
+
+    Attributes
+    ----------
+    name
+        Human-readable name, e.g. "CO₂".
+    unit
+        Unit of measurement that is expected from the underlying sensor.
+    breakpoints
+        List of pairs ``(concentration, iaqi)`` used to linearly interpolate
+        the sub-index for this pollutant.  The points **must** be ordered by
+        concentration ascending.  An IAQI of 100 represents perfectly clean
+        air for that pollutant, 0 represents extremely polluted.
+    """
+
+    name: str
+    unit: str
+    breakpoints: List[Tuple[float, int]]
+
+# ---------------------------------------------------------------------------
+# Pollutant definitions
+# ---------------------------------------------------------------------------
+
+# The breakpoint tables were previously stored in a separate global mapping.
+# They have now been integrated directly into the PollutantInfo dataclass for
+# better cohesion – every relevant bit of information about a pollutant is now
+# located in a single place.
+
+POLLUTANTS: Dict[str, PollutantInfo] = {
+    "co2": PollutantInfo(
+        name="CO₂",
+        unit="ppm",
+        breakpoints=[
+            (400, 100),
+            (600, 80),
+            (1000, 60),
+            (1500, 40),
+            (2500, 20),
+            (4000, 0),
+        ],
+    ),
+    "voc": PollutantInfo(
+        name="VOCs",
+        unit="ppb",
+        breakpoints=[
+            (1, 100),
+            (200, 80),
+            (250, 60),
+            (350, 40),
+            (400, 20),
+            (500, 0),
+        ],
+    ),
+    "nox": PollutantInfo(
+        name="NOₓ",
+        unit="ppb",
+        breakpoints=[
+            (1, 100),
+            (50, 80),
+            (100, 60),
+            (300, 40),
+            (350, 20),
+            (500, 0),
+        ],
+    ),
+    "ch2o": PollutantInfo(
+        name="Formaldehyde",
+        unit="mg/m³",
+        breakpoints=[
+            (0, 100),
+            (0.06, 80),
+            (0.11, 60),
+            (0.31, 40),
+            (0.76, 20),
+            (1.0, 0),
+        ],
+    ),
+    "pm1": PollutantInfo(
+        name="PM1",
+        unit="μg/m³",
+        breakpoints=[
+            (0, 100),
+            (15, 80),
+            (35, 60),
+            (62, 40),
+            (96, 20),
+            (150, 0),
+        ],
+    ),
+    "pm25": PollutantInfo(
+        name="PM2.5",
+        unit="μg/m³",
+        breakpoints=[
+            (0, 100),
+            (21, 80),
+            (51, 60),
+            (91, 40),
+            (141, 20),
+            (200, 0),
+        ],
+    ),
+    "pm10": PollutantInfo(
+        name="PM10",
+        unit="μg/m³",
+        breakpoints=[
+            (0, 100),
+            (31, 80),
+            (76, 60),
+            (126, 40),
+            (201, 20),
+            (300, 0),
+        ],
+    ),
+    "co": PollutantInfo(
+        name="CO",
+        unit="ppm",
+        breakpoints=[
+            (0, 100),
+            (1.8, 80),
+            (8.8, 60),
+            (10.1, 40),
+            (15.1, 20),
+            (30, 0),
+        ],
+    ),
+    "o3": PollutantInfo(
+        name="O₃",
+        unit="ppm",
+        breakpoints=[
+            (0, 100),
+            (0.026, 80),
+            (0.061, 60),
+            (0.076, 40),
+            (0.101, 20),
+            (0.3, 0),
+        ],
+    ),
 }
 
 
@@ -103,9 +171,11 @@ def compute_iaqi(pollutant: str, c: float) -> float | None:
     If c is above the last => clamp to last bracket's IAQI.
     If we can't find the pollutant => returns None.
     """
-    bp = BREAKPOINTS.get(pollutant.lower())
-    if not bp:
+    pollutant_info = POLLUTANTS.get(pollutant.lower())
+    if not pollutant_info:
         return None  # unknown pollutant
+
+    bp = pollutant_info.breakpoints
 
     # If c is below the first bracket
     if c < bp[0][0]:
@@ -207,6 +277,15 @@ class IndoorAQISensor(SensorEntity):
     Each IndoorAQISensor references one set of pollutant sensors,
     calculates a single IAQI (0..100) = min(subindices),
     sets textual labels, etc.
+    
+    This sensor provides:
+    1. Overall IAQI as the state (minimum of all pollutant indices)
+    2. Individual IAQI components for each pollutant (as attributes with iaqi_ prefix)
+    3. Raw pollutant values for reference (as attributes with raw_ prefix)
+    4. Bottleneck pollutants - components with lowest IAQI values, ordered from worst to less bad
+    
+    This allows building dashboards that show not just the overall air quality,
+    but also which specific pollutants are causing problems.
 
     'suggested_object_id' is optional
     """
@@ -246,8 +325,9 @@ class IndoorAQISensor(SensorEntity):
     def update(self):
         now_utc = datetime.now(timezone.utc)
         sensor_errors = []
-        subindices = []
-
+        iaqi_components = {}
+        raw_values = {}
+        
         for pollutant, entity_id in self._sensor_map.items():
             if not entity_id:
                 sensor_errors.append(f"{pollutant}: missing entity_id")
@@ -271,6 +351,7 @@ class IndoorAQISensor(SensorEntity):
             # parse float
             try:
                 val = float(raw)
+                raw_values[pollutant] = val  # Store the raw value
             except ValueError:
                 sensor_errors.append(f"{pollutant}: not numeric")
                 continue
@@ -279,14 +360,39 @@ class IndoorAQISensor(SensorEntity):
             if iaqi is None:
                 sensor_errors.append(f"{pollutant}: bracket unknown")
             else:
-                subindices.append(iaqi)
+                # Store individual component IAQI
+                iaqi_components[pollutant] = iaqi
 
+        # Compute subindices from iaqi_components
+        subindices = list(iaqi_components.values())
+        
+        # Find bottleneck components (those with lowest IAQI values)
         if subindices:
             overall = min(subindices)  # 0..100 (lowest=worst, highest=best)
             self._state = overall
+            
+            bottlenecks = []
+            bottleneck_details = []
+            
+            # Sort components by IAQI value (ascending) and process those within 5 points of minimum
+            # This ensures bottlenecks are ordered from worst to least bad
+            for pollutant, value in sorted(iaqi_components.items(), key=lambda x: x[1]):
+                if value <= overall + 5:  # Components within 5 points of minimum
+                    bottlenecks.append(pollutant)
+                    
+                    # Create human-readable detail with pollutant name, value and unit
+                    if pollutant_info := POLLUTANTS.get(pollutant):
+                        bottleneck_details.append(
+                            f"{pollutant_info.name}: {raw_values[pollutant]} {pollutant_info.unit}"
+                        )
+            
+            # Create a human-readable bottleneck string
+            bottleneck_string = ", ".join(bottleneck_details)
         else:
             overall = None
             self._state = None
+            bottlenecks = []
+            bottleneck_string = ""
 
         if overall is None:
             label = "Unknown"
@@ -319,6 +425,14 @@ class IndoorAQISensor(SensorEntity):
             "color": color,
             "sensor_errors": sensor_errors,
             "subindex_count": len(subindices),
+            # Add component IAQIs with iaqi_ prefix for each pollutant
+            **{f"iaqi_{pollutant}": value for pollutant, value in iaqi_components.items()},
+            # Add raw values with raw_ prefix for each pollutant
+            **{f"raw_{pollutant}": value for pollutant, value in raw_values.items()},
+            # Add bottlenecks in order from worst to least bad
+            "bottlenecks": bottlenecks,
+            # Human-readable bottleneck string with pollutant names, values and units
+            "bottleneck_string": bottleneck_string,
         }
 
         if sensor_errors:
