@@ -99,3 +99,9 @@ internet access was turned off.
 If you need to add a new dependency, set it up to be installed by the `experimental/gatelet/setup.sh` script.
 You will not be able to install it yourself, but you will help by giving the commands
 needed to install it for future runs.
+
+## Project Status
+
+Key-in-path authentication and webhook handling are in place. Challenge-response
+login, Home Assistant integration and the admin interface still need to be
+implemented. Refer to `TODO.md` in the repository root for details.

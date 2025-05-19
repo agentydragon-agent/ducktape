@@ -107,3 +107,10 @@ The project will be implemented in phases:
    - Add human authentication
    - Create admin dashboard
    - Implement key management
+
+## Current Status
+
+The repository contains the initial FastAPI server with database models,
+key-in-path authentication and webhook endpoints. Challenge-response login,
+Home Assistant integration and the human admin interface are not yet
+implemented. See `TODO.md` in the repository root for the remaining tasks.
