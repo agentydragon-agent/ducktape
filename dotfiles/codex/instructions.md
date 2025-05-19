@@ -155,23 +155,30 @@ Do not use name of class as a string for this.
 
 Test files should be located in the same directory as the module they're testing, with the name pattern `test_*.py`.
 
-When using Hamcrest assertions in tests, don't wrap primitive values in `equal_to()`. Use direct comparisons where possible.
+### When to use PyHamcrest vs standard assertions
 
-Example:
+Use standard Python assertions for basic checks that don't benefit from Hamcrest's matchers:
+
 ```python
-# Wrong:
-assert_that(value, equal_to(200))
-
-# Right:
-assert_that(value, 200)
+# Use standard assertions when Hamcrest doesn't add value:
+assert value == 200
+assert user.name == "John"  
+assert foo is True
+assert not bar
+assert len(items) > 0
 ```
 
-Use Hamcrest matchers for more complex assertions:
-```python
-# Use has_entries for dict assertions:
-assert_that(data, has_entries(status="ok", payload_id=anything()))
+Use PyHamcrest when it makes the assertion more clear, expressive, or when you're doing complex checks:
 
-# Use all_of for multiple conditions:
+```python
+# Use Hamcrest for these cases:
+# String content checking
+assert_that(text, contains_string("success"))
+
+# Dictionary content validation
+assert_that(data, has_entries(status="ok", count=greater_than(0)))
+
+# Multiple conditions
 assert_that(
     response.text,
     all_of(
@@ -180,6 +187,18 @@ assert_that(
     )
 )
 ```
+
+Access properties directly when using Hamcrest instead of using has_property when it doesn't add value:
+
+```python
+# Wrong - unnecessarily verbose:
+assert_that(user, has_property("name", contains_string("John")))
+
+# Right - clearer and more direct:
+assert_that(user.name, contains_string("John"))
+```
+
+The rule of thumb is: if you're just doing a single test on an object and it's a basic equality/truthiness check, use standard assertions. Use Hamcrest when you need its matchers to simplify complex assertions.
 
 If you notice you'd like to test your changes (which is of course highly encouraged), rather than writing one-off
 blobs of throwaway Python, feel free to suggest creating a new actual test file.

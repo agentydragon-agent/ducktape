@@ -2,12 +2,14 @@
 
 import pytest
 from datetime import datetime, timedelta
+from hamcrest import assert_that, is_
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from server.auth.key_auth import validate_key, KeyAuthError
 from server.config import settings
 from server.models import AuthKey
-from tests.utils import persist
+from server.tests.utils import persist
 
 
 @pytest.mark.asyncio
