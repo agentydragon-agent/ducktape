@@ -52,8 +52,15 @@ su - postgres -c "
   initdb -D '$PGDATA'
   pg_ctl -D '$PGDATA' -w start
   createdb gatelet
+  pg_ctl -D '$PGDATA' -m fast stop
 "
-echo 'export DATABASE_URL=postgresql+psycopg://postgres@localhost/gatelet' >> /root/.bashrc
+
+# runtime auto-start hook (root & agent shells)
+cat >> /root/.bashrc <<'EOS'
+  PGDATA=/workspace/pgdata
+  pg_ctl -D "$PGDATA" -l /tmp/pg.log -w start
+  export DATABASE_URL="postgresql+psycopg://postgres@localhost/gatelet"
+EOS
 
 # Dev hygiene
 ##############################################################################
