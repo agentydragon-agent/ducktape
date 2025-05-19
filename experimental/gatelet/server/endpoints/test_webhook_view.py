@@ -1,9 +1,7 @@
 """Tests for webhook viewing endpoints."""
 
 import pytest
-from hamcrest import (
-    all_of, assert_that, contains_string
-)
+from hamcrest import assert_that, all_of, contains_string
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -40,7 +38,7 @@ async def test_list_all_payloads_key_auth(
     
     # Use key-in-path authentication
     response = await client.get(f"/k/{test_auth_key.key_value}/webhooks/")
-    assert_that(response.status_code, 200)
+    assert response.status_code == 200
     
     # Check that the page contains the integration name and payload data
     assert_that(
@@ -83,7 +81,7 @@ async def test_list_integration_payloads(
     
     # Use key-in-path authentication
     response = await client.get(f"/k/{test_auth_key.key_value}/webhooks/{integration.name}")
-    assert_that(response.status_code, 200)
+    assert response.status_code == 200
     
     # Check that the page contains the integration name and specific data
     assert_that(
@@ -105,7 +103,7 @@ async def test_list_nonexistent_integration(
     """Test listing a non-existent integration."""
     # Use key-in-path authentication
     response = await client.get(f"/k/{test_auth_key.key_value}/webhooks/nonexistent")
-    assert_that(response.status_code, 404)
+    assert response.status_code == 404
 
 
 @pytest.mark.asyncio
@@ -135,7 +133,7 @@ async def test_session_auth_webhooks(
     
     # Use session-based authentication
     response = await client.get(f"/s/{test_auth_session.session_token}/webhooks/")
-    assert_that(response.status_code, 200)
+    assert response.status_code == 200
     
     # Check that the page contains the integration name and session data
     assert_that(
