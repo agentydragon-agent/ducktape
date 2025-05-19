@@ -417,8 +417,9 @@ class IndoorAQISensor(SensorEntity):
             label, color, icon = "Severely Polluted", "purple", "emoticon-devil"
 
         self._icon = f"mdi:{icon}"
-        # Generate the sensor_errors list for the attributes and logging
-        sensor_errors = [
+        # Transform the *dict* into a *list[str]* for attributes – keep the
+        # original mapping around for later use.
+        sensor_errors_list = [
             f"{pollutant}: {error_type}"
             for pollutant, error_type in sensor_errors.items()
         ]
@@ -426,7 +427,7 @@ class IndoorAQISensor(SensorEntity):
         self._attrs = {
             "level": label,
             "color": color,
-            "sensor_errors": sensor_errors,
+            "sensor_errors": sensor_errors_list,
             "subindex_count": len(subindices),
             # Add component IAQIs with iaqi_ prefix for each pollutant
             **{

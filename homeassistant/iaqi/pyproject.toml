@@ -16,8 +16,9 @@ dependencies = [
 [project.optional-dependencies]
 test = [
     "pytest>=7.0.0",
-    "pytest-cov>=4.0.0",
-    "pytest-homeassistant-custom-component>=0.13.4",
+
+    # exact pin to avoid long install time hell
+    "pytest-homeassistant-custom-component==0.13.45",
     "PyHamcrest>=2.0.4",
 ]
 
@@ -25,12 +26,4 @@ test = [
 packages = ["custom_components.indoor_aqi"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
 asyncio_mode = "auto"
-
-[tool.coverage.run]
-source = ["custom_components/indoor_aqi"]
-
-[tool.black]
-target-version = ["py39"]
-line-length = 88
