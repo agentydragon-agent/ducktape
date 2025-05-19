@@ -1,17 +1,91 @@
 """Tests for the Indoor AQI sensor component."""
 
 from datetime import datetime, timedelta, timezone
+import logging
+from logging.handlers import MemoryHandler
+from unittest.mock import patch
 
 import pytest
-from hamcrest import assert_that, close_to, contains_inanyorder, has_entries
+from hamcrest import assert_that, close_to, contains_inanyorder, has_entries, contains_exactly, empty
+from hamcrest.core.base_matcher import BaseMatcher
 from homeassistant.const import STATE_UNAVAILABLE
 
-from custom_components.indoor_aqi.sensor import IndoorAQISensor, compute_iaqi
+from custom_components.indoor_aqi.sensor import IndoorAQISensor, compute_iaqi, _LOGGER
+
+
+class LogEntryContaining(BaseMatcher):
+    """Matcher for log entries containing specific text."""
+    
+    def __init__(self, text):
+        self.text = text
+        
+    def _matches(self, item):
+        if not item:
+            return False
+        if not hasattr(item[0], 'getMessage'):
+            return False
+        return self.text in item[0].getMessage()
+        
+    def describe_to(self, description):
+        description.append_text(f'a log entry containing "{self.text}"')
+        
+    def describe_mismatch(self, item, mismatch_description):
+        if not item:
+            mismatch_description.append_text('was empty log buffer')
+        elif not hasattr(item[0], 'getMessage'):
+            mismatch_description.append_text('was not a log entry')
+        else:
+            mismatch_description.append_text(f'was "{item[0].getMessage()}"')
+
+
+class EmptyLogBuffer(BaseMatcher):
+    """Matcher for empty log buffer."""
+    
+    def _matches(self, item):
+        return not item
+        
+    def describe_to(self, description):
+        description.append_text('an empty log buffer')
+        
+    def describe_mismatch(self, item, mismatch_description):
+        if item:
+            mismatch_description.append_text(f'had {len(item)} entries')
+
+
+def log_containing(text):
+    """Returns a matcher for log entries containing the specified text."""
+    return LogEntryContaining(text)
+
+
+def empty_log():
+    """Returns a matcher for empty log buffer."""
+    return EmptyLogBuffer()
 
 
 @pytest.fixture
 def now():
     return datetime.now(timezone.utc)
+
+
+@pytest.fixture
+def memory_handler():
+    """Create a memory handler to capture log messages."""
+    # Create a memory handler that stores log records in memory
+    handler = MemoryHandler(capacity=100)  # Store up to 100 log records
+    
+    # Save the original handlers
+    original_handlers = _LOGGER.handlers.copy()
+    original_level = _LOGGER.level
+    
+    # Configure the logger to use our memory handler and ensure WARNING level is enabled
+    _LOGGER.setLevel(logging.WARNING)
+    _LOGGER.handlers = [handler]
+    
+    yield handler
+    
+    # Clean up: restore original handlers and level
+    _LOGGER.handlers = original_handlers
+    _LOGGER.setLevel(original_level)
 
 
 @pytest.mark.parametrize(
@@ -123,9 +197,115 @@ async def test_sensor_error_handling(hass, now):
     assert_that(
         sensor.extra_state_attributes["sensor_errors"],
         contains_inanyorder(
-            "pm25: sensor.missing has no state object",
+            "pm25: no state object",
             "voc: unavailable",
             "o3: not numeric",
             "unknown: bracket unknown",
         ),
     )
+
+
+async def test_partial_data_log_on_change(hass, memory_handler, now):
+    """Test that partial data is logged when the set of sensors with errors changes."""
+    # First update - CO2 and PM25 are working, VOC is unavailable
+    hass.states.async_set(
+        "sensor.co2",
+        "800",
+        {"unit_of_measurement": "ppm", "last_updated": now},
+    )
+
+    hass.states.async_set(
+        "sensor.pm25",
+        "30",
+        {"unit_of_measurement": "μg/m³", "last_updated": now},
+    )
+
+    hass.states.async_set(
+        "sensor.voc",
+        STATE_UNAVAILABLE,
+        {"last_updated": now},
+    )
+
+    # Create our sensor
+    sensor = IndoorAQISensor(
+        hass=hass,
+        name="Test AQI",
+        unique_id="test_aqi",
+        sensor_map={"co2": "sensor.co2", "pm25": "sensor.pm25", "voc": "sensor.voc"},
+        stale_time=timedelta(hours=1),
+    )
+
+    buffer = memory_handler.buffer
+    
+    # First update - VOC unavailable
+    sensor.update()
+    assert_that(buffer, log_containing("partial data"))
+    buffer.clear()
+
+    # Second update - same state, no log expected
+    sensor.update()
+    assert_that(buffer, empty_log())
+
+    # Third update - PM25 becomes unavailable
+    hass.states.async_set(
+        "sensor.pm25",
+        STATE_UNAVAILABLE,
+        {"last_updated": now},
+    )
+    sensor.update()
+    assert_that(buffer, log_containing("Newly unavailable: pm25"))
+    buffer.clear()
+
+    # Fourth update - PM25 back to normal, VOC still unavailable
+    hass.states.async_set(
+        "sensor.pm25",
+        "30",
+        {"unit_of_measurement": "μg/m³", "last_updated": now},
+    )
+    sensor.update()
+    assert_that(buffer, log_containing("Newly available: pm25"))
+    buffer.clear()
+
+
+async def test_log_after_hour_unchanged(hass, memory_handler, now):
+    """Test that partial data is logged again after an hour even if unchanged."""
+    # Setup - CO2 working, VOC unavailable
+    hass.states.async_set(
+        "sensor.co2",
+        "800",
+        {"unit_of_measurement": "ppm", "last_updated": now},
+    )
+
+    hass.states.async_set(
+        "sensor.voc",
+        STATE_UNAVAILABLE,
+        {"last_updated": now},
+    )
+
+    # Create our sensor
+    sensor = IndoorAQISensor(
+        hass=hass,
+        name="Test AQI",
+        unique_id="test_aqi",
+        sensor_map={"co2": "sensor.co2", "voc": "sensor.voc"},
+        stale_time=timedelta(hours=1),
+    )
+
+    buffer = memory_handler.buffer
+    
+    # First update - VOC unavailable
+    sensor.update()
+    assert_that(buffer, log_containing("partial data"))
+    buffer.clear()
+
+    # Second update - same state, no log expected
+    sensor.update()
+    assert_that(buffer, empty_log())
+
+    # Instead of patching datetime, just manually adjust the timestamp
+    # Set last log time back by an hour to simulate passage of time
+    sensor._last_log_time = now - timedelta(hours=1, minutes=1)
+    
+    # Update again - should log since it's been over an hour
+    sensor.update()
+    assert_that(buffer, log_containing("partial data"))
