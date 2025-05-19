@@ -14,9 +14,9 @@ load(
 rust_library(
     name = "source",
     srcs = ["source.rs"],
-    edition = "2021",
+    edition = "2024",
     proc_macro_deps = [
-        "//remote:async_trait",
+        "@crates//:async-trait",
     ],
     visibility = ["//visibility:public"],
     deps = [
@@ -27,9 +27,9 @@ rust_library(
 rust_library(
     name = "converter",
     srcs = ["converter.rs"],
-    edition = "2021",
+    edition = "2024",
     proc_macro_deps = [
-        "//remote:async_trait",
+        "@crates//:async-trait",
     ],
     visibility = ["//visibility:public"],
     deps = [
@@ -41,22 +41,22 @@ rust_library(
 rust_library(
     name = "exchange_rate",
     srcs = ["exchange_rate.rs"],
-    edition = "2021",
+    edition = "2024",
     visibility = ["//visibility:public"],
     deps = [
         ":denomination",
-        "//remote:chrono",
-        "//remote:chrono_tz",
-        "//remote:rust_decimal",
+        "@crates//:chrono",
+        "@crates//:chrono-tz",
+        "@crates//:rust_decimal",
     ],
 )
 
 rust_binary(
     name = "rust_main",
     srcs = ["main.rs"],
-    edition = "2021",
+    edition = "2024",
     proc_macro_deps = [
-        "//remote:rust_decimal_macros",
+        "@crates//:rust_decimal_macros",
     ],
     deps = [
         ":asset",
@@ -79,40 +79,40 @@ rust_binary(
         "//finance/worthy/source:coinbase_source",
         "//finance/worthy/source:ftx_source",
         "//finance/worthy/source:ibflex_source",
-        "//remote:chrono",
-        "//remote:csv",
-        "//remote:env_logger",
-        "//remote:futures",
-        "//remote:glob",
-        "//remote:log",
-        "//remote:reqwest",
-        "//remote:rust_decimal",
-        "//remote:rusty_money",
-        "//remote:scraper",
-        "//remote:serde_json",
-        "//remote:serde_yaml",
-        "//remote:shellexpand",
-        "//remote:structopt",
-        "//remote:term_table",
-        "//remote:tokio",
-        "//remote:xdg",
+        "@crates//:chrono",
+        "@crates//:csv",
+        "@crates//:env_logger",
+        "@crates//:futures",
+        "@crates//:glob",
+        "@crates//:log",
+        "@crates//:reqwest",
+        "@crates//:rust_decimal",
+        "@crates//:rusty-money",
+        "@crates//:scraper",
+        "@crates//:serde_json",
+        "@crates//:serde_yaml",
+        "@crates//:shellexpand",
+        "@crates//:structopt",
+        "@crates//:term-table",
+        "@crates//:tokio",
+        "@crates//:xdg",
     ],
 )
 
 rust_library(
     name = "common_currency",
     srcs = ["common_currency.rs"],
-    edition = "2021",
+    edition = "2024",
     proc_macro_deps = [
-        "//remote:rust_decimal_macros",
+        "@crates//:rust_decimal_macros",
     ],
     visibility = ["//visibility:public"],
     deps = [
         ":denomination",
         ":exchange_rate",
-        "//remote:log",
-        "//remote:petgraph",
-        "//remote:rust_decimal",
+        "@crates//:log",
+        "@crates//:petgraph",
+        "@crates//:rust_decimal",
     ],
 )
 
@@ -120,112 +120,112 @@ rust_library(
     name =
         "graph_util",
     srcs = ["graph_util.rs"],
-    edition = "2021",
+    edition = "2024",
     deps = [
-        "//remote:sophia",
+        "@crates//:sophia",
     ],
 )
 
 rust_library(
     name = "dpop_http_client",
     srcs = ["dpop_http_client.rs"],
-    edition = "2021",
+    edition = "2024",
     deps = [
-        "//remote:base64",
-        "//remote:biscuit",
-        "//remote:chrono",
-        "//remote:jwt",
-        "//remote:log",
-        "//remote:oauth2",
-        "//remote:openssl",
-        "//remote:rand",
-        "//remote:reqwest",
-        "//remote:serde",
-        "//remote:url",
+        "@crates//:base64",
+        "@crates//:biscuit",
+        "@crates//:chrono",
+        "@crates//:jwt",
+        "@crates//:log",
+        "@crates//:oauth2",
+        "@crates//:openssl",
+        "@crates//:rand",
+        "@crates//:reqwest",
+        "@crates//:serde",
+        "@crates//:url",
     ],
 )
 
 rust_library(
     name = "solid_io",
     srcs = ["solid_io.rs"],
-    edition = "2021",
+    edition = "2024",
     deps = [
         ":dpop_http_client",
         ":graph_output",
         ":graph_util",
         ":ns",
-        "//remote:base64",
-        "//remote:biscuit",
-        "//remote:chrono",
-        "//remote:env_logger",
-        "//remote:jwt",
-        "//remote:log",
-        "//remote:oauth2",
-        "//remote:openssl",
-        "//remote:rand",
-        "//remote:reqwest",
-        "//remote:serde",
-        "//remote:serde_json",
-        "//remote:sophia",
-        "//remote:sophia_term",
-        "//remote:tokio",
-        "//remote:url",
-        "//remote:warp",
+        "@crates//:base64",
+        "@crates//:biscuit",
+        "@crates//:chrono",
+        "@crates//:env_logger",
+        "@crates//:jwt",
+        "@crates//:log",
+        "@crates//:oauth2",
+        "@crates//:openssl",
+        "@crates//:rand",
+        "@crates//:reqwest",
+        "@crates//:serde",
+        "@crates//:serde_json",
+        "@crates//:sophia",
+        "@crates//:sophia_term",
+        "@crates//:tokio",
+        "@crates//:url",
+        "@crates//:warp",
     ],
 )
 
 rust_test(
     name = "solid_io_test",
     srcs = ["solid_io_test.rs"],
-    edition = "2021",
+    edition = "2024",
     deps = [
         ":solid_io",
-        "//remote:env_logger",
-        "//remote:sophia",
+        "@crates//:env_logger",
+        "@crates//:sophia",
     ],
 )
 
 rust_test(
     name = "common_currency_test",
     srcs = ["common_currency_test.rs"],
-    edition = "2021",
+    edition = "2024",
     proc_macro_deps = [
-        "//remote:rust_decimal_macros",
+        "@crates//:rust_decimal_macros",
     ],
     deps = [
         ":common_currency",
         ":denomination",
         ":exchange_rate",
-        "//remote:env_logger",
-        "//remote:log",
-        "//remote:rust_decimal",
+        "@crates//:env_logger",
+        "@crates//:log",
+        "@crates//:rust_decimal",
     ],
 )
 
 rust_library(
     name = "ibflex",
     srcs = ["ibflex.rs"],
-    edition = "2021",
+    edition = "2024",
     visibility = ["//visibility:public"],
     deps = [
-        "//remote:log",
-        "//remote:reqwest",
-        "//remote:rust_decimal",
-        "//remote:serde",
-        "//remote:serde_xml_rs",
-        "//remote:tokio",
-        "//remote:url",
+        "@crates//:log",
+        "@crates//:reqwest",
+        "@crates//:rust_decimal",
+        "@crates//:serde",
+        "@crates//:serde-xml-rs",
+        "@crates//:tokio",
+        "@crates//:url",
     ],
 )
 
 rust_test(
     name = "ibflex_test",
     srcs = ["ibflex_test.rs"],
-    edition = "2021",
+    edition = "2024",
     deps = [
         ":ibflex",
-        "//remote:rust_decimal",
-        "//remote:url",
+        "@crates//:rust_decimal",
+        "@crates//:url",
     ],
 )
 
@@ -242,39 +242,39 @@ rust_test(
 rust_library(
     name = "denomination",
     srcs = ["denomination.rs"],
-    edition = "2021",
+    edition = "2024",
     visibility = ["//visibility:public"],
     deps = [
-        "//remote:serde",
+        "@crates//:serde",
     ],
 )
 
 rust_library(
     name = "asset",
     srcs = ["asset.rs"],
-    edition = "2021",
+    edition = "2024",
     visibility = ["//visibility:public"],
     deps = [
         ":denomination",
-        "//remote:rust_decimal",
-        "//remote:serde",
+        "@crates//:rust_decimal",
+        "@crates//:serde",
     ],
 )
 
 rust_library(
     name = "flags",
     srcs = ["flags.rs"],
-    edition = "2021",
+    edition = "2024",
     deps = [
-        "//remote:serde",
-        "//remote:structopt",
+        "@crates//:serde",
+        "@crates//:structopt",
     ],
 )
 
 rust_library(
     name = "config",
     srcs = ["config.rs"],
-    edition = "2021",
+    edition = "2024",
     deps = [
         ":asset",
         "//finance/worthy/converter:alphavantage_converter",
@@ -285,85 +285,85 @@ rust_library(
         "//finance/worthy/source:coinbase_source",
         "//finance/worthy/source:ftx_source",
         "//finance/worthy/source:ibflex_source",
-        "//remote:rust_decimal",
-        "//remote:serde",
-        "//remote:serde_yaml",
+        "@crates//:rust_decimal",
+        "@crates//:serde",
+        "@crates//:serde_yaml",
     ],
 )
 
 rust_test(
     name = "flags_test",
     srcs = ["flags_test.rs"],
-    edition = "2021",
+    edition = "2024",
     deps = [
         ":config",
         ":flags",
-        "//remote:structopt",
+        "@crates//:structopt",
     ],
 )
 
 rust_library(
     name = "graph_output",
     srcs = ["graph_output.rs"],
-    edition = "2021",
+    edition = "2024",
     deps = [
         ":asset",
         ":denomination",
         ":exchange_rate",
         ":ns",
-        "//remote:chrono",
-        "//remote:sophia",
-        "//remote:uuid",
+        "@crates//:chrono",
+        "@crates//:sophia",
+        "@crates//:uuid",
     ],
 )
 
 rust_test(
     name = "graph_output_test",
     srcs = ["graph_output_test.rs"],
-    edition = "2021",
+    edition = "2024",
     proc_macro_deps = [
-        "//remote:rust_decimal_macros",
+        "@crates//:rust_decimal_macros",
     ],
     deps = [
         ":asset",
         ":denomination",
         ":exchange_rate",
         ":graph_output",
-        "//remote:chrono",
-        "//remote:env_logger",
-        "//remote:rust_decimal",
-        "//remote:sophia",
+        "@crates//:chrono",
+        "@crates//:env_logger",
+        "@crates//:rust_decimal",
+        "@crates//:sophia",
     ],
 )
 
 rust_library(
     name = "json_output",
     srcs = ["json_output.rs"],
-    edition = "2021",
+    edition = "2024",
     proc_macro_deps = [
-        "//remote:rust_decimal_macros",
+        "@crates//:rust_decimal_macros",
     ],
     deps = [
-        "//remote:chrono",
-        "//remote:rust_decimal",
-        "//remote:serde",
-        "//remote:serde_json",
+        "@crates//:chrono",
+        "@crates//:rust_decimal",
+        "@crates//:serde",
+        "@crates//:serde_json",
     ],
 )
 
 rust_test(
     name = "json_output_test",
     srcs = ["json_output_test.rs"],
-    edition = "2021",
+    edition = "2024",
     proc_macro_deps = [
-        "//remote:rust_decimal_macros",
+        "@crates//:rust_decimal_macros",
     ],
     deps = [
         ":json_output",
-        "//remote:chrono",
-        "//remote:rust_decimal",
-        "//remote:serde",
-        "//remote:serde_json",
+        "@crates//:chrono",
+        "@crates//:rust_decimal",
+        "@crates//:serde",
+        "@crates//:serde_json",
     ],
 )
 
@@ -372,8 +372,8 @@ rust_library(
     srcs = [
         "ns.rs",
     ],
-    edition = "2021",
+    edition = "2024",
     deps = [
-        "//remote:sophia",
+        "@crates//:sophia",
     ],
 )

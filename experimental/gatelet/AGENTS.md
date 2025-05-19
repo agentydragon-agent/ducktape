@@ -56,3 +56,13 @@ alembic revision --autogenerate -m "Description of changes"
 ## Tools to Run Before Committing
 
 Before committing, run `black`, `pylint`, `mypy`.
+
+## Run environment
+
+If you are OpenAI Codex, you are probably running in an environment that has no internet
+access, but was previously initialized by running `experimental/gatelet/setup.sh` from repo root before
+internet access was turned off.
+
+If you need to add a new dependency, set it up to be installed by the `experimental/gatelet/setup.sh` script.
+You will not be able to install it yourself, but you will help by giving the commands
+needed to install it for future runs.

@@ -10,7 +10,7 @@ load(
 #    srcs = ["source.rs"],
 #    edition = "2021",
 #    proc_macro_deps = [
-#        "//remote:async_trait",
+#        "@crates//:async_trait",
 #    ],
 #    visibility = ["//visibility:public"],
 #    deps = [
@@ -23,13 +23,13 @@ rust_library(
     srcs = ["manifold_api.rs"],
     edition = "2021",
     deps = [
-        "//remote:log",
-        "//remote:reqwest",
-        "//remote:rust_decimal",
-        "//remote:serde",
-        "//remote:serde_json",
-        "//remote:serde_path_to_error",
-        "//remote:url",
+        "@crates//:log",
+        "@crates//:reqwest",
+        "@crates//:rust_decimal",
+        "@crates//:serde",
+        "@crates//:serde_json",
+        "@crates//:serde_path_to_error",
+        "@crates//:url",
     ],
 )
 
@@ -39,13 +39,13 @@ rust_binary(
     edition = "2021",
     deps = [
         ":manifold_api",
-        "//remote:tokio",
-        "//remote:serde",
-        "//remote:env_logger",
-        "//remote:log",
-        "//remote:serde_json",
-        "//remote:toml",
-        #h"//remote:serde_yaml",
+        "@crates//:tokio",
+        "@crates//:serde",
+        "@crates//:env_logger",
+        "@crates//:log",
+        "@crates//:serde_json",
+        "@crates//:toml",
+        #h"@crates//:serde_yaml",
     ],
 )
 
@@ -54,9 +54,9 @@ rust_binary(
     srcs = ["test.rs"],
     edition = "2021",
     deps = [
-        "//remote:serde",
-        "//remote:serde_json",
-        "//remote:toml",
-        #h"//remote:serde_yaml",
+        "@crates//:serde",
+        "@crates//:serde_json",
+        "@crates//:toml",
+        #h"@crates//:serde_yaml",
     ],
 )
