@@ -24,19 +24,13 @@ bazel_dep(name = "rules_rust", version = "0.61.0")  # latest 2025-05-19
 
 # — rust toolchains —
 rust = use_extension("@rules_rust//rust:extensions.bzl", "rust")
-# Rust 1.80 stabilised `slice::split_at_checked`, which some of our
-# transitive dependencies (e.g. `writeable` v0.6.1 used by `headless_chrome`)
-# rely on.  The build was failing with Rust 1.78 because that API was still
-# unstable there.  Bumping the compiler to 1.80 (or newer) on the stable
-# channel is enough – we don’t need to move to nightly.
 
 rust.toolchain(
-    versions  = ["1.80.0"],          # minimum version that contains split_at_checked
-    #targets  = ["x86_64-unknown-linux-gnu"],
+    versions  = ["1.87.0"],
     edition   = "2021",
 )
 use_repo(rust, "rust_toolchains")
-register_toolchains("@rust_toolchains//:all")   # makes the toolchain visible
+register_toolchains("@rust_toolchains//:all")
 
 # ─ Rust crates (crate_universe) ─────────────────────────────────────────────
 crate = use_extension("@rules_rust//crate_universe:extensions.bzl", "crate")
