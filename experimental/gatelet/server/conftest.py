@@ -4,9 +4,13 @@ import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
-from importlib import reload
+from importlib import import_module, reload
 from pathlib import Path
 from typing import AsyncGenerator
+
+# Ensure the test configuration is loaded before importing the server modules
+TEST_CONFIG_PATH = Path(__file__).parent / "tests" / "gatelet_test.toml"
+os.environ.setdefault("GATELET_CONFIG", str(TEST_CONFIG_PATH))
 
 import pytest
 import pytest_asyncio
@@ -14,7 +18,6 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
 from sqlalchemy.pool import NullPool
 
-import server.config
 from server.database import get_db_session
 from server.models import Base, WebhookIntegration, WebhookPayload, AuthKey, AuthCRSession, AuthNonce
 
@@ -32,11 +35,13 @@ def setup_test_config():
     test_config_path = str(Path(__file__).parent / "tests" / "gatelet_test.toml")
     os.environ["GATELET_CONFIG"] = test_config_path
     
-    # Re-import config to ensure we're using the test config
-    reload(server.config)
-    
+    # Import config after setting the environment variable so it uses
+    # the test configuration file. Reload in case it was imported earlier.
+    server_config = import_module("server.config")
+    reload(server_config)
+
     # Return the reloaded settings
-    return server.config.settings
+    return server_config.settings
 
 
 @pytest.fixture(scope="session")
