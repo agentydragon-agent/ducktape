@@ -21,10 +21,10 @@ async def test_validate_valid_key(db_session: AsyncSession):
     key = AuthKey(
         key_value=f"valid-test-key-{unique_id}",
         description=f"Valid test key {unique_id}",
-        created_at=datetime.now()
+        created_at=datetime.now(),
     )
     key = await persist(db_session, key)
-    
+
     # Validate key
     validated_key = await validate_key(key.key_value, db_session)
     assert validated_key.id == key.id
@@ -47,10 +47,10 @@ async def test_validate_revoked_key(db_session: AsyncSession):
         key_value=f"revoked-test-key-{unique_id}",
         description=f"Revoked test key {unique_id}",
         created_at=datetime.now(),
-        revoked_at=datetime.now()
+        revoked_at=datetime.now(),
     )
     key = await persist(db_session, key)
-    
+
     # Validate key
     with pytest.raises(KeyAuthError):
         await validate_key(key.key_value, db_session)
@@ -63,14 +63,14 @@ async def test_validate_expired_key(db_session: AsyncSession):
     unique_id = uuid.uuid4().hex[:8]
     expiry_period = settings.auth.key_in_url.key_validity
     created_at = datetime.now() - expiry_period - timedelta(days=1)
-    
+
     key = AuthKey(
         key_value=f"expired-test-key-{unique_id}",
         description=f"Expired test key {unique_id}",
-        created_at=created_at
+        created_at=created_at,
     )
     key = await persist(db_session, key)
-    
+
     # Validate key
     with pytest.raises(KeyAuthError):
         await validate_key(key.key_value, db_session)
