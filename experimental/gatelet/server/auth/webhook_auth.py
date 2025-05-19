@@ -1,7 +1,7 @@
 """Webhook authentication handlers for Gatelet."""
 
 from abc import ABC, abstractmethod
-from typing import Dict, Optional
+from typing import Any, Dict, Optional, Union
 
 from fastapi import Request
 from fastapi.security import HTTPAuthorizationCredentials
@@ -64,9 +64,17 @@ class BearerAuthHandler(WebhookAuthHandler):
             raise AuthError("Invalid token", headers=bearer_headers)
 
 
-def create_auth_handler(config: WebhookAuthConfig) -> WebhookAuthHandler:
+def create_auth_handler(config: Union[WebhookAuthConfig, Dict[str, Any]]) -> WebhookAuthHandler:
     """Factory function to create appropriate authentication handler."""
-    if isinstance(config, NoAuth):
+    if isinstance(config, dict):
+        auth_type = config.get("type")
+        if auth_type == "none":
+            return NoAuthHandler(NoAuth())
+        elif auth_type == "bearer":
+            return BearerAuthHandler(BearerAuth(token=config.get("token", "")))
+        else:
+            raise ValueError(f"Unknown authentication type in dict: {auth_type}")
+    elif isinstance(config, NoAuth):
         return NoAuthHandler(config)
     elif isinstance(config, BearerAuth):
         return BearerAuthHandler(config)

@@ -132,8 +132,11 @@ async def session_auth(
 
     # Extend session if needed
     session.last_activity_at = datetime.now()
-    await db_session.commit()
-
+    
+    # Only commit if session is managed - prevents errors in tests
+    if db_session.in_transaction():
+        await db_session.commit()
+    # Create SessionAuthContext with the updated session
     return SessionAuthContext(session)
 
 

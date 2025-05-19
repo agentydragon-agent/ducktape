@@ -37,5 +37,5 @@
   "forwardPorts": [8000, 5432],
   
   // Use 'postCreateCommand' to run commands after the container is created.
-  "postCreateCommand": "pip install -e . && pip install -r requirements-dev.txt"
+  "postCreateCommand": "pip install -e '.[dev]'"
 }

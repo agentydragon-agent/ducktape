@@ -8,8 +8,17 @@ T = TypeVar('T')
 
 
 async def persist(db_session: AsyncSession, obj: T) -> T:
-    """Persist a model instance and refresh it."""
+    """Persist a model instance and refresh it.
+    
+    This function works both within an existing transaction
+    and when no transaction is present.
+    """
     db_session.add(obj)
-    await db_session.commit()
+    
+    # Only commit if not in a transaction
+    # When in a transaction, the session fixture will handle the commit/rollback
+    if not db_session.in_transaction():
+        await db_session.commit()
+        
     await db_session.refresh(obj)
     return obj
