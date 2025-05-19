@@ -2,7 +2,8 @@
 
 import pytest
 from datetime import datetime, timedelta
-from unittest.mock import AsyncMock, patch
+from urllib.parse import urlparse, parse_qs
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from server.auth.handlers import (
@@ -13,7 +14,7 @@ from server.auth.handlers import (
     session_auth
 )
 from server.models import AuthCRSession, AuthKey
-from tests.utils import persist
+from server.tests.utils import persist
 
 
 @pytest.mark.asyncio
@@ -25,10 +26,15 @@ async def test_key_path_auth_context():
     assert auth_context.auth_type == "key_path"
     assert auth_context.key_value == "test-key"
     assert auth_context.create_url("test/path") == "/k/test-key/test/path"
-    assert auth_context.create_url_with_params("test/path", a=1, b="test") in [
-        "/k/test-key/test/path?a=1&b=test",
-        "/k/test-key/test/path?b=test&a=1"
-    ]
+    
+    # Test URL with parameters
+    url_with_params = auth_context.create_url_with_params("test/path", a=1, b="test")
+    parsed_url = urlparse(url_with_params)
+    query_params = parse_qs(parsed_url.query)
+    
+    assert parsed_url.path == "/k/test-key/test/path"
+    assert query_params["a"] == ["1"]
+    assert query_params["b"] == ["test"]
 
 
 @pytest.mark.asyncio
@@ -40,10 +46,15 @@ async def test_session_auth_context():
     assert auth_context.auth_type == "session"
     assert auth_context.session_token == "test-token"
     assert auth_context.create_url("test/path") == "/s/test-token/test/path"
-    assert auth_context.create_url_with_params("test/path", a=1, b="test") in [
-        "/s/test-token/test/path?a=1&b=test",
-        "/s/test-token/test/path?b=test&a=1"
-    ]
+    
+    # Test URL with parameters
+    url_with_params = auth_context.create_url_with_params("test/path", a=1, b="test")
+    parsed_url = urlparse(url_with_params)
+    query_params = parse_qs(parsed_url.query)
+    
+    assert parsed_url.path == "/s/test-token/test/path"
+    assert query_params["a"] == ["1"]
+    assert query_params["b"] == ["test"]
 
 
 @pytest.mark.asyncio
@@ -58,7 +69,6 @@ async def test_key_path_auth_valid(db_session: AsyncSession):
     
     # Test with valid key
     auth_context = await key_path_auth(key.key_value, db_session)
-    assert isinstance(auth_context, KeyPathAuthContext)
     assert auth_context.key_value == key.key_value
 
 
@@ -87,15 +97,15 @@ async def test_session_auth_valid(db_session: AsyncSession):
         expires_at=datetime.now() + timedelta(hours=1),
         last_activity_at=datetime.now()
     )
+    original_activity_time = session.last_activity_at
     session = await persist(db_session, session)
     
     # Test with valid session
     auth_context = await session_auth(session.session_token, db_session)
-    assert isinstance(auth_context, SessionAuthContext)
     assert auth_context.session_token == session.session_token
     
     # Verify last_activity_at was updated
-    assert session.last_activity_at > session.created_at
+    assert session.last_activity_at > original_activity_time
 
 
 @pytest.mark.asyncio

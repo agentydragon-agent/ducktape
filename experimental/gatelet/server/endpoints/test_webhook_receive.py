@@ -1,10 +1,7 @@
 """Tests for webhook receiving endpoint."""
 
 import pytest
-from hamcrest import (
-    all_of, anything, assert_that, contains_string, has_entries, 
-    has_properties, is_, none
-)
+from hamcrest import assert_that, has_entries, anything
 from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -32,7 +29,7 @@ async def test_receive_webhook_no_auth(
     # Send webhook payload
     payload = {"test": "data", "value": 42}
     response = await client.post(f"/webhook/{integration.name}", json=payload)
-    assert_that(response.status_code, 200)
+    assert response.status_code == 200
     
     # Check response
     data = response.json()
@@ -43,10 +40,8 @@ async def test_receive_webhook_no_auth(
     result = await db_session.execute(query)
     webhook_payload = result.scalar_one()
     
-    assert_that(webhook_payload, has_properties(
-        integration_name=integration.name,
-        payload=payload
-    ))
+    assert webhook_payload.integration_name == integration.name
+    assert webhook_payload.payload == payload
 
 
 @pytest.mark.asyncio
@@ -73,7 +68,7 @@ async def test_receive_webhook_bearer_auth(
         json=payload, 
         headers=headers
     )
-    assert_that(response.status_code, 200)
+    assert response.status_code == 200
     
     # Check response
     data = response.json()
@@ -84,10 +79,8 @@ async def test_receive_webhook_bearer_auth(
     result = await db_session.execute(query)
     webhook_payload = result.scalar_one()
     
-    assert_that(webhook_payload, has_properties(
-        integration_name=integration.name,
-        payload=payload
-    ))
+    assert webhook_payload.integration_name == integration.name
+    assert webhook_payload.payload == payload
 
 
 @pytest.mark.asyncio
@@ -114,11 +107,68 @@ async def test_receive_webhook_invalid_auth(
         json=payload, 
         headers=headers
     )
-    assert_that(response.status_code, 401)
+    assert response.status_code == 401
     
     # No payload should be stored
     query = select(WebhookPayload).where(
         WebhookPayload.integration_id == integration.id
     )
     result = await db_session.execute(query)
-    assert_that(result.scalar_one_or_none(), is_(none()))
+    assert result.scalar_one_or_none() is None
+
+
+@pytest.mark.asyncio
+async def test_receive_webhook_nonexistent_integration(
+    client: AsyncClient,
+    db_session: AsyncSession
+):
+    """Test receiving webhook for non-existent integration."""
+    payload = {"test": "data"}
+    response = await client.post("/webhook/nonexistent", json=payload)
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_receive_webhook_disabled_integration(
+    client: AsyncClient,
+    db_session: AsyncSession
+):
+    """Test receiving webhook for disabled integration."""
+    # Create disabled integration
+    integration = WebhookIntegration(
+        name="test-disabled",
+        description="Disabled test integration",
+        auth_type="none",
+        auth_config={"type": "none"},
+        is_enabled=False
+    )
+    integration = await persist(db_session, integration)
+    
+    payload = {"test": "data"}
+    response = await client.post(f"/webhook/{integration.name}", json=payload)
+    assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_receive_webhook_invalid_json(
+    client: AsyncClient,
+    db_session: AsyncSession
+):
+    """Test receiving webhook with invalid JSON."""
+    # Create test integration
+    integration = WebhookIntegration(
+        name="test-invalid-json",
+        description="Test integration",
+        auth_type="none",
+        auth_config={"type": "none"},
+        is_enabled=True
+    )
+    integration = await persist(db_session, integration)
+    
+    # Send invalid JSON payload
+    response = await client.post(
+        f"/webhook/{integration.name}", 
+        content="not-json",
+        headers={"Content-Type": "application/json"}
+    )
+    assert response.status_code == 400
