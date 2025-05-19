@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Expects to run from repo root.
 
-set -uo pipefail
+set -e
 
 warn() { echo "⚠️  $* (ignored)"; }
 run() { "$@" || warn "$*"; }
@@ -32,8 +32,7 @@ apt-get install -y \
   ca-certificates
 # NodeJS + NPM already installed
 
-# ##############################################################################
-# 0.  Expose Postgres binaries system-wide
+# Expose Postgres binaries system-wide
 ##############################################################################
 PG_BIN="$(pg_config --bindir)"            # e.g. /usr/lib/postgresql/16/bin
 export PATH="$PG_BIN:$PATH"               # for the remainder of setup.sh
@@ -41,8 +40,7 @@ export PATH="$PG_BIN:$PATH"               # for the remainder of setup.sh
 # persist for all future shells
 echo "export PATH=$PG_BIN:\$PATH" | tee /etc/profile.d/pg-bin.sh /root/.bashrc ~postgres/.bashrc chmod +x /etc/profile.d/pg-bin.sh
 
-# ##############################################################################
-# 2.  Initialise and launch a local Postgres that survives the sandbox
+# Initialise and launch a local Postgres that survives the sandbox
 ##############################################################################
 PGDATA=/workspace/pgdata
 
@@ -55,35 +53,32 @@ su - postgres -c "
   pg_ctl -D '$PGDATA' -w start
   createdb gatelet
 "
-
-# ── Python virtualenv ────────────────────────────────────────────────────────
-pip install --upgrade pip setuptools wheel
+echo 'export DATABASE_URL=postgresql+psycopg://postgres@localhost/gatelet' >> /root/.bashrc
 
 # Dev hygiene
+##############################################################################
 pip install pre-commit
 pre-commit install
 
-# venv for gatelet
-VENV=experimental/gatelet/.venv
-python -m venv $VENV
-source $VENV/bin/activate
-pip install --upgrade pip wheel
-pip install -e experimental/gatelet[dev]
+# Set up virtualenv
+##############################################################################
 
-# Install browsers (headless mode)
-python -m playwright install --with-deps chromium # firefox webkit
+python_env_setup() {
+    pip install --upgrade pip wheel
+    pip install -e experimental/gatelet[dev]
+
+    # Install browsers (headless mode)
+    python -m playwright install --with-deps chromium # firefox webkit
+}
+
+# pip install --upgrade pip setuptools wheel
+# VENV=experimental/gatelet/.venv
+# python -m venv $VENV
+# source $VENV/bin/activate
+
+python_env_setup
 
 # deactivate
-
-##############################################################################
-# 4.  Persist app-visible env vars (agent runs in a NEW shell)
-##############################################################################
-{
-  echo 'export DATABASE_URL=postgresql+psycopg://postgres@localhost/gatelet'
-  echo "source $VENV/bin/activate"
-} >> /root/.bashrc
-
-
-deactivate
+# echo "source $(realpath $VENV)/bin/activate" >> /root/.bashrc
 
 echo "✅ Bootstrap finished (errors above were ignored)."
