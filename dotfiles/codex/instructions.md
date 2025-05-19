@@ -153,5 +153,33 @@ Do not use name of class as a string for this.
 
 ## Testing
 
+Test files should be located in the same directory as the module they're testing, with the name pattern `test_*.py`.
+
+When using Hamcrest assertions in tests, don't wrap primitive values in `equal_to()`. Use direct comparisons where possible.
+
+Example:
+```python
+# Wrong:
+assert_that(value, equal_to(200))
+
+# Right:
+assert_that(value, 200)
+```
+
+Use Hamcrest matchers for more complex assertions:
+```python
+# Use has_entries for dict assertions:
+assert_that(data, has_entries(status="ok", payload_id=anything()))
+
+# Use all_of for multiple conditions:
+assert_that(
+    response.text,
+    all_of(
+        contains_string("success"),
+        contains_string("data")
+    )
+)
+```
+
 If you notice you'd like to test your changes (which is of course highly encouraged), rather than writing one-off
 blobs of throwaway Python, feel free to suggest creating a new actual test file.
