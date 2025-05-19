@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "indoor_aqi"
+version = "0.1.0"
+description = "Indoor Air Quality Index component for Home Assistant"
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "MIT"}
+dependencies = [
+    "homeassistant>=2022.1.0",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "pytest-homeassistant-custom-component>=0.13.4",
+    "PyHamcrest>=2.0.4",
+]
+
+[tool.setuptools]
+packages = ["custom_components.indoor_aqi"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.coverage.run]
+source = ["custom_components/indoor_aqi"]
+
+[tool.black]
+target-version = ["py39"]
+line-length = 88
