@@ -138,7 +138,7 @@ class Settings(BaseModel):
     def from_file(cls, path: Path):
         """Load settings from file at path."""
         logger.info(f"Loading settings from {path.absolute()}")
-        with open(path, "rb") as f:
+        with open(path, "r") as f:
             config_dict = toml.load(f)
         return cls.parse_obj(config_dict)
 

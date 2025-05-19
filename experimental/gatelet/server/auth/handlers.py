@@ -72,6 +72,14 @@ class KeyPathAuthContext:
 
     def create_url(self, path: str) -> str:
         return f"/k/{self.key_value}/{path}"
+        
+    def create_url_with_params(self, path: str, **query_params) -> str:
+        """Create authenticated URL with query parameters."""
+        base_url = self.create_url(path)
+        if not query_params:
+            return base_url
+
+        return f"{base_url}?{urlencode(query_params)}"
 
 
 class SessionAuthContext:
@@ -91,6 +99,14 @@ class SessionAuthContext:
 
     def create_url(self, path: str) -> str:
         return f"/s/{self.session_token}/{path}"
+        
+    def create_url_with_params(self, path: str, **query_params) -> str:
+        """Create authenticated URL with query parameters."""
+        base_url = self.create_url(path)
+        if not query_params:
+            return base_url
+
+        return f"{base_url}?{urlencode(query_params)}"
 
 
 async def key_path_auth(
