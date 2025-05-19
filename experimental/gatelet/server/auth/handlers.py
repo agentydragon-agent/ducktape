@@ -1,5 +1,6 @@
 """Authentication handlers for Gatelet endpoints."""
 
+import logging
 from datetime import datetime
 from typing import Callable, Protocol
 from urllib.parse import urlencode
@@ -11,6 +12,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..database import get_db_session
 from ..models import AuthCRSession, AuthKey
 from .key_auth import KeyAuthError, validate_key
+
+logger = logging.getLogger(__name__)
 
 
 class AuthHandlerError(Exception):
@@ -113,9 +116,15 @@ async def key_path_auth(
     key: str, db_session: AsyncSession = Depends(get_db_session)
 ) -> KeyPathAuthContext:
     """Authenticate using key in path."""
+    logger.debug("key_path_auth called with key: %s...", key[:4])
+    
     try:
-        return KeyPathAuthContext(await validate_key(key, db_session))
+        logger.debug("Validating key")
+        auth_key = await validate_key(key, db_session)
+        logger.debug("Key validation successful")
+        return KeyPathAuthContext(auth_key)
     except KeyAuthError:
+        logger.warning("Key authentication failed for key: %s...", key[:4])
         raise AuthHandlerError()
 
 
@@ -133,9 +142,11 @@ async def session_auth(
     # Extend session if needed
     session.last_activity_at = datetime.now()
     
-    # Only commit if session is managed - prevents errors in tests
-    if db_session.in_transaction():
-        await db_session.commit()
+    # Flush changes without committing if in an external transaction
+    # This ensures changes are visible within the transaction but don't
+    # interfere with external transaction management
+    await db_session.flush()
+    
     # Create SessionAuthContext with the updated session
     return SessionAuthContext(session)
 
