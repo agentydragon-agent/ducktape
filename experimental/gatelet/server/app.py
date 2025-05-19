@@ -18,6 +18,7 @@ from .auth.handlers import (
     key_path_auth,
     session_auth,
 )
+from .auth.webhook_auth import AuthError
 from .config import settings
 from .database import get_db_session
 from .endpoints import webhook_receive, webhook_view

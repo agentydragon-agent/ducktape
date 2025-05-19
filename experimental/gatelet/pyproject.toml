@@ -50,7 +50,7 @@ include-package-data = true
 
 [tool.pytest.ini_options]
 minversion = "7.0"
-testpaths = ["tests"]
+testpaths = ["server"]
 asyncio_mode = "auto"
 filterwarnings = ["ignore::DeprecationWarning"]
 

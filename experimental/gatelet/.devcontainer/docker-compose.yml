@@ -6,7 +6,7 @@ services:
       context: ..
       dockerfile: .devcontainer/Dockerfile
     volumes:
-      - ../..:/workspace:cached
+      - ..:/workspace:cached
     environment:
       # Set PostgreSQL connection variables for both development and test
       - POSTGRES_HOST=db

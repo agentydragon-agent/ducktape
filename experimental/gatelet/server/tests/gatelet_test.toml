@@ -1,7 +1,7 @@
 # Test configuration for Gatelet
 
 [database]
-dsn = "postgresql://postgres:postgres@db/gatelet_test"
+dsn = "postgresql+asyncpg://postgres:postgres@db/gatelet_test"
 
 [server]
 host = "0.0.0.0"
