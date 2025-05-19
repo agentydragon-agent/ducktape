@@ -122,7 +122,8 @@ async def db_session(db_engine: AsyncEngine) -> AsyncGenerator[AsyncSession, Non
         trans = await session.begin()
         try:
             yield session
-            await trans.commit()
+            if trans.is_active:
+                await trans.commit()
         finally:
             if trans.is_active:
                 await trans.rollback()
