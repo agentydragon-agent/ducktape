@@ -13,7 +13,7 @@ from ..auth.handlers import AuthContext
 from ..config import settings
 from ..database import get_db_session
 from ..models import WebhookIntegration, WebhookPayload
-from ..app import templates
+from ..app import templates, register_with_all_auth_methods, app
 
 router = APIRouter(tags=["webhook_view"])
 
@@ -203,3 +203,8 @@ async def list_integration_payloads(
             },
         },
     )
+
+
+# Register the webhook routes with all auth methods
+register_with_all_auth_methods("/webhooks/", list_all_payloads)
+register_with_all_auth_methods("/webhooks/{integration_name}", list_integration_payloads)

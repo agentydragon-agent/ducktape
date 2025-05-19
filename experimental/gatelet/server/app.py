@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any, Callable, Optional, Type
 
 from fastapi import Cookie, Depends, FastAPI, Request, status
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -74,6 +74,34 @@ async def root(request: Request, session: Optional[str] = Cookie(None)):
     )
 
 
+def register_with_all_auth_methods(path: str, handler: Callable):
+    """Register a handler with all available auth methods.
+
+    Args:
+        path: URL path to register (without auth prefix)
+        handler: Handler function to register
+    """
+    # Key in path auth
+    if settings.auth.key_in_url.enabled:
+        app.add_api_route(
+            f"/k/{{key}}{path}",
+            handler,
+            methods=["GET"],
+            response_class=HTMLResponse,
+            dependencies=[Depends(key_path_auth)],
+        )
+
+    # Challenge-response session auth
+    if settings.auth.challenge_response.enabled:
+        app.add_api_route(
+            f"/s/{{session_token}}{path}",
+            handler,
+            methods=["GET"],
+            response_class=HTMLResponse,
+            dependencies=[Depends(session_auth)],
+        )
+
+
 # Create auth-method-agnostic route handlers for each endpoint type
 async def authenticated_root_handler(request: Request, auth: AuthContext):
     """Shared handler for authenticated root endpoint."""
@@ -82,68 +110,5 @@ async def authenticated_root_handler(request: Request, auth: AuthContext):
     )
 
 
-async def webhook_list_handler(request: Request, auth: AuthContext):
-    """Shared handler for webhook list endpoint."""
-    # Get webhook integrations - implementation will be added later
-    integrations = []
-
-    return templates.TemplateResponse(
-        "webhooks_list.html",
-        {
-            "request": request,
-            "header": "Webhook Integrations",
-            "auth": auth,
-            "integrations": integrations,
-        },
-    )
-
-
-def register_auth_routes(
-    prefix: str,
-    auth_dependency: Callable,
-    auth_context_type: Type[AuthContext],
-    enabled: bool,
-):
-    """Register all routes for a specific authentication method.
-
-    Args:
-        prefix: URL prefix for this auth method (e.g., "k/{key}")
-        auth_dependency: Dependency function for this auth method
-        auth_context_type: Type of auth context for type hints
-        enabled: Whether this auth method is enabled
-    """
-    if not enabled:
-        return
-
-    # Root endpoint
-    @app.get(f"/{prefix}/", response_class=HTMLResponse)
-    async def auth_root(
-        request: Request, auth: auth_context_type = Depends(auth_dependency)
-    ):
-        return await authenticated_root_handler(request, auth)
-
-    # Webhook list endpoint
-    @app.get(f"/{prefix}/webhooks/", response_class=HTMLResponse)
-    async def auth_webhooks(
-        request: Request,
-        auth: auth_context_type = Depends(auth_dependency),
-        db_session: AsyncSession = Depends(get_db_session),
-    ):
-        return await webhook_list_handler(request, auth, db_session)
-
-
-# Register routes for each auth method
-register_auth_routes(
-    prefix="k/{key}",
-    auth_dependency=key_path_auth,
-    auth_context_type=KeyPathAuthContext,
-    enabled=settings.auth.key_in_url.enabled,
-)
-
-register_auth_routes(
-    prefix="s/{session_token}",
-    auth_dependency=session_auth,
-    auth_context_type=SessionAuthContext,
-    enabled=settings.auth.challenge_response.enabled,
-)
-
+# Register root page with all auth methods
+register_with_all_auth_methods("/", authenticated_root_handler)

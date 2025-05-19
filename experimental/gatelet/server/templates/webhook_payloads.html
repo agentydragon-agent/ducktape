@@ -1,5 +1,17 @@
 {% extends "base.html" %}
 
+{# Simple pagination link macro #}
+{% macro page_link(page_num) %}
+    {% set extra = "" %}
+    {% if page_num == 1 and page != 1 %}
+        {% set extra = " - Latest" %}
+    {% elif page_num == total_pages and page != total_pages %}
+        {% set extra = " - Earliest" %}
+    {% endif %}
+    
+    <a href="{{ auth.create_url_with_params('webhooks/' + integration_name, page=page_num, page_size=page_size) }}">[{{ page_num }}{{ extra }}]</a>
+{% endmacro %}
+
 {% block title %}Gatelet - {{ integration_name|default('All') }} Payloads{% endblock %}
 
 {% block nav %}
@@ -38,12 +50,12 @@
 <section class="pagination">
     {% if total_pages > 1 %}
         {% if page > 6 %}
-        <a href="{{ auth.create_url_with_params('webhooks/' + integration_path, page=total_pages, page_size=page_size) }}">[{{ total_pages }} - Earliest]</a>
-        <span>...</span>
+            {{ page_link(total_pages) }}
+            <span>...</span>
         {% endif %}
         
         {% for p in range(max(1, page-5), page) %}
-        <a href="{{ auth.create_url_with_params('webhooks/' + integration_path, page=p, page_size=page_size) }}">[{{ p }}]</a>
+            {{ page_link(p) }}
         {% endfor %}
     {% endif %}
     
@@ -51,12 +63,12 @@
     
     {% if page < total_pages %}
         {% for p in range(page+1, min(page+6, total_pages+1)) %}
-        <a href="{{ auth.create_url_with_params('webhooks/' + integration_path, page=p, page_size=page_size) }}">[{{ p }}]</a>
+            {{ page_link(p) }}
         {% endfor %}
         
         {% if page < total_pages - 5 %}
-        <span>...</span>
-        <a href="{{ auth.create_url_with_params('webhooks/' + integration_path, page=1, page_size=page_size) }}">[1 - Latest]</a>
+            <span>...</span>
+            {{ page_link(1) }}
         {% endif %}
     {% endif %}
 </section>
