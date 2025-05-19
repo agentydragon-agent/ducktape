@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+
+{% block title %}Gatelet - Dashboard{% endblock %}
+
+{% block nav %}
+<nav>
+    <a href="{{ auth.create_url('') }}">Home</a>
+    <a href="{{ auth.create_url('webhooks') }}">Webhooks</a>
+</nav>
+{% endblock %}
+
+{% block content %}
+<section>
+    <h2>Welcome to Gatelet</h2>
+    <p>You are authenticated and can access the following resources:</p>
+</section>
+
+<section>
+    <h3>Available Services</h3>
+    <ul>
+        <li><a href="{{ auth.create_url('webhooks') }}">Webhook Integrations</a> - View and manage webhook data</li>
+    </ul>
+</section>
+{% endblock %}
