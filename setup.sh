@@ -44,7 +44,7 @@ run pip install -e llm/mcp/habitify
 run pip install "psycopg[binary,pool]" asyncpg sqlalchemy
 
 # LLM / NLP helpers
-run pip install sentence-transformers openai tiktoken
+# run pip install sentence-transformers openai tiktoken
 
 # Home-Assistant clients & misc
 run pip install homeassistant homeassistant-cli aiohttp pyyaml
