@@ -15,9 +15,9 @@ run sudo apt-get install -y \
      nodejs npm
 
 # ── PostgreSQL basic setup ───────────────────────────────────────────────────
-run sudo systemctl enable --now postgresql
-run sudo -u postgres createuser --superuser "${USER}"
-run sudo -u postgres createdb "${USER}"
+# run sudo systemctl enable --now postgresql
+# run sudo -u postgres createuser --superuser "${USER}"
+# run sudo -u postgres createdb "${USER}"
 
 # ── Node toolchain (Vite + React) ────────────────────────────────────────────
 run sudo npm install -g corepack
@@ -56,5 +56,5 @@ run pre-commit install
 echo
 echo "✅ Bootstrap finished (errors above were ignored)."
 echo "   Activate with: source \"$VENV_DIR/bin/activate\""
-echo "   Postgres URL:  postgresql://$USER@localhost/$USER"
+# echo "   Postgres URL:  postgresql://$USER@localhost/$USER"
 
