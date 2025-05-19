@@ -41,8 +41,8 @@ dev = [
     "pytest-postgresql==4.1.1",
     "sqlalchemy-stubs==0.4.0",
     # TODO: write playwright test
-    "playwright",
-    "pytest-playwright",
+    # "playwright",
+    # "pytest-playwright",
 ]
 
 [tool.setuptools]

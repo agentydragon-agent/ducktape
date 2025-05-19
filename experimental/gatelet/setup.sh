@@ -15,18 +15,14 @@ export DEBIAN_FRONTEND=noninteractive
 #     We only need to teach APT to use the proxy; everything else (pip, curl…)
 #     respects the env-vars automatically.
 ##############################################################################
-if [[ -n "${HTTP_PROXY:-}" ]];  then
-  echo "Acquire::http::Proxy  \"${HTTP_PROXY}\";"  > /etc/apt/apt.conf.d/01proxy
-fi
-if [[ -n "${HTTPS_PROXY:-}" ]]; then
-  echo "Acquire::https::Proxy \"${HTTPS_PROXY}\";" >> /etc/apt/apt.conf.d/01proxy
-fi
+[[ -n "${HTTP_PROXY:-}"  ]] && echo "Acquire::http::Proxy  \"${HTTP_PROXY}\";"  > /etc/apt/apt.conf.d/01proxy
+[[ -n "${HTTPS_PROXY:-}" ]] && echo "Acquire::https::Proxy \"${HTTPS_PROXY}\";" >> /etc/apt/apt.conf.d/01proxy
 
 # ── System packages ──────────────────────────────────────────────────────────
 # Those won't work -- getting:
 #   'Cannot initiate the connection to archive.ubuntu.com:80 (185.125.190.81). - connect (101: Network is unreachable)'
-apt-get update
-apt-get install -y \
+apt-get update -qq
+apt-get install -y --no-install-recommends \
   build-essential python3-venv python3-dev curl \
   postgresql postgresql-contrib libpq-dev \
   ca-certificates
@@ -43,25 +39,7 @@ chmod +x /etc/profile.d/pg-bin.sh
 
 # Initialise and launch a local Postgres that survives the sandbox
 ##############################################################################
-PGDATA=/workspace/pgdata
-
-# make the directory writable for postgres
-install -d -o postgres -g postgres "$PGDATA"
-
-su - postgres -c "
-  set -e
-  initdb -D '$PGDATA'
-  pg_ctl -D '$PGDATA' -w start
-  createdb gatelet
-  pg_ctl -D '$PGDATA' -m fast stop
-"
-
-# runtime auto-start hook (root & agent shells)
-cat >> /root/.bashrc <<'EOS'
-  PGDATA=/workspace/pgdata
-  pg_ctl -D "$PGDATA" status >/dev/null 2>&1 || pg_ctl -D "$PGDATA" -w start
-  export DATABASE_URL="postgresql+psycopg://postgres@localhost/gatelet"
-EOS
+echo "export IS_CODEX_ENV=1" >> /root/.bashrc
 
 # Dev hygiene
 ##############################################################################
@@ -76,7 +54,7 @@ python_env_setup() {
     pip install -e experimental/gatelet[dev]
 
     # Install browsers (headless mode)
-    python -m playwright install --with-deps chromium-headless-shell # firefox webkit chromium
+    # python -m playwright install --with-deps chromium-headless-shell # firefox webkit chromium
 }
 
 # pip install --upgrade pip setuptools wheel
