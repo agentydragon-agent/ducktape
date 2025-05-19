@@ -2,14 +2,13 @@
 
 import pytest
 from hamcrest import (
-    all_of, assert_that, contains_string, equal_to, has_entries, 
-    has_property, greater_than, is_not, is_
+    all_of, assert_that, contains_string
 )
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from server.models import WebhookIntegration, WebhookPayload
-from tests.utils import persist
+from server.tests.utils import persist
 
 
 @pytest.mark.asyncio
@@ -41,11 +40,9 @@ async def test_list_all_payloads_key_auth(
     
     # Use key-in-path authentication
     response = await client.get(f"/k/{test_auth_key.key_value}/webhooks/")
+    assert_that(response.status_code, 200)
     
-    # Verify response status code
-    assert_that(response.status_code, equal_to(200))
-    
-    # Verify response content
+    # Check that the page contains the integration name and payload data
     assert_that(
         response.text,
         all_of(
@@ -86,11 +83,9 @@ async def test_list_integration_payloads(
     
     # Use key-in-path authentication
     response = await client.get(f"/k/{test_auth_key.key_value}/webhooks/{integration.name}")
+    assert_that(response.status_code, 200)
     
-    # Verify response status code
-    assert_that(response.status_code, equal_to(200))
-    
-    # Verify response content
+    # Check that the page contains the integration name and specific data
     assert_that(
         response.text,
         all_of(
@@ -110,7 +105,7 @@ async def test_list_nonexistent_integration(
     """Test listing a non-existent integration."""
     # Use key-in-path authentication
     response = await client.get(f"/k/{test_auth_key.key_value}/webhooks/nonexistent")
-    assert_that(response.status_code, equal_to(404))
+    assert_that(response.status_code, 404)
 
 
 @pytest.mark.asyncio
@@ -140,11 +135,9 @@ async def test_session_auth_webhooks(
     
     # Use session-based authentication
     response = await client.get(f"/s/{test_auth_session.session_token}/webhooks/")
+    assert_that(response.status_code, 200)
     
-    # Verify response status code
-    assert_that(response.status_code, equal_to(200))
-    
-    # Verify response content
+    # Check that the page contains the integration name and session data
     assert_that(
         response.text,
         all_of(
