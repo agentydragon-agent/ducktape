@@ -1,8 +1,8 @@
 # Test configuration for Gatelet
 
 [database]
-# Use in-memory SQLite for tests to avoid needing a running Postgres server
-dsn = "sqlite+aiosqlite:///:memory:"
+# TODO: use temporary SQLite database, started for test process scope and then immediately torn down and stopped
+dsn = TODO
 
 [server]
 host = "0.0.0.0"

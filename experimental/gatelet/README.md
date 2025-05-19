@@ -17,42 +17,6 @@ Service that lets LLMs access real-time and historical information relevant to t
 
 ## Development Setup
 
-**⚠️ All development and testing MUST be done inside the devcontainer ⚠️**
-
-This project uses a development container with:
-- Python 3.11
-- PostgreSQL database (with separate test database)
-
-### Using the Devcontainer
-
-```bash
-# Start the devcontainer
-docker compose -f .devcontainer/docker-compose.yml up -d
-
-# Enter the container shell
-docker compose -f .devcontainer/docker-compose.yml exec app bash
-
-# Inside container: Install dependencies
-pip install -e '.[dev]'
-```
-
-### Running Tests (INSIDE DEVCONTAINER)
-```bash
-# Run all tests (INSIDE DEVCONTAINER)
-python -m pytest
-
-# Run specific tests (INSIDE DEVCONTAINER)
-python -m pytest server/auth/
-```
-
-### Database Configuration (INSIDE DEVCONTAINER)
-- Main database: `gatelet`
-- Test database: `gatelet_test`
-- Default credentials: Username: `postgres`, Password: `postgres`
-- Host: `db` (internal container network name)
-
-See CLAUDE.md for detailed development instructions.
-
 ## LLM-Friendly Design
 
 Designed for current LLM constraints (as of May 2025), particularly OpenAI scheduled tasks with o3 model:
