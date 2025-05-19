@@ -3,6 +3,8 @@
 
 set -e
 
+./setup.sh
+
 warn() { echo "⚠️  $* (ignored)"; }
 run() { "$@" || warn "$*"; }
 
@@ -40,11 +42,6 @@ chmod +x /etc/profile.d/pg-bin.sh
 # Initialise and launch a local Postgres that survives the sandbox
 ##############################################################################
 echo "export IS_CODEX_ENV=1" >> /root/.bashrc
-
-# Dev hygiene
-##############################################################################
-pip install pre-commit
-pre-commit install
 
 # Set up virtualenv
 ##############################################################################
