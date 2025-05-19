@@ -59,6 +59,7 @@ async def test_session_auth_context():
 
 
 @pytest.mark.asyncio
+@pytest.mark.timeout(5)  # 5 second timeout
 async def test_key_path_auth_valid(db_session: AsyncSession):
     """Test key_path_auth with valid key."""
     # Use a unique key value
@@ -68,14 +69,16 @@ async def test_key_path_auth_valid(db_session: AsyncSession):
         description=f"Valid test key {unique_id}",
         created_at=datetime.now()
     )
-    key = await persist(db_session, key)
+    db_session.add(key)
+    await db_session.flush()
     
-    # Test with valid key
+    # Test with valid key - use the direct key_value rather than refreshing
     auth_context = await key_path_auth(key.key_value, db_session)
     assert auth_context.key_value == key.key_value
 
 
 @pytest.mark.asyncio
+@pytest.mark.timeout(5)  # 5 second timeout
 async def test_key_path_auth_invalid(db_session: AsyncSession):
     """Test key_path_auth with invalid key."""
     # Test with invalid key
@@ -84,6 +87,7 @@ async def test_key_path_auth_invalid(db_session: AsyncSession):
 
 
 @pytest.mark.asyncio
+@pytest.mark.timeout(5)  # 5 second timeout
 async def test_session_auth_valid(db_session: AsyncSession):
     """Test session_auth with valid session."""
     # Use unique values for key and session
@@ -93,7 +97,8 @@ async def test_session_auth_valid(db_session: AsyncSession):
         description=f"Valid test key {unique_id}",
         created_at=datetime.now()
     )
-    key = await persist(db_session, key)
+    db_session.add(key)
+    await db_session.flush()
     
     session = AuthCRSession(
         session_token=f"valid-test-session-{unique_id}",
@@ -103,7 +108,8 @@ async def test_session_auth_valid(db_session: AsyncSession):
         last_activity_at=datetime.now()
     )
     original_activity_time = session.last_activity_at
-    session = await persist(db_session, session)
+    db_session.add(session)
+    await db_session.flush()
     
     # Test with valid session
     auth_context = await session_auth(session.session_token, db_session)
@@ -114,6 +120,7 @@ async def test_session_auth_valid(db_session: AsyncSession):
 
 
 @pytest.mark.asyncio
+@pytest.mark.timeout(5)  # 5 second timeout
 async def test_session_auth_invalid(db_session: AsyncSession):
     """Test session_auth with invalid session."""
     # Test with invalid session token
