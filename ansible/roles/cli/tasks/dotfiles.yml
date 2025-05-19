@@ -45,6 +45,6 @@
         # !!! NOTE WEIRD REVERSED CONVENTION !!!
         # For some stupid reason "source" in Ansible convention means the *place where the symlink leads*
         # and "destination" is the *symlink*. Thanks Obama.
-        src: "{{ ducktape_path }}/nonrcm-dotfiles/config/cronomix
+        src: "{{ ducktape_path }}/nonrcm-dotfiles/config/cronomix"
         dest: "{{ ansible_env.HOME }}/.config/cronomix"
         state: link
