@@ -1,0 +1,21 @@
+# Configuration for Gatelet
+
+[database]
+dsn = "postgresql+asyncpg://postgres:postgres@db/gatelet"
+
+[server]
+host = "0.0.0.0"
+port = 8000
+
+[auth]
+[auth.key_in_url]
+enabled = true
+
+[auth.challenge_response]
+enabled = true
+
+[home_assistant]
+api_url = "http://localhost:8123"
+api_token = "test_token"
+
+[webhook]
