@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+
+{% block title %}Gatelet - Webhook Integrations{% endblock %}
+
+{% block nav %}
+<nav>
+    <a href="{{ auth.create_url('') }}">Home</a>
+    <a href="{{ auth.create_url('webhooks') }}">Webhooks</a>
+</nav>
+{% endblock %}
+
+{% block content %}
+<section>
+    <h2>Webhook Integrations</h2>
+    <p>Data received from the following webhook integrations:</p>
+</section>
+
+<section>
+    {% if integrations %}
+    <ul class="webhook-list">
+        {% for integration in integrations %}
+        <li>
+            <h3>{{ integration.name }}</h3>
+            {% if integration.description %}
+            <p>{{ integration.description }}</p>
+            {% endif %}
+            <a href="{{ auth.create_url('webhooks/' + integration.name) }}">View received payloads</a>
+        </li>
+        {% endfor %}
+    </ul>
+    {% else %}
+    <p>No webhook integrations available.</p>
+    {% endif %}
+</section>
+{% endblock %}
