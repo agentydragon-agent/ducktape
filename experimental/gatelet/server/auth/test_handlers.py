@@ -1,6 +1,7 @@
 """Tests for authentication handlers."""
 
 import pytest
+import uuid
 from datetime import datetime, timedelta
 from urllib.parse import urlparse, parse_qs
 
@@ -60,9 +61,11 @@ async def test_session_auth_context():
 @pytest.mark.asyncio
 async def test_key_path_auth_valid(db_session: AsyncSession):
     """Test key_path_auth with valid key."""
+    # Use a unique key value
+    unique_id = uuid.uuid4().hex[:8]
     key = AuthKey(
-        key_value="valid-test-key",
-        description="Valid test key",
+        key_value=f"valid-test-key-{unique_id}",
+        description=f"Valid test key {unique_id}",
         created_at=datetime.now()
     )
     key = await persist(db_session, key)
@@ -83,15 +86,17 @@ async def test_key_path_auth_invalid(db_session: AsyncSession):
 @pytest.mark.asyncio
 async def test_session_auth_valid(db_session: AsyncSession):
     """Test session_auth with valid session."""
+    # Use unique values for key and session
+    unique_id = uuid.uuid4().hex[:8]
     key = AuthKey(
-        key_value="valid-test-key",
-        description="Valid test key",
+        key_value=f"valid-test-key-{unique_id}",
+        description=f"Valid test key {unique_id}",
         created_at=datetime.now()
     )
     key = await persist(db_session, key)
     
     session = AuthCRSession(
-        session_token="valid-test-session",
+        session_token=f"valid-test-session-{unique_id}",
         auth_key_id=key.id,
         created_at=datetime.now(),
         expires_at=datetime.now() + timedelta(hours=1),
@@ -119,16 +124,18 @@ async def test_session_auth_invalid(db_session: AsyncSession):
 @pytest.mark.asyncio
 async def test_session_auth_expired(db_session: AsyncSession):
     """Test session_auth with expired session."""
+    # Use unique values
+    unique_id = uuid.uuid4().hex[:8]
     key = AuthKey(
-        key_value="test-key",
-        description="Test key",
+        key_value=f"test-key-{unique_id}",
+        description=f"Test key {unique_id}",
         created_at=datetime.now()
     )
     key = await persist(db_session, key)
     
     # Create expired session
     session = AuthCRSession(
-        session_token="expired-test-session",
+        session_token=f"expired-test-session-{unique_id}",
         auth_key_id=key.id,
         created_at=datetime.now() - timedelta(hours=2),
         expires_at=datetime.now() - timedelta(hours=1),

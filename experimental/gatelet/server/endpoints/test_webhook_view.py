@@ -5,6 +5,8 @@ from hamcrest import assert_that, all_of, contains_string
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from server.auth.dependencies import auth_dependency
+from server.auth.handlers import KeyPathAuthContext
 from server.models import WebhookIntegration, WebhookPayload
 from server.tests.utils import persist
 
@@ -13,7 +15,8 @@ from server.tests.utils import persist
 async def test_list_all_payloads_key_auth(
     client: AsyncClient,
     db_session: AsyncSession,
-    test_auth_key
+    test_auth_key,
+    monkeypatch
 ):
     """Test listing all payloads with key path authentication."""
     # Create test integration and payloads
@@ -96,7 +99,7 @@ async def test_list_integration_payloads(
 
 @pytest.mark.asyncio
 async def test_list_nonexistent_integration(
-    client: AsyncClient,
+    client: AsyncClient, 
     db_session: AsyncSession,
     test_auth_key
 ):

@@ -135,12 +135,12 @@ For infrastructure configuration:
 
 ```bash
 # Validate playbooks
-ansible-playbook -i inventory.yaml playbook.yaml --check
+ansible-playbook playbook.yaml --check
 
 # Apply roles to specific hosts
-ansible-playbook -i inventory.yaml vps.yaml  # For VPS
-ansible-playbook -i inventory.yaml agentydragon.yaml  # For main laptop
-ansible-playbook -i inventory.yaml gpd.yaml  # For GPD laptop
+ansible-playbook vps.yaml  # For VPS
+ansible-playbook agentydragon.yaml  # For main laptop
+ansible-playbook gpd.yaml  # For GPD laptop
 ```
 
 ## Deployment
@@ -150,12 +150,12 @@ The repository includes Ansible playbooks for deploying services to different ho
 ```bash
 # Deploy to servers
 cd ansible
-ansible-playbook -i inventory.yaml vps.yaml  # Deploy to VPS
-ansible-playbook -i inventory.yaml agentydragon.yaml  # Deploy to main laptop
-ansible-playbook -i inventory.yaml gpd.yaml  # Deploy to GPD laptop
+ansible-playbook vps.yaml  # Deploy to VPS
+ansible-playbook agentydragon.yaml  # Deploy to main laptop
+ansible-playbook gpd.yaml  # Deploy to GPD laptop
 
 # Deploy specific components
-ansible-playbook -i inventory.yaml vps.yaml --tags webhook_inbox
+ansible-playbook vps.yaml --tags webhook_inbox
 ```
 
 Dotfiles are managed and deployed through Ansible roles rather than direct rcm commands, ensuring consistent deployment across different hosts.

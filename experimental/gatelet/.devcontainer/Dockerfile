@@ -16,10 +16,7 @@ RUN apt-get update \
 WORKDIR /workspace
 
 # Install Python dependencies
-COPY experimental/gatelet/requirements*.txt ./
-RUN pip install --upgrade pip \
-    && pip install -r requirements.txt \
-    && if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
+RUN pip install --upgrade pip
 
 # Create a non-root user for development
 ARG USERNAME=vscode

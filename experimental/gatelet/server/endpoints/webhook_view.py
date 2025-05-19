@@ -9,11 +9,11 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..auth.handlers import AuthContext
+from ..auth.dependencies import Auth
 from ..config import settings
 from ..database import get_db_session
 from ..models import WebhookIntegration, WebhookPayload
-from ..app import templates, register_with_all_auth_methods, app
+from ..shared import templates
 
 router = APIRouter(tags=["webhook_view"])
 
@@ -127,10 +127,9 @@ async def get_webhook_payloads(
     }
 
 
-@router.get("/webhooks/", response_class=HTMLResponse)
 async def list_all_payloads(
     request: Request,
-    auth: AuthContext,
+    auth: Auth,
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=100)] = DEFAULT_PAGE_SIZE,
     db_session: AsyncSession = Depends(get_db_session),
@@ -169,11 +168,10 @@ async def list_all_payloads(
     )
 
 
-@router.get("/webhooks/{integration_name}", response_class=HTMLResponse)
 async def list_integration_payloads(
     request: Request,
     integration_name: str,
-    auth: AuthContext,
+    auth: Auth,
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=100)] = DEFAULT_PAGE_SIZE,
     db_session: AsyncSession = Depends(get_db_session),
@@ -203,6 +201,4 @@ async def list_integration_payloads(
     )
 
 
-# Register the webhook routes with all auth methods
-register_with_all_auth_methods("/webhooks/", list_all_payloads)
-register_with_all_auth_methods("/webhooks/{integration_name}", list_integration_payloads)
+# The webhook routes will be registered with all auth methods in app.py

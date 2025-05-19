@@ -7,17 +7,17 @@ from typing import Any, Callable, Optional, Type
 from fastapi import Cookie, Depends, FastAPI, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from .shared import templates, BASE_DIR
 
 from .auth.handlers import (
     AuthContext,
     AuthHandlerError,
     KeyPathAuthContext,
     SessionAuthContext,
-    key_path_auth,
-    session_auth,
 )
+from .auth.dependencies import Auth, get_key_path_auth_with_context, get_session_auth_with_context
 from .auth.webhook_auth import AuthError
 from .config import settings
 from .database import get_db_session
@@ -28,13 +28,11 @@ logger = logging.getLogger(__name__)
 app = FastAPI(
     title="Gatelet", description="LLM-friendly API for Home Assistant and webhooks"
 )
-BASE_DIR = Path(__file__).parent
 app.mount(
     "/static",
     StaticFiles(directory=BASE_DIR / "static"),
     name="static",
 )
-templates = Jinja2Templates(directory=BASE_DIR / "templates")
 
 # Include routers
 app.include_router(webhook_receive.router)
@@ -53,6 +51,17 @@ async def auth_error_handler(request: Request, exc: AuthHandlerError):
             "detail": "Authentication failed",
         },
         status_code=status.HTTP_401_UNAUTHORIZED,
+    )
+
+
+@app.exception_handler(AuthError)
+async def webhook_auth_error(request: Request, exc: AuthError):
+    """Handle webhook auth errors in API-friendly way."""
+    from fastapi.responses import JSONResponse
+    return JSONResponse(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        content={"detail": "Authentication failed"},
+        headers=getattr(exc, "headers", {}),
     )
 
 
@@ -89,7 +98,7 @@ def register_with_all_auth_methods(path: str, handler: Callable):
             handler,
             methods=["GET"],
             response_class=HTMLResponse,
-            dependencies=[Depends(key_path_auth)],
+            dependencies=[Depends(get_key_path_auth_with_context)],
         )
 
     # Challenge-response session auth
@@ -99,12 +108,12 @@ def register_with_all_auth_methods(path: str, handler: Callable):
             handler,
             methods=["GET"],
             response_class=HTMLResponse,
-            dependencies=[Depends(session_auth)],
+            dependencies=[Depends(get_session_auth_with_context)],
         )
 
 
 # Create auth-method-agnostic route handlers for each endpoint type
-async def authenticated_root_handler(request: Request, auth: AuthContext):
+async def authenticated_root_handler(request: Request, auth: Auth):
     """Shared handler for authenticated root endpoint."""
     return templates.TemplateResponse(
         "index.html", {"request": request, "header": "Gatelet", "auth": auth}
@@ -113,3 +122,7 @@ async def authenticated_root_handler(request: Request, auth: AuthContext):
 
 # Register root page with all auth methods
 register_with_all_auth_methods("/", authenticated_root_handler)
+
+# Register webhook routes with all auth methods
+register_with_all_auth_methods("/webhooks/", webhook_view.list_all_payloads)
+register_with_all_auth_methods("/webhooks/{integration_name}", webhook_view.list_integration_payloads)

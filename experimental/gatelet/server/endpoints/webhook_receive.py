@@ -17,15 +17,7 @@ from ..models import WebhookIntegration, WebhookPayload
 router = APIRouter(tags=["webhooks"])
 
 
-# Error handler for webhook auth errors
-@router.exception_handler(AuthError)
-async def webhook_auth_error(request: Request, exc: AuthError):
-    """Handle webhook auth errors in API-friendly way."""
-    return JSONResponse(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        content={"detail": "Authentication failed"},
-        headers=exc.headers,
-    )
+# Error handler for webhook auth errors should be registered in app.py, not at the router level
 
 
 @router.post("/webhook/{integration_name}")
