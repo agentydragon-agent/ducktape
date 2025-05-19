@@ -3,9 +3,9 @@ load("@rules_rust//rust:defs.bzl", "rust_library")
 rust_library(
     name = "ibflex_source",
     srcs = ["ibflex_source.rs"],
-    edition = "2021",
+    edition = "2024",
     proc_macro_deps = [
-        "//remote:async_trait",
+        "@crates//:async-trait",
     ],
     visibility = ["//visibility:public"],
     deps = [
@@ -13,46 +13,46 @@ rust_library(
         "//finance/worthy:denomination",
         "//finance/worthy:ibflex",
         "//finance/worthy:source",
-        "//remote:rust_decimal",
-        "//remote:serde",
+        "@crates//:rust_decimal",
+        "@crates//:serde",
     ],
 )
 
 rust_library(
     name = "coinbase_source",
     srcs = ["coinbase_source.rs"],
-    edition = "2021",
+    edition = "2024",
     proc_macro_deps = [
-        "//remote:async_trait",
+        "@crates//:async-trait",
     ],
     visibility = ["//visibility:public"],
     deps = [
         "//finance/worthy:asset",
         "//finance/worthy:denomination",
         "//finance/worthy:source",
-        "//remote:coinbase_rs",
-        "//remote:futures",
-        "//remote:log",
-        "//remote:rust_decimal",
-        "//remote:serde",
+        "@crates//:coinbase-rs",
+        "@crates//:futures",
+        "@crates//:log",
+        "@crates//:rust_decimal",
+        "@crates//:serde",
     ],
 )
 
 rust_library(
     name = "ftx_source",
     srcs = ["ftx_source.rs"],
-    edition = "2021",
+    edition = "2024",
     proc_macro_deps = [
-        "//remote:async_trait",
+        "@crates//:async-trait",
     ],
     visibility = ["//visibility:public"],
     deps = [
         "//finance/worthy:asset",
         "//finance/worthy:denomination",
         "//finance/worthy:source",
-        "//remote:ftx",
-        "//remote:log",
-        "//remote:rust_decimal",
-        "//remote:serde",
+        "@crates//:ftx",
+        "@crates//:log",
+        "@crates//:rust_decimal",
+        "@crates//:serde",
     ],
 )

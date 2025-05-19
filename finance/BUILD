@@ -1,4 +1,3 @@
-load("@my_deps//:requirements.bzl", "requirement")
 load("@rules_python//python:python.bzl", "py_library")
 
 py_library(

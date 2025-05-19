@@ -1,4 +1,3 @@
-load("@my_deps//:requirements.bzl", "requirement")
 load("@rules_python//python:python.bzl", "py_binary", "py_test")
 
 py_library(
@@ -28,10 +27,10 @@ py_library(
     name = "splitwise_lib",
     srcs = ["splitwise_lib.py"],
     deps = [
-        requirement("absl-py"),
-        requirement("splitwise"),
+        "@pypi//absl_py",
+        "@pypi//splitwise",
         # TODO: get rid of xdg requirement
-        requirement("xdg"),
+        "@pypi//xdg",
         ":external_system",
     ],
 )
@@ -44,8 +43,8 @@ py_binary(
         ":splitwise_lib",
         ":ubs_credit_card_lib",
         ":ubs_lib",
-        requirement("absl-py"),
-        requirement("xdg"),
+        "@pypi//absl_py",
+        "@pypi//xdg",
         "//finance:gnucash_util",
     ],
 )

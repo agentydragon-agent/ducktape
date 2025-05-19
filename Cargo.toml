@@ -1,9 +1,11 @@
+cargo-features = ["edition2024"]
+
 [package]
 name = "ducktape"
 version = "0.0.1"
 authors = ["Rai <agentydragon@gmail.com>"]
-edition = "2021"
-resolver = "2"
+edition = "2024"
+# resolver = "2"
 
 [dependencies]
 log = "*"
