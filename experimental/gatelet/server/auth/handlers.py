@@ -2,6 +2,7 @@
 
 from datetime import datetime
 from typing import Callable, Protocol
+from urllib.parse import urlencode
 
 from fastapi import Depends
 from sqlalchemy import select
@@ -36,6 +37,22 @@ class AuthContext(Protocol):
             URL with authentication component
         """
         ...
+
+    def create_url_with_params(self, path: str, **query_params) -> str:
+        """Create authenticated URL with query parameters.
+
+        Args:
+            path: Path to authenticate (should not start with /)
+            **query_params: Query parameters as keyword arguments
+
+        Returns:
+            URL with authentication component and query parameters
+        """
+        base_url = self.create_url(path)
+        if not query_params:
+            return base_url
+
+        return f"{base_url}?{urlencode(query_params)}"
 
 
 class KeyPathAuthContext:
