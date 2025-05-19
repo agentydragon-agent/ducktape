@@ -1,0 +1,107 @@
+module(
+    name = "ducktape",
+    version = "0.1.0",
+)
+
+bazel_dep(name = "rules_python", version = "1.4.1")
+
+python = use_extension("@rules_python//python/extensions:python.bzl", "python")
+python.toolchain(
+    python_version = "3.13",
+)
+
+pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
+pip.parse(
+    hub_name = "pypi",
+    python_version = "3.13",
+    requirements_lock = "//:requirements_lock.txt",
+)
+
+use_repo(pip, "pypi")
+
+# Rust rules
+bazel_dep(name = "rules_rust", version = "0.61.0")  # latest 2025-05-19
+
+# — rust toolchains —
+rust = use_extension("@rules_rust//rust:extensions.bzl", "rust")
+# Rust 1.80 stabilised `slice::split_at_checked`, which some of our
+# transitive dependencies (e.g. `writeable` v0.6.1 used by `headless_chrome`)
+# rely on.  The build was failing with Rust 1.78 because that API was still
+# unstable there.  Bumping the compiler to 1.80 (or newer) on the stable
+# channel is enough – we don’t need to move to nightly.
+
+rust.toolchain(
+    versions  = ["1.80.0"],          # minimum version that contains split_at_checked
+    #targets  = ["x86_64-unknown-linux-gnu"],
+    edition   = "2021",
+)
+use_repo(rust, "rust_toolchains")
+register_toolchains("@rust_toolchains//:all")   # makes the toolchain visible
+
+# ─ Rust crates (crate_universe) ─────────────────────────────────────────────
+crate = use_extension("@rules_rust//crate_universe:extensions.bzl", "crate")
+
+# If your workspace has Cargo.toml at the root:
+crate.from_cargo(
+    name          = "crates",          # this becomes the repo name
+    cargo_lockfile = "//:Cargo.lock",
+    manifests      = ["//:Cargo.toml"],
+)
+
+# expose the generated repo (↑ name="crates")
+use_repo(crate, "crates")
+
+# ─ core deps ────────────────────────────────────────────────────────────────
+bazel_dep(name = "rules_haskell", version = "1.0")  # Bazel 7-ready
+
+# ─ GHC toolchain (binary bindist) ───────────────────────────────────────────
+haskell_toolchains = use_extension(
+    "@rules_haskell//extensions:haskell_toolchains.bzl",
+    "haskell_toolchains",
+)
+haskell_toolchains.bindists(version = "9.0.2")
+
+# ─ third-party Hackage packages via Stackage snapshot ───────────────────────
+stack = use_extension(
+    "@rules_haskell//extensions:stack_snapshot.bzl",
+    "stack_snapshot",
+)
+
+# keep the custom attoparsec split you had before
+stack.components(
+    name = "attoparsec",
+    mapping = {
+        "lib:attoparsec":            ["lib:attoparsec"],
+        "lib:attoparsec-internal":   ["lib:attoparsec-internal"],
+    },
+)
+
+stack.components_dependencies(
+    name = "attoparsec",
+    mapping_json = """{"lib:attoparsec": ["lib:attoparsec-internal"]}""",
+)
+
+stack.snapshot(
+    name     = "stackage",
+    snapshot = "lts-19.17",
+    packages = ["base", "hakyll"],
+    # vendored override comes from the extra extension below
+    vendored_packages = {"xml-conduit": "@xml_conduit//:xml-conduit"},
+)
+
+# expose the repos the two extensions create
+use_repo(
+    haskell_toolchains, "all_bindist_toolchains",
+)
+register_toolchains("@all_bindist_toolchains//:all") # makes the toolchain visible
+use_repo(
+    stack,
+    "stackage",          # the pinned snapshot
+    "stackage-exe",      # helper binary
+    "stackage-unpinned", # auto-generated during `bazel run @...//:pin`
+)
+
+# ─ one-off override for xml-conduit ─────────────────────────────────────────
+extra_deps = use_extension("//:xml_conduit_deps.bzl", "xml_conduit_deps")
+use_repo(extra_deps, "xml_conduit")
+

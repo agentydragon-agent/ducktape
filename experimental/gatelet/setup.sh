@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Bootstrap full dev environment (Python + PostgreSQL + Node/Vite/React + LLM tooling)
-# Continues even if individual steps fail.
+# Expects to run from repo root.
 
 set -uo pipefail
 
@@ -31,40 +30,25 @@ run apt-get install -y \
   build-essential python3-venv python3-dev curl \
   postgresql postgresql-contrib libpq-dev \
   ca-certificates
-# NodeJS already installed
+# NodeJS + NPM already installed
 
-
-# ── PostgreSQL basic setup ───────────────────────────────────────────────────
 # ##############################################################################
 # 2.  Initialise and launch a local Postgres that survives the sandbox
 ##############################################################################
 PGDATA=/workspace/pgdata
 run su - postgres -c "initdb -D $PGDATA"
 run su - postgres -c "pg_ctl -D $PGDATA -o '-c listen_addresses=localhost' -w start"
-run su - postgres -c "createdb appdb"
-
-# ── Node toolchain (Vite + React) ────────────────────────────────────────────
-#run sudo npm install -g corepack
-#run corepack enable
-#run corepack prepare pnpm@latest --activate
-#run pnpm add -g vite
-#run pnpm install react react-dom
+run su - postgres -c "createdb gatelet"
 
 # ── Python virtualenv ────────────────────────────────────────────────────────
 run pip install --upgrade pip setuptools wheel
-#run pip install -r requirements.codex
-#run pip install -r requirements_lock.txt
-
-# Bazelisk is already included in codex-universal, see https://github.com/openai/codex-universal
 
 # Dev hygiene
-run pre-commit install
-
-# Editable sub-projects
-#run pip install -e experimental/gatelet[dev] llm/mcp/habitify
+pre-commit install
 
 # venv for gatelet
-python -m venv /venv
+VENV=experimental/gatelet/.venv
+python -m venv $VENV
 source /venv/bin/activate
 pip install --upgrade pip wheel
 pip install -e experimental/gatelet[dev]
@@ -74,15 +58,9 @@ deactivate
 # 4.  Persist app-visible env vars (agent runs in a NEW shell)
 ##############################################################################
 {
-  echo 'export VIRTUAL_ENV=/venv'
-  echo 'export PATH=/venv/bin:$PATH'
-  echo 'export DATABASE_URL=postgresql+psycopg://postgres@localhost/appdb'
+  echo "export VIRTUAL_ENV=$VENV"
+  echo 'export PATH=$VIRTUAL_ENV/bin:$PATH'
+  echo 'export DATABASE_URL=postgresql+psycopg://postgres@localhost/gatelet'
 } >> /root/.bashrc
 
-echo
 echo "✅ Bootstrap finished (errors above were ignored)."
-# echo "   Postgres URL:  postgresql://$USER@localhost/$USER"
-
-
-# create an env file for the app
-#echo 'DATABASE_URL=postgresql+psycopg://postgres@localhost/postgres' > /workspace/.env
