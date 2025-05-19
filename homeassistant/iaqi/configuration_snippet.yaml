@@ -1,3 +1,5 @@
+# Example configuration snippet for indoor air quality aggregation from given set of sensors.
+
 indoor_aqi:
   monitors:
     - name: "Rai's room AQI"

@@ -23,6 +23,6 @@ bazel run //:requirements.update
 # inside the canonical repo
 cd ~/code/ducktape
 
-# create Claude sandbox, branch agent/claude-ws1 off main
-git worktree add -b agent/claude-ws1 ~/claude-code/ws1 main
+# create Claude sandbox, branch agent/claude/ws1
+git worktree add -b agent/claude/ws1 ~/claude-code/ws1 HEAD
 ```
