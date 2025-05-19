@@ -1,11 +1,15 @@
-"""Configuration management for Gatelet server."""
+"""Configuration management for Gatelet server.
+
+TODO: Add configuration options for test database connections.
+This will support running tests with a real database instead of mocks.
+"""
 
 import logging
 import os
 import re
 from datetime import timedelta
 from pathlib import Path
-from typing import Dict, List, Literal, Self, Union
+from typing import Dict, List, Literal, Union, Type, TypeVar, cast
 
 import toml
 from pydantic import BaseModel, Field, PostgresDsn, validator
@@ -131,7 +135,7 @@ class Settings(BaseModel):
     webhook: WebhookSettings
 
     @classmethod
-    def from_file(cls, path: Path) -> Self:
+    def from_file(cls, path: Path):
         """Load settings from file at path."""
         logger.info(f"Loading settings from {path.absolute()}")
         with open(path, "rb") as f:
