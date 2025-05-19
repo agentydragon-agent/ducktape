@@ -19,7 +19,9 @@ from server.models import Base
 @pytest.fixture(scope="session", autouse=True)
 def setup_test_config():
     """Setup test configuration."""
-    os.environ["GATELET_CONFIG"] = str(Path(__file__).parent.parent.parent / "tests" / "gatelet_test.toml")
+    # Set the environment variable to point to the test config
+    test_config_path = str(Path(__file__).parent / "gatelet_test.toml")
+    os.environ["GATELET_CONFIG"] = test_config_path
     
     # Re-import config to ensure we're using the test config
     reload(server.config)
