@@ -45,7 +45,16 @@ echo "export PATH=$PG_BIN:\$PATH" | tee /etc/profile.d/pg-bin.sh /root/.bashrc ~
 # 2.  Initialise and launch a local Postgres that survives the sandbox
 ##############################################################################
 PGDATA=/workspace/pgdata
-su - postgres -c "initdb -D '$PGDATA' && pg_ctl -D '$PGDATA' -w start && createdb gatelet"
+
+# make the directory writable for postgres
+install -d -o postgres -g postgres "$PGDATA"
+
+su - postgres -c "
+  set -e
+  initdb -D '$PGDATA'
+  pg_ctl -D '$PGDATA' -w start
+  createdb gatelet
+"
 
 # ── Python virtualenv ────────────────────────────────────────────────────────
 pip install --upgrade pip setuptools wheel
