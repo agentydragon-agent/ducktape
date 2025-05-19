@@ -28,6 +28,39 @@ Tests are designed for execution INSIDE the devcontainer:
 pytest
 ```
 
+### Test database access
+
+If the env var `IS_CODEX_ENV` is set to `1`, you are running in a Codex container
+and MUST make tests bring up **AND** TEAR DOWN the database before & at the end
+of your test commands. If you fail to tear it down properly, it violates the
+Codex environment check that no processes may linger between execution steps.
+MAKE SURE TO CREATE AND TEAR DOWN THE DATABASE AND START/STOP THE SERVER IN
+YOUR TESTS.
+
+Example:
+
+```python
+# conftest.py
+import subprocess, os, pytest, tempfile, shutil, time
+
+@pytest.fixture(scope="session", autouse=True)
+def _postgres():
+    if os.environ.get("IS_CODEX_ENV") != "1":
+        yield
+        return
+
+    datadir = tempfile.mkdtemp()
+    subprocess.check_call(["initdb", "-D", datadir, "-A", "trust"])
+    proc = subprocess.Popen(["pg_ctl", "-D", datadir, "-w", "start"])
+    os.environ["DATABASE_URL"] = "postgresql+psycopg://postgres@localhost/postgres"
+    time.sleep(0.5)          # tiny grace
+    try:
+        yield
+    finally:
+        subprocess.check_call(["pg_ctl", "-D", datadir, "-m", "fast", "stop"])
+        shutil.rmtree(datadir)
+```
+
 ## Development Commands
 
 ### Starting the Server
