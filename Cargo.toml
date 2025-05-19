@@ -63,32 +63,32 @@ scraper = "*"
 name = "ducktape_fake"
 path = "main.rs"
 
-[package.metadata.raze]
-workspace_path = "//remote"
-genmode = "Remote"
-package_aliases_dir = "remote"
-default_gen_buildrs = true
-rust_rules_workspace_name = "rules_rust"
+# [package.metadata.raze]
+# workspace_path = "//remote"
+# genmode = "Remote"
+# package_aliases_dir = "remote"
+# default_gen_buildrs = true
+# rust_rules_workspace_name = "rules_rust"
 
 # Only generate BUILD files for Linux.
 targets = ["x86_64-unknown-linux-gnu"]
 
-[package.metadata.raze.crates.ring.'*']
-compile_data_attr = "glob([\"**/*\"])"
-
-[package.metadata.raze.crates.webpki.'*']
-compile_data_attr = "glob([\"**/*\"])"
-
-[package.metadata.raze.crates.oxiri.'*']
-compile_data_attr = "glob([\"**/*\"])"
-
-[package.metadata.raze.crates.oxilangtag.'*']
-compile_data_attr = "glob([\"**/*\"])"
-
-[package.metadata.raze.crates.derive_builder.'*']
-compile_data_attr = "glob([\"**/*\"])"
-
-[package.metadata.raze.crates.bstr.'*']
-compile_data_attr = "glob([\"**/*\"])"
+# [package.metadata.raze.crates.ring.'*']
+# compile_data_attr = "glob([\"**/*\"])"
+# 
+# [package.metadata.raze.crates.webpki.'*']
+# compile_data_attr = "glob([\"**/*\"])"
+# 
+# [package.metadata.raze.crates.oxiri.'*']
+# compile_data_attr = "glob([\"**/*\"])"
+# 
+# [package.metadata.raze.crates.oxilangtag.'*']
+# compile_data_attr = "glob([\"**/*\"])"
+# 
+# [package.metadata.raze.crates.derive_builder.'*']
+# compile_data_attr = "glob([\"**/*\"])"
+# 
+# [package.metadata.raze.crates.bstr.'*']
+# compile_data_attr = "glob([\"**/*\"])"
 
 # TODO: fix ../remote/remote/BUILD.mio-0.8.3.bazel
