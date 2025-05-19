@@ -25,8 +25,8 @@ fi
 # ── System packages ──────────────────────────────────────────────────────────
 # Those won't work -- getting:
 #   'Cannot initiate the connection to archive.ubuntu.com:80 (185.125.190.81). - connect (101: Network is unreachable)'
-run apt-get update
-run apt-get install -y \
+apt-get update
+apt-get install -y \
   build-essential python3-venv python3-dev curl \
   postgresql postgresql-contrib libpq-dev \
   ca-certificates
@@ -36,14 +36,15 @@ run apt-get install -y \
 # 2.  Initialise and launch a local Postgres that survives the sandbox
 ##############################################################################
 PGDATA=/workspace/pgdata
-run su - postgres -c "initdb -D $PGDATA"
-run su - postgres -c "pg_ctl -D $PGDATA -o '-c listen_addresses=localhost' -w start"
-run su - postgres -c "createdb gatelet"
+su - postgres -c "initdb -D $PGDATA"
+su - postgres -c "pg_ctl -D $PGDATA -o '-c listen_addresses=localhost' -w start"
+su - postgres -c "createdb gatelet"
 
 # ── Python virtualenv ────────────────────────────────────────────────────────
-run pip install --upgrade pip setuptools wheel
+pip install --upgrade pip setuptools wheel
 
 # Dev hygiene
+pip install pre-commit
 pre-commit install
 
 # venv for gatelet
