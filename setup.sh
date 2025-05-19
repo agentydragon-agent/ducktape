@@ -8,11 +8,13 @@ warn() { echo "⚠️  $* (ignored)"; }
 run() { "$@" || warn "$*"; }
 
 # ── System packages ──────────────────────────────────────────────────────────
-run sudo apt-get update
-run sudo apt-get install -y \
-     build-essential python3-venv python3-dev curl git \
-     postgresql postgresql-contrib libpq-dev \
-     nodejs npm
+# Those won't work -- getting:
+#   'Cannot initiate the connection to archive.ubuntu.com:80 (185.125.190.81). - connect (101: Network is unreachable)'
+# run sudo apt-get update
+# run sudo apt-get install -y \
+#      build-essential python3-venv python3-dev curl git \
+#      postgresql postgresql-contrib libpq-dev \
+#      nodejs npm
 
 # ── PostgreSQL basic setup ───────────────────────────────────────────────────
 # run sudo systemctl enable --now postgresql
