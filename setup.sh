@@ -42,6 +42,7 @@ run pip install -e llm/mcp/habitify
 
 # PostgreSQL drivers (sync & async)
 run pip install "psycopg[binary,pool]" asyncpg sqlalchemy
+run pip install aiosqlite
 
 # LLM / NLP helpers
 # run pip install sentence-transformers openai tiktoken

@@ -1,7 +1,8 @@
 # Test configuration for Gatelet
 
 [database]
-dsn = "postgresql+asyncpg://postgres:postgres@db/gatelet_test"
+# Use in-memory SQLite for tests to avoid needing a running Postgres server
+dsn = "sqlite+aiosqlite:///:memory:"
 
 [server]
 host = "0.0.0.0"
