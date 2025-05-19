@@ -11,8 +11,11 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Dict, List, Literal, Union, Type, TypeVar, cast
 
-import toml
-from pydantic import BaseModel, Field, PostgresDsn, validator
+try:
+    import tomllib as toml
+except ModuleNotFoundError:  # pragma: no cover - fallback for older Python
+    import toml  # type: ignore
+from pydantic import BaseModel, Field, validator
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +43,8 @@ WebhookAuthConfig = Union[NoAuth, BearerAuth]
 
 
 class DatabaseSettings(BaseModel):
-    dsn: PostgresDsn = Field(
+    # Use a simple string so we can support both Postgres and SQLite for tests
+    dsn: str = Field(
         default="postgresql://postgres:postgres@localhost:5432/gatelet"
     )
 
@@ -138,7 +142,8 @@ class Settings(BaseModel):
     def from_file(cls, path: Path):
         """Load settings from file at path."""
         logger.info(f"Loading settings from {path.absolute()}")
-        with open(path, "r") as f:
+        # tomllib expects binary mode for file objects
+        with open(path, "rb") as f:
             config_dict = toml.load(f)
         return cls.parse_obj(config_dict)
 
