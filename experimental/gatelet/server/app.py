@@ -20,7 +20,7 @@ from .auth.handlers import (
 )
 from .config import settings
 from .database import get_db_session
-from .endpoints import webhook_receive
+from .endpoints import webhook_receive, webhook_view
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +37,7 @@ templates = Jinja2Templates(directory=BASE_DIR / "templates")
 
 # Include routers
 app.include_router(webhook_receive.router)
+app.include_router(webhook_view.router)
 
 
 # Error handlers

@@ -100,6 +100,7 @@ class WebhookIntegrationSettings(BaseModel):
 
 class WebhookSettings(BaseModel):
     integrations: Dict[str, WebhookIntegrationSettings] = Field(default_factory=dict)
+    default_page_size: int = Field(default=10)
 
     @validator("integrations")
     def validate_integration_names(cls, v):
@@ -113,6 +114,12 @@ class WebhookSettings(BaseModel):
                 raise ValueError(
                     f"Integration name '{name}' too long (max 50 characters)"
                 )
+        return v
+        
+    @validator("default_page_size")
+    def validate_page_size(cls, v):
+        if v < 1 or v > 100:
+            raise ValueError("default_page_size must be between 1 and 100")
         return v
 
 
