@@ -66,7 +66,7 @@ pre-commit install
 # venv for gatelet
 VENV=experimental/gatelet/.venv
 python -m venv $VENV
-source $VENV/activate
+source $VENV/bin/activate
 pip install --upgrade pip wheel
 pip install -e experimental/gatelet[dev]
 
@@ -80,7 +80,7 @@ python -m playwright install --with-deps chromium # firefox webkit
 ##############################################################################
 {
   echo 'export DATABASE_URL=postgresql+psycopg://postgres@localhost/gatelet'
-  echo "source $VENV/activate"
+  echo "source $VENV/bin/activate"
 } >> /root/.bashrc
 
 
