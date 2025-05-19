@@ -48,8 +48,13 @@ class KeyPathAuthContext:
     def auth_type(self) -> str:
         return "key_path"
 
+    @property
+    def key_value(self) -> str:
+        """Get the authentication key value."""
+        return self.key.key_value
+
     def create_url(self, path: str) -> str:
-        return f"/k/{self.key.key_value}/{path}"
+        return f"/k/{self.key_value}/{path}"
 
 
 class SessionAuthContext:
@@ -62,8 +67,13 @@ class SessionAuthContext:
     def auth_type(self) -> str:
         return "session"
 
+    @property
+    def session_token(self) -> str:
+        """Get the session token."""
+        return self.session.session_token
+
     def create_url(self, path: str) -> str:
-        return f"/s/{self.session.session_token}/{path}"
+        return f"/s/{self.session_token}/{path}"
 
 
 async def key_path_auth(
@@ -102,4 +112,3 @@ def create_auth_dependency(auth_type: str) -> Callable:
         return session_auth
     else:
         raise ValueError(f"Unsupported {auth_type = }")
-
