@@ -68,6 +68,48 @@ nav a {
     border-radius: 4px;
 }
 
+/* Integration list */
+.integrations-list {
+    margin: 1em 0;
+    padding: 1em;
+    background-color: #f5f5f5;
+    border-radius: 4px;
+}
+
+.integrations-list ul {
+    list-style-type: none;
+    padding: 0;
+}
+
+.integrations-list li {
+    margin-bottom: 0.5em;
+}
+
+/* Webhook payloads table */
+.payload-table table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1em 0;
+}
+
+.payload-table th, 
+.payload-table td {
+    padding: 0.5em;
+    border: 1px solid #ddd;
+    text-align: left;
+}
+
+.payload-table th {
+    background-color: #f5f5f5;
+    font-weight: bold;
+}
+
+.payload-table pre {
+    margin: 0;
+    max-height: 200px;
+    overflow-y: auto;
+}
+
 /* Pagination */
 .pagination {
     margin-top: 2em;
