@@ -164,17 +164,19 @@ The project is implemented in phases:
    - Nonce‑based login flow for LLMs
    - Session management with automatic extension
 
-3. **Phase 3** – Home Assistant Integration *(pending)*
-   - Home Assistant API client
-   - Entity state and history views
+3. **Phase 3** – Home Assistant Integration *(in progress)*
+   - Basic entity state listing implemented
+   - Historical and trend views pending
 
 4. **Phase 4** – Human Admin Interface *(in progress)*
-   - Password‑based admin login (implemented)
-   - Dashboard with session and key management
+   - Password‑based admin login implemented
+   - Key management pages available
+   - Session management and log views pending
 
 ## Current Status
 
 Gatelet runs with both key‑in‑path and challenge‑response authentication.
-Webhooks can be received and browsed, and a minimal password-based admin login
-is available. Home Assistant integration and full admin dashboards are still
-missing. See `TODO.md` in the repository root for the remaining tasks.
+Webhooks can be received and browsed. The admin login and key management pages
+are operational, and Home Assistant entity states can be listed. Session
+management views, log inspection and historical Home Assistant data are still
+pending. See `experimental/gatelet/TODO.md` for the remaining tasks.
