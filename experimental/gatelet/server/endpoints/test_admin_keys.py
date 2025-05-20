@@ -1,0 +1,88 @@
+import re
+from http import HTTPStatus
+
+import pytest
+from httpx import AsyncClient
+from server.models import AuthKey
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+
+@pytest.fixture(autouse=True)
+async def _override_db(monkeypatch, db_session: AsyncSession):
+    from contextlib import asynccontextmanager
+
+    @asynccontextmanager
+    async def _override():
+        yield db_session
+
+    monkeypatch.setattr("server.database.get_db_session", _override)
+
+
+def _extract_csrf(page_text: str) -> str:
+    m = re.search(r'name="csrf_token" value="([^"]+)"', page_text)
+    assert m
+    return m.group(1)
+
+
+async def _login(client: AsyncClient) -> str:
+    home = await client.get("/")
+    token = _extract_csrf(home.text)
+    response = await client.post(
+        "/admin/login",
+        data={"password": "gatelet", "csrf_token": token},
+        headers={"X-CSRF-Token": token},
+    )
+    assert response.status_code == HTTPStatus.FOUND
+    return response.cookies["admin_session"]
+
+
+@pytest.mark.asyncio
+async def test_list_keys(
+    client: AsyncClient, db_session: AsyncSession, test_auth_key: AuthKey
+):
+    session = await _login(client)
+    response = await client.get("/admin/keys/", cookies={"admin_session": session})
+    assert response.status_code == HTTPStatus.OK
+    assert str(test_auth_key.id) in response.text
+    assert test_auth_key.key_value in response.text
+
+
+@pytest.mark.asyncio
+async def test_create_key(client: AsyncClient, db_session: AsyncSession):
+    session = await _login(client)
+    response = await client.get("/admin/keys/new", cookies={"admin_session": session})
+    token = _extract_csrf(response.text)
+
+    count_before = await db_session.scalar(select(func.count()).select_from(AuthKey))
+
+    response = await client.post(
+        "/admin/keys/new",
+        data={"description": "test key", "csrf_token": token},
+        headers={"X-CSRF-Token": token},
+        cookies={"admin_session": session},
+    )
+    assert response.status_code == HTTPStatus.OK
+
+    count_after = await db_session.scalar(select(func.count()).select_from(AuthKey))
+    assert count_after == count_before + 1
+
+
+@pytest.mark.asyncio
+async def test_revoke_key(
+    client: AsyncClient, db_session: AsyncSession, test_auth_key: AuthKey
+):
+    session = await _login(client)
+    response = await client.get("/admin/keys/", cookies={"admin_session": session})
+    token = _extract_csrf(response.text)
+
+    response = await client.post(
+        f"/admin/keys/{test_auth_key.id}/revoke",
+        data={"csrf_token": token},
+        headers={"X-CSRF-Token": token},
+        cookies={"admin_session": session},
+    )
+    assert response.status_code == HTTPStatus.FOUND
+
+    await db_session.refresh(test_auth_key)
+    assert test_auth_key.revoked_at is not None
