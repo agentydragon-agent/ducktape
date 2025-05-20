@@ -17,6 +17,45 @@ Service that lets LLMs access real-time and historical information relevant to t
 
 ## Development Setup
 
+The project requires Python 3.10+ and a PostgreSQL database. A quick reproducible setup uses Docker for the database.
+
+1. Start PostgreSQL in Docker:
+
+```bash
+docker run --name gatelet-db -e POSTGRES_PASSWORD=postgres -e POSTGRES_USER=postgres -e POSTGRES_DB=gatelet -p 5432:5432 -d postgres:16
+```
+
+2. Create a virtual environment and install Gatelet with development dependencies:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e '.[dev]'
+```
+
+3. Copy the example configuration and set the database URL:
+
+```bash
+cp gatelet.example.toml gatelet.toml
+export DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/gatelet
+```
+
+4. Initialize the database and start the server:
+
+```bash
+alembic upgrade head
+uvicorn server.app:app --reload --host 0.0.0.0 --port 8000
+```
+
+The service will be available at http://localhost:8000. When finished, stop the database container with:
+
+```bash
+docker stop gatelet-db
+docker rm gatelet-db
+```
+
+For development inside the Codex devcontainer, run `experimental/gatelet/setup.sh` from the repository root before network access is disabled.
+
 ## LLM-Friendly Design
 
 Designed for current LLM constraints (as of May 2025), particularly OpenAI scheduled tasks with o3 model:

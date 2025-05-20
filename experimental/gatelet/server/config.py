@@ -9,12 +9,8 @@ import os
 import re
 from datetime import timedelta
 from pathlib import Path
-from typing import Dict, List, Literal, Union, Type, TypeVar, cast
+from typing import Dict, List, Literal, Type, TypeVar, Union, cast
 
-try:
-    import tomllib as toml
-except ModuleNotFoundError:  # pragma: no cover - fallback for older Python
-    import toml  # type: ignore
 from pydantic import BaseModel, Field, validator
 
 logger = logging.getLogger(__name__)
@@ -44,9 +40,7 @@ WebhookAuthConfig = Union[NoAuth, BearerAuth]
 
 class DatabaseSettings(BaseModel):
     # Use a simple string so we can support both Postgres and SQLite for tests
-    dsn: str = Field(
-        default="postgresql://postgres:postgres@localhost:5432/gatelet"
-    )
+    dsn: str = Field(default="postgresql://postgres:postgres@localhost:5432/gatelet")
 
 
 class ServerSettings(BaseModel):
@@ -123,7 +117,7 @@ class WebhookSettings(BaseModel):
                     f"Integration name '{name}' too long (max 50 characters)"
                 )
         return v
-        
+
     @validator("default_page_size")
     def validate_page_size(cls, v):
         if v < 1 or v > 100:
@@ -142,9 +136,17 @@ class Settings(BaseModel):
     def from_file(cls, path: Path):
         """Load settings from file at path."""
         logger.info(f"Loading settings from {path.absolute()}")
-        # tomllib expects binary mode for file objects
-        with open(path, "rb") as f:
-            config_dict = toml.load(f)
+        try:
+            import tomllib as toml
+
+            # tomllib expects binary mode for file objects
+            with open(path, "rb") as f:
+                config_dict = toml.load(f)
+        except ModuleNotFoundError:  # pragma: no cover - fallback for older Python
+            import toml  # type: ignore
+
+            with open(path, "r") as f:
+                config_dict = toml.load(f)
         return cls.parse_obj(config_dict)
 
 

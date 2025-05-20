@@ -13,6 +13,8 @@
 #   include_tasks: tasks/trilium_client.yml
 
 - include_tasks: tasks/bazel.yml
+  vars:
+    bazel_state: absent
 
 - name: Install CLI packages
   become: true
