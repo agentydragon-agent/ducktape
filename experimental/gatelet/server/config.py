@@ -9,7 +9,7 @@ import os
 import re
 from datetime import timedelta
 from pathlib import Path
-from typing import Dict, List, Literal, Type, TypeVar, Union, cast
+from typing import Dict, List, Literal, Union
 
 from pydantic import BaseModel, Field, validator
 
@@ -100,6 +100,10 @@ class WebhookIntegrationSettings(BaseModel):
     enabled: bool = Field(default=False)
 
 
+MAX_INTEGRATION_NAME_LEN = 50
+MAX_PAGE_SIZE = 100
+
+
 class WebhookSettings(BaseModel):
     integrations: Dict[str, WebhookIntegrationSettings] = Field(default_factory=dict)
     default_page_size: int = Field(default=10)
@@ -112,16 +116,16 @@ class WebhookSettings(BaseModel):
                 raise ValueError(
                     f"Integration name '{name}' not only letters, numbers, underscores, and hyphens."
                 )
-            if len(name) > 50:
+            if len(name) > MAX_INTEGRATION_NAME_LEN:
                 raise ValueError(
-                    f"Integration name '{name}' too long (max 50 characters)"
+                    f"Integration name '{name}' too long (max {MAX_INTEGRATION_NAME_LEN} characters)"
                 )
         return v
 
     @validator("default_page_size")
     def validate_page_size(cls, v):
-        if v < 1 or v > 100:
-            raise ValueError("default_page_size must be between 1 and 100")
+        if v < 1 or v > MAX_PAGE_SIZE:
+            raise ValueError(f"default_page_size must be between 1 and {MAX_PAGE_SIZE}")
         return v
 
 
