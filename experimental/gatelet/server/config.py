@@ -9,7 +9,7 @@ import os
 import re
 from datetime import timedelta
 from pathlib import Path
-from typing import Dict, List, Literal, Union
+from typing import BinaryIO, Dict, List, Literal, TextIO, Union, cast
 
 from pydantic import BaseModel, Field, validator
 
@@ -159,13 +159,13 @@ class Settings(BaseModel):
 
             # tomllib expects binary mode for file objects
             with open(path, "rb") as f:
-                config_dict = toml.load(f)
+                config_dict = toml.load(cast(BinaryIO, f))
         except ModuleNotFoundError:  # pragma: no cover - fallback for older Python
             import toml  # type: ignore
 
             # toml library (not Python builtin - used in case of Python < 3.11) reads strings
             with open(path, "r") as f:
-                config_dict = toml.load(f)  # type: ignore[arg-type]
+                config_dict = toml.load(cast(TextIO, f))  # type: ignore[arg-type]
         return cls.parse_obj(config_dict)
 
 

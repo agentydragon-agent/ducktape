@@ -19,6 +19,39 @@
     <h3>Available Services</h3>
     <ul>
         <li><a href="{{ auth.create_url('webhooks') }}">Webhooks</a> - View and filter webhook payloads</li>
+        <li><a href="{{ auth.create_url('ha') }}">Home Assistant Entities</a></li>
     </ul>
+</section>
+
+<section>
+    <h3>Latest Webhook Events</h3>
+    {% if recent_payloads %}
+    <ul>
+        {% for p in recent_payloads %}
+        <li>
+            {{ p.received_at.strftime('%Y-%m-%d %H:%M:%S') }} -
+            <a href="{{ auth.create_url('webhooks/' + p.integration_name) }}">{{ p.integration_name }}</a>
+        </li>
+        {% endfor %}
+    </ul>
+    {% else %}
+    <p>No events recorded.</p>
+    {% endif %}
+</section>
+
+<section>
+    <h3>Home Assistant Status</h3>
+    {% if ha_states %}
+    <ul>
+        {% for s in ha_states %}
+        <li>
+            <a href="{{ auth.create_url('ha/' + s.entity_id) }}">{{ s.entity_id }}</a>:
+            {{ s.state }}
+        </li>
+        {% endfor %}
+    </ul>
+    {% else %}
+    <p>Home Assistant data unavailable.</p>
+    {% endif %}
 </section>
 {% endblock %}

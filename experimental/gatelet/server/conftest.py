@@ -151,6 +151,7 @@ def _patch_get_db_session(monkeypatch, db_session: AsyncSession) -> None:
         yield db_session
 
     monkeypatch.setattr("server.database.get_db_session", _override)
+    monkeypatch.setattr("server.app.get_db_session", _override)
 
 
 @pytest_asyncio.fixture
