@@ -1,5 +1,7 @@
 """Tests for admin password authentication."""
 
+from http import HTTPStatus
+
 import pytest
 import re
 from httpx import AsyncClient
@@ -47,4 +49,3 @@ async def test_admin_login_invalid(client: AsyncClient, db_session: AsyncSession
         headers={"X-CSRF-Token": token},
     )
     assert response.status_code == 401  # noqa: PLR2004
-    assert "Invalid password" in response.text

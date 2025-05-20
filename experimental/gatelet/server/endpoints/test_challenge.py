@@ -3,15 +3,15 @@
 import html
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
+from http import HTTPStatus
 
 import pytest
 from httpx import AsyncClient
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from server.config import settings
 from server.endpoints.challenge import COMPUTE_OPTION_SOURCE, compute_correct_option
 from server.models import AuthCRSession, AuthKey, AuthNonce  # type: ignore[import]
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 @pytest.fixture(autouse=True)
@@ -28,7 +28,7 @@ async def test_start_challenge_creates_nonce(
     client: AsyncClient, db_session: AsyncSession, test_auth_key: AuthKey
 ):
     response = await client.get(f"/cr/{test_auth_key.id}")
-    assert response.status_code == 200
+    assert response.status_code == HTTPStatus.OK
     nonce = (
         (await db_session.execute(select(AuthNonce).order_by(AuthNonce.id.desc())))
         .scalars()
@@ -55,8 +55,9 @@ async def test_answer_challenge_success(
         )
     )
     response = await client.get(f"/cr/{test_auth_key.id}/{nonce.nonce_value}/{answer}")
-    assert response.status_code == 302
-    session = (await db_session.execute(select(AuthCRSession))).scalar_one()
+    assert response.status_code == HTTPStatus.FOUND
+    query = select(AuthCRSession).where(AuthCRSession.auth_key_id == test_auth_key.id)
+    session = (await db_session.execute(query)).scalar_one()
     assert session.auth_key_id == test_auth_key.id
 
 
@@ -77,7 +78,7 @@ async def test_challenge_template_contains_code(
     client: AsyncClient, test_auth_key: AuthKey
 ):
     response = await client.get(f"/cr/{test_auth_key.id}")
-    assert response.status_code == 200
+    assert response.status_code == HTTPStatus.OK
 
     page_text = html.unescape(response.text)
     assert COMPUTE_OPTION_SOURCE in page_text
