@@ -14,6 +14,23 @@ Service that lets LLMs access real-time and historical information relevant to t
 2. **Reporter** - Python scripts that:
    - Send event data to the server
    - Can be installed on laptops and other devices
+   - Provided as ``gatelet-report-event`` and ``gatelet-report-battery`` CLI tools
+
+### Reporter Usage
+
+Send an arbitrary JSON payload:
+
+```bash
+gatelet-report-event --url http://localhost:8000 \
+  --integration laptop '{"foo": "bar"}'
+```
+
+Report current battery status:
+
+```bash
+gatelet-report-battery --url http://localhost:8000 \
+  --integration laptop-power
+```
 
 ## Development Setup
 
@@ -175,12 +192,13 @@ The project is implemented in phases:
 4. **Phase 4** – Human Admin Interface *(in progress)*
    - Password‑based admin login implemented
    - Key management pages available
-   - Session management and log views pending
+  - Session management implemented
+  - Log inspection page available
 
 ## Current Status
 
 Gatelet runs with both key‑in‑path and challenge‑response authentication.
 Webhooks can be received and browsed. The admin login and key management pages
 are operational, and Home Assistant entity states can be listed. Session
-management views, log inspection and historical Home Assistant data are still
-pending. See `gatelet/TODO.md` for the remaining tasks.
+management views and historical Home Assistant data are still pending.
+See `gatelet/TODO.md` for the remaining tasks.
