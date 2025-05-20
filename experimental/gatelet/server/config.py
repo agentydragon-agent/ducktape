@@ -129,12 +129,26 @@ class WebhookSettings(BaseModel):
         return v
 
 
+class AdminSettings(BaseModel):
+    """Configuration for the human admin account."""
+
+    password_hash: str = Field(...)
+
+
+class SecuritySettings(BaseModel):
+    """Misc security configuration."""
+
+    csrf_secret: str = Field(...)
+
+
 class Settings(BaseModel):
     database: DatabaseSettings
     server: ServerSettings
     auth: AuthSettings
     home_assistant: HomeAssistantSettings
     webhook: WebhookSettings
+    admin: AdminSettings
+    security: SecuritySettings
 
     @classmethod
     def from_file(cls, path: Path):
@@ -149,10 +163,13 @@ class Settings(BaseModel):
         except ModuleNotFoundError:  # pragma: no cover - fallback for older Python
             import toml  # type: ignore
 
-            with open(path, "r") as f:
+            with open(path, "rb") as f:
                 config_dict = toml.load(f)
         return cls.parse_obj(config_dict)
 
 
+# Path to the active configuration file
+CONFIG_PATH = Path(os.getenv("GATELET_CONFIG", "gatelet.toml"))
+
 # Load settings
-settings = Settings.from_file(Path(os.getenv("GATELET_CONFIG", "gatelet.toml")))
+settings = Settings.from_file(CONFIG_PATH)
