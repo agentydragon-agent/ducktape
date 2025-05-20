@@ -4,9 +4,7 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from server.endpoints import admin
 from server.models import AdminUser
-from server.tests.utils import persist
 
 
 @pytest.fixture(autouse=True)

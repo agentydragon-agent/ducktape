@@ -56,6 +56,17 @@ docker rm gatelet-db
 
 For development inside the Codex devcontainer, run `experimental/gatelet/setup.sh` from the repository root before network access is disabled.
 
+### Administration
+
+Common management tasks are wrapped in a small `Makefile`:
+
+```bash
+make -C experimental/gatelet reset-db        # initialize a fresh database
+make -C experimental/gatelet change-password # change the admin password
+```
+
+`reset-db` displays the current row counts for all tables and asks for confirmation before dropping everything. It then creates a fresh admin account with password `gatelet`.
+
 ## LLM-Friendly Design
 
 Designed for current LLM constraints (as of May 2025), particularly OpenAI scheduled tasks with o3 model:
