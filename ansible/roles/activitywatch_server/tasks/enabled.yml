@@ -17,15 +17,23 @@
   user:
     name: aw-server
     system: yes
-    create_home: no
+    home: "{{ activitywatch_data_dir }}"
+    create_home: yes
 
-- name: Make aw-server data dir
-  become: true
-  file:
-    path: "{{ activitywatch_data_dir }}"
-    state: directory
-    owner: aw-server
-    mode: 0755 # TODO: this should not be world-readable
+#- name: Make aw-server data dir
+#  become: true
+#  file:
+#    path: "{{ activitywatch_data_dir }}"
+#    state: directory
+#    owner: aw-server
+#    mode: 0755 # TODO: this should not be world-readable
+#
+#- name: Ensure data dir ownership
+#  file:
+#    path: "{{ activitywatch_data_dir }}"
+#    owner: aw-server
+#    group: aw-server
+#    mode: "0755"
 
 - name: Install systemd service for aw-server
   template:
@@ -37,5 +45,5 @@
   systemd:
     daemon_reload: true
     name: aw-server
-    state: started
+    state: restarted # started
     enabled: true

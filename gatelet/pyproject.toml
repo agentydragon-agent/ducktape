@@ -30,6 +30,34 @@ dependencies = [
     'fastapi-csrf-protect',
     'fastapi-users[sqlalchemy,argon2]',
     'fastapi-sessions',
+
+    # ActivityWatch stuff
+    'aw-client',
+    'aw-core', # bundles: 'aw-query', 'aw-transform',
+
+    # llm helpers: openai, tiktoken, anthropic
+
+    "oura", # Oura API: https://github.com/turing-complet/python-ouraring
+    # TODO: google - activity?
+    "python-metar", # weather
+    # "withings-api", # TODO: scale, later
+    # strava, pytrain=apple fitness, polaracceslink, garminconnect, fitbit
+    # py-toggl, rescuetime-py
+
+    # weather
+    "pyowm", # live weather, forecasts
+    "aqipy",
+    "meteostat",
+    "geopy",  # geocoding: gps -> place name
+    # finance: yfinance, ccxt
+    # caldav: nextcloud/apple
+
+    # google cal
+    "google-api-python-client",
+    "google-auth",
+
+    # (smart home extra: pytradfri, pywizlight)
+
 ]
 
 [project.optional-dependencies]
