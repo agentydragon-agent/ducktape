@@ -82,6 +82,7 @@ gatelet-report-battery = "gatelet.report_battery:main"
 [tool.setuptools]
 package-dir = {"" = "."}
 packages = ["server", "gatelet"]
+py_modules = ["gatelet"]
 include-package-data = true
 
 [tool.setuptools.package-data]
