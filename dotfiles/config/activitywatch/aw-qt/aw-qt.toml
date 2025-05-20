@@ -1,6 +1,6 @@
 [aw-qt]
 # Not starting aw-server -- data will go to agentydragon.com VPS
-autostart_modules = ["aw-watcher-afk", "aw-watcher-window", "aw-notify"]
+autostart_modules = ["aw-watcher-afk", "aw-watcher-window"]# , "aw-notify"]
 
 [aw-qt-testing]
 #autostart_modules = ["aw-server", "aw-watcher-afk", "aw-watcher-window"]

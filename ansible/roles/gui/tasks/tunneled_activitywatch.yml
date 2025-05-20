@@ -1,6 +1,6 @@
 # ActivityWatch talks to VPS, not localhost
 # For reporting to webhook
-- name: ActivityWatch
+- name: Install ActivityWatch via dpkg from GitHub
   become: true
   github_release_install:
     release_spec:
