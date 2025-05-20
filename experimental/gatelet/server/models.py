@@ -1,6 +1,7 @@
 """SQLAlchemy models for Gatelet."""
 
 from datetime import datetime, timedelta
+from typing import Any
 
 from sqlalchemy import (
     JSON,
@@ -15,7 +16,6 @@ from sqlalchemy import (
 )
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import Session, relationship, sessionmaker
-from typing import Any
 
 Base: Any = declarative_base()
 

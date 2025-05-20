@@ -23,19 +23,20 @@
 #  - if user A already dismissed a match, we might not want to show it
 #    to user B anymore (e.g.: maybe matches might have a limited TTL?)
 
-from flask import Flask, request, jsonify
-from flask_sqlalchemy import SQLAlchemy
-from flask_migrate import Migrate
+from datetime import datetime
+
+from flask import Flask, jsonify, request
 from flask_login import (
-    UserMixin,
     LoginManager,
+    UserMixin,
+    current_user,
+    login_required,
     login_user,
     logout_user,
-    login_required,
-    current_user,
 )
-from werkzeug.security import generate_password_hash, check_password_hash
-from datetime import datetime
+from flask_migrate import Migrate
+from flask_sqlalchemy import SQLAlchemy
+from werkzeug.security import check_password_hash, generate_password_hash
 
 app = Flask(__name__)
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///app.db"

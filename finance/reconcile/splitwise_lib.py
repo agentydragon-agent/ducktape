@@ -1,16 +1,14 @@
 import datetime
 import decimal
+import http.server
 import json
 import urllib.parse
-import http.server
-
 from typing import Dict
-
-from ducktape.finance.reconcile import external_system
 
 import splitwise
 import xdg
 from absl import logging
+from ducktape.finance.reconcile import external_system
 
 
 def get_splitwise_net(expense, user_id):

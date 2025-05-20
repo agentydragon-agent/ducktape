@@ -1,6 +1,6 @@
-import sys
 import re
 import subprocess
+import sys
 
 PATTERN = re.compile("^Anki ([0-9.]+)$", flags=re.MULTILINE)
 

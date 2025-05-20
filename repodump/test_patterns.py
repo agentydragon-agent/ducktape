@@ -1,5 +1,6 @@
-from .patterns import path_pattern_to_regex, path_match
 import pytest
+
+from .patterns import path_match, path_pattern_to_regex
 
 
 def test_path_pattern_to_regex_basic():

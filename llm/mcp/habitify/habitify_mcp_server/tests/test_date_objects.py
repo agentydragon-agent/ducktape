@@ -29,7 +29,7 @@ async def test_check_habit_status_async_returns_date_object(client):
     mock_resp.json.return_value = {"data": {"status": "completed"}}
 
     # Patch the client's request method
-    with patch.object(client.client, "get", return_value=mock_resp) as mock_get:
+    with patch.object(client.client, "get", return_value=mock_resp):
         # Call the method with a string date
         status = await client.check_habit_status_async("test-habit-id", "2025-01-15")
 

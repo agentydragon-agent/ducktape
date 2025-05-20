@@ -14,7 +14,7 @@ import pytest
 import yaml
 
 from ..habitify_client import HabitifyClient, HabitifyError
-from ..types import Habit, HabitStatus, Area
+from ..types import Area, Habit, HabitStatus
 
 # Path to the API reference examples
 REFERENCE_DIR = os.path.join(

@@ -10,20 +10,14 @@ To auto-add transactions:
 
 import datetime
 import glob
-import yaml
 import re
 
-
-from absl import app
-from absl import flags
-from absl import logging
-import xdg
 import gnucash
-
+import xdg
+import yaml
+from absl import app, flags, logging
 from ducktape.finance import gnucash_util
-from ducktape.finance.reconcile import ubs_lib
-from ducktape.finance.reconcile import ubs_credit_card_lib
-from ducktape.finance.reconcile import splitwise_lib
+from ducktape.finance.reconcile import splitwise_lib, ubs_credit_card_lib, ubs_lib
 
 # variables = globals().copy()
 # variables.update(locals())

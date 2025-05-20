@@ -1,15 +1,13 @@
-import csv
-import io
-import decimal
-import datetime
-import hashlib
 import base64
-
+import csv
+import datetime
+import decimal
+import hashlib
+import io
 from typing import Dict
 
-from ducktape.finance.reconcile import external_system
-
 from absl import logging
+from ducktape.finance.reconcile import external_system
 
 # TODO: compute hash from everything
 

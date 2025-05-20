@@ -3,14 +3,13 @@
 import pytest
 from fastapi import Request
 from fastapi.security import HTTPAuthorizationCredentials
-
-from server.config import BearerAuth, NoAuth
 from server.auth.webhook_auth import (
     AuthError,
     BearerAuthHandler,
     NoAuthHandler,
     create_auth_handler,
 )
+from server.config import BearerAuth, NoAuth
 
 
 @pytest.fixture

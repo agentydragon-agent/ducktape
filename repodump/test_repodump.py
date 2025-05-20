@@ -1,7 +1,9 @@
 import os
-from click.testing import CliRunner
-from . import main
+
 import pytest
+from click.testing import CliRunner
+
+from . import main
 
 
 @pytest.fixture

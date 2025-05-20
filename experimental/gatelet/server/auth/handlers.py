@@ -9,9 +9,9 @@ from fastapi import Depends
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..config import settings
 from ..database import get_db_session
 from ..models import AdminSession, AuthCRSession, AuthKey
-from ..config import settings
 from .key_auth import KeyAuthError, validate_key
 
 logger = logging.getLogger(__name__)

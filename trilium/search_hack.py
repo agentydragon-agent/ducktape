@@ -1,12 +1,11 @@
-from absl import app
-import pandas as pd
-import openai
-import os.path
 import datetime
-import requests
 import json
-from absl import flags
+import os.path
 
+import openai
+import pandas as pd
+import requests
+from absl import app, flags
 
 # needs: pip install plotly sklearn
 from openai.embeddings_utils import cosine_similarity
@@ -17,8 +16,7 @@ EMBEDDINGS_FILE = "embeddings.json"
 
 
 def fetch_openai_api_key():
-    token = _TOKEN.value
-    root = _ROOT.value
+    token, root = _TOKEN.value, _ROOT.value
     headers = {"Authorization": token}
 
     response = requests.get(
@@ -209,9 +207,6 @@ def index():
 
 
 def search(query):
-    token = _TOKEN.value
-    root = _ROOT.value
-
     openai.api_key = fetch_openai_api_key()
 
     with open(EMBEDDINGS_FILE, "r") as f:

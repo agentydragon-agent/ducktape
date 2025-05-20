@@ -1,6 +1,7 @@
 # custom_components/indoor_aqi/__init__.py
 
 import logging
+
 from homeassistant import config_entries
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant

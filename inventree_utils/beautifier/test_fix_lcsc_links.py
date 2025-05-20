@@ -1,4 +1,5 @@
 import pytest
+
 from .fix_lcsc_links import normalize_url
 
 

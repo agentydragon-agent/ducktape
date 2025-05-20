@@ -1,8 +1,8 @@
 # Pass arguments to rcup, check it didn't ask for confirmation.
 import re
-import sys
-import subprocess
 import shlex
+import subprocess
+import sys
 
 argv = sys.argv[1:]
 args = ["rcup"] + argv

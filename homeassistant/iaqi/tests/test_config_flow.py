@@ -2,8 +2,9 @@
 
 from custom_components.indoor_aqi import DOMAIN
 from hamcrest import assert_that, contains_string, equal_to, has_entries
-from homeassistant import config_entries
 from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+from homeassistant import config_entries
 
 
 async def _init_config_flow(hass, source=config_entries.SOURCE_IMPORT, data=None):

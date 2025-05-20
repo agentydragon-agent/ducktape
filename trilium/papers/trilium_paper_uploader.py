@@ -1,11 +1,10 @@
-import requests
-from absl import app
-from absl import flags
-from tqdm.auto import tqdm
 import re
-import feedparser
-
 from typing import Optional
+
+import feedparser
+import requests
+from absl import app, flags
+from tqdm.auto import tqdm
 
 _ROOT = flags.DEFINE_string("root", "http://localhost:37840", "ETAPI root URL")
 _TOKEN = flags.DEFINE_string("token", None, "ETAPI token")
