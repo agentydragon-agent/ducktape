@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import settings
 from ..database import get_db_session
-from ..models import AdminSession, AuthKey
+from ..models import AdminSession, AuthCRSession, AuthKey
 from ..security import verify_password
 from ..shared import templates
 
@@ -173,4 +173,108 @@ async def revoke_key(
         key.revoked_at = datetime.now()
         await db_session.flush()
     response = RedirectResponse("/admin/keys/", status_code=302)
+    return response
+
+
+@router.get("/admin/admin-sessions/", response_class=HTMLResponse)
+async def list_admin_sessions(
+    request: Request,
+    admin_session: AdminSession = Depends(_get_admin_session),
+    db_session: AsyncSession = Depends(get_db_session),
+    csrf_protect: CsrfProtect = Depends(),
+) -> HTMLResponse:
+    sessions = (
+        (
+            await db_session.execute(
+                select(AdminSession).order_by(AdminSession.created_at)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    token, signed = csrf_protect.generate_csrf_tokens()
+    response = templates.TemplateResponse(
+        "admin_sessions.html",
+        {
+            "request": request,
+            "sessions": sessions,
+            "csrf_token": token,
+            "session_type": "admin",
+        },
+    )
+    csrf_protect.set_csrf_cookie(signed, response)
+    return response
+
+
+@router.post(
+    "/admin/admin-sessions/{session_id}/invalidate", response_class=RedirectResponse
+)
+async def invalidate_admin_session(
+    session_id: int,
+    request: Request,
+    admin_session: AdminSession = Depends(_get_admin_session),
+    db_session: AsyncSession = Depends(get_db_session),
+    csrf_protect: CsrfProtect = Depends(),
+) -> Response:
+    await csrf_protect.validate_csrf(request)
+    stmt = select(AdminSession).where(AdminSession.id == session_id)
+    sess = (await db_session.execute(stmt)).scalar_one_or_none()
+    if sess:
+        await db_session.delete(sess)
+        await db_session.flush()
+
+    response = RedirectResponse("/admin/admin-sessions/", status_code=302)
+    if sess and sess.session_token == request.cookies.get("admin_session"):
+        response.delete_cookie("admin_session")
+    return response
+
+
+@router.get("/admin/llm-sessions/", response_class=HTMLResponse)
+async def list_llm_sessions(
+    request: Request,
+    admin_session: AdminSession = Depends(_get_admin_session),
+    db_session: AsyncSession = Depends(get_db_session),
+    csrf_protect: CsrfProtect = Depends(),
+) -> HTMLResponse:
+    sessions = (
+        (
+            await db_session.execute(
+                select(AuthCRSession).order_by(AuthCRSession.created_at)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    token, signed = csrf_protect.generate_csrf_tokens()
+    response = templates.TemplateResponse(
+        "admin_sessions.html",
+        {
+            "request": request,
+            "sessions": sessions,
+            "csrf_token": token,
+            "session_type": "llm",
+        },
+    )
+    csrf_protect.set_csrf_cookie(signed, response)
+    return response
+
+
+@router.post(
+    "/admin/llm-sessions/{session_id}/invalidate", response_class=RedirectResponse
+)
+async def invalidate_llm_session(
+    session_id: int,
+    request: Request,
+    admin_session: AdminSession = Depends(_get_admin_session),
+    db_session: AsyncSession = Depends(get_db_session),
+    csrf_protect: CsrfProtect = Depends(),
+) -> Response:
+    await csrf_protect.validate_csrf(request)
+    stmt = select(AuthCRSession).where(AuthCRSession.id == session_id)
+    sess = (await db_session.execute(stmt)).scalar_one_or_none()
+    if sess:
+        await db_session.delete(sess)
+        await db_session.flush()
+
+    response = RedirectResponse("/admin/llm-sessions/", status_code=302)
     return response
