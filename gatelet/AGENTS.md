@@ -93,10 +93,10 @@ Before committing, run `pre-commit`.
 ## Run environment
 
 If you are OpenAI Codex, you are probably running in an environment that has no internet
-access, but was previously initialized by running `experimental/gatelet/setup.sh` from repo root before
+access, but was previously initialized by running `gatelet/setup.sh` from repo root before
 internet access was turned off.
 
-If you need to add a new dependency, set it up to be installed by the `experimental/gatelet/setup.sh` script.
+If you need to add a new dependency, set it up to be installed by the `gatelet/setup.sh` script.
 You will not be able to install it yourself, but you will help by giving the commands
 needed to install it for future runs.
 
@@ -116,5 +116,5 @@ interactive elements so models can follow them reliably.
 Key-in-path and challenge-response authentication are implemented, and webhook
 handling works. The admin login and key management pages are functional. Home
 Assistant integration currently only lists entity states, and the admin session
-overview and log pages are still missing. Refer to `experimental/gatelet/TODO.md`
+overview and log pages are still missing. Refer to `gatelet/TODO.md`
 for details.
