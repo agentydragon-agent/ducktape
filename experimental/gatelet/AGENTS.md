@@ -88,7 +88,7 @@ alembic revision --autogenerate -m "Description of changes"
 
 ## Tools to Run Before Committing
 
-Before committing, run `black`, `pylint`, `mypy`.
+Before committing, run `pre-commit`.
 
 ## Run environment
 
