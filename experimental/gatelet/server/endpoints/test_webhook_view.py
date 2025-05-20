@@ -6,22 +6,11 @@ import pytest
 from hamcrest import all_of, assert_that, contains_string
 from httpx import AsyncClient
 from server.models import WebhookIntegration, WebhookPayload
+from server.shared import templates
 from server.tests.utils import persist
 from sqlalchemy.ext.asyncio import AsyncSession
 
-
-@pytest.fixture(autouse=True)
-def _override_get_db(monkeypatch, db_session: AsyncSession):
-    from contextlib import asynccontextmanager
-
-    @asynccontextmanager
-    async def _override():
-        yield db_session
-
-    monkeypatch.setattr("server.database.get_db_session", _override)
-    from server.shared import templates
-
-    templates.env.globals.update({"max": max, "min": min})
+templates.env.globals.update({"max": max, "min": min})
 
 
 @pytest.mark.asyncio

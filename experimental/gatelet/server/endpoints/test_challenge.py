@@ -1,7 +1,6 @@
 """Tests for challenge-response authentication endpoints."""
 
 import html
-from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from http import HTTPStatus
 
@@ -12,15 +11,6 @@ from server.endpoints.challenge import COMPUTE_OPTION_SOURCE, compute_correct_op
 from server.models import AuthCRSession, AuthKey, AuthNonce  # type: ignore[import]
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-
-
-@pytest.fixture(autouse=True)
-def _override_get_db(monkeypatch, db_session: AsyncSession):
-    @asynccontextmanager
-    async def _override():
-        yield db_session
-
-    monkeypatch.setattr("server.database.get_db_session", _override)
 
 
 @pytest.mark.asyncio
