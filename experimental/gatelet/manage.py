@@ -1,23 +1,23 @@
 """Command line utilities for Gatelet management."""
 
 from __future__ import annotations
+
 import argparse
+import asyncio
 import getpass
 from typing import Iterable
+
 import tomllib
-from tomlkit import dumps
-
-from sqlalchemy import func, select
-
-from server.config import settings, CONFIG_PATH
+from server.config import CONFIG_PATH, settings
 from server.models import (
     Base,
-    get_engine,
-    get_session_maker,
     WebhookIntegration,
     WebhookPayload,
 )
 from server.security import hash_password
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from tomlkit import dumps
 
 
 def _confirm(prompt: str) -> bool:
@@ -26,31 +26,37 @@ def _confirm(prompt: str) -> bool:
     return resp == "y"
 
 
-def _entity_counts(session) -> Iterable[tuple[str, int]]:
+async def _entity_counts(session: AsyncSession) -> Iterable[tuple[str, int]]:
     """Return row counts for all tables."""
     counts = []
     for table in Base.metadata.sorted_tables:
-        cnt = session.execute(select(func.count()).select_from(table)).scalar()  # pylint: disable=not-callable
+        result = await session.execute(select(func.count()).select_from(table))
+        cnt = result.scalar()
         counts.append((table.name, cnt))
     return counts
 
 
-def reset_db() -> None:
+async def reset_db() -> None:
     """Drop and recreate tables and populate with sample data."""
-    engine = get_engine(str(settings.database.dsn))
-    Session = get_session_maker(engine)
-    with Session() as session:
-        counts = _entity_counts(session)
+    engine = create_async_engine(str(settings.database.dsn), future=True)
+    Session = async_sessionmaker(engine, expire_on_commit=False, autoflush=False)
+
+    async with Session() as session:
+        counts = await _entity_counts(session)
         if any(cnt > 0 for _, cnt in counts):
             print("Current entity counts:")
             for name, cnt in counts:
                 print(f"  {name}: {cnt}")
             if not _confirm("Drop and recreate the database?"):
                 print("Aborted.")
+                await engine.dispose()
                 return
-    Base.metadata.drop_all(engine)
-    Base.metadata.create_all(engine)
-    with Session.begin() as session:  # pylint: disable=no-member
+
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
+        await conn.run_sync(Base.metadata.create_all)
+
+    async with Session.begin() as session:
         # Sample integration and payloads for UI demos
         integ = WebhookIntegration(
             name="sample",
@@ -60,7 +66,7 @@ def reset_db() -> None:
             is_enabled=True,
         )
         session.add(integ)
-        session.flush()
+        await session.flush()
         for i in range(3):
             session.add(
                 WebhookPayload(
@@ -69,6 +75,7 @@ def reset_db() -> None:
                     payload={"sample": i},
                 )
             )
+    await engine.dispose()
     print("Database initialized with sample webhook payloads.")
 
 
@@ -100,7 +107,7 @@ def main() -> None:
 
     args = parser.parse_args()
     if args.cmd == "reset-db":
-        reset_db()
+        asyncio.run(reset_db())
     elif args.cmd == "change-password":
         change_password(args.password)
 
