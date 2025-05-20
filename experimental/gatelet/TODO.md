@@ -15,5 +15,4 @@ plan in `ha-api-task.txt`.
 - Expand the Home Assistant integration with history and trend views for
   configured entities
 - Provide reporter scripts to send device events to Gatelet
-- Resolve remaining TODO comments in the code (e.g. redirect after login,
-  integration filtering)
+- Resolve remaining TODO comments in the code (e.g. redirect after login)
