@@ -175,12 +175,13 @@ The project is implemented in phases:
 4. **Phase 4** – Human Admin Interface *(in progress)*
    - Password‑based admin login implemented
    - Key management pages available
-   - Session management and log views pending
+  - Session management implemented
+  - Log inspection page available
 
 ## Current Status
 
 Gatelet runs with both key‑in‑path and challenge‑response authentication.
 Webhooks can be received and browsed. The admin login and key management pages
 are operational, and Home Assistant entity states can be listed. Session
-management views, log inspection and historical Home Assistant data are still
-pending. See `gatelet/TODO.md` for the remaining tasks.
+management views and historical Home Assistant data are still pending.
+See `gatelet/TODO.md` for the remaining tasks.
