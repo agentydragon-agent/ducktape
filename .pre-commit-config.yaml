@@ -1,17 +1,25 @@
 repos:
+  # Safety guard: block pushes to protected branches
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
     hooks:
       - id: no-commit-to-branch
 
+  # Ruff = linter + import sorter + formatter
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.11.10
     hooks:
       - id: ruff-check
-        args: [--extend-select, PL]   # turn on Pylint-equivalent rules
+        args: [--fix, --extend-select, PL,I]
       - id: ruff-format
+
+  # Static type checking
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v1.10.0
     hooks:
       - id: mypy
-        additional_dependencies: [types-requests]   # extras as needed
+        additional_dependencies:
+          # deps of gatelet that still lack bundled typings
+          - types-psycopg2    # stubs for psycopg2-binary
+          - types-python-dateutil  # indirect via httpx / fastapi
+

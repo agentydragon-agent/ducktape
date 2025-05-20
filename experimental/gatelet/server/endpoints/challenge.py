@@ -16,14 +16,25 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..auth.handlers import AuthHandlerError
 from ..config import settings
 from ..database import get_db_session
-from ..models import AuthCRSession, AuthKey, AuthNonce
+from ..models import AuthCRSession, AuthKey, AuthNonce  # type: ignore[import]
 from ..shared import templates
 
 
+MAX_OPTIONS = 256
+
+
 def compute_correct_option(key_value: str, nonce_value: str, num_options: int) -> int:
-    """Compute the correct option for the given key and nonce."""
-    digest = hashlib.sha256(f"{key_value}{nonce_value}".encode()).hexdigest()
-    return int(digest[-2:], 16) % num_options
+    """Compute the correct option for the given key and nonce.
+
+    ``num_options`` must be a power of two and no greater than 256 to ensure
+    equal probability distribution based solely on the final byte of the hash.
+    """
+
+    assert 0 < num_options <= MAX_OPTIONS, "num_options must be between 1 and 256"
+    assert num_options & (num_options - 1) == 0, "num_options must be a power of two"
+
+    digest_byte = hashlib.sha256(f"{key_value}{nonce_value}".encode()).digest()[-1]
+    return digest_byte % num_options
 
 
 COMPUTE_OPTION_SOURCE = inspect.getsource(compute_correct_option)
