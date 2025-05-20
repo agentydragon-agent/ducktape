@@ -198,3 +198,10 @@
       acknowledged_version: v0.13.2
       asset_pattern: ".*-{{ ansible_architecture }}\\.deb$"
     method: deb
+
+- name: Start and enable ActivityWatch tunnel
+  systemd:
+    name: aw-tunnel.service
+    scope: user
+    state: started
+    enabled: yes

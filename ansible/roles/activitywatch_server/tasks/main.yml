@@ -1,0 +1,12 @@
+---
+# Dispatcher which decides whether ActivityWatch server should be enabled or disabled based
+# on the `activitywatch_state` variable ("present"/"absent").  Using a string mirrors
+# the familiar `state` parameter pattern found in many Ansible modules.
+
+- name: Include tasks to **enable** ActivityWatch server
+  ansible.builtin.include_tasks: enabled.yml
+  when: (activitywatch_state | default('present')) in ['present', 'enabled', 'on']
+
+- name: Include tasks to **disable** ActivityWatch server
+  ansible.builtin.include_tasks: disabled.yml
+  when: (activitywatch_state | default('present')) in ['absent', 'disabled', 'off']

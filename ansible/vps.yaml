@@ -172,6 +172,15 @@
         llm_html_host_port: 9000
       tags: llm-html
 
+    - name: ActivityWatch server
+      ansible.builtin.include_role:
+        name: activitywatch_server
+        apply:
+          tags: activitywatch
+      tags: activitywatch
+      vars:
+        activitywatch_state: present
+
   handlers:
     # Only triggers if nginx config files changed.
     - name: Reload nginx

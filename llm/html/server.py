@@ -21,6 +21,8 @@ from datetime import datetime
 from hashlib import blake2b, sha256
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
+import sys
+from typing import Final, List
 
 import markdown
 from jinja2 import Environment, FileSystemLoader

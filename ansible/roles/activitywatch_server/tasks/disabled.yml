@@ -1,0 +1,8 @@
+---
+# ActivityWatch server disabled – ensure the service is **not** running
+# Any on-disk data is retained so that the service can be re-enabled later without loss.
+
+- name: Stop and remove ActivityWatch Docker container if present
+  community.docker.docker_container:
+    name: aw-server
+    state: absent
