@@ -1,27 +1,23 @@
 """FastAPI application for Gatelet server."""
 
 import logging
-from pathlib import Path
-from typing import Any, Callable, Optional, Type
+from typing import Callable, Optional
 
 from fastapi import Cookie, Depends, FastAPI, Request, status
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from .shared import templates, BASE_DIR
 
-from .auth.handlers import (
-    AuthContext,
-    AuthHandlerError,
-    KeyPathAuthContext,
-    SessionAuthContext,
+from .auth.handlers import AuthContext, AuthHandlerError
+from .auth.dependencies import (
+    Auth,
+    get_key_path_auth_with_context,
+    get_session_auth_with_context,
 )
-from .auth.dependencies import Auth, get_key_path_auth_with_context, get_session_auth_with_context
 from .auth.webhook_auth import AuthError
 from .config import settings
-from .database import get_db_session
-from .endpoints import webhook_receive, webhook_view
+from .endpoints import challenge, webhook_receive, webhook_view
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +33,7 @@ app.mount(
 # Include routers
 app.include_router(webhook_receive.router)
 app.include_router(webhook_view.router)
+app.include_router(challenge.router)
 
 
 # Error handlers
@@ -58,6 +55,7 @@ async def auth_error_handler(request: Request, exc: AuthHandlerError):
 async def webhook_auth_error(request: Request, exc: AuthError):
     """Handle webhook auth errors in API-friendly way."""
     from fastapi.responses import JSONResponse
+
     return JSONResponse(
         status_code=status.HTTP_401_UNAUTHORIZED,
         content={"detail": "Authentication failed"},
@@ -125,4 +123,6 @@ register_with_all_auth_methods("/", authenticated_root_handler)
 
 # Register webhook routes with all auth methods
 register_with_all_auth_methods("/webhooks/", webhook_view.list_all_payloads)
-register_with_all_auth_methods("/webhooks/{integration_name}", webhook_view.list_integration_payloads)
+register_with_all_auth_methods(
+    "/webhooks/{integration_name}", webhook_view.list_integration_payloads
+)

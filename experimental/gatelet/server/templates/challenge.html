@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+
+{% block title %}Gatelet - Challenge{% endblock %}
+
+{% block content %}
+<section>
+    <h2>Authentication Challenge</h2>
+    {% if message %}<p>{{ message }}</p>{% endif %}
+    <p>Compute SHA256 of your secret key followed by the nonce value below.</p>
+    <p>Take the last two hexadecimal digits of the hash and choose the matching link.</p>
+    <p>Nonce: <code>{{ nonce_value }}</code></p>
+    <ul>
+    {% for opt in options %}
+        <li><a href="/cr/{{ key_id }}/{{ nonce_value }}/{{ opt }}">{{ opt }}</a></li>
+    {% endfor %}
+    </ul>
+</section>
+{% endblock %}
