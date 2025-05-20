@@ -1,6 +1,5 @@
-# Default variables for the activitywatch role
-activitywatch_version: "0.13.2"          # upstream tag
-activitywatch_bind_ip: "127.0.0.1"       # keep server local-only
-activitywatch_port: 5600                 # internal API port
+# Default variables for the activitywatch role.
+# Kept bound only on 127.0.0.1.
+activitywatch_port: 5600               # internal API port
 activitywatch_data_dir: "/opt/activitywatch/data"
-activitywatch_state: "present"           # whether service should be running (present/absent)
+activitywatch_state: "present"         # whether service should be running (present/absent)

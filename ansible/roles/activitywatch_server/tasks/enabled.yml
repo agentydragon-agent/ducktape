@@ -1,27 +1,41 @@
 ---
 # ActivityWatch server enabled - ensure the service is running
 #
-# TODO: this should not be world-readable
+# TODO: dedupe w/ tunneled_activitywatch.yml
+- name: Install ActivityWatch via dpkg from GitHub
+  become: true
+  github_release_install:
+    release_spec:
+      repo: ActivityWatch/activitywatch
+      version: v0.13.2
+      acknowledged_version: v0.13.2
+      asset_pattern: ".*-{{ ansible_architecture }}\\.deb$"
+    method: deb
 
-- name: Ensure data directory exists
-  ansible.builtin.file:
+- name: Create aw-server user
+  become: true
+  user:
+    name: aw-server
+    system: yes
+    create_home: no
+
+- name: Make aw-server data dir
+  become: true
+  file:
     path: "{{ activitywatch_data_dir }}"
     state: directory
-    mode: "0755"
+    owner: aw-server
+    mode: 0755 # TODO: this should not be world-readable
 
-- name: Pull aw-server-rust image
-  community.docker.docker_image:
-    name: ghcr.io/activitywatch/aw-server-rust
-    tag: "{{ activitywatch_version }}"
-    source: pull
+- name: Install systemd service for aw-server
+  template:
+    src: aw-server.service.j2
+    dest: /etc/systemd/system/aw-server.service
+    mode: "0644"
 
-- name: Run aw-server container
-  community.docker.docker_container:
+- name: Reload systemd and enable+start service
+  systemd:
+    daemon_reload: true
     name: aw-server
-    image: "ghcr.io/activitywatch/aw-server-rust:{{ activitywatch_version }}"
-    restart_policy: unless-stopped
-    published_ports:
-      - "{{ activitywatch_bind_ip }}:{{ activitywatch_port }}:5600"
-    volumes:
-      - "{{ activitywatch_data_dir }}:/data"
     state: started
+    enabled: true

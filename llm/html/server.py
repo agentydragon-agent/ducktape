@@ -23,6 +23,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 import sys
 from typing import Final, List
+from zoneinfo import ZoneInfo
 
 import markdown
 from jinja2 import Environment, FileSystemLoader
@@ -96,26 +97,98 @@ class TokenScheme:
         digest = hmac.new(self.secret, date.encode(), sha256).digest()[:size]
         return bytes_b58(digest, self._AUTH_LEN)
 
+    class VerificationError(ValueError):
+        """Aggregates all individual verification failures."""
+
+        def __init__(self, issues: list[str]):
+            super().__init__("; ".join(issues))
+            self.issues = issues
+
     def verify_token(self, token: str):
-        if not token.startswith(self._VERSION):
-            raise ValueError("Invalid token version")
+        """Validate *token* against the current document & secret.
 
-        try:
-            date, rest = token.removeprefix(self._VERSION).rsplit("-", 1)
-            doc_act, rest = rest[: self._DOC_LEN], rest[self._DOC_LEN :]
-            pub_act, priv_act = rest[: self._PUB_LEN], rest[self._PUB_LEN :]
-        except ValueError:
-            raise ValueError("Invalid token format")
+        The method checks every individual component and collects *all*
+        mismatches so callers receive a full report in one go instead of being
+        forced to fix issues one-by-one.  A single aggregated
+        :pyclass:`VerificationError` is raised if any problem is detected.
+        """
 
-        if self._doc_hash() != doc_act:
-            raise ValueError("Document hash mismatch")
+        issues: list[str] = []
 
-        pub_exp = self._public_auth(date)
-        if pub_act != pub_exp:
-            raise ValueError("Public hash mismatch")
-        exp_auth = self._private_auth(date)
-        if not hmac.compare_digest(priv_act, exp_auth):
-            raise ValueError("Private hash mismatch")
+        # ─── basic structure ───────────────────────────────────────────────
+        if ":" not in token:
+            raise self.VerificationError(["Token is missing ':' separator"])  # nothing more we can do
+
+        version_str, payload = token.split(":", 1)
+
+        if version_str != self._VERSION:
+            issues.append(
+                f"Version mismatch (expected={self._VERSION}, got={version_str or '<empty>'})"
+            )
+
+        # Payload is expected to look like “MMDD-HH:MM-<digest>”
+        parts = payload.split("-", 2)
+        if len(parts) < 2:
+            issues.append("Token payload is incomplete – expected date & digest parts")
+            raise self.VerificationError(issues)
+
+        mmdd, hhmm = parts[0], parts[1]
+        digest = parts[2] if len(parts) == 3 else ""
+
+        # Validate date components early so that later checks can decide if
+        # they can rely on *date*.
+        date_valid = True
+        if len(mmdd) != 4 or not mmdd.isdigit():
+            issues.append(f"Invalid MMDD component: '{mmdd}'")
+            date_valid = False
+
+        if len(hhmm) != 5 or hhmm[2] != ":" or not (hhmm[:2].isdigit() and hhmm[3:].isdigit()):
+            issues.append(f"Invalid HH:MM component: '{hhmm}'")
+            date_valid = False
+
+        date = f"{mmdd}-{hhmm}" if date_valid else None
+
+        # ─── digest parts (may be incomplete) ──────────────────────────────
+        doc_act = digest[: self._DOC_LEN]
+        pub_act = digest[self._DOC_LEN : self._DOC_LEN + self._PUB_LEN]
+        priv_act = digest[self._DOC_LEN + self._PUB_LEN :]
+
+        # Document hash check
+        if len(doc_act) != self._DOC_LEN:
+            issues.append(
+                f"Document hash incomplete ({len(doc_act)}/{self._DOC_LEN} characters provided)"
+            )
+        else:
+            doc_exp = self._doc_hash()
+            if doc_act != doc_exp:
+                issues.append("Document hash mismatch")
+
+        # Public hash check (depends on date)
+        if len(pub_act) != self._PUB_LEN:
+            issues.append(
+                f"Public hash incomplete ({len(pub_act)}/{self._PUB_LEN} characters provided)"
+            )
+        elif date is None:
+            issues.append("Cannot verify public hash due to invalid date")
+        else:
+            pub_exp = self._public_auth(date)
+            if pub_act != pub_exp:
+                issues.append("Public hash mismatch")
+
+        # Private hash check (depends on date)
+        if len(priv_act) != self._AUTH_LEN:
+            issues.append(
+                f"Private hash incomplete ({len(priv_act)}/{self._AUTH_LEN} characters provided)"
+            )
+        elif date is None:
+            issues.append("Cannot verify private hash due to invalid date")
+        else:
+            priv_exp = self._private_auth(date)
+            if not hmac.compare_digest(priv_act, priv_exp):
+                issues.append("Private hash mismatch")
+
+        if issues:
+            raise self.VerificationError(issues)
 
 
 env = Environment(loader=FileSystemLoader("."), trim_blocks=True, lstrip_blocks=True)
@@ -127,7 +200,9 @@ class Handler(BaseHTTPRequestHandler):
         text = (Path(__file__).parent / "index.md").read_text()
         ts = TokenScheme(b"hunter2", text)
 
-        prefix, bits = ts.make_token(datetime.now())
+        # Use San Francisco timezone (America/Los_Angeles)
+        sf_time = datetime.now(ZoneInfo("America/Los_Angeles"))
+        prefix, bits = ts.make_token(sf_time)
 
         text = tpl.render(
             prefix=prefix,
@@ -143,7 +218,9 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(html)
 
 
-if __name__ == "__main__":
+def _start_server(host: str = "0.0.0.0", port: int = 9000):
+    """Start the HTTP server – extracted so that the CLI stays tidy."""
+
     # Bind to all interfaces so that Docker port-forwarding works.  Inside a
     # container the service is usually accessed via the container’s bridge
     # address (e.g. 172.x.x.x), not 127.0.0.1.  Listening only on the loopback
@@ -151,7 +228,83 @@ if __name__ == "__main__":
     # results in a “connection reset” error even though the container is up and
     # its health-check may pass.  Using 0.0.0.0 exposes the service on every
     # interface while remaining just as safe inside the isolated container.
-    host, port = "0.0.0.0", 9000
-
     print(f"Starting server on http://{host}:{port}")
     HTTPServer((host, port), Handler).serve_forever()
+
+
+def _verify_cli(token: str, *, secret: str = "hunter2", doc_path: str = "index.md") -> int:
+    """Command-line helper to *verify* a token and print a human readable report.
+
+    Returns an exit-code alike integer so the caller can ``sys.exit`` with it.
+    """
+
+    try:
+        doc = Path(doc_path).read_text()
+    except FileNotFoundError:
+        print(f"ERROR: Document file '{doc_path}' not found", file=sys.stderr)
+        return 2
+
+    ts = TokenScheme(secret.encode(), doc)
+
+    try:
+        ts.verify_token(token)
+    except TokenScheme.VerificationError as exc:
+        print("Token verification FAILED:")
+        for issue in exc.issues:
+            print(f"  ✗ {issue}")
+        return 1
+
+    print("Token verification succeeded – all checks passed ✅")
+    return 0
+
+
+def _build_arg_parser() -> "argparse.ArgumentParser":
+    import argparse
+
+    p = argparse.ArgumentParser(description="Token demo web-server & verifier")
+    sub = p.add_subparsers(dest="command", required=False)
+
+    # --- serve -------------------------------------------------------------
+    serve = sub.add_parser("serve", help="Start the demo web server (default)")
+    serve.add_argument("--host", default="0.0.0.0", help="Interface to bind to")
+    serve.add_argument("--port", type=int, default=9000, help="TCP port to listen on")
+
+    # --- verify ------------------------------------------------------------
+    verify = sub.add_parser("verify", help="Verify a token against the current document")
+    verify.add_argument("token", help="The token to be verified")
+    verify.add_argument(
+        "--doc",
+        default="index.md",
+        help="Path to the markdown document the token was generated for (default: index.md)",
+    )
+    verify.add_argument(
+        "--secret",
+        default="hunter2",
+        help="Shared secret that was used to generate the private component",
+    )
+
+    return p
+
+
+def main(argv: list[str] | None = None):
+    import argparse
+
+    parser = _build_arg_parser()
+    args = parser.parse_args(argv)
+
+    if args.command in (None, "serve"):
+        _start_server(host=getattr(args, "host", "0.0.0.0"), port=getattr(args, "port", 9000))
+    elif args.command == "verify":
+        exit_code = _verify_cli(
+            args.token,
+            secret=args.secret,
+            doc_path=args.doc,
+        )
+        sys.exit(exit_code)
+    else:
+        # Should not happen thanks to argparse choices
+        parser.error(f"Unknown command {args.command}")
+
+
+if __name__ == "__main__":
+    main()
