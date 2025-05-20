@@ -1,6 +1,5 @@
 """Challenge-response authentication endpoints."""
 
-=======
 from __future__ import annotations
 
 import hashlib
@@ -34,23 +33,17 @@ def _create_options(num_options: int) -> List[str]:
     """Create list of option strings."""
     return [str(i) for i in range(num_options)]
 
+
 router = APIRouter(tags=["auth"])
 
 
 async def _validate_key(key_id: int, db_session: AsyncSession) -> AuthKey:
     stmt = select(AuthKey).where(AuthKey.id == key_id)
     result = await db_session.execute(stmt)
-    key = result.scalar_one_or_none()
+    key: AuthKey | None = result.scalar_one_or_none()
     if not key or not key.is_valid(settings.auth.key_in_url.key_validity):
         raise AuthHandlerError()
     return key
-
-
-def _create_options(correct: str) -> List[str]:
-    options = {correct}
-    while len(options) < settings.auth.challenge_response.num_options:
-        options.add(random.randint(0, 255).to_bytes(1, "big").hex())
-    return sorted(options)
 
 
 async def _new_challenge(key: AuthKey, db_session: AsyncSession):

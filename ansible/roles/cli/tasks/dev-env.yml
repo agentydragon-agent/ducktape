@@ -66,3 +66,8 @@
     global: true
 
   # become: true
+
+- name: Install Bazelisk
+  community.general.npm:
+    name: '@bazel/bazelisk'
+    global: true

@@ -2,7 +2,7 @@
 # Make a copy, rename to gatelet.toml, and customize with your own values.
 
 [database]
-dsn = "postgresql://postgres:postgres@localhost:5432/gatelet"
+dsn = "postgresql+asyncpg://postgres:postgres@localhost:5432/gatelet"
 
 [server]
 host = "0.0.0.0"

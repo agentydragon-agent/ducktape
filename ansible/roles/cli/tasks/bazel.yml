@@ -1,10 +1,10 @@
-- name: Install Bazel
+- name: Manage Bazel
   when: ansible_architecture == "amd64"
   tags:
   - bazel
   become: true
   block:
-  - name: Add Bazel APT repository
+  - name: Manage Bazel APT repository
     ansible.builtin.deb822_repository:
       name: bazel
       types: [deb]
@@ -14,10 +14,10 @@
       suites: [stable]
       components: [jdk1.8]
       architectures: [amd64]  # no i386 included
-      state: present
-      enabled: yes
+      state: "{{ bazel_state | default('present') }}"
+      enabled: "{{ bazel_state | default('present') == 'present' }}"
 
-  - name: Install Bazel
+  - name: Manage Bazel package
     ansible.builtin.apt:
       pkg: bazel
-      state: present
+      state: "{{ bazel_state | default('present') }}"
