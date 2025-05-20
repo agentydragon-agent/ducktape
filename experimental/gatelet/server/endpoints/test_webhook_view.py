@@ -1,12 +1,13 @@
 """Tests for webhook viewing endpoints."""
 
-import pytest
-from hamcrest import assert_that, all_of, contains_string
-from httpx import AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession
+from http import HTTPStatus
 
+import pytest
+from hamcrest import all_of, assert_that, contains_string
+from httpx import AsyncClient
 from server.models import WebhookIntegration, WebhookPayload
 from server.tests.utils import persist
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 @pytest.fixture(autouse=True)
@@ -24,7 +25,6 @@ def _override_get_db(monkeypatch, db_session: AsyncSession):
 
 
 @pytest.mark.asyncio
-@pytest.mark.skip(reason="pagination rendering unstable in test env")
 async def test_list_all_payloads_key_auth(
     client: AsyncClient, db_session: AsyncSession, test_auth_key, monkeypatch
 ):
@@ -51,7 +51,7 @@ async def test_list_all_payloads_key_auth(
 
     # Use key-in-path authentication
     response = await client.get(f"/k/{test_auth_key.key_value}/webhooks/")
-    assert response.status_code == 200
+    assert response.status_code == HTTPStatus.OK
 
     # Check that the page contains the integration name and payload data
     assert_that(
@@ -60,7 +60,7 @@ async def test_list_all_payloads_key_auth(
             contains_string(integration.name),
             contains_string("test"),
             contains_string("data"),
-            contains_string("page=1"),
+            contains_string("page=2"),
         ),
     )
 
@@ -93,7 +93,7 @@ async def test_list_integration_payloads(
     response = await client.get(
         f"/k/{test_auth_key.key_value}/webhooks/{integration.name}"
     )
-    assert response.status_code == 200
+    assert response.status_code == HTTPStatus.OK
 
     # Check that the page contains the integration name and specific data
     assert_that(
@@ -113,7 +113,7 @@ async def test_list_nonexistent_integration(
     """Test listing a non-existent integration."""
     # Use key-in-path authentication
     response = await client.get(f"/k/{test_auth_key.key_value}/webhooks/nonexistent")
-    assert response.status_code == 404
+    assert response.status_code == HTTPStatus.NOT_FOUND
 
 
 @pytest.mark.asyncio
@@ -141,7 +141,7 @@ async def test_session_auth_webhooks(
 
     # Use session-based authentication
     response = await client.get(f"/s/{test_auth_session.session_token}/webhooks/")
-    assert response.status_code == 200
+    assert response.status_code == HTTPStatus.OK
 
     # Check that the page contains the integration name and session data
     assert_that(

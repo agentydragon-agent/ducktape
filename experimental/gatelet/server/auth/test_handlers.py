@@ -1,12 +1,10 @@
 """Tests for authentication handlers."""
 
-import pytest
 import uuid
 from datetime import datetime, timedelta
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import parse_qs, urlparse
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
+import pytest
 from server.auth.handlers import (
     AuthHandlerError,
     KeyPathAuthContext,
@@ -15,6 +13,7 @@ from server.auth.handlers import (
     session_auth,
 )
 from server.models import AuthCRSession, AuthKey
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 @pytest.mark.asyncio
@@ -59,12 +58,10 @@ async def test_session_auth_context():
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(5)  # 5 second timeout
-@pytest.mark.skip(reason="Test is freezing, needs resolved database connection issues")
 async def test_key_path_auth_valid(db_session: AsyncSession):
     """Test key_path_auth with valid key."""
     # Use a unique key value
     unique_id = uuid.uuid4().hex[:8]
-    print(f"Creating key with unique ID: {unique_id}")
 
     key = AuthKey(
         key_value=f"valid-test-key-{unique_id}",
@@ -74,20 +71,14 @@ async def test_key_path_auth_valid(db_session: AsyncSession):
     db_session.add(key)
     await db_session.flush()
 
-    print(f"Added key with ID {key.id} and value {key.key_value}")
-
     # Test with valid key - use the direct key_value rather than refreshing
-    print("Calling key_path_auth...")
     auth_context = await key_path_auth(key.key_value, db_session)
-    print("key_path_auth returned successfully")
 
     assert auth_context.key_value == key.key_value
-    print("Test completed successfully")
 
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(5)  # 5 second timeout
-@pytest.mark.skip(reason="Test is freezing, needs resolved database connection issues")
 async def test_key_path_auth_invalid(db_session: AsyncSession):
     """Test key_path_auth with invalid key."""
     # Test with invalid key
@@ -97,7 +88,6 @@ async def test_key_path_auth_invalid(db_session: AsyncSession):
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(5)  # 5 second timeout
-@pytest.mark.skip(reason="Test is freezing, needs resolved database connection issues")
 async def test_session_auth_valid(db_session: AsyncSession):
     """Test session_auth with valid session."""
     # Use unique values for key and session
@@ -131,7 +121,6 @@ async def test_session_auth_valid(db_session: AsyncSession):
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(5)  # 5 second timeout
-@pytest.mark.skip(reason="Test is freezing, needs resolved database connection issues")
 async def test_session_auth_invalid(db_session: AsyncSession):
     """Test session_auth with invalid session."""
     # Test with invalid session token
@@ -141,7 +130,6 @@ async def test_session_auth_invalid(db_session: AsyncSession):
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(5)  # 5 second timeout
-@pytest.mark.skip(reason="Test is freezing, needs resolved database connection issues")
 async def test_session_auth_expired(db_session: AsyncSession):
     """Test session_auth with expired session."""
     # Use unique values
