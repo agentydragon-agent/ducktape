@@ -67,6 +67,23 @@ make -C experimental/gatelet change-password # change the admin password
 
 `reset-db` displays the current row counts for all tables and asks for confirmation before dropping everything. It then creates a fresh admin account with password `gatelet`.
 
+### Testing and Development
+
+Install the project with development dependencies and run tests using `pytest`.
+When `IS_CODEX_ENV=1` is set, the test suite automatically launches a temporary
+PostgreSQL server and removes it after the tests finish.
+
+```bash
+pip install -e '.[dev]'
+pytest experimental/gatelet
+```
+
+Before committing, run:
+
+```bash
+pre-commit run --files <changed files>
+```
+
 ## LLM-Friendly Design
 
 Designed for current LLM constraints (as of May 2025), particularly OpenAI scheduled tasks with o3 model:
@@ -136,31 +153,28 @@ Gatelet supports multiple authentication methods:
 
 ## Implementation Plan
 
-The project will be implemented in phases:
+The project is implemented in phases:
 
-1. **Phase 1**: Webhooks with Key-in-Path Authentication
-   - Create package structure
-   - Implement basic webhook receiving and storage
-   - Implement key-in-path authentication
+1. **Phase 1** – Webhooks with Key‑in‑Path Authentication *(completed)*
+   - Basic FastAPI server and PostgreSQL schema
+   - Webhook receiving and storage
+   - Key‑in‑path authentication
 
-2. **Phase 2**: Challenge-Response Authentication
-   - Design challenge-response authentication mechanism
-   - Implement session management for LLMs
-   - Add time-limited tokens with extension mechanism
+2. **Phase 2** – Challenge‑Response Authentication *(completed)*
+   - Nonce‑based login flow for LLMs
+   - Session management with automatic extension
 
-3. **Phase 3**: Home Assistant Integration
-   - Add Home Assistant API client
-   - Create entity state display
-   - Implement history views for different entity types
+3. **Phase 3** – Home Assistant Integration *(pending)*
+   - Home Assistant API client
+   - Entity state and history views
 
-4. **Phase 4**: Human Admin Interface
-   - Add human authentication
-   - Create admin dashboard
-   - Implement key management
+4. **Phase 4** – Human Admin Interface *(in progress)*
+   - Password‑based admin login (implemented)
+   - Dashboard with session and key management
 
 ## Current Status
 
-The repository contains the initial FastAPI server with database models,
-key-in-path authentication and webhook endpoints. Challenge-response login,
-Home Assistant integration and the human admin interface are not yet
-implemented. See `TODO.md` in the repository root for the remaining tasks.
+Gatelet runs with both key‑in‑path and challenge‑response authentication.
+Webhooks can be received and browsed, and a minimal password-based admin login
+is available. Home Assistant integration and full admin dashboards are still
+missing. See `TODO.md` in the repository root for the remaining tasks.
