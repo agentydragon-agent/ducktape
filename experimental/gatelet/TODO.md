@@ -10,7 +10,8 @@ is available. The tasks below track what is still needed to fully implement the
 plan in `ha-api-task.txt`.
 
 - Finish the human admin interface:
-  - List and invalidate active sessions
+  - ~~List and invalidate active admin sessions~~ (done)
+  - ~~List and invalidate active LLM sessions~~ (done)
   - Expose log inspection pages
 - Expand the Home Assistant integration with history and trend views for
   configured entities

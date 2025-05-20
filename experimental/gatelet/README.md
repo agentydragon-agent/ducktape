@@ -117,8 +117,8 @@ Gatelet supports multiple authentication methods:
    - Success grants session with time-limited links
 
 3. **Human Admin Authentication** - Standard username/password for human administrators
-   - Uses cookies for session management
-   - Provides access to logs, session management, and key administration
+   - Uses cookies for **admin session** management
+   - Provides access to logs, session management for both **admin** and **LLM** sessions, and key administration
 
 ## Authentication and Session Terms
 
@@ -147,9 +147,10 @@ Gatelet supports multiple authentication methods:
 - Trend data for continuous sensors (temperature, humidity, etc.)
 
 ### Session Management
-- Challenge-based authentication for LLMs
+- Challenge-based authentication for LLMs (LLM sessions)
 - Time-limited tokens with automatic extension
-- Human admin interface for viewing sessions, managing keys, and monitoring logs
+- Human admin interface for viewing **admin sessions**
+  and **LLM sessions**, managing keys, and monitoring logs
 
 ## Implementation Plan
 
