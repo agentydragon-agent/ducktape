@@ -32,7 +32,7 @@ server {
     }
 
     location /l {
-        return 302 https://www.agentydragon.com/llm/index.html;
+        return 302 https://llm.agentydragon.com/;
     }
 
     # /llm/<FOO> → GitLab raw …/llm/<FOO>.txt
