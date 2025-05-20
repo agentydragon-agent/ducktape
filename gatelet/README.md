@@ -54,15 +54,15 @@ docker stop gatelet-db
 docker rm gatelet-db
 ```
 
-For development inside the Codex devcontainer, run `experimental/gatelet/setup.sh` from the repository root before network access is disabled.
+For development inside the Codex devcontainer, run `gatelet/setup.sh` from the repository root before network access is disabled.
 
 ### Administration
 
 Common management tasks are wrapped in a small `Makefile`:
 
 ```bash
-make -C experimental/gatelet reset-db        # initialize a fresh database
-make -C experimental/gatelet change-password # change the admin password
+make -C gatelet reset-db        # initialize a fresh database
+make -C gatelet change-password # change the admin password
 ```
 
 `reset-db` displays the current row counts for all tables and asks for confirmation before dropping everything. It then creates a fresh admin account with password `gatelet`.
@@ -75,7 +75,7 @@ PostgreSQL server and removes it after the tests finish.
 
 ```bash
 pip install -e '.[dev]'
-pytest experimental/gatelet
+pytest gatelet
 ```
 
 Before committing, run:
@@ -183,4 +183,4 @@ Gatelet runs with both key‑in‑path and challenge‑response authentication.
 Webhooks can be received and browsed. The admin login and key management pages
 are operational, and Home Assistant entity states can be listed. Session
 management views, log inspection and historical Home Assistant data are still
-pending. See `experimental/gatelet/TODO.md` for the remaining tasks.
+pending. See `gatelet/TODO.md` for the remaining tasks.

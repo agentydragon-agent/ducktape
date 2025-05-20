@@ -29,14 +29,14 @@ echo "export IS_CODEX_ENV=1" >> /root/.bashrc
 
 python_env_setup() {
     pip install --upgrade pip wheel
-    pip install -e experimental/gatelet[dev]
+    pip install -e gatelet[dev]
 
     # Install browsers (headless mode)
     # python -m playwright install --with-deps chromium-headless-shell # firefox webkit chromium
 }
 
 # pip install --upgrade pip setuptools wheel
-# VENV=experimental/gatelet/.venv
+# VENV=gatelet/.venv
 # python -m venv $VENV
 # source $VENV/bin/activate
 
