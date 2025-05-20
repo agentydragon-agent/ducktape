@@ -10,7 +10,7 @@ repos:
     rev: v0.11.10
     hooks:
       - id: ruff-check
-        args: [--fix, --extend-select, PL,I]
+        args: [--fix, "--extend-select=PL,I"]
       - id: ruff-format
 
   # Static type checking
