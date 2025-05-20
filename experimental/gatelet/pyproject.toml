@@ -24,6 +24,7 @@ dependencies = [
     "python-multipart>=0.0.9",
     "pydantic>=2.4.0",
     "compact_json>=1.0.0",
+    "homeassistant-api",
 ]
 
 [project.optional-dependencies]

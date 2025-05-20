@@ -22,4 +22,5 @@ repos:
           # deps of gatelet that still lack bundled typings
           - types-psycopg2    # stubs for psycopg2-binary
           - types-python-dateutil  # indirect via httpx / fastapi
+          - homeassistant-stubs
 
