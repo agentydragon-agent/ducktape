@@ -102,6 +102,8 @@ needed to install it for future runs.
 
 ## Project Status
 
-Key-in-path authentication and webhook handling are in place. Challenge-response
-login, Home Assistant integration and the admin interface still need to be
-implemented. Refer to `TODO.md` in the repository root for details.
+Key-in-path and challenge-response authentication are implemented, and webhook
+handling works. The admin login and key management pages are functional. Home
+Assistant integration currently only lists entity states, and the admin session
+overview and log pages are still missing. Refer to `experimental/gatelet/TODO.md`
+for details.
