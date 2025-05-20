@@ -8,6 +8,7 @@ dsn = "postgresql+asyncpg://postgres:postgres@localhost:5432/gatelet"
 host = "0.0.0.0"
 port = 8000
 log_level = "INFO"
+log_file = "gatelet.log"
 
 [auth.key_in_url]
 enabled = true
