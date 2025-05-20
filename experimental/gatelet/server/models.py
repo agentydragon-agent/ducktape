@@ -149,15 +149,6 @@ class AuthNonce(Base):
         return self.used_at is not None
 
 
-class AdminUser(Base):
-    """Model for administrator password."""
-
-    __tablename__ = "admin_users"
-
-    id = Column(Integer, primary_key=True)
-    password_hash = Column(String, nullable=False)
-
-
 class AdminSession(Base):
     """Admin session model."""
 

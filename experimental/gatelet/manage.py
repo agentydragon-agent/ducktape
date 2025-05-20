@@ -1,15 +1,22 @@
-from __future__ import annotations
-
 """Command line utilities for Gatelet management."""
 
+from __future__ import annotations
 import argparse
 import getpass
 from typing import Iterable
+import tomllib
+from tomlkit import dumps
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select
 
-from server.config import settings
-from server.models import AdminUser, Base, get_engine, get_session_maker
+from server.config import settings, CONFIG_PATH
+from server.models import (
+    Base,
+    get_engine,
+    get_session_maker,
+    WebhookIntegration,
+    WebhookPayload,
+)
 from server.security import hash_password
 
 
@@ -29,7 +36,7 @@ def _entity_counts(session) -> Iterable[tuple[str, int]]:
 
 
 def reset_db() -> None:
-    """Drop and recreate tables, set default admin password."""
+    """Drop and recreate tables and populate with sample data."""
     engine = get_engine(str(settings.database.dsn))
     Session = get_session_maker(engine)
     with Session() as session:
@@ -43,26 +50,43 @@ def reset_db() -> None:
                 return
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
-    with Session() as session:
-        admin = AdminUser(password_hash=hash_password("gatelet"))
-        session.add(admin)
-        session.commit()
-    print("Database initialized with default admin password 'gatelet'.")
+    with Session.begin() as session:  # pylint: disable=no-member
+        # Sample integration and payloads for UI demos
+        integ = WebhookIntegration(
+            name="sample",
+            description="Sample integration",
+            auth_type="none",
+            auth_config={"type": "none"},
+            is_enabled=True,
+        )
+        session.add(integ)
+        session.flush()
+        for i in range(3):
+            session.add(
+                WebhookPayload(
+                    integration_name=integ.name,
+                    integration_id=integ.id,
+                    payload={"sample": i},
+                )
+            )
+    print("Database initialized with sample webhook payloads.")
 
 
 def change_password(password: str | None) -> None:
-    """Change admin password."""
-    engine = get_engine(str(settings.database.dsn))
-    Session = get_session_maker(engine)
+    """Change admin password stored in the config file."""
+
     pwd = password or getpass.getpass("New admin password: ")
-    with Session.begin() as session:  # pylint: disable=no-member
-        admin = session.execute(select(AdminUser)).scalar_one_or_none()
-        hashed = hash_password(pwd)
-        if admin:
-            session.execute(update(AdminUser).values(password_hash=hashed))
-        else:
-            session.add(AdminUser(password_hash=hashed))
-    print("Admin password updated.")
+    hashed = hash_password(pwd)
+
+    with open(CONFIG_PATH, "rb") as f:
+        data = tomllib.load(f)
+
+    data.setdefault("admin", {})["password_hash"] = hashed
+
+    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+        f.write(dumps(data))
+
+    print("Admin password updated in config.")
 
 
 def main() -> None:
