@@ -1,0 +1,22 @@
+# ActivityWatch talks to VPS, not localhost
+- name: Start and enable ActivityWatch tunnel
+  systemd:
+    name: aw-tunnel.service
+    scope: user
+    state: started
+    enabled: yes
+
+# For reporting to webhook
+- name: ActivityWatch
+  become: true
+  github_release_install:
+    release_spec:
+      repo: ActivityWatch/activitywatch
+      version: v0.13.2
+      acknowledged_version: v0.13.2
+      asset_pattern: ".*-{{ ansible_architecture }}\\.deb$"
+    method: deb
+
+# aw-watcher-ask --interval 45m --jitter 15m --question "How focused are you? (1-5)"
+
+# TODO: maybe: pipx install aw-notify -- auto notifications

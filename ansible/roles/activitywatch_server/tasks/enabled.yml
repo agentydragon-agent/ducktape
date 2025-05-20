@@ -1,0 +1,27 @@
+---
+# ActivityWatch server enabled - ensure the service is running
+#
+# TODO: this should not be world-readable
+
+- name: Ensure data directory exists
+  ansible.builtin.file:
+    path: "{{ activitywatch_data_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Pull aw-server-rust image
+  community.docker.docker_image:
+    name: ghcr.io/activitywatch/aw-server-rust
+    tag: "{{ activitywatch_version }}"
+    source: pull
+
+- name: Run aw-server container
+  community.docker.docker_container:
+    name: aw-server
+    image: "ghcr.io/activitywatch/aw-server-rust:{{ activitywatch_version }}"
+    restart_policy: unless-stopped
+    published_ports:
+      - "{{ activitywatch_bind_ip }}:{{ activitywatch_port }}:5600"
+    volumes:
+      - "{{ activitywatch_data_dir }}:/data"
+    state: started
