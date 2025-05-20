@@ -4,8 +4,16 @@ import uuid
 from datetime import datetime, timedelta
 from typing import Optional
 
-from fastapi import (APIRouter, Cookie, Depends, Form, HTTPException, Request,
-                     status)
+from fastapi import (
+    APIRouter,
+    Cookie,
+    Depends,
+    Form,
+    HTTPException,
+    Request,
+    Response,
+    status,
+)
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -49,10 +57,20 @@ async def login(
     request: Request,
     password: str = Form(...),
     db_session: AsyncSession = Depends(get_db_session),
-) -> HTMLResponse:
+) -> Response:
     admin = await _get_admin(db_session)
-        status_code=status.HTTP_401_UNAUTHORIZED,
-    )
+    if not verify_password(password, admin.password_hash):
+        return templates.TemplateResponse(
+            "public.html",
+            {
+                "request": request,
+                "header": "Gatelet",
+                "show_admin_login": True,
+                "login_error": "Invalid password",
+                "llm_instructions": "To access this service as an LLM, follow the instructions provided by your user.",
+            },
+            status_code=status.HTTP_401_UNAUTHORIZED,
+        )
 
     session = AdminSession(
         session_token=uuid.uuid4().hex,

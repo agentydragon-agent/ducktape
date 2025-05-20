@@ -4,7 +4,7 @@ from typing import Annotated, Optional
 
 from fastapi import Cookie, Depends
 
-from ..database import get_db_session
+from .. import database
 from .handlers import (
     AuthContext,
     admin_auth,
@@ -33,14 +33,14 @@ Auth = Annotated[AuthContext, Depends(auth_dependency)]
 
 
 async def get_key_path_auth_with_context(key: str) -> AuthContext:
-    async with get_db_session() as session:
+    async with database.get_db_session() as session:
         auth_context = await key_path_auth(key, session)
         auth_dependency.set_context(auth_context)
         return auth_context
 
 
 async def get_session_auth_with_context(session_token: str) -> AuthContext:
-    async with get_db_session() as session:
+    async with database.get_db_session() as session:
         auth_context = await session_auth(session_token, session)
         auth_dependency.set_context(auth_context)
         return auth_context
@@ -51,7 +51,7 @@ async def get_admin_auth_with_context(
 ) -> AuthContext:
     if session_token is None:
         raise RuntimeError("No admin session")
-    async with get_db_session() as session:
+    async with database.get_db_session() as session:
         auth_context = await admin_auth(session_token, session)
         auth_dependency.set_context(auth_context)
         return auth_context
