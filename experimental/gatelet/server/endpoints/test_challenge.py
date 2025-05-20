@@ -1,6 +1,7 @@
 """Tests for challenge-response authentication endpoints."""
 
-import hashlib
+import html
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 
 import pytest
@@ -8,13 +9,13 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from server.models import AuthCRSession, AuthNonce, AuthKey  # type: ignore[import]
+from server.config import settings
+from server.endpoints.challenge import COMPUTE_OPTION_SOURCE, compute_correct_option
+from server.models import AuthCRSession, AuthKey, AuthNonce  # type: ignore[import]
 
 
 @pytest.fixture(autouse=True)
 def _override_get_db(monkeypatch, db_session: AsyncSession):
-    from contextlib import asynccontextmanager
-
     @asynccontextmanager
     async def _override():
         yield db_session
@@ -46,10 +47,13 @@ async def test_answer_challenge_success(
         .scalars()
         .first()
     )
-    digest = hashlib.sha256(
-        f"{test_auth_key.key_value}{nonce.nonce_value}".encode()
-    ).hexdigest()
-    answer = digest[-2:]
+    answer = str(
+        compute_correct_option(
+            test_auth_key.key_value,
+            nonce.nonce_value,
+            settings.auth.challenge_response.num_options,
+        )
+    )
     response = await client.get(f"/cr/{test_auth_key.id}/{nonce.nonce_value}/{answer}")
     assert response.status_code == 302
     session = (await db_session.execute(select(AuthCRSession))).scalar_one()
@@ -66,3 +70,14 @@ async def test_session_extension(
     await client.get(f"/s/{test_auth_session.session_token}/")
     await db_session.refresh(test_auth_session)
     assert test_auth_session.expires_at > original_exp
+
+
+@pytest.mark.asyncio
+async def test_challenge_template_contains_code(
+    client: AsyncClient, test_auth_key: AuthKey
+):
+    response = await client.get(f"/cr/{test_auth_key.id}")
+    assert response.status_code == 200
+
+    page_text = html.unescape(response.text)
+    assert COMPUTE_OPTION_SOURCE in page_text

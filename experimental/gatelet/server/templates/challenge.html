@@ -6,8 +6,9 @@
 <section>
     <h2>Authentication Challenge</h2>
     {% if message %}<p>{{ message }}</p>{% endif %}
-    <p>Compute SHA256 of your secret key followed by the nonce value below.</p>
-    <p>Take the last two hexadecimal digits of the hash and choose the matching link.</p>
+    <p>The following Python code computes the correct option using your secret key.</p>
+    <pre>{{ compute_source }}
+print(compute_correct_option(key, "{{ nonce_value }}", {{ num_options }}))</pre>
     <p>Nonce: <code>{{ nonce_value }}</code></p>
     <ul>
     {% for opt in options %}

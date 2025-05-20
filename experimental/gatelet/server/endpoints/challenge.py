@@ -1,7 +1,10 @@
 """Challenge-response authentication endpoints."""
 
+=======
+from __future__ import annotations
+
 import hashlib
-import random
+import inspect
 import uuid
 from datetime import datetime
 from typing import List
@@ -11,11 +14,25 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..auth.handlers import AuthHandlerError
 from ..config import settings
 from ..database import get_db_session
-from ..models import AuthKey, AuthNonce, AuthCRSession
+from ..models import AuthCRSession, AuthKey, AuthNonce
 from ..shared import templates
-from ..auth.handlers import AuthHandlerError
+
+
+def compute_correct_option(key_value: str, nonce_value: str, num_options: int) -> int:
+    """Compute the correct option for the given key and nonce."""
+    digest = hashlib.sha256(f"{key_value}{nonce_value}".encode()).hexdigest()
+    return int(digest[-2:], 16) % num_options
+
+
+COMPUTE_OPTION_SOURCE = inspect.getsource(compute_correct_option)
+
+
+def _create_options(num_options: int) -> List[str]:
+    """Create list of option strings."""
+    return [str(i) for i in range(num_options)]
 
 router = APIRouter(tags=["auth"])
 
@@ -45,10 +62,11 @@ async def _new_challenge(key: AuthKey, db_session: AsyncSession):
     db_session.add(nonce)
     await db_session.flush()
 
-    digest = hashlib.sha256(f"{key.key_value}{nonce_value}".encode()).hexdigest()
-    correct = digest[-2:]
-    options = _create_options(correct)
-    return nonce, correct, options
+    correct_idx = compute_correct_option(
+        key.key_value, nonce_value, settings.auth.challenge_response.num_options
+    )
+    options = _create_options(settings.auth.challenge_response.num_options)
+    return nonce, str(correct_idx), options
 
 
 @router.get("/cr/{key_id}", response_class=HTMLResponse)
@@ -64,6 +82,8 @@ async def start_challenge(
             "key_id": key.id,
             "nonce_value": nonce.nonce_value,
             "options": options,
+            "num_options": settings.auth.challenge_response.num_options,
+            "compute_source": COMPUTE_OPTION_SOURCE,
             "message": None,
         },
     )
@@ -83,6 +103,8 @@ async def _render_new_challenge(
             "key_id": key.id,
             "nonce_value": nonce.nonce_value,
             "options": options,
+            "num_options": settings.auth.challenge_response.num_options,
+            "compute_source": COMPUTE_OPTION_SOURCE,
             "message": message,
         },
     )
@@ -107,9 +129,10 @@ async def answer_challenge(
     nonce.used_at = datetime.now()
     await db_session.flush()
 
-    digest = hashlib.sha256(f"{key.key_value}{nonce_value}".encode()).hexdigest()
-    correct = digest[-2:]
-    if answer.lower() != correct:
+    correct_idx = compute_correct_option(
+        key.key_value, nonce_value, settings.auth.challenge_response.num_options
+    )
+    if answer != str(correct_idx):
         return await _render_new_challenge(request, key, db_session, "Incorrect answer")
 
     now = datetime.now()
