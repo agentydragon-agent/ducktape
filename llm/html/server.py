@@ -142,5 +142,14 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    print("Starting server on http://127.0.0.1:9000")
-    HTTPServer(("127.0.0.1", 9000), Handler).serve_forever()
+    # Bind to all interfaces so that Docker port-forwarding works.  Inside a
+    # container the service is usually accessed via the container’s bridge
+    # address (e.g. 172.x.x.x), not 127.0.0.1.  Listening only on the loopback
+    # interface therefore makes the process unreachable from the host and
+    # results in a “connection reset” error even though the container is up and
+    # its health-check may pass.  Using 0.0.0.0 exposes the service on every
+    # interface while remaining just as safe inside the isolated container.
+    host, port = "0.0.0.0", 9000
+
+    print(f"Starting server on http://{host}:{port}")
+    HTTPServer((host, port), Handler).serve_forever()
