@@ -1,3 +1,4 @@
+{# Audience: authenticated human admin or LLM (via key or session) #}
 {% extends "base.html" %}
 
 {# Simple pagination link macro #}
@@ -37,6 +38,7 @@
             {% for integration in integrations %}
             <li>
                 <a href="{{ auth.create_url('webhooks/' + integration.name) }}">{{ integration.name }}</a>
+                {% if not integration.is_enabled %}(disabled){% endif %}
                 {% if integration.description %}
                 - {{ integration.description }}
                 {% endif %}

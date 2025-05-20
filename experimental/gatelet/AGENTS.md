@@ -100,6 +100,17 @@ If you need to add a new dependency, set it up to be installed by the `experimen
 You will not be able to install it yourself, but you will help by giving the commands
 needed to install it for future runs.
 
+## Template Guidelines
+
+Each HTML template begins with a comment describing its intended audience:
+
+- `human admin`
+- `LLM`
+- `authenticated human admin or LLM`
+
+Pages for LLMs must offer only link-based navigation and avoid forms or other
+interactive elements so models can follow them reliably.
+
 ## Project Status
 
 Key-in-path and challenge-response authentication are implemented, and webhook
