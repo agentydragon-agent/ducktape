@@ -1,13 +1,14 @@
 """Tests for webhook receiving endpoint."""
 
-import pytest
-from hamcrest import assert_that, has_entries, anything
-from httpx import AsyncClient
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from http import HTTPStatus
 
+import pytest
+from hamcrest import anything, assert_that, has_entries
+from httpx import AsyncClient
 from server.models import WebhookIntegration, WebhookPayload
 from server.tests.utils import persist
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 @pytest.mark.asyncio
@@ -26,7 +27,7 @@ async def test_receive_webhook_no_auth(client: AsyncClient, db_session: AsyncSes
     # Send webhook payload
     payload = {"test": "data", "value": 42}
     response = await client.post(f"/webhook/{integration.name}", json=payload)
-    assert response.status_code == 200
+    assert response.status_code == HTTPStatus.OK
 
     # Check response
     data = response.json()
@@ -62,7 +63,7 @@ async def test_receive_webhook_bearer_auth(
     response = await client.post(
         f"/webhook/{integration.name}", json=payload, headers=headers
     )
-    assert response.status_code == 200
+    assert response.status_code == HTTPStatus.OK
 
     # Check response
     data = response.json()
@@ -98,7 +99,7 @@ async def test_receive_webhook_invalid_auth(
     response = await client.post(
         f"/webhook/{integration.name}", json=payload, headers=headers
     )
-    assert response.status_code == 401
+    assert response.status_code == HTTPStatus.UNAUTHORIZED
 
     # No payload should be stored
     query = select(WebhookPayload).where(
@@ -115,7 +116,7 @@ async def test_receive_webhook_nonexistent_integration(
     """Test receiving webhook for non-existent integration."""
     payload = {"test": "data"}
     response = await client.post("/webhook/nonexistent", json=payload)
-    assert response.status_code == 404
+    assert response.status_code == HTTPStatus.NOT_FOUND
 
 
 @pytest.mark.asyncio
@@ -135,7 +136,7 @@ async def test_receive_webhook_disabled_integration(
 
     payload = {"test": "data"}
     response = await client.post(f"/webhook/{integration.name}", json=payload)
-    assert response.status_code == 403
+    assert response.status_code == HTTPStatus.FORBIDDEN
 
 
 @pytest.mark.asyncio
@@ -159,4 +160,4 @@ async def test_receive_webhook_invalid_json(
         content="not-json",
         headers={"Content-Type": "application/json"},
     )
-    assert response.status_code == 400
+    assert response.status_code == HTTPStatus.BAD_REQUEST
