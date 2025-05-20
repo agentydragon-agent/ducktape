@@ -1,4 +1,3 @@
-#load("@com_github_bazelbuild_buildtools//buildifier:def.bzl", "buildifier")
 load(
     "@rules_rust//rust:defs.bzl",
     "rust_binary",
@@ -6,10 +5,6 @@ load(
     "rust_library",
     "rust_test",
 )
-
-#buildifier(
-#    name = "buildifier",
-#)
 
 rust_library(
     name = "source",

@@ -13,7 +13,17 @@ haskell_cabal_library(
     version = "1.9.1.1",
     srcs = glob(["**"]),
     haddock = False,
-    deps = ["@stackage//:cabal-doctest"],
+    deps = [
+        "@stackage//:attoparsec",
+        "@stackage//:blaze-html",
+        "@stackage//:blaze-markup",
+        "@stackage//:conduit",
+        "@stackage//:conduit-extra",
+        "@stackage//:data-default-class",
+        "@stackage//:resourcet",
+        "@stackage//:xml-types",
+        "@stackage//:cabal-doctest",
+    ],
     setup_deps = ["@stackage//:cabal-doctest"],
     visibility = ["//visibility:public"],
 )
