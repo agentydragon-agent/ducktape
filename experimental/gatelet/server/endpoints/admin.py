@@ -18,23 +18,27 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..config import settings
+from fastapi_csrf_protect import CsrfProtect
+from pydantic import BaseModel
 from ..database import get_db_session
-from ..models import AdminSession, AdminUser
-from ..security import hash_password, verify_password
+from ..models import AdminSession
+from ..security import verify_password
 from ..shared import templates
 
 router = APIRouter(tags=["admin"])
 
+
+class _CsrfSettings(BaseModel):
+    secret_key: str = settings.security.csrf_secret
+
+
+@CsrfProtect.load_config
+def _get_csrf_config():
+    return _CsrfSettings()
+
+
 SESSION_DURATION = timedelta(hours=1)
-
-
-async def _get_admin(db_session: AsyncSession) -> AdminUser:
-    admin = (await db_session.execute(select(AdminUser))).scalar_one_or_none()
-    if not admin:
-        admin = AdminUser(password_hash=hash_password("gatelet"))
-        db_session.add(admin)
-        await db_session.flush()
-    return admin
 
 
 async def _get_admin_session(
@@ -57,9 +61,10 @@ async def login(
     request: Request,
     password: str = Form(...),
     db_session: AsyncSession = Depends(get_db_session),
+    csrf_protect: CsrfProtect = Depends(),
 ) -> Response:
-    admin = await _get_admin(db_session)
-    if not verify_password(password, admin.password_hash):
+    await csrf_protect.validate_csrf(request)
+    if not verify_password(password, settings.admin.password_hash):
         return templates.TemplateResponse(
             "public.html",
             {
@@ -81,6 +86,8 @@ async def login(
     await db_session.flush()
     response = RedirectResponse("/admin/", status_code=302)
     response.set_cookie("admin_session", session.session_token, httponly=True)
+    token, signed = csrf_protect.generate_csrf_tokens()
+    csrf_protect.set_csrf_cookie(signed, response)
     return response
 
 

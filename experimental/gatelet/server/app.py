@@ -20,6 +20,9 @@ from .auth.webhook_auth import AuthError
 from .config import settings
 from .endpoints import admin, challenge, webhook_receive, webhook_view
 from .shared import BASE_DIR, templates
+from .database import get_db_session
+from .models import AdminSession
+from fastapi_csrf_protect import CsrfProtect
 
 logger = logging.getLogger(__name__)
 
@@ -64,14 +67,12 @@ async def webhook_auth_error(request: Request, exc: AuthError):
     )
 
 
-from .database import get_db_session
-
-# Root endpoint - public information and login form
-from .models import AdminSession
-
-
 @app.get("/", response_class=HTMLResponse)
-async def root(request: Request, session: Optional[str] = Cookie(None)):
+async def root(
+    request: Request,
+    session: Optional[str] = Cookie(None),
+    csrf_protect: CsrfProtect = Depends(),
+):
     """Root endpoint with service information and authentication options."""
     # Check if already authenticated via cookie
     if session:
@@ -81,15 +82,19 @@ async def root(request: Request, session: Optional[str] = Cookie(None)):
             if admin_session and admin_session.expires_at > datetime.now():
                 return RedirectResponse("/admin/", status_code=302)
 
-    return templates.TemplateResponse(
+    token, signed = csrf_protect.generate_csrf_tokens()
+    response = templates.TemplateResponse(
         "public.html",
         {
             "request": request,
             "header": "Gatelet",
             "show_admin_login": True,
             "llm_instructions": "To access this service as an LLM, follow the instructions provided by your user.",
+            "csrf_token": token,
         },
     )
+    csrf_protect.set_csrf_cookie(signed, response)
+    return response
 
 
 def register_with_all_auth_methods(

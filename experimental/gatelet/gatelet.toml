@@ -43,3 +43,9 @@ enabled = true
 
 [webhook.integrations.activity-watch.auth_config]
 type = "none"
+
+[admin]
+password_hash = "$argon2id$v=19$m=65536,t=3,p=4$QGhN6d1bi1EKQUhJqfUe4w$lRUJ6+taip7yBS6Q652QLcP14eqE3ehX95tBTTkypiU"
+
+[security]
+csrf_secret = "change_me"
