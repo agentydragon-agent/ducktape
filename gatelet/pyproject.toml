@@ -47,9 +47,13 @@ dev = [
     # "pytest-playwright",
 ]
 
+[project.scripts]
+gatelet-report-event = "gatelet.report_event:main"
+gatelet-report-battery = "gatelet.report_battery:main"
+
 [tool.setuptools]
 package-dir = {"" = "."}
-packages = ["server"]
+packages = ["server", "gatelet"]
 include-package-data = true
 
 [tool.setuptools.package-data]
