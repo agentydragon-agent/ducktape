@@ -1,0 +1,36 @@
+import pytest
+from httpx import AsyncClient
+from server.models import WebhookIntegration, WebhookPayload
+from server.tests.utils import persist
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from gatelet.report_event import send_event
+
+
+@pytest.mark.asyncio
+async def test_send_event_works(client: AsyncClient, db_session: AsyncSession):
+    integration = await persist(
+        db_session,
+        WebhookIntegration(
+            name="report-test",
+            description="Test integration",
+            auth_type="none",
+            auth_config={"type": "none"},
+            is_enabled=True,
+        ),
+    )
+
+    payload = {"foo": "bar"}
+    result = await send_event(
+        "http://testserver",
+        integration.name,
+        payload,
+        client=client,
+    )
+
+    assert result["status"] == "ok"
+
+    stmt = select(WebhookPayload).where(WebhookPayload.id == result["payload_id"])
+    stored = (await db_session.execute(stmt)).scalar_one()
+    assert stored.payload == payload

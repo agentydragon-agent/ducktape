@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Optional
 
 from fastapi import (
@@ -278,3 +279,26 @@ async def invalidate_llm_session(
 
     response = RedirectResponse("/admin/llm-sessions/", status_code=302)
     return response
+
+
+@router.get("/admin/logs/", response_class=HTMLResponse)
+async def view_logs(
+    request: Request,
+    lines: int = 200,
+    admin_session: AdminSession = Depends(_get_admin_session),
+) -> HTMLResponse:
+    """Display the last ``lines`` lines of the server log file."""
+    log_path = Path(settings.server.log_file)
+    if log_path.exists():
+        try:
+            log_text = "\n".join(
+                log_path.read_text(encoding="utf-8").splitlines()[-lines:]
+            )
+        except Exception:  # pragma: no cover - unexpected read error
+            log_text = "<unable to read log file>"
+    else:
+        log_text = "<log file not found>"
+    return templates.TemplateResponse(
+        "admin_logs.html",
+        {"request": request, "log_text": log_text, "lines": lines},
+    )

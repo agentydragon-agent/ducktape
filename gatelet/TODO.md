@@ -12,7 +12,7 @@ plan in `ha-api-task.txt` plus a bunch more added.
 - Finish the human admin interface:
   - ~~List and invalidate active admin sessions~~ (done)
   - ~~List and invalidate active LLM sessions~~ (done)
-  - Expose log inspection pages
+  - ~~Expose log inspection pages~~ (done)
 - Expand the Home Assistant integration with history views for configured entities with varied interval
   sizes, practical for realistic application. Rememer the history is primarily intended for consumption
   by LLMs that don't have a graphical browser, so any fancy graphical widgets are just a waste of time.
@@ -32,6 +32,8 @@ plan in `ha-api-task.txt` plus a bunch more added.
   - On dashboard, buttons to trigger actions/automations in Home Assistant, with description from JSON file.
     - Log those when model does them.
 - Provide reporter scripts to send device events to Gatelet
+  - Long-running deamons
+  - Do not duplicate ActivityWatch
 - Resolve remaining TODO comments in the code (e.g. redirect after login)
 - Allow LLMs to start whitelisted automations on Home Assistant, listed in config file. Again, this must
   be done LLM-accessibly.
