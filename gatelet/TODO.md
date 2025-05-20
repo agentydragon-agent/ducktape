@@ -12,7 +12,7 @@ plan in `ha-api-task.txt`.
 - Finish the human admin interface:
   - ~~List and invalidate active admin sessions~~ (done)
   - ~~List and invalidate active LLM sessions~~ (done)
-  - Expose log inspection pages
+  - ~~Expose log inspection pages~~ (done)
 - Expand the Home Assistant integration with history and trend views for
   configured entities
 - Provide reporter scripts to send device events to Gatelet
