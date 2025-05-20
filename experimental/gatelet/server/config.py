@@ -165,7 +165,7 @@ class Settings(BaseModel):
 
             # toml library (not Python builtin - used in case of Python < 3.11) reads strings
             with open(path, "r") as f:
-                config_dict = toml.load(f)
+                config_dict = toml.load(f)  # type: ignore[arg-type]
         return cls.parse_obj(config_dict)
 
 
