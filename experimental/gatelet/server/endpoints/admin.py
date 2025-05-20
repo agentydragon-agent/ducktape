@@ -31,6 +31,8 @@ router = APIRouter(tags=["admin"])
 
 class _CsrfSettings(BaseModel):
     secret_key: str = settings.security.csrf_secret
+    token_location: str = "body"
+    token_key: str = "csrf_token"
 
 
 @CsrfProtect.load_config
