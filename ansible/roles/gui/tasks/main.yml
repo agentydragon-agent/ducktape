@@ -188,20 +188,5 @@
 - import_tasks: login_event_webhook_reporter.yml
   tags: login_event_webhook_reporter
 
-# For reporting to webhook
-- name: ActivityWatch
-  become: true
-  github_release_install:
-    release_spec:
-      repo: ActivityWatch/activitywatch
-      version: v0.13.2
-      acknowledged_version: v0.13.2
-      asset_pattern: ".*-{{ ansible_architecture }}\\.deb$"
-    method: deb
-
-- name: Start and enable ActivityWatch tunnel
-  systemd:
-    name: aw-tunnel.service
-    scope: user
-    state: started
-    enabled: yes
+- import_tasks: tunneled_activitywatch.yml
+  tags: activitywatch
