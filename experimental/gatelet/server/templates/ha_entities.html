@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+
+{% block title %}Home Assistant Entities{% endblock %}
+
+{% block nav %}
+<nav>
+    <a href="{{ auth.create_url('') }}">Home</a>
+    <a href="{{ auth.create_url('webhooks') }}">Webhooks</a>
+</nav>
+{% endblock %}
+
+{% block content %}
+<h2>Home Assistant Entities</h2>
+{% if states %}
+<ul>
+    {% for s in states %}
+    <li><a href="{{ auth.create_url('ha/' + s.entity_id) }}">{{ s.entity_id }}</a>: {{ s.state }}</li>
+    {% endfor %}
+</ul>
+{% else %}
+<p>No data available.</p>
+{% endif %}
+{% endblock %}

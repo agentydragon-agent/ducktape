@@ -5,7 +5,7 @@ from typing import Annotated, Any, Dict, Optional
 
 from compact_json import Formatter
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth.dependencies import Auth
@@ -126,6 +126,24 @@ async def get_webhook_payloads(
     }
 
 
+async def get_latest_payloads(
+    db_session: AsyncSession, limit: int = 5
+) -> list[dict[str, Any]]:
+    """Get latest webhook payloads across all integrations."""
+    query = (
+        select(WebhookPayload).order_by(WebhookPayload.received_at.desc()).limit(limit)
+    )
+    result = await db_session.execute(query)
+    return [
+        {
+            "id": payload.id,
+            "integration_name": payload.integration_name,
+            "received_at": payload.received_at,
+        }
+        for payload in result.scalars().all()
+    ]
+
+
 async def list_all_payloads(
     request: Request,
     auth: Auth,
@@ -140,9 +158,7 @@ async def list_all_payloads(
     # TODO: Once we have human login, with human having logged in, it should also show disabled integrations
 
     # Get webhook integrations
-    integrations_query = select(WebhookIntegration).where(
-        WebhookIntegration.is_enabled == True
-    )
+    integrations_query = select(WebhookIntegration).where(WebhookIntegration.is_enabled)
     integrations_result = await db_session.execute(integrations_query)
     integrations = [
         {
@@ -170,7 +186,7 @@ async def list_all_payloads(
     )
 
 
-async def list_integration_payloads(
+async def list_integration_payloads(  # noqa: PLR0913
     request: Request,
     integration_name: str,
     auth: Auth,

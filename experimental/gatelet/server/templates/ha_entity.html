@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+
+{% block title %}{{ header }}{% endblock %}
+
+{% block nav %}
+<nav>
+    <a href="{{ auth.create_url('') }}">Home</a>
+    <a href="{{ auth.create_url('ha') }}">Entities</a>
+</nav>
+{% endblock %}
+
+{% block content %}
+<h2>{{ header }}</h2>
+{% if state %}
+<p>State: {{ state.state }}</p>
+<p>Last changed: {{ state.last_changed.strftime('%Y-%m-%d %H:%M:%S') }}</p>
+{% else %}
+<p>No data found.</p>
+{% endif %}
+{% endblock %}
