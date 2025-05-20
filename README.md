@@ -18,6 +18,12 @@ To update Python requirements lock:
 bazel run //:requirements.update
 ```
 
+To format Bazel configuration files:
+
+```bash
+bazel run //:buildifier
+```
+
 ## Spawning agents
 ```
 # inside the canonical repo
