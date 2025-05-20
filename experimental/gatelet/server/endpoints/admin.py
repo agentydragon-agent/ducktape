@@ -1,17 +1,18 @@
 from __future__ import annotations
 
-import hashlib
 import uuid
 from datetime import datetime, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, Cookie, Depends, Form, HTTPException, Request, status
+from fastapi import (APIRouter, Cookie, Depends, Form, HTTPException, Request,
+                     status)
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database import get_db_session
 from ..models import AdminSession, AdminUser
+from ..security import hash_password, verify_password
 from ..shared import templates
 
 router = APIRouter(tags=["admin"])
@@ -19,14 +20,10 @@ router = APIRouter(tags=["admin"])
 SESSION_DURATION = timedelta(hours=1)
 
 
-def _hash_password(password: str) -> str:
-    return hashlib.sha256(password.encode()).hexdigest()
-
-
 async def _get_admin(db_session: AsyncSession) -> AdminUser:
     admin = (await db_session.execute(select(AdminUser))).scalar_one_or_none()
     if not admin:
-        admin = AdminUser(password_hash=_hash_password("gatelet"))
+        admin = AdminUser(password_hash=hash_password("gatelet"))
         db_session.add(admin)
         await db_session.flush()
     return admin
@@ -47,13 +44,6 @@ async def _get_admin_session(
     return admin_session
 
 
-@router.get("/admin/login", response_class=HTMLResponse)
-async def login_form(request: Request) -> HTMLResponse:
-    return templates.TemplateResponse(
-        "admin_login.html", {"request": request, "error": None}
-    )
-
-
 @router.post("/admin/login", response_class=HTMLResponse)
 async def login(
     request: Request,
@@ -61,10 +51,6 @@ async def login(
     db_session: AsyncSession = Depends(get_db_session),
 ) -> HTMLResponse:
     admin = await _get_admin(db_session)
-    if admin.password_hash != _hash_password(password):
-        return templates.TemplateResponse(
-            "admin_login.html",
-            {"request": request, "error": "Invalid password"},
             status_code=status.HTTP_401_UNAUTHORIZED,
         )
 

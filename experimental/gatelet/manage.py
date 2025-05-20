@@ -2,27 +2,15 @@ from __future__ import annotations
 
 """Command line utilities for Gatelet management."""
 
-# pylint: disable=wrong-import-position
-
 import argparse
 import getpass
-import hashlib
 from typing import Iterable
 
-from sqlalchemy import select, func, update
+from sqlalchemy import func, select, update
 
 from server.config import settings
-from server.models import (
-    AdminUser,
-    Base,
-    get_engine,
-    get_session_maker,
-)
-
-
-def _hash_password(password: str) -> str:
-    """Return sha256 hash for password."""
-    return hashlib.sha256(password.encode()).hexdigest()
+from server.models import AdminUser, Base, get_engine, get_session_maker
+from server.security import hash_password
 
 
 def _confirm(prompt: str) -> bool:
@@ -58,7 +46,7 @@ def reset_db() -> None:
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
     with Session() as session:
-        admin = AdminUser(password_hash=_hash_password("gatelet"))
+        admin = AdminUser(password_hash=hash_password("gatelet"))
         session.add(admin)
         session.commit()
     print("Database initialized with default admin password 'gatelet'.")
@@ -71,7 +59,7 @@ def change_password(password: str | None) -> None:
     pwd = password or getpass.getpass("New admin password: ")
     with Session.begin() as session:  # pylint: disable=no-member
         admin = session.execute(select(AdminUser)).scalar_one_or_none()
-        hashed = _hash_password(pwd)
+        hashed = hash_password(pwd)
         if admin:
             session.execute(update(AdminUser).values(password_hash=hashed))
         else:

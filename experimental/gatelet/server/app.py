@@ -5,20 +5,21 @@ from datetime import datetime
 from typing import Callable, Optional
 
 from fastapi import Cookie, Depends, FastAPI, Request, status
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import select
 
-from .shared import templates, BASE_DIR
-
-from .auth.handlers import AuthContext, AuthHandlerError
 from .auth.dependencies import (
     Auth,
+    get_admin_auth_with_context,
     get_key_path_auth_with_context,
     get_session_auth_with_context,
 )
+from .auth.handlers import AuthContext, AuthHandlerError
 from .auth.webhook_auth import AuthError
 from .config import settings
 from .endpoints import admin, challenge, webhook_receive, webhook_view
+from .shared import BASE_DIR, templates
 
 logger = logging.getLogger(__name__)
 
@@ -56,8 +57,6 @@ async def auth_error_handler(request: Request, exc: AuthHandlerError):
 @app.exception_handler(AuthError)
 async def webhook_auth_error(request: Request, exc: AuthError):
     """Handle webhook auth errors in API-friendly way."""
-    from fastapi.responses import JSONResponse
-
     return JSONResponse(
         status_code=status.HTTP_401_UNAUTHORIZED,
         content={"detail": "Authentication failed"},
@@ -65,10 +64,10 @@ async def webhook_auth_error(request: Request, exc: AuthError):
     )
 
 
-# Root endpoint - public information and login form
-from sqlalchemy import select
-from .models import AdminSession
 from .database import get_db_session
+
+# Root endpoint - public information and login form
+from .models import AdminSession
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -93,12 +92,15 @@ async def root(request: Request, session: Optional[str] = Cookie(None)):
     )
 
 
-def register_with_all_auth_methods(path: str, handler: Callable):
+def register_with_all_auth_methods(
+    path: str, handler: Callable, register_admin: bool = True
+):
     """Register a handler with all available auth methods.
 
     Args:
         path: URL path to register (without auth prefix)
         handler: Handler function to register
+        register_admin: Whether to expose this handler for admin sessions
     """
     # Key in path auth
     if settings.auth.key_in_url.enabled:
@@ -120,6 +122,15 @@ def register_with_all_auth_methods(path: str, handler: Callable):
             dependencies=[Depends(get_session_auth_with_context)],
         )
 
+    if register_admin:
+        app.add_api_route(
+            f"/admin{path}",
+            handler,
+            methods=["GET"],
+            response_class=HTMLResponse,
+            dependencies=[Depends(get_admin_auth_with_context)],
+        )
+
 
 # Create auth-method-agnostic route handlers for each endpoint type
 async def authenticated_root_handler(request: Request, auth: Auth):
@@ -130,7 +141,7 @@ async def authenticated_root_handler(request: Request, auth: Auth):
 
 
 # Register root page with all auth methods
-register_with_all_auth_methods("/", authenticated_root_handler)
+register_with_all_auth_methods("/", authenticated_root_handler, register_admin=False)
 
 # Register webhook routes with all auth methods
 register_with_all_auth_methods("/webhooks/", webhook_view.list_all_payloads)

@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database import get_db_session
-from ..models import AuthCRSession, AuthKey
+from ..models import AdminSession, AuthCRSession, AuthKey
 from ..config import settings
 from .key_auth import KeyAuthError, validate_key
 
@@ -113,6 +113,27 @@ class SessionAuthContext:
         return f"{base_url}?{urlencode(query_params)}"
 
 
+class AdminAuthContext:
+    """Authentication context for admin sessions."""
+
+    def __init__(self, session: AdminSession):
+        self.session = session
+
+    @property
+    def auth_type(self) -> str:
+        return "admin"
+
+    def create_url(self, path: str) -> str:
+        return f"/{path}"
+
+    def create_url_with_params(self, path: str, **query_params) -> str:
+        base_url = self.create_url(path)
+        if not query_params:
+            return base_url
+
+        return f"{base_url}?{urlencode(query_params)}"
+
+
 async def key_path_auth(
     key: str, db_session: AsyncSession = Depends(get_db_session)
 ) -> KeyPathAuthContext:
@@ -157,11 +178,26 @@ async def session_auth(
     return SessionAuthContext(session)
 
 
+async def admin_auth(
+    session_token: str,
+    db_session: AsyncSession = Depends(get_db_session),
+) -> AdminAuthContext:
+    """Authenticate using admin session token."""
+    query = select(AdminSession).where(AdminSession.session_token == session_token)
+    admin_session = (await db_session.execute(query)).scalar_one_or_none()
+    if not admin_session or admin_session.expires_at <= datetime.now():
+        raise AuthHandlerError()
+
+    return AdminAuthContext(admin_session)
+
+
 def create_auth_dependency(auth_type: str) -> Callable:
     """Create an authentication dependency based on auth type."""
     if auth_type == "key_path":
         return key_path_auth
     elif auth_type == "session":
         return session_auth
+    elif auth_type == "admin":
+        return admin_auth
     else:
         raise ValueError(f"Unsupported {auth_type = }")
