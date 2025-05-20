@@ -1,8 +1,4 @@
-"""Configuration management for Gatelet server.
-
-TODO: Add configuration options for test database connections.
-This will support running tests with a real database instead of mocks.
-"""
+"""Configuration management for Gatelet server."""
 
 import logging
 import os
@@ -39,8 +35,16 @@ WebhookAuthConfig = Union[NoAuth, BearerAuth]
 
 
 class DatabaseSettings(BaseModel):
-    # Use a simple string so we can support both Postgres and SQLite for tests
-    dsn: str = Field(default="postgresql://postgres:postgres@localhost:5432/gatelet")
+    # Use a simple string so we can support both Postgres and SQLite for tests.
+    # The DATABASE_URL environment variable overrides the value from the
+    # configuration file. This makes it easy to point tests at a temporary
+    # database.
+    dsn: str = Field(
+        default=os.getenv(
+            "DATABASE_URL",
+            "postgresql://postgres:postgres@localhost:5432/gatelet",
+        )
+    )
 
 
 class ServerSettings(BaseModel):
