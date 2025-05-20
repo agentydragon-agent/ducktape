@@ -1,0 +1,20 @@
+# vim: ft=systemd
+
+[Unit]
+Description=ActivityWatch server (Rust, headless)
+After=network.target
+
+[Service]
+# $HOME already points at {{ activitywatch_data_dir }}
+ExecStart=/opt/activitywatch/aw-server-rust/aw-server-rust \
+         --host 127.0.0.1 \
+         --port {{ activitywatch_port | default(5600) }} \
+         --dbpath {{ activitywatch_data_dir }}/aw-server.sqlite
+WorkingDirectory={{ activitywatch_data_dir }}
+User=aw-server
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+
