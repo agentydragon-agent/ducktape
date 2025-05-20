@@ -8,10 +8,10 @@ import shutil
 import subprocess
 import tempfile
 import time
+from collections.abc import AsyncGenerator
 from datetime import datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
-from collections.abc import AsyncGenerator
 
 import pytest
 import pytest_asyncio
@@ -30,8 +30,9 @@ os.environ.setdefault(
 # pylint: disable=wrong-import-position
 
 from server.app import app  # type: ignore[import]
+from server.config import settings  # type: ignore[import]
 from server.database import get_db_session  # type: ignore[import]
-from server.models import Base, AuthCRSession, AuthKey  # type: ignore[import]
+from server.models import AuthCRSession, AuthKey, Base  # type: ignore[import]
 from server.tests.utils import persist  # type: ignore[import]
 
 logging.basicConfig(
@@ -53,10 +54,12 @@ def _postgres():
     bin_dir = Path(shutil.which("initdb")).parent
     initdb = bin_dir / "initdb"
     pg_ctl = bin_dir / "pg_ctl"
+    createdb = bin_dir / "createdb"
+    port = "55432"
     subprocess.check_call(
         ["sudo", "-u", "postgres", str(initdb), "-D", datadir, "-A", "trust"]
     )
-    proc = subprocess.Popen(
+    subprocess.check_call(
         [
             "sudo",
             "-u",
@@ -65,10 +68,18 @@ def _postgres():
             "-D",
             datadir,
             "-w",
+            "-o",
+            f"-p {port}",
             "start",
         ]
     )
-    os.environ["DATABASE_URL"] = "postgresql+asyncpg://postgres@localhost/postgres"
+    subprocess.check_call(
+        ["sudo", "-u", "postgres", str(createdb), "-p", port, "gatelet"]
+    )
+    os.environ["DATABASE_URL"] = (
+        f"postgresql+asyncpg://postgres@localhost:{port}/gatelet"
+    )
+    settings.database.dsn = os.environ["DATABASE_URL"]
     os.environ.setdefault(
         "GATELET_CONFIG",
         str(Path(__file__).resolve().parent.parent / "gatelet.toml"),
@@ -127,6 +138,19 @@ async def db_session(db_engine: AsyncEngine) -> AsyncGenerator[AsyncSession, Non
         finally:
             if trans.is_active:
                 await trans.rollback()
+
+
+@pytest.fixture(autouse=True)
+def _patch_get_db_session(monkeypatch, db_session: AsyncSession) -> None:
+    """Override ``get_db_session`` globally for tests."""
+
+    from contextlib import asynccontextmanager
+
+    @asynccontextmanager
+    async def _override() -> AsyncGenerator[AsyncSession, None]:
+        yield db_session
+
+    monkeypatch.setattr("server.database.get_db_session", _override)
 
 
 @pytest_asyncio.fixture
