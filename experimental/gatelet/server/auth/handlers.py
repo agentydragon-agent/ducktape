@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database import get_db_session
 from ..models import AuthCRSession, AuthKey
+from ..config import settings
 from .key_auth import KeyAuthError, validate_key
 
 logger = logging.getLogger(__name__)
@@ -75,7 +76,7 @@ class KeyPathAuthContext:
 
     def create_url(self, path: str) -> str:
         return f"/k/{self.key_value}/{path}"
-        
+
     def create_url_with_params(self, path: str, **query_params) -> str:
         """Create authenticated URL with query parameters."""
         base_url = self.create_url(path)
@@ -102,7 +103,7 @@ class SessionAuthContext:
 
     def create_url(self, path: str) -> str:
         return f"/s/{self.session_token}/{path}"
-        
+
     def create_url_with_params(self, path: str, **query_params) -> str:
         """Create authenticated URL with query parameters."""
         base_url = self.create_url(path)
@@ -117,7 +118,7 @@ async def key_path_auth(
 ) -> KeyPathAuthContext:
     """Authenticate using key in path."""
     logger.debug("key_path_auth called with key: %s...", key[:4])
-    
+
     try:
         logger.debug("Validating key")
         auth_key = await validate_key(key, db_session)
@@ -140,13 +141,18 @@ async def session_auth(
         raise AuthHandlerError()
 
     # Extend session if needed
-    session.last_activity_at = datetime.now()
-    
+    now = datetime.now()
+    session.last_activity_at = now
+    new_exp = now + settings.auth.challenge_response.session_extension
+    max_exp = session.created_at + settings.auth.challenge_response.session_max_duration
+    if new_exp > session.expires_at:
+        session.expires_at = min(new_exp, max_exp)
+
     # Flush changes without committing if in an external transaction
     # This ensures changes are visible within the transaction but don't
     # interfere with external transaction management
     await db_session.flush()
-    
+
     # Create SessionAuthContext with the updated session
     return SessionAuthContext(session)
 
