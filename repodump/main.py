@@ -13,12 +13,12 @@ import os
 import sys
 import re
 import click
-from .patterns import path_pattern_to_regex, path_match
+from .patterns import path_match
 import yaml
 
 CONFIG_PATH = os.path.expanduser("~/.config/repodump.yaml")
 
- 
+
 def load_config():
     """Load YAML config from ~/.config/repodump.yaml or exit if missing."""
     if not os.path.isfile(CONFIG_PATH):
@@ -28,12 +28,10 @@ def load_config():
         return yaml.safe_load(f)
 
 
-
-
-
 #
 # -------------- The core scanning code --------------
 #
+
 
 def scan_directory(root_dir, cfg_includes, cfg_excludes):
     """
@@ -84,6 +82,7 @@ def approximate_tokens(byte_count):
 # -------------- Snippet removal code --------------
 #
 
+
 def strip_snippets_from_text(text, snippets):
     """
     snippets: list of dicts, each dict might have:
@@ -121,11 +120,9 @@ def remove_regex(text, pattern, flags_str):
 # -------------- CLI with Click --------------
 #
 
+
 @click.command(
-    context_settings=dict(
-        allow_extra_args=True,
-        ignore_unknown_options=True
-    )
+    context_settings=dict(allow_extra_args=True, ignore_unknown_options=True)
 )
 @click.option(
     "--output",
@@ -133,14 +130,14 @@ def remove_regex(text, pattern, flags_str):
     "output_flag",
     is_flag=True,
     default=False,
-    help="Enable output. -o => either stdout (if no filename) or file (if filename follows)."
+    help="Enable output. -o => either stdout (if no filename) or file (if filename follows).",
 )
 @click.option(
     "--copy",
     "-c",
     "copy_output",
     is_flag=True,
-    help="Copy final output to clipboard (requires pyperclip)."
+    help="Copy final output to clipboard (requires pyperclip).",
 )
 @click.pass_context
 def main(ctx, output_flag, copy_output):
@@ -248,6 +245,7 @@ def main(ctx, output_flag, copy_output):
     if copy_output:
         try:
             import pyperclip
+
             pyperclip.copy(final_text)
             click.echo("Dump copied to clipboard.")
         except ImportError:
@@ -256,4 +254,3 @@ def main(ctx, output_flag, copy_output):
 
 if __name__ == "__main__":
     main()
-

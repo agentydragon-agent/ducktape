@@ -1,11 +1,10 @@
 """Webhook viewing endpoints."""
 
 import math
-from typing import Annotated, Any, Dict, List, Optional
+from typing import Annotated, Any, Dict, Optional
 
 from compact_json import Formatter
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from fastapi.responses import HTMLResponse
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -137,11 +136,13 @@ async def list_all_payloads(
     """List all webhook integrations and payloads."""
     # TODO: This lists all webhook payloads even from disabled integrations.
     # It's fine for now, but we should consider filtering by enabled integrations in the future.
-    
+
     # TODO: Once we have human login, with human having logged in, it should also show disabled integrations
-    
+
     # Get webhook integrations
-    integrations_query = select(WebhookIntegration).where(WebhookIntegration.is_enabled == True)
+    integrations_query = select(WebhookIntegration).where(
+        WebhookIntegration.is_enabled == True
+    )
     integrations_result = await db_session.execute(integrations_query)
     integrations = [
         {
@@ -151,14 +152,15 @@ async def list_all_payloads(
         }
         for integration in integrations_result.scalars().all()
     ]
-    
+
     # Get payloads with pagination
     context = await get_webhook_payloads(db_session, None, page, page_size)
 
     # Add request-specific context
     return templates.TemplateResponse(
         "webhook_payloads.html",
-        context | {
+        context
+        | {
             "request": request,
             "auth": auth,
             "header": "Webhook Integrations",
@@ -186,7 +188,8 @@ async def list_integration_payloads(
     # Add request-specific context
     return templates.TemplateResponse(
         "webhook_payloads.html",
-        context | {
+        context
+        | {
             "request": request,
             "auth": auth,
             "header": f"{integration_name} Webhook Payloads",

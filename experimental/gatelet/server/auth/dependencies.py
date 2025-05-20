@@ -6,7 +6,6 @@ from fastapi import Cookie, Depends
 
 from ..database import get_db_session
 from .handlers import (
-    AdminAuthContext,
     AuthContext,
     admin_auth,
     key_path_auth,

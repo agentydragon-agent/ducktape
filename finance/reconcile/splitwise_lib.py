@@ -29,14 +29,14 @@ def make_client(splitwise_credentials_path):
     else:
         splitwise_credentials = {}
 
-    consumer_key = splitwise_credentials['consumer_key']
-    consumer_secret = splitwise_credentials['consumer_secret']
+    consumer_key = splitwise_credentials["consumer_key"]
+    consumer_secret = splitwise_credentials["consumer_secret"]
 
     return splitwise.Splitwise(consumer_key, consumer_secret)
 
 
 def assign_token(client, cache_dir):
-    token_path = cache_dir / 'splitwise_token.json'
+    token_path = cache_dir / "splitwise_token.json"
     if token_path.exists():
         with open(token_path) as f:
             access_token = json.load(f)
@@ -47,12 +47,13 @@ def assign_token(client, cache_dir):
         url, secret = client.getAuthorizeURL()
         print(f"Please go to {url}.")
         params = retrieve_get_params(port=port)
-        access_token = client.getAccessToken(params['oauth_token'][0], secret,
-                                             params['oauth_verifier'][0])
+        access_token = client.getAccessToken(
+            params["oauth_token"][0], secret, params["oauth_verifier"][0]
+        )
         logging.info("got access token")
 
         token_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(token_path, 'w') as f:
+        with open(token_path, "w") as f:
             json.dump(access_token, f)
             logging.info("Access token saved to %s", access_token)
     client.setAccessToken(access_token)
@@ -73,16 +74,17 @@ def retrieve_get_params(port):
             self.wfile.write(b"Auth handled, you can close this tab.")
             self.server.shutdown()
 
-    server = http.server.ThreadingHTTPServer(('', port), RequestHandler)
+    server = http.server.ThreadingHTTPServer(("", port), RequestHandler)
     server.serve_forever()
     return get_params
 
 
 def load_splitwise_expenses(
-        splitwise_group_id) -> Dict[str, external_system.ExternalExpense]:
-    config_dir = xdg.xdg_config_home() / 'gnucash_splitwise_reconciler'
-    cache_dir = xdg.xdg_cache_home() / 'gnucash_splitwise_reconciler'
-    splitwise_credentials_path = config_dir / 'splitwise_credentials.json'
+    splitwise_group_id,
+) -> Dict[str, external_system.ExternalExpense]:
+    config_dir = xdg.xdg_config_home() / "gnucash_splitwise_reconciler"
+    cache_dir = xdg.xdg_cache_home() / "gnucash_splitwise_reconciler"
+    splitwise_credentials_path = config_dir / "splitwise_credentials.json"
 
     client = make_client(splitwise_credentials_path)
 
@@ -96,9 +98,9 @@ def load_splitwise_expenses(
 
     while True:
         logging.info("fetching batch of %d items at offset %d", limit, offset)
-        batch = client.getExpenses(offset=offset,
-                                   limit=limit,
-                                   group_id=splitwise_group_id)
+        batch = client.getExpenses(
+            offset=offset, limit=limit, group_id=splitwise_group_id
+        )
         # exp.repayments[*].fromUser, .toUser
         # can have: exp.deletedAt
         for expense in batch:
@@ -110,12 +112,12 @@ def load_splitwise_expenses(
                     # We are not involved.
                     continue
 
-                dt = datetime.datetime.strptime(expense.date,
-                                                '%Y-%m-%dT%H:%M:%SZ').date()
+                dt = datetime.datetime.strptime(
+                    expense.date, "%Y-%m-%dT%H:%M:%SZ"
+                ).date()
                 expenses[str(expense.id)] = external_system.ExternalExpense(
                     id=str(expense.id),
-                    description=((expense.description or '') +
-                                 (expense.notes or '')),
+                    description=((expense.description or "") + (expense.notes or "")),
                     amount=net,
                     trade_date=dt,
                 )

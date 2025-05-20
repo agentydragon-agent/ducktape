@@ -6,13 +6,13 @@ import gnucash
 
 
 def account_from_path(top_account, account_path, original_path=None):
-    if original_path == None: original_path = account_path
+    if original_path == None:
+        original_path = account_path
     account, account_path = account_path[0], account_path[1:]
 
     account = top_account.lookup_by_name(account)
     if account == None:
-        raise Exception("path " + ''.join(original_path) +
-                        " could not be found")
+        raise Exception("path " + "".join(original_path) + " could not be found")
     if len(account_path) > 0:
         return account_from_path(account, account_path, original_path)
     else:
@@ -28,12 +28,13 @@ def gnc_numeric_to_python_Decimal(numeric):
     copy = gnucash.GncNumeric(numeric.num(), numeric.denom())
     result = copy.to_decimal(None)
     if not result:
-        raise Exception("gnc numeric value %s can't be converted to decimal" %
-                        copy.to_string())
-    digit_tuple = tuple(int(char) for char in str(copy.num()) if char != '-')
+        raise Exception(
+            "gnc numeric value %s can't be converted to decimal" % copy.to_string()
+        )
+    digit_tuple = tuple(int(char) for char in str(copy.num()) if char != "-")
     denominator = copy.denom()
     exponent = int(math.log10(denominator))
-    assert ((10**exponent) == denominator)
+    assert (10**exponent) == denominator
     return decimal.Decimal((sign, digit_tuple, -exponent))
 
 

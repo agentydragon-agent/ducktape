@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 
 import sys
-import dataclasses
 import pint
 from tqdm.auto import tqdm
 from inventree.api import InvenTreeAPI
-from inventree.part import Part as InvPart, PartCategory
+from inventree.part import Part as InvPart
 from inventree.stock import StockItem
 from inventree.part import ParameterTemplate, Parameter
-from samplebooks_parts_data import Resistor, Capacitor, BasePart, parts
+from samplebooks_parts_data import Resistor, BasePart, parts
 from collections import defaultdict
 
 # ---------- Setup / config ----------

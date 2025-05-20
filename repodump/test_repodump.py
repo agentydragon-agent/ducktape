@@ -1,6 +1,5 @@
 import os
 from click.testing import CliRunner
-import repodump
 from . import main
 import pytest
 
@@ -13,10 +12,12 @@ def mock_config(monkeypatch):
             "include": ["*.py"],
             "exclude": ["*.ignore"],
         },
-        "strip_snippets": [{
-            "type": "literal",
-            "lines": "REMOVE THIS",
-        }]
+        "strip_snippets": [
+            {
+                "type": "literal",
+                "lines": "REMOVE THIS",
+            }
+        ],
     }
     monkeypatch.setattr(main, "load_config", lambda: config)
 
@@ -117,8 +118,7 @@ def test_copy_flag(mock_config, mock_repo):
         # The exit code might be 0 (success) or 0 with a note about pyperclip missing
         assert result.exit_code == 0
         # We either see "Dump copied to clipboard." or "pyperclip not installed"
-        assert ("Dump copied to clipboard." in result.output
-                or "pyperclip not installed" in result.output)
-
-
-
+        assert (
+            "Dump copied to clipboard." in result.output
+            or "pyperclip not installed" in result.output
+        )

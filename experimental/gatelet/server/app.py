@@ -15,7 +15,7 @@ from .auth.dependencies import (
     get_key_path_auth_with_context,
     get_session_auth_with_context,
 )
-from .auth.handlers import AuthContext, AuthHandlerError
+from .auth.handlers import AuthHandlerError
 from .auth.webhook_auth import AuthError
 from .config import settings
 from .endpoints import admin, challenge, webhook_receive, webhook_view

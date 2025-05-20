@@ -3,7 +3,6 @@
 import pytest
 import uuid
 from datetime import datetime, timedelta
-from hamcrest import assert_that, is_
 
 from sqlalchemy.ext.asyncio import AsyncSession
 

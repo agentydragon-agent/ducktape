@@ -99,7 +99,7 @@ def upload_lcsc_images(api: InvenTreeAPI):
         # We'll attempt to fetch the LCSC image URL
         try:
             image_url = scrape_lcsc_image_url(lcsc_id)
-        except Exception as e:
+        except Exception:
             log.exception("Failed to get image URL from LCSC")
             raise
 
@@ -120,7 +120,7 @@ def upload_lcsc_images(api: InvenTreeAPI):
         try:
             r = requests.get(image_url, headers=LCSC_SCRAPE_HEADERS)
             r.raise_for_status()
-        except Exception as e:
+        except Exception:
             log.exception("Error downloading part image")
             raise
         # part.uploadImage(...) expects a path, save to a temp file

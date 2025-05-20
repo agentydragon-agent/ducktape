@@ -1,10 +1,8 @@
-import os
 import shlex
 import subprocess
 import sys
 from pathlib import Path
 
-from inventree.api import InvenTreeAPI
 from inventree.label import LabelTemplate
 from inventree.part import Part
 from inventree.stock import StockItem

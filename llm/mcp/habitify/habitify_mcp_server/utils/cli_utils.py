@@ -8,10 +8,8 @@ import typer
 from rich.console import Console
 
 from ..habitify_client import HabitifyClient, HabitifyError
-from . import format_rich_status
 
 # Import asyncio for async functions
-import asyncio
 
 
 async def resolve_habit_for_cli(

@@ -14,9 +14,8 @@ import json
 import re
 import urllib.request
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Optional, Tuple, TypeVar
+from typing import Any, Dict, Optional, TypeVar
 
-from ansible.plugins.action import ActionBase
 
 # Type variables for better type hints
 T = TypeVar("T")

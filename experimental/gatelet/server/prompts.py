@@ -1,7 +1,5 @@
 """Prompt generation for LLMs to access Gatelet."""
 
-from typing import Union
-
 from .config import ChallengeResponseAuthSettings, KeyInUrlAuthSettings
 from .models import AuthKey
 
@@ -27,4 +25,3 @@ def generate_access_prompt(
         return f"Go to: {base_url}/cr/{auth_key.id}"
     else:
         raise ValueError(f"Unsupported authentication configuration: {type(config)}")
-

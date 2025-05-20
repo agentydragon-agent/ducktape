@@ -13,9 +13,7 @@ if not output:
     sys.exit(0)
 
 if re.match(r"overwrite .+\? \[ynaq\]", output):
-    print(
-        "rcup interactively asked whether to overwrite, you should it manually:"
-    )
+    print("rcup interactively asked whether to overwrite, you should it manually:")
 else:
     print("rcup produced unhandled output")
 

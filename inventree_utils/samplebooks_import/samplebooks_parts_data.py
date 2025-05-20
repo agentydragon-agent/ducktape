@@ -3,7 +3,6 @@
 import dataclasses
 import pint
 from itertools import groupby
-from tqdm.auto import tqdm
 
 E24 = [
     1,
@@ -393,7 +392,6 @@ def eyeball_check():
 # param = Parameter.create(self.api, data={'part': p.pk, 'template': parametertemplate.pk, 'data': 10})
 import dataclasses
 import pint
-from itertools import groupby
 
 E24 = [
     1,

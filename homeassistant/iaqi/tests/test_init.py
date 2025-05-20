@@ -2,7 +2,7 @@
 
 from unittest.mock import patch
 
-from hamcrest import assert_that, has_entries, not_none
+from hamcrest import assert_that, has_entries
 from homeassistant.setup import async_setup_component
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 

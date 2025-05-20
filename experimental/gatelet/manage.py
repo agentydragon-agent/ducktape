@@ -23,9 +23,7 @@ def _entity_counts(session) -> Iterable[tuple[str, int]]:
     """Return row counts for all tables."""
     counts = []
     for table in Base.metadata.sorted_tables:
-        cnt = session.execute(
-            select(func.count()).select_from(table)
-        ).scalar()  # pylint: disable=not-callable
+        cnt = session.execute(select(func.count()).select_from(table)).scalar()  # pylint: disable=not-callable
         counts.append((table.name, cnt))
     return counts
 

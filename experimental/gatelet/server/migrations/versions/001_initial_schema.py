@@ -128,4 +128,3 @@ def downgrade() -> None:
     op.drop_table("auth_keys")
     op.drop_table("webhook_payloads")
     op.drop_table("webhook_integrations")
-

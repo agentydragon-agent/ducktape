@@ -109,6 +109,7 @@ aw_cur = datetime.now() - timedelta(minutes=5)
 
 # ─ immediate AW snapshot helper ─────────────────────────────────────────────
 
+
 def _send_aw_snapshot() -> None:
     """Collect ActivityWatch events *since the current watermark* and queue
     them immediately.  Also advances the global watermark ``aw_cur``.
@@ -142,7 +143,6 @@ def _send_aw_snapshot() -> None:
         "AW snapshot queued via signal/suspend (size=%d bytes)",
         len(_make_body([ev_payload])),
     )
-
 
 
 # ─ helpers ───────────────────────────────────────────────────────────────────
@@ -297,7 +297,9 @@ def _collect_aw_events(ts_from: datetime) -> tuple[dict[str, list], datetime]:
                 per_app[title] = per_app.get(title, 0) + int(dur)
             else:
                 other_entry: dict = {"dur": int(dur)}
-                other_entry.update({k: v for k, v in data.items() if k not in ("app", "title")})
+                other_entry.update(
+                    {k: v for k, v in data.items() if k not in ("app", "title")}
+                )
                 misc.append(other_entry)
 
         # Merge tiny titles (< MERGE_SHORT_TITLE_SEC) into "other" per app.
@@ -308,7 +310,9 @@ def _collect_aw_events(ts_from: datetime) -> tuple[dict[str, list], datetime]:
                 titles["other"] = titles.get("other", 0) + other_total
 
         # Desired structure: per app → {title: dur, ...}
-        out_obj: dict[str, dict[str, int] | list] = {app: titles for app, titles in agg.items()}
+        out_obj: dict[str, dict[str, int] | list] = {
+            app: titles for app, titles in agg.items()
+        }
 
         if misc:
             out_obj["_other"] = misc  # reserved key for non-window items
@@ -382,6 +386,8 @@ _run_cli_helpers()
 # ─ startup notice ────────────────────────────────────────────────────────────
 
 log.info("AW snapshot trigger: run `kill -USR1 %d` to send immediately", os.getpid())
+
+
 def _aw_poll(_: int) -> bool:
     global aw_cur
 
@@ -479,6 +485,7 @@ loop = GLib.MainLoop()
 for sig in (signal.SIGINT, signal.SIGTERM):
     signal.signal(sig, goodbye)
 # SIGUSR1 – immediate AW snapshot
+
 
 def _sigusr1_handler(signum, frame):  # pragma: no cover
     # Schedule on mainloop to avoid doing heavy work in signal context.

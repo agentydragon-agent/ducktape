@@ -174,7 +174,7 @@ class EncryptedEncoder:
         chunks = [ciphertext[i : i + width] for i in range(0, len(ciphertext), width)]
         total = len(chunks)
         body = "\n".join(
-            f"  {chunk!r}  # line {i+1}/{total}" for i, chunk in enumerate(chunks)
+            f"  {chunk!r}  # line {i + 1}/{total}" for i, chunk in enumerate(chunks)
         )
 
         return out | {
@@ -248,7 +248,7 @@ def _print_startup_banner() -> None:
     if any(mod.startswith("pytest") for mod in sys.modules):
         return
 
-    index_url = f"http://127.0.0.1:8000/"
+    index_url = "http://127.0.0.1:8000/"
 
     lines: list[str] = [
         "📬  Webhook Inbox ready",
@@ -260,14 +260,14 @@ def _print_startup_banner() -> None:
     # False. Running locally in a terminal (e.g. via ``uvicorn webhook_inbox:app
     # --reload``) the call returns *True* so we show the convenience link.
     if WEBHOOK_INBOX_KEY and sys.stdout.isatty():
-        lines.append(f"  Unencrypted UI →")
+        lines.append("  Unencrypted UI →")
         lines.append(f"    {index_url}?key={WEBHOOK_INBOX_KEY}")
         lines.append(f"    {index_url}k/{quote(WEBHOOK_INBOX_KEY)}")
     lines.extend(
         [
             "",
             "Send a test webhook:",
-            f"""   curl -X POST {index_url} -d '{json.dumps({'hello':'world'})}'""",
+            f"""   curl -X POST {index_url} -d '{json.dumps({"hello": "world"})}'""",
         ]
     )
 
@@ -418,7 +418,7 @@ def _render_events_page(
         raise HTTPException(400, f"'count' must be between 1 and {PAGE_SIZE}")
 
     rows = CONN.execute(
-        "SELECT id,ts,payload FROM events " "WHERE ts < ? ORDER BY ts DESC LIMIT ?",
+        "SELECT id,ts,payload FROM events WHERE ts < ? ORDER BY ts DESC LIMIT ?",
         (before_ts, count),
     ).fetchall()
 

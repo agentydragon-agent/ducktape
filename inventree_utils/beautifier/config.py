@@ -53,7 +53,7 @@ def load_or_prompt_for_config() -> InstanceConfig:
     with open(INSTANCE_FILE, "w") as f:
         yaml.safe_dump(dataclasses.asdict(cfg), f)
 
-    print(f"\nConfiguration saved.\n")
+    print("\nConfiguration saved.\n")
     return cfg
 
 

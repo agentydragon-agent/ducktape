@@ -1,11 +1,6 @@
 #!/usr/bin/env python3
-import argparse
-import os
 import pathlib
-import re
-import shutil
 import sys
-import textwrap
 from pathlib import Path
 
 import markdown

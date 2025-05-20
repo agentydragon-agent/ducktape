@@ -4,13 +4,11 @@ import json
 from typing import Any, Dict
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth.webhook_auth import AuthError, create_auth_handler
-from ..config import settings
 from ..database import get_db_session
 from ..models import WebhookIntegration, WebhookPayload
 

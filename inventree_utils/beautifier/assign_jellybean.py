@@ -100,7 +100,7 @@ def parse_jellybean_editor_file(part_lookup, file_path):
 def _run_editor(file):
     cmdline = (os.environ.get("EDITOR", "vi"), file)
     print(f"Opening editor: {shlex.join(cmdline)}")
-    return subprocess.run(cmdline).returncode == 0
+    return subprocess.run(cmdline, check=False).returncode == 0
 
 
 def build_assignments_table(api, assignments):

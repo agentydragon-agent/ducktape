@@ -64,7 +64,6 @@ def _list_to_array(lst: Iterable[str]) -> str:
 
 
 class ActionModule(ActionBase):
-
     def run(self, tmp=None, task_vars=None):  # noqa: D401  (Ansible's signature)
         result = super().run(tmp, task_vars)
 

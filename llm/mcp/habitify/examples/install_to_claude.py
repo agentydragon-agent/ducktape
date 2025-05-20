@@ -39,7 +39,7 @@ cmd = ["mcp", "install", mcp_module, "--name", server_name]
 for env_var in env_vars:
     cmd.extend(["-v", env_var])
 
-print(f"Installing Habitify MCP server to Claude Desktop...")
+print("Installing Habitify MCP server to Claude Desktop...")
 print(f"Server module: {mcp_module}")
 print(f"Server name: {server_name}")
 
@@ -64,4 +64,3 @@ except FileNotFoundError:
     sys.exit(1)
 
 print("\nHabitify MCP server successfully installed to Claude Desktop!")
-
