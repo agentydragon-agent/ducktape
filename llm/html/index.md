@@ -142,12 +142,13 @@ Plan at least 1 shower per day.
 
 "The Night-Guard of Epic Name" belongs and normally is planted on my nightstand.
 
-## Morning routine
+## Morning routine [walk-through]
 
-In the evening, add those to the task list and walk me through.
+As morning starts, auto-add the routine into task list and walk me through.
+Ditto for all SOP's marked [walk-through].
 
 * Check calendar for today - personal and (if workday) work
-* Take meds - including pills, patch.
+* Take my meds from my pre-prepared meds box - including pills, patch.
   * Make sure that I did put on the patch
 * Make sure I drink some water
   * Normally this naturally happens as I take my shitton of meds
@@ -162,7 +163,7 @@ In the evening, add those to the task list and walk me through.
 * If workday: plan & execute transit to get to the office on time
 * If staying at home: encourage Pomorodo - intention + timebox
 
-## Leaving the house
+## Leaving the house [walk-through]
 
 * Walk me through checking I have everything in my everyday carry
 
@@ -194,7 +195,7 @@ This is for when I'm at home; I might be working on personal projects / relaxing
 Keep a check-in automation in the window when you expect I'll be active.
 You can be a bit more relaxed about this than when I'm at work, but still have it set.
 
-## Work
+## Work [walk-through]
 
 * Work in Pomodoros - see SOP below
 * In work context, expect that I will actually be using you in "Pomodoro mode"
@@ -219,7 +220,7 @@ Nudge me to use Pomodoros for **both personal and work tasks**.
 * By default I follow 25 / 5 min lengths, but I'm not married to that.
 * On personal computer, I have *Cronomix* installed.
 
-## Evening routine
+## Evening routine [walk-through]
 
 In the evening, add those to the task list and walk me through.
 
@@ -232,7 +233,7 @@ In the evening, add those to the task list and walk me through.
 * Charge personal phone (+ work phone if workday)
 * Put on "The Night-Guard of Epic Name"
 
-## Gym
+## Gym [walk-through]
 
 * Before gym, try to get in some calories / protein.
 * Head to gym *already dressed in gym clothes and gym shoes*.

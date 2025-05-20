@@ -4,6 +4,7 @@ module(
 )
 
 bazel_dep(name = "rules_python", version = "1.4.1")
+bazel_dep(name = "buildifier_prebuilt", version = "8.0.3")
 
 python = use_extension("@rules_python//python/extensions:python.bzl", "python")
 python.toolchain(
@@ -61,26 +62,60 @@ stack = use_extension(
     "stack_snapshot",
 )
 
-# keep the custom attoparsec split you had before
-stack.components(
-    name = "attoparsec",
-    mapping = {
-        "lib:attoparsec":            ["lib:attoparsec"],
-        "lib:attoparsec-internal":   ["lib:attoparsec-internal"],
-    },
-)
-
-stack.components_dependencies(
-    name = "attoparsec",
-    mapping_json = """{"lib:attoparsec": ["lib:attoparsec-internal"]}""",
-)
-
+# Define the Stackage snapshot
 stack.snapshot(
-    name     = "stackage",
-    snapshot = "lts-19.17",
-    packages = ["base", "hakyll"],
-    # vendored override comes from the extra extension below
-    vendored_packages = {"xml-conduit": "@xml_conduit//:xml-conduit"},
+    name = "lts-19.17",  # This is the snapshot name
+)
+
+# Declare the packages we need
+stack.package(
+    name = "base",
+)
+
+stack.package(
+    name = "hakyll",
+)
+
+# Add required dependency packages for xml-conduit
+# Configure attoparsec with its internal components
+stack.package(
+    name = "attoparsec",
+    components = ["lib:attoparsec", "lib:attoparsec-internal"],
+    components_dependencies = {"lib:attoparsec": ["lib:attoparsec-internal"]},
+)
+
+stack.package(
+    name = "blaze-html",
+)
+
+stack.package(
+    name = "blaze-markup",
+)
+
+stack.package(
+    name = "conduit",
+)
+
+stack.package(
+    name = "conduit-extra",
+)
+
+stack.package(
+    name = "data-default-class",
+)
+
+stack.package(
+    name = "resourcet",
+)
+
+stack.package(
+    name = "xml-types",
+)
+
+# Set up xml-conduit override
+stack.package(
+    name = "xml-conduit",
+    vendored = "@xml_conduit//:xml-conduit",
 )
 
 # expose the repos the two extensions create
@@ -90,9 +125,7 @@ use_repo(
 register_toolchains("@all_bindist_toolchains//:all") # makes the toolchain visible
 use_repo(
     stack,
-    "stackage",          # the pinned snapshot
-    "stackage-exe",      # helper binary
-    "stackage-unpinned", # auto-generated during `bazel run @...//:pin`
+    "stackage",  # The repository for the pinned snapshot
 )
 
 # ─ one-off override for xml-conduit ─────────────────────────────────────────

@@ -1,4 +1,5 @@
 load("@rules_python//python/pip_install:requirements.bzl", "compile_pip_requirements")
+load("@buildifier_prebuilt//:rules.bzl", "buildifier")
 
 # Convenient way to update.
 compile_pip_requirements(
@@ -14,4 +15,18 @@ platform(
         "@platforms//os:linux",
         "@platforms//cpu:x86_64",
     ],
+)
+
+# Format Bazel files
+buildifier(
+    name = "buildifier",
+    lint_mode = "fix",
+    mode = "fix",
+)
+
+# Check Bazel formatting
+buildifier(
+    name = "buildifier.check",
+    lint_mode = "warn",
+    mode = "diff",
 )
