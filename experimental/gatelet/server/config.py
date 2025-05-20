@@ -163,7 +163,8 @@ class Settings(BaseModel):
         except ModuleNotFoundError:  # pragma: no cover - fallback for older Python
             import toml  # type: ignore
 
-            with open(path, "rb") as f:
+            # toml library (not Python builtin - used in case of Python < 3.11) reads strings
+            with open(path, "r") as f:
                 config_dict = toml.load(f)
         return cls.parse_obj(config_dict)
 
