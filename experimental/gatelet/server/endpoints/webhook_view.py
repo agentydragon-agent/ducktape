@@ -81,17 +81,26 @@ async def get_webhook_payloads(
         Dict with template context variables
     """
     # Build base query
-    count_query = select(func.count()).select_from(WebhookPayload)
-    payloads_query = select(WebhookPayload).order_by(WebhookPayload.received_at.desc())
+    join_condition = WebhookPayload.integration_id == WebhookIntegration.id
+    count_query = (
+        select(func.count())
+        .select_from(WebhookPayload)
+        .join(WebhookIntegration, join_condition)
+    )
+    payloads_query = (
+        select(WebhookPayload)
+        .join(WebhookIntegration, join_condition)
+        .order_by(WebhookPayload.received_at.desc())
+    )
 
     # Apply filter if integration name provided
     if integration_name:
-        count_query = count_query.where(
-            WebhookPayload.integration_name == integration_name
-        )
-        payloads_query = payloads_query.where(
-            WebhookPayload.integration_name == integration_name
-        )
+        condition = WebhookIntegration.name == integration_name
+    else:
+        condition = WebhookIntegration.is_enabled
+
+    count_query = count_query.where(condition)
+    payloads_query = payloads_query.where(condition)
 
     # Get total count
     total_count = await db_session.scalar(count_query)
@@ -131,7 +140,13 @@ async def get_latest_payloads(
 ) -> list[dict[str, Any]]:
     """Get latest webhook payloads across all integrations."""
     query = (
-        select(WebhookPayload).order_by(WebhookPayload.received_at.desc()).limit(limit)
+        select(WebhookPayload)
+        .join(
+            WebhookIntegration, WebhookPayload.integration_id == WebhookIntegration.id
+        )
+        .where(WebhookIntegration.is_enabled)
+        .order_by(WebhookPayload.received_at.desc())
+        .limit(limit)
     )
     result = await db_session.execute(query)
     return [
@@ -152,10 +167,7 @@ async def list_all_payloads(
     db_session: AsyncSession = Depends(get_db_session),
 ):
     """List all webhook integrations and payloads."""
-    # TODO: This lists all webhook payloads even from disabled integrations.
-    # It's fine for now, but we should consider filtering by enabled integrations in the future.
-
-    # TODO: Once we have human login, with human having logged in, it should also show disabled integrations
+    # TODO: Once we have human login, it should also show disabled integrations
 
     # Get webhook integrations
     integrations_query = select(WebhookIntegration).where(WebhookIntegration.is_enabled)
