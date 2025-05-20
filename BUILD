@@ -1,5 +1,5 @@
-load("@rules_python//python/pip_install:requirements.bzl", "compile_pip_requirements")
 load("@buildifier_prebuilt//:rules.bzl", "buildifier")
+load("@rules_python//python/pip_install:requirements.bzl", "compile_pip_requirements")
 
 # Convenient way to update.
 compile_pip_requirements(

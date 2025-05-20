@@ -31,4 +31,3 @@ haskell_cabal_library(
     )
 
 xml_conduit_deps = module_extension(implementation = _xml_conduit_deps_impl)
-

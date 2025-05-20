@@ -1,4 +1,5 @@
-load("@rules_python//python:python.bzl", "py_binary", "py_test")
+load("@rules_python//python:defs.bzl", "py_library")
+load("@rules_python//python:python.bzl", "py_binary")
 
 py_library(
     name = "external_system",
@@ -43,8 +44,8 @@ py_binary(
         ":splitwise_lib",
         ":ubs_credit_card_lib",
         ":ubs_lib",
+        "//finance:gnucash_util",
         "@pypi//absl_py",
         "@pypi//xdg",
-        "//finance:gnucash_util",
     ],
 )
