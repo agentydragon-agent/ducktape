@@ -4,3 +4,14 @@ repos:
     hooks:
       - id: no-commit-to-branch
 
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.11.10
+    hooks:
+      - id: ruff-check
+        args: [--extend-select, PL]   # turn on Pylint-equivalent rules
+      - id: ruff-format
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.10.0
+    hooks:
+      - id: mypy
+        additional_dependencies: [types-requests]   # extras as needed
