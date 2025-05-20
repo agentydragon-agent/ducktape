@@ -1,18 +1,21 @@
 server {
     listen 80;
     server_name agentydragon.com www.agentydragon.com;
-
     return 301 https://$host$request_uri;
 }
 
 server {
     listen 443 ssl http2;
-    server_name agentydragon.com www.agentydragon.com;
+    server_name agentydragon.com;
+    return 301 https://www.agentydragon.com$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name www.agentydragon.com;
 
     ssl_certificate /etc/letsencrypt/live/agentydragon.com/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/agentydragon.com/privkey.pem;
-
-
 
     root /var/www/agentydragon.com;
     index index.html index.htm;

@@ -79,6 +79,8 @@
         loop:
           - agentydragon.com
           - adgn.link
+        notify:
+          - Reload nginx
 
       # nginx default website takes priority over http://agentydragon.com
       # redirect, so disable it.
