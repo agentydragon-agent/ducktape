@@ -5,10 +5,9 @@ import uuid
 from datetime import datetime
 
 import pytest
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from server.auth.handlers import key_path_auth, AuthHandlerError
+from server.auth.handlers import AuthHandlerError, key_path_auth
 from server.models import AuthKey
+from sqlalchemy.ext.asyncio import AsyncSession
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)

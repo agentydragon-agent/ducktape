@@ -1,8 +1,7 @@
 """Basic tests for the Indoor AQI sensor component."""
 
-from hamcrest import assert_that, close_to
-
 from custom_components.indoor_aqi.sensor import compute_iaqi
+from hamcrest import assert_that, close_to
 
 
 def test_compute_iaqi_normal_values():

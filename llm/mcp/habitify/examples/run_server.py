@@ -5,10 +5,11 @@ This script creates and starts the Habitify MCP server with either stdio transpo
 (for Claude Desktop) or SSE transport (for HTTP-based web integrations).
 """
 
-import os
-import sys
 import argparse
 import logging
+import os
+import sys
+
 from dotenv import load_dotenv
 
 # Setup logging

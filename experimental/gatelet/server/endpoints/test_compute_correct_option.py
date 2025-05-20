@@ -1,6 +1,6 @@
 import hashlib
-import pytest
 
+import pytest
 from server.endpoints.challenge import compute_correct_option
 
 

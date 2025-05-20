@@ -1,7 +1,8 @@
 # http://manifold.markets/api/v0/markets?limit=1&before=id
-import requests
 import urllib
+
 import pandas as pd
+import requests
 from tqdm.auto import tqdm
 
 BASE_URI = "http://manifold.markets/api/v0"

@@ -16,7 +16,6 @@ import urllib.request
 from dataclasses import dataclass
 from typing import Any, Dict, Optional, TypeVar
 
-
 # Type variables for better type hints
 T = TypeVar("T")
 R = TypeVar("R")

@@ -10,12 +10,12 @@ import dataclasses
 import logging
 import os
 import sys
-import yaml
 from functools import cached_property
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 import httpx
+import yaml
 
 # Configure logging
 logging.basicConfig(

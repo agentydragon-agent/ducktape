@@ -1,10 +1,8 @@
-import subprocess
 import os
 import os.path
+import subprocess
 
-from absl import app
-from absl import logging
-from absl import flags
+from absl import app, flags, logging
 
 FLAGS = flags.FLAGS
 

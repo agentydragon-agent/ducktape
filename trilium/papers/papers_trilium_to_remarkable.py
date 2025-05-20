@@ -6,17 +6,15 @@ This will pair the device to Remarkable API so that we can upload later.
 """
 
 import dataclasses
-import requests
-from absl import app
-from absl import flags
 import re
-from tqdm.auto import tqdm
 import subprocess
-import click
 import sys
-
 from typing import Optional
 
+import click
+import requests
+from absl import app, flags
+from tqdm.auto import tqdm
 from xdg import xdg_cache_home
 
 _ETAPI_ROOT_URL = flags.DEFINE_string(

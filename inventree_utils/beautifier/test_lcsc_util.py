@@ -1,4 +1,5 @@
 import pytest
+
 from .lcsc_util import parse_url_for_lcsc_id
 
 

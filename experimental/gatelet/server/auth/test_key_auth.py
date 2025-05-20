@@ -1,15 +1,14 @@
 """Tests for key-in-path authentication."""
 
-import pytest
 import uuid
 from datetime import datetime, timedelta
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from server.auth.key_auth import validate_key, KeyAuthError
+import pytest
+from server.auth.key_auth import KeyAuthError, validate_key
 from server.config import settings
 from server.models import AuthKey
 from server.tests.utils import persist
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 @pytest.mark.asyncio

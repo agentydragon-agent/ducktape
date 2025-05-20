@@ -2,8 +2,9 @@
 Error handling utilities for Habitify MCP.
 """
 
+from typing import Any, Callable, Dict, Optional, Union
+
 import httpx
-from typing import Any, Dict, Optional, Union, Callable
 
 from ..types import ErrorResponse
 

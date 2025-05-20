@@ -10,11 +10,13 @@ Examples:
 """
 
 import os
-import sys
 import re
+import sys
+
 import click
-from .patterns import path_match
 import yaml
+
+from .patterns import path_match
 
 CONFIG_PATH = os.path.expanduser("~/.config/repodump.yaml")
 

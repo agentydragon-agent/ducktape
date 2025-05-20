@@ -19,7 +19,6 @@ from ..database import get_db_session
 from ..models import AuthCRSession, AuthKey, AuthNonce  # type: ignore[import]
 from ..shared import templates
 
-
 MAX_OPTIONS = 256
 
 
