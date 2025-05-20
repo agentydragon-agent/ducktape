@@ -92,6 +92,9 @@ Designed for current LLM constraints (as of May 2025), particularly OpenAI sched
 - Authentication via URL paths or challenge-response
 - All functionality accessible via GET requests
 - Self-describing interfaces guide LLMs on service usage
+- Each HTML template starts with a comment indicating its audience
+  (human admin, LLM, or both). Pages for LLMs provide only link-based
+  navigation without forms.
 
 ### OpenAI o3 Model Constraints
 
