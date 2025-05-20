@@ -1,9 +1,8 @@
 """Tests for admin password authentication."""
 
-from http import HTTPStatus
+import re
 
 import pytest
-import re
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -30,7 +29,6 @@ async def test_admin_login_success(client: AsyncClient, db_session: AsyncSession
     response = await client.post(
         "/admin/login",
         data={"password": "gatelet", "csrf_token": token},
-        headers={"X-CSRF-Token": token},
     )
     assert response.status_code == 302  # noqa: PLR2004
     assert response.headers["location"] == "/admin/"
@@ -46,6 +44,5 @@ async def test_admin_login_invalid(client: AsyncClient, db_session: AsyncSession
     response = await client.post(
         "/admin/login",
         data={"password": "wrong", "csrf_token": token},
-        headers={"X-CSRF-Token": token},
     )
     assert response.status_code == 401  # noqa: PLR2004

@@ -31,7 +31,6 @@ async def _login(client: AsyncClient) -> str:
     response = await client.post(
         "/admin/login",
         data={"password": "gatelet", "csrf_token": token},
-        headers={"X-CSRF-Token": token},
     )
     assert response.status_code == HTTPStatus.FOUND
     return response.cookies["admin_session"]
@@ -59,7 +58,6 @@ async def test_create_key(client: AsyncClient, db_session: AsyncSession):
     response = await client.post(
         "/admin/keys/new",
         data={"description": "test key", "csrf_token": token},
-        headers={"X-CSRF-Token": token},
         cookies={"admin_session": session},
     )
     assert response.status_code == HTTPStatus.OK
@@ -79,7 +77,6 @@ async def test_revoke_key(
     response = await client.post(
         f"/admin/keys/{test_auth_key.id}/revoke",
         data={"csrf_token": token},
-        headers={"X-CSRF-Token": token},
         cookies={"admin_session": session},
     )
     assert response.status_code == HTTPStatus.FOUND
