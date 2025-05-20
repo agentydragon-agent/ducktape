@@ -7,6 +7,7 @@ from typing import Callable, Optional
 from fastapi import Cookie, Depends, FastAPI, Request, status
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi_csrf_protect import CsrfProtect
 from sqlalchemy import select
 
 from .auth.dependencies import (
@@ -18,11 +19,18 @@ from .auth.dependencies import (
 from .auth.handlers import AuthHandlerError
 from .auth.webhook_auth import AuthError
 from .config import settings
-from .endpoints import admin, challenge, webhook_receive, webhook_view
-from .shared import BASE_DIR, templates
 from .database import get_db_session
+from .endpoints import (
+    admin,
+    challenge,
+    homeassistant,
+    webhook_receive,
+    webhook_view,
+)
+from .endpoints.homeassistant import fetch_states
+from .endpoints.webhook_view import get_latest_payloads
 from .models import AdminSession
-from fastapi_csrf_protect import CsrfProtect
+from .shared import BASE_DIR, templates
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +48,7 @@ app.include_router(webhook_receive.router)
 app.include_router(webhook_view.router)
 app.include_router(challenge.router)
 app.include_router(admin.router)
+app.include_router(homeassistant.router)
 
 
 # Error handlers
@@ -140,8 +149,18 @@ def register_with_all_auth_methods(
 # Create auth-method-agnostic route handlers for each endpoint type
 async def authenticated_root_handler(request: Request, auth: Auth):
     """Shared handler for authenticated root endpoint."""
+    async with get_db_session() as db_session:
+        recent = await get_latest_payloads(db_session, limit=5)
+    ha_states = await fetch_states()
     return templates.TemplateResponse(
-        "index.html", {"request": request, "header": "Gatelet", "auth": auth}
+        "index.html",
+        {
+            "request": request,
+            "header": "Gatelet",
+            "auth": auth,
+            "recent_payloads": recent,
+            "ha_states": ha_states,
+        },
     )
 
 
@@ -153,3 +172,7 @@ register_with_all_auth_methods("/webhooks/", webhook_view.list_all_payloads)
 register_with_all_auth_methods(
     "/webhooks/{integration_name}", webhook_view.list_integration_payloads
 )
+
+# Register Home Assistant routes with all auth methods
+register_with_all_auth_methods("/ha/", homeassistant.list_entities)
+register_with_all_auth_methods("/ha/{entity_id}", homeassistant.entity_details)
