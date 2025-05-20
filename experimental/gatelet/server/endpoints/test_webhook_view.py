@@ -3,7 +3,7 @@
 from http import HTTPStatus
 
 import pytest
-from hamcrest import all_of, assert_that, contains_string
+from hamcrest import all_of, assert_that, contains_string, is_not
 from httpx import AsyncClient
 from server.models import WebhookIntegration, WebhookPayload
 from server.shared import templates
@@ -141,3 +141,29 @@ async def test_session_auth_webhooks(
             contains_string("session"),
         ),
     )
+
+
+@pytest.mark.asyncio
+async def test_disabled_payloads_hidden(
+    client: AsyncClient, db_session: AsyncSession, test_auth_key
+):
+    """Ensure payloads from disabled integrations are not shown."""
+    integration = WebhookIntegration(
+        name="disabled-int",
+        description="Disabled integration",
+        auth_type="none",
+        auth_config={"type": "none"},
+        is_enabled=False,
+    )
+    integration = await persist(db_session, integration)
+
+    payload = WebhookPayload(
+        integration_name=integration.name,
+        integration_id=integration.id,
+        payload={"hidden": True},
+    )
+    await persist(db_session, payload)
+
+    response = await client.get(f"/k/{test_auth_key.key_value}/webhooks/")
+    assert response.status_code == HTTPStatus.OK
+    assert_that(response.text, is_not(contains_string(integration.name)))
