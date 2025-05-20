@@ -1,10 +1,11 @@
 """FastAPI application for Gatelet server."""
 
 import logging
+from datetime import datetime
 from typing import Callable, Optional
 
 from fastapi import Cookie, Depends, FastAPI, Request, status
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from .shared import templates, BASE_DIR
@@ -17,7 +18,7 @@ from .auth.dependencies import (
 )
 from .auth.webhook_auth import AuthError
 from .config import settings
-from .endpoints import challenge, webhook_receive, webhook_view
+from .endpoints import admin, challenge, webhook_receive, webhook_view
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +35,7 @@ app.mount(
 app.include_router(webhook_receive.router)
 app.include_router(webhook_view.router)
 app.include_router(challenge.router)
+app.include_router(admin.router)
 
 
 # Error handlers
@@ -64,12 +66,21 @@ async def webhook_auth_error(request: Request, exc: AuthError):
 
 
 # Root endpoint - public information and login form
+from sqlalchemy import select
+from .models import AdminSession
+from .database import get_db_session
+
+
 @app.get("/", response_class=HTMLResponse)
 async def root(request: Request, session: Optional[str] = Cookie(None)):
     """Root endpoint with service information and authentication options."""
     # Check if already authenticated via cookie
     if session:
-        raise NotImplementedError("TODO: redirect to authenticated root")
+        async with get_db_session() as db_session:
+            stmt = select(AdminSession).where(AdminSession.session_token == session)
+            admin_session = (await db_session.execute(stmt)).scalar_one_or_none()
+            if admin_session and admin_session.expires_at > datetime.now():
+                return RedirectResponse("/admin/", status_code=302)
 
     return templates.TemplateResponse(
         "public.html",

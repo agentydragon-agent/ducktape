@@ -39,7 +39,9 @@ class WebhookIntegration(Base):
         comment="Authentication type (e.g., 'none', 'token', 'basic')",
     )
     auth_config = Column(JSON, nullable=True, comment="Authentication configuration")
-    created_at = Column(DateTime, nullable=False, default=func.now())
+    created_at = Column(
+        DateTime, nullable=False, default=func.now()
+    )  # pylint: disable=not-callable
     updated_at = Column(
         DateTime, nullable=False, default=func.now(), onupdate=func.now()
     )
@@ -80,7 +82,9 @@ class AuthKey(Base):
     id = Column(Integer, primary_key=True)
     key_value = Column(String, unique=True, nullable=False)
     description = Column(String, nullable=True)
-    created_at = Column(DateTime, nullable=False, default=func.now())
+    created_at = Column(
+        DateTime, nullable=False, default=func.now()  # pylint: disable=not-callable
+    )
     revoked_at = Column(DateTime, nullable=True)
 
     # Relationship to LLM challenge-response sessions
@@ -143,6 +147,28 @@ class AuthNonce(Base):
     def is_used(self) -> bool:
         """Check if nonce has been used."""
         return self.used_at is not None
+
+
+class AdminUser(Base):
+    """Model for administrator password."""
+
+    __tablename__ = "admin_users"
+
+    id = Column(Integer, primary_key=True)
+    password_hash = Column(String, nullable=False)
+
+
+class AdminSession(Base):
+    """Admin session model."""
+
+    __tablename__ = "admin_sessions"
+
+    id = Column(Integer, primary_key=True)
+    session_token = Column(String, unique=True, nullable=False)
+    created_at = Column(
+        DateTime, nullable=False, default=func.now()  # pylint: disable=not-callable
+    )
+    expires_at = Column(DateTime, nullable=False)
 
 
 def get_engine(database_url):
