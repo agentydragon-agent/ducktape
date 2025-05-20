@@ -2,7 +2,7 @@
 Utility to resolve a habit by name or ID.
 """
 
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Optional, Union
 
 from ..habitify_client import HabitifyClient, HabitifyError
 from ..types import ErrorResponse, ResolvedHabit

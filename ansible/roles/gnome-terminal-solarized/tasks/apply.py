@@ -110,7 +110,7 @@ def cmd_apply(name: str, color_dir: Path, font: str | None):
     if not (profile := profile_list.find_profile_by_name(name)):
         profile = profile_list.create_profile()
         profile_list.sync()
-        logger.debug(f"Created profile, applying settings")
+        logger.debug("Created profile, applying settings")
     else:
         logger.debug(f"Existing profile '{name}': {profile.uuid}")
 

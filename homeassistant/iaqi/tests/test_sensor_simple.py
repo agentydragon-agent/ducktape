@@ -28,4 +28,3 @@ def test_compute_iaqi_interpolation():
 def test_compute_iaqi_unknown_pollutant():
     """Test IAQI calculation with unknown pollutant."""
     assert compute_iaqi("unknown", 100) is None
-

@@ -194,7 +194,9 @@ class TestHabitifyClient:
         # Patch the client's request method
         with patch.object(client.client, "get", return_value=mock_resp) as mock_get:
             # Call the method with filters
-            habits = await client.get_journal_async(date=today, status="none", time_of_day="morning,evening")
+            habits = await client.get_journal_async(
+                date=today, status="none", time_of_day="morning,evening"
+            )
 
             # Check that the correct URL was called with parameters
             mock_get.assert_called_once()
@@ -218,7 +220,9 @@ class TestHabitifyClient:
         # Patch the client's request method
         with patch.object(client.client, "get", return_value=mock_resp) as mock_get:
             # Call the method
-            status = await client.check_habit_status_async("-Lo9NTLRX3aCxg-PjN25", date="2025-05-09")
+            status = await client.check_habit_status_async(
+                "-Lo9NTLRX3aCxg-PjN25", date="2025-05-09"
+            )
 
             # Check that the correct URL was called with parameters
             mock_get.assert_called_once()
@@ -236,7 +240,9 @@ class TestHabitifyClient:
     async def test_check_habit_status_invalid_date_async(self, client, mock_async_response):
         """Test the check_habit_status_async method with an invalid date format."""
         # Mock the error response
-        mock_resp = mock_async_response("get_habit_status_(invalid_date_format).yaml", status_code=500)
+        mock_resp = mock_async_response(
+            "get_habit_status_(invalid_date_format).yaml", status_code=500
+        )
         mock_resp.raise_for_status.side_effect = httpx.HTTPStatusError(
             "HTTP Error", request=MagicMock(), response=mock_resp
         )

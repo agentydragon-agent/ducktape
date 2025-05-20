@@ -9,7 +9,7 @@ import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 
 class Status(str, Enum):
@@ -98,7 +98,9 @@ class HabitStatusResponse(BaseModel):
     note: Optional[str] = None
 
     @classmethod
-    def from_api_model(cls, api_model: HabitStatus, date: Optional[Union[str, datetime.date]] = None) -> "HabitStatusResponse":
+    def from_api_model(
+        cls, api_model: HabitStatus, date: Optional[Union[str, datetime.date]] = None
+    ) -> "HabitStatusResponse":
         """Convert API model to client response model with Python date object."""
         # If we already have a date object, use it directly
         if isinstance(date, datetime.date):

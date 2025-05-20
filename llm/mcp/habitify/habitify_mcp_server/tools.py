@@ -4,22 +4,18 @@ Habitify MCP tools implementation.
 
 import functools
 from datetime import datetime
-from typing import Any, Callable, Dict, Literal, Optional, TypeVar, Union, cast
+from typing import Any, Callable, Literal, Optional, TypeVar, cast
 
-from .habitify_client import HabitifyClient, HabitifyError
+from .habitify_client import HabitifyClient
 from .types import (
     DateRangeStatusItem,
     DateRangeStatusResult,
-    DeleteResult,
     ErrorResponse,
-    Habit,
     HabitResult,
     HabitsResult,
     LogResult,
-    ResolvedHabit,
     ResultType,
     StatusResult,
-    UpdateResult,
 )
 from .utils import get_server_api_key
 from .utils.date_utils import format_date_human, format_date_yyyy_mm_dd

@@ -8,14 +8,11 @@ from typing import Any, Dict, Optional
 from mcp.server.fastmcp import FastMCP
 
 from . import tools
-from .types import Status, UnitType
+from .types import Status
 
 
 def create_habitify_mcp_server(
-    debug: bool = False,
-    log_level: str = "INFO",
-    api_key: Optional[str] = None,
-    port: int = 3000
+    debug: bool = False, log_level: str = "INFO", api_key: Optional[str] = None, port: int = 3000
 ) -> FastMCP:
     """
     Create and configure a Habitify MCP server.
@@ -48,7 +45,6 @@ def create_habitify_mcp_server(
             # Fallback for new FastMCP API
             server.set_metadata({"api_key": api_key_value})
 
-
     @server.tool()
     async def get_habits(include_archived: bool = False) -> Dict[str, Any]:
         """
@@ -63,9 +59,7 @@ def create_habitify_mcp_server(
         return await tools.get_habits(include_archived=include_archived)
 
     @server.tool()
-    async def get_habit(
-        id: Optional[str] = None, name: Optional[str] = None
-    ) -> Dict[str, Any]:
+    async def get_habit(id: Optional[str] = None, name: Optional[str] = None) -> Dict[str, Any]:
         """
         Get details of a specific habit by ID or name.
 
@@ -77,7 +71,6 @@ def create_habitify_mcp_server(
             Dictionary containing habit details or error information
         """
         return await tools.get_habit(id=id, name=name)
-
 
     @server.tool()
     async def get_habit_status(
@@ -114,14 +107,8 @@ def create_habitify_mcp_server(
             Dictionary with habit status(es) or error information
         """
         return await tools.get_habit_status(
-            id=id,
-            name=name,
-            date=date,
-            start_date=start_date,
-            end_date=end_date,
-            days=days
+            id=id, name=name, date=date, start_date=start_date, end_date=end_date, days=days
         )
-
 
     @server.tool()
     async def set_habit_status(
@@ -147,12 +134,7 @@ def create_habitify_mcp_server(
             Dictionary containing status update result or error information
         """
         return await tools.set_habit_status(
-            id=id,
-            name=name,
-            status=status.value,
-            date=date,
-            note=note,
-            value=value
+            id=id, name=name, status=status.value, date=date, note=note, value=value
         )
 
     # log_habit tool removed - redundant with set_habit_status

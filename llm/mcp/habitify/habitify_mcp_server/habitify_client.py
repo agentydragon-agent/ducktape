@@ -8,14 +8,13 @@ import asyncio
 import datetime
 import logging
 import os
-from typing import Any, Dict, List, Literal, Optional, Union
+from typing import Any, List, Literal, Optional, Union
 
 import httpx
 from dotenv import load_dotenv
 
 from .types import Area, Habit, HabitStatus, HabitStatusResponse
-from .utils.date_utils import (create_date_range, format_date_for_api,
-                               format_date_yyyy_mm_dd)
+from .utils.date_utils import create_date_range, format_date_for_api, format_date_yyyy_mm_dd
 
 logger = logging.getLogger("habitify.client")
 
@@ -258,7 +257,9 @@ class HabitifyClient:
 
             # If API didn't return a date, add the request date to the API model
             if not api_result.date:
-                api_result.date = format_date_yyyy_mm_dd(date) if date else datetime.date.today().isoformat()
+                api_result.date = (
+                    format_date_yyyy_mm_dd(date) if date else datetime.date.today().isoformat()
+                )
 
             # Convert the API model to a client response model with Python date object
             return HabitStatusResponse.from_api_model(api_result, date)

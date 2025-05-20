@@ -133,12 +133,11 @@ class ActionModule(ActionBase):
             )
             if release_data.get("failed"):
                 return _fail(result, release_data["msg"])
-        else:
-            # todo dedupe
-            if not (release_data := args.get("release_data")):
-                return _fail(
-                    result, "Missing required parameter: release_data xor release_spec"
-                )
+        # todo dedupe
+        elif not (release_data := args.get("release_data")):
+            return _fail(
+                result, "Missing required parameter: release_data xor release_spec"
+            )
         if not (asset_url := release_data.get("asset_url")):
             return _fail(result, "No asset URL in release info")
 

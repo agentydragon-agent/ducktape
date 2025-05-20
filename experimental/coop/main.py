@@ -26,13 +26,20 @@
 from flask import Flask, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
-from flask_login import UserMixin, LoginManager, login_user, logout_user, login_required, current_user
+from flask_login import (
+    UserMixin,
+    LoginManager,
+    login_user,
+    logout_user,
+    login_required,
+    current_user,
+)
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime
 
 app = Flask(__name__)
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///app.db'
-app.config['SECRET_KEY'] = 'secret-key-goes-here'
+app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///app.db"
+app.config["SECRET_KEY"] = "secret-key-goes-here"
 
 db = SQLAlchemy(app)
 migrate = Migrate(app, db)
@@ -41,7 +48,7 @@ login_manager = LoginManager(app)
 
 class Profile(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"))
 
     # TODO: set maximum length
     profile = db.Column(db.Text)
@@ -65,9 +72,9 @@ class User(UserMixin, db.Model):
 
 class ProfileMatchState(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'))
-    match_id = db.Column(db.Integer, db.ForeignKey('match.id'))
-    status = db.Column(db.String(10), default='pending')
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"))
+    match_id = db.Column(db.Integer, db.ForeignKey("match.id"))
+    status = db.Column(db.String(10), default="pending")
 
     # user can comment on why they picked this outcome state -
     # e.g. "this sounds promising" / "i'm not interested in this" / ...
@@ -75,8 +82,8 @@ class ProfileMatchState(db.Model):
 
     match_description = db.Column(db.String(1024))
 
-    profile = db.relationship('Profile', backref='match_states')
-    match = db.relationship('Match', backref='profile_match_states')
+    profile = db.relationship("Profile", backref="match_states")
+    match = db.relationship("Match", backref="profile_match_states")
 
     # TODO: add created_at, updated_at
 
@@ -84,15 +91,19 @@ class ProfileMatchState(db.Model):
 class Match(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     profile_match_state1_id = db.Column(
-        db.Integer, db.ForeignKey('profile_match_state.id'))
+        db.Integer, db.ForeignKey("profile_match_state.id")
+    )
     profile_match_state2_id = db.Column(
-        db.Integer, db.ForeignKey('profile_match_state.id'))
+        db.Integer, db.ForeignKey("profile_match_state.id")
+    )
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
 
     profile_match_state1 = db.relationship(
-        'ProfileMatchState', foreign_keys=[profile_match_state1_id])
+        "ProfileMatchState", foreign_keys=[profile_match_state1_id]
+    )
     profile_match_state2 = db.relationship(
-        'ProfileMatchState', foreign_keys=[profile_match_state2_id])
+        "ProfileMatchState", foreign_keys=[profile_match_state2_id]
+    )
 
 
 @login_manager.user_loader
@@ -100,16 +111,16 @@ def load_user(user_id):
     return User.query.get(int(user_id))
 
 
-@app.route('/register', methods=['POST'])
+@app.route("/register", methods=["POST"])
 def register():
     data = request.json
-    user = User(username=data['username'],
-                profile=data['profile'],
-                contact_info=data['contact'])
-    user.set_password(data['password'])
+    user = User(
+        username=data["username"], profile=data["profile"], contact_info=data["contact"]
+    )
+    user.set_password(data["password"])
     db.session.add(user)
     db.session.commit()
-    return jsonify({'message': 'User registered successfully.'}), 201
+    return jsonify({"message": "User registered successfully."}), 201
 
 
 # TODO:
@@ -119,10 +130,10 @@ def register():
 DUMMY_HASH = generate_password_hash("")
 
 
-@app.route('/login', methods=['POST'])
+@app.route("/login", methods=["POST"])
 def login():
     data = request.json
-    user = User.query.filter_by(username=data['username']).first()
+    user = User.query.filter_by(username=data["username"]).first()
 
     # TODO: secure random
     gold_hash = generate_password_hash("")
@@ -134,45 +145,43 @@ def login():
         user_exists = True
         gold_hash = DUMMY_HASH
 
-    password_matches_gold_hash = check_password_hash(gold_hash,
-                                                     data['password'])
+    password_matches_gold_hash = check_password_hash(gold_hash, data["password"])
 
     if user_exists and password_matches_gold_hash:
         # If the user exists and the password is correct, log the user in
         login_user(user)
-        return jsonify({'message': 'Login successful'})
+        return jsonify({"message": "Login successful"})
     else:
         # If the password is incorrect, return an error
-        return jsonify({'message': 'Invalid username or password'}), 401
+        return jsonify({"message": "Invalid username or password"}), 401
 
 
-@app.route('/logout', methods=['POST'])
+@app.route("/logout", methods=["POST"])
 @login_required
 def logout():
     logout_user()
-    return jsonify({'message': 'Logged out successfully'})
+    return jsonify({"message": "Logged out successfully"})
 
 
-@app.route('/update_profile', methods=['POST'])
+@app.route("/update_profile", methods=["POST"])
 @login_required
 def update_profile():
     data = request.json
-    current_user.profile = data['profile']
+    current_user.profile = data["profile"]
 
     # Delete all matches involving the current user
-    user_match_states = UserMatchState.query.filter_by(
-        user_id=current_user.id).all()
+    user_match_states = UserMatchState.query.filter_by(user_id=current_user.id).all()
 
     # Delete all matches and corresponding user match states involving the current user
-    Match.query.join(UserMatchState,
-                     (UserMatchState.match_id == Match.id)).filter(
-                         UserMatchState.user_id == current_user.id).delete(
-                             synchronize_session=False)
+    Match.query.join(UserMatchState, (UserMatchState.match_id == Match.id)).filter(
+        UserMatchState.user_id == current_user.id
+    ).delete(synchronize_session=False)
     UserMatchState.query.filter_by(user_id=current_user.id).delete(
-        synchronize_session=False)
+        synchronize_session=False
+    )
 
     db.session.commit()
-    return jsonify({'message': 'Profile updated successfully'})
+    return jsonify({"message": "Profile updated successfully"})
 
 
 # @app.route('/find_matches', methods=['GET'])
@@ -209,50 +218,57 @@ def update_profile():
 #     return jsonify(matches)
 
 
-@app.route('/respond_match', methods=['POST'])
+@app.route("/respond_match", methods=["POST"])
 @login_required
 def respond_match():
     data = request.json
-    profile_match_state = UserMatchState.query.get(
-        data['profile_match_state_id'])
+    profile_match_state = UserMatchState.query.get(data["profile_match_state_id"])
     if profile_match_state and profile_match_state.user_id == current_user.id:
-        profile_match_state.status = data['response']
+        profile_match_state.status = data["response"]
         db.session.commit()
-        return jsonify({'message': 'Response recorded'})
-    return jsonify({'message': 'Invalid request'}), 400
+        return jsonify({"message": "Response recorded"})
+    return jsonify({"message": "Invalid request"}), 400
 
 
-@app.route('/respond_match', methods=['POST'])
+@app.route("/respond_match", methods=["POST"])
 @login_required
 def respond_match():
     data = request.json
-    match = Match.query.get(data['match_id'])
+    match = Match.query.get(data["match_id"])
     if match.user1_id == current_user.id:
-        match.status1 = data['response']
+        match.status1 = data["response"]
     elif match.user2_id == current_user.id:
-        match.status2 = data['response']
+        match.status2 = data["response"]
     db.session.commit()
-    return jsonify({'message': 'Response recorded'})
+    return jsonify({"message": "Response recorded"})
 
 
-@app.route('/matches', methods=['GET'])
+@app.route("/matches", methods=["GET"])
 @login_required
 def matches():
-    confirmed_matches = Match.query.filter((
-        (Match.user1_id == current_user.id) & (Match.status1 == 'yes')
-        & (Match.status2 == 'yes')) | (
-            (Match.user2_id == current_user.id) & (Match.status1 == 'yes')
-            & (Match.status2 == 'yes'))).all()
+    confirmed_matches = Match.query.filter(
+        (
+            (Match.user1_id == current_user.id)
+            & (Match.status1 == "yes")
+            & (Match.status2 == "yes")
+        )
+        | (
+            (Match.user2_id == current_user.id)
+            & (Match.status1 == "yes")
+            & (Match.status2 == "yes")
+        )
+    ).all()
     match_details = []
     for match in confirmed_matches:
-        other_user_id = match.user2_id if match.user1_id == current_user.id else match.user1_id
+        other_user_id = (
+            match.user2_id if match.user1_id == current_user.id else match.user1_id
+        )
         other_user = User.query.get(other_user_id)
-        match_details.append({
-            'username': other_user.username,
-            'contact_info': other_user.contact_info
-        })
+        match_details.append(
+            {"username": other_user.username, "contact_info": other_user.contact_info}
+        )
     return jsonify(match_details)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     app.run(debug=True)

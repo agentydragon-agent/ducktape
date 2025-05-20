@@ -29,11 +29,14 @@ async def test_import_flow(hass):
     result = await _init_config_flow(hass, data=test_data)
 
     # Check that it created the entry
-    assert_that(result, has_entries(
-        type="create_entry",
-        title=contains_string("imported via YAML"),
-        data=test_data
-    ))
+    assert_that(
+        result,
+        has_entries(
+            type="create_entry",
+            title=contains_string("imported via YAML"),
+            data=test_data,
+        ),
+    )
 
     # Check that the entry got the right unique ID
     assert_that(result["result"].unique_id, equal_to("indoor_aqi_yaml_import"))
@@ -51,10 +54,7 @@ async def test_import_flow_already_exists(hass):
     result = await _init_config_flow(hass, data=test_data)
 
     # Check that it aborted
-    assert_that(result, has_entries(
-        type="abort",
-        reason="already_configured"
-    ))
+    assert_that(result, has_entries(type="abort", reason="already_configured"))
 
 
 async def test_import_flow_empty_data(hass):
@@ -63,8 +63,4 @@ async def test_import_flow_empty_data(hass):
     result = await _init_config_flow(hass, data=None)
 
     # Check that it still works (creates an entry with empty data)
-    assert_that(result, has_entries(
-        type="create_entry",
-        data={}
-    ))
-
+    assert_that(result, has_entries(type="create_entry", data={}))

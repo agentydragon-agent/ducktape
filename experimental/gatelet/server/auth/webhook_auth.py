@@ -64,7 +64,9 @@ class BearerAuthHandler(WebhookAuthHandler):
             raise AuthError("Invalid token", headers=bearer_headers)
 
 
-def create_auth_handler(config: Union[WebhookAuthConfig, Dict[str, Any]]) -> WebhookAuthHandler:
+def create_auth_handler(
+    config: Union[WebhookAuthConfig, Dict[str, Any]],
+) -> WebhookAuthHandler:
     """Factory function to create appropriate authentication handler."""
     if isinstance(config, dict):
         auth_type = config.get("type")

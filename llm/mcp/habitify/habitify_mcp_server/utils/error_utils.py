@@ -3,7 +3,7 @@ Error handling utilities for Habitify MCP.
 """
 
 import httpx
-from typing import Any, Dict, List, Optional, TypeVar, Union, Callable
+from typing import Any, Dict, Optional, Union, Callable
 
 from ..types import ErrorResponse
 
@@ -101,8 +101,7 @@ def create_error_response(
 
 
 def create_validation_error(
-    message: str,
-    context: Optional[Dict[str, Any]] = None
+    message: str, context: Optional[Dict[str, Any]] = None
 ) -> ErrorResponse:
     """
     Create a validation error response for parameter validation failures.
@@ -117,10 +116,7 @@ def create_validation_error(
     return _create_error_base(message, context, "validation")
 
 
-def create_not_found_error(
-    message: str,
-    context: Optional[Dict[str, Any]] = None
-) -> ErrorResponse:
+def create_not_found_error(message: str, context: Optional[Dict[str, Any]] = None) -> ErrorResponse:
     """
     Create a not found error response.
 
@@ -134,10 +130,7 @@ def create_not_found_error(
     return _create_error_base(message, context, "not_found")
 
 
-def create_auth_error(
-    message: str,
-    context: Optional[Dict[str, Any]] = None
-) -> ErrorResponse:
+def create_auth_error(message: str, context: Optional[Dict[str, Any]] = None) -> ErrorResponse:
     """
     Create an authentication error response.
 

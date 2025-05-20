@@ -1,5 +1,6 @@
 import re
 
+
 def path_pattern_to_regex(pat: str) -> re.Pattern:
     """
     Convert a shell-like path pattern into a regex, with these rules:
@@ -17,14 +18,14 @@ def path_pattern_to_regex(pat: str) -> re.Pattern:
 
     # If no slash in the pattern, treat it as matching any subdirectory
     # e.g. "*.md" => "**/*.md"
-    if '/' not in pat:
-        pat = '**/' + pat
+    if "/" not in pat:
+        pat = "**/" + pat
 
-    segments = pat.split('/')
+    segments = pat.split("/")
     regex_parts = []
 
     for i, seg in enumerate(segments):
-        if seg == '**':
+        if seg == "**":
             # '**' => zero or more directories, so:
             # This means "match 0 or more segments of the form 'something/'"
             # We'll use a capturing group like '(?:[^/]*/)*', but also allow ZERO of them (so it's optional).
@@ -33,13 +34,13 @@ def path_pattern_to_regex(pat: str) -> re.Pattern:
             # Actually we can allow zero with a question mark? We can do:
             #   '(?:[^/]*/)*' means "any # of subdirectories". That already allows zero times, because it's '*'
             # So let's do:
-            regex_parts.append('(?:[^/]*/)*')
+            regex_parts.append("(?:[^/]*/)*")
         else:
             # For normal segments, interpret '*' and '?' in a single directory
             seg_escaped = re.escape(seg)
             # Re‐interpret escaped `\*` => [^/]*, `\?` => [^/]
-            seg_escaped = seg_escaped.replace('\\*', '[^/]*')
-            seg_escaped = seg_escaped.replace('\\?', '[^/]')
+            seg_escaped = seg_escaped.replace("\\*", "[^/]*")
+            seg_escaped = seg_escaped.replace("\\?", "[^/]")
             # This segment must match exactly once at this directory level
             regex_parts.append(seg_escaped)
 
@@ -81,16 +82,16 @@ def _assemble_pattern_regex(segs):
     Turn the list of segments (with '**' or normal) into a single regex
     that matches the entire path from start to finish.
     """
-    regex = '^'
+    regex = "^"
     for i, seg in enumerate(segs):
-        if seg == '**':
+        if seg == "**":
             # zero or more subdirs:
-            regex += '(?:[^/]*/)*'
+            regex += "(?:[^/]*/)*"
         else:
             # normal segment
             seg_escaped = re.escape(seg)
-            seg_escaped = seg_escaped.replace('\\*','[^/]*')
-            seg_escaped = seg_escaped.replace('\\?', '[^/]')
+            seg_escaped = seg_escaped.replace("\\*", "[^/]*")
+            seg_escaped = seg_escaped.replace("\\?", "[^/]")
             # add that segment
             regex += seg_escaped
 
@@ -98,9 +99,9 @@ def _assemble_pattern_regex(segs):
             if i < len(segs) - 1:
                 # look ahead: if the next seg is '**', we do no slash,
                 # because '**' begins with '.*' pattern that can handle its own slash
-                if segs[i+1] != '**':
-                    regex += '/'
-    regex += '$'
+                if segs[i + 1] != "**":
+                    regex += "/"
+    regex += "$"
     return re.compile(regex)
 
 
@@ -117,4 +118,3 @@ def path_match(rel_path: str, patterns) -> bool:
         if r.match(rel_path):
             return True
     return False
-

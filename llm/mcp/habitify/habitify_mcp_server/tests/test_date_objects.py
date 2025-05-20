@@ -3,12 +3,12 @@ Test to ensure that the HabitifyClient returns date objects, not strings.
 """
 
 import datetime
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
 
-from ..habitify_client import HabitifyClient, HabitStatus
+from ..habitify_client import HabitifyClient
 
 
 @pytest.fixture
@@ -26,11 +26,7 @@ async def test_check_habit_status_async_returns_date_object(client):
     mock_resp = AsyncMock(spec=httpx.Response)
     mock_resp.status_code = 200
     mock_resp.raise_for_status.return_value = None
-    mock_resp.json.return_value = {
-        "data": {
-            "status": "completed"
-        }
-    }
+    mock_resp.json.return_value = {"data": {"status": "completed"}}
 
     # Patch the client's request method
     with patch.object(client.client, "get", return_value=mock_resp) as mock_get:
@@ -59,18 +55,13 @@ async def test_set_habit_status_async_returns_date_object(client):
     mock_resp = AsyncMock(spec=httpx.Response)
     mock_resp.status_code = 200
     mock_resp.raise_for_status.return_value = None
-    mock_resp.json.return_value = {
-        "status": True
-    }
+    mock_resp.json.return_value = {"status": True}
 
     # Patch the client's request method
     with patch.object(client.client, "put", return_value=mock_resp) as mock_put:
         # Call the method with a string date
         status = await client.set_habit_status_async(
-            "test-habit-id", 
-            "completed", 
-            "2025-02-15",
-            "Test note"
+            "test-habit-id", "completed", "2025-02-15", "Test note"
         )
 
         # Verify the date is a Python date object, not a string
@@ -82,10 +73,7 @@ async def test_set_habit_status_async_returns_date_object(client):
         # Call the method with a date object
         test_date = datetime.date(2025, 6, 10)
         status = await client.set_habit_status_async(
-            "test-habit-id", 
-            "completed", 
-            test_date,
-            "Test note with date object"
+            "test-habit-id", "completed", test_date, "Test note with date object"
         )
 
         # Verify the date is the same Python date object we passed in

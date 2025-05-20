@@ -172,7 +172,7 @@ def install(
         console.print("[bold green]Success![/] Habitify MCP server installed to Claude Desktop.")
         console.print("You can now use Habitify tools in your Claude conversations.")
     except subprocess.CalledProcessError as e:
-        err_console.print(f"[bold red]Error:[/] Failed to install MCP server.")
+        err_console.print("[bold red]Error:[/] Failed to install MCP server.")
         if e.stderr:
             err_console.print(e.stderr)
         raise typer.Exit(code=1)

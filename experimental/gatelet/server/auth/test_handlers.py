@@ -15,7 +15,6 @@ from server.auth.handlers import (
     session_auth,
 )
 from server.models import AuthCRSession, AuthKey
-from server.tests.utils import persist
 
 
 @pytest.mark.asyncio

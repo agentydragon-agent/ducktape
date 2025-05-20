@@ -29,7 +29,7 @@ class Props(BaseModel, extra="forbid"):
     meta_node_id: Optional[str] = Field(alias="_metaNodeId", default=None)
     source_id: Optional[str] = Field(alias="_sourceId", default=None)
     done: Optional[int] = Field(alias="_done", default=None)
-    description: Optional[str] = None # present in e.g. gc7H7gDG3Ce8
+    description: Optional[str] = None  # present in e.g. gc7H7gDG3Ce8
 
     # e.g.:
     # {
@@ -106,8 +106,6 @@ class Props(BaseModel, extra="forbid"):
     #   "modifiedTs": [1732767573651]
     # }
     searchContextNode: Optional[str] = None
-
-
 
     model_config = ConfigDict(extra="allow", frozen=True)
 
@@ -195,7 +193,7 @@ class NodeStore(Mapping[str, BaseNode]):
                     )
                 )
         if bad:
-            print(f"⚠  {len(bad)} node(s) failed – showing {min(5,len(bad))}:")
+            print(f"⚠  {len(bad)} node(s) failed – showing {min(5, len(bad))}:")
             for nid, blob, tb in random.sample(bad, min(5, len(bad))):
                 print(f"\n── id: {nid} ──")
                 print(json.dumps(blob, indent=2, ensure_ascii=False))
@@ -242,7 +240,6 @@ def attach_supertag_property(store: NodeStore) -> None:
     BaseNode.supertags = property(lambda self: idx.get(self.id, []))  # type: ignore[attr-defined]
 
 
-
 # ──────────────────────────  Inline refs  ────────────────────────── #
 
 _NODE_SPAN = re.compile(r'<span data-inlineref-node="([^"]+)"></span>')
@@ -253,17 +250,17 @@ def _inline_to_text(raw: str, store: NodeStore, style: str) -> str:
     def node_sub(m):
         nid = m.group(1)
         tgt = store.get(nid)
-        nm  = html.unescape((tgt.name if tgt else nid) or nid)
+        nm = html.unescape((tgt.name if tgt else nid) or nid)
         return f"[[{nm}^{nid}]]" if style == "tana" else nm
 
     def date_sub(m):
         data = json.loads(html.unescape(m.group(1)))
-        iso  = f'{data["dateTimeString"]}[{data.get("timezone","")}]'
+        iso = f"{data['dateTimeString']}[{data.get('timezone', '')}]"
         return f"[[date:{iso}]]" if style == "tana" else iso
 
     # ── keep verbatim code / image lines ───────────────────────
     if raw.lstrip().startswith("```") or raw.lstrip().startswith("!"):
-        return raw                                              # no substitutions
+        return raw  # no substitutions
     # ───────────────────────────────────────────────────────────
 
     txt = _NODE_SPAN.sub(node_sub, raw)
@@ -271,7 +268,6 @@ def _inline_to_text(raw: str, store: NodeStore, style: str) -> str:
     txt = html.unescape(txt)
     txt = re.sub(r"</?strong>", "**", txt, flags=re.IGNORECASE)
     return txt
-
 
 
 # ──────────────────────────  Headline  ────────────────────────── #
@@ -287,10 +283,10 @@ def _journal_headline(name: str) -> str | None:
     except Exception:
         return None
 
+
 def _is_wrapper(node: BaseNode) -> bool:
     """Nodes that should *not* get their own bullet - just pass through."""
     return node.props.doc_type in {"workspace", "viewDef", "layout"}
-
 
 
 def _headline(node: BaseNode, store: NodeStore, style: str) -> str:
@@ -325,7 +321,6 @@ def _is_supertag_tuple(t: TupleNode, store: NodeStore) -> bool:
     return k.id == _SUPERTAG_KEY_ID
 
 
-
 # ──────────────────────────────────────────────────────────────
 # Helper: return a scalar text representation of a node
 #         or None if the node is actually a container.
@@ -342,7 +337,13 @@ def _scalar_text(node: BaseNode, store: NodeStore, sty: str) -> str | None:
             key = store.get(tup.children[0])
             val = store.get(tup.children[1])
             if key and key.id == "SYS_A55" and val:
-                return "[X]" if val.id == "SYS_V03" else "[ ]" if val.id == "SYS_V04" else None
+                return (
+                    "[X]"
+                    if val.id == "SYS_V03"
+                    else "[ ]"
+                    if val.id == "SYS_V04"
+                    else None
+                )
 
     return None  # container, not a scalar
 
@@ -350,8 +351,9 @@ def _scalar_text(node: BaseNode, store: NodeStore, sty: str) -> str | None:
 # ──────────────────────────────────────────────────────────────
 # Tuple renderer
 # ──────────────────────────────────────────────────────────────
-def _render_tuple(t: TupleNode, store: NodeStore, vis: set[str],
-                  write, ind: str, sty: str) -> None:
+def _render_tuple(
+    t: TupleNode, store: NodeStore, vis: set[str], write, ind: str, sty: str
+) -> None:
     # need at least key + value
     if len(t.children) < 2:
         return
@@ -379,7 +381,6 @@ def _render_tuple(t: TupleNode, store: NodeStore, vis: set[str],
     _render_node(val_node, store, vis, write, ind + "  ", sty)
 
 
-
 def _render_node(
     n: BaseNode, store: NodeStore, vis: Set[str], write, ind: str, sty: str
 ):
@@ -399,12 +400,20 @@ def _render_node(
 
     # tuples (skip supertag assignment)
     for cid in n.children:
-        if (c := store.get(cid)) and isinstance(c, TupleNode) and not _is_supertag_tuple(c, store):
+        if (
+            (c := store.get(cid))
+            and isinstance(c, TupleNode)
+            and not _is_supertag_tuple(c, store)
+        ):
             _render_tuple(c, store, vis, write, ind + "  ", sty)
 
     # non-tuple owned children
     for cid in n.children:
-        if (c := store.get(cid)) and not isinstance(c, TupleNode) and c.props.owner_id == n.id:
+        if (
+            (c := store.get(cid))
+            and not isinstance(c, TupleNode)
+            and c.props.owner_id == n.id
+        ):
             _render_node(c, store, vis, write, ind + "  ", sty)
 
 
@@ -422,8 +431,8 @@ def _roots(store: NodeStore) -> List[BaseNode]:
     owned_nodes = {n.id for n in store.values() if n.props.owner_id and not n.is_trash}
 
     childed = {cid for n in store.values() if not n.is_trash for cid in n.children}
-    meta    = {n.props.meta_node_id for n in store.values() if n.props.meta_node_id}
-    inline  = _collect_inline_refs(store)
+    meta = {n.props.meta_node_id for n in store.values() if n.props.meta_node_id}
+    inline = _collect_inline_refs(store)
 
     return sorted(
         [
@@ -431,14 +440,14 @@ def _roots(store: NodeStore) -> List[BaseNode]:
             for n in store.values()
             if (
                 not n.is_trash
-                and n.name                                   # ← NEW
-                and n.children                               # ← NEW
-                and not _is_wrapper(n)            # ← NEW
-                and not n.id.startswith("SYS_")   # drop system nodes
-                and n.id not in owned_nodes       # exclude nodes that are owned
-                and n.id not in childed           # referenced as child anywhere
-                and n.id not in meta              # pure meta-nodes
-                and n.id not in inline            # only inline-referenced
+                and n.name  # ← NEW
+                and n.children  # ← NEW
+                and not _is_wrapper(n)  # ← NEW
+                and not n.id.startswith("SYS_")  # drop system nodes
+                and n.id not in owned_nodes  # exclude nodes that are owned
+                and n.id not in childed  # referenced as child anywhere
+                and n.id not in meta  # pure meta-nodes
+                and n.id not in inline  # only inline-referenced
                 and not isinstance(n, TupleNode)  # tuples never roots
             )
         ],

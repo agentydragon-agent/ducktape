@@ -1,10 +1,8 @@
 # custom_components/indoor_aqi/config_flow.py
 
-import asyncio
 import logging
 
 from homeassistant import config_entries
-from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowResult
 
 from . import DOMAIN

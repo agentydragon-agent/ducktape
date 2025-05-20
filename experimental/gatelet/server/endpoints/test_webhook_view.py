@@ -5,9 +5,6 @@ from hamcrest import assert_that, all_of, contains_string
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from server.auth.dependencies import auth_dependency
-from server.auth.handlers import KeyPathAuthContext
-import server.auth.dependencies as auth_dependencies
 from server.models import WebhookIntegration, WebhookPayload
 from server.tests.utils import persist
 

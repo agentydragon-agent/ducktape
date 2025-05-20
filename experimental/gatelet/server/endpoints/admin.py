@@ -51,8 +51,8 @@ async def login(
     db_session: AsyncSession = Depends(get_db_session),
 ) -> HTMLResponse:
     admin = await _get_admin(db_session)
-            status_code=status.HTTP_401_UNAUTHORIZED,
-        )
+        status_code=status.HTTP_401_UNAUTHORIZED,
+    )
 
     session = AdminSession(
         session_token=uuid.uuid4().hex,
