@@ -61,7 +61,7 @@ export DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/gatele
 
 ```bash
 alembic upgrade head
-uvicorn server.app:app --reload --host 0.0.0.0 --port 8000
+uvicorn gatelet.server.app:app --reload --host 0.0.0.0 --port 8000
 ```
 
 The service will be available at http://localhost:8000. When finished, stop the database container with:
