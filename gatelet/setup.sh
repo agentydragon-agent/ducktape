@@ -58,12 +58,12 @@ python_env_setup() {
     # "fastapi-sessions"
 }
 
-# pip install --upgrade pip setuptools wheel
-# VENV=gatelet/.venv
-# python -m venv $VENV
-# source $VENV/bin/activate
+pip install --upgrade pip setuptools wheel
+VENV=gatelet/.venv
+python -m venv $VENV
+source $VENV/bin/activate
 
 python_env_setup
 
-# deactivate
-# echo "source $(realpath $VENV)/bin/activate" >> /root/.bashrc
+deactivate
+echo "source $(realpath $VENV)/bin/activate" >> /root/.bashrc
