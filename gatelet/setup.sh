@@ -20,42 +20,20 @@ PG_BIN="$(pg_config --bindir)"            # e.g. /usr/lib/postgresql/16/bin
 echo "export PATH=$PG_BIN:\$PATH" | tee /etc/profile.d/pg-bin.sh /root/.bashrc ~postgres/.bashrc
 chmod +x /etc/profile.d/pg-bin.sh
 
-# Initialise and launch a local Postgres that survives the sandbox
-##############################################################################
 echo "export IS_CODEX_ENV=1" >> /root/.bashrc
 
 # Set up virtualenv
 ##############################################################################
-
 python_env_setup() {
     pip install --upgrade pip wheel
-    pip install -e gatelet[dev]
-    # pip install \
-    # "pytest==7.3.1" \
-    # "pytest-asyncio==0.21.0" \
-    # "pytest-timeout==2.2.0" \
-    # "isort==5.12.0" \
-    # "pyhamcrest==2.0.4" \
-    # "httpx==0.24.1" \
-    # "pytest-postgresql==4.1.1" \
-    # "sqlalchemy-stubs==0.4.0" \
-    # "fastapi>=0.104.0" \
-    # "uvicorn[standard]>=0.23.2" \
-    # "SQLAlchemy>=2.0.0" \
-    # "alembic>=1.12.0" \
-    # "psycopg2-binary>=2.9.6" \
-    # "asyncpg>=0.27.0 "\
-    # "cryptography>=41.0.0" \
-    # "jinja2>=3.1.2" \
-    # "python-multipart>=0.0.9" \
-    # "pydantic>=2.4.0" \
-    # "compact_json>=1.0.0" \
-    # "homeassistant-api" \
-    # "passlib" \
-    # "tomlkit" \
-    # "fastapi-csrf-protect" \
-    # "fastapi-users[sqlalchemy,argon2]" \
-    # "fastapi-sessions"
+
+    # When this script is executed we are still in the repository root even
+    # though the file itself lives in the *gatelet/* sub-folder.  Tell pip
+    # explicitly that we want to install the local *directory* rather than a
+    # package from PyPI by prefixing the path with "./".
+
+    echo "++ pip install -e ./gatelet[dev]"
+    pip install -e "./gatelet[dev]"
 }
 
 pip install --upgrade pip setuptools wheel
@@ -67,5 +45,5 @@ python_env_setup
 
 playwright install --with-deps --only-shell chrome
 
-deactivate
+source deactivate
 echo "source $(realpath $VENV)/bin/activate" >> /root/.bashrc
