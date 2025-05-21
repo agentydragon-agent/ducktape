@@ -3,7 +3,7 @@ from http import HTTPStatus
 
 import pytest
 from httpx import AsyncClient
-from server.models import AuthKey
+from gatelet.server.models import AuthKey
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,7 +16,7 @@ async def _override_db(monkeypatch, db_session: AsyncSession):
     async def _override():
         yield db_session
 
-    monkeypatch.setattr("server.database.get_db_session", _override)
+    monkeypatch.setattr("gatelet.server.database.get_db_session", _override)
 
 
 def _extract_csrf(page_text: str) -> str:

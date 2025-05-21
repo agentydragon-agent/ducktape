@@ -26,10 +26,14 @@ async def _stub_data(monkeypatch):
             }
         ]
 
-    monkeypatch.setattr("server.endpoints.homeassistant.fetch_states", _states)
-    monkeypatch.setattr("server.endpoints.webhook_view.get_latest_payloads", _payloads)
-    monkeypatch.setattr("server.app.fetch_states", _states)
-    monkeypatch.setattr("server.app.get_latest_payloads", _payloads)
+    monkeypatch.setattr(
+        "gatelet.server.endpoints.homeassistant.fetch_states", _states
+    )
+    monkeypatch.setattr(
+        "gatelet.server.endpoints.webhook_view.get_latest_payloads", _payloads
+    )
+    monkeypatch.setattr("gatelet.server.app.fetch_states", _states)
+    monkeypatch.setattr("gatelet.server.app.get_latest_payloads", _payloads)
     yield
 
 
