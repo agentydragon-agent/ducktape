@@ -65,5 +65,7 @@ source $VENV/bin/activate
 
 python_env_setup
 
+playwright install --with-deps --only-shell chrome
+
 deactivate
 echo "source $(realpath $VENV)/bin/activate" >> /root/.bashrc
