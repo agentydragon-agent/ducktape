@@ -6,9 +6,9 @@ from http import HTTPStatus
 import pytest
 from hamcrest import all_of, assert_that, contains_string, is_not
 from httpx import AsyncClient
-from server.models import WebhookIntegration, WebhookPayload
-from server.shared import templates
-from server.tests.utils import persist
+from gatelet.server.models import WebhookIntegration, WebhookPayload
+from gatelet.server.shared import templates
+from gatelet.server.tests.utils import persist
 from sqlalchemy.ext.asyncio import AsyncSession
 
 

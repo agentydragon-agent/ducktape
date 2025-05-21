@@ -17,7 +17,7 @@ async def _override_db(monkeypatch, db_session: AsyncSession):
         await db_session.execute("DELETE FROM admin_sessions")
         await db_session.commit()
 
-    monkeypatch.setattr("server.database.get_db_session", _override)
+    monkeypatch.setattr("gatelet.server.database.get_db_session", _override)
 
 
 @pytest.mark.asyncio

@@ -5,14 +5,14 @@ from datetime import datetime, timedelta
 from urllib.parse import parse_qs, urlparse
 
 import pytest
-from server.auth.handlers import (
+from gatelet.server.auth.handlers import (
     AuthHandlerError,
     KeyPathAuthContext,
     SessionAuthContext,
     key_path_auth,
     session_auth,
 )
-from server.models import AuthCRSession, AuthKey
+from gatelet.server.models import AuthCRSession, AuthKey
 from sqlalchemy.ext.asyncio import AsyncSession
 
 

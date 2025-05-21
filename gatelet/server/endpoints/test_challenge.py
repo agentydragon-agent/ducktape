@@ -6,9 +6,16 @@ from http import HTTPStatus
 
 import pytest
 from httpx import AsyncClient
-from server.config import settings
-from server.endpoints.challenge import COMPUTE_OPTION_SOURCE, compute_correct_option
-from server.models import AuthCRSession, AuthKey, AuthNonce  # type: ignore[import]
+from gatelet.server.config import settings
+from gatelet.server.endpoints.challenge import (
+    COMPUTE_OPTION_SOURCE,
+    compute_correct_option,
+)
+from gatelet.server.models import (
+    AuthCRSession,
+    AuthKey,
+    AuthNonce,
+)  # type: ignore[import]
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -35,10 +42,14 @@ async def _stub_data(monkeypatch):
             }
         ]
 
-    monkeypatch.setattr("server.endpoints.homeassistant.fetch_states", _states)
-    monkeypatch.setattr("server.endpoints.webhook_view.get_latest_payloads", _payloads)
-    monkeypatch.setattr("server.app.fetch_states", _states)
-    monkeypatch.setattr("server.app.get_latest_payloads", _payloads)
+    monkeypatch.setattr(
+        "gatelet.server.endpoints.homeassistant.fetch_states", _states
+    )
+    monkeypatch.setattr(
+        "gatelet.server.endpoints.webhook_view.get_latest_payloads", _payloads
+    )
+    monkeypatch.setattr("gatelet.server.app.fetch_states", _states)
+    monkeypatch.setattr("gatelet.server.app.get_latest_payloads", _payloads)
     yield
 
 

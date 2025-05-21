@@ -29,11 +29,11 @@ os.environ.setdefault(
 )
 # pylint: disable=wrong-import-position
 
-from server.app import app  # type: ignore[import]
-from server.config import settings  # type: ignore[import]
-from server.database import get_db_session  # type: ignore[import]
-from server.models import AuthCRSession, AuthKey, Base  # type: ignore[import]
-from server.tests.utils import persist  # type: ignore[import]
+from gatelet.server.app import app  # type: ignore[import]
+from gatelet.server.config import settings  # type: ignore[import]
+from gatelet.server.database import get_db_session  # type: ignore[import]
+from gatelet.server.models import AuthCRSession, AuthKey, Base  # type: ignore[import]
+from gatelet.server.tests.utils import persist  # type: ignore[import]
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -150,8 +150,8 @@ def _patch_get_db_session(monkeypatch, db_session: AsyncSession) -> None:
     async def _override() -> AsyncGenerator[AsyncSession, None]:
         yield db_session
 
-    monkeypatch.setattr("server.database.get_db_session", _override)
-    monkeypatch.setattr("server.app.get_db_session", _override)
+    monkeypatch.setattr("gatelet.server.database.get_db_session", _override)
+    monkeypatch.setattr("gatelet.server.app.get_db_session", _override)
 
 
 @pytest_asyncio.fixture

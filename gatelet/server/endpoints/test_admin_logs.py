@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 from httpx import AsyncClient
-from server.config import settings
+from gatelet.server.config import settings
 
 
 def _extract_csrf(page_text: str) -> str:

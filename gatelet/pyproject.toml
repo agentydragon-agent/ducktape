@@ -79,14 +79,26 @@ dev = [
 gatelet-report-event = "gatelet.report_event:main"
 gatelet-report-battery = "gatelet.report_battery:main"
 
+
+
 [tool.setuptools]
 package-dir = {"" = "."}
-packages = ["server", "gatelet"]
-py_modules = ["gatelet"]
+
+# Automatically include every Python package that is part of the ``gatelet``
+# namespace (``gatelet`` itself, ``gatelet.server`` and any future
+# sub-packages).
+packages = { find = { where = ["."], include = ["gatelet*"], namespaces = false } }
+
+# Include non-Python assets for the server component (HTML templates, CSS,
+# …).  They live under ``gatelet/server`` so we reference the fully-qualified
+# package name.
 include-package-data = true
 
 [tool.setuptools.package-data]
-"server" = ["templates/*", "static/**/*"]
+"gatelet.server" = [
+    "templates/*",
+    "static/**/*",
+]
 
 [tool.pytest.ini_options]
 minversion = "7.0"

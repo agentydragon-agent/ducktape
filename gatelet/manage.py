@@ -8,13 +8,13 @@ import getpass
 from typing import Iterable
 
 import tomllib
-from server.config import CONFIG_PATH, settings
-from server.models import (
+from gatelet.server.config import CONFIG_PATH, settings
+from gatelet.server.models import (
     Base,
     WebhookIntegration,
     WebhookPayload,
 )
-from server.security import hash_password
+from gatelet.server.security import hash_password
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from tomlkit import dumps
