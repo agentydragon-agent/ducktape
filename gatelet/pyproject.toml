@@ -35,29 +35,29 @@ dependencies = [
     'aw-client',
     'aw-core', # bundles: 'aw-query', 'aw-transform',
 
-    # llm helpers: openai, tiktoken, anthropic
-
     "oura", # Oura API: https://github.com/turing-complet/python-ouraring
     # TODO: google - activity?
     "python-metar", # weather
     # "withings-api", # TODO: scale, later
-    # strava, pytrain=apple fitness, polaracceslink, garminconnect, fitbit
-    # py-toggl, rescuetime-py
 
     # weather
     "pyowm", # live weather, forecasts
     "aqipy",
     "meteostat",
     "geopy",  # geocoding: gps -> place name
-    # finance: yfinance, ccxt
-    # caldav: nextcloud/apple
 
     # google cal
     "google-api-python-client",
     "google-auth",
 
-    # (smart home extra: pytradfri, pywizlight)
 
+    # Not anytime soon:
+    #   Smart home extra:         pytradfri, pywizlight
+    #   NextCloud/Apple Calendar: caldav
+    #   Finance:                  yfinance, ccxt
+    #   Fitness:                  strava, pytrain (Apple Fitness), polaracceslink, garminconnect, fitbit
+    #   Time tracking:            py-toggl, rescuetime-py
+    #   LLM helpers:              openai, tiktoken, anthropic
 ]
 
 [project.optional-dependencies]
