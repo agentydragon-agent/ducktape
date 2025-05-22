@@ -70,14 +70,20 @@ async def fetch_recent_activity(minutes: int = 15) -> dict[str, Any] | None:
                         active_secs += _duration_seconds(ev)
 
             return {
-                "active_minutes": active_secs / 60,
-                "afk_minutes": afk_secs / 60,
-                "app_seconds": sorted(
-                    app_secs.items(), key=lambda kv: kv[1], reverse=True
-                ),
-                "url_seconds": sorted(
-                    url_secs.items(), key=lambda kv: kv[1], reverse=True
-                ),
+                "active": timedelta(seconds=active_secs),
+                "afk": timedelta(seconds=afk_secs),
+                "app": [
+                    (app, timedelta(seconds=secs))
+                    for app, secs in sorted(
+                        app_secs.items(), key=lambda kv: kv[1], reverse=True
+                    )
+                ],
+                "url": [
+                    (url, timedelta(seconds=secs))
+                    for url, secs in sorted(
+                        url_secs.items(), key=lambda kv: kv[1], reverse=True
+                    )
+                ],
             }
         except Exception as exc:  # pragma: no cover - network errors
             logger.error("Failed to fetch ActivityWatch data: %s", exc)
