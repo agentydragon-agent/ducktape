@@ -15,7 +15,14 @@
 {% if states %}
 <ul>
     {% for s in states %}
-    <li><a href="{{ auth.create_url('ha/' + s.entity_id) }}">{{ s.entity_id }}</a>: {{ s.state }}</li>
+    <li>
+        <a href="{{ auth.create_url('ha/' + s.entity_id) }}">{{ s.entity_id }}</a>:
+        {{ s.state }}
+        {% if s.friendly_name != s.entity_id %} ({{ s.friendly_name }}){% endif %}
+        {% if is_human %}
+        (<a href="{{ ha_history_url(s.entity_id) }}" target="_blank">open in HA</a>)
+        {% endif %}
+    </li>
     {% endfor %}
 </ul>
 {% else %}

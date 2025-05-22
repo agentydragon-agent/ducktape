@@ -16,14 +16,14 @@ plan in `ha-api-task.txt` plus a bunch more added.
 - Expand the Home Assistant integration with history views for configured entities with varied interval
   sizes, practical for realistic application. Rememer the history is primarily intended for consumption
   by LLMs that don't have a graphical browser, so any fancy graphical widgets are just a waste of time.
-  - When showing data to a human, provide links into the Home Assistant instance for entities.
+  - ~~When showing data to a human, provide links into the Home Assistant instance for entities.~~ (done)
 - Make a useful "dashboard" for LLMs listing Home Assistant & webhooks from, say, last hour, up to some limits,
   with links that let the LLM dig in, look at history, look at individual integrations, etc.
   - Establish thorough the report that we shall call this "hub" / "landing page" *dashboard*, for consistency.
   - The purpose of the dashboard is to expose to the LLM data that's most likely to useful to it *right now*
     for reacting to roughly real-time events in the user's life.
 - For Home Assistant:
-  - Sensors that are discrete (e.g. on/off, open/closed) -> dashboard and expanded view should list current value and list of change events with timestamp.
+  - ~~Sensors that are discrete (e.g. on/off, open/closed) -> dashboard and expanded view should list current value and list of change events with timestamp.~~ (done)
   - Sensors that are continuous -> should list regularly spaced samples of values; with unit if exposed from HA. Present as table in a way that saves space.
   - Note that you'll be also showing things like states of smart plugs etc.
   - Show entities grouped by their area (from HA; again, for *human only*, linked to HA instance). Represent entities also by their display name so model better
