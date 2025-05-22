@@ -33,6 +33,9 @@ async def fetch_states() -> list[dict[str, Any]]:
                         "entity_id": entity_id,
                         "state": state.state,
                         "last_changed": state.last_changed,
+                        "friendly_name": state.attributes.get(
+                            "friendly_name", entity_id
+                        ),
                     }
                 )
             except Exception as exc:  # pragma: no cover - network errors
@@ -44,9 +47,17 @@ async def fetch_states() -> list[dict[str, Any]]:
 async def list_entities(request: Request, auth: Auth) -> HTMLResponse:
     """List configured Home Assistant entity states."""
     states = await fetch_states()
+    is_human = auth.auth_type == "admin"
     return templates.TemplateResponse(
         "ha_entities.html",
-        {"request": request, "auth": auth, "states": states, "header": "Entities"},
+        {
+            "request": request,
+            "auth": auth,
+            "states": states,
+            "header": "Entities",
+            "is_human": is_human,
+            "history": [],
+        },
     )
 
 
@@ -55,6 +66,7 @@ async def entity_details(request: Request, entity_id: str, auth: Auth) -> HTMLRe
     """Display details for a single entity."""
     states = await fetch_states()
     entity = next((s for s in states if s["entity_id"] == entity_id), None)
+    is_human = auth.auth_type == "admin"
     return templates.TemplateResponse(
         "ha_entity.html",
         {
@@ -62,5 +74,7 @@ async def entity_details(request: Request, entity_id: str, auth: Auth) -> HTMLRe
             "auth": auth,
             "state": entity,
             "header": f"{entity_id} Details",
+            "is_human": is_human,
+            "history": [],
         },
     )

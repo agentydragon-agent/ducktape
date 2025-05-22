@@ -122,8 +122,9 @@ interactive elements so models can follow them reliably.
 
 ## Project Status
 
-Key-in-path and challenge-response authentication are implemented, and webhook
-handling works. The admin login and key management pages are functional. Home
-Assistant integration currently only lists entity states, and the admin session
-overview and log pages are still missing. Refer to `gatelet/TODO.md`
-for details.
+Key-in-path and challenge-response authentication are implemented and webhook
+handling works. The admin login, key management, session overview and log pages
+are all functional. Home Assistant entity states list friendly names and, when
+viewed by a human admin, include links back to the Home Assistant UI using the
+configured API URL. Refer to
+`gatelet/TODO.md` for remaining tasks such as history and trend views.
