@@ -7,6 +7,12 @@
 <nav>
     <a href="{{ auth.create_url('') }}">Home</a>
     <a href="{{ auth.create_url('webhooks') }}">Webhooks</a>
+    {% if auth.auth_type == 'admin' %}
+    <a href="/admin/ha/">Home Assistant</a>
+    <a href="/admin/admin-sessions/">Admin Sessions</a>
+    <a href="/admin/llm-sessions/">LLM Sessions</a>
+    <a href="/admin/keys/">Manage Keys</a>
+    {% endif %}
 </nav>
 {% endblock %}
 
