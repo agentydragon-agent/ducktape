@@ -55,6 +55,8 @@ pip install -e '.[dev]'
 cp gatelet.example.toml gatelet.toml
 export DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/gatelet
 ```
+Edit ``gatelet.toml`` and set ``home_assistant.api_url`` to your Home Assistant
+instance. Admin pages will link back to this URL.
 
 4. Initialize the database and start the server:
 
@@ -161,9 +163,10 @@ Gatelet supports multiple authentication methods:
 - Optional encryption for sensitive data
 
 ### Home Assistant Integration
-- Current state of configured entities
+- Current state of configured entities with friendly names
 - Historical state changes for discrete entities
 - Trend data for continuous sensors (temperature, humidity, etc.)
+- Direct links back to Home Assistant when viewed by a human admin
 
 ### Session Management
 - Challenge-based authentication for LLMs (LLM sessions)
@@ -191,13 +194,14 @@ The project is implemented in phases:
 4. **Phase 4** – Human Admin Interface *(in progress)*
    - Password‑based admin login implemented
    - Key management pages available
-  - Session management implemented
-  - Log inspection page available
+   - Session management implemented
+   - Log inspection page available
 
 ## Current Status
 
 Gatelet runs with both key‑in‑path and challenge‑response authentication.
-Webhooks can be received and browsed. The admin login and key management pages
-are operational, and Home Assistant entity states can be listed. Session
-management views and historical Home Assistant data are still pending.
+Webhooks can be received and browsed. The admin login, key management,
+session overview, and log pages are operational. Home Assistant entity states
+list friendly names and admins get direct links back to the Home Assistant UI.
+History and trend views are still pending.
 See `gatelet/TODO.md` for the remaining tasks.
