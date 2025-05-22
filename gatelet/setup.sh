@@ -9,8 +9,19 @@ run() { "$@" || warn "$*"; }
 
 export DEBIAN_FRONTEND=noninteractive
 
+apt-get update
 apt-get install -y --no-install-recommends \
-  postgresql postgresql-contrib libpq-dev
+  postgresql postgresql-contrib libpq-dev \
+  wget curl gnupg libnss3 libatk-bridge2.0-0 libxss1 \
+  libasound2 libatk1.0-0 libgtk-3-0 xvfb fonts-noto-color-emoji \
+  fonts-liberation fonts-ipafont-gothic fonts-wqy-zenhei \
+  fonts-tlwg-loma-otf fonts-freefont-ttf
+
+# Install Google Chrome for Playwright tests
+curl -fsSL https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /usr/share/keyrings/google-chrome.gpg
+echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] https://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list
+apt-get update
+apt-get install -y --no-install-recommends google-chrome-stable
 
 # Expose Postgres binaries system-wide
 ##############################################################################
