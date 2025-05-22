@@ -32,6 +32,10 @@ entities = [
     "climate.living_room"
 ]
 
+[activitywatch]
+enabled = false
+server_url = "http://127.0.0.1:5600"
+
 [webhook.integrations.home-assistant]
 enabled = true
 
