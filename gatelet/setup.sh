@@ -12,10 +12,7 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update
 apt-get install -y --no-install-recommends \
   postgresql postgresql-contrib libpq-dev \
-  wget curl gnupg libnss3 libatk-bridge2.0-0 libxss1 \
-  libasound2 libatk1.0-0 libgtk-3-0 xvfb fonts-noto-color-emoji \
-  fonts-liberation fonts-ipafont-gothic fonts-wqy-zenhei \
-  fonts-tlwg-loma-otf fonts-freefont-ttf
+  wget curl gnupg
 
 # Expose Postgres binaries system-wide
 ##############################################################################
