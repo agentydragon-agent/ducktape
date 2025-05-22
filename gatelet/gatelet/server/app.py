@@ -21,6 +21,7 @@ from .auth.webhook_auth import AuthError
 from .config import settings
 from .database import get_db_session
 from .endpoints import (
+    activitywatch,
     admin,
     challenge,
     homeassistant,
@@ -152,6 +153,7 @@ async def authenticated_root_handler(request: Request, auth: Auth):
     async with get_db_session() as db_session:
         recent = await get_latest_payloads(db_session, limit=5)
     ha_states = await fetch_states()
+    aw_summary = await activitywatch.fetch_recent_activity()
     return templates.TemplateResponse(
         "index.html",
         {
@@ -160,6 +162,7 @@ async def authenticated_root_handler(request: Request, auth: Auth):
             "auth": auth,
             "recent_payloads": recent,
             "ha_states": ha_states,
+            "aw_activity": aw_summary,
         },
     )
 
