@@ -38,7 +38,7 @@ async def test_fetch_recent_activity(monkeypatch):
 
     result = await activitywatch.fetch_recent_activity(minutes=10)
     assert result is not None
-    assert abs(result["active_minutes"] - 3.0) < EPS
-    assert abs(result["afk_minutes"] - 0.5) < EPS
-    assert result["app_seconds"][0][0] == "ExampleBrowser"
-    assert result["url_seconds"][0][0] == "https://example.com"
+    assert abs(result["active"].total_seconds() / 60 - 3.0) < EPS
+    assert abs(result["afk"].total_seconds() / 60 - 0.5) < EPS
+    assert result["app"][0][0] == "ExampleBrowser"
+    assert result["url"][0][0] == "https://example.com"
