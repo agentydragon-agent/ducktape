@@ -17,12 +17,6 @@ apt-get install -y --no-install-recommends \
   fonts-liberation fonts-ipafont-gothic fonts-wqy-zenhei \
   fonts-tlwg-loma-otf fonts-freefont-ttf
 
-# Install Google Chrome for Playwright tests
-curl -fsSL https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /usr/share/keyrings/google-chrome.gpg
-echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] https://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list
-apt-get update
-apt-get install -y --no-install-recommends google-chrome-stable
-
 # Expose Postgres binaries system-wide
 ##############################################################################
 PG_BIN="$(pg_config --bindir)"            # e.g. /usr/lib/postgresql/16/bin
@@ -54,7 +48,7 @@ source $VENV/bin/activate
 
 python_env_setup
 
-playwright install --with-deps --only-shell chrome
+playwright install
 
 deactivate
 echo "source $(realpath $VENV)/bin/activate" >> /root/.bashrc
