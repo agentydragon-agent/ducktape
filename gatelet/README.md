@@ -11,25 +11,24 @@ Service that lets LLMs access real-time and historical information relevant to t
    - Offers multiple authentication methods
    - Includes admin interface for humans
 
-2. **Reporter** - Python scripts that:
-   - Send event data to the server
-   - Can be installed on laptops and other devices
-   - Provided as ``gatelet-report-event`` and ``gatelet-report-battery`` CLI tools
+2. **Reporter** - Single Python program ``gatelet-reporter`` that:
+   - Sends events to the server
+   - Can run as a long-running daemon for tasks like battery reporting
+   - Intended to be installed on laptops and other devices
 
 ### Reporter Usage
 
 Send an arbitrary JSON payload:
 
 ```bash
-gatelet-report-event --url http://localhost:8000 \
+gatelet-reporter event --url http://localhost:8000 \
   --integration laptop '{"foo": "bar"}'
 ```
 
-Report current battery status:
+Run the daemon according to your configuration:
 
 ```bash
-gatelet-report-battery --url http://localhost:8000 \
-  --integration laptop-power
+gatelet-reporter
 ```
 
 ## Development Setup
