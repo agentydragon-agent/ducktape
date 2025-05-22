@@ -1,11 +1,11 @@
 import pytest
 from httpx import AsyncClient
-from gatelet.server.models import WebhookIntegration, WebhookPayload
-from gatelet.server.tests.utils import persist
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from gatelet.report_event import send_event
+from gatelet.reporter import send_event
+from gatelet.server.models import WebhookIntegration, WebhookPayload
+from gatelet.server.tests.utils import persist
 
 
 @pytest.mark.asyncio

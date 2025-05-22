@@ -90,6 +90,15 @@ alembic revision --autogenerate -m "Description of changes"
 
 Before committing, run `pre-commit`.
 
+## Reporter Daemon
+
+All data collection binaries are unified into ``gatelet-reporter``.  It reads
+defaults from ``$XDG_CONFIG_HOME/gatelet/gatelet-report.toml``. Running
+``gatelet-reporter`` launches a daemon that periodically reports battery status
+when ``battery_enabled = true`` in the config.  Use ``gatelet-reporter event``
+to send one-off events. Future reporters should reuse this binary rather than
+adding new entry points.
+
 ## Run environment
 
 If you are OpenAI Codex, you are probably running in an environment that has no internet
