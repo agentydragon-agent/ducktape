@@ -7,19 +7,6 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
-@pytest.fixture(autouse=True)
-async def _override_db(monkeypatch, db_session: AsyncSession):
-    from contextlib import asynccontextmanager
-
-    @asynccontextmanager
-    async def _override():
-        yield db_session
-        await db_session.execute("DELETE FROM admin_sessions")
-        await db_session.commit()
-
-    monkeypatch.setattr("gatelet.server.database.get_db_session", _override)
-
-
 @pytest.mark.asyncio
 async def test_admin_login_success(client: AsyncClient, db_session: AsyncSession):
     home = await client.get("/")
