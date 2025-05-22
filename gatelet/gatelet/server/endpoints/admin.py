@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..auth.dependencies import Auth, get_admin_auth_with_context
 from ..config import settings
 from ..database import get_db_session
+from ..endpoints import activitywatch
 from ..endpoints.homeassistant import fetch_states
 from ..endpoints.webhook_view import get_latest_payloads
 from ..models import AdminSession, AuthCRSession, AuthKey
@@ -106,6 +107,7 @@ async def admin_root(request: Request, auth: Auth) -> HTMLResponse:
     async with get_db_session() as db_session:
         recent = await get_latest_payloads(db_session, limit=5)
     ha_states = await fetch_states()
+    aw_summary = await activitywatch.fetch_recent_activity()
     return templates.TemplateResponse(
         "index.html",
         {
@@ -113,6 +115,7 @@ async def admin_root(request: Request, auth: Auth) -> HTMLResponse:
             "auth": auth,
             "recent_payloads": recent,
             "ha_states": ha_states,
+            "aw_activity": aw_summary,
         },
     )
 

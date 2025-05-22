@@ -61,4 +61,32 @@
     <p>Home Assistant data unavailable.</p>
     {% endif %}
 </section>
+
+<section>
+    <h3>ActivityWatch (last 15 minutes)</h3>
+    {% if aw_activity %}
+    <p>
+        Active {{ aw_activity.active | minutes }} /
+        AFK {{ aw_activity.afk | minutes }}
+    </p>
+    {% if aw_activity.app %}
+    <h4>Top applications</h4>
+    <ul>
+        {% for app, td in aw_activity.app[:5] %}
+        <li>{{ app }} - {{ td | minutes }}</li>
+        {% endfor %}
+    </ul>
+    {% endif %}
+    {% if aw_activity.url %}
+    <h4>Top URLs</h4>
+    <ul>
+        {% for url, td in aw_activity.url[:5] %}
+        <li>{{ url }} - {{ td | minutes }}</li>
+        {% endfor %}
+    </ul>
+    {% endif %}
+    {% else %}
+    <p>No ActivityWatch data.</p>
+    {% endif %}
+</section>
 {% endblock %}
