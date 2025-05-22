@@ -21,8 +21,11 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..auth.dependencies import Auth, get_admin_auth_with_context
 from ..config import settings
 from ..database import get_db_session
+from ..endpoints.homeassistant import fetch_states
+from ..endpoints.webhook_view import get_latest_payloads
 from ..models import AdminSession, AuthCRSession, AuthKey
 from ..security import verify_password
 from ..shared import templates
@@ -94,11 +97,24 @@ async def login(
     return response
 
 
-@router.get("/admin/", response_class=HTMLResponse)
-async def admin_root(
-    request: Request, admin_session: AdminSession = Depends(_get_admin_session)
-) -> HTMLResponse:
-    return templates.TemplateResponse("admin_index.html", {"request": request})
+@router.get(
+    "/admin/",
+    response_class=HTMLResponse,
+    dependencies=[Depends(get_admin_auth_with_context)],
+)
+async def admin_root(request: Request, auth: Auth) -> HTMLResponse:
+    async with get_db_session() as db_session:
+        recent = await get_latest_payloads(db_session, limit=5)
+    ha_states = await fetch_states()
+    return templates.TemplateResponse(
+        "index.html",
+        {
+            "request": request,
+            "auth": auth,
+            "recent_payloads": recent,
+            "ha_states": ha_states,
+        },
+    )
 
 
 @router.get("/admin/keys/", response_class=HTMLResponse)
