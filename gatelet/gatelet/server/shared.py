@@ -1,5 +1,6 @@
 """Shared resources for the Gatelet server."""
 
+from datetime import timedelta
 from pathlib import Path
 
 from fastapi.templating import Jinja2Templates
@@ -17,3 +18,13 @@ def ha_history_url(entity_id: str) -> str:
 
 
 templates.env.globals["ha_history_url"] = ha_history_url
+
+
+def format_minutes(td: timedelta) -> str:
+    """Return a human readable minutes string for ``td``."""
+
+    minutes = td.total_seconds() / 60
+    return f"{round(minutes)} min"
+
+
+templates.env.filters["minutes"] = format_minutes

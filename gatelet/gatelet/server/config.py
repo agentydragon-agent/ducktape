@@ -100,6 +100,13 @@ class HomeAssistantSettings(BaseModel):
     entities: List[str] = Field(default_factory=list)
 
 
+class ActivityWatchSettings(BaseModel):
+    """Configuration for ActivityWatch integration."""
+
+    enabled: bool = Field(default=False)
+    server_url: str = Field(default="http://127.0.0.1:5600")
+
+
 class WebhookIntegrationSettings(BaseModel):
     auth_config: WebhookAuthConfig = Field()
     enabled: bool = Field(default=False)
@@ -151,6 +158,7 @@ class Settings(BaseModel):
     server: ServerSettings
     auth: AuthSettings
     home_assistant: HomeAssistantSettings
+    activitywatch: ActivityWatchSettings = Field(default=ActivityWatchSettings())
     webhook: WebhookSettings
     admin: AdminSettings
     security: SecuritySettings

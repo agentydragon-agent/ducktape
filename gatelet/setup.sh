@@ -45,6 +45,7 @@ source $VENV/bin/activate
 
 python_env_setup
 
+apt update && apt install -y  libgtk-4-1  libgraphene-1.0-0  libwoff1  libvpx9  libevent-2.1-7t64  libopus0  libgstreamer-plugins-base1.0-0  libgstreamer-plugins-bad1.0-0  libgstreamer-gl1.0-0  libflite1  libwebpdemux2  libavif16  libharfbuzz-icu0  libwebpmux3  libenchant-2-2  libsecret-1-0  libhyphen0  libmanette-0.2-0  libgles2  libx264-164
 playwright install
 
 deactivate
