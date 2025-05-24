@@ -15,8 +15,7 @@ def account_from_path(top_account, account_path, original_path=None):
         raise Exception("path " + "".join(original_path) + " could not be found")
     if len(account_path) > 0:
         return account_from_path(account, account_path, original_path)
-    else:
-        return account
+    return account
 
 
 def gnc_numeric_to_python_Decimal(numeric):

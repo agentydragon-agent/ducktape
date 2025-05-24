@@ -37,7 +37,7 @@ def iter_events(
             yield ev
 
 
-def summarize(minutes: int | None = 30, *, day: date | None = None) -> None:  # noqa: PLR0912 - clarity over brevity
+def summarize(minutes: int | None = 30, *, day: date | None = None) -> None:
     now = datetime.now(timezone.utc)
 
     if day:

@@ -108,22 +108,21 @@ def load_splitwise_expenses(
         for expense in batch:
             if expense.getDeletedAt():
                 continue
-            else:
-                net = get_splitwise_net(expense, my_user_id)
-                if net is None:
-                    # We are not involved.
-                    continue
+            net = get_splitwise_net(expense, my_user_id)
+            if net is None:
+                # We are not involved.
+                continue
 
-                dt = datetime.datetime.strptime(
-                    expense.date,
-                    "%Y-%m-%dT%H:%M:%SZ",
-                ).date()
-                expenses[str(expense.id)] = external_system.ExternalExpense(
-                    id=str(expense.id),
-                    description=((expense.description or "") + (expense.notes or "")),
-                    amount=net,
-                    trade_date=dt,
-                )
+            dt = datetime.datetime.strptime(
+                expense.date,
+                "%Y-%m-%dT%H:%M:%SZ",
+            ).date()
+            expenses[str(expense.id)] = external_system.ExternalExpense(
+                id=str(expense.id),
+                description=((expense.description or "") + (expense.notes or "")),
+                amount=net,
+                trade_date=dt,
+            )
         if len(batch) < limit:
             logging.info("at offset %d, got less than limit %d", offset, limit)
             break

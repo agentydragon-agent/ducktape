@@ -81,7 +81,7 @@ def all_part_ids(api):
     parts = Part.list(api)
     if not parts:
         print("No parts found")
-        return
+        return None
 
     print(f"Found {len(parts)} parts altogether")
 

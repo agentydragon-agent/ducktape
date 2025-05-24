@@ -17,7 +17,7 @@ async def test_admin_login_success(client: AsyncClient, db_session: AsyncSession
         "/admin/login",
         data={"password": "gatelet", "csrf_token": token},
     )
-    assert response.status_code == 302  # noqa: PLR2004
+    assert response.status_code == 302
     assert response.headers["location"] == "/admin/"
     assert "admin_session" in response.cookies
 
@@ -32,4 +32,4 @@ async def test_admin_login_invalid(client: AsyncClient, db_session: AsyncSession
         "/admin/login",
         data={"password": "wrong", "csrf_token": token},
     )
-    assert response.status_code == 401  # noqa: PLR2004
+    assert response.status_code == 401

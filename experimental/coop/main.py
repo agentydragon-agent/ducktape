@@ -158,9 +158,8 @@ def login():
         # If the user exists and the password is correct, log the user in
         login_user(user)
         return jsonify({"message": "Login successful"})
-    else:
-        # If the password is incorrect, return an error
-        return jsonify({"message": "Invalid username or password"}), 401
+    # If the password is incorrect, return an error
+    return jsonify({"message": "Invalid username or password"}), 401
 
 
 @app.route("/logout", methods=["POST"])

@@ -51,7 +51,7 @@ pathlib.Path.iterdir = _safe_iterdir  # type: ignore[assignment]
 
 
 @pytest.fixture(autouse=True)
-def auto_enable_custom_integrations(enable_custom_integrations, hass):  # noqa: D401
+def auto_enable_custom_integrations(enable_custom_integrations, hass):
     """Ensure the custom component & config dir are available for every test."""
 
     # Point Home Assistant towards the repository root so that the loader can
@@ -59,5 +59,3 @@ def auto_enable_custom_integrations(enable_custom_integrations, hass):  # noqa: 
     import pathlib
 
     hass.config.config_dir = str(pathlib.Path(__file__).resolve().parents[1])
-
-    yield

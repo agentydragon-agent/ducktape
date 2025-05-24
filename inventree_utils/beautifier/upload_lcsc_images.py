@@ -110,7 +110,7 @@ def upload_lcsc_images(api: InvenTreeAPI):
             if ans == "q":
                 print("Quitting.")
                 return
-            elif ans == "a":
+            if ans == "a":
                 confirm_all = True
             elif ans == "n":
                 print("Skipping this part.")

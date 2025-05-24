@@ -45,8 +45,7 @@ class SnapInstall:
         args = {"name": self.name}
         if installed:
             return args | {"state": "present", **self.kwargs}
-        else:
-            return args | {"state": "absent"}
+        return args | {"state": "absent"}
 
 
 @dataclass
@@ -78,8 +77,7 @@ class PipInstall:
         args = {"name": self.name}
         if installed:
             return {**args, "state": "present", **self.kwargs}
-        else:
-            return {**args, "state": "absent"}
+        return {**args, "state": "absent"}
 
 
 @dataclass
@@ -134,12 +132,11 @@ class FlatpakInstall:
         if installed:
             # Install or ensure present.
             return args | {"state": "present", **self.kwargs}
-        else:
-            # Ensure absent – additional kwargs are typically not needed when
-            # uninstalling but they *are* accepted by the underlying module
-            # (they will just be ignored).  Keep the behaviour consistent with
-            # the *snap* handler and drop them for clarity.
-            return args | {"state": "absent"}
+        # Ensure absent – additional kwargs are typically not needed when
+        # uninstalling but they *are* accepted by the underlying module
+        # (they will just be ignored).  Keep the behaviour consistent with
+        # the *snap* handler and drop them for clarity.
+        return args | {"state": "absent"}
 
 
 METHODS = {

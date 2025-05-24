@@ -443,9 +443,7 @@ def _find_session():
     sid, uid = os.environ.get("XDG_SESSION_ID"), os.getuid()
     matches = []
     for s_id, u, _user, _seat, path in mgr.ListSessions():
-        if sid and s_id == sid:
-            matches.append(path)
-        elif u == uid:
+        if (sid and s_id == sid) or u == uid:
             matches.append(path)
     if len(matches) == 1:
         return matches[0]

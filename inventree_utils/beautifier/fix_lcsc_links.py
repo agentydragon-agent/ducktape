@@ -42,7 +42,7 @@ def fix_lcsc_links(api: InvenTreeAPI):
             if choice == "q":
                 print("Quitting script.")
                 return
-            elif choice == "a":
+            if choice == "a":
                 apply_all = True
             elif choice != "y":
                 continue

@@ -109,55 +109,51 @@ def get_quantity(part: BasePart) -> int:
                 return 35
             return 50
 
-        elif part.package == "0402":
+        if part.package == "0402":
             # R0402
             if val_ohms in (10, 10_000):
                 return 40
             return 50
 
-        elif part.package == "0603":
+        if part.package == "0603":
             # R0603
             # (0,1k,10k) => 100
             # <=100k => 50
             # >100k => 25
             if val_ohms in (0, 1_000, 10_000):
                 return 100
-            elif val_ohms <= 100_000:
+            if val_ohms <= 100_000:
                 return 50
-            else:
-                return 25
-
-        else:
-            raise ValueError(f"No resistor rules for package {part.package}")
-
-    else:
-        # It's a capacitor
-        val_pf = part.capacitance.to(pf).magnitude
-
-        if part.package == "0201":
-            # C0201
-            # everything 50 except 100nF => 40
-            if abs(val_pf - 100_000) < 1e-9:
-                return 40
-            return 50
-
-        elif part.package == "0402":
-            # C0402
-            # all 50 except 100nF => 130
-            if abs(val_pf - 100_000) < 1e-9:
-                return 130
-            return 50
-
-        elif part.package == "0603":
-            # C0603 => always 25
             return 25
 
-        elif part.package == "0805":
-            # C0805 => 50
-            return 50
+        raise ValueError(f"No resistor rules for package {part.package}")
 
-        else:
-            raise ValueError(f"No capacitor rules for package {part.package}")
+    # It's a capacitor
+    val_pf = part.capacitance.to(pf).magnitude
+
+    if part.package == "0201":
+        # C0201
+        # everything 50 except 100nF => 40
+        if abs(val_pf - 100_000) < 1e-9:
+            return 40
+        return 50
+
+    if part.package == "0402":
+        # C0402
+        # all 50 except 100nF => 130
+        if abs(val_pf - 100_000) < 1e-9:
+            return 130
+        return 50
+
+    if part.package == "0603":
+        # C0603 => always 25
+        return 25
+
+    if part.package == "0805":
+        # C0805 => 50
+        return 50
+
+    raise ValueError(f"No capacitor rules for package {part.package}")
 
 
 # ---------- Building final data ----------
@@ -173,13 +169,12 @@ def build_part_name(p: BasePart) -> str:
         value += f"±{p.tolerance}"
     if isinstance(p, Resistor):
         return f"R {p.package} {value}"
-    else:
-        name = f"C {p.package} {value}"
-        if p.voltage_rating:
-            name += f", {int(p.voltage_rating)} V"
-        if p.dielectric:
-            name += f", {p.dielectric}"
-        return name
+    name = f"C {p.package} {value}"
+    if p.voltage_rating:
+        name += f", {int(p.voltage_rating)} V"
+    if p.dielectric:
+        name += f", {p.dielectric}"
+    return name
 
 
 def build_part_description(p: BasePart) -> str:
@@ -190,8 +185,7 @@ def build_part_description(p: BasePart) -> str:
     marker = "(bulk SMD sample book import)"
     if base:
         return f"{base} {marker}"
-    else:
-        return marker
+    return marker
 
 
 def part_matches_in_db(

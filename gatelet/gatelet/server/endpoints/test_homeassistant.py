@@ -34,7 +34,6 @@ async def _stub_data(monkeypatch):
     )
     monkeypatch.setattr("gatelet.server.app.fetch_states", _states)
     monkeypatch.setattr("gatelet.server.app.get_latest_payloads", _payloads)
-    yield
 
 
 @pytest.mark.asyncio

@@ -28,7 +28,6 @@ class WebhookAuthHandler(ABC):
         credentials: HTTPAuthorizationCredentials | None,
     ) -> None:
         """Validate authentication for a webhook."""
-        pass
 
 
 class NoAuthHandler(WebhookAuthHandler):
@@ -43,7 +42,6 @@ class NoAuthHandler(WebhookAuthHandler):
         credentials: HTTPAuthorizationCredentials | None,
     ) -> None:
         """Always approve - no authentication required."""
-        pass
 
 
 class BearerAuthHandler(WebhookAuthHandler):
@@ -78,13 +76,11 @@ def create_auth_handler(
         auth_type = config.get("type")
         if auth_type == "none":
             return NoAuthHandler(NoAuth())
-        elif auth_type == "bearer":
+        if auth_type == "bearer":
             return BearerAuthHandler(BearerAuth(token=config.get("token", "")))
-        else:
-            raise ValueError(f"Unknown authentication type in dict: {auth_type}")
-    elif isinstance(config, NoAuth):
+        raise ValueError(f"Unknown authentication type in dict: {auth_type}")
+    if isinstance(config, NoAuth):
         return NoAuthHandler(config)
-    elif isinstance(config, BearerAuth):
+    if isinstance(config, BearerAuth):
         return BearerAuthHandler(config)
-    else:
-        raise ValueError(f"Unknown authentication type: {type(config)}")
+    raise ValueError(f"Unknown authentication type: {type(config)}")

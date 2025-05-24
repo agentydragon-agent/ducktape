@@ -69,7 +69,7 @@ def match_to_account(external_transaction):
         )
     ):
         return ["Expenses", "Groceries"]
-    elif any(
+    if any(
         x in desc
         for x in (
             # Dharmasala
@@ -81,28 +81,27 @@ def match_to_account(external_transaction):
         )
     ):
         return ["Expenses", "Coffee, tea places"]
-    elif "uber" in desc:
+    if "uber" in desc:
         return ["Expenses", "Uber"]
-    elif ("sbb easyride" in desc) or ("operator ict" in desc):
+    if ("sbb easyride" in desc) or ("operator ict" in desc):
         return ["Expenses", "Public Transportation"]
-    elif "aws emea" in desc:
+    if "aws emea" in desc:
         return ["Expenses", "Online Services", "AWS"]
-    elif "google cloud emea" in desc:
+    if "google cloud emea" in desc:
         return ["Expenses", "Online Services", "Google Cloud"]
-    elif "linode" in desc:
+    if "linode" in desc:
         return ["Expenses", "Online Services", "Linode"]
-    elif "focusmate" in desc:
+    if "focusmate" in desc:
         return ["Expenses", "Subscriptions", "Focusmate"]
-    elif "waking up" in desc:
+    if "waking up" in desc:
         return ["Expenses", "Subscriptions", "Waking Up"]
-    elif "kep - kompetenzzentrum fuer ernaehr" in desc:
+    if "kep - kompetenzzentrum fuer ernaehr" in desc:
         return ["Expenses", "Medical Expenses"]
-    elif "swica gesundheitsorganisation gener" in desc:
+    if "swica gesundheitsorganisation gener" in desc:
         return ["Expenses", "Insurance", "Health Insurance"]
-    elif ("surcharge abroad" in desc) or ("balance of service prices" in desc):
+    if ("surcharge abroad" in desc) or ("balance of service prices" in desc):
         return ["Expenses", "Bank Service Charge", "CHF"]
-    else:
-        return None
+    return None
 
 
 def add_external_to_gnucash(
@@ -166,7 +165,7 @@ def main(_):
     config_dir = xdg.xdg_config_home() / "ducktape"
     cache_dir = xdg.xdg_cache_home() / "ducktape"
 
-    with open(config_dir / "config.yaml", "r") as f:
+    with open(config_dir / "config.yaml") as f:
         config = yaml.safe_load(f)
 
     with gnucash_util.GnuCashSession(

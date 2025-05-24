@@ -1,7 +1,7 @@
 """Database session management for Gatelet server."""
 
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
 
 from sqlalchemy.ext.asyncio import (
     AsyncSession,

@@ -32,7 +32,7 @@ def find_attribute_value_in_result(result, attribute_name):
     for attribute in result["attributes"]:
         if attribute["name"] == attribute_name:
             return attribute["value"]
-    raise KeyError()
+    raise KeyError
 
 
 @dataclasses.dataclass

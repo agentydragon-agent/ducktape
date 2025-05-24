@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import getpass
-from typing import Iterable
+from collections.abc import Iterable
 
 import tomllib
 from sqlalchemy import func, select

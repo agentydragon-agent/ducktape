@@ -6,10 +6,6 @@ It contains common classes and functions used by the GitHub release action
 plugins.
 """
 
-from __future__ import absolute_import, division, print_function
-
-__metaclass__ = type
-
 import json
 import re
 import urllib.request
@@ -63,7 +59,7 @@ class ReleaseSpec:
             with urllib.request.urlopen(req) as response:
                 release_data = json.loads(response.read().decode("utf-8"))
         except Exception as e:
-            return _fail(result, f"Error fetching release info: {str(e)}")
+            return _fail(result, f"Error fetching release info: {e!s}")
 
         # Clear known-unused keys
         for asset in release_data.get("assets", []):
@@ -153,10 +149,10 @@ class GitHubInstaller:
     @property
     def module_name(self) -> str:
         """Ansible module name for this installation method."""
-        raise NotImplementedError()
+        raise NotImplementedError
 
     def install_module_args(self, asset_url: str) -> Dict[str, Any]:
-        raise NotImplementedError()
+        raise NotImplementedError
 
     def get_additional_info(self, asset_url: str) -> Dict[str, Any]:
         """Extra information about installed asset."""
