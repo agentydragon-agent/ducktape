@@ -19,7 +19,7 @@ class InstanceConfig:
 
 def prompt_for_config() -> InstanceConfig:
     server_url = input(
-        "InvenTree instance (e.g. https://inventree.mycompany.com): "
+        "InvenTree instance (e.g. https://inventree.mycompany.com): ",
     ).strip()
     if not server_url:
         raise ValueError("No server URL provided.")

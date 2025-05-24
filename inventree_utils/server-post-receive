@@ -59,4 +59,3 @@ git -c advice.detachedHead=false checkout -f -q FETCH_HEAD
 rsync -a --delete "$TMPDIR/$SUBDIR/" "$DEPLOY_TO/"
 
 echo "✅ Deployed."
-

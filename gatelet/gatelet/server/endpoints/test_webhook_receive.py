@@ -5,10 +5,11 @@ from http import HTTPStatus
 import pytest
 from hamcrest import anything, assert_that, has_entries
 from httpx import AsyncClient
-from gatelet.server.models import WebhookIntegration, WebhookPayload
-from gatelet.server.tests.utils import persist
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from gatelet.server.models import WebhookIntegration, WebhookPayload
+from gatelet.server.tests.utils import persist
 
 
 @pytest.mark.asyncio
@@ -44,7 +45,8 @@ async def test_receive_webhook_no_auth(client: AsyncClient, db_session: AsyncSes
 
 @pytest.mark.asyncio
 async def test_receive_webhook_bearer_auth(
-    client: AsyncClient, db_session: AsyncSession
+    client: AsyncClient,
+    db_session: AsyncSession,
 ):
     """Test receiving webhook with bearer authentication."""
     # Create test integration with bearer auth
@@ -61,7 +63,9 @@ async def test_receive_webhook_bearer_auth(
     payload = {"test": "data", "auth": "bearer"}
     headers = {"Authorization": "Bearer test-token"}
     response = await client.post(
-        f"/webhook/{integration.name}", json=payload, headers=headers
+        f"/webhook/{integration.name}",
+        json=payload,
+        headers=headers,
     )
     assert response.status_code == HTTPStatus.OK
 
@@ -80,7 +84,8 @@ async def test_receive_webhook_bearer_auth(
 
 @pytest.mark.asyncio
 async def test_receive_webhook_invalid_auth(
-    client: AsyncClient, db_session: AsyncSession
+    client: AsyncClient,
+    db_session: AsyncSession,
 ):
     """Test receiving webhook with invalid bearer authentication."""
     # Create test integration with bearer auth
@@ -97,13 +102,15 @@ async def test_receive_webhook_invalid_auth(
     payload = {"test": "data", "auth": "invalid"}
     headers = {"Authorization": "Bearer wrong-token"}
     response = await client.post(
-        f"/webhook/{integration.name}", json=payload, headers=headers
+        f"/webhook/{integration.name}",
+        json=payload,
+        headers=headers,
     )
     assert response.status_code == HTTPStatus.UNAUTHORIZED
 
     # No payload should be stored
     query = select(WebhookPayload).where(
-        WebhookPayload.integration_id == integration.id
+        WebhookPayload.integration_id == integration.id,
     )
     result = await db_session.execute(query)
     assert result.scalar_one_or_none() is None
@@ -111,7 +118,8 @@ async def test_receive_webhook_invalid_auth(
 
 @pytest.mark.asyncio
 async def test_receive_webhook_nonexistent_integration(
-    client: AsyncClient, db_session: AsyncSession
+    client: AsyncClient,
+    db_session: AsyncSession,
 ):
     """Test receiving webhook for non-existent integration."""
     payload = {"test": "data"}
@@ -121,7 +129,8 @@ async def test_receive_webhook_nonexistent_integration(
 
 @pytest.mark.asyncio
 async def test_receive_webhook_disabled_integration(
-    client: AsyncClient, db_session: AsyncSession
+    client: AsyncClient,
+    db_session: AsyncSession,
 ):
     """Test receiving webhook for disabled integration."""
     # Create disabled integration
@@ -141,7 +150,8 @@ async def test_receive_webhook_disabled_integration(
 
 @pytest.mark.asyncio
 async def test_receive_webhook_invalid_json(
-    client: AsyncClient, db_session: AsyncSession
+    client: AsyncClient,
+    db_session: AsyncSession,
 ):
     """Test receiving webhook with invalid JSON."""
     # Create test integration

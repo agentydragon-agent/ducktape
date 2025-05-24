@@ -7,7 +7,7 @@ qrcode helper options:
     error_correction=L/M/Q/H = 7%/15%(default)/25%/30%
     box_size (in pixels) - doesn't matter
     border: 0 (pixels)
-  
+
 # Barcodes
 
 helper source: https://github.com/inventree/InvenTree/blob/7362305296146e98c8f528b6e40c43f4757d3941/src/backend/InvenTree/report/templatetags/barcode.py#L98

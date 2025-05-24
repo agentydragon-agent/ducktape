@@ -212,7 +212,7 @@ def part_matches_in_db(
         """Helper: if expected is nonempty and differs from actual, record mismatch."""
         if expected and str(actual) != str(expected):
             differences.append(
-                f"{label} differs: InvenTree='{actual}' vs Script='{expected}'"
+                f"{label} differs: InvenTree='{actual}' vs Script='{expected}'",
             )
 
     # 1) Check top-level fields
@@ -267,7 +267,8 @@ def part_matches_in_db(
 
 
 def create_part_in_inventree(
-    p: BasePart, param_templates: dict[str, ParameterTemplate]
+    p: BasePart,
+    param_templates: dict[str, ParameterTemplate],
 ) -> InvPart:
     """
     Actually create the part if not found or mismatch.
@@ -364,7 +365,7 @@ def main():
     for nt in needed_templates:
         if nt not in tmpl_map:
             raise RuntimeError(
-                f"Missing ParameterTemplate '{nt}' in InvenTree. Please create it first."
+                f"Missing ParameterTemplate '{nt}' in InvenTree. Please create it first.",
             )
 
     # 2) Retrieve all existing "autogen" parts to check what we already have
@@ -385,7 +386,7 @@ def main():
     for param in all_params:
         params_by_part[param.part].append(param)
     print(
-        f"Loaded {len(all_params)} parameters for {len(existing_autogen_parts)} parts"
+        f"Loaded {len(all_params)} parameters for {len(existing_autogen_parts)} parts",
     )
 
     # 4) Precompute quantity checks
@@ -403,7 +404,7 @@ def main():
             invp = existing_map[name]
             if not part_matches_in_db(invp, p, tmpl_map, params_by_part[invp.pk]):
                 print(
-                    f"WARNING: Part '{name}' already exists but differs from the script's data! {SERVER_ADDRESS}/part/{invp.pk}/"
+                    f"WARNING: Part '{name}' already exists but differs from the script's data! {SERVER_ADDRESS}/part/{invp.pk}/",
                 )
             # else it is fine => skip
         else:
@@ -430,7 +431,7 @@ def main():
         newp = create_part_in_inventree(mp, tmpl_map)
         si = create_stock_for_part(newp, mp)
         print(
-            f"{newp.name} (N={int(si.quantity)}) created: {SERVER_ADDRESS}/part/{newp.pk}/"
+            f"{newp.name} (N={int(si.quantity)}) created: {SERVER_ADDRESS}/part/{newp.pk}/",
         )
         if add_one:
             print("Stopped after adding one part (debug mode).")

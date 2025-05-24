@@ -121,7 +121,7 @@ SMD 1x1 box:
     diodes:
         [[ 1N4148 ]]
         [SOD-323]
-        [Vf=1.25V@150mA] [Vr=100V] 
+        [Vf=1.25V@150mA] [Vr=100V]
 
         - "Jellybean name" (if present), or part name
         - "Package" parameter
@@ -142,7 +142,7 @@ SMD 1x1 box:
         [[Vf=2.0V@20mA]]
 
     resettable fuse:
-    
+
     various:
         [[ HX6286ESO ]]
         [SOT-23] [Hall switch]

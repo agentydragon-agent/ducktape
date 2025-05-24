@@ -4,11 +4,12 @@ import uuid
 from datetime import datetime, timedelta
 
 import pytest
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from gatelet.server.auth.key_auth import KeyAuthError, validate_key
 from gatelet.server.config import settings
 from gatelet.server.models import AuthKey
 from gatelet.server.tests.utils import persist
-from sqlalchemy.ext.asyncio import AsyncSession
 
 
 @pytest.mark.asyncio

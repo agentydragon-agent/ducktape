@@ -33,7 +33,9 @@ async def test_fetch_recent_activity(monkeypatch):
 
     monkeypatch.setattr(activitywatch.settings.activitywatch, "enabled", True)
     monkeypatch.setattr(
-        activitywatch, "ActivityWatchClient", lambda *a, **k: StubClient()
+        activitywatch,
+        "ActivityWatchClient",
+        lambda *a, **k: StubClient(),
     )
 
     result = await activitywatch.fetch_recent_activity(minutes=10)

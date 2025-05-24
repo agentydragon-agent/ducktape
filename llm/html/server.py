@@ -14,15 +14,13 @@ Rejects obvious typos without the secret; authenticates quickly with it.
 TODO: not completely "you mst collect whole thing" yet
 """
 
-import hashlib
 import hmac
 import math
+import sys
 from datetime import datetime
 from hashlib import blake2b, sha256
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
-import sys
-from typing import Final, List
 from zoneinfo import ZoneInfo
 
 import markdown
@@ -89,7 +87,8 @@ class TokenScheme:
     def _public_auth(self, date: str) -> str:
         size = _digest_size(self._PUB_LEN)
         return bytes_b58(
-            blake2b(date.encode(), digest_size=size).digest(), self._PUB_LEN
+            blake2b(date.encode(), digest_size=size).digest(),
+            self._PUB_LEN,
         )
 
     def _private_auth(self, date: str) -> str:
@@ -117,13 +116,15 @@ class TokenScheme:
 
         # ─── basic structure ───────────────────────────────────────────────
         if ":" not in token:
-            raise self.VerificationError(["Token is missing ':' separator"])  # nothing more we can do
+            raise self.VerificationError(
+                ["Token is missing ':' separator"],
+            )  # nothing more we can do
 
         version_str, payload = token.split(":", 1)
 
         if version_str != self._VERSION:
             issues.append(
-                f"Version mismatch (expected={self._VERSION}, got={version_str or '<empty>'})"
+                f"Version mismatch (expected={self._VERSION}, got={version_str or '<empty>'})",
             )
 
         # Payload is expected to look like “MMDD-HH:MM-<digest>”
@@ -142,7 +143,11 @@ class TokenScheme:
             issues.append(f"Invalid MMDD component: '{mmdd}'")
             date_valid = False
 
-        if len(hhmm) != 5 or hhmm[2] != ":" or not (hhmm[:2].isdigit() and hhmm[3:].isdigit()):
+        if (
+            len(hhmm) != 5
+            or hhmm[2] != ":"
+            or not (hhmm[:2].isdigit() and hhmm[3:].isdigit())
+        ):
             issues.append(f"Invalid HH:MM component: '{hhmm}'")
             date_valid = False
 
@@ -156,7 +161,7 @@ class TokenScheme:
         # Document hash check
         if len(doc_act) != self._DOC_LEN:
             issues.append(
-                f"Document hash incomplete ({len(doc_act)}/{self._DOC_LEN} characters provided)"
+                f"Document hash incomplete ({len(doc_act)}/{self._DOC_LEN} characters provided)",
             )
         else:
             doc_exp = self._doc_hash()
@@ -166,7 +171,7 @@ class TokenScheme:
         # Public hash check (depends on date)
         if len(pub_act) != self._PUB_LEN:
             issues.append(
-                f"Public hash incomplete ({len(pub_act)}/{self._PUB_LEN} characters provided)"
+                f"Public hash incomplete ({len(pub_act)}/{self._PUB_LEN} characters provided)",
             )
         elif date is None:
             issues.append("Cannot verify public hash due to invalid date")
@@ -178,7 +183,7 @@ class TokenScheme:
         # Private hash check (depends on date)
         if len(priv_act) != self._AUTH_LEN:
             issues.append(
-                f"Private hash incomplete ({len(priv_act)}/{self._AUTH_LEN} characters provided)"
+                f"Private hash incomplete ({len(priv_act)}/{self._AUTH_LEN} characters provided)",
             )
         elif date is None:
             issues.append("Cannot verify private hash due to invalid date")
@@ -232,7 +237,12 @@ def _start_server(host: str = "0.0.0.0", port: int = 9000):
     HTTPServer((host, port), Handler).serve_forever()
 
 
-def _verify_cli(token: str, *, secret: str = "hunter2", doc_path: str = "index.md") -> int:
+def _verify_cli(
+    token: str,
+    *,
+    secret: str = "hunter2",
+    doc_path: str = "index.md",
+) -> int:
     """Command-line helper to *verify* a token and print a human readable report.
 
     Returns an exit-code alike integer so the caller can ``sys.exit`` with it.
@@ -270,7 +280,10 @@ def _build_arg_parser() -> "argparse.ArgumentParser":
     serve.add_argument("--port", type=int, default=9000, help="TCP port to listen on")
 
     # --- verify ------------------------------------------------------------
-    verify = sub.add_parser("verify", help="Verify a token against the current document")
+    verify = sub.add_parser(
+        "verify",
+        help="Verify a token against the current document",
+    )
     verify.add_argument("token", help="The token to be verified")
     verify.add_argument(
         "--doc",
@@ -287,13 +300,14 @@ def _build_arg_parser() -> "argparse.ArgumentParser":
 
 
 def main(argv: list[str] | None = None):
-    import argparse
-
     parser = _build_arg_parser()
     args = parser.parse_args(argv)
 
     if args.command in (None, "serve"):
-        _start_server(host=getattr(args, "host", "0.0.0.0"), port=getattr(args, "port", 9000))
+        _start_server(
+            host=getattr(args, "host", "0.0.0.0"),
+            port=getattr(args, "port", 9000),
+        )
     elif args.command == "verify":
         exit_code = _verify_cli(
             args.token,

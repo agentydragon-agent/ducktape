@@ -28,11 +28,14 @@ async def _login(client: AsyncClient) -> str:
 
 @pytest.mark.asyncio
 async def test_list_llm_sessions(
-    client: AsyncClient, db_session: AsyncSession, test_auth_session: AuthCRSession
+    client: AsyncClient,
+    db_session: AsyncSession,
+    test_auth_session: AuthCRSession,
 ):
     session_cookie = await _login(client)
     response = await client.get(
-        "/admin/llm-sessions/", cookies={"admin_session": session_cookie}
+        "/admin/llm-sessions/",
+        cookies={"admin_session": session_cookie},
     )
     assert response.status_code == HTTPStatus.OK
     assert test_auth_session.session_token in response.text
@@ -40,11 +43,14 @@ async def test_list_llm_sessions(
 
 @pytest.mark.asyncio
 async def test_invalidate_llm_session(
-    client: AsyncClient, db_session: AsyncSession, test_auth_session: AuthCRSession
+    client: AsyncClient,
+    db_session: AsyncSession,
+    test_auth_session: AuthCRSession,
 ):
     session_cookie = await _login(client)
     response = await client.get(
-        "/admin/llm-sessions/", cookies={"admin_session": session_cookie}
+        "/admin/llm-sessions/",
+        cookies={"admin_session": session_cookie},
     )
     token = _extract_csrf(response.text)
 
@@ -57,7 +63,7 @@ async def test_invalidate_llm_session(
 
     result = (
         await db_session.execute(
-            select(AuthCRSession).where(AuthCRSession.id == test_auth_session.id)
+            select(AuthCRSession).where(AuthCRSession.id == test_auth_session.id),
         )
     ).scalar_one_or_none()
     assert result is None

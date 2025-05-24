@@ -82,7 +82,7 @@ instead of `/state`.
   But summarize out or drop unactionable things:
 
   * NO: "Rai: on Lyft X -> Y, hailed 11:54, boarded red Honda 12:00, ETA reported then was 12:44. 12:22: still on Lyft.
-    12:34: ETA report updated to 12:42." 
+    12:34: ETA report updated to 12:42."
     YES: "Rai: boarded Lyft X -> Y 12:00, ETA 12:42."
   * NO: "Rai asked at 9:07 about my favorite lizard, and complained that my answer ('red tegu') was the wrong subtype of tegu'"
     YES: "Morning chitchat, likely in good mood"
@@ -116,7 +116,7 @@ for that day, and we will continue from there. Then eventually once 2000-01-02 i
 we will write a bootstrap prompt for 2000-01-03, and so on.
 
 On any given day, the AI assisting me can be relied on to have access to
-the memory tool (to=bio), my self-entered user bio and preferences, and this document 
+the memory tool (to=bio), my self-entered user bio and preferences, and this document
 instructions. It might also have some recall of previous conversations, but that is not
 very reliable.
 

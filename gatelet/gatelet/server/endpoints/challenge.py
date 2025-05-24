@@ -66,7 +66,9 @@ async def _new_challenge(key: AuthKey, db_session: AsyncSession):
     await db_session.flush()
 
     correct_idx = compute_correct_option(
-        key.key_value, nonce_value, settings.auth.challenge_response.num_options
+        key.key_value,
+        nonce_value,
+        settings.auth.challenge_response.num_options,
     )
     options = _create_options(settings.auth.challenge_response.num_options)
     return nonce, str(correct_idx), options
@@ -74,7 +76,9 @@ async def _new_challenge(key: AuthKey, db_session: AsyncSession):
 
 @router.get("/cr/{key_id}", response_class=HTMLResponse)
 async def start_challenge(
-    key_id: int, request: Request, db_session: AsyncSession = Depends(get_db_session)
+    key_id: int,
+    request: Request,
+    db_session: AsyncSession = Depends(get_db_session),
 ):
     key = await _validate_key(key_id, db_session)
     nonce, _, options = await _new_challenge(key, db_session)
@@ -126,14 +130,19 @@ async def answer_challenge(
     nonce = (await db_session.execute(stmt)).scalar_one_or_none()
     if not nonce or not nonce.is_valid:
         return await _render_new_challenge(
-            request, key, db_session, "Invalid or expired challenge"
+            request,
+            key,
+            db_session,
+            "Invalid or expired challenge",
         )
 
     nonce.used_at = datetime.now()
     await db_session.flush()
 
     correct_idx = compute_correct_option(
-        key.key_value, nonce_value, settings.auth.challenge_response.num_options
+        key.key_value,
+        nonce_value,
+        settings.auth.challenge_response.num_options,
     )
     if answer != str(correct_idx):
         return await _render_new_challenge(request, key, db_session, "Incorrect answer")

@@ -18,7 +18,7 @@ def mock_config(monkeypatch):
             {
                 "type": "literal",
                 "lines": "REMOVE THIS",
-            }
+            },
         ],
     }
     monkeypatch.setattr(main, "load_config", lambda: config)

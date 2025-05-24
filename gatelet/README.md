@@ -7,7 +7,7 @@ Service that lets LLMs access real-time and historical information relevant to t
 1. **Server** - FastAPI-based web service that:
    - Receives and stores webhooks in PostgreSQL
    - Provides browsable interface optimized for LLMs
-   - Retrieves and presents Home Assistant data 
+   - Retrieves and presents Home Assistant data
    - Offers multiple authentication methods
    - Includes admin interface for humans
 
@@ -127,7 +127,7 @@ Gatelet supports multiple authentication methods:
 
 1. **Key in Path** - Simple authentication by including key in URL path
    - Usage model: User provides direct URL with embedded key (http://server/k/SECRET_KEY/)
-   - Example: `/k/{key}/` 
+   - Example: `/k/{key}/`
 
 2. **Challenge-Response** - Secure authentication using nonce challenges
    - Usage model: User provides base URL and secret key separately

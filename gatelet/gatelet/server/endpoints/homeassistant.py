@@ -34,9 +34,10 @@ async def fetch_states() -> list[dict[str, Any]]:
                         "state": state.state,
                         "last_changed": state.last_changed,
                         "friendly_name": state.attributes.get(
-                            "friendly_name", entity_id
+                            "friendly_name",
+                            entity_id,
                         ),
-                    }
+                    },
                 )
             except Exception as exc:  # pragma: no cover - network errors
                 logger.error("Failed fetching %s: %s", entity_id, exc)

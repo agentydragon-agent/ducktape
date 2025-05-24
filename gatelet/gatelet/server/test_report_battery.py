@@ -10,7 +10,9 @@ from gatelet.server.tests.utils import persist
 
 @pytest.mark.asyncio
 async def test_send_battery_status(
-    monkeypatch, client: AsyncClient, db_session: AsyncSession
+    monkeypatch,
+    client: AsyncClient,
+    db_session: AsyncSession,
 ):
     integration = await persist(
         db_session,

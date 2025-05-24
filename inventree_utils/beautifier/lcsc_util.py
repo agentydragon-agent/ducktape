@@ -1,7 +1,7 @@
 import re
 
 LCSC_PRODUCT_URL_RE = re.compile(
-    r"https?://www\.lcsc\.com/product-detail/(?:[^/]*_)?(?P<id>C\d+)\.html(?:\?.*)?"
+    r"https?://www\.lcsc\.com/product-detail/(?:[^/]*_)?(?P<id>C\d+)\.html(?:\?.*)?",
 )
 
 

@@ -323,7 +323,7 @@ def eyeball_check():
                 row_data.append(part.tolerance or "-")
             if has_voltage:
                 row_data.append(
-                    str(part.voltage_rating) + "V" if part.voltage_rating else "-"
+                    str(part.voltage_rating) + "V" if part.voltage_rating else "-",
                 )
             if has_dielectric:
                 row_data.append(part.dielectric or "-")

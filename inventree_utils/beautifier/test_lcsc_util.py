@@ -7,7 +7,8 @@ from .lcsc_util import parse_url_for_lcsc_id
     "url",
     (
         pytest.param(
-            "https://www.lcsc.com/product-detail/C123456.html", id="normalized"
+            "https://www.lcsc.com/product-detail/C123456.html",
+            id="normalized",
         ),
         pytest.param(
             "https://www.lcsc.com/product-detail/ABC_def_C999_C123456.html",

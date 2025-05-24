@@ -57,7 +57,7 @@ def _postgres():
     createdb = bin_dir / "createdb"
     port = "55432"
     subprocess.check_call(
-        ["sudo", "-u", "postgres", str(initdb), "-D", datadir, "-A", "trust"]
+        ["sudo", "-u", "postgres", str(initdb), "-D", datadir, "-A", "trust"],
     )
     subprocess.check_call(
         [
@@ -71,10 +71,10 @@ def _postgres():
             "-o",
             f"-p {port}",
             "start",
-        ]
+        ],
     )
     subprocess.check_call(
-        ["sudo", "-u", "postgres", str(createdb), "-p", port, "gatelet"]
+        ["sudo", "-u", "postgres", str(createdb), "-p", port, "gatelet"],
     )
     os.environ["DATABASE_URL"] = (
         f"postgresql+asyncpg://postgres@localhost:{port}/gatelet"
@@ -99,7 +99,7 @@ def _postgres():
                 "-m",
                 "fast",
                 "stop",
-            ]
+            ],
         )
         shutil.rmtree(datadir)
 
@@ -109,7 +109,8 @@ async def db_engine(_postgres) -> AsyncGenerator[AsyncEngine, None]:
     """Create a database engine and initialize the schema."""
 
     database_url = os.environ.get(
-        "DATABASE_URL", "postgresql+asyncpg://postgres@localhost/postgres"
+        "DATABASE_URL",
+        "postgresql+asyncpg://postgres@localhost/postgres",
     )
     engine = create_async_engine(database_url, future=True)
 
@@ -126,7 +127,9 @@ async def db_session(db_engine: AsyncEngine) -> AsyncGenerator[AsyncSession, Non
     """Provide a database session wrapped in a transaction."""
 
     session_factory = async_sessionmaker(
-        db_engine, expire_on_commit=False, autoflush=False
+        db_engine,
+        expire_on_commit=False,
+        autoflush=False,
     )
 
     async with session_factory() as session:
@@ -182,7 +185,8 @@ async def test_auth_key(db_session: AsyncSession) -> AuthKey:
 
 @pytest_asyncio.fixture
 async def test_auth_session(
-    db_session: AsyncSession, test_auth_key: AuthKey
+    db_session: AsyncSession,
+    test_auth_key: AuthKey,
 ) -> AuthCRSession:
     """Create a temporary session bound to ``test_auth_key``."""
 

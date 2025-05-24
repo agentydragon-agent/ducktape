@@ -14,13 +14,13 @@
 		- Follow this format for the bootstrap prompt:
 			- ```
 			  # /boot YYYY-MM-DD
-			  
+
 			  ## Agenda
-			  
+
 			  * 9:00-10:00:…
 			  * 10:00-11:00:…
 			  …
-			  
+
 			  ## <any other headings>
 			  …
 			  ```
@@ -38,11 +38,11 @@
 	- Approximate format:
 		- ```
 		  ## Breakfast <or Snack or ...>: Meal name
-		  
+
 		  * Ingredient 1: 100 amount units
 		  * Ingredient 2: 200 amount units
 		  …
-		  
+
 		  Macros:
 		  * 1000-1200 kcal (depends on full-fat/low-fat)
 		  * 50 g protein

@@ -10,7 +10,9 @@ from homeassistant import config_entries
 async def _init_config_flow(hass, source=config_entries.SOURCE_IMPORT, data=None):
     """Initialize a configuration flow with the given source and data."""
     return await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": source}, data=data
+        DOMAIN,
+        context={"source": source},
+        data=data,
     )
 
 
@@ -22,8 +24,8 @@ async def test_import_flow(hass):
             {
                 "name": "Test AQI",
                 "sensors": {"co2": "sensor.test_co2", "pm25": "sensor.test_pm25"},
-            }
-        ]
+            },
+        ],
     }
 
     # Start the import flow
@@ -47,7 +49,9 @@ async def test_import_flow_already_exists(hass):
     """Test the import flow when an entry already exists."""
     # Create an existing entry with the same unique ID
     MockConfigEntry(
-        domain=DOMAIN, unique_id="indoor_aqi_yaml_import", data={}
+        domain=DOMAIN,
+        unique_id="indoor_aqi_yaml_import",
+        data={},
     ).add_to_hass(hass)
 
     # Try to import again

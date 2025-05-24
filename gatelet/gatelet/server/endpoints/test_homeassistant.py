@@ -24,12 +24,13 @@ async def _stub_data(monkeypatch):
                 "id": 1,
                 "integration_name": "test",
                 "received_at": datetime.datetime(2020, 1, 1),
-            }
+            },
         ]
 
     monkeypatch.setattr("gatelet.server.endpoints.homeassistant.fetch_states", _states)
     monkeypatch.setattr(
-        "gatelet.server.endpoints.webhook_view.get_latest_payloads", _payloads
+        "gatelet.server.endpoints.webhook_view.get_latest_payloads",
+        _payloads,
     )
     monkeypatch.setattr("gatelet.server.app.fetch_states", _states)
     monkeypatch.setattr("gatelet.server.app.get_latest_payloads", _payloads)
@@ -65,7 +66,8 @@ async def test_entities_page_admin_links(client: AsyncClient, db_session: AsyncS
     assert m
     token = m.group(1)
     resp = await client.post(
-        "/admin/login", data={"password": "gatelet", "csrf_token": token}
+        "/admin/login",
+        data={"password": "gatelet", "csrf_token": token},
     )
     session_cookie = resp.cookies["admin_session"]
     resp = await client.get("/admin/ha/", cookies={"session_token": session_cookie})

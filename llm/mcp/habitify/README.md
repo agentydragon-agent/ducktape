@@ -55,7 +55,7 @@ There are multiple ways to provide your Habitify API key:
    ```bash
    habitify --api-key=your_api_key_here ...
    ```
-   
+
 > **Security Note:** Your API key provides full access to your Habitify account. Never commit it to version control or share it publicly. The `.gitignore` file in this repository is configured to exclude `.env` files.
 
 ## Usage

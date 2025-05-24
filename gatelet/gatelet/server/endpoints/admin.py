@@ -147,7 +147,8 @@ async def new_key_form(
 ) -> HTMLResponse:
     token, signed = csrf_protect.generate_csrf_tokens()
     response = templates.TemplateResponse(
-        "admin_key_new.html", {"request": request, "csrf_token": token}
+        "admin_key_new.html",
+        {"request": request, "csrf_token": token},
     )
     csrf_protect.set_csrf_cookie(signed, response)
     return response
@@ -206,7 +207,7 @@ async def list_admin_sessions(
     sessions = (
         (
             await db_session.execute(
-                select(AdminSession).order_by(AdminSession.created_at)
+                select(AdminSession).order_by(AdminSession.created_at),
             )
         )
         .scalars()
@@ -227,7 +228,8 @@ async def list_admin_sessions(
 
 
 @router.post(
-    "/admin/admin-sessions/{session_id}/invalidate", response_class=RedirectResponse
+    "/admin/admin-sessions/{session_id}/invalidate",
+    response_class=RedirectResponse,
 )
 async def invalidate_admin_session(
     session_id: int,
@@ -259,7 +261,7 @@ async def list_llm_sessions(
     sessions = (
         (
             await db_session.execute(
-                select(AuthCRSession).order_by(AuthCRSession.created_at)
+                select(AuthCRSession).order_by(AuthCRSession.created_at),
             )
         )
         .scalars()
@@ -280,7 +282,8 @@ async def list_llm_sessions(
 
 
 @router.post(
-    "/admin/llm-sessions/{session_id}/invalidate", response_class=RedirectResponse
+    "/admin/llm-sessions/{session_id}/invalidate",
+    response_class=RedirectResponse,
 )
 async def invalidate_llm_session(
     session_id: int,
@@ -311,7 +314,7 @@ async def view_logs(
     if log_path.exists():
         try:
             log_text = "\n".join(
-                log_path.read_text(encoding="utf-8").splitlines()[-lines:]
+                log_path.read_text(encoding="utf-8").splitlines()[-lines:],
             )
         except Exception:  # pragma: no cover - unexpected read error
             log_text = "<unable to read log file>"

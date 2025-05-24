@@ -28,7 +28,9 @@ async def _login(client: AsyncClient) -> str:
 
 @pytest.mark.asyncio
 async def test_list_keys(
-    client: AsyncClient, db_session: AsyncSession, test_auth_key: AuthKey
+    client: AsyncClient,
+    db_session: AsyncSession,
+    test_auth_key: AuthKey,
 ):
     session = await _login(client)
     response = await client.get("/admin/keys/", cookies={"admin_session": session})
@@ -58,7 +60,9 @@ async def test_create_key(client: AsyncClient, db_session: AsyncSession):
 
 @pytest.mark.asyncio
 async def test_revoke_key(
-    client: AsyncClient, db_session: AsyncSession, test_auth_key: AuthKey
+    client: AsyncClient,
+    db_session: AsyncSession,
+    test_auth_key: AuthKey,
 ):
     session = await _login(client)
     response = await client.get("/admin/keys/", cookies={"admin_session": session})

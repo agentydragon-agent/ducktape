@@ -1,6 +1,7 @@
 import hashlib
 
 import pytest
+
 from gatelet.server.endpoints.challenge import compute_correct_option
 
 

@@ -140,4 +140,3 @@ Then later:
      * state 10 minutes ago, 1 hour ago, 8 hours ago (if available)
      * link to pagination in history, with selectable interval (5 min, 30 min, 6 hr);
        initially linking to last page at end of history = current datetime.
-

@@ -23,7 +23,9 @@ class WebhookAuthHandler(ABC):
 
     @abstractmethod
     async def validate(
-        self, request: Request, credentials: HTTPAuthorizationCredentials | None
+        self,
+        request: Request,
+        credentials: HTTPAuthorizationCredentials | None,
     ) -> None:
         """Validate authentication for a webhook."""
         pass
@@ -36,7 +38,9 @@ class NoAuthHandler(WebhookAuthHandler):
         self.config = config
 
     async def validate(
-        self, request: Request, credentials: HTTPAuthorizationCredentials | None
+        self,
+        request: Request,
+        credentials: HTTPAuthorizationCredentials | None,
     ) -> None:
         """Always approve - no authentication required."""
         pass
@@ -49,7 +53,9 @@ class BearerAuthHandler(WebhookAuthHandler):
         self.config = config
 
     async def validate(
-        self, request: Request, credentials: HTTPAuthorizationCredentials | None
+        self,
+        request: Request,
+        credentials: HTTPAuthorizationCredentials | None,
     ) -> None:
         """Validate Bearer token authentication."""
         bearer_headers = {"WWW-Authenticate": "Bearer"}

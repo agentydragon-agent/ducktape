@@ -190,7 +190,7 @@ class NodeStore(Mapping[str, BaseNode]):
                         doc.get("id", "<none>"),
                         doc,
                         "".join(traceback.format_exception(exc)),
-                    )
+                    ),
                 )
         if bad:
             print(f"⚠  {len(bad)} node(s) failed – showing {min(5, len(bad))}:")
@@ -352,7 +352,12 @@ def _scalar_text(node: BaseNode, store: NodeStore, sty: str) -> str | None:
 # Tuple renderer
 # ──────────────────────────────────────────────────────────────
 def _render_tuple(
-    t: TupleNode, store: NodeStore, vis: set[str], write, ind: str, sty: str
+    t: TupleNode,
+    store: NodeStore,
+    vis: set[str],
+    write,
+    ind: str,
+    sty: str,
 ) -> None:
     # need at least key + value
     if len(t.children) < 2:
@@ -382,7 +387,12 @@ def _render_tuple(
 
 
 def _render_node(
-    n: BaseNode, store: NodeStore, vis: Set[str], write, ind: str, sty: str
+    n: BaseNode,
+    store: NodeStore,
+    vis: Set[str],
+    write,
+    ind: str,
+    sty: str,
 ):
     if _is_wrapper(n):
         for cid in n.children:

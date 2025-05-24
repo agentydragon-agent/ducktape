@@ -8,6 +8,10 @@ import getpass
 from typing import Iterable
 
 import tomllib
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from tomlkit import dumps
+
 from gatelet.server.config import CONFIG_PATH, settings
 from gatelet.server.models import (
     Base,
@@ -15,9 +19,6 @@ from gatelet.server.models import (
     WebhookPayload,
 )
 from gatelet.server.security import hash_password
-from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from tomlkit import dumps
 
 
 def _confirm(prompt: str) -> bool:
@@ -73,7 +74,7 @@ async def reset_db() -> None:
                     integration_name=integ.name,
                     integration_id=integ.id,
                     payload={"sample": i},
-                )
+                ),
             )
     await engine.dispose()
     print("Database initialized with sample webhook payloads.")
