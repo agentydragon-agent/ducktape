@@ -16,6 +16,7 @@ from uuid import uuid4
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -135,6 +136,8 @@ async def db_session(db_engine: AsyncEngine) -> AsyncGenerator[AsyncSession, Non
             yield session
             if trans.is_active:
                 await trans.commit()
+            await session.execute(text("DELETE FROM admin_sessions"))
+            await session.commit()
         finally:
             if trans.is_active:
                 await trans.rollback()
