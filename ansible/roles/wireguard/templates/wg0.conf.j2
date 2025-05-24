@@ -1,0 +1,24 @@
+[Interface]
+Address     = {{ wg_address }}
+PrivateKey  = {{ wg_private }}
+ListenPort  = {{ wg_port }}
+
+{% for peer in groups['wg_peers'] if peer != inventory_hostname %}
+{# ----------------------------------------------------------- #}
+{%   if (inventory_hostname == wg_hub) or (peer == wg_hub) %}
+[Peer]
+PublicKey = {{ hostvars[peer]['wg_public'] }}
+
+{%     if inventory_hostname == wg_hub %}
+AllowedIPs = {{ hostvars[peer]['wg_address'].split('/')[0] }}/32
+{%     else %}
+AllowedIPs = {{ wg_mesh_cidr }}
+{%     endif %}
+
+{%     if hostvars[peer].get('wg_endpoint') %}
+Endpoint = {{ hostvars[peer]['wg_endpoint'] }}:{{ wg_port }}
+PersistentKeepalive = 25
+{%     endif %}
+{%   endif %}
+{# ----------------------------------------------------------- #}
+{% endfor %}

@@ -1,0 +1,50 @@
+- name: Install WireGuard packages
+  become: true
+  ansible.builtin.package:
+    name: "{{ wg_packages }}"
+    state: present
+
+- name: Deploy {{ wg_interface }} config
+  become: true
+  ansible.builtin.template:
+    src: wg0.conf.j2
+    dest: "{{ wg_conf_path }}"
+    owner: root
+    group: root
+    mode: "0600"
+  notify: restart wireguard
+
+- name: Enable & start wg-quick@{{ wg_interface }}
+  become: true
+  ansible.builtin.systemd:
+    name: "wg-quick@{{ wg_interface }}"
+    enabled: true
+    state: started
+    daemon_reload: true
+
+# roles/wireguard/tasks/iptables_wg.yml
+- name: Hub routing
+  when: inventory_hostname == wg_hub
+  become: true
+  block:
+  - name: Allow WireGuard peer-to-peer forwarding (wg0→wg0) in DOCKER-USER
+    # acc. to o3:
+    #   Why use DOCKER-USER?
+    #   Docker rewrites FORWARD table every time it restarts;
+    #   anything you add directly to FORWARD can disappear.
+    #   DOCKER-USER is for administrator rules and Docker leaves it intact.
+    iptables:
+      chain:         DOCKER-USER
+      in_interface:  wg0
+      out_interface: wg0
+      jump:          ACCEPT
+      comment:       WG hair-pin
+      state:         present
+
+  - name: Allow wg0 → any (return path)
+    iptables:
+      chain:        DOCKER-USER
+      in_interface: wg0
+      jump:         ACCEPT
+      comment:      WG egress
+      state:        present
