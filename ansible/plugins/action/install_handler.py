@@ -168,7 +168,7 @@ class ActionModule(ActionBase):
                 continue
             if arg not in METHODS:
                 raise AnsibleError(
-                    f"Unknown argument: {arg}. Expected: {list(METHODS.keys())}"
+                    f"Unknown argument: {arg}. Expected: {list(METHODS.keys())}",
                 )
 
             assert arg not in parsed
@@ -181,7 +181,7 @@ class ActionModule(ActionBase):
 
         if use not in parsed and use != "none":
             raise AnsibleError(
-                f"Invalid use value: {use}. Expected one of {list(parsed.keys())} or 'none'"
+                f"Invalid use value: {use}. Expected one of {list(parsed.keys())} or 'none'",
             )
 
         # run selected install method

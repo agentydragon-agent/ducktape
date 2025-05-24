@@ -29,5 +29,3 @@ dependencies:
     tags: [solarized]
   - role: timekpr
   - role: google-drive-client
-
-

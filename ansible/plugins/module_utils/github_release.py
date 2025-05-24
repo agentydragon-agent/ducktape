@@ -103,7 +103,8 @@ class ReleaseSpec:
             latest_version = release_data["tag_name"]
             if not latest_version:
                 return _fail(
-                    result, "Failed to extract version information of latest release."
+                    result,
+                    "Failed to extract version information of latest release.",
                 )
             result["latest_version"] = latest_version
 

@@ -91,7 +91,7 @@ class ProfileList(SettingsWrapper):
         matches = [p for p in profiles if p["visible-name"] == name]
         if len(matches) > 1:
             raise RuntimeError(
-                f"Multiple '{name}' profiles: {', '.join(p.uuid for p in matches)}"
+                f"Multiple '{name}' profiles: {', '.join(p.uuid for p in matches)}",
             )
         return matches[0] if matches else None
 
@@ -134,7 +134,9 @@ def main():
     # Define a parent parser with global options
     global_opts = argparse.ArgumentParser(add_help=False)
     global_opts.add_argument(
-        "--debug", action="store_true", help="Enable debug logging"
+        "--debug",
+        action="store_true",
+        help="Enable debug logging",
     )
 
     parser = argparse.ArgumentParser()

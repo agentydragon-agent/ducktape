@@ -5,4 +5,3 @@
       /org/gnome/Shell org.gnome.Shell.Eval \
       string:'global.reexec_self()'
   changed_when: false
-

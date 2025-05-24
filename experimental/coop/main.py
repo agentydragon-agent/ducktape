@@ -92,18 +92,22 @@ class ProfileMatchState(db.Model):
 class Match(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     profile_match_state1_id = db.Column(
-        db.Integer, db.ForeignKey("profile_match_state.id")
+        db.Integer,
+        db.ForeignKey("profile_match_state.id"),
     )
     profile_match_state2_id = db.Column(
-        db.Integer, db.ForeignKey("profile_match_state.id")
+        db.Integer,
+        db.ForeignKey("profile_match_state.id"),
     )
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
 
     profile_match_state1 = db.relationship(
-        "ProfileMatchState", foreign_keys=[profile_match_state1_id]
+        "ProfileMatchState",
+        foreign_keys=[profile_match_state1_id],
     )
     profile_match_state2 = db.relationship(
-        "ProfileMatchState", foreign_keys=[profile_match_state2_id]
+        "ProfileMatchState",
+        foreign_keys=[profile_match_state2_id],
     )
 
 
@@ -116,7 +120,9 @@ def load_user(user_id):
 def register():
     data = request.json
     user = User(
-        username=data["username"], profile=data["profile"], contact_info=data["contact"]
+        username=data["username"],
+        profile=data["profile"],
+        contact_info=data["contact"],
     )
     user.set_password(data["password"])
     db.session.add(user)
@@ -175,10 +181,10 @@ def update_profile():
 
     # Delete all matches and corresponding user match states involving the current user
     Match.query.join(UserMatchState, (UserMatchState.match_id == Match.id)).filter(
-        UserMatchState.user_id == current_user.id
+        UserMatchState.user_id == current_user.id,
     ).delete(synchronize_session=False)
     UserMatchState.query.filter_by(user_id=current_user.id).delete(
-        synchronize_session=False
+        synchronize_session=False,
     )
 
     db.session.commit()
@@ -257,7 +263,7 @@ def matches():
             (Match.user2_id == current_user.id)
             & (Match.status1 == "yes")
             & (Match.status2 == "yes")
-        )
+        ),
     ).all()
     match_details = []
     for match in confirmed_matches:
@@ -266,7 +272,7 @@ def matches():
         )
         other_user = User.query.get(other_user_id)
         match_details.append(
-            {"username": other_user.username, "contact_info": other_user.contact_info}
+            {"username": other_user.username, "contact_info": other_user.contact_info},
         )
     return jsonify(match_details)
 

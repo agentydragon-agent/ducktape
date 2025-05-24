@@ -51,4 +51,3 @@
     cmd: fc-cache -fv
   when: fonts_updated
   changed_when: true
-

@@ -105,7 +105,7 @@ class ActionModule(ActionBase):
         assert isinstance(method_name, str)
         if not (klass := INSTALL_METHODS.get(method_name)):
             raise ActionError(
-                f"Invalid {method = }. Expected one of: {', '.join(INSTALL_METHODS.keys())}"
+                f"Invalid {method = }. Expected one of: {', '.join(INSTALL_METHODS.keys())}",
             )
         installer = klass(**method_args)
         installer.validate()
@@ -126,7 +126,8 @@ class ActionModule(ActionBase):
             # todo dedupe
             if "release_spec" not in args:
                 return _fail(
-                    result, "Missing required parameter: release_data xor release_spec"
+                    result,
+                    "Missing required parameter: release_data xor release_spec",
                 )
             result["release_data"] = (
                 release_data := ReleaseSpec(**args["release_spec"]).resolve()
@@ -136,7 +137,8 @@ class ActionModule(ActionBase):
         # todo dedupe
         elif not (release_data := args.get("release_data")):
             return _fail(
-                result, "Missing required parameter: release_data xor release_spec"
+                result,
+                "Missing required parameter: release_data xor release_spec",
             )
         if not (asset_url := release_data.get("asset_url")):
             return _fail(result, "No asset URL in release info")

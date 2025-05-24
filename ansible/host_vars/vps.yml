@@ -9,4 +9,3 @@ syncthing_open_ports: true
 # you can leave this **undefined** and the existing account will be reused.
 #
 # letsencrypt_admin_email: "admin@your-domain.example"
-

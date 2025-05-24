@@ -77,4 +77,3 @@ flagging or whatever
 TODO: how to do this with a bigger group, like "we're a band of 3 ppl looking
 for a drummer"? something like a "profile" / "classified" with multiple "input"
 & "output" slots? more advanced matching?
-

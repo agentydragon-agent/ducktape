@@ -28,4 +28,3 @@ EDITOR=`which vim`
 if [ -f "$HOME/.secret_env" ]; then
     . "$HOME/.secret_env"
 fi
-

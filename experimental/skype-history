@@ -9,7 +9,7 @@ c = conn.cursor()
 
 if len(sys.argv) == 1:
     for row in c.execute(
-        "SELECT id, from_dispname, timestamp, body_xml FROM Messages ORDER BY Timestamp;"
+        "SELECT id, from_dispname, timestamp, body_xml FROM Messages ORDER BY Timestamp;",
     ):
         timestamp = row[2]
         timestamp = datetime.datetime.fromtimestamp(timestamp)
@@ -18,7 +18,7 @@ if len(sys.argv) == 1:
 else:
     person = sys.argv[1]
     for row in c.execute(
-        "SELECT id, from_dispname, timestamp, body_xml FROM Messages ORDER BY Timestamp;"
+        "SELECT id, from_dispname, timestamp, body_xml FROM Messages ORDER BY Timestamp;",
     ):
         if person in row[1]:
             print("%s" % (row[3]))

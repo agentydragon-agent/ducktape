@@ -8,22 +8,22 @@
       register: appimagelauncher_check
       changed_when: false
       failed_when: false
-      
+
     - name: Verify AppImageLauncher is installed
       assert:
         that: "'install ok installed' in appimagelauncher_check.stdout"
         success_msg: "AppImageLauncher is correctly installed"
         fail_msg: "AppImageLauncher is not installed properly"
-        
+
     - name: Check AppImageLauncher version
       command: dpkg-query -W -f='${Version}' appimagelauncher
       register: appimagelauncher_version
       changed_when: false
-      
+
     - name: Display AppImageLauncher version
       debug:
         var: appimagelauncher_version.stdout
-        
+
     - name: Verify AppImageLauncher binaries exist
       stat:
         path: "{{ item }}"
@@ -32,7 +32,7 @@
         - /usr/bin/AppImageLauncher
         - /usr/bin/appimagelauncherd
       failed_when: not binary_check.results[0].stat.exists or not binary_check.results[1].stat.exists
-        
+
     - name: Verify GitHub Release info functionality
       block:
         - name: Check release information
@@ -41,7 +41,7 @@
             version: "v3.0.0-alpha-4"  # Using a known version
             asset_pattern: ".*_{{ dpkg_arch }}\\.deb$"
           register: verification_check
-          
+
         - name: Verify GitHub release info returned correct metadata
           assert:
             that:

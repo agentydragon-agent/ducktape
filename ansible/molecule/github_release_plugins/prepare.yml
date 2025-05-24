@@ -8,7 +8,7 @@
       apt:
         update_cache: true
         cache_valid_time: 3600
-      
+
     - name: Install required packages
       become: true
       apt:
@@ -20,13 +20,13 @@
           - software-properties-common
           - jq
         state: present
-        
+
     # Set up dpkg_arch for testing
     - name: Get dpkg architecture
       command: dpkg --print-architecture
       register: dpkg_arch_cmd
       changed_when: false
-      
+
     - name: Set dpkg_arch fact
       set_fact:
         dpkg_arch: "{{ dpkg_arch_cmd.stdout }}"

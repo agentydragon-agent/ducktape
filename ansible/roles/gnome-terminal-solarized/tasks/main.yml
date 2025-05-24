@@ -94,4 +94,3 @@
   - debug:
       msg: "stderr: {{ set_default.stderr_lines }}"
   when: ansible_verbosity >= 1
-
