@@ -1,5 +1,5 @@
 ---
-- hosts: localhost
+- hosts: agentydragon
   vars_files:
     - vars/common_vars.yml
   vars:
@@ -15,6 +15,8 @@
     - role: laptop
     - role: dev-ml
     - role: scanbox
+    - role: wireguard
+      tags: [wireguard]
 
   tasks:
     - name: Install CUDA (NVidia-specific)

@@ -1,5 +1,5 @@
 ---
-- hosts: localhost
+- hosts: gpd
   vars_files:
     - vars/common_vars.yml
   vars:
@@ -8,9 +8,11 @@
   remote_user: "{{ my_user }}"
 
   roles:
-    - cli
-    - gui
-    - laptop
+    - role: cli
+    - role: gui
+    - role: laptop
+    - role: wireguard
+      tags: [wireguard]
   tasks:
     # TODO: add Ubuntu startup programs, like Flameshot etc.
 

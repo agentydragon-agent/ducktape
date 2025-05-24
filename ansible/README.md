@@ -24,23 +24,6 @@ echo -n "$VAULT_KEY" | \
 * The `rcup` command asks for confirmation before overwriting existing dotfiles.
   Which we can't give from an Ansible playbook. Which sucks.
 
-* Githooks need to be installed manually for now.
-  <https://github.com/gabyx/githooks#installation>
-  * find latest release on github:
-    <https://github.com/gabyx/Githooks/releases/tag/v2.5.0>, download the
-    `linux.amd64` one
-  * check checksums
-  * in temporary dir, execute
-    ```
-    ./cli installer \
-      --non-interactive \
-      --skip-install-into-existing
-    ```
-  * todo: i should check it's gonna be installed into dotfiles repo!
-
-* TODO: add git hooks update into regular update flow; should be possible to do
-  unattended
-
 ## To update requirements
 
 ```bash
@@ -114,3 +97,9 @@ These parts can't be done by Ansible:
 * Add `~/.config/bazelrc.secrets` - see the `bazelrc` dotfile. The global
   `bazelrc` imports this file, it's supposed to contain the path (and
   password) to the Bazel cache on the VPS.
+
+## WireGuard
+
+Enables:
+
+* ActivityWatch between laptops and server
