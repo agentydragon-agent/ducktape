@@ -1,3 +1,24 @@
+## MAKE NEW VAULT KEY (DONT)
+
+```bash
+VAULT_KEY=$(pwgen -s 32 1)
+```
+
+```
+# default = "label"
+# source =./vault_pass.sh
+```
+
+## Per-host setup for deployment
+
+Grab `VAULT_KEY`. Save in keyring:
+
+```bash
+echo -n "$VAULT_KEY" | \
+  secret-tool store --label='ansible-vault ducktape' \
+    service ansible-vault account ducktape
+```
+
 ## Caveats
 
 * The `rcup` command asks for confirmation before overwriting existing dotfiles.
