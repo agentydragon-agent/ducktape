@@ -1,6 +1,5 @@
-import os
-import os.path
 import subprocess
+from pathlib import Path
 
 from absl import app, flags, logging
 
@@ -36,9 +35,12 @@ def main(_):
     }
     # TODO: kill all processes on our death
     for (code, year, semester, name), n in m.items():
-        d = os.path.join(FLAGS.path, f"{code}-{name}")
-        os.makedirs(d, exist_ok=True)
-        url_pattern = f"https://is.mff.cuni.cz/prednasky/play/{FLAGS.secret}/{code}_{year}_{semester}_[01-{n + 1:02d}].webm"
+        d = Path(FLAGS.path) / f"{code}-{name}"
+        d.mkdir(exist_ok=True)
+        url_pattern = (
+            f"https://is.mff.cuni.cz/prednasky/play/{FLAGS.secret}/"
+            f"{code}_{year}_{semester}_[01-{n + 1:02d}].webm"
+        )
         args = [
             "curl",
             url_pattern,

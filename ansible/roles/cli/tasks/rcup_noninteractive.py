@@ -5,7 +5,7 @@ import subprocess
 import sys
 
 argv = sys.argv[1:]
-args = ["rcup"] + argv
+args = ["rcup", *argv]
 output = subprocess.check_output(args).decode("utf-8")
 
 if not output:
