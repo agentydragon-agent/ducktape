@@ -33,6 +33,7 @@
       - iftop
       - iotop
       - iputils-ping
+      - libsecret-tools  # for secret-tool, for Ansible Vault
       - locate
       - mc
       - mmv
