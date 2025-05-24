@@ -22,6 +22,9 @@
 	requireForce = true
 [branch]
 	autosetuprebase = always
+[rebase]
+    # https://git-scm.com/docs/git-pull/2.17.0#Documentation/git-pull.txt---autostash
+    autostash = true
 [rerere]
 	enabled = true
 [url "git@github.com:"]
