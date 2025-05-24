@@ -26,7 +26,10 @@ def pick_buckets(client: ActivityWatchClient) -> Tuple[List[str], List[str], Lis
 
 
 def iter_events(
-    client: ActivityWatchClient, bucket_ids: List[str], start: datetime, end: datetime
+    client: ActivityWatchClient,
+    bucket_ids: List[str],
+    start: datetime,
+    end: datetime,
 ):
     """Yield events from all buckets in [start, end)."""
     for bid in bucket_ids:
@@ -82,7 +85,7 @@ def summarize(minutes: int | None = 30, *, day: date | None = None) -> None:  # 
             active_secs += dur
 
     print(
-        f"\nActivityWatch summary for {label} ({start.isoformat()} → {end.isoformat()})\n"
+        f"\nActivityWatch summary for {label} ({start.isoformat()} → {end.isoformat()})\n",
     )
 
     tot_secs = active_secs + afk_secs
@@ -108,7 +111,9 @@ def summarize(minutes: int | None = 30, *, day: date | None = None) -> None:  # 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description="ActivityWatch quick summary")
     ap.add_argument(
-        "--day", metavar="YYYY-MM-DD", help="daily summary for given date (UTC)"
+        "--day",
+        metavar="YYYY-MM-DD",
+        help="daily summary for given date (UTC)",
     )
     ap.add_argument(
         "--mins",

@@ -47,7 +47,7 @@ def build_editor_file(api, edited_parts):
         # Do not change part links or names - the script will fail.
         # Lines starting with '#' will be ignored.
         # -------------------------------------------------------------
-        """
+        """,
         )
         + "\n"
         + "\n".join("# " + r for r in table)
@@ -151,7 +151,7 @@ def assign_jellybean(api: InvenTreeAPI):
     """
     # Find the parameter template.
     param_template = unwrap_singleton(
-        ParameterTemplate.list(api, name=JELLYBEAN_PARAM_NAME)
+        ParameterTemplate.list(api, name=JELLYBEAN_PARAM_NAME),
     )
     edited_parts = get_parts_without_parameter(api, param_template)
     if not edited_parts:

@@ -70,7 +70,8 @@ def load_ubs_credit_card_csv(path) -> Dict[str, external_system.ExternalExpense]
             }, line["Account number"]
             # logging.info("%s", line)
             purchase_date = datetime.datetime.strptime(
-                line["Purchase date"], "%d.%m.%Y"
+                line["Purchase date"],
+                "%d.%m.%Y",
             ).date()
             # Direct debit:
             # {
@@ -101,7 +102,7 @@ def load_ubs_credit_card_csv(path) -> Dict[str, external_system.ExternalExpense]
             )
             hash_version = "A"
             transaction_hash = hash_version + base64.b64encode(
-                hashlib.sha256(transaction_hash_text.encode("utf-8")).digest()
+                hashlib.sha256(transaction_hash_text.encode("utf-8")).digest(),
             )[:16].decode("ascii")
             # logging.info("hash=[%s] %s", transaction_hash_text,
             #              transaction_hash)

@@ -27,7 +27,7 @@ async def receive(
     """Receive webhook payload for a specific integration."""
     # Check if integration exists
     query = select(WebhookIntegration).where(
-        WebhookIntegration.name == integration_name
+        WebhookIntegration.name == integration_name,
     )
     result = await db_session.execute(query)
     integration = result.scalar_one_or_none()
@@ -55,7 +55,8 @@ async def receive(
             scheme, _, credentials_value = auth_header.partition(" ")
             if credentials_value:
                 credentials = HTTPAuthorizationCredentials(
-                    scheme=scheme, credentials=credentials_value
+                    scheme=scheme,
+                    credentials=credentials_value,
                 )
 
         # Validate the credentials
@@ -71,7 +72,8 @@ async def receive(
         payload = await request.json()
     except json.JSONDecodeError:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid JSON payload"
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid JSON payload",
         )
 
     # Store webhook payload

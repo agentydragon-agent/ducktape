@@ -29,7 +29,7 @@ def gnc_numeric_to_python_Decimal(numeric):
     result = copy.to_decimal(None)
     if not result:
         raise Exception(
-            "gnc numeric value %s can't be converted to decimal" % copy.to_string()
+            "gnc numeric value %s can't be converted to decimal" % copy.to_string(),
         )
     digit_tuple = tuple(int(char) for char in str(copy.num()) if char != "-")
     denominator = copy.denom()

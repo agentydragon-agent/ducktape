@@ -28,7 +28,8 @@ DEFAULT_PAGE_SIZE = settings.webhook.default_page_size
 
 
 async def get_webhook_integration(
-    integration_name: str, db_session: AsyncSession
+    integration_name: str,
+    db_session: AsyncSession,
 ) -> WebhookIntegration:
     """Get webhook integration by name.
 
@@ -43,7 +44,7 @@ async def get_webhook_integration(
         HTTPException: If integration not found or disabled
     """
     query = select(WebhookIntegration).where(
-        WebhookIntegration.name == integration_name
+        WebhookIntegration.name == integration_name,
     )
     result = await db_session.execute(query)
     integration = result.scalar_one_or_none()
@@ -136,13 +137,15 @@ async def get_webhook_payloads(
 
 
 async def get_latest_payloads(
-    db_session: AsyncSession, limit: int = 5
+    db_session: AsyncSession,
+    limit: int = 5,
 ) -> list[dict[str, Any]]:
     """Get latest webhook payloads across all integrations."""
     query = (
         select(WebhookPayload)
         .join(
-            WebhookIntegration, WebhookPayload.integration_id == WebhookIntegration.id
+            WebhookIntegration,
+            WebhookPayload.integration_id == WebhookIntegration.id,
         )
         .where(WebhookIntegration.is_enabled)
         .order_by(WebhookPayload.received_at.desc())
@@ -172,7 +175,7 @@ async def list_all_payloads(
         integrations_query = select(WebhookIntegration)
     else:
         integrations_query = select(WebhookIntegration).where(
-            WebhookIntegration.is_enabled
+            WebhookIntegration.is_enabled,
         )
     integrations_result = await db_session.execute(integrations_query)
     integrations = [

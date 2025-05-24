@@ -18,7 +18,9 @@ from tqdm.auto import tqdm
 from xdg import xdg_cache_home
 
 _ETAPI_ROOT_URL = flags.DEFINE_string(
-    "etapi_root_url", "http://localhost:37840", "ETAPI root URL"
+    "etapi_root_url",
+    "http://localhost:37840",
+    "ETAPI root URL",
 )
 _TOKEN = flags.DEFINE_string("token", None, "ETAPI token")
 _PURGE = flags.DEFINE_bool("purge", False, "Purge RM side?")
@@ -46,7 +48,8 @@ class PaperInTrilium:
 def get_result_priority(result):
     try:
         priority = find_attribute_value_in_result(
-            result, attribute_name="readingPriority"
+            result,
+            attribute_name="readingPriority",
         )
     except KeyError:
         return None  # unprioritized go last
@@ -155,7 +158,7 @@ def purge_remarkable_synced_dir():
 def get_existing_filenames():
     """Yields filenames uploaded in shared folder sans .pdf extension."""
     existing = subprocess.check_output(make_args("ls", REMARKABLE_SIDE_PATH)).decode(
-        "utf-8"
+        "utf-8",
     )
     for line in existing.splitlines():
         FILE_PREFIX = "[f]\t"

@@ -19,10 +19,10 @@ async def test_setup_component(hass):
                     "name": "Test AQI",
                     "unique_id": "test_aqi",
                     "sensors": {"co2": "sensor.test_co2", "pm25": "sensor.test_pm25"},
-                }
+                },
             ],
             "stale_time": "3600",
-        }
+        },
     }
 
     # Mock entity states - we don't need actual states for this test
@@ -44,7 +44,7 @@ async def test_setup_entry(hass):
 
     # We expect async_setup_entry to call async_forward_entry_setups for sensor platform
     with patch(
-        "homeassistant.config_entries.ConfigEntries.async_forward_entry_setups"
+        "homeassistant.config_entries.ConfigEntries.async_forward_entry_setups",
     ) as mock_forward:
         assert await async_setup_entry(hass, entry)
         # Check that it forwarded the setup to the sensor platform
@@ -58,7 +58,7 @@ async def test_unload_entry(hass):
 
     # We expect async_unload_entry to call async_unload_platforms
     with patch(
-        "homeassistant.config_entries.ConfigEntries.async_unload_platforms"
+        "homeassistant.config_entries.ConfigEntries.async_unload_platforms",
     ) as mock_unload:
         # Need to add hass.data for the entry first
         hass.data.setdefault(DOMAIN, {})

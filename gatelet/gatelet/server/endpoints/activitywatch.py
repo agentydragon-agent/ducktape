@@ -75,13 +75,17 @@ async def fetch_recent_activity(minutes: int = 15) -> dict[str, Any] | None:
                 "app": [
                     (app, timedelta(seconds=secs))
                     for app, secs in sorted(
-                        app_secs.items(), key=lambda kv: kv[1], reverse=True
+                        app_secs.items(),
+                        key=lambda kv: kv[1],
+                        reverse=True,
                     )
                 ],
                 "url": [
                     (url, timedelta(seconds=secs))
                     for url, secs in sorted(
-                        url_secs.items(), key=lambda kv: kv[1], reverse=True
+                        url_secs.items(),
+                        key=lambda kv: kv[1],
+                        reverse=True,
                     )
                 ],
             }

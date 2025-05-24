@@ -3,6 +3,7 @@
 import pytest
 from fastapi import Request
 from fastapi.security import HTTPAuthorizationCredentials
+
 from gatelet.server.auth.webhook_auth import (
     AuthError,
     BearerAuthHandler,
@@ -79,7 +80,8 @@ async def test_no_auth_handler_validate_with_credentials(no_auth_handler, mock_r
     """Test NoAuthHandler validation with credentials."""
     # Should pass with any credentials
     await no_auth_handler.validate(
-        mock_request, HTTPAuthorizationCredentials(scheme="any", credentials="any")
+        mock_request,
+        HTTPAuthorizationCredentials(scheme="any", credentials="any"),
     )
 
 
@@ -87,14 +89,16 @@ async def test_no_auth_handler_validate_with_credentials(no_auth_handler, mock_r
 async def test_bearer_auth_handler_validate_success(bearer_auth_handler, mock_request):
     """Test BearerAuthHandler validation with valid credentials."""
     credentials = HTTPAuthorizationCredentials(
-        scheme="bearer", credentials="test-token"
+        scheme="bearer",
+        credentials="test-token",
     )
     await bearer_auth_handler.validate(mock_request, credentials)
 
 
 @pytest.mark.asyncio
 async def test_bearer_auth_handler_missing_credentials(
-    bearer_auth_handler, mock_request
+    bearer_auth_handler,
+    mock_request,
 ):
     """Test BearerAuthHandler validation with missing credentials."""
     with pytest.raises(AuthError, match="Missing Authorization header"):
@@ -113,7 +117,8 @@ async def test_bearer_auth_handler_wrong_scheme(bearer_auth_handler, mock_reques
 async def test_bearer_auth_handler_invalid_token(bearer_auth_handler, mock_request):
     """Test BearerAuthHandler validation with invalid token."""
     credentials = HTTPAuthorizationCredentials(
-        scheme="bearer", credentials="wrong-token"
+        scheme="bearer",
+        credentials="wrong-token",
     )
     with pytest.raises(AuthError, match="Invalid token"):
         await bearer_auth_handler.validate(mock_request, credentials)

@@ -18,7 +18,7 @@ prompt += "\n\n".join(
             "__pycache__",
             "samplebooks_import",
         )
-    ]
+    ],
 )
 prompt += textwrap.dedent(
     """
@@ -40,7 +40,7 @@ prompt += textwrap.dedent(
 
         ### Task
 
-        """
+        """,
 )
 
 print(prompt)

@@ -1,4 +1,4 @@
-#!/bin/bash 
+#!/bin/bash
 
 gst-launch-0.10 -e v4l2src ! \
    ffmpegcolorspace ! \

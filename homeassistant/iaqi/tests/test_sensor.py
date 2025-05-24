@@ -97,7 +97,12 @@ def memory_handler():
     ],
 )
 async def test_sensor_update(
-    hass, co2_value, pm25_value, expected_iaqi, expected_bottleneck, now
+    hass,
+    co2_value,
+    pm25_value,
+    expected_iaqi,
+    expected_bottleneck,
+    now,
 ):
     """Test sensor updates with different pollutant values."""
     # Create actual sensor entities with constant values
@@ -151,7 +156,9 @@ async def test_sensor_error_handling(hass, now):
 
     # Unavailable sensor
     hass.states.async_set(
-        "sensor.unavailable", STATE_UNAVAILABLE, {"last_updated": now}
+        "sensor.unavailable",
+        STATE_UNAVAILABLE,
+        {"last_updated": now},
     )
 
     # Stale sensor

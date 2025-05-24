@@ -47,7 +47,7 @@ for market in tqdm(markets, leave=False):
                 "id": market["id"],
                 "url": market["url"],
                 "num_bets": num_bets,
-            }
+            },
         )
         # also:
         #   - pool, probability, isResolved, ...

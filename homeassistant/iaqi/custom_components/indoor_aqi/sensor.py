@@ -218,7 +218,9 @@ def parse_timedelta(value) -> timedelta:
 
 
 async def async_setup_entry(
-    hass: HomeAssistant, entry: ConfigEntry, async_add_entities
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    async_add_entities,
 ):
     """
     Called after __init__.py's async_setup_entry. We'll read the config from
@@ -263,12 +265,12 @@ async def async_setup_entry(
                 unique_id=unique_id,
                 sensor_map=sensor_map,
                 stale_time=stale_time,
-            )
+            ),
         )
 
     if not entities:
         _LOGGER.warning(
-            "No monitors found in YAML config, no IndoorAQI sensors created."
+            "No monitors found in YAML config, no IndoorAQI sensors created.",
         )
 
     async_add_entities(entities, update_before_add=True)
@@ -392,7 +394,7 @@ class IndoorAQISensor(SensorEntity):
                     # Create human-readable detail with pollutant name, value and unit
                     if pollutant_info := POLLUTANTS.get(pollutant):
                         bottleneck_details.append(
-                            f"{pollutant_info.name}: {raw_values[pollutant]} {pollutant_info.unit}"
+                            f"{pollutant_info.name}: {raw_values[pollutant]} {pollutant_info.unit}",
                         )
 
             # Create a human-readable bottleneck string

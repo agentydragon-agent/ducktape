@@ -103,7 +103,9 @@ async def _run(config: ReporterConfig) -> None:
     while True:
         if config.battery_enabled:
             result = await send_battery_status(
-                config.url, config.integration, token=config.token
+                config.url,
+                config.integration,
+                token=config.token,
             )
             print(json.dumps(result))
         await asyncio.sleep(config.interval)
@@ -148,7 +150,7 @@ def main(argv: Iterable[str] | None = None) -> None:
                 url=args.url,
                 integration=args.integration,
                 token=args.token,
-            )
+            ),
         )
     else:
         asyncio.run(_run(config))

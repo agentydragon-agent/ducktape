@@ -63,10 +63,11 @@ def load_ubs_csv(path) -> Dict[str, external_system.ExternalExpense]:
                 line["Debit"] and not line["Credit"]
             )
             amount = decimal.Decimal(
-                (line["Credit"] or "0").replace("'", "")
+                (line["Credit"] or "0").replace("'", ""),
             ) - decimal.Decimal((line["Debit"] or "0").replace("'", ""))
             trade_date = datetime.datetime.strptime(
-                line["Trade date"], "%d.%m.%Y"
+                line["Trade date"],
+                "%d.%m.%Y",
             ).date()
             result[transaction_id] = external_system.ExternalExpense(
                 amount=amount,
@@ -78,7 +79,7 @@ def load_ubs_csv(path) -> Dict[str, external_system.ExternalExpense]:
                         line["Description 1"],
                         line["Description 2"],
                         line["Description 3"],
-                    ]
+                    ],
                 ),
             )
     return result

@@ -9,7 +9,7 @@
     {% elif page_num == total_pages and page != total_pages %}
         {% set extra = " - Earliest" %}
     {% endif %}
-    
+
     <a href="{{ auth.create_url_with_params('webhooks/' + integration_name | default(''), page=page_num, page_size=page_size) }}">[{{ page_num }}{{ extra }}]</a>
 {% endmacro %}
 
@@ -26,11 +26,11 @@
 <section>
     <h2>{{ integration_name|default('All') }} Webhook Payloads</h2>
     <p>Showing {{ payloads|length }} of {{ total_count }} payloads</p>
-    
+
     {% if show_all_link %}
     <p><a href="{{ auth.create_url('webhooks') }}">View all integrations</a></p>
     {% endif %}
-    
+
     {% if integrations and not integration_name %}
     <div class="integrations-list">
         <h3>Available Integrations</h3>
@@ -55,19 +55,19 @@
             {{ page_link(total_pages) }}
             <span>...</span>
         {% endif %}
-        
+
         {% for p in range(max(1, page-5), page) %}
             {{ page_link(p) }}
         {% endfor %}
     {% endif %}
-    
+
     <span>[{{ page }}]</span>
-    
+
     {% if page < total_pages %}
         {% for p in range(page+1, min(page+6, total_pages+1)) %}
             {{ page_link(p) }}
         {% endfor %}
-        
+
         {% if page < total_pages - 5 %}
             <span>...</span>
             {{ page_link(1) }}

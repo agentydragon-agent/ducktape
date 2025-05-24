@@ -25,7 +25,8 @@ from fastapi.templating import Jinja2Templates
 from starlette.datastructures import URL
 
 WEBHOOK_INBOX_KEY: str = os.getenv(
-    "WEBHOOK_INBOX_KEY", ""
+    "WEBHOOK_INBOX_KEY",
+    "",
 )  # 44-char url-safe b64, or unset → no crypto
 
 MAX_PAYLOAD = int(os.getenv("MAX_PAYLOAD", "16384"))
@@ -218,7 +219,7 @@ def configure_db(path: str | os.PathLike):
         """CREATE TABLE IF NOT EXISTS events(
                id      INTEGER PRIMARY KEY,
                ts      INTEGER,
-               payload TEXT)"""
+               payload TEXT)""",
     )
     CONN.execute(
         """CREATE TABLE IF NOT EXISTS access_log(
@@ -229,7 +230,7 @@ def configure_db(path: str | os.PathLike):
                query   TEXT,
                payload TEXT,
                headers TEXT,
-               status  INTEGER)"""
+               status  INTEGER)""",
     )
     return CONN
 
@@ -268,7 +269,7 @@ def _print_startup_banner() -> None:
             "",
             "Send a test webhook:",
             f"""   curl -X POST {index_url} -d '{json.dumps({"hello": "world"})}'""",
-        ]
+        ],
     )
 
     print("\n".join(lines))
@@ -344,7 +345,8 @@ async def ingest(req: Request):
     except UnicodeDecodeError:
         raise HTTPException(400, "Payload must be valid UTF-8")
     CONN.execute(
-        "INSERT INTO events(ts,payload) VALUES(?,?)", (int(time.time()), payload)
+        "INSERT INTO events(ts,payload) VALUES(?,?)",
+        (int(time.time()), payload),
     )
     CONN.commit()
     return {"status": "ok"}
@@ -394,7 +396,7 @@ def _render_events_page(
         # Also propagate *query-style* key if that’s how it was supplied.
         if key_style == "query" and key_value:
             redirect_target = str(
-                URL(redirect_target).include_query_params(key=key_value)
+                URL(redirect_target).include_query_params(key=key_value),
             )
 
         return RedirectResponse(url=redirect_target, status_code=302)
@@ -406,7 +408,8 @@ def _render_events_page(
         before_ts = int(params["before"])
     except ValueError:
         raise HTTPException(
-            400, "Invalid 'before' parameter – must be integer timestamp"
+            400,
+            "Invalid 'before' parameter – must be integer timestamp",
         )
 
     try:
@@ -445,10 +448,11 @@ def _render_events_page(
     if rows:
         oldest_ts = rows[-1][1]
         if CONN.execute(
-            "SELECT 1 FROM events WHERE ts < ? LIMIT 1", (oldest_ts,)
+            "SELECT 1 FROM events WHERE ts < ? LIMIT 1",
+            (oldest_ts,),
         ).fetchone():
             older_link = str(
-                URL(base_path).include_query_params(before=oldest_ts, count=count)
+                URL(base_path).include_query_params(before=oldest_ts, count=count),
             )
 
     # Propagate *query-style* key only when the correct key was provided and the
@@ -494,7 +498,9 @@ def _render_events_page(
 @app.get("/")
 def list_events(req: Request):
     return _render_events_page(
-        req, key_value=req.query_params.get("key"), key_style="query"
+        req,
+        key_value=req.query_params.get("key"),
+        key_style="query",
     )
 
 

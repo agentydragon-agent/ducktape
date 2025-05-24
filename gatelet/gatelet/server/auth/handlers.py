@@ -135,7 +135,8 @@ class AdminAuthContext:
 
 
 async def key_path_auth(
-    key: str, db_session: AsyncSession = Depends(get_db_session)
+    key: str,
+    db_session: AsyncSession = Depends(get_db_session),
 ) -> KeyPathAuthContext:
     """Authenticate using key in path."""
     logger.debug("key_path_auth called with key: %s...", key[:4])
@@ -151,7 +152,8 @@ async def key_path_auth(
 
 
 async def session_auth(
-    session_token: str, db_session: AsyncSession = Depends(get_db_session)
+    session_token: str,
+    db_session: AsyncSession = Depends(get_db_session),
 ) -> SessionAuthContext:
     """Authenticate using challenge-response session token."""
     # Find session

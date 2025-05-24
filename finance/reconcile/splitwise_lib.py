@@ -46,7 +46,9 @@ def assign_token(client, cache_dir):
         print(f"Please go to {url}.")
         params = retrieve_get_params(port=port)
         access_token = client.getAccessToken(
-            params["oauth_token"][0], secret, params["oauth_verifier"][0]
+            params["oauth_token"][0],
+            secret,
+            params["oauth_verifier"][0],
         )
         logging.info("got access token")
 
@@ -97,7 +99,9 @@ def load_splitwise_expenses(
     while True:
         logging.info("fetching batch of %d items at offset %d", limit, offset)
         batch = client.getExpenses(
-            offset=offset, limit=limit, group_id=splitwise_group_id
+            offset=offset,
+            limit=limit,
+            group_id=splitwise_group_id,
         )
         # exp.repayments[*].fromUser, .toUser
         # can have: exp.deletedAt
@@ -111,7 +115,8 @@ def load_splitwise_expenses(
                     continue
 
                 dt = datetime.datetime.strptime(
-                    expense.date, "%Y-%m-%dT%H:%M:%SZ"
+                    expense.date,
+                    "%Y-%m-%dT%H:%M:%SZ",
                 ).date()
                 expenses[str(expense.id)] = external_system.ExternalExpense(
                     id=str(expense.id),

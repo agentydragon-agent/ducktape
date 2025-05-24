@@ -43,7 +43,7 @@ class DatabaseSettings(BaseModel):
         default=os.getenv(
             "DATABASE_URL",
             "postgresql://postgres:postgres@localhost:5432/gatelet",
-        )
+        ),
     )
 
 
@@ -90,7 +90,7 @@ class ChallengeResponseAuthSettings(BaseModel):
 class AuthSettings(BaseModel):
     key_in_url: KeyInUrlAuthSettings = Field(default=KeyInUrlAuthSettings())
     challenge_response: ChallengeResponseAuthSettings = Field(
-        default=ChallengeResponseAuthSettings()
+        default=ChallengeResponseAuthSettings(),
     )
 
 
@@ -126,11 +126,11 @@ class WebhookSettings(BaseModel):
             # Check for URL-safe names
             if not re.match(r"^[a-zA-Z0-9_-]+$", name):
                 raise ValueError(
-                    f"Integration name '{name}' not only letters, numbers, underscores, and hyphens."
+                    f"Integration name '{name}' not only letters, numbers, underscores, and hyphens.",
                 )
             if len(name) > MAX_INTEGRATION_NAME_LEN:
                 raise ValueError(
-                    f"Integration name '{name}' too long (max {MAX_INTEGRATION_NAME_LEN} characters)"
+                    f"Integration name '{name}' too long (max {MAX_INTEGRATION_NAME_LEN} characters)",
                 )
         return v
 

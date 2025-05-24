@@ -77,7 +77,7 @@ def main(_):
                     return 200
         return 200  # unprioritized go last
 
-    results = list(sorted(results["results"], key=get_result_priority))
+    results = sorted(results["results"], key=get_result_priority)
 
     for result in tqdm(results):
         priority = get_result_priority(result)

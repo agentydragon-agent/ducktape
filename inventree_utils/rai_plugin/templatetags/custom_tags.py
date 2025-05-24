@@ -107,7 +107,7 @@ class ParametersProcessor:
 
             frame = inspect.currentframe().f_back  # Get the caller frame (class body)
             frame.f_locals["_displayers"].append(
-                (attrs, wrapped)
+                (attrs, wrapped),
             )  # Get class-local variables
             return wrapped
 

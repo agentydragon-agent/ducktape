@@ -30,7 +30,8 @@ async def _login(client: AsyncClient) -> str:
 async def test_list_admin_sessions(client: AsyncClient, db_session: AsyncSession):
     session_cookie = await _login(client)
     response = await client.get(
-        "/admin/admin-sessions/", cookies={"admin_session": session_cookie}
+        "/admin/admin-sessions/",
+        cookies={"admin_session": session_cookie},
     )
     assert response.status_code == HTTPStatus.OK
     assert session_cookie in response.text
@@ -40,13 +41,14 @@ async def test_list_admin_sessions(client: AsyncClient, db_session: AsyncSession
 async def test_invalidate_admin_session(client: AsyncClient, db_session: AsyncSession):
     session_cookie = await _login(client)
     response = await client.get(
-        "/admin/admin-sessions/", cookies={"admin_session": session_cookie}
+        "/admin/admin-sessions/",
+        cookies={"admin_session": session_cookie},
     )
     token = _extract_csrf(response.text)
 
     session_obj = (
         await db_session.execute(
-            select(AdminSession).where(AdminSession.session_token == session_cookie)
+            select(AdminSession).where(AdminSession.session_token == session_cookie),
         )
     ).scalar_one()
 
@@ -59,7 +61,7 @@ async def test_invalidate_admin_session(client: AsyncClient, db_session: AsyncSe
 
     result = (
         await db_session.execute(
-            select(AdminSession).where(AdminSession.id == session_obj.id)
+            select(AdminSession).where(AdminSession.id == session_obj.id),
         )
     ).scalar_one_or_none()
     assert result is None

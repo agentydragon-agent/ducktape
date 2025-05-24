@@ -5,9 +5,10 @@ import uuid
 from datetime import datetime
 
 import pytest
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from gatelet.server.auth.handlers import AuthHandlerError, key_path_auth
 from gatelet.server.models import AuthKey
-from sqlalchemy.ext.asyncio import AsyncSession
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)

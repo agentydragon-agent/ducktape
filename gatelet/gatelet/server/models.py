@@ -41,7 +41,10 @@ class WebhookIntegration(Base):
     auth_config = Column(JSON, nullable=True, comment="Authentication configuration")
     created_at = Column(DateTime, nullable=False, default=func.now())  # pylint: disable=not-callable
     updated_at = Column(
-        DateTime, nullable=False, default=func.now(), onupdate=func.now()
+        DateTime,
+        nullable=False,
+        default=func.now(),
+        onupdate=func.now(),
     )
     is_enabled = Column(Boolean, nullable=False, default=True)
 
@@ -64,7 +67,9 @@ class WebhookPayload(Base):
     )
     # Link to integration configuration
     integration_id = Column(
-        Integer, ForeignKey("webhook_integrations.id"), nullable=True
+        Integer,
+        ForeignKey("webhook_integrations.id"),
+        nullable=True,
     )
     payload = Column(JSON, nullable=False)
 

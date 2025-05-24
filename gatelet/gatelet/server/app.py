@@ -36,7 +36,8 @@ from .shared import BASE_DIR, templates
 logger = logging.getLogger(__name__)
 
 app = FastAPI(
-    title="Gatelet", description="LLM-friendly API for Home Assistant and webhooks"
+    title="Gatelet",
+    description="LLM-friendly API for Home Assistant and webhooks",
 )
 app.mount(
     "/static",
@@ -108,7 +109,9 @@ async def root(
 
 
 def register_with_all_auth_methods(
-    path: str, handler: Callable, register_admin: bool = True
+    path: str,
+    handler: Callable,
+    register_admin: bool = True,
 ):
     """Register a handler with all available auth methods.
 
@@ -173,7 +176,8 @@ register_with_all_auth_methods("/", authenticated_root_handler, register_admin=F
 # Register webhook routes with all auth methods
 register_with_all_auth_methods("/webhooks/", webhook_view.list_all_payloads)
 register_with_all_auth_methods(
-    "/webhooks/{integration_name}", webhook_view.list_integration_payloads
+    "/webhooks/{integration_name}",
+    webhook_view.list_integration_payloads,
 )
 
 # Register Home Assistant routes with all auth methods

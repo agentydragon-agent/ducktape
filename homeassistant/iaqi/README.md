@@ -5,7 +5,7 @@ Calculates an Indoor Air Quality Index (IAQI) from multiple air quality sensors.
 ## Features
 
 - **Overall IAQI calculation**: Combines multiple air quality sensors into a single 0-100 index
-- **Individual component tracking**: Exposes IAQI value for each pollutant separately 
+- **Individual component tracking**: Exposes IAQI value for each pollutant separately
 - **Bottleneck identification**: Identifies which pollutants are causing poor air quality
 - **Human-readable descriptions**: Easy-to-understand descriptions of air quality issues
 - **Raw value tracking**: Stores raw sensor values for context
@@ -23,13 +23,13 @@ Calculates an Indoor Air Quality Index (IAQI) from multiple air quality sensors.
            co2: sensor.living_room_co2
            pm25: sensor.living_room_pm25
            voc: sensor.living_room_voc
-       
+
        - name: "Bedroom AQI"
          unique_id: "bedroom_aqi"
          sensors:
            co2: sensor.bedroom_co2
            pm25: sensor.bedroom_pm25
-     
+
      # Optional: set how long before a sensor reading is considered "stale"
      stale_time: "1:00:00"  # Format: HH:MM:SS or seconds (default: 3600)
    ```

@@ -23,7 +23,8 @@ class IndoorAQIConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             user_input = {}
 
         _LOGGER.debug(
-            "IndoorAQI: YAML import config flow triggered with: %s", user_input
+            "IndoorAQI: YAML import config flow triggered with: %s",
+            user_input,
         )
 
         # We only want a single import-based entry. If one already exists, skip.

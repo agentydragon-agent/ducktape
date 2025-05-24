@@ -51,11 +51,15 @@ class Profile(SettingsWrapper):
     def __init__(self, uuid_: str):
         self.uuid = uuid_
         super().__init__(
-            "org.gnome.Terminal.Legacy.Profile", f"{PROFILE_BASE}:{uuid_}/"
+            "org.gnome.Terminal.Legacy.Profile",
+            f"{PROFILE_BASE}:{uuid_}/",
         )
 
     def apply_color_scheme(
-        self, name: str, color_dir: Path, font: str | None = None
+        self,
+        name: str,
+        color_dir: Path,
+        font: str | None = None,
     ) -> None:
         self["visible-name"] = name
         self["background-color"] = (color_dir / "bg_color").read_text().strip()

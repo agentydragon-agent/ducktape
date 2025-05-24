@@ -135,7 +135,7 @@ def index():
                 # TODO: also label
                 # iconClass, ~template, label: #relation:...
                 if attribute["type"] == "label" and attribute["name"].startswith(
-                    ("relation:", "label:")
+                    ("relation:", "label:"),
                 ):
                     # relation/label definition
                     continue
@@ -223,14 +223,14 @@ def search(query):
                 "string": note["string"],
             }
             for note_id, note in embeddings["notes"].items()
-        ]
+        ],
     )
 
     # return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
     import numpy as np
 
     df["similarities"] = df.embedding.apply(
-        lambda x: cosine_similarity(x or np.zeros_like(embedding), embedding)
+        lambda x: cosine_similarity(x or np.zeros_like(embedding), embedding),
     )
     df = df.drop(columns=["embedding"])
     res = df.sort_values("similarities", ascending=False).head(10)
