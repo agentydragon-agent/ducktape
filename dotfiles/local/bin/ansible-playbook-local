@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# Run Ansible playbook on localhost
+#   • Prompts for sudo once if needed, then re-uses the sudo timestamp
+#   • Keeps the timestamp fresh while the playbook runs
+#   • Pass-through to ansible-playbook with all original CLI args
+#
+# Usage:
+#   ansible-playbook-local playbook.yml [options]
+
+set -euo pipefail
+
+# 1. ensure we have a valid sudo timestamp (“cookie”)
+if ! sudo -n true 2>/dev/null; then
+  echo "No sudo cookie, please sudo in:"
+  sudo -v
+fi
+
+# 2. keep the timestamp alive so long runs don’t expire (5 min default)
+( while true; do sleep 60; sudo -n true 2>/dev/null || exit; done ) &
+KEEPALIVE_PID=$!
+trap 'kill "$KEEPALIVE_PID" 2>/dev/null' EXIT
+
+# 3. drop into ansible-playbook (no --ask-become-pass needed)
+exec ansible-playbook "$@"
+
+
