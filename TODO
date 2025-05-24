@@ -3,7 +3,9 @@ add to installation on small laptop:
 	nmap,
 	other hacking tools
 
-merge agentydragon & gpd gitconfig dotfile
+merge agentydragon & gpd dotfiles:
+    - gitconfig
+    - profile
 
 cargo install stylua (for lua formatting neovim)
 
