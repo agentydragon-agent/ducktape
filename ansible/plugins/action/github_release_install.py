@@ -105,7 +105,8 @@ class ActionModule(ActionBase):
         assert isinstance(method_name, str)
         if not (klass := INSTALL_METHODS.get(method_name)):
             raise ActionError(
-                f"Invalid {method = }. Expected one of: {', '.join(INSTALL_METHODS.keys())}",
+                f"Invalid {method = }. Expected one of: "
+                f"{', '.join(INSTALL_METHODS.keys())}",
             )
         installer = klass(**method_args)
         installer.validate()
@@ -116,7 +117,7 @@ class ActionModule(ActionBase):
         if task_vars is None:
             task_vars = {}
 
-        result = super(ActionModule, self).run(tmp, task_vars)
+        result = super().run(tmp, task_vars)
         result.update(changed=False, failed=False)
 
         args = self._task.args.copy()

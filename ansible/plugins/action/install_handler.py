@@ -95,7 +95,8 @@ class FlatpakInstall:
           remote: flathub
           method: user
 
-    Additional keyword arguments are passed through to the *community.general.flatpak* module.
+    Additional keyword arguments are passed through to the
+    *community.general.flatpak* module.
     """
 
     name: str
@@ -132,7 +133,7 @@ class FlatpakInstall:
         if installed:
             # Install or ensure present.
             return args | {"state": "present", **self.kwargs}
-        # Ensure absent – additional kwargs are typically not needed when
+        # Ensure absent - additional kwargs are typically not needed when
         # uninstalling but they *are* accepted by the underlying module
         # (they will just be ignored).  Keep the behaviour consistent with
         # the *snap* handler and drop them for clarity.
@@ -172,13 +173,14 @@ class ActionModule(ActionBase):
             try:
                 parsed[arg] = METHODS[arg].parse(value)
             except Exception as e:
-                raise AnsibleError(f"Error parsing {arg}: {e}")
+                raise AnsibleError(f"Error parsing {arg}: {e}") from e
             if debug:
                 result[f"{arg}_parsed"] = parsed[arg].__dict__
 
         if use not in parsed and use != "none":
             raise AnsibleError(
-                f"Invalid use value: {use}. Expected one of {list(parsed.keys())} or 'none'",
+                f"Invalid use value: {use}. Expected one of "
+                f"{list(parsed.keys())} or 'none'",
             )
 
         # run selected install method
