@@ -1,0 +1,87 @@
+[lint]
+select = [
+   # base (E,F)
+    "E",
+    "F",
+    # PL = pylint
+    # PLC = pylint convention
+    "PLC",
+    # PLE = pylint errors
+    "PLC",
+    # PLR = pylint refactor
+    "PLR",
+    # PLW = pylint warnings
+    "PLW",
+    "UP",  # pyupgrade
+    "FURB", # refurb - e.g. pathlib use etc
+
+    # isort
+    "I",
+    "FAST", # FastAPI lints
+    "YTT",
+    # not: "ANN" -- demands type annotations everywhere
+    "ASYNC", # flake8-async
+    # not: "S" -- flake8-bandit, pretty strict security lints
+    # maybe: "FBT" -- enforce booleans to be kwarg
+    "B", # flake8-bugbear -- common bugs
+    # not: "A" -- shadowing builtins
+    "COM", # flake8-commas -- enforce trailing commas
+    "C4", # flake8-comprehensions -- some comprehension patterns
+    "LOG", # flake8-logging stdlib logging lints
+    # "G", # logging format: use 'extra' kwarg instead
+    "INP", # implicit namespace pkg => add __init__.py
+    "PIE", # flake8-pie -- some random things
+    "PT", # pytest
+    "RSE", # one single raise thing
+    "RET", # flake8-return -- return statements
+    "SIM", # flake8-simplify -- simplify things
+    "SLOT", # flake8-slots -- enforce __slots__ usage where required
+    "ARG", # flake8-arguments -- unused function arguments
+    "PTH", # flake8-pathlib -- pathlib usage
+    # FLY: flynt -- fstring instead of string join
+    # C90: mccabe -- "too complex" code
+    "NPY", # numpy lints
+    "PD", # pandas lints
+    "N", # pep8-naming
+
+    # DJ: Django
+    # EM: error message things
+
+    # don't want:
+    #   T10: diallow debugger
+    #   FIX: todo/fixme/... comments
+    #   INT: gettext
+    #   ISC: implicit str concat - I do this deliberately
+    #   ICN: import conventions e.g. numpy as np
+    #   DTZ: strict datetime timezones
+    #   CPY: copyright notices
+    #   T20: flake8-print - no print statements
+    #   PYI: python interfaces files
+    #   EXE: things around correct exe's
+    #   FA: future annotations, irreleevant in 3.12+
+    #   Q: flake8-quotes -- enforce single quotes
+    #   SLF: flake8-self -- private members access
+    #   TID: tidy imports
+    #   TD: flake8-todos - TODO formatting
+    #   TC: flake8-type-checking -- typecheck-only imports etc
+    #   PERF: performance lints
+    #   DOC: enforce pydoclint -- all must be documented
+    #   D: pydocstyle
+    #   PGH: pygrep-hooks
+    #   TRY: "tryceratops" - create own etc. etc
+
+    # see: ruff rule --all; ruff rule RUF052
+    #"RUF008", # dataclass mutable default
+    "RUF", # ruff specific
+]
+ignore = [
+    # suppress “magic-value-comparison” - too noisy, flags even
+    # 'if len(sys.argv) > 2'
+    "PLR2004",
+    "PLR0912", # too many branches
+    "PLR0915", # too many statements
+    "PLR0911", # too many return statements
+    # ruff check ... --select=... --statistics
+]
+# Default line width: 88 chars
+# line-length = 120

@@ -1,16 +1,35 @@
 repos:
-  # Safety guard: block pushes to protected branches
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
     hooks:
+      # Safety guard: block pushes to protected branches.
+      # 'main' and 'master' are protected by default.
       - id: no-commit-to-branch
+
+      # XXX: disable for tanapaste
+      # - id: trailing-whitespace
+      # - id: end-of-file-fixer  # files end always in newline
+
+      - id: check-merge-conflict
+      # Syntax checks
+      - id: check-ast  # valid Python parse
+      - id: check-yaml
+      - id: check-toml
+
+      # TODO: this one should NOT fix within dotfiles e.g. OrcaSlicer
+      # - id: check-json
+
+      # TODO: maybe:
+      # https://github.com/pre-commit/pre-commit-hooks?tab=readme-ov-file#name-tests-test
+      # --pytest-test-first
+      # - check-shebang-scripts-are-executable
 
   # Ruff = linter + import sorter + formatter
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.11.10
     hooks:
       - id: ruff-check
-        args: [--fix, "--extend-select=PL,I"]
+        args: [--fix]
       - id: ruff-format
 
   # Static type checking
