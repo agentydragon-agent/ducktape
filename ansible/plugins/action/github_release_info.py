@@ -41,7 +41,7 @@ plugins_dir = str(Path(__file__).parent.parent)
 if plugins_dir not in sys.path:
     sys.path.insert(0, plugins_dir)
 
-from module_utils.github_release import ReleaseSpec
+from module_utils.github_release import ReleaseSpec  # noqa: E402
 
 
 class ActionModule(ActionBase):
@@ -50,6 +50,6 @@ class ActionModule(ActionBase):
     Wraps get_github_release_info from shared github_release module.
     """
 
-    def run(self, tmp=None, task_vars=None):
+    def run(self, tmp=None, task_vars=None):  # noqa: ARG002
         """Main entry point for the action plugin."""
         return ReleaseSpec(**self._task.args).resolve()
