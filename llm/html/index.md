@@ -148,7 +148,9 @@ Replace YYYY-MM-DD with the date of the targeted / next day, e.g. 2000-01-02.
 Put the bootstrap prompt into a Markdown fenced code block for each copy-pasting.
 
 ```
-Read http://adgn.link/l/, then execute /boot YYYY-MM-DD.
+Read: http://llm.agentydragon.com/
+
+Once you've absorbed all instructions, execute /boot YYYY-MM-DD.
 
 # Context
 
