@@ -59,7 +59,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 from ansible.plugins.action import ActionBase
 
@@ -68,7 +68,7 @@ plugins_dir = str(Path(__file__).parent.parent)
 if plugins_dir not in sys.path:
     sys.path.insert(0, plugins_dir)
 
-from module_utils.github_release import (
+from module_utils.github_release import (  # noqa: E402
     INSTALL_METHODS,
     ActionError,
     GitHubInstaller,
@@ -84,7 +84,7 @@ ENSURE_PRESENT = "present"
 class ActionModule(ActionBase):
     """GitHub Release Install action plugin."""
 
-    def _create_installer(self, args: Dict[str, Any]) -> GitHubInstaller:
+    def _create_installer(self, args: dict[str, Any]) -> GitHubInstaller:
         """Create installer instance based on method.
 
         Raises:

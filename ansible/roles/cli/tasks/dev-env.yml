@@ -65,6 +65,11 @@
     # Seems to mean "install user-globally"
     global: true
 
+- name: Install Claude Code
+  community.general.npm:
+    name: '@anthropic-ai/claude-code'
+    global: true
+
   # become: true
 
 - name: Install Bazelisk

@@ -65,7 +65,7 @@ def _list_to_array(lst: Iterable[str]) -> str:
 
 
 class ActionModule(ActionBase):
-    def run(self, tmp=None, task_vars=None):  # noqa: D401  (Ansible's signature)
+    def run(self, tmp=None, task_vars=None):
         result = super().run(tmp, task_vars)
 
         args = self._task.args
@@ -88,7 +88,7 @@ class ActionModule(ActionBase):
         def _dconf(**kwargs):
             return self._execute_module(
                 module_name="ansible.builtin.dconf",
-                module_args=kwargs | dict(key=args["key"]),
+                module_args=kwargs | {"key": args["key"]},
                 task_vars=task_vars,
                 tmp=tmp,
             )
@@ -107,11 +107,11 @@ class ActionModule(ActionBase):
 
         # 3. Compare / maybe write
         if desired == current:
-            return result | dict(changed=False, after=before_raw)
+            return result | {"changed": False, "after": before_raw}
 
         after_raw = _list_to_array(desired)
 
         if not self._play_context.check_mode:
             _dconf(value=after_raw)
 
-        return result | dict(changed=True, after=after_raw)
+        return result | {"changed": True, "after": after_raw}
