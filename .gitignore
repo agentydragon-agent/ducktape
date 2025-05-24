@@ -6,3 +6,8 @@ website/.sass-cache
 website/_cache
 
 **/.claude/settings.local.json
+
+# Stopgap against mess trying to mix RCM & non-RCM dotfiles
+# (Those are supposed to be non-RCM)
+dotfiles/config/cronomix/**
+dotfiles/config/OrcaSlicer/**
