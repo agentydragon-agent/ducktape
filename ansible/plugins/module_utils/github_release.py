@@ -10,7 +10,7 @@ import json
 import re
 import urllib.request
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, TypeVar
+from typing import Any, Optional, TypeVar
 
 # Type variables for better type hints
 T = TypeVar("T")
@@ -18,19 +18,14 @@ R = TypeVar("R")
 
 
 class ActionError(Exception):
-    """Custom exception for action module errors.
-
-    Attributes:
-        message: The error message
-        skip_install: Whether this error should be treated as non-fatal and just skip installation
-    """
+    """Custom exception for action module errors."""
 
     def __init__(self, message: str):
         self.message = message
         super().__init__(message)
 
 
-def _fail(result, msg: str) -> Dict[str, Any]:
+def _fail(result, msg: str) -> dict[str, Any]:
     return result | {"failed": True, "msg": msg}
 
 
@@ -43,7 +38,7 @@ class ReleaseSpec:
     asset_pattern: Optional[str] = None
     acknowledged_version: Optional[str] = None
 
-    def resolve(self) -> Dict[str, Any]:
+    def resolve(self) -> dict[str, Any]:
         """Gets GitHub release info."""
         result = {}
 
@@ -121,12 +116,14 @@ class ReleaseSpec:
         if len(matches) > 1:
             return _fail(
                 result,
-                f"{len(matches)} assets match {self.asset_pattern}. Use a more specific pattern.",
+                f"{len(matches)} assets match {self.asset_pattern}. "
+                "Use a more specific pattern.",
             )
         if not matches:
+            available = ", ".join(asset["name"] for asset in assets)
             return _fail(
                 result,
-                f"No assets match {self.asset_pattern}. Available: {', '.join(asset['name'] for asset in assets)}",
+                f"No assets match {self.asset_pattern}. Available: {available}",
             )
         if not (url := matches[0].get("browser_download_url")):
             return _fail(result, "No download URL found for the asset.")
@@ -151,10 +148,10 @@ class GitHubInstaller:
         """Ansible module name for this installation method."""
         raise NotImplementedError
 
-    def install_module_args(self, asset_url: str) -> Dict[str, Any]:
+    def install_module_args(self, asset_url: str) -> dict[str, Any]:
         raise NotImplementedError
 
-    def get_additional_info(self, asset_url: str) -> Dict[str, Any]:
+    def get_additional_info(self, asset_url: str) -> dict[str, Any]:  # noqa: ARG002
         """Extra information about installed asset."""
         return {}
 
@@ -170,7 +167,7 @@ class DebInstall(GitHubInstaller):
     def module_name(self) -> str:
         return "ansible.builtin.apt"
 
-    def install_module_args(self, asset_url: str) -> Dict[str, Any]:
+    def install_module_args(self, asset_url: str) -> dict[str, Any]:
         return {"deb": asset_url}
 
 
@@ -184,7 +181,7 @@ class BinaryInstall(GitHubInstaller):
     def module_name(self) -> str:
         return "ansible.builtin.get_url"
 
-    def install_module_args(self, asset_url: str) -> Dict[str, Any]:
+    def install_module_args(self, asset_url: str) -> dict[str, Any]:
         """Return arguments for installing the binary."""
         return {"url": asset_url, "dest": self.dest_path, "mode": "0755"}
 
@@ -208,7 +205,7 @@ class ArchiveInstall(GitHubInstaller):
     def module_name(self) -> str:
         return "ansible.builtin.unarchive"
 
-    def install_module_args(self, asset_url: str) -> Dict[str, Any]:
+    def install_module_args(self, asset_url: str) -> dict[str, Any]:
         """Return arguments for extracting and installing the archive."""
         args = {
             "src": asset_url,
@@ -224,7 +221,7 @@ class ArchiveInstall(GitHubInstaller):
         if not self.dest_path:
             raise ActionError("dest_path is required for archive installation")
 
-    def get_additional_info(self, asset_url: str) -> Dict[str, Any]:
+    def get_additional_info(self, asset_url: str) -> dict[str, Any]:
         """Determine extracted directory name and pattern from asset URL."""
         filename = asset_url.split("/")[-1]
         # Extract base name without extension(s)
@@ -235,7 +232,7 @@ class ArchiveInstall(GitHubInstaller):
 
 
 # Maps method name to implementation.
-INSTALL_METHODS: Dict[str, type[GitHubInstaller]] = {
+INSTALL_METHODS: dict[str, type[GitHubInstaller]] = {
     "deb": DebInstall,
     "binary": BinaryInstall,
     "archive": ArchiveInstall,
