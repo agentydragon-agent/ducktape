@@ -11,12 +11,11 @@ from __future__ import annotations
 import argparse
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
-from typing import Dict, List, Tuple
 
 from aw_client import ActivityWatchClient
 
 
-def pick_buckets(client: ActivityWatchClient) -> Tuple[List[str], List[str], List[str]]:
+def pick_buckets(client: ActivityWatchClient) -> tuple[list[str], list[str], list[str]]:
     """Return lists of window, web, and afk bucket IDs."""
     buckets = client.get_buckets()
     window_bk = [b for b in buckets if b.startswith("aw-watcher-window")]
@@ -27,14 +26,13 @@ def pick_buckets(client: ActivityWatchClient) -> Tuple[List[str], List[str], Lis
 
 def iter_events(
     client: ActivityWatchClient,
-    bucket_ids: List[str],
+    bucket_ids: list[str],
     start: datetime,
     end: datetime,
 ):
     """Yield events from all buckets in [start, end)."""
     for bid in bucket_ids:
-        for ev in client.get_events(bid, start=start, end=end):
-            yield ev
+        yield from client.get_events(bid, start=start, end=end)
 
 
 def summarize(minutes: int | None = 30, *, day: date | None = None) -> None:
@@ -54,8 +52,8 @@ def summarize(minutes: int | None = 30, *, day: date | None = None) -> None:
 
     window_bk, web_bk, afk_bk = pick_buckets(client)
 
-    app_secs: Dict[str, float] = defaultdict(float)
-    url_secs: Dict[str, float] = defaultdict(float)
+    app_secs: dict[str, float] = defaultdict(float)
+    url_secs: dict[str, float] = defaultdict(float)
     afk_secs = 0.0
     active_secs = 0.0
 

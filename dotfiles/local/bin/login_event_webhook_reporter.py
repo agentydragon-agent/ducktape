@@ -7,11 +7,13 @@ GNOME + logind event reporter + ActivityWatch batch uploader
  • Polls ActivityWatch every AW_PERIOD and includes the data
 """
 
+import argparse
 import json
 import logging
 import os
 import signal
 import socket
+import sys
 import time
 import urllib.error
 import urllib.request
@@ -32,7 +34,7 @@ FLUSH_INTERVAL = timedelta(minutes=10)  # retry cadence
 # queue would result in a larger payload, it is split into multiple requests.
 # Events whose individual payload would exceed the limit are dropped with an
 # error logged.
-MAX_PAYLOAD = 16_384  # 16 KiB – enforced hard limit sent to the server
+MAX_PAYLOAD = 16_384  # 16 KiB - enforced hard limit sent to the server
 
 # ActivityWatch
 AW_API = "http://localhost:5600/api/0"
@@ -48,15 +50,12 @@ MERGE_SHORT_TITLE_SEC = 3  # seconds
 # ──────────────────────────────────────────────────────────────────────────────
 # Lightweight CLI (runs before resident initialisation)
 
-import argparse
-import sys
-
 
 def _run_cli_helpers() -> None:
     """Handle one-off helper command-line flags that should exit quickly.
 
     Currently supports only ``--aw-dump`` which performs a single ActivityWatch
-    poll (since the initial high-water-mark of *now − 5 min*) and prints the
+    poll (since the initial high-water-mark of *now - 5 min*) and prints the
     payload that would have been queued by the daemon to *stdout*.
     """
 
@@ -64,15 +63,18 @@ def _run_cli_helpers() -> None:
     cli.add_argument(
         "--aw-dump",
         action="store_true",
-        help="Query ActivityWatch once, dump resulting JSON payload to stdout, then exit.",
+        help=(
+            "Query ActivityWatch once, dump resulting JSON payload to stdout, "
+            "then exit."
+        ),
     )
 
     args, _unknown = cli.parse_known_args()
 
     if not args.aw_dump:
-        return  # no helper flags – proceed with normal initialisation
+        return  # no helper flags - proceed with normal initialisation
 
-    # Helper mode active – perform minimal work and exit.
+    # Helper mode active - perform minimal work and exit.
     ts_from = datetime.now() - timedelta(minutes=5)
     events_by_bucket, ts_to = _collect_aw_events(ts_from)
 
@@ -210,12 +212,12 @@ def _flush() -> bool:
 
         if len(body) > MAX_PAYLOAD:
             # Sanity guard; shouldn't happen because of the logic above.
-            log.error("internal error: constructed oversized payload – skipping batch")
+            log.error("internal error: constructed oversized payload - skipping batch")
             queue[:0] = batch  # prepend back for retry
             break
 
         if not _post(body):
-            # Failed – prepend unsent events back to queue in original order.
+            # Failed - prepend unsent events back to queue in original order.
             queue[:0] = batch  # type: ignore[slice-assignment]
             break
 
@@ -258,7 +260,7 @@ def _collect_aw_events(ts_from: datetime) -> tuple[dict[str, list], datetime]:
       field containing Unix seconds.
     • Events whose ``duration`` is present and **< 1.0 s** are dropped.
 
-    Any *requests* failures are internally caught – the function never raises
+    Any *requests* failures are internally caught - the function never raises
     and returns an empty mapping when polling fails.
     """
 
@@ -373,7 +375,7 @@ def _ensure_aw_size(ev_dict: dict) -> None:
         if _cur_size() <= threshold:
             break
 
-    # Final check – if still oversized, log warning and leave as-is; flush()
+    # Final check - if still oversized, log warning and leave as-is; flush()
     if _cur_size() > threshold:
         log.warning(
             "AW payload still %d bytes after compaction (limit %d)",
@@ -448,8 +450,8 @@ def _find_session():
     if len(matches) == 1:
         return matches[0]
     if len(matches) > 1:
-        raise RuntimeError("multiple sessions – set XDG_SESSION_ID")
-    raise RuntimeError("no sessions – set XDG_SESSION_ID")
+        raise RuntimeError("multiple sessions - set XDG_SESSION_ID")
+    raise RuntimeError("no sessions - set XDG_SESSION_ID")
 
 
 session = bus.get(".login1", _find_session())
@@ -461,7 +463,7 @@ session.onUnlock = lambda *_: emit("unlocked")
 
 def _on_prepare_for_sleep(down: bool):
     if down:
-        # Pre-suspend – emit event and send AW snapshot for the period up to now.
+        # Pre-suspend - emit event and send AW snapshot for the period up to now.
         emit("suspending")
         _send_aw_snapshot()
     else:
@@ -485,7 +487,7 @@ GLib.timeout_add_seconds(int(AW_PERIOD.total_seconds()), _aw_poll, 0)
 loop = GLib.MainLoop()
 for sig in (signal.SIGINT, signal.SIGTERM):
     signal.signal(sig, goodbye)
-# SIGUSR1 – immediate AW snapshot
+# SIGUSR1 - immediate AW snapshot
 
 
 def _sigusr1_handler(signum, frame):  # pragma: no cover
