@@ -188,5 +188,5 @@
 - import_tasks: login_event_webhook_reporter.yml
   tags: login_event_webhook_reporter
 
-- import_tasks: tunneled_activitywatch.yml
+- import_tasks: activitywatch.yml
   tags: activitywatch

@@ -1,5 +1,4 @@
-# Default variables for the activitywatch role.
-# Kept bound only on 127.0.0.1.
-activitywatch_port: 5600               # internal API port
+activitywatch_host: 127.0.0.1  # by default, listen on localhost
+activitywatch_port: 5600       # API port
 activitywatch_data_dir: "/opt/activitywatch/data"
-activitywatch_state: "present"         # whether service should be running (present/absent)
+activitywatch_state: "present" # whether service should be running (present/absent)

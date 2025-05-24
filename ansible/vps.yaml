@@ -18,8 +18,10 @@
     # Misc host-specific variables
     rcup_computer: vps
 
-  roles: []
+  roles:
     #- cli    # <- TODO:  needs ducktape, etc
+    - role: wireguard
+      tags: [wireguard]
 
   tasks:
     # Needs to run before Docker, which tries to install gnupg2
@@ -179,6 +181,7 @@
           tags: activitywatch
       tags: activitywatch
       vars:
+        activitywatch_host: 10.13.13.1
         activitywatch_state: present
 
   handlers:

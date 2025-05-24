@@ -1,7 +1,7 @@
 [server]
-# Same as default, except in our case this points to a tunnel to agentydragon.com,
+# Same as default, except in our case this points to VPS to agentydragon.com,
 # not a local HTTP server.
-hostname = "127.0.0.1"
+hostname = "10.13.13.1"
 port = "5600"
 
 [client]
