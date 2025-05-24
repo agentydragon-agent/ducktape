@@ -3,7 +3,6 @@ import csv
 import datetime
 import decimal
 import hashlib
-import io
 from typing import Dict
 
 from absl import logging
@@ -36,7 +35,7 @@ _EXPECTED_CSV_COLUMNS = {
 
 def load_ubs_credit_card_csv(path) -> Dict[str, external_system.ExternalExpense]:
     result = {}
-    with io.open(path, "r", encoding="latin1") as f:
+    with open(path, encoding="latin1") as f:
         lines = f.readlines()
         assert lines[0] == "sep=;\n"
         for line in csv.DictReader(lines[1:], delimiter=";"):

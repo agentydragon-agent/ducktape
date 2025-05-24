@@ -50,7 +50,7 @@ def search_for_arxiv_id(title) -> Optional[str]:
     if len(matches) == 0:
         print("no match on arxiv")
         return None
-    elif len(matches) == 1:
+    if len(matches) == 1:
         print("found by exact title", matches[0], title)
         return matches[0]
     raise Exception("UNHANDLED: multiple matches found on arxiv!")
@@ -143,7 +143,6 @@ def main(_):
             child_note = response.json()
             if child_note["type"] == "file" and child_note["mime"] == "application/pdf":
                 paper_found = True
-                pass
 
         if paper_found:
             # print(priority, note_id, arxiv_id, title,

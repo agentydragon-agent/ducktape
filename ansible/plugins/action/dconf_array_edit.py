@@ -29,7 +29,7 @@ Implementation is idempotent: *changed* is True only if array was changed.
 
 from __future__ import annotations
 
-from typing import Iterable
+from collections.abc import Iterable
 
 from gi.repository import GLib
 

@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pyperclip
 
-root = Path(".")
+root = Path()
 prompt = "Here's my current codebase for maintaining and beautifying my Inventree instance:\n\n"
 prompt += "\n\n".join(
     [

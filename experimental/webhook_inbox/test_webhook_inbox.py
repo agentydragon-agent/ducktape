@@ -8,7 +8,7 @@ from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
 
 
-@pytest.fixture()
+@pytest.fixture
 def app_and_client(tmp_path: Path):
     """Return (app_module, client) wired to test database."""
 
@@ -21,7 +21,7 @@ def app_and_client(tmp_path: Path):
         client.close()
 
 
-@pytest.fixture()
+@pytest.fixture
 def client(app_and_client):
     _, client = app_and_client
     return client

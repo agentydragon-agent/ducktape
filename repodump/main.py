@@ -26,7 +26,7 @@ def load_config():
     if not os.path.isfile(CONFIG_PATH):
         click.echo(f"Config not found: {CONFIG_PATH}\nPlease create it, then re-run.")
         sys.exit(1)
-    with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+    with open(CONFIG_PATH, encoding="utf-8") as f:
         return yaml.safe_load(f)
 
 
@@ -202,7 +202,7 @@ def main(ctx, output_flag, copy_output):
     for fp in sorted(all_files):
         relpath = os.path.relpath(fp, root_dir)
         try:
-            with open(fp, "r", encoding="utf-8", errors="ignore") as f:
+            with open(fp, encoding="utf-8", errors="ignore") as f:
                 content = f.read()
         except Exception:
             blob_lines.append(f"# Skipped unreadable file: {relpath}\n\n")

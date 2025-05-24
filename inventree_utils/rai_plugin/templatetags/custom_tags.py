@@ -51,9 +51,9 @@ def remove_prefix(x):
 def fmt_range(min, max):
     if min and not max:
         return f"&geq;{min}"
-    elif max and not min:
+    if max and not min:
         return f"&leq;{max}"
-    elif min and max:
+    if min and max:
         return f"&in;[{min};{max}]"
 
 

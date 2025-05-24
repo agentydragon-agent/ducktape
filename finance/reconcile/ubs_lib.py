@@ -1,7 +1,6 @@
 import csv
 import datetime
 import decimal
-import io
 from typing import Dict
 
 from ducktape.finance.reconcile import external_system
@@ -46,7 +45,7 @@ def load_ubs_csv(path) -> Dict[str, external_system.ExternalExpense]:
     # Returns:
     result = {}
     # encoding='utf-8-sig' skips byte order mark
-    with io.open(path, "r", encoding="utf-8-sig") as f:
+    with open(path, encoding="utf-8-sig") as f:
         reader = csv.DictReader(f, delimiter=";")
         for line in reader:
             assert set(line.keys()) == _EXPECTED_CSV_COLUMNS, (

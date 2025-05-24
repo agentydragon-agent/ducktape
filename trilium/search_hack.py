@@ -60,7 +60,7 @@ def index():
     #   'strings': {'string': embedding},
     # }
     if os.path.exists(EMBEDDINGS_FILE):
-        with open(EMBEDDINGS_FILE, "r") as f:
+        with open(EMBEDDINGS_FILE) as f:
             embeddings = json.load(f)
     else:
         embeddings = {
@@ -192,7 +192,6 @@ def index():
             embeddings["strings"][string] = embedding
         except Exception as e:
             print(string, e)
-            pass
 
     print(len(results["results"]))
 
@@ -209,7 +208,7 @@ def index():
 def search(query):
     openai.api_key = fetch_openai_api_key()
 
-    with open(EMBEDDINGS_FILE, "r") as f:
+    with open(EMBEDDINGS_FILE) as f:
         embeddings = json.load(f)
 
     # TODO: lower level caching

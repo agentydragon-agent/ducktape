@@ -14,8 +14,6 @@ logger = logging.getLogger(__name__)
 class KeyAuthError(Exception):
     """Authentication error for key-in-path."""
 
-    pass
-
 
 async def validate_key(key: str, db_session: AsyncSession) -> AuthKey:
     """Validate a key from the URL path.
@@ -41,19 +39,19 @@ async def validate_key(key: str, db_session: AsyncSession) -> AuthKey:
     # Check if key exists
     if not auth_key:
         logger.warning("Key not found: %s...", key[:4])
-        raise KeyAuthError()
+        raise KeyAuthError
 
     logger.debug("Key found with ID: %s", auth_key.id)
 
     # Check if key is revoked
     if auth_key.revoked_at:
         logger.warning("Key is revoked: %s...", key[:4])
-        raise KeyAuthError()
+        raise KeyAuthError
 
     # Check if key is valid based on creation time
     if not auth_key.is_valid(settings.auth.key_in_url.key_validity):
         logger.warning("Key is expired: %s...", key[:4])
-        raise KeyAuthError()
+        raise KeyAuthError
 
     logger.debug("Key validation successful")
     return auth_key

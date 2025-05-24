@@ -5,7 +5,7 @@ from textwrap import indent
 
 path = pathlib.Path("/home/agentydragon/downloads/tana-export-2025-05-12.json")
 
-with open(path, "r") as file:
+with open(path) as file:
     data = json.load(file)
 
 
@@ -53,7 +53,7 @@ print("Text child nested under it that includes mention of another node under it
 doc = by_id("4qgC_YWmtZBu")
 show(doc)
 print(
-    "^-- note props._ownerId is ID of the parent node; there is at most one 'owner parent' but nodes may be 'children' under multiple different nodes'"
+    "^-- note props._ownerId is ID of the parent node; there is at most one 'owner parent' but nodes may be 'children' under multiple different nodes'",
 )
 
 print()
@@ -75,7 +75,7 @@ for child in ["OU6JjVPuPWqF"]:
     for c in by_id(child)["children"]:
         show(by_id(c))
 print(
-    "note this tuple node has *MULTIPLE* values -- corresponds to multiple assigned Hotlists, see the corresponding Tnaa Paste/Markdown"
+    "note this tuple node has *MULTIPLE* values -- corresponds to multiple assigned Hotlists, see the corresponding Tnaa Paste/Markdown",
 )
 
 print()
@@ -86,7 +86,7 @@ show(by_id("Of9-D47GEA"))
 print()
 print()
 print(
-    "The 'supertags for node' supertag - want to have values associated with this key for a tagged node exposed for easy access:"
+    "The 'supertags for node' supertag - want to have values associated with this key for a tagged node exposed for easy access:",
 )
 show(by_id("SYS_A13"), 1)
 show(by_id("SYS_TA05_02"))
@@ -95,7 +95,7 @@ show(by_id("SYS_T04"))
 
 # 'Eecrise', has a bunchas checkboxes
 print(
-    "Checkboxes rendergin - please appropriately expose for convenience of spoecial rendering:"
+    "Checkboxes rendergin - please appropriately expose for convenience of spoecial rendering:",
 )
 show(by_id("9dCT4NlSzKqw"))
 show(by_id("aAYRhJM5eKJI"))
@@ -113,11 +113,11 @@ print(indent(Path("references/empty-checkboxes.markdown").read_text(), "  "))
 
 print()
 print(
-    "Tana JSON dump is a JSON file with .docs[] array which contains these objects. Try to read them all. If any can't be parsed, print out its ID and the node itself."
+    "Tana JSON dump is a JSON file with .docs[] array which contains these objects. Try to read them all. If any can't be parsed, print out its ID and the node itself.",
 )
 print()
 print(
-    "nodes with owner like uA_iLd0SUk_TRASH => is in trash, mark with some marker bool."
+    "nodes with owner like uA_iLd0SUk_TRASH => is in trash, mark with some marker bool.",
 )
 
 # TODO: checkbox

@@ -177,7 +177,7 @@ class Settings(BaseModel):
             import toml  # type: ignore
 
             # toml library (not Python builtin - used in case of Python < 3.11) reads strings
-            with open(path, "r") as f:
+            with open(path) as f:
                 config_dict = toml.load(cast(TextIO, f))  # type: ignore[arg-type]
         return cls.parse_obj(config_dict)
 

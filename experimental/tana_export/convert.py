@@ -14,9 +14,10 @@ import json
 import random
 import re
 import traceback
+from collections.abc import Mapping
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Set
+from typing import Any, Dict, List, Optional, Set
 
 from pydantic import BaseModel, ConfigDict, Field
 
