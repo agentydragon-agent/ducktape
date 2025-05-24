@@ -1,6 +1,9 @@
-vps:
+wg_peers:
   hosts:
-    agentydragon.com:
+    vps:
+    agentydragon:
+    gpd:
+    homeassistant: # (not managed by Ansible but included in mesh)
 
 all:
   hosts:
