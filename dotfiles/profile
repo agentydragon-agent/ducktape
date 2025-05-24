@@ -48,3 +48,13 @@ fi
 
 # tidy-up: drop helper, compatible with zsh+Bash and POSIX shells
 unset -f add_path 2>/dev/null || unset add_path
+
+export BASIC_MEMORY_HOME=$HOME/.syncthing/pkm/basic-memory
+
+# for Claude Code
+#
+# TODO: add to asible: npm install -g should go into ~/.npm-global
+# npm config set prefix ~/.npm-global
+export PATH=~/.npm-global/bin:$PATH
+
+
