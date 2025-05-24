@@ -3,20 +3,10 @@ from http import HTTPStatus
 
 import pytest
 from httpx import AsyncClient
-from gatelet.server.models import AuthCRSession
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-
-@pytest.fixture(autouse=True)
-async def _override_db(monkeypatch, db_session: AsyncSession):
-    from contextlib import asynccontextmanager
-
-    @asynccontextmanager
-    async def _override():
-        yield db_session
-
-    monkeypatch.setattr("gatelet.server.database.get_db_session", _override)
+from gatelet.server.models import AuthCRSession
 
 
 def _extract_csrf(page_text: str) -> str:
