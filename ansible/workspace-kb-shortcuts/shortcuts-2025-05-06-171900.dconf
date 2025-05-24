@@ -32,4 +32,3 @@ tile-enter=['<Super>Return']
 
 [tileable-wm]
 key-bindings=false
-

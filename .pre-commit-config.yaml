@@ -30,4 +30,3 @@ repos:
     hooks:
       - id: buildifier
       - id: buildifier-lint
-

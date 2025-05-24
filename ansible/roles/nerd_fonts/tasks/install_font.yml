@@ -40,8 +40,8 @@
 
     - name: Get download URL for {{ item }}
       ansible.builtin.shell: |
-        jq --raw-output '.assets[] 
-          | select(.name == "{{ item }}.tar.xz") 
+        jq --raw-output '.assets[]
+          | select(.name == "{{ item }}.tar.xz")
           | .browser_download_url' {{ latest_release_json_path }}
       register: font_download_url
       changed_when: false

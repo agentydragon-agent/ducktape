@@ -4,4 +4,3 @@
     name: smbd
     state: restarted
   become: yes
-

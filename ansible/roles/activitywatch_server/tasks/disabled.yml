@@ -6,4 +6,3 @@
     name: aw-server
     state: stopped
     enabled: false
-

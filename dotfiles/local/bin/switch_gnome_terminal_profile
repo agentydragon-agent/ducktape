@@ -11,27 +11,29 @@ import dbus
 from absl import app, flags, logging
 
 _PROFILE = flags.DEFINE_string(
-    "profile", None, "Name or UUID of profile to set everywhere"
+    "profile",
+    None,
+    "Name or UUID of profile to set everywhere",
 )
 
 
 def gsettings_get_profile_uuid_list() -> List[str]:
     out = subprocess.check_output(
-        ["gsettings", "get", "org.gnome.Terminal.ProfilesList", "list"]
+        ["gsettings", "get", "org.gnome.Terminal.ProfilesList", "list"],
     ).decode("utf-8")
     return ast.literal_eval(out)
 
 
 def gsettings_get_default_profile_uuid() -> str:
     out = subprocess.check_output(
-        ["gsettings", "get", "org.gnome.Terminal.ProfilesList", "default"]
+        ["gsettings", "get", "org.gnome.Terminal.ProfilesList", "default"],
     ).decode("utf-8")
     return ast.literal_eval(out)
 
 
 def gsettings_set_default_profile_uuid(uuid: str) -> None:
     out = subprocess.check_output(
-        ["gsettings", "set", "org.gnome.Terminal.ProfilesList", "default", f"'{uuid}'"]
+        ["gsettings", "set", "org.gnome.Terminal.ProfilesList", "default", f"'{uuid}'"],
     ).decode("utf-8")
     assert out == ""
 
@@ -48,7 +50,7 @@ def dconf_get_profile_visible_name(uuid: str) -> str:
                 "dconf",
                 "read",
                 f"/org/gnome/terminal/legacy/profiles:/:{uuid}/visible-name",
-            ]
+            ],
         )
         .decode("utf-8")
         .strip()
@@ -88,7 +90,8 @@ def dbus_update_profile_on_all_windows(uuid: str) -> None:
         logging.info("talking to: %s", obj)
         window_actions_iface = dbus.Interface(obj, "org.gtk.Actions")
         logging.info(
-            "starting profile uuid: %s", _get_window_profile_uuid(window_actions_iface)
+            "starting profile uuid: %s",
+            _get_window_profile_uuid(window_actions_iface),
         )
         # res = window_actions_iface.Activate('about', [], [])
         res = window_actions_iface.SetState(

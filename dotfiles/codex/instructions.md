@@ -162,7 +162,7 @@ Use standard Python assertions for basic checks that don't benefit from Hamcrest
 ```python
 # Use standard assertions when Hamcrest doesn't add value:
 assert value == 200
-assert user.name == "John"  
+assert user.name == "John"
 assert foo is True
 assert not bar
 assert len(items) > 0

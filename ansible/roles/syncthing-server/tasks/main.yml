@@ -97,4 +97,3 @@
     dest: /etc/nginx/sites-enabled/syncthing.agentydragon.com
     state: link
   notify: Reload nginx
-

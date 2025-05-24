@@ -149,7 +149,8 @@ def _send_aw_snapshot() -> None:
 def _make_body(events: list[dict]) -> bytes:
     """Return JSON body bytes for *events* batch."""
     return json.dumps(
-        {"host": socket.gethostname(), "events": events}, separators=(",", ":")
+        {"host": socket.gethostname(), "events": events},
+        separators=(",", ":"),
     ).encode()
 
 
@@ -157,7 +158,9 @@ def _post(body: bytes) -> bool:
     """Send *body* to the endpoint.  Return True on success."""
     try:
         urllib.request.urlopen(
-            ENDPOINT, data=body, timeout=TIMEOUT.total_seconds()
+            ENDPOINT,
+            data=body,
+            timeout=TIMEOUT.total_seconds(),
         ).read()
         return True
     except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError):
@@ -298,7 +301,7 @@ def _collect_aw_events(ts_from: datetime) -> tuple[dict[str, list], datetime]:
             else:
                 other_entry: dict = {"dur": int(dur)}
                 other_entry.update(
-                    {k: v for k, v in data.items() if k not in ("app", "title")}
+                    {k: v for k, v in data.items() if k not in ("app", "title")},
                 )
                 misc.append(other_entry)
 

@@ -19,4 +19,3 @@
     - name: Ensure Solarized Dark profile exists
       assert:
         that: "'visible-name=\\'Solarized Dark\\'' in dconf_out.stdout"
-

@@ -13,7 +13,7 @@ platforms:
     command: ""
     volumes:
       - /sys/fs/cgroup:/sys/fs/cgroup:ro
-    
+
 provisioner:
   name: ansible
   log: true

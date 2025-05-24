@@ -18,7 +18,7 @@ def test_extract_version():
 
 def main():
     stdout = subprocess.check_output(["/usr/local/bin/anki", "--version"]).decode(
-        "utf-8"
+        "utf-8",
     )
     # make sure to not print a \n
     sys.stdout.write(extract_version(stdout))

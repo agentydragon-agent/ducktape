@@ -114,5 +114,3 @@ These parts can't be done by Ansible:
 * Add `~/.config/bazelrc.secrets` - see the `bazelrc` dotfile. The global
   `bazelrc` imports this file, it's supposed to contain the path (and
   password) to the Bazel cache on the VPS.
-
-

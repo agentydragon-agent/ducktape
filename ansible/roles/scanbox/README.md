@@ -23,4 +23,3 @@ After running, set a password:
 ```bash
 sudo smbpasswd -s -a scanbox
 ```
-
