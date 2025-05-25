@@ -10,10 +10,10 @@ all:
     vps:
       ansible_host: agentydragon.com
     agentydragon:
-      ansible_connection: local
+      ansible_connection: local_cached_sudo
       # (pyenv breaks interpreter detection)
       ansible_python_interpreter: /usr/bin/python3
     gpd:
-      ansible_connection: local
+      ansible_connection: local_cached_sudo
       # (pyenv breaks interpreter detection)
       ansible_python_interpreter: /usr/bin/python3
