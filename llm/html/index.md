@@ -579,7 +579,7 @@ When I issue the `/sync` command (or just tell you to "sync" with no other conte
 that would change the meaning), that means I want you to synchronize yourself
 to the state of the real world and to instructions. Do the following:
 
-* Re-open and re-read this very page - i.e., <http://adgn.link/llm>
+* Re-open and re-read this very page - i.e., <http://llm.agentydragon.com>
 * Run Python to check the current time
 
 # Probabilistic model
