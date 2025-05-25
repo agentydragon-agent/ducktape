@@ -110,7 +110,7 @@
         apply:
           tags: grocy
       vars:
-        grocy_state: present
+        grocy_state: absent # disabled
       tags: [grocy]
 
     - name: InvenTree
