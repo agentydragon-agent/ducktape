@@ -452,7 +452,18 @@ This invents the supertags `#options` and `#car`, neither of which exist. Instea
 
 ## Tables
 
-You *may* use your own attributes if you're making a table, for example:
+You may render a node as a table by appending `%%view:table%%` to the node.
+
+This "annotation" belongs *only* at the end of the node's initial line - it does not
+function like a HTML tag, you do not close it.
+
+Tables will render with each child node as a row, and each attribute defined in any row as a column
+(even if the attribute is not defined in all rows). Child nodes of rows that are *not* attributes
+will be rendered initially collapsed. Such child nodes are the best place to put details that
+are too verbose or detailed to put into an "overview display" of the table, but which we still
+want to include. Tana has easy affordances for expanding and collapsing them.
+
+For example:
 
 ```
 %%tana%%
@@ -468,10 +479,56 @@ You *may* use your own attributes if you're making a table, for example:
     - Year:: 2021
     - Fast, but not very good driving
     - Actually not that fast either
-  ...
 ```
 
-But this still does NOT involve using any new supertags.
+This will initially render approximately like this Markdown:
+
+```
+|   Name           | Price   | Color | Year |
+|------------------|---------|-------|------|
+| + Toyota Corolla | $20,000 | Red   | 2022 |
+| + Honda Civic    | $22,000 | Blue  | 2021 |
+```
+
+And in Tana one can easily expand details of any row, kind of like a HTML `<details>` element:
+
+```
+|   Name           | Price   | Color | Year |
+|------------------|---------|-------|------|
+| + Toyota Corolla | $20,000 | Red   | 2022 |
+| - Honda Civic    | $22,000 | Blue  | 2021 |
+|   - Fast, but not very good driving       |
+|   - Actually not that fast either         |
+```
+
+Attributes may contain nested content, like this:
+
+```
+%%tana%%
+- Lizards %%view:table%%
+  - Gus-gus
+    - Good boy?:: 
+      - Very!
+        - Doesn't bark
+        - Wags
+        - Is cute
+    - Aesthetic?:: 
+      - Also very!
+        - Black and white
+          - Never goes out of style
+  - Geico gecko
+    - Good boy?:: 
+      - Somewhat
+        - Promotes capitalism
+        - But is lizard some points
+    - Aesthetic?:: Yes
+```
+
+Such nested content also has easy collapse/expand affordances. One good use of that is to include optional detail.
+(Nested content is also allowed in attributes outside of tables.)
+
+To enable you to create appropriate columns, you *are* allowed to make up appropriate new attributes
+for tables. But this still does NOT involve using any new supertags.
 
 # Cronometer
 
