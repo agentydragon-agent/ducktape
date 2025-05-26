@@ -11,7 +11,7 @@ echo "Deploying IAQI…"
 # -z : compress data during transfer
 # -P : equivalent to --partial --progress (shows per-file progress)
 # --delete : remove files on the remote side that no longer exist locally
-rsync -avzhP --delete "custom_components/iaqi" "ha-15leroy:/root/homeassistant/custom_components/"
+rsync -avzhP --delete "custom_components/indoor_aqi" "ha-15leroy:/root/homeassistant/custom_components/"
 
 echo -e "\nRestarting Home Assistant…"
 ssh ha-15leroy "ha core restart"
