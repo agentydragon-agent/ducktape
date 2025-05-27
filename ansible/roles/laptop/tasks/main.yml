@@ -6,3 +6,16 @@
       - acpi
       - blueman
       - powertop
+
+- name: Deploy bluetooth configuration
+  become: true
+  ansible.builtin.copy:
+    src: bluetooth_main.conf
+    dest: /etc/bluetooth/main.conf
+    owner: root
+    group: root
+    mode: '0644'
+    backup: yes
+  notify: restart bluetooth
+  # This configuration enables battery level reading from devices like Bose QC45
+  # by setting Experimental = true in the [General] section
