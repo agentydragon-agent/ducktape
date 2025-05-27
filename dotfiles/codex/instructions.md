@@ -202,3 +202,62 @@ The rule of thumb is: if you're just doing a single test on an object and it's a
 
 If you notice you'd like to test your changes (which is of course highly encouraged), rather than writing one-off
 blobs of throwaway Python, feel free to suggest creating a new actual test file.
+
+* if you do `logger.error/warning/...` inside exc handler it auto sets `exc_info=True` => `e` gets auto displayed => `": {e}"` in log message is unnecessary as `e` already auto printed
+
+## Code Patterns
+
+* Inline walrus operator `:=` can be used to simplify checks and assignments, e.g.:
+    ```python
+    # Instead of:
+    missing = configured - available_interfaces
+    if missing:
+        logger.warning(f"Configured interfaces not found: {', '.join(sorted(missing))}")
+    
+    # Prefer:
+    if missing := configured - available_interfaces:
+        logger.warning(f"Configured interfaces not found: {', '.join(sorted(missing))}")
+    ```
+
+* When you know an attribute ALWAYS exists, do NOT use `hasattr()`. For example:
+    ```python
+    # Wrong:
+    def format_sensor_name(self, piece: HardwarePiece, sensor_type: str) -> str:
+        if hasattr(piece, 'get_display_name'):
+            return f"Temperature {piece.get_display_name()}"
+        return f"Temperature {piece.hardware_id}"
+
+    # Right:
+    def format_sensor_name(self, piece: HardwarePiece, sensor_type: str) -> str:
+        return f"Temperature {piece.get_display_name()}"
+    ```
+
+* Exception Handling: NEVER swallow exceptions silently. When handling hardware discovery or sensor reading, ALWAYS propagate or log errors explicitly. For example, the code snippet you showed is BAD because it silently ignores potential errors during hardware discovery. Instead, handle specific exceptions, log them, or re-raise if appropriate.
+
+Specific note about hardware/sensor discovery: 
+```python
+async def discover_hardware(self) -> List[HardwarePiece]:
+    """Discover available temperature sensors."""
+    try:
+        pieces_by_key: Dict[Tuple[str, str], TemperaturePiece] = {}
+        
+        try:
+            sensor_temps = psutil.sensors_temperatures()
+        except Exception as e:
+            logger.error(f"Failed to retrieve temperature sensors: {e}")
+            raise  # Re-raise to indicate discovery failure
+
+        # ...
+
+        pieces = list(pieces_by_key.values())
+        if pieces:
+            labels = [f"{p.chip_name}:{p.label or 'unlabeled'}" for p in pieces]
+            logger.debug(f"Discovered {len(pieces)} temperature sensors: {', '.join(labels)}")
+        else:
+            logger.warning("No temperature sensors found")
+
+        return pieces
+    except Exception as e:
+        logger.error(f"Unexpected error during hardware discovery: {e}")
+        raise
+```
