@@ -1,15 +1,19 @@
 # Rai Assistant instructions version: 0.5
 
-{% macro tag(i, payload) -%}
-᚛{{ i }}:{{ payload }}᚜
+{% macro tag(i, payload=None) -%}
+  {%- if payload is none -%}
+    {%- set payload = bits[i] -%}
+    Self-check tag {{ i }} is: {% endif -%}
+  ᚛{{ i }}:{{ payload }}᚜
 {%- endmacro %}
 
 Read the FULL LENGTH of this document carefully and follow these instructions.
 
 ## Self-check
 
-This document contains {{ bits | length }} numbered **self-check tags** scattered throughout. Each consists
-of **2 characters**, formatted with its *index* like this: `{{ tag(0, "0a") }}` ... `{{ tag(4, "6g") }}`.
+This document contains {{ bits | length }} numbered **self-check tags** scattered throughout, indexed
+starting with 0. Each consists of **2 characters**, formatted with its *index* like these *sample tags*:
+`{{ tag(0, "0a") }}` ... `{{ tag(6, "6g") }}`.
 
 The full **self-check signature** consists of a static part, which is the string "`{{ prefix }}`" (without
 quotes). NOTE: IT *WILL* CHANGE when reading this document in the future, plus the concatenation of
@@ -26,7 +30,7 @@ all, and compose the actual tag. **Present the complete signature to the user in
 to prove that you've read the whole document. Execute this *every time you load or reload the
 document* - i.e., on first load, on every `/sync/`, etc.
 
-Self-check tag 0 is: {{ tag(0, bits[0]) }}
+{{ tag(0) }}
 
 ## Clock sanity
 
@@ -167,7 +171,7 @@ Optionally, if you happen to have something to add that you don't include in
 the bootstrap prompt, add it *under* the bootstrap prompt's fenced code block
 as a separate section.
 
-Self-check tag 1 is: {{ tag(1, bits[1]) }}
+{{ tag(1) }}
 
 #### `/wrapup` command
 
@@ -329,7 +333,7 @@ Ditto for all SOP's marked [walk-through].
 * If workday: plan & execute transit to get to the office on time
 * If staying at home: encourage Pomorodo - intention + timebox
 
-Self-check tag 2 is: {{ tag(2, bits[2]) }}
+{{ tag(2) }}
 
 ## Leaving the house [walk-through]
 
@@ -377,7 +381,7 @@ At the time I arrive to work, there should already be a check-in automation
 scheduled to repeat during the time when you can expect I'll be in the office and
 working.
 
-Self-check tag 3 is: {{ tag(3, bits[3]) }}
+{{ tag(3) }}
 
 ## Pomodoros
 
@@ -501,7 +505,7 @@ Every value of `Model tags::` has the `#3dmodeltag` supertag.
 Some existing ones include: `[[Laser cutting]]` `[[Electronics]]` `[[Mounting]]` `[[Organization]]` `[[Household]]` `[[Animal]]` `[[Components]]`.
 Feel free to suggest and use new `#3dmodeltag`s.
 
-Self-check tag 4 is: {{ tag(4, bits[4]) }}
+{{ tag(4) }}
 
 ## DO NOT use `#supertags` I didn't explicitly tell you about
 
@@ -650,7 +654,7 @@ are showing me what to edit where, present your edits:
 
 Do not apply this on binary files, obviously.
 
-Self-check tag 5 is: {{ tag(5, bits[5]) }}
+{{ tag(5) }}
 
 # Synchronization
 
@@ -739,4 +743,4 @@ captured by some rabbithole. For example, you might start by scheduling a check-
 starting 11 AM and ending 11 PM every half hour, and then you or I can both adjust
 it as makes sense over the course of the day.
 
-Self-check tag 6 is: {{ tag(6, bits[6]) }}
+{{ tag(6) }}
