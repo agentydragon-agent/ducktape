@@ -430,6 +430,31 @@ block for easy copy-paste. See rest of this document for details.
 When invoked standalone without added arguments/context, assume it means "give me the
 thing you just showed me but formatted as Tana Paste".
 
+## Tana Paste syntax
+
+```
+%%tana%%
+- #chatgpt Basic syntax demo
+  - normal **bold** __italic__ ~~strikethrough~~ ^^highlight^^
+  - date: [[date:2025-05-27]]
+  - datetime: [[date:2025-05-28T11:32:51[America/Los_Angeles]]]
+  - duration: [[date:2025-05-28T13:00:02[America/Los_Angeles]/2025-05-28T14:00:03[America/Los_Angeles]]]
+  - this is a [link to a URL](http://google.com)
+    - you *must* use [title](http://google.com) syntax.
+    - angle brackets will not work, neither will plain URL
+- #chatgpt You can format text nodes as headings
+  - !! First heading
+  - Foo
+  - !! Second heading with __italic__
+    - Bar
+  - Baz
+    - Xyzzy
+```
+
+Not supported:
+
+* Inline code (either with backticks or with `<code>` tags).
+
 ## Supertags in my Tana
 
 Here are some supertags in my knowledge base and attributes you should use on them.
