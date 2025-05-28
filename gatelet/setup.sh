@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Setup for OpenAI Codex container.
 # Expects to run from repo root.
 # Expects that setup.sh in repo root has already been run.
 
