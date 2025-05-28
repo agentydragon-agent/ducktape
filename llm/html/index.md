@@ -610,6 +610,100 @@ Such nested content also has easy collapse/expand affordances. One good use of t
 To enable you to create appropriate columns, you *are* allowed to make up appropriate new attributes
 for tables. But this still does NOT involve using any new supertags.
 
+### Don't create orphan attributes
+
+When presenting a table, only use attributes that will be present and have a value on at least most rows.
+DO NOT define one-off attributes that are only present on one row. Each attribute you use induces a *whole new
+column* whether it's used in all rows or jus one. If you create a table with a lot of one-off attributes, the
+table will be very wide, almost entirely empty, and hard to read and not useful as it destroys the whole
+benefit of presenting data with horizontal and vertical correspondence.
+
+For example, this is BAD:
+
+```
+%%tana%%
+- #chatgpt Transport options %%view:table%%
+  - Toyota Corolla
+    - Price:: $20,000
+    - Color:: Red
+    - Miles/gallon:: 30
+  - Tesla Model S
+    - Price:: $100,000
+    - Color:: Silver
+    - Autopilot:: Yes
+    - Steering wheel:: No
+  - Walking
+    - Price:: Free
+    - Scenic:: Yes
+    - Calories burned:: 200
+  - Bicycle
+    - Price:: $500
+    - Color:: Blue
+    - Honk sound:: Cathartic
+    - Bicycle day vibes:: Confirmed
+    - Calories burned:: 100
+  - Teleportation
+    - Price:: Priceless
+    - Legal status:: Questionable
+```
+
+Because it would render roughly like this:
+
+|   Name            | Price     | Color | Miles/gallon | Autopilot | Steering wheel | Scenic | Calories burned  | Honk sound      | Bicycle day vibes | Legal status |
+|-------------------|-----------|-------|--------------|-----------|----------------|--------|------------------|-----------------|-------------------|--------------|
+| + Toyota Corolla  | $20,000   | Red   | 30           |           |                |        |                  |                 |                   |              |
+| + Tesla Model S   | $100,000  | Silver|              | Yes       | No             |        |                  |                 |                   |              |
+| + Walking         | Free      |       |              |           |                | Yes    | 200              |                 |                   |              |
+| + Bicycle         | $500      | Blue  |              |           |                |        | 100              | Cathartic       | Confirmed         |              |
+| + Teleportation   | Priceless |       |              |           |                |        |                  |                 |                   | Questionable |
+
+*Some* possible options to fix this include:
+
+* Placing content that is particular to only a couple rows/free-text *and* should be visible in the table
+  without opening disclosure widgets (e.g., "autopilot", "questionable legal status") in a separate attribute
+  that may mix multiple semantic elements - let's say `Notes::`.
+* Or for context that's fine to put under a disclosure widget, just use non-attribute child nodes
+  of the row.
+
+For example, this is BETTER:
+
+```
+%%tana%%
+- #chatgpt Transport options %%view:table%%
+  - Toyota Corolla
+    - Price:: $20,000
+    - Color:: Red
+    - Notes:: 30 miles/gallon
+  - Tesla Model S
+    - Price:: $100,000
+    - Color:: Silver
+    - Notes:: Autopilot; no steering wheel
+  - Walking
+    - Price:: Free
+    - Notes::
+      - Burns 200 kcal
+    - Scenic
+  - Bicycle
+    - Price:: $500
+    - Color:: Blue
+    - Cathartic honking
+    - Bicycle day vibes
+  - Teleportation
+    - Price:: Priceless
+    - Notes::
+      - ⚠️ Legal status questionable
+```
+
+This will render like this:
+
+|   Name            | Price     | Color  | Notes                        |
+|-------------------|-----------|--------|------------------------------|
+| + Toyota Corolla  | $20,000   | Red    | 30 miles/gallon              |
+| + Tesla Model S   | $100,000  | Silver | Autopilot; no steering wheel |
+| + Walking         | Free      |        | Burns 200 kcal               |
+| + Bicycle         | $500      | Blue   |                              |
+| + Teleportation   | Priceless |        | ⚠️ Legal status questionable |
+
 # Cronometer
 
 I enter my nutrition into Cronometer.
