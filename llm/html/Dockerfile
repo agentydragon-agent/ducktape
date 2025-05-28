@@ -17,7 +17,7 @@ RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt
 
 # Copy the application code
-COPY server.py index.md ./
+COPY server.py token_scheme.py index.md style.css ./
 
 EXPOSE 9000
 

@@ -1,4 +1,4 @@
-# Rai Assistant instructions version: 0.5
+# Rai Assistant instructions version: 0.6
 
 {% macro tag(i, payload=None) -%}
   {%- if payload is none -%}
