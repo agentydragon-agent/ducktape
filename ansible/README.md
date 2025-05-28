@@ -1,14 +1,3 @@
-## MAKE NEW VAULT KEY (DONT)
-
-```bash
-VAULT_KEY=$(pwgen -s 32 1)
-```
-
-```
-# default = "label"
-# source =./vault_pass.sh
-```
-
 ## Per-host setup for deployment
 
 Grab `VAULT_KEY`. Save in keyring:
