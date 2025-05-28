@@ -29,7 +29,10 @@ select = [
     "C4", # flake8-comprehensions -- some comprehension patterns
     "LOG", # flake8-logging stdlib logging lints
     # "G", # logging format: use 'extra' kwarg instead
-    "INP", # implicit namespace pkg => add __init__.py
+
+    # Disabling - noisy for one-off scripts without __init__
+    # "INP", # implicit namespace pkg => add __init__.py
+
     "PIE", # flake8-pie -- some random things
     "PT", # pytest
     "RSE", # one single raise thing
