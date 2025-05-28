@@ -33,7 +33,38 @@ gatelet-reporter
 
 ## Development Setup
 
-The project requires Python 3.10+ and a PostgreSQL database. A quick reproducible setup uses Docker for the database.
+The project requires Python 3.10+ and a PostgreSQL database. Two development approaches are available:
+
+### Option 1: Docker Compose (Recommended)
+
+The easiest way to start developing is using Docker Compose with the included development environment:
+
+```bash
+# Install development dependencies (includes invoke task runner)
+pip install -e '.[dev]'
+
+# Copy example configuration
+cp gatelet.example.toml gatelet.toml
+# Edit gatelet.toml with your API keys
+
+# Start everything with one command
+invoke setup
+```
+
+This starts PostgreSQL and Gatelet with automatic code reloading. The service will be available at http://localhost:8000.
+
+Available development commands:
+- `invoke up` - Start development environment with live reload
+- `invoke down` - Stop all services
+- `invoke test` - Run tests
+- `invoke shell` - Open shell in container
+- `invoke db` - Connect to PostgreSQL
+- `invoke format` - Format code with black/isort
+- `invoke --list` - Show all available commands
+
+### Option 2: Manual Setup
+
+If you prefer to run services directly:
 
 1. Start PostgreSQL in Docker:
 
