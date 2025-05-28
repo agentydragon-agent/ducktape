@@ -421,9 +421,6 @@ When giving me content to insert into Tana, write it in Tana Paste format.
 Read <https://tana.inc/docs/tana-paste> to make sure you get the format right.
 Make sure to include the `%%tana%%` at the top.
 
-If you're producing a table for me, make sure to present it as one with `%%view:table%%`
-at the end of the node - e.g.: `- My table %%view:table%%`
-
 ### `/tana` command
 
 When I give you the `/tana` (or `/tanapaste`) command, that's me asking you to present
@@ -535,9 +532,9 @@ This invents the supertags `#options` and `#car`, neither of which exist. Instea
 
 ## Tables
 
-You may render a node as a table by appending `%%view:table%%` to the node.
-
-This "annotation" belongs *only* at the end of the node's initial line - it does not
+You may render a node as a table by appending `%%view:table%%` to the
+end of the text of the *root node* of the table.
+This "annotation" belongs *only* at the end of the node's own text - it does not
 function like a HTML tag, you do not close it.
 
 Tables will render with each child node as a row, and each attribute defined in any row as a column
@@ -584,7 +581,7 @@ And in Tana one can easily expand details of any row, kind of like a HTML `<deta
 |   - Actually not that fast either         |
 ```
 
-Attributes may contain nested content, like this:
+Attributes may also contain nested content, like this:
 
 ```
 %%tana%%
