@@ -39,7 +39,11 @@ select = [
     "RET", # flake8-return -- return statements
     "SIM", # flake8-simplify -- simplify things
     "SLOT", # flake8-slots -- enforce __slots__ usage where required
-    "ARG", # flake8-arguments -- unused function arguments
+
+    # xxx: commented out because pytest fixtures
+    # might do: [tool.ruff.lint.per-file-ignores] "tests/**" = ["ARG001"]
+    # "ARG", # flake8-arguments -- unused function arguments
+
     "PTH", # flake8-pathlib -- pathlib usage
     # FLY: flynt -- fstring instead of string join
     # C90: mccabe -- "too complex" code
@@ -88,3 +92,4 @@ ignore = [
 ]
 # Default line width: 88 chars
 # line-length = 120
+
