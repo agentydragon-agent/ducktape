@@ -6,9 +6,24 @@ If there is `CLAUDE.md` or `CODEX.md`, read it and follow it.
 I am happy to allow you to fire HTTP queries for testing. If useful for testing etc., just fire them right away without asking.
 Also start servers, experiment, etc.
 
+### References folder
+
 You might see a folder like `references/` in the repo. If you do, do not edit anything in the folder. But the folder will
 contain copied source code artifacts that may be useful to you to implement what you're doing. Look around and use `references/`
 for reference.
+
+Refer to it.
+
+It should contain `references/fetch.sh` - a shell script to fetch the reference information.
+
+If you're fetching new reference information on your own, add it to `references/fetch.sh`.
+Feel free to add to it whatever references you may find useful.
+It's intended to run at `./fetch.sh` from `references/`.
+
+Likewise, feel free to run the script and edit/update/add to it.
+
+All the actual reference files (e.g. 3rd party repos, documentation etc.) should be `gitignore`'d -
+the only thing under version control in `references/` should be the `fetch.sh` script.
 
 ## Python
 
