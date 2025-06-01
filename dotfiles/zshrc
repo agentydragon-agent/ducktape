@@ -120,7 +120,9 @@ bindkey -e
 
 ZSH_THEME_TERM_TITLE_IDLE="%n: %~ $"
 
-unsetopt share_history # Don't share command history between zsh's
+# have terminals share history entirely and live
+setopt inc_append_history # Append to history file immediately, not at the end of the session
+setopt share_history # Read history from history file continuously (not just at start of session)
 
 #eval `dircolors ~/.dir_colors/dircolors`
 export MC_SKIN=~/.config/mc/solarized.ini
