@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
 GNOME + logind event reporter + ActivityWatch batch uploader
- • Buffers while offline, bulk-posts when online
- • Retries every FLUSH_INTERVAL
- • Logs to systemd-journal
- • Polls ActivityWatch every AW_PERIOD and includes the data
+ * Buffers while offline, bulk-posts when online
+ * Retries every FLUSH_INTERVAL
+ * Logs to systemd-journal
+ * Polls ActivityWatch every AW_PERIOD and includes the data
 """
 
 import argparse
@@ -25,7 +25,7 @@ from gi.repository import GLib
 from pydbus import SystemBus
 from systemd.journal import JournalHandler
 
-# ─ CONFIG ────────────────────────────────────────────────────────────────────
+# - CONFIG ----------------------------------------------------------------------
 ENDPOINT = "https://webhook.agentydragon.com/"  # full URL
 TIMEOUT = timedelta(seconds=3)  # HTTP timeout
 FLUSH_INTERVAL = timedelta(minutes=10)  # retry cadence
@@ -47,7 +47,7 @@ LOGLEVEL = "INFO"  # DEBUG / INFO
 # discarding extremely brief window switches.
 MERGE_SHORT_TITLE_SEC = 3  # seconds
 
-# ──────────────────────────────────────────────────────────────────────────────
+# --------------------------------------------------------------------------------
 # Lightweight CLI (runs before resident initialisation)
 
 
@@ -96,7 +96,7 @@ def _run_cli_helpers() -> None:
 
 # The helper handler will be invoked a bit later once the shared *_collect_aw_events*
 # function becomes available so that we don't have to duplicate any logic.
-# ──────────────────────────────────────────────────────────────────────────────
+# --------------------------------------------------------------------------------
 
 # journal logger
 log = logging.getLogger("login_event_webhook_reporter")
@@ -109,7 +109,7 @@ queue = []  # buffered events (list[dict])
 # watermark; first poll covers last 5 min
 aw_cur = datetime.now() - timedelta(minutes=5)
 
-# ─ immediate AW snapshot helper ─────────────────────────────────────────────
+# - immediate AW snapshot helper -------------------------------------------------
 
 
 def _send_aw_snapshot() -> None:
@@ -147,7 +147,7 @@ def _send_aw_snapshot() -> None:
     )
 
 
-# ─ helpers ───────────────────────────────────────────────────────────────────
+# - helpers ----------------------------------------------------------------------
 def _make_body(events: list[dict]) -> bytes:
     """Return JSON body bytes for *events* batch."""
     return json.dumps(
@@ -189,7 +189,7 @@ def _flush() -> bool:
         # Build a batch whose encoded size stays within MAX_PAYLOAD.
         while queue:
             next_ev = queue[0]
-            tentative_body = _make_body(batch + [next_ev])
+            tentative_body = _make_body([*batch, next_ev])
             if len(tentative_body) <= MAX_PAYLOAD:
                 batch.append(queue.pop(0))  # move from queue → batch
             else:
@@ -227,7 +227,7 @@ def _flush() -> bool:
             "sent %d event(s) (%s), %.1f KiB",
             len(batch),
             " ".join(
-                f"{v}×{k}"
+                f"{v}x{k}"
                 for k, v in Counter(ev["event"] for ev in batch).most_common()
             ),
             len(body) / 1024,
@@ -256,7 +256,7 @@ def _collect_aw_events(ts_from: datetime) -> tuple[dict[str, list], datetime]:
     Additional normalisation is applied so that downstream consumers receive a
     trimmed-down representation suited for webhook transport and debugging:
 
-    • Each event’s ``timestamp`` ISO string is replaced by an integer ``ts``
+    • Each event's ``timestamp`` ISO string is replaced by an integer ``ts``
       field containing Unix seconds.
     • Events whose ``duration`` is present and **< 1.0 s** are dropped.
 
@@ -315,9 +315,7 @@ def _collect_aw_events(ts_from: datetime) -> tuple[dict[str, list], datetime]:
                 titles["other"] = titles.get("other", 0) + other_total
 
         # Desired structure: per app → {title: dur, ...}
-        out_obj: dict[str, dict[str, int] | list] = {
-            app: titles for app, titles in agg.items()
-        }
+        out_obj: dict[str, dict[str, int] | list] = dict(agg.items())
 
         if misc:
             out_obj["_other"] = misc  # reserved key for non-window items

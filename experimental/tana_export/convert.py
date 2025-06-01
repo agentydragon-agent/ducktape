@@ -17,20 +17,20 @@ import traceback
 from collections.abc import Mapping
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
 
 class Props(BaseModel, extra="forbid"):
-    created: Optional[int] = None
-    name: Optional[str] = None
-    doc_type: Optional[str] = Field(alias="_docType", default=None)
-    owner_id: Optional[str] = Field(alias="_ownerId", default=None)
-    meta_node_id: Optional[str] = Field(alias="_metaNodeId", default=None)
-    source_id: Optional[str] = Field(alias="_sourceId", default=None)
-    done: Optional[int] = Field(alias="_done", default=None)
-    description: Optional[str] = None  # present in e.g. gc7H7gDG3Ce8
+    created: int | None = None
+    name: str | None = None
+    doc_type: str | None = Field(alias="_docType", default=None)
+    owner_id: str | None = Field(alias="_ownerId", default=None)
+    meta_node_id: str | None = Field(alias="_metaNodeId", default=None)
+    source_id: str | None = Field(alias="_sourceId", default=None)
+    done: int | None = Field(alias="_done", default=None)
+    description: str | None = None  # present in e.g. gc7H7gDG3Ce8
 
     # e.g.:
     # {
@@ -56,7 +56,7 @@ class Props(BaseModel, extra="forbid"):
     #     13
     #   ]
     # }
-    flags: Optional[int] = Field(alias="_flags", default=None)
+    flags: int | None = Field(alias="_flags", default=None)
 
     # e.g.:
     # {
@@ -72,8 +72,8 @@ class Props(BaseModel, extra="forbid"):
     #   "modifiedTs": [1721944840187],
     #   "touchCounts": [7]
     # }
-    imageWidth: Optional[int] = Field(alias="_imageWidth", default=None)
-    imageHeight: Optional[int] = Field(alias="_imageHeight", default=None)
+    imageWidth: int | None = Field(alias="_imageWidth", default=None)
+    imageHeight: int | None = Field(alias="_imageHeight", default=None)
 
     # {
     #   "id": "oxIi6At72Q-R",
@@ -91,8 +91,8 @@ class Props(BaseModel, extra="forbid"):
     #   "modifiedTs": [1701150011150],
     #   "touchCounts": [9]
     # }
-    view: Optional[str] = Field(alias="_view", default=None)
-    editMode: Optional[bool] = Field(alias="_editMode", default=None)
+    view: str | None = Field(alias="_view", default=None)
+    editMode: bool | None = Field(alias="_editMode", default=None)
 
     # {
     #   "id": "kgqfA9Zxzr66",
@@ -106,12 +106,12 @@ class Props(BaseModel, extra="forbid"):
     #   "touchCounts": [5],
     #   "modifiedTs": [1732767573651]
     # }
-    searchContextNode: Optional[str] = None
+    searchContextNode: str | None = None
 
     model_config = ConfigDict(extra="allow", frozen=True)
 
     @property
-    def created_dt(self) -> Optional[datetime]:
+    def created_dt(self) -> datetime | None:
         if self.created is None:
             return None
         return datetime.fromtimestamp(self.created / 1_000, tz=timezone.utc)
@@ -124,15 +124,15 @@ class Props(BaseModel, extra="forbid"):
 class BaseNode(BaseModel, extra="forbid"):
     id: str
     props: Props
-    children: List[str] = Field(default_factory=list)
-    modifiedTs: Optional[List[int]] = None
-    touchCounts: Optional[List[int]] = None
-    associationMap: Optional[Dict[str, str]] = None
+    children: list[str] = Field(default_factory=list)
+    modifiedTs: list[int] | None = None
+    touchCounts: list[int] | None = None
+    associationMap: dict[str, str] | None = None
 
     model_config = ConfigDict(extra="allow", frozen=True)
 
     @property
-    def name(self) -> Optional[str]:  # type: ignore[override]
+    def name(self) -> str | None:  # type: ignore[override]
         return self.props.name
 
     @property
@@ -149,14 +149,14 @@ class TagDefNode(BaseNode): ...
 class UnknownNode(BaseNode): ...
 
 
-_DOC_CLASS: Mapping[Optional[str], type[BaseNode]] = {
+_DOC_CLASS: Mapping[str | None, type[BaseNode]] = {
     "tuple": TupleNode,
     "tagDef": TagDefNode,
     None: UnknownNode,
 }
 
 
-def _make_node(raw: Dict[str, Any]) -> BaseNode:
+def _make_node(raw: dict[str, Any]) -> BaseNode:
     # There are some nodes with no _docType, e.g. hN3mU6IQqe.
     return _DOC_CLASS.get(raw["props"].get("_docType"), UnknownNode).model_validate(raw)
 
@@ -207,8 +207,8 @@ class NodeStore(Mapping[str, BaseNode]):
 _SUPERTAG_KEY_ID = "SYS_A13"  # “Node supertags(s)”
 
 
-def _supertag_index(store: NodeStore) -> Dict[str, List[str]]:
-    out: Dict[str, List[str]] = {}
+def _supertag_index(store: NodeStore) -> dict[str, list[str]]:
+    out: dict[str, list[str]] = {}
     for n in store.values():
         if isinstance(n, TupleNode) and len(n.children) >= 2:
             k, v = store.get(n.children[0]), store.get(n.children[1])
@@ -218,7 +218,7 @@ def _supertag_index(store: NodeStore) -> Dict[str, List[str]]:
 
 
 def attach_supertag_property(store: NodeStore) -> None:
-    idx: Dict[str, List[str]] = _supertag_index(store)
+    idx: dict[str, list[str]] = _supertag_index(store)
 
     # NEW: propagate tags via meta-node link
     for n in store.values():
@@ -267,8 +267,7 @@ def _inline_to_text(raw: str, store: NodeStore, style: str) -> str:
     txt = _NODE_SPAN.sub(node_sub, raw)
     txt = _DATE_SPAN.sub(date_sub, txt)
     txt = html.unescape(txt)
-    txt = re.sub(r"</?strong>", "**", txt, flags=re.IGNORECASE)
-    return txt
+    return re.sub(r"</?strong>", "**", txt, flags=re.IGNORECASE)
 
 
 # ──────────────────────────  Headline  ────────────────────────── #
@@ -390,7 +389,7 @@ def _render_tuple(
 def _render_node(
     n: BaseNode,
     store: NodeStore,
-    vis: Set[str],
+    vis: set[str],
     write,
     ind: str,
     sty: str,
@@ -429,15 +428,15 @@ def _render_node(
 
 
 # ──────────────────────────  Root selection  ────────────────────────── #
-def _collect_inline_refs(store: NodeStore) -> Set[str]:
-    ids: Set[str] = set()
+def _collect_inline_refs(store: NodeStore) -> set[str]:
+    ids: set[str] = set()
     for n in store.values():
         if n.name:
             ids.update(_NODE_SPAN.findall(n.name))
     return ids
 
 
-def _roots(store: NodeStore) -> List[BaseNode]:
+def _roots(store: NodeStore) -> list[BaseNode]:
     # nodes that *have* an owner (i.e. are children)
     owned_nodes = {n.id for n in store.values() if n.props.owner_id and not n.is_trash}
 
@@ -468,10 +467,10 @@ def _roots(store: NodeStore) -> List[BaseNode]:
 
 # ──────────────────────────  Exporters  ────────────────────────── #
 def _export(store: NodeStore, style: str) -> str:
-    lines: List[str] = []
+    lines: list[str] = []
     if style == "tana":
         lines.append("%%tana%%")
-    vis: Set[str] = set()
+    vis: set[str] = set()
     write = lines.append
 
     for r in _roots(store):

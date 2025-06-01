@@ -267,7 +267,6 @@ class TestHabitifyClient:
 
         # Create a custom side_effect function to track which dates were requested
         requested_dates = []
-        original_get = client.client.get
 
         async def mock_get_with_date_tracking(url, **kwargs):
             # Record the requested date

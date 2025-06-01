@@ -29,7 +29,7 @@ This repository also manages configuration and applications for three systems:
    - Tana export utilities (Python)
 
 4. **Infrastructure Automation**
-   - Ansible playbooks and roles for system configuration
+   - Ansible playbooks and roles for system configuration (see ansible/README.md for details)
    - Dotfiles management for multiple machines (deployed via Ansible)
    - Custom system services
 

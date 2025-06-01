@@ -50,6 +50,6 @@ class ActionModule(ActionBase):
     Wraps get_github_release_info from shared github_release module.
     """
 
-    def run(self, tmp=None, task_vars=None):  # noqa: ARG002
+    def run(self, tmp=None, task_vars=None):
         """Main entry point for the action plugin."""
         return ReleaseSpec(**self._task.args).resolve()

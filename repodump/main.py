@@ -124,7 +124,7 @@ def remove_regex(text, pattern, flags_str):
 
 
 @click.command(
-    context_settings=dict(allow_extra_args=True, ignore_unknown_options=True),
+    context_settings={"allow_extra_args": True, "ignore_unknown_options": True},
 )
 @click.option(
     "--output",

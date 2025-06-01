@@ -3,7 +3,6 @@ import decimal
 import http.server
 import json
 import urllib.parse
-from typing import Dict
 
 import splitwise
 import xdg
@@ -41,7 +40,6 @@ def assign_token(client, cache_dir):
             logging.info("Access token loaded from %s", access_token)
     else:
         port = 3003
-        redirect_uri = f"http://localhost:{port}"
         url, secret = client.getAuthorizeURL()
         print(f"Please go to {url}.")
         params = retrieve_get_params(port=port)
@@ -81,7 +79,7 @@ def retrieve_get_params(port):
 
 def load_splitwise_expenses(
     splitwise_group_id,
-) -> Dict[str, external_system.ExternalExpense]:
+) -> dict[str, external_system.ExternalExpense]:
     config_dir = xdg.xdg_config_home() / "gnucash_splitwise_reconciler"
     cache_dir = xdg.xdg_cache_home() / "gnucash_splitwise_reconciler"
     splitwise_credentials_path = config_dir / "splitwise_credentials.json"

@@ -151,7 +151,7 @@ class GitHubInstaller:
     def install_module_args(self, asset_url: str) -> dict[str, Any]:
         raise NotImplementedError
 
-    def get_additional_info(self, asset_url: str) -> dict[str, Any]:  # noqa: ARG002
+    def get_additional_info(self, asset_url: str) -> dict[str, Any]:
         """Extra information about installed asset."""
         return {}
 

@@ -53,7 +53,7 @@ for market in tqdm(markets, leave=False):
         #   - pool, probability, isResolved, ...
 
 df = pd.DataFrame(recs)
-df.sort_values("num_bets", ascending=False, inplace=True)
-df.reset_index(inplace=True, drop=True)
+df = df.sort_values("num_bets", ascending=False)
+df = df.reset_index(drop=True)
 print(df)
 # creatorName

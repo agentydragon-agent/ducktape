@@ -7,12 +7,8 @@ deterministic.
 
 from datetime import datetime
 
-
 import pytest
-
-
 from server import TokenScheme
-
 
 SECRET = b"hunter2"
 
@@ -39,7 +35,7 @@ def test_doc_hash_mismatch_is_reported():
 
     # Corrupt the very first character of the document hash part.
     # Layout: 1:MMDD-HH:MM-<doc><pub><priv>
-    head, tail = token[:-1], token[-1]
+    _head, _tail = token[:-1], token[-1]
     # The doc hash starts right after the second dash – that's position index of last '-'? simpler: just
     # mutate one character after the final dash.
     pos = token.rfind("-") + 1
@@ -56,7 +52,7 @@ def test_incomplete_token_is_reported_but_does_not_crash():
     ts, token = _make_token()
 
     # Strip the private hash so only doc+pub remain.
-    incomplete_token = token[:- ts._AUTH_LEN]
+    incomplete_token = token[: -ts._AUTH_LEN]
 
     with pytest.raises(TokenScheme.VerificationError) as err:
         ts.verify_token(incomplete_token)

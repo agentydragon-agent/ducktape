@@ -1,7 +1,6 @@
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Dict, List, Tuple
 
 from homeassistant.components.sensor import SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
@@ -40,7 +39,7 @@ class PollutantInfo:
 
     name: str
     unit: str
-    breakpoints: List[Tuple[float, int]]
+    breakpoints: list[tuple[float, int]]
 
 
 # ---------------------------------------------------------------------------
@@ -52,7 +51,7 @@ class PollutantInfo:
 # better cohesion – every relevant bit of information about a pollutant is now
 # located in a single place.
 
-POLLUTANTS: Dict[str, PollutantInfo] = {
+POLLUTANTS: dict[str, PollutantInfo] = {
     "co2": PollutantInfo(
         name="CO₂",
         unit="ppm",

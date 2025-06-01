@@ -88,7 +88,7 @@ def memory_handler():
 
 
 @pytest.mark.parametrize(
-    "co2_value, pm25_value, expected_iaqi, expected_bottleneck",
+    ("co2_value", "pm25_value", "expected_iaqi", "expected_bottleneck"),
     [
         # CO2 is the bottleneck (1500 ppm = IAQI 40, PM25 30 μg/m³ = IAQI ~73)
         ("1500", "30", 40.0, "CO₂: 1500.0 ppm"),

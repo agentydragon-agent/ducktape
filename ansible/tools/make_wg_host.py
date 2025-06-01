@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-tools/make_wg_host.py – generate WireGuard keys per host into
+tools/make_wg_host.py - generate WireGuard keys per host into
 host_vars/<host>/wireguard.yml, encrypting the private key
 with Ansible Vault.
 
@@ -51,7 +51,7 @@ def write_host_file(host: str):
     outfile = host_dir / "wireguard.yml"
 
     if outfile.exists():
-        print(f"⚠️  {outfile} already exists – skipping", file=sys.stderr)
+        print(f"⚠️  {outfile} already exists - skipping", file=sys.stderr)
         return
 
     encrypted = vault_encrypt("wg_private", priv)
@@ -65,7 +65,7 @@ def write_host_file(host: str):
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: mk_wg_host.py <host1> [host2 …]", file=sys.stderr)
+        print("Usage: mk_wg_host.py <host1> [host2 ...]", file=sys.stderr)
         sys.exit(1)
 
     for h in sys.argv[1:]:

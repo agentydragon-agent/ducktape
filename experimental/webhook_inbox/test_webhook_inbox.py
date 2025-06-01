@@ -41,7 +41,8 @@ def test_ingest_persists_event(app_and_client):
     assert resp.json() == {"status": "ok"}
 
     row = app.CONN.execute("SELECT payload FROM events").fetchone()
-    assert row and row[0] == payload
+    assert row
+    assert row[0] == payload
 
 
 def test_payload_too_large(app_and_client):
@@ -62,7 +63,8 @@ def test_invalid_utf8_payload(client):
 
 def test_root_redirects(client):
     r = client.get("/", follow_redirects=False)
-    assert r.status_code == 302 and r.headers["location"].startswith("/?before=")
+    assert r.status_code == 302
+    assert r.headers["location"].startswith("/?before=")
 
 
 def test_bad_before(client):
@@ -76,7 +78,8 @@ def test_missing_count_redirects_to_default(app_and_client):
     r = client.get(f"/?before={ts}", follow_redirects=False)
     assert r.status_code == 302
     loc = r.headers["location"]
-    assert f"before={ts}" in loc and f"count={app.PAGE_SIZE}" in loc
+    assert f"before={ts}" in loc
+    assert f"count={app.PAGE_SIZE}" in loc
 
 
 @pytest.mark.parametrize("bad", [0, -1])

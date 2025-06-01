@@ -1,7 +1,6 @@
 import csv
 import datetime
 import decimal
-from typing import Dict
 
 from ducktape.finance.reconcile import external_system
 
@@ -39,7 +38,7 @@ _EXPECTED_CSV_COLUMNS = {
 }
 
 
-def load_ubs_csv(path) -> Dict[str, external_system.ExternalExpense]:
+def load_ubs_csv(path) -> dict[str, external_system.ExternalExpense]:
     # TODO: check IBAN
 
     # Returns:

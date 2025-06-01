@@ -97,7 +97,7 @@ class HabitifyClient:
                 return [model_class(**item) for item in result]
             elif result is None:
                 # For some endpoints that return null data but success
-                if "status" in data and data["status"] == True:
+                if "status" in data and data["status"] is True:
                     status_obj = HabitStatus(status="success")
                     return status_obj
                 return None

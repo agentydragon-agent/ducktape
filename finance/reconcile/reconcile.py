@@ -163,7 +163,7 @@ def add_external_to_gnucash(
 
 def main(_):
     config_dir = xdg.xdg_config_home() / "ducktape"
-    cache_dir = xdg.xdg_cache_home() / "ducktape"
+    xdg.xdg_cache_home() / "ducktape"
 
     with open(config_dir / "config.yaml") as f:
         config = yaml.safe_load(f)

@@ -55,6 +55,7 @@ def fmt_range(min, max):
         return f"&leq;{max}"
     if min and max:
         return f"&in;[{min};{max}]"
+    return None
 
 
 def apply(value, *fns):
