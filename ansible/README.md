@@ -89,6 +89,66 @@ These parts can't be done by Ansible:
 
 ## WireGuard
 
-Enables:
+The WireGuard VPN network provides secure connectivity between all managed devices using a hub-and-spoke topology with the VPS as the central hub.
 
-* ActivityWatch between laptops and server
+### Network Layout
+
+| Host | IP Address | Description | Notes |
+|------|------------|-------------|-------|
+| `vps` | 10.13.13.1/24 | VPS Hub | Accessible at agentydragon.com:51820 |
+| `agentydragon` | 10.13.13.11/24 | ThinkPad X1 Extreme | |
+| `gpd` | 10.13.13.12/24 | GPD Win Max 2 | |
+| `homeassistant` | 10.13.13.100/24 | Home Assistant | Not managed by Ansible |
+| `pixel6` | 10.13.13.50/24 | Pixel 6 phone | |
+
+### Adding a New Device
+
+To add a new device to the WireGuard network:
+
+1. Generate keypair and create host vars:
+   ```bash
+   cd ansible
+   python tools/make_wg_host.py <hostname>
+   ```
+
+2. Assign an IP address by editing `host_vars/<hostname>/wireguard.yml`:
+   ```yaml
+   wg_address: "10.13.13.XX/24"  # Choose an unused IP
+   ```
+
+3. Add the host to the `wg_peers` group in `inventory.yaml`:
+   ```yaml
+   wg_peers:
+     hosts:
+       # ... existing hosts ...
+       <hostname>: # Description
+   ```
+
+4. Deploy the configuration:
+   ```bash
+   # Deploy to VPS to update peer allowlist
+   ansible-playbook vps.yaml --tags wireguard
+   
+   # Deploy to the new device (if managed by Ansible)
+   ansible-playbook <hostname>.yaml --tags wireguard
+   ```
+
+### Mobile Device Setup
+
+For mobile devices (Android/iOS), generate a QR code for easy setup:
+
+```bash
+cd ansible
+python tools/make_wg_qr.py <hostname>
+
+# Or save QR code to file
+python tools/make_wg_qr.py <hostname> -o wireguard-<hostname>.png
+```
+
+Scan the QR code with the WireGuard mobile app to import the configuration.
+
+### Features Enabled
+
+* All devices report ActivityWatch data to the central server on VPS
+* Secure access to internal services
+* Cross-device connectivity

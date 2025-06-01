@@ -41,7 +41,7 @@ class TokenScheme:
 
     Rejects obvious typos without the secret; authenticates quickly with it.
     """
-    
+
     _VERSION = "1"
 
     # ─── master knobs: base-58 symbol counts ─────────────────────────────

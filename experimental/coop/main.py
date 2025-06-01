@@ -176,7 +176,7 @@ def update_profile():
     current_user.profile = data["profile"]
 
     # Delete all matches involving the current user
-    user_match_states = UserMatchState.query.filter_by(user_id=current_user.id).all()
+    UserMatchState.query.filter_by(user_id=current_user.id).all()
 
     # Delete all matches and corresponding user match states involving the current user
     Match.query.join(UserMatchState, (UserMatchState.match_id == Match.id)).filter(

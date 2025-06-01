@@ -43,7 +43,7 @@ don't make code worse:
 
 Follow PEP 8.
 
-Imports go at the top of files. Not into functions etc.
+Imports go at the top of files. Always put imports at top of file except possibly if required to break import loops or typing. Not into functions etc.
 
 Never use `getattr`/`setattr` unless absolutely necessary - as in there literally *is no way* to do things differenly.
 

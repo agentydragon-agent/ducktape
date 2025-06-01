@@ -479,7 +479,8 @@ def _render_events_page(
         ctx["decrypt_link"] = str(URL(str(req.url)).include_query_params(key="KEY"))
 
     # Human-readable interval description ---------------------------------
-    fmt_ts = lambda ts: datetime.fromtimestamp(ts, PAC).isoformat(timespec="seconds")
+    def fmt_ts(ts):
+        return datetime.fromtimestamp(ts, PAC).isoformat(timespec="seconds")
 
     if events:
         start_iso = fmt_ts(events[-1]["ts"])

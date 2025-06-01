@@ -77,7 +77,7 @@ def index():
     ]
     MAX = 100
 
-    for query in INDEXED_QUERIES:
+    for _query in INDEXED_QUERIES:
         response = requests.get(
             f"{root}/etapi/notes",
             # TODO: I want to index *all* notes but the API doesn't allow empty

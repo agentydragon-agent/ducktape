@@ -5,7 +5,7 @@ from .lcsc_util import parse_url_for_lcsc_id
 
 @pytest.mark.parametrize(
     "url",
-    (
+    [
         pytest.param(
             "https://www.lcsc.com/product-detail/C123456.html",
             id="normalized",
@@ -22,7 +22,7 @@ from .lcsc_util import parse_url_for_lcsc_id
             "https://www.lcsc.com/product-detail/RGB-LEDs-Built-in-IC_Worldsemi-WS2812B-B-W_C123456.html?s_z=n_C123456",
             id="ws2812b",
         ),
-    ),
+    ],
 )
 def test_parse_url_for_lcsc_id_valid_forms(url: str):
     parsed_id = parse_url_for_lcsc_id(url)

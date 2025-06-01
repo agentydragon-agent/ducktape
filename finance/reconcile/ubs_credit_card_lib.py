@@ -3,7 +3,6 @@ import csv
 import datetime
 import decimal
 import hashlib
-from typing import Dict
 
 from absl import logging
 from ducktape.finance.reconcile import external_system
@@ -33,7 +32,7 @@ _EXPECTED_CSV_COLUMNS = {
 # 3342 5396 0770;510197XXXXXX7156;MICHAEL POKORNY;10.11.2021;Tritt Käse im Viadukt    Zürich       CHE;Grocery stores;44.60;CHF;;CHF;44.60;;11.11.2021
 
 
-def load_ubs_credit_card_csv(path) -> Dict[str, external_system.ExternalExpense]:
+def load_ubs_credit_card_csv(path) -> dict[str, external_system.ExternalExpense]:
     result = {}
     with open(path, encoding="latin1") as f:
         lines = f.readlines()

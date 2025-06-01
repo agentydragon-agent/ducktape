@@ -27,13 +27,13 @@ def build_desktop_content(exec: str, name: str, icon: str | None, enabled: bool)
 
 def run_module() -> None:
     module = AnsibleModule(
-        argument_spec=dict(
-            exec=dict(type="str", required=True),
-            name=dict(type="str"),
-            icon=dict(type="str"),
-            enabled=dict(type="bool", default=True),
-            desktop_file_name=dict(type="str"),
-        ),
+        argument_spec={
+            "exec": {"type": "str", "required": True},
+            "name": {"type": "str"},
+            "icon": {"type": "str"},
+            "enabled": {"type": "bool", "default": True},
+            "desktop_file_name": {"type": "str"},
+        },
         supports_check_mode=True,
     )
 
@@ -47,7 +47,7 @@ def run_module() -> None:
     # ``params`` always contains ``desktop_file_name`` because it is declared in
     # ``argument_spec``.  When the caller does **not** specify a value Ansible
     # sets the key to ``None`` instead of omitting it.  Using ``dict.get`` with
-    # a default therefore does **not** help – we would still receive ``None``
+    # a default therefore does **not** help - we would still receive ``None``
     # and calling ``lower()`` on that would raise an ``AttributeError``.
 
     # Prefer the explicitly provided file name when it is a non-empty string,

@@ -24,7 +24,7 @@ def path_pattern_to_regex(pat: str) -> re.Pattern:
     segments = pat.split("/")
     regex_parts = []
 
-    for i, seg in enumerate(segments):
+    for _i, seg in enumerate(segments):
         if seg == "**":
             # '**' => zero or more directories, so:
             # This means "match 0 or more segments of the form 'something/'"

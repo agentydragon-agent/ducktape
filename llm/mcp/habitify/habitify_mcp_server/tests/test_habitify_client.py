@@ -495,7 +495,6 @@ class TestHabitifyClient:
 
         # Create a custom side_effect function to track which dates were requested
         requested_dates = []
-        original_get = client.async_client.get
 
         async def mock_get_with_date_tracking(url, **kwargs):
             # Record the requested date
@@ -555,9 +554,7 @@ class TestHabitifyClient:
             return success_resp  # default
 
         # Patch the client's request method
-        with patch.object(
-            client.async_client, "get", side_effect=mock_get_implementation
-        ) as mock_get:
+        with patch.object(client.async_client, "get", side_effect=mock_get_implementation):
             # Call the method with a date range
             statuses = await client.check_habit_status_range_async(
                 "-Lo9NTLRX3aCxg-PjN25", start_date="2025-05-01", end_date="2025-05-03"

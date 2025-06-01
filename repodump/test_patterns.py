@@ -49,7 +49,7 @@ def test_path_pattern_to_regex_mixed_segments():
 
 
 @pytest.mark.parametrize(
-    "pattern,path,should_match",
+    ("pattern", "path", "should_match"),
     [
         # Single star won't cross subdir
         ("boxes/*.py", "boxes/foo.py", True),

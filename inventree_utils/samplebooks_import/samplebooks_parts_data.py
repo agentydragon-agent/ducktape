@@ -74,8 +74,12 @@ ohm = ureg.ohm
 pf = ureg.pF
 
 
-_r = lambda value, **kwargs: Resistor(resistance=value * ohm, **kwargs)
-_c = lambda value, **kwargs: Capacitor(capacitance=value * pf, **kwargs)
+def _r(value, **kwargs):
+    return Resistor(resistance=value * ohm, **kwargs)
+
+
+def _c(value, **kwargs):
+    return Capacitor(capacitance=value * pf, **kwargs)
 
 
 parts = []
@@ -83,7 +87,7 @@ parts = []
 # R 0201
 crunch(
     _r,
-    dict(package="0201", tolerance="1%", description="Yageo FR-07 series"),
+    {"package": "0201", "tolerance": "1%", "description": "Yageo FR-07 series"},
     0,
     [i * 10**decade for decade in [0, 1, 2, 3, 4, 5, 6] for i in E24],
     1e7,
@@ -93,13 +97,13 @@ crunch(
 crunch(
     _c,
     # unfortunately lotsa stuff unknown
-    dict(
-        package="0201",
-        voltage_rating=None,
-        dielectric=None,
-        tolerance=None,
-        description="Dielectric, voltage rating etc. not listed in sample book",
-    ),
+    {
+        "package": "0201",
+        "voltage_rating": None,
+        "dielectric": None,
+        "tolerance": None,
+        "description": "Dielectric, voltage rating etc. not listed in sample book",
+    },
     0.5,
     [1, 1.5, 2, 2.2, 2.7, 3, 3.3, 3.9, 4, 4.7, 5.6, 7, 8, 8.2, 9],
     [10, 12, 15, 18, 20, 22, 27, 33, 39, 47, 56, 68, 82],
@@ -112,7 +116,7 @@ crunch(
 # R 0402
 crunch(
     _r,
-    dict(package="0402", tolerance="1%", description=None),
+    {"package": "0402", "tolerance": "1%", "description": None},
     0,
     [i * 10**decade for decade in [0, 1, 2, 3, 4, 5, 6] for i in E24],
     1e7,
@@ -121,39 +125,39 @@ crunch(
 # C 0402
 crunch(
     _c,
-    dict(
-        package="0402",
-        voltage_rating=50,
-        dielectric="COG",
-        tolerance="0.1pF",
-        description=None,
-    ),
+    {
+        "package": "0402",
+        "voltage_rating": 50,
+        "dielectric": "COG",
+        "tolerance": "0.1pF",
+        "description": None,
+    },
     0.5,
-    dict(tolerance="0.25pF"),
+    {"tolerance": "0.25pF"},
     [0.7, 1, 1.2, 1.3, 1.5, 1.6, 1.8, 2, 2.2, 2.4, 2.5, 2.7, 3, 3.3, 3.6],
     [3.9, 4.3, 4.7, 5],
-    dict(tolerance="0.5pF"),
+    {"tolerance": "0.5pF"},
     [6, 6.2, 6.8, 7, 7.5, 8, 8.2, 9],
-    dict(tolerance="5%"),
+    {"tolerance": "5%"},
     [10, 11, 12, 15, 16, 18, 20, 22, 24, 27, 30, 33, 36, 39, 43, 47, 51, 56],
     [62, 68, 82],  # for some reason no 75, 91
     [100, 110, 120, 150, 180],
-    dict(dielectric="X7R"),
+    {"dielectric": "X7R"},
     [200, 220],
-    dict(tolerance="10%"),
+    {"tolerance": "10%"},
     [330, 470, 680, 820, 1_000, 1_500, 2_200, 3_300, 4_700, 6_800],
-    dict(voltage_rating=25),
+    {"voltage_rating": 25},
     [8_200, 10_000, 15_000, 22_000],
-    dict(voltage_rating=16),
+    {"voltage_rating": 16},
     [33_000, 47_000, 68_000, 82_000, 100_000],
-    dict(dielectric="X5R", voltage_rating=10),
+    {"dielectric": "X5R", "voltage_rating": 10},
     [220_000, 470_000, 680_000, 820_000, 1_000_000],
 )
 
 # R 0603
 crunch(
     _r,
-    dict(package="0603", tolerance="1%", description='Labeled "YAGFJR-07"'),
+    {"package": "0603", "tolerance": "1%", "description": 'Labeled "YAGFJR-07"'},
     0,
     [
         i * 10**decade
@@ -166,57 +170,57 @@ crunch(
 # C 0603
 crunch(
     _c,
-    dict(
-        package="0603",
-        voltage_rating=50,
-        dielectric="NPO",
-        tolerance="0.25pF",
-        description="Labeled 'Wa1[dielectric type]'",
-    ),
+    {
+        "package": "0603",
+        "voltage_rating": 50,
+        "dielectric": "NPO",
+        "tolerance": "0.25pF",
+        "description": "Labeled 'Wa1[dielectric type]'",
+    },
     1,
-    dict(tolerance="0.5pF"),
+    {"tolerance": "0.5pF"},
     5,
-    dict(tolerance="5%"),
+    {"tolerance": "5%"},
     [10, 15, 22, 27, 33, 47, 68, 82, 100, 120, 150, 180],
-    dict(dielectric="X7R", voltage_rating=50, tolerance="10%"),
+    {"dielectric": "X7R", "voltage_rating": 50, "tolerance": "10%"},
     [220, 470, 680, 1000, 10_000, 100_000, 470_000],
-    dict(dielectric="X5R", voltage_rating=25),
+    {"dielectric": "X5R", "voltage_rating": 25},
     1_000_000,
-    dict(dielectric="X5R", voltage_rating=16),
+    {"dielectric": "X5R", "voltage_rating": 16},
     2_200_000,
 )
 
 # C 0805
 crunch(
     _c,
-    dict(
-        package="0805",
-        voltage_rating=50,
-        dielectric="COG",
-        tolerance="0.25pF",
-        description=None,
-    ),
+    {
+        "package": "0805",
+        "voltage_rating": 50,
+        "dielectric": "COG",
+        "tolerance": "0.25pF",
+        "description": None,
+    },
     [0.5, 0.75, 1, 1.1, 1.2, 1.3, 1.5, 1.8, 2, 2.2, 2.4, 2.5, 2.7, 3, 3.3],
     [3.6, 3.9, 4, 4.3, 4.7, 5],
-    dict(tolerance="0.5pF"),
+    {"tolerance": "0.5pF"},
     [5.1, 5.6, 6, 6.2, 6.8, 7, 7.5, 8, 8.2, 9, 9.1],
-    dict(tolerance="5%"),
+    {"tolerance": "5%"},
     [10, 11, 12, 13, 15, 16, 18, 20, 22, 24, 27, 30, 33, 36, 39, 43, 47, 51],
     [56, 62, 68, 75, 82, 91, 100, 110, 120, 130, 150, 160, 180, 200],
-    dict(dielectric="X7R", tolerance="10%"),
+    {"dielectric": "X7R", "tolerance": "10%"},
     [220, 330, 470, 560, 680, 820, 1_000, 1_500, 2_200, 3_300, 4_700, 6_800],
     [8_200, 10_000, 15_000],
-    dict(voltage_rating=25),
+    {"voltage_rating": 25},
     [22_000, 33_000, 47_000, 68_000, 82_000, 100_000],
-    dict(voltage_rating=50),
+    {"voltage_rating": 50},
     [220_000, 470_000],
-    dict(voltage_rating=25),
+    {"voltage_rating": 25},
     [680_000],
-    dict(voltage_rating=10),
+    {"voltage_rating": 10},
     [1_000_000],
-    dict(voltage_rating=16, dielectric="X5R"),
+    {"voltage_rating": 16, "dielectric": "X5R"},
     [2_200_000],
-    dict(voltage_rating=10),
+    {"voltage_rating": 10},
     [4_700_000, 10_000_000],
 )
 
@@ -464,8 +468,12 @@ ohm = ureg.ohm
 pf = ureg.pF
 
 
-_r = lambda value, **kwargs: Resistor(resistance=value * ohm, **kwargs)
-_c = lambda value, **kwargs: Capacitor(capacitance=value * pf, **kwargs)
+def _r(value, **kwargs):
+    return Resistor(resistance=value * ohm, **kwargs)
+
+
+def _c(value, **kwargs):
+    return Capacitor(capacitance=value * pf, **kwargs)
 
 
 parts = []
@@ -473,7 +481,7 @@ parts = []
 # R 0201
 crunch(
     _r,
-    dict(package="0201", tolerance="1%", description="Yageo FR-07 series"),
+    {"package": "0201", "tolerance": "1%", "description": "Yageo FR-07 series"},
     0,
     [i * 10**decade for decade in [0, 1, 2, 3, 4, 5, 6] for i in E24],
     1e7,
@@ -483,13 +491,13 @@ crunch(
 crunch(
     _c,
     # unfortunately lotsa stuff unknown
-    dict(
-        package="0201",
-        voltage_rating=None,
-        dielectric=None,
-        tolerance=None,
-        description="dielectric, voltage rating etc. unknown, not listed by seller",
-    ),
+    {
+        "package": "0201",
+        "voltage_rating": None,
+        "dielectric": None,
+        "tolerance": None,
+        "description": "dielectric, voltage rating etc. unknown, not listed by seller",
+    },
     0.5,
     [1, 1.5, 2, 2.2, 2.7, 3, 3.3, 3.9, 4, 4.7, 5.6, 7, 8, 8.2, 9],
     [10, 12, 15, 18, 20, 22, 27, 33, 39, 47, 56, 68, 82],
@@ -502,7 +510,7 @@ crunch(
 # R 0402
 crunch(
     _r,
-    dict(package="0402", tolerance="1%", description=None),
+    {"package": "0402", "tolerance": "1%", "description": None},
     0,
     [i * 10**decade for decade in [0, 1, 2, 3, 4, 5, 6] for i in E24],
     1e7,
@@ -511,39 +519,39 @@ crunch(
 # C 0402
 crunch(
     _c,
-    dict(
-        package="0402",
-        voltage_rating=50,
-        dielectric="COG",
-        tolerance="0.1pF",
-        description=None,
-    ),
+    {
+        "package": "0402",
+        "voltage_rating": 50,
+        "dielectric": "COG",
+        "tolerance": "0.1pF",
+        "description": None,
+    },
     0.5,
-    dict(tolerance="0.25pF"),
+    {"tolerance": "0.25pF"},
     [0.7, 1, 1.2, 1.3, 1.5, 1.6, 1.8, 2, 2.2, 2.4, 2.5, 2.7, 3, 3.3, 3.6],
     [3.9, 4.3, 4.7, 5],
-    dict(tolerance="0.5pF"),
+    {"tolerance": "0.5pF"},
     [6, 6.2, 6.8, 7, 7.5, 8, 8.2, 9],
-    dict(tolerance="5%"),
+    {"tolerance": "5%"},
     [10, 11, 12, 15, 16, 18, 20, 22, 24, 27, 30, 33, 36, 39, 43, 47, 51, 56],
     [62, 68, 82],  # for some reason no 75, 91
     [100, 110, 120, 150, 180],
-    dict(dielectric="X7R"),
+    {"dielectric": "X7R"},
     [200, 220],
-    dict(tolerance="10%"),
+    {"tolerance": "10%"},
     [330, 470, 680, 820, 1000, 1500, 2200, 3300, 4700, 6800],
-    dict(voltage_rating=25),
+    {"voltage_rating": 25},
     [8200, 10000, 15000, 22000],
-    dict(voltage_rating=16),
+    {"voltage_rating": 16},
     [33000, 47000, 68000, 82000, 100_000],
-    dict(dielectric="X5R", voltage_rating=10),
+    {"dielectric": "X5R", "voltage_rating": 10},
     [220_000, 470_000, 680_000, 820_000, 1_000_000],
 )
 
 # R 0603
 crunch(
     _r,
-    dict(package="0603", tolerance="1%", description='Labeled "YAGFJR-07"'),
+    {"package": "0603", "tolerance": "1%", "description": 'Labeled "YAGFJR-07"'},
     0,
     [
         i * 10**decade
@@ -556,57 +564,57 @@ crunch(
 # C 0603
 crunch(
     _c,
-    dict(
-        package="0603",
-        voltage_rating=50,
-        dielectric="NPO",
-        tolerance="0.25pF",
-        description="Labeled 'Wa1(dielectric type)'",
-    ),
+    {
+        "package": "0603",
+        "voltage_rating": 50,
+        "dielectric": "NPO",
+        "tolerance": "0.25pF",
+        "description": "Labeled 'Wa1(dielectric type)'",
+    },
     1,
-    dict(tolerance="0.5pF"),
+    {"tolerance": "0.5pF"},
     5,
-    dict(tolerance="5%"),
+    {"tolerance": "5%"},
     [10, 15, 22, 27, 33, 47, 68, 82, 100, 120, 150, 180],
-    dict(dielectric="X7R", voltage_rating=50, tolerance="10%"),
+    {"dielectric": "X7R", "voltage_rating": 50, "tolerance": "10%"},
     [220, 470, 680, 1000, 10_000, 100_000, 470_000],
-    dict(dielectric="X5R", voltage_rating=25),
+    {"dielectric": "X5R", "voltage_rating": 25},
     1_000_000,
-    dict(dielectric="X5R", voltage_rating=16),
+    {"dielectric": "X5R", "voltage_rating": 16},
     2_200_000,
 )
 
 # C 0805
 crunch(
     _c,
-    dict(
-        package="0805",
-        voltage_rating=50,
-        dielectric="COG",
-        tolerance="0.25pF",
-        description=None,
-    ),
+    {
+        "package": "0805",
+        "voltage_rating": 50,
+        "dielectric": "COG",
+        "tolerance": "0.25pF",
+        "description": None,
+    },
     [0.5, 0.75, 1, 1.1, 1.2, 1.3, 1.5, 1.8, 2, 2.2, 2.4, 2.5, 2.7, 3, 3.3],
     [3.6, 3.9, 4, 4.3, 4.7, 5],
-    dict(tolerance="0.5pF"),
+    {"tolerance": "0.5pF"},
     [5.1, 5.6, 6, 6.2, 6.8, 7, 7.5, 8, 8.2, 9, 9.1],
-    dict(tolerance="5%"),
+    {"tolerance": "5%"},
     [10, 11, 12, 13, 15, 16, 18, 20, 22, 24, 27, 30, 33, 36, 39, 43, 47, 51],
     [56, 62, 68, 75, 82, 91, 100, 110, 120, 130, 150, 160, 180, 200],
-    dict(dielectric="X7R", tolerance="10%"),
+    {"dielectric": "X7R", "tolerance": "10%"},
     [220, 330, 470, 560, 680, 820, 1000, 1500, 2200, 3300, 4700, 6800],
     [8200, 10_000, 15_000],
-    dict(voltage_rating=25),
+    {"voltage_rating": 25},
     [22_000, 33_000, 47_000, 68_000, 82_000, 100_000],
-    dict(voltage_rating=50),
+    {"voltage_rating": 50},
     [220_000, 470_000],
-    dict(voltage_rating=25),
+    {"voltage_rating": 25},
     [680_000],
-    dict(voltage_rating=10),
+    {"voltage_rating": 10},
     [1_000_000],
-    dict(voltage_rating=16, dielectric="X5R"),
+    {"voltage_rating": 16, "dielectric": "X5R"},
     [2_200_000],
-    dict(voltage_rating=10, dielectric="X5R"),
+    {"voltage_rating": 10, "dielectric": "X5R"},
     [4_700_000, 10_000_000],
 )
 

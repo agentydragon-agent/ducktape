@@ -103,7 +103,7 @@ class ProfileList(SettingsWrapper):
         uuids = self["list"]
         new_uuid = str(uuid.uuid4())
         logger.debug(f"Existing uuids: {uuids!r}, add new uuid {new_uuid}")
-        self["list"] = uuids + [new_uuid]
+        self["list"] = [*uuids, new_uuid]
         return Profile(new_uuid)
 
 

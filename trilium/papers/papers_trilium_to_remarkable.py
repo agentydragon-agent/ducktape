@@ -172,11 +172,10 @@ def build_filename(paper):
         filename += f"{paper.arxiv_id} "
     filename += paper.title
     filename = filename.replace(":", "_")
-    filename = (
+    return (
         filename.replace("/", "-").replace("?", "-").replace("(", "_").replace(")", "_")
     )
     # filename = filename.replace(' ', '_')
-    return filename
 
 
 def sync():

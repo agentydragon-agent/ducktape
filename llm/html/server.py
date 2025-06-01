@@ -13,7 +13,6 @@ import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse
 from jinja2 import Environment, FileSystemLoader
-
 from token_scheme import TokenScheme
 
 # Configure logging to output to stdout
@@ -121,5 +120,8 @@ if __name__ == "__main__":
 
     logger.info(f"Starting FastAPI server on http://{host}:{port}")
     uvicorn.run(
-        app, host=host, port=port, log_config=None
+        app,
+        host=host,
+        port=port,
+        log_config=None,
     )  # None to use our logging config
