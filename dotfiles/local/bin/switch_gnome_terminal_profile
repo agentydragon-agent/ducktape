@@ -1,14 +1,17 @@
 #!/usr/bin/python3
 # Works on gnome-terminal 3.44.0 as of 2022-09-03.
-# Requirements: absl-py, dbus-python
+# Requirements: absl-py, dbus-python, pygobject
 
 import ast
 import subprocess
-from typing import List
+import sys
+import uuid
+from uuid import UUID
 from xml.etree import ElementTree
 
 import dbus
 from absl import app, flags, logging
+from gi.repository import Gio
 
 _PROFILE = flags.DEFINE_string(
     "profile",
@@ -16,52 +19,188 @@ _PROFILE = flags.DEFINE_string(
     "Name or UUID of profile to set everywhere",
 )
 
+_AUTO_MODE = flags.DEFINE_bool(
+    "auto_mode",
+    False,
+    "Enable auto profile mode - creates/manages a fixed 'Auto' profile",
+)
 
-def gsettings_get_profile_uuid_list() -> List[str]:
-    out = subprocess.check_output(
-        ["gsettings", "get", "org.gnome.Terminal.ProfilesList", "list"],
-    ).decode("utf-8")
-    return ast.literal_eval(out)
+_THEME = flags.DEFINE_enum(
+    "theme",
+    None,
+    ["light", "dark"],
+    "Theme to apply to auto profile (only used with --auto_mode)",
+)
+
+# Source profiles to copy colors from in auto mode
+THEME_SOURCE_PROFILES = {
+    "light": "Solarized Light",
+    "dark": "Solarized Dark",
+}
+
+AUTO_PROFILE_NAME = "Auto"
+GSETTINGS_PROFILES_LIST = Gio.Settings.new("org.gnome.Terminal.ProfilesList")
+
+
+def gsettings_get_profile_uuids() -> set[UUID]:
+    return {UUID(x) for x in GSETTINGS_PROFILES_LIST.get_strv("list")}
 
 
 def gsettings_get_default_profile_uuid() -> str:
-    out = subprocess.check_output(
-        ["gsettings", "get", "org.gnome.Terminal.ProfilesList", "default"],
-    ).decode("utf-8")
-    return ast.literal_eval(out)
+    return GSETTINGS_PROFILES_LIST.get_string("default")
 
 
-def gsettings_set_default_profile_uuid(uuid: str) -> None:
-    out = subprocess.check_output(
-        ["gsettings", "set", "org.gnome.Terminal.ProfilesList", "default", f"'{uuid}'"],
-    ).decode("utf-8")
-    assert out == ""
+def gsettings_set_default_profile_uuid(profile_uuid: UUID) -> None:
+    GSETTINGS_PROFILES_LIST.set_string("default", str(profile_uuid))
 
 
-def dconf_get_profile_visible_name(uuid: str) -> str:
-    # As of 2022-09-03 (gnome-terminal 3.44.0), somehow the visible-name only
-    # seems to propagate correctly into dconf, not into gsettings...
-    # but the list of profiles (ProfileList) is up in gsettings.
-    # dconf list /org/gnome/terminal/legacy/profiles:/ returns a lot of profiles
-    # which I've deleted a long time back.
-    name = (
-        subprocess.check_output(
-            [
-                "dconf",
-                "read",
-                f"/org/gnome/terminal/legacy/profiles:/:{uuid}/visible-name",
-            ],
+class ProfileDConf:
+    def __init__(self, profile_uuid: UUID):
+        self.profile_uuid = profile_uuid
+
+    def _path(self, property_name: str) -> str:
+        """Construct the dconf path for the given property."""
+        return (
+            f"/org/gnome/terminal/legacy/profiles:/:{self.profile_uuid}/{property_name}"
         )
-        .decode("utf-8")
-        .strip()
+
+    def read_property(self, property_name: str) -> str | bool | None:
+        try:
+            out = (
+                subprocess.check_output(["dconf", "read", self._path(property_name)])
+                .decode("utf-8")
+                .strip()
+            )
+            if not out:
+                return None
+            if out == "true":
+                return True
+            if out == "false":
+                return False
+            return ast.literal_eval(out)
+        except subprocess.CalledProcessError:
+            return None
+
+    @property
+    def visible_name(self) -> str:
+        v = self.read_property("visible-name")
+        assert isinstance(v, str)
+        return v
+
+    def write_property(self, property_name: str, value: bool | str) -> None:
+        """Write a property to the profile."""
+        if value is True:
+            v = "true"
+        elif value is False:
+            v = "false"
+        elif isinstance(value, str):
+            assert "'" not in value, "Value must not contain single quotes"
+            v = f"'{value}'"
+        elif isinstance(value, list) and all(isinstance(x, str) for x in value):
+            v = repr(value)
+        else:
+            raise ValueError(
+                f"Unsupported value type: {type(value)}. Must be bool or str.",
+            )
+        subprocess.check_call(["dconf", "write", self._path(property_name), v])
+
+
+def copy_profile_colors(source_uuid: UUID, target_uuid: UUID) -> None:
+    """Copy color-related properties from one profile to another."""
+    color_properties = [
+        "background-color",
+        "foreground-color",
+        "palette",
+        "bold-color",
+        "cursor-background-color",
+        "cursor-foreground-color",
+        "highlight-background-color",
+        "highlight-foreground-color",
+    ]
+
+    source_dconf, target_dconf = ProfileDConf(source_uuid), ProfileDConf(target_uuid)
+    for prop in color_properties:
+        if value := source_dconf.read_property(prop):
+            logging.info("Copy %s: %s", prop, value)
+            target_dconf.write_property(prop, value)
+
+
+def get_profile_uuid_by_name_mapping() -> dict[str, UUID]:
+    """Build a mapping of profile names to UUIDs."""
+    uuid_by_name: dict[str, UUID] = {}
+
+    for profile_uuid in gsettings_get_profile_uuids():
+        try:
+            # As of 2022-09-03 (gnome-terminal 3.44.0), somehow the visible-name only
+            # seems to propagate correctly into dconf, not into gsettings...
+            # but the list of profiles (ProfileList) is up in gsettings.
+            # dconf list /org/gnome/terminal/legacy/profiles:/ returns a lot of profiles
+            # which I've deleted a long time back.
+            name = ProfileDConf(profile_uuid).visible_name
+        except Exception as e:
+            logging.warning(f"Failed to get name for profile {profile_uuid}: {e}")
+            continue
+        if name in uuid_by_name:
+            logging.warning(
+                f"Duplicate profile name {name}: {uuid_by_name[name]} and {profile_uuid}",
+            )
+            continue
+        uuid_by_name[name] = profile_uuid
+
+    return uuid_by_name
+
+
+def create_auto_profile():
+    # Create new profile
+    auto_uuid = uuid.uuid4()
+
+    # Add to profile list
+    profile_list = list(gsettings_get_profile_uuids())
+    profile_list.append(auto_uuid)
+
+    # Update profile list in gsettings
+    GSETTINGS_PROFILES_LIST.set_strv(
+        "list",
+        [str(profile_uuid) for profile_uuid in profile_list],
     )
-    try:
-        return ast.literal_eval(name)
-    except (SyntaxError, ValueError):
-        raise ValueError(f"Failed to parse name of profile {uuid}: {name=!r}")
+
+    # Set profile name
+    auto_dconf = ProfileDConf(auto_uuid)
+    auto_dconf.write_property("visible-name", AUTO_PROFILE_NAME)
+    auto_dconf.write_property("use-theme-colors", False)
+    return auto_uuid
 
 
-def dbus_update_profile_on_all_windows(uuid: str) -> None:
+def create_or_update_auto_profile(theme: str) -> UUID:
+    """Create or update the auto profile with colors from the specified theme."""
+    uuid_by_name = get_profile_uuid_by_name_mapping()
+
+    # Check if auto profile exists
+    auto = [name for name in uuid_by_name if name.startswith(AUTO_PROFILE_NAME)]
+    if len(auto) > 1:
+        raise ValueError(f"Multiple Auto profiles found: {auto}")
+    if len(auto) == 1:
+        auto_uuid = uuid_by_name[auto[0]]
+        logging.info(f"Found existing Auto profile: {auto_uuid}")
+    else:
+        auto_uuid = create_auto_profile()
+        logging.info(f"Created new Auto profile: {auto_uuid}")
+
+    if not (source_profile_name := THEME_SOURCE_PROFILES.get(theme)):
+        raise ValueError(f"Source profile '{source_profile_name}' not found")
+    source_uuid = uuid_by_name[source_profile_name]
+
+    logging.info(f"Copying colors from {source_profile_name} to Auto profile")
+    copy_profile_colors(source_uuid, auto_uuid)
+    ProfileDConf(auto_uuid).write_property(
+        "visible-name",
+        f"{AUTO_PROFILE_NAME} ({theme} - {source_profile_name})",
+    )
+
+    return auto_uuid
+
+
+def dbus_update_profile_on_all_windows(new_uuid: UUID) -> None:
     bus = dbus.SessionBus()
 
     obj = bus.get_object("org.gnome.Terminal", "/org/gnome/Terminal/window")
@@ -69,7 +208,7 @@ def dbus_update_profile_on_all_windows(uuid: str) -> None:
 
     tree = ElementTree.fromstring(iface.Introspect())
     windows = [child.attrib["name"] for child in tree if child.tag == "node"]
-    logging.info("requesting new uuid: %s", uuid)
+    logging.info(f"requesting new uuid: {new_uuid}")
 
     def _get_window_profile_uuid(window_actions_iface):
         # gnome-terminal source code pointer:
@@ -77,8 +216,7 @@ def dbus_update_profile_on_all_windows(uuid: str) -> None:
         # d-feet (https://wiki.gnome.org/action/show/Apps/DFeet) is useful for
         # manual poking.
         description = window_actions_iface.Describe("profile")
-        profile_uuid = description[2][0]
-        return profile_uuid
+        return UUID(description[2][0])
 
     for window in windows:
         window_path = f"/org/gnome/Terminal/window/{window}"
@@ -87,48 +225,70 @@ def dbus_update_profile_on_all_windows(uuid: str) -> None:
         # because they do not have the 'profile' action.
 
         obj = bus.get_object("org.gnome.Terminal", window_path)
-        logging.info("talking to: %s", obj)
         window_actions_iface = dbus.Interface(obj, "org.gtk.Actions")
-        logging.info(
-            "starting profile uuid: %s",
-            _get_window_profile_uuid(window_actions_iface),
-        )
+        original_uuid = _get_window_profile_uuid(window_actions_iface)
+        logging.info(f"talking to {obj}, starting profile uuid: {original_uuid}")
         # res = window_actions_iface.Activate('about', [], [])
-        res = window_actions_iface.SetState(
+        window_actions_iface.SetState(
             # https://wiki.gnome.org/Projects/GLib/GApplication/DBusAPI#Overview-2
             # https://gitlab.gnome.org/GNOME/gnome-terminal/-/blob/f85f2a381e5ba9904d00236e46fc72ae31253ff0/src/terminal-window.cc#L2132
             "profile",
             # Requested new state
             # https://gitlab.gnome.org/GNOME/gnome-terminal/-/blob/f85f2a381e5ba9904d00236e46fc72ae31253ff0/src/terminal-window.cc#L1319
-            uuid,
+            str(new_uuid),
             # "Platform data" - `a{sv}`
             [],
         )
-        logging.info("window_actions_iface.SetState result: %s", res)
         uuid_after = _get_window_profile_uuid(window_actions_iface)
-        logging.info("new uuid after action: %s", uuid_after)
-        assert uuid_after == uuid
+        logging.info(f"new uuid after action: {uuid_after}")
+        assert uuid_after == new_uuid
         # TODO: this only includes currently active tabs, not background tabs :/
 
 
+def _run_auto():
+    # Auto mode: manage the Auto profile
+    if not _THEME.value:
+        raise ValueError("--theme must be specified with --auto_mode")
+
+    # Create or update the auto profile with colors from the theme
+    auto_uuid = create_or_update_auto_profile(_THEME.value)
+
+    # Set as default and update all windows
+    gsettings_set_default_profile_uuid(auto_uuid)
+    dbus_update_profile_on_all_windows(auto_uuid)
+
+
+def _run_legacy():
+    # Legacy mode: switch to a named profile (original behavior)
+    if not _PROFILE.value:
+        raise ValueError("--profile must be specified without --auto_mode")
+
+    profile_uuids = set(gsettings_get_profile_uuids())
+
+    profile_uuid: UUID
+    try:
+        profile_uuid = UUID(_PROFILE.value)
+        if profile_uuid not in profile_uuids:
+            raise ValueError(f"No such profile UUID: {profile_uuid}")
+    except ValueError:  # not a UUID
+        uuid_by_name = get_profile_uuid_by_name_mapping()
+        if _PROFILE.value not in uuid_by_name:
+            raise Exception("No such profile (by UUID or name)")
+        profile_uuid: UUID = uuid_by_name[_PROFILE.value]
+
+    gsettings_set_default_profile_uuid(profile_uuid)
+    dbus_update_profile_on_all_windows(profile_uuid)
+
+
 def main(_):
-    profile_uuids = set(gsettings_get_profile_uuid_list())
-    uuid_by_name = {}
-    for uuid in profile_uuids:
-        name = dconf_get_profile_visible_name(uuid)
-        uuid_by_name[name] = uuid
-
-    if _PROFILE.value in profile_uuids:
-        uuid = _PROFILE.value
-    elif _PROFILE.value in uuid_by_name:
-        uuid = uuid_by_name[_PROFILE.value]
+    if _AUTO_MODE.value:
+        _run_auto()
     else:
-        raise Exception("No such profile (by UUID or name)")
-
-    gsettings_set_default_profile_uuid(uuid)
-    dbus_update_profile_on_all_windows(uuid)
+        _run_legacy()
 
 
 if __name__ == "__main__":
-    flags.mark_flag_as_required(_PROFILE.name)
+    # Maintain backward compatibility: require --profile only if not in auto mode
+    if not (len(sys.argv) > 1 and "--auto_mode" in sys.argv[1:]):
+        flags.mark_flag_as_required(_PROFILE.name)
     app.run(main)
