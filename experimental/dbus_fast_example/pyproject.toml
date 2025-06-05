@@ -1,0 +1,13 @@
+[project]
+name = "dbus_fast_example"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "dbus-fast",
+    "pytest",
+    "pytest-asyncio",
+]
+
+[tool.pytest.ini_options]
+addopts = "-vv"
+asyncio_mode = "auto"
