@@ -39,6 +39,28 @@ don't make code worse:
 * `dict1 | dict2` (unino), `dict1 & dict2` (intersection) and ditto for `set`s
 * `zoneinfo` builtin library
 
+### Optionals and Type Hints
+
+NEVER use `Optional[str]`, `Optional[X]` etc. Replace with `str | None`, `X | None`, etc. - newer Python style of optionals. For example:
+
+```python
+# Wrong:
+class Registration:
+    webhook_id: str
+    webhook_secret: Optional[str]  # For encryption
+    instance_url: str
+    cloudhook_url: Optional[str]
+    remote_ui_url: Optional[str]
+
+# Right:
+class Registration:
+    webhook_id: str
+    webhook_secret: str | None  # For encryption
+    instance_url: str
+    cloudhook_url: str | None
+    remote_ui_url: str | None
+```
+
 ## Style
 
 Follow PEP 8.
@@ -170,6 +192,8 @@ Do not use name of class as a string for this.
 
 Test files should be located in the same directory as the module they're testing, with the name pattern `test_*.py`.
 
+When writing unit test, make them be pytest tests, not executable files with __main__ section.
+
 ### When to use PyHamcrest vs standard assertions
 
 Use standard Python assertions for basic checks that don't benefit from Hamcrest's matchers:
@@ -276,3 +300,11 @@ async def discover_hardware(self) -> List[HardwarePiece]:
         logger.error(f"Unexpected error during hardware discovery: {e}")
         raise
 ```
+
+## URL and Parameter Handling
+
+do not assemble URLs with plain string concat, e.g. `[f"{k}={v}" for k, v in params.items()]`. use some existing library that auto-wraps escaping etc.; apply *generally* for *all* formats that need escaping/similar.
+
+## CLI and Shell Tools
+
+I have ripgrep installed ('rg'). feel free to use it.
