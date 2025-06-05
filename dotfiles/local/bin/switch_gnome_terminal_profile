@@ -42,12 +42,24 @@ AUTO_PROFILE_NAME = "Auto"
 GSETTINGS_PROFILES_LIST = Gio.Settings.new("org.gnome.Terminal.ProfilesList")
 
 
-def gsettings_get_profile_uuids() -> set[UUID]:
-    return {UUID(x) for x in GSETTINGS_PROFILES_LIST.get_strv("list")}
+class GSettingsProfiles:
+    def __init__(self):
+        self.settings = Gio.Settings.new("org.gnome.Terminal.ProfilesList")
 
+    @property
+    def profile_uuids(self) -> set[UUID]:
+        """Get all profile UUIDs from gsettings."""
+        return {UUID(x) for x in self.settings.get_strv("list")}
 
-def gsettings_get_default_profile_uuid() -> str:
-    return GSETTINGS_PROFILES_LIST.get_string("default")
+    @profile_uuids.setter
+    def profile_uuids(self, uuids: set[UUID]) -> None:
+        """Set the profile UUIDs in gsettings."""
+        self.settings.set_strv("list", [str(uuid) for uuid in uuids])
+
+    @property
+    def default_profile_uuid(self) -> UUID:
+        """Get the default profile UUID from gsettings."""
+        return UUID(self.settings.get_string("default"))
 
 
 def gsettings_set_default_profile_uuid(profile_uuid: UUID) -> None:
@@ -64,7 +76,7 @@ class ProfileDConf:
             f"/org/gnome/terminal/legacy/profiles:/:{self.profile_uuid}/{property_name}"
         )
 
-    def read_property(self, property_name: str) -> str | bool | None:
+    def read_property(self, property_name: str) -> str | bool:
         try:
             out = (
                 subprocess.check_output(["dconf", "read", self._path(property_name)])
@@ -72,20 +84,27 @@ class ProfileDConf:
                 .strip()
             )
             if not out:
-                return None
+                raise KeyError
             if out == "true":
                 return True
             if out == "false":
                 return False
             return ast.literal_eval(out)
         except subprocess.CalledProcessError:
-            return None
+            raise KeyError(
+                f"Reading '{property_name}' from {self.profile_uuid} failed",
+            )
 
     @property
     def visible_name(self) -> str:
         v = self.read_property("visible-name")
         assert isinstance(v, str)
         return v
+
+    @visible_name.setter
+    def visible_name(self, name: str) -> None:
+        assert isinstance(name, str), "Name must be a string"
+        self.write_property("visible-name", name)
 
     def write_property(self, property_name: str, value: bool | str) -> None:
         """Write a property to the profile."""
@@ -112,24 +131,36 @@ def copy_profile_colors(source_uuid: UUID, target_uuid: UUID) -> None:
         "foreground-color",
         "palette",
         "bold-color",
+        "bold-color-same-as-fg",
+        "cursor-colors-set",
         "cursor-background-color",
         "cursor-foreground-color",
         "highlight-background-color",
         "highlight-foreground-color",
+        "font",
+        "use-theme-colors",
     ]
 
     source_dconf, target_dconf = ProfileDConf(source_uuid), ProfileDConf(target_uuid)
     for prop in color_properties:
-        if value := source_dconf.read_property(prop):
-            logging.info("Copy %s: %s", prop, value)
-            target_dconf.write_property(prop, value)
+        try:
+            value = source_dconf.read_property(prop)
+        except KeyError:
+            logging.warning(
+                "Property %s not found in source profile %s",
+                prop,
+                source_uuid,
+            )
+            continue
+        logging.info(f"Copy {prop}={value}")
+        target_dconf.write_property(prop, value)
 
 
 def get_profile_uuid_by_name_mapping() -> dict[str, UUID]:
     """Build a mapping of profile names to UUIDs."""
     uuid_by_name: dict[str, UUID] = {}
 
-    for profile_uuid in gsettings_get_profile_uuids():
+    for profile_uuid in GSettingsProfiles().profile_uuids:
         try:
             # As of 2022-09-03 (gnome-terminal 3.44.0), somehow the visible-name only
             # seems to propagate correctly into dconf, not into gsettings...
@@ -154,20 +185,13 @@ def create_auto_profile():
     # Create new profile
     auto_uuid = uuid.uuid4()
 
-    # Add to profile list
-    profile_list = list(gsettings_get_profile_uuids())
-    profile_list.append(auto_uuid)
-
-    # Update profile list in gsettings
-    GSETTINGS_PROFILES_LIST.set_strv(
-        "list",
-        [str(profile_uuid) for profile_uuid in profile_list],
-    )
+    # Add to profile list in gsettings
+    gsettings_profiles = GSettingsProfiles()
+    gsettings_profiles.profile_uuids = gsettings_profiles.profile_uuids | {auto_uuid}
 
     # Set profile name
     auto_dconf = ProfileDConf(auto_uuid)
-    auto_dconf.write_property("visible-name", AUTO_PROFILE_NAME)
-    auto_dconf.write_property("use-theme-colors", False)
+    auto_dconf.visible_name = AUTO_PROFILE_NAME
     return auto_uuid
 
 
@@ -263,12 +287,10 @@ def _run_legacy():
     if not _PROFILE.value:
         raise ValueError("--profile must be specified without --auto_mode")
 
-    profile_uuids = set(gsettings_get_profile_uuids())
-
     profile_uuid: UUID
     try:
         profile_uuid = UUID(_PROFILE.value)
-        if profile_uuid not in profile_uuids:
+        if profile_uuid not in GSettingsProfiles().profile_uuids:
             raise ValueError(f"No such profile UUID: {profile_uuid}")
     except ValueError:  # not a UUID
         uuid_by_name = get_profile_uuid_by_name_mapping()
