@@ -1,2 +1,2 @@
 #!/bin/bash
-switch_gnome_terminal_profile --profile='Solarized Dark'
+switch_gnome_terminal_profile --auto_mode --theme=dark
