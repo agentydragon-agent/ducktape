@@ -108,7 +108,7 @@ class TokenScheme:
 
         parts = payload.split("-", 2)
         if len(parts) < 2:
-            issues.append("Token payload is incomplete – expected date & digest parts")
+            issues.append("Token is incomplete - expected date & digest parts")
             raise self.VerificationError(issues)
 
         mmdd, hhmm = parts[0], parts[1]
@@ -140,7 +140,9 @@ class TokenScheme:
         else:
             doc_exp = self._doc_hash()
             if doc_act != doc_exp:
-                issues.append("Document hash mismatch")
+                issues.append(
+                    f"Document hash mismatch (expected={doc_exp}, got={doc_act})",
+                )
 
         if len(pub_act) != self._PUB_LEN:
             issues.append(
@@ -151,7 +153,9 @@ class TokenScheme:
         else:
             pub_exp = self._public_auth(date)
             if pub_act != pub_exp:
-                issues.append("Public hash mismatch")
+                issues.append(
+                    f"Public hash mismatch (expected={pub_exp}, got={pub_act})",
+                )
 
         if len(priv_act) != self._AUTH_LEN:
             issues.append(
@@ -162,7 +166,9 @@ class TokenScheme:
         else:
             priv_exp = self._private_auth(date)
             if not hmac.compare_digest(priv_act, priv_exp):
-                issues.append("Private hash mismatch")
+                issues.append(
+                    f"Private hash mismatch (expected={priv_exp}, got={priv_act})",
+                )
 
         if issues:
             raise self.VerificationError(issues)

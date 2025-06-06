@@ -45,20 +45,16 @@ NEVER use `Optional[str]`, `Optional[X]` etc. Replace with `str | None`, `X | No
 
 ```python
 # Wrong:
-class Registration:
-    webhook_id: str
-    webhook_secret: Optional[str]  # For encryption
-    instance_url: str
-    cloudhook_url: Optional[str]
-    remote_ui_url: Optional[str]
+class Foo:
+    ab: Optional[str]  # For encryption
+    cd: str
+    ef: Optional[str]
 
 # Right:
-class Registration:
-    webhook_id: str
-    webhook_secret: str | None  # For encryption
-    instance_url: str
-    cloudhook_url: str | None
-    remote_ui_url: str | None
+class Foo:
+    ab: str | None  # For encryption
+    cd: str
+    ef: str | None
 ```
 
 ## Style
@@ -99,19 +95,11 @@ Wrong:
     if target_value is not None:
         habit_data["target_value"] = target_value
 
-    if frequency is not None:
-        habit_data["frequency"] = frequency
-
-    if frequency_config is not None:
-        habit_data["frequency_config"] = frequency_config
-
 Good:
     for key, value in {
         "category": category,
         "goal_type": goal_type,
         "target_value": target_value,
-        "frequency": frequency,
-        "frequency_config": frequency_config,
     }.items():
         if value is not None:
             habit_data[key] = value
@@ -325,3 +313,112 @@ assert_that(sensors, has_items(
 ```
 
 This approach provides more readable and concise assertions, making it easier to verify complex object collections.
+
+## PyHamcrest Specific Notes
+
+in pyhamcrest, when looking for whether a sequence contains *one* element which meets some properties, use *has_item*.
+
+DO NOT do:
+```python
+xs = [x for x in capture_updates if x.unique_id == "bluetooth_enabled"]
+assert any(x.state == True and x.icon == "mdi:bluetooth" for x in xs)
+```
+
+or:
+```python
+from hamcrest import assert_that, has_items, has_properties
+assert_that(
+    capture_updates,
+    has_items(
+        has_properties(
+            unique_id="bluetooth_enabled",
+            state=True,
+            icon="mdi:bluetooth"
+        )
+    )
+)
+```
+
+instead, *do* do this:
+```python
+from hamcrest import assert_that, has_item, has_properties
+assert_that(
+    capture_updates,
+    has_item(
+        has_properties(
+            unique_id="bluetooth_enabled",
+            state=True,
+            icon="mdi:bluetooth"
+        )
+    )
+)
+```
+
+## HTML Templating
+
+as soon as you start doing nontrivial html operations/concatting, switch from manual html stitching to jinja2 or other templating engine that contextually makes sense. For example:
+
+```python
+def render_html_page(title: str, content: str, active_page: str = "index") -> str:
+    """Render HTML page with common structure and navigation menu."""
+    menu_items = [("index", "Home")] + [(page, page.capitalize()) for page in MARKDOWN_PAGES]
+    
+    menu_html = '<nav class="menu">\n'
+    for page_id, page_title in menu_items:
+        url = "/" if page_id == "index" else f"/{page_id}"
+        active_class = ' class="active"' if page_id == active_page else ""
+        menu_html += f'    <a href="{url}"{active_class}>{page_title}</a>\n'
+    menu_html += '</nav>\n'
+    
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{title}</title>
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+{menu_html}
+{content}
+</body>
+</html>"""
+
+# This is already a level of complexity above the point where you should have switched to jinja2 or similar.
+```
+
+## Avoiding One-off Variables
+
+Avoid creating one-off variables that are used only once and add unnecessary lines. For example:
+
+```python
+async def update_sensors(self, updates: list[SensorUpdate]):
+    """Send batched sensor updates.
+    
+    Note: SensorUpdate is designed to map 1:1 to the API format.
+    """
+    await self._post_webhook({
+        "type": "update_sensor_states",
+        "data": [update.dict(exclude_none=True) for update in updates]
+    })
+```
+
+Instead of creating a `data` variable that is used only once, directly pass the inline-constructed dictionary to the method.
+
+## Variable Naming Convention
+
+try to make sure variables are clear about the unit / type of thing they're expecting.
+
+instead of:
+```python
+bluetooth_devices: list[str]
+timeout: int
+```
+
+prefer:
+```python
+bluetooth_device_macs: list[str]
+timeout_secs: int
+```
+
+of course with timeout specifically it would be even better to just use `datetime.timedelta` and then it's fine to just call it 'timeout' because type inherently encodes unit
