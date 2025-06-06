@@ -29,6 +29,12 @@ def _fail(result, msg: str) -> dict[str, Any]:
     return result | {"failed": True, "msg": msg}
 
 
+def _prune_dict(x: dict[str, Any], keys: set[str]):
+    """Remove specified keys from a dictionary."""
+    for key in keys & x.keys():
+        del x[key]
+
+
 @dataclass
 class ReleaseSpec:
     """Base class for GitHub release information."""
@@ -40,7 +46,7 @@ class ReleaseSpec:
 
     def resolve(self) -> dict[str, Any]:
         """Gets GitHub release info."""
-        result = {}
+        result: dict[str, Any] = {}
 
         # Make API request
         try:
@@ -59,34 +65,38 @@ class ReleaseSpec:
         # Clear known-unused keys
         for asset in release_data.get("assets", []):
             # explicitly kept: 'label', 'name', 'url'
-            for key in [
-                "content_type",
+            _prune_dict(
+                asset,
+                {
+                    "content_type",
+                    "created_at",
+                    "download_count",
+                    "id",
+                    "node_id",
+                    "size",
+                    "state",
+                    "updated_at",
+                    "uploader",
+                    "zipball_url",
+                    "tarball_url",
+                    "url",  # API URL; we use browser_download_url
+                },
+            )
+        _prune_dict(
+            release_data,
+            {
+                "author",
+                "body",
                 "created_at",
-                "download_count",
+                "draft",
+                "html_url",
                 "id",
                 "node_id",
-                "size",
-                "state",
-                "updated_at",
-                "uploader",
-            ]:
-                if key in asset:
-                    del asset[key]
-        for key in [
-            "author",
-            "body",
-            "created_at",
-            "draft",
-            "html_url",
-            "id",
-            "node_id",
-            "prerelease",
-            "published_at",
-            "reactions",
-        ]:
-            if key in release_data:
-                del release_data[key]
-
+                "prerelease",
+                "published_at",
+                "reactions",
+            },
+        )
         result["release_data"] = release_data
 
         # Handle acknowledged version if provided
