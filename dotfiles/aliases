@@ -14,3 +14,5 @@ function bmosh() {
   # Use like: bmosh root@agentydragon.com
   mosh $1 -- tmux new-session -A -s bmosh
 }
+
+alias vimdiff='nvim -d'
