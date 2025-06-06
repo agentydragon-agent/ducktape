@@ -10,7 +10,7 @@ import json
 import re
 import urllib.request
 from dataclasses import dataclass
-from typing import Any, Optional, TypeVar
+from typing import Any, TypeVar
 
 # Type variables for better type hints
 T = TypeVar("T")
@@ -39,10 +39,10 @@ def _prune_dict(x: dict[str, Any], keys: set[str]):
 class ReleaseSpec:
     """Base class for GitHub release information."""
 
-    repo: Optional[str] = None
+    repo: str | None = None
     version: str = "latest"
-    asset_pattern: Optional[str] = None
-    acknowledged_version: Optional[str] = None
+    asset_pattern: str | None = None
+    acknowledged_version: str | None = None
 
     def resolve(self) -> dict[str, Any]:
         """Gets GitHub release info."""
@@ -185,7 +185,7 @@ class DebInstall(GitHubInstaller):
 class BinaryInstall(GitHubInstaller):
     """Install a GitHub release as a binary executable."""
 
-    dest_path: Optional[str] = None
+    dest_path: str | None = None
 
     @property
     def module_name(self) -> str:
@@ -208,8 +208,8 @@ ARCHIVES = (".tar.gz", ".tgz", ".tar.bz2", ".tar.xz", ".tar.zst", ".zip")
 class ArchiveInstall(GitHubInstaller):
     """Install a GitHub release from an archive file."""
 
-    dest_path: Optional[str] = None
-    creates_file: Optional[str] = None
+    dest_path: str | None = None
+    creates_file: str | None = None
 
     @property
     def module_name(self) -> str:
