@@ -1,0 +1,4 @@
+[tool.mypy]
+# This is a standalone project, not a package
+namespace_packages = false
+explicit_package_bases = true
