@@ -131,7 +131,8 @@ filter for the specific types of errors you intentionally want to swallow.
 ## Early bail-out
 
 Use early bail-out pattern. Including making functions to enable using it when it makes things nicer.
-For example, do not do:
+
+For example, DO NOT do:
 
     if condition:
         foo()
@@ -144,7 +145,7 @@ For example, do not do:
         xyzzy()
         faise Error(...)
 
-Instead, do:
+Instead, DO:
 
     if not condition:
         xyzzy()
@@ -154,6 +155,31 @@ Instead, do:
     baz()
     foobar()
     ...
+
+
+DO NOT do:
+    async def _handle_interfaces_removed(self, path: str, interfaces: list[str]) -> None:
+        """Handle interfaces being removed (e.g., adapter disappearing)."""
+        if path == self._adapter_path and "org.bluez.Adapter1" in interfaces:
+            logger.warning(f"Bluetooth adapter removed: {path}")
+            # Clean up adapter
+            if self._adapter_properties_iface:
+                self._adapter_properties_iface.off_properties_changed(self._handle_adapter_properties_changed)
+            self._adapter_path = None
+            # ... bunch more code in this branch, nothing outside it ...
+
+Instead, DO:
+
+    async def _handle_interfaces_removed(self, path: str, interfaces: list[str]) -> None:
+        """Handle interfaces being removed (e.g., adapter disappearing)."""
+        if path != self._adapter_path or "org.bluez.Adapter1" not in interfaces:
+            return  # Early bail-out if not the adapter we're interested in
+        logger.warning(f"Bluetooth adapter removed: {path}")
+        # Clean up adapter
+        if self._adapter_properties_iface:
+            self._adapter_properties_iface.off_properties_changed(self._handle_adapter_properties_changed)
+        self._adapter_path = None
+        ...
 
 This can be especially nice in helper functions.
 

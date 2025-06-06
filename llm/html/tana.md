@@ -25,7 +25,7 @@ When giving me content to insert into Tana, write it in Tana Paste format.
 Read <https://tana.inc/docs/tana-paste> to make sure you get the format right.
 Make sure to include the `%%tana%%` at the top.
 
-## Tana Paste syntax
+### Syntax
 
 ```
 %%tana%%
@@ -45,18 +45,197 @@ Make sure to include the `%%tana%%` at the top.
     - Xyzzy
 - #chatgpt Linking to URLs
   - ✅ Supported link syntax:
-    - [Link text](https://www.example.com/) and other text
+    - [Link text](https://works.com/) and other text
     - If you want to link to a URL without overriding the text, repeat it in text and targe tURL:
-      - Like this: [https://www.example.com/](https://www.example.com/)
-  - URLs inserted directly or within angle brackages WILL NOT WORK:
-    - ❌ http://bad.example.com/
-    - ❌ <http://bad.example.com/>
+      - Like this: [https://works.com/](https://works.com/)
+  - ❌ URLs inserted directly or within angle brackages WILL NOT WORK:
+    - http://broken.com/
+    - <http://broken.com/>
+- #chatgpt Images
+  - ✅ Nodes containing only an image work; can set a caption:
+    - ![Caption text](https://test.com/image.png)
+    - ![](https://test.com/image.png)
+  - ❌ Images included as part of other content in a node DO NOT work:
+    - ![This](https://test.com/image.png) does not work
+    - neither wil ![](https://www.example.com/image.png) this
 - #chatgpt Tag all top level nodes in your Tana Paste with `#chatgpt`
 ```
 
 ### Not supported
 
 * Inline code (either with backticks or with `<code>` tags).
+
+### Tables
+
+You may render a node as a table by appending `%%view:table%%` to the
+end of the text of the *root node* of the table.
+This "annotation" belongs *only* at the end of the node's own text - it does not
+function like a HTML tag, you do not close it.
+
+Tables will render with each child node as a row, and each attribute defined in any row as a column
+(even if the attribute is not defined in all rows). Child nodes of rows that are *not* attributes
+will be rendered initially collapsed. Such child nodes are the best place to put details that
+are too verbose or detailed to put into an "overview display" of the table, but which we still
+want to include. Tana has easy affordances for expanding and collapsing them.
+
+For example:
+
+```
+%%tana%%
+- #chatgpt Options for buying a car %%view:table%%
+  - Toyota Corolla
+    - Price:: $20,000
+    - Color:: Red
+    - Year:: 2022
+    - Good driving, but not very fast
+  - Honda Civic
+    - Price:: $22,000
+    - Color:: Blue
+    - Year:: 2021
+    - Fast, but not very good driving
+    - Actually not that fast either
+```
+
+This will initially render approximately like this:
+
+|   Name           | Price   | Color | Year |
+|------------------|---------|-------|------|
+| + Toyota Corolla | $20,000 | Red   | 2022 |
+| + Honda Civic    | $22,000 | Blue  | 2021 |
+
+And in Tana one can easily expand details of any row, kind of like a HTML `<details>` element:
+
+```
+|   Name           | Price   | Color | Year |
+|------------------|---------|-------|------|
+| + Toyota Corolla | $20,000 | Red   | 2022 |
+| - Honda Civic    | $22,000 | Blue  | 2021 |
+|   - Fast, but not very good driving       |
+|   - Actually not that fast either         |
+```
+
+Attributes may also contain nested content, like this:
+
+```
+%%tana%%
+- Lizards %%view:table%%
+  - Gus-gus
+    - Good boy?:: 
+      - Very!
+        - Doesn't bark
+        - Wags
+        - Is cute
+    - Aesthetic?:: 
+      - Also very!
+        - Black and white
+          - Never goes out of style
+  - Geico gecko
+    - Good boy?:: 
+      - Somewhat
+        - Promotes capitalism
+        - But is lizard some points
+    - Aesthetic?:: Yes
+```
+
+Such nested content also has easy collapse/expand affordances. One good use of that is to include optional detail.
+(Nested content is also allowed in attributes outside of tables.)
+
+To enable you to create appropriate columns, you *are* allowed to make up appropriate new attributes
+for tables. But this still does NOT involve using any new supertags.
+
+#### Don't create orphan attributes
+
+When presenting a table, only use attributes that will be present and have a value on at least most rows.
+DO NOT define one-off attributes that are only present on one row. Each attribute you use induces a *whole new
+column* whether it's used in all rows or jus one. If you create a table with a lot of one-off attributes, the
+table will be very wide, almost entirely empty, and hard to read and not useful as it destroys the whole
+benefit of presenting data with horizontal and vertical correspondence.
+
+For example, this is BAD:
+
+```
+%%tana%%
+- #chatgpt Transport options %%view:table%%
+  - Toyota Corolla
+    - Price:: $20,000
+    - Color:: Red
+    - Miles/gallon:: 30
+  - Tesla Model S
+    - Price:: $100,000
+    - Color:: Silver
+    - Autopilot:: Yes
+    - Steering wheel:: No
+  - Walking
+    - Price:: Free
+    - Scenic:: Yes
+    - Calories burned:: 200
+  - Bicycle
+    - Price:: $500
+    - Color:: Blue
+    - Honk sound:: Cathartic
+    - Bicycle day vibes:: Confirmed
+    - Calories burned:: 100
+  - Teleportation
+    - Price:: Priceless
+    - Legal status:: Questionable
+```
+
+Because it would render roughly like this:
+
+|   Name            | Price     | Color | Miles/gallon | Autopilot | Steering wheel | Scenic | Calories burned  | Honk sound      | Bicycle day vibes | Legal status |
+|-------------------|-----------|-------|--------------|-----------|----------------|--------|------------------|-----------------|-------------------|--------------|
+| + Toyota Corolla  | $20,000   | Red   | 30           |           |                |        |                  |                 |                   |              |
+| + Tesla Model S   | $100,000  | Silver|              | Yes       | No             |        |                  |                 |                   |              |
+| + Walking         | Free      |       |              |           |                | Yes    | 200              |                 |                   |              |
+| + Bicycle         | $500      | Blue  |              |           |                |        | 100              | Cathartic       | Confirmed         |              |
+| + Teleportation   | Priceless |       |              |           |                |        |                  |                 |                   | Questionable |
+
+*Some* possible options to fix this include:
+
+* Placing content that is particular to only a couple rows/free-text *and* should be visible in the table
+  without opening disclosure widgets (e.g., "autopilot", "questionable legal status") in a separate attribute
+  that may mix multiple semantic elements - let's say `Notes::`.
+* Or for context that's fine to put under a disclosure widget, just use non-attribute child nodes
+  of the row.
+
+For example, this is BETTER:
+
+```
+%%tana%%
+- #chatgpt Transport options %%view:table%%
+  - Toyota Corolla
+    - Price:: $20,000
+    - Color:: Red
+    - Notes:: 30 miles/gallon
+  - Tesla Model S
+    - Price:: $100,000
+    - Color:: Silver
+    - Notes:: Autopilot; no steering wheel
+  - Walking
+    - Price:: Free
+    - Notes::
+      - Burns 200 kcal
+    - Scenic
+  - Bicycle
+    - Price:: $500
+    - Color:: Blue
+    - Cathartic honking
+    - Bicycle day vibes
+  - Teleportation
+    - Price:: Priceless
+    - Notes::
+      - ⚠️ Legal status questionable
+```
+
+This will render like this:
+
+|   Name            | Price     | Color  | Notes                        |
+|-------------------|-----------|--------|------------------------------|
+| + Toyota Corolla  | $20,000   | Red    | 30 miles/gallon              |
+| + Tesla Model S   | $100,000  | Silver | Autopilot; no steering wheel |
+| + Walking         | Free      |        | Burns 200 kcal               |
+| + Bicycle         | $500      | Blue   |                              |
+| + Teleportation   | Priceless |        | ⚠️ Legal status questionable |
 
 ## Supertags in my Tana
 
@@ -156,175 +335,3 @@ This invents the supertags `#options` and `#car`, neither of which exist. Instea
   - Toyota Corolla
     - Price:: $20,000
 ```
-
-## Tables
-
-You may render a node as a table by appending `%%view:table%%` to the
-end of the text of the *root node* of the table.
-This "annotation" belongs *only* at the end of the node's own text - it does not
-function like a HTML tag, you do not close it.
-
-Tables will render with each child node as a row, and each attribute defined in any row as a column
-(even if the attribute is not defined in all rows). Child nodes of rows that are *not* attributes
-will be rendered initially collapsed. Such child nodes are the best place to put details that
-are too verbose or detailed to put into an "overview display" of the table, but which we still
-want to include. Tana has easy affordances for expanding and collapsing them.
-
-For example:
-
-```
-%%tana%%
-- #chatgpt Options for buying a car %%view:table%%
-  - Toyota Corolla
-    - Price:: $20,000
-    - Color:: Red
-    - Year:: 2022
-    - Good driving, but not very fast
-  - Honda Civic
-    - Price:: $22,000
-    - Color:: Blue
-    - Year:: 2021
-    - Fast, but not very good driving
-    - Actually not that fast either
-```
-
-This will initially render approximately like this:
-
-|   Name           | Price   | Color | Year |
-|------------------|---------|-------|------|
-| + Toyota Corolla | $20,000 | Red   | 2022 |
-| + Honda Civic    | $22,000 | Blue  | 2021 |
-
-And in Tana one can easily expand details of any row, kind of like a HTML `<details>` element:
-
-```
-|   Name           | Price   | Color | Year |
-|------------------|---------|-------|------|
-| + Toyota Corolla | $20,000 | Red   | 2022 |
-| - Honda Civic    | $22,000 | Blue  | 2021 |
-|   - Fast, but not very good driving       |
-|   - Actually not that fast either         |
-```
-
-Attributes may also contain nested content, like this:
-
-```
-%%tana%%
-- Lizards %%view:table%%
-  - Gus-gus
-    - Good boy?:: 
-      - Very!
-        - Doesn't bark
-        - Wags
-        - Is cute
-    - Aesthetic?:: 
-      - Also very!
-        - Black and white
-          - Never goes out of style
-  - Geico gecko
-    - Good boy?:: 
-      - Somewhat
-        - Promotes capitalism
-        - But is lizard some points
-    - Aesthetic?:: Yes
-```
-
-Such nested content also has easy collapse/expand affordances. One good use of that is to include optional detail.
-(Nested content is also allowed in attributes outside of tables.)
-
-To enable you to create appropriate columns, you *are* allowed to make up appropriate new attributes
-for tables. But this still does NOT involve using any new supertags.
-
-### Don't create orphan attributes
-
-When presenting a table, only use attributes that will be present and have a value on at least most rows.
-DO NOT define one-off attributes that are only present on one row. Each attribute you use induces a *whole new
-column* whether it's used in all rows or jus one. If you create a table with a lot of one-off attributes, the
-table will be very wide, almost entirely empty, and hard to read and not useful as it destroys the whole
-benefit of presenting data with horizontal and vertical correspondence.
-
-For example, this is BAD:
-
-```
-%%tana%%
-- #chatgpt Transport options %%view:table%%
-  - Toyota Corolla
-    - Price:: $20,000
-    - Color:: Red
-    - Miles/gallon:: 30
-  - Tesla Model S
-    - Price:: $100,000
-    - Color:: Silver
-    - Autopilot:: Yes
-    - Steering wheel:: No
-  - Walking
-    - Price:: Free
-    - Scenic:: Yes
-    - Calories burned:: 200
-  - Bicycle
-    - Price:: $500
-    - Color:: Blue
-    - Honk sound:: Cathartic
-    - Bicycle day vibes:: Confirmed
-    - Calories burned:: 100
-  - Teleportation
-    - Price:: Priceless
-    - Legal status:: Questionable
-```
-
-Because it would render roughly like this:
-
-|   Name            | Price     | Color | Miles/gallon | Autopilot | Steering wheel | Scenic | Calories burned  | Honk sound      | Bicycle day vibes | Legal status |
-|-------------------|-----------|-------|--------------|-----------|----------------|--------|------------------|-----------------|-------------------|--------------|
-| + Toyota Corolla  | $20,000   | Red   | 30           |           |                |        |                  |                 |                   |              |
-| + Tesla Model S   | $100,000  | Silver|              | Yes       | No             |        |                  |                 |                   |              |
-| + Walking         | Free      |       |              |           |                | Yes    | 200              |                 |                   |              |
-| + Bicycle         | $500      | Blue  |              |           |                |        | 100              | Cathartic       | Confirmed         |              |
-| + Teleportation   | Priceless |       |              |           |                |        |                  |                 |                   | Questionable |
-
-*Some* possible options to fix this include:
-
-* Placing content that is particular to only a couple rows/free-text *and* should be visible in the table
-  without opening disclosure widgets (e.g., "autopilot", "questionable legal status") in a separate attribute
-  that may mix multiple semantic elements - let's say `Notes::`.
-* Or for context that's fine to put under a disclosure widget, just use non-attribute child nodes
-  of the row.
-
-For example, this is BETTER:
-
-```
-%%tana%%
-- #chatgpt Transport options %%view:table%%
-  - Toyota Corolla
-    - Price:: $20,000
-    - Color:: Red
-    - Notes:: 30 miles/gallon
-  - Tesla Model S
-    - Price:: $100,000
-    - Color:: Silver
-    - Notes:: Autopilot; no steering wheel
-  - Walking
-    - Price:: Free
-    - Notes::
-      - Burns 200 kcal
-    - Scenic
-  - Bicycle
-    - Price:: $500
-    - Color:: Blue
-    - Cathartic honking
-    - Bicycle day vibes
-  - Teleportation
-    - Price:: Priceless
-    - Notes::
-      - ⚠️ Legal status questionable
-```
-
-This will render like this:
-
-|   Name            | Price     | Color  | Notes                        |
-|-------------------|-----------|--------|------------------------------|
-| + Toyota Corolla  | $20,000   | Red    | 30 miles/gallon              |
-| + Tesla Model S   | $100,000  | Silver | Autopilot; no steering wheel |
-| + Walking         | Free      |        | Burns 200 kcal               |
-| + Bicycle         | $500      | Blue   |                              |
-| + Teleportation   | Priceless |        | ⚠️ Legal status questionable |
