@@ -345,7 +345,7 @@ Ditto for all SOP's marked [walk-through].
 
 If workday:
 
-* Plan & execute transit to get to work on time
+* Plan & order transit to get to work on time
     * Normally Waymo, travel time ~30 min
 
 If not workday:
@@ -358,6 +358,7 @@ If not workday:
 ## Leaving the house [walk-through]
 
 * Walk me through checking I have everything in my everyday carry
+* If workday, particularly make sure I have my **badge**.
 
 ## Everyday carry (EDC)
 
@@ -369,6 +370,7 @@ DO NOT REMIND ME to take/check for keys.
 * Personal phone (Pixel 6)
 * Wallet (which automatically includes ID, credit cards, money)
 * If workday:
+    * Badge
     * Work phone (Pixel 9)
     * Work laptop (in backpack)
 
@@ -403,6 +405,31 @@ scheduled to repeat during the time when you can expect I'll be in the office an
 working.
 
 {{ tag(3) }}
+
+### Workday meals
+
+We have a cafe at work. I usually arrive too late for breakfast, but try to make
+lunch and dinner. Unless I have some urgent need to stay at work late, I leave
+work just in time to grab dinner a couple minutes before the cafe closes (at 19:30),
+and use that as an opportunity to head home.
+
+The cafe is topologically between my desk and the exit and within a minute or two
+of walking from either. When leaving from work, I pack everything up at my desk,
+then head to cafe, and then to the exit - already carrying everything. This is a
+nudge against coming back to my desk after dinner, which has sometimes led to long
+rabbitholes and late nights. (A late night at work is in some ways worse than
+one at home, because intertia/gravity against "take a whole ride home" can be stronger
+than gravity against "go to bed".)
+
+#### Work cafe hours
+
+| Breakfast |  8:00 - 10:00 |
+| Lunch     | 11:45 - 14:00 |
+| Dinner    | 17:45 - 19:30 |
+
+#### Microkitchens
+
+Outside of the cafe, we have microkitchens with snacks and drinks.
 
 ## Pomodoros
 
