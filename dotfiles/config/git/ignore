@@ -3,3 +3,5 @@
 .aider*
 __pycache__
 *.sw[op]
+**/.claude/settings.local.json
+**/CLAUDE.local.md
