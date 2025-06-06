@@ -308,3 +308,20 @@ do not assemble URLs with plain string concat, e.g. `[f"{k}={v}" for k, v in par
 ## CLI and Shell Tools
 
 I have ripgrep installed ('rg'). feel free to use it.
+
+## Using PyHamcrest for Matching
+
+Use pyhamcrest when testing sensor collections or complex matching scenarios. For example:
+
+```python
+# Instead of multiple `.next()` and assert calls:
+assert_that(sensors, has_items(
+    has_properties(unique_id="battery_level", state=50.0, icon="mdi:battery-50"),
+    has_properties(unique_id="battery_state", state="discharging", icon="mdi:battery-minus"),
+    has_properties(unique_id="battery_power", state=-10.0, unit_of_measurement="W", device_class=DeviceClass.POWER),
+    has_properties(unique_id="battery_time_to_empty", state=3600, unit_of_measurement="s", device_class=DeviceClass.DURATION),
+    has_properties(unique_id="battery_time_to_full", state=7200, unit_of_measurement="s", device_class=DeviceClass.DURATION),
+))
+```
+
+This approach provides more readable and concise assertions, making it easier to verify complex object collections.
