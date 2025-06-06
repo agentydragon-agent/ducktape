@@ -152,3 +152,11 @@ Scan the QR code with the WireGuard mobile app to import the configuration.
 * All devices report ActivityWatch data to the central server on VPS
 * Secure access to internal services
 * Cross-device connectivity
+
+## VPS SyncThing management
+
+```zsh
+ssh -L 9092:localhost:8384 root@agentydragon.com
+```
+
+Then open <http://localhost:9092> in a browser.
