@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ title }}</title>
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+    <nav class="menu">
+        <a href="/"{% if active_page == "index" %} class="active"{% endif %}>Home</a>
+        {% for page in markdown_pages %}
+        <a href="/{{ page }}"{% if active_page == page %} class="active"{% endif %}>{{ page_titles.get(page, page|capitalize) }}</a>
+        {% endfor %}
+    </nav>
+    <main class="content">
+        {{ content|safe }}
+    </main>
+</body>
+</html>
