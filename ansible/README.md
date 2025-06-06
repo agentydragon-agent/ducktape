@@ -155,8 +155,4 @@ Scan the QR code with the WireGuard mobile app to import the configuration.
 
 ## VPS SyncThing management
 
-```zsh
-ssh -L 9092:localhost:8384 root@agentydragon.com
-```
-
-Then open <http://localhost:9092> in a browser.
+Open on WireGuard network: <http://10.13.13.1:8384>
