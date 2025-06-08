@@ -25,86 +25,51 @@ Likewise, feel free to run the script and edit/update/add to it.
 All the actual reference files (e.g. 3rd party repos, documentation etc.) should be `gitignore`'d -
 the only thing under version control in `references/` should be the `fetch.sh` script.
 
-## Python
+## General across languages
 
-Write targetting the Python version that's installed. Use its available features to their full extent where they make sense and
-don't make code worse:
-
-* `match` statement
-* `:=` assignment operator
-* `X | Y` instead of `Union[X | Y]`
-* `X | None` instead of `Optional[X]`
-* `f"{var=}"` instead of `f"var={var}"` (use this one basically always whenever that's the string you are producing)
-* `str.removeprefix`, `str.removesuffix` instead of slicing - safer
-* `dict1 | dict2` (unino), `dict1 & dict2` (intersection) and ditto for `set`s
-* `zoneinfo` builtin library
-
-### Optionals and Type Hints
-
-NEVER use `Optional[str]`, `Optional[X]` etc. Replace with `str | None`, `X | None`, etc. - newer Python style of optionals. For example:
-
-```python
-# Wrong:
-class Foo:
-    ab: Optional[str]  # For encryption
-    cd: str
-    ef: Optional[str]
-
-# Right:
-class Foo:
-    ab: str | None  # For encryption
-    cd: str
-    ef: str | None
-```
-
-## Style
-
-Follow PEP 8.
-
-Imports go at the top of files. Always put imports at top of file except possibly if required to break import loops or typing. Not into functions etc.
-
-Never use `getattr`/`setattr` unless absolutely necessary - as in there literally *is no way* to do things differenly.
-
-Use `pathlib` for manipulating paths, not `os.path`.
-
-Before finishing, clear up your code, remove unused imports, code etc. and run `black`.
-
-## Not trailing whitespace
+### No trailing whitespace
 
 Do not leave around trailing whitespace in files. If you have an empty line, that empty line should not contain indentation whitespace.
 Apply something like this to all your code files:
 
     sed -i 's/[[:space:]]\+$//' filename
 
-## Aggressive DRY
+### Aggressive DRY
 
 Be relatively aggressively DRY. Even in e.g. Ansible playbooks, use variables for shared paths etc.
 Reuse code when possible. Reuse *code patterns* when possible - for that purpose, some things you
 can do include e.g., write decorators, context managers, etc.
 
-### Example: loop
+#### Example: loop
+
+Use loops to avoid repeating the same code block, for example:
 
 Wrong:
-    # Add optional parameters
-    if category is not None:
-        habit_data["category"] = category
 
-    if goal_type is not None:
-        habit_data["goal_type"] = goal_type
+```
+if category is not None:
+    habit_data["category"] = category
 
-    if target_value is not None:
-        habit_data["target_value"] = target_value
+if goal_type is not None:
+    habit_data["goal_type"] = goal_type
+
+if target_value is not None:
+    habit_data["target_value"] = target_value
+```
 
 Good:
-    for key, value in {
-        "category": category,
-        "goal_type": goal_type,
-        "target_value": target_value,
-    }.items():
-        if value is not None:
-            habit_data[key] = value
 
-## No broad try-catch, no swallowing errors
+```
+for key, value in {
+    "category": category,
+    "goal_type": goal_type,
+    "target_value": target_value,
+}.items():
+    if value is not None:
+        habit_data[key] = value
+```
+
+### No broad try-catch, no swallowing errors
 
 Do not write broad try-catch, like `try: ... except Exception: ...`.
 If you need to catch exceptions, catch specific ones.
@@ -128,62 +93,75 @@ ever unintentionaly swallow fun things like `KeyboardInterrupt` or `SystemExit` 
 and why this is the best possible solution and why you cannot in any way instead write a precise
 filter for the specific types of errors you intentionally want to swallow.
 
-## Early bail-out
+NEVER swallow exceptions silently. ALWAYS propagate or AT LEAST log errors explicitly.
+
+Handle specific exceptions, log them, or re-raise if appropriate.
+
+### Early bail-out
 
 Use early bail-out pattern. Including making functions to enable using it when it makes things nicer.
 
 For example, DO NOT do:
 
-    if condition:
-        foo()
-        bar()
-        baz()
-        foobar()
-        xyzzyfoo()
-        ...
-    else:
-        xyzzy()
-        faise Error(...)
-
-Instead, DO:
-
-    if not condition:
-        xyzzy()
-        raise Error(...)
+```python
+if condition:
     foo()
     bar()
     baz()
     foobar()
+    xyzzyfoo()
     ...
-
-
-DO NOT do:
-    async def _handle_interfaces_removed(self, path: str, interfaces: list[str]) -> None:
-        """Handle interfaces being removed (e.g., adapter disappearing)."""
-        if path == self._adapter_path and "org.bluez.Adapter1" in interfaces:
-            logger.warning(f"Bluetooth adapter removed: {path}")
-            # Clean up adapter
-            if self._adapter_properties_iface:
-                self._adapter_properties_iface.off_properties_changed(self._handle_adapter_properties_changed)
-            self._adapter_path = None
-            # ... bunch more code in this branch, nothing outside it ...
+else:
+    xyzzy()
+    faise Error(...)
+```
 
 Instead, DO:
 
-    async def _handle_interfaces_removed(self, path: str, interfaces: list[str]) -> None:
-        """Handle interfaces being removed (e.g., adapter disappearing)."""
-        if path != self._adapter_path or "org.bluez.Adapter1" not in interfaces:
-            return  # Early bail-out if not the adapter we're interested in
+```python
+if not condition:
+    xyzzy()
+    raise Error(...)
+foo()
+bar()
+baz()
+foobar()
+...
+```
+
+DO NOT do:
+
+```python
+async def _handle_interfaces_removed(self, path: str, interfaces: list[str]) -> None:
+    """Handle interfaces being removed (e.g., adapter disappearing)."""
+    if path == self._adapter_path and "org.bluez.Adapter1" in interfaces:
         logger.warning(f"Bluetooth adapter removed: {path}")
         # Clean up adapter
         if self._adapter_properties_iface:
             self._adapter_properties_iface.off_properties_changed(self._handle_adapter_properties_changed)
         self._adapter_path = None
-        ...
+        # ... bunch more code in this branch, nothing outside it ...
+```
 
+Instead, DO:
+
+```python
+async def _handle_interfaces_removed(self, path: str, interfaces: list[str]) -> None:
+    """Handle interfaces being removed (e.g., adapter disappearing)."""
+    if path != self._adapter_path or "org.bluez.Adapter1" not in interfaces:
+        return  # Early bail-out if not the adapter we're interested in
+    logger.warning(f"Bluetooth adapter removed: {path}")
+    # Clean up adapter
+    if self._adapter_properties_iface:
+        self._adapter_properties_iface.off_properties_changed(self._handle_adapter_properties_changed)
+    self._adapter_path = None
+    ...
+```
+
+This just saved us an indentation level.
 This can be especially nice in helper functions.
 
-## Document current state
+### Document current state, NOT change you're making
 
 If you make a change, don't leave behind comments like e.g. `# This used to work this way but we changed it to work this other way`
 if you got rid of the old thing. You would not leave that around on a say piece of code on GitHub. It's not helpful to reader to know
@@ -192,7 +170,115 @@ about this historical detail. Just document current state.
 If you applied a fix because something wasn't working, don't keep the broken non-working
 version around "for backward compatibility". It was broken. It has no value.
 
-## Referencing same class
+### DO NOT assemble non-plaintext by string concatantion (e.g., URL parameters)
+
+do not assemble URLs with plain string concat, e.g. `[f"{k}={v}" for k, v in params.items()]`. use some existing library that auto-wraps escaping etc.; apply *generally* for *all* formats that need escaping/similar.
+
+This applies *generally* to *ANY* format that is NOT actually plaintext and cannot be in full generality
+*ALWAYS* made by plain string concat. DO NOT assemble by manual string concat, either: JSON, text protobufs, SQL, etc etc etc.
+
+### CLI and Shell Tools
+
+I have ripgrep installed ('rg'). feel free to use it.
+
+### Avoid One-off Variables
+
+Avoid creating one-off variables that are used only once and add unnecessary lines. For example:
+
+```python
+async def update_sensors(self, updates: list[SensorUpdate]):
+    """Send batched sensor updates.
+    
+    Note: SensorUpdate is designed to map 1:1 to the API format.
+    """
+    await self._post_webhook({
+        "type": "update_sensor_states",
+        "data": [update.dict(exclude_none=True) for update in updates]
+    })
+```
+
+Instead of creating a `data` variable that is used only once, directly pass the inline-constructed dictionary to the method.
+
+### Self-describing variable names - e.g., units, "is it an IP or a MAC address", etc.
+
+try to make sure variables are clear about the unit / type of thing they're expecting.
+
+instead of:
+```python
+bluetooth_devices: list[str]
+timeout: int
+```
+
+prefer:
+```python
+bluetooth_device_macs: list[str]
+timeout_secs: int
+```
+
+of course with timeout specifically it would be even better to just use `datetime.timedelta` and then it's fine to just call it 'timeout' because type inherently encodes unit
+
+## Python
+
+### Style
+
+Follow PEP 8.
+
+Imports go at the top of files. Always put imports at top of file except possibly if required to break import loops or typing. Not into functions etc.
+
+Never use `getattr`/`setattr` unless absolutely necessary - as in there literally *is no way* to do things differenly.
+
+Before finishing, clear up your code, remove unused imports, code etc. and run `black`.
+
+### Target modern Python
+
+Write targetting the Python version that's installed. Use its available features to their full extent where they make sense and
+don't make code worse:
+
+* `match` statement
+* `:=` assignment operator
+* `X | Y` instead of `Union[X | Y]`
+* `X | None` instead of `Optional[X]`
+* `f"{var=}"` instead of `f"var={var}"` (use this one basically always whenever that's the string you are producing)
+* `str.removeprefix`, `str.removesuffix` instead of slicing - safer
+* `dict1 | dict2` (unino), `dict1 & dict2` (intersection) and ditto for `set`s
+* `zoneinfo` builtin library
+
+Use `pathlib` for manipulating paths, not `os.path`.
+
+#### NEVER use `typing.List`, `Union`, `Optional`, ... -- replace with new syntax sugar
+
+NEVER use `Optional[str]`, `Optional[X]` etc.
+Replace with newer style: `str | None`, `X | None`, etc.
+
+DO NOT write:
+
+* `variable: List[int]`
+* `variable: Union[str, int]`
+* `variable: Optional[str]`
+
+DO write:
+
+* `variable: list[int]`
+* `variable: str | int`
+* `variable: str | None`
+
+
+```python
+# Wrong:
+class Foo:
+    ab: Optional[str]  # For encryption
+    cd: str
+    ef: Optional[str]
+
+# Right:
+class Foo:
+    ab: str | None  # For encryption
+    cd: str
+    ef: str | None
+```
+
+
+### Referencing same class
 
 Use `typing.Self` or `from __future__ import annotations` for referencing the same class in type hints:
 
@@ -202,13 +288,32 @@ Use `typing.Self` or `from __future__ import annotations` for referencing the sa
 
 Do not use name of class as a string for this.
 
-## Testing
+### Testing
 
 Test files should be located in the same directory as the module they're testing, with the name pattern `test_*.py`.
 
 When writing unit test, make them be pytest tests, not executable files with __main__ section.
 
-### When to use PyHamcrest vs standard assertions
+### Logging
+
+if you do `logger.error/warning/...` inside exc handler it auto sets `exc_info=True` => `e` gets auto displayed => `": {e}"` in log message is unnecessary as `e` already auto printed
+
+### Walrus operator
+
+Inline walrus operator `:=` can be used to simplify checks and assignments, e.g.:
+
+```python
+# Instead of:
+missing = configured - available_interfaces
+if missing:
+    logger.warning(f"Interfaces not found: {', '.join(sorted(missing))}")
+
+# Prefer:
+if missing := configured - available_interfaces:
+    logger.warning(f"Interfaces not found: {', '.join(sorted(missing))}")
+```
+
+#### When to use PyHamcrest vs standard assertions
 
 Use standard Python assertions for basic checks that don't benefit from Hamcrest's matchers:
 
@@ -256,74 +361,30 @@ The rule of thumb is: if you're just doing a single test on an object and it's a
 If you notice you'd like to test your changes (which is of course highly encouraged), rather than writing one-off
 blobs of throwaway Python, feel free to suggest creating a new actual test file.
 
-* if you do `logger.error/warning/...` inside exc handler it auto sets `exc_info=True` => `e` gets auto displayed => `": {e}"` in log message is unnecessary as `e` already auto printed
-
 ## Code Patterns
 
-* Inline walrus operator `:=` can be used to simplify checks and assignments, e.g.:
-    ```python
-    # Instead of:
-    missing = configured - available_interfaces
-    if missing:
-        logger.warning(f"Configured interfaces not found: {', '.join(sorted(missing))}")
-    
-    # Prefer:
-    if missing := configured - available_interfaces:
-        logger.warning(f"Configured interfaces not found: {', '.join(sorted(missing))}")
-    ```
+### EXTREMELY STRONGLY AVOID `hasattr` / `getattr` / `setattr`
 
-* When you know an attribute ALWAYS exists, do NOT use `hasattr()`. For example:
-    ```python
-    # Wrong:
-    def format_sensor_name(self, piece: HardwarePiece, sensor_type: str) -> str:
-        if hasattr(piece, 'get_display_name'):
-            return f"Temperature {piece.get_display_name()}"
-        return f"Temperature {piece.hardware_id}"
+One particular example, NEVER use those when you can already KNOW an attribute ALWAYS exists
+because you control all the definition/use sites:
 
-    # Right:
-    def format_sensor_name(self, piece: HardwarePiece, sensor_type: str) -> str:
-        return f"Temperature {piece.get_display_name()}"
-    ```
+WRONG:
 
-* Exception Handling: NEVER swallow exceptions silently. When handling hardware discovery or sensor reading, ALWAYS propagate or log errors explicitly. For example, the code snippet you showed is BAD because it silently ignores potential errors during hardware discovery. Instead, handle specific exceptions, log them, or re-raise if appropriate.
-
-Specific note about hardware/sensor discovery: 
 ```python
-async def discover_hardware(self) -> List[HardwarePiece]:
-    """Discover available temperature sensors."""
-    try:
-        pieces_by_key: Dict[Tuple[str, str], TemperaturePiece] = {}
-        
-        try:
-            sensor_temps = psutil.sensors_temperatures()
-        except Exception as e:
-            logger.error(f"Failed to retrieve temperature sensors: {e}")
-            raise  # Re-raise to indicate discovery failure
-
-        # ...
-
-        pieces = list(pieces_by_key.values())
-        if pieces:
-            labels = [f"{p.chip_name}:{p.label or 'unlabeled'}" for p in pieces]
-            logger.debug(f"Discovered {len(pieces)} temperature sensors: {', '.join(labels)}")
-        else:
-            logger.warning("No temperature sensors found")
-
-        return pieces
-    except Exception as e:
-        logger.error(f"Unexpected error during hardware discovery: {e}")
-        raise
+def format_sensor_name(self, piece: HardwarePiece, sensor_type: str) -> str:
+    if hasattr(piece, 'get_display_name'):
+        return f"Temperature {piece.get_display_name()}"
+    return f"Temperature {piece.hardware_id}"
 ```
 
-## URL and Parameter Handling
+OK:
 
-do not assemble URLs with plain string concat, e.g. `[f"{k}={v}" for k, v in params.items()]`. use some existing library that auto-wraps escaping etc.; apply *generally* for *all* formats that need escaping/similar.
+```python
+def format_sensor_name(self, piece: HardwarePiece, sensor_type: str) -> str:
+    return f"Temperature {piece.get_display_name()}"
+```
 
-## CLI and Shell Tools
-
-I have ripgrep installed ('rg'). feel free to use it.
-
-## Using PyHamcrest for Matching
+### PyHamcrest
 
 Use pyhamcrest when testing sensor collections or complex matching scenarios. For example:
 
@@ -340,17 +401,17 @@ assert_that(sensors, has_items(
 
 This approach provides more readable and concise assertions, making it easier to verify complex object collections.
 
-## PyHamcrest Specific Notes
-
-in pyhamcrest, when looking for whether a sequence contains *one* element which meets some properties, use *has_item*.
+When looking for whether a sequence contains *one* element which meets some properties, use *has_item*.
 
 DO NOT do:
+
 ```python
 xs = [x for x in capture_updates if x.unique_id == "bluetooth_enabled"]
 assert any(x.state == True and x.icon == "mdi:bluetooth" for x in xs)
 ```
 
-or:
+ALSO DO NOT DO:
+
 ```python
 from hamcrest import assert_that, has_items, has_properties
 assert_that(
@@ -365,7 +426,8 @@ assert_that(
 )
 ```
 
-instead, *do* do this:
+Instead, DO do this:
+
 ```python
 from hamcrest import assert_that, has_item, has_properties
 assert_that(
@@ -382,69 +444,22 @@ assert_that(
 
 ## HTML Templating
 
-as soon as you start doing nontrivial html operations/concatting, switch from manual html stitching to jinja2 or other templating engine that contextually makes sense. For example:
+As soon as you start doing nontrivial html operations/concatting, switch from manual html stitching to jinja2 or other templating engine that contextually makes sense.
+
+BAD: already **WAY TOO COMPLEX** for manual html stitching - **AND** prone to escaping issues:
 
 ```python
-def render_html_page(title: str, content: str, active_page: str = "index") -> str:
-    """Render HTML page with common structure and navigation menu."""
-    menu_items = [("index", "Home")] + [(page, page.capitalize()) for page in MARKDOWN_PAGES]
-    
-    menu_html = '<nav class="menu">\n'
-    for page_id, page_title in menu_items:
-        url = "/" if page_id == "index" else f"/{page_id}"
-        active_class = ' class="active"' if page_id == active_page else ""
-        menu_html += f'    <a href="{url}"{active_class}>{page_title}</a>\n'
-    menu_html += '</nav>\n'
-    
-    return f"""<!DOCTYPE html>
+menu_html = '<nav class="menu">\n'
+for page_id, page_title in menu_items:
+    url = "/" if page_id == "index" else f"/{page_id}"
+    active_class = ' class="active"' if page_id == active_page else ""
+    menu_html += f'    <a href="{url}"{active_class}>{page_title}</a>\n'
+menu_html += '</nav>\n'
+html = f"""<!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{title}</title>
-    <link rel="stylesheet" href="/style.css">
-</head>
-<body>
-{menu_html}
-{content}
-</body>
+<head><meta charset="utf-8"><title>{title}</title></head>
+<body>{content}</body>
 </html>"""
-
-# This is already a level of complexity above the point where you should have switched to jinja2 or similar.
 ```
 
-## Avoiding One-off Variables
-
-Avoid creating one-off variables that are used only once and add unnecessary lines. For example:
-
-```python
-async def update_sensors(self, updates: list[SensorUpdate]):
-    """Send batched sensor updates.
-    
-    Note: SensorUpdate is designed to map 1:1 to the API format.
-    """
-    await self._post_webhook({
-        "type": "update_sensor_states",
-        "data": [update.dict(exclude_none=True) for update in updates]
-    })
-```
-
-Instead of creating a `data` variable that is used only once, directly pass the inline-constructed dictionary to the method.
-
-## Variable Naming Convention
-
-try to make sure variables are clear about the unit / type of thing they're expecting.
-
-instead of:
-```python
-bluetooth_devices: list[str]
-timeout: int
-```
-
-prefer:
-```python
-bluetooth_device_macs: list[str]
-timeout_secs: int
-```
-
-of course with timeout specifically it would be even better to just use `datetime.timedelta` and then it's fine to just call it 'timeout' because type inherently encodes unit
+This should have switched to jinja2 about 10 minutes ago already.
