@@ -1,0 +1,32 @@
+---
+# User-level development tools
+- name: Install user-level development tools
+  become: true
+  become_user: "{{ my_user | default(ansible_user_id) }}"
+  block:
+    # Special handling for ansible due to broken metadata
+    - name: Force reinstall ansible if it has broken metadata
+      community.general.pipx:
+        name: ansible
+        state: reinstall
+      ignore_errors: true
+
+    - name: Install dev env PyPI packages via pipx
+      community.general.pipx:
+        name: "{{ item }}"
+        state: present
+      loop:
+        - speedtest-cli
+        - autopep8
+        - ruff
+        - pre-commit
+        - ansible  # Get newer version than Ubuntu 22.04's ancient one
+
+    - name: Install Node.js CLI tools globally (user-level)
+      community.general.npm:
+        name: "{{ item }}"
+        global: true  # Install globally within user's npm environment
+      loop:
+        - '@openai/codex'
+        - '@anthropic-ai/claude-code'
+        - '@bazel/bazelisk'
