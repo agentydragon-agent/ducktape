@@ -1,9 +1,0 @@
-# Cannot be done for cloudragon because of OS Login. ugh.
----
-- name: Set zsh as login shell
-  become: true
-  tags:
-    - zsh
-  user:
-    name: "{{ my_user }}"
-    shell: /bin/zsh

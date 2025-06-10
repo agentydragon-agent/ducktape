@@ -81,6 +81,38 @@ class PipInstall:
 
 
 @dataclass
+class PipxInstall:
+    name: str
+    kwargs: dict
+
+    @property
+    def module_name(self):
+        return "community.general.pipx"
+
+    @classmethod
+    def parse(cls, val):
+        def validate(pkg_name: str):
+            if set(pkg_name) & set("<=>"):
+                raise AnsibleError(f"Version specifiers not allowed: {pkg_name}")
+
+        match val:
+            case str():
+                validate(val)
+                return cls(name=val, kwargs={})
+            case {"name": str() as name, **kwargs}:
+                validate(name)
+                return cls(name=name, kwargs=kwargs)
+            case _:
+                raise AnsibleError("Invalid pipx value")
+
+    def module_args(self, installed):
+        args = {"name": self.name}
+        if installed:
+            return {**args, "state": "present", **self.kwargs}
+        return {**args, "state": "absent"}
+
+
+@dataclass
 class FlatpakInstall:
     """Handle installing applications with Flatpak via community.general.flatpak.
 
@@ -144,6 +176,7 @@ METHODS = {
     "apt": AptInstall,
     "snap": SnapInstall,
     "pip": PipInstall,
+    "pipx": PipxInstall,
     "flatpak": FlatpakInstall,
 }
 

@@ -17,6 +17,8 @@
   vars:
     # Misc host-specific variables
     rcup_computer: vps
+    # Disable heavy dev packages on VPS
+    include_heavy_dev_packages: false
 
   roles:
     #- cli    # <- TODO:  needs ducktape, etc
@@ -183,6 +185,55 @@
       vars:
         # Listens on localhost; uploading data works via SSH tunnel.
         activitywatch_state: present
+
+    # Setup agentydragon user with CLI tools and dotfiles
+    - name: Setup agentydragon user environment
+      tags: [user-setup]
+      vars:
+        my_user: agentydragon
+        ducktape_path: "/home/agentydragon/code/ducktape"
+      block:
+        - name: Check if SSH key exists for agentydragon user
+          ansible.builtin.stat:
+            path: /home/agentydragon/.ssh/authorized_keys
+          register: ssh_key_check
+
+        - name: Assert SSH key is set up
+          ansible.builtin.assert:
+            that:
+              - ssh_key_check.stat.exists
+              - ssh_key_check.stat.size > 0
+            fail_msg: |
+              SSH key must be set up for agentydragon user. Please:
+              1. Run 'ssh-copy-id agentydragon@{{ inventory_hostname }}' to set up SSH access
+              2. SSH into the server as agentydragon and set up GitHub access:
+                 - Generate SSH key: ssh-keygen -t ed25519 -C "your_email@example.com"
+                 - Add the key to GitHub: https://github.com/settings/keys
+                 - Or use GitHub CLI: gh auth login
+            success_msg: "SSH key is set up for agentydragon user"
+
+        - name: Create code directory
+          become: true
+          become_user: agentydragon
+          ansible.builtin.file:
+            path: "/home/agentydragon/code"
+            state: directory
+            mode: '0755'
+
+        - name: Clone ducktape repository
+          become: true
+          become_user: agentydragon
+          ansible.builtin.git:
+            repo: git@github.com:agentydragon/ducktape.git
+            dest: "{{ ducktape_path }}"
+            version: devel
+            accept_hostkey: true
+            depth: 1  # Shallow clone for speed
+
+        - name: Apply CLI role
+          ansible.builtin.include_role:
+            name: cli
+          # CLI role tasks that need root will handle their own become
 
   handlers:
     # Only triggers if nginx config files changed.
