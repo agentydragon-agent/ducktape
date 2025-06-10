@@ -9,13 +9,9 @@
       #- cabal-install
       - clang
       - ninja-build
-      - postgresql
-      - postgresql-client
-      - android-tools-adb
       - clang-format
       - cloc
       - cmake
-      - esptool  # ESP8266/ESP32 flashing tool
       - flex
       - gcc
       - gcc
@@ -40,39 +36,13 @@
       #- protobuf-compiler
       #- pyqt5-dev-tools
 
-- name: Install dev env PyPI packages
-  ansible.builtin.pip:
-    name:
-      - autopep8
-      - ruff
-      - pre-commit
-
-# Ubuntu 22.04 ships with ancient Ansible. Get it from pip.
-- name: Ansible
-  install_handler:
-    apt: ansible
-    pip: ansible
-    use: pip
-
 # TODO: cargo broken
 #- name: Install stylua (Lua formatter for Neovim)
 #  community.general.cargo:
 #    name: stylua
 
-- name: Install OpenAI Codex CLI
-  community.general.npm:
-    name: '@openai/codex'
-    # Seems to mean "install user-globally"
-    global: true
+# Include heavy/optional dev packages (controlled by include_heavy_dev_packages variable)
+- include_tasks: dev-env-heavy.yml
 
-- name: Install Claude Code
-  community.general.npm:
-    name: '@anthropic-ai/claude-code'
-    global: true
-
-  # become: true
-
-- name: Install Bazelisk
-  community.general.npm:
-    name: '@bazel/bazelisk'
-    global: true
+# Include user-level development tools
+- include_tasks: dev-env-user.yml

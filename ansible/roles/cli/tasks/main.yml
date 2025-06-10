@@ -61,10 +61,16 @@
       - yasm
       - zsh
 
-- name: Install PyPI packages
-  ansible.builtin.pip:
-    name:
-      - speedtest-cli
+# Modern systems require using pipx or apt for Python CLI tools
+- name: Install pipx for Python CLI tools
+  become: true
+  ansible.builtin.apt:
+    pkg:
+      - pipx
+    state: latest
+
+# Move speedtest-cli installation to user level
+# (Handled in dev-env-user.yml with other user tools)
 
 - name: Remove retired pkgs
   become: true
@@ -86,6 +92,23 @@
 - include_tasks: tasks/nodejs.yml
 
 - include_tasks: tasks/dev-env.yml
+
+# Set up oh-my-zsh
+- name: Clone oh-my-zsh
+  tags: [oh-my-zsh, zsh]
+  git:
+    # TODO(agentydragon): shallow clone
+    repo: https://github.com/robbyrussell/oh-my-zsh
+    dest: "{{ ansible_user_dir }}/.oh-my-zsh"
+
+# Set zsh as default shell
+- name: Set zsh as login shell
+  become: true
+  tags: [zsh]
+  user:
+    name: "{{ ansible_user_id }}"
+    shell: /bin/zsh
+
 - include_tasks: tasks/dotfiles.yml
 
 - name: Check Neovim is >= 0.11 (for DEC mode 2031 for auto color scheme switching)
