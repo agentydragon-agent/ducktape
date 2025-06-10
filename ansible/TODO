@@ -1,0 +1,3 @@
+- test out authentik
+- authentik <-> google oauth, or possibly my own ==> authenticate to apache guacamole (vps) => persistent remote desktop
+- install powerlevel10k on vps
