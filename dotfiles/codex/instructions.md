@@ -1,12 +1,7 @@
 If the repository have a `README.md`, read it and refer to it.
 If there is `CLAUDE.md` or `CODEX.md`, read it and follow it.
 
-## References
-
-I am happy to allow you to fire HTTP queries for testing. If useful for testing etc., just fire them right away without asking.
-Also start servers, experiment, etc.
-
-### References folder
+# References folder
 
 You might see a folder like `references/` in the repo. If you do, do not edit anything in the folder. But the folder will
 contain copied source code artifacts that may be useful to you to implement what you're doing. Look around and use `references/`
@@ -25,22 +20,44 @@ Likewise, feel free to run the script and edit/update/add to it.
 All the actual reference files (e.g. 3rd party repos, documentation etc.) should be `gitignore`'d -
 the only thing under version control in `references/` should be the `fetch.sh` script.
 
-## General across languages
+# Internet use OK
 
-### No trailing whitespace
+Feel free fire HTTP queries for testing, fetching documentation, source code for reference, etc.
+*Especially* to add to the `references/` folder.
+
+If useful for testing etc., just fire them right away without asking. Also start servers, experiment, etc.
+
+# One-off Scripts and Throwaway Tests
+
+if you're writing a one-off script - like say a one-off test of some behavior, a tool to only invoke once for some cleanup and then never again, etc:
+
+name and place it in the filesystem so that its hnature as a *throwaway* *one-off* script is VERY CLEAR.
+
+for example:
+
+*   BAD: `test_notification_correctness.py`
+    * when you are just tesitng the behvaavior of some API to only run it once, and learn about it, and then never to run it again
+*   BETTER: `throwaway/test_notification_correctness.py`
+*   EVEN BETTER `throwaway/2000-01-02/test_notification_correctness.py` PLUS add header at top of file like `# THIS IS JUST A ONE-OFF THROWAWAY SCRIPT`
+
+this is to prevent polluting repositories with tons of accumulating cruft and helpers and one-off tests in highly frequented locations like repo root
+
+# General across languages
+
+## No trailing whitespace
 
 Do not leave around trailing whitespace in files. If you have an empty line, that empty line should not contain indentation whitespace.
 Apply something like this to all your code files:
 
     sed -i 's/[[:space:]]\+$//' filename
 
-### Aggressive DRY
+## Aggressive DRY
 
 Be relatively aggressively DRY. Even in e.g. Ansible playbooks, use variables for shared paths etc.
 Reuse code when possible. Reuse *code patterns* when possible - for that purpose, some things you
 can do include e.g., write decorators, context managers, etc.
 
-#### Example: loop
+### Example: loop
 
 Use loops to avoid repeating the same code block, for example:
 
@@ -69,7 +86,7 @@ for key, value in {
         habit_data[key] = value
 ```
 
-### No broad try-catch, no swallowing errors
+## No broad try-catch, no swallowing errors
 
 Do not write broad try-catch, like `try: ... except Exception: ...`.
 If you need to catch exceptions, catch specific ones.
@@ -97,7 +114,7 @@ NEVER swallow exceptions silently. ALWAYS propagate or AT LEAST log errors expli
 
 Handle specific exceptions, log them, or re-raise if appropriate.
 
-### Early bail-out
+## Early bail-out
 
 Use early bail-out pattern. Including making functions to enable using it when it makes things nicer.
 
@@ -161,7 +178,7 @@ async def _handle_interfaces_removed(self, path: str, interfaces: list[str]) -> 
 This just saved us an indentation level.
 This can be especially nice in helper functions.
 
-### Document current state, NOT change you're making
+## Document current state, NOT change you're making
 
 If you make a change, don't leave behind comments like e.g. `# This used to work this way but we changed it to work this other way`
 if you got rid of the old thing. You would not leave that around on a say piece of code on GitHub. It's not helpful to reader to know
@@ -170,18 +187,18 @@ about this historical detail. Just document current state.
 If you applied a fix because something wasn't working, don't keep the broken non-working
 version around "for backward compatibility". It was broken. It has no value.
 
-### DO NOT assemble non-plaintext by string concatantion (e.g., URL parameters)
+## DO NOT assemble non-plaintext by string concatantion (e.g., URL parameters)
 
 do not assemble URLs with plain string concat, e.g. `[f"{k}={v}" for k, v in params.items()]`. use some existing library that auto-wraps escaping etc.; apply *generally* for *all* formats that need escaping/similar.
 
 This applies *generally* to *ANY* format that is NOT actually plaintext and cannot be in full generality
 *ALWAYS* made by plain string concat. DO NOT assemble by manual string concat, either: JSON, text protobufs, SQL, etc etc etc.
 
-### CLI and Shell Tools
+## CLI and Shell Tools
 
 I have ripgrep installed ('rg'). feel free to use it.
 
-### Avoid One-off Variables
+## Avoid One-off Variables
 
 Avoid creating one-off variables that are used only once and add unnecessary lines. For example:
 
@@ -199,7 +216,7 @@ async def update_sensors(self, updates: list[SensorUpdate]):
 
 Instead of creating a `data` variable that is used only once, directly pass the inline-constructed dictionary to the method.
 
-### Self-describing variable names - e.g., units, "is it an IP or a MAC address", etc.
+## Self-describing variable names - e.g., units, "is it an IP or a MAC address", etc.
 
 try to make sure variables are clear about the unit / type of thing they're expecting.
 
@@ -217,9 +234,9 @@ timeout_secs: int
 
 of course with timeout specifically it would be even better to just use `datetime.timedelta` and then it's fine to just call it 'timeout' because type inherently encodes unit
 
-## Python
+# Python
 
-### Style
+## Style
 
 Follow PEP 8.
 
@@ -229,7 +246,7 @@ Never use `getattr`/`setattr` unless absolutely necessary - as in there literall
 
 Before finishing, clear up your code, remove unused imports, code etc. and run `black`.
 
-### Target modern Python
+## Target modern Python
 
 Write targetting the Python version that's installed. Use its available features to their full extent where they make sense and
 don't make code worse:
@@ -245,7 +262,7 @@ don't make code worse:
 
 Use `pathlib` for manipulating paths, not `os.path`.
 
-#### NEVER use `typing.List`, `Union`, `Optional`, ... -- replace with new syntax sugar
+### NEVER use `typing.List`, `Union`, `Optional`, ... -- replace with new syntax sugar
 
 NEVER use `Optional[str]`, `Optional[X]` etc.
 Replace with newer style: `str | None`, `X | None`, etc.
@@ -278,7 +295,7 @@ class Foo:
 ```
 
 
-### Referencing same class
+## Referencing same class
 
 Use `typing.Self` or `from __future__ import annotations` for referencing the same class in type hints:
 
@@ -288,17 +305,7 @@ Use `typing.Self` or `from __future__ import annotations` for referencing the sa
 
 Do not use name of class as a string for this.
 
-### Testing
-
-Test files should be located in the same directory as the module they're testing, with the name pattern `test_*.py`.
-
-When writing unit test, make them be pytest tests, not executable files with __main__ section.
-
-### Logging
-
-if you do `logger.error/warning/...` inside exc handler it auto sets `exc_info=True` => `e` gets auto displayed => `": {e}"` in log message is unnecessary as `e` already auto printed
-
-### Walrus operator
+## Walrus operator
 
 Inline walrus operator `:=` can be used to simplify checks and assignments, e.g.:
 
@@ -312,54 +319,6 @@ if missing:
 if missing := configured - available_interfaces:
     logger.warning(f"Interfaces not found: {', '.join(sorted(missing))}")
 ```
-
-#### When to use PyHamcrest vs standard assertions
-
-Use standard Python assertions for basic checks that don't benefit from Hamcrest's matchers:
-
-```python
-# Use standard assertions when Hamcrest doesn't add value:
-assert value == 200
-assert user.name == "John"
-assert foo is True
-assert not bar
-assert len(items) > 0
-```
-
-Use PyHamcrest when it makes the assertion more clear, expressive, or when you're doing complex checks:
-
-```python
-# Use Hamcrest for these cases:
-# String content checking
-assert_that(text, contains_string("success"))
-
-# Dictionary content validation
-assert_that(data, has_entries(status="ok", count=greater_than(0)))
-
-# Multiple conditions
-assert_that(
-    response.text,
-    all_of(
-        contains_string("success"),
-        contains_string("data")
-    )
-)
-```
-
-Access properties directly when using Hamcrest instead of using has_property when it doesn't add value:
-
-```python
-# Wrong - unnecessarily verbose:
-assert_that(user, has_property("name", contains_string("John")))
-
-# Right - clearer and more direct:
-assert_that(user.name, contains_string("John"))
-```
-
-The rule of thumb is: if you're just doing a single test on an object and it's a basic equality/truthiness check, use standard assertions. Use Hamcrest when you need its matchers to simplify complex assertions.
-
-If you notice you'd like to test your changes (which is of course highly encouraged), rather than writing one-off
-blobs of throwaway Python, feel free to suggest creating a new actual test file.
 
 ## Code Patterns
 
@@ -383,6 +342,36 @@ OK:
 def format_sensor_name(self, piece: HardwarePiece, sensor_type: str) -> str:
     return f"Temperature {piece.get_display_name()}"
 ```
+
+## HTML Templating
+
+As soon as you start doing nontrivial html operations/concatting, switch from manual html stitching to jinja2 or other templating engine that contextually makes sense.
+
+BAD: already **WAY TOO COMPLEX** for manual html stitching - **AND** prone to escaping issues:
+
+```python
+menu_html = '<nav class="menu">\n'
+for page_id, page_title in menu_items:
+    url = "/" if page_id == "index" else f"/{page_id}"
+    active_class = ' class="active"' if page_id == active_page else ""
+    menu_html += f'    <a href="{url}"{active_class}>{page_title}</a>\n'
+menu_html += '</nav>\n'
+html = f"""<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>{title}</title></head>
+<body>{content}</body>
+</html>"""
+```
+
+This should have switched to jinja2 about 10 minutes ago already.
+
+## Logging
+
+if you do `logger.error/warning/...` inside exc handler it auto sets `exc_info=True` => `e` gets auto displayed => `": {e}"` in log message is unnecessary as `e` already auto printed
+
+Test files should be located in the same directory as the module they're testing, with the name pattern `test_*.py`.
+
+When writing unit test, make them be pytest tests, **NOT** executable files with __main__ section.
 
 ### PyHamcrest
 
@@ -442,24 +431,50 @@ assert_that(
 )
 ```
 
-## HTML Templating
+### When to use PyHamcrest vs standard assertions
 
-As soon as you start doing nontrivial html operations/concatting, switch from manual html stitching to jinja2 or other templating engine that contextually makes sense.
-
-BAD: already **WAY TOO COMPLEX** for manual html stitching - **AND** prone to escaping issues:
+Use standard Python assertions for basic checks that don't benefit from Hamcrest's matchers:
 
 ```python
-menu_html = '<nav class="menu">\n'
-for page_id, page_title in menu_items:
-    url = "/" if page_id == "index" else f"/{page_id}"
-    active_class = ' class="active"' if page_id == active_page else ""
-    menu_html += f'    <a href="{url}"{active_class}>{page_title}</a>\n'
-menu_html += '</nav>\n'
-html = f"""<!DOCTYPE html>
-<html lang="en">
-<head><meta charset="utf-8"><title>{title}</title></head>
-<body>{content}</body>
-</html>"""
+# Use standard assertions when Hamcrest doesn't add value:
+assert value == 200
+assert user.name == "John"
+assert foo is True
+assert not bar
+assert len(items) > 0
 ```
 
-This should have switched to jinja2 about 10 minutes ago already.
+Use PyHamcrest when it makes the assertion more clear, expressive, or when you're doing complex checks:
+
+```python
+# Use Hamcrest for these cases:
+# String content checking
+assert_that(text, contains_string("success"))
+
+# Dictionary content validation
+assert_that(data, has_entries(status="ok", count=greater_than(0)))
+
+# Multiple conditions
+assert_that(
+    response.text,
+    all_of(
+        contains_string("success"),
+        contains_string("data")
+    )
+)
+```
+
+Access properties directly when using Hamcrest instead of using has_property when it doesn't add value:
+
+```python
+# Wrong - unnecessarily verbose:
+assert_that(user, has_property("name", contains_string("John")))
+
+# Right - clearer and more direct:
+assert_that(user.name, contains_string("John"))
+```
+
+The rule of thumb is: if you're just doing a single test on an object and it's a basic equality/truthiness check, use standard assertions. Use Hamcrest when you need its matchers to simplify complex assertions.
+
+If you notice you'd like to test your changes (which is of course highly encouraged), rather than writing one-off
+blobs of throwaway Python, feel free to suggest creating a new actual test file.
