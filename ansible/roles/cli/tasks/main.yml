@@ -97,14 +97,16 @@
   git:
     # TODO(agentydragon): shallow clone
     repo: https://github.com/robbyrussell/oh-my-zsh
-    dest: "{{ ansible_user_dir }}/.oh-my-zsh"
+    dest: "/home/{{ my_user | default(ansible_user_id) }}/.oh-my-zsh"
+  become: true
+  become_user: "{{ my_user | default(ansible_user_id) }}"
 
 # Set zsh as default shell
 - name: Set zsh as login shell
   become: true
   tags: [zsh]
   user:
-    name: "{{ ansible_user_id }}"
+    name: "{{ my_user | default(ansible_user_id) }}"
     shell: /bin/zsh
 
 # Deploy dotfiles before dev-env to ensure npmrc is in place

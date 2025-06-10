@@ -27,6 +27,7 @@
       ansible.builtin.script: rcup_noninteractive.py -B {{ rcup_computer }} -x vim -x README.md -d {{ ducktape_path }}/dotfiles
       args:
         executable: python3
+      timeout: 10
 
     # OrcaSlicer does not play well with its individual files being symlinks.
     - name: Install OrcaSlicer config folder symlink
@@ -35,8 +36,10 @@
         # For some stupid reason "source" in Ansible convention means the *place where the symlink leads*
         # and "destination" is the *symlink*. Thanks Obama.
         src: "{{ ducktape_path }}/nonrcm-dotfiles/config/OrcaSlicer"
-        dest: "{{ ansible_env.HOME }}/.config/OrcaSlicer"
+        dest: "/home/{{ my_user | default(ansible_user_id) }}/.config/OrcaSlicer"
         state: link
+      become: true
+      become_user: "{{ my_user | default(ansible_user_id) }}"
       tags:
       - orcaslicer
 
@@ -46,5 +49,7 @@
         # For some stupid reason "source" in Ansible convention means the *place where the symlink leads*
         # and "destination" is the *symlink*. Thanks Obama.
         src: "{{ ducktape_path }}/nonrcm-dotfiles/config/cronomix"
-        dest: "{{ ansible_env.HOME }}/.config/cronomix"
+        dest: "/home/{{ my_user | default(ansible_user_id) }}/.config/cronomix"
         state: link
+      become: true
+      become_user: "{{ my_user | default(ansible_user_id) }}"
