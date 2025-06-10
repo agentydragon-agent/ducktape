@@ -24,10 +24,16 @@
     #   register: rcup_result
 
     - name: Install ducktape dotfiles, fail if would need overwrite
-      ansible.builtin.script: rcup_noninteractive.py -B {{ rcup_computer }} -x vim -x README.md -d {{ ducktape_path }}/dotfiles
-      args:
-        executable: python3
+      ansible.builtin.command: |
+        python3 {{ role_path }}/tasks/rcup_noninteractive.py -B {{ rcup_computer }} -x vim -x README.md -d {{ ducktape_path }}/dotfiles
+      environment:
+        HOME: "/home/{{ my_user | default(ansible_user_id) }}"
+        USER: "{{ my_user | default(ansible_user_id) }}"
       timeout: 10
+      become: true
+      become_user: "{{ my_user | default(ansible_user_id) }}"
+      register: rcup_result
+      failed_when: rcup_result.rc != 0
 
     # OrcaSlicer does not play well with its individual files being symlinks.
     - name: Install OrcaSlicer config folder symlink
