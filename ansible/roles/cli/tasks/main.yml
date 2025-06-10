@@ -91,8 +91,6 @@
 # needed for OpenAI Codex CLI, vim-copilot
 - include_tasks: tasks/nodejs.yml
 
-- include_tasks: tasks/dev-env.yml
-
 # Set up oh-my-zsh
 - name: Clone oh-my-zsh
   tags: [oh-my-zsh, zsh]
@@ -109,7 +107,10 @@
     name: "{{ ansible_user_id }}"
     shell: /bin/zsh
 
+# Deploy dotfiles before dev-env to ensure npmrc is in place
 - include_tasks: tasks/dotfiles.yml
+
+- include_tasks: tasks/dev-env.yml
 
 - name: Check Neovim is >= 0.11 (for DEC mode 2031 for auto color scheme switching)
   block:
