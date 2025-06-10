@@ -231,14 +231,15 @@
             depth: 1  # Shallow clone for speed
 
         - name: Apply CLI role
-          ansible.builtin.include_role:
+          ansible.builtin.import_role:
             name: cli
           # CLI role tasks that need root will handle their own become
 
-    - name: Configure Authentik
-      ansible.builtin.include_role:
-        name: authentik
-      tags: [authentik]
+    # TODO: configure - plus for remote desktop
+    # - name: Configure Authentik
+    #   ansible.builtin.include_role:
+    #     name: authentik
+    #   tags: [authentik]
 
   handlers:
     # Only triggers if nginx config files changed.
