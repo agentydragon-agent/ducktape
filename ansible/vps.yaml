@@ -230,10 +230,15 @@
             accept_hostkey: true
             depth: 1  # Shallow clone for speed
 
-        - name: Apply CLI role
-          ansible.builtin.import_role:
-            name: cli
-          # CLI role tasks that need root will handle their own become
+    # Apply CLI role (outside the block so tags work independently)
+    - name: Apply CLI role
+      ansible.builtin.import_role:
+        name: cli
+      vars:
+        my_user: agentydragon
+        ducktape_path: "/home/agentydragon/code/ducktape"
+      tags: [dotfiles]
+      # CLI role tasks that need root will handle their own become
 
     # TODO: configure - plus for remote desktop
     # - name: Configure Authentik
