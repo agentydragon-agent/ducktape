@@ -8,6 +8,16 @@ echo -n "$VAULT_KEY" | \
     service ansible-vault account ducktape
 ```
 
+## Generating secrets
+
+To generate and encrypt a secret in one go:
+
+```bash
+# Generate a 32-character password and encrypt it
+python3 -c "import secrets; print(secrets.token_urlsafe(32))" | \
+  ansible-vault encrypt_string --stdin-name 'vault_variable_name'
+```
+
 ## Caveats
 
 * The `rcup` command asks for confirmation before overwriting existing dotfiles.

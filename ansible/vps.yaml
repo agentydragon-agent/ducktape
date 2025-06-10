@@ -235,6 +235,11 @@
             name: cli
           # CLI role tasks that need root will handle their own become
 
+    - name: Configure Authentik
+      ansible.builtin.include_role:
+        name: authentik
+      tags: [authentik]
+
   handlers:
     # Only triggers if nginx config files changed.
     - name: Reload nginx
