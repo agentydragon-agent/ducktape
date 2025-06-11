@@ -21,3 +21,4 @@ nvim-treesitter: folding
 TODO: add apt-file
 
 TODO: prompt on vps is currently not p10k; just set to agnoster with dirty index. might want to change.
+TODO: get rid of login_event_webhook_reporter -- already got activitywatch. might combine with halinuxcompanion => have it work
