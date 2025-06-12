@@ -1,0 +1,15 @@
+Root node for file:z-GIaRFjsyQ5
+- [Library](Library.md)
+- [Inbox](Inbox.md)
+- Searches
+- Schema
+  - #recipe
+- [Export Test](<Export Test/README.md>)
+- Avatar
+- Users
+  - agentydragon@gmail_com
+- List of layouts for z-GIaRFjsyQ5 _(Layouts that can be shared with users with access to z-GIaRFjsyQ5)_
+- Deleted Nodes _(When a node is deleted, it is moved here)_
+  - Sarch node looking up all #recipe nodes
+  - #recipe
+- MoveTo list _(Nodes on this list are shown in the MoveTo menu)_
