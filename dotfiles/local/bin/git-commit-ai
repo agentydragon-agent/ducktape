@@ -1,0 +1,464 @@
+#!/usr/bin/env python3
+"""
+git-commit-ai
+
+* Streams Claude (Anthropic) to draft the initial commit message shown in your editor.
+* Runs the repo's pre-commit hook **in parallel** so you don't wait twice.
+* Caches per-repo for one week keyed by staged diff hash.
+* Limits diff context per file and prepends diffstat.
+* Debug mode (`--debug`) prints prompt / response sizes, timing, and cost; those stats are also
+  appended as comment lines in the template so they're visible while you edit.
+
+Call exactly like `git commit`; every flag is forwarded. Extra wrapper flags:
+
+    --model MODEL          (default: sonnet)
+    --debug                verbose timings & token/cost info
+
+Example
+    git-commit-ai -a               # like “git commit -a”
+"""
+
+# ---------------------------------------------------------------------
+import argparse
+import asyncio
+import contextlib
+import hashlib
+import itertools
+import os
+import re
+import subprocess
+import sys
+import time
+from datetime import datetime, timedelta
+from pathlib import Path
+
+import yaml  # pip install PyYAML
+from git import Repo  # pip install GitPython
+
+# ---------- constants -------------------------------------------------
+MAX_FILE_LINES = 400  # truncate each file's hunk lines
+PAST_COMMITS_MAX_CHARS = 6000  # history context ceiling
+CACHE_TTL = timedelta(days=7)
+SPINNER_INTERVAL = 0.1
+DEFAULT_MODEL = "sonnet"
+
+COMMIT_MESSAGE_PROMPT = """Write a concise, imperative-mood Git commit message. Output ONLY the commit message between <message> and </message> tags.
+No explanations, no markdown, no signatures. Do NOT include 'Generated with' or 'Co-Authored-By' lines.
+
+Example outputs:
+<message>
+Add user authentication to API endpoints
+</message>
+
+<message>
+Refactor database connection handling
+
+- Extract connection pool logic into separate module
+- Add retry mechanism for transient failures
+- Update all database queries to use new pool
+</message>
+
+Below, the staged diff is trimmed per file and preceded by a diffstat for context.
+
+{diffstat}
+
+{diff}"""
+
+
+# ---------------------------------------------------------------------
+class PromptBuilder:
+    def __init__(self, repo: Repo, diff: str, diffstat: str):
+        self.repo = repo
+        self.parts = [COMMIT_MESSAGE_PROMPT.format(diffstat=diffstat, diff=diff)]
+        self._append_history()
+
+    def _append_history(self):
+        chars = 0
+        for commit in self.repo.iter_commits("HEAD", max_count=100):
+            msg = commit.message.split("\n\n")[0]  # subject line only
+            block = f"- {msg}"
+            if chars + len(block) > PAST_COMMITS_MAX_CHARS:
+                break
+            self.parts.append(block)
+            chars += len(block)
+
+    def build(self) -> str:
+        return (
+            "\n\nPast commits:\n"
+            + "\n".join(self.parts[1:])
+            + "\n\n###\n\n"
+            + self.parts[0]
+        )
+
+
+# ---------- helpers ---------------------------------------------------
+def get_commit_diff(repo: Repo, passthru: list[str]) -> str:
+    """Get the diff that would be committed with the given flags."""
+    # First, check what would be committed with these flags
+    dry_run = subprocess.run(
+        ["git", "commit", "--dry-run", "-m", "_test_", *passthru],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    # If nothing to commit, return empty
+    if dry_run.returncode != 0 and "nothing to commit" in dry_run.stdout:
+        return ""
+
+    # Now get the diff based on what would be committed
+    if "-a" in passthru or "--all" in passthru:
+        # Show diff of all tracked files
+        raw = repo.git.diff("HEAD", "--unified=0")
+    else:
+        # Show only staged changes
+        raw = repo.git.diff("--cached", "--unified=0")
+
+    cur: list[str] = []
+    out, lines = [], 0
+    for line in raw.splitlines():
+        if line.startswith(("diff --git", "index ", "--- ", "+++ ")):
+            if cur:
+                out.append("\n".join(cur[:MAX_FILE_LINES]))
+            cur, lines = [line], 0
+        else:
+            if lines < MAX_FILE_LINES:
+                cur.append(line)
+            lines += 1
+    if cur:
+        out.append("\n".join(cur[:MAX_FILE_LINES]))
+    return "\n\n".join(out)
+
+
+def diffstat(repo: Repo, passthru: list[str]) -> str:
+    """Get diffstat for what would be committed."""
+    if "-a" in passthru or "--all" in passthru:
+        return repo.git.diff("HEAD", "--stat")
+    return repo.git.diff("--cached", "--stat")
+
+
+def sha(text: str) -> str:
+    return hashlib.sha256(text.encode()).hexdigest()
+
+
+def get_short_commitish(repo: Repo) -> str:
+    """Get the short commit hash of HEAD."""
+    return repo.git.rev_parse("HEAD", short=True)
+
+
+def repo_cache_dir(repo: Repo) -> Path:
+    """Get the cache directory for storing individual cache files."""
+    p = Path(repo.git_dir) / "ai_commit_cache"
+    p.mkdir(exist_ok=True)
+    return p
+
+
+def load_cache_entry(cache_dir: Path, key: str) -> dict | None:
+    """Load a single cache entry from its file."""
+    cache_file = cache_dir / f"{key}.yaml"
+    if not cache_file.exists():
+        return None
+    try:
+        return yaml.safe_load(cache_file.read_text())
+    except Exception:
+        return None
+
+
+def save_cache_entry(cache_dir: Path, key: str, entry: dict):
+    """Save a single cache entry to its file."""
+    cache_file = cache_dir / f"{key}.yaml"
+    cache_file.write_text(yaml.dump(entry, default_flow_style=False, sort_keys=False))
+
+
+def clean_old_cache_entries(cache_dir: Path, ttl: timedelta):
+    """Remove cache entries older than TTL based on file modification time."""
+    now = time.time()
+    for cache_file in cache_dir.glob("*.yaml"):
+        if now - cache_file.stat().st_mtime > ttl.total_seconds():
+            cache_file.unlink()
+
+
+class ParallelStatusSpinner:
+    def __init__(self, ai_task, precommit_task):
+        self.ai_task = ai_task
+        self.precommit_task = precommit_task
+        self.spinner_task = None
+
+    async def __aenter__(self):
+        self.spinner_task = asyncio.create_task(self._run())
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        if self.spinner_task and not self.spinner_task.done():
+            self.spinner_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self.spinner_task
+        print("\r", end="", flush=True)
+
+    async def _run(self):
+        start_time = time.time()
+        chars = itertools.cycle("|/-\\")
+
+        while not (self.ai_task.done() and self.precommit_task.done()):
+            elapsed = time.time() - start_time
+            ch = next(chars)
+
+            ai_status = "✓" if self.ai_task.done() else "⋯"
+            precommit_status = "✓" if self.precommit_task.done() else "⋯"
+
+            print(
+                f"\r💡 commit message [{ai_status}], pre-commit [{precommit_status}] {ch} {elapsed:.1f}s",
+                end="",
+                flush=True,
+            )
+
+            try:
+                # Check if any task has failed
+                if self.ai_task.done() and self.ai_task.exception():
+                    break
+                if self.precommit_task.done() and self.precommit_task.exception():
+                    break
+            except asyncio.CancelledError:
+                break
+
+            await asyncio.sleep(SPINNER_INTERVAL)
+
+
+async def ask_claude(prompt: str, model: str) -> str:
+    proc = await asyncio.create_subprocess_exec(
+        "claude",
+        "--model",
+        model,
+        "-p",
+        prompt,
+        "--disallowedTools",
+        "*",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, stderr = await proc.communicate()
+
+    if proc.returncode != 0:
+        raise subprocess.CalledProcessError(
+            proc.returncode or 1,  # Use 1 as default if returncode is None
+            ["claude"],
+            stderr.decode(),
+        )
+
+    response = stdout.decode().strip()
+
+    # Extract message from between tags
+    if match := re.search(r"<message>\s*(.*?)\s*</message>", response, re.DOTALL):
+        return match.group(1).strip()
+    # Fallback if tags are missing
+    return response
+
+
+async def run_precommit_with_output(repo: Repo, spinner=None):
+    """Run pre-commit hook and stream its output."""
+    hook_path = Path(repo.git_dir) / "hooks" / "pre-commit"
+    if not (hook_path.exists() and hook_path.is_file()):
+        return 0  # No pre-commit hook, success
+
+    proc = await asyncio.create_subprocess_exec(
+        str(hook_path),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        env=os.environ.copy(),
+    )
+
+    has_output = False
+
+    async def stream_output(stream, is_stderr=False):
+        nonlocal has_output
+        while True:
+            line = await stream.readline()
+            if not line:
+                break
+            if not has_output:
+                has_output = True
+                # Cancel spinner when we get output
+                if spinner and spinner.spinner_task and not spinner.spinner_task.done():
+                    spinner.spinner_task.cancel()
+                print()  # New line before output
+            print(
+                line.decode(),
+                end="",
+                file=sys.stderr if is_stderr else sys.stdout,
+                flush=True,
+            )
+
+    # Stream both stdout and stderr concurrently
+    await asyncio.gather(
+        stream_output(proc.stdout),
+        stream_output(proc.stderr, is_stderr=True),
+    )
+
+    return await proc.wait()
+
+
+def token_estimate(text: str) -> int:
+    return int(len(text) / 4)  # crude ≈4 chars / token
+
+
+# ---------- main ------------------------------------------------------
+async def async_main():
+    start = time.time()
+    repo = Repo(Path.cwd(), search_parent_directories=True)
+
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--model", default=DEFAULT_MODEL)
+    parser.add_argument("--debug", action="store_true")
+    known, passthru = parser.parse_known_args()
+
+    diff = get_commit_diff(repo, passthru)
+    if not diff.strip():
+        # Check if there's truly nothing to commit
+        status = repo.git.status("--porcelain")
+        if not status or ("-a" not in passthru and "--all" not in passthru):
+            print("nothing to commit, working tree clean", file=sys.stderr)
+            sys.exit(1)
+        else:
+            # There are changes but -a wasn't passed
+            print(
+                'no changes added to commit (use "git add" and/or "git commit -a")',
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+    cache_dir = repo_cache_dir(repo)
+    commitish = get_short_commitish(repo)
+    key = f"{commitish}_{sha(diff)}"
+    now = datetime.utcnow().timestamp()
+
+    # Clean old cache entries
+    clean_old_cache_entries(cache_dir, CACHE_TTL)
+
+    entry = load_cache_entry(cache_dir, key)
+    if entry:
+        msg = entry["msg"]
+        cached = True
+    else:
+        diffstat_txt = diffstat(repo, passthru)
+        prompt = PromptBuilder(repo, diff, diffstat_txt).build()
+
+        # Create tasks for parallel execution
+        ai_task = asyncio.create_task(ask_claude(prompt, known.model))
+        precommit_task = asyncio.create_task(run_precommit_with_output(repo))
+
+        async with ParallelStatusSpinner(ai_task, precommit_task) as spinner:
+            # Update precommit to have reference to spinner
+            precommit_task.cancel()
+            precommit_task = asyncio.create_task(
+                run_precommit_with_output(repo, spinner),
+            )
+
+            # Wait for both main tasks to complete
+            results = await asyncio.gather(
+                ai_task,
+                precommit_task,
+                return_exceptions=True,
+            )
+
+            # Check for exceptions
+            if isinstance(results[0], Exception):
+                raise results[0]
+            if isinstance(results[1], Exception):
+                raise results[1]
+
+            msg, precommit_rc = results
+
+            if precommit_rc != 0:
+                print("✖ pre-commit hook failed — aborting commit", file=sys.stderr)
+                sys.exit(precommit_rc)
+
+        entry = {"msg": msg, "ts": now, "commitish": commitish}
+        save_cache_entry(cache_dir, key, entry)
+        cached = False
+
+    elapsed = time.time() - start
+    stats_comment = (
+        f"# ai-draft {'(cached)' if cached else ''}\n"
+        f"# prompt chars: {len(diff)}  ~{token_estimate(diff)}tok\n"
+        f"# response chars: {len(msg)}  elapsed: {elapsed:.2f}s\n"
+    )
+    if known.debug:
+        print(stats_comment.replace("# ", ""), file=sys.stderr)
+
+    final_text = msg + "\n\n" + stats_comment if known.debug else msg
+
+    # Use git's COMMIT_EDITMSG for a more authentic experience
+    commit_msg_path = Path(repo.git_dir) / "COMMIT_EDITMSG"
+
+    # Write our message
+    commit_msg_path.write_text(final_text + "\n")
+
+    # Store original content for comparison
+    original_content = commit_msg_path.read_text()
+
+    # Get git's editor
+    proc = await asyncio.create_subprocess_exec(
+        "git",
+        "var",
+        "GIT_EDITOR",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, stderr = await proc.communicate()
+    result_stdout = stdout.decode() if stdout else ""
+    editor = (
+        result_stdout.strip()
+        if proc.returncode == 0
+        else os.environ.get("EDITOR", "vi")
+    )
+
+    # Run the editor
+    editor_proc = await asyncio.create_subprocess_shell(f"{editor} {commit_msg_path}")
+    editor_result = await editor_proc.wait()
+
+    if editor_result != 0:
+        print("error: editor exited with error code", file=sys.stderr)
+        sys.exit(1)
+
+    # Check what happened
+    try:
+        final_content = commit_msg_path.read_text()
+    except FileNotFoundError:
+        print("Aborting commit.", file=sys.stderr)
+        sys.exit(1)
+
+    # Check if content changed
+    if final_content == original_content:
+        # No changes made - this is like doing :wq without editing
+        # We should still commit since we have a valid message
+        pass
+
+    # Check for empty message (after stripping comments)
+    lines = [
+        line
+        for line in final_content.splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    ]
+    if not lines:
+        print("Aborting commit due to empty commit message.", file=sys.stderr)
+        sys.exit(1)
+
+    # Now do the actual commit with the message
+    commit_proc = await asyncio.create_subprocess_exec(
+        "git",
+        "commit",
+        "-F",
+        str(commit_msg_path),
+        "--no-verify",
+        *passthru,
+    )
+    returncode = await commit_proc.wait()
+    sys.exit(returncode)
+
+
+def main():
+    asyncio.run(async_main())
+
+
+if __name__ == "__main__":
+    main()
