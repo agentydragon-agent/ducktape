@@ -1,0 +1,43 @@
+%%tana%%
+- Export Test
+  - Daily notes
+    - 2025
+      - Week 24
+        - Today, Thu, Jun 12
+          - This node is in Jun 12, 2025
+  - This is a test Tana workspace
+    - This is **Bold**
+    - This is _Italic_
+    - This is <mark>Highlit</mark>
+    - This is __Underscored__
+    - This is <strike>Strikethrough</strike>
+  - Node X
+  - Inline reference to Node X: [[Node X^Qi0AlCNyZgW0]]
+  - Inline reference to Node X with an alternate alias: [[Node X^Qi0AlCNyZgW0]]
+  - Inline code: <code>foo = "bar"</code>
+  - Code block, Python:
+```Python
+#!/usr/bin/python
+print("hello world")
+```
+  - Date: [[date:2025-06-12]]
+  - Datetime: [[date:2025-06-12T12:38:03[America/Los_Angeles]]]
+  - Datetime range: [[date:2025-06-12T12:38:11[America/Los_Angeles]/2025-06-12T13:38:12[America/Los_Angeles]]]
+  - The node below has a supertag applied, "recipe"
+    - Perfect Eggs #recipe
+      - This node has attributes set
+      - Attribute with multiple node values:: 
+        - Value 1
+        - Value 2
+        - Value 3
+      - Attribute with one node value:: Value A
+      - Checkbox attribute 1 (true):: [X] 
+      - Checkbox attribute 2 (false):: 
+  - Other nodes with #recipe supertag:
+    - Scramble #recipe
+    - Steak #recipe
+  - Search node looking for all #recipe nodes
+    - [[Perfect Eggs^Oh-JrJ73G9iK]]
+    - [[Scramble^Hldnr8OJrKHh]]
+    - [[Steak^BA8e4EUg0rpa]]
+
