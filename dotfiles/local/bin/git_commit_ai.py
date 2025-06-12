@@ -607,7 +607,7 @@ async def async_main():
     final_text = msg + stats_comment + template_text
 
     # Use git's COMMIT_EDITMSG for a more authentic experience
-    commit_msg_path = Path(repo.git_dir) / "AI_COMMIT_EDITMSG"
+    commit_msg_path = Path(repo.git_dir) / "COMMIT_EDITMSG"
     commit_msg_path.write_text(final_text + "\n")
 
     # Store the file's modification time before editing
