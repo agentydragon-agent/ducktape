@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-convert.py – Convert Tana JSON dump to
+convert.py - Convert Tana JSON dump to
 
 * Markdown  →  <dump>.converted.md
 * Tana-paste → <dump>.converted.tanapaste.txt
@@ -16,13 +16,15 @@ import re
 import traceback
 from collections.abc import Mapping
 from datetime import datetime, timezone
+from html.parser import HTMLParser
+from io import StringIO
 from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
 
-class Props(BaseModel, extra="forbid"):
+class Props(BaseModel):
     created: int | None = None
     name: str | None = None
     doc_type: str | None = Field(alias="_docType", default=None)
@@ -72,8 +74,8 @@ class Props(BaseModel, extra="forbid"):
     #   "modifiedTs": [1721944840187],
     #   "touchCounts": [7]
     # }
-    imageWidth: int | None = Field(alias="_imageWidth", default=None)
-    imageHeight: int | None = Field(alias="_imageHeight", default=None)
+    image_width: int | None = Field(alias="_imageWidth", default=None)
+    image_height: int | None = Field(alias="_imageHeight", default=None)
 
     # {
     #   "id": "oxIi6At72Q-R",
@@ -92,7 +94,7 @@ class Props(BaseModel, extra="forbid"):
     #   "touchCounts": [9]
     # }
     view: str | None = Field(alias="_view", default=None)
-    editMode: bool | None = Field(alias="_editMode", default=None)
+    edit_mode: bool | None = Field(alias="_editMode", default=None)
 
     # {
     #   "id": "kgqfA9Zxzr66",
@@ -106,9 +108,9 @@ class Props(BaseModel, extra="forbid"):
     #   "touchCounts": [5],
     #   "modifiedTs": [1732767573651]
     # }
-    searchContextNode: str | None = None
+    search_context_node: str | None = Field(alias="searchContextNode", default=None)
 
-    model_config = ConfigDict(extra="allow", frozen=True)
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     @property
     def created_dt(self) -> datetime | None:
@@ -121,13 +123,13 @@ class Props(BaseModel, extra="forbid"):
         return bool(self.owner_id and self.owner_id.endswith("_TRASH"))
 
 
-class BaseNode(BaseModel, extra="forbid"):
+class BaseNode(BaseModel):
     id: str
     props: Props
     children: list[str] = Field(default_factory=list)
-    modifiedTs: list[int] | None = None
-    touchCounts: list[int] | None = None
-    associationMap: dict[str, str] | None = None
+    modified_ts: list[int] | None = Field(alias="modifiedTs", default=None)
+    touch_counts: list[int] | None = Field(alias="touchCounts", default=None)
+    association_map: dict[str, str] | None = Field(alias="associationMap", default=None)
 
     model_config = ConfigDict(extra="allow", frozen=True)
 
@@ -177,7 +179,7 @@ class NodeStore(Mapping[str, BaseNode]):
 
     @classmethod
     def from_file(cls, path: Path):
-        with open(path, encoding="utf-8") as fh:
+        with path.open(encoding="utf-8") as fh:
             data = json.load(fh)
 
         ok, bad = {}, []
@@ -194,7 +196,7 @@ class NodeStore(Mapping[str, BaseNode]):
                     ),
                 )
         if bad:
-            print(f"⚠  {len(bad)} node(s) failed – showing {min(5, len(bad))}:")
+            print(f"⚠  {len(bad)} node(s) failed - showing {min(5, len(bad))}:")
             for nid, blob, tb in random.sample(bad, min(5, len(bad))):
                 print(f"\n── id: {nid} ──")
                 print(json.dumps(blob, indent=2, ensure_ascii=False))
@@ -212,7 +214,7 @@ def _supertag_index(store: NodeStore) -> dict[str, list[str]]:
     for n in store.values():
         if isinstance(n, TupleNode) and len(n.children) >= 2:
             k, v = store.get(n.children[0]), store.get(n.children[1])
-            if k and k.id == _SUPERTAG_KEY_ID and v and v.name:
+            if k and k.id == _SUPERTAG_KEY_ID and v and v.name and n.props.owner_id:
                 out.setdefault(n.props.owner_id, []).append(v.name)
     return out
 
@@ -247,6 +249,52 @@ _NODE_SPAN = re.compile(r'<span data-inlineref-node="([^"]+)"></span>')
 _DATE_SPAN = re.compile(r'<span data-inlineref-date="([^"]+)"></span>')
 
 
+class HTMLToMarkdownParser(HTMLParser):
+    """Convert HTML formatting to Markdown syntax."""
+
+    def __init__(self):
+        super().__init__()
+        self.output = StringIO()
+        self.tag_stack = []
+
+    def handle_starttag(self, tag, attrs):
+        self.tag_stack.append(tag)
+        if tag in ("b", "strong"):
+            self.output.write("**")
+        elif tag in ("i", "em"):
+            self.output.write("_")
+        elif tag == "u":
+            self.output.write("__")
+        elif tag == "mark":
+            self.output.write("<mark>")
+        elif tag == "strike":
+            self.output.write("<strike>")
+        elif tag == "code":
+            self.output.write("<code>")
+
+    def handle_endtag(self, tag):
+        if self.tag_stack and self.tag_stack[-1] == tag:
+            self.tag_stack.pop()
+        if tag in ("b", "strong"):
+            self.output.write("**")
+        elif tag in ("i", "em"):
+            self.output.write("_")
+        elif tag == "u":
+            self.output.write("__")
+        elif tag == "mark":
+            self.output.write("</mark>")
+        elif tag == "strike":
+            self.output.write("</strike>")
+        elif tag == "code":
+            self.output.write("</code>")
+
+    def handle_data(self, data):
+        self.output.write(data)
+
+    def get_markdown(self):
+        return self.output.getvalue()
+
+
 def _inline_to_text(raw: str, store: NodeStore, style: str) -> str:
     def node_sub(m):
         nid = m.group(1)
@@ -266,8 +314,16 @@ def _inline_to_text(raw: str, store: NodeStore, style: str) -> str:
 
     txt = _NODE_SPAN.sub(node_sub, raw)
     txt = _DATE_SPAN.sub(date_sub, txt)
-    txt = html.unescape(txt)
-    return re.sub(r"</?strong>", "**", txt, flags=re.IGNORECASE)
+
+    # Convert HTML formatting to markdown for tana style
+    if style == "tana":
+        parser = HTMLToMarkdownParser()
+        parser.feed(txt)
+        txt = parser.get_markdown()
+    else:
+        txt = html.unescape(txt)
+
+    return txt
 
 
 # ──────────────────────────  Headline  ────────────────────────── #
@@ -349,9 +405,12 @@ def _scalar_text(node: BaseNode, store: NodeStore, sty: str) -> str | None:
 
 
 # ──────────────────────────────────────────────────────────────
+# Render context
+# ──────────────────────────────────────────────────────────────
+# ──────────────────────────────────────────────────────────────
 # Tuple renderer
 # ──────────────────────────────────────────────────────────────
-def _render_tuple(
+def _render_tuple(  # noqa: PLR0913
     t: TupleNode,
     store: NodeStore,
     vis: set[str],
@@ -386,7 +445,7 @@ def _render_tuple(
     _render_node(val_node, store, vis, write, ind + "  ", sty)
 
 
-def _render_node(
+def _render_node(  # noqa: PLR0913
     n: BaseNode,
     store: NodeStore,
     vis: set[str],
@@ -466,6 +525,15 @@ def _roots(store: NodeStore) -> list[BaseNode]:
 
 
 # ──────────────────────────  Exporters  ────────────────────────── #
+def export_node_as_tanapaste(node: BaseNode, store: NodeStore) -> str:
+    """Export a single node and its children as TanaPaste format."""
+    lines: list[str] = []
+    lines.append("%%tana%%")
+    vis: set[str] = set()
+    _render_node(node, store, vis, lines.append, "", "tana")
+    return "\n".join(lines).rstrip() + "\n"
+
+
 def _export(store: NodeStore, style: str) -> str:
     lines: list[str] = []
     if style == "tana":
@@ -474,7 +542,7 @@ def _export(store: NodeStore, style: str) -> str:
     write = lines.append
 
     for r in _roots(store):
-        _render_node(r, store, vis, write, "" if style == "tana" else "", style)
+        _render_node(r, store, vis, write, "", style)
 
         if style == "md":
             hdr = lines.pop()
