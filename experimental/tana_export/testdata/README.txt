@@ -4,5 +4,5 @@ test_workspace.json:
 test_workspace_node.txt:
     the "Export Test" workspace root node from the same workspace -> "Copy as Tana Paste" from Tana PWA
 
-test_markdown_export.zip:
-    Markdown ZIP export of the same workspace from Tana PWA
+test_markdown_export/:
+    Markdown ZIP export of the same workspace from Tana PWA -> moved into this folder, unzipped inside it

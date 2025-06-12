@@ -1,0 +1,9 @@
+Perfect Eggs #recipe
+- This node has attributes set
+- **Attribute with multiple node values**:
+  - Value 1
+  - Value 2
+  - Value 3
+- **Attribute with one node value**: Value A
+- **Checkbox attribute 1 (true)**: [Yes](https://app.tana.inc/?nodeid=SYS_V03)
+- **Checkbox attribute 2 (false)**:
