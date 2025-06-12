@@ -537,15 +537,14 @@ async def async_main():
         cached = False
 
     elapsed = time.time() - start
-    stats_comment = f"# ai-draft{'(cached)' if cached else ''}: prompt: {len(diff)} chars, response: {len(msg)} chars, elapsed: {elapsed:.2f}s\n"
+    stats_comment = f"\n# ai-draft{'(cached)' if cached else ''}: prompt: {len(diff)} chars, response: {len(msg)} chars, elapsed: {elapsed:.2f}s\n"
 
     # Get git status information for the commit template
     branch = repo.active_branch.name if not repo.head.is_detached else "HEAD detached"
     status_output = repo.git.status("--porcelain")
 
     # Build the standard git commit template
-    template_text = f"""
-# Please enter the commit message for your changes. Lines starting
+    template_text = f"""# Please enter the commit message for your changes. Lines starting
 # with '#' will be ignored, and an empty message aborts the commit.
 #
 # On branch {branch}
