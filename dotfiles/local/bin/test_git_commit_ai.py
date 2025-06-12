@@ -2,6 +2,7 @@
 """Tests for git-commit-ai script."""
 
 import asyncio
+import contextlib
 import os
 import sys
 from pathlib import Path
@@ -274,6 +275,175 @@ class TestParallelTaskRunner:
         )  # Should be cancelled when pre-commit fails
         assert ai_task.cancelled()
 
+    @pytest.mark.asyncio
+    async def test_output_clears_status_line(self):
+        """Test that pre-commit output clears the status line."""
+        # Create a mock file descriptor pair
+        read_fd, write_fd = os.pipe()
+
+        # Create mock tasks
+        async def mock_ai_task():
+            await asyncio.sleep(0.5)
+            return "Test message"
+
+        async def mock_precommit_task():
+            await asyncio.sleep(0.3)
+            return 0
+
+        ai_task = asyncio.create_task(mock_ai_task())
+        precommit_task = asyncio.create_task(mock_precommit_task())
+
+        ui = ParallelTaskRunner(TaskState(ai_task), TaskState(precommit_task))
+        ui.set_output_fd(read_fd)
+
+        # Track what gets printed
+        captured_output = []
+        original_print = print
+
+        def mock_print(*args, **kwargs):
+            output = " ".join(str(arg) for arg in args)
+            captured_output.append((output, kwargs.get("end", "\n")))
+            original_print(*args, **kwargs)
+
+        with patch("builtins.print", mock_print):
+            async with ui:
+                # Let status print once
+                await asyncio.sleep(0.15)
+
+                # Write some pre-commit output
+                os.write(write_fd, b"Pre-commit output\n")
+                await asyncio.sleep(0.05)
+
+                # Check that status was cleared
+                assert any("\r\033[2K" in output for output, _ in captured_output)
+
+                # Clean up
+                os.close(write_fd)
+                await asyncio.gather(ai_task, precommit_task, return_exceptions=True)
+
+    @pytest.mark.asyncio
+    async def test_status_visibility_tracking(self):
+        """Test that status visibility is tracked correctly."""
+        # Create simple tasks
+        ai_task = asyncio.create_task(asyncio.sleep(0.1))
+        precommit_task = asyncio.create_task(asyncio.sleep(0.1))
+
+        ui = ParallelTaskRunner(TaskState(ai_task), TaskState(precommit_task))
+
+        # Initially not visible
+        assert not ui._status_visible
+
+        # Print status line
+        ui._print_status_line()
+        assert ui._status_visible
+
+        # Clear status line
+        ui._clear_status_line()
+        assert not ui._status_visible
+
+        # Clean up
+        await asyncio.gather(ai_task, precommit_task, return_exceptions=True)
+
+    @pytest.mark.asyncio
+    async def test_long_precommit_output_lines(self):
+        """Test handling of pre-commit output lines longer than terminal width."""
+        # Create a mock file descriptor pair
+        read_fd, write_fd = os.pipe()
+
+        # Create mock tasks
+        async def mock_ai_task():
+            await asyncio.sleep(0.3)
+            return "Test message"
+
+        async def mock_precommit_task():
+            await asyncio.sleep(0.2)
+            return 0
+
+        ai_task = asyncio.create_task(mock_ai_task())
+        precommit_task = asyncio.create_task(mock_precommit_task())
+
+        ui = ParallelTaskRunner(TaskState(ai_task), TaskState(precommit_task))
+        ui.set_output_fd(read_fd)
+
+        # Mock terminal width to be narrow
+        with patch("shutil.get_terminal_size") as mock_size:
+            mock_size.return_value.columns = 40  # Narrow terminal
+
+            async with ui:
+                # Write a very long line without newline
+                long_line = "Checking " + "." * 100 + " "
+                os.write(write_fd, long_line.encode())
+                await asyncio.sleep(0.05)
+
+                # Complete the line
+                os.write(write_fd, b"done!\n")
+                await asyncio.sleep(0.05)
+
+                # Write another long line with embedded progress
+                try:
+                    os.write(write_fd, b"[")
+                    for _ in range(50):
+                        os.write(write_fd, b"=")
+                        await asyncio.sleep(0.001)
+                    os.write(write_fd, b"] 100%\n")
+                except BrokenPipeError:
+                    # Expected if the reader closed the pipe
+                    pass
+
+                # Close write end if not already closed
+                with contextlib.suppress(OSError):
+                    os.close(write_fd)
+
+                # Wait for tasks to complete
+                await asyncio.gather(ai_task, precommit_task, return_exceptions=True)
+
+        # The test passes if it doesn't crash or hang
+        # The long lines should be handled gracefully
+
+    @pytest.mark.asyncio
+    async def test_status_line_truncation(self):
+        """Test that status line is truncated to fit terminal width."""
+
+        # Create mock tasks with long names
+        async def mock_ai_task():
+            await asyncio.sleep(0.1)
+            return "Test message"
+
+        async def mock_precommit_task():
+            await asyncio.sleep(0.1)
+            return 0
+
+        ai_task = asyncio.create_task(mock_ai_task())
+        precommit_task = asyncio.create_task(mock_precommit_task())
+
+        ui = ParallelTaskRunner(TaskState(ai_task), TaskState(precommit_task))
+
+        # Mock terminal width to be very narrow
+        with patch("shutil.get_terminal_size") as mock_size:
+            mock_size.return_value.columns = 30  # Very narrow terminal
+
+            # Capture printed output
+            captured = []
+
+            def mock_print(*args, **kwargs):
+                captured.append(" ".join(str(arg) for arg in args))
+
+            with patch("builtins.print", mock_print):
+                ui._print_status_line()
+
+            # Status line should be truncated
+            assert len(captured) > 0
+            status_line = captured[-1]
+            # Remove ANSI codes for length check
+            import re
+
+            clean_line = re.sub(r"\033\[[0-9;]*[mK]", "", status_line)
+            clean_line = clean_line.lstrip("\r")
+            assert len(clean_line) <= 29  # Should fit in terminal width - 1
+
+        # Clean up
+        await asyncio.gather(ai_task, precommit_task, return_exceptions=True)
+
 
 class TestPrecommitHook:
     """Test pre-commit hook execution."""
@@ -474,6 +644,72 @@ exit 0
 
 class TestFullIntegration:
     """Test the full git-commit-ai flow."""
+
+    @pytest.mark.asyncio
+    async def test_precommit_output_handling(
+        self,
+        test_repo,
+        mock_claude_path,
+        monkeypatch,
+    ):
+        """Test that pre-commit output is handled correctly with status updates."""
+        # Create a pre-commit hook with various output patterns
+        hook_path = Path(test_repo.git_dir) / "hooks" / "pre-commit"
+        hook_path.parent.mkdir(exist_ok=True)
+        hook_content = """#!/bin/bash
+echo -n "Checking files..."  # No newline
+sleep 0.1
+echo " done!"  # Complete the line
+echo "Running tests..."
+sleep 0.1
+echo "All good!"
+exit 0
+"""
+        hook_path.write_text(hook_content)
+        hook_path.chmod(0o755)
+
+        # Create a mock editor
+        mock_editor = mock_claude_path / "mock_editor"
+        mock_editor.write_text("#!/bin/sh\nexit 0\n")
+        mock_editor.chmod(0o755)
+        monkeypatch.setenv("EDITOR", str(mock_editor))
+
+        # Change to test repo directory
+        original_cwd = str(Path.cwd())
+        os.chdir(test_repo.working_dir)
+
+        try:
+            with (
+                patch("sys.argv", ["git-commit-ai"]),
+                patch("sys.exit") as mock_exit,
+            ):
+                # Capture output to verify correct behavior
+                captured = []
+                original_write = sys.stdout.buffer.write
+
+                def capture_write(data):
+                    captured.append(data)
+                    return original_write(data)
+
+                with patch.object(sys.stdout.buffer, "write", capture_write):
+                    await async_main()
+
+                # Should succeed
+                mock_exit.assert_called_with(0)
+
+                # Verify output patterns
+                output = b"".join(captured).decode("utf-8", errors="replace")
+
+                # Should have pre-commit output
+                assert "Checking files... done!" in output
+                assert "Running tests..." in output
+                assert "All good!" in output
+
+                # Should have status updates (with escape codes)
+                assert "⏳ pre-commit" in output or "✓ pre-commit" in output
+                assert "⏳ message" in output or "✓ message" in output
+        finally:
+            os.chdir(original_cwd)
 
     @pytest.mark.asyncio
     async def test_commit_all_flag(self, test_repo, mock_claude_path, monkeypatch):
