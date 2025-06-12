@@ -6,20 +6,17 @@ GNOME + logind event reporter
  * Logs to systemd-journal
 """
 
-import argparse
 import json
 import logging
 import os
 import signal
 import socket
-import sys
 import time
 import urllib.error
 import urllib.request
 from collections import Counter
-from datetime import datetime, timedelta
+from datetime import timedelta
 
-import requests
 from gi.repository import GLib
 from pydbus import SystemBus
 from systemd.journal import JournalHandler
@@ -51,7 +48,7 @@ log.setLevel(LOGLEVEL)
 log.addHandler(JournalHandler())
 log.propagate = False
 
-queue = []  # buffered events (list[dict])
+queue: list[dict] = []  # buffered events
 
 
 # - helpers ----------------------------------------------------------------------
@@ -143,13 +140,6 @@ def _flush() -> bool:
     return not queue or sent_any
 
 
-def _q(event, **ev):
-    """Queue *ev* and attempt immediate flush."""
-    queue.append(dict(event=event, **ev))
-    log.info("queued %s (q=%d)", event, len(queue))
-    _flush()
-
-
 def _periodic(_: int) -> bool:
     _flush()
     return True  # keep timer
@@ -157,7 +147,10 @@ def _periodic(_: int) -> bool:
 
 # ─ GNOME / logind hooks ──────────────────────────────────────────────────────
 def emit(ev: str):
-    _q(event=ev, ts=int(time.time()))
+    """Queue *ev* and attempt immediate flush."""
+    queue.append({"event": ev, "ts": time.time()})
+    log.info("queued %s (q=%d)", ev, len(queue))
+    _flush()
 
 
 bus = SystemBus()
