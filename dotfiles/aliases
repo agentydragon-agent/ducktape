@@ -18,5 +18,5 @@ function bmosh() {
 alias vimdiff='nvim -d'
 
 # (testing)
-alias gc='git_commit_ai.py'
-alias gca='git_commit_ai.py --all'
+# alias gc='git_commit_ai.py'
+# alias gca='git_commit_ai.py --all'
