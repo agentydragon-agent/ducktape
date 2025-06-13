@@ -37,6 +37,7 @@ class Props(BaseModel):
     flags: int | None = Field(alias="_flags", default=None)
     image_width: int | None = Field(alias="_imageWidth", default=None)
     image_height: int | None = Field(alias="_imageHeight", default=None)
+    published: int | None = Field(alias="_published", default=None)
 
     # {
     #   "id": "oxIi6At72Q-R",
