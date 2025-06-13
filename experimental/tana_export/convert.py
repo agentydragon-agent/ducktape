@@ -525,12 +525,11 @@ def _roots(store: NodeStore) -> list[BaseNode]:
 
 
 # ──────────────────────────  Exporters  ────────────────────────── #
-def export_node_as_tanapaste(node: BaseNode, store: NodeStore) -> str:
+def export_node_as_tanapaste(store: NodeStore, node: BaseNode) -> str:
     """Export a single node and its children as TanaPaste format."""
     lines: list[str] = []
     lines.append("%%tana%%")
-    vis: set[str] = set()
-    _render_node(node, store, vis, lines.append, "", "tana")
+    _render_node(node, store, set(), lines.append, "", "tana")
     return "\n".join(lines).rstrip() + "\n"
 
 
