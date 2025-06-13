@@ -7,16 +7,18 @@ import difflib
 from pathlib import Path
 
 import pytest
-
 from convert import NodeStore, attach_supertag_property, export_node_as_tanapaste
 
 TESTDATA_PATH = Path(__file__).parent / "testdata"
 
 
-@pytest.mark.parametrize(
-    "node_id",
-    ["r1shM2RHNgCv", "Oh-JrJ73G9iK", "KhlJy8yJ37KN", "MFjacEHVlv36", "Vi0w332Hvh9b"],
-)
+def get_test_node_ids():
+    """Get all node IDs from .tanapaste files in testdata."""
+    tanapaste_files = list(TESTDATA_PATH.glob("*.tanapaste"))
+    return [f.stem for f in tanapaste_files]
+
+
+@pytest.mark.parametrize("node_id", get_test_node_ids())
 def test_node_export(node_id):
     """Test that generated TanaPaste for specific nodes match reference files."""
     store = NodeStore.from_file(TESTDATA_PATH / "test_workspace.json")
@@ -26,13 +28,10 @@ def test_node_export(node_id):
 
     # Check exact equality
     if actual != expected:
-        diff = difflib.unified_diff(
+        # Use ndiff for word-level changes with color-like output
+        diff = difflib.ndiff(
             expected.splitlines(keepends=True),
             actual.splitlines(keepends=True),
-            fromfile="expected",
-            tofile="actual",
-            lineterm="",
         )
         print("".join(diff))
         pytest.fail(f"Content does not match for {node_id}")
-
