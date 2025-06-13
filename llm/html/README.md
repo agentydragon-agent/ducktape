@@ -9,10 +9,10 @@ A FastAPI server that renders Markdown instructions with dynamic token generatio
 pip install -r requirements.txt
 
 # Run the FastAPI server
-python server.py
+python html_server.py
 
 # Or with custom settings
-TOKEN_SECRET=mysecret PORT=8080 python server.py
+TOKEN_SECRET=mysecret PORT=8080 python html_server.py
 ```
 
 The server will start on http://localhost:9000 by default.

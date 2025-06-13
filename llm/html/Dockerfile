@@ -17,7 +17,7 @@ RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt
 
 # Copy the application code
-COPY server.py token_scheme.py index.md style.css base.html verify.html tana.md ./
+COPY html_server.py token_scheme.py index.md style.css base.html verify.html tana.md ./
 
 EXPOSE 9000
 
@@ -25,4 +25,4 @@ EXPOSE 9000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s \
   CMD curl --fail http://127.0.0.1:9000/ || exit 1
 
-CMD ["python", "server.py"]
+CMD ["python", "html_server.py"]

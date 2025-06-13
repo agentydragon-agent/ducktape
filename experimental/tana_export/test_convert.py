@@ -12,62 +12,51 @@ from convert import NodeStore, attach_supertag_property, export_node_as_tanapast
 TESTDATA_PATH = Path(__file__).parent / "testdata"
 
 
-def get_test_node_ids():
-    """Get all node IDs from .tanapaste files in testdata."""
-    tanapaste_files = list(TESTDATA_PATH.glob("*.tanapaste"))
-    return [f.stem for f in tanapaste_files]
+def check_content_match(actual: str, expected: str, test_name: str) -> None:
+    """Check if actual matches expected, print diff if not."""
+    if actual != expected:
+        # Use ndiff for word-level changes with color-like output
+        diff = difflib.ndiff(
+            expected.splitlines(keepends=True),
+            actual.splitlines(keepends=True),
+        )
+        print("".join(diff))
+        pytest.fail(f"Content does not match for {test_name}")
 
 
-@pytest.mark.parametrize("node_id", get_test_node_ids())
+@pytest.mark.parametrize("node_id", [f.stem for f in TESTDATA_PATH.glob("*.tanapaste")])
 def test_node_export(node_id):
     """Test that generated TanaPaste for specific nodes match reference files."""
     store = NodeStore.from_file(TESTDATA_PATH / "test_workspace.json")
     attach_supertag_property(store)
     actual = export_node_as_tanapaste(store, store[node_id])
     expected = (TESTDATA_PATH / f"{node_id}.tanapaste").read_text()
-
-    # Check exact equality
-    if actual != expected:
-        # Use ndiff for word-level changes with color-like output
-        diff = difflib.ndiff(
-            expected.splitlines(keepends=True),
-            actual.splitlines(keepends=True),
-        )
-        print("".join(diff))
-        pytest.fail(f"Content does not match for {node_id}")
+    check_content_match(actual, expected, node_id)
 
 
 @pytest.mark.parametrize(
-    "node_id",
+    ("folder", "node_id"),
     [
-        "BYSeNY-L_Yth",
-        "5PumeU26_4fo",
-        "Oh-JrJ73G9iK",
-        "2Ap-6LC3fVuq",
-        "6aoZJeWmOXcl",
-        "hiHpuPTowhDs",
-        "KhlJy8yJ37KN",
-        "LkFZLMTHylYl",
-        "r1shM2RHNgCv",
-        "u00FQD8V08fy",
-        "x2-AdByI7b-a",
-        "YbPcBamWZFGV",
+        ("supertag_with_spaces", "BYSeNY-L_Yth"),
+        ("table_contextual_column", "5PumeU26_4fo"),
+        ("node_attributes", "Oh-JrJ73G9iK"),
+        ("datetime_fields", "2Ap-6LC3fVuq"),
+        ("inline_references", "6aoZJeWmOXcl"),
+        ("supertag_with_attributes", "hiHpuPTowhDs"),
+        ("links", "KhlJy8yJ37KN"),
+        ("search_node", "LkFZLMTHylYl"),
+        ("text_formatting", "r1shM2RHNgCv"),
+        ("multiple_nodes_same_supertag", "u00FQD8V08fy"),
+        ("multiple_supertags", "x2-AdByI7b-a"),
+        ("code_blocks", "YbPcBamWZFGV"),
     ],
 )
-def test_node_export_minimal_json(node_id):
+def test_node_export_minimal_json(folder, node_id):
     """Test that generated TanaPaste from minimal JSON files match reference files."""
-    # Load from the minimal JSON file instead of full workspace
-    store = NodeStore.from_file(TESTDATA_PATH / f"{node_id}.json")
+    # Load from the minimal JSON file in the feature folder
+    base = TESTDATA_PATH / folder
+    store = NodeStore.from_file(base / f"{node_id}.json")
     attach_supertag_property(store)
     actual = export_node_as_tanapaste(store, store[node_id])
-    expected = (TESTDATA_PATH / f"{node_id}.tanapaste").read_text()
-
-    # Check exact equality
-    if actual != expected:
-        # Use ndiff for word-level changes with color-like output
-        diff = difflib.ndiff(
-            expected.splitlines(keepends=True),
-            actual.splitlines(keepends=True),
-        )
-        print("".join(diff))
-        pytest.fail(f"Content does not match for {node_id} using minimal JSON")
+    expected = (base / f"{node_id}.tanapaste").read_text()
+    check_content_match(actual, expected, f"{node_id} using minimal JSON")
