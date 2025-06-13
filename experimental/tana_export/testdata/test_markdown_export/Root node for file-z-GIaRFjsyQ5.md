@@ -4,12 +4,15 @@ Root node for file:z-GIaRFjsyQ5
 - Searches
 - Schema
   - #recipe
+  - #tag-a
+  - #tag-b
+  - #tag-c
+  - #tag-d
+  - #supertag with space in name
 - [Export Test](<Export Test/README.md>)
 - Avatar
 - Users
   - agentydragon@gmail_com
 - List of layouts for z-GIaRFjsyQ5 _(Layouts that can be shared with users with access to z-GIaRFjsyQ5)_
-- Deleted Nodes _(When a node is deleted, it is moved here)_
-  - Sarch node looking up all #recipe nodes
-  - #recipe
+- [Deleted Nodes](<Deleted Nodes.md>)
 - MoveTo list _(Nodes on this list are shown in the MoveTo menu)_

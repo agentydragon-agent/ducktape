@@ -1,0 +1,78 @@
+%%tana%%
+- Export Test
+  - Daily notes
+    - 2025
+      - Week 24
+        - Today, Thu, Jun 12
+          - This node is in Jun 12, 2025
+    -
+  - Node content formatting
+    - Basic formatting
+      - This is **Bold**
+      - This is _Italic_
+      - This is <mark>Highlit</mark>
+      - This is __Underscored__
+      - This is <strike>Strikethrough</strike>
+    - Datetime
+      - Date: [[date:2025-06-12]]
+      - Datetime: [[date:2025-06-12T12:38:03[America/Los_Angeles]]]
+      - Datetime range: [[date:2025-06-12T12:38:11[America/Los_Angeles]/2025-06-12T13:38:12[America/Los_Angeles]]]
+    - Code
+      - Inline code: <code>foo = "bar"</code>
+      - Code block, Python:
+```Python
+#!/usr/bin/python
+print("hello world")
+```
+    - Checkbox nodes
+      - [X] Filled with **bold**
+      - [ ] Unfilled with _italic_
+      - [ ] Unfilled reference to filled with bold: [[Filled with bold^-cpuVMjVcnvN]]
+  - Inline references
+    - Node X
+    - Inline reference to Node X: [[Node X^Qi0AlCNyZgW0]]
+    - Inline reference to Node X with an alternate alias: [[Node X^Qi0AlCNyZgW0]]
+  - Links
+    - Basic link
+      - https://www.google.com/
+        - URL:: https://www.google.com/
+    - Inline link: [[https://www.reddit.com/^_VJcNPQVghEd]]
+    - Inline link with different text: [[here^G3mhwksxY0VD]]
+    - Link with embedded additional content:
+      - https://xkcd.com/
+        - URL:: https://xkcd.com/
+        - content 1
+        - content 2
+  - The node below has a supertag applied, "recipe"
+    - Perfect Eggs #recipe
+      - This node has attributes set
+      - Attribute with multiple node values:: 
+        - Value 1
+        - Value 2
+        - Value 3
+      - Attribute with one node value:: Value A
+      - Checkbox attribute 1 (true):: [X] 
+      - Checkbox attribute 2 (false):: 
+      - Attribute referencing 2 other nodes:: 
+        - [[Node X^Qi0AlCNyZgW0]]
+        - [[Node Y^nDZ-2gyNELRb]]
+  - Some other nodes with #recipe supertag:
+    - Scramble #recipe
+    - Steak #recipe
+  - Node with multiple supertags:
+    - Foobar #tag-a, #tag-b, #tag-c, #tag-d
+      - testing
+    - Reference (full-block) to node with multiple supertags:
+      - [[Foobar^x_DxhU6IlETf]]
+  - Node with supertags with space in name:
+    - Node with tags with space #[[supertag with space in name]]
+  - Image
+    - Plain image
+      -  ![](https://firebasestorage.googleapis.com/v0/b/tagr-prod.appspot.com/o/notespace%2Fagentydragon%40gmail.com%2Fuploads%2F2025-06-13T00%3A51%3A03.687Z-image.png?alt=media&token=fce13347-79df-42cd-8fd4-eecc10ffa7ba) 
+    - Image with caption
+      -  ![Caption of this image - **bold**, **_italic_**](https://firebasestorage.googleapis.com/v0/b/tagr-prod.appspot.com/o/notespace%2Fagentydragon%40gmail.com%2Fuploads%2F2025-06-13T00%3A51%3A49.350Z-image.png?alt=media&token=e5f17b31-9ea5-4f95-b77d-caa4df8c9fd1) 
+  - Search node looking for all #recipe nodes
+    - [[Perfect Eggs^Oh-JrJ73G9iK]]
+    - [[Scramble^Hldnr8OJrKHh]]
+    - [[Steak^BA8e4EUg0rpa]]
+

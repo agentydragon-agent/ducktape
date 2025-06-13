@@ -1,23 +1,45 @@
 Export Test
 - [Daily notes](<Daily notes/README.md>)
-- This is a test Tana workspace
-  - This is Bold
-  - This is Italic
-  - This is Highlit
-  - This is Underscored
-  - This is Strikethrough
-- Node X
-- Inline reference to Node X: Node X
-- Inline reference to Node X with an alternate alias: Different name for node X
-- Inline code: foo = "bar"
-- Code block, Python:
-  - ```Python
+- Node content formatting
+  - Basic formatting
+    - This is Bold
+    - This is Italic
+    - This is Highlit
+    - This is Underscored
+    - This is Strikethrough
+  - Datetime
+    - Date: *2025-06-12*
+    - Datetime: *2025-06-12T12:38:03[America/Los_Angeles]*
+    - Datetime range: *2025-06-12T12:38:11[America/Los_Angeles]/2025-06-12T13:38:12[America/Los_Angeles]*
+  - Code
+    - Inline code: foo = "bar"
+    - Code block, Python:
+      - ```Python
 #!/usr/bin/python
 print("hello world")
 ```
-- Date: *2025-06-12*
-- Datetime: *2025-06-12T12:38:03[America/Los_Angeles]*
-- Datetime range: *2025-06-12T12:38:11[America/Los_Angeles]/2025-06-12T13:38:12[America/Los_Angeles]*
+  - Checkbox nodes
+    - [x] Filled with bold
+    - [ ] Unfilled with italic
+    - [ ] Unfilled reference to filled with bold: [x] Filled with bold
+- Inline references
+  - Node X
+  - Inline reference to Node X: Node X
+  - Inline reference to Node X with an alternate alias: Different name for node X
+- Links
+  - Basic link
+    - [https://www.google.com/](https://www.google.com/)
+  - Inline link: [https://www.reddit.com/](https://www.reddit.com/)
+  - Inline link with different text: [here](https://xkcd.com/)
+  - Link with embedded additional content:
+    - [https://xkcd.com/](https://xkcd.com/)
 - [The node below has a supertag applied, "recipe"](<The node below has a supertag applied, -recipe/README.md>)
-- [Other nodes with #recipe supertag:](<Other nodes with -recipe supertag/README.md>)
+- [Some other nodes with #recipe supertag:](<Some other nodes with -recipe supertag/README.md>)
+- [Node with multiple supertags:](<Node with multiple supertags/README.md>)
+- [Node with supertags with space in name:](<Node with supertags with space in name/README.md>)
+- Image
+  - Plain image
+    - ![](https://firebasestorage.googleapis.com/v0/b/tagr-prod.appspot.com/o/notespace%2Fagentydragon%40gmail.com%2Fuploads%2F2025-06-13T00%3A51%3A03.687Z-image.png?alt=media&token=fce13347-79df-42cd-8fd4-eecc10ffa7ba)
+  - Image with caption
+    - ![Caption of this image - bold, italic](https://firebasestorage.googleapis.com/v0/b/tagr-prod.appspot.com/o/notespace%2Fagentydragon%40gmail.com%2Fuploads%2F2025-06-13T00%3A51%3A49.350Z-image.png?alt=media&token=e5f17b31-9ea5-4f95-b77d-caa4df8c9fd1)
 - Search node looking for all #recipe nodes

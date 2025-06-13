@@ -7,3 +7,6 @@ Perfect Eggs #recipe
 - **Attribute with one node value**: Value A
 - **Checkbox attribute 1 (true)**: [Yes](https://app.tana.inc/?nodeid=SYS_V03)
 - **Checkbox attribute 2 (false)**:
+- **Attribute referencing 2 other nodes**:
+  - Node X
+  - Node Y
