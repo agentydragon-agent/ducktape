@@ -30,34 +30,6 @@ print(indent(Path("references/xTcTNuPqb8.tanapaste").read_text(), "      "))
 
 print()
 print()
-print("Node tagged with a supertag (via tuple child):")
-doc = by_id("5N-4sKK5_l9i")
-show(doc, 1)
-assert doc["children"] == [
-    "YOy0EnzmlULs",
-    "OU6JjVPuPWqF",
-    "mNttKSyLTZGI",
-    "4qgC_YWmtZBu",
-    "Fcn_1pHcsglr",
-]
-
-print("  Reference rendering of node '5N-4sKK5_l9i':")
-print("    Tana Paste:")
-print(indent(Path("references/5N-4sKK5_l9i.tanapaste").read_text(), "      "))
-print("    Markdown:")
-print(indent(Path("references/5N-4sKK5_l9i.md").read_text(), "      "))
-
-print()
-print()
-print("Text child nested under it that includes mention of another node under it:")
-doc = by_id("4qgC_YWmtZBu")
-show(doc)
-print(
-    "^-- note props._ownerId is ID of the parent node; there is at most one 'owner parent' but nodes may be 'children' under multiple different nodes'",
-)
-
-print()
-print()
 print("Done on <datetime tag> tuple:")
 t = "YOy0EnzmlULs"
 show(by_id(t))
@@ -127,19 +99,6 @@ print(
 # SYS_A202 = "Node source"
 # is SYS_A202=SYS_V118, it's an event from external calendar => would be
 # good to drop if not used for other things
-
-print("------------")
-show(by_id("Be23ydzuQC"))  # tesl's vpn to croatia
-show(by_id("NBKbMzpuRr"))
-print(indent(Path("references/Be23ydzuQC.tanapaste").read_text(), "  "))
-print(indent(Path("references/Be23ydzuQC.md").read_text(), "  "))
-show(by_id("RKK7Sz1e7v"))
-show(by_id("bWqmUPvK13"))
-show(by_id("8jDFAsFnee"))
-show(by_id("iMJNVTNr_I"))
-show(by_id("oMbsUDb-zw"))
-print(indent(Path("references/RKK7Sz1e7v.tanapaste").read_text(), "  "))
-print(indent(Path("references/RKK7Sz1e7v.md").read_text(), "  "))
 
 
 print()
