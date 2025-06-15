@@ -57,7 +57,7 @@ Be relatively aggressively DRY. Even in e.g. Ansible playbooks, use variables fo
 Reuse code when possible. Reuse *code patterns* when possible - for that purpose, some things you
 can do include e.g., write decorators, context managers, etc.
 
-### Example: loop
+### Particular case: loop
 
 Use loops to avoid repeating the same code block, for example:
 
@@ -84,6 +84,41 @@ for key, value in {
 }.items():
     if value is not None:
         habit_data[key] = value
+```
+
+### Particular case: No redundant special cases for empty structures
+
+Do not implement redundant special cases for empty lists/dicts/structures if they do not change behavior.
+
+DO NOT DO:
+
+```python
+def fn(x: list[int]):
+    if not xs:      # <-- BAD - redundant, deleting this block neither changes behavior nor runtime
+        return '<>'
+   
+    x = '<'
+    for i, n in enumerate(xs):
+        if i > 0:
+            x += ' '
+        x += str(n)
+    x += '>'
+    return x
+```
+
+Here the first 2 lines of the function are *redundant* because they do not change behavior and neither are they an optimization.
+
+CORRECTED:
+
+```python
+def fn(x: list[int]):
+    x = '<'
+    for i, n in enumarate(xs):
+        if i > 0:
+            x += ' '
+        x += str(n)
+    x += '>'
+    return x
 ```
 
 ## No broad try-catch, no swallowing errors
@@ -466,11 +501,15 @@ assert_that(
 
 Access properties directly when using Hamcrest instead of using has_property when it doesn't add value:
 
-```python
-# Wrong - unnecessarily verbose:
-assert_that(user, has_property("name", contains_string("John")))
+WRONG - unnecessarily verbose:
 
-# Right - clearer and more direct:
+```python
+assert_that(user, has_property("name", contains_string("John")))
+```
+
+RIGHT - clearer and more direct:
+
+```python
 assert_that(user.name, contains_string("John"))
 ```
 
