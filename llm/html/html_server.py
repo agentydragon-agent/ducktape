@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 TOKEN_SECRET = os.environ.get("TOKEN_SECRET", "hunter2").encode()
 
 # List of markdown pages to serve (without .md extension)
-MARKDOWN_PAGES = ["tana"]
+MARKDOWN_PAGES = ["tana", "coding"]
 
 # Cache for page titles from frontmatter
 PAGE_TITLES = {}
