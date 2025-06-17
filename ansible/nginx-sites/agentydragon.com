@@ -7,6 +7,10 @@ server {
 server {
     listen 443 ssl http2;
     server_name agentydragon.com;
+
+    ssl_certificate /etc/letsencrypt/live/agentydragon.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/agentydragon.com/privkey.pem;
+
     return 301 https://www.agentydragon.com$request_uri;
 }
 
