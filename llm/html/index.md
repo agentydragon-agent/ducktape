@@ -385,26 +385,35 @@ If not workday:
 
 ## Everyday carry (EDC)
 
-NOTE: I do *NOT* carry or possess physical keys.
-DO NOT REMIND ME to take/check for keys.
+**NO KEYS** - I don't carry physical keys. Never remind me about keys.
 
-### Critical
+### In pockets
 
-* Personal phone (Pixel 6)
-* Wallet (which automatically includes ID, credit cards, money)
-* If workday:
-    * Badge
-    * Work phone (Pixel 9)
-    * Work laptop (in backpack)
+**Always:**
+- Personal phone (Pixel 6)
+- Wallet
 
-### Standard backpack content - carried usually though not always
+**Workdays add:**
+- Badge
+- Work phone (Pixel 9)
 
-* Personal GPD laptop
-* USB-C charger
-* USB-C cable
-* Power bank
-* Remarkable
-* Shokz bone conduction headphones
+### Backpack
+
+**Usually:**
+
+- USB-C charger & cable
+- Power bank
+- Remarkable
+- Shokz headphones
+
+**NOT on workdays:**
+
+- Personal GPD laptop
+
+**On workdays:**
+
+- Work laptop (in backpack)
+- **NOT personal laptop** (avoid non-work rabbitholes)
 
 ## At home
 
