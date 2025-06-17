@@ -16,16 +16,13 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from convert import (
-    BaseNode,
-    NodeStore,
-    RenderContext,
-    TupleNode,
-    attach_supertag_property,
-)
+from convert import RenderContext
+from tana_lib import SUPERTAG_KEY_ID, BaseNode, NodeStore, TupleNode
+from tana_lib.supertags import attach_supertag_property
+from tana_lib.types import NodeId
 
 # Constants from convert.py
-_SUPERTAG_KEY_ID = "SYS_A13"
+_SUPERTAG_KEY_ID = NodeId(SUPERTAG_KEY_ID)
 
 
 def _is_wrapper(node: BaseNode) -> bool:
@@ -36,17 +33,17 @@ def _is_wrapper(node: BaseNode) -> bool:
 class TrackingNodeStore(NodeStore):
     """A NodeStore that tracks which nodes are accessed."""
 
-    def __init__(self, mapping: dict[str, BaseNode]):
+    def __init__(self, mapping: dict[NodeId, BaseNode]):
         super().__init__(mapping)
-        self.accessed_nodes: set[str] = set()
+        self.accessed_nodes: set[NodeId] = set()
         self.tracking_enabled: bool = True
 
-    def __getitem__(self, k: str) -> BaseNode:
+    def __getitem__(self, k: NodeId) -> BaseNode:
         if self.tracking_enabled:
             self.accessed_nodes.add(k)
         return super().__getitem__(k)
 
-    def get(self, k: str, default=None):
+    def get(self, k: NodeId, default=None):
         if k in self and self.tracking_enabled:
             self.accessed_nodes.add(k)
         return super().get(k, default)
@@ -62,9 +59,9 @@ def collect_supertag_dependencies(store: NodeStore, node_ids: set[str]) -> set[s
     - Meta nodes that propagate tags
     - Wrapper nodes that propagate tags to children
     """
-    dependencies = set()
-    to_process = set(node_ids)
-    processed = set()
+    dependencies: set[str] = set()
+    to_process: set[str] = set(node_ids)
+    processed: set[str] = set()
 
     while to_process:
         current_id = to_process.pop()
@@ -75,7 +72,7 @@ def collect_supertag_dependencies(store: NodeStore, node_ids: set[str]) -> set[s
         if current_id not in store:
             continue
 
-        node = store[current_id]
+        node = store[NodeId(current_id)]
 
         # Check if this node has a meta_node_id (inherits tags from it)
         if node.props.meta_node_id and node.props.meta_node_id in store:
@@ -86,7 +83,7 @@ def collect_supertag_dependencies(store: NodeStore, node_ids: set[str]) -> set[s
         for child_id in node.children:
             if child_id not in store:
                 continue
-            child = store[child_id]
+            child = store[NodeId(child_id)]
             if (
                 isinstance(child, TupleNode)
                 and len(child.children) >= 2
@@ -100,14 +97,14 @@ def collect_supertag_dependencies(store: NodeStore, node_ids: set[str]) -> set[s
                 for tag_id in child.children[1:]:
                     if tag_id in store:
                         dependencies.add(tag_id)
-                        tag_node = store[tag_id]
+                        tag_node = store[NodeId(tag_id)]
                         if tag_node.props.meta_node_id:
                             dependencies.add(tag_node.props.meta_node_id)
                             to_process.add(tag_node.props.meta_node_id)
 
         # Check if this node is owned by a wrapper that might propagate tags
         if node.props.owner_id and node.props.owner_id in store:
-            owner = store[node.props.owner_id]
+            owner = store[NodeId(node.props.owner_id)]
             if _is_wrapper(owner):
                 dependencies.add(owner.id)
                 to_process.add(owner.id)
@@ -131,7 +128,7 @@ class TrackingRenderContext(RenderContext):
 def export_node_with_tracking(
     store: TrackingNodeStore,
     node_id: str,
-) -> tuple[str, set[str]]:
+) -> tuple[str, set[NodeId]]:
     """
     Export a single node as TanaPaste and return the export along with touched node IDs.
 
@@ -142,7 +139,7 @@ def export_node_with_tracking(
     if node_id not in store:
         raise ValueError(f"Node {node_id} not found in store")
 
-    node = store[node_id]
+    node = store[NodeId(node_id)]
 
     # Clear accessed nodes to start fresh
     store.accessed_nodes.clear()
@@ -164,11 +161,14 @@ def export_node_with_tracking(
 
     # Disable tracking while collecting dependencies to avoid cascading
     store.tracking_enabled = False
-    supertag_deps = collect_supertag_dependencies(store, export_nodes)
+    supertag_deps = collect_supertag_dependencies(
+        store,
+        {str(nid) for nid in export_nodes},
+    )
     store.tracking_enabled = True
 
     # Combine both sets
-    all_accessed = export_nodes | supertag_deps
+    all_accessed = export_nodes | {NodeId(nid) for nid in supertag_deps}
 
     # Return the export and all accessed nodes
     return tanapaste, all_accessed

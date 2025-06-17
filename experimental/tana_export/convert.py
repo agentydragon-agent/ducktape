@@ -10,245 +10,32 @@ from __future__ import annotations
 
 import argparse
 import html
-import json
-import re
-from collections import defaultdict
-from collections.abc import Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from html.parser import HTMLParser
-from io import StringIO
+from datetime import datetime
 from pathlib import Path
-from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
-
-
-class Props(BaseModel):
-    created: int | None = None
-    name: str | None = None
-    doc_type: str | None = Field(alias="_docType", default=None)
-    owner_id: str | None = Field(alias="_ownerId", default=None)
-    meta_node_id: str | None = Field(alias="_metaNodeId", default=None)
-    source_id: str | None = Field(alias="_sourceId", default=None)
-    done: int | None = Field(alias="_done", default=None)
-    description: str | None = None  # present in e.g. gc7H7gDG3Ce8
-    flags: int | None = Field(alias="_flags", default=None)
-    image_width: int | None = Field(alias="_imageWidth", default=None)
-    image_height: int | None = Field(alias="_imageHeight", default=None)
-    published: int | None = Field(alias="_published", default=None)
-
-    # {
-    #   "id": "oxIi6At72Q-R",
-    #   "children": ["UcmDPW21ODoU"],
-    #   "props": {
-    #     "_docType": "viewDef",
-    #     "_editMode": true,
-    #     "_ownerId": "tucdPrxIajt5",
-    #     "_view": "table",
-    #     "created": 1701150010598,
-    #     "name": "Default"
-    #   },
-    #   "modifiedTs": [1701150011150],
-    #   "touchCounts": [9]
-    # }
-    view: str | None = Field(alias="_view", default=None)
-    edit_mode: bool | None = Field(alias="_editMode", default=None)
-    search_context_node: str | None = Field(alias="searchContextNode", default=None)
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    @property
-    def created_dt(self) -> datetime | None:
-        if self.created is None:
-            return None
-        return datetime.fromtimestamp(self.created / 1_000, tz=timezone.utc)
-
-    @property
-    def is_trash(self) -> bool:
-        return bool(self.owner_id and self.owner_id.endswith("_TRASH"))
-
-
-class BaseNode(BaseModel):
-    id: str
-    props: Props
-    children: list[str] = Field(default_factory=list)
-    modified_ts: list[int] | None = Field(alias="modifiedTs", default=None)
-    touch_counts: list[int] | None = Field(alias="touchCounts", default=None)
-    association_map: dict[str, str] | None = Field(alias="associationMap", default=None)
-    _store: NodeStore | None = None
-
-    model_config = ConfigDict(extra="allow", frozen=True, arbitrary_types_allowed=True)
-
-    @property
-    def name(self) -> str | None:  # type: ignore[override]
-        return self.props.name
-
-    @property
-    def is_trash(self) -> bool:
-        return self.props.is_trash
-
-    @property
-    def child_nodes(self) -> list[BaseNode]:
-        """Return children as node instances."""
-        if not self._store:
-            return []
-        return [self._store[cid] for cid in self.children if cid in self._store]
-
-
-class TupleNode(BaseNode): ...
-
-
-class TagDefNode(BaseNode): ...
-
-
-class UnknownNode(BaseNode): ...
-
-
-_DOC_CLASS: Mapping[str | None, type[BaseNode]] = {
-    "tuple": TupleNode,
-    "tagDef": TagDefNode,
-    None: UnknownNode,
-}
-
-
-class NodeStore(Mapping[str, BaseNode]):
-    def __init__(self, mapping: Mapping[str, BaseNode]):
-        self._m = dict(mapping)
-        # Set store reference on each node
-        for node in self._m.values():
-            # Use object.__setattr__ to set on frozen model
-            object.__setattr__(node, "_store", self)
-
-    # mapping protocol (read-only)
-    def __getitem__(self, k):
-        return self._m[k]
-
-    def __iter__(self):
-        return iter(self._m)
-
-    def __len__(self):
-        return len(self._m)
-
-    @classmethod
-    def from_file(cls, path: Path):
-        with path.open(encoding="utf-8") as fh:
-            data = json.load(fh)
-
-        def _make_node(raw: dict[str, Any]) -> BaseNode:
-            # There are some nodes with no _docType, e.g. hN3mU6IQqe.
-            return _DOC_CLASS.get(
-                raw["props"].get("_docType"),
-                UnknownNode,
-            ).model_validate(raw)
-
-        return cls({n.id: n for n in (_make_node(doc) for doc in data["docs"])})
-
-
-# ──────────────────────────  Supertag view  ────────────────────────── #
-
-_SUPERTAG_KEY_ID = "SYS_A13"  # “Node supertags(s)”
-_URL_KEY_ID = "SYS_A78"  # “URL”
-
-
-def attach_supertag_property(store: NodeStore) -> None:
-    idx: defaultdict[str, list[str]] = defaultdict(list)
-
-    def _add(id, tags):
-        for tag in tags:
-            if tag and tag not in idx[id]:
-                idx[id].append(tag)
-
-    for n in store.values():
-        if not (
-            isinstance(n, TupleNode)
-            and len(n.children) >= 2
-            and n.props.owner_id
-            and (key_node := store.get(n.children[0]))
-            and key_node.id == _SUPERTAG_KEY_ID
-        ):
-            continue
-        # Handle multi-value tuples - all children after the key are tag values
-        for v in n.child_nodes[1:]:
-            if v.name:
-                idx[n.props.owner_id].append(v.name)
-
-    # NEW: propagate tags via meta-node link
-    for n in store.values():
-        if n.props.meta_node_id:
-            _add(n.id, idx[n.props.meta_node_id])
-
-    # propagate wrapper tags to visible children
-    for w in store.values():
-        if _is_wrapper(w):
-            for cid in w.children:
-                _add(cid, idx[w.id])
-
-    BaseNode.supertags = property(lambda self: idx[self.id])  # type: ignore[attr-defined]
-
-
-# ──────────────────────────  Inline refs  ────────────────────────── #
-
-_NODE_SPAN = re.compile(r'<span data-inlineref-node="([^"]+)"></span>')
-_DATE_SPAN = re.compile(r'<span data-inlineref-date="([^"]+)"></span>')
-
-
-class HTMLToMarkdownParser(HTMLParser):
-    """Convert HTML formatting to Markdown syntax."""
-
-    def __init__(self):
-        super().__init__()
-        self.output = StringIO()
-        self.tag_stack = []
-
-    def handle_starttag(self, tag, attrs):
-        self.tag_stack.append(tag)
-        if tag in ("b", "strong"):
-            self.output.write("**")
-        elif tag in ("i", "em"):
-            self.output.write("_")
-        elif tag == "u":
-            self.output.write("__")
-        elif tag == "mark":
-            self.output.write("<mark>")
-        elif tag == "strike":
-            self.output.write("<strike>")
-        elif tag == "code":
-            self.output.write("<code>")
-
-    def handle_endtag(self, tag):
-        if self.tag_stack and self.tag_stack[-1] == tag:
-            self.tag_stack.pop()
-        if tag in ("b", "strong"):
-            self.output.write("**")
-        elif tag in ("i", "em"):
-            self.output.write("_")
-        elif tag == "u":
-            self.output.write("__")
-        elif tag == "mark":
-            self.output.write("</mark>")
-        elif tag == "strike":
-            self.output.write("</strike>")
-        elif tag == "code":
-            self.output.write("</code>")
-
-    def handle_data(self, data):
-        self.output.write(data)
-
-    def get_markdown(self):
-        return self.output.getvalue()
-
-
-def _get_tuple_value(node: BaseNode, key_id: str) -> BaseNode | None:
-    """Get the value node for a specific key from a node's tuple children."""
-    for child in node.child_nodes:
-        if isinstance(child, TupleNode) and len(child.child_nodes) >= 2:
-            key_node, val_node = child.child_nodes[:2]
-            if key_node.id == key_id:
-                return val_node
-    return None
-
+from tana_lib import (
+    CHECKBOX_CHECKED_ID,
+    CHECKBOX_KEY_ID,
+    CHECKBOX_UNCHECKED_ID,
+    SUPERTAG_KEY_ID,
+    URL_KEY_ID,
+    BaseNode,
+    CodeBlockNode,
+    NodeId,
+    NodeStore,
+    TupleNode,
+    VisualNode,
+    get_tuple_value,
+)
+from tana_lib.html_utils import (
+    DATE_SPAN_PATTERN,
+    NODE_SPAN_PATTERN,
+    find_inline_node_refs,
+    html_to_markdown,
+    parse_inline_date,
+)
 
 # ──────────────────────────  Headline  ────────────────────────── #
 
@@ -270,7 +57,11 @@ def _is_wrapper(node: BaseNode) -> bool:
 
 
 def _is_supertag_tuple(t: TupleNode) -> bool:
-    return len(t.children) > 0 and t.children[0] == _SUPERTAG_KEY_ID
+    return len(t.children) > 0 and t.children[0] == SUPERTAG_KEY_ID
+
+
+def _is_url_tuple(t: TupleNode) -> bool:
+    return len(t.children) > 0 and t.children[0] == URL_KEY_ID
 
 
 @dataclass
@@ -288,9 +79,9 @@ class RenderContext:
     # ──────────────────────────────────────────────────────────────
     def _scalar_text(self, node: BaseNode) -> str | None:
         # Check if the node itself is a checkbox value
-        if node.id == "SYS_V03":
+        if node.id == CHECKBOX_CHECKED_ID:
             return "[X] "  # Note: trailing space for consistency with expected output
-        if node.id == "SYS_V04":
+        if node.id == CHECKBOX_UNCHECKED_ID:
             return "[ ]"
 
         # regular leaf: has its own name and no children (except for special tuples)
@@ -298,25 +89,10 @@ class RenderContext:
             return self._inline_to_text(node.name)
 
         # special case: a checkbox tuple
-        if val := _get_tuple_value(node, "SYS_A55"):
+        if val := get_tuple_value(node, CHECKBOX_KEY_ID):
             return self._scalar_text(val)
 
         return None  # container, not a scalar
-
-    def _get_image_url(self, node: BaseNode) -> str | None:
-        """Extract image URL from a visual node's metadata."""
-        if (
-            node.props.doc_type != "visual"
-            or not node.props.meta_node_id
-            or not (metanode := self.store.get(node.props.meta_node_id))
-        ):
-            return None
-
-        # Look for media tuple in metanode children
-        if val_node := _get_tuple_value(metanode, "SYS_T15"):
-            return val_node.name
-
-        return None
 
     def _inline_to_text(self, raw: str) -> str:
         def node_sub(m):
@@ -326,44 +102,26 @@ class RenderContext:
             return f"[[{nm}^{nid}]]" if self.style == "tana" else nm
 
         def date_sub(m):
-            data = json.loads(html.unescape(m.group(1)))
-            date_str = data["dateTimeString"]
-            timezone = data.get("timezone", "")
-
-            # Check if it's a date-only value (no time component)
-            # Date-only formats: YYYY, YYYY-MM, YYYY-MM-DD, YYYY-Www
-            if "T" not in date_str and "/" not in date_str:
-                # Date-only values don't include timezone
-                iso = date_str
-            elif "/" in date_str and timezone:
-                # Date range - need to add timezone to each date
-                dates = date_str.split("/")
-                iso = f"{dates[0]}[{timezone}]/{dates[1]}[{timezone}]"
-            else:
-                # Single DateTime value
-                iso = f"{date_str}[{timezone}]" if timezone else date_str
-
+            iso = parse_inline_date(m.group(1))
             return f"[[date:{iso}]]" if self.style == "tana" else iso
 
         # keep verbatim code / image lines
         if raw.lstrip().startswith("```") or raw.lstrip().startswith("!"):
             return raw  # no substitutions
 
-        txt = _NODE_SPAN.sub(node_sub, raw)
-        txt = _DATE_SPAN.sub(date_sub, txt)
+        txt = NODE_SPAN_PATTERN.sub(node_sub, raw)
+        txt = DATE_SPAN_PATTERN.sub(date_sub, txt)
 
         # Convert HTML formatting to markdown for tana style
         if self.style == "tana":
-            parser = HTMLToMarkdownParser()
-            parser.feed(txt)
-            return parser.get_markdown()
+            return html_to_markdown(txt)
         return html.unescape(txt)
 
     @contextmanager
-    def add_indent(self, n: int):
-        """Context manager to temporarily add indentation."""
+    def add_indent(self):
+        """Context manager to temporarily add 2 spaces of indentation."""
         old_indent = self.indent
-        self.indent += " " * n
+        self.indent += "  "
         try:
             yield
         finally:
@@ -376,12 +134,12 @@ class RenderContext:
 
         base = self._inline_to_text(raw)
 
-        # ── NEW: description suffix ────────────────────────────────
+        # Description suffix
         if node.props.description:
             base += " - " + self._inline_to_text(node.props.description)
 
         # supertags
-        tags = getattr(node, "supertags", [])
+        tags = list(self.store.get_supertags(node.id))
         if node.props.doc_type == "journalPart" and "day" not in tags:
             tags.append("day")
         if tags:
@@ -409,7 +167,7 @@ class RenderContext:
             for val_node in t.child_nodes[1:]:
                 # For tana style, render as reference if the value is not owned by this tuple
                 # (i.e., it's a reference to an existing node)
-                with self.add_indent(2):
+                with self.add_indent():
                     if (
                         self.style == "tana"
                         and val_node.name
@@ -430,7 +188,7 @@ class RenderContext:
             # Add trailing space for consistency with expected output
             yield prefix + val_txt
             # still render value-node children (e.g., URL, tags) one level deeper
-            with self.add_indent(2):
+            with self.add_indent():
                 for child in val_node.child_nodes:
                     yield from self.render_node(child)
             return
@@ -439,7 +197,7 @@ class RenderContext:
         # Check if this is an empty value node (no name, no children)
         # Common for unset checkbox attributes
         yield prefix
-        with self.add_indent(2):
+        with self.add_indent():
             if val_node.name or val_node.children:
                 yield from self.render_node(val_node)
 
@@ -450,19 +208,15 @@ class RenderContext:
             return
 
         # Special handling for visual (image) nodes
-        if n.props.doc_type == "visual" and (url := self._get_image_url(n)):
+        if isinstance(n, VisualNode) and (url := n.get_image_url()):
             # Use the visual node's name as caption if it has one
             caption = self._inline_to_text(n.name) if n.name else ""
             yield f"{self.indent}-  ![{caption}]({url}) "
             return
 
         # Special handling for code blocks
-        if n.props.doc_type == "codeblock" and self.style == "tana":
-            # Find language from tuple
-            language = (
-                lang_node.name if (lang_node := _get_tuple_value(n, "SYS_A70")) else ""
-            )
-
+        if isinstance(n, CodeBlockNode) and self.style == "tana":
+            language = n.get_language()
             # Write code block with triple backticks
             yield f"```{language}"
             if n.name:
@@ -480,18 +234,12 @@ class RenderContext:
 
         # URL tuples first (for link nodes)
         for c in n.child_nodes:
-            if (
-                isinstance(c, TupleNode)
-                and not _is_supertag_tuple(c)
-                and len(c.children) >= 1
-                and (key_node := self.store.get(c.children[0]))
-                and key_node.id == _URL_KEY_ID
-            ):
-                with self.add_indent(2):
+            if isinstance(c, TupleNode) and _is_url_tuple(c):
+                with self.add_indent():
                     yield from self.render_tuple(c)
 
         # Check if this node has an associationMap - if so, render children as references with associated data
-        with self.add_indent(2):
+        with self.add_indent():
             for c in n.child_nodes:
                 if n.association_map and self.style == "tana":
                     if isinstance(c, TupleNode):
@@ -502,11 +250,11 @@ class RenderContext:
                         and (assoc_node := self.store.get(n.association_map[c.id]))
                     ):
                         continue
-                    with self.add_indent(2):
+                    with self.add_indent():
                         # Render associated data if exists
                         yield f"{self.indent}- **Associated data**"
                         # Render tuples from the associated data node
-                        with self.add_indent(2):
+                        with self.add_indent():
                             for assoc_child in assoc_node.child_nodes:
                                 if isinstance(assoc_child, TupleNode):
                                     yield from self.render_tuple(assoc_child)
@@ -520,20 +268,17 @@ class RenderContext:
                         yield f"{self.indent}- [[{self._inline_to_text(c.name or c.id)}^{c.id}]]"
                     else:
                         yield from self.render_node(c)
-                elif not (
-                    len(c.children) >= 1
-                    and c.children[0] in (_URL_KEY_ID, _SUPERTAG_KEY_ID)
-                ):
+                elif not (_is_url_tuple(c) or _is_supertag_tuple(c)):
                     # Skip rendered supertag assignment and URL tuples
                     yield from self.render_tuple(c)
 
 
 # Root selection
-def _collect_inline_refs(store: NodeStore) -> set[str]:
-    ids: set[str] = set()
+def _collect_inline_refs(store: NodeStore) -> set[NodeId]:
+    ids: set[NodeId] = set()
     for n in store.values():
         if n.name:
-            ids.update(_NODE_SPAN.findall(n.name))
+            ids.update(find_inline_node_refs(n.name))
     return ids
 
 
@@ -615,7 +360,6 @@ def main():
     base = Path(args.out_base or src.with_suffix("").name + ".converted")
 
     store = NodeStore.from_file(src)
-    attach_supertag_property(store)
 
     for suffix, sty in ((".md", "md"), (".tanapaste.txt", "tana")):
         out_path = base.with_suffix(suffix)
