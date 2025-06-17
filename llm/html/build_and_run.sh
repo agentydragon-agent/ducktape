@@ -1,8 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
-# Build the Docker image
-docker build -t llm-html:latest .
+# Build the Docker image with extended context to include dotfiles
+docker build -t llm-html:latest -f Dockerfile ../..
 
 # Function to cleanup on exit
 cleanup() {

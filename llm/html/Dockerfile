@@ -11,13 +11,15 @@ RUN apt-get update -qq \
 WORKDIR /app
 
 # Only copy dependency manifests first to leverage Docker layer cache
-COPY requirements.txt ./
+COPY llm/html/requirements.txt ./
 
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt
 
-# Copy the application code
-COPY html_server.py token_scheme.py index.md style.css base.html verify.html tana.md ./
+# Copy the application code from the build context
+COPY llm/html/html_server.py llm/html/token_scheme.py llm/html/index.md llm/html/style.css llm/html/base.html llm/html/verify.html llm/html/tana.md ./
+# Copy coding instructions from dotfiles
+COPY dotfiles/codex/instructions.md ./coding.md
 
 EXPOSE 9000
 
