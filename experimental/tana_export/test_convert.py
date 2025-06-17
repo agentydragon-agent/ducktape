@@ -7,7 +7,8 @@ import difflib
 from pathlib import Path
 
 import pytest
-from convert import NodeStore, attach_supertag_property, export_node_as_tanapaste
+from convert import export_node_as_tanapaste
+from tana_lib import NodeStore
 
 TESTDATA_PATH = Path(__file__).parent / "testdata"
 
@@ -28,7 +29,6 @@ def check_content_match(actual: str, expected: str, test_name: str) -> None:
 def test_node_export(node_id):
     """Test that generated TanaPaste for specific nodes match reference files."""
     store = NodeStore.from_file(TESTDATA_PATH / "test_workspace.json")
-    attach_supertag_property(store)
     actual = export_node_as_tanapaste(store, store[node_id])
     expected = (TESTDATA_PATH / f"{node_id}.tanapaste").read_text()
     check_content_match(actual, expected, node_id)
@@ -56,7 +56,6 @@ def test_node_export_minimal_json(folder, node_id):
     # Load from the minimal JSON file in the feature folder
     base = TESTDATA_PATH / folder
     store = NodeStore.from_file(base / f"{node_id}.json")
-    attach_supertag_property(store)
     actual = export_node_as_tanapaste(store, store[node_id])
     expected = (base / f"{node_id}.tanapaste").read_text()
     check_content_match(actual, expected, f"{node_id} using minimal JSON")
