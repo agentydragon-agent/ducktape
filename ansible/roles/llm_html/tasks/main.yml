@@ -38,10 +38,10 @@
       - buildx
       - build
       - -f
-      - Dockerfile
+      - llm/html/Dockerfile
       - -t
       - llm-html:latest
-      - https://gitlab.com/agentydragon/ducktape.git#devel:llm/html
+      - https://gitlab.com/agentydragon/ducktape.git#devel
     chdir: /tmp
   register: _build_result
   changed_when: false

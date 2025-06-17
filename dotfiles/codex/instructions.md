@@ -1,82 +1,94 @@
-If the repository have a `README.md`, read it and refer to it.
+---
+title: Code Agent Instructions
+---
+
+# Coding Standards
+
+## CRITICAL RULES (NEVER VIOLATE)
+
+1. **NEVER swallow exceptions** - Always handle specific exceptions or crash loudly
+2. **NEVER use string concatenation for structured data** (URLs, SQL, HTML, JSON)
+3. **NEVER use `getattr`/`setattr`** unless literally no alternative exists
+4. **ALWAYS fail fast** - Crash immediately on unexpected state
+
+## Repository Instructions
+
+If the repository has a `README.md`, read it and refer to it.
 If there is `CLAUDE.md` or `CODEX.md`, read it and follow it.
 
-# References folder
+## References Folder (if present)
 
-You might see a folder like `references/` in the repo. If you do, do not edit anything in the folder. But the folder will
-contain copied source code artifacts that may be useful to you to implement what you're doing. Look around and use `references/`
-for reference.
+If you see a `references/` folder:
+- **DO NOT edit** the reference files inside
+- Look for `references/fetch.sh` which fetches/updates references
+- Feel free to add to `fetch.sh` for new references
 
-Refer to it.
+Example `fetch.sh` might include:
+```bash
+# Fetch API docs and convert to markdown
+curl -L https://example.com/api-docs.html | pandoc -f html -t markdown > api.md
 
-It should contain `references/fetch.sh` - a shell script to fetch the reference information.
+# Clone specific files
+curl -O https://raw.githubusercontent.com/user/repo/main/implementation.py
+```
 
-If you're fetching new reference information on your own, add it to `references/fetch.sh`.
-Feel free to add to it whatever references you may find useful.
-It's intended to run at `./fetch.sh` from `references/`.
-
-Likewise, feel free to run the script and edit/update/add to it.
-
-All the actual reference files (e.g. 3rd party repos, documentation etc.) should be `gitignore`'d -
-the only thing under version control in `references/` should be the `fetch.sh` script.
+Only `fetch.sh` is version controlled. Fetched files are gitignored.
 
 # Internet use OK
 
-Feel free fire HTTP queries for testing, fetching documentation, source code for reference, etc.
+Feel free to fire HTTP queries for testing, fetching documentation, source code for reference, etc.
 *Especially* to add to the `references/` folder.
 
 If useful for testing etc., just fire them right away without asking. Also start servers, experiment, etc.
 
-# One-off Scripts and Throwaway Tests
+## One-off Scripts
 
-if you're writing a one-off script - like say a one-off test of some behavior, a tool to only invoke once for some cleanup and then never again, etc:
+For temporary/experimental scripts, make their throwaway nature obvious:
 
-name and place it in the filesystem so that its hnature as a *throwaway* *one-off* script is VERY CLEAR.
-
-for example:
-
-*   BAD: `test_notification_correctness.py`
-    * when you are just tesitng the behvaavior of some API to only run it once, and learn about it, and then never to run it again
-*   BETTER: `throwaway/test_notification_correctness.py`
-*   EVEN BETTER `throwaway/2000-01-02/test_notification_correctness.py` PLUS add header at top of file like `# THIS IS JUST A ONE-OFF THROWAWAY SCRIPT`
-
-this is to prevent polluting repositories with tons of accumulating cruft and helpers and one-off tests in highly frequented locations like repo root
+**Wrong:** `test_api.py` in repo root
+**Right:** `throwaway/2024-01-15/test_api.py` with header `# THROWAWAY SCRIPT - DO NOT REUSE`
 
 # General across languages
 
-## No trailing whitespace
+## Code Brevity
+Minimize code length aggressively. Prefer:
+- One-liners over multi-line when readable
+- List/dict comprehensions over loops
+- Ternary operators over if/else blocks
+- Built-in functions over manual implementations
 
-Do not leave around trailing whitespace in files. If you have an empty line, that empty line should not contain indentation whitespace.
-Apply something like this to all your code files:
+**This is more important than some traditional "clean code" rules.**
 
-    sed -i 's/[[:space:]]\+$//' filename
+```python
+# Wrong - unnecessary loop:
+operands = []
+for op_id in operand_ids:
+    if expr := _parse_single_component(store, op_id):
+        operands.append(expr)
 
-## Aggressive DRY
-
-Be relatively aggressively DRY. Even in e.g. Ansible playbooks, use variables for shared paths etc.
-Reuse code when possible. Reuse *code patterns* when possible - for that purpose, some things you
-can do include e.g., write decorators, context managers, etc.
-
-### Particular case: loop
-
-Use loops to avoid repeating the same code block, for example:
-
-Wrong:
-
+# Right - list comprehension:
+operands = [expr for op_id in operand_ids if (expr := _parse_single_component(store, op_id))]
 ```
+
+## No Trailing Whitespace
+
+Remove all trailing whitespace. Empty lines should be truly empty.
+
+## DRY (Don't Repeat Yourself)
+
+Be aggressive about eliminating repetition. The longer the repeated pattern, the more important to refactor it. Use whatever abstraction fits: loops, functions, decorators, context managers, etc.
+
+**Example using loops:**
+```python
+# Wrong:
 if category is not None:
     habit_data["category"] = category
-
 if goal_type is not None:
     habit_data["goal_type"] = goal_type
-
 if target_value is not None:
     habit_data["target_value"] = target_value
-```
 
-Good:
-
-```
+# Right:
 for key, value in {
     "category": category,
     "goal_type": goal_type,
@@ -86,99 +98,115 @@ for key, value in {
         habit_data[key] = value
 ```
 
+**Example using mappings:**
+```python
+# Wrong - repetitive if/elif:
+if operator_id == AND_OPERATOR_ID:
+    return _parse_boolean_expression(store, "AND", node.children[1:])
+elif operator_id == OR_OPERATOR_ID:
+    return _parse_boolean_expression(store, "OR", node.children[1:])
+elif operator_id == NOT_OPERATOR_ID:
+    return _parse_boolean_expression(store, "NOT", node.children[1:])
+
+# Right - use mapping:
+OPERATORS = {AND_OPERATOR_ID: "AND", OR_OPERATOR_ID: "OR", NOT_OPERATOR_ID: "NOT"}
+if operator_id in OPERATORS:
+    return _parse_boolean_expression(store, OPERATORS[operator_id], node.children[1:])
+```
+
 ### Particular case: No redundant special cases for empty structures
 
 Do not implement redundant special cases for empty lists/dicts/structures if they do not change behavior.
 
-DO NOT DO:
-
+**Wrong** (function formats a list as `<1 2 3>`):
 ```python
-def fn(x: list[int]):
-    if not xs:      # <-- BAD - redundant, deleting this block neither changes behavior nor runtime
-        return '<>'
+def format_numbers(xs: list[int]):
+    if not xs:      # <-- BAD: redundant special case
+        return '<>'  # Same result as general case below
    
-    x = '<'
+    result = '<'
     for i, n in enumerate(xs):
         if i > 0:
-            x += ' '
-        x += str(n)
-    x += '>'
-    return x
+            result += ' '
+        result += str(n)
+    result += '>'
+    return result
 ```
 
-Here the first 2 lines of the function are *redundant* because they do not change behavior and neither are they an optimization.
+The special case `if not xs` is redundant because the loop naturally handles empty lists, producing the same `<>` output.
 
 CORRECTED:
 
 ```python
-def fn(x: list[int]):
-    x = '<'
-    for i, n in enumarate(xs):
+def format_numbers(xs: list[int]):
+    result = '<'
+    for i, n in enumerate(xs):
         if i > 0:
-            x += ' '
-        x += str(n)
-    x += '>'
-    return x
+            result += ' '
+        result += str(n)
+    result += '>'
+    return result
 ```
 
-## No broad try-catch, no swallowing errors
+## Exception Handling
 
-Do not write broad try-catch, like `try: ... except Exception: ...`.
-If you need to catch exceptions, catch specific ones.
-If you need to catch multiple exceptions, use a tuple.
-This is only allowed at a very outer level like when you need to catch any possible
-uncaught exception you might have run into while handling some request and need to
-return it as a HTTP error 500. Or when you're doing something that *MUST* be
-very magical and there is no other way.
+**FORBIDDEN:**
+```python
+try:
+    risky_operation()
+except Exception:  # NEVER do this
+    pass  # ABSOLUTELY FORBIDDEN
+```
 
-If you ever do something like this:
+**Wrong:**
+```python
+try:
+    risky_operation()
+except Exception as e:  # Too broad
+    logger.error(f"Something went wrong: {e}")
+```
 
-    try:
-        ...
-    except Exception as e:
-        pass
+**Right:**
+```python
+try:
+    risky_operation()
+except (ValueError, KeyError) as e:  # Specific exceptions
+    logger.error(f"Data validation failed: {e}")
+    raise  # Re-raise or handle appropriately
+```
 
-I will be very very unhapy and you should feel ashamed of yourself. There might be some
-very rare reasons to do that every once in a blue moon, but if they happen, they deserve
-a very detailed explanatory comment about why exactly this is okay here and why it won't
-ever unintentionaly swallow fun things like `KeyboardInterrupt` or `SystemExit` or `SyntaxError`
-and why this is the best possible solution and why you cannot in any way instead write a precise
-filter for the specific types of errors you intentionally want to swallow.
-
-NEVER swallow exceptions silently. ALWAYS propagate or AT LEAST log errors explicitly.
-
-Handle specific exceptions, log them, or re-raise if appropriate.
+Only catch `Exception` at the very outer boundary (e.g., request handlers) and ALWAYS log it.
 
 ## Early bail-out
 
 Use early bail-out pattern. Including making functions to enable using it when it makes things nicer.
 
-For example, DO NOT do:
-
+**Wrong:**
 ```python
-if condition:
-    foo()
-    bar()
-    baz()
-    foobar()
-    xyzzyfoo()
-    ...
-else:
-    xyzzy()
-    faise Error(...)
+def process_data(data):
+    if data is not None and len(data) > 0:
+        validate_data(data)
+        transformed = transform_data(data)
+        result = analyze_data(transformed)
+        save_results(result)
+        return result
+    else:
+        logger.error("No data provided")
+        raise ValueError("Data cannot be empty")
 ```
 
-Instead, DO:
-
+**Right:**
 ```python
-if not condition:
-    xyzzy()
-    raise Error(...)
-foo()
-bar()
-baz()
-foobar()
-...
+def process_data(data):
+    if not data:  # Early bail-out
+        logger.error("No data provided")
+        raise ValueError("Data cannot be empty")
+    
+    validate_data(data)
+    transformed = transform_data(data)
+    result = analyze_data(transformed)
+    save_results(result)
+    return result
 ```
 
 DO NOT do:
@@ -213,174 +241,211 @@ async def _handle_interfaces_removed(self, path: str, interfaces: list[str]) -> 
 This just saved us an indentation level.
 This can be especially nice in helper functions.
 
-## Document current state, NOT change you're making
+## Document Current State Only
 
-If you make a change, don't leave behind comments like e.g. `# This used to work this way but we changed it to work this other way`
-if you got rid of the old thing. You would not leave that around on a say piece of code on GitHub. It's not helpful to reader to know
-about this historical detail. Just document current state.
+No historical comments like `# This used to work this way but we changed it`. 
+Don't keep broken code "for backward compatibility". It was broken. Delete it.
 
-If you applied a fix because something wasn't working, don't keep the broken non-working
-version around "for backward compatibility". It was broken. It has no value.
+**Avoid redundant docstrings:**
+```python
+# Wrong - docstring just repeats what's obvious from signature:
+def _parse_boolean_expression(store: NodeStore, operator: str, operand_ids: list[NodeId]) -> BooleanSearch | None:
+    """
+    Parse a boolean expression with the given operator and operands.
+    
+    Args:
+        store: The NodeStore
+        operator: The boolean operator ("AND", "OR", "NOT")
+        operand_ids: List of operand node IDs
+    
+    Returns:
+        The parsed boolean expression or None
+    """
+    operands = [expr for op_id in operand_ids if (expr := _parse_single_component(store, op_id))]
+    return BooleanSearch(operator, operands) if operands else None
 
-## DO NOT assemble non-plaintext by string concatantion (e.g., URL parameters)
+# Right - no docstring, or only document non-obvious behavior:
+def _parse_boolean_expression(store: NodeStore, operator: str, operand_ids: list[NodeId]) -> BooleanSearch | None:
+    operands = [expr for op_id in operand_ids if (expr := _parse_single_component(store, op_id))]
+    return BooleanSearch(operator, operands) if operands else None
+```
 
-do not assemble URLs with plain string concat, e.g. `[f"{k}={v}" for k, v in params.items()]`. use some existing library that auto-wraps escaping etc.; apply *generally* for *all* formats that need escaping/similar.
+## DO NOT assemble non-plaintext by string concatenation (e.g., URL parameters)
 
-This applies *generally* to *ANY* format that is NOT actually plaintext and cannot be in full generality
-*ALWAYS* made by plain string concat. DO NOT assemble by manual string concat, either: JSON, text protobufs, SQL, etc etc etc.
+Do not assemble URLs with plain string concat, e.g. `"&".join([f"{k}={v}" for k, v in params.items()])`. Use proper libraries:
+
+**Wrong (various languages):**
+```python
+# Python
+url = f"https://api.example.com/search?q={query}&limit={limit}"  # BAD: no escaping
+html = f"<div title='{title}'>{content}</div>"  # BAD: manual string concat
+html = f'<p class="{html.escape(css_class)}">'  # STILL BAD: manual string concat
+sql = f"SELECT * FROM users WHERE name = '{username}'"  # BAD: SQL injection
+```
+
+```javascript
+// JavaScript
+const url = `https://api.example.com/search?q=${query}&limit=${limit}`;  // BAD
+const html = `<div title="${title}">${content}</div>`;  // BAD
+const sql = `SELECT * FROM users WHERE id = ${userId}`;  // BAD
+```
+
+```bash
+# Bash
+URL="https://api.example.com/search?q=$QUERY"  # BAD
+SQL="SELECT * FROM users WHERE name = '$NAME'"  # BAD
+```
+
+**Right:**
+```python
+# URLs: Use requests (preferred) or urllib
+response = requests.get("https://api.example.com/search", params={"q": query, "limit": limit})
+
+# HTML: Use template engines or proper HTML builders
+from jinja2 import Template
+template = Template("<div title='{{ title }}'>{{ content }}</div>")
+html = template.render(title=title, content=content)
+
+# SQL: Use parameterized queries
+cursor.execute("SELECT * FROM users WHERE name = %s", [username])
+
+# JSON: Use json module
+data = json.dumps({"name": name, "value": value})
+```
+
+This applies to *ANY* structured format. If it has special characters or escaping rules, use a library.
 
 ## CLI and Shell Tools
 
-I have ripgrep installed ('rg'). feel free to use it.
+Examples of tools you can use without asking: `rg`, `jq`, `tree`, `ag`. Feel free to use any standard development tools.
 
 ## Avoid One-off Variables
 
-Avoid creating one-off variables that are used only once and add unnecessary lines. For example:
-
+Don't create variables used only once:
 ```python
-async def update_sensors(self, updates: list[SensorUpdate]):
-    """Send batched sensor updates.
-    
-    Note: SensorUpdate is designed to map 1:1 to the API format.
-    """
-    await self._post_webhook({
-        "type": "update_sensor_states",
-        "data": [update.dict(exclude_none=True) for update in updates]
-    })
+# Wrong:
+data = [update.dict() for update in updates]
+await self._post_webhook({"type": "update", "data": data})
+
+# Right:
+await self._post_webhook({
+    "type": "update",
+    "data": [update.dict() for update in updates]
+})
 ```
 
-Instead of creating a `data` variable that is used only once, directly pass the inline-constructed dictionary to the method.
+## Self-describing Variable Names
 
-## Self-describing variable names - e.g., units, "is it an IP or a MAC address", etc.
-
-try to make sure variables are clear about the unit / type of thing they're expecting.
-
-instead of:
+Include units/formats in names:
 ```python
-bluetooth_devices: list[str]
+# Wrong:
 timeout: int
-```
+devices: list[str]
 
-prefer:
-```python
-bluetooth_device_macs: list[str]
+# Right:
 timeout_secs: int
-```
+device_macs: list[str]
 
-of course with timeout specifically it would be even better to just use `datetime.timedelta` and then it's fine to just call it 'timeout' because type inherently encodes unit
+# Better (type encodes unit):
+timeout: datetime.timedelta
+```
 
 # Python
 
-## Style
+## Code Style Philosophy
+**Optimize for brevity and minimal cognitive load.** Fewer lines, fewer characters, less to hold in working memory.
 
-Follow PEP 8.
+## Formatting
+1. Check for `.pre-commit-config.yaml` - use whatever formatter is configured there
+2. If no pre-commit, use `black`
+3. Remove unused imports before finishing
 
-Imports go at the top of files. Always put imports at top of file except possibly if required to break import loops or typing. Not into functions etc.
+## Core Rules
+- Imports at top (except for import loops)
+- Use `pathlib` not `os.path`
+- NEVER use `getattr`/`setattr` unless absolutely necessary
 
-Never use `getattr`/`setattr` unless absolutely necessary - as in there literally *is no way* to do things differenly.
-
-Before finishing, clear up your code, remove unused imports, code etc. and run `black`.
-
-## Target modern Python
-
-Write targetting the Python version that's installed. Use its available features to their full extent where they make sense and
-don't make code worse:
-
-* `match` statement
-* `:=` assignment operator
-* `X | Y` instead of `Union[X | Y]`
-* `X | None` instead of `Optional[X]`
-* `f"{var=}"` instead of `f"var={var}"` (use this one basically always whenever that's the string you are producing)
-* `str.removeprefix`, `str.removesuffix` instead of slicing - safer
-* `dict1 | dict2` (unino), `dict1 & dict2` (intersection) and ditto for `set`s
-* `zoneinfo` builtin library
-
-Use `pathlib` for manipulating paths, not `os.path`.
-
-### NEVER use `typing.List`, `Union`, `Optional`, ... -- replace with new syntax sugar
-
-NEVER use `Optional[str]`, `Optional[X]` etc.
-Replace with newer style: `str | None`, `X | None`, etc.
-
-DO NOT write:
-
-* `variable: List[int]`
-* `variable: Union[str, int]`
-* `variable: Optional[str]`
-
-DO write:
-
-* `variable: list[int]`
-* `variable: str | int`
-* `variable: str | None`
-
-
+## Use Modern Python
 ```python
-# Wrong:
-class Foo:
-    ab: Optional[str]  # For encryption
-    cd: str
-    ef: Optional[str]
+# Type hints - ALWAYS use new syntax
+str | None                  # NOT Optional[str]
+list[int]                   # NOT List[int]
 
-# Right:
-class Foo:
-    ab: str | None  # For encryption
-    cd: str
-    ef: str | None
+# Features to use aggressively
+f"{var=}"                   # Shows var='value'
+text.removeprefix("pre_")   # NOT text[4:]
+dict1 | dict2              # Merge dicts
+if (n := len(items)) > 10:  # Walrus operator
+match status:               # Pattern matching
+    case "ok": return True
+    case _: raise ValueError(f"Unknown {status=}")
+
+# Use enums for fixed string sets
+from enum import Enum
+class Operator(Enum):
+    AND = "AND"
+    OR = "OR"
+    NOT = "NOT"
+
+# Wrong - stringly typed:
+operator: str  # "AND", "OR", "NOT"
+
+# Right - use enum:
+operator: Operator
 ```
 
 
-## Referencing same class
+## Self-referencing Types
 
-Use `typing.Self` or `from __future__ import annotations` for referencing the same class in type hints:
-
-    class X:
-        def foo(self) -> Self:
-            return self
-
-Do not use name of class as a string for this.
-
-## Walrus operator
-
-Inline walrus operator `:=` can be used to simplify checks and assignments, e.g.:
-
+Use `typing.Self` or `from __future__ import annotations`:
 ```python
-# Instead of:
+class X:
+    def foo(self) -> Self:  # NOT -> "X"
+        return self
+```
+
+## Walrus Operator
+
+Use `:=` to combine assignment and test:
+```python
+# Wrong:
 missing = configured - available_interfaces
 if missing:
-    logger.warning(f"Interfaces not found: {', '.join(sorted(missing))}")
+    logger.warning(f"Interfaces not found: {missing}")
 
-# Prefer:
+# Also wrong:
+expr = _parse_single_component(store, op_id)
+if expr:
+    operands.append(expr)
+
+# Right:
 if missing := configured - available_interfaces:
-    logger.warning(f"Interfaces not found: {', '.join(sorted(missing))}")
+    logger.warning(f"Interfaces not found: {missing}")
+
+if expr := _parse_single_component(store, op_id):
+    operands.append(expr)
 ```
 
 ## Code Patterns
 
-### EXTREMELY STRONGLY AVOID `hasattr` / `getattr` / `setattr`
+### NEVER use `hasattr` / `getattr` / `setattr`
 
-One particular example, NEVER use those when you can already KNOW an attribute ALWAYS exists
-because you control all the definition/use sites:
-
-WRONG:
-
+**ABSOLUTELY FORBIDDEN when you control the code:**
 ```python
-def format_sensor_name(self, piece: HardwarePiece, sensor_type: str) -> str:
-    if hasattr(piece, 'get_display_name'):
-        return f"Temperature {piece.get_display_name()}"
-    return f"Temperature {piece.hardware_id}"
+# WRONG - I HATE THIS:
+if hasattr(piece, 'get_display_name'):
+    return f"Temperature {piece.get_display_name()}"
+return f"Temperature {piece.hardware_id}"
 ```
 
-OK:
-
+**Right:**
 ```python
-def format_sensor_name(self, piece: HardwarePiece, sensor_type: str) -> str:
-    return f"Temperature {piece.get_display_name()}"
+return f"Temperature {piece.get_display_name()}"  # You KNOW it exists
 ```
 
 ## HTML Templating
 
-As soon as you start doing nontrivial html operations/concatting, switch from manual html stitching to jinja2 or other templating engine that contextually makes sense.
+As soon as you start doing nontrivial html operations/concatting, switch from manual html stitching to `jinja2` or other templating engine that contextually makes sense.
 
 BAD: already **WAY TOO COMPLEX** for manual html stitching - **AND** prone to escaping issues:
 
@@ -398,19 +463,37 @@ html = f"""<!DOCTYPE html>
 </html>"""
 ```
 
-This should have switched to jinja2 about 10 minutes ago already.
+This should have switched to `jinja2` about 10 minutes ago already.
 
 ## Logging
 
-if you do `logger.error/warning/...` inside exc handler it auto sets `exc_info=True` => `e` gets auto displayed => `": {e}"` in log message is unnecessary as `e` already auto printed
+Inside exception handlers, logger methods automatically include exception info:
+
+**Wrong:**
+```python
+try:
+    risky_operation()
+except ValueError as e:
+    logger.error(f"Operation failed: {e}")  # BAD: duplicates exception info
+```
+
+**Right:**
+```python
+try:
+    risky_operation()
+except ValueError:
+    logger.error("Operation failed")  # Good: exception details auto-included
+```
+
+## Testing
 
 Test files should be located in the same directory as the module they're testing, with the name pattern `test_*.py`.
 
-When writing unit test, make them be pytest tests, **NOT** executable files with __main__ section.
+When writing unit tests, make them be pytest tests, **NOT** executable files with `__main__` section.
 
 ### PyHamcrest
 
-Use pyhamcrest when testing sensor collections or complex matching scenarios. For example:
+Use `pyhamcrest` when testing sensor collections or complex matching scenarios. For example:
 
 ```python
 # Instead of multiple `.next()` and assert calls:
@@ -425,7 +508,7 @@ assert_that(sensors, has_items(
 
 This approach provides more readable and concise assertions, making it easier to verify complex object collections.
 
-When looking for whether a sequence contains *one* element which meets some properties, use *has_item*.
+When looking for whether a sequence contains *one* element which meets some properties, use `has_item`.
 
 DO NOT do:
 
@@ -479,7 +562,7 @@ assert not bar
 assert len(items) > 0
 ```
 
-Use PyHamcrest when it makes the assertion more clear, expressive, or when you're doing complex checks:
+Use `pyhamcrest` when it makes the assertion more clear, expressive, or when you're doing complex checks:
 
 ```python
 # Use Hamcrest for these cases:
@@ -499,7 +582,7 @@ assert_that(
 )
 ```
 
-Access properties directly when using Hamcrest instead of using has_property when it doesn't add value:
+Access properties directly when using Hamcrest instead of using `has_property` when it doesn't add value:
 
 WRONG - unnecessarily verbose:
 
@@ -517,3 +600,66 @@ The rule of thumb is: if you're just doing a single test on an object and it's a
 
 If you notice you'd like to test your changes (which is of course highly encouraged), rather than writing one-off
 blobs of throwaway Python, feel free to suggest creating a new actual test file.
+
+## Handling Unhandled Cases
+
+**ALWAYS handle the else case in switches/type checks. Crash on unexpected inputs.**
+
+Actively check that the program stays within understood guardrails. As soon as something unexpected happens → CRASH.
+
+```python
+match msg:
+    case SystemMessage(): return {"role": "system", "content": msg.content}
+    case UserMessage(): return {"role": "user", "content": msg.content}
+    case AssistantMessage(): return {"role": "assistant", "content": msg.content}
+    case _: raise TypeError(f"Unexpected message type: {type(msg)}")
+```
+
+**Sometimes let natural exceptions serve as crashes:**
+```python
+# If this should NEVER fail (you control all callers):
+operator_map = {AND_OPERATOR_ID: "AND", OR_OPERATOR_ID: "OR", NOT_OPERATOR_ID: "NOT"}
+return _parse_boolean_expression(store, operator_map[operator_id], node.children[1:])
+# KeyError here means a programming error - let it crash
+
+# But if it's user input or external data, be explicit:
+if operator_id not in operator_map:
+    raise ValueError(f"Invalid operator: {operator_id}")
+```
+
+## Sentinel Objects
+
+Using `None` as a default is fine when it means "nothing special" or "use default behavior":
+```python
+def format_data(data: str, formatter: Formatter | None = None):
+    if formatter is None:
+        return data  # No formatting, just return as-is
+    return formatter.format(data)
+```
+
+Use sentinel objects when there's a semantic difference between passing `None` and not passing anything:
+
+```python
+# Example: JSON API where {"key": null} differs from {} (no key)
+_UNSET = object()  # Sentinel value
+
+def update_json_api(endpoint: str, key: str, value: Any = _UNSET):
+    payload = {}
+    if value is not _UNSET:
+        # This handles both None and actual values
+        payload[key] = value  # {"key": null} if value is None
+    # If value is _UNSET, key is omitted entirely: {}
+    return requests.post(endpoint, json=payload)
+```
+
+# Re-exporting Modules
+
+Do not create new `__init__.py` files that re-export things from sibling/child modules, i.e. `__all__ == ["ThingFromSubmoduleA", "ThingFromSubmoduleB", ...]`
+
+If you find yourself in a codebase that already has a well-established file like that, it's OK to continue using and adding to it.
+
+But DO NOT create such a file yourself without my explicit permission.
+
+# Final Rule
+
+**When in doubt, CRASH.** Better to fail loudly than silently corrupt state.
