@@ -9,11 +9,11 @@ does not work:
 
     Tana "copy as Tana Paste":
         %%tana%%
-        - Code block value:: 
+        - Code block value::
         ```Python
         print("Hello world")
         ```
-        - Multiple code block values:: 
+        - Multiple code block values::
         ```Python
         print("Code 1")
         ```
