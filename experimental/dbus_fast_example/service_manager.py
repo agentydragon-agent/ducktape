@@ -20,7 +20,7 @@ class ServiceManager:
         if self.proc:
             raise RuntimeError("service already running")
         script = Path(__file__).with_name("dbus_service.py")
-        self.proc = subprocess.Popen(  # noqa: ASYNC220 - short blocking call
+        self.proc = subprocess.Popen(  # - short blocking call
             [sys.executable, str(script), self.bus_address],
         )
         await self._wait_until_running()

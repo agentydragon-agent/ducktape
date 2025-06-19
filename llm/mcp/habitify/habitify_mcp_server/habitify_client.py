@@ -14,7 +14,11 @@ import httpx
 from dotenv import load_dotenv
 
 from .types import Area, Habit, HabitStatus, HabitStatusResponse
-from .utils.date_utils import create_date_range, format_date_for_api, format_date_yyyy_mm_dd
+from .utils.date_utils import (
+    create_date_range,
+    format_date_for_api,
+    format_date_yyyy_mm_dd,
+)
 
 logger = logging.getLogger("habitify.client")
 
@@ -374,7 +378,7 @@ class HabitifyClient:
             # Create API result model with the input data since the API returns null for success
             api_result = HabitStatus(
                 status=status,
-                date=format_date_yyyy_mm_dd(date) if date else datetime.date.today().isoformat(),
+                date=(format_date_yyyy_mm_dd(date) if date else datetime.date.today().isoformat()),
                 note=note,
                 value=value,
             )

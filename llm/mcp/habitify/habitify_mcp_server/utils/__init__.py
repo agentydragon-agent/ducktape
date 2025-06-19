@@ -25,7 +25,12 @@ from .error_utils import (
 # Avoid circular import by not importing from habit_resolver.py here
 
 # Define status colors mapping
-STATUS_COLORS = {"completed": "green", "skipped": "yellow", "failed": "red", "none": "blue"}
+STATUS_COLORS = {
+    "completed": "green",
+    "skipped": "yellow",
+    "failed": "red",
+    "none": "blue",
+}
 
 # Define type variables for function annotations
 T = TypeVar("T")
