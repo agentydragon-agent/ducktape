@@ -6,4 +6,3 @@ test
   - xxxzzzaaa
   - foobar
 - zzzxxxaaa
-
