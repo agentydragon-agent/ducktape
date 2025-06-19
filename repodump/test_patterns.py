@@ -69,9 +69,9 @@ def test_path_pattern_to_regex_mixed_segments():
 )
 def test_path_match(pattern, path, should_match):
     result = path_match(path, [pattern])
-    assert result == should_match, (
-        f"{pattern=} with {path=} => {result}, expected {should_match}"
-    )
+    assert (
+        result == should_match
+    ), f"{pattern=} with {path=} => {result}, expected {should_match}"
 
 
 def test_multiple_patterns():

@@ -6,7 +6,7 @@ from click.testing import CliRunner
 from . import main
 
 
-@pytest.fixture
+@pytest.fixture()
 def mock_config(monkeypatch):
     config = {
         "repos": {},
@@ -24,7 +24,7 @@ def mock_config(monkeypatch):
     monkeypatch.setattr(main, "load_config", lambda: config)
 
 
-@pytest.fixture
+@pytest.fixture()
 def mock_repo(tmp_path):
     """
     Create a temporary "repo" with .py and .ignore files.

@@ -61,12 +61,12 @@ def empty_log():
     return EmptyLogBuffer()
 
 
-@pytest.fixture
+@pytest.fixture()
 def now():
     return datetime.now(timezone.utc)
 
 
-@pytest.fixture
+@pytest.fixture()
 def memory_handler():
     """Create a memory handler to capture log messages."""
     # Create a memory handler that stores log records in memory
