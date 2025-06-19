@@ -187,7 +187,7 @@ a stacked plot of asset values:
     set timefmt "%Y-%m-%d %H:%M:%S"
     set key vert out center left
     set autoscale xfixmin
-    
+
     plot \
          "net-worth.csv" u 1:($6+$5+$4+$7+$8) w filledcurves x1 title 'EUR účet', \
          "" u 1:($6+$5+$4+$7) w filledcurves x1 title 'Akcie', \

@@ -10,7 +10,7 @@ The point is to save and invest money, and pay yourself a salary from the intere
 There is a relationship between:
 
 * How much you have invested
-* The interest your investment makes. (The widely cited "[Trinity study](https://en.wikipedia.org/wiki/Trinity_study)" suggests 4% as a "safe withdrawal rate".) 
+* The interest your investment makes. (The widely cited "[Trinity study](https://en.wikipedia.org/wiki/Trinity_study)" suggests 4% as a "safe withdrawal rate".)
 * The salary you pay yourself
 * How long your savings last for you
 
@@ -119,13 +119,13 @@ So the right value for $c'$ is exactly $c$.
 
 So we have:
 $$
-f(x) = \frac{\exp(\log(1+i)(x-C)) + c}{\log(1+i)} = \frac{(1+i)^{x-C} + c}{\log(1+i)} 
+f(x) = \frac{\exp(\log(1+i)(x-C)) + c}{\log(1+i)} = \frac{(1+i)^{x-C} + c}{\log(1+i)}
 $$
 
 $C$ mediates a multiplicative factor before $(1+i)^x$. $C$ is just *some constant that makes the function work with the $f(0)$ boundary condition*. Instead of wiggling the $C$, we can instead wiggle $C_2=(1+i)^-C$, which is the actual multiplicative factor, and relabel $C_2$ as $C$. (It's an abuse of notation, but an OK one. \*handwave\*)
 
 $$
-f(x) = C \cdot (1+i)^{x} + \frac{c}{\log(1+i)} 
+f(x) = C \cdot (1+i)^{x} + \frac{c}{\log(1+i)}
 $$
 The one remaining unknown variable is $C$, which we will get from $f(0)$ - which are the initial savings.
 

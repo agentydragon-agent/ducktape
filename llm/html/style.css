@@ -229,12 +229,12 @@ th {
         gap: 10px;
         flex-wrap: wrap;
     }
-    
+
     .menu a {
         display: inline-block;
         margin-bottom: 0;
     }
-    
+
     .content {
         margin-left: 0;
         padding: 20px;
