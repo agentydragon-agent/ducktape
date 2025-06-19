@@ -975,7 +975,7 @@
 			"sub_path": "process/0.16mm Optimal @Elegoo Giga 0.4 nozzle.json"
 		}
 	],
-	"filament_list": [	
+	"filament_list": [
 	    {
             "name": "fdm_elegoo_filament_common",
             "sub_path": "filament/ELEGOO/fdm_elegoo_filament_common.json"
@@ -987,7 +987,7 @@
         {
             "name": "fdm_elegoo_filament_tpu",
             "sub_path": "filament/ELEGOO/fdm_elegoo_filament_tpu.json"
-        },	
+        },
         {
             "name": "fdm_elegoo_filament_pet",
             "sub_path": "filament/ELEGOO/fdm_elegoo_filament_pet.json"
@@ -1253,7 +1253,7 @@
         {
             "name": "Elegoo Centauri 0.8 nozzle",
             "sub_path": "machine/EC/Elegoo Centauri 0.8 nozzle.json"
-        },	
+        },
 		{
 			"name": "fdm_machine_common",
 			"sub_path": "machine/fdm_machine_common.json"

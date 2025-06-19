@@ -74,8 +74,8 @@
     "fan_speedup_time": "0.5",
     "thumbnails_format": "COLPIC",
     "thumbnails": [
-        "400x400/COLPIC", 
-        "114x114/COLPIC", 
+        "400x400/COLPIC",
+        "114x114/COLPIC",
         "160x160/PNG"
     ],
     "machine_unload_filament_time": "29",
