@@ -17,7 +17,7 @@ select = [
 
     # isort
     "I",
-    "FAST", # FastAPI lints
+    # "FAST", # FastAPI lints - not a valid rule selector
     "YTT",
     # not: "ANN" -- demands type annotations everywhere
     "ASYNC", # flake8-async
@@ -96,4 +96,3 @@ ignore = [
         "E501", # line too long
 ]
 # line-length = 120
-
