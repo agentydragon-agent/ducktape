@@ -30,3 +30,4 @@
         - '@openai/codex'
         - '@anthropic-ai/claude-code'
         - '@bazel/bazelisk'
+        - '@ast-grep/cli'  # For semantic code queries across multiple languages
