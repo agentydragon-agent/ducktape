@@ -122,7 +122,7 @@ bored. It's just a matter of how much I like it.</span> In the moment.
 
 So  <span class="generated"> I'm going to be publishing the article in the second week and I'll be
 posting the article in the second week and I 'll be posting the article in the
-second week and I'll be posting the article in the second week and I</span> am 
+second week and I'll be posting the article in the second week and I</span> am
 <span class="generated">posting the article in the second week and I will be posting the</span> rest <span class="generated">of
 the post and I will be posting</span> to RSS and Atom and Hacker News maybe and
 <span class="generated">maybe on the same page. If you like the content you see in</span> this website,

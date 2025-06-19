@@ -49,7 +49,7 @@ Tana uses special system nodes for search operators and types:
 ### Boolean Operators
 - **`SYS_A15`** - Search expression attribute key (always first in the tuple)
 - **`SYS_A41`** - AND operator
-- **`SYS_A42`** - OR operator  
+- **`SYS_A42`** - OR operator
 - **`SYS_A43`** - NOT operator
 
 ### System Types

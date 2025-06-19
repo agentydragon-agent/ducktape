@@ -59,7 +59,7 @@ thought of as kind of an emotional "this is who I *really* am, this is what is
 [SMART](https://en.wikipedia.org/wiki/SMART_criteria) goals like "I want to
 weight <= 90 kg by 2019-01-01".
 
-I really like some things about this view. It's comparatively very non-violent, 
+I really like some things about this view. It's comparatively very non-violent,
 and it natually allows for "okay, so a year ago I thought I wanted to be more
 fit, and I started swimming because I like it, and I met this person and talked
 with them and changed my goals, so now I want something a bit different", and
