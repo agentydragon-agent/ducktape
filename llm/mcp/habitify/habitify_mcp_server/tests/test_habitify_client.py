@@ -18,7 +18,8 @@ from ..types import Area, Habit, HabitStatus
 
 # Path to the API reference examples
 REFERENCE_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "habitify_api_reference"
+    os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+    "habitify_api_reference",
 )
 
 

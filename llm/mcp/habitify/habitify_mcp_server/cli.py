@@ -56,7 +56,10 @@ def mcp(
     ),
     port: int = typer.Option(3000, "--port", "-p", help="Port for SSE transport"),
     api_key: Optional[str] = typer.Option(
-        None, "--api-key", "-k", help="Habitify API key (overrides environment variable)"
+        None,
+        "--api-key",
+        "-k",
+        help="Habitify API key (overrides environment variable)",
     ),
     quiet: bool = typer.Option(False, "--quiet", "-q", help="Disable debug output"),
     debug: bool = typer.Option(False, "--debug", "-d", help="Enable debug logging"),
@@ -126,7 +129,10 @@ def mcp(
 def install(
     name: str = typer.Option("Habitify", "--name", "-n", help="Name to register the server as"),
     api_key: Optional[str] = typer.Option(
-        None, "--api-key", "-k", help="Habitify API key (overrides environment variable)"
+        None,
+        "--api-key",
+        "-k",
+        help="Habitify API key (overrides environment variable)",
     ),
 ) -> None:
     """Install the Habitify MCP server to Claude Desktop."""
@@ -184,7 +190,10 @@ def list_habits(
         False, "--include-archived", "-a", help="Include archived habits"
     ),
     api_key: Optional[str] = typer.Option(
-        None, "--api-key", "-k", help="Habitify API key (overrides environment variable)"
+        None,
+        "--api-key",
+        "-k",
+        help="Habitify API key (overrides environment variable)",
     ),
 ) -> None:
     """List habits, excluding archived ones by default."""
@@ -250,7 +259,10 @@ def status(
         None, "--date", "-d", help="Date in YYYY-MM-DD format (defaults to today)"
     ),
     api_key: Optional[str] = typer.Option(
-        None, "--api-key", "-k", help="Habitify API key (overrides environment variable)"
+        None,
+        "--api-key",
+        "-k",
+        help="Habitify API key (overrides environment variable)",
     ),
 ) -> None:
     """Check a habit's status for a specific date."""
@@ -313,7 +325,10 @@ async def _status_async(
 def log(
     habit: str = typer.Argument(..., help="Habit ID or name"),
     status: str = typer.Option(
-        "completed", "--status", "-s", help="Status to set (completed, skipped, failed, none)"
+        "completed",
+        "--status",
+        "-s",
+        help="Status to set (completed, skipped, failed, none)",
     ),
     date: Optional[str] = typer.Option(
         None, "--date", "-d", help="Date in YYYY-MM-DD format (defaults to today)"
@@ -323,7 +338,10 @@ def log(
         None, "--value", "-v", help="Optional value (for number/timer habits)"
     ),
     api_key: Optional[str] = typer.Option(
-        None, "--api-key", "-k", help="Habitify API key (overrides environment variable)"
+        None,
+        "--api-key",
+        "-k",
+        help="Habitify API key (overrides environment variable)",
     ),
 ) -> None:
     """Log a habit with a specific status."""
@@ -331,7 +349,14 @@ def log(
 
     # Run the async implementation in an event loop
     asyncio.run(
-        _log_async(habit=habit, status=status, date=date, note=note, value=value, api_key=api_key)
+        _log_async(
+            habit=habit,
+            status=status,
+            date=date,
+            note=note,
+            value=value,
+            api_key=api_key,
+        )
     )
 
 

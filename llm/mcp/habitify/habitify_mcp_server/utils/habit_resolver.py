@@ -52,7 +52,9 @@ async def resolve_habit(
 
                 if exact_match:
                     return ResolvedHabit(
-                        habit_id=exact_match.id, habit_name=exact_match.name, match_type="exact"
+                        habit_id=exact_match.id,
+                        habit_name=exact_match.name,
+                        match_type="exact",
                     )
 
                 # Otherwise return ambiguous match error
@@ -66,7 +68,9 @@ async def resolve_habit(
             return ResolvedHabit(
                 habit_id=matching_habits[0].id,
                 habit_name=matching_habits[0].name,
-                match_type="exact" if matching_habits[0].name.lower() == habit_name else "partial",
+                match_type=(
+                    "exact" if matching_habits[0].name.lower() == habit_name else "partial"
+                ),
             )
         except HabitifyError as e:
             return create_error_response(e)
