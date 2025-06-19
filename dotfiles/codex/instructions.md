@@ -6,15 +6,350 @@ title: Code Agent Instructions
 
 ## CRITICAL RULES (NEVER VIOLATE)
 
-1. **NEVER swallow exceptions** - Always handle specific exceptions or crash loudly
-2. **NEVER use string concatenation for structured data** (URLs, SQL, HTML, JSON)
-3. **NEVER use `getattr`/`setattr`** unless literally no alternative exists
-4. **ALWAYS fail fast** - Crash immediately on unexpected state
+1. **⚠️ CRITICAL - NEVER make absolute claims without evidence trails ⚠️**
+
+   **🚨 THIS IS AS IMPORTANT AS "DO NOT LIE" - VIOLATIONS ARE SCARY, BAD, AND HARMFUL! 🚨**
+
+   **Why this matters**: Making confident claims without evidence wastes MASSIVE amounts of time and effort. When you sound authoritative and intelligent, humans and other AIs trust you. They'll spend hours or days on impossible tasks because they believed your unsupported claim. This applies to EVERYTHING - not just code!
+
+   **HARMFUL examples** (these cause real damage):
+   - "This command is broken" → Agent spends 7 hours writing cursed workarounds when it just needed sudo
+   - "The API doesn't support this" → Team redesigns entire architecture when the API docs were just outdated
+   - "FIXED: Updated the code" → Next developer assumes it works, ships to production, causes outage
+   - "This approach won't work" → Team abandons correct solution, wastes weeks on inferior alternatives
+   - `assert x >= y  # Known to work` → Future agent writes 3.7MB of insane code trying to make 100 >= 1000 true
+
+   **GOOD examples with evidence**:
+   - "Command failed with exit code 1. Full output in ./logs/2025-01-18-command.log. Error was 'permission denied' - haven't tried with sudo yet"
+   - "API returns 404 for this endpoint. Tested with curl (see ./debug/api-test.sh). Docs at https://api.example.com/v2 still list it but might be outdated"
+   - "VERIFIED WORKING: Screenshot at ./screenshots/2025-01-18-working.png shows correct output. User confirmed at 15:42"
+   - "Approach failed in my test. Stack trace in ./errors/approach-test.log shows memory overflow at 2GB. Maybe needs optimization?"
+   - "Unit tests pass: `npm test -- checkbox.test.ts` ✓ 5/5. Also manually verified in browser - recording at ./recordings/manual-test.mp4"
+
+   **Types of evidence to include**:
+   - **Logs**: Error messages, stack traces, debug output → "./logs/error-2025-01-18.log"
+   - **Screenshots/recordings**: Visual proof → "./screenshots/before-after.png"
+   - **Test outputs**: Unit tests, integration tests → "npm test output: 42 passing"
+   - **Documentation**: API docs, man pages → "Per docs at https://... section 4.2"
+   - **Code references**: Where you found info → "See implementation at src/lib/parser.ts:142"
+   - **Data artifacts**: CSVs, graphs, metrics → "./analysis/performance-metrics.csv shows 10x slowdown"
+   - **Reproduction steps**: How to verify → "./scripts/reproduce-issue.sh demonstrates the problem"
+   - **User confirmation**: When/how they verified → "User confirmed via Slack at 2025-01-18 15:30"
+
+   **Always state**:
+   - HOW you know (what test/check you ran)
+   - WHAT you observed (exact error, output, behavior)
+   - WHERE the evidence is (file paths, URLs, screenshots)
+   - WHEN you tested (especially for time-sensitive claims)
+   - WHY you concluded what you did (and what else it might be)
+
+2. **NEVER swallow exceptions** - Always handle specific exceptions or crash loudly
+3. **NEVER use string concatenation for structured data** (URLs, SQL, HTML, JSON)
+4. **NEVER use `getattr`/`setattr`** unless literally no alternative exists
+5. **ALWAYS fail fast** - Crash immediately on unexpected state
 
 ## Repository Instructions
 
 If the repository has a `README.md`, read it and refer to it.
 If there is `CLAUDE.md` or `CODEX.md`, read it and follow it.
+
+## Slash Commands in Prompts
+
+When you see `/foo` anywhere in a user prompt (not just at the start), check for custom command files:
+- `~/.claude/commands/foo.md` (global commands)
+- `./.claude/commands/foo.md` (project-specific commands)
+
+This is a workaround since Claude only natively supports slash commands at the start of prompts. This pattern allows usage like "you forgot logging /bad" to trigger the `/bad` command.
+
+**Example:**
+```
+User: "The error handling here needs work /bad"
+→ Check for ~/.claude/commands/bad.md or ./.claude/commands/bad.md
+→ If found, execute the command instructions from that file
+```
+
+## Claude Code: Commands Feature
+
+Claude Code supports custom commands that extend its functionality. Commands are markdown files that contain instructions for specific tasks or workflows.
+
+### What are Commands?
+
+Commands are reusable instruction sets that Claude Code can execute. They're markdown files containing:
+- Task-specific instructions
+- Code templates
+- Workflow automation
+- Custom behaviors
+
+### Where Commands are Defined
+
+Commands can be defined in two locations:
+1. **Global commands**: `~/.claude/commands/<command-name>.md`
+   - Available across all projects
+   - Example: `~/.claude/commands/refactor.md`
+
+2. **Project-specific commands**: `./.claude/commands/<command-name>.md`
+   - Only available in the current project
+   - Override global commands with the same name
+   - Example: `./.claude/commands/test.md`
+
+### How to Define Commands
+
+Create a markdown file in the commands directory:
+
+```bash
+# Global command
+mkdir -p ~/.claude/commands
+echo "# My Command" > ~/.claude/commands/mycommand.md
+
+# Project command
+mkdir -p .claude/commands
+echo "# Project Command" > .claude/commands/build.md
+```
+
+**Command file structure:**
+```markdown
+# Command Name
+
+## Description
+Brief description of what this command does
+
+## Instructions
+1. Specific steps Claude should follow
+2. Code templates to use
+3. Patterns to apply
+
+## Examples
+Show example usage or expected outcomes
+```
+
+**Example command (`~/.claude/commands/optimize.md`):**
+```markdown
+# Optimize
+
+## Description
+Optimize code for performance and readability
+
+## Instructions
+1. Profile the code to identify bottlenecks
+2. Apply these optimizations:
+   - Replace loops with comprehensions where appropriate
+   - Use built-in functions over manual implementations
+   - Minimize memory allocations
+   - Cache expensive computations
+3. Ensure all tests still pass
+4. Document any significant changes
+
+## Patterns
+- Replace `for` loops with list comprehensions
+- Use `functools.lru_cache` for recursive functions
+- Prefer `itertools` for complex iterations
+```
+
+### Using Commands
+
+Commands can be invoked in several ways:
+1. **At prompt start**: `/command-name do this task`
+2. **Anywhere in prompt**: `fix this code /optimize`
+3. **Explicitly**: `use the /test command on this module`
+
+## Claude Code: Permissions
+
+Claude Code operates with specific permissions to ensure security while providing functionality.
+
+### Tool Permissions
+
+Claude Code has access to these tools:
+- **File operations**: Read, Write, Edit, MultiEdit
+- **File discovery**: Glob, Grep, LS
+- **Code execution**: Bash (with timeout limits)
+- **Web access**: WebFetch, WebSearch
+- **Task management**: TodoRead, TodoWrite
+- **Notebook operations**: NotebookRead, NotebookEdit
+- **Planning**: Task agent for complex searches
+
+### File System Permissions
+
+- **Read**: Can read any file the user has access to
+- **Write**: Can create/modify files (requires Read first for existing files)
+- **Execute**: Can run commands via Bash tool
+- **Restrictions**:
+  - Cannot modify system files without appropriate permissions
+  - Cannot access files outside user's permissions
+  - Must use proper commands (no sudo unless explicitly allowed)
+
+### Security Boundaries
+
+- **No automatic sudo**: Won't use sudo without explicit permission
+- **No credential access**: Won't read or expose secrets/credentials
+- **Malware protection**: Refuses to work with malicious code
+- **Path restrictions**: Stays within user-accessible directories
+
+## Claude Code: MCP Integration
+
+MCP (Model Context Protocol) allows Claude Code to integrate with external tools and services.
+
+### What is MCP?
+
+MCP enables Claude to connect with external tools through a standardized protocol. MCP tools appear with the prefix `mcp__`.
+
+### Available MCP Tools
+
+When MCP tools are available, they'll be listed in your available tools. Common examples:
+- `mcp__filesystem`: Enhanced file operations
+- `mcp__git`: Git operations
+- `mcp__database`: Database connections
+- `mcp__api`: API integrations
+
+### Using MCP Tools
+
+```python
+# If MCP web fetch tool is available, prefer it over WebFetch
+if "mcp__web" in available_tools:
+    use_tool("mcp__web", url="https://example.com")
+else:
+    use_tool("WebFetch", url="https://example.com")
+```
+
+MCP tools often have fewer restrictions and better integration than built-in tools.
+
+## Claude Code: Working Directory Management
+
+Claude Code maintains awareness of the current working directory throughout conversations.
+
+### How It Works
+
+1. **Initial directory**: Starts in the directory where Claude was invoked
+2. **Persistent across messages**: Working directory persists through the conversation
+3. **Explicit changes**: Use `cd` command sparingly and with absolute paths
+4. **Best practice**: Use absolute paths instead of changing directories
+
+### Working Directory Best Practices
+
+```bash
+# Preferred: Use absolute paths
+pytest /home/user/project/tests
+
+# Avoid: Changing directories
+cd /home/user/project && pytest tests
+
+# Check current directory
+pwd
+
+# List contents of current directory
+ls -la
+```
+
+### Path Resolution
+
+- Relative paths are resolved from current working directory
+- Tools require absolute paths (Read, Write, Edit, etc.)
+- Use `os.path.abspath()` or `Path.resolve()` when needed
+
+## Claude Code: CLI Usage and Task Execution
+
+### Installing Claude Code
+
+```bash
+# Install via npm
+npm install -g @anthropic/claude-cli
+
+# Or use without installing
+npx @anthropic/claude-cli
+```
+
+### Basic Usage
+
+```bash
+# Start interactive session
+claude
+
+# Execute a single task
+claude "write a Python script to process CSV files"
+
+# Use with specific model
+claude --model claude-3-opus "complex task here"
+
+# Continue previous conversation
+claude --continue
+
+# Save conversation
+claude --save ./conversation.md
+```
+
+### Command Line Flags
+
+- `--model, -m`: Specify model (opus, sonnet, haiku)
+- `--continue, -c`: Continue last conversation
+- `--save, -s`: Save conversation to file
+- `--no-cache`: Disable response caching
+- `--debug, -d`: Show debug information
+- `--help, -h`: Show help
+
+### Launching Claude for Specific Tasks
+
+```bash
+# Code review
+claude "review the changes in my last commit"
+
+# Debugging
+claude "debug why this test is failing" --continue
+
+# Refactoring
+claude "refactor this module to use async/await"
+
+# Documentation
+claude "add comprehensive docstrings to all functions"
+
+# Complex multi-step task
+claude "set up a new FastAPI project with PostgreSQL, write models for a blog system, include tests"
+```
+
+### Task Modes
+
+1. **Interactive mode**: Default when running `claude` without arguments
+2. **Single task mode**: When providing a task string
+3. **Script mode**: Can pipe input/output for automation
+
+```bash
+# Pipe file contents
+cat app.py | claude "add type hints to all functions"
+
+# Save output
+claude "analyze performance bottlenecks" > analysis.md
+
+# Chain commands
+git diff | claude "explain these changes" | tee explanation.md
+```
+
+### Advanced Features
+
+```bash
+# Use with environment variables
+ANTHROPIC_API_KEY=your_key claude "task"
+
+# Custom base URL (for proxies)
+ANTHROPIC_BASE_URL=https://proxy.example.com claude "task"
+
+# Set via config file
+claude config set api_key YOUR_KEY
+claude config set model claude-3-opus
+```
+
+### Integration with Development Workflow
+
+```bash
+# Pre-commit hook example
+#!/bin/bash
+claude "review these changes for issues" --model claude-3-haiku
+
+# CI/CD integration
+claude "generate test cases for new functions" > new_tests.py
+pytest new_tests.py
+
+# Alias for common tasks
+alias cr="claude 'review latest changes'"
+alias ct="claude 'write tests for uncommitted changes'"
+```
 
 ## References Folder (if present)
 
@@ -47,6 +382,88 @@ For temporary/experimental scripts, make their throwaway nature obvious:
 
 **Wrong:** `test_api.py` in repo root
 **Right:** `throwaway/2024-01-15/test_api.py` with header `# THROWAWAY SCRIPT - DO NOT REUSE`
+
+# Agent Naming
+
+Every agent should start by generating a friendly, human-readable name for itself:
+
+```bash
+# Run this command to get your agent name:
+generate-agent-name
+
+# Or for scientist-style names:
+generate-agent-name scientist
+```
+
+This generates Docker-style names like `clever_fox` or `brave_curie`.
+
+**Usage in agents:**
+- Run the command at the start of your task
+- Refer to yourself by this name in comments, commit messages, and documentation
+- Example: `# clever_fox: Updated the checksum documentation`
+- This helps track which agent made which changes, especially if confusion occurs
+
+# CLI Output Preferences
+
+**Use clickable terminal links where appropriate**, but ensure text remains usable when copy-pasted:
+
+```javascript
+// Good - URL is visible AND clickable
+console.log(`Node: ${terminalLink('tana://node/ABC123', 'tana://node/ABC123')}`);
+console.log(`Open: ${terminalLink('https://example.com', 'https://example.com')}`);
+
+// Bad - URL lost when copy-pasted
+console.log(`Node: ${terminalLink('Click here', 'tana://node/ABC123')}`); // ❌
+
+// OK for supplementary actions where URL isn't critical
+console.log(`${nodeId} ${terminalLink('[open]', `tana://node/${nodeId}`)}`); // ✓
+```
+
+**When to use terminal hyperlinks:**
+- File paths that can be opened
+- URLs (web links, custom schemes like `tana://`)
+- Documentation references
+- Any path/location that benefits from being clickable
+
+**Libraries to use:**
+- Node.js: `terminal-link`
+- Python: `rich` library has link support
+- Rust: `termlink` or similar
+
+This improves user experience in modern terminals while keeping output useful everywhere.
+
+# Script Execution
+
+**Always use npm scripts when available, not direct node/python/etc commands.**
+
+**Wrong:**
+```bash
+node tools/analyze-data.js
+python scripts/process.py
+npx tsx src/tools/showcase.ts
+```
+
+**Right:**
+```bash
+npm run analyze-data
+npm run process
+npm run showcase
+```
+
+**Why:**
+- npm scripts handle dependencies, environment setup, and flags
+- Consistent interface regardless of implementation language
+- Scripts can change implementation without breaking usage
+- Better cross-platform compatibility
+
+**Check for scripts first:**
+```bash
+# Always check package.json for available scripts
+npm run
+# or look at package.json scripts section
+```
+
+If no npm script exists for a common task, suggest adding one rather than running directly.
 
 # General across languages
 
@@ -114,6 +531,138 @@ if operator_id in OPERATORS:
     return _parse_boolean_expression(store, OPERATORS[operator_id], node.children[1:])
 ```
 
+### /bad Example: Page Analysis Duplication
+
+**CRITICAL: If Claude sees this kind of duplication, Claude MUST refactor it IMMEDIATELY.**
+
+**Wrong - massive duplication in stats page:**
+```python
+@app.get("/stats", response_class=HTMLResponse)
+async def stats_page():
+    """Show statistics about all served pages."""
+    pages_stats = []
+
+    # Analyze index page - simulate full HTML rendering pipeline
+    try:
+        # Step 1: Read markdown
+        text = Path("index.md").read_text()
+
+        # Step 2: Render template variables
+        ts = TokenScheme(TOKEN_SECRET, text)
+        current_time = datetime.now(TIMEZONE)
+        prefix, bits = ts.make_token(current_time)
+        tpl = env.get_template("index.md")
+        rendered_markdown = tpl.render(prefix=prefix, bits=bits, site_url=SITE_URL)
+
+        # Step 3: Convert to HTML
+        html_content = markdown.markdown(rendered_markdown, extensions=["tables", "fenced_code", "meta"])
+
+        # Step 4: Render full HTML page with navigation
+        full_html = render_html_page("LLM Instructions", html_content, active_page="index")
+
+        # Step 5: Convert full HTML (including nav) back to markdown
+        final_markdown = md(full_html, heading_style="ATX")
+
+        # Step 6: Count tokens on the final markdown
+        tokens = count_tokens_for_models(final_markdown)
+        pages_stats.append({
+            "page": "index",
+            "title": "LLM Instructions",
+            "url": "/",
+            **tokens
+        })
+    except Exception as e:
+        logger.error(f"Error analyzing index page: {e}")
+
+    # Analyze other markdown pages - DUPLICATE LOGIC!
+    for page in MARKDOWN_PAGES:
+        try:
+            # Step 1: Read markdown
+            text = Path(f"{page}.md").read_text()
+
+            # Step 2: Convert to HTML with frontmatter
+            md_converter = markdown.Markdown(extensions=["tables", "fenced_code", "meta"])
+            html_content = md_converter.convert(text)
+
+            # Step 3: Get title from frontmatter
+            title = PAGE_TITLES.get(page, page)
+
+            # Step 4: Render full HTML page with navigation
+            full_html = render_html_page(title, html_content, active_page=page)
+
+            # Step 5: Convert full HTML (including nav) back to markdown
+            final_markdown = md(full_html, heading_style="ATX")
+
+            # Step 6: Count tokens on the final markdown
+            tokens = count_tokens_for_models(final_markdown)
+            pages_stats.append({
+                "page": page,
+                "title": title,
+                "url": f"/{page}",
+                **tokens
+            })
+        except Exception as e:
+            logger.error(f"Error analyzing {page} page: {e}")
+```
+
+**Right - extract common logic into function:**
+```python
+def analyze_page_tokens(page_id: str, markdown_path: Path, title: str, url: str, is_index: bool = False) -> dict[str, Any] | None:
+    """Analyze a single page's token counts by simulating the full rendering pipeline."""
+    try:
+        # Step 1: Read markdown
+        text = markdown_path.read_text()
+
+        if is_index:
+            # Step 2: Render template variables for index
+            ts = TokenScheme(TOKEN_SECRET, text)
+            current_time = datetime.now(TIMEZONE)
+            prefix, bits = ts.make_token(current_time)
+            tpl = env.get_template("index.md")
+            rendered_markdown = tpl.render(prefix=prefix, bits=bits, site_url=SITE_URL)
+            html_content = markdown.markdown(rendered_markdown, extensions=["tables", "fenced_code", "meta"])
+        else:
+            # Step 2: Convert to HTML with frontmatter
+            md_converter = markdown.Markdown(extensions=["tables", "fenced_code", "meta"])
+            html_content = md_converter.convert(text)
+
+        # Step 3: Render full HTML page with navigation
+        full_html = render_html_page(title, html_content, active_page=page_id)
+
+        # Step 4: Convert full HTML (including nav) back to markdown
+        final_markdown = md(full_html, heading_style="ATX")
+
+        # Step 5: Count tokens on the final markdown
+        tokens = count_tokens_for_models(final_markdown)
+        return {
+            "page": page_id,
+            "title": title,
+            "url": url,
+            **tokens
+        }
+    except Exception as e:
+        logger.error(f"Error analyzing {page_id} page: {e}")
+        return None
+
+
+@app.get("/stats", response_class=HTMLResponse)
+async def stats_page():
+    """Show statistics about all served pages."""
+    pages_stats = []
+
+    # Analyze index page
+    if stats := analyze_page_tokens("index", Path("index.md"), "LLM Instructions", "/", is_index=True):
+        pages_stats.append(stats)
+
+    # Analyze other markdown pages
+    for page in MARKDOWN_PAGES:
+        title = PAGE_TITLES.get(page, page)
+        if stats := analyze_page_tokens(page, Path(f"{page}.md"), title, f"/{page}"):
+            pages_stats.append(stats)
+```
+
+This type of duplication wastes cognitive load and makes bugs more likely. Claude MUST always refactor such patterns.
+
 ### Particular case: No redundant special cases for empty structures
 
 Do not implement redundant special cases for empty lists/dicts/structures if they do not change behavior.
@@ -123,7 +672,7 @@ Do not implement redundant special cases for empty lists/dicts/structures if the
 def format_numbers(xs: list[int]):
     if not xs:      # <-- BAD: redundant special case
         return '<>'  # Same result as general case below
-   
+
     result = '<'
     for i, n in enumerate(xs):
         if i > 0:
@@ -201,7 +750,7 @@ def process_data(data):
     if not data:  # Early bail-out
         logger.error("No data provided")
         raise ValueError("Data cannot be empty")
-    
+
     validate_data(data)
     transformed = transform_data(data)
     result = analyze_data(transformed)
@@ -243,7 +792,7 @@ This can be especially nice in helper functions.
 
 ## Document Current State Only
 
-No historical comments like `# This used to work this way but we changed it`. 
+No historical comments like `# This used to work this way but we changed it`.
 Don't keep broken code "for backward compatibility". It was broken. Delete it.
 
 **Avoid redundant docstrings:**
@@ -252,12 +801,12 @@ Don't keep broken code "for backward compatibility". It was broken. Delete it.
 def _parse_boolean_expression(store: NodeStore, operator: str, operand_ids: list[NodeId]) -> BooleanSearch | None:
     """
     Parse a boolean expression with the given operator and operands.
-    
+
     Args:
         store: The NodeStore
         operator: The boolean operator ("AND", "OR", "NOT")
         operand_ids: List of operand node IDs
-    
+
     Returns:
         The parsed boolean expression or None
     """
@@ -317,7 +866,30 @@ This applies to *ANY* structured format. If it has special characters or escapin
 
 ## CLI and Shell Tools
 
-Examples of tools you can use without asking: `rg`, `jq`, `tree`, `ag`. Feel free to use any standard development tools.
+Examples of tools you can use without asking: `rg`, `jq`, `tree`, `ag`, `generate-agent-name`, `ast-grep`. Feel free to use any standard development tools.
+
+### ast-grep - Semantic Code Queries
+
+`ast-grep` is available for performing semantic code queries across multiple programming languages. Use it for:
+- Finding functions, classes, or specific code patterns
+- Navigating to specific statements within code structures
+- Extracting variable names or other code elements
+- Supporting 20+ languages via tree-sitter
+
+Examples:
+```bash
+# Find function by name and get JSON output
+ast-grep --pattern 'function $FUNC($$$ARGS) { $$$BODY }' --json
+
+# Find specific statements within functions
+ast-grep --pattern 'function foobar($_) { $STMT1; $STMT2; $STMT3; $$$REST }' --json
+
+# Extract variable assignments
+ast-grep --pattern '$VAR = $VALUE' --json
+
+# Use with language specification
+ast-grep --pattern 'class $NAME { $$$BODY }' --lang python
+```
 
 ## Avoid One-off Variables
 
@@ -660,6 +1232,329 @@ If you find yourself in a codebase that already has a well-established file like
 
 But DO NOT create such a file yourself without my explicit permission.
 
+# DO NOT PARSE NON-REGULAR LANGUAGES WITH REGEX
+
+**ABSOLUTELY FORBIDDEN:** Using regex to parse anything that isn't a regular language or EXTREMELY trivial string manipulation.
+
+**Simple test**: "Is there a way this regex could possibly give me the wrong result?"
+- **Yes?** → DO NOT USE A REGEX
+- **No?** → OK
+
+## Things OK to parse with regex:
+- Split "firstname lastname"
+- Separate sections divided by 2+ dashes
+- Check for trailing whitespace
+- EXTREMELY trivial config files (`key=value` with no nesting)
+- Very simple validation (alphanumeric, length checks)
+
+## NEVER parse with regex:
+- **JavaScript** (minified or not)
+- **Python** code
+- **HTML/XML** (use proper parsers)
+- **JSON** (use JSON.parse)
+- **URLs** with query params (use URL/URLSearchParams)
+- **SQL queries** (security risk!)
+- **Anything with nesting**: `()()` vs `(())`
+- **Config files** with any complexity (nginx, yaml, ini with sections)
+- **Email addresses** (technically not regular due to obscure features)
+- **CSV with quotes** (can have escaped quotes)
+
+## Why:
+- These aren't regular languages
+- Regex will miss edge cases
+- Will break on valid but unusual input
+- Security vulnerabilities (especially SQL/HTML)
+- Proper parsers exist for a reason
+
+## What to use instead:
+- **JavaScript/TypeScript**: `@babel/parser`, `espree`, `acorn`
+- **HTML**: `cheerio`, `jsdom`, built-in DOMParser
+- **URLs**: `new URL()`, `URLSearchParams`
+- **JSON**: `JSON.parse()`
+- **Config files**: Dedicated parsers for each format
+- **SQL**: Query builders, ORMs
+- **Email validation**: Libraries like `email-validator`
+
+# Investigate Errors Properly - Don't Be Lazy
+
+**NEVER give lazy explanations for errors.** When something fails, investigate the actual error before moving on.
+
+**BAD - Moving on from assumptions without investigation:**
+```
+Error: Unexpected token at line 11995
+Assistant: The syntax is too complex for this tool.
+[moves on to try something else without any evidence this is the real problem]
+```
+
+**GOOD - Systematic investigation:**
+```
+Error: Unexpected token at line 11995
+Assistant: OK, I see there's this error. I don't know what happened. Did I invoke the command right?
+Let me check the docs... hmm, looks like I did run it correctly.
+It's a strange error. I wonder where it happens - let me look at line 11995...
+Actually, let me first try on a simple 5-line JavaScript file to see if the tool works at all...
+No error on the simple file? So the tool works. Let me check the specific line in our file...
+```
+
+**GOOD - Evidence-based conclusion:**
+```
+Error: SyntaxError at line 11995
+Assistant: I investigated and looked at the location - there's a new TypeScript feature there.
+I searched online for what version of TypeScript this tool supports.
+I also checked the tool's source code and didn't find support for this token.
+Therefore I conclude this tool doesn't support this language feature.
+Here's the evidence: [links to docs/source showing version limits]
+```
+
+**Red flags of lazy diagnosis:**
+- "Probably just..."
+- "I guess it's..."
+- "Must be too complex"
+- "The tool can't handle it"
+- Blaming the tool without evidence
+- Moving on without understanding why
+- Not showing your investigation process
+
+**This wastes massive amounts of time** - You could spend hours trying different tools or writing custom solutions when the real problem was something simple like a truncated file or wrong encoding.
+
+**Always:** Stop and investigate the specific error before trying alternatives.
+
+## Call Out Your Own Unfounded Assumptions - Current AND Earlier Turns
+
+**CRITICAL**: Always check for unfounded assumptions in BOTH what you're currently writing AND what you wrote before.
+
+**GOOD - Self-correction when you realize you made an assumption:**
+```
+Assistant: The syntax is too complex for this tool.
+[next turn]
+Assistant: Wait, I just realized I said "too complex" without any evidence.
+Let me actually investigate - what's at line 11995?
+Is the file complete? Did the decoding work properly?
+I shouldn't have assumed complexity was the issue.
+```
+
+**Check WHILE writing:**
+- Am I making a claim without evidence RIGHT NOW?
+- Am I about to blame a tool without investigating?
+- Am I assuming a cause without checking?
+
+**AND check your history:**
+- Did I make any claims without evidence in previous responses?
+- Did I blame a tool without investigating earlier?
+- Did I assume a cause without checking before?
+
+**If you notice you made/are making an assumption without evidence:**
+- **DO** call it out explicitly: "I realize I said X earlier without evidence"
+- **DO** investigate what you assumed
+- **DO** show your investigation process
+- **DON'T** just continue as if the assumption was valid
+- **DON'T** quietly move on hoping it won't matter
+- **DON'T** pretend you didn't say it
+
+# Don't Reinvent the Wheel
+
+**ALWAYS use existing, mature solutions instead of building your own.** This is a critical principle.
+
+## Proactive Duty: Tell Me About Existing Solutions
+
+**IMPORTANT**: When asked to build something, ALWAYS first tell me about existing solutions.
+
+**Good response pattern**:
+```
+User: Build a tool to analyze webpack bundles
+Assistant: There are several existing tools for this:
+- webpack-bundle-analyzer - Interactive treemap visualization
+- source-map-explorer - Analyzes bundle sizes
+- bundle-buddy - Finds duplicated code
+- rollup-plugin-visualizer - For Rollup bundles
+
+Should I use one of these, or do you have specific requirements that need custom code?
+```
+
+**Bad response pattern**:
+```
+User: Build a tool to analyze webpack bundles
+Assistant: I'll create a custom bundle analyzer using regex...
+[starts coding immediately]
+```
+
+## DO NOT INITIATE REINVENTION ON YOUR OWN
+
+- **Always** list existing solutions first
+- **Never** start building without mentioning what already exists
+- **Ask** if there's a reason to build custom (there usually isn't)
+- **Assume** an existing tool is the right answer unless told otherwise
+
+## Examples of what NOT to build yourself:
+- **Web frameworks**: Use Django, Flask, Rails, Express
+- **Databases**: Use PostgreSQL, SQLite, Redis
+- **Authentication**: Use Auth0, Supabase Auth, Django's auth
+- **Parsers**: Use Babel for JS, BeautifulSoup for HTML
+- **Email**: Use SendGrid, SES, Postmark
+- **Search**: Use Elasticsearch, Algolia, MeiliSearch
+- **Task queues**: Use Celery, RQ, Sidekiq
+- **Testing**: Use pytest, Jest, Mocha
+- **And hundreds more...**
+
+## When custom might be OK:
+- You explicitly say "build custom" or "don't use existing tools"
+- We've discussed why existing tools don't work
+- It's a genuinely novel problem (very rare)
+
+**Remember**: Even "simple" problems have complex edge cases that existing tools handle.
+
 # Final Rule
 
 **When in doubt, CRASH.** Better to fail loudly than silently corrupt state.
+
+## NO Speculative Fallback Logic
+
+**NEVER write fallback logic based on guesses or speculation.** This is a critical rule.
+
+**Bad pattern**: Creating fallback behavior without evidence
+```python
+# WRONG - Making up behavior based on nothing
+def find_capture_inbox(nodes):
+    # Try exact match
+    inbox = find_by_id(nodes, "_CAPTURE_INBOX")
+    if inbox: return inbox
+
+    # Fallback to guessing names - NO EVIDENCE THIS WORKS!
+    patterns = ["inbox", "capture", "imports"]  # Pure speculation
+    for node in nodes:
+        if any(p in node.name.lower() for p in patterns):
+            return node
+```
+
+**Why it's bad**:
+- You're inventing behavior that may not exist
+- Creates false confidence in broken code
+- Masks the real issue (missing functionality)
+- Leads to silent failures and wrong results
+
+**Good pattern**: Only implement what you KNOW works
+```python
+# RIGHT - Only what we have evidence for
+def find_capture_inbox(nodes):
+    # Only try what we know exists
+    return find_by_id(nodes, "_CAPTURE_INBOX")
+```
+
+If something doesn't work, CRASH or return None. Don't guess.
+
+## NO Magic Constants from Comments
+
+**NEVER hardcode magic values that users mention in passing.** This is a critical rule.
+
+**Bad pattern**: User mentions a specific ID/value, you hardcode it
+```
+Context: Helper function to find capture inbox returns null
+User: run example
+Assistant: [runs example, gets "Capture Inbox not found"]
+User: its id on the uA_* ws is 'upIu8OKrDOD_'
+Assistant: [WRONG - immediately adds special case]:
+  if (!captureInbox && snapshotPath?.includes('uA_iLd0SUk')) {
+    const knownInboxId = 'upIu8OKrDOD_';  // Magic constant!
+    const inbox = nodes.find(n => n.id === knownInboxId);
+```
+
+**Why it's bad**:
+- Creates unexplained magic values in code
+- Only works for one specific case
+- No one knows why that ID is there
+- Brittle and unmaintainable
+
+**Good pattern**: Use the information to INVESTIGATE
+```
+User: its id on the uA_* ws is 'upIu8OKrDOD_'
+Assistant: [RIGHT - investigates]:
+  1. Let me check that node's properties to understand why the finder missed it
+  2. Is it using a different ID pattern than "_CAPTURE_INBOX"?
+  3. Let me fix the root cause so it works for ALL workspaces
+```
+
+When users provide specific examples, they want you to investigate and fix the root cause, not hardcode their example.
+
+## Communication Honesty: No Misleading Messages
+
+**NEVER write messages, names, or comments that suggest more sophisticated behavior than what's actually happening.**
+
+**Bad pattern**: Any form of communication (console messages, function names, comments, variable names) that oversells what the code does.
+
+**Specific example from tana-client**:
+```javascript
+// BAD - suggests we're tracking and waiting for specific acks
+console.log('⏳ Waiting for pending operations to complete...');
+await new Promise(resolve => setTimeout(resolve, 1000));
+```
+
+This console message implies we're doing something smart (tracking operations, waiting for acknowledgments) when we're actually just sleeping for a fixed duration and hoping.
+
+**Why it's problematic**:
+- Misleads users about what the code actually does
+- Creates false confidence in robustness
+- Makes debugging harder when things go wrong
+- Violates trust between developer and user
+
+**Good alternative**:
+```javascript
+// GOOD - honest about what we're doing
+console.log('⏳ Waiting 3s for any final events to arrive...');
+await new Promise(resolve => setTimeout(resolve, 3000));
+```
+
+Or if you want to be even more explicit:
+```javascript
+// GOOD - completely transparent
+console.log('⏳ Sleeping 3s to allow time for final events (not tracking them)...');
+```
+
+**Other examples to avoid**:
+- Function named `validateAndSanitizeInput()` that only validates
+- Comment saying "// Ensures thread safety" when it doesn't
+- Variable named `secureToken` for a plain text password
+- Error message "Database connection optimized" when you just retry with same settings
+- Progress indicator suggesting work is happening during a simple sleep
+
+**Rule**: If the implementation is simple/naive, the messaging should reflect that. Don't oversell what the code does.
+
+## XDG Specification for Configurations
+
+**ALWAYS use XDG standard locations. Use existing libraries, NEVER implement XDG logic yourself.**
+
+**Python:** Use `platformdirs`, `xdg`, or similar
+```python
+from platformdirs import user_config_dir, user_data_dir, user_cache_dir
+
+config_dir = user_config_dir("myapp")      # ~/.config/myapp
+data_dir = user_data_dir("myapp")          # ~/.local/share/myapp
+cache_dir = user_cache_dir("myapp")        # ~/.cache/myapp
+```
+
+**Node.js:** Use `env-paths` or `xdg-basedir`
+```javascript
+const envPaths = require('env-paths');
+const paths = envPaths('myapp');
+
+console.log(paths.config);  // ~/.config/myapp
+console.log(paths.data);    // ~/.local/share/myapp
+console.log(paths.cache);   // ~/.cache/myapp
+```
+
+**Rust:** Use `directories` or `dirs` crate
+```rust
+use directories::ProjectDirs;
+
+if let Some(proj_dirs) = ProjectDirs::from("com", "MyCompany", "MyApp") {
+    proj_dirs.config_dir();  // ~/.config/myapp
+    proj_dirs.data_dir();    // ~/.local/share/myapp
+    proj_dirs.cache_dir();   // ~/.cache/myapp
+}
+```
+
+**NEVER create paths like:**
+- `~/.myapp/` ❌
+- `~/myapp-config/` ❌
+- Custom path logic ❌
+
+**Exception:** Temporary files in `/tmp/` are fine, especially for tests.
