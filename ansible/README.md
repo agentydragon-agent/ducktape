@@ -138,7 +138,7 @@ To add a new device to the WireGuard network:
    ```bash
    # Deploy to VPS to update peer allowlist
    ansible-playbook vps.yaml --tags wireguard
-   
+
    # Deploy to the new device (if managed by Ansible)
    ansible-playbook <hostname>.yaml --tags wireguard
    ```
