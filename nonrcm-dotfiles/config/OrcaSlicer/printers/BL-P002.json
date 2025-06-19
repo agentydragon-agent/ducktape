@@ -51,7 +51,7 @@
         "printer_series":"series_x1",
         "has_cali_line":true,
         "printer_is_enclosed":true
-    }, 
+    },
     "01.01.01.00": {
         "print": {
             "support_1080dpi":true,

@@ -8,7 +8,7 @@
     "top_surface_acceleration": "2000",
     "initial_layer_acceleration": "1000",
     "inner_wall_acceleration": "2000",
-    "outer_wall_acceleration": "2000",   
+    "outer_wall_acceleration": "2000",
     "travel_acceleration": "3000",
     "accel_to_decel_factor": "50%",
     "default_jerk": "7",
