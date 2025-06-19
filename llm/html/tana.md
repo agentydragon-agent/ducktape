@@ -120,17 +120,17 @@ Attributes may also contain nested content, like this:
 %%tana%%
 - Lizards %%view:table%%
   - Gus-gus
-    - Good boy?:: 
+    - Good boy?::
       - Very!
         - Doesn't bark
         - Wags
         - Is cute
-    - Aesthetic?:: 
+    - Aesthetic?::
       - Also very!
         - Black and white
           - Never goes out of style
   - Geico gecko
-    - Good boy?:: 
+    - Good boy?::
       - Somewhat
         - Promotes capitalism
         - But is lizard some points
