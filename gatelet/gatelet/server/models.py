@@ -39,7 +39,9 @@ class WebhookIntegration(Base):
         comment="Authentication type (e.g., 'none', 'token', 'basic')",
     )
     auth_config = Column(JSON, nullable=True, comment="Authentication configuration")
-    created_at = Column(DateTime, nullable=False, default=func.now())  # pylint: disable=not-callable
+    created_at = Column(
+        DateTime, nullable=False, default=func.now()
+    )  # pylint: disable=not-callable
     updated_at = Column(
         DateTime,
         nullable=False,
