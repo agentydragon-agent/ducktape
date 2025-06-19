@@ -193,6 +193,9 @@ class EncryptedEncoder:
 
 ENCODER = EncryptedEncoder(WEBHOOK_INBOX_KEY)
 
+# Global database connection, initialized by configure_db()
+CONN: sqlite3.Connection
+
 
 def configure_db(path: str | os.PathLike):
     """(Re-)initialise the global SQLite connection and schema.
