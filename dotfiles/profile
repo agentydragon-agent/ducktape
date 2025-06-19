@@ -56,5 +56,3 @@ export BASIC_MEMORY_HOME=$HOME/.syncthing/pkm/basic-memory
 # TODO: add to asible: npm install -g should go into ~/.npm-global
 # npm config set prefix ~/.npm-global
 export PATH=~/.npm-global/bin:$PATH
-
-
