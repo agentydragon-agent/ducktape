@@ -46,12 +46,12 @@ print("hello world")
   - The node below has a supertag applied, "recipe" (test reference hiHpuPTowhDs)
     - Perfect Eggs (test reference) #recipe
       - This node has attributes set
-      - Attribute with multiple node values:: 
+      - Attribute with multiple node values::
         - Value 1
         - Value 2
         - Value 3
       - Attribute with one node value:: Value A
-      - Attribute referencing 2 other nodes:: 
+      - Attribute referencing 2 other nodes::
         - [[Node X^Qi0AlCNyZgW0]]
         - [[Node Y^nDZ-2gyNELRb]]
   - Some other nodes with #recipe supertag: (test reference u00FQD8V08fy)
@@ -68,9 +68,9 @@ print("hello world")
     - Node with tags with space #[[supertag with space in name]]
   - Image (test reference Vi0w332Hvh9b)
     - Plain image
-      -  ![](https://firebasestorage.googleapis.com/v0/b/tagr-prod.appspot.com/o/notespace%2Fagentydragon%40gmail.com%2Fuploads%2F2025-06-13T00%3A51%3A03.687Z-image.png?alt=media&token=fce13347-79df-42cd-8fd4-eecc10ffa7ba) 
+      -  ![](https://firebasestorage.googleapis.com/v0/b/tagr-prod.appspot.com/o/notespace%2Fagentydragon%40gmail.com%2Fuploads%2F2025-06-13T00%3A51%3A03.687Z-image.png?alt=media&token=fce13347-79df-42cd-8fd4-eecc10ffa7ba)
     - Image with caption
-      -  ![Caption of this image - **bold**, **_italic_**](https://firebasestorage.googleapis.com/v0/b/tagr-prod.appspot.com/o/notespace%2Fagentydragon%40gmail.com%2Fuploads%2F2025-06-13T00%3A51%3A49.350Z-image.png?alt=media&token=e5f17b31-9ea5-4f95-b77d-caa4df8c9fd1) 
+      -  ![Caption of this image - **bold**, **_italic_**](https://firebasestorage.googleapis.com/v0/b/tagr-prod.appspot.com/o/notespace%2Fagentydragon%40gmail.com%2Fuploads%2F2025-06-13T00%3A51%3A49.350Z-image.png?alt=media&token=e5f17b31-9ea5-4f95-b77d-caa4df8c9fd1)
   - Search node looking for all #recipe nodes (test reference LkFZLMTHylYl)
     - [[Perfect Eggs (test reference)^Oh-JrJ73G9iK]]
     - [[Scramble^Hldnr8OJrKHh]]
@@ -94,21 +94,21 @@ print("hello world")
   - Node rendered as a table (test reference SGrUB4iyWYde)
     - Table
       - Row 1
-        - Standard column:: 
+        - Standard column::
           - A1
             - A1a
         - Number column:: 11
         - Row 1 content foo
         - Row 1 content bar
       - Row 2
-        - Standard column:: 
+        - Standard column::
           - A2
             - A2a
         - Number column:: 22
         - Row 2 content foo
         - Row 2 content bar
       - Row 3
-        - Standard column:: 
+        - Standard column::
           - A3
             - A3a
         - Number column:: 33
@@ -124,4 +124,3 @@ print("hello world")
     - [[Scramble^Hldnr8OJrKHh]]
       - **Associated data**
         - Contextual column:: Meh
-
