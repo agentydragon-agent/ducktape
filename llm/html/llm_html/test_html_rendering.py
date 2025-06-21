@@ -9,13 +9,13 @@ from .server import app
 from .token_scheme import N_TAGS, TokenScheme
 
 
-@pytest.fixture()
+@pytest.fixture
 def mock_token_bits():
     """Create predictable token bits for testing."""
     return [chr(ord("a") + i) * 2 for i in range(N_TAGS)]
 
 
-@pytest.fixture()
+@pytest.fixture
 def mock_token_scheme(mock_token_bits):
     """Mock TokenScheme.make_token to return predictable values."""
     with patch.object(TokenScheme, "make_token") as mock_make_token:
@@ -23,7 +23,7 @@ def mock_token_scheme(mock_token_bits):
         yield mock_make_token
 
 
-@pytest.fixture()
+@pytest.fixture
 def client():
     """Create test client for FastAPI app."""
     return TestClient(app)

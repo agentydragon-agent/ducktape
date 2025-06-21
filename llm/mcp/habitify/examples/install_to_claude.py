@@ -9,19 +9,13 @@ import os
 import subprocess
 import sys
 
-from dotenv import load_dotenv
 
-# Load environment variables
-load_dotenv()
+# Add the parent directory to the path so we can import the server
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from habitify_mcp_server.config import load_api_key, get_api_base_url
 
-# Check if API key is set
-api_key = os.environ.get("HABITIFY_API_KEY")
-if not api_key:
-    print("Error: HABITIFY_API_KEY environment variable is required")
-    print("Please set it using one of these methods:")
-    print("  1. Add it to your .env file: HABITIFY_API_KEY=your_api_key_here")
-    print("  2. Set it as an environment variable: export HABITIFY_API_KEY=your_api_key_here")
-    sys.exit(1)
+# Load API key using our common utility
+api_key = load_api_key(api_key_override=None, exit_on_missing=True, logger_func=print)
 
 # Prepare the installation command
 # Note: We need to use the module name, not the path
@@ -30,7 +24,7 @@ server_name = "Habitify"
 env_vars = [f"HABITIFY_API_KEY={api_key}"]
 
 # Optional API base URL if set
-api_base_url = os.environ.get("HABITIFY_API_BASE_URL")
+api_base_url = get_api_base_url()
 if api_base_url:
     env_vars.append(f"HABITIFY_API_BASE_URL={api_base_url}")
 

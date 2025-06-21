@@ -82,9 +82,7 @@ def mcp(
     # Check if API key is set
     if not habitify_api_key:
         err_console.print("[bold red]Error:[/] Habitify API key is required.")
-        err_console.print(
-            "Please set the HABITIFY_API_KEY environment variable or use --api-key."
-        )
+        err_console.print("Please set the HABITIFY_API_KEY environment variable or use --api-key.")
         raise typer.Exit(code=1)
 
     # Set up signal handlers
@@ -115,17 +113,13 @@ def mcp(
     # Run the server
     try:
         if transport == "stdio":
-            err_console.print(
-                "[bold green]Starting[/] Habitify MCP server with stdio transport"
-            )
+            err_console.print("[bold green]Starting[/] Habitify MCP server with stdio transport")
             server.run(transport="stdio")
         else:
             err_console.print(
                 f"[bold green]Starting[/] Habitify MCP server with SSE transport on port {port}"
             )
-            server.run(
-                transport="sse"
-            )  # Port is already configured in the server settings
+            server.run(transport="sse")  # Port is already configured in the server settings
     except KeyboardInterrupt:
         err_console.print("\n[yellow]Keyboard interrupt received.[/] Shutting down...")
     except Exception as e:
@@ -136,9 +130,7 @@ def mcp(
 
 @app.command("install")
 def install(
-    name: str = typer.Option(
-        "Habitify", "--name", "-n", help="Name to register the server as"
-    ),
+    name: str = typer.Option("Habitify", "--name", "-n", help="Name to register the server as"),
     api_key: Optional[str] = typer.Option(
         None,
         "--api-key",
@@ -153,9 +145,7 @@ def install(
     # Check if API key is set
     if not habitify_api_key:
         err_console.print("[bold red]Error:[/] Habitify API key is required.")
-        err_console.print(
-            "Please set the HABITIFY_API_KEY environment variable or use --api-key."
-        )
+        err_console.print("Please set the HABITIFY_API_KEY environment variable or use --api-key.")
         raise typer.Exit(code=1)
 
     # Get full path to the server module
@@ -178,17 +168,13 @@ def install(
     if api_base_url:
         cmd.extend(["-v", f"HABITIFY_API_BASE_URL={api_base_url}"])
 
-    console.print(
-        f"[bold]Installing[/] Habitify MCP server to Claude Desktop as '{name}'..."
-    )
+    console.print(f"[bold]Installing[/] Habitify MCP server to Claude Desktop as '{name}'...")
 
     try:
         result = subprocess.run(cmd, check=True, capture_output=True, text=True)
         if result.stdout:
             console.print(result.stdout)
-        console.print(
-            "[bold green]Success![/] Habitify MCP server installed to Claude Desktop."
-        )
+        console.print("[bold green]Success![/] Habitify MCP server installed to Claude Desktop.")
         console.print("You can now use Habitify tools in your Claude conversations.")
     except subprocess.CalledProcessError as e:
         err_console.print("[bold red]Error:[/] Failed to install MCP server.")
@@ -255,9 +241,7 @@ async def _list_habits_async(
                 )
             else:
                 archived_count = sum(1 for h in habits if h.archived)
-                console.print(
-                    f"Showing all {len(habits)} habits ({archived_count} archived)"
-                )
+                console.print(f"Showing all {len(habits)} habits ({archived_count} archived)")
 
             console.print(table)
     except HabitifyError as e:
@@ -296,21 +280,17 @@ async def _status_async(
         # Use async context manager
         async with HabitifyClient(api_key=habitify_api_key) as client:
             # Resolve habit ID and name
-            habit_id, habit_name = await resolve_habit_for_cli(
-                habit, client, err_console
-            )
+            habit_id, habit_name = await resolve_habit_for_cli(habit, client, err_console)
 
             # Check status
             status = await client.check_habit_status(habit_id, date)
 
             # Create a nice table
-            formatted_date = datetime.fromisoformat(
-                status.date.replace("Z", "+00:00")
-            ).strftime("%B %d, %Y")
-
-            console.print(
-                f"Status for [bold green]{habit_name}[/] on [bold]{formatted_date}[/]:"
+            formatted_date = datetime.fromisoformat(status.date.replace("Z", "+00:00")).strftime(
+                "%B %d, %Y"
             )
+
+            console.print(f"Status for [bold green]{habit_name}[/] on [bold]{formatted_date}[/]:")
 
             table = Table(show_header=False, box=None)
             table.add_column("Property", style="blue")
@@ -348,9 +328,7 @@ def log(
     date: Optional[str] = typer.Option(
         None, "--date", "-d", help="Date in YYYY-MM-DD format (defaults to today)"
     ),
-    note: Optional[str] = typer.Option(
-        None, "--note", "-n", help="Optional note to attach"
-    ),
+    note: Optional[str] = typer.Option(None, "--note", "-n", help="Optional note to attach"),
     value: Optional[float] = typer.Option(
         None, "--value", "-v", help="Optional value (for number/timer habits)"
     ),
@@ -398,9 +376,7 @@ async def _log_async(
         # Use async context manager
         async with HabitifyClient(api_key=habitify_api_key) as client:
             # Resolve habit ID and name
-            habit_id, habit_name = await resolve_habit_for_cli(
-                habit, client, err_console
-            )
+            habit_id, habit_name = await resolve_habit_for_cli(habit, client, err_console)
 
             # Log the habit
             result = await client.set_habit_status(
@@ -412,9 +388,9 @@ async def _log_async(
             actual_date = date or today
             if result and result.date:
                 actual_date = result.date
-            formatted_date = datetime.fromisoformat(
-                actual_date.replace("Z", "+00:00")
-            ).strftime("%B %d, %Y")
+            formatted_date = datetime.fromisoformat(actual_date.replace("Z", "+00:00")).strftime(
+                "%B %d, %Y"
+            )
 
             # Success message with color based on status
             status_color = get_status_color(status)

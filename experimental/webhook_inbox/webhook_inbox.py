@@ -15,6 +15,7 @@ import time
 import zlib
 from datetime import datetime
 from urllib.parse import quote
+from zoneinfo import ZoneInfo
 
 from compact_json import Formatter
 from cryptography.fernet import Fernet
@@ -22,7 +23,6 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from starlette.datastructures import URL
-from zoneinfo import ZoneInfo
 
 WEBHOOK_INBOX_KEY: str = os.getenv(
     "WEBHOOK_INBOX_KEY",

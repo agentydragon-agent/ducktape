@@ -272,9 +272,9 @@ def main(_):
                             days,
                         )
 
-                    assert (
-                        external_id not in matched_external_ids
-                    ), f"{external_id} matched to 2 transactions in GnuCash"
+                    assert external_id not in matched_external_ids, (
+                        f"{external_id} matched to 2 transactions in GnuCash"
+                    )
                     matched_external_ids.add(external_id)
                     continue
 

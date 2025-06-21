@@ -7,13 +7,13 @@ import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import markdown
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse
 from jinja2 import Environment, FileSystemLoader
-from zoneinfo import ZoneInfo
 
 from .token_counter import count_tokens_for_models
 from .token_scheme import TokenScheme
@@ -241,7 +241,7 @@ async def stats_page():
 @app.get("/style.css")
 async def style_css():
     """Serve the CSS file."""
-    file_path = Path(__file__).parent / "style.css"
+    file_path = Path("style.css")
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="style.css not found")
 

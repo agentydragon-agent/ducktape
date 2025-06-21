@@ -2,13 +2,13 @@
 Habitify MCP Server implementation.
 """
 
-import os
 from typing import Any, Optional
 
 from mcp.server.fastmcp import FastMCP
 
 from . import tools
 from .types import Status
+from .config import load_api_key
 
 
 def create_habitify_mcp_server(
@@ -40,7 +40,7 @@ def create_habitify_mcp_server(
     )
 
     # Store API key in server context for tools - properly handled through the context API
-    api_key_value = api_key or os.environ.get("HABITIFY_API_KEY")
+    api_key_value = load_api_key(api_key_override=api_key, exit_on_missing=False)
     if api_key_value:
         try:
             server.metadata = {"api_key": api_key_value}
@@ -62,9 +62,7 @@ def create_habitify_mcp_server(
         return await tools.get_habits(include_archived=include_archived)
 
     @server.tool()
-    async def get_habit(
-        id: Optional[str] = None, name: Optional[str] = None
-    ) -> dict[str, Any]:
+    async def get_habit(id: Optional[str] = None, name: Optional[str] = None) -> dict[str, Any]:
         """
         Get details of a specific habit by ID or name.
 

@@ -261,9 +261,7 @@ class HabitifyClient:
             # If API didn't return a date, add the request date to the API model
             if not api_result.date:
                 api_result.date = (
-                    format_date_yyyy_mm_dd(date)
-                    if date
-                    else datetime.date.today().isoformat()
+                    format_date_yyyy_mm_dd(date) if date else datetime.date.today().isoformat()
                 )
 
             # Convert the API model to a client response model with Python date object
@@ -379,11 +377,7 @@ class HabitifyClient:
             # Create API result model with the input data since the API returns null for success
             api_result = HabitStatus(
                 status=status,
-                date=(
-                    format_date_yyyy_mm_dd(date)
-                    if date
-                    else datetime.date.today().isoformat()
-                ),
+                date=(format_date_yyyy_mm_dd(date) if date else datetime.date.today().isoformat()),
                 note=note,
                 value=value,
             )
@@ -429,9 +423,7 @@ class HabitifyClient:
                 )
             elif status == 500 and data and "message" in data:
                 if "habit does not exist" in data["message"].lower():
-                    return HabitifyError(
-                        f"Habit ID not found: {data['message']}", status
-                    )
+                    return HabitifyError(f"Habit ID not found: {data['message']}", status)
                 elif "target_date" in data["message"].lower():
                     return HabitifyError(
                         "Invalid date format. The API requires ISO 8601 format (YYYY-MM-DDThh:mm:ss±hh:mm).",

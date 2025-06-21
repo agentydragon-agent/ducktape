@@ -1,120 +1,173 @@
 # Habitify MCP Server
 
-A Python Model Context Protocol (MCP) server for interacting with the Habitify habit tracking API. This server allows Claude AI to help you track and manage your habits through the Habitify service.
+A Model Context Protocol (MCP) server that provides Claude Desktop with access to the Habitify habit tracking API. This allows you to manage your habits through natural conversation with Claude.
 
-## Features
+## Current State
 
-- View your habits and check their status
-- Track habit completion with different statuses (completed, skipped, failed)
-- Support for both single-date and date-range status queries
-- Create, update and delete habits through Claude
-- Full integration with Claude Desktop through MCP tools
-- Support for both stdio and SSE transports
-- Clean error handling with helpful messages
+The server implements a subset of the Habitify API endpoints:
+- ✅ Get all habits
+- ✅ Get habit details by ID
+- ✅ Check habit status for specific dates
+- ✅ Set habit status (completed, skipped, failed, none)
+- ✅ Get areas (categories)
+- ✅ Get journal (daily habit view)
+- ❌ Create/update/delete habits (not implemented)
+- ❌ Habit notes/logs management (not implemented)
+
+See [Habitify API documentation](https://docs.habitify.me/) for full API capabilities.
 
 ## Installation
 
-### Requirements
+### Quick Start
 
-- Python 3.8 or higher
-- A Habitify API key (from your Habitify account)
-- The MCP SDK (for installing to Claude Desktop)
+1. Install the package:
+   ```bash
+   pip install -e .
+   ```
 
-### Install Dependencies
-
-```bash
-# Clone the repository
-git clone https://github.com/example/habitify-mcp-py.git
-cd habitify-mcp-py
-
-# Install dependencies
-pip install -r requirements.txt
-
-# For development
-pip install -e ".[dev]"
-```
-
-### Configure API Key
-
-There are multiple ways to provide your Habitify API key:
-
-1. **Environment variable** (recommended for security):
+2. Set your Habitify API key (get it from Habitify app settings):
    ```bash
    export HABITIFY_API_KEY=your_api_key_here
-   habitify ...
    ```
 
-2. **.env file**:
-   Create a `.env` file in the project directory:
-   ```
-   HABITIFY_API_KEY=your_api_key_here
-   ```
-   Note: Make sure `.env` files are listed in your `.gitignore` to prevent accidental commits of API keys.
-
-3. **Commandline argument** (not recommended for shared systems):
+3. Install to Claude Desktop:
    ```bash
-   habitify --api-key=your_api_key_here ...
+   habitify install
    ```
 
-> **Security Note:** Your API key provides full access to your Habitify account. Never commit it to version control or share it publicly. The `.gitignore` file in this repository is configured to exclude `.env` files.
+### Manual Configuration
 
-## Usage
+If you prefer manual setup, add to your Claude Desktop config:
 
-### Install to Claude Desktop
-
-The easiest way to use this MCP server is to install it directly to Claude Desktop:
-
-```bash
-# Install to Claude with API key from environment or .env file
-habitify install
-
-# Or specify API key directly
-habitify install --api-key=your_api_key_here
-
-# Optionally change the server name
-habitify install --name="My Habitify"
+```json
+{
+  "mcpServers": {
+    "habitify": {
+      "command": "habitify",
+      "args": ["mcp"],
+      "env": {
+        "HABITIFY_API_KEY": "your_api_key_here"
+      }
+    }
+  }
+}
 ```
 
-### Run the Server Manually
+## Usage Examples
 
-You can also run the server manually:
+### Using the Python Client Directly
+
+```python
+from habitify_mcp_server import HabitifyClient
+import asyncio
+from datetime import date, timedelta
+
+async def main():
+    async with HabitifyClient() as client:
+        # Get all habits
+        habits = await client.get_habits()
+        for habit in habits:
+            print(f"{habit.name}: {habit.id}")
+        
+        # Check habit status for today
+        habit_id = habits[0].id
+        status = await client.check_habit_status(habit_id)
+        print(f"Status: {status.status}")
+        
+        # Mark habit as completed
+        await client.set_habit_status(
+            habit_id, 
+            status="completed",
+            note="Completed via API!"
+        )
+        
+        # Check habit status for date range
+        start = date.today() - timedelta(days=7)
+        statuses = await client.check_habit_status_range(
+            habit_id,
+            start_date=start,
+            end_date=date.today()
+        )
+        for s in statuses:
+            print(f"{s.date}: {s.status}")
+
+asyncio.run(main())
+```
+
+### Conversation Examples with Claude
+
+Once installed, you can ask Claude:
+
+- "What habits do I have?"
+- "Did I complete my meditation habit today?"
+- "Mark my exercise habit as completed for today"
+- "Show me my habit completion for the last week"
+- "Skip my reading habit for today with note 'traveling'"
+
+### Command Line Usage
 
 ```bash
-# Run with stdio transport (default, for direct use with Claude)
+# Run server with stdio transport (for Claude Desktop)
 habitify mcp
 
-# Run with SSE transport (for web integration)
-habitify mcp --transport=sse --port=5000
+# Run with SSE transport on custom port
+habitify mcp --transport=sse --port=8080
 
-# Run with debug logging
-habitify mcp --debug
+# Test the API connection
+habitify test
+
+# View help
+habitify --help
 ```
 
 ## Development
 
-### Run Tests
+### Project Structure
+
+```
+habitify_mcp_server/
+├── __init__.py          # Package exports
+├── cli.py               # Command-line interface
+├── server.py            # MCP server implementation
+├── habitify_client.py   # Habitify API client
+├── types.py             # Pydantic models
+└── utils/
+    └── date_utils.py    # Date handling utilities
+```
+
+### Running Tests
 
 ```bash
+# Run all tests
 pytest
+
+# Run with coverage
+pytest --cov=habitify_mcp_server
+
+# Run specific test file
+pytest tests/test_client.py
 ```
 
-### Code Quality
+### API Reference Collection
+
+The `habitify_api_reference/` directory contains YAML files with real API request/response examples:
 
 ```bash
-# Run linters
-black habitify_mcp_server
-isort habitify_mcp_server
+# Regenerate reference examples (requires API key)
+cd habitify_api_reference
+python collect_references.py
 ```
 
-## API Reference Examples
+## Environment Variables
 
-The `habitify_api_reference` directory contains examples of API requests and responses for all Habitify API endpoints, useful for development and testing.
+- `HABITIFY_API_KEY` - Your Habitify API key (required)
+- `HABITIFY_API_BASE_URL` - API base URL (default: https://api.habitify.me)
 
-To collect fresh reference examples (requires an API key):
+## Security Notes
 
-```bash
-python habitify_api_reference/collect_references.py
-```
+- Never commit API keys to version control
+- The `.env` file is gitignored for safety
+- API keys provide full account access - keep them secure
 
 ## License
 

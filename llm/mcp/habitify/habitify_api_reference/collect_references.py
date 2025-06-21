@@ -80,9 +80,7 @@ class ApiReferenceCollector:
             "x-timer",
         ]
         return {
-            name: value
-            for name, value in headers.items()
-            if name.lower() not in headers_to_exclude
+            name: value for name, value in headers.items() if name.lower() not in headers_to_exclude
         }
 
     def _mask_name(self, name: str) -> str:
@@ -168,15 +166,11 @@ class ApiReferenceCollector:
         """
         logger.info(f"Making request: {name} ({method} {endpoint})")
 
-        response = self.client.request(
-            method=method, url=endpoint, params=params, json=json_data
-        )
+        response = self.client.request(method=method, url=endpoint, params=params, json=json_data)
 
         # If expected status is provided, validate it
         if response.status_code != expected_status:
-            logger.error(
-                f"Expected status {expected_status} but got {response.status_code}"
-            )
+            logger.error(f"Expected status {expected_status} but got {response.status_code}")
             sys.exit(1)
 
         # Create reference data structure

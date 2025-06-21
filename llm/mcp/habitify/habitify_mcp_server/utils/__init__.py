@@ -6,6 +6,9 @@ import functools
 import os
 from typing import Any, Callable, Optional, TypeVar, cast
 
+# Import API key getter from our config module
+from ..config import load_api_key
+
 from .date_utils import (
     create_date_range,
     format_date_for_api,
@@ -74,7 +77,8 @@ def get_api_key_from_param_or_env(api_key_param: Optional[str] = None) -> Option
     Returns:
         API key from parameter or environment variable
     """
-    return api_key_param or os.environ.get("HABITIFY_API_KEY")
+    # Use our common config utility
+    return load_api_key(api_key_override=api_key_param, exit_on_missing=False)
 
 
 def get_server_api_key() -> Optional[str]:
@@ -99,9 +103,7 @@ def get_server_api_key() -> Optional[str]:
         return None
 
 
-def validate_required_params(
-    *param_names: str, **params: Any
-) -> Optional[dict[str, Any]]:
+def validate_required_params(*param_names: str, **params: Any) -> Optional[dict[str, Any]]:
     """
     Validate that at least one of the specified parameters is not None.
 
@@ -114,9 +116,7 @@ def validate_required_params(
     """
     # Filter to only include the specified parameters
     if param_names:
-        filtered_params = {
-            name: params.get(name) for name in param_names if name in params
-        }
+        filtered_params = {name: params.get(name) for name in param_names if name in params}
     else:
         filtered_params = params
 
@@ -187,7 +187,7 @@ def with_client(func: F) -> F:
             from ..habitify_client import HabitifyClient
 
             # Create client and call function
-            with HabitifyClient(api_key=api_key) as client:
+            async with HabitifyClient(api_key=api_key) as client:
                 # Add client to kwargs
                 kwargs["client"] = client
                 return await func(*args, **kwargs)

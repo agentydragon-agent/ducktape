@@ -2,9 +2,8 @@
 Habitify MCP tools implementation.
 """
 
-import functools
 from datetime import datetime
-from typing import Any, Callable, Literal, Optional, TypeVar, cast
+from typing import Literal, Optional, cast
 
 from .habitify_client import HabitifyClient
 from .types import (
@@ -17,47 +16,10 @@ from .types import (
     ResultType,
     StatusResult,
 )
-from .utils import get_server_api_key
+from .utils import with_client
 from .utils.date_utils import format_date_human, format_date_yyyy_mm_dd
 from .utils.error_utils import create_error_response, create_validation_error
 from .utils.habit_resolver import resolve_habit
-
-# Type variable for function annotations
-F = TypeVar("F", bound=Callable[..., Any])
-
-
-def with_client(func: F) -> F:
-    """
-    Decorator to handle common client creation and error handling.
-
-    This decorator:
-    1. Gets the API key from server metadata
-    2. Creates a HabitifyClient with proper context manager
-    3. Calls the decorated function with the client
-    4. Handles any exceptions and converts them to ErrorResponse
-
-    Args:
-        func: Async function to decorate
-
-    Returns:
-        Decorated function
-    """
-
-    @functools.wraps(func)
-    async def wrapper(*args, **kwargs) -> ResultType:
-        try:
-            # Get API key and create client
-            api_key = get_server_api_key()
-
-            # Use ASYNC context manager for proper resource cleanup
-            async with HabitifyClient(api_key=api_key) as client:
-                # Call the function with client and other args
-                return await func(client=client, *args, **kwargs)
-        except Exception as e:
-            # Handle all errors
-            return create_error_response(e)
-
-    return cast(F, wrapper)
 
 
 def validate_habit_identifier(**kwargs) -> Optional[ErrorResponse]:

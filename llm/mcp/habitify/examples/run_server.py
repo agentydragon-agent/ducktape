@@ -10,7 +10,10 @@ import logging
 import os
 import sys
 
-from dotenv import load_dotenv
+
+# Add the parent directory to the path so we can import the server
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from habitify_mcp_server.config import load_api_key
 
 # Setup logging
 logging.basicConfig(
@@ -18,9 +21,6 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger("habitify-mcp-example")
-
-# Load environment variables from .env file if present
-load_dotenv()
 
 
 # Parse command line arguments
@@ -61,19 +61,11 @@ def main() -> int:
         logging.getLogger().setLevel(logging.DEBUG)
         logger.setLevel(logging.DEBUG)
 
-    # Set API key from args if provided
-    if args.api_key:
-        os.environ["HABITIFY_API_KEY"] = args.api_key
-
-    # Check if API key is set
-    if not os.environ.get("HABITIFY_API_KEY"):
-        logger.error("Error: HABITIFY_API_KEY environment variable is required")
-        logger.error("Please set it using one of these methods:")
-        logger.error("  1. Add it to your .env file: HABITIFY_API_KEY=your_api_key_here")
-        logger.error(
-            "  2. Set it as an environment variable: export HABITIFY_API_KEY=your_api_key_here"
-        )
-        logger.error("  3. Pass it as a command-line argument: --api-key=your_api_key_here")
+    # Load API key using our common utility
+    api_key = load_api_key(
+        api_key_override=args.api_key, exit_on_missing=False, logger_func=logger.error
+    )
+    if not api_key:
         return 1
 
     # Import here so we only import after checking API key

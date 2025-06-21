@@ -25,7 +25,7 @@ from git_commit_ai import (  # noqa: E402
 )
 
 
-@pytest.fixture()
+@pytest.fixture
 def make_mock_claude(tmp_path, monkeypatch):
     """Base fixture for creating mock claude commands."""
 
@@ -41,7 +41,7 @@ def make_mock_claude(tmp_path, monkeypatch):
     return create_claude
 
 
-@pytest.fixture()
+@pytest.fixture
 def mock_claude_path(make_mock_claude):
     """Create a mock claude command with successful response."""
     return make_mock_claude(
@@ -55,7 +55,7 @@ This commit introduces a basic test file to the repository.
     )
 
 
-@pytest.fixture()
+@pytest.fixture
 def mock_failing_claude_path(make_mock_claude):
     """Create a mock claude command that returns an error."""
     return make_mock_claude(
@@ -66,7 +66,7 @@ sys.exit(1)
     )
 
 
-@pytest.fixture()
+@pytest.fixture
 def mock_slow_claude_path(make_mock_claude):
     """Create a mock claude command that responds slowly."""
     return make_mock_claude(
@@ -79,7 +79,7 @@ print("</message>")
     )
 
 
-@pytest.fixture()
+@pytest.fixture
 def mock_ui():
     """Create a mock UI that captures output chunks."""
     output_chunks = []
@@ -94,7 +94,7 @@ def mock_ui():
     return ui
 
 
-@pytest.fixture()
+@pytest.fixture
 def test_repo(tmpdir):
     """Create a temporary git repository for testing."""
     repo = Repo.init(tmpdir)
@@ -125,7 +125,7 @@ def _create_precommit_hook(test_repo, hook_content):
     return test_repo
 
 
-@pytest.fixture()
+@pytest.fixture
 def test_repo_with_precommit(test_repo):
     """Create a test repo with a pre-commit hook that outputs colors."""
     hook_content = """#!/bin/bash
@@ -143,7 +143,7 @@ exit 0
     return _create_precommit_hook(test_repo, hook_content)
 
 
-@pytest.fixture()
+@pytest.fixture
 def test_repo_with_failing_precommit(test_repo):
     """Create a test repo with a failing pre-commit hook."""
     hook_content = """#!/bin/bash
@@ -174,7 +174,7 @@ class TestParallelTaskRunner:
         icon = ParallelTaskRunner._get_status_icon(status)
         assert str(icon) == expected_icon
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_status_display(self):
         """Test that status display shows correct icons and timing."""
 
@@ -205,7 +205,7 @@ class TestParallelTaskRunner:
         await ai_task
         await precommit_task
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_successful_tasks(self):
         """Test UI with both tasks succeeding."""
 
@@ -243,7 +243,7 @@ class TestParallelTaskRunner:
         assert ui.precommit_state.duration is not None
         assert ui.ai_state.duration is not None
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_failing_precommit(self):
         """Test UI when pre-commit fails."""
 
@@ -275,7 +275,7 @@ class TestParallelTaskRunner:
         )  # Should be cancelled when pre-commit fails
         assert ai_task.cancelled()
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_output_clears_status_line(self):
         """Test that pre-commit output clears the status line."""
         # Create a mock file descriptor pair
@@ -321,7 +321,7 @@ class TestParallelTaskRunner:
                 os.close(write_fd)
                 await asyncio.gather(ai_task, precommit_task, return_exceptions=True)
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_status_visibility_tracking(self):
         """Test that status visibility is tracked correctly."""
         # Create simple tasks
@@ -344,7 +344,7 @@ class TestParallelTaskRunner:
         # Clean up
         await asyncio.gather(ai_task, precommit_task, return_exceptions=True)
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_long_precommit_output_lines(self):
         """Test handling of pre-commit output lines longer than terminal width."""
         # Create a mock file descriptor pair
@@ -400,7 +400,7 @@ class TestParallelTaskRunner:
         # The test passes if it doesn't crash or hang
         # The long lines should be handled gracefully
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_status_line_truncation(self):
         """Test that status line is truncated to fit terminal width."""
 
@@ -448,7 +448,7 @@ class TestParallelTaskRunner:
 class TestPrecommitHook:
     """Test pre-commit hook execution."""
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_run_precommit_with_colors(
         self,
         test_repo_with_precommit,
@@ -474,7 +474,7 @@ class TestPrecommitHook:
         finally:
             os.chdir(original_cwd)
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_run_precommit_no_hook(self, test_repo, mock_claude_path):
         """Test behavior when no pre-commit hook exists."""
         # Change to test repo directory
@@ -493,7 +493,7 @@ class TestPrecommitHook:
         finally:
             os.chdir(original_cwd)
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_run_precommit_failing(
         self,
         test_repo_with_failing_precommit,
@@ -518,7 +518,7 @@ class TestPrecommitHook:
 class TestStreamingOutput:
     """Test character-by-character streaming."""
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_immediate_streaming(self, test_repo, make_mock_claude, capsys):
         """Test that output is streamed immediately without waiting for newlines."""
         # Create a hook that outputs without newlines
@@ -558,7 +558,7 @@ exit 0
         # Note: with PTY the output goes directly to stdout, so we can't easily capture it
         # The test passes if there's no error during execution
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_precommit_no_final_newline(
         self,
         test_repo,
@@ -600,7 +600,7 @@ exit 0
         # The output stream should have handled the missing newline
         # The final status should be on its own line, not mixed with pre-commit output
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_precommit_mixed_output_patterns(self, test_repo, make_mock_claude):
         """Test various output patterns from pre-commit hooks."""
         # Create a hook with mixed output patterns
@@ -645,7 +645,7 @@ exit 0
 class TestFullIntegration:
     """Test the full git-commit-ai flow."""
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_precommit_output_handling(
         self,
         test_repo,
@@ -711,7 +711,7 @@ exit 0
         finally:
             os.chdir(original_cwd)
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_commit_all_flag(self, test_repo, mock_claude_path, monkeypatch):
         """Test that --all flag properly stages files before pre-commit."""
         # Reset any staged changes
@@ -770,7 +770,7 @@ exit 0
         finally:
             os.chdir(original_cwd)
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_commit_all_flag_cancelled(
         self,
         test_repo,
@@ -820,13 +820,13 @@ exit 0
 
                 # But the modifications should still exist
                 unstaged = test_repo.git.diff("--name-only")
-                assert (
-                    "README.md" in unstaged
-                ), "Modified files should still be modified"
+                assert "README.md" in unstaged, (
+                    "Modified files should still be modified"
+                )
         finally:
             os.chdir(original_cwd)
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_commit_all_flag_with_deleted_files(
         self,
         test_repo,
@@ -898,7 +898,7 @@ exit 0
         finally:
             os.chdir(original_cwd)
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_commit_all_flag_only_deletions(
         self,
         test_repo,
@@ -956,7 +956,7 @@ exit 0
         finally:
             os.chdir(original_cwd)
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_commit_all_flag_mixed_changes(
         self,
         test_repo,
@@ -1040,7 +1040,7 @@ exit 0
         finally:
             os.chdir(original_cwd)
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_no_staged_changes(self, test_repo, capsys):
         """Test behavior when there are no staged changes."""
         # Create a repo with no staged changes
@@ -1073,7 +1073,7 @@ exit 0
         finally:
             os.chdir(original_cwd)
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_unstaged_changes_without_all_flag(self, test_repo, capsys):
         """Test behavior when there are unstaged changes but -a flag not used."""
         # The test_repo fixture creates a staged file, let's reset it first
@@ -1108,7 +1108,7 @@ exit 0
         finally:
             os.chdir(original_cwd)
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_full_flow_with_mocked_claude(
         self,
         test_repo_with_precommit,
@@ -1147,7 +1147,7 @@ exit 0
             # The last call should be with 0 (the final git commit exit)
             mock_exit.assert_called_with(0)
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_commit_template_format(
         self,
         test_repo,
@@ -1228,7 +1228,7 @@ sys.exit(1)
         finally:
             os.chdir(original_cwd)
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_full_flow_with_failing_precommit(
         self,
         test_repo_with_failing_precommit,

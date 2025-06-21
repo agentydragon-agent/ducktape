@@ -29,9 +29,7 @@ def parse_date(date_string: Optional[str] = None) -> datetime.datetime:
             # Try to parse as YYYY-MM-DD
             return datetime.datetime.strptime(date_string, "%Y-%m-%d")
         except ValueError:
-            raise ValueError(
-                f"Invalid date format: {date_string}. Please use YYYY-MM-DD."
-            )
+            raise ValueError(f"Invalid date format: {date_string}. Please use YYYY-MM-DD.")
 
 
 def _normalize_date(
@@ -181,9 +179,7 @@ def create_date_range(
     Returns:
         Tuple of (start_date, end_date, date_list) where date_list is a list of datetime objects
     """
-    today_dt = datetime.datetime.combine(
-        datetime.date.today(), datetime.datetime.min.time()
-    )
+    today_dt = datetime.datetime.combine(datetime.date.today(), datetime.datetime.min.time())
 
     # Parse dates if provided as strings
     start = _normalize_date(start_date) if start_date else None

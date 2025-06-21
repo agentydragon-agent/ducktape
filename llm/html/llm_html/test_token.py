@@ -36,14 +36,14 @@ class TamperedTokenCase(BaseModel):
     expected_error: str = Field(description="Expected error message")
 
 
-@pytest.fixture()
+@pytest.fixture
 def token_scheme():
     """Create a TokenScheme instance with a fixed secret and document."""
     test_case = TokenTestCase()
     return TokenScheme(test_case.secret, test_case.document)
 
 
-@pytest.fixture()
+@pytest.fixture
 def fresh_valid_token(token_scheme):
     """Generate a fresh *valid* token and return the scheme instance & token."""
     prefix, bits = token_scheme.make_token(datetime.now())

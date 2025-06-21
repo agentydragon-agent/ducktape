@@ -16,17 +16,44 @@ Or conversationally anywhere in your prompt:
 
 Use this command when you have a complex task that can be broken into subtasks with dependencies between them. The command can appear at the start, middle, or end of your message.
 
+## IMPORTANT: Confirmation Required
+
+**Before spawning any agents, I will ALWAYS:**
+1. **Tell you which workflow will be used** (worktree by default, naive if specified)
+2. **Show you the execution plan** with:
+   - Total number of tasks
+   - Number of phases
+   - Tasks per phase
+   - Example: "This will spawn **23 tasks** across **4 phases** using **worktree workflow**"
+3. **Ask for your confirmation** before proceeding
+
+You can then:
+- Confirm to proceed
+- Request changes to the plan
+- Cancel the operation
+
 ## Workflow Modes
 
-### 1. Naive Workflow (Default)
-All tasks work in the same repository. Simple and direct, suitable for smaller dependency graphs or when git isolation isn't needed.
+### 1. Worktree Workflow (Default)
+**Each task gets its own git worktree for complete isolation.** This is the default and recommended approach for maximum parallelism and clean merging of parallel work.
 
-### 2. Worktree Workflow
-Each task gets its own git worktree for complete isolation. Better for complex graphs, concurrent development, and when you need clean merging of parallel work.
+**Git worktrees allow multiple working directories for the same repository:**
+```bash
+# Example: Creating a worktree for a task
+git worktree add ./spawn-graph/2025-01-02-1430/phase01/task01-auth feature/auth-refactor
 
-Choose based on your needs:
-- **Naive**: Quick, simple tasks without complex merge requirements
-- **Worktree**: Complex tasks, need isolation, want clean git history per task
+# This creates:
+# - A new working directory at the specified path
+# - Checks out the branch 'feature/auth-refactor'
+# - Multiple agents can work in parallel without conflicts
+```
+
+### 2. Naive Workflow
+All tasks work in the same repository. Only use this for simple tasks where git isolation isn't needed.
+
+**Always use worktree workflow (the default) unless you have a specific reason not to:**
+- **Worktree (default)**: Parallel development, clean git history, no merge conflicts during work
+- **Naive**: Only for read-only analysis or very simple non-conflicting tasks
 
 ## What It Does
 
@@ -38,6 +65,51 @@ Choose based on your needs:
    - Waits for completion
    - Repeats until all tasks are done
 4. **Coordinates** results back into a coherent whole
+
+## CRITICAL: Git Commands for Spawning Agent
+
+**The spawning agent (YOU, when using this command) MUST run specific git commands:**
+
+### Before Spawning Each Wave:
+```bash
+# For EACH task in the phase, create a worktree:
+git worktree add "./spawn-graph/${INSTANCE}/${PHASE}/${TASK}" \
+    -b "spawn-graph/${INSTANCE}/${PHASE}/${TASK}"
+
+# Example for 3 tasks in phase01:
+git worktree add "./spawn-graph/2025-01-02-1430/phase01/task01-auth" \
+    -b "spawn-graph/2025-01-02-1430/phase01/task01-auth"
+    
+git worktree add "./spawn-graph/2025-01-02-1430/phase01/task02-database" \
+    -b "spawn-graph/2025-01-02-1430/phase01/task02-database"
+    
+git worktree add "./spawn-graph/2025-01-02-1430/phase01/task03-api" \
+    -b "spawn-graph/2025-01-02-1430/phase01/task03-api"
+```
+
+### After Each Wave Completes:
+```bash
+# 1. Check results from each task
+for BRANCH in $(git branch -r | grep "spawn-graph/${INSTANCE}/${PHASE}"); do
+    git show "${BRANCH}:path/to/OUTPUT.md"
+done
+
+# 2. Merge successful tasks
+git checkout main
+for SUCCESSFUL_BRANCH in [list of successful branches]; do
+    git merge --no-ff "${SUCCESSFUL_BRANCH}" -m "Merge ${TASK} from spawn-graph"
+done
+
+# 3. Clean up ALL worktrees for the phase
+for WORKTREE in ./spawn-graph/${INSTANCE}/${PHASE}/task*/; do
+    git worktree remove "${WORKTREE}" --force
+done
+
+# 4. Delete merged branches
+for BRANCH in [list of merged branches]; do
+    git branch -d "${BRANCH}"
+done
+```
 
 ## Process
 
@@ -131,9 +203,32 @@ When using `--workflow=worktree` (or requesting worktree workflow conversational
      - Each task named like `phase01-foundation/task03-check-dependencies` (format: phase{N}-{phasename}/task{M}-{taskname})
 
 2. **Worktree Setup per Task**
-   - Create worktree at `./spawn-graph/{instance}/phase{N}-{phasename}/task{M}-{taskname}/`
-   - Create branch: `spawn-graph/{instance}/phase{N}-{phasename}/task{M}-{taskname}`
-   - If current directory is dirty, apply same uncommitted changes to each worktree
+   
+   **CRITICAL: The spawning agent MUST run these exact git commands for each task:**
+   
+   ```bash
+   # For each task in the phase, run:
+   INSTANCE="2025-01-02-1430-parallel-fizzbuzz"  # Example
+   PHASE="phase01-foundation"
+   TASK="task01-define-interfaces"
+   BRANCH_NAME="spawn-graph/${INSTANCE}/${PHASE}/${TASK}"
+   WORKTREE_PATH="./spawn-graph/${INSTANCE}/${PHASE}/${TASK}"
+   
+   # Create the worktree with a new branch
+   git worktree add "${WORKTREE_PATH}" -b "${BRANCH_NAME}"
+   
+   # If the main working directory has uncommitted changes, replicate them:
+   if [ -n "$(git status --porcelain)" ]; then
+       # Save current changes
+       git stash push -m "spawn-graph-${INSTANCE}-uncommitted"
+       
+       # Apply to the new worktree
+       cd "${WORKTREE_PATH}"
+       git stash pop
+       cd -
+   fi
+   ```
+   
    - Task output dir will be created by agent at: `./spawn-graph/{instance}/phase{N}-{phasename}/task{M}-{taskname}/spawn-graph/{instance}/phase{N}-{phasename}/task{M}-{taskname}/`
 
 3. **Phase Execution**
@@ -143,7 +238,14 @@ When using `--workflow=worktree` (or requesting worktree workflow conversational
      ```
      Read TASK.md and PLAN.md from ./spawn-graph/{instance}/
      Execute task phase{X}-{phasename}/task{Y}-{taskname}
-     Work exclusively in worktree ./spawn-graph/{instance}/phase{X}-{phasename}/task{Y}-{taskname}/
+     
+     IMPORTANT: You are working in a git worktree!
+     Your working directory is: ./spawn-graph/{instance}/phase{X}-{phasename}/task{Y}-{taskname}/
+     This is a separate working copy of the repository.
+     
+     First, install pre-commit hooks in your worktree:
+     pre-commit install
+     
      Create task output dir at: ./spawn-graph/{instance}/phase{X}-{phasename}/task{Y}-{taskname}/spawn-graph/{instance}/phase{X}-{phasename}/task{Y}-{taskname}/
      Make logical commits on branch spawn-graph/{instance}/phase{X}-{phasename}/task{Y}-{taskname}
      Write final OUTPUT.md in task output dir when done/blocked
@@ -155,19 +257,119 @@ When using `--workflow=worktree` (or requesting worktree workflow conversational
    - Create task output directory (with full path duplication)
    - Keep current state in task output directory
    - Make incremental commits including task output
+   - **CRITICAL: Before marking task complete, perform quality checks on YOUR contribution:**
+     ```bash
+     # 1. Run pre-commit checks on YOUR changes:
+     # First, check what files YOU changed:
+     git diff --name-only main...HEAD
+     
+     # Run pre-commit ONLY on files you modified:
+     pre-commit run --files $(git diff --name-only main...HEAD)
+     
+     # If pre-commit fails on YOUR files, fix the issues:
+     # - Format code you wrote (black, prettier, etc.)
+     # - Fix linting errors in your code
+     # - Address type errors you introduced
+     # - Keep running until YOUR changes pass
+     
+     # Note: If pre-commit fails on files you DIDN'T modify, that's not your responsibility
+     # Only fix issues in code YOU added or changed
+     ```
+     
+   - **ADDITIONAL QUALITY STEPS - Think about what's relevant for YOUR task:**
+     - **Self-Review**: Read through all code you wrote. Ask yourself:
+       - Is this the clearest way to express this logic?
+       - Are variable/function names descriptive?
+       - Would another developer understand this easily?
+       - Can any of this be simplified or made more elegant?
+       - Are there any code smells or anti-patterns?
+     - **Documentation & Links**:
+       - If you added documentation with links, test they work
+       - If you reference external resources, verify they're accessible
+       - Check relative file paths in docs/comments are correct
+     - **Testing**:
+       - If you added features, did you add tests?
+       - Run any relevant test suites for code you touched
+       - Consider edge cases you might have missed
+     - **Dependencies**:
+       - If you added new dependencies, are they necessary?
+       - Are versions pinned appropriately?
+     - **Performance**:
+       - For algorithmic code: Is this efficient?
+       - For UI code: Will this cause unnecessary re-renders?
+     - **Security**:
+       - No hardcoded secrets or credentials
+       - Input validation where needed
+       - No SQL injection or XSS vulnerabilities
+     - **Cleanup**:
+       - Remove any debug print statements
+       - Delete commented-out code
+       - Remove unused imports
+       - Clean up any temporary files
+     
+     **Think contextually**: What other cleanup makes sense for YOUR specific task?
+     - API work? Check error handling and response codes
+     - Frontend? Check accessibility and responsive design  
+     - Data processing? Verify data integrity and edge cases
+     - Documentation? Spell check and verify examples work
+     
+     **Take action**: Don't just think about these - actually make improvements!
    - Document observations, side outputs, blockers
    - Final output goes to task output directory's `OUTPUT.md` with status:
-     - SUCCESS: Task completed
+     - SUCCESS: Task completed AND pre-commit passes on YOUR changes
      - FAILED: Task cannot be completed
      - BLOCKED: Waiting on dependency or external factor
      - PARTIAL: Some progress made but incomplete
 
 5. **Phase Completion**
-   - Read each task's `OUTPUT.md` from branch tip
-   - Merge successful task branches into main branch
-   - Handle conflicts intelligently (worst case: drop unmergeable work)
+   
+   **CRITICAL: The spawning agent MUST run these exact git commands after each phase:**
+   
+   ```bash
+   # After all agents in a phase complete, run:
+   
+   # 1. Check out each task's OUTPUT.md to see results
+   for TASK_DIR in ./spawn-graph/${INSTANCE}/${PHASE}/task*/; do
+       TASK_NAME=$(basename "$TASK_DIR")
+       BRANCH="spawn-graph/${INSTANCE}/${PHASE}/${TASK_NAME}"
+       
+       # Get the OUTPUT.md from the branch
+       OUTPUT_FILE="${TASK_DIR}/spawn-graph/${INSTANCE}/${PHASE}/${TASK_NAME}/OUTPUT.md"
+       if git show "${BRANCH}:${OUTPUT_FILE}" > /dev/null 2>&1; then
+           echo "=== Results from ${TASK_NAME} ==="
+           git show "${BRANCH}:${OUTPUT_FILE}"
+       fi
+   done
+   
+   # 2. Merge successful tasks back to main
+   git checkout main
+   
+   for TASK_DIR in ./spawn-graph/${INSTANCE}/${PHASE}/task*/; do
+       TASK_NAME=$(basename "$TASK_DIR")
+       BRANCH="spawn-graph/${INSTANCE}/${PHASE}/${TASK_NAME}"
+       
+       # Check if task succeeded (you need to parse OUTPUT.md for this)
+       if [task succeeded]; then
+           echo "Merging ${BRANCH}..."
+           git merge --no-ff "${BRANCH}" -m "Merge ${TASK_NAME} from spawn-graph phase ${PHASE}"
+       fi
+   done
+   
+   # 3. Clean up worktrees
+   for TASK_DIR in ./spawn-graph/${INSTANCE}/${PHASE}/task*/; do
+       echo "Removing worktree ${TASK_DIR}..."
+       git worktree remove "${TASK_DIR}" --force
+   done
+   
+   # 4. Delete merged branches
+   for TASK_DIR in ./spawn-graph/${INSTANCE}/${PHASE}/task*/; do
+       TASK_NAME=$(basename "$TASK_DIR")
+       BRANCH="spawn-graph/${INSTANCE}/${PHASE}/${TASK_NAME}"
+       git branch -d "${BRANCH}" 2>/dev/null || true
+   done
+   ```
+   
    - Update `PLAN.md` if needed (add retries, conflict resolution tasks)
-   - Clean up worktrees with `git worktree remove`
    - Proceed to next phase
 
 ### Example: Parallel FizzBuzz Computation
@@ -224,10 +426,14 @@ T3: [Final Report]
 **Agent Work Example (Phase 2, Task 1)**:
 ```bash
 # Assume we start in /home/user/myproject
+# IMPORTANT: This is a git worktree, not the main repository!
 cd ./spawn-graph/2025-01-02-1430-parallel-fizzbuzz/phase02-compute/task01-fizzbuzz-1-33/
 
 # We are now in {task-dir} for Phase 2, Task 1
 # pwd is /home/user/myproject/spawn-graph/2025-01-02-1430-parallel-fizzbuzz/phase02-compute/task01-fizzbuzz-1-33/
+# This is a separate working directory created with:
+# git worktree add ./spawn-graph/2025-01-02-1430-parallel-fizzbuzz/phase02-compute/task01-fizzbuzz-1-33 \
+#     -b spawn-graph/2025-01-02-1430-parallel-fizzbuzz/phase02-compute/task01-fizzbuzz-1-33
 
 # Create {task-output-dir} for this task (note the path duplication!)
 mkdir -p spawn-graph/2025-01-02-1430-parallel-fizzbuzz/phase02-compute/task01-fizzbuzz-1-33/
@@ -274,6 +480,94 @@ EOF
 git add -A
 git commit -m "test: add comprehensive test coverage"
 
+# CRITICAL: Quality checks before finalizing
+echo "=== Starting quality checks on my contribution ==="
+
+# 1. Pre-commit checks
+echo "Checking what files I modified..."
+MY_FILES=$(git diff --name-only main...HEAD)
+echo "Files I changed: $MY_FILES"
+
+if [ -n "$MY_FILES" ]; then
+    echo "Running pre-commit checks on my changes..."
+    pre-commit run --files $MY_FILES
+    
+    # If pre-commit fails on MY files, fix issues
+    while ! pre-commit run --files $MY_FILES; do
+        echo "Pre-commit checks failed on my code, fixing issues..."
+        git add $MY_FILES
+        git commit -m "style: fix formatting and linting issues in my code"
+    done
+    
+    echo "Pre-commit checks passed on my changes!"
+fi
+
+# 2. Self-review and improvements
+echo "Performing self-review of my code..."
+
+# Example: Improving the fizzbuzz function after review
+cat > src/fizzbuzz_1_33.py << 'EOF'
+"""Generate FizzBuzz sequence for numbers 1-33."""
+from typing import List
+
+def fizzbuzz_range_1_33() -> List[str]:
+    """
+    Generate FizzBuzz sequence for numbers 1 through 33.
+    
+    Returns:
+        List of strings where:
+        - Numbers divisible by 15 are replaced with "FizzBuzz"
+        - Numbers divisible by 3 are replaced with "Fizz"
+        - Numbers divisible by 5 are replaced with "Buzz"
+        - Other numbers are converted to strings
+    """
+    results = []
+    for i in range(1, 34):
+        if i % 15 == 0:
+            results.append("FizzBuzz")
+        elif i % 3 == 0:
+            results.append("Fizz")
+        elif i % 5 == 0:
+            results.append("Buzz")
+        else:
+            results.append(str(i))
+    return results
+
+
+# After review, realized we could make this more efficient:
+def fizzbuzz_range_1_33_optimized() -> List[str]:
+    """Optimized version using list comprehension."""
+    def fizzbuzz_value(n: int) -> str:
+        if n % 15 == 0:
+            return "FizzBuzz"
+        elif n % 3 == 0:
+            return "Fizz"
+        elif n % 5 == 0:
+            return "Buzz"
+        return str(n)
+    
+    return [fizzbuzz_value(i) for i in range(1, 34)]
+EOF
+
+# 3. Run tests to ensure nothing broke
+echo "Running tests..."
+pytest tests/test_fizzbuzz_1_33.py -v
+
+# 4. Check for any debug prints or TODOs
+echo "Checking for debug artifacts..."
+grep -n "print(" src/fizzbuzz_1_33.py || echo "No debug prints found ✓"
+grep -n "TODO\|FIXME\|XXX" src/fizzbuzz_1_33.py || echo "No TODOs found ✓"
+
+# 5. Verify no hardcoded values that should be configurable
+echo "Checking for magic numbers..."
+# In this case, 1-33 range is the requirement, so it's OK
+
+# 6. Final commit with improvements
+git add -A
+git commit -m "refactor: improve code quality based on self-review"
+
+echo "=== Quality checks complete! ==="
+
 # Final output goes in task output directory
 # We're still in {task-dir}, so we write to the relative path:
 cat > spawn-graph/2025-01-02-1430-parallel-fizzbuzz/phase02-compute/task01-fizzbuzz-1-33/OUTPUT.md << 'EOF'
@@ -284,6 +578,14 @@ Generated FizzBuzz for numbers 1-33
 - Tests: tests/test_fizzbuzz_1_33.py
 - Test coverage: 100%
 - Performance: 0.002s for range
+
+Quality Checks Performed:
+- Pre-commit: ✅ All checks passed on my changes
+- Self-review: ✅ Refactored for clarity and added optimized version
+- Documentation: ✅ Added comprehensive docstrings
+- Testing: ✅ All tests pass
+- Cleanup: ✅ No debug code or TODOs remaining
+- Type hints: ✅ Full type annotations added
 
 Results preview:
 1, 2, Fizz, 4, Buzz, Fizz, 7, 8, Fizz, Buzz, 11, Fizz, 13, 14, FizzBuzz...
@@ -298,64 +600,106 @@ git commit -m "docs: add final output and results"
 
 ### Phase Completion: Reviewing and Merging Results
 
-**Example: After Phase 2 completes, before starting Phase 3**:
-```bash
-# Starting from project root (/home/user/myproject)
-cd spawn-graph/2025-01-02-1430-parallel-fizzbuzz/phase02-compute/
+**IMPORTANT: This is what the spawning agent MUST do after Phase 2 completes:**
 
-# Review all task outputs
-for task in task*/; do
-    echo "=== Output from $task ==="
-    cat "$task/spawn-graph/2025-01-02-1430-parallel-fizzbuzz/phase02-compute/$task/OUTPUT.md"
-    echo
+```bash
+#!/bin/bash
+# SPAWNING AGENT MUST RUN THESE COMMANDS
+
+# Set variables
+INSTANCE="2025-01-02-1430-parallel-fizzbuzz"
+PHASE="phase02-compute"
+
+# 1. First, check the status of all tasks
+echo "=== Checking task results ==="
+for TASK_DIR in ./spawn-graph/${INSTANCE}/${PHASE}/task*/; do
+    if [ -d "$TASK_DIR" ]; then
+        TASK_NAME=$(basename "$TASK_DIR")
+        BRANCH="spawn-graph/${INSTANCE}/${PHASE}/${TASK_NAME}"
+        OUTPUT_PATH="spawn-graph/${INSTANCE}/${PHASE}/${TASK_NAME}/OUTPUT.md"
+        
+        echo "Checking ${TASK_NAME}..."
+        
+        # Try to get OUTPUT.md from the branch
+        if git show "${BRANCH}:${OUTPUT_PATH}" > /tmp/output_check.md 2>/dev/null; then
+            STATUS=$(grep "^STATUS:" /tmp/output_check.md | cut -d' ' -f2)
+            echo "  Status: ${STATUS}"
+        else
+            echo "  Status: NO OUTPUT FILE"
+        fi
+    fi
 done
 
-# Example output:
-# === Output from task01-fizzbuzz-1-33/ ===
-# STATUS: SUCCESS
-# Generated FizzBuzz for numbers 1-33
-# ...
-# === Output from task02-fizzbuzz-34-66/ ===
-# STATUS: SUCCESS
-# Generated FizzBuzz for numbers 34-66
-# ...
-# === Output from task03-fizzbuzz-67-100/ ===
-# STATUS: BLOCKED
-# Could not complete due to missing dependency X
-# ...
-# === Output from task04-optimized-algo/ ===
-# STATUS: SUCCESS
-# Implemented optimized algorithm with 3x speedup
-# ...
-
-# Make planning decisions based on outputs
-# - task01, task02, task04: SUCCESS → merge their branches
-# - task03: BLOCKED → add retry task to Phase 3
-
-# Merge successful task branches
-cd ../../.. # Back to project root
+# 2. Merge successful tasks
+echo -e "\n=== Merging successful tasks ==="
 git checkout main
 
-# Merge each successful task
-for task in phase02-compute/task01-fizzbuzz-1-33 \
-           phase02-compute/task02-fizzbuzz-34-66 \
-           phase02-compute/task04-optimized-algo; do
-    branch="spawn-graph/2025-01-02-1430-parallel-fizzbuzz/$task"
-    echo "Merging $branch..."
-    git merge --no-ff "$branch" -m "Merge $task from spawn-graph"
+for TASK_DIR in ./spawn-graph/${INSTANCE}/${PHASE}/task*/; do
+    if [ -d "$TASK_DIR" ]; then
+        TASK_NAME=$(basename "$TASK_DIR")
+        BRANCH="spawn-graph/${INSTANCE}/${PHASE}/${TASK_NAME}"
+        OUTPUT_PATH="spawn-graph/${INSTANCE}/${PHASE}/${TASK_NAME}/OUTPUT.md"
+        
+        # Check if OUTPUT.md exists and contains SUCCESS
+        if git show "${BRANCH}:${OUTPUT_PATH}" 2>/dev/null | grep -q "^STATUS: SUCCESS"; then
+            echo "Merging ${TASK_NAME}..."
+            git merge --no-ff "${BRANCH}" -m "Merge ${TASK_NAME} from spawn-graph ${PHASE}"
+        else
+            echo "Skipping ${TASK_NAME} (not successful)"
+        fi
+    fi
 done
 
-# Update PLAN.md for Phase 3 to include retry of blocked task
-cat >> spawn-graph/2025-01-02-1430-parallel-fizzbuzz/PLAN.md << 'EOF'
-
-## Phase 3 Adjustments
-- Added task03-retry-fizzbuzz-67-100 to handle blocked task from Phase 2
-EOF
-
-# Clean up completed worktrees
-for task in phase02-compute/task*/; do
-    git worktree remove "spawn-graph/2025-01-02-1430-parallel-fizzbuzz/$task"
+# 3. Clean up worktrees
+echo -e "\n=== Cleaning up worktrees ==="
+for TASK_DIR in ./spawn-graph/${INSTANCE}/${PHASE}/task*/; do
+    if [ -d "$TASK_DIR" ]; then
+        echo "Removing worktree: ${TASK_DIR}"
+        git worktree remove "${TASK_DIR}" --force
+    fi
 done
+
+# 4. Delete merged branches
+echo -e "\n=== Deleting merged branches ==="
+for TASK_DIR in ./spawn-graph/${INSTANCE}/${PHASE}/task*/; do
+    TASK_NAME=$(basename "$TASK_DIR")
+    BRANCH="spawn-graph/${INSTANCE}/${PHASE}/${TASK_NAME}"
+    
+    # Only delete if fully merged
+    if git branch --merged | grep -q "${BRANCH}"; then
+        echo "Deleting branch: ${BRANCH}"
+        git branch -d "${BRANCH}"
+    else
+        echo "Keeping unmerged branch: ${BRANCH}"
+    fi
+done
+
+# 5. List any worktrees that remain (there should be none)
+echo -e "\n=== Remaining worktrees ==="
+git worktree list
+
+# Example output:
+# === Checking task results ===
+# Checking task01-fizzbuzz-1-33...
+#   Status: SUCCESS
+# Checking task02-fizzbuzz-34-66...
+#   Status: SUCCESS
+# Checking task03-fizzbuzz-67-100...
+#   Status: BLOCKED
+# Checking task04-optimized-algo...
+#   Status: SUCCESS
+#
+# === Merging successful tasks ===
+# Merging task01-fizzbuzz-1-33...
+# Merging task02-fizzbuzz-34-66...
+# Skipping task03-fizzbuzz-67-100 (not successful)
+# Merging task04-optimized-algo...
+#
+# === Cleaning up worktrees ===
+# Removing worktree: ./spawn-graph/2025-01-02-1430-parallel-fizzbuzz/phase02-compute/task01-fizzbuzz-1-33/
+# Removing worktree: ./spawn-graph/2025-01-02-1430-parallel-fizzbuzz/phase02-compute/task02-fizzbuzz-34-66/
+# Removing worktree: ./spawn-graph/2025-01-02-1430-parallel-fizzbuzz/phase02-compute/task03-fizzbuzz-67-100/
+# Removing worktree: ./spawn-graph/2025-01-02-1430-parallel-fizzbuzz/phase02-compute/task04-optimized-algo/
 ```
 
 **After Merging All Successful Tasks**:
@@ -476,6 +820,13 @@ Each spawned agent receives:
 ```markdown
 You are agent {agent_id} working on task {task_id}.
 
+## CRITICAL: You are working in a Git Worktree
+- Your working directory is: ./spawn-graph/{instance}/{phase}/{task}/
+- This is a SEPARATE working copy from the main repository
+- You have your own branch: spawn-graph/{instance}/{phase}/{task}
+- Other agents are working in parallel in their own worktrees
+- Your changes will be merged back to main after completion
+
 ## Your Task
 {task_description}
 
@@ -487,6 +838,21 @@ You are agent {agent_id} working on task {task_id}.
 
 ## Integration Points
 {how_your_output_connects_to_other_tasks}
+
+## QUALITY REQUIREMENTS
+Before marking your task complete:
+1. Run pre-commit on YOUR changed files only
+2. Do a thorough self-review of your code:
+   - Is it clear and well-documented?
+   - Are names descriptive?
+   - Can anything be simplified?
+3. Check all links/references work
+4. Run relevant tests
+5. Remove debug code and TODOs
+6. Think: What else needs cleanup for THIS specific task?
+7. Actually make the improvements!
+
+Only mark SUCCESS when your code is high quality.
 
 ## Constraints
 - Time limit: {estimated_duration}

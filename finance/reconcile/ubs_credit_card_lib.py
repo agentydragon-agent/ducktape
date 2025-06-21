@@ -38,9 +38,9 @@ def load_ubs_credit_card_csv(path) -> dict[str, external_system.ExternalExpense]
         lines = f.readlines()
         assert lines[0] == "sep=;\n"
         for line in csv.DictReader(lines[1:], delimiter=";"):
-            assert (
-                set(line.keys()) == _EXPECTED_CSV_COLUMNS
-            ), f"unexpected keys: {line.keys()}"
+            assert set(line.keys()) == _EXPECTED_CSV_COLUMNS, (
+                f"unexpected keys: {line.keys()}"
+            )
 
             if line["Booking text"] == "Balance brought forward":
                 # TODO:

@@ -47,9 +47,9 @@ def load_ubs_csv(path) -> dict[str, external_system.ExternalExpense]:
     with open(path, encoding="utf-8-sig") as f:
         reader = csv.DictReader(f, delimiter=";")
         for line in reader:
-            assert (
-                set(line.keys()) == _EXPECTED_CSV_COLUMNS
-            ), f"unexpected keys: {line.keys()}"
+            assert set(line.keys()) == _EXPECTED_CSV_COLUMNS, (
+                f"unexpected keys: {line.keys()}"
+            )
             # Lines that don't have 'Debit' or 'Credit' seem to be just
             # transaction details.
             if not (line["Debit"] or line["Credit"]):
