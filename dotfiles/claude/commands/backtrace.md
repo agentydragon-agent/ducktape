@@ -1,5 +1,7 @@
 Show the current task stack and context.
 
+Aliases: bt, stack
+
 When invoked, provide a clear summary of:
 1. Current task depth and what we're doing at each level
 2. Where we are in the current task
@@ -21,8 +23,8 @@ Use a visual stack representation showing the task hierarchy:
 
 ## Example Usage
 
-User: /stack
-Assistant:
+U: /backtrace
+A:
 ```
 [Git commit organization for 48 files]
 └─[Creating individual commits]
