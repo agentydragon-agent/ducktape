@@ -29,7 +29,6 @@ def count_tokens_for_models(text: str) -> dict[str, int]:
     """Count tokens for multiple models."""
     return {
         "claude-4": count_anthropic_tokens(text),
-        "gpt-4o": count_openai_tokens(text, "gpt-4o"),
         "o3": count_openai_tokens(text, "o3"),
         "bytes": len(text.encode("utf-8")),
     }

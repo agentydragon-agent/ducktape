@@ -14,17 +14,50 @@ body {
     color: var(--color-primary);
 }
 
-/* Navigation menu */
-.menu {
+/* Hamburger button styling */
+.hamburger-button {
     position: fixed;
-    left: 0;
-    top: 0;
-    width: 400px;
-    height: 100vh;
+    top: 20px;
+    left: 20px;
+    z-index: 1050;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.hamburger-button .navbar-toggler-icon {
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 30'%3e%3cpath stroke='rgba%28255, 255, 255, 0.85%29' stroke-linecap='round' stroke-miterlimit='10' stroke-width='2' d='M4 7h22M4 15h22M4 23h22'/%3e%3c/svg%3e");
+    width: 24px;
+    height: 24px;
+}
+
+/* Navigation menu - Desktop */
+@media (min-width: 992px) {
+    .offcanvas-lg {
+        position: fixed;
+        left: 0;
+        top: 0;
+        width: 400px;
+        height: 100vh;
+        transform: none;
+        visibility: visible !important;
+        background-color: var(--color-background);
+    }
+    
+    .offcanvas-lg .offcanvas-body {
+        height: 100%;
+        overflow-y: auto;
+    }
+}
+
+/* Navigation menu styling */
+.menu {
     background-color: var(--color-background);
     padding: 20px;
     box-sizing: border-box;
-    overflow-y: auto;
 }
 
 .menu a {
@@ -53,9 +86,25 @@ body {
 
 /* Main content area */
 .content {
-    margin-left: 400px;
     padding: 20px 40px;
     max-width: 800px;
+    margin: 0 auto;
+}
+
+/* Desktop: offset content for sidebar */
+@media (min-width: 992px) {
+    .content {
+        margin-left: 400px;
+        margin-right: auto;
+    }
+}
+
+/* Mobile: add top padding for hamburger button */
+@media (max-width: 991px) {
+    .content {
+        margin-left: 0;
+        padding-top: 80px;
+    }
 }
 
 h1, h2, h3, h4, h5, h6 {
@@ -219,24 +268,18 @@ th {
     margin-left: 20px;
 }
 
-@media (max-width: 768px) {
-    .menu {
-        position: static;
-        width: 100%;
-        height: auto;
-        padding: 10px;
-        display: flex;
-        gap: 10px;
-        flex-wrap: wrap;
+/* Mobile-specific styles for offcanvas */
+@media (max-width: 991px) {
+    .offcanvas {
+        width: 300px !important;
     }
-
-    .menu a {
-        display: inline-block;
-        margin-bottom: 0;
+    
+    .offcanvas-backdrop {
+        background-color: rgba(0, 0, 0, 0.5);
     }
-
-    .content {
-        margin-left: 0;
-        padding: 20px;
+    
+    /* Ensure hamburger doesn't overlap with navigation header */
+    .offcanvas-header {
+        padding-left: 60px; /* Space for hamburger button */
     }
 }

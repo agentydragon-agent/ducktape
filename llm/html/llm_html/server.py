@@ -4,7 +4,7 @@
 import logging
 import os
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -14,6 +14,7 @@ import uvicorn
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse
 from jinja2 import Environment, FileSystemLoader
+from markdownify import markdownify
 
 from .token_counter import count_tokens_for_models
 from .token_scheme import TokenScheme
@@ -35,12 +36,19 @@ MARKDOWN_PAGES = ["tana", "coding"]
 # Cache for page titles from frontmatter
 PAGE_TITLES = {}
 
+# Cache for stats with TTL
+STATS_CACHE = {
+    "data": None,
+    "last_updated": None,
+    "ttl": timedelta(minutes=5),
+}
+
 # Common security headers for all responses
 HEADERS = {
     "Cache-Control": "no-store",
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
-    "Content-Security-Policy": "default-src 'self'; style-src 'self' 'unsafe-inline'",
+    "Content-Security-Policy": "default-src 'self' https://cdn.jsdelivr.net data:; style-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; img-src 'self' data:",
 }
 
 # Site configuration
@@ -195,7 +203,7 @@ def analyze_page_tokens(
         full_html = render_html_page(title, html_content, active_page=page_id)
 
         # Step 4: Convert full HTML (including nav) back to markdown
-        final_markdown = md(full_html, heading_style="ATX")
+        final_markdown = markdownify(full_html, heading_style="ATX")
 
         # Step 5: Count tokens on the final markdown
         tokens = count_tokens_for_models(final_markdown)
@@ -205,9 +213,20 @@ def analyze_page_tokens(
         return None
 
 
-@app.get("/stats", response_class=HTMLResponse)
-async def stats_page():
-    """Show statistics about all served pages."""
+@app.get("/api/stats")
+async def stats_api():
+    """Return statistics about all served pages as JSON."""
+    # Check cache
+    now = datetime.now(TIMEZONE)
+    if (
+        STATS_CACHE["data"] is not None
+        and STATS_CACHE["last_updated"] is not None
+        and now - STATS_CACHE["last_updated"] < STATS_CACHE["ttl"]
+    ):
+        logger.info("Returning cached stats")
+        return STATS_CACHE["data"]
+
+    logger.info("Calculating fresh stats")
     pages_stats = []
 
     # Analyze index page
@@ -226,11 +245,29 @@ async def stats_page():
         if stats := analyze_page_tokens(page, Path(f"{page}.md"), title, f"/{page}"):
             pages_stats.append(stats)
 
+    # Calculate totals
+    totals = {
+        "claude-4": sum(stat["claude-4"] for stat in pages_stats),
+        "o3": sum(stat["o3"] for stat in pages_stats),
+        "bytes": sum(stat["bytes"] for stat in pages_stats),
+    }
+
+    result = {"pages": pages_stats, "totals": totals}
+
+    # Update cache
+    STATS_CACHE["data"] = result
+    STATS_CACHE["last_updated"] = now
+
+    return result
+
+
+@app.get("/stats", response_class=HTMLResponse)
+async def stats_page():
+    """Show statistics page (loads data via API)."""
     # Render the stats template
     template = env.get_template("stats.html")
     html = template.render(
         title="Server Statistics",
-        pages_stats=pages_stats,
         active_page="stats",
         markdown_pages=MARKDOWN_PAGES,
         page_titles=PAGE_TITLES,

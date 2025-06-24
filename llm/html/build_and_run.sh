@@ -13,6 +13,9 @@ cleanup() {
 # Set trap to cleanup on script exit
 trap cleanup EXIT INT TERM
 
+# Remove any existing container with the same name
+docker rm -f llm-html 2>/dev/null || true
+
 # Run the container interactively
 echo "Starting container... Press Ctrl-C to stop"
 echo "Access at http://localhost:9000"
