@@ -190,3 +190,6 @@
 
 - import_tasks: tunneled_activitywatch.yml
   tags: activitywatch
+
+- import_tasks: xdg_mime_types.yml
+  tags: [mime, xdg]
