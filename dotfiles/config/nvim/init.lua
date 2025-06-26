@@ -117,6 +117,9 @@ opt.termguicolors = true -- Enable true color support (recommended for modern UI
 vim.g.mapleader = " "
 vim.g.maplocalleader = "\\"
 
+-- Enable EditorConfig support
+vim.g.editorconfig = true
+
 require("config.lazy")
 
 -- Django template formatter:
