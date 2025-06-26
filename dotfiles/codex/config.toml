@@ -1,0 +1,19 @@
+# model_reasoning_summary = "detailed"
+
+#[mcp_servers.tana-mcp]
+#command = "python"
+#args = ["/home/agentydragon/syncthing/tana-decomp/mcp/tana-mcp-minimal.py"]
+#env = { "TANA_MCP_CODEX_MODE" = "true", "TANA_REFRESH_TOKEN" = "AMf-vBz4Wd0VxIu6qpL9OhKlAL_1TZwvXJIHNZKQdQ7ux7eXwi93Tc3uv418z_xmgY2av7OoZesKJthkd76AEKBfrz_FxEJ7Pc37hbCvuTOVrOwd6RHkcWjPqD4q-q1oRXrpM0B6GRtrkexpm4khSSDcqByCCClxBIZe_MWKL17NofNXf6u27m1WGO3qoPsxPZ1Lsxv_qDvx9MUBTMzLWQsaoj47CbjpfsvxyhCq898tTHNpAECEMHzqBimqlZJdB6YACvLqD_kUzMkv55MMlIqAWCRL1mZGeBsDuLCl7DNTBH4KpF7v3ZPzwQWe7rbX-yDJikXPLgWCb1A8pXU5wchTUZROrjPqzsWQUFe8lBPeLyLEceJOo_N-npW82y5mraCnRehYA-8ZGqfWJwkkbzNC3XhwH-zs08x35YB6J3sE4vBvv4dxSMGXKWlVPDu-lnfczl8su-kN" }
+
+[tui]
+auto_mount_repo = true
+header_compact = true
+markdown_compact = true
+message_spacing = false
+require_double_ctrl_d = true
+
+[sandbox]
+sandbox_permissions = [
+    "disk-write-platform-global-temp-folder",
+    "disk-write-platform-user-temp-folder",
+]
