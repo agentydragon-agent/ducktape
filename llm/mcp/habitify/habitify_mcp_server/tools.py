@@ -3,7 +3,7 @@ Habitify MCP tools implementation.
 """
 
 from datetime import datetime
-from typing import Literal, Optional, cast
+from typing import Any, Literal, Optional, cast
 
 from .habitify_client import HabitifyClient
 from .types import (
@@ -39,6 +39,23 @@ def validate_habit_identifier(**kwargs) -> Optional[ErrorResponse]:
         )
 
     return None
+
+
+# Valid statuses for habit status operations
+VALID_STATUSES = {"completed", "skipped", "failed", "none"}
+
+
+async def _validate_and_resolve(
+    client: HabitifyClient,
+    id: Optional[str] = None,
+    name: Optional[str] = None,
+    action: str = "use",
+) -> Any:
+    """Validate habit identifier and resolve habit or return ErrorResponse."""
+    validation_error = validate_habit_identifier(id=id, name=name, action=action)
+    if validation_error:
+        return validation_error
+    return await resolve_habit(client, id=id, name=name)
 
 
 @with_client
@@ -121,6 +138,9 @@ async def get_habit(
             },
         )
 
+    # This should never be reached due to validation, but satisfies mypy
+    return create_validation_error("Either a habit ID or habit name is required")
+
 
 @with_client
 async def get_habit_status(
@@ -157,25 +177,19 @@ async def get_habit_status(
     Returns:
         Dict with habit status or error information
     """
-    # Validate required arguments
-    validation_error = validate_habit_identifier(id=id, name=name, action="check")
-    if validation_error:
-        return validation_error
+    # Validate and resolve habit identifier
+    resolved = await _validate_and_resolve(client, id=id, name=name, action="check")
+    if isinstance(resolved, ErrorResponse):
+        return resolved
 
     # Check if we're doing a date range query or a single date query
-    is_range_query = any([start_date, end_date, days])
+    is_range_query = any((start_date, end_date, days))
 
     # If both date and range parameters are provided, return an error
     if date and is_range_query:
         return create_validation_error(
             "Cannot specify both date and date range parameters (start_date, end_date, days) simultaneously."
         )
-
-    # Resolve the habit (either by ID or name)
-    resolved = await resolve_habit(client, id=id, name=name)
-
-    if isinstance(resolved, ErrorResponse):
-        return resolved
 
     # If it's a range query
     if is_range_query:
@@ -238,9 +252,6 @@ async def get_habit_status(
         )
 
 
-# log_habit function removed - redundant with set_habit_status
-
-
 @with_client
 async def set_habit_status(
     client: HabitifyClient,
@@ -266,27 +277,18 @@ async def set_habit_status(
     Returns:
         Dict with status update result or error information
     """
-    # Validate required arguments
-    validation_error = validate_habit_identifier(id=id, name=name, action="set")
-    if validation_error:
-        return validation_error
+    # Validate and resolve habit identifier
+    resolved = await _validate_and_resolve(client, id=id, name=name, action="set")
+    if isinstance(resolved, ErrorResponse):
+        return resolved
 
     if not status:
         return create_validation_error("Status is required to set a habit status.")
 
-    # Validate status value
-    valid_statuses = ["completed", "skipped", "failed", "none"]
-    if status not in valid_statuses:
+    if status not in VALID_STATUSES:
         return create_validation_error(
-            f"Invalid status value: {status}. Status must be one of: {', '.join(valid_statuses)}"
+            f"Invalid status value: {status}. Status must be one of: {', '.join(VALID_STATUSES)}"
         )
-
-    # Resolve the habit (either by ID or name)
-    resolved = await resolve_habit(client, id=id, name=name)
-
-    # With Pydantic, we can properly use isinstance
-    if isinstance(resolved, ErrorResponse):
-        return resolved
 
     result = await client.set_habit_status(
         resolved.habit_id,

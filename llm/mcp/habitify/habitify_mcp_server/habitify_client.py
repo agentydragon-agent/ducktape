@@ -322,7 +322,8 @@ class HabitifyClient:
             raise
 
         # Sort results by date to maintain chronological order
-        results.sort(key=lambda x: x.date)
+        # Use a default date for None values (should never happen in practice)
+        results.sort(key=lambda x: x.date or datetime.date.min)
 
         return results
 
@@ -358,7 +359,7 @@ class HabitifyClient:
         target_date = format_date_for_api(date)
 
         # Build the request body based on examples
-        request_body = {
+        request_body: dict[str, Any] = {
             "status": status,
             "target_date": target_date,
         }

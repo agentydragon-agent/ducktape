@@ -83,24 +83,12 @@ def get_api_key_from_param_or_env(api_key_param: Optional[str] = None) -> Option
 
 def get_server_api_key() -> Optional[str]:
     """
-    Get API key from MCP server metadata context.
+    Get API key from environment.
 
     Returns:
-        API key from server metadata or None
+        API key from environment variable or None
     """
-    try:
-        from mcp.shared.context import get_server_metadata
-
-        server_metadata = get_server_metadata()
-        if isinstance(server_metadata, dict):
-            return server_metadata.get("api_key")
-        # Handle newer FastMCP that might use a different metadata structure
-        api_key = getattr(server_metadata, "api_key", None)
-        if api_key:
-            return api_key
-        return None
-    except Exception:
-        return None
+    return os.environ.get("HABITIFY_API_KEY")
 
 
 def validate_required_params(*param_names: str, **params: Any) -> Optional[dict[str, Any]]:

@@ -115,10 +115,7 @@ def generate_name(style="animal"):
     """Generate a friendly name in the specified style."""
     adjective = random.choice(adjectives)
 
-    if style == "scientist":
-        noun = random.choice(scientists)
-    else:
-        noun = random.choice(animals)
+    noun = random.choice(scientists) if style == "scientist" else random.choice(animals)
 
     return f"{adjective}_{noun}"
 

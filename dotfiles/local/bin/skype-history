@@ -13,7 +13,7 @@ if len(sys.argv) == 1:
     ):
         timestamp = row[2]
         timestamp = datetime.datetime.fromtimestamp(timestamp)
-        print("%s %s: %s" % (row[1], timestamp, row[3]))
+        print(f"{row[1]} {timestamp}: {row[3]}")
 
 else:
     person = sys.argv[1]
@@ -21,4 +21,4 @@ else:
         "SELECT id, from_dispname, timestamp, body_xml FROM Messages ORDER BY Timestamp;",
     ):
         if person in row[1]:
-            print("%s" % (row[3]))
+            print(f"{row[3]}")

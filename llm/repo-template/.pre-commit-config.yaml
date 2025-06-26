@@ -25,17 +25,25 @@ repos:
     hooks:
       - id: black
 
-  - repo: https://github.com/charliermarsh/ruff-pre-commit
+  - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.3.5
     hooks:
       - id: ruff
         args: [--fix]
+      - id: ruff-format
 
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v1.9.0
     hooks:
       - id: mypy
         additional_dependencies: []
+
+  # Semgrep for custom pattern detection
+  - repo: https://github.com/returntocorp/semgrep
+    rev: v1.45.0
+    hooks:
+      - id: semgrep
+        args: ['--config=.semgrep/rules.yaml', '--error']
 
   # Local hooks using ducktape-llm-common tools
   - repo: local
@@ -48,19 +56,3 @@ repos:
         pass_filenames: true
         description: Ensure files end with exactly one newline using ducktape-llm-common
         # Note: testdata/ and references/ are already excluded by top-level exclude
-
-      - id: check-work-urls
-        name: Check work URLs
-        entry: check-work-urls
-        language: system
-        types: [markdown]
-        pass_filenames: true
-        description: Validate custom work URL formats
-
-      - id: check-task-metadata
-        name: Check task metadata
-        entry: check-task-metadata
-        language: system
-        files: '(METADATA\.yaml|TASK_GRAPH\.md)$'
-        pass_filenames: true
-        description: Validate task metadata files

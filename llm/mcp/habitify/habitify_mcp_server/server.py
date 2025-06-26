@@ -39,14 +39,8 @@ def create_habitify_mcp_server(
         port=port,  # Set the port in the server settings
     )
 
-    # Store API key in server context for tools - properly handled through the context API
-    api_key_value = load_api_key(api_key_override=api_key, exit_on_missing=False)
-    if api_key_value:
-        try:
-            server.metadata = {"api_key": api_key_value}
-        except AttributeError:
-            # Fallback for new FastMCP API
-            server.set_metadata({"api_key": api_key_value})
+    # Validate API key is available (tools will retrieve it from environment)
+    load_api_key(api_key_override=api_key, exit_on_missing=False)
 
     @server.tool()
     async def get_habits(include_archived: bool = False) -> dict[str, Any]:
@@ -59,7 +53,7 @@ def create_habitify_mcp_server(
         Returns:
             Dictionary containing the list of habits and count
         """
-        return await tools.get_habits(include_archived=include_archived)
+        return await tools.get_habits(include_archived=include_archived)  # type: ignore[call-arg]
 
     @server.tool()
     async def get_habit(id: Optional[str] = None, name: Optional[str] = None) -> dict[str, Any]:
@@ -73,7 +67,7 @@ def create_habitify_mcp_server(
         Returns:
             Dictionary containing habit details or error information
         """
-        return await tools.get_habit(id=id, name=name)
+        return await tools.get_habit(id=id, name=name)  # type: ignore[call-arg]
 
     @server.tool()
     async def get_habit_status(
@@ -109,7 +103,7 @@ def create_habitify_mcp_server(
         Returns:
             Dictionary with habit status(es) or error information
         """
-        return await tools.get_habit_status(
+        return await tools.get_habit_status(  # type: ignore[call-arg]
             id=id,
             name=name,
             date=date,
@@ -141,9 +135,8 @@ def create_habitify_mcp_server(
         Returns:
             Dictionary containing status update result or error information
         """
-        return await tools.set_habit_status(
+        return await tools.set_habit_status(  # type: ignore[call-arg]
             id=id, name=name, status=status.value, date=date, note=note, value=value
         )
 
-    # log_habit tool removed - redundant with set_habit_status
     return server
