@@ -17,6 +17,8 @@
     - role: scanbox
     - role: wireguard
       tags: [wireguard]
+    - role: firecrawl
+      tags: [firecrawl]
 
   tasks:
     - name: Install CUDA (NVidia-specific)

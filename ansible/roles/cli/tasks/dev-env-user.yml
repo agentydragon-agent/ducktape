@@ -22,6 +22,7 @@
         - pre-commit
         - ansible  # Get newer version than Ubuntu 22.04's ancient one
         - libcst  # Python concrete syntax tree library for refactoring
+        - pydeps  # Python dependency graph visualization
 
     - name: Install Node.js CLI tools globally (user-level)
       community.general.npm:
@@ -33,6 +34,7 @@
         - '@bazel/bazelisk'
         - '@ast-grep/cli'  # For semantic code queries across multiple languages
         - 'jscpd'  # Copy/paste detector for 150+ languages including Python, TypeScript
+        - 'madge'  # Dependency graph visualization tool
 
 # Install comby for structural code search and replace
 - import_tasks: comby.yml

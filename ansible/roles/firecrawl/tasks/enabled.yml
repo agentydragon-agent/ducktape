@@ -1,0 +1,64 @@
+---
+# Enable (install & run) Firecrawl via Docker Compose
+
+- name: Ensure python3-pip is present (docker SDK dep)
+  become: true
+  ansible.builtin.apt:
+    name: python3-pip
+    state: present
+
+# ---------------------------------------------------------------------------
+# Prepare project directory with compose files
+# ---------------------------------------------------------------------------
+
+- name: Create Firecrawl Docker Compose directory on host
+  become: true
+  ansible.builtin.file:
+    path: "{{ firecrawl_project_path }}"
+    state: directory
+    mode: "0755"
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+
+- name: Copy docker-compose files for Firecrawl
+  become: true
+  ansible.builtin.copy:
+    src: "docker-compose.yml"
+    dest: "{{ firecrawl_project_path }}/docker-compose.yml"
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: "0644"
+
+# ---------------------------------------------------------------------------
+# Start / recreate the stack (pull latest images, etc.)
+# ---------------------------------------------------------------------------
+
+- name: docker compose up for Firecrawl
+  become: true
+  community.docker.docker_compose_v2:
+    project_src: "{{ firecrawl_project_path }}"
+    pull: always     # pull updated images
+    recreate: always # pick up any env / compose modifications
+  register: firecrawl_compose
+
+- name: Show compose output (verbosity 1)
+  ansible.builtin.debug:
+    var: firecrawl_compose
+    verbosity: 1
+
+- name: Wait for Firecrawl API to be ready
+  ansible.builtin.uri:
+    url: "http://localhost:{{ firecrawl_port }}/health"
+    status_code: 200
+  register: result
+  until: result.status == 200
+  retries: 30
+  delay: 2
+
+- name: Display Firecrawl access information
+  ansible.builtin.debug:
+    msg:
+      - "Firecrawl is now running!"
+      - "API endpoint: http://localhost:{{ firecrawl_port }}"
+      - "Test API key: {{ firecrawl_test_api_key }}"
+      - "You can test with: curl http://localhost:{{ firecrawl_port }}/health"
