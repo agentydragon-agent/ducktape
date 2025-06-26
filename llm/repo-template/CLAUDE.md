@@ -43,9 +43,16 @@ pre-commit run --all-files
 pre-commit run black --all-files    # Format Python code
 pre-commit run ruff --all-files     # Lint Python code
 pre-commit run mypy --all-files     # Type check Python code
+pre-commit run semgrep --all-files  # Pattern-based linting
 
 # Auto-fix issues where possible
 ruff check --fix .
+
+# Run only Semgrep custom rules
+semgrep --config=.semgrep/rules.yaml .
+
+# Check specific patterns
+semgrep --pattern 'getattr($OBJ, "$ATTR")' --lang python .
 ```
 
 ### Testing
@@ -88,9 +95,16 @@ cd references && ./fetch.sh
 
 ### Python Development
 - **Formatter**: Black (configured in pre-commit)
-- **Linter**: Ruff (runs automatically via pre-commit)
+- **Linter**: Ruff (enforces modern Python patterns, configured in pyproject.toml)
+- **Pattern Detection**: Semgrep (catches anti-patterns from llm.agentydragon.com/coding)
 - **Type Checker**: mypy (configured for strict checking)
 - **Test Framework**: pytest
+
+### Linting Configuration
+This template includes opinionated linting rules based on https://llm.agentydragon.com/coding:
+- **Ruff**: Enforces modern Python syntax, pathlib usage, proper exception handling
+- **Semgrep**: Detects string concatenation for URLs/SQL/HTML, broad exceptions, getattr usage
+- **Auto-fixes**: ~60% of issues can be automatically fixed with `ruff check --fix`
 
 ### Pre-commit Hooks
 The following checks run automatically on commit:
