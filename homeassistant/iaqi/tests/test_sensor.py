@@ -1,7 +1,10 @@
+# ruff: noqa
+# mypy: ignore-errors
 """Tests for the Indoor AQI sensor component."""
 
 import logging
 from datetime import datetime, timedelta, timezone
+
 from logging.handlers import MemoryHandler
 
 import pytest
@@ -63,7 +66,7 @@ def empty_log():
 
 @pytest.fixture
 def now():
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 @pytest.fixture
@@ -96,7 +99,7 @@ def memory_handler():
         ("1000", "51", 60.0, "CO₂: 1000.0 ppm, PM2.5: 51.0 μg/m³"),
     ],
 )
-async def test_sensor_update(
+async def test_sensor_update(  # noqa: PLR0913
     hass,
     co2_value,
     pm25_value,

@@ -1,6 +1,7 @@
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
 from homeassistant.components.sensor import SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
@@ -48,7 +49,7 @@ class PollutantInfo:
 
 # The breakpoint tables were previously stored in a separate global mapping.
 # They have now been integrated directly into the PollutantInfo dataclass for
-# better cohesion – every relevant bit of information about a pollutant is now
+# better cohesion - every relevant bit of information about a pollutant is now
 # located in a single place.
 
 POLLUTANTS: dict[str, PollutantInfo] = {
@@ -186,15 +187,15 @@ def compute_iaqi(pollutant: str, c: float) -> float | None:
         return float(bp[-1][1])
 
     # Otherwise, find i such that bp[i][0] <= c <= bp[i+1][0]
-    for i in range(len(bp) - 1):
-        cLo, iLo = bp[i]
-        cHi, iHi = bp[i + 1]
-        if cLo <= c <= cHi:
+    for idx in range(len(bp) - 1):
+        c_lo, i_lo = bp[idx]
+        c_hi, i_hi = bp[idx + 1]
+        if c_lo <= c <= c_hi:
             # linear interpolation
-            if cHi == cLo:
-                return float(iLo)
-            ratio = (c - cLo) / (cHi - cLo)
-            return float(iLo + (iHi - iLo) * ratio)
+            if c_hi == c_lo:
+                return float(i_lo)
+            ratio = (c - c_lo) / (c_hi - c_lo)
+            return float(i_lo + (i_hi - i_lo) * ratio)
 
     return None  # fallback if something was out of the bracket array
 
@@ -240,14 +241,9 @@ async def async_setup_entry(
 
     # Look for "monitors" or fallback to a single "sensors" block.
     monitors = yaml_cfg.get("monitors", [])
-    if not monitors:
-        # Single block fallback:
-        # indoor_aqi:
-        #   name: "Rai's room AQI"
-        #   sensors: ...
-        #   stale_time: ...
-        if "sensors" in yaml_cfg:
-            monitors = [yaml_cfg]
+    # Single block fallback for sensors config
+    if not monitors and "sensors" in yaml_cfg:
+        monitors = [yaml_cfg]
 
     entities = []
     for m in monitors:
@@ -300,13 +296,13 @@ class IndoorAQISensor(SensorEntity):
         self._sensor_map = sensor_map  # dict: pollutant -> entity_id
         self._stale_time = stale_time
 
-        self._state = None  # final IAQI
-        self._attrs = {}
+        self._state: float | None = None  # final IAQI
+        self._attrs: dict[str, Any] = {}
         self._icon = "mdi:cloud"
 
         # For tracking partial data logging
         # Set of sensors with errors in previous update
-        self._previous_error_sensors = set()
+        self._previous_error_sensors: set[str] = set()
         # Last time we logged partial data
         self._last_log_time = datetime.now(timezone.utc)
 
@@ -418,7 +414,7 @@ class IndoorAQISensor(SensorEntity):
             label, color, icon = "Severely Polluted", "purple", "emoticon-devil"
 
         self._icon = f"mdi:{icon}"
-        # Transform the *dict* into a *list[str]* for attributes – keep the
+        # Transform the *dict* into a *list[str]* for attributes - keep the
         # original mapping around for later use.
         sensor_errors_list = [
             f"{pollutant}: {error_type}"
