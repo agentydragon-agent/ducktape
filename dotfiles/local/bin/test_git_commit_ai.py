@@ -1229,6 +1229,129 @@ sys.exit(1)
             os.chdir(original_cwd)
 
     @pytest.mark.asyncio
+    async def test_debug_mode_logging(self, test_repo, monkeypatch, tmp_path):
+        """Test that debug mode logs Claude command."""
+        # Create a mock editor that doesn't change the file
+        mock_editor = tmp_path / "mock_editor"
+        mock_editor.write_text("#!/bin/sh\nexit 0\n")
+        mock_editor.chmod(0o755)
+        monkeypatch.setenv("EDITOR", str(mock_editor))
+
+        # Mock ask_claude to capture calls
+        mock_claude_called = False
+
+        async def mock_ask_claude(prompt: str, model: str) -> str:
+            nonlocal mock_claude_called
+            mock_claude_called = True
+            return "feat: Test commit message"
+
+        # Change to test repo directory
+        original_cwd = str(Path.cwd())
+        os.chdir(test_repo.working_dir)
+
+        try:
+            with (
+                patch("git_commit_ai.ask_claude", mock_ask_claude),
+                patch("sys.argv", ["git-commit-ai", "--debug"]),
+                patch("sys.exit") as mock_exit,
+            ):
+                mock_exit.side_effect = SystemExit
+
+                with pytest.raises(SystemExit):
+                    await async_main()
+
+                # Check that debug log file was created
+                log_file = Path(test_repo.git_dir) / "git_commit_ai.log"
+                assert log_file.exists()
+
+                # Verify log contains Claude command
+                log_content = log_file.read_text()
+                assert "Claude command:" in log_content
+                assert "claude --model" in log_content
+                assert "--disallowedTools" in log_content
+        finally:
+            os.chdir(original_cwd)
+
+    @pytest.mark.asyncio
+    async def test_vim_workflow_save_unchanged(self, test_repo, monkeypatch, tmp_path):
+        """Test that :wq on unchanged AI message proceeds with commit."""
+        # Create a mock editor that simulates :wq (touch file but don't change content)
+        mock_editor = tmp_path / "mock_editor_wq"
+        mock_editor.write_text(
+            """#!/usr/bin/env python3
+import sys
+import time
+import os
+from pathlib import Path
+
+# Get the file path
+filepath = sys.argv[1]
+
+# Touch the file to update mtime
+Path(filepath).touch()
+
+# Exit successfully
+sys.exit(0)
+""",
+        )
+        mock_editor.chmod(0o755)
+        monkeypatch.setenv("EDITOR", str(mock_editor))
+
+        # Mock ask_claude
+        async def mock_ask_claude(prompt: str, model: str) -> str:
+            return "feat: Test commit message"
+
+        # Change to test repo directory
+        original_cwd = str(Path.cwd())
+        os.chdir(test_repo.working_dir)
+
+        try:
+            with (
+                patch("git_commit_ai.ask_claude", mock_ask_claude),
+                patch("sys.argv", ["git-commit-ai"]),
+                patch("sys.exit") as mock_exit,
+            ):
+                await async_main()
+
+                # Should succeed (exit 0)
+                mock_exit.assert_called_with(0)
+        finally:
+            os.chdir(original_cwd)
+
+    @pytest.mark.asyncio
+    async def test_vim_workflow_quit_no_save(self, test_repo, monkeypatch, tmp_path):
+        """Test that :q! (no save) aborts commit."""
+        # Create a mock editor that simulates :q! (don't touch file)
+        mock_editor = tmp_path / "mock_editor_q"
+        mock_editor.write_text("#!/bin/sh\n# Don't modify file at all\nexit 0\n")
+        mock_editor.chmod(0o755)
+        monkeypatch.setenv("EDITOR", str(mock_editor))
+
+        # Mock ask_claude
+        async def mock_ask_claude(prompt: str, model: str) -> str:
+            return "feat: Test commit message"
+
+        # Change to test repo directory
+        original_cwd = str(Path.cwd())
+        os.chdir(test_repo.working_dir)
+
+        try:
+            with (
+                patch("git_commit_ai.ask_claude", mock_ask_claude),
+                patch("sys.argv", ["git-commit-ai"]),
+                patch("sys.exit") as mock_exit,
+            ):
+                mock_exit.side_effect = SystemExit
+
+                with pytest.raises(SystemExit):
+                    await async_main()
+
+                # Should abort (exit 1)
+                mock_exit.assert_called_with(1)
+        finally:
+            os.chdir(original_cwd)
+
+    @pytest.mark.asyncio
     async def test_full_flow_with_failing_precommit(
         self,
         test_repo_with_failing_precommit,

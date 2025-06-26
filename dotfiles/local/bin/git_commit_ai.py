@@ -10,9 +10,17 @@ git-commit-ai
 Call exactly like `git commit`; every flag is forwarded. Extra wrapper flags:
 
     --model MODEL          (default: sonnet)
+    --debug                Enable debug logging (shows exact Claude command)
+
+Note: --no-verify is always added internally to avoid running hooks twice. To skip
+      AI message generation entirely, use regular `git commit` instead.
+
+Important: Do NOT install this as a prepare-commit-msg hook. Since this command
+         calls `git commit` internally, it would create an infinite loop. Use
+         this as a standalone command replacement for `git commit`.
 
 Example
-    git-commit-ai -a               # like “git commit -a”
+    git-commit-ai -a               # like "git commit -a"
 """
 
 # ---------------------------------------------------------------------
@@ -21,6 +29,7 @@ import asyncio
 import contextlib
 import fcntl
 import hashlib
+import logging
 import os
 import pty
 import re
@@ -200,9 +209,9 @@ class TaskState:
             return TaskStatus.RUNNING
 
         try:
-            if self.task.result() == 0:
-                return TaskStatus.SUCCESS
-            return TaskStatus.FAILED
+            # If result() doesn't raise, the task succeeded
+            self.task.result()
+            return TaskStatus.SUCCESS
         except asyncio.CancelledError:
             return TaskStatus.CANCELLED
         except Exception:
@@ -299,7 +308,7 @@ class ParallelTaskRunner:
         async def run_precommit_wrapper():
             try:
                 if not (precommit_path.exists() and precommit_path.is_file()):
-                    return 0  # No pre-commit hook, return success
+                    return  # No pre-commit hook, nothing to do
                 # Run pre-commit hook with given slave end of PTY.
                 proc = await asyncio.create_subprocess_exec(
                     str(precommit_path),
@@ -308,7 +317,9 @@ class ParallelTaskRunner:
                     stdin=slave_fd,
                     env=os.environ.copy(),
                 )
-                return await proc.wait()
+                returncode = await proc.wait()
+                if returncode != 0:
+                    raise subprocess.CalledProcessError(returncode, str(precommit_path))
             finally:
                 os.close(slave_fd)
 
@@ -318,10 +329,12 @@ class ParallelTaskRunner:
         update_task = asyncio.create_task(runner._update_loop())
         output_task = asyncio.create_task(runner._stream_output(master_fd))
         try:
-            msg, precommit_rc = await asyncio.gather(ai_task, precommit_task)
-            if precommit_rc != 0:
-                # UI will have already shown the output and status
-                sys.exit(precommit_rc)
+            # Both tasks will raise exceptions on failure
+            msg, _ = await asyncio.gather(ai_task, precommit_task)
+        except subprocess.CalledProcessError as e:
+            # Pre-commit hook failed
+            # UI will have already shown the output and status
+            sys.exit(e.returncode)
         except Exception:
             # One of the tasks failed - wait for both to complete before re-raising
             await asyncio.gather(ai_task, precommit_task, return_exceptions=True)
@@ -399,8 +412,17 @@ class ParallelTaskRunner:
 
 
 async def ask_claude(prompt: str, model: str) -> str:
-    assert len(prompt) < 20_000  # this should be ensured by prompt builder
-    proc = await asyncio.create_subprocess_exec(
+    # Truncate prompt if too long and warn user
+    if len(prompt) >= 20_000:
+        truncated_prompt = prompt[:19_900] + "\n\n[TRUNCATED - prompt was too long]"
+        print(
+            f"# Warning: Prompt truncated from {len(prompt)} to 19,900 chars",
+            file=sys.stderr,
+        )
+        prompt = truncated_prompt
+
+    # Build command as list for proper handling
+    cmd = [
         "claude",
         "--model",
         model,
@@ -408,19 +430,47 @@ async def ask_claude(prompt: str, model: str) -> str:
         prompt,
         "--disallowedTools",
         "*",
+    ]
+
+    # Use subprocess.list2cmdline for proper shell-safe formatting
+    shell_cmd = subprocess.list2cmdline(cmd)
+    logger = logging.getLogger(__name__)
+    logger.debug("Claude command:\n%s", shell_cmd)
+    logger.debug("Prompt content:\n%s", prompt)
+
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
-    stdout, stderr = await proc.communicate()
+    try:
+        # Add 30 second timeout for Claude API calls
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30.0)
+    except asyncio.TimeoutError:
+        print("\n# Error: Claude API timed out after 30 seconds", file=sys.stderr)
+        print(
+            "# This might be due to network issues or API unavailability",
+            file=sys.stderr,
+        )
+        proc.terminate()
+        await proc.wait()
+        raise subprocess.CalledProcessError(
+            -1,
+            cmd,
+            "Claude command timed out after 30 seconds",
+        )
 
     if proc.returncode != 0:
+        stderr_text = stderr.decode()
+        logger.debug("Claude stderr:\n%s", stderr_text)
         raise subprocess.CalledProcessError(
             proc.returncode or 1,  # Use 1 as default if returncode is None
             ["claude"],
-            stderr.decode(),
+            stderr_text,
         )
 
     response = stdout.decode().strip()
+    logger.debug("Claude response:\n%s", response)
 
     # Extract message from between tags
     if match := re.search(r"<message>\s*(.*?)\s*</message>", response, re.DOTALL):
@@ -480,7 +530,30 @@ async def async_main():
 
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--model", default=DEFAULT_MODEL)
+    parser.add_argument("--debug", action="store_true", help="Enable debug logging")
     known, passthru = parser.parse_known_args()
+
+    # Configure logging - always log to file under .git/
+    log_file = Path(repo.git_dir) / "git_commit_ai.log"
+
+    # Always log to file
+    file_handler = logging.FileHandler(log_file, mode="a")
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(
+        logging.Formatter("%(asctime)s - %(levelname)s: %(message)s"),
+    )
+
+    # Configure root logger
+    logger = logging.getLogger()
+    logger.setLevel(logging.DEBUG)
+    logger.addHandler(file_handler)
+
+    if known.debug:
+        # Also log to stderr when debug is enabled
+        console_handler = logging.StreamHandler(sys.stderr)
+        console_handler.setLevel(logging.DEBUG)
+        console_handler.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
+        logger.addHandler(console_handler)
 
     # If --all or -a is passed, we need to stage files before running pre-commit
     # Pre-commit only runs on staged files
@@ -609,8 +682,9 @@ async def async_main():
     commit_msg_path = Path(repo.git_dir) / "COMMIT_EDITMSG"
     commit_msg_path.write_text(final_text + "\n")
 
-    # Store the file's modification time before editing
+    # Store the file's modification time and content before editing
     mtime_before = commit_msg_path.stat().st_mtime
+    content_before = final_text
 
     # Run the editor
     editor = await _get_editor()
@@ -622,14 +696,22 @@ async def async_main():
 
     # Check what happened
     try:
-        # Check if file was modified
-        if commit_msg_path.stat().st_mtime == mtime_before:
+        final_content = commit_msg_path.read_text()
+
+        # Check if file was modified - hybrid approach
+        mtime_after = commit_msg_path.stat().st_mtime
+        # Compare content (strip trailing newline that gets added)
+        content_after = final_content.rstrip("\n")
+
+        if mtime_after == mtime_before and content_after == content_before:
             # File wasn't saved - user did :q! or equivalent
             print("Aborting commit due to unchanged commit message.", file=sys.stderr)
             cleanup_staged_files(repo, staged_for_precommit)
             sys.exit(1)
-
-        final_content = commit_msg_path.read_text()
+        elif mtime_after == mtime_before and content_after != content_before:
+            # Content changed but mtime didn't - user did :wq on AI message
+            # This is the desired vim workflow - proceed with commit
+            pass
     except FileNotFoundError:
         print("Aborting commit.", file=sys.stderr)
         cleanup_staged_files(repo, staged_for_precommit)
