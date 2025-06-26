@@ -1,0 +1,7 @@
+[project]
+name = "ducktape-tools"
+version = "0.0.0"
+requires-python = ">=3.11"
+
+[project.scripts]
+fix-unicode = "ducktape_tools.unicode.fix:cli"

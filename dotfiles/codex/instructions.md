@@ -49,7 +49,7 @@ GOOD: Unknown unicode → Keep original + warn user
       Can't parse → Fail with specific error
 
 PRINCIPLE: Losing information is worse than failing loudly
-EXAMPLE: fix_unicode.py initially replaced unknown chars with '?'
+EXAMPLE: fix-unicode initially replaced unknown chars with '?'
 ```
 
 ## 📝 No Redundant Documentation {#no-redundant-docs}
