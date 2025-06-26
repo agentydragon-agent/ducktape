@@ -72,42 +72,69 @@ All tasks work in the same repository. Only use this for simple tasks where git 
 
 ### Before Spawning Each Wave:
 ```bash
-# For EACH task in the phase, create a worktree:
-git worktree add "./spawn-graph/${INSTANCE}/${PHASE}/${TASK}" \
-    -b "spawn-graph/${INSTANCE}/${PHASE}/${TASK}"
+# CRITICAL: Always operate from git repository root!
+cd "$(git rev-parse --show-toplevel)"
 
 # Example for 3 tasks in phase01:
-git worktree add "./spawn-graph/2025-01-02-1430/phase01/task01-auth" \
-    -b "spawn-graph/2025-01-02-1430/phase01/task01-auth"
-    
-git worktree add "./spawn-graph/2025-01-02-1430/phase01/task02-database" \
-    -b "spawn-graph/2025-01-02-1430/phase01/task02-database"
-    
-git worktree add "./spawn-graph/2025-01-02-1430/phase01/task03-api" \
-    -b "spawn-graph/2025-01-02-1430/phase01/task03-api"
+INSTANCE="2025-01-02-1430"
+PHASE="phase01"
+
+# Using brace expansion for multiple tasks
+for TASK in task01-auth task02-database task03-api; do
+    BRANCH_NAME="spawn-graph/${INSTANCE}/${PHASE}/${TASK}"
+    WORKTREE_PATH="./spawn-graph/${INSTANCE}/${PHASE}/${TASK}"
+    git worktree add "${WORKTREE_PATH}" -b "${BRANCH_NAME}"
+done
+
+# Or using brace expansion in one line:
+# for TASK in task{01-auth,02-database,03-api}; do ...; done
 ```
 
 ### After Each Wave Completes:
 ```bash
+# CRITICAL: Always operate from git repository root!
+cd "$(git rev-parse --show-toplevel)"
+
 # 1. Check results from each task
-for BRANCH in $(git branch -r | grep "spawn-graph/${INSTANCE}/${PHASE}"); do
-    git show "${BRANCH}:path/to/OUTPUT.md"
+for TASK_DIR in ./spawn-graph/${INSTANCE}/${PHASE}/task*/; do
+    if [ -d "$TASK_DIR" ]; then
+        TASK_NAME=$(basename "$TASK_DIR")
+        BRANCH="spawn-graph/${INSTANCE}/${PHASE}/${TASK_NAME}"
+        OUTPUT_PATH="spawn-graph/${INSTANCE}/${PHASE}/${TASK_NAME}/OUTPUT.md"
+        
+        # Check OUTPUT.md from the branch
+        if git show "${BRANCH}:${OUTPUT_PATH}" 2>/dev/null; then
+            echo "=== Results from ${TASK_NAME} ==="
+        fi
+    fi
 done
 
-# 2. Merge successful tasks
+# 2. Merge successful tasks back to main
 git checkout main
-for SUCCESSFUL_BRANCH in [list of successful branches]; do
-    git merge --no-ff "${SUCCESSFUL_BRANCH}" -m "Merge ${TASK} from spawn-graph"
+for TASK_DIR in ./spawn-graph/${INSTANCE}/${PHASE}/task*/; do
+    if [ -d "$TASK_DIR" ]; then
+        TASK_NAME=$(basename "$TASK_DIR")
+        BRANCH="spawn-graph/${INSTANCE}/${PHASE}/${TASK_NAME}"
+        
+        # Check if task succeeded (parse OUTPUT.md)
+        if git show "${BRANCH}:spawn-graph/${INSTANCE}/${PHASE}/${TASK_NAME}/OUTPUT.md" 2>/dev/null | grep -q "^STATUS: SUCCESS"; then
+            git merge --no-ff "${BRANCH}" -m "Merge ${TASK_NAME} from spawn-graph phase ${PHASE}"
+        fi
+    fi
 done
 
-# 3. Clean up ALL worktrees for the phase
-for WORKTREE in ./spawn-graph/${INSTANCE}/${PHASE}/task*/; do
-    git worktree remove "${WORKTREE}" --force
-done
-
-# 4. Delete merged branches
-for BRANCH in [list of merged branches]; do
-    git branch -d "${BRANCH}"
+# 3. Clean up successfully merged worktrees
+for TASK_DIR in ./spawn-graph/${INSTANCE}/${PHASE}/task*/; do
+    if [ -d "$TASK_DIR" ]; then
+        TASK_NAME=$(basename "$TASK_DIR")
+        BRANCH="spawn-graph/${INSTANCE}/${PHASE}/${TASK_NAME}"
+        
+        # Only remove if branch was merged
+        if git branch --merged | grep -q "${BRANCH}"; then
+            git worktree remove "${TASK_DIR}" --force
+            git branch -d "${BRANCH}" 2>/dev/null || true
+        fi
+    fi
 done
 ```
 
@@ -165,6 +192,9 @@ When using `--workflow=worktree` (or requesting worktree workflow conversational
 
 ### Scaffolding Structure
 
+**NOTE**: Worktrees must be created within the repository due to Claude's security model.
+See [CLAUDE_SECURITY_MODEL.md](~/code/ducktape/dotfiles/claude-commands/CLAUDE_SECURITY_MODEL.md) for details on why centralized storage outside the repo is not possible.
+
 ```
 ./spawn-graph/
 ├── README.md                                    # Explains this is for coordinating spawn-graph tasks
@@ -190,6 +220,32 @@ When using `--workflow=worktree` (or requesting worktree workflow conversational
 
 **KEY INSIGHT**: The task output dir is intentionally duplicated! When branches merge, each task's output lands in a unique location, preventing conflicts.
 
+### Critical Invariant: Repository View Consistency
+
+**INVARIANT**: Spawned agents must see the repository structure exactly as the spawning agent sees it.
+
+If spawning agent sees:
+```
+repo/
+├── src/
+├── tests/
+└── spawn-graph/
+```
+
+Then spawned agent in worktree MUST also see:
+```
+worktree-root/
+├── src/
+├── tests/
+└── spawn-graph/
+```
+
+This means:
+- Same relative paths work for both agents
+- Same file references remain valid
+- No path translation needed between agents
+- `./src/main.py` means the same thing to both
+
 ### Workflow Process
 
 1. **Initialization**
@@ -207,6 +263,9 @@ When using `--workflow=worktree` (or requesting worktree workflow conversational
    **CRITICAL: The spawning agent MUST run these exact git commands for each task:**
    
    ```bash
+   # CRITICAL: Always operate from git repository root!
+   cd "$(git rev-parse --show-toplevel)"
+   
    # For each task in the phase, run:
    INSTANCE="2025-01-02-1430-parallel-fizzbuzz"  # Example
    PHASE="phase01-foundation"
@@ -236,14 +295,23 @@ When using `--workflow=worktree` (or requesting worktree workflow conversational
    - Launch N parallel agents (one per task in phase)
    - Each agent receives:
      ```
+     CRITICAL: Your starting directory reflects spawning agent's position!
+     If spawning agent was in subdirectory src/utils/ when spawning,
+     you will also start in src/utils/ within your worktree.
+     
+     Your worktree root is: {repo-root}/spawn-graph/{instance}/phase{X}-{phasename}/task{Y}-{taskname}/
+     Your current directory: {repo-root}/spawn-graph/{instance}/phase{X}-{phasename}/task{Y}-{taskname}/{relative_path_from_repo_root}
+     
+     First, navigate to your worktree root:
+     cd "$(git rev-parse --show-toplevel)"
+     
      Read TASK.md and PLAN.md from ./spawn-graph/{instance}/
      Execute task phase{X}-{phasename}/task{Y}-{taskname}
      
      IMPORTANT: You are working in a git worktree!
-     Your working directory is: ./spawn-graph/{instance}/phase{X}-{phasename}/task{Y}-{taskname}/
      This is a separate working copy of the repository.
      
-     First, install pre-commit hooks in your worktree:
+     Install pre-commit hooks in your worktree:
      pre-commit install
      
      Create task output dir at: ./spawn-graph/{instance}/phase{X}-{phasename}/task{Y}-{taskname}/spawn-graph/{instance}/phase{X}-{phasename}/task{Y}-{taskname}/
@@ -315,8 +383,18 @@ When using `--workflow=worktree` (or requesting worktree workflow conversational
      
      **Take action**: Don't just think about these - actually make improvements!
    - Document observations, side outputs, blockers
+   - **CRITICAL: Ensure clean worktree before completion**:
+     ```bash
+     # Commit all your work
+     git add -A
+     git commit -m "final: Complete task ${TASK_NAME}"
+     
+     # Verify clean status
+     git status --porcelain
+     # Should show NO output - if it does, commit remaining changes!
+     ```
    - Final output goes to task output directory's `OUTPUT.md` with status:
-     - SUCCESS: Task completed AND pre-commit passes on YOUR changes
+     - SUCCESS: Task completed AND pre-commit passes on YOUR changes AND worktree is clean
      - FAILED: Task cannot be completed
      - BLOCKED: Waiting on dependency or external factor
      - PARTIAL: Some progress made but incomplete
@@ -326,9 +404,15 @@ When using `--workflow=worktree` (or requesting worktree workflow conversational
    **CRITICAL: The spawning agent MUST run these exact git commands after each phase:**
    
    ```bash
+   # CRITICAL: Always operate from git repository root to avoid path disasters!
+   cd "$(git rev-parse --show-toplevel)"
+   
    # After all agents in a phase complete, run:
    
-   # 1. Check out each task's OUTPUT.md to see results
+   # 1. IMPORTANT: Each agent MUST ensure their worktree is clean before phase completion
+   # Agents are responsible for committing all their work and having a clean git status
+   
+   # 2. Check out each task's OUTPUT.md to see results
    for TASK_DIR in ./spawn-graph/${INSTANCE}/${PHASE}/task*/; do
        TASK_NAME=$(basename "$TASK_DIR")
        BRANCH="spawn-graph/${INSTANCE}/${PHASE}/${TASK_NAME}"
@@ -341,10 +425,10 @@ When using `--workflow=worktree` (or requesting worktree workflow conversational
        fi
    done
    
-   # 2. Merge successful tasks back to main
+   # 3. Merge successful tasks back to main
    git checkout main
    
-   for TASK_DIR in ./spawn-graph/${INSTANCE}/${PHASE}/task*/; do
+   for TASK_DIR in "$SPAWN_GRAPH_BASE/${INSTANCE}/${PHASE}"/task*/; do
        TASK_NAME=$(basename "$TASK_DIR")
        BRANCH="spawn-graph/${INSTANCE}/${PHASE}/${TASK_NAME}"
        
@@ -355,17 +439,22 @@ When using `--workflow=worktree` (or requesting worktree workflow conversational
        fi
    done
    
-   # 3. Clean up worktrees
-   for TASK_DIR in ./spawn-graph/${INSTANCE}/${PHASE}/task*/; do
-       echo "Removing worktree ${TASK_DIR}..."
-       git worktree remove "${TASK_DIR}" --force
-   done
-   
-   # 4. Delete merged branches
-   for TASK_DIR in ./spawn-graph/${INSTANCE}/${PHASE}/task*/; do
+   # 4. Clean up successfully merged worktrees
+   # IMPORTANT: Only delete worktrees that were successfully merged
+   for TASK_DIR in "$SPAWN_GRAPH_BASE/${INSTANCE}/${PHASE}"/task*/; do
        TASK_NAME=$(basename "$TASK_DIR")
        BRANCH="spawn-graph/${INSTANCE}/${PHASE}/${TASK_NAME}"
-       git branch -d "${BRANCH}" 2>/dev/null || true
+       
+       # Only remove if branch was merged
+       if git branch --merged | grep -q "${BRANCH}"; then
+           echo "Removing worktree ${TASK_DIR}..."
+           git worktree remove "${TASK_DIR}" --force
+           
+           # Delete the merged branch
+           git branch -d "${BRANCH}" 2>/dev/null || true
+       else
+           echo "Keeping unmerged worktree: ${TASK_DIR}"
+       fi
    done
    ```
    
@@ -425,9 +514,13 @@ T3: [Final Report]
 
 **Agent Work Example (Phase 2, Task 1)**:
 ```bash
-# Assume we start in /home/user/myproject
-# IMPORTANT: This is a git worktree, not the main repository!
-cd ./spawn-graph/2025-01-02-1430-parallel-fizzbuzz/phase02-compute/task01-fizzbuzz-1-33/
+# CRITICAL: Agent starts where spawning agent was!
+# If spawning agent was in /home/user/myproject/src/utils/, 
+# then agent starts in /home/user/myproject/spawn-graph/2025-01-02-1430-parallel-fizzbuzz/phase02-compute/task01-fizzbuzz-1-33/src/utils/
+
+# First, navigate to worktree root
+cd "$(git rev-parse --show-toplevel)"
+# Now we're at: /home/user/myproject/spawn-graph/2025-01-02-1430-parallel-fizzbuzz/phase02-compute/task01-fizzbuzz-1-33/
 
 # We are now in {task-dir} for Phase 2, Task 1
 # pwd is /home/user/myproject/spawn-graph/2025-01-02-1430-parallel-fizzbuzz/phase02-compute/task01-fizzbuzz-1-33/
@@ -606,6 +699,9 @@ git commit -m "docs: add final output and results"
 #!/bin/bash
 # SPAWNING AGENT MUST RUN THESE COMMANDS
 
+# CRITICAL: Always operate from git repository root!
+cd "$(git rev-parse --show-toplevel)"
+
 # Set variables
 INSTANCE="2025-01-02-1430-parallel-fizzbuzz"
 PHASE="phase02-compute"
@@ -634,7 +730,7 @@ done
 echo -e "\n=== Merging successful tasks ==="
 git checkout main
 
-for TASK_DIR in ./spawn-graph/${INSTANCE}/${PHASE}/task*/; do
+for TASK_DIR in "$SPAWN_GRAPH_BASE/${INSTANCE}/${PHASE}"/task*/; do
     if [ -d "$TASK_DIR" ]; then
         TASK_NAME=$(basename "$TASK_DIR")
         BRANCH="spawn-graph/${INSTANCE}/${PHASE}/${TASK_NAME}"
@@ -652,7 +748,7 @@ done
 
 # 3. Clean up worktrees
 echo -e "\n=== Cleaning up worktrees ==="
-for TASK_DIR in ./spawn-graph/${INSTANCE}/${PHASE}/task*/; do
+for TASK_DIR in "$SPAWN_GRAPH_BASE/${INSTANCE}/${PHASE}"/task*/; do
     if [ -d "$TASK_DIR" ]; then
         echo "Removing worktree: ${TASK_DIR}"
         git worktree remove "${TASK_DIR}" --force
@@ -661,7 +757,7 @@ done
 
 # 4. Delete merged branches
 echo -e "\n=== Deleting merged branches ==="
-for TASK_DIR in ./spawn-graph/${INSTANCE}/${PHASE}/task*/; do
+for TASK_DIR in "$SPAWN_GRAPH_BASE/${INSTANCE}/${PHASE}"/task*/; do
     TASK_NAME=$(basename "$TASK_DIR")
     BRANCH="spawn-graph/${INSTANCE}/${PHASE}/${TASK_NAME}"
     
@@ -735,6 +831,8 @@ git worktree list
 3. **Easy Navigation**: Can review any task's work in isolation
 4. **Debugging**: Full paper trail of what each agent did
 5. **Reusability**: Can cherry-pick specific task implementations
+
+**Note on Storage Location**: While centralized worktree storage would be cleaner, Claude's security model requires worktrees to be within the repository. See [CLAUDE_SECURITY_MODEL.md](~/code/ducktape/dotfiles/claude-commands/CLAUDE_SECURITY_MODEL.md) for technical details.
 
 ### When to Use Worktree vs Naive
 
@@ -821,11 +919,15 @@ Each spawned agent receives:
 You are agent {agent_id} working on task {task_id}.
 
 ## CRITICAL: You are working in a Git Worktree
-- Your working directory is: ./spawn-graph/{instance}/{phase}/{task}/
+- Your worktree root: {absolute_worktree_path}
+- Your starting directory: {current_working_directory}
+- IMPORTANT: You may not be at worktree root! The spawning agent's cwd is preserved.
+- First action: `cd "$(git rev-parse --show-toplevel)"` to go to worktree root
 - This is a SEPARATE working copy from the main repository
 - You have your own branch: spawn-graph/{instance}/{phase}/{task}
 - Other agents are working in parallel in their own worktrees
 - Your changes will be merged back to main after completion
+- NOTE: Worktrees are in ./spawn-graph/ due to security restrictions (see CLAUDE_SECURITY_MODEL.md)
 
 ## Your Task
 {task_description}
@@ -851,8 +953,12 @@ Before marking your task complete:
 5. Remove debug code and TODOs
 6. Think: What else needs cleanup for THIS specific task?
 7. Actually make the improvements!
+8. **CRITICAL: Ensure clean worktree**:
+   - Commit ALL your work
+   - Run `git status --porcelain` - must show NO output
+   - If any files remain, commit them before marking complete
 
-Only mark SUCCESS when your code is high quality.
+Only mark SUCCESS when your code is high quality AND worktree is clean.
 
 ## Constraints
 - Time limit: {estimated_duration}
@@ -867,6 +973,7 @@ Only mark SUCCESS when your code is high quality.
 3. **Interfaces**: Define clear interfaces between tasks
 4. **Checkpoints**: Built-in validation at wave boundaries
 5. **Fallbacks**: Have strategies for agent failures
+6. **Storage Location**: Worktrees must be in `./spawn-graph/` within the repo (not centralized) due to Claude's security model - see [CLAUDE_SECURITY_MODEL.md](~/code/ducktape/dotfiles/claude-commands/CLAUDE_SECURITY_MODEL.md)
 
 ## When to Use
 
@@ -924,7 +1031,7 @@ The magic happens through Claude's ability to invoke multiple Task tools in para
 ### Example Execution Pattern
 
 ```
-User: /spawn-graph
+U: /spawn-graph
 
 Claude: I'll execute the first wave of 15 independent tasks:
 [Invokes 15 Task tools in one message]

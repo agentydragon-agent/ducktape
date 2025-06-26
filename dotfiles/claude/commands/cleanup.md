@@ -1,140 +1,224 @@
-# Cleanup
+---
+description: Clean up temporary files, side outputs, and oneoff scripts
+name: cleanup
+---
 
-## Description
-Sweep through the current working directory to identify and clean up unused files, old experiments, junk, and outdated content.
+Intelligent cleanup of temporary work artifacts, focusing on oneoff scripts and exploration side-effects.
 
-## Instructions
+## Usage
 
-1. **Analyze the current directory structure**
-   - Use `find`, `git status`, and `ls` to understand the codebase
-   - Check `.gitignore` to understand what's intentionally untracked
-   - Look for common patterns of clutter
-
-2. **Identify cleanup candidates in this order:**
-
-   **Untracked junk files (skip if under dotfiles AND in .gitignore):**
-   - Log files (`*.log`, `*.out`, `debug-*`, etc.)
-   - Temporary files (`*.tmp`, `*.temp`, `*.swp`, `.DS_Store`)
-   - Build artifacts not in `.gitignore`
-   - Old test outputs or recordings
-   - Cache directories that can be regenerated
-   - NOTE: Skip hidden files/directories (starting with .) that are already in .gitignore
-
-   **Redundant downloads/archives:**
-   - Downloaded libraries/tools with extracted versions present
-   - `.tar.gz`, `.zip` files where contents are already extracted
-   - Multiple versions of the same download
-   - Well-known libraries that can be easily re-downloaded
-
-   **Old experiments and dead code:**
-   - Directories like `old/`, `backup/`, `deprecated/`, `archive/`
-   - Files with names like `test-*.js`, `experiment-*`, `poc-*`
-   - Commented-out large code blocks
-   - Files not imported/required anywhere
-
-   **Unused code analysis:**
-   - Functions/classes never called or instantiated
-   - Exported members not imported anywhere
-   - Dead code after early returns
-   - Unreachable case/switch branches
-   - Variables assigned but never used
-   - Imports that are not used in the file
-
-   **Outdated documentation:**
-   - READMEs referencing non-existent files/directories
-   - Documentation for removed features
-   - Broken links in markdown files
-   - Migration guides for completed migrations
-
-   **TODO Lists:**
-   - Check all TODO.md, TODO.txt files
-   - Scan for inline TODOs in code comments
-   - Mark completed items as done
-   - Remove irrelevant/obsolete TODOs
-   - Consolidate scattered TODO lists
-
-   **Broken references:**
-   - Import statements for deleted modules
-   - Scripts referencing non-existent files
-   - Configuration pointing to missing resources
-
-3. **For TODO lists specifically:**
-   - Read each TODO file and check items against current state
-   - Mark completed items with [x]
-   - Strike through or remove obsolete items
-   - Look for duplicate TODOs across files
-   - Check if mentioned files/features still exist
-   - Update priorities based on current project state
-
-4. **Present findings organized by category**
-   - Group similar items together
-   - Show file sizes for large items
-   - Indicate if items are git-tracked or not
-   - Suggest specific actions for each category
-
-5. **Get user confirmation before deleting**
-   - Never auto-delete without permission
-   - Offer options: delete all, selective delete, or skip
-   - For git-tracked files, suggest `git rm` instead of `rm`
-
-6. **Additional cleanup suggestions:**
-   - Consolidate similar configuration files
-   - Suggest moving experiments to an `experiments/` directory
-   - Recommend adding patterns to `.gitignore`
-   - Identify duplicate code/files
-   - Run linters to find unused variables/imports
-   - Use tools like `depcheck` for unused npm dependencies
-   - Check for circular dependencies
-
-## Example Output Format
-
+Clean up the current directory:
 ```
-Cleanup Analysis for /path/to/project
-
-Untracked Junk (Safe to delete):
-- logs/*.log (15 files, 45MB total)
-- workspace-snapshot-*.json (5 files, 125MB)
-- old-recording-*.jsonl (3 files, 89MB)
-[Skipping .cache/, .npm/, etc - already in .gitignore]
-
-Redundant Archives:
-- tana-client.tar.gz (8MB) - already extracted to ./tana-client/
-- old-snapshot-2024.json.zip (15MB) - unzipped version exists
-
-Old Experiments:
-- experiments/old-auth-flow/ (last modified 3 months ago)
-- test-firebase-direct.js (not imported anywhere)
-- poc-websocket-handler.ts (superseded by src/client/websocket.ts)
-
-Outdated Documentation:
-- docs/old-api.md (references removed endpoints)
-- README-deprecated.md (for old version)
-
-TODO Lists:
-- docs/TODO.md: 15 items completed, 8 obsolete, 45 remaining
-- Inline TODOs: Found 23, verified 12 are done
-- client/TODO.md: Contains duplicate items from main TODO
-
-Broken References:
-- src/index.ts imports './deleted-module'
-- scripts/build.sh references tools/old-compiler.js
-
-Suggested actions:
-1. Delete all untracked junk files
-2. Remove redundant archives
-3. Move old experiments to archive/
-4. Update or remove outdated docs
-5. Fix broken imports
-
-Proceed with cleanup? [y/n/selective]
+/cleanup
 ```
 
-## Key Principles
+Or use naturally in conversation:
+```
+U: cleanup the temp files
+A: I'll scan for temporary files and oneoff scripts to clean up.
 
-- Always preserve git history (use `git rm` for tracked files)
-- Be conservative - when in doubt, ask
-- Explain why something is considered clutter
-- Provide size information for large items
-- Suggest `.gitignore` updates to prevent future clutter
-- Never delete without explicit confirmation
-- Skip hidden files/dirs that are already properly gitignored
+U: clean up my experiments 
+A: Looking for experimental code and temporary outputs to remove.
+
+U: cleanup
+A: Starting cleanup scan for temporary artifacts.
+```
+
+## What Gets Cleaned
+
+### 1. Oneoff Scripts (Priority)
+Pattern: `oneoff__*.{py,js,ts,sh}` @{#oneoff-scripts}
+
+```
+U: cleanup oneoffs
+A: Found 5 oneoff scripts:
+   - oneoff__test_webhook_integration.py (2 days old)
+   - oneoff__bulk_rename_vars.py (1 week old)
+   - oneoff__debug_auth_flow.js (3 hours old)
+   Would you like to delete all? [y/n/selective]
+```
+
+### 2. Temporary Outputs
+- Test outputs: `test-output-*`, `*-test-results.*`
+- Debug logs: `debug-*.log`, `*.debug`, `trace-*`
+- Temporary data: `*.tmp`, `*.temp`, `temp-*`, `tmp-*`
+- Process artifacts: `*.pid`, `*.lock` (except INSTANCE_LOCK.md)
+- Cache files: `*.cache`, `.cache/` (if not gitignored)
+
+### 3. Exploration Artifacts
+- Quick analysis: `analysis-*.txt`, `output-*.json`
+- Extracted data: `extracted-*.{json,txt,csv}`
+- Download remnants: `download-*`, `snapshot-*.json.backup`
+- Screenshot captures: `/tmp/tana-captures/` (older than 1 day)
+
+### 4. Failed Attempts
+- Backup files: `*.backup`, `*.old`, `*~`
+- Version sprawl: `*-v2`, `*-final`, `*-FINAL-FINAL`
+- Partial outputs: `*.partial`, `*.incomplete`
+
+### 5. Build Artifacts in Wrong Places
+- Node modules outside project: `./node_modules/` in scripts/
+- Python caches: `__pycache__/`, `*.pyc` outside venv
+- TypeScript outputs: `*.js` files with corresponding `*.ts`
+
+## Safety Features
+
+### Always Protected
+- Git worktrees (use `git worktree remove`)
+- Active lock files (INSTANCE_LOCK.md with recent timestamp)
+- Config files (even if named `.tmp`)
+- Anything in `.git/`
+- Files modified in last hour (unless explicitly requested)
+
+### Smart Detection
+```
+U: cleanup
+A: Cleanup scan found:
+
+📝 Oneoff Scripts (5 files, 12KB):
+  ✓ oneoff__test_api_v2.py - "Can delete after: API tests added" (3 days old)
+  ✓ oneoff__bulk_rename.sh - "Can delete after: Rename complete" (1 week old)
+  ⚠️ oneoff__debug_current.py - Modified 10 minutes ago, skip? [y/n]
+
+🗑️ Temporary Files (23 files, 145MB):
+  - debug-2024-01-*.log (15 files, 89MB)
+  - test-output-*.json (8 files, 56MB)
+
+💾 Old Snapshots (3 files, 267MB):
+  - workspace-snapshot-2024-01-15.json.backup
+  - workspace-snapshot-2024-01-14.json.old
+  - snapshot-before-refactor.json
+
+📦 Found archive at: ./experiments/archive/
+What would you like to do? (archive all/delete all/archive oneoffs only/pick each/cancel)
+```
+
+### Confirmation Options
+- `all` or `yes` - Delete everything found
+- `oneoffs` - Only delete oneoff scripts  
+- `temp files` or `temp` - Only delete temporary files
+- `snapshots` - Only delete old snapshots
+- `pick each` or `selective` - Choose file by file
+- `nothing` or `no` - Cancel cleanup
+
+## Natural Language Triggers
+
+Nonexhaustive examples of recognized phrases:
+- "cleanup", "clean up", "clean"
+- "remove temp files", "delete temporary"
+- "cleanup oneoffs", "remove oneoff scripts"
+- "tidy up", "clean workspace"
+
+## Examples
+
+```
+U: I've been experimenting a lot, cleanup
+A: I'll scan for experimental artifacts and oneoff scripts.
+   
+   Found:
+   - 8 oneoff scripts (oneoff__*.py)
+   - 45 temporary outputs
+   - 3 old workspace snapshots
+   
+   Total: 523MB can be cleaned up. Proceed? [y/n]
+
+U: just cleanup the oneoffs from last week
+A: Found 3 oneoff scripts older than 7 days:
+   - oneoff__migrate_data.py (10 days)
+   - oneoff__test_old_api.py (8 days)  
+   - oneoff__benchmark_v1.py (14 days)
+   
+   Delete these 3 files? [y/n]
+
+U: cleanup but keep anything related to auth
+A: Cleanup scan (excluding *auth* files):
+   
+   Safe to delete:
+   - oneoff__test_performance.py
+   - debug-render-2024.log
+   - tmp-calculations.json
+   
+   Keeping:
+   - oneoff__debug_auth_flow.py (matches 'auth')
+   - auth-test-results.json (matches 'auth')
+   
+   Proceed? [y/n]
+```
+
+## Archive Detection
+
+The cleanup command automatically detects nearby archive directories:
+- `./archive/`
+- `./archives/`
+- `./old/`
+- `./experiments/archive/`
+- `../.archive/` (parent directory)
+
+When found, offers to move files instead of deleting:
+
+```
+U: cleanup
+A: Found archive directory at ./archive/experiments/
+   
+   📝 Oneoff Scripts (3 files):
+   - oneoff__test_integration.py
+   - oneoff__bulk_process.py
+   
+   Would you like to:
+   - archive - Move to ./archive/experiments/2024-01-20/
+   - delete - Permanently delete
+   - selective - Choose per file
+   - cancel
+
+U: archive
+A: Moving to archive:
+   ✓ oneoff__test_integration.py → ./archive/experiments/2024-01-20/
+   ✓ oneoff__bulk_process.py → ./archive/experiments/2024-01-20/
+   
+   Archived 2 files. Archive location saved to cleanup-archive.log
+```
+
+## Best Practices
+
+1. **Archive vs delete** - Use archives for experiments that might be referenced later
+2. **Date-based subdirs** - Archives are organized by date automatically
+3. **Archive log** - Creates `cleanup-archive.log` tracking what was archived when
+
+## Integration with Other Patterns
+
+- Works with @{#oneoff-scripts} marking pattern
+- Respects @{#messy-workspace} detection
+- Follows @{#no-data-loss} principle - asks before deleting
+- Compatible with version control - suggests `git rm` for tracked files
+- Auto-triggered by WORK_COMPLETE trigger when temp files were used
+
+## Automatic Trigger
+
+When completing work that used temporary files or oneoff scripts:
+
+```
+U: test the webhook integration
+A: I'll create a oneoff script to test the webhook...
+   [creates oneoff__test_webhook.py]
+   [runs tests]
+   ✅ Webhook integration working correctly!
+   
+   🧹 I created temporary files during this work. Would you like to clean up?
+   - oneoff__test_webhook.py
+   - webhook-test-output.json
+   
+   [cleanup/keep/selective]
+
+U: cleanup
+A: Removing temporary work files:
+   ✓ Deleted oneoff__test_webhook.py
+   ✓ Deleted webhook-test-output.json
+```
+
+## Notes
+
+- Never auto-deletes without confirmation
+- Shows file ages and sizes for context
+- Groups similar items for easier decisions
+- Suggests adding patterns to `.gitignore`
+- Can be undone with git if needed (for tracked files)

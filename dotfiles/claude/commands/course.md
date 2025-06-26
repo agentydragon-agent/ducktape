@@ -55,25 +55,25 @@ When invoked, systematically address incorrect or unverified assumptions to prev
 ## Example Usage
 
 ### Example 1: Unverified assumption
-User: /course you're assuming this API returns JSON but you never checked
-Assistant: You're right - I assumed the API returns JSON without verifying. Is this:
+U: /course you're assuming this API returns JSON but you never checked
+A: You're right - I assumed the API returns JSON without verifying. Is this:
 - Unverified (might return JSON but we should check Content-Type header)
 - False (definitely returns something else like XML/plaintext)?
 
-User: unverified - could be JSON or error page HTML
+U: unverified - could be JSON or error page HTML
 
 ### Example 2: False assumption
-User: /course wrong - you assumed all node IDs start with '-' but system nodes don't
-Assistant: I see - I falsely assumed all node IDs have a '-' prefix. Let me correct this systematically.
+U: /course wrong - you assumed all node IDs start with '-' but system nodes don't
+A: I see - I falsely assumed all node IDs have a '-' prefix. Let me correct this systematically.
 
 [Creates todos to update docs about node ID formats, fix the source of this misinformation, and search for other places making this assumption]
 
 ### Example 3: Vague correction needed
-User: /course this auth flow doesn't work like you think
-Assistant: What specifically am I assuming wrong about the auth flow?
+U: /course this auth flow doesn't work like you think
+A: What specifically am I assuming wrong about the auth flow?
 - Token refresh mechanism?
 - Required headers?
 - Authentication endpoint?
 - Token expiration behavior?
 
-User: you're assuming refresh tokens expire in 1 hour but they actually last 30 days
+U: you're assuming refresh tokens expire in 1 hour but they actually last 30 days
