@@ -4,8 +4,7 @@ Filtering and search operations for Tana nodes.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-from typing import Callable
+from collections.abc import Callable, Iterator
 
 from .models import BaseNode, NodeStore
 from .query import get_field_values, is_in_deleted_nodes

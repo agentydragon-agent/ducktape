@@ -1,10 +1,7 @@
-# ruff: noqa
-# mypy: ignore-errors
 """Tests for the Indoor AQI sensor component."""
 
 import logging
-from datetime import datetime, timedelta, timezone
-
+from datetime import UTC, datetime, timedelta
 from logging.handlers import MemoryHandler
 
 import pytest

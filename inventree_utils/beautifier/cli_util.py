@@ -11,7 +11,9 @@ def build_table(rows, header=None):
     column_widths = [max(len(row[i]) for row in rows) for i in range(column_count)]
 
     lines = [
-        " ".join(cell.ljust(width) for cell, width in zip(row, column_widths))
+        " ".join(
+            cell.ljust(width) for cell, width in zip(row, column_widths, strict=False)
+        )
         for row in rows
     ]
     if header:

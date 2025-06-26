@@ -1,6 +1,6 @@
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from homeassistant.components.sensor import SensorEntity, SensorStateClass
@@ -304,7 +304,7 @@ class IndoorAQISensor(SensorEntity):
         # Set of sensors with errors in previous update
         self._previous_error_sensors: set[str] = set()
         # Last time we logged partial data
-        self._last_log_time = datetime.now(timezone.utc)
+        self._last_log_time = datetime.now(UTC)
 
         # Make it numeric so that HA will plot it
         self._attr_native_unit_of_measurement = "IAQI"
@@ -328,7 +328,7 @@ class IndoorAQISensor(SensorEntity):
         return self._attrs
 
     def update(self):
-        now_utc = datetime.now(timezone.utc)
+        now_utc = datetime.now(UTC)
         # Track sensors and their error types: {pollutant: error_type}
         sensor_errors = {}
         iaqi_components = {}

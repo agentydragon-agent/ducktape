@@ -7,7 +7,7 @@ from __future__ import annotations
 import html
 import json
 import re
-from typing import Callable
+from collections.abc import Callable
 
 # Regex patterns for inline references
 NODE_SPAN_PATTERN = re.compile(r'<span data-inlineref-node="([^"]+)"></span>')

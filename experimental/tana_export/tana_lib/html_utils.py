@@ -12,9 +12,9 @@ from __future__ import annotations
 import html
 import json
 import re
+from collections.abc import Callable
 from html.parser import HTMLParser
 from io import StringIO
-from typing import Callable
 
 from .types import NodeId
 

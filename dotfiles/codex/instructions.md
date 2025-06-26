@@ -32,8 +32,8 @@ STANDARD: Use U: / A: for User/Assistant in all examples
 
 U: todo fix the unicode handling
 A: Added "fix the unicode handling" to todo list.
-U: c
-A: Continuing with current task...
+A: (TodoWrite tool call)
+A: Continuing with fixing the unicode handling...
 ```
 
 ## ⚠️ Data Loss Prevention {#no-data-loss}

@@ -9,7 +9,6 @@ import dataclasses
 import re
 import subprocess
 import sys
-from typing import Optional
 
 import click
 import requests
@@ -37,11 +36,11 @@ def find_attribute_value_in_result(result, attribute_name):
 
 @dataclasses.dataclass
 class PaperInTrilium:
-    arxiv_id: Optional[str]
+    arxiv_id: str | None
     note_id: str
     title: str
-    pdf_note_id: Optional[str]
-    priority: Optional[int]
+    pdf_note_id: str | None
+    priority: int | None
     finished_reading: bool
 
 

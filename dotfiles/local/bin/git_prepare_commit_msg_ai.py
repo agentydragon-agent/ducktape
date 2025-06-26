@@ -188,7 +188,7 @@ async def ask_claude(prompt: str, model: str) -> str:
     try:
         # Add 30 second timeout for Claude API calls
         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30.0)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         proc.terminate()
         await proc.wait()
         raise subprocess.CalledProcessError(

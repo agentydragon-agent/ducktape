@@ -1,5 +1,4 @@
 import re
-from typing import Optional
 
 import feedparser
 import requests
@@ -27,7 +26,7 @@ def get_arxiv_pdf_bytes(arxiv_id):
     return pdf_bytes
 
 
-def search_for_arxiv_id(title) -> Optional[str]:
+def search_for_arxiv_id(title) -> str | None:
     # TODO: do not repeat search if we tried to look it up before and it failed
     response = requests.get(
         "https://export.arxiv.org/api/query",
