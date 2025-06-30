@@ -1,5 +1,5 @@
 ---
-description: Intelligently organize and commit overlapping changes in a messy git repository
+description: Intelligently commit changes in a git repo
 name: commit
 ---
 
@@ -25,181 +25,211 @@ A: Starting repository analysis for intelligent commit suggestions.
 
 ## Overview
 
-This command helps when you have:
-- Many untracked/dirty files
-- Overlapping changes across files
-- Mixed refactors, features, and experiments
-- Abandoned work mixed with valuable changes
+This command helps organize messy uncommitted changes into clean, logical commits. It handles everything from a few mixed changes to complete chaos with dozens of modified files.
 
-## Process Flow
+### ⚠️ Critical Behavior
 
-### 1. Pre-commit Cleanup
+**ALWAYS PAUSE AND ASK**: After analyzing changes, you MUST pause and ask the user how they want to proceed. Never automatically stage or commit without explicit user direction. Present options clearly and wait for user input.
 
-Run automated cleanup to avoid wasted effort:
+## Process
+
+The command works in a few stages:
+1. Run any pre-commit hooks to auto-fix formatting
+2. Analyze all changes to find logical groupings
+3. **PAUSE and present analysis to user for direction**
+4. Stage changes based on user's choice
+5. Handle files with mixed changes intelligently
+
+**IMPORTANT**: Always pause after analysis and ask the user how they want to proceed. Never automatically stage or commit without explicit user direction.
+
+## Example Session
+
+### Initial Analysis (Always Pause Here)
+
 ```
 U: /commit
-A: Running pre-commit checks and auto-cleanup first...
+A: Running pre-commit hooks... fixed some formatting issues.
+
+   I've analyzed your changes. You have 23 files modified with quite a mix of changes.
+
+   I found 5 logical groups:
+   1. [config] Environment setup for the auth service (3 files)
+   2. [feat] Authentication implementation (8 files)
+   3. [refactor] Logging cleanup throughout the codebase (15 files)
+   4. [docs] API documentation updates (2 files)
+   5. [test] New integration tests (4 files)
+
+   Also noticed some files that probably shouldn't be committed:
+   - debug.log, server.log (should these go in .gitignore?)
+   - backup-2023-12-01.sql (old backup file)
+   - experiment-auth-v2.py (looks like abandoned code)
    
-   🧹 Auto-formatting with pre-commit hooks:
-   ✓ Fixed whitespace in 12 files
-   ✓ Reformatted Python with black (8 files)
-   ✓ Sorted imports with isort (5 files)
-   ✓ Fixed line endings (3 files)
+   What would you like to do? I can create separate commits for each group, combine some of them, or show you the actual changes first.
+
+U: let's do the auth implementation
+
+A: Perfect! I'll prepare the authentication commit.
+
+   This will include:
+   - New auth service and models
+   - Auth endpoints in the API (I'll only stage the auth-related changes)
+   - Authentication middleware
+   - Tests for the auth system
+   - Config and dependencies
+
+   Here's what I'm thinking for the commit message:
+   ```
+   feat: Implement authentication service
    
-   ⚠️ Pre-commit made changes. Continuing with analysis...
+   - Add JWT-based authentication with refresh tokens
+   - Create login/logout endpoints
+   - Add middleware for protected routes
+   - Include auth tests
+   ```
+
+   Should I go ahead and stage these changes? Or would you like to see the diff first?
+
+U: go ahead
+
+A: ✅ Done! Created the commit:
+
+   ```
+   [main 3f7a9b2] feat: Implement authentication service
+    8 files changed, 523 insertions(+), 12 deletions(-)
+   ```
+
+   You still have 4 groups of changes left. The logging refactor touches quite a few files (15). 
+   Would you like to tackle that next, or start with something smaller like the config changes?
 ```
 
-If pre-commit fails:
+### Different User Choices
+
+#### Example: User wants to review first
 ```
-A: ❌ Pre-commit checks failed:
-   - Large file detected: debug.log (>10MB)
-   - Merge conflict markers in api/routes.py
+U: can I see the changes first?
+
+A: Of course! Let me show you what's in each group:
+
+   **Config changes** (Group 1):
+   - Adding auth settings to app.yaml
+   - New JWT_SECRET in .env.example
+   - Auth feature flags in config/features.json
+
+   **Authentication implementation** (Group 2):
+   - Complete auth service with JWT handling
+   - Login/logout endpoints
+   - Auth middleware for route protection
+   - User session management
+   - Tests covering all auth flows
+
+   **Logging refactor** (Group 3):
+   - Replacing 47 print() statements with proper logger calls
+   - Adding structured logging with context
+   - New logging config
+
+   Want me to show the actual diffs for any of these?
+
+U: actually, let's combine the config and auth into one commit since they're related
+
+A: That makes sense! The auth config and implementation do belong together.
+
+   I'll stage all 11 files:
+   - 3 config files with auth settings
+   - 8 auth implementation files
+
+   How about this commit message:
+   ```
+   feat: Add authentication service with configuration
    
-   Fix these issues first? [fix/continue anyway/abort]
+   - Implement JWT-based authentication
+   - Add auth configuration to app.yaml
+   - Create login/logout endpoints
+   - Add middleware and tests
+   ```
+
+   Look good?
 ```
 
-### 2. Index State Preservation
+#### Example: User wants all changes in one commit
+```
+U: just put everything in one commit
 
-If the git index already has staged changes:
+A: Hmm, that would combine 5 different types of changes - features, refactoring, docs, and tests. 
+   
+   The commit would be:
+   - Authentication implementation (8 files)
+   - Logging refactor (15 files)  
+   - Config changes (3 files)
+   - Documentation updates (2 files)
+   - New tests (4 files)
+
+   That's quite a mix! Are you sure you want everything in one commit? It might make the history harder to follow.
+
+U: you're right, let's split them up
+
+A: Good call! Clean commits are easier to review and revert if needed.
+   
+   Which would you like to start with?
+   - The authentication feature (it's self-contained)
+   - The logging refactor (biggest change, touches many files)
+   - The config setup (smallest, good warm-up)
+   
+   Or I can show you more details about any of these.
+```
+
+### 5. Automatic Change Analysis & Smart Staging
+
+The model automatically detects overlapping changes and handles partial staging transparently:
+
 ```
 U: /commit
-A: I see you have 3 files already staged. I'll save this index state so we can restore it if needed.
+A: Analyzing your changes... I found 3 logical change groups:
+
+   📊 **Logging Upgrade** (12 files)
+   - Replacing print() with structured logging
+   - Touches: api/endpoints.py, auth/service.py, db/connection.py + 9 others
    
-   Saving index state to: .git/COMMIT_TOOL_SAVED_INDEX_1706234567
-   ✓ Index state saved. You can restore with: git read-tree COMMIT_TOOL_SAVED_INDEX_1706234567
+   ⏱️ **Timeout Handling** (8 files)  
+   - Adding timeout parameters to external calls
+   - Touches: api/endpoints.py, auth/service.py, db/connection.py + 5 others
    
-   Resetting index to analyze all changes...
-```
-
-### 2. Change Analysis
-
-```
-A: Analyzing repository changes...
-
-📊 Repository State:
-- 47 modified files
-- 23 untracked files  
-- 12 deleted files
-- ~2,400 lines changed
-
-🔍 Detected logical change groups:
-1. Auth service implementation (12 files, ~450 lines)
-2. Logging refactor (8 files, ~200 lines)
-3. API documentation updates (5 files, ~150 lines)
-4. Test suite additions (15 files, ~800 lines)
-5. Config file updates (3 files, ~50 lines)
-
-🗑️ Likely unwanted:
-- 5 log files (*.log)
-- 3 abandoned experiment files (experiment-*.py)
-- Backup files (*~, *.backup)
-
-📝 Notes:
-- File auth.py has changes for both auth service AND logging refactor
-- The logging refactor touches many files but changes are consistent
-- Found 3 possible abandoned features that could be cleaned up
-```
-
-### 3. Commit Proposals (Progressive)
-
-When there are many changes:
-```
-A: Found 5 logical commits so far (15 more files remain unanalyzed):
-
-1️⃣ [config] Update environment configs
-   - .env.example: Add new auth variables
-   - config/settings.py: Add auth configuration
-   - docker-compose.yml: Add auth service
+   🆕 **User Profile Endpoint** (5 files)
+   - New /users/profile endpoint with auth
+   - Touches: api/endpoints.py, auth/service.py + 3 others
    
-2️⃣ [feat] Implement authentication service
-   - auth/service.py: New auth service class
-   - auth/models.py: User and token models  
-   - api/endpoints.py: Add auth endpoints (hunks 1-3)
-   - tests/test_auth.py: Auth service tests
+   How would you like to organize these commits?
+
+U: let's merge timeout & logging into one commit, then the endpoint separately
+
+A: Perfect! Creating two commits:
+   1. Infrastructure improvements (timeout + logging)
+   2. User profile endpoint
+
+   Working on commit 1...
    
-3️⃣ [refactor] Standardize logging across services
-   - utils/logger.py: New centralized logger
-   - api/endpoints.py: Update to new logger (hunk 4)
-   - services/*.py: Replace print with logger (8 files)
+   ✓ Staged changes:
+     - api/endpoints.py (just logging/timeout changes)
+     - auth/service.py (just logging/timeout changes) 
+     - db/connection.py (all changes)
+     - utils/helpers.py (all changes)
+     - 12 other files
    
-4️⃣ [docs] Update API documentation
-   - README.md: Document auth endpoints
-   - docs/api.md: Full endpoint documentation
-   - auth/service.py: Add docstring examples (hunk 5)
+   Ready to commit. Review changes?
 
-5️⃣ [test] Add integration test suite
-   - tests/integration/*: New test files
-   - .github/workflows/test.yml: Run integration tests
+U: yes commit it
 
-What would you like to do?
-- 1-5: Stage and commit specific change
-- all: Stage all 5 commits in order
-- more: Continue analyzing remaining 15 files
-- custom: Create custom grouping
-```
-
-### 4. Interactive Staging
-
-```
-U: let's do 2
-A: Staging commit 2: [feat] Implement authentication service
-
-📋 Saving current index state...
-✓ Saved to: .git/COMMIT_TOOL_SAVED_INDEX_1706234568
-
-🔄 Resetting index...
-📝 Staging changes:
-  ✓ auth/service.py (full file)
-  ✓ auth/models.py (full file)
-  ✓ api/endpoints.py (hunks 1-3 only)
-  ✓ tests/test_auth.py (full file)
-
-✅ Changes staged. Please review with: git diff --cached
-
-Options:
-- commit - Create the commit
-- review - Show the staged diff
-- unstage - Undo and restore previous state
-- amend - Add/remove files from staging
-```
-
-### 5. Smart Hunk Selection
-
-For files with overlapping changes:
-```
-U: show me how you'll split api/endpoints.py
-A: File api/endpoints.py has changes for multiple commits:
-
-Hunk 1 (lines 15-45): ✅ Include - Auth endpoint definitions
-```python
-+@app.post("/auth/login")
-+async def login(credentials: LoginRequest):
-+    """Authenticate user and return token."""
-+    user = await auth_service.authenticate(credentials)
-+    return {"token": generate_token(user)}
-```
-
-Hunk 2 (lines 47-62): ✅ Include - Auth middleware  
-```python
-+@app.middleware("http")
-+async def auth_middleware(request: Request, call_next):
-+    token = request.headers.get("Authorization")
-+    request.state.user = await verify_token(token)
-```
-
-Hunk 3 (lines 78-85): ✅ Include - Error handling for auth
-```python
-+except AuthenticationError as e:
-+    return JSONResponse({"error": str(e)}, status_code=401)
-```
-
-Hunk 4 (lines 120-125): ❌ Exclude - Logging refactor (separate commit)
-```python
--    print(f"Request: {request.path}")
-+    logger.info(f"Request: {request.path}")
-```
-
-This creates a clean separation between features.
+A: Created commit: "refactor: improve logging and add timeout handling"
+   
+   Now staging the user profile endpoint...
+   
+   ✓ Staged changes:
+     - api/endpoints.py (just the new /users/profile endpoint)
+     - auth/service.py (just the profile permission checks)
+     - models/user.py (new profile schema)
+     - tests/test_profile.py (new tests)
+     - docs/api.md (endpoint documentation)
+   
+   Ready for commit 2. Continue?
 ```
 
 ## Features
@@ -232,53 +262,44 @@ This creates a clean separation between features.
 
 ## Examples
 
-### Basic Usage
+### Auto-Detection of Issues
 ```
 U: /commit
-A: [full analysis and proposals as shown above]
+A: Running pre-commit hooks... done.
 
-U: do commits 1 and 3
-A: I'll stage those commits in order.
+   I noticed some issues while analyzing:
+   - Found junk files: debug.log, backup files, temp experiments
+   - auth.py has mixed changes (auth feature + logging refactor)
+   - 3 files look like abandoned work
    
-   First, commit 1: [config] Update environment configs
-   [stages files]
-   Ready to commit. Run: git commit -m "[config] Update environment configs"
-   
-   After you commit, tell me "next" for commit 3.
+   I'll organize the real changes into clean commits and handle these issues.
 ```
 
-### Handling Complex Splits
+### Smart Staging with Mixed Files
 ```
-U: file x.py has too many unrelated changes, help
-A: Let me analyze x.py in detail...
+U: let's do the auth feature commit
+A: Staging authentication changes...
+
+   Handling files with mixed changes:
+   - auth.py (staging just auth logic, skipping logging changes)
+   - api/endpoints.py (staging new endpoints, skipping timeout changes)
+   - tests/test_auth.py (all changes - only auth-related)
    
-   I found 4 distinct change types in x.py:
-   - Lines 10-45: New feature A
-   - Lines 100-120: Refactoring logging  
-   - Lines 200-250: New feature B
-   - Lines 300-310: Typo fixes
-   
-   I can stage these as separate commits using git add -p.
-   Would you like me to walk through each hunk? [y/n]
+   ✓ Staged auth changes from 8 files
+   ✓ Ready to commit the authentication feature
 ```
 
-### Cleanup Mode
+### Proactive Cleanup
 ```
-U: just clean up the junk
-A: I'll help remove unwanted files:
+U: /commit
+A: Before organizing commits, I found files that shouldn't be tracked:
    
-   🗑️ Suggested for deletion:
-   - server.log (2.3MB)
-   - debug.log (5.1MB)  
-   - backup-2023-*.sql (3 files, 150MB)
-   - experiment-*.py (not referenced)
+   - debug.log, server.log - 7.4MB (*.log → .gitignore?)
+   - schema.backup, old_config.backup (*.backup → .gitignore?)
+   - README~ (vim backup) (*~ → .gitignore?)
+   - experiment-feature.py (unreferenced)
    
-   📝 Suggested .gitignore additions:
-   *.log
-   backup-*.sql
-   experiment-*.py
-   
-   Delete files and update .gitignore? [y/n/selective]
+   Should I clean these up and update .gitignore?
 ```
 
 ## Advanced Features
@@ -308,6 +329,41 @@ A: Interactive mode activated. I'll help you build custom commits.
    Enter numbers to toggle (e.g., "1 3"), or "done" when ready:
 ```
 
+### Planning Complex Commits with Task Agent
+
+For complex scenarios, the model uses a Task agent to plan the approach:
+
+```
+U: /commit
+A: This looks complex with multiple overlapping changes. Let me analyze the best approach...
+
+Tool: Task
+Parameters:
+  description: Plan commit strategy
+  prompt: |
+    Analyze git diff output and plan optimal commit organization:
+    1. Identify logical change groups (features, refactors, fixes)
+    2. Map which files have overlapping changes
+    3. For each overlap, determine which hunks belong to which commit
+    4. Plan the staging sequence (which files need partial staging)
+    5. Consider user workflow - what order makes most sense
+    6. Output concrete plan with exact git commands needed
+
+A: Based on the analysis, here's my recommended approach:
+
+   Found 4 logical change groups with significant overlap in core files.
+   
+   **Recommended commit order** (minimizes conflicts):
+   1. Infrastructure (logging + error handling) - touches 18 files
+   2. Performance optimizations - touches 12 files  
+   3. New user features - touches 8 files
+   4. Documentation updates - touches 5 files
+   
+   Files requiring partial staging: api/core.py, models/base.py, utils/helpers.py
+   
+   Shall we proceed with this plan?
+```
+
 ## Integration
 
 - Works with @{#messy-workspace} detection
@@ -327,15 +383,39 @@ git write-tree  # Returns tree SHA
 git read-tree <tree-sha>
 ```
 
-### Hunk Analysis
-- Uses `git diff --cached` for staged changes
-- Uses `git diff` for unstaged changes  
-- Parses unified diff format
-- Groups by semantic patterns
+### Hunk Analysis & Partial Staging
+
+Behind the scenes, the model handles complex partial staging:
+
+```python
+# 1. Analyze which hunks belong to which logical change
+# Model examines git diff output and categorizes each hunk
+
+# 2. For files with mixed changes, use git add -p
+Tool: Bash
+Parameters:
+  command: echo -e "y\nn\ny\nn\nq" | git add -p api/endpoints.py
+  description: Stage logging/timeout hunks, skip endpoint changes
+
+# 3. Verify correct staging
+Tool: Bash
+Parameters:
+  command: git diff --cached api/endpoints.py
+  description: Confirm only intended changes are staged
+```
+
+The model automatically:
+- Detects which files have overlapping changes
+- Determines which hunks belong to each logical commit
+- Builds appropriate y/n sequences for git add -p
+- Falls back to manual file manipulation if hunks are too intertwined
+- Verifies staging accuracy before presenting to user
 
 ## Notes
 
-- Never commits automatically - always requires confirmation
+- **ALWAYS PAUSES after analysis** - waits for user direction
+- Never commits automatically - always requires confirmation  
 - Preserves all changes - nothing is lost
 - Can be interrupted and resumed
 - Works with partial staging (git add -p)
+- User controls the flow - user chooses what to commit and when

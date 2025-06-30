@@ -7,18 +7,14 @@ name = "ducktape-llm-common"
 version = "0.1.0"
 description = "Common utilities, linters, and prompts for LLM development workflows"
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 authors = [
     {name = "Ducktape Development Team", email = "dev@ducktape.ai"},
 ]
-license = {text = "MIT"}
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -29,15 +25,16 @@ keywords = ["linter", "pre-commit", "workflow", "llm", "ai", "automation"]
 dependencies = [
     "PyYAML>=6.0",
     "click>=8.0",
-    "pathlib2>=2.3.7; python_version<'3.10'",
+    "platformdirs>=3.0",
+    "pydantic>=2.0",
+    "pygit2>=1.13.0",
+    "ruff>=0.1.0",  # actual prod dependency of linter
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
-    "black>=23.0",
-    "ruff>=0.1.0",
     "mypy>=1.0",
     "pre-commit>=3.0",
 ]
@@ -47,12 +44,11 @@ check-work-urls = "ducktape_llm_common.linters.check_work_urls:main"
 check-task-metadata = "ducktape_llm_common.linters.check_task_metadata:main"
 fix-newlines = "ducktape_llm_common.utils.fix_newlines:main"
 ducktape-version = "ducktape_llm_common.cli.version_tool:main"
+claude-linter = "ducktape_llm_common.linters.claude_rules:main"
 
 [project.urls]
 Homepage = "https://github.com/ducktape/llm-common"
-Documentation = "https://ducktape.readthedocs.io/en/latest/"
 Repository = "https://github.com/ducktape/llm-common.git"
-Issues = "https://github.com/ducktape/llm-common/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["ducktape_llm_common"]
@@ -61,22 +57,17 @@ packages = ["ducktape_llm_common"]
 include = [
     "/ducktape_llm_common",
     "/README.md",
-    "/LICENSE",
 ]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py", "*_test.py"]
 addopts = "-v --cov=ducktape_llm_common --cov-report=term-missing"
-
-[tool.black]
-line-length = 88
-target-version = ["py38", "py39", "py310", "py311", "py312"]
-include = '\.pyi?$'
+norecursedirs = ["__pycache__", "*.egg", "dist", "build", ".git"]
 
 [tool.ruff]
-target-version = "py38"
-line-length = 88
+target-version = "py310"
+line-length = 120
 
 [tool.ruff.lint]
 select = [
@@ -89,14 +80,11 @@ select = [
     "UP",   # pyupgrade
 ]
 ignore = [
-    "E501",  # line too long - handled by black
-    "B008",  # do not perform function calls in argument defaults
-    "E402",  # module level import not at top of file
     "B027",  # empty method in abstract base class
 ]
 
 [tool.mypy]
-python_version = "3.8"
+python_version = "3.10"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true

@@ -317,6 +317,17 @@ If pattern has special chars → escape for regex
         <li>Non-overlapping anchors</li>
       </ul>
     </rule>
+    
+    <rule id="/validation/second-person">
+      <title>No Second Person for User</title>
+      <content>Never use "you" or "your" to refer to the user in documentation or commands. Use "the user" or rephrase.</content>
+      <example negative>
+        <content>You can use this command when you need to clean up files</content>
+      </example>
+      <example positive>
+        <content>The user can use this command when cleanup is needed</content>
+      </example>
+    </rule>
   </rules>
   
   <process id="linting-process">

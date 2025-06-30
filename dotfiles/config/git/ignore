@@ -5,3 +5,5 @@ __pycache__
 *.sw[op]
 **/.claude/settings.local.json
 **/CLAUDE.local.md
+# Temporary one-off scripts (see CLAUDE.md @{#oneoff-scripts})
+oneoff__*

@@ -7,3 +7,35 @@
 - name: Set dpkg_arch fact to architecture string
   set_fact:
     dpkg_arch: "{{ raw_dpkg_arch.stdout }}"
+
+# Python environment health checks
+- name: Check for problematic packages in global Python environment
+  block:
+    - name: Check if pytest-socket is installed globally
+      command: pip show pytest-socket
+      register: pytest_socket_check
+      failed_when: false
+      changed_when: false
+
+    - name: Fail if pytest-socket is in global environment
+      fail:
+        msg: |
+          ⚠️  ERROR: pytest-socket is installed in your global Python environment!
+          This package can interfere with network-dependent tests and tools.
+          
+          To fix:
+            pip uninstall pytest-socket
+          
+          To check what depends on it:
+            pipdeptree --reverse --packages pytest-socket
+      when: pytest_socket_check.rc == 0
+
+    - name: Set fact for pytest-socket presence
+      set_fact:
+        has_pytest_socket: "{{ pytest_socket_check.rc == 0 }}"
+
+- name: Report Python environment health
+  debug:
+    msg: |
+      Python Environment Health Check:
+      - pytest-socket: {{ 'FOUND ⚠️' if has_pytest_socket else 'Not found ✅' }}

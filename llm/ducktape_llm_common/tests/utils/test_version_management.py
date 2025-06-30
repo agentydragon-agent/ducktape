@@ -136,9 +136,7 @@ class TestEnhancedVersionFunctions:
             assert len(version_files) == 3
 
             # Check versions
-            versions_by_path = {
-                str(path.name): version for path, version in version_files
-            }
+            versions_by_path = {str(path.name): version for path, version in version_files}
             assert versions_by_path["project1"] == 1
             assert versions_by_path["project2"] == 2
             assert versions_by_path["project3"] == 1

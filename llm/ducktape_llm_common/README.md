@@ -6,7 +6,7 @@ A comprehensive shared Python package providing utilities, linters, and prompts 
 
 `ducktape-llm-common` implements the common automation referenced by standard operating procedures in LLM development workflows. It provides:
 
-- **Linters**: Validate custom URL formats and metadata files
+- **Linters**: Enforce coding standards, validate custom URL formats and metadata files
 - **Prompts**: Standardized instructions for AI agents
 - **Utilities**: Version management and common validation functions
 - **Templates**: Quick-start structures for investigations and tasks
@@ -21,19 +21,36 @@ pip install -e /path/to/ducktape_llm_common
 pip install -e "/path/to/ducktape_llm_common[dev]"
 ```
 
+### Requirements
+
+- Python 3.10+
+- See `requirements.txt` for dependencies
+
 ## Quick Start
+
+### Console Scripts Available
+- `claude-linter` - Enforce CLAUDE.md coding standards
+- `check-work-urls` - Validate work URLs in markdown files
+- `check-task-metadata` - Validate METADATA.yaml files
+- `fix-newlines` - Ensure files end with exactly one newline
+- `ducktape-version` - Version management CLI tool
 
 ### Using Linters
 
 The package provides command-line linters that can be used standalone or with pre-commit:
 
 ```bash
+# Enforce CLAUDE.md coding standards
+claude-linter
+
 # Check work tracking URLs in your project
 check-work-urls .
 
 # Validate task metadata files
 check-task-metadata .
 ```
+
+For detailed documentation on the Claude linter, see [docs/linters/claude-linter.md](docs/linters/claude-linter.md).
 
 ### Pre-commit Integration
 
@@ -132,22 +149,29 @@ create_metadata_version_file("./new-project")
 
 ```
 ducktape_llm_common/
-├── __init__.py           # Package initialization, exports METADATA_VERSION
-├── linters/             # Command-line linters
+├── __init__.py              # Package initialization, exports METADATA_VERSION
+├── linters/                 # Command-line linters
 │   ├── __init__.py
-│   ├── check_work_urls.py      # Validate work://, task://, inv:// URLs
+│   ├── base.py             # Base linter class
+│   ├── claude_config.py    # Claude linter configuration models
+│   ├── claude_rules.py     # Claude linter implementation
+│   ├── check_work_urls.py  # Validate work://, task://, inv:// URLs
 │   └── check_task_metadata.py  # Validate METADATA.yaml files
-├── prompts/             # AI agent instruction prompts
-│   ├── __init__.py      # Prompt loading system
+├── prompts/                 # AI agent instruction prompts
+│   ├── __init__.py         # Prompt loading system
 │   ├── work_tracking.md
 │   ├── evidence_gathering.md
 │   ├── task_management.md
 │   └── debugging_protocol.md
-├── utils/               # Shared utilities
+├── utils/                   # Shared utilities
 │   ├── __init__.py
+│   ├── fix_newlines.py
 │   └── version_check.py
-└── templates/           # Project structure templates
-    └── __init__.py
+├── templates/               # Project structure templates
+│   └── __init__.py
+└── cli/                     # CLI tools
+    ├── __init__.py
+    └── version_tool.py
 ```
 
 ## Metadata Version
@@ -169,8 +193,9 @@ pytest
 # Run with coverage
 pytest --cov=ducktape_llm_common
 
-# Run specific test file
-pytest tests/test_linters.py
+# Run specific test module
+pytest tests/linters/
+pytest tests/utils/
 ```
 
 ### Code Quality

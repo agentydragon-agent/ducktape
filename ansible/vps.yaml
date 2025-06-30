@@ -21,6 +21,7 @@
     include_heavy_dev_packages: false
 
   roles:
+    - role: python-health
     #- cli    # <- TODO:  needs ducktape, etc
     - role: wireguard
       tags: [wireguard]

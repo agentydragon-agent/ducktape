@@ -8,10 +8,11 @@ import json
 import logging
 import shutil
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from ducktape_llm_common.utils.version_check import (
     VersionMigrationError,
@@ -29,7 +30,7 @@ class MigrationContext:
     path: Path
     from_version: int
     to_version: int
-    backup_path: Optional[Path] = None
+    backup_path: Path | None = None
     dry_run: bool = False
     metadata: dict[str, Any] = field(default_factory=dict)
 
@@ -48,7 +49,7 @@ class MigrationStep(ABC):
         pass
 
     @abstractmethod
-    def check(self, context: MigrationContext) -> tuple[bool, Optional[str]]:
+    def check(self, context: MigrationContext) -> tuple[bool, str | None]:
         """Check if this step needs to be applied.
 
         Returns:
@@ -79,7 +80,7 @@ class FileMigrationStep(MigrationStep):
         """Find all files matching the pattern."""
         return list(context.path.rglob(self.file_pattern))
 
-    def check(self, context: MigrationContext) -> tuple[bool, Optional[str]]:
+    def check(self, context: MigrationContext) -> tuple[bool, str | None]:
         """Check if any matching files exist."""
         files = self.find_files(context)
         if not files:
@@ -257,7 +258,7 @@ class MigrationRunner:
     def run(
         self,
         path: Path,
-        target_version: Optional[int] = None,
+        target_version: int | None = None,
         dry_run: bool = False,
         create_backup: bool = True,
     ) -> None:
@@ -283,9 +284,7 @@ class MigrationRunner:
         # Get migration path
         migrations = self.get_migration_path(current_version, target_version)
         if not migrations:
-            raise VersionMigrationError(
-                f"No migration path from v{current_version} to v{target_version}"
-            )
+            raise VersionMigrationError(f"No migration path from v{current_version} to v{target_version}")
 
         # Create backup if requested
         backup_path = None
@@ -302,10 +301,7 @@ class MigrationRunner:
                 dry_run=dry_run,
             )
 
-            logger.info(
-                f"{'Would run' if dry_run else 'Running'} migration: "
-                f"{migration.description()}"
-            )
+            logger.info(f"{'Would run' if dry_run else 'Running'} migration: {migration.description()}")
 
             # Check what needs to be done
             needed_steps = migration.check(context)
@@ -332,7 +328,7 @@ class MigrationRunner:
 class RenameFileStep(FileMigrationStep):
     """Migration step that renames files."""
 
-    def __init__(self, old_pattern: str, new_name_func: callable):
+    def __init__(self, old_pattern: str, new_name_func: Callable[[str], str]):
         super().__init__(old_pattern)
         self.new_name_func = new_name_func
 
@@ -350,7 +346,7 @@ class RenameFileStep(FileMigrationStep):
 class UpdateFileContentStep(FileMigrationStep):
     """Migration step that updates file contents."""
 
-    def __init__(self, file_pattern: str, update_func: callable):
+    def __init__(self, file_pattern: str, update_func: Callable[[str], str]):
         super().__init__(file_pattern)
         self.update_func = update_func
 
