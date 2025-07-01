@@ -3,7 +3,9 @@
 import json
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
+import platformdirs
 from pydantic import BaseModel, Field
 
 
@@ -17,112 +19,16 @@ class RuleConfig(BaseModel):
 class RuffConfig(BaseModel):
     """Configuration for ruff-based rules."""
 
-    # Ruff rules to enable
+    # Ruff rules to enable - NO DEFAULTS!
     enabled_rules: list[str] = Field(
-        default_factory=lambda: [
-            # Early bailout patterns
-            "RET505",  # superfluous-else-return (autofix available)
-            "RET506",  # superfluous-else-raise (autofix available)
-            "RET507",  # superfluous-else-continue (autofix available)
-            "RET508",  # superfluous-else-break (autofix available)
-            "PLR5501",  # collapsible-else-if (autofix available)
-            "SIM102",  # collapsible-if (autofix available)
-            # CLAUDE.md: /attrs/no-hasattr-getattr
-            "B009",  # getattr-with-constant (autofix available)
-            "B010",  # setattr-with-constant (autofix available)
-            # Modern Python features
-            "UP007",  # non-pep604-annotation-union (X | Y) (autofix available)
-            "UP032",  # f-string (autofix available)
-            "RUF013",  # implicit-optional (autofix available)
-            "UP018",  # native-literals (autofix available)
-            "UP009",  # utf8-encoding-declaration (autofix available)
-            "UP010",  # unnecessary-future-import (autofix available)
-            "FA100",  # future-rewritable-type-annotation (Optional -> X | None) (autofix available)
-            # Timeout patterns for blocking operations
-            "S113",  # request-without-timeout
-            "ASYNC109",  # async-function-with-timeout
-            # Function call in default arguments
-            "B008",  # function-call-in-default-argument
-            # Simplify code patterns
-            "SIM108",  # if-else-block-instead-of-if-exp (autofix available)
-            "SIM110",  # reimplemented-builtin (autofix available)
-            "SIM114",  # if-with-same-arms (autofix available)
-            "SIM118",  # in-dict-keys (autofix available)
-            "PLR1714",  # repeated-equality-comparison (autofix available)
-            "SIM103",  # needless-bool (return condition directly) (autofix available)
-            # Remove redundant code
-            "RUF100",  # unused-noqa (autofix available)
-            "PLR1711",  # useless-return (autofix available)
-            "RET501",  # unnecessary-return-none (autofix available)
-            "RET502",  # implicit-return-value (autofix available)
-            "RET504",  # unnecessary-assign (autofix available)
-            # Path and imports best practices
-            "S108",  # hardcoded-temp-file
-            "E402",  # module-import-not-at-top-of-file
-            "I001",  # unsorted-imports (autofix available)
-            "F401",  # unused-import (autofix available)
-            "PLC0415",  # import-outside-top-level
-            # Documentation rules (no redundant docs)
-            "D200",  # unnecessary-multiline-docstring (autofix available)
-            # String building for URLs/SQL/HTML
-            "S608",  # hardcoded-sql-expression
-            "S611",  # django-raw-sql
-            # CLAUDE.md: /errors/fail-fast
-            "E722",  # bare-except
-            "BLE001",  # blind-except
-            # Error handling
-            "B904",  # raise-without-from-inside-except
-            # Code quality
-            "B002",  # unary-prefix-increment-decrement
-            "B003",  # assignment-to-os-environ
-            "B006",  # mutable-argument-default
-            "B011",  # assert-false
-            "B018",  # useless-expression
-            "PIE810",  # multiple-starts-ends-with
-            # CLAUDE.md: Use modern Python features (legacy)
-            "UP006",  # use-union-operator (X | Y) (autofix sometimes)
-            "UP035",  # deprecated-typing-import (autofix sometimes)
-            # CLAUDE.md: Code style
-            "W291",  # trailing-whitespace (autofix available)
-            # CLAUDE.md: Python conventions
-            "PTH100",
-            "PTH101",
-            "PTH102",
-            "PTH103",  # use-pathlib rules
-            "PTH118",  # os-path-join (use Path with /) (autofix available)
-            "PTH120",  # os-path-dirname (use Path.parent) (autofix available)
-            # Type checking best practices
-            "PGH003",  # blanket-type-ignore (use specific rule codes)
-            # Code style and formatting
-            "COM812",  # missing-trailing-comma (autofix available)
-            "W293",  # blank-line-with-whitespace (autofix available)
-            "F541",  # f-string-missing-placeholders (autofix available)
-            # Documentation formatting
-            "D212",  # multi-line-summary-first-line (autofix available)
-            "D413",  # missing-blank-line-after-last-section (autofix available)
-            "D202",  # no-blank-lines-after-function-docstring (autofix available)
-            # Path handling consistency
-            "PTH123",  # builtin-open (use Path.open())
-            # Code quality
-            "EXE001",  # shebang-not-executable
-            "ARG001",  # unused-function-argument
-            "ARG002",  # unused-method-argument
-            "FBT001",  # boolean-typed-positional-argument-in-function-definition
-            "FBT002",  # boolean-default-value-positional-argument
-            "N815",  # mixed-case-variable-in-class-scope
-            # Exception handling
-            "TRY002",  # raise-vanilla-class (create custom exceptions)
-            "TRY400",  # error-instead-of-exception (use logging.exception)
-            # CLAUDE.md: /data/no-data-loss
-            # "E999",  # syntax-error (removed in newer ruff versions)
-        ],
+        default_factory=list,
         description="List of ruff rule IDs to enable",
     )
 
     # Manual checks (not ruff rules)
     check_hasattr: bool = True  # No ruff rule for hasattr yet
     check_string_building: bool = False  # Disabled for now
-    check_disabled_linting: bool = False  # # type: ignore, # noqa - disabled for now
+    check_disabled_linting: bool = False  # # type: ignore,
 
 
 class ClaudeLinterConfig(BaseModel):
@@ -143,7 +49,7 @@ class ClaudeLinterConfig(BaseModel):
             "node_modules",
             ".mypy_cache",
             ".pytest_cache",
-        ]
+        ],
     )
 
     # Ruff integration
@@ -180,15 +86,71 @@ class ClaudeLinterConfig(BaseModel):
         return cls()
 
     @classmethod
+    def load_xdg_config(cls) -> dict[str, Any] | None:
+        """Load user config from XDG config directory."""
+        config_dir = Path(platformdirs.user_config_dir("claude-linter"))
+        config_path = config_dir / "config.toml"
+
+        if not config_path.exists():
+            return None
+
+        try:
+            import tomllib
+        except ImportError:
+            import tomli as tomllib
+
+        with open(config_path, "rb") as f:
+            return tomllib.load(f)
+
+    @classmethod
+    def load_project_ruff_config(cls, start_path: Path) -> dict[str, Any] | None:
+        """Load ruff configuration from project files."""
+        config_names = [
+            ("pyproject.toml", ["tool", "ruff"]),
+            ("ruff.toml", []),
+            (".ruff.toml", []),
+        ]
+
+        current = start_path.resolve()
+
+        # Walk up directory tree to find git root
+        while current != current.parent:
+            # Check for config files
+            for config_name, path_parts in config_names:
+                config_path = current / config_name
+                if config_path.exists():
+                    try:
+                        import tomllib
+                    except ImportError:
+                        import tomli as tomllib
+
+                    with open(config_path, "rb") as f:
+                        data = tomllib.load(f)
+
+                    # Navigate to the right section
+                    for part in path_parts:
+                        if part in data:
+                            data = data[part]
+                        else:
+                            data = None
+                            break
+
+                    if data:
+                        return data
+
+            # Stop at git root
+            if (current / ".git").exists():
+                break
+
+            current = current.parent
+
+        return None
+
+    @classmethod
     def find_config(cls, start_path: Path | None = None) -> "ClaudeLinterConfig":
         """Find and load config file starting from given path."""
         if start_path is None:
             start_path = Path.cwd()
-        config_names = [
-            ".claude-linter.json",
-            ".claude/linter.json",
-            "pyproject.toml",
-        ]
 
         disable_markers = [
             ".claude-linter-disable",
@@ -197,21 +159,53 @@ class ClaudeLinterConfig(BaseModel):
 
         current = start_path.resolve()
 
-        # Walk up directory tree
+        # Check for explicit disable markers
         while current != current.parent:
-            # Check for explicit disable markers
             for disable_marker in disable_markers:
                 if (current / disable_marker).exists():
                     return cls(enabled=False)  # Explicitly disabled
-
-            # Check for config files
-            for config_name in config_names:
-                config_path = current / config_name
-                if config_path.exists():
-                    return cls.from_file(config_path)
+            if (current / ".git").exists():
+                break
             current = current.parent
 
-        return cls()  # Default config (enabled by default)
+        # Load configurations in order
+        # 1. Load XDG user config
+        xdg_config = cls.load_xdg_config()
+        user_ruff_rules = []
+        if xdg_config and "ruff" in xdg_config:
+            ruff_section = xdg_config["ruff"]
+            # Support both "force-select" and "select" for user rules
+            user_ruff_rules = ruff_section.get("force-select", ruff_section.get("select", []))
+
+        # 2. Load project ruff config
+        project_config = cls.load_project_ruff_config(start_path)
+        project_ruff_rules = []
+        if project_config:
+            # Get rules from project's ruff config
+            project_ruff_rules = project_config.get("select", [])
+            # Also check for extend-select
+            project_ruff_rules.extend(project_config.get("extend-select", []))
+
+        # 3. Merge rules - user rules always included
+        all_rules = list(set(user_ruff_rules + project_ruff_rules))
+
+        # 4. Check if we have any configuration at all
+        if not all_rules:
+            # No config found anywhere
+            raise ValueError(
+                "No linter configuration found!\n\n"
+                "claude-linter requires either:\n"
+                "- A project ruff configuration ([tool.ruff] in pyproject.toml)\n"
+                f"- Your personal config at {platformdirs.user_config_dir('claude-linter')}/config.toml\n\n"
+                "Example personal config:\n"
+                "[ruff]\n"
+                'select = ["E", "F", "RET505", "B009"]\n',
+            )
+
+        # Create config with merged rules
+        config = cls()
+        config.rules.enabled_rules = all_rules
+        return config
 
     def to_json_file(self, path: Path):
         """Save config to JSON file."""

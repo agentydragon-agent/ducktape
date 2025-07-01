@@ -54,24 +54,46 @@ fi
 
 ## Configuration
 
+The Claude linter uses a flexible configuration system that reads from multiple sources:
+
+### Configuration Loading Order
+
+1. **XDG user config** - Your personal rules from `~/.config/claude-linter/config.toml`
+2. **Project ruff config** - Standard ruff configuration from the project
+3. **Error if no config** - If no configuration is found anywhere, the linter will error
+
+### Personal Configuration (XDG)
+
+Create your personal configuration at `~/.config/claude-linter/config.toml`:
+
+```toml
+[ruff]
+# These rules will always be enforced across all your projects
+force-select = [
+    "RET505",   # Early bailout patterns
+    "B009",     # No getattr with constant
+    "UP007",    # Use X | Y union types
+    # ... add your preferred rules
+]
+```
+
 ### Project Configuration
 
-Create `.claude-linter.json` in your project root:
+The linter automatically reads standard ruff configuration from projects:
 
-```json
-{
-  "enabled": true,
-  "rules": {
-    "enabled_rules": ["E999", "B009", "B010", "..."],
-    "check_hasattr": true,
-    "check_string_building": false,
-    "check_disabled_linting": false
-  },
-  "ignore_paths": [".venv", "venv", "__pycache__"],
-  "max_errors_per_file": 5,
-  "show_context_lines": 2
-}
+- `pyproject.toml` with `[tool.ruff]` section
+- `ruff.toml` or `.ruff.toml`
+
+Example project config:
+
+```toml
+# pyproject.toml
+[tool.ruff]
+select = ["E", "F", "I"]  # Project's rules
+extend-select = ["W291"]  # Additional rules
 ```
+
+Your personal rules will be merged with the project's rules automatically.
 
 ### Disabling
 
@@ -79,6 +101,22 @@ To disable for a project:
 
 ```bash
 touch .claude-linter-disable
+```
+
+### Configuration Errors
+
+If no configuration is found anywhere, you'll see:
+
+```
+Error: No linter configuration found!
+
+claude-linter requires either:
+- A project ruff configuration ([tool.ruff] in pyproject.toml)
+- Your personal config at ~/.config/claude-linter/config.toml
+
+Example personal config:
+[ruff]
+select = ["E", "F", "RET505", "B009"]
 ```
 
 ## Implementation Details
