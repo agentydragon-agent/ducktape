@@ -1,5 +1,6 @@
 """Configuration models for Claude linter."""
 
+import json
 from datetime import datetime
 from pathlib import Path
 
@@ -36,6 +37,7 @@ class RuffConfig(BaseModel):
             "UP018",  # native-literals (autofix available)
             "UP009",  # utf8-encoding-declaration (autofix available)
             "UP010",  # unnecessary-future-import (autofix available)
+            "FA100",  # future-rewritable-type-annotation (Optional -> X | None) (autofix available)
             # Timeout patterns for blocking operations
             "S113",  # request-without-timeout
             "ASYNC109",  # async-function-with-timeout
@@ -47,6 +49,7 @@ class RuffConfig(BaseModel):
             "SIM114",  # if-with-same-arms (autofix available)
             "SIM118",  # in-dict-keys (autofix available)
             "PLR1714",  # repeated-equality-comparison (autofix available)
+            "SIM103",  # needless-bool (return condition directly) (autofix available)
             # Remove redundant code
             "RUF100",  # unused-noqa (autofix available)
             "PLR1711",  # useless-return (autofix available)
@@ -56,6 +59,9 @@ class RuffConfig(BaseModel):
             # Path and imports best practices
             "S108",  # hardcoded-temp-file
             "E402",  # module-import-not-at-top-of-file
+            "I001",  # unsorted-imports (autofix available)
+            "F401",  # unused-import (autofix available)
+            "PLC0415",  # import-outside-top-level
             # Documentation rules (no redundant docs)
             "D200",  # unnecessary-multiline-docstring (autofix available)
             # String building for URLs/SQL/HTML
@@ -83,8 +89,32 @@ class RuffConfig(BaseModel):
             "PTH101",
             "PTH102",
             "PTH103",  # use-pathlib rules
+            "PTH118",  # os-path-join (use Path with /) (autofix available)
+            "PTH120",  # os-path-dirname (use Path.parent) (autofix available)
+            # Type checking best practices
+            "PGH003",  # blanket-type-ignore (use specific rule codes)
+            # Code style and formatting
+            "COM812",  # missing-trailing-comma (autofix available)
+            "W293",  # blank-line-with-whitespace (autofix available)
+            "F541",  # f-string-missing-placeholders (autofix available)
+            # Documentation formatting
+            "D212",  # multi-line-summary-first-line (autofix available)
+            "D413",  # missing-blank-line-after-last-section (autofix available)
+            "D202",  # no-blank-lines-after-function-docstring (autofix available)
+            # Path handling consistency
+            "PTH123",  # builtin-open (use Path.open())
+            # Code quality
+            "EXE001",  # shebang-not-executable
+            "ARG001",  # unused-function-argument
+            "ARG002",  # unused-method-argument
+            "FBT001",  # boolean-typed-positional-argument-in-function-definition
+            "FBT002",  # boolean-default-value-positional-argument
+            "N815",  # mixed-case-variable-in-class-scope
+            # Exception handling
+            "TRY002",  # raise-vanilla-class (create custom exceptions)
+            "TRY400",  # error-instead-of-exception (use logging.exception)
             # CLAUDE.md: /data/no-data-loss
-            "E999",  # syntax-error (ensure files parse)
+            # "E999",  # syntax-error (removed in newer ruff versions)
         ],
         description="List of ruff rule IDs to enable",
     )
@@ -130,8 +160,6 @@ class ClaudeLinterConfig(BaseModel):
             return cls()
 
         if path.suffix == ".json":
-            import json
-
             with open(path) as f:
                 data = json.load(f)
                 return cls(**data)

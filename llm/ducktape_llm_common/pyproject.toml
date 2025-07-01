@@ -44,7 +44,8 @@ check-work-urls = "ducktape_llm_common.linters.check_work_urls:main"
 check-task-metadata = "ducktape_llm_common.linters.check_task_metadata:main"
 fix-newlines = "ducktape_llm_common.utils.fix_newlines:main"
 ducktape-version = "ducktape_llm_common.cli.version_tool:main"
-claude-linter = "ducktape_llm_common.linters.claude_rules:main"
+claude-linter = "ducktape_llm_common.linters.claude_linter:main"
+claude-linter-hook = "ducktape_llm_common.linters.claude_hook:main"
 
 [project.urls]
 Homepage = "https://github.com/ducktape/llm-common"
@@ -52,6 +53,12 @@ Repository = "https://github.com/ducktape/llm-common.git"
 
 [tool.hatch.build.targets.wheel]
 packages = ["ducktape_llm_common"]
+
+[tool.hatch.build]
+include = [
+    "ducktape_llm_common/**/*.py",
+    "ducktape_llm_common/**/*.sh",
+]
 
 [tool.hatch.build.targets.sdist]
 include = [

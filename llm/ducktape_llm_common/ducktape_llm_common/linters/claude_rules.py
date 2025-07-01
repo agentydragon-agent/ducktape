@@ -47,16 +47,19 @@ class ClaudeRulesLinter(BaseLinter):
         self,
         session_pid: int | None = None,
         config: ClaudeLinterConfig | None = None,
+        treat_all_as_errors: bool = False,
     ):
         """Initialize the Claude rules linter.
 
         Args:
             session_pid: Claude session PID for state tracking
             config: Linter configuration (will auto-load if not provided)
+            treat_all_as_errors: If True, treat ALL violations as errors (not just new ones)
         """
         super().__init__()
         self.session_pid = session_pid or os.getppid()
         self.config = config or ClaudeLinterConfig.find_config()
+        self.treat_all_as_errors = treat_all_as_errors
 
         # Remember where the linter was launched from
         self.launch_cwd = Path.cwd()
@@ -206,9 +209,7 @@ class ClaudeRulesLinter(BaseLinter):
 
     def _check_syntax(self, file: Path, content: str) -> LintError | None:
         """Check if Python file has valid syntax."""
-        if "E999" not in self.config.rules.enabled_rules:
-            return None
-
+        # Always check syntax regardless of rules since E999 was removed from ruff
         try:
             ast.parse(content, filename=str(file))
             return None
@@ -357,21 +358,30 @@ class ClaudeRulesLinter(BaseLinter):
         # Compare with previous counts
         previous_counts = self._state.get(file_key, {}).get("violation_counts", {})
 
-        # Report violations based on whether this is first check
+        # Report violations based on mode and whether this is first check
         for rule_name, current_count in current_counts.items():
             previous_count = previous_counts.get(rule_name, 0)
 
-            if is_first_check and current_count > 0:
-                # First time seeing file - report as pre-existing
+            # Determine if we should report this violation
+            should_report_as_error = False
+            if self.treat_all_as_errors and current_count > 0:
+                # In treat_all_as_errors mode, report ALL violations as errors
+                should_report_as_error = True
+            elif is_first_check and current_count > 0 and not self.treat_all_as_errors:
+                # First time seeing file - report as pre-existing warning
                 self._add_pre_existing_warning(result, rule_name, current_count, all_violations.get(rule_name, []))
             elif current_count > previous_count:
-                # Add errors for new violations
+                # New violations compared to last check
+                should_report_as_error = True
+
+            if should_report_as_error:
+                # Add errors for violations
                 if rule_name in manual_violations:
                     for line_num, column in manual_violations[rule_name]:
                         error = LintError(
                             line=line_num,
                             column=column,
-                            message=f"NEW {rule_name}! Was {previous_count}, now {current_count}",
+                            message=f"{rule_name} violation",
                             rule=f"no-{rule_name}",
                             file=file,
                         )
@@ -384,7 +394,7 @@ class ClaudeRulesLinter(BaseLinter):
                         error = LintError(
                             line=v.get("location", {}).get("row", 0),
                             column=v.get("location", {}).get("column", 0),
-                            message=f"NEW! Was {previous_count}, now {current_count}: {v.get('message', '')}",
+                            message=f"{v.get('message', '')}",
                             rule=rule_name,
                             file=file,
                         )
@@ -431,10 +441,7 @@ class ClaudeRulesLinter(BaseLinter):
                     fg="red",
                     bold=True,
                 )
-                click.echo("This might be due to:")
-                click.echo("  - Very large codebase")
-                click.echo("  - Slow filesystem")
-                click.echo("  - Network-mounted directories")
+                click.echo("Very large codebase? Slow filesystem? Network-mounted directories?")
                 click.echo("\nPlease ask the user to:")
                 click.echo("  1. Run from a faster location")
                 click.echo("  2. Add more paths to .claude-linter.json ignore_paths")
@@ -908,7 +915,7 @@ class ClaudeRulesLinter(BaseLinter):
             click.secho(f"📝 Autofix log saved: {autofix_log_file}", fg="green")
 
 
-@click.command()
+@click.group(invoke_without_command=True)
 @click.argument(
     "directory",
     default=".",
@@ -921,9 +928,15 @@ class ClaudeRulesLinter(BaseLinter):
 )
 @click.option("--init", is_flag=True, help="Initialize config for this project")
 @click.option("--show-state", is_flag=True, help="Show internal state (counters, last seen times)")
-def main(directory: Path, check_only: bool, init: bool, show_state: bool):
+@click.option(
+    "--bash-hook", "bash_hook_flag", is_flag=True, help="Output bash hook logic for pre-command linter integration."
+)
+@click.pass_context
+def main(ctx: click.Context, directory: Path, check_only: bool, init: bool, show_state: bool, bash_hook_flag: bool):
     """Claude rules linter - enforces CLAUDE.md coding standards."""
-
+    if bash_hook_flag:
+        _bash_hook()
+        sys.exit(0)
     if init:
         config = ClaudeLinterConfig(enabled=True)
         config_file = Path.cwd() / ".claude-linter.json"
@@ -948,11 +961,19 @@ def main(directory: Path, check_only: bool, init: bool, show_state: bool):
                 click.secho("✅ No violations found!", fg="green")
             else:
                 click.echo("ℹ️  Linter not enabled. Use --init to create config.")
-            sys.exit(0)
-    else:
-        if not linter.check_and_block(directory):
-            sys.exit(1)
         sys.exit(0)
+
+    if not linter.check_and_block(directory):
+        sys.exit(1)
+    sys.exit(0)
+
+
+def _bash_hook() -> None:
+    """Output bash hook logic for pre-command linter integration."""
+    import importlib.resources as _resources
+
+    hook = _resources.read_text(__package__, "bash_hook.sh")
+    click.echo(hook)
 
 
 if __name__ == "__main__":

@@ -46,14 +46,10 @@ claude-linter --show-state
 Add to your `.bashrc` for automatic checking:
 
 ```bash
-# Minimal bash hook that runs on every command
-__claude_linter_preexec() {
-    if ! claude-linter . >/dev/null 2>&1; then
-        claude-linter . >&2
-        echo "🛑 Command blocked due to Claude rule violations" >&2
-        false
-    fi
-}
+# Minimal bash hook delegated to the linter
+if [ "$CLAUDECODE" = "1" ] || [ "$CODEX_AGENT" = "1" ]; then
+    eval "$(claude-linter --bash-hook)"
+fi
 ```
 
 ## Configuration

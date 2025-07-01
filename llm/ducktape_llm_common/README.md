@@ -29,7 +29,7 @@ pip install -e "/path/to/ducktape_llm_common[dev]"
 ## Quick Start
 
 ### Console Scripts Available
-- `claude-linter` - Enforce CLAUDE.md coding standards
+- `claude-linter` - Unified linter for Claude Code hooks (pre/post modes)
 - `check-work-urls` - Validate work URLs in markdown files
 - `check-task-metadata` - Validate METADATA.yaml files
 - `fix-newlines` - Ensure files end with exactly one newline
@@ -40,8 +40,9 @@ pip install -e "/path/to/ducktape_llm_common[dev]"
 The package provides command-line linters that can be used standalone or with pre-commit:
 
 ```bash
-# Enforce CLAUDE.md coding standards
-claude-linter
+# Claude Code hook modes
+claude-linter pre   # Run pre-hook (blocks non-fixable violations)
+claude-linter post  # Run post-hook (auto-fixes violations)
 
 # Check work tracking URLs in your project
 check-work-urls .
