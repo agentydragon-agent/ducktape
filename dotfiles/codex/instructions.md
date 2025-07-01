@@ -362,17 +362,6 @@
       </escape-routes>
     </behavior>
     
-    <behavior name="The Morning Ritual">
-      <description>How Claude starts each session to avoid repeated mistakes</description>
-      <steps>
-        <step>Check yesterday's learnings: `mcp__memory__search_nodes("learning $(date -d yesterday +%Y-%m-%d)")`</step>
-        <step>Review open TODOs from last session</step>
-        <step>Check for uncommitted experiments: `git status`</step>
-        <step>Look for temp files that need organizing: `find . -name "temp*" -o -name "test*" -mtime -1`</step>
-        <step>Verify yesterday's "this works" claims still work</step>
-      </steps>
-    </behavior>
-    
     <behavior name="The 10-Minute Check">
       <description>If stuck for 10 minutes, stop and reassess</description>
       <checklist>
@@ -410,35 +399,15 @@
   </conversation-format>
 
   <tool-format>
-    <description>When documenting tool calls in examples/instructions, use this pseudo-XML format:</description>
+    <description>Tool calls in examples use pseudo-XML format</description>
     <example>
       <tool-call>
         <tool name="WebSearch">
-          <params>
-            {
-              "query": "python async best practices",
-              "allowed_domains": ["python.org", "realpython.com"]
-            }
-          </params>
+          <params>{"query": "python async", "allowed_domains": ["python.org"]}</params>
         </tool>
       </tool-call>
     </example>
-    <example>
-      <tool-call>
-        <mcp server="puppeteer" tool="puppeteer_navigate">
-          <params>
-            {
-              "url": "https://example.com",
-              "allowDangerous": true,
-              "launchOptions": {
-                "headless": false,
-                "args": ["--proxy-server=http://localhost:8080"]
-              }
-            }
-          </params>
-        </mcp>
-      </tool-call>
-    </example>
+    <ref href="~/.claude/schemas/prompt-xml-schema.md">Full schema documentation</ref>
   </tool-format>
 
   <rules>
@@ -699,12 +668,12 @@
     <base path="~/.claude/patterns/*.md">Domain-specific patterns</base>
     <base path="~/.claude.json">Global MCP server config (mcpServers section)</base>
     <base path="~/.claude/settings.json">Other Claude Code settings (permissions, theme, etc)</base>
-    <base path="~/code/ducktape">Personal infrastructure hub - see <ref href="#/ducktape"/></base>
   </knowledge-bases>
   
-  <ducktape id="/ducktape">
+  <ducktape id="/ducktape" href="~/code/ducktape">
     <title>~/code/ducktape - Personal Infrastructure Hub</title>
-    <description>Central location for personal infrastructure, configuration, and cross-project utilities</description>
+    <description>Centralized computer configuration, infra, cross-project utilities</description>
+    <instruction>Use to look up / edit configuration of this machine</instruction>
     
     <key-contents>
       <directory name="ansible/">Infrastructure automation roles (python-health, docker, dev tools, etc.)</directory>
@@ -1318,36 +1287,38 @@
       <mantra>hasattr = "I don't trust my own refactoring"</mantra>
     </pattern>
   </patterns>
-
-  <hasattr-getattr-protocol critical="true">
-    <title>🚨 CRITICAL PROTOCOL: hasattr/getattr Detection 🚨</title>
-    
-    <when-detected>
-      1. **IMMEDIATE FULL STOP** - Do not write another line
-      2. **PRINT WARNING** - "🚨 CRITICAL: hasattr/getattr detected - STOPPING"
-      3. **SHOW THE OFFENDING CODE** - Display the exact hasattr/getattr usage
-      4. **EXPLAIN THE VIOLATION** - Why this specific usage is wrong
-      5. **SHOW THE FIX** - Rewrite without hasattr/getattr
-      6. **WAIT FOR USER** - "Awaiting user confirmation to proceed with fix"
-    </when-detected>
-    
-    <no-exceptions>
-      - Even if you think it's justified
-      - Even if it's "just checking"
-      - Even if it's "defensive"
-      - Even if it's "optional"
-      - **ESPECIALLY** if you just added the attribute
-    </no-exceptions>
-    
-    <user-trauma>
-      The user has been burned by this pattern too many times. They find dead
-      hasattr checks weeks later and waste hours figuring out if there's some
-      hidden backward compatibility requirement. There never is. It's always
-      just Claude being "defensive" about code Claude just wrote.
-    </user-trauma>
-  </hasattr-getattr-protocol>
-
   <critical-rules>
+    <rule id="/hasattr-getattr-blanket-ban">
+      <title>🚨 CRITICAL PROTOCOL: hasattr/getattr Detection 🚨</title>
+      
+      <description>
+        <trigger>Assistant writes ANY code using hasattr or getattr</trigger>
+        <action>
+          1. **IMMEDIATE FULL STOP** - Do not write another line
+          2. **PRINT WARNING** - "🚨 CRITICAL: hasattr/getattr detected - STOPPING"
+          3. **SHOW THE OFFENDING CODE** - Display the exact hasattr/getattr usage
+          4. **EXPLAIN THE VIOLATION** - Why this specific usage is wrong
+          5. **SHOW THE FIX** - Rewrite without hasattr/getattr
+          6. **WAIT FOR USER** - "Awaiting user confirmation to proceed with fix"
+        </action>
+      </description>
+      
+      <no-exceptions>
+        - Even if you think it's justified
+        - Even if it's "just checking"
+        - Even if it's "defensive"
+        - Even if it's "optional"
+        - **ESPECIALLY** if you just added the attribute
+      </no-exceptions>
+      
+      <user-trauma>
+        The user has been burned by this pattern too many times. They find dead
+        hasattr checks weeks later and waste hours figuring out if there's some
+        hidden backward compatibility requirement. There never is. It's always
+        just Claude being "defensive" about code Claude just wrote.
+      </user-trauma>
+    </rule>
+
     <rule id="/evidence/prove-it" priority="1">
       <title>Evidence Required</title>
       <description>No claims without proof</description>
@@ -1477,6 +1448,32 @@ if isinstance(response, ErrorResponse):
     <rule id="/behavior/only-what-asked" priority="11" critical="true">
       <title>Do ONLY What Was Asked</title>
       <description>NEVER take autonomous actions beyond the explicit request. This is ESPECIALLY critical for risky/destructive operations. When asked to commit with --no-verify, DO NOT also create tracking issues. When asked to restart puppeteer, DO NOT killall google-chrome (killing ALL Chrome instances including user's personal browsing). ALWAYS ASK before adding extra actions: "Should I also...?"</description>
+    </rule>
+    
+    <rule id="/code/ast-only-manipulation" priority="12" critical="true">
+      <title>AST-Only Code Manipulation</title>
+      <description>**STRICTLY FORBIDDEN**: ANY code search/replace/manipulation via grep, regex, sed, awk, string matching, or text-based methods. **MANDATORY**: ALL code manipulation MUST use AST (Abstract Syntax Tree) parsing and manipulation tools. This ensures semantic correctness and prevents breaking code through naive text replacement.</description>
+      <why>
+        - Text-based replacements break on edge cases (strings, comments, similar names)
+        - AST manipulation understands code structure and semantics
+        - Prevents introducing syntax errors or changing unintended code
+        - Ensures refactoring is semantically correct
+      </why>
+      <examples>
+        <example negative>
+          <description>Using grep/sed to rename a function</description>
+          <code>grep -r "oldFunction" . | sed 's/oldFunction/newFunction/g'</code>
+        </example>
+        <example negative>
+          <description>Using regex to find/replace code patterns</description>
+          <code>re.sub(r'className\s*=\s*"([^"]*)"', r'className={\1}', code)</code>
+        </example>
+        <example positive>
+          <description>Using AST tools for refactoring</description>
+          <code>ast-grep, comby, jscodeshift, python AST module</code>
+        </example>
+      </examples>
+      <enforcement>If user asks for code manipulation without specifying AST tools, STOP and explain this requirement.</enforcement>
     </rule>
   </critical-rules>
 
@@ -1783,7 +1780,7 @@ Starting with the build...</a>
     </tools-as-memory>
     <when-confused>
       <action>!!! Stop and acknowledge confusion immediately</action>
-      <action>Use <ref href="~/.claude/commands/backtrace.md"/> to capture context</action>
+      <action><ref href="~/.claude/commands/backtrace.md"/> to capture context</action>
       <action>Check if this is a typo or simple cause</action>
       <action>Search MCP memory for similar confusion</action>
       <action>Document the confusion for future reference</action>

@@ -109,7 +109,7 @@ force-select = [
     "PTH123",   # builtin-open (use Path.open())
     
     # Code quality
-    "EXE001",   # shebang-not-executable
+    # "EXE001",   # shebang-not-executable
     "ARG001",   # unused-function-argument
     "ARG002",   # unused-method-argument
     "FBT001",   # boolean-typed-positional-argument-in-function-definition

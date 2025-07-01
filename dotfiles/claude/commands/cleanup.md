@@ -77,11 +77,25 @@ name: cleanup
   <workflow>
     <step id="scan">
       <title>Scan - Analyze directory for cleanup candidates</title>
+      <important>ALWAYS start with a full unfiltered directory listing!</important>
+      <description>
+        The scan step should adapt to what you find. After the initial ls -la, you might run various 
+        other commands based on what you discover. The examples below are suggestions, not an exhaustive list.
+      </description>
       <tool-call>
-        <glob pattern="**/oneoff__*" />
-        <grep pattern="TEMPORARY|ONE-OFF|Can delete after" include="*.py" />
-        <bash command="find . -type f -name '*.md' | head -20" />
+        <bash command="ls -la" description="MANDATORY: Full unfiltered directory listing to see ALL files" />
       </tool-call>
+      <suggested-followups>
+        <description>Based on what you see, you might want to run commands like:</description>
+        <tool-call>
+          <glob pattern="**/oneoff__*" />
+          <grep pattern="TEMPORARY|ONE-OFF|Can delete after" include="*.py" />
+          <bash command="find . -type f -name '*.md' | head -20" />
+          <bash command="du -sh .* | sort -h" description="Check sizes of hidden directories" />
+          <bash command="find . -name '*.log' -o -name '*.tmp'" description="Find log and temp files" />
+          <bash command="git status --ignored" description="See what git is ignoring" />
+        </tool-call>
+      </suggested-followups>
     </step>
     
     <step id="present">
@@ -105,16 +119,23 @@ name: cleanup
   <cleanup-targets>
     <target id="oneoff-scripts" priority="1">
       <title>Oneoff Scripts</title>
-      <pattern>oneoff__*.{py,js,ts,sh}</pattern>
+      <pattern description="Conventional pattern, non-exhaustive">oneoff__*.{py,js,ts,sh}</pattern>
       <ref href="#/patterns/oneoff-scripts"/>
+      <description>Scripts created for temporary tasks, experiments, or debugging, with no use once they've been applied.</description>
       
       <example positive>
         <u>cleanup oneoffs</u>
         <a>
-          Found 5 oneoff scripts:
-          - oneoff__test_webhook_integration.py (2 days old)
-          - oneoff__bulk_rename_vars.py (1 week old)
-          - oneoff__debug_auth_flow.js (3 hours old)
+          These 3 scripts look fine to delete:
+
+          - oneoff__test_webhook_integration.py (2 days old) - tests specific issue we since fixed
+          - oneoff__bulk_rename_vars.py (1 week old) - applied refactor to change case convention
+          - parse_json_data.js (5 days old) - used once to format logs for issue #12345 into readable bugreport
+
+          This one might be useful to promote to a proper script:
+
+          - oneoff__debug_auth_flow.js (3 hours old) - debugging the OAuth flow, which is still in flux
+
           Would you like to delete all?
         </a>
       </example>
@@ -207,6 +228,7 @@ name: cleanup
       <patterns>
         <pattern>Backup files: *.backup, *.old, *~</pattern>
         <pattern>Version sprawl: *-v2, *-final, *-FINAL-FINAL</pattern>
+        <pattern>Script iterations: script_v2.js when script.js exists</pattern>
         <pattern>Partial outputs: *.partial, *.incomplete</pattern>
       </patterns>
     </target>
@@ -217,6 +239,19 @@ name: cleanup
         <pattern>Node modules outside project: ./node_modules/ in scripts/</pattern>
         <pattern>Python caches: __pycache__/, *.pyc outside venv</pattern>
         <pattern>TypeScript outputs: *.js files with corresponding *.ts</pattern>
+      </patterns>
+    </target>
+    
+    <target id="hidden-caches" priority="6">
+      <title>Hidden Cache Directories</title>
+      <patterns>
+        <pattern>.ruff_cache/ - Python linter cache</pattern>
+        <pattern>.mypy_cache/ - Python type checker cache</pattern>
+        <pattern>.pytest_cache/ - Test runner cache</pattern>
+        <pattern>.coverage - Coverage report artifacts</pattern>
+        <pattern>.tox/ - Test environment cache</pattern>
+        <pattern>.hypothesis/ - Property testing cache</pattern>
+        <pattern>Note: .venv/, .env/, .git/, .claude/ are usually meaningful - don't delete</pattern>
       </patterns>
     </target>
   </cleanup-targets>
@@ -330,7 +365,7 @@ Ready to proceed? This will:
 - debug.log
 
 All clean!</a>
-      <reasoning>❌ Bad: Missed obvious temp files like __pycache__/, *.pyc, test-output-*.json, temp directories</reasoning>
+      <reasoning>❌ Bad: Didn't run ls -la first! Missed .ruff_cache/, .claude/, __pycache__/, *.pyc, test-output-*.json, hidden directories</reasoning>
     </example>
     
     <example negative>
@@ -356,6 +391,76 @@ Workspace is cleaner now!</a>
   </common-mistakes>
 
   <examples>
+    <example positive>
+      <u>cleanup versioned scripts</u>
+      <a>Found version sprawl in scripts:
+      
+VERSION CONSOLIDATION PLAN:
+      
+1. Script Versions Detected:
+   📄 generate_python_bundle.js (10KB) - Original version
+   📄 generate_python_bundle_v2.js (12KB) - Enhanced with class expansion
+   
+   Comparing features:
+   - v2 adds: Class method extraction, async detection, better preservation
+   - v2 is clearly the improved version
+   
+2. Recommendation:
+   - Archive v1 as generate_python_bundle_v1.js
+   - Make v2 the primary generate_python_bundle.js
+   - Remove the _v2 suffix
+   
+This consolidates functionality and removes version confusion.
+Proceed?</a>
+      
+      <u>yes, merge v2 into main</u>
+      <a>Consolidating versioned scripts:
+      
+<tool-call>
+  <bash command="cp generate_python_bundle.js archive/2025-07-01-cleanup/generate_python_bundle_v1.js" />
+  <bash command="mv generate_python_bundle_v2.js generate_python_bundle.js" />
+</tool-call>
+
+✅ Archived old version to archive/2025-07-01-cleanup/
+✅ Promoted v2 as the main script
+✅ Removed version suffix confusion
+
+The enhanced version is now the default generate_python_bundle.js</a>
+    </example>
+    
+    <example positive>
+      <u>cleanup</u>
+      <a>Let me start with a full directory scan to see everything:
+
+<tool-call>
+  <bash command="ls -la" />
+</tool-call>
+
+I see quite a bit here! Including hidden directories like .ruff_cache/, test files, and some extraction artifacts. Let me investigate further:
+
+<tool-call>
+  <bash command="du -sh .ruff_cache" description="Check ruff cache size" />
+  <bash command="find . -name 'test_*.py' -type f | wc -l" description="Count test files" />
+  <bash command="ls -la *.json | grep -E '(extracted_|extract)'" description="Look for extraction artifacts" />
+</tool-call>
+
+The .ruff_cache is 2.3MB and I found several extraction JSON files. Let me check what some of these test files actually are:
+
+<tool-call>
+  <read file_path="./test_id_generator.py" limit="10" description="Check if this is a real test or a oneoff" />
+  <read file_path="./test_js2py.py" limit="10" description="See what this test file contains" />
+</tool-call>
+
+Hmm, test_id_generator.py looks like a quick experiment, not a proper test. Let me also check for backup files:
+
+<tool-call>
+  <bash command="find . -name '*_old.py' -o -name '*_backup.py' -o -name '*.bak'" description="Look for backup files" />
+  <read file_path="./detect_and_rename_react.py" limit="15" description="This sounds like it might be a oneoff script" />
+</tool-call>
+
+Based on my inspection, here's what I found to clean up...</a>
+    </example>
+    
     <example positive>
       <u>I've been experimenting a lot, cleanup</u>
       <a>I'll scan for experimental artifacts and scattered documentation.
@@ -477,27 +582,33 @@ Proceed?</a>
     
     <example positive>
       <u>cleanup</u>
-      <a>Found archive directory at ./archive/experiments/
-   
-   📝 Oneoff Scripts (3 files):
-   - oneoff__test_integration.py
-   - oneoff__bulk_process.py
-   
-   Would you like to archive these files or delete them permanently?</a>
-      
+      <a>
+        <tool-call description="Scan (details elided)">
+          <bash command="ls -la" />
+          ...
+        </tool-call>
+
+        Found an archive directory at ./archive/experiments/
+         
+        📝 Oneoff Scripts (3 files):
+        - oneoff__test_integration.py
+        - oneoff__bulk_process.py
+        
+        Would you like to archive these files or delete them permanently?</a>
       <u>archive</u>
       <a>Moving to archive:
-   <tool-call>
-     <bash command="mkdir -p ./archive/experiments/2024-01-20" />
-     <bash command="mv oneoff__test_integration.py ./archive/experiments/2024-01-20/" />
-     <bash command="mv oneoff__bulk_process.py ./archive/experiments/2024-01-20/" />
-     <bash command="echo '[2024-01-20 14:32] Archived 2 oneoff scripts' >> cleanup-archive.log" />
-   </tool-call>
+        <tool-call>
+          <bash command="date" description="Get the right timestamp for the archive" />
+          <bash command="mkdir -p ./archive/experiments/2024-01-20" />
+          <bash command="mv oneoff__test_integration.py ./archive/experiments/2024-01-20/" />
+          <bash command="mv oneoff__bulk_process.py ./archive/experiments/2024-01-20/" />
+        </tool-call>
    
-   ✓ oneoff__test_integration.py → ./archive/experiments/2024-01-20/
-   ✓ oneoff__bulk_process.py → ./archive/experiments/2024-01-20/
+        ✓ oneoff__test_integration.py → ./archive/experiments/2024-01-20/
+        ✓ oneoff__bulk_process.py → ./archive/experiments/2024-01-20/
    
-   Archived 2 files. Archive location saved to cleanup-archive.log</a>
+        2 files archived. Nothing else found to clean up.
+      </a>
     </example>
   </archive-detection>
 
@@ -529,7 +640,6 @@ Proceed?</a>
   <best-practices>
     <practice>Archive vs delete - Use archives for experiments that might be referenced later</practice>
     <practice>Date-based subdirs - Archives are organized by date automatically</practice>
-    <practice>Archive log - Creates `cleanup-archive.log` tracking what was archived when</practice>
   </best-practices>
 
   <integration>

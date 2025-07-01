@@ -480,9 +480,9 @@ class ClaudeRulesLinter(BaseLinter):
 
         # Show warnings first (less severe)
         if warning_results:
-            click.secho("=" * 60, fg="yellow")
+            click.secho("=" * 40, fg="yellow")
             click.secho("⚠️  Pre-existing violations in inherited code", fg="yellow")
-            click.secho("=" * 60, fg="yellow")
+            click.secho("=" * 40, fg="yellow")
             click.echo()
 
             for result in warning_results:
@@ -496,9 +496,9 @@ class ClaudeRulesLinter(BaseLinter):
 
         # Show errors (new violations)
         if error_results:
-            click.secho("=" * 60, fg="red", bold=True)
+            click.secho("=" * 40, fg="red", bold=True)
             click.secho("🚨 CLAUDE.md VIOLATIONS DETECTED! 🚨", fg="red", bold=True)
-            click.secho("=" * 60, fg="red", bold=True)
+            click.secho("=" * 40, fg="red", bold=True)
             click.echo()
 
             for result in error_results:
@@ -511,12 +511,9 @@ class ClaudeRulesLinter(BaseLinter):
                     click.echo(f"   Line {error.line}:{error.column} - {error.message}")
                 click.echo()
 
-            click.secho("=" * 60, fg="red", bold=True)
             click.secho("🛑 EXECUTION BLOCKED - IMMEDIATE ACTION REQUIRED", fg="red", bold=True)
-            click.secho("=" * 60, fg="red", bold=True)
             click.echo()
 
-            click.echo("According to CLAUDE.md, you MUST now:")
             click.echo("1. STOP - Do not proceed")
             click.echo("2. ANALYZE - Why these violations occurred")
             click.echo("3. FIX - Create proper solutions")
