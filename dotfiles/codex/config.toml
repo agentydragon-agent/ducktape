@@ -17,6 +17,10 @@ markdown_compact = true
 message_spacing = false
 require_double_ctrl_d = true
 
+[shell_environment_policy]
+# Triggers auto-lints
+set = { CODEX_AGENT = "1" }
+
 [sandbox]
 sandbox_permissions = [
     "disk-full-read-access",
