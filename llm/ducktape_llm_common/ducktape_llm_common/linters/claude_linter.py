@@ -19,12 +19,14 @@ def main():
 Modes:
   pre   - Pre-tool-use hook that blocks non-fixable violations
   post  - Post-tool-use hook that auto-fixes violations
+  check - Check files for violations (manual mode)
 """,
     )
 
-    parser.add_argument("mode", choices=["pre", "post"], help="Hook mode to run")
+    parser.add_argument("mode", choices=["pre", "post", "check"], help="Mode to run")
 
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
+    parser.add_argument("files", nargs="*", help="Files to check (for check mode)")
 
     args = parser.parse_args()
 
@@ -37,6 +39,37 @@ Modes:
         from ducktape_llm_common.linters.claude_post_hook import main as post_main
 
         post_main()
+    elif args.mode == "check":
+        # Manual check mode
+        from pathlib import Path
+
+        from ducktape_llm_common.linters.claude_rules import ClaudeRulesLinter
+
+        linter = ClaudeRulesLinter()
+
+        # Determine what to check
+        if args.files:
+            # Check specific files
+            results = []
+            for file_path in args.files:
+                path = Path(file_path)
+                if path.is_file() and path.suffix == ".py":
+                    result = linter.lint_file(path)
+                    if result.has_errors or result.has_warnings:
+                        results.append(result)
+                elif path.is_dir():
+                    results.extend(linter.lint_directory(path))
+        else:
+            # Check current directory
+            results = linter.lint_directory(Path.cwd())
+
+        if results:
+            linter.format_violations(results)
+            # Exit with error code if violations found
+            exit(1)
+        else:
+            print("✅ No violations found!")
+            exit(0)
 
 
 if __name__ == "__main__":

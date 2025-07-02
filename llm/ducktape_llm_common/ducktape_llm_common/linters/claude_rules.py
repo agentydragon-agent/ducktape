@@ -521,6 +521,14 @@ class ClaudeRulesLinter(BaseLinter):
             click.echo()
 
             click.secho("This pause is MANDATORY.", fg="red", bold=True)
+            click.echo()
+
+            # Add command-line re-run hint
+            click.echo("To manually check files after fixing:")
+            first_file = error_results[0].file if error_results else "."
+            click.echo(f"  claude-linter check {first_file}")
+            click.echo("  # or check all files in current directory:")
+            click.echo("  claude-linter check")
 
     def check_and_block(self, directory: Path | None = None) -> bool:
         """Check for violations and block if found.

@@ -1,36 +1,74 @@
-# Claude Code Linter Hook
+# Claude Code Linter Hooks
 
-This document describes the Claude Code post-tool-use hook that automatically runs `claude-linter` on Python files edited by Claude.
+This document describes the Claude Code hooks that automatically run `claude-linter` on files edited by Claude.
 
 ## Overview
 
-The hook integrates with Claude Code's hooks system to run the linter automatically after Claude creates new Python files using the Write tool. If linting fails, the hook blocks execution (exit code 2) and sends the errors back to Claude for correction.
+The hooks integrate with Claude Code's hooks system to:
+- **Pre-hook**: Run the linter before Write operations to block violations
+- **Post-hook**: Auto-fix text issues and Python formatting after Write/Edit/MultiEdit operations
 
-**Note**: Currently only processes Write operations (new file creation) where all violations are guaranteed to be from Claude's current action.
+Both hooks ensure code quality standards are maintained.
 
 ## Setup
 
-1. **Hook Script**: The main hook logic is in:
-   - `/home/agentydragon/code/ducktape/llm/ducktape_llm_common/ducktape_llm_common/linters/claude_hook.py`
+1. **Hook Scripts**: The hook logic is in:
+   - Pre-hook: `ducktape_llm_common/linters/claude_pre_hook.py`
+   - Post-hook: `ducktape_llm_common/linters/claude_post_hook.py`
+   - Unified CLI: `ducktape_llm_common/linters/claude_linter.py`
 
-2. **Installation**: The hook is automatically installed as `claude-linter-hook` when you install the package:
+2. **Installation**: The hooks are automatically installed when you install the package:
    ```bash
    pip install -e /path/to/ducktape_llm_common
    # or
    pip install ducktape-llm-common
    ```
+   This installs the `claude-linter` command with pre/post/check modes.
 
-3. **Configuration**: The hook is configured in `~/.claude/settings.json`:
+3. **Configuration**: The hooks are configured in `~/.claude/settings.json`:
    ```json
    {
      "hooks": {
+       "PreToolUse": [
+         {
+           "matcher": "Write",
+           "hooks": [
+             {
+               "type": "command",
+               "command": "claude-linter pre",
+               "continue": true
+             }
+           ]
+         }
+       ],
        "PostToolUse": [
          {
            "matcher": "Write",
            "hooks": [
              {
                "type": "command",
-               "command": "claude-linter-hook"
+               "command": "claude-linter post",
+               "continue": true
+             }
+           ]
+         },
+         {
+           "matcher": "Edit",
+           "hooks": [
+             {
+               "type": "command",
+               "command": "claude-linter post",
+               "continue": true
+             }
+           ]
+         },
+         {
+           "matcher": "MultiEdit",
+           "hooks": [
+             {
+               "type": "command",
+               "command": "claude-linter post",
+               "continue": true
              }
            ]
          }
@@ -41,41 +79,96 @@ The hook integrates with Claude Code's hooks system to run the linter automatica
 
 ## How It Works
 
-1. **Triggering**: The hook triggers after Claude uses the Write tool (new file creation)
-2. **File Detection**: It checks if the new file is a Python file (`.py` extension)
-3. **Linting**: 
+### Pre-Hook (Write only)
+1. **Triggering**: Runs before Claude creates new files with Write tool
+2. **Python File Detection**: Checks if the file will be a Python file (`.py` extension)
+3. **Text Fixes**: Runs pre-commit text fixes on all file types
+4. **Python Linting**: 
    - Creates a `ClaudeRulesLinter` instance with `treat_all_as_errors=True`
    - This mode treats ALL violations as errors (not just "new" ones)
-   - Runs the linter directly on the newly created file
-4. **Results**:
-   - **Success**: Exits with code 0, prints success message to stdout
-   - **Failure**: Exits with code 2, sends error messages to stderr for Claude to see and fix
+   - Runs the linter to check for violations
+5. **Results**:
+   - **Success**: Exits with code 0, allows file creation
+   - **Failure**: Exits with code 2, blocks creation and shows errors to Claude
+
+### Post-Hook (Write/Edit/MultiEdit)
+1. **Triggering**: Runs after Claude modifies files
+2. **Text Fixes**: Automatically fixes:
+   - Trailing whitespace (preserves markdown double-space line breaks)
+   - Missing final newlines
+   - Mixed line endings (converts to LF)
+   - UTF-8 BOM
+3. **Python Fixes**: For `.py` files, also runs:
+   - `ruff format` for code formatting
+   - `ruff check --fix` for auto-fixable violations
+4. **Results**: Always exits with code 0, reports what was fixed
 
 ## Behavior
 
-- The hook only processes Write operations (new file creation)
-- Treats all violations as errors since they're all from the current tool call
-- Directly calls the linter's Python API
-- Exit code 2 blocks file creation and requires Claude to fix the issues
+- Pre-hook blocks violations that can't be auto-fixed
+- Post-hook auto-fixes what it can
+- Text fixes apply to all supported file types (.py, .js, .md, .txt, .rs, etc.)
+- Python-specific fixes only apply to .py files
 
 ## Testing
 
-To test the hook manually:
+To test the hooks manually:
 
 ```bash
-# Create a test JSON input
-echo '{"tool": {"name": "Write", "parameters": {"file_path": "/path/to/test.py"}}}' | claude-linter-hook
+# Test pre-hook (expects JSON on stdin)
+echo '{"tool_name": "Write", "tool_input": {"file_path": "/path/to/test.py"}}' | claude-linter pre
+
+# Test post-hook (expects JSON on stdin)
+echo '{"tool_name": "Write", "tool_input": {"file_path": "/path/to/test.py"}}' | claude-linter post
+
+# Manual check mode (no stdin required)
+claude-linter check                    # Check all Python files in current directory
+claude-linter check file.py           # Check specific file
+claude-linter check src/              # Check all Python files in directory
 ```
 
 ## Troubleshooting
 
-- Check that `claude-linter` is in PATH
-- Verify the hook script is executable
-- Check Claude Code logs for hook execution details
-- Ensure the settings.json is properly formatted
+- Check that `claude-linter` is in PATH: `which claude-linter`
+- View debug logs: `/tmp/claude-linter-hook.log` and `/tmp/claude-post-hook.log`
+- Verify the hooks are configured in `~/.claude/settings.json`
+- Ensure the package is installed: `pip show ducktape-llm-common`
+
+## CLI Usage
+
+The `claude-linter` command supports three modes:
+
+1. **`claude-linter pre`** - Pre-hook mode (blocks violations)
+   - Used by Claude Code before Write operations
+   - Reads JSON from stdin
+   - Exit code 2 blocks the operation
+
+2. **`claude-linter post`** - Post-hook mode (auto-fixes)
+   - Used by Claude Code after Write/Edit/MultiEdit operations
+   - Reads JSON from stdin
+   - Always exits with code 0
+
+3. **`claude-linter check [files...]`** - Manual check mode
+   - For users to manually check files
+   - No stdin required
+   - Exit code 1 if violations found
+
+## Text Fixes
+
+The post-hook automatically fixes these text issues in all supported file types:
+
+- **Trailing whitespace**: Removes trailing spaces/tabs (preserves markdown double-space line breaks)
+- **End of file**: Ensures files end with exactly one newline
+- **Line endings**: Converts CRLF and CR to LF
+- **UTF-8 BOM**: Removes byte order markers
+
+Supported file extensions: `.py`, `.js`, `.ts`, `.jsx`, `.tsx`, `.md`, `.txt`, `.rs`, `.toml`, `.yaml`, `.yml`, `.json`, `.sh`, `.bash`, `.zsh`, `.html`, `.css`, `.scss`, `.vue`, `.svelte`
 
 ## Related Files
 
-- Main linter: `claude-linter`
+- Main linter CLI: `ducktape_llm_common/linters/claude_linter.py`
+- Pre-hook logic: `ducktape_llm_common/linters/claude_pre_hook.py`
+- Post-hook logic: `ducktape_llm_common/linters/claude_post_hook.py`
+- Text fixes: `ducktape_llm_common/linters/text_fixes.py`
 - Linter rules: `ducktape_llm_common/linters/claude_rules.py`
 - Linter config: `.claude-linter.json` (project-specific)

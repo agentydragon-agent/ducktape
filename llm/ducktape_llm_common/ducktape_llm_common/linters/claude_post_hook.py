@@ -11,6 +11,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from ducktape_llm_common.linters.text_fixes import fix_all_text_issues
+
 # Set up logging - only to file, not stderr (which is used for hook output)
 logging.basicConfig(
     level=logging.DEBUG,
@@ -42,86 +44,92 @@ def main():
         logger.debug(f"Skipping non-file-editing tool: {tool_name}")
         sys.exit(0)
 
-    # Check if it's a Python file
+    # Get the file path
     file_path = tool_input.get("file_path", "")
-    if not file_path.endswith(".py"):
-        logger.debug(f"Skipping non-Python file: {file_path}")
-        sys.exit(0)
 
     file_path = Path(file_path)
     if not file_path.exists():
         logger.warning(f"File does not exist: {file_path}")
         sys.exit(0)
 
-    logger.info(f"Processing Python file: {file_path}")
+    logger.info(f"Processing file: {file_path}")
 
-    # Get the enabled rules from claude config
-    from ducktape_llm_common.linters.claude_config import ClaudeLinterConfig
+    # Track what was fixed
+    fixed_items = []
 
-    config = ClaudeLinterConfig.find_config()
-    enabled_rules = ",".join(config.rules.enabled_rules)
+    # Run text fixes first (for all file types)
+    logger.debug("Running text fixes")
+    text_fixes = fix_all_text_issues(file_path)
+    if text_fixes:
+        fixed_items.extend(text_fixes)
+        logger.info(f"Fixed text issues: {text_fixes}")
 
-    # Run ruff format first (replaces black)
-    logger.debug("Running ruff format")
-    format_result = subprocess.run(["ruff", "format", str(file_path)], capture_output=True, text=True)
-    logger.debug(f"Format result: {format_result.returncode}, stdout: {format_result.stdout}")
+    # For Python files, also run ruff
+    if file_path.suffix == ".py":
+        logger.debug("Processing Python-specific fixes")
 
-    # Check what violations exist
-    logger.debug(f"Checking violations with rules: {enabled_rules}")
-    check_result = subprocess.run(
-        ["ruff", "check", "--select", enabled_rules, "--output-format", "json", str(file_path)],
-        capture_output=True,
-        text=True,
-    )
+        # Get the enabled rules from claude config
+        from ducktape_llm_common.linters.claude_config import ClaudeLinterConfig
 
-    # Count violations before fix
-    violations_before = []
-    if check_result.returncode != 0 and check_result.stdout:
-        try:
-            violations_before = json.loads(check_result.stdout)
-            logger.info(f"Found {len(violations_before)} violations before fix")
-        except json.JSONDecodeError:
-            logger.warning("Could not parse check result")
-            violations_before = []
+        config = ClaudeLinterConfig.find_config()
+        enabled_rules = ",".join(config.rules.enabled_rules)
 
-    # Run ruff fix for auto-fixable violations
-    logger.debug("Running ruff fix")
-    subprocess.run(
-        ["ruff", "check", "--select", enabled_rules, "--fix", str(file_path)],
-        capture_output=True,
-        text=True,
-    )
+        # Run ruff format first (replaces black)
+        logger.debug("Running ruff format")
+        format_result = subprocess.run(["ruff", "format", str(file_path)], capture_output=True, text=True)
+        logger.debug(f"Format result: {format_result.returncode}, stdout: {format_result.stdout}")
 
-    # Check what violations remain after fixing
-    logger.debug("Checking violations after fix")
-    check_after = subprocess.run(
-        ["ruff", "check", "--select", enabled_rules, "--output-format", "json", str(file_path)],
-        capture_output=True,
-        text=True,
-    )
+        # Check what violations exist
+        logger.debug(f"Checking violations with rules: {enabled_rules}")
+        check_result = subprocess.run(
+            ["ruff", "check", "--select", enabled_rules, "--output-format", "json", str(file_path)],
+            capture_output=True,
+            text=True,
+        )
 
-    violations_after = []
-    if check_after.returncode != 0 and check_after.stdout:
-        try:
-            violations_after = json.loads(check_after.stdout)
-            logger.info(f"Found {len(violations_after)} violations after fix")
-        except json.JSONDecodeError:
-            logger.warning("Could not parse check result after fix")
-            violations_after = []
+        # Count violations before fix
+        violations_before = []
+        if check_result.returncode != 0 and check_result.stdout:
+            try:
+                violations_before = json.loads(check_result.stdout)
+                logger.info(f"Found {len(violations_before)} violations before fix")
+            except json.JSONDecodeError:
+                logger.warning("Could not parse check result")
+                violations_before = []
 
-    # Calculate what was fixed
-    fixed_count = len(violations_before) - len(violations_after)
-    # Check if formatting changed the file
-    formatted = format_result.returncode == 0 and "reformatted" in format_result.stdout
+        # Run ruff fix for auto-fixable violations
+        logger.debug("Running ruff fix")
+        subprocess.run(
+            ["ruff", "check", "--select", enabled_rules, "--fix", str(file_path)],
+            capture_output=True,
+            text=True,
+        )
 
-    logger.info(f"Fixed {fixed_count} violations, formatted: {formatted}")
+        # Check what violations remain after fixing
+        logger.debug("Checking violations after fix")
+        check_after = subprocess.run(
+            ["ruff", "check", "--select", enabled_rules, "--output-format", "json", str(file_path)],
+            capture_output=True,
+            text=True,
+        )
 
-    if fixed_count > 0 or formatted:
-        # Report what we fixed
+        violations_after = []
+        if check_after.returncode != 0 and check_after.stdout:
+            try:
+                violations_after = json.loads(check_after.stdout)
+                logger.info(f"Found {len(violations_after)} violations after fix")
+            except json.JSONDecodeError:
+                logger.warning("Could not parse check result after fix")
+                violations_after = []
+
+        # Calculate what was fixed
+        fixed_count = len(violations_before) - len(violations_after)
+        # Check if formatting changed the file
+        formatted = format_result.returncode == 0 and "reformatted" in format_result.stdout
+
+        logger.info(f"Fixed {fixed_count} violations, formatted: {formatted}")
+
         if fixed_count > 0:
-            logger.info(f"Reporting {fixed_count} fixed violations to Claude")
-            print(f"✅ Auto-fixed {fixed_count} violation(s) in {file_path.name}:", file=sys.stderr)
-
             # Group fixed violations by type
             fixed_codes = {}
             for v_before in violations_before:
@@ -135,11 +143,17 @@ def main():
                     fixed_codes[code] = fixed_codes.get(code, 0) + 1
 
             for code, count in sorted(fixed_codes.items()):
-                print(f"  - {code}: {count} instance(s)", file=sys.stderr)
+                fixed_items.append(f"{code} ({count}x)")
 
         if formatted:
-            print(f"✅ Formatted {file_path.name}", file=sys.stderr)
+            fixed_items.append("code formatting")
 
+    # Report all fixes if any were made
+    if fixed_items:
+        logger.info(f"Reporting fixes to Claude: {fixed_items}")
+        print(f"✅ Auto-fixed in {file_path.name}:", file=sys.stderr)
+        for item in fixed_items:
+            print(f"  - {item}", file=sys.stderr)
         print("\n[Claude linter] FYI no action required. Autofixes applied.", file=sys.stderr)
 
     # Exit 0 to allow continuation

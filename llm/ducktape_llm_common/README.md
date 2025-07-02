@@ -29,7 +29,7 @@ pip install -e "/path/to/ducktape_llm_common[dev]"
 ## Quick Start
 
 ### Console Scripts Available
-- `claude-linter` - Unified linter for Claude Code hooks (pre/post modes)
+- `claude-linter` - Unified linter for Claude Code hooks (pre/post/check modes)
 - `check-work-urls` - Validate work URLs in markdown files
 - `check-task-metadata` - Validate METADATA.yaml files
 - `fix-newlines` - Ensure files end with exactly one newline
@@ -43,6 +43,7 @@ The package provides command-line linters that can be used standalone or with pr
 # Claude Code hook modes
 claude-linter pre   # Run pre-hook (blocks non-fixable violations)
 claude-linter post  # Run post-hook (auto-fixes violations)
+claude-linter check # Manual check mode for developers
 
 # Check work tracking URLs in your project
 check-work-urls .
@@ -154,8 +155,12 @@ ducktape_llm_common/
 ├── linters/                 # Command-line linters
 │   ├── __init__.py
 │   ├── base.py             # Base linter class
+│   ├── claude_linter.py    # Unified CLI for pre/post/check modes
+│   ├── claude_pre_hook.py  # Pre-hook logic (blocks violations)
+│   ├── claude_post_hook.py # Post-hook logic (auto-fixes)
 │   ├── claude_config.py    # Claude linter configuration models
 │   ├── claude_rules.py     # Claude linter implementation
+│   ├── text_fixes.py       # Direct text fixing functions
 │   ├── check_work_urls.py  # Validate work://, task://, inv:// URLs
 │   └── check_task_metadata.py  # Validate METADATA.yaml files
 ├── prompts/                 # AI agent instruction prompts

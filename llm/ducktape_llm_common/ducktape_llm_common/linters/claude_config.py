@@ -57,7 +57,29 @@ class ClaudeLinterConfig(BaseModel):
 
     # Output settings
     max_errors_per_file: int = 5
+    max_total_errors: int = 20  # Maximum total errors to display across all files
     show_context_lines: int = 2
+
+    # Display customization - multiline strings for header/footer
+    error_header: str = """============================================================
+🚨 CLAUDE.md VIOLATIONS DETECTED! 🚨
+============================================================"""
+
+    error_footer: str = """============================================================
+🛑 EXECUTION BLOCKED - IMMEDIATE ACTION REQUIRED
+============================================================
+
+According to CLAUDE.md, you MUST now:
+1. STOP - Do not proceed
+2. ANALYZE - Why these violations occurred
+3. FIX - Create proper solutions
+4. PRESENT - Show plan to user
+
+This pause is MANDATORY."""
+
+    show_manual_check_hint: bool = True
+    truncation_message: str = "... and {count} more violation(s)"
+    show_total_summary: bool = True  # Show "Total: X violations in Y files" at the top
 
     @classmethod
     def from_file(cls, path: Path) -> "ClaudeLinterConfig":
