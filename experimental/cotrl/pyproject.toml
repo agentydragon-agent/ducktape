@@ -1,0 +1,7 @@
+[tool.ruff]
+# Ignore specific rules for experimental code
+ignore = ["PLR0913"]  # Too many arguments
+
+[tool.mypy]
+# Ignore missing type stubs for experimental code
+ignore_missing_imports = true
