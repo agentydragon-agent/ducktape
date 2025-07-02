@@ -7,3 +7,6 @@
 [submodule "mc/lib"]
 	path = dotfiles/mc/lib
 	url = https://github.com/iwfmp/mc-solarized-skin.git
+[submodule "llm/ducktape_llm_common/references/pre-commit-hooks"]
+	path = llm/ducktape_llm_common/references/pre-commit-hooks
+	url = https://github.com/pre-commit/pre-commit-hooks.git

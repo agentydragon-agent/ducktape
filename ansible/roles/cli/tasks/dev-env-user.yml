@@ -21,7 +21,7 @@
         - ruff
         - pre-commit
         - ansible  # Get newer version than Ubuntu 22.04's ancient one
-        - libcst  # Python concrete syntax tree library for refactoring
+        # - libcst  # Python concrete syntax tree library for refactoring ... doesn't seem to exist in pipx:w
         - pydeps  # Python dependency graph visualization
 
     - name: Install Node.js CLI tools globally (user-level)

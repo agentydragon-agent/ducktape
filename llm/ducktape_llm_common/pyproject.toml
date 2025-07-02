@@ -45,7 +45,6 @@ check-task-metadata = "ducktape_llm_common.linters.check_task_metadata:main"
 fix-newlines = "ducktape_llm_common.utils.fix_newlines:main"
 ducktape-version = "ducktape_llm_common.cli.version_tool:main"
 claude-linter = "ducktape_llm_common.linters.claude_linter:main"
-claude-linter-hook = "ducktape_llm_common.linters.claude_hook:main"
 
 [project.urls]
 Homepage = "https://github.com/ducktape/llm-common"

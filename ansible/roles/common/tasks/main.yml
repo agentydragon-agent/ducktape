@@ -37,5 +37,4 @@
 - name: Report Python environment health
   debug:
     msg: |
-      Python Environment Health Check:
-      - pytest-socket: {{ 'FOUND ⚠️' if has_pytest_socket else 'Not found ✅' }}
+      pytest-socket: {{ 'FOUND ⚠️' if has_pytest_socket else 'Not found ✅' }}
