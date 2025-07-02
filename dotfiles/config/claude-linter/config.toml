@@ -12,11 +12,11 @@ force-select = [
     "RET508",   # superfluous-else-break (autofix available)
     "PLR5501",  # collapsible-else-if (autofix available)
     "SIM102",   # collapsible-if (autofix available)
-    
+
     # CLAUDE.md: /attrs/no-hasattr-getattr
     "B009",     # getattr-with-constant (autofix available)
     "B010",     # setattr-with-constant (autofix available)
-    
+
     # Modern Python features
     "UP007",    # non-pep604-annotation-union (X | Y) (autofix available)
     "UP032",    # f-string (autofix available)
@@ -25,14 +25,14 @@ force-select = [
     "UP009",    # utf8-encoding-declaration (autofix available)
     "UP010",    # unnecessary-future-import (autofix available)
     "FA100",    # future-rewritable-type-annotation (Optional -> X | None) (autofix available)
-    
+
     # Timeout patterns for blocking operations
     "S113",     # request-without-timeout
     "ASYNC109", # async-function-with-timeout
-    
+
     # Function call in default arguments
     "B008",     # function-call-in-default-argument
-    
+
     # Simplify code patterns
     "SIM108",   # if-else-block-instead-of-if-exp (autofix available)
     "SIM110",   # reimplemented-builtin (autofix available)
@@ -40,35 +40,35 @@ force-select = [
     "SIM118",   # in-dict-keys (autofix available)
     "PLR1714",  # repeated-equality-comparison (autofix available)
     "SIM103",   # needless-bool (return condition directly) (autofix available)
-    
+
     # Remove redundant code
     "RUF100",   # unused-noqa (autofix available)
     "PLR1711",  # useless-return (autofix available)
     "RET501",   # unnecessary-return-none (autofix available)
     "RET502",   # implicit-return-value (autofix available)
     "RET504",   # unnecessary-assign (autofix available)
-    
+
     # Path and imports best practices
     "S108",     # hardcoded-temp-file
     "E402",     # module-import-not-at-top-of-file
     "I001",     # unsorted-imports (autofix available)
     "F401",     # unused-import (autofix available)
     "PLC0415",  # import-outside-top-level
-    
+
     # Documentation rules (no redundant docs)
     "D200",     # unnecessary-multiline-docstring (autofix available)
-    
+
     # String building for URLs/SQL/HTML
     "S608",     # hardcoded-sql-expression
     "S611",     # django-raw-sql
-    
+
     # CLAUDE.md: /errors/fail-fast
     "E722",     # bare-except
     "BLE001",   # blind-except
-    
+
     # Error handling
     "B904",     # raise-without-from-inside-except
-    
+
     # Code quality
     "B002",     # unary-prefix-increment-decrement
     "B003",     # assignment-to-os-environ
@@ -76,14 +76,14 @@ force-select = [
     "B011",     # assert-false
     "B018",     # useless-expression
     "PIE810",   # multiple-starts-ends-with
-    
+
     # CLAUDE.md: Use modern Python features (legacy)
     "UP006",    # use-union-operator (X | Y) (autofix sometimes)
     "UP035",    # deprecated-typing-import (autofix sometimes)
-    
+
     # CLAUDE.md: Code style
     "W291",     # trailing-whitespace (autofix available)
-    
+
     # CLAUDE.md: Python conventions
     "PTH100",   # os-path-exists (use Path.exists())
     "PTH101",   # os-path-dirname (use Path.parent)
@@ -91,23 +91,23 @@ force-select = [
     "PTH103",   # os-path-splitext (use Path.suffix)
     "PTH118",   # os-path-join (use Path with /) (autofix available)
     "PTH120",   # os-path-dirname (use Path.parent) (autofix available)
-    
+
     # Type checking best practices
     "PGH003",   # blanket-type-ignore (use specific rule codes)
-    
+
     # Code style and formatting
     "COM812",   # missing-trailing-comma (autofix available)
     "W293",     # blank-line-with-whitespace (autofix available)
     "F541",     # f-string-missing-placeholders (autofix available)
-    
+
     # Documentation formatting
     "D212",     # multi-line-summary-first-line (autofix available)
     "D413",     # missing-blank-line-after-last-section (autofix available)
     "D202",     # no-blank-lines-after-function-docstring (autofix available)
-    
+
     # Path handling consistency
     "PTH123",   # builtin-open (use Path.open())
-    
+
     # Code quality
     # "EXE001",   # shebang-not-executable
     "ARG001",   # unused-function-argument
@@ -115,8 +115,40 @@ force-select = [
     "FBT001",   # boolean-typed-positional-argument-in-function-definition
     "FBT002",   # boolean-default-value-positional-argument
     "N815",     # mixed-case-variable-in-class-scope
-    
+
     # Exception handling
     "TRY002",   # raise-vanilla-class (create custom exceptions)
     "TRY400",   # error-instead-of-exception (use logging.exception)
 ]
+
+# Pre-commit hooks for text fixes that apply to all file types
+# Used by Claude Code post-hook for auto-fixing common text issues
+[pre-commit]
+# Array of tables syntax - each [[pre-commit.repos]] creates a new repo entry
+[[pre-commit.repos]]
+repo = "https://github.com/pre-commit/pre-commit-hooks"
+rev = "v4.5.0"
+
+[[pre-commit.repos.hooks]]
+id = "trailing-whitespace"
+name = "Fix trailing whitespace"
+# Apply to common text file types that Claude edits
+files = '\\.(py|js|ts|jsx|tsx|md|txt|rs|toml|yaml|yml|json|sh|bash|zsh|html|css|scss|vue|svelte)$'
+# Don't fix markdown files that use two spaces for line breaks
+args = ["--markdown-linebreak-ext=md"]
+
+[[pre-commit.repos.hooks]]
+id = "end-of-file-fixer"
+name = "Fix end of file"
+files = '\\.(py|js|ts|jsx|tsx|md|txt|rs|toml|yaml|yml|json|sh|bash|zsh|html|css|scss|vue|svelte)$'
+
+[[pre-commit.repos.hooks]]
+id = "mixed-line-ending"
+name = "Fix mixed line endings"
+args = ["--fix=lf"]
+files = '\\.(py|js|ts|jsx|tsx|md|txt|rs|toml|yaml|yml|json|sh|bash|zsh|html|css|scss|vue|svelte)$'
+
+[[pre-commit.repos.hooks]]
+id = "fix-byte-order-marker"
+name = "Fix UTF-8 byte order marker"
+files = '\\.(py|js|ts|jsx|tsx|md|txt|rs|toml|yaml|yml|json|sh|bash|zsh|html|css|scss|vue|svelte)$'
