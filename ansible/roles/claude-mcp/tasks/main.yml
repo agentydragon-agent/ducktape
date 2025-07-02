@@ -1,0 +1,83 @@
+---
+- name: Check if Claude Code CLI is installed
+  command: which claude
+  register: claude_cli_check
+  failed_when: false
+  changed_when: false
+
+- name: Fail if Claude CLI is not installed
+  fail:
+    msg: |
+      ⚠️  ERROR: Claude Code CLI is not installed!
+      Please install Claude Code first: https://claude.ai/code
+  when: claude_cli_check.rc != 0
+
+- name: Get current MCP server list
+  command: claude mcp list
+  register: mcp_list_output
+  changed_when: false
+
+- name: Parse configured MCP servers
+  set_fact:
+    configured_mcp_servers: "{{ mcp_list_output.stdout_lines | default([]) | map('regex_replace', '^([^:]+):.*', '\\1') | list }}"
+
+- name: Check for missing MCP servers
+  set_fact:
+    missing_mcp_servers: "{{ claude_mcp_servers.keys() | list | difference(configured_mcp_servers) }}"
+
+- name: Report MCP server status
+  debug:
+    msg: |
+      Claude MCP Server Status:
+      - Configured servers: {{ configured_mcp_servers | join(', ') or 'None' }}
+      - Missing servers: {{ missing_mcp_servers | join(', ') or 'None ✅' }}
+      - Auto-apply: {{ claude_mcp_auto_apply | ternary('Enabled', 'Disabled') }}
+
+- name: Check if MCP configuration changes are needed
+  command: "{{ role_path }}/files/apply-mcp-config.py --check --json-output"
+  register: mcp_check_result
+  failed_when: false
+  changed_when: false
+
+- name: Parse MCP check results
+  set_fact:
+    mcp_changes_needed: "{{ (mcp_check_result.stdout | from_json).changed | default(false) }}"
+    mcp_check_data: "{{ mcp_check_result.stdout | from_json }}"
+
+- name: Apply MCP configuration if enabled
+  when: 
+    - claude_mcp_auto_apply | bool
+    - mcp_changes_needed | bool
+  block:
+    - name: Apply MCP configuration using Python script
+      command: "{{ role_path }}/files/apply-mcp-config.py --json-output"
+      register: apply_result
+      changed_when: (apply_result.stdout | from_json).changed | default(false)
+    
+    - name: Display configuration changes
+      debug:
+        msg: |
+          MCP Configuration Applied:
+          - Servers added: {{ (apply_result.stdout | from_json).servers_added | join(', ') }}
+          - Servers updated: {{ (apply_result.stdout | from_json).servers_updated | join(', ') }}
+          - Message: {{ (apply_result.stdout | from_json).msg }}
+      when: apply_result.changed
+
+- name: Fail if MCP servers are not configured and auto-apply is disabled
+  fail:
+    msg: |
+      ⚠️  ERROR: Required Claude MCP servers are not configured!
+      
+      Servers that need to be added: {{ mcp_check_data.servers_added | default([]) | join(', ') }}
+      Servers that need to be updated: {{ mcp_check_data.servers_updated | default([]) | join(', ') }}
+      
+      To configure manually, run:
+        {{ role_path }}/files/apply-mcp-config.py
+      
+      Or enable auto-apply by setting:
+        claude_mcp_auto_apply: true
+      
+      Note: This will modify your ~/.claude.json configuration.
+  when: 
+    - not claude_mcp_auto_apply | bool
+    - mcp_changes_needed | bool

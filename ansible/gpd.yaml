@@ -13,6 +13,8 @@
     - role: laptop
     - role: wireguard
       tags: [wireguard]
+    - role: claude-mcp
+      tags: [claude, mcp]
   tasks:
     # TODO: add Ubuntu startup programs, like Flameshot etc.
 
@@ -39,3 +41,8 @@
         owner: root
         group: root
         mode: '0644'
+
+    - name: Install shared development environment
+      ansible.builtin.import_role:
+        name: dev-env
+      tags: [dev-env]

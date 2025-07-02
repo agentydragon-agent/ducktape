@@ -19,12 +19,19 @@
       tags: [wireguard]
     - role: firecrawl
       tags: [firecrawl]
+    - role: claude-mcp
+      tags: [claude, mcp]
 
   tasks:
     - name: Install CUDA (NVidia-specific)
       become: true
       ansible.builtin.apt:
         pkg: system76-cuda-latest
+
+    - name: Install shared development environment
+      ansible.builtin.import_role:
+        name: dev-env
+      tags: [dev-env]
 
 
     # TODO: does not seem to work. getting this on trying to suspend, plus

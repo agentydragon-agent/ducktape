@@ -231,6 +231,19 @@
       tags: [dotfiles]
       # CLI role tasks that need root will handle their own become
 
+    # Apply Claude MCP role for agentydragon user
+    - name: Apply Claude MCP role
+      ansible.builtin.import_role:
+        name: claude-mcp
+      tags: [claude, mcp]
+
+    - name: Install shared development environment for agentydragon
+      ansible.builtin.import_role:
+        name: dev-env
+      vars:
+        my_user: agentydragon
+      tags: [dev-env]
+
     # TODO: configure - plus for remote desktop
     # - name: Configure Authentik
     #   ansible.builtin.include_role:
