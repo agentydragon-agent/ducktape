@@ -36,6 +36,19 @@
         - 'jscpd'  # Copy/paste detector for 150+ languages including Python, TypeScript
         - 'madge'  # Dependency graph visualization tool
 
+    # Install Rust development tools
+    - name: Ensure cargo bin directory exists
+      ansible.builtin.file:
+        path: "~/.cargo/bin"
+        state: directory
+        mode: '0755'
+
+    - name: Install sccache via cargo
+      ansible.builtin.shell: cargo install sccache --locked
+      args:
+        creates: "~/.cargo/bin/sccache"
+      # Note: Cargo is configured to use sccache via ~/.cargo/config.toml dotfile
+
 # Install comby for structural code search and replace
 - import_tasks: comby.yml
   tags: [comby, dev-tools]
