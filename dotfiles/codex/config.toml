@@ -29,7 +29,8 @@ sandbox_permissions = [
     "disk-write-cwd",
     "disk-write-platform-global-temp-folder",
     "disk-write-platform-user-temp-folder",
-    "disk-write-folder=/home/agentydragon/.pyenv/shims",
+    # not sufficient: "disk-write-folder=/home/agentydragon/.pyenv/shims",
+    "disk-write-folder=/home/agentydragon/.pyenv",
 
     # Allow writing to sccache.
     # (Alternative would be read-only + SCCACHE_LOCAL_RW_MODE=READ_ONLY.)
