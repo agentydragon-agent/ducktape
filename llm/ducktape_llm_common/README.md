@@ -32,8 +32,6 @@ pip install -e "/path/to/ducktape_llm_common[dev]"
 - `claude-linter` - Unified linter for Claude Code hooks (pre/post/check modes)
 - `check-work-urls` - Validate work URLs in markdown files
 - `check-task-metadata` - Validate METADATA.yaml files
-- `fix-newlines` - Ensure files end with exactly one newline
-- `ducktape-version` - Version management CLI tool
 
 ### Using Linters
 
@@ -53,27 +51,6 @@ check-task-metadata .
 ```
 
 For detailed documentation on the Claude linter, see [docs/linters/claude-linter.md](docs/linters/claude-linter.md).
-
-### Pre-commit Integration
-
-Add to your `.pre-commit-config.yaml`:
-
-```yaml
-repos:
-  - repo: local
-    hooks:
-      - id: check-work-urls
-        name: Check work tracking URLs
-        entry: check-work-urls
-        language: system
-        types: [text]
-
-      - id: check-task-metadata
-        name: Check task metadata
-        entry: check-task-metadata
-        language: system
-        files: '(METADATA\.yaml|TASK_GRAPH\.md)$'
-```
 
 ### Using Templates
 
@@ -124,69 +101,6 @@ prompt = get_prompt("task_management", variables={
 from ducktape_llm_common.prompts import list_available_prompts
 available = list_available_prompts()
 ```
-
-### Version Management
-
-Handle metadata versioning across projects:
-
-```python
-from ducktape_llm_common import METADATA_VERSION
-from ducktape_llm_common.utils import (
-    get_metadata_version,
-    validate_metadata_version,
-    create_metadata_version_file
-)
-
-# Check current metadata version
-current_version = get_metadata_version("./my-project")
-
-# Validate compatibility
-is_compatible = validate_metadata_version(1, "./my-project")
-
-# Create version file
-create_metadata_version_file("./new-project")
-```
-
-## Package Structure
-
-```
-ducktape_llm_common/
-├── __init__.py              # Package initialization, exports METADATA_VERSION
-├── linters/                 # Command-line linters
-│   ├── __init__.py
-│   ├── base.py             # Base linter class
-│   ├── claude_linter.py    # Unified CLI for pre/post/check modes
-│   ├── claude_pre_hook.py  # Pre-hook logic (blocks violations)
-│   ├── claude_post_hook.py # Post-hook logic (auto-fixes)
-│   ├── claude_config.py    # Claude linter configuration models
-│   ├── claude_rules.py     # Claude linter implementation
-│   ├── text_fixes.py       # Direct text fixing functions
-│   ├── check_work_urls.py  # Validate work://, task://, inv:// URLs
-│   └── check_task_metadata.py  # Validate METADATA.yaml files
-├── prompts/                 # AI agent instruction prompts
-│   ├── __init__.py         # Prompt loading system
-│   ├── work_tracking.md
-│   ├── evidence_gathering.md
-│   ├── task_management.md
-│   └── debugging_protocol.md
-├── utils/                   # Shared utilities
-│   ├── __init__.py
-│   ├── fix_newlines.py
-│   └── version_check.py
-├── templates/               # Project structure templates
-│   └── __init__.py
-└── cli/                     # CLI tools
-    ├── __init__.py
-    └── version_tool.py
-```
-
-## Metadata Version
-
-The package uses a metadata versioning system to ensure compatibility:
-
-- Current version: `METADATA_VERSION = 1`
-- Version stored in `.metadata-version` files
-- Validation ensures tools work with compatible metadata structures
 
 ## Development
 

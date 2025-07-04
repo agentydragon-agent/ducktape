@@ -7,7 +7,7 @@ discovery, validation, template support, and error handling.
 import re
 from pathlib import Path
 from string import Template
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any
 
 
 class PromptError(Exception):
@@ -37,7 +37,7 @@ class PromptVariableError(PromptError):
 class PromptLoader:
     """Advanced prompt loader with caching, validation, and template support."""
 
-    def __init__(self, prompt_dirs: Optional[List[Path]] = None):
+    def __init__(self, prompt_dirs: list[Path] | None = None):
         """Initialize the prompt loader.
 
         Args:
@@ -55,10 +55,10 @@ class PromptLoader:
         else:
             self.prompt_dirs = prompt_dirs
 
-        self._cache: Dict[str, str] = {}
-        self._discovered_prompts: Optional[Dict[str, Path]] = None
+        self._cache: dict[str, str] = {}
+        self._discovered_prompts: dict[str, Path] | None = None
 
-    def discover_prompts(self, force_refresh: bool = False) -> Dict[str, Path]:
+    def discover_prompts(self, force_refresh: bool = False) -> dict[str, Path]:
         """Discover all available prompts across all prompt directories.
 
         Args:
@@ -90,9 +90,7 @@ class PromptLoader:
         self._discovered_prompts = prompts
         return prompts
 
-    def list_prompts(
-        self, include_paths: bool = False
-    ) -> Union[List[str], List[Tuple[str, str]]]:
+    def list_prompts(self, include_paths: bool = False) -> list[str] | list[tuple[str, str]]:
         """List all available prompts.
 
         Args:
@@ -111,7 +109,7 @@ class PromptLoader:
     def load_prompt(
         self,
         prompt_name: str,
-        variables: Optional[Dict[str, Any]] = None,
+        variables: dict[str, Any] | None = None,
         allow_missing_vars: bool = False,
         use_cache: bool = True,
     ) -> str:
@@ -138,9 +136,7 @@ class PromptLoader:
         prompts = self.discover_prompts()
         if prompt_name not in prompts:
             available = ", ".join(sorted(prompts.keys()))
-            raise PromptNotFoundError(
-                f"Prompt '{prompt_name}' not found. Available prompts: {available}"
-            )
+            raise PromptNotFoundError(f"Prompt '{prompt_name}' not found. Available prompts: {available}")
 
         prompt_path = prompts[prompt_name]
 
@@ -156,16 +152,14 @@ class PromptLoader:
 
         # Process variables if provided
         if variables:
-            content = self._process_variables(
-                content, variables, allow_missing_vars, prompt_name
-            )
+            content = self._process_variables(content, variables, allow_missing_vars, prompt_name)
 
         return content
 
     def _process_variables(
         self,
         content: str,
-        variables: Dict[str, Any],
+        variables: dict[str, Any],
         allow_missing: bool,
         prompt_name: str,
     ) -> str:
@@ -182,9 +176,7 @@ class PromptLoader:
         except KeyError as e:
             if not allow_missing:
                 missing_var = str(e).strip("'")
-                raise PromptVariableError(
-                    f"Missing required variable '{missing_var}' in prompt '{prompt_name}'"
-                ) from e
+                raise PromptVariableError(f"Missing required variable '{missing_var}' in prompt '{prompt_name}'") from e
 
         # Fall back to Template for more flexible substitution
         try:
@@ -196,11 +188,9 @@ class PromptLoader:
                 return template.substitute(**variables)
         except KeyError as e:
             missing_var = str(e).strip("'")
-            raise PromptVariableError(
-                f"Missing required variable '{missing_var}' in prompt '{prompt_name}'"
-            ) from e
+            raise PromptVariableError(f"Missing required variable '{missing_var}' in prompt '{prompt_name}'") from e
 
-    def validate_prompt(self, prompt_name: str) -> List[str]:
+    def validate_prompt(self, prompt_name: str) -> list[str]:
         """Validate a prompt for common issues.
 
         Args:
@@ -245,7 +235,7 @@ class PromptLoader:
 
         return issues
 
-    def get_prompt_metadata(self, prompt_name: str) -> Dict[str, Any]:
+    def get_prompt_metadata(self, prompt_name: str) -> dict[str, Any]:
         """Extract metadata from a prompt file.
 
         Looks for YAML frontmatter or special comment blocks.
@@ -299,7 +289,7 @@ class PromptLoader:
 _default_loader = PromptLoader()
 
 
-def discover_prompts(force_refresh: bool = False) -> Dict[str, Path]:
+def discover_prompts(force_refresh: bool = False) -> dict[str, Path]:
     """Discover all available prompts.
 
     Args:
@@ -313,7 +303,7 @@ def discover_prompts(force_refresh: bool = False) -> Dict[str, Path]:
 
 def list_prompts(
     include_paths: bool = False,
-) -> Union[List[str], List[Tuple[str, str]]]:
+) -> list[str] | list[tuple[str, str]]:
     """List all available prompts.
 
     Args:
@@ -327,7 +317,7 @@ def list_prompts(
 
 def load_prompt(
     prompt_name: str,
-    variables: Optional[Dict[str, Any]] = None,
+    variables: dict[str, Any] | None = None,
     allow_missing_vars: bool = False,
     use_cache: bool = True,
 ) -> str:
@@ -345,12 +335,10 @@ def load_prompt(
         PromptNotFoundError: If the prompt doesn't exist
         PromptVariableError: If required variables are missing
     """
-    return _default_loader.load_prompt(
-        prompt_name, variables, allow_missing_vars, use_cache
-    )
+    return _default_loader.load_prompt(prompt_name, variables, allow_missing_vars, use_cache)
 
 
-def validate_prompt(prompt_name: str) -> List[str]:
+def validate_prompt(prompt_name: str) -> list[str]:
     """Validate a prompt for common issues.
 
     Args:
@@ -362,7 +350,7 @@ def validate_prompt(prompt_name: str) -> List[str]:
     return _default_loader.validate_prompt(prompt_name)
 
 
-def get_prompt_metadata(prompt_name: str) -> Dict[str, Any]:
+def get_prompt_metadata(prompt_name: str) -> dict[str, Any]:
     """Get metadata for a prompt.
 
     Args:

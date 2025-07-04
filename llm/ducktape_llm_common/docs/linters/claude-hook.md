@@ -13,9 +13,9 @@ Both hooks ensure code quality standards are maintained.
 ## Setup
 
 1. **Hook Scripts**: The hook logic is in:
-   - Pre-hook: `ducktape_llm_common/linters/claude_pre_hook.py`
-   - Post-hook: `ducktape_llm_common/linters/claude_post_hook.py`
-   - Unified CLI: `ducktape_llm_common/linters/claude_linter.py`
+   - Pre-hook: `ducktape_llm_common/claude_linter/claude_pre_hook.py`
+   - Post-hook: `ducktape_llm_common/claude_linter/claude_post_hook.py`
+   - Unified CLI: `ducktape_llm_common/claude_linter/claude_linter.py`
 
 2. **Installation**: The hooks are automatically installed when you install the package:
    ```bash
@@ -153,22 +153,9 @@ The `claude-linter` command supports three modes:
    - No stdin required
    - Exit code 1 if violations found
 
-## Text Fixes
-
-The post-hook automatically fixes these text issues in all supported file types:
-
-- **Trailing whitespace**: Removes trailing spaces/tabs (preserves markdown double-space line breaks)
-- **End of file**: Ensures files end with exactly one newline
-- **Line endings**: Converts CRLF and CR to LF
-- **UTF-8 BOM**: Removes byte order markers
-
-Supported file extensions: `.py`, `.js`, `.ts`, `.jsx`, `.tsx`, `.md`, `.txt`, `.rs`, `.toml`, `.yaml`, `.yml`, `.json`, `.sh`, `.bash`, `.zsh`, `.html`, `.css`, `.scss`, `.vue`, `.svelte`
-
 ## Related Files
 
-- Main linter CLI: `ducktape_llm_common/linters/claude_linter.py`
-- Pre-hook logic: `ducktape_llm_common/linters/claude_pre_hook.py`
-- Post-hook logic: `ducktape_llm_common/linters/claude_post_hook.py`
-- Text fixes: `ducktape_llm_common/linters/text_fixes.py`
-- Linter rules: `ducktape_llm_common/linters/claude_rules.py`
+- Main linter CLI: `ducktape_llm_common/claude_linter/claude_linter.py`
+- Pre-hook logic: `ducktape_llm_common/claude_linter/claude_pre_hook.py`
+- Post-hook logic: `ducktape_llm_common/claude_linter/claude_post_hook.py`
 - Linter config: `.claude-linter.json` (project-specific)

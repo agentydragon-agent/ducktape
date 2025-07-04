@@ -2,7 +2,7 @@
 
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 from .constants import PromptName
 from .loader import PromptVariableError, load_prompt
@@ -12,7 +12,7 @@ def load_work_tracking_prompt(
     agent_name: str,
     task_id: str,
     project_name: str,
-    context: Optional[str] = None,
+    context: str | None = None,
     **extra_vars,
 ) -> str:
     """Load the work tracking prompt with standard variables.
@@ -43,7 +43,7 @@ def load_task_management_prompt(
     task_id: str,
     goal: str,
     deliverables: list[str],
-    constraints: Optional[list[str]] = None,
+    constraints: list[str] | None = None,
     **extra_vars,
 ) -> str:
     """Load the task management prompt with required information.
@@ -73,8 +73,8 @@ def load_task_management_prompt(
 def load_debugging_protocol_prompt(
     error_description: str,
     context: str,
-    stack_trace: Optional[str] = None,
-    attempted_solutions: Optional[list[str]] = None,
+    stack_trace: str | None = None,
+    attempted_solutions: list[str] | None = None,
     **extra_vars,
 ) -> str:
     """Load the debugging protocol prompt.
@@ -93,9 +93,7 @@ def load_debugging_protocol_prompt(
         "error_description": error_description,
         "context": context,
         "stack_trace": stack_trace or "No stack trace available",
-        "attempted_solutions": "\n".join(
-            f"- {s}" for s in (attempted_solutions or ["None"])
-        ),
+        "attempted_solutions": "\n".join(f"- {s}" for s in (attempted_solutions or ["None"])),
         "timestamp": datetime.now().isoformat(),
         **extra_vars,
     }
@@ -107,7 +105,7 @@ def load_spawn_coordination_prompt(
     team_id: str,
     agents: list[str],
     task_graph: str,
-    coordination_strategy: Optional[str] = None,
+    coordination_strategy: str | None = None,
     **extra_vars,
 ) -> str:
     """Load the spawn coordination prompt for multi-agent teams.
@@ -138,8 +136,8 @@ def load_investigation_setup_prompt(
     investigation_id: str,
     title: str,
     goal: str,
-    initial_evidence: Optional[list[str]] = None,
-    methodology: Optional[str] = None,
+    initial_evidence: list[str] | None = None,
+    methodology: str | None = None,
     **extra_vars,
 ) -> str:
     """Load the investigation setup prompt.
@@ -171,7 +169,7 @@ def load_investigation_setup_prompt(
 def load_metadata_validation_prompt(
     file_path: str,
     expected_version: int,
-    validation_rules: Optional[list[str]] = None,
+    validation_rules: list[str] | None = None,
     **extra_vars,
 ) -> str:
     """Load the metadata validation prompt.
@@ -188,9 +186,7 @@ def load_metadata_validation_prompt(
     variables = {
         "file_path": file_path,
         "expected_version": str(expected_version),
-        "validation_rules": "\n".join(
-            f"- {r}" for r in (validation_rules or ["Standard validation rules"])
-        ),
+        "validation_rules": "\n".join(f"- {r}" for r in (validation_rules or ["Standard validation rules"])),
         "timestamp": datetime.now().isoformat(),
         **extra_vars,
     }
@@ -200,8 +196,8 @@ def load_metadata_validation_prompt(
 
 def create_prompt_with_defaults(
     prompt_name: PromptName,
-    required_vars: Dict[str, Any],
-    optional_vars: Optional[Dict[str, Any]] = None,
+    required_vars: dict[str, Any],
+    optional_vars: dict[str, Any] | None = None,
 ) -> str:
     """Create a prompt with default values for common variables.
 
@@ -234,9 +230,7 @@ def create_prompt_with_defaults(
     return load_prompt(prompt_name.value, variables)
 
 
-def validate_prompt_variables(
-    prompt_name: PromptName, provided_vars: Dict[str, Any]
-) -> tuple[bool, list[str]]:
+def validate_prompt_variables(prompt_name: PromptName, provided_vars: dict[str, Any]) -> tuple[bool, list[str]]:
     """Validate that all required variables are provided for a prompt.
 
     Args:

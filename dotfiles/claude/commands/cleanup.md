@@ -11,20 +11,28 @@ name: cleanup
   </meta>
   
   <goal>
-    Your goal is to intelligently analyze and clean up the user's workspace by detecting ALL forms of disorder, temporary artifacts, and organizational issues - not just the specific patterns documented below.
-    Use your judgment to propose custom cleanup solutions based on what you actually find in each unique situation.
+    Your goal is to make '$ ls' output look clean, organized, and immediately understandable. Focus on visible clutter first - files and directories that show up in a basic ls command. Hidden files (.whatever) are lower priority unless they're unusually large or problematic.
+    
+    The aim is a reasonable hierarchy where someone new to the project can understand what they're looking at.
   </goal>
   
   <context>
-    <purpose>Intelligent cleanup of temporary work artifacts, focusing on oneoff scripts and exploration side-effects.</purpose>
+    <purpose>Clean up workspace to make the directory structure clear and navigable. Focus on visible organization first.</purpose>
     
     <guidelines>
-      The patterns, examples, and workflows documented below are SUGGESTIONS and COMMON CASES, not an exhaustive list. You should:
-      - Look beyond these examples to find any workspace disorder
-      - Propose creative organizational solutions specific to what you discover
-      - Adapt your cleanup approach to the user's actual workspace structure
-      - Always ask for confirmation before taking destructive actions
+      <guideline priority="1">Make `ls` output clean - this is what people see first</guideline>
+      <guideline priority="2">Create logical groupings (docs/, scripts/, archive/, etc.)</guideline>
+      <guideline priority="3">Remove or archive obviously temporary files</guideline>
+      <guideline priority="4">Consolidate version sprawl and redundant files</guideline>
+      <guideline priority="5">Hidden files are low priority unless causing actual problems</guideline>
     </guidelines>
+    
+    <principle>A clean workspace has:
+      - Clear purpose for each visible file
+      - Logical subdirectories for grouped content
+      - No version confusion (file_v2, file_final, file_FINAL_FINAL)
+      - No scattered temporary outputs
+    </principle>
   </context>
 
   <triggers>
@@ -76,25 +84,30 @@ name: cleanup
 
   <workflow>
     <step id="scan">
-      <title>Scan - Analyze directory for cleanup candidates</title>
-      <important>ALWAYS start with a full unfiltered directory listing!</important>
+      <title>Scan - Start with visible files first</title>
+      <important>Start with basic `ls` to see what's immediately visible</important>
       <description>
-        The scan step should adapt to what you find. After the initial ls -la, you might run various 
-        other commands based on what you discover. The examples below are suggestions, not an exhaustive list.
+        Focus on making the visible workspace clean first. Hidden files come later if needed.
       </description>
       <tool-call>
-        <bash command="ls -la" description="MANDATORY: Full unfiltered directory listing to see ALL files" />
+        <bash command="ls" description="FIRST: See visible files - this is what matters most" />
       </tool-call>
       <suggested-followups>
-        <description>Based on what you see, you might want to run commands like:</description>
-        <tool-call>
-          <glob pattern="**/oneoff__*" />
-          <grep pattern="TEMPORARY|ONE-OFF|Can delete after" include="*.py" />
-          <bash command="find . -type f -name '*.md' | head -20" />
-          <bash command="du -sh .* | sort -h" description="Check sizes of hidden directories" />
-          <bash command="find . -name '*.log' -o -name '*.tmp'" description="Find log and temp files" />
-          <bash command="git status --ignored" description="See what git is ignoring" />
-        </tool-call>
+        <description>No automated pattern will catch everything. You must manually examine each file:</description>
+        <manual-inspection>
+          <step>Look at EVERY visible file and understand its purpose</step>
+          <step>Read file names carefully - humans are creative with clutter</step>
+          <step>Check file dates - old files might be obsolete regardless of name</step>
+          <step>Look for relationships between files that tools won't detect</step>
+        </manual-inspection>
+        <tool-examples>
+          <bash command="ls -la" description="See everything including hidden files" />
+          <bash command="ls -lt | head -20" description="See most recently modified files" />
+          <bash command="ls -lS | head -20" description="See largest files first" />
+          <read path="suspicious_file.py" limit="20" description="Peek at files to understand purpose" />
+          <bash command="file *" description="See file types for everything" />
+        </tool-examples>
+        <note>Pattern matching is just a starting point - use your judgment!</note>
       </suggested-followups>
     </step>
     
@@ -117,7 +130,43 @@ name: cleanup
   </workflow>
 
   <cleanup-targets>
-    <target id="oneoff-scripts" priority="1">
+    <target id="visible-organization" priority="1">
+      <title>Visible Workspace Organization</title>
+      <description>Make `ls` output immediately understandable - detect ANY clutter pattern</description>
+      
+      <detection-approach>
+        <step>Look at ALL visible files and ask: "What is this for?"</step>
+        <step>Identify files that seem related but scattered</step>
+        <step>Find ANY naming pattern suggesting versions/iterations</step>
+        <step>Notice when similar files could be grouped</step>
+      </detection-approach>
+      
+      <common-patterns>
+        <pattern>Version indicators: v1/v2/v3, old/new, backup, copy, final, FINAL, latest</pattern>
+        <pattern>Date suffixes: _2024-01-15, _jan15, _monday</pattern>
+        <pattern>Status markers: _working, _broken, _test, _temp, _todo</pattern>
+        <pattern>Numbered iterations: attempt1, try2, version3</pattern>
+        <pattern>Similar names: api.py + api_utils.py + api_helpers.py + api_old.py</pattern>
+        <pattern>Mixed purposes: scripts mixed with docs mixed with data</pattern>
+      </common-patterns>
+      
+      <example>
+        Before `ls`:
+        api_client.py  api_client_new.py  api_utils.py  AUTH_NOTES.txt
+        bundle_parser.js  bundle_parser_fixed.js  data_export_2024.json
+        extract_attempt1.py  extract_final.py  extract_WORKING.py
+        meeting_notes.md  progress.md  README.md  requirements_old.txt
+        script.py  script_backup.py  test.py  test2.py  utils_v1.py
+        
+        After cleanup:
+        README.md  api_client.py  bundle_parser.js  extract.py
+        archive/  docs/  scripts/  tests/  data/
+        
+        The key: Use your judgment to detect ANY form of clutter!
+      </example>
+    </target>
+    
+    <target id="oneoff-scripts" priority="2">
       <title>Oneoff Scripts</title>
       <pattern description="Conventional pattern, non-exhaustive">oneoff__*.{py,js,ts,sh}</pattern>
       <ref href="#/patterns/oneoff-scripts"/>
@@ -242,8 +291,9 @@ name: cleanup
       </patterns>
     </target>
     
-    <target id="hidden-caches" priority="6">
-      <title>Hidden Cache Directories</title>
+    <target id="hidden-caches" priority="99">
+      <title>Hidden Cache Directories (Low Priority)</title>
+      <description>Only clean these if specifically requested or causing problems</description>
       <patterns>
         <pattern>.ruff_cache/ - Python linter cache</pattern>
         <pattern>.mypy_cache/ - Python type checker cache</pattern>
@@ -253,6 +303,7 @@ name: cleanup
         <pattern>.hypothesis/ - Property testing cache</pattern>
         <pattern>Note: .venv/, .env/, .git/, .claude/ are usually meaningful - don't delete</pattern>
       </patterns>
+      <note>Hidden files don't clutter `ls` output - focus on visible organization first</note>
     </target>
   </cleanup-targets>
 

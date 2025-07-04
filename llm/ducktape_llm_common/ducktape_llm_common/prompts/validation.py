@@ -2,7 +2,6 @@
 
 import re
 from pathlib import Path
-from typing import Dict, List, Optional
 
 import yaml
 
@@ -23,9 +22,7 @@ class PromptValidator:
             "references": self._validate_references,
         }
 
-    def validate_prompt(
-        self, prompt_name: str, rules: Optional[List[str]] = None
-    ) -> Dict[str, List[str]]:
+    def validate_prompt(self, prompt_name: str, rules: list[str] | None = None) -> dict[str, list[str]]:
         """Validate a prompt against specified rules.
 
         Args:
@@ -59,9 +56,7 @@ class PromptValidator:
 
         return results
 
-    def validate_all_prompts(
-        self, rules: Optional[List[str]] = None
-    ) -> Dict[str, Dict[str, List[str]]]:
+    def validate_all_prompts(self, rules: list[str] | None = None) -> dict[str, dict[str, list[str]]]:
         """Validate all discovered prompts.
 
         Args:
@@ -80,9 +75,7 @@ class PromptValidator:
 
         return results
 
-    def _validate_structure(
-        self, content: str, prompt_path: Optional[Path]
-    ) -> List[str]:
+    def _validate_structure(self, content: str, prompt_path: Path | None) -> list[str]:
         """Validate the structural elements of a prompt."""
         issues = []
 
@@ -99,24 +92,19 @@ class PromptValidator:
             issues.append("Prompt is very short - consider adding more detail")
 
         # Check for lists
-        list_items = [
-            line for line in lines if line.strip().startswith(("-", "*", "1."))
-        ]
+        list_items = [line for line in lines if line.strip().startswith(("-", "*", "1."))]
         if not list_items and len(non_empty_lines) > 10:
             issues.append("No lists found - consider using lists for clarity")
 
         # Check for code blocks
         if "```" not in content and any(
-            keyword in content.lower()
-            for keyword in ["code", "example", "command", "script"]
+            keyword in content.lower() for keyword in ["code", "example", "command", "script"]
         ):
             issues.append("Mentions code/commands but no code blocks found")
 
         return issues
 
-    def _validate_variables(
-        self, content: str, prompt_path: Optional[Path]
-    ) -> List[str]:
+    def _validate_variables(self, content: str, prompt_path: Path | None) -> list[str]:
         """Validate template variables in the prompt."""
         issues = []
 
@@ -134,22 +122,15 @@ class PromptValidator:
                     undefined_vars.append(var)
 
             if undefined_vars:
-                issues.append(
-                    f"Variables used but not described: {', '.join(sorted(undefined_vars))}"
-                )
+                issues.append(f"Variables used but not described: {', '.join(sorted(undefined_vars))}")
 
             # Check for inconsistent variable styles
             if format_vars and template_vars:
-                issues.append(
-                    "Mixed variable styles found - use consistent format "
-                    "({var} or ${var})"
-                )
+                issues.append("Mixed variable styles found - use consistent format ({var} or ${var})")
 
         return issues
 
-    def _validate_metadata(
-        self, content: str, prompt_path: Optional[Path]
-    ) -> List[str]:
+    def _validate_metadata(self, content: str, prompt_path: Path | None) -> list[str]:
         """Validate metadata in the prompt."""
         issues = []
 
@@ -176,9 +157,7 @@ class PromptValidator:
                         recommended = ["title", "description", "variables", "category"]
                         missing = [f for f in recommended if f not in metadata]
                         if missing:
-                            issues.append(
-                                f"Metadata missing recommended fields: {', '.join(missing)}"
-                            )
+                            issues.append(f"Metadata missing recommended fields: {', '.join(missing)}")
                     except yaml.YAMLError as e:
                         issues.append(f"Invalid YAML in frontmatter: {e}")
                 else:
@@ -188,7 +167,7 @@ class PromptValidator:
 
         return issues
 
-    def _validate_content(self, content: str, prompt_path: Optional[Path]) -> List[str]:
+    def _validate_content(self, content: str, prompt_path: Path | None) -> list[str]:
         """Validate the content quality of the prompt."""
         issues = []
 
@@ -219,9 +198,7 @@ class PromptValidator:
 
         # Check for trailing whitespace
         lines_with_trailing = [
-            i + 1
-            for i, line in enumerate(content.split("\n"))
-            if line.endswith(" ") or line.endswith("\t")
+            i + 1 for i, line in enumerate(content.split("\n")) if line.endswith(" ") or line.endswith("\t")
         ]
         if lines_with_trailing:
             issues.append(
@@ -231,16 +208,12 @@ class PromptValidator:
 
         return issues
 
-    def _validate_references(
-        self, content: str, prompt_path: Optional[Path]
-    ) -> List[str]:
+    def _validate_references(self, content: str, prompt_path: Path | None) -> list[str]:
         """Validate references to other prompts or files."""
         issues = []
 
         # Check for references to other prompts
-        prompt_refs = re.findall(
-            r'(?:see|refer to|load)\s+["\']?(\w+_prompt)["\']?', content, re.I
-        )
+        prompt_refs = re.findall(r'(?:see|refer to|load)\s+["\']?(\w+_prompt)["\']?', content, re.I)
         if prompt_refs:
             available_prompts = set(discover_prompts().keys())
             for ref in prompt_refs:
@@ -259,7 +232,7 @@ class PromptValidator:
         return issues
 
 
-def validate_prompt_file(prompt_path: Path) -> List[str]:
+def validate_prompt_file(prompt_path: Path) -> list[str]:
     """Validate a prompt file for basic issues.
 
     Args:
@@ -296,7 +269,7 @@ def validate_prompt_file(prompt_path: Path) -> List[str]:
     return issues
 
 
-def validate_prompt_collection(prompt_dir: Path) -> Dict[str, List[str]]:
+def validate_prompt_collection(prompt_dir: Path) -> dict[str, list[str]]:
     """Validate all prompts in a directory.
 
     Args:
