@@ -2,15 +2,15 @@
 
 ## Overview
 
-The Claude linter enforces coding standards from CLAUDE.md by tracking violation counts and only complaining when counts increase. This prevents noise from existing violations while catching new ones.
+The Claude linter integrates with Claude Code's hook system to provide real-time linting and automatic fixes during file operations. It leverages pre-commit for validation and auto-fixing, blocking operations that would introduce non-fixable violations.
 
 ## Key Features
 
-- **Incremental enforcement**: Only reports new violations, not existing ones
-- **Auto-fixes**: Automatically fixes formatting and simple issues before checking
-- **CWD-aware**: Only lints files under the current working directory
-- **Git-aware**: Respects .gitignore and excludes submodules
-- **Session-based**: Tracks state per Claude session (PID)
+- **Pre-write validation**: Blocks writes that would introduce non-fixable violations
+- **Post-write auto-fixes**: Automatically fixes issues after writes/edits
+- **Pre-commit integration**: Uses pre-commit's extensive hook ecosystem
+- **Git-aware**: Works both inside and outside Git repositories
+- **Clean logging**: Structured JSON logs for debugging
 
 ## Installation
 
@@ -22,138 +22,122 @@ pip install -e /path/to/ducktape_llm_common
 
 ## Usage
 
+### Claude Code Hook Integration
+
+The linter is automatically invoked by Claude Code through its hook system. Configure it in your Claude settings:
+
+```json
+{
+  "hooks": {
+    "PreToolUse": {
+      "command": ["claude-linter", "hook", "pre"]
+    },
+    "PostToolUse": {
+      "command": ["claude-linter", "hook", "post"]
+    }
+  }
+}
+```
+
 ### Command Line
 
 ```bash
-# Check current directory
-claude-linter
+# Run pre-hook validation (used by Claude)
+claude-linter hook pre
 
-# Check specific directory
-claude-linter /path/to/project
+# Run post-hook fixes (used by Claude)
+claude-linter hook post
 
-# Check without blocking
-claude-linter --check-only
+# Clean old log files
+claude-linter clean
 
-# Initialize project config
-claude-linter --init
+# Clean logs older than N days
+claude-linter clean --older-than 7
 
-# Show internal state
-claude-linter --show-state
-```
-
-### Bash Integration
-
-Add to your `.bashrc` for automatic checking:
-
-```bash
-# Minimal bash hook delegated to the linter
-if [ "$CLAUDECODE" = "1" ] || [ "$CODEX_AGENT" = "1" ]; then
-    eval "$(claude-linter --bash-hook)"
-fi
+# Preview what would be cleaned
+claude-linter clean --dry-run
 ```
 
 ## Configuration
 
-The Claude linter uses a flexible configuration system that reads from multiple sources:
+The Claude linter uses pre-commit for its configuration:
 
-### Configuration Loading Order
+### Configuration Sources
 
-1. **XDG user config** - Your personal rules from `~/.config/claude-linter/config.toml`
-2. **Project ruff config** - Standard ruff configuration from the project
-3. **Error if no config** - If no configuration is found anywhere, the linter will error
+1. **Git Repository Mode**: When working in a Git repository, the linter automatically finds and uses `.pre-commit-config.yaml` by traversing up the directory tree
+2. **Non-Git Mode**: When outside a Git repository, it uses configuration provided via Claude settings or a fallback configuration
 
-### Personal Configuration (XDG)
+### Pre-commit Configuration
 
-Create your personal configuration at `~/.config/claude-linter/config.toml`:
+Create `.pre-commit-config.yaml` in your project:
 
-```toml
-[ruff]
-# These rules will always be enforced across all your projects
-force-select = [
-    "RET505",   # Early bailout patterns
-    "B009",     # No getattr with constant
-    "UP007",    # Use X | Y union types
-    # ... add your preferred rules
-]
+```yaml
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.1.0
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
 ```
 
-### Project Configuration
+### Hook Execution
 
-The linter automatically reads standard ruff configuration from projects:
+Both pre and post hooks run ALL configured pre-commit hooks with fixing enabled:
 
-- `pyproject.toml` with `[tool.ruff]` section
-- `ruff.toml` or `.ruff.toml`
-
-Example project config:
-
-```toml
-# pyproject.toml
-[tool.ruff]
-select = ["E", "F", "I"]  # Project's rules
-extend-select = ["W291"]  # Additional rules
-```
-
-Your personal rules will be merged with the project's rules automatically.
+- **Pre-hook**: Tests if proposed content can be fully fixed (blocks only if non-fixable issues remain)
+- **Post-hook**: Actually applies the fixes to written files
 
 ### Disabling
 
-To disable for a project:
+The linter respects pre-commit's standard disabling mechanisms:
 
-```bash
-touch .claude-linter-disable
-```
-
-### Configuration Errors
-
-If no configuration is found anywhere, you'll see:
-
-```
-Error: No linter configuration found!
-
-claude-linter requires either:
-- A project ruff configuration ([tool.ruff] in pyproject.toml)
-- Your personal config at ~/.config/claude-linter/config.toml
-
-Example personal config:
-[ruff]
-select = ["E", "F", "RET505", "B009"]
-```
+- Add `SKIP` environment variable for specific hooks
+- Use `# pragma: no cover` or hook-specific ignore comments in code
 
 ## Implementation Details
 
-### State Tracking
+### Hook Behavior
 
-- State stored in `~/.claude/projects/<sanitized_project_path>/linter/`
-- Tracks last check time and violation counts per file
-- Only reports when violation count increases
-- First-time files show warnings instead of errors
+#### Pre-Hook (Write operations only)
+1. Receives proposed file content from Claude Code
+2. Creates a temporary file with the content
+3. Runs pre-commit with fixing enabled on the temp file
+4. If fixes were applied, runs again to check if non-fixable issues remain
+5. Blocks the write only if non-fixable violations are found
+6. Returns JSON response with decision and reason
 
-### Rule Categories
+#### Post-Hook (Write, Edit, MultiEdit operations)
+1. Receives information about written/edited files
+2. Runs pre-commit with fixing enabled on the actual files
+3. Applies auto-fixes directly to the files
+4. Blocks with "FYI" message if fixes were applied
+5. Returns JSON response indicating if changes were made
 
-The linter enforces rules in these categories:
+### Logging
 
-1. **No hasattr/getattr/setattr** - Direct attribute access only
-2. **Early bailout patterns** - Guard clauses and no redundant else
-3. **Modern Python features** - Union types, f-strings, pathlib
-4. **Exception handling** - No bare except, proper re-raising
-5. **Code simplification** - Ternary operators, builtin functions
-6. **Import organization** - Imports at top of file
-7. **Timeout requirements** - Network operations need timeouts
+- Logs stored in `~/.cache/claude-linter/`
+- Named with pattern: `hook-{pre|post}-{timestamp}.json`
+- Contains full request/response data for debugging
+- Old logs can be cleaned with `claude-linter clean`
 
-### Auto-fixes
+### Exit Codes
 
-Before checking, automatically applies:
+The linter always exits with code 0 to comply with Claude Code's hook API. Actual decisions are communicated through the JSON response:
 
-- Code formatting (ruff format)
-- Auto-fixable ruff rules
-- Trailing whitespace removal
-
-### Reporting
-
-- Colored terminal output
-- Full JSON reports in `~/.claude/projects/<project>/linter/logs/`
-- Violation details with file, line, and column
-- Blocks command execution on new violations
+```json
+{
+  "decision": "block",
+  "reason": "Non-fixable violations found:\n- Line 10: Missing type annotation",
+  "continue": true
+}
+```
 
 ## Future Improvements
 
