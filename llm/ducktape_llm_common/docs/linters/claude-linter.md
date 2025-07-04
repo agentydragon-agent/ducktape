@@ -30,23 +30,22 @@ The linter is automatically invoked by Claude Code through its hook system. Conf
 {
   "hooks": {
     "PreToolUse": {
-      "command": ["claude-linter", "hook", "pre"]
+      "command": ["claude-linter", "hook"]
     },
     "PostToolUse": {
-      "command": ["claude-linter", "hook", "post"]
+      "command": ["claude-linter", "hook"]
     }
   }
 }
 ```
 
+The hook command automatically routes to the correct handler based on the `hook_event_name` field in the JSON input.
+
 ### Command Line
 
 ```bash
-# Run pre-hook validation (used by Claude)
-claude-linter hook pre
-
-# Run post-hook fixes (used by Claude)
-claude-linter hook post
+# Run hook (automatically routes based on JSON input)
+claude-linter hook
 
 # Clean old log files
 claude-linter clean
@@ -117,8 +116,13 @@ The linter respects pre-commit's standard disabling mechanisms:
 1. Receives information about written/edited files
 2. Runs pre-commit with fixing enabled on the actual files
 3. Applies auto-fixes directly to the files
-4. Blocks with "FYI" message if fixes were applied
-5. Returns JSON response indicating if changes were made
+4. For Write: Sends "FYI" message to Claude if fixes were applied
+5. For Edit/MultiEdit: 
+   - Always applies all possible auto-fixes
+   - If non-fixable violations remain after fixes, warns Claude with detailed message
+   - If only auto-fixes were needed, sends "FYI" message to Claude
+   - If no changes needed, continues normally
+6. Returns JSON response (block decision = warning to Claude, not blocking the operation)
 
 ### Logging
 

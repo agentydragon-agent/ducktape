@@ -12,16 +12,16 @@ from .models import HookRequest, HookResponse
 from .precommit_runner import PreCommitRunner
 
 
-def evaluate_pre(req: HookRequest) -> tuple[HookResponse, int]:
+def evaluate_pre(req: HookRequest) -> HookResponse:
     # Pre-write hook evaluation - early bailout
     if req.tool_name != "Write":
         # Return empty response to let normal permission flow continue
-        return HookResponse(), 0
+        return HookResponse()
 
     inp = req.tool_input
     if not inp.file_path or inp.content is None:
         # Return empty response to let normal permission flow continue
-        return HookResponse(), 0
+        return HookResponse()
 
     # Run hooks on temp file
     tmp = tempfile.NamedTemporaryFile("w", delete=False, suffix=Path(inp.file_path).suffix)
@@ -43,9 +43,9 @@ def evaluate_pre(req: HookRequest) -> tuple[HookResponse, int]:
         if original_content == fixed_content:
             if ret1 != 0:
                 # Had violations but none were fixable
-                return _block_with_reason(out1, err1), 0
+                return _block_with_reason(out1, err1)
             # No violations at all - let normal permission flow continue
-            return HookResponse(reason="Pre-commit checks passed"), 0
+            return HookResponse()
 
         # Content changed, check if pre-commit is satisfied with the fixed version
         ret2, out2, err2 = runner.run([tmp_path], cwd=str(Path(inp.file_path).parent))
@@ -53,12 +53,10 @@ def evaluate_pre(req: HookRequest) -> tuple[HookResponse, int]:
 
         if fixed_content == fixed_again_content:
             # All violations were fixable - let normal permission flow continue
-            return HookResponse(
-                reason="Pre-commit checks passed (auto-fixable violations will be fixed after write)"
-            ), 0
+            return HookResponse()
         else:
             # Pre-commit keeps changing things - non-fixable violations found
-            return _block_with_reason(out2, err2), 0
+            return _block_with_reason(out2, err2)
 
     finally:
         Path(tmp_path).unlink()
@@ -70,21 +68,51 @@ def _block_with_reason(stdout: str, stderr: str) -> HookResponse:
     return HookResponse(decision="block", reason=reason)
 
 
-def evaluate_post(req: HookRequest) -> tuple[HookResponse, int]:
+def evaluate_post(req: HookRequest) -> HookResponse:
     # Post-write hook evaluation
     if req.tool_name not in ["Write", "Edit", "MultiEdit"]:
-        return HookResponse(decision="approve"), 0
+        return HookResponse()
     file_path = req.tool_input.file_path
     if not file_path or not Path(file_path).exists():
-        return HookResponse(decision="approve"), 0
+        return HookResponse()
+
     original = Path(file_path).read_text()
     config = get_merged_config([file_path], fix=True)
     runner = PreCommitRunner(config)
-    ret, out, err = runner.run([file_path], cwd=str(Path(file_path).parent))
-    new = Path(file_path).read_text()
-    if new == original:
-        return HookResponse(decision="approve"), 0
-    return HookResponse(decision="block", reason="FYI: Auto-fixes were applied"), 0
+
+    # First run: apply autofixes
+    ret1, out1, err1 = runner.run([file_path], cwd=str(Path(file_path).parent))
+    content_after_fixes = Path(file_path).read_text()
+
+    # For Edit/MultiEdit, we need to check if there are still blocking issues
+    if req.tool_name in ["Edit", "MultiEdit"]:
+        # Run again to check if there are still violations after fixes
+        ret2, out2, err2 = runner.run([file_path], cwd=str(Path(file_path).parent))
+        content_after_second_run = Path(file_path).read_text()
+
+        if content_after_second_run != content_after_fixes:
+            # Still changing - there are non-fixable violations
+            return HookResponse(
+                decision="block",
+                reason=(
+                    f"File was edited successfully, but has non-fixable violations:\n{out2}\n\n"
+                    "Auto-fixes were applied where possible."
+                ),
+            )
+        elif content_after_fixes != original:
+            # Only auto-fixes were applied, no blocking issues
+            return HookResponse(
+                decision="block",
+                reason="FYI: Auto-fixes were applied to the edited file",
+            )
+        else:
+            # No changes needed
+            return HookResponse()
+    else:
+        # Write tool - original behavior
+        if content_after_fixes == original:
+            return HookResponse()
+        return HookResponse(decision="block", reason="FYI: Auto-fixes were applied")
 
 
 @click.group()
@@ -146,17 +174,17 @@ def pre_hook():
         click.echo("Error parsing JSON input", err=True)
         sys.exit(1)
 
-    decision, code = evaluate_pre(req)
+    decision = evaluate_pre(req)
     output_json = decision.model_dump_json(by_alias=True, exclude_none=True)
 
     # Log output
     log_data["output"] = json.loads(output_json)  # Parse JSON to embed as structure
-    log_data["exit_code"] = code
+    log_data["exit_code"] = 0
     with open(log_file, "w") as f:
         json.dump(log_data, f, indent=2)
 
     print(output_json, file=sys.stdout)
-    sys.exit(code)
+    sys.exit(0)
 
 
 # Expose post-hook logic
@@ -195,7 +223,7 @@ def post_hook():
         click.echo("Error parsing JSON input", err=True)
         sys.exit(1)
 
-    decision, code = evaluate_post(req)
+    decision = evaluate_post(req)
     if decision:
         output_json = decision.model_dump_json(by_alias=True, exclude_none=True)
         print(output_json, file=sys.stdout)
@@ -206,11 +234,11 @@ def post_hook():
         log_data["output"] = None
 
     # Log exit code
-    log_data["exit_code"] = code
+    log_data["exit_code"] = 0
     with open(log_file, "w") as f:
         json.dump(log_data, f, indent=2)
 
-    sys.exit(code)
+    sys.exit(0)
 
 
 # Expose pre/post as top-level commands for compatibility with tests
@@ -220,7 +248,12 @@ cli.add_command(post_hook, name="post")
 
 @cli.command("clean")
 @click.option("--dry-run", is_flag=True, help="Show what would be deleted without deleting")
-@click.option("--older-than", type=int, default=7, help="Delete logs older than N days (default: 7)")
+@click.option(
+    "--older-than",
+    type=int,
+    default=7,
+    help="Delete logs older than N days (default: 7)",
+)
 def clean(dry_run: bool, older_than: int) -> None:
     """Clean up old log files."""
     log_dir = Path.home() / ".cache" / "claude-linter"
@@ -259,3 +292,66 @@ def clean(dry_run: bool, older_than: int) -> None:
         click.echo(f"\nWould delete {deleted_count} files ({total_size} bytes)")
     else:
         click.echo(f"Deleted {deleted_count} files ({total_size} bytes)")
+
+
+@cli.command("hook")
+def unified_hook():
+    """Unified hook command that routes based on hook_event_name in JSON input."""
+    # Create log directory
+    log_dir = Path.home() / ".cache" / "claude-linter"
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    # Read input
+    input_json = sys.stdin.read()
+
+    # Try to parse JSON for logging and routing
+    try:
+        input_data = json.loads(input_json)
+    except json.JSONDecodeError:
+        click.echo("Error: Invalid JSON input", err=True)
+        sys.exit(1)
+
+    # Parse request to get hook event name
+    try:
+        req = HookRequest.model_validate_json(input_json)
+    except Exception as e:
+        click.echo(f"Error parsing hook request: {e}", err=True)
+        sys.exit(1)
+
+    # Route based on hook_event_name
+    if not req.hook_event_name:
+        click.echo("Error: hook_event_name not provided", err=True)
+        sys.exit(1)
+
+    # Create event-specific log file
+    hook_type = req.hook_event_name.lower().replace("tooluse", "")  # "pre" or "post"
+    log_file = log_dir / f"hook-{hook_type}-{datetime.datetime.now().isoformat()}.json"
+
+    # Log input
+    log_data = {
+        "timestamp": datetime.datetime.now().isoformat(),
+        "hook_type": hook_type,
+        "hook_event_name": req.hook_event_name,
+        "input": input_data,
+    }
+
+    # Route to appropriate handler
+    if req.hook_event_name == "PreToolUse":
+        decision = evaluate_pre(req)
+    elif req.hook_event_name == "PostToolUse":
+        decision = evaluate_post(req)
+    else:
+        # For other events (Notification, Stop, SubagentStop), return empty response
+        decision = HookResponse()
+
+    # Handle output
+    output_json = decision.model_dump_json(by_alias=True, exclude_none=True)
+    print(output_json, file=sys.stdout)
+    log_data["output"] = json.loads(output_json)
+
+    # Log exit code
+    log_data["exit_code"] = 0
+    with open(log_file, "w") as f:
+        json.dump(log_data, f, indent=2)
+
+    sys.exit(0)
