@@ -29,10 +29,20 @@ class PreCommitRunner:
         # Ensure cwd is set
         current_working_dir = Path(cwd) if cwd else Path.cwd()
 
-        # Create log file
-        log_dir = Path.home() / ".cache" / "claude-linter"
-        log_dir.mkdir(parents=True, exist_ok=True)
-        log_file = log_dir / f"debug-{datetime.datetime.now().isoformat()}.log"
+        # Only create debug logs if explicitly requested via environment variable
+        import os
+
+        debug_enabled = os.environ.get("CLAUDE_LINTER_DEBUG", "").lower() in (
+            "1",
+            "true",
+            "yes",
+        )
+        log_file = None
+        if debug_enabled:
+            # Create log file
+            log_dir = Path.home() / ".cache" / "claude-linter"
+            log_dir.mkdir(parents=True, exist_ok=True)
+            log_file = log_dir / f"debug-{datetime.datetime.now().isoformat()}.log"
 
         # Create a temporary git repo to make pre-commit happy
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -40,22 +50,41 @@ class PreCommitRunner:
 
             # Initialize a git repo
             subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True)
-            subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=tmpdir, capture_output=True)
-            subprocess.run(["git", "config", "user.name", "Test User"], cwd=tmpdir, capture_output=True)
+            subprocess.run(
+                ["git", "config", "user.email", "test@example.com"],
+                cwd=tmpdir,
+                capture_output=True,
+            )
+            subprocess.run(
+                ["git", "config", "user.name", "Test User"],
+                cwd=tmpdir,
+                capture_output=True,
+            )
 
-            # Copy files to temp repo
+            # Copy files to temp repo, preserving full path structure
             temp_paths = []
             for path in paths:
                 path = Path(path)
-                if path.is_absolute():
-                    # Make it relative to the original cwd
-                    try:
-                        rel_path = path.relative_to(current_working_dir)
-                    except ValueError:
-                        # If not relative to cwd, just use the name
-                        rel_path = Path(path.name)
-                else:
-                    rel_path = path
+
+                # Get absolute path
+                abs_path = path.absolute()
+
+                # Find the git root of the original file (if in a git repo)
+                try:
+                    git_root_result = subprocess.run(
+                        ["git", "rev-parse", "--show-toplevel"],
+                        cwd=str(abs_path.parent),
+                        capture_output=True,
+                        text=True,
+                        check=True,
+                    )
+                    original_git_root = Path(git_root_result.stdout.strip())
+                    # Preserve the full path relative to the original git root
+                    rel_path = abs_path.relative_to(original_git_root)
+                except (subprocess.CalledProcessError, ValueError):
+                    # Not in a git repo or can't determine relative path
+                    # Fall back to using the full absolute path structure
+                    rel_path = Path(*abs_path.parts[1:])  # Skip the root '/'
 
                 temp_file = tmpdir_path / rel_path
                 temp_file.parent.mkdir(parents=True, exist_ok=True)
@@ -70,25 +99,26 @@ class PreCommitRunner:
             config_text = yaml.dump(config)
             config_path.write_text(config_text)
 
-            # Write debug info to log
-            with open(log_file, "w") as f:
-                f.write("=== Claude Linter Debug Log ===\n")
-                f.write(f"Time: {datetime.datetime.now()}\n")
-                f.write(f"Working dir: {current_working_dir}\n")
-                f.write(f"Temp dir: {tmpdir}\n")
-                f.write(f"Paths: {paths}\n")
-                f.write(f"Temp paths: {temp_paths}\n")
-                f.write(f"\n--- Config ---\n{config_text}\n")
+            # Write debug info to log if enabled
+            if log_file:
+                with open(log_file, "w") as f:
+                    f.write("=== Claude Linter Debug Log ===\n")
+                    f.write(f"Time: {datetime.datetime.now()}\n")
+                    f.write(f"Working dir: {current_working_dir}\n")
+                    f.write(f"Temp dir: {tmpdir}\n")
+                    f.write(f"Paths: {paths}\n")
+                    f.write(f"Temp paths: {temp_paths}\n")
+                    f.write(f"\n--- Config ---\n{config_text}\n")
 
-                # Write file contents
-                f.write("\n--- File contents ---\n")
-                for temp_path in temp_paths:
-                    file_path = tmpdir_path / temp_path
-                    f.write(f"\n{temp_path}:\n")
-                    if file_path.exists():
-                        f.write(file_path.read_text())
-                    else:
-                        f.write("(file does not exist)\n")
+                    # Write file contents
+                    f.write("\n--- File contents ---\n")
+                    for temp_path in temp_paths:
+                        file_path = tmpdir_path / temp_path
+                        f.write(f"\n{temp_path}:\n")
+                        if file_path.exists():
+                            f.write(file_path.read_text())
+                        else:
+                            f.write("(file does not exist)\n")
 
             # Stage files
             subprocess.run(["git", "add"] + temp_paths, cwd=tmpdir, capture_output=True)
@@ -105,20 +135,21 @@ class PreCommitRunner:
             # Run as subprocess
             result = subprocess.run(cmd, cwd=tmpdir, capture_output=True, text=True)
 
-            # Append results to log
-            with open(log_file, "a") as f:
-                f.write("\n--- Pre-commit command ---\n")
-                f.write(f"Command: {' '.join(cmd)}\n")
-                f.write(f"Return code: {result.returncode}\n")
-                f.write(f"\n--- Stdout ---\n{result.stdout}\n")
-                f.write(f"\n--- Stderr ---\n{result.stderr}\n")
+            # Append results to log if enabled
+            if log_file:
+                with open(log_file, "a") as f:
+                    f.write("\n--- Pre-commit command ---\n")
+                    f.write(f"Command: {' '.join(cmd)}\n")
+                    f.write(f"Return code: {result.returncode}\n")
+                    f.write(f"\n--- Stdout ---\n{result.stdout}\n")
+                    f.write(f"\n--- Stderr ---\n{result.stderr}\n")
 
             # Copy modified files back
-            for rel_path_str in temp_paths:
+            for i, rel_path_str in enumerate(temp_paths):
                 temp_file = tmpdir_path / rel_path_str
                 if temp_file.exists():
                     # Copy back to original location
-                    original_path = Path(paths[temp_paths.index(rel_path_str)])
+                    original_path = Path(paths[i])
                     original_path.write_text(temp_file.read_text())
 
             return result.returncode, result.stdout, result.stderr

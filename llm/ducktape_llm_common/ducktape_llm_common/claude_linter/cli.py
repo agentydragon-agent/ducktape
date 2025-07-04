@@ -77,39 +77,37 @@ def evaluate_post(req: HookRequest) -> HookResponse:
         return HookResponse()
 
     original = Path(file_path).read_text()
-    config = get_merged_config([file_path], fix=True)
-    runner = PreCommitRunner(config)
 
-    # First run: apply autofixes
-    ret1, out1, err1 = runner.run([file_path], cwd=str(Path(file_path).parent))
-    content_after_fixes = Path(file_path).read_text()
-
-    # For Edit/MultiEdit, we need to check if there are still blocking issues
+    # For Edit/MultiEdit, only check violations without fixing
     if req.tool_name in ["Edit", "MultiEdit"]:
-        # Run again to check if there are still violations after fixes
-        ret2, out2, err2 = runner.run([file_path], cwd=str(Path(file_path).parent))
-        content_after_second_run = Path(file_path).read_text()
+        # Get config without fix flag for Edit/MultiEdit
+        config = get_merged_config([file_path], fix=False)
+        runner = PreCommitRunner(config)
 
-        if content_after_second_run != content_after_fixes:
-            # Still changing - there are non-fixable violations
+        # Run check-only (no fixes)
+        ret, out, err = runner.run([file_path], cwd=str(Path(file_path).parent))
+
+        if ret != 0:
+            # There are violations - report them
             return HookResponse(
                 decision="block",
                 reason=(
-                    f"File was edited successfully, but has non-fixable violations:\n{out2}\n\n"
-                    "Auto-fixes were applied where possible."
+                    f"FYI: Your edit was applied successfully, but the file now has linting violations:\n{out}\n\n"
+                    "This is just a notification - your changes have been saved."
                 ),
             )
-        elif content_after_fixes != original:
-            # Only auto-fixes were applied, no blocking issues
-            return HookResponse(
-                decision="block",
-                reason="FYI: Auto-fixes were applied to the edited file",
-            )
         else:
-            # No changes needed
+            # No violations
             return HookResponse()
     else:
-        # Write tool - original behavior
+        # Write tool - keep original behavior with autofixes
+        config = get_merged_config([file_path], fix=True)
+        runner = PreCommitRunner(config)
+
+        # First run: apply autofixes
+        ret1, out1, err1 = runner.run([file_path], cwd=str(Path(file_path).parent))
+        content_after_fixes = Path(file_path).read_text()
+
         if content_after_fixes == original:
             return HookResponse()
         return HookResponse(decision="block", reason="FYI: Auto-fixes were applied")
