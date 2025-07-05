@@ -1,0 +1,2 @@
+- plain "except:" -> immediate block, including on edit
+- detect "this just hides errors" (with LLM?)
