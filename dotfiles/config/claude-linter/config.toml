@@ -12,6 +12,16 @@ force-select = [
     "RET508",   # superfluous-else-break (autofix available)
     "PLR5501",  # collapsible-else-if (autofix available)
     "SIM102",   # collapsible-if (autofix available)
+    "SIM117",
+    "SIM116",
+    "SIM115",
+    "SIM114",
+    "SIM113",
+    "SIM112",
+    "SIM110",
+    "SIM109",
+    "SIM107",
+    "SIM101",
 
     # CLAUDE.md: /attrs/no-hasattr-getattr
     "B009",     # getattr-with-constant (autofix available)
@@ -124,31 +134,33 @@ force-select = [
 # Pre-commit hooks for text fixes that apply to all file types
 # Used by Claude Code post-hook for auto-fixing common text issues
 [pre-commit]
-# Array of tables syntax - each [[pre-commit.repos]] creates a new repo entry
+
+# Ruff - Python linter and formatter
+[[pre-commit.repos]]
+repo = "https://github.com/astral-sh/ruff-pre-commit"
+rev = "v0.11.0"
+
+[[pre-commit.repos.hooks]]
+id = "ruff"
+args = ["--fix"]
+
+[[pre-commit.repos.hooks]]
+id = "ruff-format"
+
+# Basic text fixes
 [[pre-commit.repos]]
 repo = "https://github.com/pre-commit/pre-commit-hooks"
-rev = "v4.5.0"
+rev = "v5.0.0"
 
 [[pre-commit.repos.hooks]]
 id = "trailing-whitespace"
-name = "Fix trailing whitespace"
-# Apply to common text file types that Claude edits
-files = '\\.(py|js|ts|jsx|tsx|md|txt|rs|toml|yaml|yml|json|sh|bash|zsh|html|css|scss|vue|svelte)$'
-# Don't fix markdown files that use two spaces for line breaks
-args = ["--markdown-linebreak-ext=md"]
+
+[[pre-commit.repos.hooks]]
+id = "check-ast"
+name = "Check Python syntax"
+
+[[pre-commit.repos.hooks]]
+id = "check-toml"
 
 [[pre-commit.repos.hooks]]
 id = "end-of-file-fixer"
-name = "Fix end of file"
-files = '\\.(py|js|ts|jsx|tsx|md|txt|rs|toml|yaml|yml|json|sh|bash|zsh|html|css|scss|vue|svelte)$'
-
-[[pre-commit.repos.hooks]]
-id = "mixed-line-ending"
-name = "Fix mixed line endings"
-args = ["--fix=lf"]
-files = '\\.(py|js|ts|jsx|tsx|md|txt|rs|toml|yaml|yml|json|sh|bash|zsh|html|css|scss|vue|svelte)$'
-
-[[pre-commit.repos.hooks]]
-id = "fix-byte-order-marker"
-name = "Fix UTF-8 byte order marker"
-files = '\\.(py|js|ts|jsx|tsx|md|txt|rs|toml|yaml|yml|json|sh|bash|zsh|html|css|scss|vue|svelte)$'

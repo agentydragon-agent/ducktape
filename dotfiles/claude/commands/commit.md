@@ -4,36 +4,14 @@ name: commit
 ---
 
 Analyze a repository with many unstaged changes and help create clean, logical commits from the chaos.
+Organize messy uncommitted changes into clean, logical commits. This command handles everything from a few mixed changes to complete chaos with dozens of modified files.
 
-## Usage
-
-```
-/commit
-```
-
-Or naturally in conversation:
-```
-U: help me commit these changes
-A: I'll analyze your uncommitted changes and suggest logical commits.
-
-U: organize my git mess
-A: Let me scan your repository and propose clean commits.
-
-U: commit
-A: Starting repository analysis for intelligent commit suggestions.
-```
-
-## Overview
-
-This command helps organize messy uncommitted changes into clean, logical commits. It handles everything from a few mixed changes to complete chaos with dozens of modified files.
-
-### ⚠️ Critical Behavior
+# ⚠️ Critical Behavior
 
 **ALWAYS PAUSE AND ASK**: After analyzing changes, you MUST pause and ask the user how they want to proceed. Never automatically stage or commit without explicit user direction. Present options clearly and wait for user input.
 
-## Process
+# Process
 
-The command works in a few stages:
 1. Run any pre-commit hooks to auto-fix formatting
 2. Analyze all changes to find logical groupings
 3. **PAUSE and present analysis to user for direction**
@@ -42,9 +20,9 @@ The command works in a few stages:
 
 **IMPORTANT**: Always pause after analysis and ask the user how they want to proceed. Never automatically stage or commit without explicit user direction.
 
-## Example Session
+# Example Session
 
-### Initial Analysis (Always Pause Here)
+## Initial Analysis (Always Pause Here)
 
 ```
 U: /commit
@@ -102,9 +80,9 @@ A: ✅ Done! Created the commit:
    Would you like to tackle that next, or start with something smaller like the config changes?
 ```
 
-### Different User Choices
+# Different User Choices
 
-#### Example: User wants to review first
+## Example: User wants to review first
 ```
 U: can I see the changes first?
 
@@ -150,7 +128,7 @@ A: That makes sense! The auth config and implementation do belong together.
    Look good?
 ```
 
-#### Example: User wants all changes in one commit
+## Example: User wants all changes in one commit
 ```
 U: just put everything in one commit
 
@@ -167,17 +145,15 @@ A: Hmm, that would combine 5 different types of changes - features, refactoring,
 
 U: you're right, let's split them up
 
-A: Good call! Clean commits are easier to review and revert if needed.
-   
-   Which would you like to start with?
+A: Alright. Which would you like to start with?
    - The authentication feature (it's self-contained)
    - The logging refactor (biggest change, touches many files)
-   - The config setup (smallest, good warm-up)
+   - The config setup (smallest)
    
    Or I can show you more details about any of these.
 ```
 
-### 5. Automatic Change Analysis & Smart Staging
+# Automatic Change Analysis & Smart Staging
 
 The model automatically detects overlapping changes and handles partial staging transparently:
 
@@ -232,37 +208,30 @@ A: Created commit: "refactor: improve logging and add timeout handling"
    Ready for commit 2. Continue?
 ```
 
-## Features
+# Features
 
-### Intelligent Grouping
+## Intelligent Grouping
 - Detects related changes across files
 - Identifies refactoring patterns
 - Separates features from cleanup
 - Handles files with mixed changes
 
-### Safety Features
+## Safety Features
 - Always preserves index state before changes
 - Can restore to any saved state
 - Shows preview before committing
 - Allows incremental review
 
-### Cleanup Detection
+## Cleanup Detection
 - Identifies likely unwanted files (logs, backups)
 - Suggests .gitignore additions
 - Detects abandoned experiments
 - Finds incomplete features
 
-## Natural Language Triggers
 
-- "help me commit"
-- "organize these changes"
-- "clean up my commits"
-- "stage these changes properly"
-- "split up this mess"
+# Examples
 
-## Examples
-
-### Auto-Detection of Issues
+## Auto-Detection of Issues
 ```
 U: /commit
 A: Running pre-commit hooks... done.
@@ -275,7 +244,7 @@ A: Running pre-commit hooks... done.
    I'll organize the real changes into clean commits and handle these issues.
 ```
 
-### Smart Staging with Mixed Files
+## Smart Staging with Mixed Files
 ```
 U: let's do the auth feature commit
 A: Staging authentication changes...
@@ -289,7 +258,7 @@ A: Staging authentication changes...
    ✓ Ready to commit the authentication feature
 ```
 
-### Proactive Cleanup
+## Proactive Cleanup
 ```
 U: /commit
 A: Before organizing commits, I found files that shouldn't be tracked:
@@ -302,9 +271,9 @@ A: Before organizing commits, I found files that shouldn't be tracked:
    Should I clean these up and update .gitignore?
 ```
 
-## Advanced Features
+# Advanced Features
 
-### Saved States Management
+## Saved States Management
 ```
 U: show saved states
 A: Saved index states:
@@ -315,7 +284,7 @@ A: Saved index states:
    Restore with: git read-tree <state-name>
 ```
 
-### Custom Commit Creation
+## Custom Commit Creation
 ```
 U: I want to create my own grouping
 A: Interactive mode activated. I'll help you build custom commits.
@@ -329,7 +298,7 @@ A: Interactive mode activated. I'll help you build custom commits.
    Enter numbers to toggle (e.g., "1 3"), or "done" when ready:
 ```
 
-### Planning Complex Commits with Task Agent
+## Planning Complex Commits with Task Agent
 
 For complex scenarios, the model uses a Task agent to plan the approach:
 
@@ -364,16 +333,16 @@ A: Based on the analysis, here's my recommended approach:
    Shall we proceed with this plan?
 ```
 
-## Integration
+# Integration
 
 - Works with @{#messy-workspace} detection
 - Can trigger /cleanup for identified junk
 - Respects @{#no-data-loss} by saving states
 - Compatible with git hooks and aliases
 
-## Technical Implementation
+# Technical Implementation
 
-### Index State Saving
+## Index State Saving
 Uses git's tree objects to preserve index state:
 ```bash
 # Save current index as tree object
@@ -383,7 +352,7 @@ git write-tree  # Returns tree SHA
 git read-tree <tree-sha>
 ```
 
-### Hunk Analysis & Partial Staging
+## Hunk Analysis & Partial Staging
 
 Behind the scenes, the model handles complex partial staging:
 
@@ -411,11 +380,25 @@ The model automatically:
 - Falls back to manual file manipulation if hunks are too intertwined
 - Verifies staging accuracy before presenting to user
 
-## Notes
+# Notes
 
 - **ALWAYS PAUSES after analysis** - waits for user direction
 - Never commits automatically - always requires confirmation  
 - Preserves all changes - nothing is lost
 - Can be interrupted and resumed
 - Works with partial staging (git add -p)
-- User controls the flow - user chooses what to commit and when
+- User controls the flow - chooses what to commit and when
+
+# Context
+
+## git status
+
+!`git status`
+
+## git diff HEAD
+
+!`git diff HEAD`
+
+## git log --oneline 10
+
+!`git log --oneline 10`

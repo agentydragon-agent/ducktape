@@ -156,7 +156,6 @@ Issues that are clearly problematic but lack obvious solutions:
      a) Option 1: Description, pros/cons
      b) Option 2: Description, pros/cons
      c) Option 3: Description, pros/cons
-     d) Option 4: Description, pros/cons
    - Needs input on: What decisions/clarifications are needed
 
 ## Legacy & Technical Debt Notes

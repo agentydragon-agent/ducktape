@@ -22,9 +22,8 @@
     <section id="core-structure">
       <title>Core Structure</title>
       <examples>
-        <example positive>
-          <title>Basic prompt structure</title>
-          <code language="xml"><![CDATA[
+        <example positive title="Basic prompt structure">
+          <code><![CDATA[
             <prompt version="1.0">
               <meta>
                 <title>Task title</title>
@@ -63,9 +62,8 @@
     <section id="conversation-schema">
       <title>Conversation Schema</title>
       <examples>
-        <example positive>
-          <title>Unified conversation format</title>
-          <code language="xml"><![CDATA[
+        <example positive title="Unified conversation format">
+          <code><![CDATA[
             <conversation>
               <u>How do I authenticate?</u>
               
@@ -97,9 +95,8 @@
           ]]></code>
         </example>
         
-        <example positive>
-          <title>Alternative: message tags with from attribute</title>
-          <code language="xml"><![CDATA[
+        <example positive title="Alternative: message tags with from attribute">
+          <code><![CDATA[
             <conversation>
               <message from="user">How do I authenticate?</message>
               <message from="assistant">I'll help you set up authentication.</message>
@@ -116,9 +113,23 @@
     
     <section id="tool-calls">
       <title>Tool Call Schema</title>
+      <note>For single tool calls, the <![CDATA[<tool-call>]]> envelope can be omitted for brevity.</note>
       <examples>
         <example positive>
-          <title>Simple built-in tools</title>
+          <title>Single tool call (no envelope needed)</title>
+          <code language="xml"><![CDATA[
+            <bash command="git status" />
+            
+            <read path="/src/main.py" />
+            
+            <mcp server="memory" tool="search_nodes">
+              <params>{"query": "authentication patterns"}</params>
+            </mcp>
+          ]]></code>
+        </example>
+        
+        <example positive>
+          <title>Multiple tools (envelope required)</title>
           <code language="xml"><![CDATA[
             <tool-call>
               <read path="/src/main.py" />
@@ -437,6 +448,70 @@
           ]]></code>
         </example>
       </examples>
+    </section>
+    
+    <section id="aliases">
+      <title>Tag Aliases for Compression</title>
+      <content>
+        Define shorter aliases for frequently used tags to reduce file size while maintaining readability.
+        Aliases are processed as equivalent to their full forms.
+      </content>
+      <examples>
+        <example positive>
+          <title>Defining aliases</title>
+          <code language="xml"><![CDATA[
+            <aliases>
+              <alias from="example" to="ex" />
+              <alias from="trigger" to="trig" />
+              <alias from="pattern" to="pat" />
+              <alias from="section" to="sec" />
+              <alias from="critical" to="crit" />
+              <alias from="negative" to="n" />
+              <alias from="positive" to="p" />
+            </aliases>
+          ]]></code>
+        </example>
+        
+        <example positive>
+          <title>Using aliases</title>
+          <code language="xml"><![CDATA[
+            <!-- Instead of -->
+            <example negative>
+              <description>Bad approach</description>
+            </example>
+            
+            <!-- Use -->
+            <ex n>
+              <desc>Bad approach</desc>
+            </ex>
+            
+            <!-- Or even more compressed -->
+            <ex n>Bad approach</ex>
+          ]]></code>
+        </example>
+        
+        <example positive>
+          <title>Compressed triggers with aliases</title>
+          <code language="xml"><![CDATA[
+            <!-- Long form -->
+            <triggers>
+              <trigger>
+                <if>ERROR</if>
+                <then>stop+read_full+trace</then>
+              </trigger>
+            </triggers>
+            
+            <!-- Compressed with aliases -->
+            <triggers>
+              <trig>ERROR→stop+read_full+trace</trig>
+            </triggers>
+          ]]></code>
+        </example>
+      </examples>
+      <note>
+        Aliases are especially useful for large configuration files where the same tags appear hundreds of times.
+        Define aliases early in the document for maximum benefit.
+      </note>
     </section>
     
     <section id="special-tags">
