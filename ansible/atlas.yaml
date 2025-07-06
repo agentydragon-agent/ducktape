@@ -1,0 +1,22 @@
+---
+- hosts: atlas
+  vars_files:
+    - vars/common_vars.yml
+  remote_user: root
+
+  roles:
+    - role: wireguard
+      tags: [wireguard]
+
+  tasks:
+    - name: Install htop
+      ansible.builtin.package:
+        name: htop
+        state: present
+      tags: [packages]
+
+    - name: Install neovim
+      ansible.builtin.package:
+        name: neovim
+        state: present
+      tags: [packages]
