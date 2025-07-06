@@ -41,13 +41,23 @@
 
 - name: Parse MCP check results
   set_fact:
-    mcp_changes_needed: "{{ (mcp_check_result.stdout | from_json).changed | default(false) }}"
-    mcp_check_data: "{{ mcp_check_result.stdout | from_json }}"
+    mcp_changes_needed: "{{ (mcp_check_result.stdout | from_json).changed | default(false) if mcp_check_result.stdout else false }}"
+    mcp_check_data: "{{ mcp_check_result.stdout | from_json if mcp_check_result.stdout else {} }}"
+  when: mcp_check_result.rc == 0 or mcp_check_result.rc == 1
+
+- name: Handle MCP check failure
+  fail:
+    msg: |
+      Failed to check MCP configuration:
+      stdout: {{ mcp_check_result.stdout }}
+      stderr: {{ mcp_check_result.stderr }}
+      rc: {{ mcp_check_result.rc }}
+  when: mcp_check_result.rc not in [0, 1]
 
 - name: Apply MCP configuration if enabled
   when: 
     - claude_mcp_auto_apply | bool
-    - mcp_changes_needed | bool
+    - mcp_changes_needed | default(false) | bool
   block:
     - name: Apply MCP configuration using Python script
       command: "{{ role_path }}/files/apply-mcp-config.py --json-output"
@@ -68,8 +78,8 @@
     msg: |
       ⚠️  ERROR: Required Claude MCP servers are not configured!
       
-      Servers that need to be added: {{ mcp_check_data.servers_added | default([]) | join(', ') }}
-      Servers that need to be updated: {{ mcp_check_data.servers_updated | default([]) | join(', ') }}
+      Servers that need to be added: {{ (mcp_check_data | default({})).servers_added | default([]) | join(', ') }}
+      Servers that need to be updated: {{ (mcp_check_data | default({})).servers_updated | default([]) | join(', ') }}
       
       To configure manually, run:
         {{ role_path }}/files/apply-mcp-config.py
@@ -80,4 +90,4 @@
       Note: This will modify your ~/.claude.json configuration.
   when: 
     - not claude_mcp_auto_apply | bool
-    - mcp_changes_needed | bool
+    - mcp_changes_needed | default(false) | bool

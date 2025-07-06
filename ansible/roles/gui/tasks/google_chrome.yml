@@ -17,3 +17,4 @@
     become: true
     ansible.builtin.apt:
       pkg: google-chrome-stable
+      update_cache: yes  # deb822_repository doesn't reliably trigger apt cache update

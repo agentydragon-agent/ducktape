@@ -1,0 +1,51 @@
+---
+- hosts: new-vm
+  vars_files:
+    - vars/common_vars.yml
+  vars:
+    rcup_computer: new-vm
+    ducktape_path: "{{ ansible_user_dir }}/code/ducktape"
+  remote_user: "{{ my_user }}"
+
+  roles:
+    - role: cli
+    - role: docker
+    - role: gui
+    - role: dev-ml
+    - role: wireguard
+      tags: [wireguard]
+
+  tasks:
+    - name: Install shared development environment
+      ansible.builtin.import_role:
+        name: dev-env
+      tags: [dev-env]
+
+    # Disable screensaver and screen blanking for headless VM
+    - name: Disable GNOME screensaver and screen blanking
+      become: true
+      become_user: "{{ my_user }}"
+      dconf:
+        key: "{{ item.key }}"
+        value: "{{ item.value }}"
+      loop:
+        - { key: "/org/gnome/desktop/screensaver/idle-activation-enabled", value: "false" }
+        - { key: "/org/gnome/desktop/screensaver/lock-enabled", value: "false" }
+        - { key: "/org/gnome/desktop/session/idle-delay", value: "uint32 0" }
+        - { key: "/org/gnome/settings-daemon/plugins/power/idle-dim", value: "false" }
+        - { key: "/org/gnome/settings-daemon/plugins/power/sleep-inactive-ac-type", value: "'nothing'" }
+        - { key: "/org/gnome/settings-daemon/plugins/power/sleep-inactive-battery-type", value: "'nothing'" }
+      tags: [vm-display]
+      when: ansible_env.DISPLAY is defined
+
+    - name: Disable screen blanking via X11 (fallback)
+      become: true
+      become_user: "{{ my_user }}"
+      ansible.builtin.shell: |
+        xset s off
+        xset -dpms
+        xset s noblank
+      environment:
+        DISPLAY: ":0"
+      ignore_errors: true
+      tags: [vm-display]

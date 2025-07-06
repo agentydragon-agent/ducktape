@@ -27,6 +27,8 @@ dependencies = [
     "pygit2>=1.13.0",
     "ruff>=0.1.0",  # actual prod dependency of linter
     "pre-commit>=3.0",  # for claude-linter CLI hook
+    "tomli>=2.0.0",  # for reading TOML files
+    "tomli-w>=1.0.0",  # for writing TOML files
 ]
 
 [project.optional-dependencies]
@@ -38,6 +40,8 @@ dev = [
 
 [project.scripts]
 claude-linter = "ducktape_llm_common.claude_linter.cli:cli"
+claude-linter-v2 = "ducktape_llm_common.claude_linter_v2.cli:cli"
+cl2 = "ducktape_llm_common.claude_linter_v2.cli:cli"
 
 [tool.hatch.build.targets.wheel]
 packages = ["ducktape_llm_common"]

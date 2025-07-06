@@ -34,7 +34,7 @@ claude_mcp_servers:
     command: npx
     args:
       - "-y"
-      - "@buger/probe"
+      - "@buger/probe-mcp"
 
 # Whether to automatically apply the configuration
 # If false, will only check and fail if not configured

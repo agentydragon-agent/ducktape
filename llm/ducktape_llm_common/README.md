@@ -13,13 +13,33 @@ A comprehensive shared Python package providing utilities, linters, and prompts 
 
 ## Installation
 
-```bash
-# Install from source
-pip install -e /path/to/ducktape_llm_common
+### For Users
 
-# Install with development dependencies
-pip install -e "/path/to/ducktape_llm_common[dev]"
+```bash
+# Install from source (non-editable)
+pip install /path/to/ducktape_llm_common
 ```
+
+### For Development
+
+**IMPORTANT**: Install non-editably in your global Python to prevent self-locking issues when claude-linter modifies its own code. Use a virtual environment for editable development.
+
+```bash
+# First, install non-editably in global Python (for stable claude-linter usage)
+pip install /path/to/ducktape_llm_common
+
+# Then create a virtual environment for development
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install editably in venv for development
+pip install -e ".[dev]"
+```
+
+This setup ensures:
+- Your global `cl2`/`claude-linter-v2` commands remain stable
+- Development changes only affect the venv
+- You can't accidentally lock yourself out by modifying hook code
 
 ### Requirements
 

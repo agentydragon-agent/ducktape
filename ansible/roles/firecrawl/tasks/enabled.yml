@@ -33,12 +33,55 @@
 # Start / recreate the stack (pull latest images, etc.)
 # ---------------------------------------------------------------------------
 
-- name: docker compose up for Firecrawl
+# First, always stop and remove any existing containers to ensure clean state
+- name: Stop and remove any existing Firecrawl containers
+  become: true
+  block:
+    - name: Check what's using port 3002 before cleanup
+      ansible.builtin.shell: |
+        lsof -i :3002 || true
+        docker ps --filter "publish=3002" || true
+      register: port_check_before
+      failed_when: false
+
+    - name: Show what's using port 3002
+      ansible.builtin.debug:
+        msg: "{{ port_check_before.stdout_lines }}"
+
+    - name: Find all containers with firecrawl in name
+      ansible.builtin.shell: |
+        docker ps -aq --filter "name=firecrawl" | xargs -r docker stop
+        docker ps -aq --filter "name=firecrawl" | xargs -r docker rm
+      register: cleanup_result
+      failed_when: false  # Don't fail if no containers found
+
+    - name: Ensure firecrawl compose project is fully down
+      community.docker.docker_compose_v2:
+        project_src: "{{ firecrawl_project_path }}"
+        project_name: firecrawl  # Explicitly set project name
+        state: absent
+        remove_orphans: true
+      failed_when: false  # Don't fail if project doesn't exist
+
+    - name: Verify port {{ firecrawl_port }} is now free
+      ansible.builtin.shell: |
+        lsof -i :{{ firecrawl_port }} || echo "Port {{ firecrawl_port }} is free"
+      register: port_check_after
+      failed_when: false
+
+    - name: Show port status after cleanup
+      ansible.builtin.debug:
+        msg: "{{ port_check_after.stdout_lines }}"
+
+- name: Start Firecrawl services fresh
   become: true
   community.docker.docker_compose_v2:
     project_src: "{{ firecrawl_project_path }}"
+    project_name: firecrawl  # Explicitly set project name to avoid directory-based naming
     pull: always     # pull updated images
     recreate: always # pick up any env / compose modifications
+    remove_orphans: true  # Remove containers for services not in compose file
+    state: present  # Ensure services are running
   register: firecrawl_compose
 
 - name: Show compose output (verbosity 1)
@@ -48,7 +91,7 @@
 
 - name: Wait for Firecrawl API to be ready
   ansible.builtin.uri:
-    url: "http://localhost:{{ firecrawl_port }}/health"
+    url: "http://localhost:{{ firecrawl_port }}/"
     status_code: 200
   register: result
   until: result.status == 200
@@ -61,4 +104,4 @@
       - "Firecrawl is now running!"
       - "API endpoint: http://localhost:{{ firecrawl_port }}"
       - "Test API key: {{ firecrawl_test_api_key }}"
-      - "You can test with: curl http://localhost:{{ firecrawl_port }}/health"
+      - "You can test with: curl http://localhost:{{ firecrawl_port }}/"

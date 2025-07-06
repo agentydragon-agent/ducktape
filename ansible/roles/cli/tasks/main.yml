@@ -82,6 +82,13 @@
       - hyphen-en-gb
     state: absent
 
+- name: Ensure snapd is installed
+  become: true
+  ansible.builtin.apt:
+    name: snapd
+    state: present
+  when: ansible_os_family == "Debian"
+
 - name: Install snaps
   become: true
   snap:

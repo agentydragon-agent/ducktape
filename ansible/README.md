@@ -89,13 +89,76 @@ These parts aren't yet done by Ansible:
 These parts can't be done by Ansible:
 
 * `ssh-keygen`
-* Add key to GitHub
+* Add key to GitHub (see GitHub SSH Key Setup section below)
 * `apt install git ansible`
-* `git clone git@github.com:agentydragon/playbooks`
+* `git clone git@github.com:agentydragon/ducktape`
 * `ansible-playbook agentydragon.yaml --ask-become-pass`
 * Add `~/.config/bazelrc.secrets` - see the `bazelrc` dotfile. The global
   `bazelrc` imports this file, it's supposed to contain the path (and
   password) to the Bazel cache on the VPS.
+
+## Manual VM/Remote Machine Setup
+
+When provisioning a new VM or remote machine:
+
+Note: The ducktape repository must be cloned before running the playbook, as the dotfiles deployment depends on it.
+
+1. Generate SSH key and add to GitHub/GitLab (see sections below)
+2. Clone ducktape repository:
+   ```bash
+   ssh agentydragon@NEW_MACHINE_IP 'mkdir -p ~/code && git clone git@gitlab.com:agentydragon/ducktape ~/code/ducktape'
+   ```
+3. Run the playbook from your provisioning machine:
+   ```bash
+   ansible-playbook new-vm.yaml --ask-become-pass
+   ```
+4. If the playbook fails on dotfiles installation, SSH to the machine and run:
+   ```bash
+   ssh agentydragon@NEW_MACHINE_IP 'RCRC=~/code/ducktape/dotfiles/rcrc rcup -B new-vm'
+   ```
+   You'll need to confirm overwriting default files like .bashrc with 'y'.
+
+## GitHub SSH Key Setup
+
+After generating an SSH key on a new machine, you can add it to GitHub using the GitHub CLI from your provisioning machine:
+
+```bash
+# On the new machine, generate SSH key:
+ssh-keygen -t ed25519 -C "agentydragon@HOSTNAME"
+
+# From your provisioning machine (with gh installed and authenticated):
+ssh agentydragon@NEW_MACHINE_IP 'cat ~/.ssh/id_ed25519.pub' | \
+  gh ssh-key add - --title "HOSTNAME"
+
+# Add GitHub to known hosts on the new machine:
+ssh agentydragon@NEW_MACHINE_IP 'ssh-keyscan github.com >> ~/.ssh/known_hosts'
+
+# Verify it worked from the new machine:
+ssh agentydragon@NEW_MACHINE_IP 'ssh -T git@github.com'
+```
+
+## GitLab SSH Key Setup
+
+Similar process for GitLab:
+
+```bash
+# From your provisioning machine (with glab installed and authenticated):
+ssh agentydragon@NEW_MACHINE_IP 'cat ~/.ssh/id_ed25519.pub' | \
+  glab ssh-key add -t "HOSTNAME"
+
+# Add GitLab to known hosts on the new machine:
+ssh agentydragon@NEW_MACHINE_IP 'ssh-keyscan gitlab.com >> ~/.ssh/known_hosts'
+
+# Verify it worked from the new machine:
+ssh agentydragon@NEW_MACHINE_IP 'ssh -T git@gitlab.com'
+```
+
+TODO: Document how to set up `gh` authentication on the new machine (for CLI operations beyond SSH)
+TODO: Document how to set up `glab` authentication on the new machine (for CLI operations beyond SSH)
+TODO (low priority): Consider adding repository setup + package install as an option to the shared Python install implementation, since "add repo & install package" is a common pattern and deb822_repository doesn't reliably trigger apt cache update
+TODO (low priority): Optimize rcrc deployment to avoid duplication - can be done by first copying over .rcrc, or by pointing RCM at a different .rcrc path => can take effect before deployed
+TODO: Handle cronomix config - unclear how it should be managed (rcm symlinks individual files in ~/.config/cronomix, not the directory itself)
+TODO (low priority): XDG associations (mimeapps.list) shouldn't be an rcm-managed dotfile - it's already being asserted/managed in ansible
 
 ## WireGuard
 

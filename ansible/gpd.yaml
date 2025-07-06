@@ -13,8 +13,6 @@
     - role: laptop
     - role: wireguard
       tags: [wireguard]
-    - role: claude-mcp
-      tags: [claude, mcp]
   tasks:
     # TODO: add Ubuntu startup programs, like Flameshot etc.
 

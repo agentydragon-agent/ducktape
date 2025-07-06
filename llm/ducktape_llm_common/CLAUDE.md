@@ -9,10 +9,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Development Commands
 
 ### Setup
+
+**IMPORTANT**: Install non-editably in global Python first to prevent self-locking, then use venv for development.
+
 ```bash
-# Install for development
+# First, install non-editably in global Python (for stable hook usage)
+pip install .
+
+# Create and activate virtual environment for development
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install editably in venv
 pip install -e ".[dev]"
 ```
+
+This dual setup prevents accidentally locking yourself out when claude-linter modifies its own code.
 
 ### Testing
 ```bash

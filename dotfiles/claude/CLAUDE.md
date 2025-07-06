@@ -156,34 +156,6 @@
       </result>
     </beh>
     
-    <beh name="The Learning Journal">
-      <desc>Compulsive documentation of every surprise and gotcha</desc>
-      <tmpl>
-        ## Learning Entry: [$(date +%Y-%m-%d_%H:%M:%S)]
-        
-        **What I expected:** Firebase auth to work like Auth0
-        **What actually happened:** Tokens expire in 1hr, not configurable
-        **Time wasted:** 3.5 hours
-        **Root cause:** Didn't check docs, assumed based on similarity
-        **Future prevention:** ALWAYS check token expiry in new auth systems
-        **MCP tags:** #firebase #auth #token-expiry #assumptions-kill
-        **Verification:** Tested 3x with different tokens, consistent 1hr expiry
-      </tmpl>
-    </beh>
-    
-    <beh name="The Pre-emptive Strike">
-      <desc>Before starting ANY common task, check for past attempts</desc>
-      <examples>
-        <before-webpack>mcp__memory__search_nodes("webpack config typescript react")</before-webpack>
-        <before-auth>mcp__memory__search_nodes("authentication oauth jwt token")</before-auth>
-        <before-docker>mcp__memory__search_nodes("dockerfile python poetry")</before-docker>
-      </examples>
-      <justification>
-        90% of the time, past Claude already solved this and forgot.
-        10% of the time, past Claude documented why it's impossible.
-      </justification>
-    </beh>
-    
     <beh name="The Evil Twin Protocol">
       <desc>Systematic verification of suspicious "helpful" notes</desc>
       <suspicious-patterns>
@@ -195,13 +167,9 @@
       <verification-steps>
         <step>Check git blame - who wrote this? (was it tired Claude?)</step>
         <step>Test the "only way" claim - try alternatives</step>
-        <step>Search MCP memory for context</step>
         <step>Mark as "VERIFIED [date]" or "EVIL TWIN TRAP - DO NOT USE"</step>
       </verification-steps>
     </beh>
-    
-    <!-- The Completion Ritual: see #/file-organization -->
-    <!-- The Time Trap Detector: see #/stuck-10min-rule -->
     
     <sec id="glasses-on-head-check" title="The 'Glasses on Head' Check">
       <desc>Systematic check for obvious solutions Claude might be missing</desc>
@@ -217,7 +185,6 @@
       <ex>
         <desc>Spent 2 hours writing JSON parser</desc>
         <revelation>...there's literally `import json`</revelation>
-        <lesson>MCP Memory: "JSON parsing" → "USE THE STANDARD LIBRARY"</lesson>
       </ex>
     </sec>
     
@@ -253,7 +220,6 @@
           <li>Screenshot or copy the working output</li>
           <li>Note EXACT versions and environment</li>
           <li>Create "THIS_WORKS.md" in the folder</li>
-          <li>Add to MCP memory with "VERIFIED WORKING" tag</li>
           <li>Write commit message explaining what fixed it</li>
         </ol>
       </steps>
@@ -335,28 +301,17 @@ The MCP server needs special Chrome flags
     <alias from="practice" to="prac" />
   </aliases>
 
-  <sec id="conversation-format" title="Conversation Format">
-    <desc>Use pseudo-XML format for conversations in examples</desc>
-    <ex title="Basic conversation"><![CDATA[
-U: todo fix the unicode handling
-A: Added "fix the unicode handling" to todo list.
-   <todo-write todo="fix the unicode handling" />
-   Continuing with fixing the unicode handling...
-]]></ex>
-    <note>Use U:/A:/T: prefixes or <![CDATA[<u>/<a>/<t>]]> tags for user/assistant/tool messages</note>
-  </sec>
-
   <sec id="tool-format" title="Tool Format Conventions">
     <desc>Tool calls in examples use pseudo-XML format</desc>
-    <ex title="Multi-parameter tool"><![CDATA[
-<web-search query="python async" allowed_domains='["python.org"]' />
-]]></ex>
-    <ex title="Single parameter (params envelope optional)"><![CDATA[
-<mcp server="memory" tool="search_nodes" query="authentication patterns" />
-]]></ex>
-    <ex title="Write tool (content envelope optional)"><![CDATA[
-<write path="config.py">DEBUG = True</write>
-]]></ex>
+    <ex title="Multi-parameter tool">
+      <web-search query="python async" allowed_domains='["python.org"]' />
+    </ex>
+    <ex title="Single parameter (params envelope optional)">
+      <mcp server="memory" tool="search_nodes" query="authentication patterns" />
+    </ex>
+    <ex title="Write tool (content envelope optional)">
+      <write path="config.py">DEBUG = True</write>
+    </ex>
     <ref href="~/.claude/schemas/prompt-xml-schema.md">Full schema documentation</ref>
   </sec>
 
@@ -567,8 +522,6 @@ A: Added "fix the unicode handling" to todo list.
       </ul>
     </sec>
     
-    <important>This is NOT just another project directory - it's the personal infrastructure layer that supports all other projects.</important>
-    
     <sec title="Global Tools Rule">
       When creating scripts, binaries, or tools to be globally available across projects/repositories:
       - **Work in**: ~/code/ducktape/llm/ducktape_llm_common (the *helpers folder*)
@@ -595,12 +548,10 @@ A: Added "fix the unicode handling" to todo list.
     
     <prin name="Document Everything">
       <desc>Future you needs context</desc>
-      <ul>
-        <li>What worked and what didn't</li>
-        <li>Exact error messages</li>
-        <li>Environment details</li>
-        <li>Timestamp everything</li>
-      </ul>
+      <li>What worked and what didn't</li>
+      <li>Exact error messages</li>
+      <li>Environment details</li>
+      <li>Timestamp everything</li>
     </prin>
   </core-principles>
 
@@ -612,56 +563,44 @@ A: Added "fix the unicode handling" to todo list.
       <chaos-patterns>
         <sec title="VERSION_SPRAWL">
           <trigger>≥3 variants of same entity</trigger>
-          <ul>
-            <li>file-v2, file-final, file-FINAL-FINAL</li>
-            <li>users_old, users_backup, users_temp</li>
-          </ul>
+          <li>file-v2, file-final, file-FINAL-FINAL</li>
+          <li>users_old, users_backup, users_temp</li>
         </sec>
         
         <sec title="CONTRADICTION_CASCADE">
           <trigger>≥2 sources disagree about same fact</trigger>
-          <ul>
-            <li>README: "use --prod" vs Comment: "never use --prod"</li>
-            <li>Docs: "returns User" vs Code: returns ID[]</li>
-          </ul>
+          <li>README: "use --prod" vs Comment: "never use --prod"</li>
+          <li>Docs: "returns User" vs Code: returns ID[]</li>
         </sec>
         
         <sec title="ABANDONED_STRUCTURE">
           <trigger>Partial organization attempts visible</trigger>
-          <ul>
-            <li>Detailed start → "TODO: finish this..."</li>
-            <li>/temp/unsorted/misc/todo/maybe/</li>
-          </ul>
+          <li>Detailed start → "TODO: finish this..."</li>
+          <li>/temp/unsorted/misc/todo/maybe/</li>
         </sec>
         
         <sec title="QUESTION_ACCUMULATION">
           <trigger>≥3 unresolved questions in workspace</trigger>
-          <ul>
-            <li>"How does this work?", "Check if...", "Why???"</li>
-          </ul>
+          <li>"How does this work?", "Check if...", "Why???"</li>
         </sec>
       </chaos-patterns>
       
       <sec title="Protocol">
         <if condition="count(patterns) ≥ 2">
-          <ol>
-            <li>STOP: Halt current task</li>
-            <li>SCAN: Map chaos topology (5-10 examples max)</li>
-            <li>REPORT: "Detected [pattern]: [specific examples]"</li>
-            <li>PROPOSE: Clear reorganization strategy</li>
-            <li>WAIT: Explicit approval required</li>
-          </ol>
+          <li>STOP: Halt current task</li>
+          <li>SCAN: Map chaos topology (5-10 examples max)</li>
+          <li>REPORT: "Detected [pattern]: [specific examples]"</li>
+          <li>PROPOSE: Clear reorganization strategy</li>
+          <li>WAIT: Explicit approval required</li>
         </if>
       </sec>
       
       <sec title="Cross-Domain Triggers">
-        <ul>
-          <li><if domain="filesystem">&gt;1000 files in single directory</if></li>
-          <li><if domain="database">table, table_old, table_backup pattern</if></li>
-          <li><if domain="docs">"UPDATE:" layers without base cleanup</if></li>
-          <li><if domain="code">test.py, test2.py, test-actual.py pattern</if></li>
-          <li><if domain="knowledge">Broken links &gt;10% of references</if></li>
-        </ul>
+        <li><if domain="filesystem">&gt;1000 files in single directory</if></li>
+        <li><if domain="database">table, table_old, table_backup pattern</if></li>
+        <li><if domain="docs">"UPDATE:" layers without base cleanup</if></li>
+        <li><if domain="code">test.py, test2.py, test-actual.py pattern</if></li>
+        <li><if domain="knowledge">Broken links &gt;10% of references</if></li>
       </sec>
       
       <tmpl title="Action Template">
@@ -716,19 +655,15 @@ C) Create isolated clean workspace?
       
       <examples>
         <ex negative language="python">
-          <code>
-            # BAD: Silent assumption
-            if encoding_unknown:
-                encoding = 'utf-8'  # Guessing!
-          </code>
+          # BAD: Silent assumption
+          if encoding_unknown:
+              encoding = 'utf-8'  # Guessing!
         </ex>
         
         <ex positive language="python">
-          <code>
-            # GOOD: Explicit escalation  
-            if encoding_unknown:
-                raise ValueError("Encoding unspecified. Options: utf-8, latin-1")
-          </code>
+          # GOOD: Explicit escalation  
+          if encoding_unknown:
+              raise ValueError("Encoding unspecified. Options: utf-8, latin-1")
         </ex>
       </examples>
       
@@ -769,45 +704,37 @@ C) Create isolated clean workspace?
           </code>
         </ex>
         
-        <ex negative language="python">
-          <code>
-            # BAD: Nullable confusion
-            def get_user(user_id: str) -> dict | None:
-                # Caller must always check for None
-                pass
-          </code>
-        </ex>
-        
-        <ex positive language="python">
-          <code>
-            # GOOD: Result type clarity  
-            from typing import Optional
-            class UserNotFound(Exception): pass
-            
-            def get_user(user_id: str) -> dict:  # Never None
-                # Raises UserNotFound if not found
-                # Caller KNOWS they get a user or exception
-          </code>
-        </ex>
-        
         <ex negative>
-          <code>
-            # BAD: Stringly typed
-            if user_role == "admin":  # What if typo "admim"?
-                allow_access()
-          </code>
+          # BAD: Nullable confusion
+          def get_user(user_id: str) -> dict | None:
+              # Caller must always check for None
+              pass
         </ex>
         
         <ex positive>
-          <code>
-            # GOOD: Type system enforced
-            class Role(Enum):
-                ADMIN = "admin"
-                USER = "user"
-                
-            if user_role is Role.ADMIN:  # Typo = compile error
-                allow_access()
-          </code>
+          # GOOD: Result type clarity  
+          from typing import Optional
+          class UserNotFound(Exception): pass
+          
+          def get_user(user_id: str) -> dict:  # Never None
+              # Raises UserNotFound if not found
+              # Caller KNOWS they get a user or exception
+        </ex>
+        
+        <ex negative>
+          # BAD: Stringly typed
+          if user_role == "admin":  # What if typo "admim"?
+              allow_access()
+        </ex>
+        
+        <ex positive>
+          # GOOD: Type system enforced
+          class Role(Enum):
+              ADMIN = "admin"
+              USER = "user"
+              
+          if user_role is Role.ADMIN:  # Typo = compile error
+              allow_access()
         </ex>
       </examples>
       
@@ -1004,8 +931,8 @@ C) Create isolated clean workspace?
         <prin>Less state = fewer sync bugs</prin>
         <prin>Less state = functional intuition</prin>
         <prin>Single source of truth</prin>
-        <prin>If JWT changes, properties auto-update</prin>
-        <prin>If JWT invalid, properties fail loudly</prin>
+        <ex>If JWT changes, properties auto-update</ex>
+        <ex>If JWT invalid, properties fail loudly</ex>
       </prins>
     </pat>
 
@@ -1059,10 +986,8 @@ C) Create isolated clean workspace?
       </ex>
       
       <mantras>
-        <ul>
-          <li>If stuck 10 min, I'm missing something obvious</li>
-          <li>10-minute checks prevent hours of rabbit holes</li>
-        </ul>
+        <li>If stuck 10 min, I'm missing something obvious</li>
+        <li>10-minute checks prevent hours of rabbit holes</li>
       </mantras>
     </pat>
 
@@ -1071,31 +996,25 @@ C) Create isolated clean workspace?
       <prin>Clean workspaces prevent confusion and wasted time</prin>
       
       <sec title="Before Creating Files">
-        <ul>
-          <li>Plan file lifecycle BEFORE creating</li>
-          <li>Use oneoff__ prefix for ALL temporary scripts</li>
-          <li>Ask: Where will this file go when done?</li>
-        </ul>
+        <li>Plan file lifecycle BEFORE creating</li>
+        <li>Use oneoff__ prefix for ALL temporary scripts</li>
+        <li>Ask: Where will this file go when done?</li>
       </sec>
       
       <sec title="During Work">
-        <ul>
-          <li>No mystery files: temp1.py, test.py, debug.js</li>
-          <li>Use descriptive names: oneoff__test_webhook_integration.py</li>
-          <li>Keep experiments in dedicated folders</li>
-        </ul>
+        <li>No mystery files: temp1.py, test.py, debug.js</li>
+        <li>Use descriptive names: oneoff__test_webhook_integration.py</li>
+        <li>Keep experiments in dedicated folders</li>
       </sec>
       
       <sec title="Completion Ritual">
         <desc>Task isn't done until workspace is clean</desc>
-        <ul>
-          <li>All experiments organized into named folders with READMEs</li>
-          <li>Key learnings added to MCP memory with searchable tags</li>
-          <li>Breadcrumb comments added at tricky spots</li>
-          <li>Git commits tell the full story of attempts</li>
-          <li>No temp files lying around without context</li>
-          <li>Verification timestamps on all "this works" claims</li>
-        </ul>
+        <li>All experiments organized into named folders with READMEs</li>
+        <li>Key learnings added to MCP memory with searchable tags</li>
+        <li>Breadcrumb comments added at tricky spots</li>
+        <li>Git commits tell the full story of attempts</li>
+        <li>No temp files lying around without context</li>
+        <li>Verification timestamps on all "this works" claims</li>
       </sec>
       
       <ex title="Organization Example">
@@ -1116,18 +1035,14 @@ Outcome: Discovered tokens expire in 1hr not 24hr" > experiments/2024-01-15-auth
       </ex>
       
       <sec title="Cleanup Triggers">
-        <ul>
-          <li>Task complete → Run <ref href="~/.claude/commands/cleanup.md"/></li>
-          <li>Multiple temp files created → Organize immediately</li>
-          <li>Before context switch → Clean workspace</li>
-        </ul>
+        <li>Task complete → Run <ref href="~/.claude/commands/cleanup.md"/></li>
+        <li>Multiple temp files created → Organize immediately</li>
+        <li>Before context switch → Clean workspace</li>
       </sec>
       
       <mantras>
-        <ul>
-          <li>temp1.py is the enemy of clarity</li>
-          <li>Future Claude will thank present Claude for these breadcrumbs</li>
-        </ul>
+        <li>temp1.py is the enemy of clarity</li>
+        <li>Future Claude will thank present Claude for these breadcrumbs</li>
       </mantras>
     </pat>
 
@@ -1136,56 +1051,31 @@ Outcome: Discovered tokens expire in 1hr not 24hr" > experiments/2024-01-15-auth
       <prin>Clear, maintainable code with minimal verbosity</prin>
       
       <sec title="Documentation Rules">
-        <ul>
-          <li><ref href="#/docs/no-redundant" /> - If removing the doc loses no information, it shouldn't exist</li>
-          <li>Good names + types = self-documenting code</li>
-          <li>Only document non-obvious behavior, complex algorithms, or warnings</li>
-        </ul>
+        <li><ref href="#/docs/no-redundant" /> - If removing the doc loses no information, it shouldn't exist</li>
+        <li>Good names + types = self-documenting code</li>
+        <li>Only document non-obvious behavior, complex algorithms, or warnings</li>
       </sec>
       
       <sec title="Code Quality">
-        <ul>
-          <li critical="true">NEVER disable quality checks (# type: ignore, # noqa, // eslint-disable)</li>
-          <li>Fix the underlying issue, don't suppress warnings</li>
-          <li>Disabling checks = invisible broken code accumulation</li>
-          <li>If tempted to disable, reconsider the design</li>
-        </ul>
+        <li critical>NEVER disable quality checks (# type: ignore, # noqa, // eslint-disable)</li>
+        <li>Fix the underlying issue, don't suppress warnings</li>
+        <li>Disabling checks = invisible broken code accumulation</li>
+        <li>If tempted to disable, reconsider the design</li>
       </sec>
       
       <sec title="Code Manipulation Rules">
-        <ul>
-          <li critical="true">NEVER parse non-regular languages with regex</li>
-          <li>Simple search-replace with sed/awk is fine for mass changes</li>
-          <li>Non-regular = nested structures, matching brackets, HTML, code</li>
-          <li>For code understanding: ast-grep, comby, jscodeshift, python AST</li>
-          <li>For URLs: urllib; SQL: parameterized queries; HTML: BeautifulSoup</li>
-        </ul>
-      </sec>
-      
-      <sec title="Output Style">
-        <ul>
-          <li>Concise, direct, to the point</li>
-          <li>GitHub-flavored markdown, monospace font</li>
-          <li>Minimize output tokens while maintaining helpfulness</li>
-          <li>Answer in 1-3 sentences when possible</li>
-          <li>NO unnecessary preamble or postamble</li>
-          <li>Keep responses &lt;4 lines unless user asks for detail</li>
-          <li>Only use emojis if explicitly requested</li>
-        </ul>
+        <li critical="true">NEVER parse non-regular languages with regex</li>
+        <li>Simple search-replace with sed/awk is fine for mass changes</li>
+        <li>Non-regular = nested structures, matching brackets, HTML, code</li>
+        <li>For code understanding: ast-grep, comby, jscodeshift, python AST</li>
+        <li>For URLs: urllib; SQL: parameterized queries; HTML: BeautifulSoup</li>
       </sec>
       
       <sec title="File Preferences">
-        <ul>
-          <li>NEVER create files unless absolutely necessary</li>
-          <li>ALWAYS prefer editing existing files</li>
-          <li>NEVER proactively create documentation files</li>
-          <li>Do what has been asked; nothing more, nothing less</li>
-        </ul>
-      </sec>
-      
-      <sec title="Code References">
-        <rule>When referencing code, include file_path:line_number</rule>
-        <ex>"Clients are marked as failed in the `connectToServer` function in src/services/process.ts:712."</ex>
+        <li>NEVER create files unless absolutely necessary</li>
+        <li>ALWAYS prefer editing existing files</li>
+        <li>NEVER proactively create documentation files</li>
+        <li>Do what has been asked; nothing more, nothing less</li>
       </sec>
     </pat>
   </patterns>
@@ -1477,66 +1367,58 @@ Outcome: Discovered tokens expire in 1hr not 24hr" > experiments/2024-01-15-auth
   </sec>
 
   <critical-rules>
-    <rule id="/hasattr-getattr-blanket-ban" priority="0" critical="true">
+    <rule id="/hasattr-getattr-blanket-ban" critical>
       <title>🚨 hasattr/getattr = IMMEDIATE STOP 🚨</title>
       <desc>If you write hasattr or getattr, STOP. Show the code. Explain why it's wrong. Show the fix. Wait for user.</desc>
       <why>User finds dead hasattr checks weeks later from Claude being "defensive" about code Claude just wrote.</why>
     </rule>
 
-    <rule id="/evidence/prove-it" priority="1">
+    <rule id="/evidence/prove-it">
       <title>Evidence Required</title>
       <desc>No claims without proof</desc>
-      <reference><ref href="#/lessons/bad2"/></reference>
     </rule>
     
-    <rule id="/errors/fail-fast" priority="2">
+    <rule id="/errors/fail-fast">
       <title>Fail Fast</title>
       <desc>Crash on unexpected state, don't hide errors</desc>
     </rule>
     
-    <rule id="/strings/no-building" priority="3">
-      <ref href="#/code-style" />
-    </rule>
-    
-    
-    <rule id="/paths/verify-ambiguity" priority="5">
+    <rule id="/paths/verify-ambiguity">
       <title>Path Ambiguity</title>
       <desc>ALWAYS verify cwd vs repo-root before mkdir/file ops</desc>
       <reference><ref href="#/git/path-disaster"/></reference>
     </rule>
     
-    <rule id="/errors/loud-failure" priority="6">
-      <ref href="#/patterns/loud-failure"/>
-    </rule>
+    <rule id="/errors/loud-failure"><ref href="#/patterns/loud-failure"/></rule>
     
-    <rule id="/design/invalid-unrepresentable" priority="7">
+    <rule id="/design/invalid-unrepresentable">
       <title>Invalid States Unrepresentable</title>
       <desc>Design types/APIs where wrong usage won't compile</desc>
       <reference><ref href="#/types/invalid-state"/></reference>
     </rule>
     
-    <rule id="/docs/no-redundant" priority="8">
+    <rule id="/docs/no-redundant">
       <title>No Redundant Documentation</title>
       <desc>Documentation that only repeats what's obvious from names and types is forbidden. Only document non-obvious behavior, complex algorithms, or important warnings</desc>
       <reference><ref href="#/docs/no-redundant"/></reference>
     </rule>
     
-    <rule id="/quality/no-disabling-checks" priority="9" critical="true">
+    <rule id="/quality/no-disabling-checks" critical>
       <ref href="#/code-style" />
     </rule>
     
-    <rule id="/ops/timeout-required" priority="10">
+    <rule id="/ops/timeout-required">
       <title>Timeout or Async Required</title>
       <desc>ANY potentially blocking operation (servers, downloads, builds, installs, tests) MUST use timeout OR run async. The Bash tool is SYNCHRONOUS - it blocks until completion!</desc>
       <reference><ref href="#/patterns/timeout-or-async"/></reference>
     </rule>
     
-    <rule id="/behavior/only-what-asked" priority="11" critical="true">
+    <rule id="/behavior/only-what-asked" critical>
       <title>Do ONLY What Was Asked</title>
       <desc>NEVER take autonomous actions beyond the explicit request. This is ESPECIALLY critical for risky/destructive operations. When asked to commit with --no-verify, DO NOT also create tracking issues. When asked to restart puppeteer, DO NOT killall google-chrome (killing ALL Chrome instances including user's personal browsing). ALWAYS ASK before adding extra actions: "Should I also...?"</desc>
     </rule>
     
-    <rule id="/code/ast-only-manipulation" priority="12" critical="true">
+    <rule id="/code/ast-only-manipulation" critical>
       <ref href="#/code-style" />
     </rule>
   </critical-rules>
@@ -1714,11 +1596,6 @@ Outcome: Discovered tokens expire in 1hr not 24hr" > experiments/2024-01-15-auth
     <check>Complex sync? → Firebase/Supabase exists</check>
   </architecture-sanity>
 
-  <tone-style>
-    <ref href="#/code-style" />
-  </tone-style>
-  
-
   <proactiveness>
     <rule>Be proactive only when user asks you to do something</rule>
     <balance>
@@ -1728,10 +1605,6 @@ Outcome: Discovered tokens expire in 1hr not 24hr" > experiments/2024-01-15-auth
     <rule>Answer questions before jumping to actions</rule>
     <rule>Stop after file work rather than explaining</rule>
   </proactiveness>
-
-  <code-style>
-    <ref href="#/code-style" />
-  </code-style>
 
   <task-management id="/todowrite-everything">
     <title>TodoWrite - External Brain Pattern</title>
@@ -1746,11 +1619,12 @@ Outcome: Discovered tokens expire in 1hr not 24hr" > experiments/2024-01-15-auth
     <mantra>Every task in TodoWrite or it doesn't exist</mantra>
     <ex>
       <u>Run the build and fix any type errors</u>
-      <a>I'll use TodoWrite to track this:
-- Run the build
-- Fix any type errors
+      <a>
+      I'll use TodoWrite to track this:
+        - Run the build
+        - Fix any type errors
 
-Starting with the build...</a>
+      Starting with the build...</a>
       <a>Found 10 type errors. Adding each to todo list...</a>
       <a>Marking first error as in_progress...</a>
       <a>Fixed! Marking completed, moving to next...</a>
@@ -1759,7 +1633,8 @@ Starting with the build...</a>
 
   <doing-tasks>
     <steps>
-      <step>Use <ref href="#/todowrite-everything" /> to plan if required</step>
+      <step>Have a plan</step>
+      <step><ref href="#/todowrite-everything" /></step>
       <step>Use search tools extensively (parallel and sequential)</step>
       <step>Implement solution with all available tools</step>
       <step>Verify with tests (check README/codebase for approach)</step>
@@ -1768,19 +1643,10 @@ Starting with the build...</a>
     <rule critical="true">NEVER commit unless explicitly asked</rule>
   </doing-tasks>
 
-  <tool-usage-policy>
-    <rule>For file search, prefer Task tool to reduce context <ref href="#/task-tool" /></rule>
-    <rule>Call multiple tools in single response when possible</rule>
-    <rule critical="true">Multiple bash calls MUST be in single message for parallel execution</rule>
-  </tool-usage-policy>
-
-  <important-reminders>
-    <ref href="#/code-style" />
-  </important-reminders>
-
-  <code-references>
-    <ref href="#/code-style" />
-  </code-references>
+  <tool-policy>
+    <rule>Complex task? Use Task tool to reduce context <ref href="#/task-tool" /></rule>
+    <rule>Use parallel tool calls when possible</rule>
+  </tool-policy>
 
   <quick-reference>
     <before-starting>
@@ -1817,49 +1683,32 @@ Starting with the build...</a>
       <mantra>Future me needs ALL the context</mantra>
       <mantra><ref href="#/file-organization" /></mantra>
     </mantras>
-    <tools-as-memory>
-      <tool><ref href="#/todowrite-everything" /> - What am I doing right now?</tool>
-      <tool>MCP Memory - What have I learned before?</tool>
-      <tool><ref href="~/.claude/commands/backtrace.md"/> - What's the full context?</tool>
-      <tool>Git - What did I change and why?</tool>
-    </tools-as-memory>
     <when-confused>
       <action><ref href="#/patterns/loud-failure" /> - Stop and acknowledge confusion immediately</action>
       <action><ref href="~/.claude/commands/backtrace.md"/> to capture context</action>
       <action>Check if this is a typo or simple cause</action>
-      <action>Search MCP memory for similar confusion</action>
+      <action>Search in documentation for similar confusion</action>
       <action>Document the confusion for future reference</action>
     </when-confused>
   </claude-in-summary>
   
-  <claude-code-configuration>
-    <title>Claude Code Settings & Configuration</title>
+  <section title="Claude Code Settings & Configuration">
+    When asked about Claude Code configuration, fetch and consult official docs.
+
+    SAMPLE TRIGGERS:
+    • Adjusting tool permissions - "whitelist" / "blacklist" / "permit" / "Write to X only" / "allow WebFetch Y" / ...
+    • Configuration files - ".claude/settings.json" / ".claude.json" / ".mcp.json", ...
+    • Managing MCP servers - "MCP", "mcp add/remove/list", ...
+    • Slash commands - "configure /project:", ...
+    • Programmatic usage - "claude -p", "claude sdk"
+    • Permission pattern syntax like "Write(tests/*)" / "Bash(pytest)" / ...
     
-    <instruction>
-      When a user asks about Claude Code configuration, permissions, or settings, fetch the official documentation.
-      
-      RECOGNIZE THESE PATTERNS:
-      • "whitelist" or "blacklist" or "permit" or "allow only" - user wants to restrict tool access
-      • "Write to X only" or "Edit only in Y" - user wants file operation restrictions  
-      • ".claude/settings" or "settings.json" - user asking about configuration files
-      • "MCP server" or "mcp add/remove/list" - user managing MCP servers
-      • "slash command" or "/project:" - user creating custom commands
-      • "claude -p" or "SDK" or "API" - user wants programmatic usage
-      • Specific syntax like "Write(tests/*)" or "Bash(pytest)" - permission patterns
-      
-      WHEN YOU SEE THESE, USE WebFetch ON THE RIGHT DOCS:
-      • Settings & permissions: https://docs.anthropic.com/en/docs/claude-code/settings
-      • Slash commands: https://docs.anthropic.com/en/docs/claude-code/slash-commands
-      • CLI reference: https://docs.anthropic.com/en/docs/claude-code/cli-reference
-      • MCP servers: https://docs.anthropic.com/en/docs/claude-code/mcp
-      • SDK usage: https://docs.anthropic.com/en/docs/claude-code/sdk
-      
-      Say: "I'll check the official Claude Code documentation for [topic]" then fetch the relevant URL.
-    </instruction>
-  </claude-code-configuration>
+    ACTION: mcp__firecrawl__firecrawl_scrape https://docs.anthropic.com/en/docs/claude-code/
+    • And specific pages as relevant: .../settings, .../slash-commands, .../cli-reference, .../mcp, .../sdk
+  </section>
 
   Remember: Fewer tokens, more impact. Compress learned patterns into symbols.
   This file should shrink over time as patterns become more efficient.
-    
+
   The core loop: Check memory → Try simple solutions → Document everything → Clean up after.
 </claude-instructions>

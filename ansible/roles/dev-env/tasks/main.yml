@@ -1,4 +1,14 @@
 ---
-# Development environment setup is now handled by the cli role's dev-env tasks
-# This role serves as a placeholder for backwards compatibility
-# TODO: Consider removing this role and updating playbooks to use cli role directly
+# Development environment setup - imports common development tools and services
+
+# Import firecrawl for all dev environments
+- name: Import firecrawl role
+  ansible.builtin.import_role:
+    name: firecrawl
+  tags: [firecrawl]
+
+# Import claude-mcp for all dev environments
+- name: Import claude-mcp role
+  ansible.builtin.import_role:
+    name: claude-mcp
+  tags: [claude, mcp]

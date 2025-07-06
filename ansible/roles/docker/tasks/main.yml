@@ -22,7 +22,7 @@
       - docker-buildx-plugin
       - docker-compose-plugin
     state: latest
-    # no need to update apt cache, deb822_repository triggers that
+    update_cache: yes  # deb822_repository doesn't reliably trigger apt cache update
   become: true
 
 # 3. User convenience

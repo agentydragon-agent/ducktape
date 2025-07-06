@@ -3,17 +3,18 @@
   tags:
     - dotfiles
   block:
-    # - name: Create empty directory for dotfiles repo
-    #   file:
-    #     path: "{{ ducktape_path }}"
-    #     state: directory
-    #     recurse: yes
-    #     mode: '0755'
-    # - name: Clone ducktape
-    #   ansible.builtin.git:
-    #     repo: git@gitlab.com:agentydragon/ducktape
-    #     dest: "{{ ducktape_path }}"
-    #     version: master
+    - name: Debug - Check if ducktape exists
+      ansible.builtin.stat:
+        path: "{{ ducktape_path }}"
+      register: ducktape_stat
+    
+    - name: Assert ducktape repository exists
+      ansible.builtin.assert:
+        that:
+          - ducktape_stat.stat.exists
+          - ducktape_stat.stat.isdir
+        fail_msg: "Ducktape repository must be cloned to {{ ducktape_path }} before running this playbook. Run: git clone git@gitlab.com:agentydragon/ducktape {{ ducktape_path }}"
+        success_msg: "Ducktape repository found at {{ ducktape_path }}"
 
     # This is interactive if the files already exist.
     # The uncommented script fails if that happens.
@@ -24,38 +25,30 @@
     #   register: rcup_result
 
     - name: Install ducktape dotfiles, fail if would need overwrite
-      ansible.builtin.command: |
-        python3 {{ role_path }}/tasks/rcup_noninteractive.py -B {{ rcup_computer }} -x vim -x README.md -d {{ ducktape_path }}/dotfiles
+      ansible.builtin.script: "{{ role_path }}/tasks/rcup_noninteractive.py -B {{ rcup_computer }}"
+      args:
+        executable: python3
       environment:
         HOME: "/home/{{ my_user | default(ansible_user_id) }}"
         USER: "{{ my_user | default(ansible_user_id) }}"
+        RCRC: "{{ ducktape_path }}/dotfiles/rcrc"
       timeout: 10
       become: true
       become_user: "{{ my_user | default(ansible_user_id) }}"
       register: rcup_result
       failed_when: rcup_result.rc != 0
+      ignore_errors: true
+      
+    - name: Check if rcup needs manual intervention
+      ansible.builtin.fail:
+        msg: |
+          Dotfiles installation requires manual intervention.
+          
+          SSH to the machine and run:
+          RCRC={{ ducktape_path }}/dotfiles/rcrc rcup -B {{ rcup_computer }}
+          
+          You'll likely need to confirm overwriting pre-existing default files (like .bashrc).
+      when: 
+        - rcup_result.failed
+        - "'overwrite' in rcup_result.stdout"
 
-    # OrcaSlicer does not play well with its individual files being symlinks.
-    - name: Install OrcaSlicer config folder symlink
-      ansible.builtin.file:
-        # !!! NOTE WEIRD REVERSED CONVENTION !!!
-        # For some stupid reason "source" in Ansible convention means the *place where the symlink leads*
-        # and "destination" is the *symlink*. Thanks Obama.
-        src: "{{ ducktape_path }}/nonrcm-dotfiles/config/OrcaSlicer"
-        dest: "/home/{{ my_user | default(ansible_user_id) }}/.config/OrcaSlicer"
-        state: link
-      become: true
-      become_user: "{{ my_user | default(ansible_user_id) }}"
-      tags:
-      - orcaslicer
-
-    - name: Install Cronomix config folder symlink
-      ansible.builtin.file:
-        # !!! NOTE WEIRD REVERSED CONVENTION !!!
-        # For some stupid reason "source" in Ansible convention means the *place where the symlink leads*
-        # and "destination" is the *symlink*. Thanks Obama.
-        src: "{{ ducktape_path }}/nonrcm-dotfiles/config/cronomix"
-        dest: "/home/{{ my_user | default(ansible_user_id) }}/.config/cronomix"
-        state: link
-      become: true
-      become_user: "{{ my_user | default(ansible_user_id) }}"

@@ -14,3 +14,4 @@
     apt:
       name: kicad
       state: present
+      update_cache: yes  # deb822_repository doesn't reliably trigger apt cache update

@@ -5,6 +5,7 @@ wg_peers:
     gpd:
     homeassistant: # (not managed by Ansible but included in mesh)
     pixel6: # Pixel 6 phone
+    new-vm:
 
 all:
   hosts:
@@ -18,3 +19,6 @@ all:
       ansible_connection: local_cached_sudo
       # (pyenv breaks interpreter detection)
       ansible_python_interpreter: /usr/bin/python3
+    new-vm:
+      ansible_host: 10.0.167.15
+      ansible_user: agentydragon
