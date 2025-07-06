@@ -4,16 +4,13 @@ from .loader import ConfigLoader
 from .models import (
     AccessControlRule,
     AutofixCategory,
+    ClaudeLinterConfig,  # Still export main config
     HookConfig,
-    HookDecision,
-    HookRequest,
-    HookResponse,
     HookType,
     LLMAnalysisConfig,
     PredicateRule,
     RuleAction,
     TaskProfile,
-    ToolInput,
     Violation,
 )
 from .modular_models import CheckConfigBase, ModularClaudeLinterConfig
@@ -24,18 +21,17 @@ __all__ = [
     # Common Models (used by both legacy and modular)
     "AccessControlRule",
     "AutofixCategory",
+    "ClaudeLinterConfig",
     "HookConfig",
-    "HookDecision",
-    "HookRequest",
-    "HookResponse",
     "HookType",
     "LLMAnalysisConfig",
     "PredicateRule",
     "RuleAction",
     "TaskProfile",
-    "ToolInput",
     "Violation",
     # Modular Models
     "ModularClaudeLinterConfig",
     "CheckConfigBase",
+    # NOTE: HookRequest, HookResponse, HookDecision, ToolInput are deprecated
+    # Use hooks.requests and hooks.claude_responses instead
 ]

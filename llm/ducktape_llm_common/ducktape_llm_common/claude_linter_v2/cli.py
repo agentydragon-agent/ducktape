@@ -6,6 +6,7 @@ A unified code quality and permission management system for Claude Code.
 """
 
 import json
+import logging
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -15,8 +16,90 @@ import click
 from pytimeparse import parse as parse_duration
 
 from . import __version__
-from .hooks import HookHandler
+from .hooks.exceptions import HookBugError
+from .hooks.handler import HOOK_REQUEST_TYPES, handle
 from .types import parse_session_id
+
+logger = logging.getLogger(__name__)
+
+
+def send_desktop_notification(title: str, message: str, urgency: str = "critical", replaces_id: int = 0) -> int:
+    """Send desktop notification via D-Bus.
+
+    Args:
+        title: Notification title
+        message: Notification body (will be truncated to 200 chars)
+        urgency: Urgency level (low, normal, critical)
+        replaces_id: ID of notification to replace (0 = new notification)
+
+    Returns:
+        ID of the notification
+    """
+    import dbus
+
+    # Map urgency strings to D-Bus urgency levels
+    urgency_map = {
+        "low": 0,
+        "normal": 1,
+        "critical": 2,
+    }
+
+    # Get session bus
+    bus = dbus.SessionBus()
+
+    # Get notification interface
+    notify_obj = bus.get_object("org.freedesktop.Notifications", "/org/freedesktop/Notifications")
+    notify_iface = dbus.Interface(notify_obj, "org.freedesktop.Notifications")
+
+    # Send notification
+    notification_id = notify_iface.Notify(
+        "Claude Linter",  # app_name
+        replaces_id,  # replaces_id (0 = new notification)
+        "",  # app_icon (empty = default)
+        title,
+        message[:200],  # body (truncated)
+        [],  # actions
+        {
+            "urgency": dbus.Byte(urgency_map.get(urgency, 2)),
+        },  # hints
+        -1,  # expire_timeout (-1 = default)
+    )
+
+    return notification_id
+
+
+def close_desktop_notification(notification_id: int) -> None:
+    """Close a desktop notification via D-Bus.
+
+    Args:
+        notification_id: ID of the notification to close
+    """
+    import dbus
+
+    try:
+        # Get session bus
+        bus = dbus.SessionBus()
+
+        # Get notification interface
+        notify_obj = bus.get_object("org.freedesktop.Notifications", "/org/freedesktop/Notifications")
+        notify_iface = dbus.Interface(notify_obj, "org.freedesktop.Notifications")
+
+        # Close notification
+        notify_iface.CloseNotification(notification_id)
+    except Exception as e:
+        logger.debug(f"Failed to close notification {notification_id}: {e}")
+
+
+def _try_send_crash_notification(title: str, message: str) -> None:
+    """Try to send crash notification, but don't fail if notify-send isn't available.
+
+    This is ONLY for use in crash handlers where we're already handling an exception.
+    """
+    try:
+        send_desktop_notification(title, message, urgency="critical")
+    except Exception as e:
+        logger.warning(f"Failed to send crash notification: {e}")
+        logger.debug(f"Notification was: {title}: {message}", exc_info=True)
 
 
 def parse_expiry_duration(duration_str: str) -> datetime:
@@ -125,36 +208,72 @@ def hook(request_json: str | None) -> None:
     try:
         request_data = json.loads(request_json)
     except json.JSONDecodeError as e:
-        error_response = {
-            "error": f"Invalid JSON: {e}",
-            "continue": False,
-        }
-        click.echo(json.dumps(error_response))
-        sys.exit(1)
+        # Log the actual error
+        logger.error(f"FATAL: JSON parse error: {e}")
+
+        # Send desktop notification
+        _try_send_crash_notification("Claude Linter Hook Crashed", f"JSON parse error: {str(e)}")
+
+        # DO NOT output JSON - just crash
+        raise
 
     # Extract hook type from request data
     hook_type = request_data.get("hook_event_name", "")
 
-    # Validate hook type
-    valid_hooks = {"PreToolUse", "PostToolUse", "Stop", "SubagentStop", "Notification"}
-    if hook_type not in valid_hooks:
-        error_response = {
-            "error": f"Unknown hook event: {hook_type}",
-            "continue": False,
-        }
-        click.echo(json.dumps(error_response))
-        sys.exit(1)
+    # Parse request with appropriate type
+    request_class = HOOK_REQUEST_TYPES.get(hook_type)
+    if not request_class:
+        # Log the error
+        logger.error(f"FATAL: Unknown hook type: {hook_type}")
+
+        # Send desktop notification
+        _try_send_crash_notification("Claude Linter Hook Crashed", f"Unknown hook type: {hook_type}")
+
+        # DO NOT output JSON - just crash
+        raise ValueError(f"Unknown hook type: {hook_type}")
+
+    try:
+        request = request_class(**request_data)
+    except Exception as e:
+        # Log the actual error
+        logger.error(f"FATAL: Request validation error for {hook_type}: {e}", exc_info=True)
+
+        # Send desktop notification
+        _try_send_crash_notification(
+            "Claude Linter Hook Crashed", f"Request validation failed for {hook_type}: {str(e)}"
+        )
+
+        # DO NOT output JSON - just crash
+        raise
 
     # Process hook
-    handler = HookHandler()
-    result = handler.handle(hook_type, request_data)
+    try:
+        response = handle(hook_type, request)
+        # Output response
+        click.echo(response.model_dump_json(by_alias=True, exclude_none=True))
+    except HookBugError as e:
+        # Hook bug - this is OUR fault
+        logger.error(f"FATAL: Hook bug: {e}", exc_info=True)
 
-    # Output result
-    click.echo(json.dumps(result))
+        # Send desktop notification
+        _try_send_crash_notification("Claude Linter Hook Bug", f"Hook implementation error: {str(e)}")
 
-    # Exit code based on decision
-    if result.get("decision") == "block":
-        sys.exit(2)
+        # DO NOT output JSON - just crash
+        raise
+    except Exception as e:
+        # Unexpected error - log it
+        import traceback
+
+        logger.error(f"FATAL: Unexpected hook processing error: {e}")
+        logger.error(traceback.format_exc())
+
+        # Send desktop notification
+        _try_send_crash_notification("Claude Linter Hook Crashed", f"Unexpected error in {hook_type}: {str(e)}")
+
+        # DO NOT output JSON - just crash
+        raise
+
+    # Always exit 0 - Claude Code uses JSON response, not exit codes
     sys.exit(0)
 
 

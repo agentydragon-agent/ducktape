@@ -5,7 +5,7 @@ where each check can be individually configured with its own section.
 """
 
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -176,7 +176,9 @@ class ModularClaudeLinterConfig(BaseModel):
     )
 
     # LLM analysis
-    llm_analysis: LLMAnalysisConfig = Field(default_factory=LLMAnalysisConfig, description="LLM analysis configuration")
+    llm_analysis: LLMAnalysisConfig = Field(
+        default_factory=lambda: LLMAnalysisConfig(), description="LLM analysis configuration"
+    )
 
     # Task profiles
     profiles: list[TaskProfile] = Field(default_factory=list, description="Pre-defined permission profiles")
@@ -184,6 +186,11 @@ class ModularClaudeLinterConfig(BaseModel):
     # Logging
     log_level: str = Field("INFO", description="Logging level")
     log_file: Path | None = Field(None, description="Log file path")
+
+    # Notifications
+    send_notifications_to_dbus: bool = Field(
+        False, description="Send Notification hook messages to D-Bus notifications"
+    )
 
     model_config = {
         "populate_by_name": True,  # Allow field aliases
@@ -268,7 +275,7 @@ class ModularClaudeLinterConfig(BaseModel):
             data = tomli.load(f)
 
         # Handle the modular structure
-        config_dict = {}
+        config_dict: dict[str, Any] = {}
 
         # Process all fields
         for key, value in data.items():
@@ -281,7 +288,23 @@ class ModularClaudeLinterConfig(BaseModel):
                 # Handle nested python sections
                 for nested_key, nested_value in value.items():
                     if nested_key == "tools":
-                        config_dict["python_tools"] = nested_value
+                        # Handle both list format and dict format
+                        if isinstance(nested_value, list):
+                            config_dict["python_tools"] = nested_value
+                        elif isinstance(nested_value, dict):
+                            # Convert dict format to list based on enabled flags
+                            tools = []
+                            if nested_value.get("ruff_enabled", True):
+                                tools.append("ruff")
+                            if nested_value.get("black_enabled", True):
+                                tools.append("black")
+                            if nested_value.get("isort_enabled", True):
+                                tools.append("isort")
+                            if nested_value.get("mypy_enabled", False):
+                                tools.append("mypy")
+                            config_dict["python_tools"] = tools
+                        else:
+                            config_dict["python_tools"] = nested_value
                     else:
                         # Convert python.bare_except -> python_bare_except
                         field_name = f"python_{nested_key}".lower()

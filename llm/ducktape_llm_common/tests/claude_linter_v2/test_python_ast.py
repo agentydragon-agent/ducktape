@@ -117,7 +117,7 @@ if hasattr(obj, 'foo'):  # But this is still the hasattr function
 class MyClass:
     def __init__(self):
         self.foo = 'bar'
-        
+
 obj = MyClass()
 obj.bar = 'baz'
 value = obj.foo

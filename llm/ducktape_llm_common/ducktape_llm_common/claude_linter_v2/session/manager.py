@@ -199,8 +199,12 @@ class SessionManager:
         abs_path = str(path.resolve())
         return abs_path.replace("/", "-")
 
-    def end_session(self, session_id: SessionID) -> None:
-        """Mark a session as ended."""
-        # Currently a no-op - sessions persist until cleaned up
-        # This method exists for future extensibility
+    def clear_turn_data(self, session_id: SessionID) -> None:
+        """
+        Clear any turn-specific data.
+
+        Note: Sessions persist across multiple Claude turns.
+        This is called when Claude ends a turn, not when a session ends.
+        """
+        # Currently a no-op but available for future turn-specific cleanup
         pass

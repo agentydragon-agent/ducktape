@@ -1,0 +1,194 @@
+# Claude Linter v2 Configuration File
+# This file shows all available configuration options with their defaults and descriptions
+
+# Version of the configuration format (required)
+version = "2.0"
+
+# Maximum number of errors to display in hook responses
+# When Claude triggers violations, only show this many to avoid overwhelming
+max_errors_to_show = 3
+
+# Logging configuration
+log_level = "INFO"  # Options: DEBUG, INFO, WARNING, ERROR
+# log_file = "/path/to/logfile.log"  # Optional: write logs to file
+
+# ===== Access Control Rules =====
+# Define path-based access control rules that apply to all tools
+# Rules are evaluated in order - first match wins
+
+[[access_control]]
+path_pattern = "/etc/**"
+action = "deny"
+message = "System configuration files are read-only"
+
+[[access_control]]
+path_pattern = "**/.env"
+action = "warn"
+message = "Environment files contain secrets - be careful"
+
+[[access_control]]
+path_pattern = "**/migrations/**"
+action = "warn"
+message = "Database migrations should be carefully reviewed"
+
+# ===== Repository-wide Predicate Rules =====
+# These rules apply across the entire session using predicate expressions
+
+[[repo_rules]]
+predicate = "Write('/tmp/**')"
+action = "allow"
+reason = "Temporary files are always allowed"
+
+[[repo_rules]]
+predicate = "Edit('**/*.py') and not Edit('**/migrations/**')"
+action = "allow"
+reason = "Python files can be edited except migrations"
+
+[[repo_rules]]
+predicate = "Bash('rm -rf *')"
+action = "deny"
+reason = "Destructive commands are not allowed"
+
+# ===== Python-specific Configuration =====
+[python]
+
+# Ruff integration
+[python.tools]
+ruff_enabled = true
+black_enabled = true
+isort_enabled = true
+
+# Force these ruff rules to always be checked
+python.ruff_force_select = ["F", "E9", "W"]
+
+# Hard blocks - violations that always prevent tool execution
+[python.hard_blocks]
+bare_except = true      # Block bare except: clauses
+getattr_setattr = true  # Block hasattr/getattr/setattr usage
+barrel_init = true      # Block barrel __init__.py patterns
+
+# ===== Hook Behaviors =====
+# Configure behavior for each hook type
+
+[hooks.pre]
+# PreToolUse hook configuration
+auto_fix = false  # Don't autofix in pre-hook (we're preventing execution)
+inject_permissions = false  # Don't show permissions before tool runs
+
+[hooks.post]
+# PostToolUse hook configuration
+auto_fix = true  # Apply autofix after tool execution
+inject_permissions = true  # Show current permissions to Claude
+# Categories of fixes to apply automatically
+autofix_categories = ["formatting"]  # Options: "formatting", "imports", "all"
+
+[hooks.stop]
+# Stop hook configuration (when Claude wants to end its turn)
+auto_fix = false
+inject_permissions = false
+quality_gate = true  # Prevent Claude from stopping if errors remain
+
+[hooks.notification]
+# Notification hook configuration
+auto_fix = false
+inject_permissions = false
+quality_gate = false
+
+[hooks.subagent_stop]
+# SubagentStop hook configuration
+auto_fix = false
+inject_permissions = false
+quality_gate = false
+
+# ===== Test File Patterns =====
+# Files matching these patterns get special treatment
+test_patterns = [
+    "**/test_*.py",
+    "**/*_test.py",
+    "**/tests/**",
+    "**/testing/**",
+    "**/fixtures/**"
+]
+
+# ===== LLM Analysis Configuration =====
+[llm_analysis]
+enabled = false  # Enable LLM-powered code analysis
+model = "gpt-4"  # Model to use for analysis
+max_cost_per_session = 1.0  # Maximum cost in USD per session
+cache_analyses = true  # Cache analysis results
+cache_ttl = "7d"  # Cache time-to-live (format: 1h, 30m, 7d)
+
+# ===== Task Profiles =====
+# Pre-defined permission profiles for common tasks
+
+[[profiles]]
+name = "refactoring"
+description = "Safe refactoring operations"
+predicates = [
+    "Edit('**/*.py')",
+    "Bash('pytest')",
+    "Bash('ruff check')",
+    "Bash('mypy')"
+]
+
+[[profiles]]
+name = "debugging"
+description = "Debugging and analysis"
+predicates = [
+    "Read('**')",
+    "Bash('grep -r')",
+    "Bash('find')",
+    "Bash('pytest -v')"
+]
+
+[[profiles]]
+name = "documentation"
+description = "Documentation updates only"
+predicates = [
+    "Edit('**/*.md')",
+    "Edit('**/*.rst')",
+    "Write('docs/**')"
+]
+
+# ===== Session-specific Overrides =====
+# These would typically be set via CLI rather than config file
+# Shown here for completeness
+
+# [session]
+# session_id = "12345"  # Usually auto-generated
+# rules = [
+#     { predicate = "Edit('/tmp/test.py')", action = "allow" }
+# ]
+
+# ===== Advanced Configuration =====
+
+# Diff intelligence settings (for Edit/MultiEdit tools)
+# These are typically not user-configurable but shown for completeness
+# [diff_intelligence]
+# context_distance = 3  # Lines away from changes to consider "near"
+
+# Violation tracking
+# [violation_tracking]
+# track_across_files = true  # Track violations across multiple files
+# track_severity = ["error", "warning"]  # Which severities to track
+
+# ===== Examples of Complex Predicates =====
+# These show the full power of the predicate system
+
+# Allow specific git commands
+# [[repo_rules]]
+# predicate = "Bash(cmd) and safe_git_commands(cmd)"
+# action = "allow"
+# reason = "Safe git operations are allowed"
+
+# Time-based rules
+# [[repo_rules]]
+# predicate = "Write('logs/**') and business_hours()"
+# action = "allow"
+# reason = "Log writes only during business hours"
+
+# User-defined functions (would need to be implemented)
+# [[repo_rules]]
+# predicate = "Write(path) and file_size(path) < 1048576"
+# action = "allow"
+# reason = "Only allow writing files smaller than 1MB"

@@ -1,5 +1,7 @@
 """Hook handlers for Claude Code integration."""
 
-from .handler import HookHandler
-
-__all__ = ["HookHandler"]
+# Individual modules should be imported directly:
+# from .handler import handle
+# from .requests import PreToolUseRequest, PostToolUseRequest, etc.
+# from .claude_responses import ClaudePreToolResponse, etc.
+# from .outcomes import PreToolAllow, PreToolDeny, etc.

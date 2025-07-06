@@ -1,13 +1,10 @@
 """Configuration models for Claude Linter v2 using Pydantic."""
 
-from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
-
-from ..types import SessionID, parse_session_id
 
 
 class Violation(BaseModel):
@@ -84,7 +81,7 @@ class PythonConfig(BaseModel):
     """Python-specific linting configuration."""
 
     tools: list[str] = Field(default_factory=lambda: ["ruff", "mypy"], description="Python linting tools to use")
-    hard_blocks: PythonHardBlock = Field(default_factory=PythonHardBlock, description="AST-based hard blocks")
+    hard_blocks: PythonHardBlock = Field(default_factory=lambda: PythonHardBlock(), description="AST-based hard blocks")
 
     # Ruff configuration
     ruff_force_select: list[str] = Field(
@@ -195,7 +192,7 @@ class ClaudeLinterConfig(BaseModel):
     repo_rules: list[PredicateRule] = Field(default_factory=list, description="Repository-wide predicate rules")
 
     # Language-specific configs
-    python: PythonConfig = Field(default_factory=PythonConfig, description="Python-specific configuration")
+    python: PythonConfig = Field(default_factory=lambda: PythonConfig(), description="Python-specific configuration")
 
     # Hook behaviors
     hooks: dict[str, HookConfig] = Field(
@@ -215,7 +212,9 @@ class ClaudeLinterConfig(BaseModel):
     )
 
     # LLM analysis
-    llm_analysis: LLMAnalysisConfig = Field(default_factory=LLMAnalysisConfig, description="LLM analysis configuration")
+    llm_analysis: LLMAnalysisConfig = Field(
+        default_factory=lambda: LLMAnalysisConfig(), description="LLM analysis configuration"
+    )
 
     # Task profiles
     profiles: list[TaskProfile] = Field(default_factory=list, description="Pre-defined permission profiles")
@@ -223,6 +222,11 @@ class ClaudeLinterConfig(BaseModel):
     # Logging
     log_level: str = Field("INFO", description="Logging level")
     log_file: Path | None = Field(None, description="Log file path")
+
+    # Notifications
+    send_notifications_to_dbus: bool = Field(
+        False, description="Send Notification hook messages to D-Bus notifications"
+    )
 
     @classmethod
     def load_from_file(cls, path: Path) -> "ClaudeLinterConfig":
@@ -243,59 +247,3 @@ class ClaudeLinterConfig(BaseModel):
 
         with open(path, "wb") as f:
             tomli_w.dump(data, f)
-
-
-# Hook request/response models for Claude Code integration
-
-
-class ToolInput(BaseModel):
-    """Tool input from Claude Code."""
-
-    file_path: str | None = None
-    content: str | None = None
-    old_content: str | None = None
-    command: str | None = None
-    # Add other tool-specific fields as needed
-
-
-class HookRequest(BaseModel):
-    """Request from Claude Code hook."""
-
-    tool_name: str = Field(description="Name of the tool being used")
-    tool_input: ToolInput = Field(description="Tool-specific input")
-    session_id: str | None = Field(None, description="Claude Code session ID")
-    # Additional fields that Claude Code might send
-    request_id: str | None = None
-    timestamp: datetime | None = None
-    hook_event_name: str | None = Field(None, description="Hook event name (PreToolUse, PostToolUse, etc)")
-
-    @property
-    def typed_session_id(self) -> SessionID | None:
-        """Get typed session ID."""
-        if self.session_id:
-            return parse_session_id(self.session_id)
-        return None
-
-
-class HookDecision(str, Enum):
-    """Decisions that can be made by hooks."""
-
-    APPROVE = "approve"  # PreToolUse only - bypass permissions
-    BLOCK = "block"  # All hooks - prevent/notify
-
-
-class HookResponse(BaseModel):
-    """Response to Claude Code hook."""
-
-    continue_: bool = Field(True, alias="continue", description="Whether to continue")
-    decision: HookDecision | None = Field(None, description="Explicit decision")
-    reason: str | None = Field(None, description="Human-readable reason")
-
-    # Optional fields
-    stopReason: str | None = Field(None, description="Message shown when stopping")
-    suppressOutput: bool | None = Field(None, description="Hide stdout (default false)")
-
-    # Custom fields for our use (will be ignored by Claude Code)
-    suggestions: list[str] | None = Field(None, description="Suggestions for fixes")
-
-    model_config = {"populate_by_name": True}  # Allow both 'continue' and 'continue_'

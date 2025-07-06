@@ -1,5 +1,6 @@
 """Hook handler implementation for Claude Code hooks."""
 
+import json
 import logging
 from datetime import datetime
 from pathlib import Path
@@ -7,106 +8,478 @@ from typing import Any
 
 from ..access.context import PredicateContext
 from ..access.rule_engine import RuleEngine
-from ..config import ConfigLoader, HookDecision, HookRequest, HookResponse, RuleAction
-from ..config.models import AutofixCategory
+from ..config import ConfigLoader, RuleAction
+from ..config.models import AutofixCategory, Violation
+from ..diff.intelligence import DiffIntelligence
 from ..linters.python_ast import PythonASTAnalyzer
 from ..linters.python_formatter import PythonFormatter
 from ..linters.python_ruff import PythonRuffLinter
 from ..session import SessionManager
 from ..session.violations import ViolationTracker
-from ..types import SessionID, parse_session_id
+from ..types import SessionID
+from .claude_responses import ClaudeBaseResponse
+from .exceptions import HookBugError
+from .formatting import format_access_denial, format_llm_message
+from .outcomes import (
+    HookOutcome,
+    NotificationAcknowledge,
+    PostToolNotifyLLM,
+    PostToolSuccess,
+    PreToolApprove,
+    PreToolDeny,
+    StopAllow,
+    StopPrevent,
+    SubagentStopAllow,
+)
+from .requests import (
+    BaseHookRequest,
+    NotificationRequest,
+    PostToolUseRequest,
+    PreToolUseRequest,
+    StopRequest,
+    SubagentStopRequest,
+)
+from .validation import validate_hook_outcome
 
 logger = logging.getLogger(__name__)
 
+# Request type mapping
+HOOK_REQUEST_TYPES: dict[str, type[BaseHookRequest]] = {
+    "PreToolUse": PreToolUseRequest,
+    "PostToolUse": PostToolUseRequest,
+    "Stop": StopRequest,
+    "SubagentStop": SubagentStopRequest,
+    "Notification": NotificationRequest,
+}
+
 
 class HookHandler:
-    """Handles pre/post/stop hooks from Claude Code."""
+    """Handles all hook types with type safety."""
 
     def __init__(self) -> None:
         self.session_manager = SessionManager()
         self.config_loader = ConfigLoader()
         self.rule_engine: RuleEngine | None = None
         self._warnings: dict[SessionID, str] = {}  # Store warnings per session
+        self._notification_ids: dict[SessionID, int] = {}  # Store notification IDs per session
         self.violation_tracker = ViolationTracker(self.session_manager)
+        self.diff_intelligence = DiffIntelligence(context_distance=3)
+        self._setup_logging()
 
-    def handle(self, hook_type: str, request_data: dict[str, Any]) -> dict[str, Any]:
+    def _setup_logging(self) -> None:
+        """Set up session-based logging."""
+        # Create logs directory
+        log_dir = Path.home() / ".claude-linter" / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        self.log_dir = log_dir
+
+        # Configure Python logging based on config
+        config = self.config_loader.config
+
+        # Set up root logger
+        root_logger = logging.getLogger()
+
+        # Clear any existing handlers to avoid duplicates
+        root_logger.handlers.clear()
+
+        # Console handler (always present for critical errors)
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(logging.ERROR)
+        console_formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+        console_handler.setFormatter(console_formatter)
+        root_logger.addHandler(console_handler)
+
+        # File handler if configured
+        if hasattr(config, "log_file") and config.log_file:
+            log_file = Path(config.log_file)
+            log_file.parent.mkdir(parents=True, exist_ok=True)
+
+            file_handler = logging.FileHandler(log_file)
+
+            # Set log level from config
+            log_level = getattr(config, "log_level", "INFO")
+            try:
+                file_handler.setLevel(getattr(logging, log_level.upper()))
+            except AttributeError:
+                file_handler.setLevel(logging.INFO)
+                logger.warning(f"Invalid log level '{log_level}', using INFO")
+
+            file_formatter = logging.Formatter(
+                "%(asctime)s - %(name)s - %(levelname)s - %(funcName)s:%(lineno)d - %(message)s"
+            )
+            file_handler.setFormatter(file_formatter)
+            root_logger.addHandler(file_handler)
+
+            # Set root logger to the lowest level to let handlers filter
+            root_logger.setLevel(logging.DEBUG)
+
+            logger.info(f"Logging configured: level={log_level}, file={log_file}")
+
+    def _log_hook_call(
+        self, session_id: SessionID, hook_type: str, request: BaseHookRequest, outcome: Any, response: Any
+    ) -> None:
+        """Log detailed hook information to session log file."""
+        log_file = self.log_dir / f"{session_id}.log"
+
+        timestamp = datetime.now().isoformat()
+
+        # Build log entry
+        log_entry = {
+            "timestamp": timestamp,
+            "hook_type": hook_type,
+            "session_id": session_id,
+            "request": {
+                "type": type(request).__name__,
+                "data": request.model_dump() if hasattr(request, "model_dump") else str(request),
+            },
+            "outcome": {"type": type(outcome).__name__, "data": str(outcome)},
+            "response": response.model_dump() if hasattr(response, "model_dump") else str(response),
+            "decision_details": {},
+        }
+
+        # Add specific details based on hook type
+        if hook_type == "PreToolUse" and hasattr(request, "tool_name"):
+            log_entry["decision_details"]["tool"] = request.tool_name
+            log_entry["decision_details"]["file"] = getattr(request.tool_input, "file_path", None)
+        elif hook_type == "PostToolUse" and hasattr(request, "tool_name"):
+            log_entry["decision_details"]["tool"] = request.tool_name
+            log_entry["decision_details"]["file"] = getattr(request.tool_input, "file_path", None)
+
+        # Write to log file
+        with open(log_file, "a") as f:
+            f.write(json.dumps(log_entry) + "\n")
+
+    def _log_decision(self, session_id: SessionID, decision_point: str, details: dict[str, Any]) -> None:
+        """Log a specific decision point."""
+        log_file = self.log_dir / f"{session_id}.log"
+
+        log_entry = {"timestamp": datetime.now().isoformat(), "decision_point": decision_point, "details": details}
+
+        with open(log_file, "a") as f:
+            f.write(f"DECISION: {json.dumps(log_entry)}\n")
+
+    def handle(self, hook_type: str, request: BaseHookRequest) -> ClaudeBaseResponse:
         """
-        Handle a hook request from Claude Code.
+        Main entry point - handles any hook type.
 
-        Args:
-            hook_type: Type of hook ("pre", "post", or "stop")
-            request_data: JSON request data from Claude Code
-
-        Returns:
-            Response dict with at least {"continue": bool}
-            May include {"decision": "block", "reason": str} for blocking
+        This is the generic handler that dispatches to typed handlers.
         """
-        try:
-            # Parse request
-            request = HookRequest(**request_data)
-        except Exception as e:
-            logger.error(f"Failed to parse request: {e}")
-            return {
-                "error": f"Invalid request: {e}",
-                "continue": False,
-            }
+        # Get session ID (required)
+        session_id = request.typed_session_id
+        self._track_session(request, session_id)
 
-        # Extract session ID from request if available
-        session_id = request.typed_session_id or parse_session_id("00000000-0000-0000-0000-000000000000")
+        # Log the incoming request
+        logger.info(f"Hook call: {hook_type} for session {session_id}")
 
-        # Track this session
-        file_path = request.tool_input.file_path or ""
-        if file_path:
-            working_dir = Path(file_path).parent
-        else:
-            working_dir = Path.cwd()
+        # Dispatch to typed handler
+        outcome = self._dispatch_hook(hook_type, request, session_id)
+
+        # Validate outcome type
+        validate_hook_outcome(hook_type, outcome)
+
+        # Convert to response
+        response = outcome.to_claude_response()
+
+        # Log the complete interaction
+        self._log_hook_call(session_id, hook_type, request, outcome, response)
+
+        return response
+
+    def _track_session(self, request: BaseHookRequest, session_id: SessionID) -> None:
+        """Track session with appropriate working directory."""
+        working_dir = Path.cwd()
+
+        # Try to get working dir from tool input if available
+        if isinstance(request, PreToolUseRequest | PostToolUseRequest):
+            file_path = request.tool_input.file_path
+            if file_path:
+                working_dir = Path(file_path).parent
 
         self.session_manager.track_session(session_id, working_dir)
 
-        # Dispatch to appropriate handler based on event name
-        if hook_type == "PreToolUse":
-            response = self._handle_pre_hook(request, session_id)
-        elif hook_type == "PostToolUse":
-            response = self._handle_post_hook(request, session_id)
-        elif hook_type == "Stop":
-            response = self._handle_stop_hook(request, session_id)
-        elif hook_type == "SubagentStop":
-            response = self._handle_subagent_stop_hook(request, session_id)
-        elif hook_type == "Notification":
-            response = self._handle_notification_hook(request, session_id)
+    def _dispatch_hook(self, hook_type: str, request: BaseHookRequest, session_id: SessionID) -> HookOutcome:
+        """Dispatch to appropriate typed handler."""
+        if hook_type == "PreToolUse" and isinstance(request, PreToolUseRequest):
+            return self._handle_pre_hook(request, session_id)
+        elif hook_type == "PostToolUse" and isinstance(request, PostToolUseRequest):
+            return self._handle_post_hook(request, session_id)
+        elif hook_type == "Stop" and isinstance(request, StopRequest):
+            return self._handle_stop_hook(request, session_id)
+        elif hook_type == "SubagentStop" and isinstance(request, SubagentStopRequest):
+            return self._handle_subagent_stop(request, session_id)
+        elif hook_type == "Notification" and isinstance(request, NotificationRequest):
+            return self._handle_notification(request, session_id)
         else:
-            # Unknown hook types should be no-op (pass through)
-            logger.warning(f"Unknown hook type: {hook_type} - treating as no-op")
-            response = HookResponse(continue_=True, reason=f"Unknown hook type {hook_type} - no action taken")
+            raise HookBugError(f"Invalid hook type: {hook_type}")
 
-        # Convert response to dict, excluding our custom fields
-        response_dict = response.model_dump(
-            by_alias=True,
-            exclude_none=True,
-            exclude={"suggestions"},  # Claude Code doesn't understand this field
-        )
-
-        # If we have suggestions and a reason, append them to the reason
-        if response.suggestions and response.reason:
-            suggestions_text = "\n".join(response.suggestions)
-            response_dict["reason"] = f"{response.reason}\n\n{suggestions_text}"
-
-        return response_dict
-
-    def _handle_pre_hook(self, request: HookRequest, session_id: SessionID) -> HookResponse:
-        """
-        Handle pre-tool-use hook.
-
-        Order of operations:
-        1. Check access control (fastest fail)
-        2. Run hard blocks (bare except, hasattr)
-        3. Check format issues (inform only)
-        """
+    def _handle_pre_hook(self, request: PreToolUseRequest, session_id: SessionID) -> HookOutcome:
+        """Handle PreToolUse with early bailout pattern."""
         config = self.config_loader.config
 
         logger.info(f"Pre-hook for {request.tool_name} in session {session_id}")
 
-        # Create predicate context
+        # Clear any existing notification for this session
+        self._clear_notification(session_id)
+
+        # Log detailed request info
+        self._log_decision(
+            session_id,
+            "pre_hook_start",
+            {
+                "tool": request.tool_name,
+                "file_path": getattr(request.tool_input, "file_path", None),
+                "has_content": bool(getattr(request.tool_input, "content", None)),
+            },
+        )
+
+        # Access control check - early bailout
+        action, message = self._check_access_control(request, session_id)
+        self._log_decision(
+            session_id, "access_control", {"action": action.value if action else None, "message": message}
+        )
+
+        if action == RuleAction.DENY:
+            return PreToolDeny(
+                llm_message=format_access_denial(
+                    predicate=f"{request.tool_name}('{request.tool_input.file_path}')",
+                    session_id=session_id,
+                    message=message,
+                )
+            )
+
+        # Store warnings for post-hook if needed
+        if action == RuleAction.WARN and message:
+            self._warnings[session_id] = message
+
+        # Python violations check - early bailout
+        is_python = self._is_python_file(request)
+        self._log_decision(
+            session_id,
+            "file_type_check",
+            {"is_python": is_python, "file_path": getattr(request.tool_input, "file_path", None)},
+        )
+
+        if not is_python:
+            return PreToolApprove()
+
+        violations = self._check_python_violations(request, config)
+        self._log_decision(
+            session_id,
+            "python_violations",
+            {
+                "count": len(violations),
+                "violations": [v.model_dump() if hasattr(v, "model_dump") else str(v) for v in violations[:3]],
+            },
+        )
+
+        if not violations:
+            return PreToolApprove()
+
+        # Format violations - only use diff intelligence for Edit/MultiEdit
+        if request.tool_name in ("Edit", "MultiEdit"):
+            # For PreToolUse, we don't have tool_response yet, so all violations are "out-of-diff"
+            # This is fine - diff intelligence is mainly useful in PostToolUse
+            categorized_groups = self.diff_intelligence.analyze(
+                tool_name=request.tool_name,
+                tool_input=request.tool_input.model_dump(),
+                tool_response=None,  # PreToolUse has no response
+                violations=violations,
+            )
+            formatted_violations = self.diff_intelligence.format_violations_by_category(categorized_groups)
+        else:
+            # Standard formatting for other tools
+            violation_messages = []
+            for v in violations[: config.max_errors_to_show]:
+                violation_messages.append(f"Line {v.line}: {v.message}")
+            formatted_violations = "\n".join(violation_messages)
+
+        formatted = format_llm_message(
+            "Python code contains hard-blocked patterns:",
+            formatted_violations,
+            "\n".join(
+                [
+                    "Fix these patterns:",
+                    "- Bare except: Use specific exception types",
+                    "- hasattr/getattr: Use proper type checking",
+                    "",
+                    f"Override: cl2 session allow '{request.tool_name}(\"{request.tool_input.file_path}\")' "
+                    f"--session {session_id}",
+                ]
+            ),
+        )
+
+        # Track violations
+        self.violation_tracker.add_violations(
+            session_id=session_id, violations=violations, file_path=request.tool_input.file_path or "", severity="error"
+        )
+
+        return PreToolDeny(llm_message=formatted)
+
+    def _handle_post_hook(self, request: PostToolUseRequest, session_id: SessionID) -> HookOutcome:
+        """Handle PostToolUse."""
+        config = self.config_loader.config
+        messages = []
+
+        logger.info(f"Post-hook for {request.tool_name} in session {session_id}")
+
+        # Clear any existing notification for this session
+        self._clear_notification(session_id)
+
+        # Log detailed info
+        self._log_decision(
+            session_id,
+            "post_hook_start",
+            {
+                "tool": request.tool_name,
+                "file_path": getattr(request.tool_input, "file_path", None),
+                "tool_succeeded": getattr(request, "tool_succeeded", None),
+                "has_tool_response": hasattr(request, "tool_response") or hasattr(request, "tool_result"),
+            },
+        )
+
+        # Apply autofix if configured
+        autofix_msg = self._try_autofix(request, config)
+        self._log_decision(
+            session_id, "autofix_attempt", {"attempted": autofix_msg is not None, "message": autofix_msg}
+        )
+        if autofix_msg:
+            messages.append(autofix_msg)
+
+        # Add any warnings from pre-hook
+        if session_id in self._warnings:
+            warning = self._warnings.pop(session_id)
+            messages.append(f"Warning: {warning}")
+
+        # Add permissions info if configured
+        post_hook_config = config.hooks.get("post")
+        if post_hook_config and post_hook_config.inject_permissions:
+            perms = self._build_permissions_info(session_id)
+            if perms:
+                messages.append(perms)
+
+        # Check remaining violations
+        if self._is_python_file(request) and request.tool_input.file_path:
+            self._update_violation_tracking(request, session_id)
+
+        # Log final decision
+        self._log_decision(
+            session_id,
+            "post_hook_outcome",
+            {
+                "has_messages": bool(messages),
+                "messages": messages,
+                "has_autofix": bool(autofix_msg),
+                "has_important_info": self._has_important_info(messages) if messages else False,
+            },
+        )
+
+        # Return appropriate outcome
+        if not messages:
+            return PostToolSuccess()
+
+        # Determine if this needs LLM attention
+        if autofix_msg:
+            return PostToolNotifyLLM(llm_message=f"Autofix: {' | '.join(messages)}")
+        elif self._has_important_info(messages):
+            return PostToolNotifyLLM(llm_message=f"Violations: {' | '.join(messages)}")
+        else:
+            return PostToolSuccess()
+
+    def _handle_stop_hook(self, request: StopRequest, session_id: SessionID) -> HookOutcome:
+        """
+        Handle Stop hook (Claude ending its turn).
+
+        Note: This fires when Claude wants to end its response to the user,
+        NOT when a session ends. Sessions persist across multiple turns.
+        """
+        config = self.config_loader.config
+
+        logger.info(f"Stop hook for session {session_id}")
+
+        # Early bailout if quality gate disabled
+        stop_hook_config = config.hooks.get("stop")
+        if stop_hook_config and not stop_hook_config.quality_gate:
+            return StopAllow()
+
+        # Get violation summary
+        summary = self.violation_tracker.get_violation_summary(session_id)
+        if summary["total"] == 0:
+            # Clean - clear tracking data
+            self.violation_tracker.clear_session(session_id)
+            return StopAllow()
+
+        # Check severity
+        by_severity = summary["by_severity"]
+        if by_severity.get("error", 0) > 0:
+            # Errors present - must prevent stop
+            error_msg = f"Code has {by_severity.get('error', 0)} errors that must be fixed."
+            if summary["by_file"]:
+                files = list(summary["by_file"].keys())[:3]
+                error_msg += f" Files: {', '.join(files)}"
+            return StopPrevent(llm_message=error_msg)
+
+        # Only warnings - allow but notify Claude
+        self.violation_tracker.clear_session(session_id)
+        return StopAllow()
+
+    def _handle_subagent_stop(self, request: SubagentStopRequest, session_id: SessionID) -> HookOutcome:
+        """Handle SubagentStop."""
+        logger.info(f"SubagentStop hook for session {session_id}")
+        # For now, always allow subagent to stop
+        return SubagentStopAllow()
+
+    def _handle_notification(self, request: NotificationRequest, session_id: SessionID) -> HookOutcome:
+        """Handle Notification."""
+        logger.info(f"Notification hook for session {session_id}")
+
+        # Send to D-Bus if configured
+        config = self.config_loader.config
+        if config.send_notifications_to_dbus and (request.message or request.title):
+            self._send_dbus_notification(
+                title=request.title or "Claude Code", message=request.message or "", session_id=session_id
+            )
+
+        return NotificationAcknowledge()
+
+    def _send_dbus_notification(self, title: str, message: str, session_id: SessionID) -> None:
+        """Send a notification via D-Bus, replacing any existing notification for this session."""
+        # Import here to avoid circular import
+        from ..cli import send_desktop_notification
+
+        try:
+            # Get existing notification ID for this session (if any)
+            replaces_id = self._notification_ids.get(session_id, 0)
+
+            # Send notification, replacing the previous one if it exists
+            notification_id = send_desktop_notification(title, message, urgency="normal", replaces_id=replaces_id)
+
+            # Store the notification ID for this session
+            self._notification_ids[session_id] = notification_id
+
+            logger.info(
+                f"Sent D-Bus notification for session {session_id}: {title} "
+                f"(ID: {notification_id}, replaced: {replaces_id})"
+            )
+        except Exception as e:
+            logger.error(f"Failed to send D-Bus notification: {e}", exc_info=True)
+
+    def _clear_notification(self, session_id: SessionID) -> None:
+        """Clear any existing notification for this session."""
+        notification_id = self._notification_ids.get(session_id)
+        if notification_id:
+            # Import here to avoid circular import
+            from ..cli import close_desktop_notification
+
+            try:
+                close_desktop_notification(notification_id)
+                del self._notification_ids[session_id]
+                logger.debug(f"Cleared notification {notification_id} for session {session_id}")
+            except Exception as e:
+                logger.debug(f"Failed to clear notification for session {session_id}: {e}")
+
+    # Helper methods
+    def _check_access_control(self, request: PreToolUseRequest, session_id: SessionID) -> tuple[RuleAction, str | None]:
+        """Check access control rules."""
         context = PredicateContext(
             tool=request.tool_name,
             path=request.tool_input.file_path,
@@ -119,369 +492,178 @@ class HookHandler:
 
         # Lazy initialize rule engine
         if self.rule_engine is None:
-            self.rule_engine = RuleEngine(config, self.session_manager)
+            self.rule_engine = RuleEngine(self.config_loader.config, self.session_manager)
 
-        # Check access control rules
-        action, message = self.rule_engine.evaluate_access(context, session_id)
+        return self.rule_engine.evaluate_access(context, session_id)
 
-        if action == RuleAction.DENY:
-            # Build suggestions
-            suggestions = [
-                "To request an override, ask the user to run:",
-                f"cl2 session allow '<predicate>' --session {session_id}",
-                "where <predicate> allows this specific operation.",
-            ]
-
-            return HookResponse(
-                continue_=True,  # Let Claude see the error
-                decision=HookDecision.BLOCK,
-                reason=message or "Permission denied",
-                suggestions=suggestions,
-            )
-        elif action == RuleAction.WARN:
-            # For warnings in pre-hook, we allow but log
-            # We'll show the warning in post-hook instead
-            logger.warning(f"Access warning: {message}")
-            # Store warning for post-hook
-            if message:
-                self._warnings[session_id] = message
-
-        # Check Python hard blocks if it's a Python file
+    def _is_python_file(self, request: PreToolUseRequest | PostToolUseRequest) -> bool:
+        """Check if request is for a Python file."""
         file_path = request.tool_input.file_path or ""
-        if file_path.endswith(".py") and request.tool_input.content:
-            # Initialize AST analyzer with config
-            analyzer = PythonASTAnalyzer(
-                bare_except=config.python_bare_except.enabled,
-                getattr_setattr=(
-                    config.python_hasattr.enabled or config.python_getattr.enabled or config.python_setattr.enabled
-                ),
-                barrel_init=file_path.endswith("__init__.py") and config.python_barrel_init.enabled,
-            )
+        return file_path.endswith(".py") and bool(request.tool_input.content)
 
-            # Analyze the code
-            violations = analyzer.analyze_code(request.tool_input.content, file_path)
+    def _check_python_violations(self, request: PreToolUseRequest, config: Any) -> list[Violation]:
+        """Check for Python AST and ruff violations."""
+        all_violations = []
 
-            if violations:
-                # Track violations
-                self.violation_tracker.add_violations(
-                    session_id=session_id,
-                    violations=violations,
-                    file_path=file_path,
-                    severity="error",
-                )
+        # AST violations
+        file_path = request.tool_input.file_path
+        if not file_path:
+            return []
 
-                # Build error message
-                error_lines = []
-                max_errors = config.max_errors_to_show
-                for v in violations[:max_errors]:
-                    error_lines.append(f"Line {v.line}: {v.message}")
-
-                if len(violations) > max_errors:
-                    error_lines.append(f"... and {len(violations) - max_errors} more violations")
-
-                return HookResponse(
-                    continue_=True,
-                    decision=HookDecision.BLOCK,
-                    reason="Python code contains hard-blocked patterns:\n" + "\n".join(error_lines),
-                    suggestions=[
-                        "These patterns are blocked to maintain code quality:",
-                        "- Bare except: Use specific exception types",
-                        "- hasattr/getattr: Use proper type checking",
-                        "- Barrel __init__.py: Keep __init__.py files minimal",
-                    ],
-                )
-
-        # Check Python code quality with ruff
-        if file_path.endswith(".py") and request.tool_input.content:
-            # Get force-select rules from modular config
-            force_select = config.get_ruff_force_select()
-
-            # Run ruff checks
-            ruff_linter = PythonRuffLinter(force_select=force_select)
-            ruff_violations = ruff_linter.check_code(
-                request.tool_input.content,
-                file_path,
-                critical_only=True,  # Only check critical rules in pre-hook
-            )
-
-            if ruff_violations:
-                # Track violations
-                self.violation_tracker.add_violations(
-                    session_id=session_id,
-                    violations=ruff_violations,
-                    file_path=file_path,
-                    severity="error",
-                )
-
-                # Build error message
-                error_lines = []
-                max_errors = config.max_errors_to_show
-                for v in ruff_violations[:max_errors]:
-                    explanation = ruff_linter.get_rule_explanation(v.rule.replace("ruff:", ""))
-                    error_lines.append(f"Line {v.line}: {v.message}")
-                    error_lines.append(f"  → {explanation}")
-
-                if len(ruff_violations) > max_errors:
-                    error_lines.append(f"... and {len(ruff_violations) - max_errors} more violations")
-
-                return HookResponse(
-                    continue_=True,
-                    decision=HookDecision.BLOCK,
-                    reason="Python code quality issues found:\n" + "\n".join(error_lines),
-                    suggestions=[
-                        "Fix these critical code quality issues before proceeding.",
-                        "Run 'ruff check --fix' locally to auto-fix some issues.",
-                    ],
-                )
-
-        return HookResponse(
-            continue_=True,
-            reason="Pre-commit checks passed",
+        analyzer = PythonASTAnalyzer(
+            bare_except=config.python_bare_except.enabled,
+            getattr_setattr=config.python_hasattr.enabled
+            or config.python_getattr.enabled
+            or config.python_setattr.enabled,
+            barrel_init=file_path.endswith("__init__.py") and config.python_barrel_init.enabled,
         )
 
-    def _handle_post_hook(self, request: HookRequest, session_id: SessionID) -> HookResponse:
-        """
-        Handle post-tool-use hook.
+        content = request.tool_input.content
+        if not content:
+            return []
 
-        Behavior varies by tool:
-        - Write: Full autofix all categories
-        - Edit/MultiEdit: Selective autofix (formatting only by default)
-        """
-        config = self.config_loader.config
-        hook_config = config.hooks.get("post", config.hooks["post"])
+        ast_violations = analyzer.analyze_code(content, file_path)
+        all_violations.extend(ast_violations)
 
-        logger.info(f"Post-hook for {request.tool_name} in session {session_id}")
+        # Ruff violations (critical only for pre-hook)
+        force_select = config.get_ruff_force_select()
+        ruff_linter = PythonRuffLinter(force_select=force_select)
+        ruff_violations = ruff_linter.check_code(content, file_path, critical_only=True)
+        all_violations.extend(ruff_violations)
 
-        # Build response message parts
-        message_parts = []
-        autofix_performed = []
+        return all_violations
 
-        # Apply selective autofix for Python files
+    def _try_autofix(self, request: PostToolUseRequest, config: Any) -> str | None:
+        """Try to apply autofix and return message if successful."""
+        hook_config = config.hooks.get("post")
+        if not hook_config:
+            self._log_decision(request.typed_session_id, "autofix_skip", {"reason": "no_post_hook_config"})
+            return None
         file_path = request.tool_input.file_path or ""
+
+        # Log autofix decision details
+        self._log_decision(
+            request.typed_session_id,
+            "autofix_check",
+            {
+                "auto_fix_enabled": hook_config.auto_fix,
+                "file_path": file_path,
+                "is_python": file_path.endswith(".py"),
+                "has_content": bool(request.tool_input.content),
+                "tool_name": request.tool_name,
+                "allowed_tools": ["Write", "Edit", "MultiEdit"],
+            },
+        )
+
         if (
-            hook_config.auto_fix
-            and file_path.endswith(".py")
-            and request.tool_input.content
-            and request.tool_name in ["Write", "Edit", "MultiEdit"]
+            not hook_config.auto_fix
+            or not file_path.endswith(".py")
+            or not request.tool_input.content
+            or request.tool_name not in ["Write", "Edit", "MultiEdit"]
         ):
-            # Determine autofix categories based on tool
-            if request.tool_name == "Write":
-                # Write gets all categories by default
-                categories = hook_config.autofix_categories or [AutofixCategory.ALL]
-            else:
-                # Edit/MultiEdit get formatting only by default
-                categories = hook_config.autofix_categories or [AutofixCategory.FORMATTING]
+            return None
 
-            # Initialize formatter
-            formatter = PythonFormatter(config.python_tools)
+        # Determine autofix categories based on tool
+        if request.tool_name == "Write":
+            categories = hook_config.autofix_categories or [AutofixCategory.ALL]
+        else:
+            categories = hook_config.autofix_categories or [AutofixCategory.FORMATTING]
 
-            # Format the code
-            formatted_code, changes = formatter.format_code(request.tool_input.content, file_path, categories)
+        # Format the code
+        formatter = PythonFormatter(config.python_tools)
+        formatted_code, changes = formatter.format_code(request.tool_input.content, file_path, categories)
 
-            # If changes were made, we need to apply them
-            if changes and formatted_code != request.tool_input.content:
-                # For Write tool, we can update the content directly
-                if request.tool_name == "Write":
-                    # Update the file with formatted content
-                    try:
-                        Path(file_path).write_text(formatted_code)
-                        autofix_performed = changes
-                        logger.info(f"Applied autofix to {file_path}: {changes}")
-                    except Exception as e:
-                        logger.error(f"Failed to apply autofix: {e}")
-                        message_parts.append(f"Autofix failed: {e}")
-                else:
-                    # For Edit/MultiEdit, we can only notify
-                    # (Claude Code doesn't support modifying Edit results)
-                    if changes:
-                        message_parts.append(f"Code formatting issues: {', '.join(changes)}")
+        if not changes or formatted_code == request.tool_input.content:
+            return None
 
-        # Add any warnings from pre-hook
-        if session_id in self._warnings:
-            warning = self._warnings.pop(session_id)
-            message_parts.append(f"Warning: {warning}")
+        # For Write tool, we can update the content directly
+        if request.tool_name == "Write":
+            try:
+                Path(file_path).write_text(formatted_code)
+                logger.info(f"Applied autofix to {file_path}: {changes}")
+                return f"Autofix applied: {', '.join(changes)}"
+            except Exception as e:
+                logger.error(f"Failed to apply autofix: {e}")
+                return f"Autofix failed: {e}"
+        else:
+            # For Edit/MultiEdit, we can only notify
+            return f"Code formatting issues: {', '.join(changes)}"
 
-        # Add autofix summary if performed
-        if autofix_performed:
-            message_parts.insert(0, f"Autofix applied: {', '.join(autofix_performed)}")
+    def _update_violation_tracking(self, request: PostToolUseRequest, session_id: SessionID) -> None:
+        """Update violation tracking after tool execution."""
+        file_path = request.tool_input.file_path
+        if not file_path or not Path(file_path).exists():
+            return
 
-        # Add permission info if enabled
-        if hook_config.inject_permissions:
-            permissions = self._build_permissions_info(session_id)
-            if permissions:
-                message_parts.append(permissions)
+        config = self.config_loader.config
+        file_content = Path(file_path).read_text()
 
-        # Check for any remaining violations in the file
-        if file_path.endswith(".py") and Path(file_path).exists():
-            # Re-check the file for violations
-            file_content = Path(file_path).read_text()
+        # Check AST violations
+        analyzer = PythonASTAnalyzer(
+            bare_except=config.python_bare_except.enabled,
+            getattr_setattr=config.python_hasattr.enabled
+            or config.python_getattr.enabled
+            or config.python_setattr.enabled,
+            barrel_init=file_path.endswith("__init__.py") and config.python_barrel_init.enabled,
+        )
+        ast_violations = analyzer.analyze_code(file_content, file_path)
 
-            # Check AST violations
-            analyzer = PythonASTAnalyzer(
-                bare_except=config.python_bare_except.enabled,
-                getattr_setattr=(
-                    config.python_hasattr.enabled or config.python_getattr.enabled or config.python_setattr.enabled
-                ),
-                barrel_init=file_path.endswith("__init__.py") and config.python_barrel_init.enabled,
-            )
-            ast_violations = analyzer.analyze_code(file_content, file_path)
+        # Check ruff violations
+        force_select = config.get_ruff_force_select()
+        ruff_linter = PythonRuffLinter(force_select=force_select)
+        ruff_violations = ruff_linter.check_code(file_content, file_path, critical_only=False)
 
-            # Check ruff violations
-            ruff_linter = PythonRuffLinter(force_select=config.get_ruff_force_select())
-            ruff_violations = ruff_linter.check_code(file_content, file_path, critical_only=False)
+        # Combine all violations
+        all_violations = ast_violations + ruff_violations
 
-            if ast_violations or ruff_violations:
-                # Track remaining violations
-                if ast_violations:
+        if all_violations:
+            # Only use diff intelligence for Edit/MultiEdit tools
+            if request.tool_name in ("Edit", "MultiEdit"):
+                # Use diff intelligence to categorize violations
+                tool_response = getattr(request, "tool_response", None) or getattr(request, "tool_result", None)
+                categorized_groups = self.diff_intelligence.analyze(
+                    tool_name=request.tool_name,
+                    tool_input=request.tool_input.model_dump(),
+                    tool_response=tool_response,
+                    violations=all_violations,
+                )
+
+                # Only track in-diff and near-diff violations as important
+                important_violations = categorized_groups.get("in-diff", []) + categorized_groups.get("near-diff", [])
+
+                if important_violations:
+                    # Convert back to plain violations for tracker
+                    violations_to_track = [cv.violation for cv in important_violations]
                     self.violation_tracker.add_violations(
                         session_id=session_id,
-                        violations=ast_violations,
+                        violations=violations_to_track,
                         file_path=file_path,
-                        severity="error",
+                        severity="error" if any(v.rule.startswith("AST") for v in violations_to_track) else "warning",
+                    )
+                else:
+                    # Only out-of-diff violations remain - mark file as effectively fixed
+                    self.violation_tracker.mark_file_fixed(session_id, file_path)
+            else:
+                # For other tools (Write, etc), track all violations normally
+                if ast_violations:
+                    self.violation_tracker.add_violations(
+                        session_id=session_id, violations=ast_violations, file_path=file_path, severity="error"
                     )
                 if ruff_violations:
                     self.violation_tracker.add_violations(
-                        session_id=session_id,
-                        violations=ruff_violations,
-                        file_path=file_path,
-                        severity="warning",
+                        session_id=session_id, violations=ruff_violations, file_path=file_path, severity="warning"
                     )
-            else:
-                # File is clean now - mark as fixed
-                self.violation_tracker.mark_file_fixed(session_id, file_path)
+        else:
+            # File is completely clean - mark as fixed
+            self.violation_tracker.mark_file_fixed(session_id, file_path)
 
-        # If we have anything to communicate, use the FYI pattern
-        if message_parts:
-            return HookResponse(
-                continue_=True,
-                decision=HookDecision.BLOCK,  # This is how we show info to Claude
-                reason="FYI: " + " | ".join(message_parts),
-            )
-
-        # Otherwise, simple success
-        return HookResponse(
-            continue_=True,
-            reason=f"{request.tool_name} completed successfully",
-        )
-
-    def _handle_stop_hook(self, request: HookRequest, session_id: SessionID) -> HookResponse:
-        """
-        Handle stop hook (session ending).
-
-        Features:
-        - Quality gate: Block if unfixed errors
-        - Cleanup questionnaire
-        """
-        config = self.config_loader.config
-        hook_config = config.hooks.get("stop", config.hooks["stop"])
-
-        logger.info(f"Stop hook for session {session_id}")
-
-        # Check quality gate if enabled
-        if hook_config.quality_gate:
-            # Get unfixed violations
-            summary = self.violation_tracker.get_violation_summary(session_id)
-            unfixed_count = summary["total"]
-
-            if unfixed_count > 0:
-                # Build detailed message about violations
-                message_parts = [
-                    f"Found {unfixed_count} unfixed code quality issues:",
-                    "",
-                ]
-
-                # Group by severity
-                by_severity = summary["by_severity"]
-                if by_severity.get("error", 0) > 0:
-                    message_parts.append(f"- {by_severity['error']} errors (must fix)")
-                if by_severity.get("warning", 0) > 0:
-                    message_parts.append(f"- {by_severity['warning']} warnings")
-                if by_severity.get("info", 0) > 0:
-                    message_parts.append(f"- {by_severity['info']} info")
-
-                # List affected files
-                message_parts.append("")
-                message_parts.append("Affected files:")
-                for file_path, count in summary["by_file"].items():
-                    # Make path relative if possible
-                    try:
-                        rel_path = Path(file_path).relative_to(Path.cwd())
-                        display_path = str(rel_path)
-                    except ValueError:
-                        display_path = file_path
-                    message_parts.append(f"- {display_path}: {count} issues")
-
-                # Add suggestions
-                suggestions = [
-                    "Please fix these issues before ending the session:",
-                    "1. Review the files listed above",
-                    "2. Fix the errors (required) and warnings (recommended)",
-                    "3. You can run 'cl2 check' locally to verify fixes",
-                ]
-
-                # If there are only warnings, allow override
-                if by_severity.get("error", 0) == 0:
-                    suggestions.append("")
-                    suggestions.append("Since there are only warnings, you can proceed if needed.")
-                    suggestions.append("Consider fixing them for better code quality.")
-
-                    # Clear violations since we're allowing proceed
-                    self.violation_tracker.clear_session(session_id)
-
-                    return HookResponse(
-                        continue_=True,
-                        decision=HookDecision.BLOCK,  # Show message but allow
-                        reason="FYI: " + "\n".join(message_parts),
-                        suggestions=suggestions,
-                    )
-                else:
-                    # Errors present - must block
-                    return HookResponse(
-                        continue_=True,
-                        decision=HookDecision.BLOCK,
-                        reason="\n".join(message_parts),
-                        suggestions=suggestions,
-                    )
-            else:
-                # No violations - clear session data
-                self.violation_tracker.clear_session(session_id)
-
-        # TODO: Phase 5 - Add cleanup questionnaire
-
-        # Mark session as ended (no-op but kept for compatibility)
-        self.session_manager.end_session(session_id)
-
-        return HookResponse(continue_=True)
-
-    def _handle_subagent_stop_hook(self, request: HookRequest, session_id: SessionID) -> HookResponse:
-        """
-        Handle SubagentStop hook.
-
-        This fires when a subagent (Task tool) completes.
-        """
-        logger.info(f"SubagentStop hook for session {session_id}")
-
-        # TODO: Implement subagent quality checks
-        # For now, just log and continue
-        return HookResponse(
-            continue_=True,
-            reason="Subagent completed",
-        )
-
-    def _handle_notification_hook(self, request: HookRequest, session_id: SessionID) -> HookResponse:
-        """
-        Handle Notification hook.
-
-        This fires for system notifications.
-        """
-        logger.info(f"Notification hook for session {session_id}")
-
-        # TODO: Implement notification tracking
-        # For now, just log and continue
-        return HookResponse(
-            continue_=True,
-            reason="Notification received",
-        )
+    def _has_important_info(self, messages: list[str]) -> bool:
+        """Check if messages contain important info that Claude should see."""
+        # Simple heuristic - if we applied autofix or have warnings, it's important
+        for msg in messages:
+            if "autofix" in msg.lower() or "warning:" in msg.lower():
+                return True
+        return False
 
     def _build_permissions_info(self, session_id: SessionID) -> str | None:
         """Build a string describing current permissions."""
@@ -503,3 +685,27 @@ class HookHandler:
                     lines.append(f"- {predicate}")
 
         return "\n".join(lines) if len(lines) > 1 else None
+
+
+# Global handler instance
+_handler = HookHandler()
+
+
+def handle(hook_type: str, request: BaseHookRequest) -> ClaudeBaseResponse:
+    """
+    Handle a hook request and return a Claude response.
+
+    This is the main entry point for hook handling.
+
+    Args:
+        hook_type: Type of hook (PreToolUse, PostToolUse, Stop, etc.)
+        request: The hook request object
+
+    Returns:
+        The Claude response object
+
+    Raises:
+        HookBugError: If there's a bug in the hook handler
+    """
+    # Let exceptions propagate - the CLI will handle logging and notifications
+    return _handler.handle(hook_type, request)
