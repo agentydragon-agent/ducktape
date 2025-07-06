@@ -110,11 +110,18 @@ class ReleaseSpec:
             result["latest_version"] = latest_version
 
             if self.acknowledged_version != latest_version:
-                return _fail(
-                    result,
-                    f"Please acknowledge new version {latest_version}. "
-                    f"Last acknowledged: {self.acknowledged_version}. ",
-                )
+                # Create a minimal failure result with just essential info
+                return {
+                    "failed": True,
+                    "msg": (
+                        f"Please acknowledge new version {latest_version}. "
+                        f"Last acknowledged: {self.acknowledged_version}. "
+                        f"Check https://github.com/{self.repo}/releases"
+                    ),
+                    "latest_version": latest_version,
+                    "acknowledged_version": self.acknowledged_version,
+                    "repo": self.repo,
+                }
 
         if not (assets := release_data.get("assets")):
             return _fail(result, "No assets found in release data.")

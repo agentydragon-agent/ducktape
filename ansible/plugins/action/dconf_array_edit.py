@@ -78,7 +78,7 @@ class ActionModule(ActionBase):
         def _normalise(v) -> list[str]:
             if v is None:
                 return []
-            if isinstance(v, (list, tuple, set)):
+            if isinstance(v, list | tuple | set):
                 return list(v)
             return [v]
 

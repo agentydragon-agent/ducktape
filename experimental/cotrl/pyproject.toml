@@ -1,4 +1,4 @@
-[tool.ruff]
+[tool.ruff.lint]
 # Ignore specific rules for experimental code
 ignore = ["PLR0913"]  # Too many arguments
 

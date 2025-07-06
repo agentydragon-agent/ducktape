@@ -3,6 +3,7 @@
 import pytest
 
 from ducktape_llm_common.claude_linter_v2.hooks.handler import HookHandler
+from ducktape_llm_common.claude_linter_v2.hooks.requests import StopRequest
 from ducktape_llm_common.claude_linter_v2.types import parse_session_id
 
 
@@ -50,26 +51,23 @@ def test_stop_hook_blocks_with_unfixed_errors(handler, session_id, tmp_path):
     )
 
     # Create stop hook request
-    request_data = {
-        "hook_event_name": "Stop",
-        "session_id": str(session_id),
-        "tool_name": "Stop",
-        "tool_input": {
-            "file_path": None,
-        },
-    }
+    request = StopRequest(
+        hook_event_name="Stop",
+        session_id=str(session_id),
+    )
 
     # Handle the hook
-    result = handler.handle("Stop", request_data)
+    result = handler.handle("Stop", request)
 
     # Should block due to errors
-    assert result["continue"] is True
-    assert result.get("decision") == "block"
-    assert "Found 3 unfixed code quality issues" in result["reason"]
-    assert "2 errors (must fix)" in result["reason"]
-    assert "1 warnings" in result["reason"]
-    assert "/test/file.py: 2 issues" in result["reason"]
-    assert "/test/other.py: 1 issues" in result["reason"]
+    response_dict = result.model_dump()
+    assert response_dict.get("continue") is False  # StopPrevent sets continue=False
+    assert response_dict.get("reason") is not None
+    reason = response_dict["reason"]
+    assert "2 errors that must be fixed" in reason
+    assert "/test/file.py" in reason
+    assert "/test/other.py" in reason
+    assert "Line 10:" in reason or "Line 20:" in reason  # Should show line numbers
 
 
 def test_stop_hook_allows_with_only_warnings(handler, session_id, tmp_path):
@@ -93,17 +91,13 @@ def test_stop_hook_allows_with_only_warnings(handler, session_id, tmp_path):
     )
 
     # Create stop hook request
-    request_data = {
-        "hook_event_name": "Stop",
-        "session_id": str(session_id),
-        "tool_name": "Stop",
-        "tool_input": {
-            "file_path": None,
-        },
-    }
+    request = StopRequest(
+        hook_event_name="Stop",
+        session_id=str(session_id),
+    )
 
     # Handle the hook
-    result = handler.handle("Stop", request_data)
+    result = handler.handle("Stop", request)
 
     # Should show FYI but allow
     assert result["continue"] is True
@@ -117,17 +111,13 @@ def test_stop_hook_allows_with_only_warnings(handler, session_id, tmp_path):
 def test_stop_hook_passes_with_no_violations(handler, session_id, tmp_path):
     """Test that stop hook passes when there are no violations."""
     # Create stop hook request
-    request_data = {
-        "hook_event_name": "Stop",
-        "session_id": str(session_id),
-        "tool_name": "Stop",
-        "tool_input": {
-            "file_path": None,
-        },
-    }
+    request = StopRequest(
+        hook_event_name="Stop",
+        session_id=str(session_id),
+    )
 
     # Handle the hook
-    result = handler.handle("Stop", request_data)
+    result = handler.handle("Stop", request)
 
     # Should pass
     assert result["continue"] is True
@@ -149,17 +139,13 @@ def test_stop_hook_passes_when_quality_gate_disabled(handler, session_id, tmp_pa
     )
 
     # Create stop hook request
-    request_data = {
-        "hook_event_name": "Stop",
-        "session_id": str(session_id),
-        "tool_name": "Stop",
-        "tool_input": {
-            "file_path": None,
-        },
-    }
+    request = StopRequest(
+        hook_event_name="Stop",
+        session_id=str(session_id),
+    )
 
     # Handle the hook
-    result = handler.handle("Stop", request_data)
+    result = handler.handle("Stop", request)
 
     # Should pass despite errors
     assert result["continue"] is True

@@ -130,11 +130,21 @@ class ActionModule(ActionBase):
                     result,
                     "Missing required parameter: release_data xor release_spec",
                 )
-            result["release_data"] = (
-                release_data := ReleaseSpec(**args["release_spec"]).resolve()
-            )
+            release_data = ReleaseSpec(**args["release_spec"]).resolve()
             if release_data.get("failed"):
+                # For version acknowledgment failures, return a clean result
+                if "acknowledged_version" in release_data:
+                    return {
+                        "failed": True,
+                        "msg": release_data["msg"],
+                        "latest_version": release_data.get("latest_version"),
+                        "acknowledged_version": release_data.get(
+                            "acknowledged_version",
+                        ),
+                        "repo": release_data.get("repo"),
+                    }
                 return _fail(result, release_data["msg"])
+            result["release_data"] = release_data
         # todo dedupe
         elif not (release_data := args.get("release_data")):
             return _fail(

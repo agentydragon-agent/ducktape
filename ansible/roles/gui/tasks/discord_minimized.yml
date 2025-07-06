@@ -24,12 +24,22 @@
         patterns: "*.desktop"
       register: autostart_files
 
-    - name: Fail if any other autostart launches Discord
-      fail:
-        msg: "Conflicting Discord autostart found: {{ item.path }}"
+    - name: Read autostart file contents
+      slurp:
+        src: "{{ item.path }}"
+      register: autostart_contents
       loop: "{{ autostart_files.files }}"
       loop_control:
         label: "{{ item.path }}"
+      when: item.path != discord_autostart_result.desktop_file_path
+
+    - name: Fail if any other autostart launches Discord
+      fail:
+        msg: "Conflicting Discord autostart found: {{ item.item.path }}"
+      loop: "{{ autostart_contents.results }}"
+      loop_control:
+        label: "{{ item.item.path | default('skipped') }}"
       when:
-        - item.path != discord_autostart_result.desktop_file_path
-        - lookup('file', item.path) is search('^Exec=.*\bdiscord\b', multiline=True)
+        - item.skipped is not defined or not item.skipped
+        - item.content is defined
+        - (item.content | b64decode) is search('^Exec=.*\bdiscord\b', multiline=True)

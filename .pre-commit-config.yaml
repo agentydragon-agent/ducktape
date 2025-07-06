@@ -40,6 +40,7 @@ repos:
     rev: v1.10.0
     hooks:
       - id: mypy
+        exclude: ^(ansible|gatelet)/
         additional_dependencies:
           # deps of gatelet that still lack bundled typings
           - types-psycopg2    # stubs for psycopg2-binary

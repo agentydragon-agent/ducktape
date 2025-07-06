@@ -12,9 +12,14 @@ from pydantic import BaseModel, Field, model_validator
 from .models import (
     AccessControlRule,
     AutofixCategory,
-    HookConfig,
     LLMAnalysisConfig,
+    NotificationHookConfig,
+    PatternBasedRule,
+    PostToolHookConfig,
     PredicateRule,
+    PreToolHookConfig,
+    StopHookConfig,
+    SubagentStopHookConfig,
     TaskProfile,
 )
 
@@ -152,27 +157,31 @@ class ModularClaudeLinterConfig(BaseModel):
         description="blanket-type-ignore",
     )
 
-    # Hook behaviors
-    hooks: dict[str, HookConfig] = Field(
+    # Hook behaviors - each hook type has its own config class
+    hooks: dict[
+        str, PreToolHookConfig | PostToolHookConfig | StopHookConfig | NotificationHookConfig | SubagentStopHookConfig
+    ] = Field(
         default_factory=lambda: {
-            "pre": HookConfig(auto_fix=False),
-            "post": HookConfig(auto_fix=True, autofix_categories=[AutofixCategory.FORMATTING]),
-            "stop": HookConfig(auto_fix=False, inject_permissions=False, quality_gate=True),
-            "notification": HookConfig(auto_fix=False, inject_permissions=False),
-            "subagent_stop": HookConfig(auto_fix=False, inject_permissions=False),
+            "pre": PreToolHookConfig(),
+            "post": PostToolHookConfig(auto_fix=True, autofix_categories=[AutofixCategory.FORMATTING]),
+            "stop": StopHookConfig(quality_gate=True),
+            "notification": NotificationHookConfig(send_to_dbus=True),
+            "subagent_stop": SubagentStopHookConfig(),
         },
         description="Hook-specific configurations",
     )
 
-    # Test file handling
-    test_patterns: list[str] = Field(
-        default_factory=lambda: ["**/test_*.py", "**/*_test.py", "**/tests/**"], description="Global test file patterns"
-    )
-
-    test_relaxed_rules: list[str] = Field(
-        default_factory=lambda: ["python.bare_except", "ruff.E722"],
-        description="Rules to relax for test files",
-        alias="test.relaxed_rules",
+    # Pattern-based file rules (replaces test-specific handling)
+    pattern_rules: list[PatternBasedRule] = Field(
+        default_factory=lambda: [
+            PatternBasedRule(
+                name="test_files",
+                patterns=["**/test_*.py", "**/*_test.py", "**/tests/**"],
+                relaxed_checks=["python.bare_except", "ruff.E722"],
+                custom_message="Test files have relaxed rules for error handling",
+            )
+        ],
+        description="Pattern-based rules for file handling",
     )
 
     # LLM analysis
@@ -186,11 +195,6 @@ class ModularClaudeLinterConfig(BaseModel):
     # Logging
     log_level: str = Field("INFO", description="Logging level")
     log_file: Path | None = Field(None, description="Log file path")
-
-    # Notifications
-    send_notifications_to_dbus: bool = Field(
-        False, description="Send Notification hook messages to D-Bus notifications"
-    )
 
     model_config = {
         "populate_by_name": True,  # Allow field aliases
@@ -319,6 +323,35 @@ class ModularClaudeLinterConfig(BaseModel):
                 for test_key, test_value in value.items():
                     field_name = f"test_{test_key}"
                     config_dict[field_name] = test_value
+            elif key == "hooks" and isinstance(value, dict):
+                # Handle hooks configuration - create proper hook config objects
+                hooks_dict = {}
+                for hook_name, hook_config in value.items():
+                    if hook_name == "pre":
+                        hooks_dict[hook_name] = (
+                            PreToolHookConfig(**hook_config) if isinstance(hook_config, dict) else PreToolHookConfig()
+                        )
+                    elif hook_name == "post":
+                        hooks_dict[hook_name] = (
+                            PostToolHookConfig(**hook_config) if isinstance(hook_config, dict) else PostToolHookConfig()
+                        )
+                    elif hook_name == "stop":
+                        hooks_dict[hook_name] = (
+                            StopHookConfig(**hook_config) if isinstance(hook_config, dict) else StopHookConfig()
+                        )
+                    elif hook_name == "notification":
+                        hooks_dict[hook_name] = (
+                            NotificationHookConfig(**hook_config)
+                            if isinstance(hook_config, dict)
+                            else NotificationHookConfig()
+                        )
+                    elif hook_name == "subagent_stop":
+                        hooks_dict[hook_name] = (
+                            SubagentStopHookConfig(**hook_config)
+                            if isinstance(hook_config, dict)
+                            else SubagentStopHookConfig()
+                        )
+                config_dict["hooks"] = hooks_dict
             else:
                 # Regular top-level fields
                 config_dict[key] = value

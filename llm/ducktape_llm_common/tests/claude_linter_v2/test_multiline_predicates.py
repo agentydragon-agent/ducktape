@@ -1,6 +1,6 @@
 """Test multiline predicate evaluation."""
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pytest
 
@@ -176,7 +176,7 @@ else:
         predicate = """
 import json
 import re
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 def check_recent_activity(ctx):
     # Check if activity is within last hour
@@ -191,7 +191,7 @@ check_recent_activity(ctx)
         assert evaluator.evaluate(predicate, context) is True
 
         # Old timestamp
-        context.timestamp = datetime.now() - datetime.timedelta(hours=2)
+        context.timestamp = datetime.now() - timedelta(hours=2)
         assert evaluator.evaluate(predicate, context) is False
 
     def test_error_handling(self, evaluator, context):

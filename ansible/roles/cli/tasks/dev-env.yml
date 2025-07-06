@@ -46,3 +46,8 @@
 
 # Include user-level development tools
 - import_tasks: dev-env-user.yml
+
+# Import claude-mcp after Claude Code is installed
+- import_role:
+    name: claude-mcp
+  tags: [claude, mcp]

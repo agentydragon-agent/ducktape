@@ -14,6 +14,8 @@ from ..diff.intelligence import DiffIntelligence
 from ..linters.python_ast import PythonASTAnalyzer
 from ..linters.python_formatter import PythonFormatter
 from ..linters.python_ruff import PythonRuffLinter
+from ..llm_analyzer import LLMAnalyzer
+from ..pattern_matcher import PatternMatcher
 from ..session import SessionManager
 from ..session.violations import ViolationTracker
 from ..types import SessionID
@@ -59,10 +61,16 @@ class HookHandler:
     def __init__(self) -> None:
         self.session_manager = SessionManager()
         self.config_loader = ConfigLoader()
-        self.rule_engine: RuleEngine | None = None
         self._warnings: dict[SessionID, str] = {}  # Store warnings per session
         self.violation_tracker = ViolationTracker(self.session_manager)
         self.diff_intelligence = DiffIntelligence(context_distance=3)
+
+        # Initialize these once instead of lazy init
+        config = self.config_loader.config
+        self.rule_engine = RuleEngine(config, self.session_manager)
+        self.pattern_matcher = PatternMatcher(config.pattern_rules)
+        self.llm_analyzer = LLMAnalyzer(config.llm_analysis)
+
         self._setup_logging()
 
     def _setup_logging(self) -> None:
@@ -129,20 +137,19 @@ class HookHandler:
             "session_id": session_id,
             "request": {
                 "type": type(request).__name__,
-                "data": request.model_dump() if hasattr(request, "model_dump") else str(request),
+                "data": request.model_dump(),  # All requests are Pydantic models
             },
             "outcome": {"type": type(outcome).__name__, "data": str(outcome)},
-            "response": response.model_dump() if hasattr(response, "model_dump") else str(response),
+            "response": response.model_dump(),  # All responses are Pydantic models
             "decision_details": {},
         }
 
         # Add specific details based on hook type
-        if hook_type == "PreToolUse" and hasattr(request, "tool_name"):
+        if isinstance(request, PreToolUseRequest | PostToolUseRequest):
             log_entry["decision_details"]["tool"] = request.tool_name
-            log_entry["decision_details"]["file"] = getattr(request.tool_input, "file_path", None)
-        elif hook_type == "PostToolUse" and hasattr(request, "tool_name"):
-            log_entry["decision_details"]["tool"] = request.tool_name
-            log_entry["decision_details"]["file"] = getattr(request.tool_input, "file_path", None)
+            # Just dump the entire tool_input as a dict
+            if request.tool_input:
+                log_entry["decision_details"]["tool_input"] = request.tool_input.model_dump()
 
         # Write to log file
         with open(log_file, "a") as f:
@@ -267,11 +274,42 @@ class HookHandler:
             "python_violations",
             {
                 "count": len(violations),
-                "violations": [v.model_dump() if hasattr(v, "model_dump") else str(v) for v in violations[:3]],
+                "violations": [v.model_dump() for v in violations[:3]],  # All violations are Pydantic models
             },
         )
 
-        if not violations:
+        # Check for LLM analysis if enabled and applicable
+        llm_violations = []
+        if (
+            config.llm_analysis.enabled
+            and request.tool_name in ("Write", "Edit", "MultiEdit")
+            and request.tool_input.content
+        ):
+            llm_ok, llm_message, llm_violations_found = self.llm_analyzer.analyze_code(
+                file_path=request.tool_input.file_path or "",
+                content=request.tool_input.content,
+                tool_name=request.tool_name,
+                tool_input=request.tool_input.model_dump(),
+            )
+
+            if not llm_ok and llm_message:
+                # LLM found critical issues - add them to violations
+                llm_violations.extend(llm_violations_found)
+
+            self._log_decision(
+                session_id,
+                "llm_analysis",
+                {
+                    "ok": llm_ok,
+                    "message": llm_message,
+                    "violations_count": len(llm_violations_found),
+                },
+            )
+
+        # Combine all violations
+        all_violations = violations + llm_violations
+
+        if not all_violations:
             return PreToolApprove()
 
         # Format violations - only use diff intelligence for Edit/MultiEdit
@@ -282,13 +320,13 @@ class HookHandler:
                 tool_name=request.tool_name,
                 tool_input=request.tool_input.model_dump(),
                 tool_response=None,  # PreToolUse has no response
-                violations=violations,
+                violations=all_violations,
             )
             formatted_violations = self.diff_intelligence.format_violations_by_category(categorized_groups)
         else:
             # Standard formatting for other tools
             violation_messages = []
-            for v in violations[: config.max_errors_to_show]:
+            for v in all_violations[: config.max_errors_to_show]:
                 violation_messages.append(f"Line {v.line}: {v.message}")
             formatted_violations = "\n".join(violation_messages)
 
@@ -301,6 +339,7 @@ class HookHandler:
                     "- Bare except: Use specific exception types",
                     "- hasattr/getattr: Use proper type checking",
                     "",
+                    f"Check violations: cl2 check {request.tool_input.file_path}",
                     f"Override: cl2 session allow '{request.tool_name}(\"{request.tool_input.file_path}\")' "
                     f"--session {session_id}",
                 ]
@@ -309,7 +348,10 @@ class HookHandler:
 
         # Track violations
         self.violation_tracker.add_violations(
-            session_id=session_id, violations=violations, file_path=request.tool_input.file_path or "", severity="error"
+            session_id=session_id,
+            violations=all_violations,
+            file_path=request.tool_input.file_path or "",
+            severity="error",
         )
 
         return PreToolDeny(llm_message=formatted)
@@ -350,8 +392,10 @@ class HookHandler:
             messages.append(f"Warning: {warning}")
 
         # Add permissions info if configured
+        from ..config.models import PostToolHookConfig
+
         post_hook_config = config.hooks.get("post")
-        if post_hook_config and post_hook_config.inject_permissions:
+        if isinstance(post_hook_config, PostToolHookConfig) and post_hook_config.inject_permissions:
             perms = self._build_permissions_info(session_id)
             if perms:
                 messages.append(perms)
@@ -396,8 +440,10 @@ class HookHandler:
         logger.info(f"Stop hook for session {session_id}")
 
         # Early bailout if quality gate disabled
+        from ..config.models import StopHookConfig
+
         stop_hook_config = config.hooks.get("stop")
-        if stop_hook_config and not stop_hook_config.quality_gate:
+        if isinstance(stop_hook_config, StopHookConfig) and not stop_hook_config.quality_gate:
             return StopAllow()
 
         # Get violation summary
@@ -411,11 +457,47 @@ class HookHandler:
         by_severity = summary["by_severity"]
         if by_severity.get("error", 0) > 0:
             # Errors present - must prevent stop
-            error_msg = f"Code has {by_severity.get('error', 0)} errors that must be fixed."
-            if summary["by_file"]:
-                files = list(summary["by_file"].keys())[:3]
-                error_msg += f" Files: {', '.join(files)}"
-            return StopPrevent(llm_message=error_msg)
+            # Get the actual violations to show details
+            violations = self.violation_tracker.get_unfixed_violations(session_id)
+
+            # Group violations by file for better formatting
+            by_file: dict[str, list] = {}
+            for v in violations:
+                if v.file_path not in by_file:
+                    by_file[v.file_path] = []
+                by_file[v.file_path].append(v)
+
+            # Build detailed error message
+            error_parts = [f"Code has {by_severity.get('error', 0)} errors that must be fixed:"]
+
+            # Get configured limits
+            max_files = stop_hook_config.max_files_to_show if isinstance(stop_hook_config, StopHookConfig) else 5
+            max_per_file = (
+                stop_hook_config.max_violations_per_file if isinstance(stop_hook_config, StopHookConfig) else 3
+            )
+
+            # Show up to max_files files with their violations
+            for file_path, file_violations in list(by_file.items())[:max_files]:
+                error_parts.append(f"\n{file_path}:")
+                # Show up to max_per_file violations per file
+                for v in file_violations[:max_per_file]:
+                    # v.rule is an optional field in Violation model
+                    if v.rule:
+                        error_parts.append(f"  Line {v.line}: {v.message} [{v.rule}]")
+                    else:
+                        error_parts.append(f"  Line {v.line}: {v.message}")
+                if len(file_violations) > max_per_file:
+                    error_parts.append(f"  ... and {len(file_violations) - max_per_file} more")
+
+            if len(by_file) > max_files:
+                error_parts.append(f"\n... and {len(by_file) - max_files} more files")
+
+            # Add single command to check all files with violations
+            error_parts.append("\n\nCommand to check all violations:")
+            all_files = list(by_file.keys())
+            error_parts.append(f"  cl2 check {' '.join(all_files)}")
+
+            return StopPrevent(llm_message="".join(error_parts))
 
         # Only warnings - allow but notify Claude
         self.violation_tracker.clear_session(session_id)
@@ -431,16 +513,29 @@ class HookHandler:
         """Handle Notification."""
         logger.info(f"Notification hook for session {session_id}")
 
-        # Send to D-Bus if configured
+        # Get notification hook config
         config = self.config_loader.config
-        if config.send_notifications_to_dbus and (request.message or request.title):
+        notification_config = config.hooks.get("notification")
+
+        # Import proper type for type checking
+        from ..config.models import NotificationHookConfig
+
+        # Check if we should send to D-Bus using proper type checking
+        if (
+            isinstance(notification_config, NotificationHookConfig)
+            and notification_config.send_to_dbus
+            and (request.message or request.title)
+        ):
             self._send_dbus_notification(
-                title=request.title or "Claude Code", message=request.message or "", session_id=session_id
+                title=request.title or "Claude Code",
+                message=request.message or "",
+                session_id=session_id,
+                urgency=notification_config.urgency,
             )
 
         return NotificationAcknowledge()
 
-    def _send_dbus_notification(self, title: str, message: str, session_id: SessionID) -> None:
+    def _send_dbus_notification(self, title: str, message: str, session_id: SessionID, urgency: str = "normal") -> None:
         """Send a notification via D-Bus, replacing any existing notification for this session."""
         # Import here to avoid circular import
         from ..cli import send_desktop_notification
@@ -450,7 +545,7 @@ class HookHandler:
             replaces_id = self.session_manager.get_notification_id(session_id) or 0
 
             # Send notification, replacing the previous one if it exists
-            notification_id = send_desktop_notification(title, message, urgency="normal", replaces_id=replaces_id)
+            notification_id = send_desktop_notification(title, message, urgency=urgency, replaces_id=replaces_id)
 
             # Store the notification ID in session data
             self.session_manager.set_notification_id(session_id, notification_id)
@@ -489,11 +584,11 @@ class HookHandler:
             timestamp=datetime.now(),
         )
 
-        # Lazy initialize rule engine
-        if self.rule_engine is None:
-            self.rule_engine = RuleEngine(self.config_loader.config, self.session_manager)
-
         return self.rule_engine.evaluate_access(context, session_id)
+
+    def _get_pattern_matcher(self) -> PatternMatcher:
+        """Get pattern matcher."""
+        return self.pattern_matcher
 
     def _is_python_file(self, request: PreToolUseRequest | PostToolUseRequest) -> bool:
         """Check if request is for a Python file."""
@@ -509,8 +604,17 @@ class HookHandler:
         if not file_path:
             return []
 
+        # Get pattern matcher to check for relaxed rules
+        pattern_matcher = self._get_pattern_matcher()
+        file_context = pattern_matcher.get_file_context(file_path)
+
+        # Check if bare except should be enforced for this file
+        bare_except_enabled = config.python_bare_except.enabled
+        if "python.bare_except" in file_context["relaxed_checks"]:
+            bare_except_enabled = False
+
         analyzer = PythonASTAnalyzer(
-            bare_except=config.python_bare_except.enabled,
+            bare_except=bare_except_enabled,
             getattr_setattr=config.python_hasattr.enabled
             or config.python_getattr.enabled
             or config.python_setattr.enabled,
@@ -522,22 +626,50 @@ class HookHandler:
             return []
 
         ast_violations = analyzer.analyze_code(content, file_path)
-        all_violations.extend(ast_violations)
+
+        # Filter out violations that are relaxed for this file
+        filtered_ast_violations = []
+        for v in ast_violations:
+            check_name = f"AST:{v.rule}" if not v.rule.startswith("AST:") else v.rule
+            should_relax, _ = pattern_matcher.should_relax_check(file_path, check_name)
+            if not should_relax:
+                filtered_ast_violations.append(v)
+
+        all_violations.extend(filtered_ast_violations)
 
         # Ruff violations (critical only for pre-hook)
         force_select = config.get_ruff_force_select()
         ruff_linter = PythonRuffLinter(force_select=force_select)
         ruff_violations = ruff_linter.check_code(content, file_path, critical_only=True)
-        all_violations.extend(ruff_violations)
+
+        # Filter ruff violations based on pattern rules
+        filtered_ruff_violations = []
+        for v in ruff_violations:
+            # Check both with and without ruff. prefix
+            should_relax = False
+            for check_name in [v.rule, f"ruff.{v.rule}"]:
+                relax, _ = pattern_matcher.should_relax_check(file_path, check_name)
+                if relax:
+                    should_relax = True
+                    break
+            if not should_relax:
+                filtered_ruff_violations.append(v)
+
+        all_violations.extend(filtered_ruff_violations)
 
         return all_violations
 
     def _try_autofix(self, request: PostToolUseRequest, config: Any) -> str | None:
         """Try to apply autofix and return message if successful."""
+        from ..config.models import PostToolHookConfig
+
         hook_config = config.hooks.get("post")
-        if not hook_config:
-            self._log_decision(request.typed_session_id, "autofix_skip", {"reason": "no_post_hook_config"})
+
+        # Type check instead of hasattr - only PostToolHookConfig has auto_fix
+        if not isinstance(hook_config, PostToolHookConfig):
+            self._log_decision(request.typed_session_id, "autofix_skip", {"reason": "not_post_tool_hook_config"})
             return None
+
         file_path = request.tool_input.file_path or ""
 
         # Log autofix decision details

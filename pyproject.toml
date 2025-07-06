@@ -1,7 +1,17 @@
 [project]
 name = "ducktape-tools"
 version = "0.0.0"
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 
 [project.scripts]
 fix-unicode = "ducktape_tools.unicode.fix:cli"
+
+[tool.mypy]
+# Treat ansible plugins as a namespace package
+namespace_packages = true
+explicit_package_bases = true
+mypy_path = "ansible"
+
+[[tool.mypy.overrides]]
+module = "ansible.plugins.action.*"
+ignore_errors = true

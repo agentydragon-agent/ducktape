@@ -50,30 +50,63 @@ action = "deny"
 reason = "Destructive commands are not allowed"
 
 # ===== Python-specific Configuration =====
-[python]
 
-# Ruff integration
-[python.tools]
-ruff_enabled = true
-black_enabled = true
-isort_enabled = true
+# Python tools to use (modular format)
+python.tools = ["ruff", "mypy"]
 
-# Force these ruff rules to always be checked
-python.ruff_force_select = ["F", "E9", "W"]
+# Python-specific checks (modular format)
+[python.bare_except]
+enabled = true
+message = "Bare except clauses hide errors"
 
-# Hard blocks - violations that always prevent tool execution
-[python.hard_blocks]
-bare_except = true      # Block bare except: clauses
-getattr_setattr = true  # Block hasattr/getattr/setattr usage
-barrel_init = true      # Block barrel __init__.py patterns
+[python.hasattr]
+enabled = true
+message = "hasattr() usage is discouraged"
+
+[python.getattr]
+enabled = true
+message = "getattr() usage is discouraged"
+
+[python.setattr]
+enabled = true
+message = "setattr() usage is discouraged"
+
+[python.barrel_init]
+enabled = true
+message = "Barrel __init__.py files (with imports) are discouraged"
+
+# ===== Ruff-specific Rules (modular format) =====
+[ruff.E722]
+enabled = true
+autofix = false
+description = "bare-except"
+
+[ruff.BLE001]
+enabled = true
+autofix = false
+description = "blind-except"
+
+[ruff.B009]
+enabled = true
+autofix = false
+description = "getattr-with-constant"
+
+[ruff.B010]
+enabled = true
+autofix = false
+description = "setattr-with-constant"
+
+[ruff.S113]
+enabled = true
+severity = "error"
+description = "request-without-timeout"
 
 # ===== Hook Behaviors =====
 # Configure behavior for each hook type
 
 [hooks.pre]
 # PreToolUse hook configuration
-auto_fix = false  # Don't autofix in pre-hook (we're preventing execution)
-inject_permissions = false  # Don't show permissions before tool runs
+# PreTool hooks don't have configuration - they just block or allow
 
 [hooks.post]
 # PostToolUse hook configuration
@@ -84,39 +117,67 @@ autofix_categories = ["formatting"]  # Options: "formatting", "imports", "all"
 
 [hooks.stop]
 # Stop hook configuration (when Claude wants to end its turn)
-auto_fix = false
-inject_permissions = false
 quality_gate = true  # Prevent Claude from stopping if errors remain
+max_files_to_show = 5  # Maximum number of files to show in error message
+max_violations_per_file = 3  # Maximum violations to show per file
 
 [hooks.notification]
 # Notification hook configuration
-auto_fix = false
-inject_permissions = false
-quality_gate = false
+send_to_dbus = true
+urgency = "normal"  # Options: "low", "normal", "critical"
 
 [hooks.subagent_stop]
 # SubagentStop hook configuration
-auto_fix = false
-inject_permissions = false
-quality_gate = false
+# No special configuration needed currently
 
-# ===== Test File Patterns =====
-# Files matching these patterns get special treatment
-test_patterns = [
+# ===== Pattern-Based File Rules =====
+# Define rules that apply to files matching specific patterns
+
+[[pattern_rules]]
+name = "test_files"
+patterns = [
     "**/test_*.py",
     "**/*_test.py",
     "**/tests/**",
     "**/testing/**",
     "**/fixtures/**"
 ]
+relaxed_checks = ["python.bare_except", "ruff.E722"]  # Allow bare except in tests
+custom_message = "Test files have relaxed error handling rules"
+enabled = true
+
+[[pattern_rules]]
+name = "migrations"
+patterns = ["**/migrations/*.py"]
+enforced_checks = []  # No special enforcement
+relaxed_checks = ["ruff.E402"]  # Allow imports not at top in migrations
+custom_message = "Migration files have special import rules"
+enabled = true
+
+[[pattern_rules]]
+name = "generated_code"
+patterns = ["**/*_pb2.py", "**/*_pb2_grpc.py", "**/generated/**"]
+relaxed_checks = ["ALL"]  # Special value to relax all checks
+custom_message = "Generated code is not linted"
+enabled = true
 
 # ===== LLM Analysis Configuration =====
 [llm_analysis]
 enabled = false  # Enable LLM-powered code analysis
-model = "gpt-4"  # Model to use for analysis
-max_cost_per_session = 1.0  # Maximum cost in USD per session
-cache_analyses = true  # Cache analysis results
-cache_ttl = "7d"  # Cache time-to-live (format: 1h, 30m, 7d)
+model = "gpt-4o-mini"  # Model to use for analysis
+daily_cost_limit = 5.0  # Maximum cost in USD per day
+cache_results = true  # Cache analysis results
+
+# Optional: Customize LLM prompts
+# [llm_analysis.prompts]
+# full_file_analysis = """Your custom prompt for full file analysis...
+# Must include {file_path} and {content} placeholders."""
+# 
+# edit_analysis = """Your custom prompt for single edit analysis...
+# Must include {file_path}, {old_string}, {new_string}, and {context} placeholders."""
+# 
+# multi_edit_analysis = """Your custom prompt for multiple edits...
+# Must include {file_path} and {edits_summary} placeholders."""
 
 # ===== Task Profiles =====
 # Pre-defined permission profiles for common tasks

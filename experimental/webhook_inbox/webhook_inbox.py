@@ -5,6 +5,7 @@ uvicorn webhook_inbox:app --host 0.0.0.0 --port 8000
 
 import base64
 import binascii
+import contextlib
 import json
 import logging
 import os
@@ -85,7 +86,7 @@ class EncryptedEncoder:
     Behaviour depends on three factors:
 
     1. If key is not set, return plain JSON.
-    2. *Client-supplied key* – when a key is set, clients can also
+    2. *Client-supplied key* - when a key is set, clients can also
        get plain JSON by supplying correct key in URL (``?key=…``/``/k/…```).
     """
 
@@ -138,7 +139,7 @@ class EncryptedEncoder:
 
         * No key configured → ``{"plaintext": <pretty JSON>}``
 
-        * Correct key supplied in the request (``?key=…``) → same – plaintext JSON.
+        * Correct key supplied in the request (``?key=…``) → same - plaintext JSON.
 
         * Key not passed or incorrect →
           ``{"ciphertext_body": …, "ciphertext_len": …, "tz": …}``
@@ -164,7 +165,7 @@ class EncryptedEncoder:
             if provided_key == self.key:
                 return {"plaintext": self.plain_encode(events)}
 
-            out["error"] = "Incorrect key in URL – data are still encrypted."
+            out["error"] = "Incorrect key in URL - data are still encrypted."
 
         # ── Encrypted path --------------------------------------------------
         ciphertext = encrypt_events(events, self.key)
@@ -187,7 +188,7 @@ class EncryptedEncoder:
 
 
 # ── Encoder setup ----------------------------------------------------------
-# A *single* encoder instance is sufficient – it decides at runtime whether to
+# A *single* encoder instance is sufficient - it decides at runtime whether to
 # encrypt or not based on the presence of a configured key and the client's
 # supplied `?key=` parameter.
 
@@ -205,16 +206,14 @@ def configure_db(path: str | os.PathLike):
     simply rely on the implicit initialisation that happens on import.
     """
 
-    global CONN
+    global CONN  # noqa: PLW0603
 
     # Close previous connection (if any) to avoid file locks under Windows
     # and to make sure commits hit the right file.
     if "CONN" in globals():
-        try:
-            CONN.close()
-        except Exception:
+        with contextlib.suppress(Exception):
             # Ignore errors when connection already closed.
-            pass
+            CONN.close()
 
     # (Re-)create connection and ensure tables exist.
     CONN = sqlite3.connect(str(path), check_same_thread=False)
@@ -367,7 +366,7 @@ def _render_events_page(
     """Common implementation for the event listing page.
 
     key_value: Key supplied by client or *None* if none was passed.
-    key_style: How the key has been conveyed – ``"query"`` for ``?key=…``,
+    key_style: How the key has been conveyed - ``"query"`` for ``?key=…``,
                ``"path"`` for ``/k/<key>/`` and *None* when no key is present.
     """
 
@@ -390,10 +389,7 @@ def _render_events_page(
     if redirect_needed:
         # Recreate original path (with key embedded if applicable) so sharing
         # the resulting URL preserves the user’s chosen addressing scheme.
-        if key_style == "path" and key_value:
-            base_path = req.url.path  # already contains correct key prefix
-        else:
-            base_path = "/"
+        base_path = req.url.path if key_style == "path" and key_value else "/"
 
         redirect_target = str(URL(base_path).include_query_params(**params))
         # Also propagate *query-style* key if that’s how it was supplied.
@@ -412,13 +408,13 @@ def _render_events_page(
     except ValueError:
         raise HTTPException(
             400,
-            "Invalid 'before' parameter – must be integer timestamp",
+            "Invalid 'before' parameter - must be integer timestamp",
         )
 
     try:
         count = int(params["count"])
     except ValueError:
-        raise HTTPException(400, "Invalid 'count' parameter – must be positive integer")
+        raise HTTPException(400, "Invalid 'count' parameter - must be positive integer")
 
     if not (1 <= count <= PAGE_SIZE):
         raise HTTPException(400, f"'count' must be between 1 and {PAGE_SIZE}")
@@ -442,10 +438,9 @@ def _render_events_page(
 
     # Determine base path *including* the embedded key when key-style is
     # "path" so navigation retains the same addressing scheme the user chose.
-    if key_style == "path" and key_value:
-        base_path = req.url.path  # e.g. "/k/<key>/"
-    else:
-        base_path = "/"
+    # Determine base path *including* the embedded key when key-style is
+    # "path" so navigation retains the same addressing scheme the user chose.
+    base_path = req.url.path if key_style == "path" and key_value else "/"
 
     older_link: str | None = None
     if rows:

@@ -6,9 +6,3 @@
   ansible.builtin.import_role:
     name: firecrawl
   tags: [firecrawl]
-
-# Import claude-mcp for all dev environments
-- name: Import claude-mcp role
-  ansible.builtin.import_role:
-    name: claude-mcp
-  tags: [claude, mcp]

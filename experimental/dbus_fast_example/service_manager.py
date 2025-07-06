@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import subprocess
 import sys
 from pathlib import Path
 
@@ -14,14 +13,17 @@ class ServiceManager:
 
     def __init__(self, bus_address: str) -> None:
         self.bus_address = bus_address
-        self.proc: subprocess.Popen[bytes] | None = None
+        self.proc: asyncio.subprocess.Process | None = None
 
     async def start(self) -> None:
         if self.proc:
             raise RuntimeError("service already running")
         script = Path(__file__).with_name("dbus_service.py")
-        self.proc = subprocess.Popen(  # - short blocking call
-            [sys.executable, str(script), self.bus_address],
+        # Using asyncio.create_subprocess_exec for async subprocess
+        self.proc = await asyncio.create_subprocess_exec(
+            sys.executable,
+            str(script),
+            self.bus_address,
         )
         await self._wait_until_running()
 
@@ -77,5 +79,5 @@ class ServiceManager:
         interface = obj.get_interface("org.example.TestInterface")  # type: ignore[attr-defined]
         await interface.call_quit()  # type: ignore[attr-defined]
         bus.disconnect()
-        self.proc.wait(timeout=2)
+        await asyncio.wait_for(self.proc.wait(), timeout=2)
         self.proc = None

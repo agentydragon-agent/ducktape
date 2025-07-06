@@ -86,9 +86,6 @@
       - pipx
     state: latest
 
-# Move speedtest-cli installation to user level
-# (Handled in dev-env-user.yml with other user tools)
-
 - name: Remove retired pkgs
   become: true
   ansible.builtin.apt:
@@ -122,6 +119,17 @@
     # TODO(agentydragon): shallow clone
     repo: https://github.com/robbyrussell/oh-my-zsh
     dest: "/home/{{ my_user | default(ansible_user_id) }}/.oh-my-zsh"
+  become: true
+  become_user: "{{ my_user | default(ansible_user_id) }}"
+
+# Install Powerlevel10k theme
+- name: Clone Powerlevel10k theme
+  tags: [oh-my-zsh, zsh, p10k]
+  git:
+    repo: https://github.com/romkatv/powerlevel10k.git
+    dest: "/home/{{ my_user | default(ansible_user_id) }}/.oh-my-zsh/custom/themes/powerlevel10k"
+    depth: 1  # Shallow clone for faster installation
+    version: master  # Use latest master as requested
   become: true
   become_user: "{{ my_user | default(ansible_user_id) }}"
 

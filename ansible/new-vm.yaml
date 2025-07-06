@@ -9,6 +9,10 @@
 
   roles:
     - role: cli
+
+    - role: dev-env
+      tags: [dev-env]
+
     - role: docker
     - role: gui
     - role: dev-ml
@@ -16,10 +20,6 @@
       tags: [wireguard]
 
   tasks:
-    - name: Install shared development environment
-      ansible.builtin.import_role:
-        name: dev-env
-      tags: [dev-env]
 
     # Disable screensaver and screen blanking for headless VM
     - name: Disable GNOME screensaver and screen blanking
@@ -38,14 +38,4 @@
       tags: [vm-display]
       when: ansible_env.DISPLAY is defined
 
-    - name: Disable screen blanking via X11 (fallback)
-      become: true
-      become_user: "{{ my_user }}"
-      ansible.builtin.shell: |
-        xset s off
-        xset -dpms
-        xset s noblank
-      environment:
-        DISPLAY: ":0"
-      ignore_errors: true
-      tags: [vm-display]
+    # TODO: Disable screen blanking further?

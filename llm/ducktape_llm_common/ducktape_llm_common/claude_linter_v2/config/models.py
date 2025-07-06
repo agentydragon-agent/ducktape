@@ -1,7 +1,6 @@
 """Configuration models for Claude Linter v2 using Pydantic."""
 
 from enum import Enum
-from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
@@ -69,59 +68,29 @@ class CheckConfig(BaseModel):
     severity: Literal["error", "warning", "info"] = Field("error", description="Severity level")
 
 
-class PythonHardBlock(BaseModel):
-    """Python AST-based hard block configuration."""
-
-    bare_except: bool = Field(True, description="Block bare except clauses")
-    getattr_setattr: bool = Field(True, description="Block hasattr/getattr/setattr usage")
-    barrel_init: bool = Field(True, description="Block barrel __init__.py patterns")
+# PythonHardBlock and PythonConfig have been removed - use modular config instead
 
 
-class PythonConfig(BaseModel):
-    """Python-specific linting configuration."""
+class HookConfigBase(BaseModel):
+    """Base configuration for all hook types."""
 
-    tools: list[str] = Field(default_factory=lambda: ["ruff", "mypy"], description="Python linting tools to use")
-    hard_blocks: PythonHardBlock = Field(default_factory=lambda: PythonHardBlock(), description="AST-based hard blocks")
-
-    # Ruff configuration
-    ruff_force_select: list[str] = Field(
-        default_factory=lambda: [
-            # Critical rules that should always be checked
-            "E722",  # bare-except
-            "BLE001",  # blind-except
-            "B009",  # getattr-with-constant
-            "B010",  # setattr-with-constant
-            "S113",  # request-without-timeout
-            "B008",  # function-call-in-default-argument
-            "E402",  # module-import-not-at-top-of-file
-            "PLC0415",  # import-outside-top-level
-            "S608",  # hardcoded-sql-expression
-            "B904",  # raise-without-from-inside-except
-            "B006",  # mutable-argument-default
-            "PGH003",  # blanket-type-ignore
-        ],
-        description="Ruff rules to force enable",
-    )
-
-    # Test file handling
-    test_patterns: list[str] = Field(
-        default_factory=lambda: ["**/test_*.py", "**/*_test.py", "**/tests/**/*.py"],
-        description="Patterns to identify test files",
-    )
-    relaxed_rules_for_tests: list[str] = Field(
-        default_factory=lambda: ["bare_except", "type_checking"], description="Rules to relax for test files"
-    )
+    enabled: bool = Field(True, description="Whether this hook is enabled")
 
 
-class HookConfig(BaseModel):
-    """Configuration for a specific hook type."""
+class PreToolHookConfig(HookConfigBase):
+    """Configuration for PreToolUse hooks."""
+
+    # No additional fields needed - PreTool just blocks or allows
+
+
+class PostToolHookConfig(HookConfigBase):
+    """Configuration for PostToolUse hooks."""
 
     auto_fix: bool = Field(True, description="Whether to auto-fix issues")
     autofix_categories: list[AutofixCategory] = Field(
         default_factory=list, description="Categories to autofix (empty = use defaults)"
     )
     inject_permissions: bool = Field(True, description="Whether to inject permission info in responses")
-    quality_gate: bool = Field(False, description="Whether to enforce quality gate (Stop hook only)")
 
     @field_validator("autofix_categories", mode="before")
     @classmethod
@@ -141,6 +110,129 @@ class HookConfig(BaseModel):
         return categories
 
 
+class StopHookConfig(HookConfigBase):
+    """Configuration for Stop hooks."""
+
+    quality_gate: bool = Field(True, description="Whether to enforce quality gate")
+    max_files_to_show: int = Field(5, description="Maximum number of files to show in error message")
+    max_violations_per_file: int = Field(3, description="Maximum violations to show per file")
+
+
+class NotificationHookConfig(HookConfigBase):
+    """Configuration for Notification hooks."""
+
+    send_to_dbus: bool = Field(True, description="Whether to send notifications to D-Bus")
+    urgency: Literal["low", "normal", "critical"] = Field("normal", description="Default notification urgency")
+
+
+class SubagentStopHookConfig(HookConfigBase):
+    """Configuration for SubagentStop hooks."""
+
+    # No additional fields needed for now
+
+
+class LLMPromptTemplates(BaseModel):
+    """Configurable prompt templates for LLM analysis."""
+
+    full_file_analysis: str = Field(
+        default="""Analyze this Python code for potential issues.
+
+File: {file_path}
+
+```python
+{content}
+```
+
+Check for:
+1. Error hiding patterns (catching exceptions without proper handling)
+2. Security issues (hardcoded secrets, SQL injection, command injection)
+3. Resource leaks (files/connections not properly closed)
+4. Race conditions
+5. Type safety issues
+
+Respond with JSON:
+{{
+    "ok": true/false,
+    "message": "Brief explanation if not ok",
+    "violations": [
+        {{
+            "line": <line_number>,
+            "rule": "LLM:<check_type>",
+            "message": "Description of issue"
+        }}
+    ]
+}}
+
+If the code looks fine, return {{"ok": true, "violations": []}}""",
+        description="Template for analyzing full files",
+    )
+
+    edit_analysis: str = Field(
+        default="""Analyze this code change for potential issues.
+
+File: {file_path}
+
+Original code:
+```python
+{old_string}
+```
+
+Changed to:
+```python
+{new_string}
+```
+
+Context:
+```python
+{context}
+```
+
+Check if this change introduces:
+1. Error hiding (broad exception handling)
+2. Security vulnerabilities
+3. Resource leaks
+4. Type safety issues
+5. Logic errors
+
+Respond with JSON:
+{{
+    "ok": true/false,
+    "message": "Brief explanation if not ok",
+    "violations": [
+        {{
+            "line": <line_number>,
+            "rule": "LLM:<check_type>",
+            "message": "Description of issue"
+        }}
+    ]
+}}""",
+        description="Template for analyzing single edits",
+    )
+
+    multi_edit_analysis: str = Field(
+        default="""Analyze these code changes for potential issues.
+
+File: {file_path}
+
+Changes:
+{edits_summary}
+
+Check if these changes introduce:
+1. Error hiding patterns
+2. Security vulnerabilities
+3. Inconsistent error handling
+4. Resource leaks
+
+Respond with JSON:
+{{
+    "ok": true/false,
+    "message": "Brief explanation if not ok",
+    "violations": []
+}}""",
+        description="Template for analyzing multiple edits",
+    )
+
+
 class LLMAnalysisConfig(BaseModel):
     """Configuration for LLM-based analysis."""
 
@@ -151,6 +243,18 @@ class LLMAnalysisConfig(BaseModel):
     )
     daily_cost_limit: float = Field(5.0, description="Maximum daily cost in USD")
     cache_results: bool = Field(True, description="Whether to cache results")
+    prompts: LLMPromptTemplates = Field(default_factory=LLMPromptTemplates, description="Prompt templates")
+
+
+class PatternBasedRule(BaseModel):
+    """Generic pattern-based rule for file handling."""
+
+    name: str = Field(description="Rule name (e.g., 'test_files', 'migrations')")
+    patterns: list[str] = Field(description="Glob patterns to match files")
+    relaxed_checks: list[str] = Field(default_factory=list, description="Checks to relax for matching files")
+    enforced_checks: list[str] = Field(default_factory=list, description="Checks to enforce for matching files")
+    custom_message: str | None = Field(None, description="Custom message when rules apply")
+    enabled: bool = Field(True, description="Whether this rule is active")
 
 
 class TaskProfile(BaseModel):
@@ -177,73 +281,4 @@ class TaskProfile(BaseModel):
         return v
 
 
-class ClaudeLinterConfig(BaseModel):
-    """Main configuration for Claude Linter v2."""
-
-    version: Literal["2.0"] = Field("2.0", description="Config version")
-
-    # Display settings
-    max_errors_to_show: int = Field(3, description="Maximum number of errors to display in hook responses")
-
-    # Access control
-    access_control: list[AccessControlRule] = Field(default_factory=list, description="Path-based access control rules")
-
-    # Repo-wide predicate rules
-    repo_rules: list[PredicateRule] = Field(default_factory=list, description="Repository-wide predicate rules")
-
-    # Language-specific configs
-    python: PythonConfig = Field(default_factory=lambda: PythonConfig(), description="Python-specific configuration")
-
-    # Hook behaviors
-    hooks: dict[str, HookConfig] = Field(
-        default_factory=lambda: {
-            "pre": HookConfig(auto_fix=False),
-            "post": HookConfig(auto_fix=True, autofix_categories=[AutofixCategory.FORMATTING]),
-            "stop": HookConfig(auto_fix=False, inject_permissions=False, quality_gate=True),
-            "notification": HookConfig(auto_fix=False, inject_permissions=False),
-            "subagent_stop": HookConfig(auto_fix=False, inject_permissions=False),
-        },
-        description="Hook-specific configurations",
-    )
-
-    # Test file handling
-    test_patterns: list[str] = Field(
-        default_factory=lambda: ["**/test_*.py", "**/*_test.py", "**/tests/**"], description="Global test file patterns"
-    )
-
-    # LLM analysis
-    llm_analysis: LLMAnalysisConfig = Field(
-        default_factory=lambda: LLMAnalysisConfig(), description="LLM analysis configuration"
-    )
-
-    # Task profiles
-    profiles: list[TaskProfile] = Field(default_factory=list, description="Pre-defined permission profiles")
-
-    # Logging
-    log_level: str = Field("INFO", description="Logging level")
-    log_file: Path | None = Field(None, description="Log file path")
-
-    # Notifications
-    send_notifications_to_dbus: bool = Field(
-        False, description="Send Notification hook messages to D-Bus notifications"
-    )
-
-    @classmethod
-    def load_from_file(cls, path: Path) -> "ClaudeLinterConfig":
-        """Load configuration from TOML file."""
-        import tomli
-
-        with open(path, "rb") as f:
-            data = tomli.load(f)
-
-        return cls(**data)
-
-    def save_to_file(self, path: Path) -> None:
-        """Save configuration to TOML file."""
-        import tomli_w
-
-        # Convert to dict, handling enums and paths
-        data = self.model_dump(mode="json")
-
-        with open(path, "wb") as f:
-            tomli_w.dump(data, f)
+# ClaudeLinterConfig has been removed - use ModularClaudeLinterConfig instead

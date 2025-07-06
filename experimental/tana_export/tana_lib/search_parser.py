@@ -7,7 +7,6 @@ from Tana JSON exports into a structured representation.
 
 from __future__ import annotations
 
-from abc import ABC
 from dataclasses import dataclass
 from enum import Enum
 
@@ -29,8 +28,8 @@ class BooleanOperator(Enum):
     NOT = "NOT"
 
 
-class SearchExpression(ABC):
-    """Abstract base class for search expressions."""
+class SearchExpression:
+    """Base class for search expressions."""
 
 
 @dataclass
