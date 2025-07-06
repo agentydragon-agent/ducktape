@@ -2,6 +2,7 @@
 - name: Set Discord to autostart, minimized
   block:
   - name: Ensure Discord is installed
+    become: true
     apt:
       name: discord
       state: present

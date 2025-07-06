@@ -61,7 +61,6 @@ class HookHandler:
         self.config_loader = ConfigLoader()
         self.rule_engine: RuleEngine | None = None
         self._warnings: dict[SessionID, str] = {}  # Store warnings per session
-        self._notification_ids: dict[SessionID, int] = {}  # Store notification IDs per session
         self.violation_tracker = ViolationTracker(self.session_manager)
         self.diff_intelligence = DiffIntelligence(context_distance=3)
         self._setup_logging()
@@ -447,14 +446,14 @@ class HookHandler:
         from ..cli import send_desktop_notification
 
         try:
-            # Get existing notification ID for this session (if any)
-            replaces_id = self._notification_ids.get(session_id, 0)
+            # Get existing notification ID for this session (if any) from session data
+            replaces_id = self.session_manager.get_notification_id(session_id) or 0
 
             # Send notification, replacing the previous one if it exists
             notification_id = send_desktop_notification(title, message, urgency="normal", replaces_id=replaces_id)
 
-            # Store the notification ID for this session
-            self._notification_ids[session_id] = notification_id
+            # Store the notification ID in session data
+            self.session_manager.set_notification_id(session_id, notification_id)
 
             logger.info(
                 f"Sent D-Bus notification for session {session_id}: {title} "
@@ -465,14 +464,14 @@ class HookHandler:
 
     def _clear_notification(self, session_id: SessionID) -> None:
         """Clear any existing notification for this session."""
-        notification_id = self._notification_ids.get(session_id)
+        notification_id = self.session_manager.get_notification_id(session_id)
         if notification_id:
             # Import here to avoid circular import
             from ..cli import close_desktop_notification
 
             try:
                 close_desktop_notification(notification_id)
-                del self._notification_ids[session_id]
+                self.session_manager.clear_notification_id(session_id)
                 logger.debug(f"Cleared notification {notification_id} for session {session_id}")
             except Exception as e:
                 logger.debug(f"Failed to clear notification for session {session_id}: {e}")

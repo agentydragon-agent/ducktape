@@ -1,3 +1,23 @@
+# Check glibc version - newer Anki requires glibc 2.36+
+- name: Check glibc version
+  command: ldd --version
+  register: glibc_version_check
+  changed_when: false
+
+- name: Extract glibc version
+  set_fact:
+    glibc_version: "{{ glibc_version_check.stdout_lines[0] | regex_search('\\d+\\.\\d+') }}"
+
+- name: Skip Anki installation on systems with older glibc
+  debug:
+    msg: "Skipping Anki installation - requires glibc 2.36+ but system has {{ glibc_version }}"
+  when: glibc_version is version('2.36', '<')
+
+- name: End play if glibc is too old
+  meta: end_play
+  when: glibc_version is version('2.36', '<')
+
+# Install Anki (only runs on systems with glibc 2.36+)
 - name: Remove system-installed Anki
   become: true
   ansible.builtin.apt:
@@ -63,9 +83,8 @@
           - latest_release_version != ""
 
     - name: Get latest Anki release URL
-      # 2025-04-11: qt5 versions seem to be no longer released
       ansible.builtin.shell: |
-        jq --raw-output '.assets[] | select(.name | test("linux-qt6")) | .browser_download_url' {{ tmp_path }}/latest-release.json
+        jq --raw-output '.assets[] | select(.name | test("anki-launcher.tar.zst")) | .browser_download_url' {{ tmp_path }}/latest-release.json
       register: latest_release_url
       changed_when: false
 
@@ -79,37 +98,27 @@
         latest_release_url: "{{ latest_release_url.stdout }}"
       changed_when: false
 
-    - name: Check if Anki is installed already
-      stat:
-        path: "{{ anki_binary_path }}"
-      register: anki_binary_stat
-
-    # If we already have Anki installed, check whether it's the latest version.
+    # Check if Anki is installed and get its version
     - name: Get version of installed Anki
       ansible.builtin.script: get_anki_version.py
       args:
         executable: python3
-      when: anki_binary_stat.stat.exists
-      register: installed_anki_version
+      register: anki_version_result
+      changed_when: false
+
+    - name: Parse Anki version result
+      ansible.builtin.set_fact:
+        anki_version_data: "{{ anki_version_result.stdout | from_json }}"
+      changed_when: false
 
     # - ansible.builtin.debug:
-    #     var: installed_anki_version
+    #     var: anki_version_data
     - ansible.builtin.debug:
         var: latest_release_url
 
     - name: Install latest Anki
-      when: (not anki_binary_stat.stat.exists) or (installed_anki_version is defined and installed_anki_version.stdout != latest_release_version.stdout)
+      when: (not anki_version_data.installed) or (anki_version_data.installed and anki_version_data.version != latest_release_version.stdout)
       block:
-
-      - name: Get name of target Anki dir from latest release version path
-        ansible.builtin.set_fact:
-          # https://github.com/ankitects/anki/releases/download/2.1.37/anki-2.1.37-linux.tar.bz2 -> anki-2.1.37-linux
-          anki_dirname: "{{ latest_release_url | regex_search('/(anki-[^/]*-linux-qt6).tar.zst$', '\\1') | first }}"
-        changed_when: false
-
-      - ansible.builtin.debug:
-          var: anki_dirname
-
       - name: Download Anki
         ansible.builtin.unarchive:
           remote_src: true
@@ -122,7 +131,7 @@
         become: true
         ansible.builtin.command:
           cmd: ./install.sh
-          chdir: "{{ tmp_path }}/{{ anki_dirname }}"
+          chdir: "{{ tmp_path }}/anki-launcher"
 
     - name: Stat {{ anki_binary_path }}
       ansible.builtin.stat:

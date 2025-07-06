@@ -6,6 +6,7 @@ wg_peers:
     homeassistant: # (not managed by Ansible but included in mesh)
     pixel6: # Pixel 6 phone
     new-vm:
+    atlas: # Proxmox host
 
 all:
   hosts:
@@ -22,3 +23,6 @@ all:
     new-vm:
       ansible_host: 10.0.167.15
       ansible_user: agentydragon
+    atlas:
+      ansible_host: 10.0.182.102
+      ansible_user: root

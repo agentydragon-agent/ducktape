@@ -52,6 +52,7 @@
       - openjdk-8-jdk
       - openscad
       - psensor
+      - virt-viewer  # SPICE/VNC viewer for virtual machines (Proxmox viewer)
       - scrcpy # Android screen mirroring
       - snapd # For Telegram etc.
       - syncthing-gtk

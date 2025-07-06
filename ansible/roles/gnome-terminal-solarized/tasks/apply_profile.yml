@@ -1,13 +1,34 @@
 ---
 - name: "Apply profile {{ profile_name }}"
   ansible.builtin.script: >
-    apply.py
-    apply '{{ profile_name }}' "{{ dir }}"
-    --font "{{ font }}"
-    {% if ansible_verbosity >= 1 %}--debug{% endif %}
+    apply.py apply '{{ profile_name }}' "{{ dir }}" --font "{{ font }}"
   register: apply_result
   failed_when: apply_result.rc != 0
-  changed_when: (apply_result.stdout | from_json).changed
+
+- name: Debug apply_result output
+  debug:
+    msg:
+      - "Return code: {{ apply_result.rc }}"
+      - "Stdout: {{ apply_result.stdout }}"
+      - "Stderr: {{ apply_result.stderr }}"
+      - "Stdout lines: {{ apply_result.stdout_lines | default([]) }}"
+      - "Stderr lines: {{ apply_result.stderr_lines | default([]) }}"
+  when: ansible_verbosity >= 1
+
+- name: Validate JSON output
+  assert:
+    that:
+      - apply_result.stdout != ''
+    fail_msg: "apply.py must output something. Got empty output"
+    success_msg: "apply.py returned output"
+
+- name: Parse JSON output from apply.py
+  set_fact:
+    apply_json: "{{ apply_result.stdout | from_json }}"
+
+- name: Set changed based on result
+  set_fact:
+    profile_changed: "{{ apply_json.changed }}"
 
 - block:
   - name: Debug stdout

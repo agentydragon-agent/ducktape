@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -38,7 +38,7 @@ class Props(BaseModel):
     def created_dt(self) -> datetime | None:
         if self.created is None:
             return None
-        return datetime.fromtimestamp(self.created / 1_000, tz=timezone.utc)
+        return datetime.fromtimestamp(self.created / 1_000, tz=UTC)
 
     @property
     def is_trash(self) -> bool:

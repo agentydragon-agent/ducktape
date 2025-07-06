@@ -1,13 +1,14 @@
+import json
 import re
 import subprocess
-import sys
+from pathlib import Path
 
 PATTERN = re.compile("^Anki ([0-9.]+)$", flags=re.MULTILINE)
 
 
 def extract_version(stdout):
     if not (match := PATTERN.search(stdout)):
-        raise ValueError(f"{stdout!r} does not contain {match}")
+        raise ValueError(f"{stdout=!r} does not contain {PATTERN!r}")
     return match.group(1)
 
 
@@ -17,11 +18,15 @@ def test_extract_version():
 
 
 def main():
-    stdout = subprocess.check_output(["/usr/local/bin/anki", "--version"]).decode(
-        "utf-8",
-    )
-    # make sure to not print a \n
-    sys.stdout.write(extract_version(stdout))
+    anki_path = Path("/usr/local/bin/anki")
+
+    if not anki_path.exists():
+        print(json.dumps({"installed": False}))
+        return
+
+    stdout = subprocess.check_output([anki_path, "--version"]).decode("utf-8")
+    version = extract_version(stdout)
+    print(json.dumps({"installed": True, "version": version}))
 
 
 if __name__ == "__main__":

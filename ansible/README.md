@@ -29,21 +29,13 @@ python3 -c "import secrets; print(secrets.token_urlsafe(32))" | \
 ansible-galaxy install -r requirements.yaml
 ```
 
-## To deploy localhost
+## To deploy
 
 ```bash
 ansible-playbook agentydragon.yaml --ask-become-pass
-```
 
-## To deploy cloudragon
-
-```bash
 ansible-playbook cloudragon.yaml --ask-become-pass
-```
 
-## To deploy linode
-
-```bash
 ansible-playbook vps.yaml
 ```
 
@@ -68,10 +60,6 @@ Make worthy work, actually.
 
 TODO: minimize texlive, etc.
 
-TODO: refactor Let's Encrypt - this way it's invoking the role 3 times,
-repeating the same setup steps like reading users for the letsencrypt group and
-such.
-
 TODO: store htpasswd into Ansible Vault
 
 ## Manual VPS installation steps
@@ -93,72 +81,62 @@ These parts can't be done by Ansible:
 * `apt install git ansible`
 * `git clone git@github.com:agentydragon/ducktape`
 * `ansible-playbook agentydragon.yaml --ask-become-pass`
-* Add `~/.config/bazelrc.secrets` - see the `bazelrc` dotfile. The global
-  `bazelrc` imports this file, it's supposed to contain the path (and
+* Add `~/.config/bazelrc.secrets` - see the `bazelrc` dotfile. Global `bazelrc` imports this file, it's supposed to contain the path (and
   password) to the Bazel cache on the VPS.
 
 ## Manual VM/Remote Machine Setup
 
 When provisioning a new VM or remote machine:
 
-Note: The ducktape repository must be cloned before running the playbook, as the dotfiles deployment depends on it.
-
-1. Generate SSH key and add to GitHub/GitLab (see sections below)
-2. Clone ducktape repository and checkout devel branch:
+1. The ducktape repository must be cloned before running the playbook, as the dotfiles deployment depends on it.
+2. Generate SSH key and add to GitHub/GitLab (see sections below)
+3. Clone ducktape repository and checkout devel branch:
    ```bash
    ssh agentydragon@NEW_MACHINE_IP 'mkdir -p ~/code && git clone git@gitlab.com:agentydragon/ducktape ~/code/ducktape && cd ~/code/ducktape && git checkout devel'
    ```
-3. Run the playbook from your provisioning machine:
+4. Run the playbook from your provisioning machine:
    ```bash
    ansible-playbook new-vm.yaml --ask-become-pass
    ```
-4. If the playbook fails on dotfiles installation, SSH to the machine and run:
+   When prompted for the BECOME password, enter the sudo password for the agentydragon user on the VM.
+5. If the playbook fails on dotfiles installation, SSH to the machine and run:
    ```bash
    ssh agentydragon@NEW_MACHINE_IP 'RCRC=~/code/ducktape/dotfiles/rcrc rcup -B new-vm'
    ```
    You'll need to confirm overwriting default files like .bashrc with 'y'.
+6. After successful deployment, update WireGuard configs on peer machines
 
-## GitHub SSH Key Setup
+4. Set hostname on the VM (currently using IP address)
 
-After generating an SSH key on a new machine, you can add it to GitHub using the GitHub CLI from your provisioning machine:
+## GitHub and GitLab SSH Key Setup
+
+After generating an SSH key on a new machine, you can add it to GitHub and GitLab using their CLI tools from your provisioning machine:
 
 ```bash
 # On the new machine, generate SSH key:
 ssh-keygen -t ed25519 -C "agentydragon@HOSTNAME"
 
+# Add both GitHub and GitLab to known hosts on the new machine:
+ssh agentydragon@NEW_MACHINE_IP 'ssh-keyscan github.com gitlab.com >> ~/.ssh/known_hosts'
+
 # From your provisioning machine (with gh installed and authenticated):
 ssh agentydragon@NEW_MACHINE_IP 'cat ~/.ssh/id_ed25519.pub' | \
   gh ssh-key add - --title "HOSTNAME"
 
-# Add GitHub to known hosts on the new machine:
-ssh agentydragon@NEW_MACHINE_IP 'ssh-keyscan github.com >> ~/.ssh/known_hosts'
-
-# Verify it worked from the new machine:
-ssh agentydragon@NEW_MACHINE_IP 'ssh -T git@github.com'
-```
-
-## GitLab SSH Key Setup
-
-Similar process for GitLab:
-
-```bash
 # From your provisioning machine (with glab installed and authenticated):
 ssh agentydragon@NEW_MACHINE_IP 'cat ~/.ssh/id_ed25519.pub' | \
   glab ssh-key add -t "HOSTNAME"
 
-# Add GitLab to known hosts on the new machine:
-ssh agentydragon@NEW_MACHINE_IP 'ssh-keyscan gitlab.com >> ~/.ssh/known_hosts'
-
-# Verify it worked from the new machine:
-ssh agentydragon@NEW_MACHINE_IP 'ssh -T git@gitlab.com'
+# Verify both worked from the new machine:
+ssh agentydragon@NEW_MACHINE_IP 'for host in github.com gitlab.com; do echo "Testing $host:"; ssh -T git@$host; done'
 ```
 
-TODO: Document how to set up `gh` authentication on the new machine (for CLI operations beyond SSH)
-TODO: Document how to set up `glab` authentication on the new machine (for CLI operations beyond SSH)
-TODO (low priority): Consider adding repository setup + package install as an option to the shared Python install implementation, since "add repo & install package" is a common pattern and deb822_repository doesn't reliably trigger apt cache update
-TODO (low priority): Optimize rcrc deployment to avoid duplication - can be done by first copying over .rcrc, or by pointing RCM at a different .rcrc path => can take effect before deployed
-TODO: Handle cronomix config - unclear how it should be managed (rcm symlinks individual files in ~/.config/cronomix, not the directory itself)
-TODO (low priority): XDG associations (mimeapps.list) shouldn't be an rcm-managed dotfile - it's already being asserted/managed in ansible
+- TODO: Document how to set up `gh` authentication on the new machine (for CLI operations beyond SSH)
+- TODO: Document how to set up `glab` authentication on the new machine (for CLI operations beyond SSH)
+- TODO: Handle cronomix config - unclear how it should be managed (rcm symlinks individual files in ~/.config/cronomix, not the directory itself)
+- TODO: XDG associations (mimeapps.list) shouldn't be an rcm-managed dotfile - it's already being asserted/managed in ansible
+- TODO: Handle Anki installation on Ubuntu 22.04 - newer Anki requires glibc 2.36+ but Ubuntu 22.04 has glibc 2.35. Need to either skip on older systems or find alternative installation method
+- TODO (low priority): Consider adding repository setup + package install as an option to the shared Python install implementation, since "add repo & install package" is a common pattern and deb822_repository doesn't reliably trigger apt cache update
 
 ## WireGuard
 
@@ -166,13 +144,15 @@ The WireGuard VPN network provides secure connectivity between all managed devic
 
 ### Network Layout
 
-| Host | IP Address | Description | Notes |
+| Host | IP (10.13.13.x/24) | Description | Notes |
 |------|------------|-------------|-------|
-| `vps` | 10.13.13.1/24 | VPS Hub | Accessible at agentydragon.com:51820 |
-| `agentydragon` | 10.13.13.11/24 | ThinkPad X1 Extreme | |
-| `gpd` | 10.13.13.12/24 | GPD Win Max 2 | |
-| `homeassistant` | 10.13.13.100/24 | Home Assistant | Not managed by Ansible |
-| `pixel6` | 10.13.13.50/24 | Pixel 6 phone | |
+| `vps` | .1 | VPS Hub | Accessible at agentydragon.com:51820 |
+| `agentydragon` | .11 | ThinkPad X1 Extreme | |
+| `gpd` | .12 | GPD Win Max 2 | |
+| `atlas` | .30 | Proxmox host | TODO set this up |
+| `new-vm` | .31 | New Pop!_OS VM | |
+| `pixel6` | .50 | Pixel 6 phone | |
+| `homeassistant` | .100 | Home Assistant | Not managed by Ansible |
 
 ### Adding a New Device
 
@@ -220,12 +200,8 @@ python tools/make_wg_qr.py <hostname> -o wireguard-<hostname>.png
 
 Scan the QR code with the WireGuard mobile app to import the configuration.
 
-### Features Enabled
+### SyncThing
 
-* All devices report ActivityWatch data to the central server on VPS
-* Secure access to internal services
-* Cross-device connectivity
-
-## VPS SyncThing management
+All devices report ActivityWatch data to the central server on VPS
 
 Open on WireGuard network: <http://10.13.13.1:8384>

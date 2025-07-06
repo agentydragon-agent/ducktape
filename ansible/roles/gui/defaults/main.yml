@@ -3,6 +3,8 @@
 xdg_mime_associations:
   - mime_type: "text/html"
     desktop_file: "google-chrome.desktop"
+  - mime_type: "application/x-virt-viewer"
+    desktop_file: "remote-viewer.desktop"
   # Add more MIME type associations as needed
   # - mime_type: "application/pdf"
   #   desktop_file: "evince.desktop"

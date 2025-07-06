@@ -16,9 +16,20 @@
   vars:
     bazel_state: absent
 
+# Install Neovim from unstable PPA to get version 0.11+
+- name: Add Neovim unstable PPA
+  become: true
+  deb822_repository:
+    name: neovim-unstable
+    uris: https://ppa.launchpadcontent.net/neovim-ppa/unstable/ubuntu
+    suites: ["{{ ansible_distribution_release }}"]
+    components: [main]
+    signed_by: https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x9DBB0BE9366964F134855E2255F96FCF8231B6DD
+
 - name: Install CLI packages
   become: true
   ansible.builtin.apt:
+    update_cache: yes  # deb822_repository doesn't reliably trigger apt cache update
     pkg:
       # removed 2024-04-13, defaults in pop os:
       #   diffutils
@@ -39,7 +50,6 @@
       - mmv
       - mosh
       - ncdu
-      - neovim
       - netcat-openbsd
       - nethogs
       - nmap
@@ -60,6 +70,13 @@
       - xxd
       - yasm
       - zsh
+
+# Install Neovim separately to ensure it updates from PPA
+- name: Install/Update Neovim from unstable PPA
+  become: true
+  ansible.builtin.apt:
+    name: neovim
+    state: latest
 
 # Modern systems require using pipx or apt for Python CLI tools
 - name: Install pipx for Python CLI tools

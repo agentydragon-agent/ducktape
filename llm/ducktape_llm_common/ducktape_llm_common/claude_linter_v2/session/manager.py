@@ -75,6 +75,24 @@ class SessionManager:
 
         self._save_session(session_id, session_data)
 
+    def set_notification_id(self, session_id: SessionID, notification_id: int) -> None:
+        """Store the notification ID for a session."""
+        session_data = self._load_session(session_id)
+        session_data["notification_id"] = notification_id
+        self._save_session(session_id, session_data)
+
+    def get_notification_id(self, session_id: SessionID) -> int | None:
+        """Get the notification ID for a session."""
+        session_data = self._load_session(session_id)
+        return session_data.get("notification_id")
+
+    def clear_notification_id(self, session_id: SessionID) -> None:
+        """Clear the notification ID for a session."""
+        session_data = self._load_session(session_id)
+        if "notification_id" in session_data:
+            del session_data["notification_id"]
+            self._save_session(session_id, session_data)
+
     def add_rule(
         self,
         predicate: str,
