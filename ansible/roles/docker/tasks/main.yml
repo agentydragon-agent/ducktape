@@ -1,6 +1,9 @@
 # xxx: if architecture in deb822 below not specified -> tries to download i386, which isn't included.
 # if set to {{ ansible_architecture }} -> that resolves to "x86_64" instead, != "amd64".
 
+- name: Check if Docker should be installed
+  ansible.builtin.debug:
+    msg: "Docker state is {{ docker_state | default('present') }}"
 
 - name: Set up Docker repository
   ansible.builtin.deb822_repository:
@@ -11,6 +14,7 @@
     signed_by: https://download.docker.com/linux/ubuntu/gpg
     architectures: ["{{ dpkg_arch }}"]
   become: true
+  when: (docker_state | default('present')) != 'absent'
 
 # 2. Engine + extras (compose v2 plugin, buildx)
 - name: Install Docker packages
@@ -24,6 +28,7 @@
     state: latest
     update_cache: yes  # deb822_repository doesn't reliably trigger apt cache update
   become: true
+  when: (docker_state | default('present')) != 'absent'
 
 # 3. User convenience
 - ansible.builtin.user:
@@ -31,6 +36,7 @@
     groups: docker
     append: true
   become: true
+  when: (docker_state | default('present')) != 'absent'
 
 # 4. Service
 - service:
@@ -38,3 +44,4 @@
     state: started
     enabled: true
   become: true
+  when: (docker_state | default('present')) != 'absent'

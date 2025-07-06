@@ -131,7 +131,7 @@ When provisioning a new VM or remote machine:
 - TODO: Handle cronomix config - unclear how it should be managed (rcm symlinks individual files in ~/.config/cronomix, not the directory itself)
 - TODO: XDG associations (mimeapps.list) shouldn't be an rcm-managed dotfile - it's already being asserted/managed in ansible
 - TODO: Handle Anki installation on Ubuntu 22.04 - newer Anki requires glibc 2.36+ but Ubuntu 22.04 has glibc 2.35. Need to either skip on older systems or find alternative installation method
-- TODO (low priority): Consider adding repository setup + package install as an option to the shared Python install implementation, since "add repo & install package" is a common pattern and deb822_repository doesn't reliably trigger apt cache update
+- TODO: (low priority): Consider adding repository setup + package install as an option to the shared Python install implementation, since "add repo & install package" is a common pattern and deb822_repository doesn't reliably trigger apt cache update
 
 ## WireGuard
 

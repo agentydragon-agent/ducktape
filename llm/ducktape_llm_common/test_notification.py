@@ -70,7 +70,7 @@ try:
     print("✓ Notification hook processed successfully")
     print("\nCheck your desktop for the notification!")
 
-except Exception as e:
+except (ImportError, OSError, AttributeError, ValueError) as e:
     print(f"\nError: {type(e).__name__}: {e}")
     import traceback
 

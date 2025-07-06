@@ -255,7 +255,7 @@ def validate_prompt_variables(prompt_name: PromptName, provided_vars: dict[str, 
             if match:
                 return False, [match.group(1)]
         return False, ["Unknown variable"]
-    except Exception:
+    except (AttributeError, KeyError, TypeError):
         # Other errors aren't about missing variables
         return True, []
 
@@ -272,7 +272,7 @@ def get_prompt_variables(prompt_name: PromptName) -> list[str]:
     try:
         # Load the raw prompt without substitution
         content = load_prompt(prompt_name.value, use_cache=False)
-    except Exception:
+    except (FileNotFoundError, OSError):
         return []
 
     # Extract variables using regex

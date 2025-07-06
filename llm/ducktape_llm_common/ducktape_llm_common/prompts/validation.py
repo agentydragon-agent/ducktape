@@ -40,7 +40,7 @@ class PromptValidator:
         # Load the prompt content
         try:
             content = load_prompt(prompt_name, use_cache=False)
-        except Exception as e:
+        except (FileNotFoundError, OSError, UnicodeDecodeError) as e:
             return {"loading": [f"Failed to load prompt: {e}"]}
 
         # Find the prompt file path
@@ -162,7 +162,7 @@ class PromptValidator:
                         issues.append(f"Invalid YAML in frontmatter: {e}")
                 else:
                     issues.append("Unclosed frontmatter block")
-            except Exception as e:
+            except (ValueError, TypeError) as e:
                 issues.append(f"Error parsing metadata: {e}")
 
         return issues

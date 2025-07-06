@@ -71,7 +71,7 @@ def safe_shell_pipeline(ctx: PredicateContext) -> bool:
 
         return True
 
-    except Exception:
+    except (ValueError, TypeError, AttributeError):
         # Any parsing error means unsafe
         return False
 

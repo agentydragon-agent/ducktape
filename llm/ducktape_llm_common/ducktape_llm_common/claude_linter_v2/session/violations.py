@@ -1,50 +1,13 @@
 """Violation tracking for quality gate in stop hook."""
 
 import logging
-from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
+from ..config.models import Violation
 from ..types import SessionID
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class Violation:
-    """A violation found during the session."""
-
-    file_path: str
-    line: int
-    message: str
-    severity: str  # "error", "warning", "info"
-    rule: str | None = None
-    timestamp: datetime = field(default_factory=datetime.now)
-    fixed: bool = False
-
-    def to_dict(self) -> dict[str, Any]:
-        """Convert to dict for JSON serialization."""
-        return {
-            "file_path": self.file_path,
-            "line": self.line,
-            "message": self.message,
-            "severity": self.severity,
-            "rule": self.rule,
-            "timestamp": self.timestamp.isoformat(),
-            "fixed": self.fixed,
-        }
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "Violation":
-        """Create from dict."""
-        data = data.copy()
-        if "timestamp" in data:
-            data["timestamp"] = datetime.fromisoformat(data["timestamp"])
-        return cls(**data)
-
-    def key(self) -> tuple[str, int, str]:
-        """Get unique key for deduplication."""
-        return (self.file_path, self.line, self.message)
 
 
 class ViolationTracker:
@@ -53,8 +16,8 @@ class ViolationTracker:
     def __init__(self, session_manager: Any) -> None:
         self.session_manager = session_manager
         self._violations: dict[
-            SessionID, dict[tuple[str, int, str], Violation]
-        ] = {}  # session_id -> {key -> violation}
+            SessionID, dict[tuple[str, int, str], dict[str, Any]]
+        ] = {}  # session_id -> {key -> violation_dict}
 
     def add_violation(
         self,
@@ -69,17 +32,20 @@ class ViolationTracker:
         if session_id not in self._violations:
             self._violations[session_id] = {}
 
-        violation = Violation(
-            file_path=file_path,
-            line=line,
-            message=message,
-            severity=severity,
-            rule=rule,
-        )
+        # Create violation dict for storage
+        violation_dict = {
+            "file_path": file_path,
+            "line": line,
+            "message": message,
+            "severity": severity,
+            "rule": rule,
+            "timestamp": datetime.now().isoformat(),
+            "fixed": False,
+        }
 
         # Use key for deduplication
-        key = violation.key()
-        self._violations[session_id][key] = violation
+        key = (file_path, line, message)
+        self._violations[session_id][key] = violation_dict
 
         # Also persist to session data
         self._save_violations(session_id)
@@ -87,24 +53,20 @@ class ViolationTracker:
     def add_violations(
         self,
         session_id: SessionID,
-        violations: list[Any],  # Generic violations from linters
+        violations: list[Violation],  # Proper Violation objects from config.models
         file_path: str,
         severity: str = "error",
     ) -> None:
         """Add multiple violations from a linter."""
         for v in violations:
-            # Handle different violation objects
-            line = getattr(v, "line", 0)
-            message = getattr(v, "message", str(v))
-            rule = getattr(v, "rule", None)
-
+            # Now we have proper Violation objects with typed attributes
             self.add_violation(
                 session_id=session_id,
-                file_path=file_path,
-                line=line,
-                message=message,
+                file_path=v.file_path or file_path,  # Use violation's file_path if available
+                line=v.line,
+                message=v.message,
                 severity=severity,
-                rule=rule,
+                rule=v.rule,
             )
 
     def mark_file_fixed(self, session_id: SessionID, file_path: str) -> None:
@@ -167,7 +129,8 @@ class ViolationTracker:
             return
 
         session_data = self.session_manager._load_session(session_id)
-        session_data["violations"] = [v.to_dict() for v in self._violations[session_id].values()]
+        # We're already storing dicts, so just convert to list
+        session_data["violations"] = list(self._violations[session_id].values())
         self.session_manager._save_session(session_id, session_data)
 
     def _load_violations(self, session_id: SessionID) -> None:
@@ -177,6 +140,7 @@ class ViolationTracker:
 
         violations_dict = {}
         for v_data in violations_data:
-            violation = Violation.from_dict(v_data)
-            violations_dict[violation.key()] = violation
+            # Reconstruct key from violation data
+            key = (v_data["file_path"], v_data["line"], v_data["message"])
+            violations_dict[key] = v_data
         self._violations[session_id] = violations_dict

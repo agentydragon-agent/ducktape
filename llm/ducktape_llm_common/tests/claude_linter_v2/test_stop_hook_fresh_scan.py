@@ -56,29 +56,15 @@ def check_attr(obj):
 
         # Should block due to errors
         response_dict = result.model_dump()
-        print(f"Response dict: {response_dict}")
-        print(f"Decision: {response_dict.get('decision')}")
-        print(f"Reason: {response_dict.get('reason')}")
-        print(f"Working dir: {Path.cwd()}")
-        print(f"Python files found: {list(Path.cwd().rglob('*.py'))}")
-        
-        # Debug: Check config
-        config = handler.config_loader.config
-        bare_except_config = config.get_check_config("python.bare_except")
-        print(f"bare_except config: {bare_except_config}")
-        if bare_except_config:
-            print(f"  enabled: {bare_except_config.enabled}")
-            print(f"  blocks_pre_hook: {bare_except_config.blocks_pre_hook}")
-            print(f"  blocks_stop_hook: {bare_except_config.blocks_stop_hook}")
-        assert response_dict.get("decision") == "block"
-        assert response_dict.get("reason") is not None
 
-        reason = response_dict["reason"]
-        assert "errors that must be fixed" in reason
-        assert str(bad_file) in reason
-        assert "Bare except" in reason or "bare-except" in reason
-        assert "hasattr" in reason
-        assert "cl2 check" in reason
+        # Check exact response structure
+        assert response_dict == {
+            "continue_": True,  # StopResponse sets this
+            "stopReason": None,
+            "suppressOutput": None,
+            "decision": "block",
+            "reason": f"Code has 1 errors that must be fixed:\n{bad_file}:  Line 4: Do not use bare `except` [ruff:E722]\n\nCommand to check all violations:  cl2 check {bad_file}",
+        }
 
     finally:
         os.chdir(original_cwd)
@@ -112,10 +98,15 @@ def safe_divide(a: float, b: float) -> float | None:
         # Handle the hook
         result = handler.handle("Stop", request)
 
-        # Should pass
+        # Should pass - check exact response
         response_dict = result.model_dump()
-        assert response_dict.get("decision") != "block"
-        assert response_dict.get("continue_") is True
+        assert response_dict == {
+            "continue_": True,
+            "stopReason": None,
+            "suppressOutput": None,
+            "decision": None,
+            "reason": None,
+        }
 
     finally:
         os.chdir(original_cwd)
@@ -142,9 +133,15 @@ def test_stop_hook_ignores_non_python_files(handler, session_id, tmp_path):
         # Handle the hook
         result = handler.handle("Stop", request)
 
-        # Should pass (no Python files)
+        # Should pass (no Python files) - check exact response
         response_dict = result.model_dump()
-        assert response_dict.get("decision") != "block"
+        assert response_dict == {
+            "continue_": True,
+            "stopReason": None,
+            "suppressOutput": None,
+            "decision": None,
+            "reason": None,
+        }
 
     finally:
         os.chdir(original_cwd)
@@ -173,9 +170,15 @@ def test_stop_hook_quality_gate_disabled(handler, session_id, tmp_path):
         # Handle the hook
         result = handler.handle("Stop", request)
 
-        # Should pass despite errors
+        # Should pass despite errors - check exact response
         response_dict = result.model_dump()
-        assert response_dict.get("decision") != "block"
+        assert response_dict == {
+            "continue_": True,
+            "stopReason": None,
+            "suppressOutput": None,
+            "decision": None,
+            "reason": None,
+        }
 
     finally:
         os.chdir(original_cwd)

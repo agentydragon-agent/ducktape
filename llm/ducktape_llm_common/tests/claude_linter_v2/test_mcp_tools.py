@@ -133,11 +133,11 @@ class TestMCPTools:
 
     def test_mcp_tool_post_hook_with_autofix(self, handler, session_id, tmp_path):
         """Test MCP tool in post-hook with autofix enabled."""
+        from ducktape_llm_common.claude_linter_v2.config.clean_models import ModularConfig
         from ducktape_llm_common.claude_linter_v2.config.models import AutofixCategory, PostToolHookConfig
-        from ducktape_llm_common.claude_linter_v2.config.modular_models import ModularClaudeLinterConfig
 
         # Create a real config model with proper nested structure
-        config = ModularClaudeLinterConfig()
+        config = ModularConfig()
         config.hooks["post"] = PostToolHookConfig(auto_fix=True, autofix_categories=[AutofixCategory.FORMATTING])
 
         # Replace the config loader's config

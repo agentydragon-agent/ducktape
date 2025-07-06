@@ -37,7 +37,7 @@ class SessionManager:
             try:
                 with open(session_file) as f:
                     return json.load(f)
-            except Exception as e:
+            except (json.JSONDecodeError, OSError) as e:
                 logger.error(f"Failed to load session {session_id}: {e}")
 
         # Return default session data
@@ -53,7 +53,7 @@ class SessionManager:
         try:
             with open(session_file, "w") as f:
                 json.dump(session_data, f, indent=2, default=str)
-        except Exception as e:
+        except (OSError, TypeError) as e:
             logger.error(f"Failed to save session {session_id}: {e}")
 
     def track_session(self, session_id: SessionID, working_dir: Path) -> None:
@@ -184,7 +184,7 @@ class SessionManager:
                         "rules": session_data.get("rules", []),
                     }
                 )
-            except Exception as e:
+            except (json.JSONDecodeError, OSError) as e:
                 logger.error(f"Failed to load session {session_id}: {e}")
 
         # Sort by last seen time (most recent first)

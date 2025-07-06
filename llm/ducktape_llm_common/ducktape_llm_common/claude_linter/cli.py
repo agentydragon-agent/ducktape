@@ -6,6 +6,7 @@ import tempfile
 from pathlib import Path
 
 import click
+from pydantic import ValidationError
 
 from .config import get_merged_config
 from .models import HookRequest, HookResponse
@@ -131,117 +132,7 @@ def check(files):
     sys.exit(0)
 
 
-@cli.group("hook")
-def hook():
-    """Run as configured Claude Code hook (reads JSON from stdin)."""
-    pass
-
-
-@hook.command("pre")
-def pre_hook():
-    """pre-write hook"""
-    # Create log directory
-    log_dir = Path.home() / ".cache" / "claude-linter"
-    log_dir.mkdir(parents=True, exist_ok=True)
-    log_file = log_dir / f"hook-pre-{datetime.datetime.now().isoformat()}.json"
-
-    # Read input
-    input_json = sys.stdin.read()
-
-    # Try to parse JSON for logging
-    try:
-        input_data = json.loads(input_json)
-    except json.JSONDecodeError:
-        input_data = input_json  # Fall back to raw string if invalid JSON
-
-    # Log input
-    log_data = {
-        "timestamp": datetime.datetime.now().isoformat(),
-        "hook_type": "pre",
-        "input": input_data,
-    }
-
-    try:
-        req = HookRequest.model_validate_json(input_json)
-    except Exception as e:
-        # Log error
-        log_data["error"] = str(e)
-        log_data["output"] = None
-        with open(log_file, "w") as f:
-            json.dump(log_data, f, indent=2)
-        click.echo("Error parsing JSON input", err=True)
-        sys.exit(1)
-
-    decision = evaluate_pre(req)
-    output_json = decision.model_dump_json(by_alias=True, exclude_none=True)
-
-    # Log output
-    log_data["output"] = json.loads(output_json)  # Parse JSON to embed as structure
-    log_data["exit_code"] = 0
-    with open(log_file, "w") as f:
-        json.dump(log_data, f, indent=2)
-
-    print(output_json, file=sys.stdout)
-    sys.exit(0)
-
-
-# Expose post-hook logic
-@hook.command("post")
-def post_hook():
-    """post-write hook"""
-    # Create log directory
-    log_dir = Path.home() / ".cache" / "claude-linter"
-    log_dir.mkdir(parents=True, exist_ok=True)
-    log_file = log_dir / f"hook-post-{datetime.datetime.now().isoformat()}.json"
-
-    # Read input
-    input_json = sys.stdin.read()
-
-    # Try to parse JSON for logging
-    try:
-        input_data = json.loads(input_json)
-    except json.JSONDecodeError:
-        input_data = input_json  # Fall back to raw string if invalid JSON
-
-    # Log input
-    log_data = {
-        "timestamp": datetime.datetime.now().isoformat(),
-        "hook_type": "post",
-        "input": input_data,
-    }
-
-    try:
-        req = HookRequest.model_validate_json(input_json)
-    except Exception as e:
-        # Log error
-        log_data["error"] = str(e)
-        log_data["output"] = None
-        with open(log_file, "w") as f:
-            json.dump(log_data, f, indent=2)
-        click.echo("Error parsing JSON input", err=True)
-        sys.exit(1)
-
-    decision = evaluate_post(req)
-    if decision:
-        output_json = decision.model_dump_json(by_alias=True, exclude_none=True)
-        print(output_json, file=sys.stdout)
-        # Parse JSON to embed as structure
-        log_data["output"] = json.loads(output_json)
-    else:
-        output_json = None
-        log_data["output"] = None
-
-    # Log exit code
-    log_data["exit_code"] = 0
-    with open(log_file, "w") as f:
-        json.dump(log_data, f, indent=2)
-
-    sys.exit(0)
-
-
-# Expose pre/post as top-level commands for compatibility with tests
-cli.add_command(pre_hook, name="pre")
-cli.add_command(post_hook, name="post")
+# Hook commands have been removed - use claude-linter-v2 instead
 
 
 @cli.command("clean")
@@ -312,7 +203,7 @@ def unified_hook():
     # Parse request to get hook event name
     try:
         req = HookRequest.model_validate_json(input_json)
-    except Exception as e:
+    except (ValidationError, json.JSONDecodeError) as e:
         click.echo(f"Error parsing hook request: {e}", err=True)
         sys.exit(1)
 

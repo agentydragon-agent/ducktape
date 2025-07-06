@@ -143,7 +143,7 @@ class PromptLoader:
         # Load the prompt content
         try:
             content = prompt_path.read_text(encoding="utf-8")
-        except Exception as e:
+        except (OSError, UnicodeDecodeError) as e:
             raise PromptError(f"Failed to read prompt '{prompt_name}': {e}") from e
 
         # Cache the raw content
@@ -205,7 +205,7 @@ class PromptLoader:
             content = self.load_prompt(prompt_name, use_cache=False)
         except PromptNotFoundError:
             return [f"Prompt '{prompt_name}' not found"]
-        except Exception as e:
+        except (OSError, UnicodeDecodeError) as e:
             return [f"Failed to load prompt: {e}"]
 
         # Check for common issues
@@ -248,7 +248,7 @@ class PromptLoader:
         """
         try:
             content = self.load_prompt(prompt_name, use_cache=False)
-        except Exception:
+        except (OSError, UnicodeDecodeError, PromptNotFoundError):
             return {}
 
         metadata = {}

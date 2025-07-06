@@ -7,6 +7,7 @@ A unified code quality and permission management system for Claude Code.
 
 import json
 import logging
+import subprocess
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -86,7 +87,7 @@ def close_desktop_notification(notification_id: int) -> None:
 
         # Close notification
         notify_iface.CloseNotification(notification_id)
-    except Exception as e:
+    except (dbus.exceptions.DBusException, AttributeError) as e:
         logger.debug(f"Failed to close notification {notification_id}: {e}")
 
 
@@ -97,7 +98,7 @@ def _try_send_crash_notification(title: str, message: str) -> None:
     """
     try:
         send_desktop_notification(title, message, urgency="critical")
-    except Exception as e:
+    except (subprocess.CalledProcessError, FileNotFoundError, OSError) as e:
         logger.warning(f"Failed to send crash notification: {e}")
         logger.debug(f"Notification was: {title}: {message}", exc_info=True)
 

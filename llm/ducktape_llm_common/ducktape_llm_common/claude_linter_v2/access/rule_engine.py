@@ -4,11 +4,11 @@ import logging
 from dataclasses import dataclass
 from enum import IntEnum
 
+from ..config.clean_models import ModularConfig
 from ..config.models import (
     AccessControlRule,
     RuleAction,
 )
-from ..config.modular_models import ModularClaudeLinterConfig
 from ..session.manager import SessionManager
 from ..types import SessionID
 from .context import PredicateContext
@@ -38,7 +38,7 @@ class RuleMatch:
 class RuleEngine:
     """Evaluates access control rules with proper precedence."""
 
-    def __init__(self, config: ModularClaudeLinterConfig, session_manager: SessionManager) -> None:
+    def __init__(self, config: ModularConfig, session_manager: SessionManager) -> None:
         """
         Initialize the rule engine.
 
@@ -95,7 +95,7 @@ class RuleEngine:
                             rule_description=f"Repo rule: {rule.predicate}",
                         )
                     )
-            except Exception as e:
+            except (ValueError, AttributeError, NameError) as e:
                 logger.error(f"Failed to evaluate repo rule '{rule.predicate}': {e}")
 
         # 3. Check session-specific rules (highest precedence)
@@ -113,7 +113,7 @@ class RuleEngine:
                             rule_description=f"Session rule: {predicate}",
                         )
                     )
-            except Exception as e:
+            except (ValueError, AttributeError, NameError) as e:
                 logger.error(f"Failed to evaluate session rule '{predicate}': {e}")
 
         # Apply "most restrictive wins" logic

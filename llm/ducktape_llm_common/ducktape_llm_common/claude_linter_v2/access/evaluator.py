@@ -120,7 +120,8 @@ class PredicateEvaluator:
                     if callable(result):
                         result = result(context)
                     return bool(result)
-                except Exception:
+                except (SyntaxError, NameError, AttributeError):
+                    # Last line wasn't a valid expression
                     pass
 
             # If we get here, no result was found
@@ -153,5 +154,5 @@ class PredicateEvaluator:
             # Just try to compile it
             compile(predicate, "<predicate>", "eval")
             return None
-        except Exception as e:
+        except SyntaxError as e:
             return str(e)

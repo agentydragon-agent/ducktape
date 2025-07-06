@@ -5,15 +5,34 @@
   vars:
     rcup_computer: atlas
     ducktape_path: "/home/{{ my_user }}/code/ducktape"
+    docker_state: absent  # Proxmox host doesn't need Docker
+    skip_ubuntu_ppas: true  # Debian-based Proxmox can't use Ubuntu PPAs
+    include_heavy_dev_packages: false
   remote_user: root
 
-  roles:
-    - role: wireguard
-      tags: [wireguard]
-    - role: cli
-      tags: [cli]
-
   tasks:
+    # Fix Proxmox repository issues
+    - name: Remove Proxmox enterprise repositories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/apt/sources.list.d/pve-enterprise.list
+        - /etc/apt/sources.list.d/ceph.list
+      tags: [repositories]
+
+    - name: Add Proxmox no-subscription repository
+      ansible.builtin.apt_repository:
+        repo: "deb http://download.proxmox.com/debian/pve bookworm pve-no-subscription"
+        state: present
+        filename: pve-no-subscription
+      tags: [repositories]
+
+    - name: Update apt cache after repository changes
+      ansible.builtin.apt:
+        update_cache: yes
+      tags: [repositories]
+
     - name: Ensure ducktape directory parent exists
       ansible.builtin.file:
         path: "/home/{{ my_user }}/code"
@@ -33,15 +52,9 @@
       tags: [dotfiles]
       ignore_errors: yes  # In case SSH keys aren't set up yet
 
-    - name: Install htop
+    - name: Install Firefox
       ansible.builtin.package:
-        name: htop
-        state: present
-      tags: [packages]
-
-    - name: Install neovim
-      ansible.builtin.package:
-        name: neovim
+        name: firefox-esr
         state: present
       tags: [packages]
 
@@ -49,12 +62,12 @@
       ansible.builtin.apt:
         name:
           - gnome
-          - virt-manager
           - virt-viewer
           - libvirt-daemon-system
           - libvirt-clients
           - gdm3  # GNOME Display Manager
           - zsh
+          - spice-client-gtk  # For SPICE console connections
         state: present
         install_recommends: no
       tags: [packages, desktop, virtualization]
@@ -86,3 +99,12 @@
         enabled: yes
         state: started
       tags: [desktop]
+
+    - import_role:
+        name: wireguard
+      tags: [wireguard]
+
+    - import_role:
+        name: cli
+      tags: [cli]
+

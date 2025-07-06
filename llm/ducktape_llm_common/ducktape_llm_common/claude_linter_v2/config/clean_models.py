@@ -124,17 +124,48 @@ class ModularConfig(BaseModel):
 
     def get_rule_config(self, rule_key: str) -> RuleConfig | None:
         """Get configuration for a specific rule."""
-        return self.rules.get(rule_key)
+        # First check explicit config
+        if rule_key in self.rules:
+            return self.rules[rule_key]
+
+        # Fall back to defaults from registry
+        from ..rule_registry import RuleRegistry
+
+        rule_def = RuleRegistry.get_by_key(rule_key)
+        if rule_def:
+            # Create a RuleConfig from registry defaults
+            return RuleConfig(
+                enabled=True,  # Rules in registry are enabled by default
+                blocks_pre_hook=rule_def.default_blocks_pre,
+                blocks_stop_hook=rule_def.default_blocks_stop,
+                message=rule_def.default_message,
+            )
+
+        return None
 
     def get_ruff_codes_to_select(self) -> list[str]:
         """Get list of ruff codes to force enable."""
         from ..rule_registry import RuleRegistry
 
         codes = []
-        for key, rule_config in self.rules.items():
-            if key.startswith("ruff.") and rule_config.enabled:
-                rule_def = RuleRegistry.get_by_key(key)
-                if rule_def:
-                    codes.append(rule_def.code)
+
+        # First, get all ruff rules from the registry that are enabled by default
+        for rule_def in RuleRegistry.get_all_rules():
+            if rule_def.category == "ruff":
+                key = f"ruff.{rule_def.code}"
+                # Check if there's an explicit config for this rule
+                if key in self.rules:
+                    # Use explicit config
+                    rule_config = self.rules[key]
+                    # Handle both dict and RuleConfig objects
+                    if isinstance(rule_config, dict):
+                        if rule_config.get("enabled", True):
+                            codes.append(rule_def.code)
+                    elif rule_config.enabled:
+                        codes.append(rule_def.code)
+                else:
+                    # Use default from registry
+                    if rule_def.default_blocks_pre or rule_def.default_blocks_stop:
+                        codes.append(rule_def.code)
 
         return codes

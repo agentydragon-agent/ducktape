@@ -60,8 +60,6 @@ class PredicateRule(BaseModel):
     priority: int = Field(0, description="Rule priority (higher = evaluated first)")
 
 
-
-
 # PythonHardBlock and PythonConfig have been removed - use modular config instead
 
 

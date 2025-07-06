@@ -1,73 +1,81 @@
 """Test modular configuration functionality."""
 
-from ducktape_llm_common.claude_linter_v2.config import (
-    ConfigLoader,
-    ModularClaudeLinterConfig,
-)
+from ducktape_llm_common.claude_linter_v2.config import ConfigLoader
+from ducktape_llm_common.claude_linter_v2.config.clean_models import ModularConfig
+from ducktape_llm_common.claude_linter_v2.rule_registry import RuleRegistry
 
 
 def test_modular_config_creation():
     """Test creating a modular config."""
-    config = ModularClaudeLinterConfig()
+    config = ModularConfig()
 
     # Check defaults
     assert config.version == "2.0"
-    assert config.python_bare_except.enabled is True
-    assert config.python_hasattr.enabled is True
-    assert config.python_getattr.enabled is True
-    assert config.python_setattr.enabled is True
-    assert config.python_barrel_init.enabled is True
+
+    # By default, rules dict is empty (defaults come from registry)
+    assert config.rules == {}
+
+    # Check that we can get default rule configs from registry
+    bare_except_rule = RuleRegistry.get_by_key("python.bare_except")
+    assert bare_except_rule is not None
+    assert bare_except_rule.default_blocks_pre is True
+    assert bare_except_rule.default_blocks_stop is True
 
 
-def test_modular_config_check_lookup():
-    """Test looking up check configurations."""
-    config = ModularClaudeLinterConfig()
+def test_modular_config_rule_lookup():
+    """Test looking up rule configurations."""
+    config = ModularConfig()
 
-    # Test direct lookups
-    bare_except = config.get_check_config("python.bare_except")
-    assert bare_except is not None
-    assert bare_except.enabled is True
-    assert "bare except" in bare_except.message.lower()
+    # Test lookup for rule with defaults
+    bare_except_config = config.get_rule_config("python.bare_except")
+    assert bare_except_config is not None
+    assert bare_except_config.enabled is True  # Default from registry
+    assert bare_except_config.blocks_pre_hook is True  # Default from registry
+    assert bare_except_config.blocks_stop_hook is True  # Default from registry
 
-    # Test ruff lookups
-    ruff_e722 = config.get_check_config("ruff.E722")
-    assert ruff_e722 is not None
-    assert ruff_e722.enabled is True
-
-    # Test non-existent check
-    fake = config.get_check_config("fake.check")
-    assert fake is None
+    # Test lookup for non-existent rule
+    fake_config = config.get_rule_config("fake.rule")
+    assert fake_config is None
 
 
-def test_modular_config_is_enabled():
-    """Test checking if rules are enabled."""
-    config = ModularClaudeLinterConfig()
+def test_modular_config_rule_override():
+    """Test overriding rule configurations."""
+    config = ModularConfig()
 
-    assert config.is_check_enabled("python.bare_except") is True
-    assert config.is_check_enabled("ruff.E722") is True
-    assert config.is_check_enabled("fake.check") is False
+    # Override a rule
+    config.rules["python.bare_except"] = {
+        "enabled": False,
+        "blocks_pre_hook": False,
+        "blocks_stop_hook": True,
+        "message": "Custom message",
+    }
 
-    # Disable a check
-    config.python_bare_except.enabled = False
-    assert config.is_check_enabled("python.bare_except") is False
+    # Check the override
+    bare_except_config = config.get_rule_config("python.bare_except")
+    assert bare_except_config is not None
+    assert bare_except_config.enabled is False
+    assert bare_except_config.blocks_pre_hook is False
+    assert bare_except_config.blocks_stop_hook is True
+    assert bare_except_config.message == "Custom message"
 
 
-def test_modular_config_ruff_force_select():
-    """Test getting ruff force select list."""
-    config = ModularClaudeLinterConfig()
+def test_modular_config_ruff_codes():
+    """Test getting ruff codes to select."""
+    config = ModularConfig()
 
-    force_select = config.get_ruff_force_select()
+    # Get default ruff codes
+    ruff_codes = config.get_ruff_codes_to_select()
 
-    # Should include enabled ruff rules
-    assert "E722" in force_select
-    assert "BLE001" in force_select
-    assert "B009" in force_select
-    assert "B010" in force_select
+    # Should include codes from registry that are enabled by default
+    assert "E722" in ruff_codes  # bare except
+    assert "BLE001" in ruff_codes  # blind except
+    assert "B009" in ruff_codes  # getattr with constant
+    assert "B010" in ruff_codes  # setattr with constant
 
     # Disable a rule
-    config.ruff_e722.enabled = False
-    force_select = config.get_ruff_force_select()
-    assert "E722" not in force_select
+    config.rules["ruff.E722"] = {"enabled": False}
+    ruff_codes = config.get_ruff_codes_to_select()
+    assert "E722" not in ruff_codes
 
 
 def test_modular_config_save_load(tmp_path):
@@ -75,22 +83,19 @@ def test_modular_config_save_load(tmp_path):
     config_path = tmp_path / "test-modular.toml"
 
     # Create config with custom values
-    config = ModularClaudeLinterConfig()
-    config.python_bare_except.enabled = False
-    config.python_bare_except.message = "Custom message"
-    config.ruff_e722.severity = "warning"
+    config = ModularConfig()
+    config.rules["python.bare_except"] = {"enabled": False, "message": "Custom message"}
+    config.rules["ruff.E722"] = {"blocks_stop_hook": False}
 
     # Save
     config.save_to_file(config_path)
 
     # Load
-    loader = ConfigLoader(config_path)
-    loaded = loader.config
+    loaded = ModularConfig.from_toml(config_path)
 
-    assert isinstance(loaded, ModularClaudeLinterConfig)
-    assert loaded.python_bare_except.enabled is False
-    assert loaded.python_bare_except.message == "Custom message"
-    assert loaded.ruff_e722.severity == "warning"
+    assert loaded.rules["python.bare_except"]["enabled"] is False
+    assert loaded.rules["python.bare_except"]["message"] == "Custom message"
+    assert loaded.rules["ruff.E722"]["blocks_stop_hook"] is False
 
 
 def test_modular_config_loading(tmp_path):
@@ -100,49 +105,64 @@ def test_modular_config_loading(tmp_path):
     modular_content = """
 version = "2.0"
 
-[python.bare_except]
+[rules]
+[rules."python.bare_except"]
 enabled = false
 message = "Custom message"
 
-[ruff.E722]
+[rules."ruff.E722"]
 enabled = true
-severity = "warning"
+blocks_stop_hook = false
 """
     modular_path.write_text(modular_content)
 
     # Test loading
-    loader = ConfigLoader(modular_path)
-    config = loader.config
-    assert isinstance(config, ModularClaudeLinterConfig)
-    assert config.python_bare_except.enabled is False
-    assert config.python_bare_except.message == "Custom message"
-    assert config.ruff_e722.enabled is True
-    assert config.ruff_e722.severity == "warning"
+    config = ModularConfig.from_toml(modular_path)
+    assert config.version == "2.0"
+
+    # Check loaded rules
+    bare_except_config = config.get_rule_config("python.bare_except")
+    assert bare_except_config is not None
+    assert bare_except_config.enabled is False
+    assert bare_except_config.message == "Custom message"
+
+    e722_config = config.get_rule_config("ruff.E722")
+    assert e722_config is not None
+    assert e722_config.enabled is True
+    assert e722_config.blocks_stop_hook is False
 
 
-def test_modular_config_custom_checks():
-    """Test adding custom checks via extra fields."""
-    config = ModularClaudeLinterConfig()
+def test_config_loader_integration(tmp_path):
+    """Test ConfigLoader with ModularConfig."""
+    # Create config file
+    config_path = tmp_path / ".claude-linter.toml"
+    config_content = """
+version = "2.0"
 
-    # Simulate loading config with custom checks
-    config.__pydantic_extra__ = {
-        "mypy.no_untyped_def": {
-            "enabled": True,
-            "message": "Functions must have type annotations",
-            "severity": "warning",
-        },
-        "project.no_print": {
-            "enabled": True,
-            "message": "Use logging instead of print",
-        },
-    }
+[rules]
+[rules."python.hasattr"]
+enabled = false
+blocks_pre_hook = false
+"""
+    config_path.write_text(config_content)
 
-    # Test lookup
-    mypy_check = config.get_check_config("mypy.no_untyped_def")
-    assert mypy_check is not None
-    assert mypy_check.enabled is True
-    assert mypy_check.severity == "warning"
+    # Change to tmp directory
+    import os
 
-    project_check = config.get_check_config("project.no_print")
-    assert project_check is not None
-    assert project_check.enabled is True
+    original_cwd = os.getcwd()
+    os.chdir(tmp_path)
+
+    try:
+        # Test loading
+        loader = ConfigLoader()
+        config = loader.config
+
+        assert isinstance(config, ModularConfig)
+        assert config.version == "2.0"
+
+        hasattr_config = config.get_rule_config("python.hasattr")
+        assert hasattr_config is not None
+        assert hasattr_config.enabled is False
+        assert hasattr_config.blocks_pre_hook is False
+    finally:
+        os.chdir(original_cwd)

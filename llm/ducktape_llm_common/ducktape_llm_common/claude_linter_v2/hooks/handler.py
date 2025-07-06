@@ -8,19 +8,18 @@ from typing import Any
 
 from ..access.context import PredicateContext
 from ..access.rule_engine import RuleEngine
-from ..config import ConfigLoader, RuleAction
-from ..config.models import AutofixCategory, Violation
-from ..diff.intelligence import DiffIntelligence
+from ..check_python import check_python_file
 from ..checkers_v2 import filter_violations
-from ..linters.python_ast import PythonASTAnalyzer
-from ..linters.python_ruff import PythonRuffLinter
-from ..pattern_matcher import PatternMatcher
+from ..config import ConfigLoader
+from ..config.models import AutofixCategory, RuleAction, Violation
+from ..diff.intelligence import DiffIntelligence
 from ..linters.python_formatter import PythonFormatter
 from ..llm_analyzer import LLMAnalyzer
 from ..pattern_matcher import PatternMatcher
 from ..session import SessionManager
 from ..session.violations import ViolationTracker
 from ..types import SessionID
+from ..utils.gitignore import get_git_tracked_files
 from .claude_responses import ClaudeBaseResponse
 from .exceptions import HookBugError
 from .formatting import format_access_denial, format_llm_message
@@ -99,17 +98,18 @@ class HookHandler:
         root_logger.addHandler(console_handler)
 
         # File handler if configured
-        if hasattr(config, "log_file") and config.log_file:
+        if config.log_file:
             log_file = Path(config.log_file)
             log_file.parent.mkdir(parents=True, exist_ok=True)
 
             file_handler = logging.FileHandler(log_file)
 
             # Set log level from config
-            log_level = getattr(config, "log_level", "INFO")
+            log_level = config.log_level
             try:
-                file_handler.setLevel(getattr(logging, log_level.upper()))
-            except AttributeError:
+                level_value = logging._nameToLevel.get(log_level.upper(), logging.INFO)
+                file_handler.setLevel(level_value)
+            except (AttributeError, KeyError):
                 file_handler.setLevel(logging.INFO)
                 logger.warning(f"Invalid log level '{log_level}', using INFO")
 
@@ -235,8 +235,8 @@ class HookHandler:
             "pre_hook_start",
             {
                 "tool": request.tool_name,
-                "file_path": getattr(request.tool_input, "file_path", None),
-                "has_content": bool(getattr(request.tool_input, "content", None)),
+                "file_path": request.tool_input.file_path if request.tool_input else None,
+                "has_content": bool(request.tool_input.content if request.tool_input else None),
             },
         )
 
@@ -264,7 +264,7 @@ class HookHandler:
         self._log_decision(
             session_id,
             "file_type_check",
-            {"is_python": is_python, "file_path": getattr(request.tool_input, "file_path", None)},
+            {"is_python": is_python, "file_path": request.tool_input.file_path if request.tool_input else None},
         )
 
         if not is_python:
@@ -312,7 +312,7 @@ class HookHandler:
         all_violations = violations + llm_violations
 
         # Filter to only blocking violations
-        blocking_violations = filter_pre_hook_blockers(all_violations, config)
+        blocking_violations = filter_violations(all_violations, config, "pre")
 
         if not blocking_violations:
             return PreToolApprove()
@@ -378,9 +378,9 @@ class HookHandler:
             "post_hook_start",
             {
                 "tool": request.tool_name,
-                "file_path": getattr(request.tool_input, "file_path", None),
-                "tool_succeeded": getattr(request, "tool_succeeded", None),
-                "has_tool_response": hasattr(request, "tool_response") or hasattr(request, "tool_result"),
+                "file_path": request.tool_input.file_path if request.tool_input else None,
+                "has_tool_response": isinstance(request, PostToolUseRequest)
+                and (request.tool_response is not None or request.tool_result is not None),
             },
         )
 
@@ -454,7 +454,7 @@ class HookHandler:
 
         # TODO: Read transcript to find only files touched since last Stop
         # For now, scan all Python files in working directory
-        
+
         # Get the working directory
         # TODO: Track directory per session
         working_dir = Path.cwd()
@@ -462,37 +462,38 @@ class HookHandler:
         # IMPORTANT: Run a fresh scan - DO NOT use stale violation tracking
         all_violations = []
         files_with_errors: dict[str, list] = {}
-        
-        # Find all Python files in the working directory
-        python_files = list(working_dir.rglob("*.py"))
-        logger.info(f"Stop hook: Found {len(python_files)} Python files in {working_dir}")
-        
+
+        # Find all Python files in the working directory that are tracked by git
+        # This respects .gitignore and won't scan node_modules, venv, etc.
+        python_files = get_git_tracked_files(working_dir, "*.py")
+        logger.info(f"Stop hook: Found {len(python_files)} git-tracked Python files in {working_dir}")
+
         for py_file in python_files:
             if not py_file.exists():
                 continue
-                
+
             try:
                 file_content = py_file.read_text()
-            except Exception as e:
+            except (OSError, UnicodeDecodeError) as e:
                 logger.debug(f"Could not read {py_file}: {e}")
                 continue
-            
+
             # Use the pure function to check for violations
             violations = check_python_file(
                 file_path=str(py_file),
                 content=file_content,
                 config=config,
-                critical_only=False  # Stop hook checks all violations
+                critical_only=False,  # Stop hook checks all violations
             )
-            
+
             logger.info(f"Stop hook: Checked {py_file}, found {len(violations)} violations")
             if violations:
                 for v in violations:
                     logger.info(f"  - Violation: {v.rule} at line {v.line}: {v.message}")
-            
+
             if violations:
                 # Only track violations that block stop hooks for quality gate
-                blocking_violations = filter_stop_hook_blockers(violations, config)
+                blocking_violations = filter_violations(violations, config, "stop")
                 logger.info(f"Stop hook: {len(blocking_violations)} are blocking violations")
                 if blocking_violations:
                     files_with_errors[str(py_file)] = blocking_violations
@@ -508,9 +509,7 @@ class HookHandler:
 
         # Get configured limits
         max_files = stop_hook_config.max_files_to_show if isinstance(stop_hook_config, StopHookConfig) else 5
-        max_per_file = (
-            stop_hook_config.max_violations_per_file if isinstance(stop_hook_config, StopHookConfig) else 3
-        )
+        max_per_file = stop_hook_config.max_violations_per_file if isinstance(stop_hook_config, StopHookConfig) else 3
 
         # Show up to max_files files with their violations
         for file_path, file_violations in list(files_with_errors.items())[:max_files]:
@@ -586,7 +585,7 @@ class HookHandler:
                 f"Sent D-Bus notification for session {session_id}: {title} "
                 f"(ID: {notification_id}, replaced: {replaces_id})"
             )
-        except Exception as e:
+        except (OSError, ImportError, AttributeError) as e:
             logger.error(f"Failed to send D-Bus notification: {e}", exc_info=True)
 
     def _clear_notification(self, session_id: SessionID) -> None:
@@ -600,7 +599,7 @@ class HookHandler:
                 close_desktop_notification(notification_id)
                 self.session_manager.clear_notification_id(session_id)
                 logger.debug(f"Cleared notification {notification_id} for session {session_id}")
-            except Exception as e:
+            except (OSError, ImportError, AttributeError) as e:
                 logger.debug(f"Failed to clear notification for session {session_id}: {e}")
 
     # Helper methods
@@ -618,7 +617,6 @@ class HookHandler:
 
         return self.rule_engine.evaluate_access(context, session_id)
 
-
     def _is_python_file(self, request: PreToolUseRequest | PostToolUseRequest) -> bool:
         """Check if request is for a Python file."""
         file_path = request.tool_input.file_path or ""
@@ -628,16 +626,16 @@ class HookHandler:
         """Check for Python AST and ruff violations."""
         file_path = request.tool_input.file_path
         content = request.tool_input.content
-        
+
         if not file_path or not content:
             return []
-            
+
         # Use the pure function
         return check_python_file(
             file_path=file_path,
             content=content,
             config=config,
-            critical_only=True  # Pre-hook only checks critical violations
+            critical_only=True,  # Pre-hook only checks critical violations
         )
 
     def _try_autofix(self, request: PostToolUseRequest, config: Any) -> str | None:
@@ -694,7 +692,7 @@ class HookHandler:
                 Path(file_path).write_text(formatted_code)
                 logger.info(f"Applied autofix to {file_path}: {changes}")
                 return f"Autofix applied: {', '.join(changes)}"
-            except Exception as e:
+            except (OSError, PermissionError, UnicodeDecodeError) as e:
                 logger.error(f"Failed to apply autofix: {e}")
                 return f"Autofix failed: {e}"
         else:
@@ -715,14 +713,17 @@ class HookHandler:
             file_path=file_path,
             content=file_content,
             config=config,
-            critical_only=False  # Post-hook tracks all violations
+            critical_only=False,  # Post-hook tracks all violations
         )
 
         if all_violations:
             # Only use diff intelligence for Edit/MultiEdit tools
             if request.tool_name in ("Edit", "MultiEdit"):
                 # Use diff intelligence to categorize violations
-                tool_response = getattr(request, "tool_response", None) or getattr(request, "tool_result", None)
+                # PostToolUseRequest may have either tool_response or tool_result
+                tool_response = None
+                if isinstance(request, PostToolUseRequest):
+                    tool_response = request.tool_response if request.tool_response is not None else request.tool_result
                 categorized_groups = self.diff_intelligence.analyze(
                     tool_name=request.tool_name,
                     tool_input=request.tool_input.model_dump(),
@@ -749,10 +750,7 @@ class HookHandler:
                 # For other tools (Write, etc), track all violations normally
                 if all_violations:
                     self.violation_tracker.add_violations(
-                        session_id=session_id, 
-                        violations=all_violations, 
-                        file_path=file_path, 
-                        severity="mixed"
+                        session_id=session_id, violations=all_violations, file_path=file_path, severity="mixed"
                     )
         else:
             # File is completely clean - mark as fixed

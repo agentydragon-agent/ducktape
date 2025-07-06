@@ -190,26 +190,55 @@ class RuleRegistry:
     # Create lookup tables
     _BY_KEY: dict[str, RuleDefinition] = {}
     _BY_CODE: dict[tuple[str, str], RuleDefinition] = {}
+    _INITIALIZED = False
 
     @classmethod
     def _initialize(cls) -> None:
         """Initialize lookup tables from class attributes."""
-        if cls._BY_KEY:  # Already initialized
+        if cls._INITIALIZED:  # Already initialized
             return
 
-        for attr_name in dir(cls):
-            attr = getattr(cls, attr_name)
-            if isinstance(attr, RuleDefinition):
-                # Create canonical key
-                key = f"{attr.category}.{attr.code}"
-                cls._BY_KEY[key] = attr
-                cls._BY_CODE[(attr.category, attr.code)] = attr
+        # Explicitly register all rules instead of using getattr
+        all_rules = [
+            cls.PYTHON_BARE_EXCEPT,
+            cls.PYTHON_HASATTR,
+            cls.PYTHON_GETATTR,
+            cls.PYTHON_SETATTR,
+            cls.PYTHON_BARREL_INIT,
+            cls.RUFF_E722,
+            cls.RUFF_BLE001,
+            cls.RUFF_B009,
+            cls.RUFF_B010,
+            cls.RUFF_S113,
+            cls.RUFF_S608,
+            cls.RUFF_B006,
+            cls.RUFF_PGH003,
+            cls.RUFF_E501,
+            cls.RUFF_B008,
+            cls.RUFF_E402,
+            cls.RUFF_PLC0415,
+            cls.RUFF_B904,
+        ]
+
+        for rule in all_rules:
+            # Create canonical key
+            key = f"{rule.category}.{rule.code}"
+            cls._BY_KEY[key] = rule
+            cls._BY_CODE[(rule.category, rule.code)] = rule
+
+        cls._INITIALIZED = True
 
     @classmethod
     def get_by_key(cls, key: str) -> RuleDefinition | None:
         """Get rule by canonical key (e.g., 'python.bare_except', 'ruff.E722')."""
         cls._initialize()
         return cls._BY_KEY.get(key)
+
+    @classmethod
+    def get_all_rules(cls) -> list[RuleDefinition]:
+        """Get all registered rules."""
+        cls._initialize()
+        return list(cls._BY_KEY.values())
 
     @classmethod
     def get_by_code(cls, category: str, code: str) -> RuleDefinition | None:
