@@ -3,12 +3,10 @@
 import logging
 from dataclasses import dataclass
 from enum import IntEnum
-from typing import List, Optional, Tuple
 
 from ..config.models import (
     AccessControlRule,
     ClaudeLinterConfig,
-    PredicateRule,
     RuleAction,
 )
 from ..session.manager import SessionManager
@@ -20,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 class RuleSource(IntEnum):
     """Source of a rule, used for precedence."""
-    
+
     CONFIG_ACCESS_CONTROL = 1  # Lowest precedence
     CONFIG_REPO_RULES = 2
     SESSION_RULES = 3  # Highest precedence
@@ -29,20 +27,20 @@ class RuleSource(IntEnum):
 @dataclass
 class RuleMatch:
     """A matched rule with its source and action."""
-    
+
     action: RuleAction
     source: RuleSource
-    message: Optional[str] = None
-    rule_description: Optional[str] = None
+    message: str | None = None
+    rule_description: str | None = None
 
 
 class RuleEngine:
     """Evaluates access control rules with proper precedence."""
-    
+
     def __init__(self, config: ClaudeLinterConfig, session_manager: SessionManager) -> None:
         """
         Initialize the rule engine.
-        
+
         Args:
             config: Linter configuration
             session_manager: Session manager for session rules
@@ -50,28 +48,28 @@ class RuleEngine:
         self.config = config
         self.session_manager = session_manager
         self.evaluator = PredicateEvaluator()
-    
+
     def evaluate_access(
         self,
         context: PredicateContext,
         session_id: str,
-    ) -> Tuple[RuleAction, Optional[str]]:
+    ) -> tuple[RuleAction, str | None]:
         """
         Evaluate all applicable rules for the given context.
-        
+
         Uses "most restrictive wins" logic:
         - DENY > WARN > ALLOW
         - Higher precedence rules override lower precedence
-        
+
         Args:
             context: Predicate context
             session_id: Session ID for session rules
-            
+
         Returns:
             Tuple of (action, message)
         """
-        matches: List[RuleMatch] = []
-        
+        matches: list[RuleMatch] = []
+
         # 1. Check path-based access control rules (lowest precedence)
         for rule in self.config.access_control:
             if self._match_access_control_rule(rule, context):
@@ -83,7 +81,7 @@ class RuleEngine:
                         rule_description=f"Path rule: {', '.join(rule.paths)}",
                     )
                 )
-        
+
         # 2. Check repo-wide predicate rules
         for rule in self.config.repo_rules:
             try:
@@ -98,7 +96,7 @@ class RuleEngine:
                     )
             except Exception as e:
                 logger.error(f"Failed to evaluate repo rule '{rule.predicate}': {e}")
-        
+
         # 3. Check session-specific rules (highest precedence)
         session_rules = self.session_manager.get_session_rules(session_id)
         for rule in session_rules:
@@ -116,16 +114,16 @@ class RuleEngine:
                     )
             except Exception as e:
                 logger.error(f"Failed to evaluate session rule '{predicate}': {e}")
-        
+
         # Apply "most restrictive wins" logic
         if not matches:
             # No rules matched, default to allow
             return RuleAction.ALLOW, None
-        
+
         # Sort by:
         # 1. Action severity (DENY > WARN > ALLOW)
         # 2. Source precedence (SESSION > REPO > ACCESS_CONTROL)
-        def rule_sort_key(match: RuleMatch) -> Tuple[int, int]:
+        def rule_sort_key(match: RuleMatch) -> tuple[int, int]:
             # Action severity (lower number = more restrictive)
             action_severity = {
                 RuleAction.DENY: 0,
@@ -133,12 +131,12 @@ class RuleEngine:
                 RuleAction.ALLOW: 2,
             }
             return (action_severity[match.action], -match.source.value)
-        
+
         matches.sort(key=rule_sort_key)
-        
+
         # Take the most restrictive rule
         winner = matches[0]
-        
+
         # Build message
         message_parts = []
         if winner.message:
@@ -149,29 +147,27 @@ class RuleEngine:
                 message_parts.append("Permission denied")
             elif winner.action == RuleAction.WARN:
                 message_parts.append("Warning")
-        
+
         if winner.rule_description:
             message_parts.append(f"({winner.rule_description})")
-        
+
         # Add information about overridden rules if relevant
         if len(matches) > 1 and winner.action == RuleAction.DENY:
             # Count how many allows were overridden
             allow_count = sum(1 for m in matches if m.action == RuleAction.ALLOW)
             if allow_count > 0:
-                message_parts.append(
-                    f"Note: {allow_count} allow rule(s) were overridden by this deny rule"
-                )
-        
+                message_parts.append(f"Note: {allow_count} allow rule(s) were overridden by this deny rule")
+
         message = ". ".join(message_parts) if message_parts else None
-        
+
         logger.debug(
             f"Rule evaluation for {context}: "
             f"winner={winner.action} from {winner.source.name}, "
             f"total matches={len(matches)}"
         )
-        
+
         return winner.action, message
-    
+
     def _match_access_control_rule(
         self,
         rule: AccessControlRule,
@@ -179,24 +175,24 @@ class RuleEngine:
     ) -> bool:
         """
         Check if an access control rule matches the context.
-        
+
         Args:
             rule: Access control rule
             context: Predicate context
-            
+
         Returns:
             True if rule matches
         """
         # Check if tool matches
         if context.tool not in rule.tools:
             return False
-        
+
         # Check if path matches any pattern
         if not context.path:
             return False
-        
+
         for pattern in rule.paths:
             if context.glob_match(pattern):
                 return True
-        
+
         return False

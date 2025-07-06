@@ -9,7 +9,7 @@ import json
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 import click
 
@@ -39,12 +39,12 @@ def cli(ctx: click.Context) -> None:
     type=str,
     help="JSON request from Claude Code (stdin if not provided)",
 )
-def hook(hook_type: str, request_json: Optional[str]) -> None:
+def hook(hook_type: str, request_json: str | None) -> None:
     """Handle Claude Code hook requests."""
     # Read JSON from stdin if not provided
     if request_json is None:
         request_json = sys.stdin.read()
-    
+
     try:
         request_data = json.loads(request_json)
     except json.JSONDecodeError as e:
@@ -54,14 +54,14 @@ def hook(hook_type: str, request_json: Optional[str]) -> None:
         }
         click.echo(json.dumps(error_response))
         sys.exit(1)
-    
+
     # Process hook
     handler = HookHandler()
     result = handler.handle(hook_type, request_data)
-    
+
     # Output result
     click.echo(json.dumps(result))
-    
+
     # Exit code based on decision
     if result.get("decision") == "block":
         sys.exit(2)
@@ -79,18 +79,18 @@ def session() -> None:
 @click.option("--expires", type=str, help="Duration (e.g., '2h', '30m')")
 @click.option("--session", type=str, help="Specific session ID (default: all in current dir)")
 @click.option("--dir", type=Path, help="Directory to affect (default: current)")
-def session_allow(predicate: str, expires: Optional[str], session: Optional[str], dir: Optional[Path]) -> None:
+def session_allow(predicate: str, expires: str | None, session: str | None, dir: Path | None) -> None:
     """Grant temporary permissions using Python predicates."""
     from .session import SessionManager
-    
+
     manager = SessionManager()
-    
+
     # Parse expiration
     expiry_time = None
     if expires:
         # TODO: Parse duration string to datetime
         pass
-    
+
     # Add rule
     target_dir = dir or Path.cwd()
     affected = manager.add_rule(
@@ -100,7 +100,7 @@ def session_allow(predicate: str, expires: Optional[str], session: Optional[str]
         session_id=session,
         directory=target_dir,
     )
-    
+
     if affected:
         click.echo(f"✓ Permission granted to {affected} session(s)")
         click.echo(f"  Predicate: {predicate}")
@@ -114,13 +114,13 @@ def session_allow(predicate: str, expires: Optional[str], session: Optional[str]
 @click.argument("predicate")
 @click.option("--session", type=str, help="Specific session ID (default: all in current dir)")
 @click.option("--dir", type=Path, help="Directory to affect (default: current)")
-def session_deny(predicate: str, session: Optional[str], dir: Optional[Path]) -> None:
+def session_deny(predicate: str, session: str | None, dir: Path | None) -> None:
     """Deny permissions using Python predicates."""
     from .session import SessionManager
-    
+
     manager = SessionManager()
     target_dir = dir or Path.cwd()
-    
+
     affected = manager.add_rule(
         predicate=predicate,
         action="deny",
@@ -128,7 +128,7 @@ def session_deny(predicate: str, session: Optional[str], dir: Optional[Path]) ->
         session_id=session,
         directory=target_dir,
     )
-    
+
     if affected:
         click.echo(f"✓ Permission denied to {affected} session(s)")
         click.echo(f"  Predicate: {predicate}")
@@ -141,31 +141,31 @@ def session_deny(predicate: str, session: Optional[str], dir: Optional[Path]) ->
 def session_list(all: bool) -> None:
     """List active sessions and their permissions."""
     from .session import SessionManager
-    
+
     manager = SessionManager()
     sessions = manager.list_sessions(all_dirs=all)
-    
+
     if not sessions:
         click.echo("No active sessions found")
         return
-    
+
     current_dir = Path.cwd()
-    
+
     # Group by directory
-    by_dir: Dict[Path, list] = {}
+    by_dir: dict[Path, list] = {}
     for session_info in sessions:
         dir_path = session_info["directory"]
         if dir_path not in by_dir:
             by_dir[dir_path] = []
         by_dir[dir_path].append(session_info)
-    
+
     # Display current directory first
     if current_dir in by_dir:
         click.echo(f"Sessions in {current_dir}:")
         for session_info in by_dir[current_dir]:
             _display_session(session_info)
         del by_dir[current_dir]
-    
+
     # Display other directories
     if by_dir and all:
         click.echo("\nSessions in other directories:")
@@ -175,11 +175,11 @@ def session_list(all: bool) -> None:
                 _display_session(session_info)
 
 
-def _display_session(session_info: Dict[str, Any]) -> None:
+def _display_session(session_info: dict[str, Any]) -> None:
     """Display a single session's information."""
     session_id = session_info["id"]
     last_seen = session_info["last_seen"]
-    
+
     # Calculate time ago
     now = datetime.now()
     delta = now - datetime.fromisoformat(last_seen)
@@ -189,9 +189,9 @@ def _display_session(session_info: Dict[str, Any]) -> None:
         ago = f"{int(delta.total_seconds() / 60)}m ago"
     else:
         ago = f"{int(delta.total_seconds() / 3600)}h ago"
-    
+
     click.echo(f"  {session_id[:8]}... - last seen {ago}")
-    
+
     # Show active rules
     rules = session_info.get("rules", [])
     if rules:
@@ -210,7 +210,7 @@ def profile() -> None:
 @profile.command("activate")
 @click.argument("name")
 @click.option("--session", type=str, help="Specific session ID (default: all in current dir)")
-def profile_activate(name: str, session: Optional[str]) -> None:
+def profile_activate(name: str, session: str | None) -> None:
     """Activate a predefined permission profile."""
     # TODO: Implement profile activation
     click.echo(f"Activating profile: {name}")
@@ -234,7 +234,7 @@ def check(paths: tuple[Path, ...], fix: bool, categories: tuple[str, ...]) -> No
     # TODO: Implement direct file checking
     if not paths:
         paths = (Path.cwd(),)
-    
+
     click.echo(f"Checking {len(paths)} path(s)...")
     if fix:
         click.echo(f"Auto-fixing categories: {', '.join(categories) or 'all'}")
