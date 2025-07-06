@@ -3,7 +3,7 @@
 import logging
 from pathlib import Path
 
-from .modular_models import ModularClaudeLinterConfig
+from .clean_models import ModularConfig
 
 logger = logging.getLogger(__name__)
 
@@ -25,14 +25,14 @@ class ConfigLoader:
             config_path: Explicit path to config file, or None to search
         """
         self.config_path = config_path
-        self._config: ModularClaudeLinterConfig | None = None
+        self._config: ModularConfig | None = None
 
-    def load(self) -> ModularClaudeLinterConfig:
+    def load(self) -> ModularConfig:
         """
         Load configuration from file or use defaults.
 
         Returns:
-            Loaded configuration in modular format
+            Loaded configuration
         """
         if self._config is not None:
             return self._config
@@ -41,7 +41,7 @@ class ConfigLoader:
         if self.config_path:
             if self.config_path.exists():
                 logger.info(f"Loading config from {self.config_path}")
-                self._config = ModularClaudeLinterConfig.load_from_file(self.config_path)
+                self._config = ModularConfig.from_toml(self.config_path)
                 return self._config
             else:
                 logger.warning(f"Config file not found: {self.config_path}")
@@ -50,10 +50,10 @@ class ConfigLoader:
         config_file = self._find_config_file()
         if config_file:
             logger.info(f"Loading config from {config_file}")
-            self._config = ModularClaudeLinterConfig.load_from_file(config_file)
+            self._config = ModularConfig.from_toml(config_file)
         else:
             logger.info("No config file found, using defaults")
-            self._config = ModularClaudeLinterConfig()
+            self._config = ModularConfig()
 
         return self._config
 
@@ -81,7 +81,7 @@ class ConfigLoader:
 
         return None
 
-    def reload(self) -> ModularClaudeLinterConfig:
+    def reload(self) -> ModularConfig:
         """
         Force reload of configuration.
 
@@ -92,7 +92,7 @@ class ConfigLoader:
         return self.load()
 
     @property
-    def config(self) -> ModularClaudeLinterConfig:
+    def config(self) -> ModularConfig:
         """Get the loaded configuration."""
         if self._config is None:
             self.load()

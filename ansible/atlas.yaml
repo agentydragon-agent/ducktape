@@ -2,13 +2,37 @@
 - hosts: atlas
   vars_files:
     - vars/common_vars.yml
+  vars:
+    rcup_computer: atlas
+    ducktape_path: "/home/{{ my_user }}/code/ducktape"
   remote_user: root
 
   roles:
     - role: wireguard
       tags: [wireguard]
+    - role: cli
+      tags: [cli]
 
   tasks:
+    - name: Ensure ducktape directory parent exists
+      ansible.builtin.file:
+        path: "/home/{{ my_user }}/code"
+        state: directory
+        owner: "{{ my_user }}"
+        group: "{{ my_user }}"
+        mode: '0755'
+      tags: [dotfiles]
+
+    - name: Clone ducktape repository if not present
+      ansible.builtin.git:
+        repo: "git@gitlab.com:agentydragon/ducktape"
+        dest: "{{ ducktape_path }}"
+        accept_hostkey: yes
+      become: true
+      become_user: "{{ my_user }}"
+      tags: [dotfiles]
+      ignore_errors: yes  # In case SSH keys aren't set up yet
+
     - name: Install htop
       ansible.builtin.package:
         name: htop
@@ -20,3 +44,45 @@
         name: neovim
         state: present
       tags: [packages]
+
+    - name: Install desktop and virtualization packages
+      ansible.builtin.apt:
+        name:
+          - gnome
+          - virt-manager
+          - virt-viewer
+          - libvirt-daemon-system
+          - libvirt-clients
+          - gdm3  # GNOME Display Manager
+          - zsh
+        state: present
+        install_recommends: no
+      tags: [packages, desktop, virtualization]
+
+    - name: Ensure libvirt service is started
+      ansible.builtin.systemd:
+        name: libvirtd
+        state: started
+        enabled: yes
+      tags: [virtualization]
+
+    - name: Create primary user
+      ansible.builtin.user:
+        name: "{{ my_user }}"
+        comment: Primary user account
+        shell: /usr/bin/zsh
+        home: "/home/{{ my_user }}"
+        create_home: yes
+        groups: 
+          - sudo
+          - libvirt  # for virt-manager access
+        append: yes
+        state: present
+      tags: [users]
+
+    - name: Enable GDM display manager
+      ansible.builtin.systemd:
+        name: gdm3
+        enabled: yes
+        state: started
+      tags: [desktop]

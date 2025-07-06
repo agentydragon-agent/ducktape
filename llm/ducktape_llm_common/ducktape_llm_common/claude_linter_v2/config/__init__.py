@@ -1,5 +1,6 @@
 """Configuration management for Claude Linter v2."""
 
+from .clean_models import ModularConfig, RuleConfig
 from .loader import ConfigLoader
 from .models import (
     AccessControlRule,
@@ -13,7 +14,6 @@ from .models import (
     TaskProfile,
     Violation,
 )
-from .modular_models import CheckConfigBase, ModularClaudeLinterConfig
 
 __all__ = [
     # Loader
@@ -29,7 +29,7 @@ __all__ = [
     "RuleAction",
     "TaskProfile",
     "Violation",
-    # Modular Models
-    "ModularClaudeLinterConfig",
-    "CheckConfigBase",
+    # Clean Models
+    "ModularConfig",
+    "RuleConfig",
 ]

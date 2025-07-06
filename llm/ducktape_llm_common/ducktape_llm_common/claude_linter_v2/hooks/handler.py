@@ -11,9 +11,11 @@ from ..access.rule_engine import RuleEngine
 from ..config import ConfigLoader, RuleAction
 from ..config.models import AutofixCategory, Violation
 from ..diff.intelligence import DiffIntelligence
+from ..checkers_v2 import filter_violations
 from ..linters.python_ast import PythonASTAnalyzer
-from ..linters.python_formatter import PythonFormatter
 from ..linters.python_ruff import PythonRuffLinter
+from ..pattern_matcher import PatternMatcher
+from ..linters.python_formatter import PythonFormatter
 from ..llm_analyzer import LLMAnalyzer
 from ..pattern_matcher import PatternMatcher
 from ..session import SessionManager
@@ -309,7 +311,10 @@ class HookHandler:
         # Combine all violations
         all_violations = violations + llm_violations
 
-        if not all_violations:
+        # Filter to only blocking violations
+        blocking_violations = filter_pre_hook_blockers(all_violations, config)
+
+        if not blocking_violations:
             return PreToolApprove()
 
         # Format violations - only use diff intelligence for Edit/MultiEdit
@@ -320,13 +325,13 @@ class HookHandler:
                 tool_name=request.tool_name,
                 tool_input=request.tool_input.model_dump(),
                 tool_response=None,  # PreToolUse has no response
-                violations=all_violations,
+                violations=blocking_violations,
             )
             formatted_violations = self.diff_intelligence.format_violations_by_category(categorized_groups)
         else:
             # Standard formatting for other tools
             violation_messages = []
-            for v in all_violations[: config.max_errors_to_show]:
+            for v in blocking_violations[: config.max_errors_to_show]:
                 violation_messages.append(f"Line {v.line}: {v.message}")
             formatted_violations = "\n".join(violation_messages)
 
@@ -346,13 +351,14 @@ class HookHandler:
             ),
         )
 
-        # Track violations
-        self.violation_tracker.add_violations(
-            session_id=session_id,
-            violations=all_violations,
-            file_path=request.tool_input.file_path or "",
-            severity="error",
-        )
+        # Track all violations (not just blocking ones) for the Stop hook
+        if all_violations:
+            self.violation_tracker.add_violations(
+                session_id=session_id,
+                violations=all_violations,
+                file_path=request.tool_input.file_path or "",
+                severity="mixed",  # Contains both blocking and non-blocking
+            )
 
         return PreToolDeny(llm_message=formatted)
 
@@ -446,62 +452,88 @@ class HookHandler:
         if isinstance(stop_hook_config, StopHookConfig) and not stop_hook_config.quality_gate:
             return StopAllow()
 
-        # Get violation summary
-        summary = self.violation_tracker.get_violation_summary(session_id)
-        if summary["total"] == 0:
-            # Clean - clear tracking data
-            self.violation_tracker.clear_session(session_id)
+        # TODO: Read transcript to find only files touched since last Stop
+        # For now, scan all Python files in working directory
+        
+        # Get the working directory
+        # TODO: Track directory per session
+        working_dir = Path.cwd()
+
+        # IMPORTANT: Run a fresh scan - DO NOT use stale violation tracking
+        all_violations = []
+        files_with_errors: dict[str, list] = {}
+        
+        # Find all Python files in the working directory
+        python_files = list(working_dir.rglob("*.py"))
+        logger.info(f"Stop hook: Found {len(python_files)} Python files in {working_dir}")
+        
+        for py_file in python_files:
+            if not py_file.exists():
+                continue
+                
+            try:
+                file_content = py_file.read_text()
+            except Exception as e:
+                logger.debug(f"Could not read {py_file}: {e}")
+                continue
+            
+            # Use the pure function to check for violations
+            violations = check_python_file(
+                file_path=str(py_file),
+                content=file_content,
+                config=config,
+                critical_only=False  # Stop hook checks all violations
+            )
+            
+            logger.info(f"Stop hook: Checked {py_file}, found {len(violations)} violations")
+            if violations:
+                for v in violations:
+                    logger.info(f"  - Violation: {v.rule} at line {v.line}: {v.message}")
+            
+            if violations:
+                # Only track violations that block stop hooks for quality gate
+                blocking_violations = filter_stop_hook_blockers(violations, config)
+                logger.info(f"Stop hook: {len(blocking_violations)} are blocking violations")
+                if blocking_violations:
+                    files_with_errors[str(py_file)] = blocking_violations
+                    all_violations.extend(blocking_violations)
+
+        logger.info(f"Stop hook: Total error violations: {len(all_violations)}")
+        # If no errors found, allow stop
+        if not all_violations:
             return StopAllow()
 
-        # Check severity
-        by_severity = summary["by_severity"]
-        if by_severity.get("error", 0) > 0:
-            # Errors present - must prevent stop
-            # Get the actual violations to show details
-            violations = self.violation_tracker.get_unfixed_violations(session_id)
+        # Build detailed error message
+        error_parts = [f"Code has {len(all_violations)} errors that must be fixed:"]
 
-            # Group violations by file for better formatting
-            by_file: dict[str, list] = {}
-            for v in violations:
-                if v.file_path not in by_file:
-                    by_file[v.file_path] = []
-                by_file[v.file_path].append(v)
+        # Get configured limits
+        max_files = stop_hook_config.max_files_to_show if isinstance(stop_hook_config, StopHookConfig) else 5
+        max_per_file = (
+            stop_hook_config.max_violations_per_file if isinstance(stop_hook_config, StopHookConfig) else 3
+        )
 
-            # Build detailed error message
-            error_parts = [f"Code has {by_severity.get('error', 0)} errors that must be fixed:"]
+        # Show up to max_files files with their violations
+        for file_path, file_violations in list(files_with_errors.items())[:max_files]:
+            error_parts.append(f"\n{file_path}:")
+            # Show up to max_per_file violations per file
+            for v in file_violations[:max_per_file]:
+                # v.rule is an optional field in Violation model
+                if v.rule:
+                    error_parts.append(f"  Line {v.line}: {v.message} [{v.rule}]")
+                else:
+                    error_parts.append(f"  Line {v.line}: {v.message}")
+            if len(file_violations) > max_per_file:
+                error_parts.append(f"  ... and {len(file_violations) - max_per_file} more")
 
-            # Get configured limits
-            max_files = stop_hook_config.max_files_to_show if isinstance(stop_hook_config, StopHookConfig) else 5
-            max_per_file = (
-                stop_hook_config.max_violations_per_file if isinstance(stop_hook_config, StopHookConfig) else 3
-            )
+        if len(files_with_errors) > max_files:
+            error_parts.append(f"\n... and {len(files_with_errors) - max_files} more files")
 
-            # Show up to max_files files with their violations
-            for file_path, file_violations in list(by_file.items())[:max_files]:
-                error_parts.append(f"\n{file_path}:")
-                # Show up to max_per_file violations per file
-                for v in file_violations[:max_per_file]:
-                    # v.rule is an optional field in Violation model
-                    if v.rule:
-                        error_parts.append(f"  Line {v.line}: {v.message} [{v.rule}]")
-                    else:
-                        error_parts.append(f"  Line {v.line}: {v.message}")
-                if len(file_violations) > max_per_file:
-                    error_parts.append(f"  ... and {len(file_violations) - max_per_file} more")
+        # Add single command to check all files with violations
+        error_parts.append("\n\nCommand to check all violations:")
+        all_files = list(files_with_errors.keys())
+        error_parts.append(f"  cl2 check {' '.join(all_files)}")
 
-            if len(by_file) > max_files:
-                error_parts.append(f"\n... and {len(by_file) - max_files} more files")
-
-            # Add single command to check all files with violations
-            error_parts.append("\n\nCommand to check all violations:")
-            all_files = list(by_file.keys())
-            error_parts.append(f"  cl2 check {' '.join(all_files)}")
-
-            return StopPrevent(llm_message="".join(error_parts))
-
-        # Only warnings - allow but notify Claude
-        self.violation_tracker.clear_session(session_id)
-        return StopAllow()
+        return StopPrevent(llm_message="".join(error_parts))
 
     def _handle_subagent_stop(self, request: SubagentStopRequest, session_id: SessionID) -> HookOutcome:
         """Handle SubagentStop."""
@@ -586,9 +618,6 @@ class HookHandler:
 
         return self.rule_engine.evaluate_access(context, session_id)
 
-    def _get_pattern_matcher(self) -> PatternMatcher:
-        """Get pattern matcher."""
-        return self.pattern_matcher
 
     def _is_python_file(self, request: PreToolUseRequest | PostToolUseRequest) -> bool:
         """Check if request is for a Python file."""
@@ -597,67 +626,19 @@ class HookHandler:
 
     def _check_python_violations(self, request: PreToolUseRequest, config: Any) -> list[Violation]:
         """Check for Python AST and ruff violations."""
-        all_violations = []
-
-        # AST violations
         file_path = request.tool_input.file_path
-        if not file_path:
-            return []
-
-        # Get pattern matcher to check for relaxed rules
-        pattern_matcher = self._get_pattern_matcher()
-        file_context = pattern_matcher.get_file_context(file_path)
-
-        # Check if bare except should be enforced for this file
-        bare_except_enabled = config.python_bare_except.enabled
-        if "python.bare_except" in file_context["relaxed_checks"]:
-            bare_except_enabled = False
-
-        analyzer = PythonASTAnalyzer(
-            bare_except=bare_except_enabled,
-            getattr_setattr=config.python_hasattr.enabled
-            or config.python_getattr.enabled
-            or config.python_setattr.enabled,
-            barrel_init=file_path.endswith("__init__.py") and config.python_barrel_init.enabled,
-        )
-
         content = request.tool_input.content
-        if not content:
+        
+        if not file_path or not content:
             return []
-
-        ast_violations = analyzer.analyze_code(content, file_path)
-
-        # Filter out violations that are relaxed for this file
-        filtered_ast_violations = []
-        for v in ast_violations:
-            check_name = f"AST:{v.rule}" if not v.rule.startswith("AST:") else v.rule
-            should_relax, _ = pattern_matcher.should_relax_check(file_path, check_name)
-            if not should_relax:
-                filtered_ast_violations.append(v)
-
-        all_violations.extend(filtered_ast_violations)
-
-        # Ruff violations (critical only for pre-hook)
-        force_select = config.get_ruff_force_select()
-        ruff_linter = PythonRuffLinter(force_select=force_select)
-        ruff_violations = ruff_linter.check_code(content, file_path, critical_only=True)
-
-        # Filter ruff violations based on pattern rules
-        filtered_ruff_violations = []
-        for v in ruff_violations:
-            # Check both with and without ruff. prefix
-            should_relax = False
-            for check_name in [v.rule, f"ruff.{v.rule}"]:
-                relax, _ = pattern_matcher.should_relax_check(file_path, check_name)
-                if relax:
-                    should_relax = True
-                    break
-            if not should_relax:
-                filtered_ruff_violations.append(v)
-
-        all_violations.extend(filtered_ruff_violations)
-
-        return all_violations
+            
+        # Use the pure function
+        return check_python_file(
+            file_path=file_path,
+            content=content,
+            config=config,
+            critical_only=True  # Pre-hook only checks critical violations
+        )
 
     def _try_autofix(self, request: PostToolUseRequest, config: Any) -> str | None:
         """Try to apply autofix and return message if successful."""
@@ -729,23 +710,13 @@ class HookHandler:
         config = self.config_loader.config
         file_content = Path(file_path).read_text()
 
-        # Check AST violations
-        analyzer = PythonASTAnalyzer(
-            bare_except=config.python_bare_except.enabled,
-            getattr_setattr=config.python_hasattr.enabled
-            or config.python_getattr.enabled
-            or config.python_setattr.enabled,
-            barrel_init=file_path.endswith("__init__.py") and config.python_barrel_init.enabled,
+        # Use the pure function to check all violations
+        all_violations = check_python_file(
+            file_path=file_path,
+            content=file_content,
+            config=config,
+            critical_only=False  # Post-hook tracks all violations
         )
-        ast_violations = analyzer.analyze_code(file_content, file_path)
-
-        # Check ruff violations
-        force_select = config.get_ruff_force_select()
-        ruff_linter = PythonRuffLinter(force_select=force_select)
-        ruff_violations = ruff_linter.check_code(file_content, file_path, critical_only=False)
-
-        # Combine all violations
-        all_violations = ast_violations + ruff_violations
 
         if all_violations:
             # Only use diff intelligence for Edit/MultiEdit tools
@@ -769,20 +740,19 @@ class HookHandler:
                         session_id=session_id,
                         violations=violations_to_track,
                         file_path=file_path,
-                        severity="error" if any(v.rule.startswith("AST") for v in violations_to_track) else "warning",
+                        severity="mixed",  # Let the Stop hook decide what blocks
                     )
                 else:
                     # Only out-of-diff violations remain - mark file as effectively fixed
                     self.violation_tracker.mark_file_fixed(session_id, file_path)
             else:
                 # For other tools (Write, etc), track all violations normally
-                if ast_violations:
+                if all_violations:
                     self.violation_tracker.add_violations(
-                        session_id=session_id, violations=ast_violations, file_path=file_path, severity="error"
-                    )
-                if ruff_violations:
-                    self.violation_tracker.add_violations(
-                        session_id=session_id, violations=ruff_violations, file_path=file_path, severity="warning"
+                        session_id=session_id, 
+                        violations=all_violations, 
+                        file_path=file_path, 
+                        severity="mixed"
                     )
         else:
             # File is completely clean - mark as fixed

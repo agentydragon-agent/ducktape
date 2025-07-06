@@ -60,12 +60,6 @@ class PredicateRule(BaseModel):
     priority: int = Field(0, description="Rule priority (higher = evaluated first)")
 
 
-class CheckConfig(BaseModel):
-    """Configuration for a single check."""
-
-    enabled: bool = Field(True, description="Whether this check is enabled")
-    message: str | None = Field(None, description="Custom error message")
-    severity: Literal["error", "warning", "info"] = Field("error", description="Severity level")
 
 
 # PythonHardBlock and PythonConfig have been removed - use modular config instead

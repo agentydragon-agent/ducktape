@@ -89,7 +89,25 @@ These parts can't be done by Ansible:
 When provisioning a new VM or remote machine:
 
 1. The ducktape repository must be cloned before running the playbook, as the dotfiles deployment depends on it.
-2. Generate SSH key and add to GitHub/GitLab (see sections below)
+2. Generate SSH key and add to GitHub/GitLab:
+   ```bash
+   # On the new machine, generate SSH key:
+   ssh-keygen -t ed25519 -C "agentydragon@HOSTNAME"
+   
+   # Add both GitHub and GitLab to known hosts on the new machine:
+   ssh agentydragon@NEW_MACHINE_IP 'ssh-keyscan github.com gitlab.com >> ~/.ssh/known_hosts'
+   
+   # From your provisioning machine (with gh installed and authenticated):
+   ssh agentydragon@NEW_MACHINE_IP 'cat ~/.ssh/id_ed25519.pub' | \
+     gh ssh-key add - --title "HOSTNAME"
+   
+   # From your provisioning machine (with glab installed and authenticated):
+   ssh agentydragon@NEW_MACHINE_IP 'cat ~/.ssh/id_ed25519.pub' | \
+     glab ssh-key add -t "HOSTNAME"
+   
+   # Verify both worked from the new machine:
+   ssh agentydragon@NEW_MACHINE_IP 'for host in github.com gitlab.com; do echo "Testing $host:"; ssh -T git@$host; done'
+   ```
 3. Clone ducktape repository and checkout devel branch:
    ```bash
    ssh agentydragon@NEW_MACHINE_IP 'mkdir -p ~/code && git clone git@gitlab.com:agentydragon/ducktape ~/code/ducktape && cd ~/code/ducktape && git checkout devel'
@@ -106,31 +124,8 @@ When provisioning a new VM or remote machine:
    You'll need to confirm overwriting default files like .bashrc with 'y'.
 6. After successful deployment, update WireGuard configs on peer machines
 
-4. Set hostname on the VM (currently using IP address)
 
-## GitHub and GitLab SSH Key Setup
-
-After generating an SSH key on a new machine, you can add it to GitHub and GitLab using their CLI tools from your provisioning machine:
-
-```bash
-# On the new machine, generate SSH key:
-ssh-keygen -t ed25519 -C "agentydragon@HOSTNAME"
-
-# Add both GitHub and GitLab to known hosts on the new machine:
-ssh agentydragon@NEW_MACHINE_IP 'ssh-keyscan github.com gitlab.com >> ~/.ssh/known_hosts'
-
-# From your provisioning machine (with gh installed and authenticated):
-ssh agentydragon@NEW_MACHINE_IP 'cat ~/.ssh/id_ed25519.pub' | \
-  gh ssh-key add - --title "HOSTNAME"
-
-# From your provisioning machine (with glab installed and authenticated):
-ssh agentydragon@NEW_MACHINE_IP 'cat ~/.ssh/id_ed25519.pub' | \
-  glab ssh-key add -t "HOSTNAME"
-
-# Verify both worked from the new machine:
-ssh agentydragon@NEW_MACHINE_IP 'for host in github.com gitlab.com; do echo "Testing $host:"; ssh -T git@$host; done'
-```
-
+- TODO: Set hostname on the VM (currently using IP address)
 - TODO: Document how to set up `gh` authentication on the new machine (for CLI operations beyond SSH)
 - TODO: Document how to set up `glab` authentication on the new machine (for CLI operations beyond SSH)
 - TODO: Handle cronomix config - unclear how it should be managed (rcm symlinks individual files in ~/.config/cronomix, not the directory itself)

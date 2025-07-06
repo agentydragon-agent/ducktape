@@ -61,13 +61,15 @@ def test_stop_hook_blocks_with_unfixed_errors(handler, session_id, tmp_path):
 
     # Should block due to errors
     response_dict = result.model_dump()
-    assert response_dict.get("continue") is False  # StopPrevent sets continue=False
+    assert response_dict.get("continue_") is True  # Always True for hook responses
+    assert response_dict.get("decision") == "block"  # StopPrevent sets decision=block
     assert response_dict.get("reason") is not None
     reason = response_dict["reason"]
     assert "2 errors that must be fixed" in reason
     assert "/test/file.py" in reason
     assert "/test/other.py" in reason
     assert "Line 10:" in reason or "Line 20:" in reason  # Should show line numbers
+    assert "cl2 check" in reason  # Should include check command
 
 
 def test_stop_hook_allows_with_only_warnings(handler, session_id, tmp_path):
@@ -99,13 +101,10 @@ def test_stop_hook_allows_with_only_warnings(handler, session_id, tmp_path):
     # Handle the hook
     result = handler.handle("Stop", request)
 
-    # Should show FYI but allow
-    assert result["continue"] is True
-    assert result.get("decision") == "block"
-    assert "FYI:" in result["reason"]
-    assert "Found 2 unfixed code quality issues" in result["reason"]
-    assert "2 warnings" in result["reason"]
-    assert "Since there are only warnings, you can proceed if needed" in result["reason"]
+    # Should allow stop (only warnings)
+    response_dict = result.model_dump()
+    assert response_dict.get("continue_") is True  # StopAllow has continue_=True
+    assert response_dict.get("decision") is None  # StopAllow doesn't set decision
 
 
 def test_stop_hook_passes_with_no_violations(handler, session_id, tmp_path):
@@ -120,8 +119,9 @@ def test_stop_hook_passes_with_no_violations(handler, session_id, tmp_path):
     result = handler.handle("Stop", request)
 
     # Should pass
-    assert result["continue"] is True
-    assert result.get("decision") != "block"
+    response_dict = result.model_dump()
+    assert response_dict.get("continue_") is True  # StopAllow has continue_=True
+    assert response_dict.get("decision") is None  # StopAllow doesn't set decision
 
 
 def test_stop_hook_passes_when_quality_gate_disabled(handler, session_id, tmp_path):
@@ -148,8 +148,9 @@ def test_stop_hook_passes_when_quality_gate_disabled(handler, session_id, tmp_pa
     result = handler.handle("Stop", request)
 
     # Should pass despite errors
-    assert result["continue"] is True
-    assert result.get("decision") != "block"
+    response_dict = result.model_dump()
+    assert response_dict.get("continue_") is True  # StopAllow has continue_=True
+    assert response_dict.get("decision") is None  # StopAllow doesn't set decision
 
 
 def test_violations_marked_as_fixed(handler, session_id, tmp_path):
@@ -186,17 +187,16 @@ def test_violations_marked_as_fixed(handler, session_id, tmp_path):
     assert unfixed[0].file_path == "/test/other.py"
 
     # Stop hook should only report the unfixed violation
-    request_data = {
-        "hook_event_name": "Stop",
-        "session_id": str(session_id),
-        "tool_name": "Stop",
-        "tool_input": {},
-    }
+    request = StopRequest(
+        hook_event_name="Stop",
+        session_id=str(session_id),
+    )
 
-    result = handler.handle("Stop", request_data)
-    assert "Found 1 unfixed code quality issues" in result.get("reason", "")
-    assert "/test/other.py: 1 issues" in result.get("reason", "")
-    assert "/test/file.py" not in result.get("reason", "")
+    result = handler.handle("Stop", request)
+    # Since only warnings remain, should allow stop
+    response_dict = result.model_dump()
+    assert response_dict.get("continue_") is True  # Only warnings - allows stop
+    assert response_dict.get("decision") is None  # StopAllow doesn't set decision
 
 
 def test_violation_deduplication(handler, session_id):
