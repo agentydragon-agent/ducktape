@@ -104,9 +104,9 @@ When provisioning a new VM or remote machine:
 Note: The ducktape repository must be cloned before running the playbook, as the dotfiles deployment depends on it.
 
 1. Generate SSH key and add to GitHub/GitLab (see sections below)
-2. Clone ducktape repository:
+2. Clone ducktape repository and checkout devel branch:
    ```bash
-   ssh agentydragon@NEW_MACHINE_IP 'mkdir -p ~/code && git clone git@gitlab.com:agentydragon/ducktape ~/code/ducktape'
+   ssh agentydragon@NEW_MACHINE_IP 'mkdir -p ~/code && git clone git@gitlab.com:agentydragon/ducktape ~/code/ducktape && cd ~/code/ducktape && git checkout devel'
    ```
 3. Run the playbook from your provisioning machine:
    ```bash

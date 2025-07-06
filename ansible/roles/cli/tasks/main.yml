@@ -116,6 +116,38 @@
     name: "{{ my_user | default(ansible_user_id) }}"
     shell: /bin/zsh
 
+# Remove default Ubuntu directories (only if empty)
+# I have custom dirs configured via user-dirs.dirs
+- name: Check if default Ubuntu directories are empty
+  find:
+    paths: "/home/{{ my_user | default(ansible_user_id) }}/{{ item }}"
+    file_type: any
+  loop:
+    - Desktop
+    - Documents
+    - Downloads
+    - Music
+    - Pictures
+    - Public
+    - Templates
+    - Videos
+  register: dir_contents
+  become: true
+  become_user: "{{ my_user | default(ansible_user_id) }}"
+  failed_when: false  # Don't fail if directory doesn't exist
+
+- name: Ensure default directories are either absent or empty
+  file:
+    path: "/home/{{ my_user | default(ansible_user_id) }}/{{ item.item }}"
+    state: absent
+  when: item.matched == 0  # Directory exists but is empty
+  loop: "{{ dir_contents.results }}"
+  become: true
+  become_user: "{{ my_user | default(ansible_user_id) }}"
+  failed_when: 
+    - item.failed is defined and item.failed == false  # Directory exists
+    - item.matched > 0  # And is not empty
+
 # Deploy dotfiles before dev-env to ensure npmrc is in place
 - import_tasks: tasks/dotfiles.yml
 
