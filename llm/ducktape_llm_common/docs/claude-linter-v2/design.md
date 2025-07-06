@@ -153,17 +153,27 @@ relaxed_rules = ["bare_except", "type_checking"]
 ## CLI Interface
 
 ```bash
-# Hook mode (called by Claude Code)
-claude-linter hook --type pre --request-json '{...}'
+# Install hooks in Claude Code (one-time setup)
+cl2 install                           # Installs all 5 hook types
+cl2 install --dry-run                # Preview what would be installed
 
-# Session management (auto-detects current session)
-claude-linter session allow 'Edit("src/**")' --expires 2h
-claude-linter session list
-claude-linter profile activate refactoring
+# Hook mode (called automatically by Claude Code)
+cl2 hook                             # No --type needed, uses hook_event_name from request
 
-# Direct usage
-claude-linter check src/main.py
-claude-linter fix src/main.py --categories formatting
+# Session management (auto-detects sessions in current directory)
+cl2 session allow 'Edit("src/**")' --expires 2h
+cl2 session deny 'Write("/etc/*")'
+cl2 session forbid 'Bash("sudo *")'  # User-friendly alias for deny
+cl2 session list                     # Show sessions in current dir
+cl2 session list --all               # Show all sessions
+
+# Profile management (TODO)
+cl2 profile list
+cl2 profile activate refactoring
+
+# Direct usage (TODO)
+cl2 check src/main.py
+cl2 fix src/main.py --categories formatting
 ```
 
 ### Session ID Management
@@ -286,16 +296,58 @@ This allows:
 - Easy rollback if needed
 - Eventually deprecate v1 once v2 is stable
 
-## Implementation Phases
+## Implementation Status (Updated: Jan 2025)
 
-1. **Phase 1**: Core framework + config system
-2. **Phase 2**: Python predicate access control
-3. **Phase 3**: Python hard blocks (bare except, hasattr)
-4. **Phase 4**: Selective autofix by hook type
-5. **Phase 5**: Stop hook with session tracking
-6. **Phase 6**: MCP server
-7. **Phase 7**: LLM analysis (optional)
-8. **Phase 8**: Contextual guidance system
+### ✅ Completed
+1. **Phase 1**: Core framework + config system ✅
+   - CLI with `cl2` command
+   - Pydantic-based configuration models
+   - Hook handler infrastructure
+   
+2. **Phase 2**: Python predicate access control ✅
+   - Unrestricted Python eval for predicates
+   - Session management with per-session files
+   - Built-in predicates (Edit, Write, etc.)
+   - "Most restrictive wins" rule evaluation
+   
+3. **Phase 3**: Python hard blocks ✅
+   - AST analyzer for bare except
+   - Blocks hasattr/getattr/setattr usage
+   - Detects barrel __init__.py patterns
+   - Integrates with pre-hook blocking
+   
+4. **Phase 4**: Selective autofix by hook type ✅
+   - Full autofix for Write tool
+   - Formatting-only for Edit/MultiEdit
+   - Ruff integration with critical rules
+   - FYI pattern for post-hook notifications
+
+5. **Phase 5**: Session tracking ✅
+   - Per-session file storage
+   - Session commands: allow, deny, forbid, list
+   - Directory-based session inference
+   
+6. **Install command** ✅
+   - `cl2 install` configures all 5 hook types
+   - Single command handles all hooks via `hook_event_name`
+   - Forward compatibility (unknown hooks → no-op)
+
+### 🚧 TODO (High Priority)
+- **Stop hook quality gate**: Block if unfixed errors remain
+- **Diff-based intelligence**: In-diff vs near-diff vs out-of-diff
+
+### 📋 TODO (Medium Priority)
+- **Task profiles**: Pre-configured permission sets
+- **safe_git_commands predicate**: Built-in safety checks
+- **Duration parsing**: Support "2h", "30m" formats
+- **Modular config**: Refactor to `[python.bare_except]` style
+- **Direct file checking**: Make `cl2 check` work
+
+### 🔮 TODO (Low Priority)
+- **Phase 6**: MCP server for permission queries
+- **Phase 7**: LLM analysis integration
+- **Phase 8**: Contextual guidance system
+- **Predicate sandboxing**: Security for untrusted predicates
 
 ## Design Principles
 

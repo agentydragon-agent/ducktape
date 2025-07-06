@@ -6,10 +6,11 @@ from enum import IntEnum
 
 from ..config.models import (
     AccessControlRule,
-    ClaudeLinterConfig,
     RuleAction,
 )
+from ..config.modular_models import ModularClaudeLinterConfig
 from ..session.manager import SessionManager
+from ..types import SessionID
 from .context import PredicateContext
 from .evaluator import PredicateEvaluator
 
@@ -37,7 +38,7 @@ class RuleMatch:
 class RuleEngine:
     """Evaluates access control rules with proper precedence."""
 
-    def __init__(self, config: ClaudeLinterConfig, session_manager: SessionManager) -> None:
+    def __init__(self, config: ModularClaudeLinterConfig, session_manager: SessionManager) -> None:
         """
         Initialize the rule engine.
 
@@ -52,7 +53,7 @@ class RuleEngine:
     def evaluate_access(
         self,
         context: PredicateContext,
-        session_id: str,
+        session_id: SessionID,
     ) -> tuple[RuleAction, str | None]:
         """
         Evaluate all applicable rules for the given context.
@@ -99,11 +100,11 @@ class RuleEngine:
 
         # 3. Check session-specific rules (highest precedence)
         session_rules = self.session_manager.get_session_rules(session_id)
-        for rule in session_rules:
+        for rule_dict in session_rules:
             try:
-                predicate = rule["predicate"]
+                predicate = rule_dict["predicate"]
                 if self.evaluator.evaluate(predicate, context):
-                    action = RuleAction(rule["action"])
+                    action = RuleAction(rule_dict["action"])
                     matches.append(
                         RuleMatch(
                             action=action,

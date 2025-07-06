@@ -5,6 +5,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from ..types import SessionID
+
 
 @dataclass
 class PredicateContext:
@@ -28,7 +30,7 @@ class PredicateContext:
     command: str | None = None  # Command being executed
 
     # Session information
-    session_id: str = "unknown"
+    session_id: SessionID | None = None
     user: str | None = None  # Future: user identification
 
     # Timing information

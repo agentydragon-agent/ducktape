@@ -8,6 +8,8 @@ from typing import Any
 
 from platformdirs import user_data_dir
 
+from ..types import SessionID
+
 logger = logging.getLogger(__name__)
 
 
@@ -24,11 +26,11 @@ class SessionManager:
         self.sessions_dir.mkdir(parents=True, exist_ok=True)
         self.projects_dir.mkdir(parents=True, exist_ok=True)
 
-    def _session_file(self, session_id: str) -> Path:
+    def _session_file(self, session_id: SessionID) -> Path:
         """Get the path to a session's data file."""
         return self.sessions_dir / f"{session_id}.json"
 
-    def _load_session(self, session_id: str) -> dict[str, Any]:
+    def _load_session(self, session_id: SessionID) -> dict[str, Any]:
         """Load a single session from disk."""
         session_file = self._session_file(session_id)
         if session_file.exists():
@@ -45,7 +47,7 @@ class SessionManager:
             "rules": [],
         }
 
-    def _save_session(self, session_id: str, session_data: dict[str, Any]) -> None:
+    def _save_session(self, session_id: SessionID, session_data: dict[str, Any]) -> None:
         """Save a single session to disk."""
         session_file = self._session_file(session_id)
         try:
@@ -54,7 +56,7 @@ class SessionManager:
         except Exception as e:
             logger.error(f"Failed to save session {session_id}: {e}")
 
-    def track_session(self, session_id: str, working_dir: Path) -> None:
+    def track_session(self, session_id: SessionID, working_dir: Path) -> None:
         """
         Track that a session is active.
 
@@ -73,17 +75,12 @@ class SessionManager:
 
         self._save_session(session_id, session_data)
 
-    def end_session(self, session_id: str) -> None:
-        """Mark a session as ended (kept for compatibility, but does nothing)."""
-        # Sessions persist forever, no need to mark as ended
-        pass
-
     def add_rule(
         self,
         predicate: str,
         action: str,
         expires: datetime | None = None,
-        session_id: str | None = None,
+        session_id: SessionID | None = None,
         directory: Path | None = None,
     ) -> int:
         """
@@ -122,7 +119,7 @@ class SessionManager:
         else:
             # Add to all sessions in the directory
             for session_file in self.sessions_dir.glob("*.json"):
-                sid = session_file.stem
+                sid = SessionID(session_file.stem)
                 session_data = self._load_session(sid)
 
                 # Skip if session is in different directory
@@ -152,7 +149,7 @@ class SessionManager:
 
         # Scan all session files
         for session_file in self.sessions_dir.glob("*.json"):
-            session_id = session_file.stem
+            session_id = SessionID(session_file.stem)
             try:
                 session_data = self._load_session(session_id)
 
@@ -177,7 +174,7 @@ class SessionManager:
 
         return results
 
-    def get_session_rules(self, session_id: str) -> list[dict[str, Any]]:
+    def get_session_rules(self, session_id: SessionID) -> list[dict[str, Any]]:
         """Get active rules for a session."""
         session_data = self._load_session(session_id)
         rules = session_data.get("rules", [])
@@ -201,3 +198,9 @@ class SessionManager:
         # Convert to absolute path and replace / with -
         abs_path = str(path.resolve())
         return abs_path.replace("/", "-")
+
+    def end_session(self, session_id: SessionID) -> None:
+        """Mark a session as ended."""
+        # Currently a no-op - sessions persist until cleaned up
+        # This method exists for future extensibility
+        pass

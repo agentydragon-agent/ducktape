@@ -1,4 +1,4 @@
-# Claude Linter v2 Configuration
+# Claude Linter v2 Modular Configuration
 version = "2.0"
 
 # Display settings
@@ -11,30 +11,61 @@ tools = ["Write", "Edit", "MultiEdit"]
 action = "deny"
 message = "Production files are read-only"
 
-# Python-specific configuration
-[python]
-tools = ["ruff", "mypy"]
+# Python tools
+python.tools = ["ruff", "mypy"]
 
-# Critical ruff rules to always check in pre-hook
-ruff_force_select = [
-    "E722",     # bare-except
-    "BLE001",   # blind-except  
-    "B009",     # getattr-with-constant
-    "B010",     # setattr-with-constant
-    "S113",     # request-without-timeout
-    "B008",     # function-call-in-default-argument
-    "E402",     # module-import-not-at-top-of-file
-    "PLC0415",  # import-outside-top-level
-    "S608",     # hardcoded-sql-expression
-    "B904",     # raise-without-from-inside-except
-    "B006",     # mutable-argument-default
-    "PGH003",   # blanket-type-ignore
-]
+# Python checks
+[python.bare_except]
+enabled = true
 
-[python.hard_blocks]
-bare_except = true
-getattr_setattr = true
-barrel_init = true
+[python.hasattr]
+enabled = true
+
+[python.getattr]
+enabled = true
+
+[python.setattr]
+enabled = true
+
+[python.barrel_init]
+enabled = true
+
+# Critical ruff rules
+[ruff.E722]
+enabled = true
+
+[ruff.BLE001]
+enabled = true
+
+[ruff.B009]
+enabled = true
+
+[ruff.B010]
+enabled = true
+
+[ruff.S113]
+enabled = true
+
+[ruff.B008]
+enabled = true
+
+[ruff.E402]
+enabled = true
+
+[ruff.PLC0415]
+enabled = true
+
+[ruff.S608]
+enabled = true
+
+[ruff.B904]
+enabled = true
+
+[ruff.B006]
+enabled = true
+
+[ruff.PGH003]
+enabled = true
 
 # Hook behaviors
 [hooks.pre]
@@ -48,6 +79,7 @@ inject_permissions = true
 [hooks.stop]
 auto_fix = false
 inject_permissions = false
+quality_gate = true
 
 # Test file patterns
 test_patterns = [

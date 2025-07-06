@@ -1,7 +1,6 @@
 """Constants and enumerations for the prompt system."""
 
 from enum import Enum
-from typing import Dict
 
 
 class PromptName(str, Enum):
@@ -120,13 +119,13 @@ class PromptName(str, Enum):
         return categories.get(prompt_name, "Uncategorized")
 
     @classmethod
-    def by_category(cls) -> Dict[str, list["PromptName"]]:
+    def by_category(cls) -> dict[str, list["PromptName"]]:
         """Get all prompts organized by category.
 
         Returns:
             Dictionary mapping category names to lists of prompts
         """
-        result: Dict[str, list[PromptName]] = {}
+        result: dict[str, list[PromptName]] = {}
 
         for prompt in cls:
             category = cls.get_category(prompt)

@@ -7,14 +7,34 @@ A unified code quality and permission management system for Claude Code.
 
 import json
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 import click
+from pytimeparse import parse as parse_duration
 
 from . import __version__
 from .hooks import HookHandler
+from .types import parse_session_id
+
+
+def parse_expiry_duration(duration_str: str) -> datetime:
+    """Parse a duration string and return expiry datetime.
+
+    Args:
+        duration_str: Duration like "2h", "30m", "1d", "1h30m"
+
+    Returns:
+        Datetime when the duration expires from now
+
+    Raises:
+        click.ClickException: If duration format is invalid
+    """
+    seconds = parse_duration(duration_str)
+    if seconds is None:
+        raise click.ClickException(f"Invalid duration format: {duration_str}\nValid formats: 30m, 2h, 1d, 1h30m, etc.")
+    return datetime.now() + timedelta(seconds=seconds)
 
 
 @click.group(invoke_without_command=True)
@@ -28,19 +48,76 @@ def cli(ctx: click.Context) -> None:
 
 @cli.command()
 @click.option(
-    "--type",
-    "hook_type",
-    type=click.Choice(["pre", "post", "stop"]),
-    required=True,
-    help="Hook type to execute",
-)
-@click.option(
     "--request-json",
     type=str,
     help="JSON request from Claude Code (stdin if not provided)",
 )
-def hook(hook_type: str, request_json: str | None) -> None:
-    """Handle Claude Code hook requests."""
+def hook(request_json: str | None) -> None:
+    """Handle Claude Code hook requests.
+
+    HOOK TYPES AND BEHAVIOR:
+
+    1. PreToolUse
+       - When: Fires after Claude creates tool parameters and before processing the tool call
+       - Purpose: Can approve or block tool calls before execution
+       - Common tools: Task, Bash, Glob, Grep, Read, Edit, MultiEdit, Write, WebFetch, WebSearch
+       - Request data includes: session_id, transcript_path, tool name, parameters
+       - Response decision: "approve" (default) or "block" (prevents tool execution)
+       - Blocking shows stopReason to user and feeds back to Claude for correction
+
+    2. PostToolUse
+       - When: Fires immediately after a tool completes successfully
+       - Purpose: Can process tool results, auto-fix issues, show warnings
+       - Uses same matchers as PreToolUse
+       - Request data includes: session_id, transcript_path, tool name, parameters, result
+       - Response decision: "continue" (default) or "block" (with stopReason)
+       - Can suppress output with suppressOutput: true
+
+    3. Stop
+       - When: Fires when the main Claude Code agent has finished responding to a user query.
+       - Purpose: Final quality gates, cleanup, session summary
+       - Request data includes: session_id, transcript_path, final state
+       - Can prevent stopping with continue: false and stopReason
+
+    4. SubagentStop
+       - When: Fires when a Claude Code subagent (Task tool call) has finished responding
+       - Purpose: Monitor subagent completions, aggregate results
+       - Request data includes: session_id, transcript_path, task info, subagent state
+       - Can prevent stopping similar to Stop hook
+
+    5. Notification
+       - When: Fires when Claude Code sends notifications to the user
+       - Purpose: Track notifications, potentially modify or suppress them
+       - Request data includes: session_id, transcript_path, notification content
+       - Can modify notification behavior
+
+    RESPONSE MECHANISMS:
+
+    JSON Output
+       Common fields:
+       - "continue": boolean (default true) - whether Claude should proceed
+       - "decision": "approve" | "block" (PreToolUse) or "continue" | "block" (PostToolUse)
+       - "stopReason": string - message shown to user when blocking
+       - "suppressOutput": boolean - hide stdout from user
+       - "error": string - error message if hook itself failed
+
+    (There is also a legaxy exit code mechanism which we *will not use*.)
+
+    SECURITY CONSIDERATIONS:
+    - Hooks execute with full user permissions without confirmation
+    - Always validate and sanitize inputs from request data
+    - Use absolute paths to avoid directory traversal
+    - Quote shell variables to prevent injection
+    - Avoid accessing sensitive files or credentials
+
+    REQUEST DATA STRUCTURE:
+    All hooks receive at minimum:
+    - hook_event_name: string - the hook type (PreToolUse, PostToolUse, etc.)
+    - session_id: string - unique identifier for the Claude session
+    - transcript_path: string - path to session transcript file
+
+    Additional fields vary by hook type and tool being called.
+    """
     # Read JSON from stdin if not provided
     if request_json is None:
         request_json = sys.stdin.read()
@@ -50,6 +127,19 @@ def hook(hook_type: str, request_json: str | None) -> None:
     except json.JSONDecodeError as e:
         error_response = {
             "error": f"Invalid JSON: {e}",
+            "continue": False,
+        }
+        click.echo(json.dumps(error_response))
+        sys.exit(1)
+
+    # Extract hook type from request data
+    hook_type = request_data.get("hook_event_name", "")
+
+    # Validate hook type
+    valid_hooks = {"PreToolUse", "PostToolUse", "Stop", "SubagentStop", "Notification"}
+    if hook_type not in valid_hooks:
+        error_response = {
+            "error": f"Unknown hook event: {hook_type}",
             "continue": False,
         }
         click.echo(json.dumps(error_response))
@@ -86,10 +176,7 @@ def session_allow(predicate: str, expires: str | None, session: str | None, dir:
     manager = SessionManager()
 
     # Parse expiration
-    expiry_time = None
-    if expires:
-        # TODO: Parse duration string to datetime
-        pass
+    expiry_time = parse_expiry_duration(expires) if expires else None
 
     # Add rule
     target_dir = dir or Path.cwd()
@@ -97,7 +184,7 @@ def session_allow(predicate: str, expires: str | None, session: str | None, dir:
         predicate=predicate,
         action="allow",
         expires=expiry_time,
-        session_id=session,
+        session_id=parse_session_id(session) if session else None,
         directory=target_dir,
     )
 
@@ -125,13 +212,54 @@ def session_deny(predicate: str, session: str | None, dir: Path | None) -> None:
         predicate=predicate,
         action="deny",
         expires=None,
-        session_id=session,
+        session_id=parse_session_id(session) if session else None,
         directory=target_dir,
     )
 
     if affected:
         click.echo(f"✓ Permission denied to {affected} session(s)")
         click.echo(f"  Predicate: {predicate}")
+    else:
+        click.echo("⚠ No active sessions found in specified directory")
+
+
+@session.command("forbid")
+@click.argument("predicate")
+@click.option("--expires", type=str, help="Duration (e.g., '2h', '30m')")
+@click.option("--session", type=str, help="Specific session ID (default: all in current dir)")
+@click.option("--dir", type=Path, help="Directory to affect (default: current)")
+def session_forbid(predicate: str, expires: str | None, session: str | None, dir: Path | None) -> None:
+    """Forbid specific actions (user-friendly alias for deny).
+
+    Examples:
+        cl2 session forbid 'Write("/etc/*")'
+        cl2 session forbid 'Bash("sudo *")'
+        cl2 session forbid 'Edit("**/production.py")' --expires 2h
+    """
+    from .session import SessionManager
+
+    manager = SessionManager()
+
+    # Parse expiration
+    expiry_time = parse_expiry_duration(expires) if expires else None
+
+    # Add rule
+    target_dir = dir or Path.cwd()
+    affected = manager.add_rule(
+        predicate=predicate,
+        action="deny",
+        expires=expiry_time,
+        session_id=parse_session_id(session) if session else None,
+        directory=target_dir,
+    )
+
+    if affected:
+        click.echo(f"🚫 Forbidden: {predicate}")
+        click.echo(f"  Affected sessions: {affected}")
+        if expires:
+            click.echo(f"  Expires: {expires}")
+        click.echo("\n  To remove this restriction, use:")
+        click.echo(f"  cl2 session allow '{predicate}'")
     else:
         click.echo("⚠ No active sessions found in specified directory")
 
@@ -229,15 +357,105 @@ def profile_list() -> None:
 @click.argument("paths", nargs=-1, type=Path)
 @click.option("--fix", is_flag=True, help="Auto-fix issues where possible")
 @click.option("--categories", multiple=True, help="Categories to check/fix")
-def check(paths: tuple[Path, ...], fix: bool, categories: tuple[str, ...]) -> None:
-    """Check files for linting issues (direct usage)."""
-    # TODO: Implement direct file checking
+@click.option("--json", "output_json", is_flag=True, help="Output results as JSON")
+@click.option("--verbose", "-v", is_flag=True, help="Show detailed output")
+def check(paths: tuple[Path, ...], fix: bool, categories: tuple[str, ...], output_json: bool, verbose: bool) -> None:
+    """Check files for linting issues (direct usage).
+
+    Examples:
+        cl2 check file.py
+        cl2 check src/ tests/ --fix
+        cl2 check --fix --categories formatting,imports
+        cl2 check src/**/*.py --json
+    """
+    import json as json_module
+    from pathlib import Path
+
+    from .checker import FileChecker
+    from .config import AutofixCategory
+
+    # Default to current directory if no paths given
     if not paths:
         paths = (Path.cwd(),)
 
-    click.echo(f"Checking {len(paths)} path(s)...")
-    if fix:
-        click.echo(f"Auto-fixing categories: {', '.join(categories) or 'all'}")
+    # Parse categories
+    autofix_categories = []
+    if categories:
+        for cat in categories:
+            try:
+                autofix_categories.append(AutofixCategory(cat))
+            except ValueError:
+                click.echo(f"❌ Unknown category: {cat}", err=True)
+                click.echo(f"Valid categories: {', '.join(c.value for c in AutofixCategory)}", err=True)
+                sys.exit(1)
+    elif fix:
+        # Default to all categories if --fix is given without specific categories
+        autofix_categories = list(AutofixCategory)
+
+    # Create checker
+    checker = FileChecker(
+        fix=fix,
+        categories=autofix_categories,
+        verbose=verbose,
+    )
+
+    # Collect all files
+    all_files = []
+    for path in paths:
+        if path.is_file():
+            all_files.append(path)
+        elif path.is_dir():
+            # Find all Python files
+            all_files.extend(path.rglob("*.py"))
+        else:
+            # Might be a glob pattern
+            import glob
+
+            all_files.extend(Path(p) for p in glob.glob(str(path), recursive=True))
+
+    if not all_files:
+        click.echo("⚠️  No files found to check")
+        sys.exit(0)
+
+    # Check files
+    total_violations = 0
+    results = {}
+
+    for file_path in sorted(all_files):
+        if verbose:
+            click.echo(f"Checking {file_path}...")
+
+        violations = checker.check_file(file_path)
+        if violations:
+            total_violations += len(violations)
+            results[str(file_path)] = [v.model_dump() for v in violations]
+
+            if not output_json:
+                click.echo(f"\n{file_path}:")
+                for v in violations:
+                    icon = "🔧" if v.fixable and fix else "❌"
+                    click.echo(f"  {icon} Line {v.line}: {v.message} [{v.rule}]")
+
+    # Output results
+    if output_json:
+        output = {
+            "total_violations": total_violations,
+            "files_checked": len(all_files),
+            "results": results,
+        }
+        click.echo(json_module.dumps(output, indent=2))
+    else:
+        # Summary
+        click.echo(f"\n{'─' * 40}")
+        if total_violations == 0:
+            click.echo("✅ No issues found!")
+        else:
+            if fix:
+                click.echo("🔧 Fixed issues where possible")
+            click.echo(f"{'❌' if not fix else '⚠️ '} Found {total_violations} issue(s) in {len(results)} file(s)")
+
+    # Exit with error code if violations found
+    sys.exit(1 if total_violations > 0 and not fix else 0)
 
 
 @cli.command()
@@ -248,6 +466,102 @@ def fix(paths: tuple[Path, ...], categories: tuple[str, ...]) -> None:
     # Delegate to check with --fix
     ctx = click.get_current_context()
     ctx.invoke(check, paths=paths, fix=True, categories=categories)
+
+
+@cli.command()
+@click.option("--dry-run", is_flag=True, help="Show what would be done without modifying files")
+@click.option(
+    "--config", type=Path, default=Path.home() / ".claude" / "settings.json", help="Path to Claude config file"
+)
+def install(dry_run: bool, config: Path) -> None:
+    """Install claude-linter-v2 hooks in Claude Code configuration."""
+    import shutil
+
+    # Check if cl2 is available
+    cl2_path = shutil.which("cl2")
+    if not cl2_path:
+        click.echo("❌ Error: cl2 command not found in PATH", err=True)
+        click.echo("Please ensure claude-linter-v2 is installed globally.", err=True)
+        sys.exit(1)
+
+    # Load existing config
+    if not config.exists():
+        click.echo(f"❌ Error: Claude config not found at {config}", err=True)
+        click.echo("Please ensure Claude Code is installed and configured.", err=True)
+        sys.exit(1)
+
+    try:
+        with open(config) as f:
+            claude_config = json.load(f)
+    except json.JSONDecodeError as e:
+        click.echo(f"❌ Error: Invalid JSON in {config}: {e}", err=True)
+        sys.exit(1)
+
+    # Define hook configurations for ALL Claude Code hook types
+    # Using a single command for all hooks - the hook handler will determine type from hook_event_name
+    hook_command = f"{cl2_path} hook"
+
+    # All hook types use the same configuration
+    hook_config = [
+        {
+            "matcher": "",  # Empty string matches all events
+            "hooks": [{"type": "command", "command": hook_command}],
+        }
+    ]
+
+    # Install for ALL known hook types
+    all_hook_types = ["PreToolUse", "PostToolUse", "Stop", "SubagentStop", "Notification"]
+    hooks = dict.fromkeys(all_hook_types, hook_config)
+
+    # Check if hooks already exist
+    existing_hooks = []
+    for hook_name in hooks:
+        if hook_name in claude_config.get("hooks", {}):
+            existing_hooks.append(hook_name)
+
+    if existing_hooks and not dry_run:
+        click.echo(f"⚠️  Warning: The following hooks already exist: {', '.join(existing_hooks)}")
+        if not click.confirm("Do you want to overwrite them?"):
+            click.echo("Installation cancelled.")
+            return
+
+    # Show what will be done
+    click.echo("\n📋 Hook Configuration:")
+    click.echo(f"   Command: {cl2_path}")
+    click.echo("   Events:")
+    for hook_name, _ in hooks.items():
+        status = "✅ exists" if hook_name in claude_config.get("hooks", {}) else "➕ new"
+        click.echo(f"     - {hook_name} [{status}]")
+
+    if dry_run:
+        click.echo("\n🔍 Dry run mode - no changes made")
+        click.echo(f"\nWould add to {config}:")
+        click.echo(json.dumps({"hooks": hooks}, indent=2))
+        return
+
+    # Create backup
+    backup_path = config.with_suffix(".json.backup")
+    shutil.copy2(config, backup_path)
+    click.echo(f"\n📦 Created backup: {backup_path}")
+
+    # Update config
+    if "hooks" not in claude_config:
+        claude_config["hooks"] = {}
+
+    claude_config["hooks"].update(hooks)
+
+    # Write updated config
+    with open(config, "w") as f:
+        json.dump(claude_config, f, indent=2)
+
+    click.echo("\n✅ Successfully installed claude-linter-v2 hooks!")
+    click.echo("\nThe following hooks are now active:")
+    click.echo("  • PreToolUse: Blocks code quality issues before execution")
+    click.echo("  • PostToolUse: Auto-fixes formatting and shows warnings")
+    click.echo("  • Stop: Quality gate - blocks session end if unfixed errors remain")
+    click.echo("  • SubagentStop: Monitors subagent task completions")
+    click.echo("  • Notification: Tracks system notifications")
+    click.echo("\n🔄 Please restart Claude Code for changes to take effect.")
 
 
 if __name__ == "__main__":

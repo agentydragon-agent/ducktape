@@ -7,6 +7,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+from ..types import SessionID, parse_session_id
+
 
 class Violation(BaseModel):
     """A code quality violation."""
@@ -122,6 +124,7 @@ class HookConfig(BaseModel):
         default_factory=list, description="Categories to autofix (empty = use defaults)"
     )
     inject_permissions: bool = Field(True, description="Whether to inject permission info in responses")
+    quality_gate: bool = Field(False, description="Whether to enforce quality gate (Stop hook only)")
 
     @field_validator("autofix_categories", mode="before")
     @classmethod
@@ -199,7 +202,9 @@ class ClaudeLinterConfig(BaseModel):
         default_factory=lambda: {
             "pre": HookConfig(auto_fix=False),
             "post": HookConfig(auto_fix=True, autofix_categories=[AutofixCategory.FORMATTING]),
-            "stop": HookConfig(auto_fix=False, inject_permissions=False),
+            "stop": HookConfig(auto_fix=False, inject_permissions=False, quality_gate=True),
+            "notification": HookConfig(auto_fix=False, inject_permissions=False),
+            "subagent_stop": HookConfig(auto_fix=False, inject_permissions=False),
         },
         description="Hook-specific configurations",
     )
@@ -262,6 +267,14 @@ class HookRequest(BaseModel):
     # Additional fields that Claude Code might send
     request_id: str | None = None
     timestamp: datetime | None = None
+    hook_event_name: str | None = Field(None, description="Hook event name (PreToolUse, PostToolUse, etc)")
+
+    @property
+    def typed_session_id(self) -> SessionID | None:
+        """Get typed session ID."""
+        if self.session_id:
+            return parse_session_id(self.session_id)
+        return None
 
 
 class HookDecision(str, Enum):
@@ -285,5 +298,4 @@ class HookResponse(BaseModel):
     # Custom fields for our use (will be ignored by Claude Code)
     suggestions: list[str] | None = Field(None, description="Suggestions for fixes")
 
-    class Config:
-        populate_by_name = True  # Allow both 'continue' and 'continue_'
+    model_config = {"populate_by_name": True}  # Allow both 'continue' and 'continue_'

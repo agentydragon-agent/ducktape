@@ -4,7 +4,6 @@ from .loader import ConfigLoader
 from .models import (
     AccessControlRule,
     AutofixCategory,
-    ClaudeLinterConfig,
     HookConfig,
     HookDecision,
     HookRequest,
@@ -12,20 +11,19 @@ from .models import (
     HookType,
     LLMAnalysisConfig,
     PredicateRule,
-    PythonConfig,
-    PythonHardBlock,
     RuleAction,
     TaskProfile,
     ToolInput,
+    Violation,
 )
+from .modular_models import CheckConfigBase, ModularClaudeLinterConfig
 
 __all__ = [
     # Loader
     "ConfigLoader",
-    # Models
+    # Common Models (used by both legacy and modular)
     "AccessControlRule",
     "AutofixCategory",
-    "ClaudeLinterConfig",
     "HookConfig",
     "HookDecision",
     "HookRequest",
@@ -33,9 +31,11 @@ __all__ = [
     "HookType",
     "LLMAnalysisConfig",
     "PredicateRule",
-    "PythonConfig",
-    "PythonHardBlock",
     "RuleAction",
     "TaskProfile",
     "ToolInput",
+    "Violation",
+    # Modular Models
+    "ModularClaudeLinterConfig",
+    "CheckConfigBase",
 ]

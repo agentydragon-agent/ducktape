@@ -5,7 +5,7 @@ from collections.abc import Callable
 from .context import PredicateContext
 
 
-def create_tool_predicate(tool_name: str, pattern: str = None) -> Callable[[PredicateContext], bool]:
+def create_tool_predicate(tool_name: str, pattern: str | None = None) -> Callable[[PredicateContext], bool]:
     """
     Create a predicate that matches a specific tool and optionally a path pattern.
 
