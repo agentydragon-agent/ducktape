@@ -4,7 +4,7 @@
   become: true
   ansible.builtin.apt:
     pkg:
-      - postgresql
+      # - postgresql  <- seems to potentially auto-enable postgres service? not great
       - postgresql-client
       - android-tools-adb
       - esptool  # ESP8266/ESP32 flashing tool
