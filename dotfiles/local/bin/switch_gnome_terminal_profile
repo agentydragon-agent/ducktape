@@ -19,17 +19,11 @@ _PROFILE = flags.DEFINE_string(
     "Name or UUID of profile to set everywhere",
 )
 
-_AUTO_MODE = flags.DEFINE_bool(
-    "auto_mode",
-    False,
-    "Enable auto profile mode - creates/manages a fixed 'Auto' profile",
-)
-
 _THEME = flags.DEFINE_enum(
     "theme",
     None,
     ["light", "dark"],
-    "Theme to apply to auto profile (only used with --auto_mode)",
+    "Theme to apply to auto profile",
 )
 
 # Source profiles to copy colors from in auto mode
@@ -277,36 +271,12 @@ def _run_auto():
     # Create or update the auto profile with colors from the theme
     auto_uuid = create_or_update_auto_profile(_THEME.value)
 
-    # Set as default and update all windows
+    # Set as default
     gsettings_set_default_profile_uuid(auto_uuid)
-    dbus_update_profile_on_all_windows(auto_uuid)
-
-
-def _run_legacy():
-    # Legacy mode: switch to a named profile (original behavior)
-    if not _PROFILE.value:
-        raise ValueError("--profile must be specified without --auto_mode")
-
-    profile_uuid: UUID
-    try:
-        profile_uuid = UUID(_PROFILE.value)
-        if profile_uuid not in GSettingsProfiles().profile_uuids:
-            raise ValueError(f"No such profile UUID: {profile_uuid}")
-    except ValueError:  # not a UUID
-        uuid_by_name = get_profile_uuid_by_name_mapping()
-        if _PROFILE.value not in uuid_by_name:
-            raise Exception("No such profile (by UUID or name)")
-        profile_uuid: UUID = uuid_by_name[_PROFILE.value]
-
-    gsettings_set_default_profile_uuid(profile_uuid)
-    dbus_update_profile_on_all_windows(profile_uuid)
 
 
 def main(_):
-    if _AUTO_MODE.value:
-        _run_auto()
-    else:
-        _run_legacy()
+    _run_auto()
 
 
 if __name__ == "__main__":

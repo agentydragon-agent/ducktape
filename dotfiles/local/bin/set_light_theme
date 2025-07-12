@@ -1,2 +1,2 @@
 #!/bin/bash
-switch_gnome_terminal_profile --auto_mode --theme=light
+switch_gnome_terminal_profile --theme=light
