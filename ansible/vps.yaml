@@ -40,11 +40,6 @@
         name: nginx
         state: latest
 
-    - name: Enable Fail2Ban role
-      ansible.builtin.include_role:
-        name: nbigot.ansible-fail2ban
-      tags: [fail2ban]
-
     - name: Create fail2ban ignore IP configuration
       ansible.builtin.copy:
         dest: /etc/fail2ban/jail.d/99-ignore-my-ip.local
@@ -55,8 +50,11 @@
         owner: root
         group: root
       tags: [fail2ban]
-      notify:
-        - Restart fail2ban
+
+    - name: Enable Fail2Ban role
+      ansible.builtin.include_role:
+        name: nbigot.ansible-fail2ban
+      tags: [fail2ban]
 
     - name: Create user
       ansible.builtin.user:
