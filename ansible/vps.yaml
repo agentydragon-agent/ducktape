@@ -60,7 +60,7 @@
           - "agentydragon.com"
           - "www.agentydragon.com"
 
-    - name: "Let’s Encrypt | adgn.link"
+    - name: "Let's Encrypt | adgn.link"
       ansible.builtin.import_role:
         name: letsencrypt
       vars:
@@ -68,6 +68,14 @@
         letsencrypt_domains:
           - "adgn.link"
           - "www.adgn.link"
+
+    - name: "Let's Encrypt | atlas.agentydragon.com"
+      ansible.builtin.import_role:
+        name: letsencrypt
+      vars:
+        letsencrypt_cert_name: "atlas.agentydragon.com"
+        letsencrypt_domains:
+          - "atlas.agentydragon.com"
 
     - name: nginx.conf
       ansible.builtin.copy:
@@ -84,6 +92,7 @@
         loop:
           - agentydragon.com
           - adgn.link
+          - atlas.agentydragon.com
         notify:
           - Reload nginx
 
@@ -104,6 +113,7 @@
         loop:
           - agentydragon.com
           - adgn.link
+          - atlas.agentydragon.com
         notify:
           - Reload nginx
 
