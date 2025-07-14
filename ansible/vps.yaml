@@ -45,6 +45,19 @@
         name: nbigot.ansible-fail2ban
       tags: [fail2ban]
 
+    - name: Create fail2ban ignore IP configuration
+      ansible.builtin.copy:
+        dest: /etc/fail2ban/jail.d/99-ignore-my-ip.local
+        content: |
+          [DEFAULT]
+          ignoreip = 127.0.0.1/8 ::1 98.51.154.161
+        mode: '0644'
+        owner: root
+        group: root
+      tags: [fail2ban]
+      notify:
+        - Restart fail2ban
+
     - name: Create user
       ansible.builtin.user:
         name: agentydragon
@@ -269,3 +282,23 @@
         daemon_reload: true
         enabled: true
       tags: [nginx]
+
+    - name: Restart fail2ban
+      block:
+        - name: Validate fail2ban configuration
+          ansible.builtin.command:
+            cmd: fail2ban-client -d
+          register: fail2ban_config_check
+          failed_when: false
+          changed_when: false
+
+        - name: Fail if fail2ban configuration is invalid
+          ansible.builtin.fail:
+            msg: "fail2ban configuration validation failed: {{ fail2ban_config_check.stderr }}"
+          when: fail2ban_config_check.rc != 0
+
+        - name: Restart fail2ban service
+          systemd:
+            name: fail2ban
+            state: restarted
+      tags: [fail2ban]

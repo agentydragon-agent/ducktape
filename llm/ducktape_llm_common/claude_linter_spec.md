@@ -6,7 +6,7 @@ This document outlines the understanding of the requirements, constraints, and i
 
 The primary goal of `claude-linter` is to provide real-time linting feedback and automatic fixes during Claude Code's file manipulation operations (`Write`, `Edit`, `MultiEdit`).
 
-*   **Pre-Write Hook (`claude-linter hook pre`):**
+*   **Pre-Write Hook**
     *   **Purpose:** To act as a gatekeeper, preventing a write operation if critical, non-autofixable violations are detected in the proposed content.
     *   **Behavior:**
         *   Should analyze the *proposed content* of the file *before* it is written.
@@ -15,7 +15,7 @@ The primary goal of `claude-linter` is to provide real-time linting feedback and
         *   If no non-autofixable violations are found, it **MUST** signal Claude Code to `approve` the write operation.
     *   **Target Tools:** Primarily `Write`. (Future consideration for non-blocking warnings on `Edit`/`MultiEdit`.)
 
-*   **Post-Write Hook (`claude-linter hook post`):**
+*   **Post-Write Hook**
     *   **Purpose:** To apply automatic fixes to the file *after* it has been written and to inform Claude Code if any changes were made.
     *   **Behavior:**
         *   Should analyze the *actual content* of the file *after* it has been written to disk.
