@@ -19,13 +19,6 @@ _PROFILE = flags.DEFINE_string(
     "Name or UUID of profile to set everywhere",
 )
 
-_THEME = flags.DEFINE_enum(
-    "theme",
-    None,
-    ["light", "dark"],
-    "Theme to apply to auto profile",
-)
-
 # Source profiles to copy colors from in auto mode
 THEME_SOURCE_PROFILES = {
     "light": "Solarized Light",
@@ -189,7 +182,7 @@ def create_auto_profile():
     return auto_uuid
 
 
-def create_or_update_auto_profile(theme: str) -> UUID:
+def create_or_update_auto_profile(source_profile_name: str) -> UUID:
     """Create or update the auto profile with colors from the specified theme."""
     uuid_by_name = get_profile_uuid_by_name_mapping()
 
@@ -204,15 +197,13 @@ def create_or_update_auto_profile(theme: str) -> UUID:
         auto_uuid = create_auto_profile()
         logging.info(f"Created new Auto profile: {auto_uuid}")
 
-    if not (source_profile_name := THEME_SOURCE_PROFILES.get(theme)):
-        raise ValueError(f"Source profile '{source_profile_name}' not found")
     source_uuid = uuid_by_name[source_profile_name]
 
     logging.info(f"Copying colors from {source_profile_name} to Auto profile")
     copy_profile_colors(source_uuid, auto_uuid)
     ProfileDConf(auto_uuid).write_property(
         "visible-name",
-        f"{AUTO_PROFILE_NAME} ({theme} - {source_profile_name})",
+        f"{AUTO_PROFILE_NAME} ({source_profile_name})",
     )
 
     return auto_uuid
@@ -263,24 +254,13 @@ def dbus_update_profile_on_all_windows(new_uuid: UUID) -> None:
         # TODO: this only includes currently active tabs, not background tabs :/
 
 
-def _run_auto():
-    # Auto mode: manage the Auto profile
-    if not _THEME.value:
-        raise ValueError("--theme must be specified with --auto_mode")
-
-    # Create or update the auto profile with colors from the theme
-    auto_uuid = create_or_update_auto_profile(_THEME.value)
-
+def main(_):
+    # Create or update the auto profile with colors from the profile
+    auto_uuid = create_or_update_auto_profile(_PROFILE.value)
     # Set as default
     gsettings_set_default_profile_uuid(auto_uuid)
 
 
-def main(_):
-    _run_auto()
-
-
 if __name__ == "__main__":
-    # Maintain backward compatibility: require --profile only if not in auto mode
-    if not (len(sys.argv) > 1 and "--auto_mode" in sys.argv[1:]):
-        flags.mark_flag_as_required(_PROFILE.name)
+    flags.mark_flag_as_required(_PROFILE.name)
     app.run(main)
