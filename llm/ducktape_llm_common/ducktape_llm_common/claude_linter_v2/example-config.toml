@@ -97,11 +97,27 @@ enabled = true
 [[profiles]]
 name = "refactoring"
 description = "Python refactoring with git and tests"
-predicate = 'Edit("**/*.py") and Bash("git:*") and Bash("pytest:*")'
+predicate = '''
+def check_refactoring(ctx):
+    """Allow Python editing, git commands, and pytest."""
+    if ctx.tool == "Edit" and ctx.path and ctx.path.endswith(".py"):
+        return True
+    if ctx.tool == "Bash" and ctx.command:
+        return ctx.command.startswith(("git", "pytest"))
+    return False
+'''
 duration = "4h"
 
 [[profiles]]
 name = "debugging"
 description = "Full read access, limited write"
-predicate = 'Read("**/*") and Edit("debug/**/*")'
+predicate = '''
+def check_debugging(ctx):
+    """Allow reading all files, editing only debug files."""
+    if ctx.tool == "Read":
+        return True
+    if ctx.tool == "Edit" and ctx.path:
+        return ctx.path.startswith("debug/")
+    return False
+'''
 duration = "2h"

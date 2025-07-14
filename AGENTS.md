@@ -99,27 +99,6 @@ pip install pre-commit
 pre-commit install
 ```
 
-### Python Code Conventions
-
-- Follow PEP 8
-- Use modern Python features when appropriate:
-  - `match` statement
-  - `:=` assignment operator
-  - `X | Y` instead of `Union[X | Y]`
-  - `X | None` instead of `Optional[X]`
-  - `f"{var=}"` instead of `f"var={var}"`
-  - `str.removeprefix`, `str.removesuffix` instead of slicing
-  - `dict1 | dict2` (union), `dict1 & dict2` (intersection) for dicts and sets
-  - `zoneinfo` builtin library
-- Do not leave trailing whitespace in files
-- Be aggressively DRY (Don't Repeat Yourself)
-- Use early bail-out pattern
-- Do not write broad `try`-`catch` blocks (e.g., catching `Exception`), catch specific exceptions only
-- Use `typing.Self` or `from __future__ import annotations` for self-references
-- Imports go **at the top of files**, **NOT inside functions**
-- Use `pathlib` for path manipulation, not `os.path`
-- Avoid `getattr`/`setattr` unless absolutely necessary
-
 ### Testing Conventions
 
 - Test files should be placed in the same directory as the code they test

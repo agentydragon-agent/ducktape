@@ -85,36 +85,30 @@ class RuleEngine:
 
         # 2. Check repo-wide predicate rules
         for rule in self.config.repo_rules:
-            try:
-                if self.evaluator.evaluate(rule.predicate, context):
-                    matches.append(
-                        RuleMatch(
-                            action=rule.action,
-                            source=RuleSource.CONFIG_REPO_RULES,
-                            message=rule.message,
-                            rule_description=f"Repo rule: {rule.predicate}",
-                        )
+            if self.evaluator.evaluate(rule.predicate, context):
+                matches.append(
+                    RuleMatch(
+                        action=rule.action,
+                        source=RuleSource.CONFIG_REPO_RULES,
+                        message=rule.message,
+                        rule_description=f"Repo rule: {rule.predicate}",
                     )
-            except (ValueError, AttributeError, NameError) as e:
-                logger.error(f"Failed to evaluate repo rule '{rule.predicate}': {e}")
+                )
 
         # 3. Check session-specific rules (highest precedence)
         session_rules = self.session_manager.get_session_rules(session_id)
         for rule_dict in session_rules:
-            try:
-                predicate = rule_dict["predicate"]
-                if self.evaluator.evaluate(predicate, context):
-                    action = RuleAction(rule_dict["action"])
-                    matches.append(
-                        RuleMatch(
-                            action=action,
-                            source=RuleSource.SESSION_RULES,
-                            message=None,
-                            rule_description=f"Session rule: {predicate}",
-                        )
+            predicate = rule_dict["predicate"]
+            if self.evaluator.evaluate(predicate, context):
+                action = RuleAction(rule_dict["action"])
+                matches.append(
+                    RuleMatch(
+                        action=action,
+                        source=RuleSource.SESSION_RULES,
+                        message=None,
+                        rule_description=f"Session rule: {predicate}",
                     )
-            except (ValueError, AttributeError, NameError) as e:
-                logger.error(f"Failed to evaluate session rule '{predicate}': {e}")
+                )
 
         # Apply "most restrictive wins" logic
         if not matches:
@@ -157,7 +151,9 @@ class RuleEngine:
             # Count how many allows were overridden
             allow_count = sum(1 for m in matches if m.action == RuleAction.ALLOW)
             if allow_count > 0:
-                message_parts.append(f"Note: {allow_count} allow rule(s) were overridden by this deny rule")
+                message_parts.append(
+                    f"Note: {allow_count} allow rule(s) were overridden by this deny rule"
+                )
 
         message = ". ".join(message_parts) if message_parts else None
 

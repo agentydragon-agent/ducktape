@@ -20,7 +20,7 @@ from ..session import SessionManager
 from ..session.violations import ViolationTracker
 from ..types import SessionID
 from ..utils.gitignore import get_git_tracked_files
-from .claude_responses import ClaudeBaseResponse
+from .claude_responses import BaseResponse
 from .exceptions import HookBugError
 from .formatting import format_access_denial, format_llm_message
 from .outcomes import (
@@ -46,14 +46,6 @@ from .validation import validate_hook_outcome
 
 logger = logging.getLogger(__name__)
 
-# Request type mapping
-HOOK_REQUEST_TYPES: dict[str, type[BaseHookRequest]] = {
-    "PreToolUse": PreToolUseRequest,
-    "PostToolUse": PostToolUseRequest,
-    "Stop": StopRequest,
-    "SubagentStop": SubagentStopRequest,
-    "Notification": NotificationRequest,
-}
 
 
 class HookHandler:
@@ -166,7 +158,7 @@ class HookHandler:
         with open(log_file, "a") as f:
             f.write(f"DECISION: {json.dumps(log_entry)}\n")
 
-    def handle(self, hook_type: str, request: BaseHookRequest) -> ClaudeBaseResponse:
+    def handle(self, hook_type: str, request: BaseHookRequest) -> BaseResponse:
         """
         Main entry point - handles any hook type.
 
@@ -790,7 +782,7 @@ class HookHandler:
 _handler = HookHandler()
 
 
-def handle(hook_type: str, request: BaseHookRequest) -> ClaudeBaseResponse:
+def handle(hook_type: str, request: BaseHookRequest) -> BaseResponse:
     """
     Handle a hook request and return a Claude response.
 

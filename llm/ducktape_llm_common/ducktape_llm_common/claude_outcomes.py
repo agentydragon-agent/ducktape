@@ -21,10 +21,10 @@ class HookOutcome(ABC):
 # PreToolUse Outcomes
 @dataclass
 class PreToolApprove(HookOutcome):
-    """Allow tool execution (default behavior)."""
+    """Explicitly approve tool execution, bypassing permission system."""
 
     def to_claude_response(self) -> PreToolResponse:
-        return PreToolResponse()  # defaults to approve
+        return PreToolResponse(decision="approve")
 
 
 @dataclass
@@ -45,7 +45,15 @@ class PreToolDeny(HookOutcome):
         return PreToolResponse(decision="block", reason=self.llm_message)
 
 
-PreToolOutcome = Union[PreToolApprove, PreToolDeny]
+@dataclass
+class PreToolNoOpinion(HookOutcome):
+    """No opinion - let existing permission flow decide."""
+
+    def to_claude_response(self) -> PreToolResponse:
+        return PreToolResponse()  # undefined decision = existing permission flow
+
+
+PreToolOutcome = Union[PreToolApprove, PreToolDeny, PreToolNoOpinion]
 
 
 # PostToolUse Outcomes
@@ -111,28 +119,7 @@ class StopPrevent(HookOutcome):
         return StopResponse(decision="block", reason=self.llm_message)
 
 
-@dataclass
-class StopAllowWithInfo(HookOutcome):
-    """
-    Allow stop but show info to Claude.
-
-    Note: Per Anthropic docs, there's no user-only message in Stop hooks.
-    This shows a message to Claude without blocking.
-
-    Example:
-        StopAllowWithInfo(
-            llm_message="Note: 2 warnings remain. Consider fixing for better quality."
-        )
-    """
-
-    llm_message: str
-
-    def to_claude_response(self) -> StopResponse:
-        # No decision=block, just reason shows info without preventing stop
-        return StopResponse(reason=self.llm_message)
-
-
-StopOutcome = Union[StopAllow, StopPrevent, StopAllowWithInfo]
+StopOutcome = Union[StopAllow, StopPrevent]
 
 
 # SubagentStop Hook Outcomes
@@ -144,7 +131,26 @@ class SubagentStopAllow(HookOutcome):
         return StopResponse()
 
 
-SubagentStopOutcome = SubagentStopAllow
+@dataclass
+class SubagentStopPrevent(HookOutcome):
+    """
+    Prevent subagent from stopping.
+    
+    Must provide reason for the subagent to understand how to proceed.
+    
+    Example:
+        SubagentStopPrevent(
+            llm_message="Cannot stop: Must complete remaining analysis tasks."
+        )
+    """
+    
+    llm_message: str
+    
+    def to_claude_response(self) -> StopResponse:
+        return StopResponse(decision="block", reason=self.llm_message)
+
+
+SubagentStopOutcome = Union[SubagentStopAllow, SubagentStopPrevent]
 
 
 # Notification Hook Outcomes
