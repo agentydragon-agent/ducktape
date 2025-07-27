@@ -91,12 +91,12 @@ def set_test_env_vars(test_config: Config):
     with patch.dict(
         os.environ,
         {
-            "ADGN_MAIN_REPO": str(test_config.main_repo),
-            "ADGN_WORKTREES_DIR": str(test_config.worktrees_dir),
-            "ADGN_BRANCH_PREFIX": test_config.branch_prefix,
-            "ADGN_DEFAULT_WORKTREE_BASE_BRANCH": test_config.default_worktree_base_branch,
-            "ADGN_LOG_OPERATIONS": "true" if test_config.log_operations else "false",
-            "ADGN_COW_METHOD": test_config.cow_method,
+            "WT_MAIN_REPO": str(test_config.main_repo),
+            "WT_WORKTREES_DIR": str(test_config.worktrees_dir),
+            "WT_BRANCH_PREFIX": test_config.branch_prefix,
+            "WT_DEFAULT_WORKTREE_BASE_BRANCH": test_config.default_worktree_base_branch,
+            "WT_LOG_OPERATIONS": "true" if test_config.log_operations else "false",
+            "WT_COW_METHOD": test_config.cow_method,
         },
     ):
         yield
@@ -511,7 +511,7 @@ def kill_daemon_and_verify(repo_path: Path, timeout: float = 5.0):
     from .test_utils import run_cli_command
 
     env = os.environ.copy()
-    env["ADGN_MAIN_REPO"] = str(repo_path.resolve())
+    env["WT_MAIN_REPO"] = str(repo_path.resolve())
 
     # Run kill-daemon command
     result = run_cli_command(["sh", "kill-daemon"], env=env)
@@ -637,7 +637,7 @@ def real_temp_repo(tmp_path):
 def real_env(real_temp_repo):
     """Set up real environment variables for integration tests with proper cleanup.
 
-    Creates config file and sets up ADGN_MAIN_REPO environment variable.
+    Creates config file and sets up WT_MAIN_REPO environment variable.
     Includes daemon cleanup before and after test execution.
     """
     import time
@@ -650,9 +650,9 @@ def real_env(real_temp_repo):
     # Create config file in the repo's .wt directory
     create_integration_test_config_file(real_temp_repo)
 
-    # Use ADGN_MAIN_REPO environment variable (consistent with other tests)
+    # Use WT_MAIN_REPO environment variable (consistent with other tests)
     env = os.environ.copy()
-    env["ADGN_MAIN_REPO"] = str(real_temp_repo.resolve())
+    env["WT_MAIN_REPO"] = str(real_temp_repo.resolve())
 
     yield env
 

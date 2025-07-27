@@ -27,7 +27,7 @@ For proper daemon test isolation, these tests use:
    - Verifies daemon process is gone within timeout
    - Fails test if daemon doesn't shut down properly
 3. Fixture setup/teardown that kills daemon before and after each test
-4. ADGN_MAIN_REPO environment variable pointing to test repo
+4. WT_MAIN_REPO environment variable pointing to test repo
 
 This ensures each test runs in complete isolation without daemon interference.
 """

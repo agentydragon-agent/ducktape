@@ -70,11 +70,11 @@ class GitStatusdDaemonClient:
 
     async def _start_daemon_if_needed(self) -> None:
         """Start daemon if not running."""
-        # Validate ADGN_MAIN_REPO is set for daemon operation
-        if not os.environ.get("ADGN_MAIN_REPO"):
+        # Validate WT_MAIN_REPO is set for daemon operation
+        if not os.environ.get("WT_MAIN_REPO"):
             raise RuntimeError(
-                "ADGN_MAIN_REPO environment variable must be set for daemon operation. "
-                f"Run: export ADGN_MAIN_REPO={self.config.main_repo_resolved}"
+                "WT_MAIN_REPO environment variable must be set for daemon operation. "
+                f"Run: export WT_MAIN_REPO={self.config.main_repo_resolved}"
             )
 
         async with self._daemon_start_lock:

@@ -52,9 +52,9 @@ gitstatusd_path: "{GITSTATUSD_PATH}"
     config_file = config_dir / "config.yaml"
     config_file.write_text(config_content)
 
-    # Create test environment with ADGN_MAIN_REPO
+    # Create test environment with WT_MAIN_REPO
     env = os.environ.copy()
-    env["ADGN_MAIN_REPO"] = str(repo_path)
+    env["WT_MAIN_REPO"] = str(repo_path)
 
     return repo_path, env, temp_dir
 

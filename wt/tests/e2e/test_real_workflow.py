@@ -33,7 +33,7 @@ These tests use proper isolation patterns:
 - pytest's tmp_path fixture (not tempfile.TemporaryDirectory)
 - kill_daemon_and_verify() with timeout-based verification
 - Fixture teardown that ensures daemon cleanup
-- ADGN_MAIN_REPO env var for config discovery
+- WT_MAIN_REPO env var for config discovery
 - Absolute path validation (no relative paths allowed)
 
 The tests run the actual CLI binary end-to-end, making them true integration tests
@@ -64,9 +64,9 @@ def real_env_with_existing_worktrees(real_temp_repo):
 
     config_file = create_integration_test_config_file(real_temp_repo)
 
-    # Use rationalized config system with ADGN_MAIN_REPO
+    # Use rationalized config system with WT_MAIN_REPO
     env = os.environ.copy()
-    env["ADGN_MAIN_REPO"] = str(real_temp_repo.resolve())  # Ensure absolute path
+    env["WT_MAIN_REPO"] = str(real_temp_repo.resolve())  # Ensure absolute path
 
     repo = pygit2.Repository(str(real_temp_repo))
     signature = pygit2.Signature("Test User", "test@example.com")

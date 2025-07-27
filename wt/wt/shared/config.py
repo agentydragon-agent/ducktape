@@ -130,19 +130,19 @@ class Config(BaseModel):
 
 def _discover_main_repo() -> Path:
     """Discover main repository using the rationalized hierarchy:
-    1. ADGN_MAIN_REPO env var (if set)
+    1. WT_MAIN_REPO env var (if set)
     2. Auto-detect from current directory's git repo using libgit2
     3. Error if no git repo found
     """
     # Priority 1: Explicit environment variable
-    if main_repo := os.environ.get("ADGN_MAIN_REPO"):
+    if main_repo := os.environ.get("WT_MAIN_REPO"):
         repo_path = Path(main_repo).expanduser()
         if not repo_path.is_absolute():
-            click.echo(f"Error: ADGN_MAIN_REPO must be absolute path, got: {main_repo}")
+            click.echo(f"Error: WT_MAIN_REPO must be absolute path, got: {main_repo}")
             sys.exit(1)
         repo_path = repo_path.resolve()
         if not repo_path.exists():
-            click.echo(f"Error: ADGN_MAIN_REPO points to non-existent path: {repo_path}")
+            click.echo(f"Error: WT_MAIN_REPO points to non-existent path: {repo_path}")
             sys.exit(1)
         return repo_path
 
@@ -169,7 +169,7 @@ def _discover_main_repo() -> Path:
 
     # Priority 3: Error if no git repo found
     click.echo(
-        "Error: No git repository found. Please run this command from within a git repository or set ADGN_MAIN_REPO."
+        "Error: No git repository found. Please run this command from within a git repository or set WT_MAIN_REPO."
     )
     sys.exit(1)
 

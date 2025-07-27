@@ -9,7 +9,7 @@ The existing system suffers from configuration scattered across environment vari
 ### Discovery and Configuration Hierarchy
 
 The rationalized system will use a single discovery chain:
-1. `ADGN_MAIN_REPO` environment variable (when explicitly set)
+1. `WT_MAIN_REPO` environment variable (when explicitly set)
 2. Auto-detection from current directory's git repository
 3. Error if no git repository context is found
 
@@ -21,7 +21,7 @@ The long-term vision transforms `wt` into a global development environment manag
 
 ### Global Daemon Architecture
 
-A single global daemon will manage all repositories and their worktrees from `~/.wt/` (overridable via `ADGN_WT_DIR` for testing). This daemon maintains a registry of known repositories and provides fast status across your entire development workspace.
+A single global daemon will manage all repositories and their worktrees from `~/.wt/` (overridable via `WT_DIR` for testing). This daemon maintains a registry of known repositories and provides fast status across your entire development workspace.
 
 The global configuration at `~/.wt/config.toml` will define repository mappings, default behaviors, and global settings like GitHub refresh intervals. Per-repository state will be cached under `~/.wt/repos/{repo-name}/` but managed centrally.
 

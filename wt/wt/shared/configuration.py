@@ -72,9 +72,9 @@ class Configuration:
                 path = Path(self._config_file.main_repo).expanduser().resolve()
             else:
                 # Auto-discover from environment
-                main_repo = os.getenv("ADGN_MAIN_REPO")
+                main_repo = os.getenv("WT_MAIN_REPO")
                 if not main_repo:
-                    raise RuntimeError("main_repo not set in config and ADGN_MAIN_REPO not in environment")
+                    raise RuntimeError("main_repo not set in config and WT_MAIN_REPO not in environment")
                 path = Path(main_repo).expanduser().resolve()
             
             if not path.exists():
