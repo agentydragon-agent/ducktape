@@ -26,8 +26,8 @@ k3s_nameserver: 8.8.8.8
 
 # VM Template Configuration
 k3s_vm_template: ubuntu-22.04-cloudinit-template
-k3s_vm_storage: local-lvm
-k3s_cloudinit_storage: local-lvm
+k3s_vm_storage: local-zfs
+k3s_cloudinit_storage: local-zfs
 
 # k3s Configuration
 k3s_version: stable
