@@ -1,0 +1,367 @@
+"""GitStatusd protocol implementation with proper type checking and validation.
+
+GitStatusd communicates via stdin/stdout with ASCII separators:
+- Record separator: ASCII 30 (0x1E)
+- Unit separator: ASCII 31 (0x1F)
+
+See: https://github.com/romkatv/gitstatus for full protocol specification.
+"""
+
+import logging
+from dataclasses import dataclass
+from enum import Enum
+from typing import Optional, Tuple, Union
+
+logger = logging.getLogger(__name__)
+
+
+class GitStatusdError(Exception):
+    """Base exception for gitstatusd protocol errors."""
+
+    pass
+
+
+class GitStatusdParseError(GitStatusdError):
+    """Error parsing gitstatusd response."""
+
+    pass
+
+
+class GitStatusdValidationError(GitStatusdError):
+    """Error validating gitstatusd response fields."""
+
+    pass
+
+
+class RepositoryState(Enum):
+    """Repository state/action as reported by gitstatusd."""
+
+    NORMAL = ""
+    MERGE = "merge"
+    REBASE = "rebase"
+    REBASE_INTERACTIVE = "rebase-i"
+    REBASE_MERGE = "rebase-m"
+    APPLY_MAILBOX = "am"
+    APPLY_MAILBOX_OR_REBASE = "am/rebase"
+    CHERRY_PICK = "cherry-pick"
+    REVERT = "revert"
+    BISECT = "bisect"
+
+
+@dataclass(frozen=True)
+class GitStatusdRequest:
+    """GitStatusd request format."""
+
+    request_id: str
+    directory_path: str
+    disable_index_computation: bool = False
+
+    def to_wire_format(self) -> str:
+        """Convert to gitstatusd wire format."""
+        disable_flag = "1" if self.disable_index_computation else "0"
+        return f"{self.request_id}\x1f{self.directory_path}\x1f{disable_flag}\x1e"
+
+
+@dataclass(frozen=True)
+class GitStatusdResponse:
+    """GitStatusd response with all fields properly typed and validated."""
+
+    # Core fields
+    request_id: str
+    is_git_repository: bool
+
+    # Repository information (only present if is_git_repository=True)
+    git_workdir: Optional[str] = None
+    commit_hash: Optional[str] = None
+    local_branch: Optional[str] = None
+    upstream_branch: Optional[str] = None
+    remote_name: Optional[str] = None
+    remote_url: Optional[str] = None
+    repository_state: Optional[RepositoryState] = None
+
+    # File counts
+    index_file_count: Optional[int] = None
+    staged_changes: Optional[int] = None
+    unstaged_changes: Optional[int] = None
+    conflicted_changes: Optional[int] = None
+    untracked_files: Optional[int] = None
+
+    # Branch tracking
+    commits_ahead_upstream: Optional[int] = None
+    commits_behind_upstream: Optional[int] = None
+    stash_count: Optional[int] = None
+
+    # Additional metadata
+    last_tag: Optional[str] = None
+    unstaged_deleted_files: Optional[int] = None
+    staged_new_files: Optional[int] = None
+    staged_deleted_files: Optional[int] = None
+
+    # Push remote information
+    push_remote_name: Optional[str] = None
+    push_remote_url: Optional[str] = None
+    commits_ahead_push_remote: Optional[int] = None
+    commits_behind_push_remote: Optional[int] = None
+
+    # Index flags
+    skip_worktree_files: Optional[int] = None
+    assume_unchanged_files: Optional[int] = None
+
+    # Commit message
+    commit_message_encoding: Optional[str] = None
+    commit_message_summary: Optional[str] = None
+
+    @property
+    def has_changes(self) -> bool:
+        """True if repository has any staged, unstaged, or untracked changes."""
+        if not self.is_git_repository:
+            return False
+        return (
+            (self.staged_changes or 0) > 0
+            or (self.unstaged_changes or 0) > 0
+            or (self.untracked_files or 0) > 0
+        )
+
+    @property
+    def has_dirty_files(self) -> bool:
+        """True if repository has staged or unstaged changes (excludes untracked)."""
+        if not self.is_git_repository:
+            return False
+        return (self.staged_changes or 0) > 0 or (self.unstaged_changes or 0) > 0
+
+    @property
+    def has_untracked_files(self) -> bool:
+        """True if repository has untracked files."""
+        if not self.is_git_repository:
+            return False
+        return (self.untracked_files or 0) > 0
+
+    @property
+    def is_ahead_of_upstream(self) -> bool:
+        """True if local branch is ahead of upstream."""
+        return (self.commits_ahead_upstream or 0) > 0
+
+    @property
+    def is_behind_upstream(self) -> bool:
+        """True if local branch is behind upstream."""
+        return (self.commits_behind_upstream or 0) > 0
+
+    @property
+    def branch_status(self) -> str:
+        """Human-readable branch status string."""
+        if not self.is_git_repository:
+            return "not a git repository"
+
+        if not self.local_branch:
+            return "detached HEAD"
+
+        if not self.upstream_branch:
+            return f"on {self.local_branch} (no upstream)"
+
+        ahead = self.commits_ahead_upstream or 0
+        behind = self.commits_behind_upstream or 0
+
+        if ahead == 0 and behind == 0:
+            return f"on {self.local_branch} (up to date)"
+        elif ahead > 0 and behind == 0:
+            return f"on {self.local_branch} (ahead {ahead})"
+        elif ahead == 0 and behind > 0:
+            return f"on {self.local_branch} (behind {behind})"
+        else:
+            return f"on {self.local_branch} (ahead {ahead}, behind {behind})"
+
+
+class GitStatusdProtocol:
+    """GitStatusd protocol handler with proper type checking and validation."""
+
+    # Expected minimum number of fields for a valid git repository response
+    MIN_GIT_REPO_FIELDS = 29
+
+    @staticmethod
+    def parse_response(raw_response: str) -> GitStatusdResponse:
+        """Parse gitstatusd response with comprehensive validation.
+
+        Args:
+            raw_response: Raw response string from gitstatusd
+
+        Returns:
+            Parsed and validated GitStatusdResponse
+
+        Raises:
+            GitStatusdParseError: If response format is invalid
+            GitStatusdValidationError: If response fields are invalid
+        """
+        try:
+            # Remove record separator and split on unit separator
+            response_data = raw_response.rstrip("\x1e")
+            if not response_data:
+                raise GitStatusdParseError("Empty response from gitstatusd")
+
+            fields = response_data.split("\x1f")
+
+            # Validate minimum field count
+            if len(fields) < 2:
+                raise GitStatusdParseError(
+                    f"Invalid response: expected at least 2 fields, got {len(fields)}"
+                )
+
+            # Parse core fields
+            request_id = fields[0]
+
+            try:
+                is_git_repo_flag = int(fields[1])
+                is_git_repository = is_git_repo_flag == 1
+            except (ValueError, IndexError) as e:
+                raise GitStatusdValidationError(f"Invalid git repository flag: {e}")
+
+            # If not a git repository, return minimal response
+            if not is_git_repository:
+                logger.debug("Directory is not a git repository (request_id=%s)", request_id)
+                return GitStatusdResponse(request_id=request_id, is_git_repository=False)
+
+            # For git repositories, validate we have enough fields
+            if len(fields) < GitStatusdProtocol.MIN_GIT_REPO_FIELDS:
+                raise GitStatusdParseError(
+                    f"Incomplete git repository response: expected {GitStatusdProtocol.MIN_GIT_REPO_FIELDS} fields, "
+                    f"got {len(fields)}"
+                )
+
+            # Parse git repository fields with proper validation
+            return GitStatusdResponse(
+                request_id=request_id,
+                is_git_repository=True,
+                git_workdir=GitStatusdProtocol._safe_get_optional_string(fields, 2),
+                commit_hash=GitStatusdProtocol._safe_get_commit_hash(fields, 3),
+                local_branch=GitStatusdProtocol._safe_get_optional_string(fields, 4),
+                upstream_branch=GitStatusdProtocol._safe_get_optional_string(fields, 5),
+                remote_name=GitStatusdProtocol._safe_get_optional_string(fields, 6),
+                remote_url=GitStatusdProtocol._safe_get_optional_string(fields, 7),
+                repository_state=GitStatusdProtocol._safe_get_repository_state(fields, 8),
+                index_file_count=GitStatusdProtocol._safe_get_int(fields, 9),
+                staged_changes=GitStatusdProtocol._safe_get_int(fields, 10),
+                unstaged_changes=GitStatusdProtocol._safe_get_int(fields, 11),
+                conflicted_changes=GitStatusdProtocol._safe_get_int(fields, 12),
+                untracked_files=GitStatusdProtocol._safe_get_int(fields, 13),
+                commits_ahead_upstream=GitStatusdProtocol._safe_get_int(fields, 14),
+                commits_behind_upstream=GitStatusdProtocol._safe_get_int(fields, 15),
+                stash_count=GitStatusdProtocol._safe_get_int(fields, 16),
+                last_tag=GitStatusdProtocol._safe_get_optional_string(fields, 17),
+                unstaged_deleted_files=GitStatusdProtocol._safe_get_int(fields, 18),
+                staged_new_files=GitStatusdProtocol._safe_get_int(fields, 19),
+                staged_deleted_files=GitStatusdProtocol._safe_get_int(fields, 20),
+                push_remote_name=GitStatusdProtocol._safe_get_optional_string(fields, 21),
+                push_remote_url=GitStatusdProtocol._safe_get_optional_string(fields, 22),
+                commits_ahead_push_remote=GitStatusdProtocol._safe_get_int(fields, 23),
+                commits_behind_push_remote=GitStatusdProtocol._safe_get_int(fields, 24),
+                skip_worktree_files=GitStatusdProtocol._safe_get_int(fields, 25),
+                assume_unchanged_files=GitStatusdProtocol._safe_get_int(fields, 26),
+                commit_message_encoding=GitStatusdProtocol._safe_get_optional_string(fields, 27),
+                commit_message_summary=GitStatusdProtocol._safe_get_optional_string(fields, 28),
+            )
+
+        except (GitStatusdParseError, GitStatusdValidationError):
+            raise
+        except Exception as e:
+            raise GitStatusdParseError(f"Unexpected error parsing gitstatusd response: {e}") from e
+
+    @staticmethod
+    def _safe_get_string(fields: list[str], index: int) -> str:
+        """Get required string field with validation."""
+        try:
+            value = fields[index]
+            if not value:
+                raise GitStatusdValidationError(f"Required field {index} is empty")
+            return value
+        except IndexError:
+            raise GitStatusdValidationError(f"Missing required field {index}")
+
+    @staticmethod
+    def _safe_get_optional_string(fields: list[str], index: int) -> Optional[str]:
+        """Get optional string field, returning None for empty strings."""
+        try:
+            value = fields[index]
+            return value if value else None
+        except IndexError:
+            return None
+
+    @staticmethod
+    def _safe_get_int(fields: list[str], index: int) -> Optional[int]:
+        """Get integer field with validation."""
+        try:
+            value = fields[index]
+            if not value:
+                return None
+            return int(value)
+        except IndexError:
+            return None
+        except ValueError as e:
+            raise GitStatusdValidationError(f"Invalid integer in field {index}: {e}")
+
+    @staticmethod
+    def _safe_get_commit_hash(fields: list[str], index: int) -> Optional[str]:
+        """Get commit hash with validation."""
+        try:
+            value = fields[index]
+            if not value:
+                return None
+
+            # Validate commit hash format (40 hex characters)
+            if len(value) != 40 or not all(c in "0123456789abcdef" for c in value.lower()):
+                raise GitStatusdValidationError(f"Invalid commit hash format: {value}")
+
+            return value
+        except IndexError:
+            return None
+
+    @staticmethod
+    def _safe_get_repository_state(fields: list[str], index: int) -> Optional[RepositoryState]:
+        """Get repository state enum with validation."""
+        try:
+            value = fields[index]
+            if not value:
+                return RepositoryState.NORMAL
+
+            # Find matching repository state
+            for state in RepositoryState:
+                if state.value == value:
+                    return state
+
+            # Unknown state - log warning but don't fail
+            logger.warning("Unknown repository state: %s", value)
+            return RepositoryState.NORMAL
+
+        except IndexError:
+            return RepositoryState.NORMAL
+
+
+# Convenience functions for backward compatibility
+def parse_gitstatusd_response(raw_response: str) -> GitStatusdResponse:
+    """Parse gitstatusd response (convenience function)."""
+    return GitStatusdProtocol.parse_response(raw_response)
+
+
+def create_gitstatusd_request(
+    request_id: str, directory_path: str, disable_index: bool = False
+) -> str:
+    """Create gitstatusd request (convenience function)."""
+    request = GitStatusdRequest(request_id, directory_path, disable_index)
+    return request.to_wire_format()
+
+
+def gitstatusd_response_to_legacy_format(
+    response: GitStatusdResponse,
+) -> Tuple[list[str], list[str]]:
+    """Convert GitStatusdResponse to legacy (dirty_files, untracked_files) format."""
+    if not response.is_git_repository:
+        return [], []
+
+    # Create placeholder lists based on counts (gitstatusd doesn't return filenames by default)
+    dirty_files = []
+    if response.has_dirty_files:
+        dirty_files.append("<staged/unstaged files present>")
+
+    untracked_files = []
+    if response.has_untracked_files:
+        untracked_files.append("<untracked files present>")
+
+    return dirty_files, untracked_files
