@@ -1,0 +1,51 @@
+[project]
+name = "wt"
+version = "0.1.0"
+description = "Worktree management with POSIX shell integration and COW operations"
+dependencies = [
+    'click',
+    'GitPython',
+    'psutil',
+    'platformdirs',
+    'colorama',
+    'pydantic',
+    'PyYAML',
+    'PyGithub>=1.77',
+    'pygit2>=1.9.0',
+    'tabulate',
+]
+
+[project.optional-dependencies]
+test = [
+    'pytest>=7.0.0',
+    'pytest-mock>=3.10.0',
+    'types-colorama',
+    'types-psutil',
+]
+typing = [
+    'types-colorama',
+    'types-psutil',
+]
+
+[tool.pytest.ini_options]
+addopts = [
+    "-v",
+    "--tb=short",
+    "--strict-markers",
+    "--disable-warnings"
+]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+    "unit: marks tests as unit tests",
+    "shell: marks tests that test shell integration"
+]
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+check_untyped_defs = true
+# Note: requires 'typing' optional dependencies for type stubs

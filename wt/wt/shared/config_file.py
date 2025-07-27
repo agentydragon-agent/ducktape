@@ -1,0 +1,52 @@
+"""Pure serializable configuration data model.
+
+DO NOT ADD LOGIC - THIS IS PURE DATA
+
+This module contains only the serializable Pydantic model that represents
+the configuration data as stored in YAML files. No business logic, no
+resolvers, no computed properties - just the raw data structure.
+
+For runtime configuration with logic and resolvers, see config.py.
+"""
+
+from pathlib import Path
+from typing import Optional
+
+from pydantic import BaseModel
+
+
+class ConfigFile(BaseModel):
+    """Pure serializable configuration data model.
+    
+    DO NOT ADD LOGIC - THIS IS PURE DATA
+    
+    This model represents the exact structure of the YAML configuration file.
+    All fields should be basic Python types that can be serialized to/from YAML.
+    No Path objects, no complex validation, no computed properties.
+    """
+    
+    # Directory paths (as strings for serialization)
+    worktrees_dir: str
+    main_repo: Optional[str] = None  # Can be auto-discovered from environment
+    
+    # Git settings
+    branch_prefix: str = "wt/"
+    default_worktree_base_branch: str = "master"
+    
+    # Behavior settings
+    log_operations: bool = False
+    cow_method: str = "reflink"  # "reflink", "copy", or "hardlink"
+    
+    # GitHub integration
+    github_enabled: bool = True
+    github_repo: str = ""  # Format: "owner/repo"
+    
+    # Tool paths
+    gitstatusd_path: Optional[str] = None
+    
+    # Cache settings
+    cache_expiration: int = 3600  # seconds
+    cache_refresh_age: int = 300  # seconds
+    
+    # UI settings
+    hidden_worktree_patterns: list[str] = []
