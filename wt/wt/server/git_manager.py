@@ -27,19 +27,6 @@ class GitRepositoryManager:
         except Exception as e:
             raise RuntimeError(f"Failed to open git repository at {resolved_path}: {e}") from e
 
-    def get_main_repo(self, main_repo_path: Path) -> pygit2.Repository:
-        return self.get_repo(main_repo_path)
-
-    def get_worktree_repo(self, worktree_path: Path) -> pygit2.Repository:
-        return self.get_repo(worktree_path)
-
-    def clear_cache(self) -> None:
-        self._repo_cache.clear()
-
-    def remove_from_cache(self, path: Path) -> None:
-        resolved_path = path.resolve()
-        if resolved_path in self._repo_cache:
-            del self._repo_cache[resolved_path]
 
     def get_default_branch(self, repo_path: Path) -> str:
         repo = self.get_repo(repo_path)

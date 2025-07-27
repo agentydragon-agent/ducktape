@@ -17,6 +17,7 @@ dependencies = [
     'PyGithub>=1.77',
     'pygit2>=1.9.0',
     'tabulate',
+    'watchdog',
 ]
 
 [project.optional-dependencies]
@@ -42,7 +43,8 @@ markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "integration: marks tests as integration tests",
     "unit: marks tests as unit tests",
-    "shell: marks tests that test shell integration"
+    "shell: marks tests that test shell integration",
+    "asyncio: marks tests as async tests"
 ]
 
 [tool.hatch.build.targets.wheel]

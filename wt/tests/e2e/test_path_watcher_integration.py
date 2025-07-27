@@ -40,7 +40,9 @@ def create_test_repo_and_config():
     config_dir = repo_path / ".wt"
     config_dir.mkdir(parents=True, exist_ok=True)
 
-    config_content = f"""branch_prefix: "test/"
+    config_content = f"""main_repo: "{repo_path}"
+worktrees_dir: "{worktrees_dir}"
+branch_prefix: "test/"
 default_worktree_base_branch: "HEAD"
 log_operations: false
 cow_method: "copy"
@@ -52,9 +54,9 @@ gitstatusd_path: "{GITSTATUSD_PATH}"
     config_file = config_dir / "config.yaml"
     config_file.write_text(config_content)
 
-    # Create test environment with WT_MAIN_REPO
+    # Create test environment with WT_DIR (new configuration system)
     env = os.environ.copy()
-    env["WT_MAIN_REPO"] = str(repo_path)
+    env["WT_DIR"] = str(config_dir)
 
     return repo_path, env, temp_dir
 

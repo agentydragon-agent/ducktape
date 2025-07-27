@@ -26,8 +26,8 @@ class ConfigFile(BaseModel):
     """
     
     # Directory paths (as strings for serialization)
-    worktrees_dir: str
-    main_repo: Optional[str] = None  # Can be auto-discovered from environment
+    main_repo: str  # Now required - explicit path to main repository
+    worktrees_dir: str  # Absolute path
     
     # Git settings
     branch_prefix: str = "wt/"

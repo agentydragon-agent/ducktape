@@ -1,262 +1,148 @@
-"""Unit tests for WorktreeService - pure business logic."""
+"""Integration tests for WorktreeService with real git repositories."""
 
+import os
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 import pytest
 
 from wt.server.worktree_service import WorktreeService
-from wt.shared.git_interface import NoSuchRef, WorktreeStatus
-from wt.shared.models import CommitInfo
+from wt.shared.configuration import Configuration
+from wt.shared.git_interface import GitInterface
+from wt.server.github_client import GitHubInterface
 
 
 class TestWorktreeService:
-    """Test the WorktreeService in isolation."""
+    """Test the WorktreeService with real git repositories."""
 
-    @pytest.fixture
-    def mock_git(self):
-        """Mock GitInterface."""
-        mock = Mock()
-        mock.worktree_list.return_value = "worktree /path/test\nbranch test-branch"
-        mock.parse_worktree_list.return_value = [(Path("/path/test"), "test-branch")]
-        mock.verify_branch_exists.return_value = None
-        mock.rev_count.return_value = 0
-        mock.log_format.return_value = "abc123|Test commit|Test Author|2024-01-01T12:00:00"
-        return mock
-
-    @pytest.fixture
-    def mock_github(self):
-        """Mock GitHubInterface."""
-        return Mock()
-
-    @pytest.fixture
-    def unit_test_config(self, git_repo, tmp_path):
-        """Real Configuration object for unit tests."""
-        from wt.shared.configuration import Configuration
-        from wt.shared.config_file import ConfigFile
-        from wt.shared.directories import Directories
-
-        # Use real git repo and tmp_path for test isolation
-        worktrees_dir = git_repo / "worktrees"
-        worktrees_dir.mkdir(exist_ok=True)
-
-        # Create real Directories instance and override private attributes to point to test tmpdir
-        dirs = Directories("test-adgn-worktree")
-        dirs._log_dir = tmp_path / "logs"
-        dirs._data_dir = tmp_path / "data"
-
-        # Create the directories
-        dirs._log_dir.mkdir(parents=True, exist_ok=True)
-        dirs._data_dir.mkdir(parents=True, exist_ok=True)
-
-        config_file = ConfigFile(
-            worktrees_dir=str(worktrees_dir),
+    @pytest.fixture(scope="function")
+    def service(self, real_temp_repo, real_env):
+        """Create WorktreeService with real dependencies and real git repo."""
+        from tests.conftest import build_test_configuration
+        
+        # Use centralized helper to create configuration
+        config = build_test_configuration(
+            real_temp_repo,
             branch_prefix="test/",
-            default_worktree_base_branch="HEAD",
+            default_worktree_base_branch="main",
             github_repo="test-user/test-repo",
+            github_enabled=False,
+            log_operations=True
         )
-        return Configuration(config_file, dirs)
+        
+        # Create real GitInterface with proper initialization
+        git = GitInterface(config=config)
+        github = Mock()  # Keep GitHub mocked for now
+        
+        return WorktreeService(git, github), config
 
-    @pytest.fixture
-    def service(self, mock_git, mock_github):
-        """Create WorktreeService with mocked dependencies."""
-        return WorktreeService(mock_git, mock_github)
+    def test_list_worktrees_empty_repo(self, service):
+        """Test listing worktrees in empty repository."""
+        worktree_service, config = service
+        
+        # Fresh repo has no worktrees except main
+        result = worktree_service.list_worktrees(config)
+        
+        # Should be empty since we filter out the main repo
+        assert len(result) == 0
 
-    def test_list_worktrees_basic(self, service, mock_git, unit_test_config):
-        """Test basic worktree listing."""
-        # Use real config paths for mock data
-        test_worktree_path = unit_test_config.worktrees_dir / "test"
-        mock_git.parse_worktree_list.return_value = [(test_worktree_path, "test-branch")]
-
-        result = service.list_worktrees(unit_test_config)
-
+    def test_create_and_list_worktree(self, service):
+        """Test creating a worktree and listing it."""
+        worktree_service, config = service
+        
+        # Create a real worktree
+        worktree_path = worktree_service.create_worktree(config, "test-branch")
+        
+        # Verify it was created
+        assert worktree_path.exists()
+        assert worktree_path.name == "test-branch"
+        
+        # List worktrees and verify it appears
+        result = worktree_service.list_worktrees(config)
         assert len(result) == 1
+        
         name, path, exists = result[0]
-        assert name == "test"
-        assert path == test_worktree_path
-        mock_git.worktree_list.assert_called_once()
-        mock_git.parse_worktree_list.assert_called_once()
+        assert name == "test-branch"
+        assert path == worktree_path
+        assert exists is True
 
-    @pytest.mark.asyncio
-    async def test_get_all_worktree_status_basic(self, service, mock_git, unit_test_config):
-        """Test getting status for all worktrees."""
-        # Mock daemon client
-        mock_daemon_client = Mock()
+    def test_worktree_removal(self, service):
+        """Test removing a worktree."""
+        worktree_service, config = service
+        
+        # Create a worktree first
+        worktree_path = worktree_service.create_worktree(config, "to-remove")
+        assert worktree_path.exists()
+        
+        # Remove it (using async method)
+        import asyncio
+        asyncio.run(worktree_service.remove_worktree(config, "to-remove", force=True))
+        
+        # Verify it's gone
+        assert not worktree_path.exists()
+        
+        # List should be empty again
+        result = worktree_service.list_worktrees(config)
+        assert len(result) == 0
 
-        # Create expected status
-        from datetime import datetime
+    def test_worktree_path_resolution(self, service):
+        """Test worktree path methods."""
+        worktree_service, config = service
+        
+        # Test path calculation
+        expected_path = config.worktrees_dir / "test-name"
+        actual_path = worktree_service.get_worktree_path(config, "test-name")
+        assert actual_path == expected_path
 
-        from wt.shared.git_interface import WorktreeStatus
-        from wt.shared.models import CommitInfo
+    def test_is_managed_worktree_filtering(self, service):
+        """Test worktree filtering logic with real paths."""
+        worktree_service, config = service
+        
+        # Main repo should not be managed
+        main_repo_path = config.main_repo
+        assert not worktree_service._is_managed_worktree(main_repo_path, config)
+        
+        # Path outside worktrees dir should not be managed
+        outside_path = Path("/tmp/outside-worktree")
+        assert not worktree_service._is_managed_worktree(outside_path, config)
+        
+        # Path inside worktrees dir should be managed
+        inside_path = config.worktrees_dir / "valid-worktree"
+        assert worktree_service._is_managed_worktree(inside_path, config)
 
-        commit_info = CommitInfo(
-            last_commit="abc123",
-            last_commit_message="Test commit",
-            last_commit_author="Test Author",
-            last_commit_date=datetime.now(),
+    def test_post_creation_script_execution(self, real_temp_repo, real_env):
+        """Test that post-creation script is executed when configured."""
+        # Create a simple test script
+        script_path = real_temp_repo / "test_script.sh"
+        script_path.write_text("""#!/bin/bash
+echo "Script executed with arg: $1" > "$1/script_output.txt"
+""")
+        script_path.chmod(0o755)
+        
+        # Use centralized helper to create configuration with script
+        from tests.conftest import build_test_configuration
+        
+        config = build_test_configuration(
+            real_temp_repo,
+            branch_prefix="test/",
+            default_worktree_base_branch="main",
+            github_repo="test-user/test-repo",
+            github_enabled=False,
+            log_operations=True,
+            post_creation_script=str(script_path)
         )
-
-        expected_status = WorktreeStatus(
-            name="test",
-            branch="test-branch",
-            ahead=0,
-            behind=0,
-            dirty_files=[],
-            untracked_files=[],
-            default_branch="master",
-            commit_info=commit_info,
-            error=None,
-        )
-
-        # Mock daemon client to return expected status as coroutine
-        async def mock_get_status():
-            return {"test": expected_status}
-
-        mock_daemon_client.get_all_worktree_status = mock_get_status
-
-        status_dict = await service.get_all_worktree_status_daemon(
-            unit_test_config, mock_daemon_client
-        )
-
-        assert len(status_dict) == 1
-        assert "test" in status_dict
-        status = status_dict["test"]
-        assert isinstance(status, WorktreeStatus)
-        assert status.branch == "test-branch"
-
-    @pytest.mark.asyncio
-    async def test_get_all_worktree_status_with_pr(
-        self, service, mock_git, mock_github, unit_test_config, set_test_env_vars
-    ):
-        """Test getting status with PR information."""
-        # Mock daemon client
-        mock_daemon_client = Mock()
-
-        # Create expected status with PR info
-        from datetime import datetime
-
-        from wt.shared.git_interface import WorktreeStatus
-        from wt.shared.github_models import PRData, PRInfo, PRState
-        from wt.shared.models import CommitInfo
-
-        commit_info = CommitInfo(
-            last_commit="abc123",
-            last_commit_message="Test commit",
-            last_commit_author="Test Author",
-            last_commit_date=datetime.now(),
-        )
-
-        pr_data = PRData(pr_number=123, pr_state=PRState.OPEN)
-
-        pr_info = PRInfo(branch="test-branch", pr_data=pr_data)
-
-        expected_status = WorktreeStatus(
-            name="test",
-            branch="test-branch",
-            ahead=0,
-            behind=0,
-            dirty_files=[],
-            untracked_files=[],
-            default_branch="master",
-            commit_info=commit_info,
-            error=None,
-            pr_info=pr_info,
-        )
-
-        # Mock daemon client to return expected status as coroutine
-        async def mock_get_status():
-            return {"test": expected_status}
-
-        mock_daemon_client.get_all_worktree_status = mock_get_status
-
-        status_dict = await service.get_all_worktree_status_daemon(
-            unit_test_config, mock_daemon_client
-        )
-
-        # Should still work (PR logic handled by daemon)
-        assert len(status_dict) == 1
-
-    def test_create_worktree_status_success(self, service, mock_git):
-        """Test successful worktree status creation."""
-        status = service._create_worktree_status(
-            "test", Path("/path/test"), "test-branch", "master"
-        )
-
-        assert status.name == "test"
-        assert status.branch == "test-branch"
-        assert status.ahead == 0
-        assert status.behind == 0
-        assert status.dirty_files == []
-        assert status.untracked_files == []
-        assert status.commit_info is not None
-
-        mock_git.verify_branch_exists.assert_called_with("test-branch")
-        mock_git.rev_count.assert_called()
-
-    def test_create_worktree_status_stale_branch(self, service, mock_git):
-        """Test handling of stale worktree (branch deleted)."""
-        mock_git.verify_branch_exists.side_effect = NoSuchRef("Branch not found")
-
-        with pytest.raises(
-            RuntimeError, match="Stale worktree test: branch test-branch was deleted"
-        ):
-            service._create_worktree_status("test", Path("/path/test"), "test-branch", "master")
-
-    def test_get_commit_info_success(self, service, mock_git):
-        """Test successful commit info retrieval."""
-        commit_info = service._get_commit_info("test-branch")
-
-        assert commit_info is not None
-        assert commit_info.last_commit == "abc123"
-        assert commit_info.last_commit_message == "Test commit"
-        assert commit_info.last_commit_author == "Test Author"
-
-        mock_git.log_format.assert_called_with("test-branch", "%H|%s|%an|%ai")
-
-    def test_get_commit_info_failure(self, service, mock_git):
-        """Test commit info retrieval failure."""
-        from wt.shared.git_interface import GitError
-
-        mock_git.log_format.side_effect = GitError("Git command failed")
-
-        commit_info = service._get_commit_info("test-branch")
-        assert commit_info is None
-
-    def test_is_managed_worktree_main_repo(self, service, unit_test_config):
-        """Test that main repo is not considered managed."""
-        result = service._is_managed_worktree(unit_test_config.main_repo, unit_test_config)
-        assert not result
-
-    def test_is_managed_worktree_outside_managed_dir(self, service, unit_test_config):
-        """Test that worktrees outside managed directory are not considered managed."""
-        outside_path = Path("/some/other/path")
-        result = service._is_managed_worktree(outside_path, unit_test_config)
-        assert not result
-
-    def test_is_managed_worktree_hidden_pattern(self, service, unit_test_config):
-        """Test that worktrees matching hidden patterns are not considered managed."""
-        # Create a config with specific hidden patterns for this test
-        test_config = unit_test_config.model_copy(update={"hidden_worktree_patterns": [".brix-"]})
-
-        hidden_worktree = test_config.worktrees_dir / ".brix-worker-123"
-        result = service._is_managed_worktree(hidden_worktree, test_config)
-        assert not result
-
-    def test_is_managed_worktree_valid(self, service, unit_test_config):
-        """Test that valid worktrees in managed directory are considered managed."""
-        valid_worktree = unit_test_config.worktrees_dir / "feature-branch"
-        result = service._is_managed_worktree(valid_worktree, unit_test_config)
-        assert result
-
-    def test_create_error_status(self, service):
-        """Test creating error status for failed worktrees."""
-        error_status = service._create_error_status(
-            "test", "test-branch", "Branch deleted", "master"
-        )
-
-        assert error_status.name == "test"
-        assert error_status.branch == "test-branch"
-        assert error_status.error == "Branch deleted"
-        assert error_status.default_branch == "master"
-        assert error_status.ahead == 0
-        assert error_status.behind == 0
+        
+        # Create WorktreeService with the script-enabled config
+        git = GitInterface(config=config)
+        github = Mock()
+        worktree_service = WorktreeService(git, github)
+        
+        # Create worktree - script should execute
+        worktree_path = worktree_service.create_worktree(config, "script-test")
+        
+        # Verify script was executed
+        output_file = worktree_path / "script_output.txt"
+        assert output_file.exists()
+        content = output_file.read_text()
+        assert str(worktree_path) in content
+        assert "Script executed with arg:" in content

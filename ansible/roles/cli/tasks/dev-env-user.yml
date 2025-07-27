@@ -44,6 +44,7 @@
         - '@ast-grep/cli'  # For semantic code queries across multiple languages
         - 'jscpd'  # Copy/paste detector for 150+ languages including Python, TypeScript
         - 'madge'  # Dependency graph visualization tool
+        - 'pyright'  # Python language server for static type checking
 
     # Install Rust development tools
     - name: Check if cargo is installed

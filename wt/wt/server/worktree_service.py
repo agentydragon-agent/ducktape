@@ -36,12 +36,12 @@ class WorktreeService:
 
     def list_worktrees(self, config) -> list[tuple[str, Path, bool]]:
         """List all managed worktrees with their existence status."""
-        parsed_worktrees = self.git.parse_worktree_list(self.git.worktree_list())
+        worktree_infos = self.git.list_worktrees()
         worktrees = []
 
-        for path, branch in parsed_worktrees:
-            if self._is_managed_worktree(path, config):
-                worktrees.append((path.name, path, path.exists()))
+        for info in worktree_infos:
+            if self._is_managed_worktree(info.path, config) and not info.is_main:
+                worktrees.append((info.path.name, info.path, info.exists))
 
         return worktrees
 
@@ -232,7 +232,7 @@ class WorktreeService:
 
     def get_worktree_path(self, config, name: str) -> Path:
         """Get path for a worktree by name."""
-        return config.worktrees_dir / name
+        return config.worktrees_dir_resolved / name
 
     def require_worktree_exists(self, config, name: str) -> Path:
         """Require that a worktree exists and return its path."""

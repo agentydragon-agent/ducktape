@@ -84,6 +84,8 @@
       Servers that need to be added: {{ (mcp_check_data | default({})).servers_added | default([]) | join(', ') }}
       Servers that need to be updated: {{ (mcp_check_data | default({})).servers_updated | default([]) | join(', ') }}
       
+      To skip this check, run: ansible-playbook playbook.yaml --skip-tags claude
+      
       To configure manually, run:
         {{ role_path }}/files/apply-mcp-config.py
       

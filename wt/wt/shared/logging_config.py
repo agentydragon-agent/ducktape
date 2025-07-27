@@ -4,9 +4,6 @@ import logging.handlers
 from datetime import datetime
 from typing import Any
 
-from .directories import Directories
-
-
 class JSONFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         log_entry = {
@@ -31,8 +28,8 @@ class JSONFormatter(logging.Formatter):
 
 
 class OperationLogger:
-    def __init__(self, directories: Directories, enabled: bool = True):
-        self.directories = directories
+    def __init__(self, config, enabled: bool = True):
+        self.config = config
         self.enabled = enabled
         self.logger = logging.getLogger("wt.operations")
 
@@ -42,7 +39,7 @@ class OperationLogger:
     def _setup_logger(self) -> None:
         # Create rotating file handler
         handler = logging.handlers.RotatingFileHandler(
-            self.directories.operations_log_file,
+            self.config.operations_log_file,
             maxBytes=10 * 1024 * 1024,  # 10MB
             backupCount=5,
         )
@@ -85,12 +82,12 @@ class OperationLogger:
         )
 
 
-def setup_logging(directories: Directories, log_level: str = "INFO") -> None:
+def setup_logging(config, log_level: str = "INFO") -> None:
     logging.basicConfig(
         level=getattr(logging, log_level.upper()),
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         handlers=[
             logging.StreamHandler(),
-            logging.FileHandler(directories.log_dir / "wt.log"),
+            logging.FileHandler(config.wt_dir / "wt.log"),
         ],
     )

@@ -4,7 +4,7 @@ import time
 from dataclasses import dataclass
 from functools import wraps
 from pathlib import Path
-from typing import Generator
+from typing import Generator, Optional
 from unittest.mock import Mock, patch
 
 # Removed GitPython dependency; use pygit2 for repo fixtures if needed
@@ -17,7 +17,6 @@ from wt.server.github_client import GitHubInterface
 from wt.server.worktree_service import WorktreeService
 from wt.shared.configuration import Configuration
 from wt.shared.config_file import ConfigFile
-from wt.shared.directories import Directories
 from wt.shared.models import PRStatus
 
 from .test_constants import GITSTATUSD_PATH
@@ -158,31 +157,13 @@ def worktrees_dir(temp_dir: Path) -> Path:
 
 @pytest.fixture
 def test_config(git_repo: Path, worktrees_dir: Path) -> Configuration:
-    config_file = ConfigFile(
+    return build_test_configuration(
+        git_repo,
         worktrees_dir=str(worktrees_dir),
-        main_repo=str(git_repo),
-        github_repo="test-user/test-repo",
-        branch_prefix="test/",
-        default_worktree_base_branch="HEAD",
-        cache_expiration=3600,
-        cache_refresh_age=300,
-        log_operations=True,
-        hidden_worktree_patterns=[],
-        gitstatusd_path=GITSTATUSD_PATH,
-        github_enabled=False,  # Disable GitHub for tests
+        default_worktree_base_branch="HEAD"
     )
-    return Configuration(config_file)
 
 
-@pytest.fixture
-def test_directories(temp_dir: Path) -> Directories:
-    dirs = Directories("test-adgn-worktree")
-    # Override with temp paths
-    dirs._log_dir = temp_dir / "logs"
-    dirs._data_dir = temp_dir / "data"
-    dirs._log_dir.mkdir(parents=True, exist_ok=True)
-    dirs._data_dir.mkdir(parents=True, exist_ok=True)
-    return dirs
 
 
 @pytest.fixture
@@ -289,41 +270,32 @@ def temp_config_file(test_config):
     """Write out a temporary config file for testing."""
     import tempfile
 
-    import yaml
-
-    from wt.shared.configuration import Configuration
-from wt.shared.config_file import ConfigFile
-
-    # Create test-specific config
-    config_file = ConfigFile(
-        worktrees_dir=str(test_config.worktrees_dir_resolved),
-        main_repo=str(test_config.main_repo_resolved),
-        branch_prefix=test_config.branch_prefix,
-        default_worktree_base_branch=test_config.default_worktree_base_branch,
-        github_repo=test_config.github_repo,
-        log_operations=test_config.log_operations,
-        cache_expiration=test_config.cache_expiration,
-        cache_refresh_age=test_config.cache_refresh_age,
-        hidden_worktree_patterns=test_config.hidden_worktree_patterns,
-        gitstatusd_path=GITSTATUSD_PATH,
-        cow_method="rsync",  # Use simple cow method for tests
-        github_enabled=False,  # Disable GitHub for tests
-    )
-
-    # Convert to dict for YAML serialization
-    config_data = config_file.model_dump(mode="json")
-
     # Create temp config directory
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)
         config_dir = temp_path / "config" / "adgn-wt"
         config_dir.mkdir(parents=True)
-        config_file = config_dir / "config.yaml"
-
-        # Write config file
-        with config_file.open("w") as f:
-            yaml.safe_dump(config_data, f)
-
+        wt_dir = config_dir / "adgn-wt" / ".wt"
+        
+        # Use centralized helper to create configuration
+        build_test_configuration(
+            test_config.main_repo,
+            wt_dir=wt_dir,
+            worktrees_dir=str(test_config.worktrees_dir),
+            branch_prefix=test_config.branch_prefix,
+            default_worktree_base_branch=test_config.default_worktree_base_branch,
+            github_repo=test_config.github_repo,
+            log_operations=test_config.log_operations,
+            cache_expiration=test_config.cache_expiration,
+            cache_refresh_age=test_config.cache_refresh_age,
+            hidden_worktree_patterns=test_config.hidden_worktree_patterns,
+            gitstatusd_path=GITSTATUSD_PATH,
+            cow_method="rsync",
+            github_enabled=False
+        )
+        
+        config_file = wt_dir / "config.yaml"
+        
         # Set XDG_CONFIG_HOME to use our temp config
         with patch.dict(os.environ, {"XDG_CONFIG_HOME": str(temp_path / "config")}):
             yield config_file
@@ -561,36 +533,26 @@ def kill_daemon_and_verify(repo_path: Path, timeout: float = 5.0):
 
 
 def create_integration_test_config_file(repo_path: Path) -> Path:
-    """Create a test config file for integration tests using Pydantic Config model.
+    """Create a test config file for integration tests using centralized helper.
 
     Creates config in .wt directory consistent with rationalized config system.
     """
-    import yaml
-
-    # Use rationalized config system - config goes in .wt directory
-    config_dir = repo_path / ".wt"
-    config_dir.mkdir(parents=True, exist_ok=True)
-
-    # Create ConfigFile instance for serialization (pure data)
-    from wt.shared.config_file import ConfigFile
+    wt_dir = repo_path / ".wt"
     
-    config_file_data = ConfigFile(
-        worktrees_dir=str(repo_path / "worktrees"),  # Essential for config resolution
+    # Use centralized helper to create configuration
+    build_test_configuration(
+        repo_path,
+        wt_dir=wt_dir,
         branch_prefix="test/",
         default_worktree_base_branch="HEAD",
         log_operations=False,
         cow_method="copy",
-        github_enabled=False,  # Disable GitHub for tests
+        github_enabled=False,
         github_repo="test/test",
         gitstatusd_path=GITSTATUSD_PATH,
     )
 
-    # Dump pure ConfigFile data to YAML
-    config_file = config_dir / "config.yaml"
-    with config_file.open("w") as f:
-        yaml.safe_dump(config_file_data.model_dump(), f)
-
-    return config_file
+    return wt_dir / "config.yaml"
 
 
 @pytest.fixture
@@ -660,3 +622,48 @@ def real_env(real_temp_repo):
 
     # Cleanup: Kill daemon after test
     kill_daemon_and_verify(real_temp_repo)
+
+
+def build_test_configuration(repo_path: Path, wt_dir: Optional[Path] = None, **config_overrides) -> Configuration:
+    """Centralized helper to build test configurations with the standard pattern.
+    
+    This eliminates duplication of the ConfigFile → YAML → Configuration.resolve workflow.
+    """
+    if wt_dir is None:
+        wt_dir = repo_path / ".wt"
+    
+    # Default config suitable for most tests
+    defaults = {
+        "main_repo": str(repo_path),
+        "worktrees_dir": str(repo_path / "worktrees"),
+        "branch_prefix": "test/",
+        "default_worktree_base_branch": "main", 
+        "github_repo": "test-user/test-repo",
+        "github_enabled": False,
+        "log_operations": True,
+        "cache_expiration": 3600,
+        "cache_refresh_age": 300,
+        "hidden_worktree_patterns": [],
+        "gitstatusd_path": GITSTATUSD_PATH,
+        "cow_method": "copy",
+    }
+    
+    config_file = ConfigFile(**{**defaults, **config_overrides})
+    
+    # Save to .wt directory
+    wt_dir.mkdir(parents=True, exist_ok=True)
+    config_path = wt_dir / "config.yaml"
+    
+    with open(config_path, 'w') as f:
+        yaml.dump(config_file.model_dump(), f)
+    
+    return Configuration.resolve(wt_dir)
+
+
+@pytest.fixture
+def config_builder(real_temp_repo):
+    """Helper to build and resolve configurations for tests."""
+    def _build_config(**config_overrides):
+        return build_test_configuration(real_temp_repo, **config_overrides)
+    
+    return _build_config
