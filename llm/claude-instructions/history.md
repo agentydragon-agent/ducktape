@@ -17,13 +17,26 @@ what was added:
 * claude code settings (CLAUDE.md, .mcp.json, ...)
 * ducktape -> ansible, dotfiles, llm, ... (what it is & why)
 * messy workspace -> organize (md file sprawl etc)
-* how to Task:
-  - do not modify files
-  - prefer:
-    - read-only tasks
-    - isolated work areas (folders)
-    - read-only tasks
+* save full context for future claude
+* "never commit unless explicitly asked"
+* TodoWrite: every task, mark todos, etc.
 
 never got to work:
 
 * llm similar (semantic search)
+* learnings file
+
+## Task
+
+* Task tool suspends you until all agents finish. to parallelize, launch multiple
+  in parallel.
+
+* how to Task - avoid stepping on each others' toes, prefer:
+  - not modify files
+  - read-only tasks
+  - isolated work areas (folders)
+  - read-only tasks
+
+* tasks can abort halfway/abruptly, there's no mechanism to report partial progress
+
+

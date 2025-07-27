@@ -88,6 +88,20 @@
       - pipx
     state: latest
 
+# Upgrade pipx to latest version via pip (Ubuntu package is too old)
+- name: Upgrade pipx to latest version via pip
+  become: true
+  become_user: "{{ my_user | default(ansible_user_id) }}"
+  ansible.builtin.pip:
+    name: pipx
+    state: latest
+    extra_args: --user --upgrade --force-reinstall
+
+# Ensure the user's pipx is in PATH for subsequent tasks
+- name: Add user's local bin to PATH for pipx
+  set_fact:
+    ansible_env: "{{ ansible_env | combine({'PATH': ansible_env.PATH + ':' + ansible_user_dir + '/.local/bin'}) }}"
+
 - name: Remove retired pkgs
   become: true
   ansible.builtin.apt:

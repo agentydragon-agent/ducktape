@@ -101,8 +101,8 @@
       tags: [desktop]
 
     - import_role:
-        name: wireguard
-      tags: [wireguard]
+        name: tailscale-client
+      tags: [tailscale]
 
     - import_role:
         name: cli

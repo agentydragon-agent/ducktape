@@ -17,6 +17,10 @@
     - role: scanbox
     - role: wireguard
       tags: [wireguard]
+    - role: tailscale-client
+      tags: [tailscale]
+    - role: k3s-client
+      tags: [k3s-client]
 
   tasks:
     - name: Install CUDA (NVidia-specific)

@@ -1,0 +1,5 @@
+---
+# Tailscale client configuration defaults
+
+# Your headscale server URL (will be set from inventory)
+headscale_server_url: "https://{{ hostvars['vps']['ansible_host'] }}:8080"

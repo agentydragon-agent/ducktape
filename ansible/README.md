@@ -200,3 +200,120 @@ Scan the QR code with the WireGuard mobile app to import the configuration.
 All devices report ActivityWatch data to the central server on VPS
 
 Open on WireGuard network: <http://10.13.13.1:8384>
+
+## Headscale (Tailscale Alternative)
+
+Headscale is a self-hosted control server for Tailscale that provides automatic peer discovery, Magic DNS, and seamless network roaming. It's configured to use the same IP range as WireGuard (10.13.0.0/16) for easy migration.
+
+### Network Layout
+
+Headscale uses the standard Tailscale IP ranges (100.64.0.0/10). Here's the organized allocation:
+
+#### Core Infrastructure - 100.64.1.x/24
+| Host | IP | Description | Notes |
+|------|------------|-------------|-------|
+| `vps` | 100.64.1.1 | Headscale Server | Control plane at https://vps-hostname:8080 |
+| `atlas` | 100.64.1.30 | Proxmox host | k3s cluster host |
+| `homeassistant` | 100.64.1.100 | Home Assistant | |
+
+#### Personal Machines - 100.64.10.x/24
+| Host | IP | Description | Notes |
+|------|------------|-------------|-------|
+| `agentydragon` | 100.64.10.11 | ThinkPad X1 Extreme | |
+| `gpd` | 100.64.10.12 | GPD Win Max 2 | |
+| `new-vm` | 100.64.10.31 | New Pop!_OS VM | |
+
+#### Mobile Devices - 100.64.20.x/24
+| Host | IP | Description | Notes |
+|------|------------|-------------|-------|
+| `pixel6` | 100.64.20.50 | Pixel 6 phone | |
+
+#### Kubernetes Services - 100.64.100.x/24
+| Host | IP | Description | Notes |
+|------|------------|-------------|-------|
+| `k3s-master` | 100.64.100.200 | k3s master node | VM on atlas |
+| `k3s-worker` | 100.64.100.201 | k3s worker node | VM on atlas |
+| | 100.64.100.210-250 | Reserved for additional k3s nodes | |
+
+#### Future Expansion
+- `100.64.50.x/24` - IoT devices
+- `100.64.60.x/24` - Guest devices  
+- `100.64.200.x/24` - Lab/experimental
+
+### Initial Setup
+
+1. **Deploy headscale server to VPS:**
+   ```bash
+   ansible-playbook vps.yaml --tags headscale
+   ```
+
+2. **Create a user for your devices:**
+   ```bash
+   ssh vps "headscale users create agentydragon"
+   ```
+
+3. **List existing users:**
+   ```bash
+   ssh vps "headscale users list"
+   ```
+
+### Adding a Device
+
+1. **Deploy tailscale client to the device:**
+   ```bash
+   ansible-playbook <hostname>.yaml --tags tailscale
+   ```
+
+2. **The client will attempt to register and show a registration key. Check pending registrations:**
+   ```bash
+   ssh vps "headscale nodes list"
+   ```
+
+3. **Register the device:**
+   ```bash
+   ssh vps "headscale nodes register --user agentydragon --key <registration-key>"
+   ```
+
+4. **Verify the device is connected:**
+   ```bash
+   ssh vps "headscale nodes list"
+   # On the device:
+   tailscale status
+   ```
+
+### Migration from WireGuard
+
+To migrate from WireGuard to Headscale:
+
+1. **Deploy tailscale to a device** (this automatically stops WireGuard)
+2. **Register the device** with headscale
+3. **Verify connectivity** to other headscale devices
+4. **Repeat for all devices**
+
+The same IP addresses are preserved, so existing configurations (k3s, DNS, etc.) continue to work.
+
+### Useful Commands
+
+```bash
+# Server management
+ssh vps "headscale users list"
+ssh vps "headscale nodes list"
+ssh vps "headscale routes list"
+
+# Client status
+tailscale status
+tailscale ping <hostname>
+tailscale netcheck
+
+# Re-authenticate a device
+sudo tailscale up --login-server=https://your-vps:8080
+```
+
+### Magic DNS
+
+Headscale provides automatic hostname resolution:
+- `atlas.your-vps-domain` resolves to `10.13.13.30`
+- `agentydragon.your-vps-domain` resolves to `10.13.13.11`
+- etc.
+
+This enables direct hostname usage in configurations without maintaining `/etc/hosts` files.

@@ -1,5 +1,5 @@
 ---
-# Install k3s on nodes
+# Install k3s on nodes using direct SSH via ProxyCommand
 
 - name: Install k3s on master node
   delegate_to: "{{ item.name }}"
@@ -29,7 +29,7 @@
 - name: Get k3s node token from master
   delegate_to: "{{ item.name }}"
   ansible.builtin.shell: |
-    cat /var/lib/rancher/k3s/server/node-token
+    sudo cat /var/lib/rancher/k3s/server/node-token
   loop: "{{ k3s_vms | selectattr('role', 'equalto', 'master') | list }}"
   register: node_token
   tags: [k3s, install-master]

@@ -10,12 +10,9 @@
     mode: '0755'
   tags: [k3s, kubectl]
 
-- name: Copy kubeconfig from master
-  delegate_to: "{{ (k3s_vms | selectattr('role', 'equalto', 'master') | first).name }}"
-  ansible.builtin.fetch:
-    src: /etc/rancher/k3s/k3s.yaml
-    dest: /tmp/k3s.yaml
-    flat: yes
+- name: Copy kubeconfig from master to atlas
+  ansible.builtin.shell: |
+    ssh -o StrictHostKeyChecking=no {{ k3s_ssh_user }}@{{ k3s_master_ip }} 'sudo cat /etc/rancher/k3s/k3s.yaml' > /tmp/k3s.yaml
   tags: [k3s, kubectl]
 
 - name: Update kubeconfig with correct server address

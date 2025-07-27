@@ -25,6 +25,10 @@
     #- cli    # <- TODO:  needs ducktape, etc
     - role: wireguard
       tags: [wireguard]
+    - role: headscale-server
+      tags: [headscale]
+    - role: tailscale-client
+      tags: [tailscale]
 
   tasks:
     # Needs to run before Docker, which tries to install gnupg2

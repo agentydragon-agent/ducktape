@@ -9,19 +9,19 @@ k3s_vms:
     memory: 4096
     disk_size: 50G
     role: master
-    ip: 10.0.167.200
+    ip: 10.0.200.200
   - name: k3s-worker
     vmid: 201
     cores: 2
     memory: 4096
     disk_size: 50G
     role: worker
-    ip: 10.0.167.201
+    ip: 10.0.200.201
 
 # Network Configuration
 k3s_network_bridge: vmbr0
-k3s_network_gateway: 10.0.167.1
-k3s_network_cidr: 24
+k3s_network_gateway: 10.0.0.1
+k3s_network_cidr: 16
 k3s_nameserver: 8.8.8.8
 
 # VM Template Configuration
@@ -30,7 +30,7 @@ k3s_vm_storage: local-zfs
 k3s_cloudinit_storage: local-zfs
 
 # k3s Configuration
-k3s_version: stable
+k3s_version: v1.29.0+k3s1
 k3s_cluster_cidr: 10.42.0.0/16
 k3s_service_cidr: 10.43.0.0/16
 k3s_cluster_dns: 10.43.0.10

@@ -34,12 +34,26 @@
   loop: "{{ k3s_vms }}"
   tags: [k3s, vm-creation]
 
-- name: Add k3s nodes to inventory
+# Copy SSH keys from local machine to VMs for direct access
+- name: Get local SSH public key
+  ansible.builtin.shell: cat ~/.ssh/id_ed25519.pub
+  register: local_ssh_key
+  delegate_to: localhost
+  tags: [k3s, ssh-setup]
+
+- name: Add local SSH key to k3s VMs
+  ansible.builtin.shell: |
+    ssh -o StrictHostKeyChecking=no {{ k3s_ssh_user }}@{{ item.ip }} 'echo "{{ local_ssh_key.stdout }}" >> ~/.ssh/authorized_keys'
+  loop: "{{ k3s_vms }}"
+  tags: [k3s, ssh-setup]
+
+- name: Add k3s nodes to inventory for direct SSH
   ansible.builtin.add_host:
     name: "{{ item.name }}"
     groups: k3s_nodes
     ansible_host: "{{ item.ip }}"
     ansible_user: "{{ k3s_ssh_user }}"
+    ansible_ssh_common_args: "-o ProxyCommand='ssh -W %h:%p root@{{ ansible_host }}'"
     k3s_role: "{{ item.role }}"
   loop: "{{ k3s_vms }}"
   tags: [k3s, inventory]
