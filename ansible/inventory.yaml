@@ -32,8 +32,8 @@ all:
 k3s_nodes:
   hosts:
     k3s-master:
-      ansible_host: 10.0.167.200
+      ansible_host: 10.0.200.200
       ansible_user: ubuntu
     k3s-worker:
-      ansible_host: 10.0.167.201
+      ansible_host: 10.0.200.201
       ansible_user: ubuntu
