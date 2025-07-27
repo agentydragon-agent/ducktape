@@ -1,0 +1,53 @@
+---
+# k3s role main tasks
+
+- name: Install required packages on Proxmox host
+  ansible.builtin.apt:
+    name:
+      - python3-proxmoxer
+      - python3-requests
+    state: present
+  tags: [k3s, prerequisites]
+
+- name: Check if Ubuntu cloud image template exists
+  ansible.builtin.shell: |
+    pvesh get /nodes/{{ proxmox_node }}/qemu/{{ k3s_vm_template }} --output-format json 2>/dev/null || echo '{}'
+  register: template_check
+  changed_when: false
+  tags: [k3s, vm-creation]
+
+- name: Download and create Ubuntu cloud image template if missing
+  include_tasks: create_template.yml
+  when: template_check.stdout == '{}'
+  tags: [k3s, vm-creation]
+
+- name: Create k3s VMs
+  include_tasks: create_vms.yml
+  tags: [k3s, vm-creation]
+
+- name: Wait for VMs to be accessible via SSH
+  ansible.builtin.wait_for:
+    host: "{{ item.ip }}"
+    port: 22
+    delay: 30
+    timeout: 300
+  loop: "{{ k3s_vms }}"
+  tags: [k3s, vm-creation]
+
+- name: Add k3s nodes to inventory
+  ansible.builtin.add_host:
+    name: "{{ item.name }}"
+    groups: k3s_nodes
+    ansible_host: "{{ item.ip }}"
+    ansible_user: "{{ k3s_ssh_user }}"
+    k3s_role: "{{ item.role }}"
+  loop: "{{ k3s_vms }}"
+  tags: [k3s, inventory]
+
+- name: Install k3s on nodes
+  include_tasks: install_k3s.yml
+  tags: [k3s, installation]
+
+- name: Configure kubectl access on Proxmox host
+  include_tasks: configure_kubectl.yml
+  tags: [k3s, kubectl]

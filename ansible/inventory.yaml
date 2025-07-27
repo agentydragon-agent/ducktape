@@ -24,5 +24,14 @@ all:
       ansible_host: 10.0.167.15
       ansible_user: agentydragon
     atlas:
-      ansible_host: 10.0.182.102
+      ansible_host: 10.0.182.102  # on home network
       ansible_user: root
+
+k3s_nodes:
+  hosts:
+    k3s-master:
+      ansible_host: 10.0.167.200
+      ansible_user: ubuntu
+    k3s-worker:
+      ansible_host: 10.0.167.201
+      ansible_user: ubuntu

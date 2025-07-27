@@ -1,0 +1,38 @@
+---
+# Create Ubuntu cloud image template for k3s VMs
+
+- name: Download Ubuntu 22.04 cloud image
+  ansible.builtin.get_url:
+    url: https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img
+    dest: /var/lib/vz/template/iso/ubuntu-22.04-cloudimg.img
+    mode: '0644'
+  tags: [k3s, template]
+
+- name: Create VM for template
+  ansible.builtin.shell: |
+    qm create 9000 --name ubuntu-22.04-cloudinit-template --memory 2048 --cores 2 --net0 virtio,bridge={{ k3s_network_bridge }}
+  tags: [k3s, template]
+
+- name: Import disk to VM
+  ansible.builtin.shell: |
+    qm importdisk 9000 /var/lib/vz/template/iso/ubuntu-22.04-cloudimg.img {{ k3s_vm_storage }}
+  tags: [k3s, template]
+
+- name: Configure VM hardware
+  ansible.builtin.shell: |
+    qm set 9000 --scsihw virtio-scsi-pci --scsi0 {{ k3s_vm_storage }}:vm-9000-disk-0
+    qm set 9000 --ide2 {{ k3s_cloudinit_storage }}:cloudinit
+    qm set 9000 --boot c --bootdisk scsi0
+    qm set 9000 --serial0 socket --vga serial0
+    qm set 9000 --agent enabled=1
+  tags: [k3s, template]
+
+- name: Convert VM to template
+  ansible.builtin.shell: |
+    qm template 9000
+  tags: [k3s, template]
+
+- name: Update template name in defaults
+  ansible.builtin.set_fact:
+    k3s_vm_template: 9000
+  tags: [k3s, template]
