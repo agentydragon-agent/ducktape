@@ -8,14 +8,23 @@
     mode: '0644'
   tags: [k3s, template]
 
+- name: Check if VM 9000 exists
+  ansible.builtin.shell: |
+    qm status 9000 2>/dev/null || echo "NOTFOUND"
+  register: vm_9000_check
+  changed_when: false
+  tags: [k3s, template]
+
 - name: Create VM for template
   ansible.builtin.shell: |
     qm create 9000 --name ubuntu-22.04-cloudinit-template --memory 2048 --cores 2 --net0 virtio,bridge={{ k3s_network_bridge }}
+  when: vm_9000_check.stdout == "NOTFOUND"
   tags: [k3s, template]
 
 - name: Import disk to VM
   ansible.builtin.shell: |
     qm importdisk 9000 /var/lib/vz/template/iso/ubuntu-22.04-cloudimg.img {{ k3s_vm_storage }}
+  when: vm_9000_check.stdout == "NOTFOUND"
   tags: [k3s, template]
 
 - name: Configure VM hardware
@@ -25,11 +34,23 @@
     qm set 9000 --boot c --bootdisk scsi0
     qm set 9000 --serial0 socket --vga serial0
     qm set 9000 --agent enabled=1
+  when: vm_9000_check.stdout == "NOTFOUND"
+  tags: [k3s, template]
+
+- name: Check if VM 9000 is already a template
+  ansible.builtin.shell: |
+    qm config 9000 | grep -q "^template: 1" && echo "IS_TEMPLATE" || echo "NOT_TEMPLATE"
+  register: template_check
+  changed_when: false
+  failed_when: false
   tags: [k3s, template]
 
 - name: Convert VM to template
   ansible.builtin.shell: |
     qm template 9000
+  when: 
+    - vm_9000_check.stdout != "NOTFOUND"
+    - template_check.stdout == "NOT_TEMPLATE"
   tags: [k3s, template]
 
 - name: Update template name in defaults
