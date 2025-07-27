@@ -15,7 +15,7 @@ from .client.handlers import (
     handle_status_single,
 )
 from .client.view_formatter import ViewFormatter
-from .shared.config import load_config
+from .shared.configuration import load_config
 from .shared.constants import MAIN_REPO_ALIASES
 
 

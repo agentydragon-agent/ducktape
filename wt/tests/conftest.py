@@ -15,7 +15,8 @@ from click.testing import CliRunner
 
 from wt.server.github_client import GitHubInterface
 from wt.server.worktree_service import WorktreeService
-from wt.shared.config import Config
+from wt.shared.configuration import Configuration
+from wt.shared.config_file import ConfigFile
 from wt.shared.directories import Directories
 from wt.shared.models import PRStatus
 
@@ -86,7 +87,7 @@ def mock_config(test_config):
 
 
 @pytest.fixture
-def set_test_env_vars(test_config: Config):
+def set_test_env_vars(test_config: Configuration):
     """Apply environment variable overrides for unit tests that need them."""
     with patch.dict(
         os.environ,
@@ -156,10 +157,10 @@ def worktrees_dir(temp_dir: Path) -> Path:
 
 
 @pytest.fixture
-def test_config(git_repo: Path, worktrees_dir: Path) -> Config:
-    return Config(
-        main_repo=git_repo,
-        worktrees_dir=worktrees_dir,
+def test_config(git_repo: Path, worktrees_dir: Path) -> Configuration:
+    config_file = ConfigFile(
+        worktrees_dir=str(worktrees_dir),
+        main_repo=str(git_repo),
         github_repo="test-user/test-repo",
         branch_prefix="test/",
         default_worktree_base_branch="HEAD",
@@ -170,6 +171,7 @@ def test_config(git_repo: Path, worktrees_dir: Path) -> Config:
         gitstatusd_path=GITSTATUSD_PATH,
         github_enabled=False,  # Disable GitHub for tests
     )
+    return Configuration(config_file)
 
 
 @pytest.fixture
@@ -289,12 +291,13 @@ def temp_config_file(test_config):
 
     import yaml
 
-    from wt.shared.config import Config
+    from wt.shared.configuration import Configuration
+from wt.shared.config_file import ConfigFile
 
     # Create test-specific config
-    config = Config(
-        main_repo=test_config.main_repo,
-        worktrees_dir=test_config.worktrees_dir,
+    config_file = ConfigFile(
+        worktrees_dir=str(test_config.worktrees_dir_resolved),
+        main_repo=str(test_config.main_repo_resolved),
         branch_prefix=test_config.branch_prefix,
         default_worktree_base_branch=test_config.default_worktree_base_branch,
         github_repo=test_config.github_repo,
@@ -305,11 +308,10 @@ def temp_config_file(test_config):
         gitstatusd_path=GITSTATUSD_PATH,
         cow_method="rsync",  # Use simple cow method for tests
         github_enabled=False,  # Disable GitHub for tests
-        enable_git_fallbacks=False,
     )
 
-    # Convert to dict for YAML serialization, excluding non-serializable fields
-    config_data = config.model_dump(exclude={"directories"}, mode="json")
+    # Convert to dict for YAML serialization
+    config_data = config_file.model_dump(mode="json")
 
     # Create temp config directory
     with tempfile.TemporaryDirectory() as temp_dir:

@@ -320,11 +320,11 @@ class GitStatusdProcess:
         github_interface=None,
         error_callback=None,
     ):
-        from ..shared.config import Config
+        from ..shared.configuration import Configuration
 
         self.worktree_info = worktree_info
         self.gitstatusd_path = gitstatusd_path
-        self.config: Config = config
+        self.config: Configuration = config
         self.git_repo_manager = git_repo_manager
         self.github_interface = github_interface
         self.error_callback = error_callback
@@ -786,14 +786,13 @@ class GitStatusdDaemon:
     """Multiplexing daemon that manages gitstatusd processes for all worktrees."""
 
     def __init__(self, config):
-        from ..shared.config import Config
+        from ..shared.configuration import Configuration
 
-        self.config: Config = config
+        self.config: Configuration = config
         logger.info(
-            "Daemon configuration loaded - worktrees_dir: %s, github_repo: %s, git_fallbacks: %s",
+            "Daemon configuration loaded - worktrees_dir: %s, github_repo: %s",
             self.config.worktrees_dir_resolved,
             self.config.github_repo,
-            self.config.enable_git_fallbacks,
         )
         logger.info(
             "GitHub refresh configuration - debounce_delay: %.1fs, periodic_interval: %.1fs",
@@ -1284,7 +1283,7 @@ if __name__ == "__main__":
     import sys
 
     # Load config using the standard discovery system
-    from wt.shared.config import load_config
+    from wt.shared.configuration import load_config
 
     try:
         config = load_config()

@@ -10,13 +10,61 @@ For the pure serializable data model, see config_file.py.
 """
 
 import os
+import sys
 from pathlib import Path
 from typing import Optional
 
+import click
+import pygit2
 import yaml
+from pydantic import ValidationError
 
 from .config_file import ConfigFile
 from .directories import Directories
+
+
+def load_config():
+    """Load configuration using simplified WT_MAIN_REPO -> .wt/config.yaml path."""
+    # Step 1: Get main repository from WT_MAIN_REPO (only supported method)
+    main_repo_env = os.getenv("WT_MAIN_REPO")
+    if not main_repo_env:
+        click.echo("Error: WT_MAIN_REPO environment variable must be set")
+        sys.exit(1)
+    
+    main_repo = Path(main_repo_env).expanduser().resolve()
+    if not main_repo.exists():
+        click.echo(f"Error: WT_MAIN_REPO points to non-existent path: {main_repo}")
+        sys.exit(1)
+    if not (main_repo / ".git").exists():
+        click.echo(f"Error: WT_MAIN_REPO is not a git repository: {main_repo}")
+        sys.exit(1)
+
+    # Step 2: Config file is always in {main_repo}/.wt/config.yaml
+    config_dir = main_repo / ".wt"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    config_file = config_dir / "config.yaml"
+
+    # Step 3: Load configuration using Configuration class
+    try:
+        directories = Directories()
+        directories.init_dirs()
+        
+        config = Configuration.load_from_file(config_file, directories)
+        return config
+    except FileNotFoundError:
+        click.echo(f"Error: Config file not found: {config_file}")
+        click.echo("Please create a configuration file with required settings.")
+        sys.exit(1)
+    except ValidationError as e:
+        click.echo(f"Configuration validation errors in {config_file}:")
+        for error in e.errors():
+            field = ".".join(str(loc) for loc in error["loc"])
+            click.echo(f"  {field}: {error['msg']}")
+        click.echo(f"\nPlease fix the configuration file: {config_file}")
+        sys.exit(1)
+    except Exception as e:
+        click.echo(f"Error loading config file {config_file}: {e}")
+        sys.exit(1)
 
 
 class Configuration:
@@ -160,3 +208,15 @@ class Configuration:
     @property
     def hidden_worktree_patterns(self) -> list[str]:
         return self._config_file.hidden_worktree_patterns
+    
+    @property
+    def github_debounce_delay(self) -> float:
+        return self._config_file.github_debounce_delay
+    
+    @property
+    def github_periodic_interval(self) -> float:
+        return self._config_file.github_periodic_interval
+    
+    @property
+    def post_creation_script(self) -> Optional[str]:
+        return self._config_file.post_creation_script

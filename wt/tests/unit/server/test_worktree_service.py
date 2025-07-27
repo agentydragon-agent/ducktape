@@ -31,8 +31,9 @@ class TestWorktreeService:
 
     @pytest.fixture
     def unit_test_config(self, git_repo, tmp_path):
-        """Real Pydantic Config object for unit tests."""
-        from wt.shared.config import Config
+        """Real Configuration object for unit tests."""
+        from wt.shared.configuration import Configuration
+        from wt.shared.config_file import ConfigFile
         from wt.shared.directories import Directories
 
         # Use real git repo and tmp_path for test isolation
@@ -48,14 +49,13 @@ class TestWorktreeService:
         dirs._log_dir.mkdir(parents=True, exist_ok=True)
         dirs._data_dir.mkdir(parents=True, exist_ok=True)
 
-        return Config(
-            main_repo=git_repo,
-            worktrees_dir=worktrees_dir,
+        config_file = ConfigFile(
+            worktrees_dir=str(worktrees_dir),
             branch_prefix="test/",
             default_worktree_base_branch="HEAD",
             github_repo="test-user/test-repo",
-            directories=dirs,
         )
+        return Configuration(config_file, dirs)
 
     @pytest.fixture
     def service(self, mock_git, mock_github):

@@ -191,6 +191,10 @@ class WorktreeService:
                     raise RuntimeError(f"Source worktree does not exist: {source_worktree}")
                 self._hydrate_worktree(source_worktree, worktree_path)
 
+            # Execute post-creation script if configured
+            if config.post_creation_script:
+                self._execute_post_creation_script(config.post_creation_script, worktree_path)
+
             return worktree_path
 
     async def remove_worktree(self, config, name: str, force: bool = False) -> None:
@@ -324,6 +328,44 @@ class WorktreeService:
 
         strategy = get_copy_strategy()
         strategy.copy(src, dst)
+
+    def _execute_post_creation_script(self, script_path: str, worktree_path: Path) -> None:
+        """Execute post-creation script with worktree path as argument."""
+        import subprocess
+        import logging
+        
+        script = Path(script_path).expanduser().resolve()
+        if not script.exists():
+            logging.warning(f"Post-creation script not found: {script}")
+            return
+        
+        if not script.is_file():
+            logging.warning(f"Post-creation script is not a file: {script}")
+            return
+            
+        try:
+            # Execute script with worktree path as argv[1]
+            result = subprocess.run(
+                [str(script), str(worktree_path)],
+                cwd=worktree_path,
+                capture_output=True,
+                text=True,
+                timeout=60  # 60 second timeout
+            )
+            
+            if result.returncode != 0:
+                logging.warning(
+                    f"Post-creation script failed (exit {result.returncode}): {script}\n"
+                    f"stdout: {result.stdout}\n"
+                    f"stderr: {result.stderr}"
+                )
+            else:
+                logging.info(f"Post-creation script completed successfully: {script}")
+                
+        except subprocess.TimeoutExpired:
+            logging.error(f"Post-creation script timed out: {script}")
+        except Exception as e:
+            logging.error(f"Error executing post-creation script {script}: {e}")
 
     def _get_processes_in_directory(self, directory: Path) -> list:
         """Get processes running in a directory."""

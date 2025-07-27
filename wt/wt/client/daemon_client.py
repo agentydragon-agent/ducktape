@@ -37,9 +37,9 @@ class GitStatusdDaemonClient:
     _daemon_start_lock = asyncio.Lock()
 
     def __init__(self, config):
-        from ..shared.config import Config
+        from ..shared.configuration import Configuration
 
-        self.config: Config = config
+        self.config: Configuration = config
 
         # Ensure daemon directory exists
         self.config.daemon_dir.mkdir(exist_ok=True)

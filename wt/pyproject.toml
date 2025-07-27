@@ -1,3 +1,7 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project]
 name = "wt"
 version = "0.1.0"
@@ -40,6 +44,9 @@ markers = [
     "unit: marks tests as unit tests",
     "shell: marks tests that test shell integration"
 ]
+
+[tool.hatch.build.targets.wheel]
+packages = ["wt"]
 
 [tool.mypy]
 python_version = "3.12"

@@ -43,6 +43,7 @@ class ConfigFile(BaseModel):
     
     # Tool paths
     gitstatusd_path: Optional[str] = None
+    post_creation_script: Optional[str] = None
     
     # Cache settings
     cache_expiration: int = 3600  # seconds
@@ -50,3 +51,7 @@ class ConfigFile(BaseModel):
     
     # UI settings
     hidden_worktree_patterns: list[str] = []
+    
+    # GitHub refresh system configuration
+    github_debounce_delay: float = 5.0
+    github_periodic_interval: float = 60.0

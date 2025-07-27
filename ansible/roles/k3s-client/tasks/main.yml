@@ -19,7 +19,14 @@
 
 - name: Copy k3s kubeconfig from atlas
   ansible.builtin.shell: |
-    scp -o StrictHostKeyChecking=no 10.13.13.30:/home/{{ my_user }}/.kube/config ~/.kube/config
+    scp -o StrictHostKeyChecking=no root@atlas:/home/{{ my_user }}/.kube/config ~/.kube/config
+  tags: [k3s-client]
+
+- name: Update kubeconfig server URL to k3s master hostname
+  ansible.builtin.replace:
+    path: "{{ ansible_env.HOME }}/.kube/config"
+    regexp: 'https://127\.0\.0\.1:6443'
+    replace: 'https://k3s-master:6443'
   tags: [k3s-client]
 
 - name: Set kubeconfig permissions
