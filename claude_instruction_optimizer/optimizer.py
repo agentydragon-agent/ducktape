@@ -31,6 +31,7 @@ Configuration:
 """
 
 # TODO: consider showing grader text Assistant messages, not just code
+# TODO: track exact OpenAI & Anthropic model used in database tables
 
 from __future__ import annotations
 
@@ -372,19 +373,22 @@ class PatternSummarizer:
     )
     
     # Context management using config values
+    MAX_CONTEXT_TOKENS = config.max_context_tokens
     
     def _count_tokens(self, text: str) -> int:
         """Count tokens in text using tiktoken."""
         encoding = tiktoken.encoding_for_model(config.openai_model)
         return len(encoding.encode(text))
     
-    def _truncate_file_content(self, files: Dict[str, str]) -> Dict[str, str]:
+    def _truncate_file_content(self, files: List[Dict[str, str]]) -> Dict[str, str]:
         """Truncate file contents to reasonable size for pattern analysis."""
         truncated = {}
         file_content_limit = config.max_file_size_for_pattern_analysis
         skip_threshold = config.max_file_size_for_pattern_analysis * 5  # Skip files over 50KB for pattern analysis
         
-        for path, content in files.items():
+        for file_info in files:
+            path = file_info["path"]
+            content = file_info["content"]
             if len(content) > skip_threshold:
                 # Skip extremely large files entirely for pattern analysis
                 logger.info(
@@ -1888,8 +1892,8 @@ Examples:
     parser.add_argument(
         "--max-parallel",
         type=int,
-        default=4,
-        help="Maximum parallel rollouts (default: %(default)s)",
+        default=None,
+        help=f"Maximum parallel rollouts (default: {config.max_parallel_rollouts})",
     )
 
     parser.add_argument(

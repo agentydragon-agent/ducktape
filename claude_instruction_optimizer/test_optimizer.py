@@ -189,7 +189,7 @@ class TestOptimizerConfig:
         assert config.openai_model == "o3"
         assert config.reasoning_effort == "high"
         assert config.bash_timeout_ms == 10000
-        assert config.max_parallel_rollouts == 8
+        assert config.max_parallel_rollouts == 16
         assert "__pycache__" in config.exclude_dirs
         assert ".pyc" in config.exclude_extensions
         
