@@ -33,7 +33,7 @@ class ConfigFile(BaseModel):
     
     # Behavior settings
     log_operations: bool = False
-    cow_method: str = "reflink"  # "reflink", "copy", or "hardlink"
+    cow_method: str = "auto"  # "auto", "reflink", "copy", or "rsync"
     
     # GitHub integration
     github_enabled: bool = True

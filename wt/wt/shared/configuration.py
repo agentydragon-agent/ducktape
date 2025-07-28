@@ -20,9 +20,10 @@ from .config_file import ConfigFile
 
 class CowMethod(Enum):
     """Copy-on-write methods for worktree hydration."""
+    AUTO = "auto"
     REFLINK = "reflink"
     COPY = "copy"
-    HARDLINK = "hardlink"
+    RSYNC = "rsync"
 
 
 class ConfigError(Exception):

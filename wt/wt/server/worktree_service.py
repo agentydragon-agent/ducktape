@@ -110,7 +110,7 @@ class WorktreeService:
             if source_worktree:
                 if not source_worktree.exists():
                     raise RuntimeError(f"Source worktree does not exist: {source_worktree}")
-                self._hydrate_worktree(source_worktree, worktree_path)
+                self._hydrate_worktree(config, source_worktree, worktree_path)
 
             # Execute post-creation script if configured
             if config.post_creation_script:
@@ -235,7 +235,7 @@ class WorktreeService:
 
         emit_command(f"cd {shlex.quote(str(dest_repo))}")
 
-    def _hydrate_worktree(self, src: Path, dst: Path) -> None:
+    def _hydrate_worktree(self, config, src: Path, dst: Path) -> None:
         """Hydrate worktree with files from source."""
         dst.mkdir(parents=True, exist_ok=True)
 
@@ -243,9 +243,9 @@ class WorktreeService:
         if not any(src.iterdir()):
             return
 
-        from ..shared.copy_strategies import get_copy_strategy
+        from .copy_strategies import get_copy_strategy
 
-        strategy = get_copy_strategy()
+        strategy = get_copy_strategy(config.cow_method)
         strategy.copy(src, dst)
 
     def _execute_post_creation_script(self, script_path: str, worktree_path: Path) -> None:
