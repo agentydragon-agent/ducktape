@@ -13,8 +13,8 @@ class OptimizerConfig(BaseModel):
     
     # Execution limits
     bash_timeout_ms: int = Field(default=10000, description="Timeout for bash commands in milliseconds")
-    max_parallel_rollouts: int = Field(default=8, description="Maximum concurrent Claude Code rollouts")
-    max_turns: int = Field(default=100, description="Maximum conversation turns for Claude Code")
+    max_parallel_rollouts: int = Field(default=8, description="Maximum concurrent coding agent rollouts")
+    max_turns: int = Field(default=100, description="Maximum conversation turns for coding agent")
     
     # Logging configuration
     truncation_length: int = Field(default=80, description="Length to truncate log messages")

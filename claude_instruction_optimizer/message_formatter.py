@@ -122,7 +122,7 @@ def log_message_summary(
     logger: Any,
     agent_id: int,
 ) -> None:
-    """Log a structured summary of a Claude Code SDK message."""
+    """Log a structured summary of a coding agent SDK message."""
     message_logger = logger.bind(agent_id=agent_id, message_type=type(message).__name__)
     
     if isinstance(message, SystemMessage):

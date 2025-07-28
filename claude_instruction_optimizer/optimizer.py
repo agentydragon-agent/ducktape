@@ -571,7 +571,36 @@ def create_openai_request(
 # debugging and auditing of API interactions.
 
 
-# JSONL logging functions removed - now using database service
+# JSONL logging functions for API debugging (still kept for OpenAI/Anthropic API logs)
+
+def log_openai_request_response(
+    log_path: Path,
+    request: Dict[str, Any],
+    response: Any,
+) -> None:
+    """Append a record of an OpenAI request and response to a JSONL file.
+
+    Parameters
+    ----------
+    log_path : Path
+        The path to the JSONL log file.
+    request : dict
+        The request parameters sent to OpenAI.
+    response : Any
+        The response received from OpenAI.
+    """
+    try:
+        response_data = response.model_dump() if hasattr(response, 'model_dump') else str(response)
+    except (AttributeError, TypeError):
+        response_data = str(response)
+    
+    record = {
+        "timestamp": datetime.utcnow().isoformat(),
+        "request": request,
+        "response": response_data,
+    }
+    with log_path.open("a") as f:
+        f.write(json.dumps(record) + "\n")
 
 
 def log_anthropic_request_event(
@@ -894,12 +923,12 @@ async def run_claude_code(
     base_dir: Path,
     anthropic_log_path: Path,
 ) -> CodeResult:
-    """Run a single Claude Code agent on the given task.
+    """Run a single coding agent on the given task.
 
     This function sets up an isolated working directory for the agent,
     writes the system prompt to a uniquely numbered ``CLAUDE-XXXX.md``
     file (where XXXX is the prompt version), and then queries the
-    Claude Code model to generate code that solves the task.  The returned
+    coding agent model to generate code that solves the task.  The returned
     CodeResult contains the generated code and any rationale provided
     by the model.
 
@@ -948,7 +977,7 @@ async def run_claude_code(
         mcp_servers={},
     )
     
-    # Execute Claude Code session and collect messages
+    # Execute coding agent session and collect messages
     message_sequence = await execute_claude_session(
         task, options, agent_id, anthropic_log_path
     )
@@ -1502,7 +1531,7 @@ async def optimize_prompts(
     """Run the prompt optimisation loop.
 
     This is the main entry point for running multiple iterations of the algorithm. It
-    repeatedly executes batches of Claude Code agents on the seed tasks in parallel,
+    repeatedly executes batches of coding agents on the seed tasks in parallel,
     grades the generated solutions using OpenAI's Responses API, updates the system
     prompt using a prompt engineer (OpenAI o3), and logs results to JSONL files.
 
@@ -1513,11 +1542,11 @@ async def optimize_prompts(
     iterations : int, optional
         The number of optimisation iterations to perform (default 3).
     rollouts_per_task : int, optional
-        The number of Claude Code agents to sample per task in each iteration (default 2).
+        The number of coding agents to sample per task in each iteration (default 2).
     base_output_dir : str, optional
         Base directory where agent working directories and logs will be stored.
     max_parallel_rollouts : int, optional
-        Maximum number of concurrent Claude Code rollouts (default from config).
+        Maximum number of concurrent coding agent rollouts (default from config).
     tasks_per_iteration : int, optional
         Number of tasks to randomly sample (with replacement) per iteration. 
         If None, uses all seed tasks (default None).
@@ -1535,55 +1564,32 @@ async def optimize_prompts(
         "Run directory created", run_directory=str(base_dir), run_prefix=run_prefix
     )
     
-    # Create optimization run record in database
-    with get_db_session() as session:
-        optimization_run = OptimizationRun(
-            start_time=datetime.utcnow(),
-            base_output_dir=str(base_dir),
-            total_iterations=iterations,
-            config_snapshot=json.dumps(asdict(config)),
-            status='running'
-        )
-        session.add(optimization_run)
-        session.commit()
-        run_id = optimization_run.id
-        logger.info("Created optimization run record", run_id=run_id)
+    # Create optimization run record using database service
+    run_id = db_service.create_optimization_run(
+        base_output_dir=str(base_dir),
+        total_iterations=iterations,
+        config_snapshot=config.model_dump_json()
+    )
 
-    # Set up Docker wrapper for isolated Claude Code execution
+    # Set up Docker wrapper for isolated coding agent execution
     external_wrapper = Path(__file__).parent / "docker_claude_wrapper.sh"
     wrapper_script = docker_manager.setup_wrapper(base_dir, external_wrapper)
     logger.info("Docker wrapper configured", wrapper_script=str(wrapper_script))
     
     try:
-        # Prepare JSONL log files
-        inner_log_path = base_dir / "inner_agent_log.jsonl"
-        grader_log_path = base_dir / "grader_log.jsonl"
-        prompt_log_path = base_dir / "prompt_engineer_log.jsonl"
-        # Prepare API log files for both OpenAI and Anthropic
+        # Prepare API log files for both OpenAI and Anthropic (keeping these for debugging)
         openai_api_log_path = base_dir / "openai_api_log.jsonl"
         anthropic_api_log_path = base_dir / "anthropic_api_log.jsonl"
 
-        # Load grading criteria from YAML configuration file.
-        graders_path = Path("graders_consolidated.yaml")
-        if not graders_path.exists():
-            raise FileNotFoundError(
-                "graders_consolidated.yaml file is required but was not found."
-            )
-
-        with graders_path.open("r") as f:
-            graders_data = yaml.safe_load(f)
-        grader_entries = graders_data.get("graders", [])
-        if not isinstance(grader_entries, list) or not grader_entries:
-            raise ValueError(
-                "graders.yaml must contain a 'graders' list with at least one entry."
-            )
+        # Get grading criteria from database (loaded from YAML sync in main())
+        criteria_db = db_service.get_active_grading_criteria()
         criteria: List[Criterion] = []
-        for entry in grader_entries:
-            try:
-                crit = Criterion(**entry)
-                criteria.append(crit)
-            except (TypeError, ValueError, KeyError) as e:
-                raise ValueError(f"Invalid grader entry {entry}: {e}") from e
+        for crit_db in criteria_db:
+            criteria.append(Criterion(
+                name=crit_db.name,
+                description=crit_db.description,
+                evaluation_criteria=crit_db.evaluation_criteria
+            ))
 
         # Initialize the prompt engineer for the entire optimization process.
         engineer = PromptEngineer(processing_mode)
@@ -1592,17 +1598,36 @@ async def optimize_prompts(
         prev_reasoning, prev_function_call, current_prompt = await engineer.propose_prompt(
             openai_api_log_path
         )
+        
+        # Store initial system prompt in database
+        initial_prompt_id = db_service.create_system_prompt(
+            run_id=run_id,
+            iteration=0,
+            content=current_prompt,
+            prompt_engineer_reasoning=json.dumps([r.model_dump() if hasattr(r, 'model_dump') else str(r) for r in prev_reasoning])
+        )
 
         # Create semaphore for controlling parallel rollouts
         rollout_semaphore = asyncio.Semaphore(max_parallel_rollouts)
 
         # Define the inner rollout function
         async def run_single_rollout(
-            task: SeedTask, rollout_id: int, iteration: int
+            task: SeedTask, rollout_id: int, iteration: int, system_prompt_id: int
         ) -> GradedCode:
             """Run a single rollout with semaphore control."""
             async with rollout_semaphore:
-                # Run Claude Code agent
+                # Create rollout record in database
+                rollout_dir = base_dir / f"iter_{iteration}" / f"task_{task.id}" / f"agent_{rollout_id}"
+                db_rollout_id = db_service.create_rollout(
+                    run_id=run_id,
+                    iteration=iteration,
+                    task_id=task.id,
+                    agent_id=f"agent_{rollout_id}",
+                    system_prompt_id=system_prompt_id,
+                    output_dir_path=str(rollout_dir)
+                )
+                
+                # Run coding agent
                 code_result = await run_claude_code(
                     task.prompt,
                     current_prompt,
@@ -1612,8 +1637,55 @@ async def optimize_prompts(
                     anthropic_log_path=anthropic_api_log_path,
                 )
 
+                # Store rollout messages in database
+                for seq_order, message in enumerate(code_result.messages):
+                    db_service.log_rollout_message(
+                        rollout_id=db_rollout_id,
+                        sequence_order=seq_order,
+                        message_type=message.get('role', 'unknown'),
+                        message_content=message
+                    )
+                
+                # Store rollout files in database
+                db_service.store_rollout_files(
+                    rollout_id=db_rollout_id,
+                    files_info=code_result.files,
+                    rollout_dir=rollout_dir
+                )
+
                 # Grade the result
                 grade = await grade_code(code_result, criteria, openai_api_log_path)
+
+                # Store grading results in database
+                facet_scores = {name: {"score": score_rat.score, "rationale": score_rat.rationale} 
+                               for name, score_rat in grade.axes.items()}
+                db_service.store_grading_results(
+                    rollout_id=db_rollout_id,
+                    overall_score=grade.overall_score,
+                    overall_rationale=grade.overall_rationale,
+                    facet_scores=facet_scores,
+                    grader_model="o3"
+                )
+                
+                # Complete rollout record with final metrics
+                # Extract cost from the last message if it's a ResultMessage
+                total_cost = 0.0
+                duration_ms = None
+                is_error = False
+                
+                if code_result.messages:
+                    last_msg = code_result.messages[-1]
+                    if last_msg.get('role') == 'result' and 'total_cost_usd' in last_msg:
+                        total_cost = last_msg.get('total_cost_usd', 0.0)
+                        duration_ms = last_msg.get('duration_ms')
+                        is_error = last_msg.get('is_error', False)
+                
+                db_service.complete_rollout(
+                    rollout_id=db_rollout_id,
+                    total_cost_usd=total_cost,
+                    is_error=is_error,
+                    duration_ms=duration_ms
+                )
 
                 logger.info(
                     "Rollout completed",
@@ -1621,6 +1693,7 @@ async def optimize_prompts(
                     rollout_id=rollout_id,
                     iteration=iteration,
                     overall_score=grade.overall_score,
+                    db_rollout_id=db_rollout_id
                 )
 
                 return GradedCode(code_result=code_result, grade=grade)
@@ -1639,6 +1712,9 @@ async def optimize_prompts(
             initial_prompt=current_prompt,
         )
 
+        # Track current system prompt ID for each iteration
+        current_prompt_id = initial_prompt_id
+        
         for iteration in range(1, iterations + 1):
             iter_logger = logger.bind(iteration=iteration, total_iterations=iterations)
             iter_logger.info("Iteration starting")
@@ -1663,12 +1739,12 @@ async def optimize_prompts(
                 iteration_tasks = seed_tasks
 
             # Create all rollout tasks for fully parallel execution
-            # Each rollout runs: Claude Code agent → grading → logging
+            # Each rollout runs: coding agent → grading → database storage
             # Semaphore controls max concurrent rollouts to prevent resource exhaustion
             all_rollouts = []
             for task in iteration_tasks:
                 for rollout_id in range(rollouts_per_task):
-                    all_rollouts.append(run_single_rollout(task, rollout_id, iteration))
+                    all_rollouts.append(run_single_rollout(task, rollout_id, iteration, current_prompt_id))
 
             iter_logger.info(
                 "Starting parallel rollouts",
@@ -1682,20 +1758,6 @@ async def optimize_prompts(
             iter_logger.info(
                 "All rollouts completed", completed_rollouts=len(iteration_results)
             )
-
-            # Log results to JSONL files
-            with inner_log_path.open("a") as f:
-                for graded_code in iteration_results:
-                    record = {
-                    "iteration": iteration,
-                    **graded_code.code_result.model_dump(),
-                    }
-                    f.write(json.dumps(record) + "\n")
-
-            with grader_log_path.open("a") as f:
-                for graded_code in iteration_results:
-                    record = {"iteration": iteration, **graded_code.grade.model_dump()}
-                    f.write(json.dumps(record) + "\n")
 
             # Display simple metrics to CLI
             overall_scores = [
@@ -1721,7 +1783,10 @@ async def optimize_prompts(
                 iteration=iteration
             )
 
-            # Add completed turn to PE conversation (current prompt + grades or pattern summary)
+            # Store pattern analysis in database and prepare feedback for PE
+            rollout_ids = db_service.get_rollouts_for_iteration(run_id, iteration)
+            rollout_db_ids = [r.id for r in rollout_ids]
+            
             if processing_mode == ProcessingMode.FULL_ROLLOUTS:
                 grades = engineer.build_grades_message(iteration_results)
                 iter_logger.info(
@@ -1739,25 +1804,38 @@ async def optimize_prompts(
                     mode="pattern_summary",
                     summary_length=len(grades)
                 )
+                
+                # Store pattern analysis in database
+                db_service.store_pattern_analysis(
+                    run_id=run_id,
+                    iteration=iteration,
+                    rollout_ids=rollout_db_ids,
+                    summary_text=grades,
+                    tokens_used=None,
+                    analysis_reasoning=None
+                )
 
             engineer.add_result(prev_reasoning, prev_function_call, current_prompt, grades)
 
-            # Generate next prompt using PE
-            prev_reasoning, prev_function_call, new_prompt = await engineer.propose_prompt(
-                openai_api_log_path
-            )
+            # Generate next prompt using PE (if not the last iteration)
+            if iteration < iterations:
+                prev_reasoning, prev_function_call, new_prompt = await engineer.propose_prompt(
+                    openai_api_log_path
+                )
 
-            # Log the new prompt in JSONL
-            with prompt_log_path.open("a") as f:
-                prompt_record = {
-                    "iteration": iteration,
-                    "timestamp": datetime.utcnow().isoformat(),
-                    "system_prompt": new_prompt,
-                }
-                f.write(json.dumps(prompt_record) + "\n")
+                # Store new system prompt in database
+                current_prompt_id = db_service.create_system_prompt(
+                    run_id=run_id,
+                    iteration=iteration + 1,
+                    content=new_prompt,
+                    prompt_engineer_reasoning=json.dumps([r.model_dump() if hasattr(r, 'model_dump') else str(r) for r in prev_reasoning])
+                )
 
-            current_prompt = new_prompt
+                current_prompt = new_prompt
 
+        # Complete the optimization run in database
+        db_service.complete_optimization_run(run_id)
+        
         logger.info("Optimization complete", logs_directory=str(base_dir))
         return base_dir
     finally:
@@ -1768,7 +1846,7 @@ async def optimize_prompts(
 def main() -> None:
     """Entry point for standalone execution."""
     parser = argparse.ArgumentParser(
-        description="Parallel prompt optimization system for Claude Code agents",
+        description="Parallel prompt optimization system for coding agents",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:

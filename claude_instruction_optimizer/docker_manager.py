@@ -1,4 +1,4 @@
-"""Docker management for Claude Code execution in isolated containers."""
+"""Docker management for coding agent execution in isolated containers."""
 
 import shutil
 import os
@@ -7,7 +7,7 @@ from typing import Optional
 
 
 class DockerManager:
-    """Manages Docker wrapper setup for Claude Code execution."""
+    """Manages Docker wrapper setup for coding agent execution."""
     
     def __init__(self):
         """Initialize DockerManager and locate Docker binary."""
@@ -27,13 +27,13 @@ class DockerManager:
         docker_path = shutil.which("docker", path=self._original_path)
         if docker_path is None:
             raise RuntimeError(
-                "Docker is required to run Claude Code agents in isolated containers. "
+                "Docker is required to run coding agents in isolated containers. "
                 "Install Docker and ensure it is in your PATH."
             )
         return docker_path
     
     def setup_wrapper(self, base_dir: Path, wrapper_script_path: Path) -> Path:
-        """Set up Docker wrapper script for Claude Code isolation.
+        """Set up Docker wrapper script for coding agent isolation.
         
         Args:
             base_dir: Base directory for the run

@@ -1,4 +1,4 @@
-# Dockerfile for Claude Code with development tools
+# Dockerfile for coding agent with development tools
 FROM gendosu/claude-code-docker:latest
 
 # Switch to root user to install packages
