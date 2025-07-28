@@ -1,0 +1,22 @@
+# Core dependencies
+openai>=1.0.0
+anthropic
+claude-code-sdk
+pydantic>=2.0.0
+structlog
+plotnine
+pandas
+numpy
+
+# Database dependencies
+sqlalchemy>=2.0.0
+pyyaml
+
+# Testing dependencies
+pytest>=7.0.0
+pytest-asyncio
+pytest-mock
+
+# Additional utilities
+tiktoken
+docker
