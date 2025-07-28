@@ -12,6 +12,7 @@
       - clang-format
       - cloc
       - cmake
+      - firejail
       - flex
       - gcc
       - gcc
