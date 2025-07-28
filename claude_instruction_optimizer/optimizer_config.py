@@ -34,7 +34,7 @@ class OptimizerConfig(BaseModel):
             "__pycache__", ".pytest_cache", ".mypy_cache", ".tox",
             ".coverage", ".idea", ".vscode", "node_modules", "venv",
             ".venv", "env", ".env", ".git", ".svn", ".hg", "build",
-            "dist", "*.egg-info", ".eggs",
+            "dist", "*.egg-info", ".eggs", "target",
         },
         description="Directories to exclude from file gathering"
     )
