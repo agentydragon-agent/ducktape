@@ -1,0 +1,194 @@
+graders:
+  - name: type_safety_data_design
+    description: Use the type system to make invalid states unrepresentable and ensure data cohesion
+    evaluation_criteria: |
+      Strong typing prevents bugs at compile time rather than runtime. Use specific types that express intent and constraints.
+      
+      REQUIRED practices:
+      - Type annotations everywhere except experimental scripts
+      - Use the most specific type available in your language (Python: Path not str, datetime not float, Decimal not float for money)
+      - Enums for fixed choices (never string literals like "active"/"inactive")
+      - Use language-provided data structures over manual boilerplate (Python: @dataclass/Pydantic, Java: records, Kotlin: data classes, Go: structs with tags)
+      - Nullable types only when null has semantic meaning (Python: Optional[T], Java: Optional<T>, Rust: Option<T>, Go: pointers)
+      - Encapsulate related data together (no parallel dicts/lists)
+      
+      RED FLAGS that lower score:
+      - Any type when actual type is known
+      - Dict[str, Any] for structured data
+      - String literals for enums: if status == "active"
+      - Parallel structures: user_ids[k] and user_names[k]
+      - Manual boilerplate for data classes
+      - Optional[T] when None would be an error
+      - Missing type annotations in production code
+      
+      GOOD examples:
+      - UserId = NewType('UserId', int)
+      - status: Status (where Status is an Enum)
+      - users: dict[str, User] (not separate id/name dicts)
+      - @dataclass with frozen=True for immutables
+      - Non-optional parameters that must have values
+      - pathlib.Path for all file paths
+      - decimal.Decimal for currency
+
+  - name: code_quality_clarity
+    description: Code should be readable, modern, and refined to its optimal form
+    evaluation_criteria: |
+      Write code for stressed humans with limited working memory. Every line should earn its place.
+      
+      REQUIRED practices:
+      - Use the idiomatic features of your language version (Python 3.10+: f-strings, pattern matching, walrus; JS: const/let not var; Java: var for local type inference)
+      - Prefer expressions over statements when clearer (Python: comprehensions, JS: map/filter, Java: streams, Rust: iterators)
+      - Early returns and guard clauses (max 2-3 nesting levels)
+      - Short functions that fit on one screen (<40 lines)
+      - Consistent naming (same concept = same name everywhere)
+      - Comments only for WHY, never WHAT (no "increment counter" above i++)
+      
+      RED FLAGS that lower score:
+      - Deep nesting (>3 levels)
+      - var in JS, Union[X,Y] instead of X|Y in Python 3.10+
+      - Optional[X] instead of X|None in Python 3.10+
+      - Mixing metaphors: client/server vs frontend/backend
+      - for x in items: result.append(f(x)) instead of [f(x) for x in items]
+      - Comments that restate code: # Check if user exists\n if user:
+      - Near-duplicate functions with minor variations
+      - Long parameter lists (>5 parameters)
+      - Temporary variables used once
+      
+      GOOD examples:
+      - if not valid: raise ValueError("reason")  # Early return
+      - results = [process(x) for x in items if x.is_valid()]
+      - Consistent pairs: start/stop (not begin/stop)
+      - result = defaults | overrides  # Dict merge
+      - match/case for complex conditionals
+      - One-liners when readable: return all(validate(x) for x in items)
+
+  - name: robustness_error_handling
+    description: Fail fast and loudly on unexpected conditions with specific error handling
+    evaluation_criteria: |
+      Code must crash loudly on programming errors. Only catch specific, expected exceptions.
+      
+      REQUIRED practices:
+      - Catch only handleable exceptions (Python: except requests.HTTPError, Java: catch IOException, JS: catch specific error types)
+      - Let programming errors crash (expose bugs)
+      - Programs must signal failure appropriately (exit with non-zero code)
+      - Services log with context then re-raise to boundaries
+      - Direct attribute access on known types (no hasattr)
+      - Validate inputs early and fail fast
+      
+      RED FLAGS that lower score:
+      - except Exception: or bare except:
+      - Silent failures: except: pass
+      - hasattr(obj, 'attr') when obj type is known
+      - Returning None/[] to hide errors
+      - Missing error context in messages
+      - CLI tools that exit(0) on failure
+      - getattr with default when attribute should exist
+      - try/except around entire program
+      
+      GOOD examples:
+      - except requests.HTTPError as e:
+          logger.error(f"API call failed: {e.response.status_code}")
+          raise
+      - assert user_id > 0, f"Invalid user_id: {user_id}"
+      - obj.attribute  # Let AttributeError expose bugs
+      - sys.exit(1)  # CLI failure
+      - Specific error messages with context
+      - Error boundaries at request handlers only
+
+  - name: architecture_design
+    description: Clear separation of concerns with appropriate abstractions and tools
+    evaluation_criteria: |
+      Well-architected code has clear boundaries, high cohesion, and low coupling.
+      
+      REQUIRED practices:
+      - Single responsibility (one reason to change)
+      - Dependency injection (pass deps, don't create)
+      - Data cohesion (related data in one struct)
+      - Config in ONE place (not scattered defaults)
+      - Use libraries for any non-trivial parsing/format handling (Python: BeautifulSoup, csv, json; Java: Jackson, JSoup; JS: DOMParser, JSON.parse)
+      - Import only what you need (Python: from x import Y, Java: avoid star imports, JS: named imports over namespace)
+      
+      RED FLAGS that lower score:
+      - God classes: UserManagerDBAuthValidator
+      - Mixed layers: SQL in view code
+      - Parallel structures: id_to_name + id_to_email
+      - Scattered defaults across inheritance hierarchy
+      - Regex for HTML/JSON/URLs (use proper parsers)
+      - __init__.py re-exports without clear API need
+      - Circular dependencies
+      - Framework code mixed with business logic
+      - Manual string parsing instead of libraries
+      
+      GOOD examples:
+      - UserService(repo=repo, mailer=mailer)  # Injected
+      - @dataclass User with all user fields together
+      - BeautifulSoup for HTML, urllib.parse for URLs
+      - Config class with all defaults in one place
+      - from package.module import SpecificClass
+      - Clear layer boundaries: data/domain/presentation
+      - csv.DictReader instead of line.split(',')
+
+  - name: implementation_completeness
+    description: Complete, honest implementation without cruft or unwanted additions
+    evaluation_criteria: |
+      Implement exactly what was asked - no more, no less. Be honest about limitations.
+      
+      REQUIRED practices:
+      - Implement ALL stated requirements
+      - No mock/placeholder code (return "TODO")
+      - No dead/unreachable code
+      - Clean migrations (X to Y means pure Y)
+      - No unwanted "helpful" features
+      - Document unavoidable issues with clear TODOs
+      - Comments/claims match actual implementation
+      
+      RED FLAGS that lower score:
+      - def process(): pass  # Stub
+      - Unreachable code after return
+      - try: new_way except: old_way after "migrate to new"
+      - Added rate limiting when not requested
+      - "Supports all formats" when only JSON works
+      - TODO without WHO/WHEN/WHY blocked
+      - if False: or platform-specific dead code
+      - Defensive code for old system after migration
+      - Mock data instead of real implementation
+      
+      GOOD examples:
+      - Complete implementation of all 5 requested features
+      - Pure OAuth2 when asked to "replace basic auth"
+      - TODO(#123, @alice, Q2): Blocked by upstream API
+      - Honest: "Currently supports only JSON export"
+      - No extra features beyond requirements
+      - Clean cut-over from old to new system
+
+  - name: test_quality
+    description: Tests should verify business logic with meaningful assertions
+    evaluation_criteria: |
+      Test behavior, not implementation. Focus on edge cases and business rules.
+      
+      REQUIRED practices:
+      - Test what can go wrong, not language features
+      - Minimal mocking (only external services)
+      - Real components where possible
+      - Multiple examples for edge cases
+      - Use framework-provided test utilities (Python: pytest fixtures like tmp_path, Java: JUnit TempDir, JS: Jest utilities)
+      - Clear test names describing behavior
+      
+      RED FLAGS that lower score:
+      - assert Config.API_KEY == "secret123"
+      - Mocking simple data classes
+      - Testing that Python works: assert 1 + 1 == 2
+      - Only happy path tests
+      - Custom fixtures for standard needs
+      - Mock-heavy integration tests
+      - Testing getters/setters
+      - No edge case coverage
+      
+      GOOD examples:
+      - test_rejects_usernames_with_urls()
+      - Multiple invalid examples with reasons
+      - tmp_path fixture for file tests
+      - Real database for integration tests
+      - PyHamcrest for complex assertions
+      - Tests for boundary conditions
+      - Using real files instead of mocks

@@ -674,7 +674,7 @@ graders:
     name: Architecture and Design Quality
     description: Evaluates code structure, separation of concerns, and design principles
     evaluation_criteria: |
-      Code should follow solid architectural principles with clear separation of concerns, appropriate abstractions, and low coupling.
+      Code should follow solid architectural principles with clear separation of concerns, appropriate abstractions, low coupling, and high cohesion.
       
       Problematic patterns:
       - God classes: Single class doing everything (UserManagerDBAuthEmailValidator)
@@ -687,6 +687,8 @@ graders:
       - Data class logic: Business logic inside data transfer objects
       - Framework bleeding: Flask/Django specifics scattered throughout business logic
       - Hard-wired dependencies: Creating instances inside classes instead of injection
+      - Scattered related data: Multiple parallel dicts/lists for data that belongs together (e.g., user_to_id AND user_to_name AND user_to_email)
+      - Low cohesion: Related data split across multiple unrelated structures
       
       Good patterns:
       - Single responsibility: Each class/function has one clear purpose
@@ -699,6 +701,8 @@ graders:
       - Pure functions: Business logic separate from I/O operations
       - Clear data flow: Input → validation → processing → output
       - Framework isolation: Core logic doesn't depend on specific frameworks
+      - Encapsulated data: Related information grouped in single structs/dataclasses (e.g., UserInfo with id, name, email)
+      - High cohesion: Data that changes together stays together
       
       Examples:
       # BAD: Mixed concerns
@@ -725,6 +729,20 @@ graders:
           def create_user(self, user: User) -> None:
               self.repo.save(user)
               self.emailer.send_welcome(user)
+      
+      # BAD: Low cohesion - related data scattered
+      user_ids: dict[str, int] = {}
+      user_names: dict[str, str] = {}
+      user_emails: dict[str, str] = {}
+      
+      # GOOD: High cohesion - related data encapsulated
+      @dataclass
+      class UserData:
+          id: int
+          name: str
+          email: str
+      
+      users: dict[str, UserData] = {}
 
   - id: faithfulness
     name: Faithfulness and Honesty
