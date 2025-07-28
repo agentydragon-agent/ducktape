@@ -1,4 +1,4 @@
-"""Parallel prompt optimization system for Claude Code agents.
+"""Parallel prompt optimization system for coding agents.
 
 Iteratively improves CLAUDE.md by running multiple agent rollouts in parallel
 on seed programming tasks, grading solutions using OpenAI's Responses API (o3 model),
@@ -13,13 +13,13 @@ Usage:
 
 Key Features:
 * Fully parallel rollouts with semaphore-based concurrency control
-* Docker containerization for isolated Claude Code agent execution
+* Docker containerization for isolated coding agent execution
 * OpenAI Responses API integration for grading and prompt engineering
 * PromptEngineer class with persistent conversation state and context trimming
 * Structured logging with JSON output for comprehensive tracking
 
 Architecture:
-* Claude Code agents run in isolated Docker containers for safety
+* Coding agents run in isolated Docker containers for safety
 * Rollouts execute in parallel (configurable max concurrency)
 * OpenAI o3 model handles both grading and prompt engineering
 * Context trimming preserves reasoning token validity
@@ -78,6 +78,9 @@ from optimizer_config import OptimizerConfig
 from docker_manager import DockerManager
 from message_formatter import log_message_summary
 from logging_utils import DualOutputLogging
+from database import init_database, get_db_session, OptimizationRun, SystemPrompt, Rollout
+from yaml_loader import load_yaml_files
+from database_service import db_service
 
 # Setup logging using utility class
 DualOutputLogging.setup_logging()
@@ -303,7 +306,7 @@ score_tracker = ScoreEvolutionTracker()
 
 # Global cost tracking
 class CostTracker:
-    """Tracks total costs across all Claude Code rollouts."""
+    """Tracks total costs across all coding agent rollouts."""
     
     def __init__(self):
         self.total_cost_usd = 0.0
@@ -568,39 +571,7 @@ def create_openai_request(
 # debugging and auditing of API interactions.
 
 
-def log_openai_request_response(
-    log_path: Path, request: Dict[str, Any], response: Response
-) -> None:
-    """Append a record of an OpenAI API request and its response to a JSONL file.
-
-    Parameters
-    ----------
-    log_path : Path
-        The path to the JSONL log file.
-    request : dict
-        A dictionary representing the parameters sent to the OpenAI API.
-    response : Response
-        The response object returned by the OpenAI library.  We attempt to
-        serialise it to JSON; if that fails, we fall back to its string
-        representation.
-    """
-    # Attempt to serialise the response object.  OpenAI responses implement a
-    # model_dump() method; if unavailable, fall back to dict(), json(), or str().
-    try:
-        response_data = (
-            response.model_dump()
-            if isinstance(response, BaseModel)
-            else {"value": str(response)}
-        )
-    except (AttributeError, TypeError):
-        response_data = {"value": str(response)}
-    record = {
-        "timestamp": datetime.utcnow().isoformat(),
-        "request": request,
-        "response": response_data,
-    }
-    with log_path.open("a") as f:
-        f.write(json.dumps(record) + "\n")
+# JSONL logging functions removed - now using database service
 
 
 def log_anthropic_request_event(
@@ -611,7 +582,7 @@ def log_anthropic_request_event(
     """Append a record of an Anthropic request or response event to a JSONL file.
 
     The caller should first log the request once, then log each event yielded
-    by the Claude Code asynchronous generator.  Events are serialised if
+    by the coding agent asynchronous generator.  Events are serialised if
     possible; otherwise they are converted to strings.
 
     Parameters
@@ -619,10 +590,10 @@ def log_anthropic_request_event(
     log_path : Path
         The path to the JSONL log file.
     request : dict
-        The request parameters sent to Claude Code, typically containing
+        The request parameters sent to the coding agent, typically containing
         messages and options.
     event : Union[SystemMessage, AssistantMessage, UserMessage, ResultMessage, str]
-        An event returned by the Claude Code async generator.  Could be a
+        An event returned by the coding agent async generator.  Could be a
         message object or a string.
     """
     try:
@@ -639,7 +610,7 @@ def log_anthropic_request_event(
 
 
 class CodeResult(BaseModel):
-    """Represents the outcome of running Claude Code on a programming task.
+    """Represents the outcome of running a coding agent on a programming task.
 
     A CodeResult contains only the essential metadata for an agent rollout: the
     task description, the agent identifier, the generated source code files, and a
@@ -685,11 +656,11 @@ async def execute_claude_session(
     agent_id: int,
     anthropic_log_path: Path,
 ) -> List[Dict[str, Any]]:
-    """Execute Claude Code session and collect messages.
+    """Execute coding agent session and collect messages.
     
     Args:
-        task: The task prompt for Claude Code
-        options: Claude Code configuration options
+        task: The task prompt for the coding agent
+        options: Coding agent configuration options
         agent_id: Agent identifier for logging
         anthropic_log_path: Path to log Anthropic API calls
         
@@ -707,7 +678,7 @@ async def execute_claude_session(
     log_anthropic_request_event(anthropic_log_path, anthropic_request, "request_sent")
     
     agent_logger = logger.bind(agent_id=agent_id)
-    agent_logger.info("Starting Claude Code session")
+    agent_logger.info("Starting coding agent session")
     
     from claude_code_sdk import ResultMessage
     
@@ -801,8 +772,118 @@ def gather_agent_files(work_dir: Path) -> List[Dict[str, str]]:
                 content = "<<not a plaintext file>>"
         
         files_info.append({"path": relative, "content": content})
-        
+    
+    # Apply centralized token-based truncation to stay under OpenAI o3 limits
+    files_info = _truncate_files_by_tokens(files_info)
+    
     return files_info
+
+
+def _truncate_files_by_tokens(files_info: List[Dict[str, str]]) -> List[Dict[str, str]]:
+    """Centralized truncation logic using tiktoken to ensure files fit in OpenAI o3 context.
+    
+    Args:
+        files_info: List of file dicts with 'path' and 'content' keys
+        
+    Returns:
+        Truncated files_info that will fit in OpenAI API calls
+    """
+    # OpenAI o3 has 200k token context limit
+    # Reserve tokens for: task description, system prompt, grading schema, response
+    MAX_FILES_TOKENS = 150_000  # Conservative limit for files content
+    
+    encoding = tiktoken.encoding_for_model("gpt-4o")  # Use gpt-4o encoding as proxy for o3
+    
+    def count_files_tokens(files: List[Dict[str, str]]) -> int:
+        """Count tokens for the JSON serialization of files as used in API calls."""
+        files_json = json.dumps(files, indent=2)
+        return len(encoding.encode(files_json))
+    
+    current_tokens = count_files_tokens(files_info)
+    
+    if current_tokens <= MAX_FILES_TOKENS:
+        # Files already fit, return as-is
+        logger.info(
+            "Files within token limit",
+            total_files=len(files_info),
+            total_tokens=current_tokens,
+            limit=MAX_FILES_TOKENS
+        )
+        return files_info
+    
+    logger.warning(
+        "Files exceed token limit, applying truncation",
+        total_files=len(files_info),
+        current_tokens=current_tokens,
+        limit=MAX_FILES_TOKENS
+    )
+    
+    # Strategy: Truncate files from largest to smallest until we fit
+    truncated_files = []
+    remaining_budget = MAX_FILES_TOKENS
+    
+    # Sort by content size (largest first) to truncate big files first
+    sorted_files = sorted(files_info, key=lambda f: len(f["content"]), reverse=True)
+    
+    for file_info in sorted_files:
+        path = file_info["path"]
+        content = file_info["content"]
+        
+        # Calculate tokens for this file in JSON format
+        single_file_json = json.dumps([{"path": path, "content": content}], indent=2)
+        file_tokens = len(encoding.encode(single_file_json))
+        
+        if file_tokens <= remaining_budget:
+            # File fits, include it
+            truncated_files.append(file_info)
+            remaining_budget -= file_tokens
+        else:
+            # File doesn't fit, try to truncate it
+            if remaining_budget > 1000:  # Only try if we have reasonable space
+                # Binary search to find max content that fits
+                max_chars = len(content)
+                min_chars = 0
+                
+                while min_chars < max_chars:
+                    mid_chars = (min_chars + max_chars + 1) // 2
+                    truncated_content = content[:mid_chars] + f"\n... [TRUNCATED FOR API LIMITS: {len(content)} total chars, showing first {mid_chars}]"
+                    test_file_json = json.dumps([{"path": path, "content": truncated_content}], indent=2)
+                    test_tokens = len(encoding.encode(test_file_json))
+                    
+                    if test_tokens <= remaining_budget:
+                        min_chars = mid_chars
+                    else:
+                        max_chars = mid_chars - 1
+                
+                if min_chars > 0:
+                    final_content = content[:min_chars] + f"\n... [TRUNCATED FOR API LIMITS: {len(content)} total chars, showing first {min_chars}]"
+                    truncated_files.append({"path": path, "content": final_content})
+                    final_file_json = json.dumps([{"path": path, "content": final_content}], indent=2)
+                    remaining_budget -= len(encoding.encode(final_file_json))
+            
+            # Skip remaining files as we're at the limit
+            logger.warning(
+                "Skipping remaining files due to token limit",
+                skipped_file=path,
+                remaining_budget_tokens=remaining_budget
+            )
+            break
+    
+    final_tokens = count_files_tokens(truncated_files)
+    
+    # Add assertion to ensure we're under the limit
+    assert final_tokens <= MAX_FILES_TOKENS, f"File truncation failed: {final_tokens} tokens > {MAX_FILES_TOKENS} limit"
+    
+    logger.info(
+        "File truncation completed",
+        original_files=len(files_info),
+        final_files=len(truncated_files),
+        original_tokens=current_tokens,
+        final_tokens=final_tokens,
+        limit=MAX_FILES_TOKENS
+    )
+    
+    return truncated_files
 
 
 async def run_claude_code(
@@ -1453,6 +1534,20 @@ async def optimize_prompts(
     logger.info(
         "Run directory created", run_directory=str(base_dir), run_prefix=run_prefix
     )
+    
+    # Create optimization run record in database
+    with get_db_session() as session:
+        optimization_run = OptimizationRun(
+            start_time=datetime.utcnow(),
+            base_output_dir=str(base_dir),
+            total_iterations=iterations,
+            config_snapshot=json.dumps(asdict(config)),
+            status='running'
+        )
+        session.add(optimization_run)
+        session.commit()
+        run_id = optimization_run.id
+        logger.info("Created optimization run record", run_id=run_id)
 
     # Set up Docker wrapper for isolated Claude Code execution
     external_wrapper = Path(__file__).parent / "docker_claude_wrapper.sh"
@@ -1722,24 +1817,31 @@ Examples:
 
     # Setup signal handlers for graceful cost reporting on interruption
     setup_signal_handlers()
+    
+    # Initialize database
+    logger.info("Initializing database")
+    init_database("sqlite:///optimizer.db")
+    
+    # Load and sync YAML files to database
+    logger.info("Loading YAML files and syncing to database")
+    yaml_loader = load_yaml_files("seeds.yaml", "graders_consolidated.yaml")
+    sync_stats = yaml_loader.load_and_sync_all()
+    logger.info("YAML sync completed", **sync_stats)
+    
+    # Get active seed tasks from database
+    with get_db_session() as session:
+        seed_tasks_db = yaml_loader.get_active_seed_tasks(session)
+        seed_tasks = []
+        for task_db in seed_tasks_db:
+            # Convert database model to the existing SeedTask dataclass
+            seed_tasks.append(SeedTask(
+                id=task_db.task_id,
+                prompt=task_db.prompt,
+                description=task_db.description
+            ))
 
     # Convert string mode back to enum
     processing_mode = ProcessingMode(args.mode)
-
-    # Load seed tasks from a YAML file.  The file 'seeds.yaml' should contain a
-    # top-level list of objects with keys 'id' and 'prompt'.  The 'prompt'
-    # field is used as the programming task.  Descriptions are ignored.
-    seeds_path = Path("seeds.yaml")
-    if not seeds_path.exists():
-        raise FileNotFoundError("seeds.yaml file is required but was not found.")
-
-    with seeds_path.open("r") as f:
-        seeds_data = yaml.safe_load(f)
-    if not isinstance(seeds_data, list) or not seeds_data:
-        raise ValueError("seeds.yaml must contain a list of seed task objects.")
-    seed_tasks = []
-    for entry in seeds_data:
-        seed_tasks.append(SeedTask(**entry))
 
     # Run the optimisation loop.  Adjust iterations and rollouts per task as desired.
     # The PromptEngineer will generate the initial prompt automatically.
