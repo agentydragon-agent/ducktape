@@ -32,6 +32,7 @@ Configuration:
 
 from __future__ import annotations
 
+import argparse
 import ast
 import asyncio
 import json
@@ -43,6 +44,7 @@ import tiktoken
 import yaml
 from dataclasses import asdict, dataclass
 from datetime import datetime
+from enum import Enum
 from pathlib import Path
 from typing import List, Dict, Any, Tuple, Optional
 
@@ -98,6 +100,12 @@ REASONING_EFFORT = "medium"
 MAX_OUTPUT_TOKENS = 4000
 BASH_TIMEOUT_MS = "30000"
 TRUNCATION_LENGTH = 80
+
+
+class ProcessingMode(Enum):
+    """Processing mode for prompt optimization."""
+    FULL_ROLLOUTS = "full_rollouts"
+    SUMMARY = "summary"
 MAX_PARALLEL_ROLLOUTS = 8  # Maximum concurrent Claude Code rollouts
 
 
@@ -940,46 +948,35 @@ class Turn:
     """A complete conversational turn in the PromptEngineer."""
 
     reasoning: List[Any]  # OpenAI reasoning from propose()
-    proposed_prompt: str  # The prompt that was proposed
+    function_call_message: ResponseFunctionToolCall  # The original function call message from OpenAI
+    proposed_prompt: str  # The prompt that was proposed (extracted from function call)
     grades: str  # Grading results from testing the prompt
 
     @property
     def messages(self) -> List[Dict[str, Any]]:
-        """Convert turn into OpenAI API message sequence."""
+        """Convert turn into OpenAI API message sequence with function calling format."""
         msgs = []
 
-        # Convert reasoning messages to proper format with verbose logging
-        for i, reasoning_item in enumerate(self.reasoning):
-            logger.info(f"Processing reasoning item {i}: type={type(reasoning_item)}, repr={repr(reasoning_item)}")
-            
-            if hasattr(reasoning_item, 'model_dump'):
-                # OpenAI SDK object - convert to dict and filter out response-only fields
-                msg_dict = reasoning_item.model_dump()
-                logger.info(f"Reasoning item {i} model_dump: {msg_dict}")
-                
-                # Filter out fields that are valid in response but not input (like 'status')
-                # Based on OpenAI docs, reasoning items should have: id, type, summary, encrypted_content
-                if 'status' in msg_dict:
-                    del msg_dict['status']
-                    logger.info(f"Reasoning item {i} after removing status: {msg_dict}")
-                msgs.append(msg_dict)
-            elif isinstance(reasoning_item, dict):
-                # Already a dict
-                logger.info(f"Reasoning item {i} is dict: {reasoning_item}")
-                msgs.append(reasoning_item)
-            else:
-                # Unknown format - crash with details
-                logger.error(f"Unknown reasoning item format at index {i}: type={type(reasoning_item)}, repr={repr(reasoning_item)}")
-                raise ValueError(f"Unknown reasoning item format: {type(reasoning_item)} - {repr(reasoning_item)}")
+        # Add all reasoning items (filtered to remove response-only fields)
+        for reasoning_item in self.reasoning:
+            msg_dict = reasoning_item.model_dump()
+            if 'status' in msg_dict:
+                del msg_dict['status']
+            msgs.append(msg_dict)
 
-        # Add user message with grading results instead of recreating function call structure
-        # The Responses API expects simple conversation format, not tool_calls reconstruction
-        user_msg = {
-            "role": "user", 
-            "content": f"Here are the grading results for the prompt:\n\n{self.grades}"
+        # Add the original function call message (preserving OpenAI's original object/IDs)
+        function_call_dict = self.function_call_message.model_dump()
+        if 'status' in function_call_dict:
+            del function_call_dict['status']
+        msgs.append(function_call_dict)
+
+        # Add function call output with grading results
+        function_output_msg = {
+            "type": "function_call_output",
+            "call_id": self.function_call_message.call_id,
+            "output": json.dumps({"grading_results": self.grades})
         }
-        logger.info(f"User grades message: {user_msg}")
-        msgs.append(user_msg)
+        msgs.append(function_output_msg)
 
         return msgs
 
@@ -1077,11 +1074,11 @@ Full Messages:
         rollout_summaries = self._build_rollout_summaries(rollouts)
         return f"Here are the results from testing the current system prompt on {len(rollouts)} coding tasks. Please analyze these results and propose an improved system prompt.\n\n{chr(10).join(['---'] * 2).join(rollout_summaries)}"
 
-    async def propose_prompt(self, openai_log_path: Path) -> Tuple[List[Any], str]:
+    async def propose_prompt(self, openai_log_path: Path) -> Tuple[List[Any], ResponseFunctionToolCall, str]:
         """Make OpenAI API call to get next prompt proposal.
 
         Returns:
-            (reasoning_messages, proposed_prompt)
+            (reasoning_messages, function_call_message, proposed_prompt)
         """
         # Trim context if needed before API call
         self._trim_context_if_needed()
@@ -1161,19 +1158,20 @@ Full Messages:
             conversation_turns=len(self._turns),
         )
 
-        return reasoning_messages, claude_prompt
+        return reasoning_messages, function_call_item, claude_prompt
 
     def add_result(
-        self, reasoning: List[Any], proposed_prompt: str, grades: str
+        self, reasoning: List[Any], function_call_message: ResponseFunctionToolCall, proposed_prompt: str, grades: str
     ) -> None:
         """Add completed turn to conversation history.
 
         Args:
             reasoning: OpenAI's reasoning messages from propose_prompt()
+            function_call_message: The original function call message from OpenAI
             proposed_prompt: The prompt that was proposed and tested
             grades: Grading results from testing this prompt
         """
-        turn = Turn(reasoning=reasoning, proposed_prompt=proposed_prompt, grades=grades)
+        turn = Turn(reasoning=reasoning, function_call_message=function_call_message, proposed_prompt=proposed_prompt, grades=grades)
         self._turns.append(turn)
 
         logger.info(
@@ -1210,6 +1208,7 @@ async def optimize_prompts(
     seed_tasks: List[str],
     iterations: int = 3,
     rollouts_per_task: int = 2,
+    processing_mode: ProcessingMode = ProcessingMode.FULL_ROLLOUTS,
     base_output_dir: str = "./agent_output",
     max_parallel_rollouts: int = MAX_PARALLEL_ROLLOUTS,
 ) -> None:
@@ -1325,7 +1324,7 @@ async def optimize_prompts(
     DROP_THRESHOLD = int(0.7 * MAX_TOKENS)  # Unused: kept for reference
 
     # Generate initial prompt without any rollout data
-    prev_reasoning, current_prompt = await engineer.propose_prompt(openai_api_log_path)
+    prev_reasoning, prev_function_call, current_prompt = await engineer.propose_prompt(openai_api_log_path)
 
     # Write initial prompt to versioned file
     prompt_version += 1
@@ -1426,10 +1425,10 @@ async def optimize_prompts(
 
         # Add completed turn to PE conversation (current prompt + grades)
         grades = engineer.build_grades_message(iteration_results)
-        engineer.add_result(prev_reasoning, current_prompt, grades)
+        engineer.add_result(prev_reasoning, prev_function_call, current_prompt, grades)
 
         # Generate next prompt using PE
-        prev_reasoning, new_prompt = await engineer.propose_prompt(openai_api_log_path)
+        prev_reasoning, prev_function_call, new_prompt = await engineer.propose_prompt(openai_api_log_path)
 
         # Log the new prompt in JSONL
         with prompt_log_path.open("a") as f:
@@ -1454,6 +1453,50 @@ async def optimize_prompts(
 
 def main() -> None:
     """Entry point for standalone execution."""
+    parser = argparse.ArgumentParser(
+        description="Parallel prompt optimization system for Claude Code agents",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  %(prog)s --iterations 5 --rollouts-per-task 3
+  %(prog)s --mode summary --iterations 1 --rollouts-per-task 1
+        """
+    )
+    
+    parser.add_argument(
+        "--iterations", 
+        type=int, 
+        default=10,
+        help="Number of optimization iterations (default: %(default)s)"
+    )
+    
+    parser.add_argument(
+        "--rollouts-per-task", 
+        type=int, 
+        default=1,
+        help="Number of agent rollouts per seed task (default: %(default)s)"
+    )
+    
+    parser.add_argument(
+        "--mode",
+        type=str,
+        choices=[mode.value for mode in ProcessingMode],
+        default=ProcessingMode.FULL_ROLLOUTS.value,
+        help="Processing mode: full_rollouts runs complete agent sessions, summary uses condensed feedback (default: %(default)s)"
+    )
+    
+    parser.add_argument(
+        "--max-parallel",
+        type=int,
+        default=4,
+        help="Maximum parallel rollouts (default: %(default)s)"
+    )
+    
+    args = parser.parse_args()
+    
+    # Convert string mode back to enum
+    processing_mode = ProcessingMode(args.mode)
+    
     # Load seed tasks from a YAML file.  The file 'seeds.yaml' should contain a
     # top-level list of objects with keys 'id' and 'prompt'.  The 'prompt'
     # field is used as the programming task.  Descriptions are ignored.
@@ -1469,15 +1512,15 @@ def main() -> None:
     for entry in seeds_data:
         seed_tasks.append(SeedTask(**entry))
 
-    # Run the optimisation loop.  Adjust iterations and rollouts per task as desired.
-    # The PromptEngineer will generate the initial prompt automatically.
+    # Run the optimisation loop with parsed arguments
     asyncio.run(
         optimize_prompts(
             seed_tasks,
-            iterations=10,
-            rollouts_per_task=1,
+            iterations=args.iterations,
+            rollouts_per_task=args.rollouts_per_task,
+            processing_mode=processing_mode,
             base_output_dir="./agent_output",
-            max_parallel_rollouts=4,  # Configurable parallelism limit
+            max_parallel_rollouts=args.max_parallel,
         )
     )
 

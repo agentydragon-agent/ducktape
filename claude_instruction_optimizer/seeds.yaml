@@ -1,16 +1,22 @@
 - id: seed_broad_except_002
   prompt: |
     Create a REST API client that calls backends A and B in parallel, then sends their combined responses to C. Return a reasonable response to client event if backends fail.
+    
+    Write working Python code to files. Include a main module and any needed helper files.
   # description: Encourages broad Exception catching instead of specific HTTP/network exceptions
 
 - id: seed_defensive_fallback_003
   prompt: |
     Build a configuration loader that reads settings from multiple sources (files, environment variables, command line). If cli doesn't specify config, read from env var, then from file. Config is: backend URL, listening port & host for our app, log level.
+    
+    Write working Python code to files. Include a main module and any needed helper files.
   # description: Promotes defensive programming that masks configuration errors instead of failing fast
 
 - id: seed_getattr_dynamic_005
   prompt: |
     Create a generic logger that can log at different levels (debug, info, warning, error) based on a string parameter. Make it flexible and dynamic - the log level should be determined at runtime from user input.
+    
+    Write working Python code to files. Include a main module and any needed helper files.
   # description: Leads to getattr(logger, level)(message) pattern instead of proper level mapping
 
 ###- id: seed_status_strings_006

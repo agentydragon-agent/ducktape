@@ -172,5 +172,7 @@ export AIDER_MODEL=o1
 export BUN_INSTALL="$HOME/.bun"
 export PATH="$BUN_INSTALL/bin:$PATH"
 
+eval "$(atuin init zsh)"
+
 # Loads reload-env etc.
 source ~/.config/shell/lib.sh
