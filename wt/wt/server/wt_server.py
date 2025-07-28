@@ -9,9 +9,11 @@ One daemon per main git repository that:
 
 import asyncio
 import contextlib
+import json
 import logging
 import os
 import signal
+import shutil
 import subprocess
 import threading
 import time
@@ -62,6 +64,51 @@ from .gitstatusd_client import (
 from .worktree_ids import make_worktree_id
 
 logger = logging.getLogger(__name__)
+
+
+def write_startup_handshake(success: bool, error_message: str = None, **extra_data):
+    """Write startup handshake JSON to stdout, then redirect stdout to log.
+    
+    Args:
+        success: Whether startup was successful
+        error_message: Error message if startup failed
+        **extra_data: Additional data to include in handshake
+    """
+    import sys
+    
+    handshake_data = {
+        "success": success,
+        "pid": os.getpid(),
+        "timestamp": time.time(),
+        **extra_data
+    }
+    
+    if not success and error_message:
+        handshake_data["error"] = error_message
+    
+    try:
+        # Write handshake to stdout (which is the pipe to parent)
+        print(json.dumps(handshake_data), flush=True)
+        
+        # Now redirect stdout to log file for regular daemon output
+        # Get daemon log from environment or use stderr (already redirected)
+        try:
+            from wt.shared.configuration import load_config
+            daemon_log = load_config().daemon_dir / "daemon.log"
+            log_fd = os.open(daemon_log, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
+            os.dup2(log_fd, 1)  # redirect stdout to log
+            os.close(log_fd)
+        except Exception:
+            # Fallback: redirect stdout to stderr (already goes to log)
+            os.dup2(2, 1)
+        
+        # Log to the new stdout (log file)
+        logger.info("Startup handshake sent: success=%s", success)
+        if not success:
+            logger.error("Startup failed: %s", error_message)
+    except Exception as e:
+        # This will go to stderr (which is already redirected to log)
+        print(f"Failed to send startup handshake: {e}", file=sys.stderr)
 
 
 @dataclass
@@ -915,8 +962,12 @@ class WtDaemon:
                 self.daemon_health.last_error_time = None
                 logger.info("Daemon health status cleared - operations are succeeding")
 
-    def _find_gitstatusd(self) -> str | None:
-        """Find gitstatusd binary."""
+    def _validate_gitstatusd(self) -> tuple[str, str | None]:
+        """Validate gitstatusd binary availability.
+        
+        Returns:
+            tuple: (gitstatusd_path, error_message) where error_message is None on success
+        """
         # Use config value if set
         if self.config.gitstatusd_path:
             gitstatusd_path = str(self.config.gitstatusd_path)
@@ -926,32 +977,76 @@ class WtDaemon:
                 )
                 if result.returncode == 0:
                     logger.info("Using configured gitstatusd at: %s", gitstatusd_path)
-                    return gitstatusd_path
-                logger.error("Configured gitstatusd path not working: %s", gitstatusd_path)
+                    return gitstatusd_path, None
+                return None, f"Configured gitstatusd path not working: {gitstatusd_path} (exit code {result.returncode})"
             except (subprocess.TimeoutExpired, FileNotFoundError, PermissionError) as e:
-                logger.error("Configured gitstatusd path failed: %s (%s)", gitstatusd_path, e)
-                return None
+                return None, f"Configured gitstatusd path failed: {gitstatusd_path} ({e})"
 
-        # Auto-detect from common locations
-        candidates = [
-            "gitstatusd",  # In PATH
-            str(
-                Path.home() / ".cache/gitstatus/gitstatusd-darwin-arm64",
-            ),  # oh-my-zsh/powerlevel10k
-            str(Path.home() / ".cache/gitstatus/gitstatusd-linux-x86_64"),  # Linux variant
-            "/usr/local/bin/gitstatusd",
-            "/opt/homebrew/bin/gitstatusd",
-        ]
-
-        for candidate in candidates:
+        # Only check PATH - no hardcoded locations
+        gitstatusd_cmd = "gitstatusd"
+        if shutil.which(gitstatusd_cmd):
             try:
-                result = subprocess.run([candidate, "--version"], check=False, capture_output=True, timeout=2)
+                result = subprocess.run([gitstatusd_cmd, "--version"], check=False, capture_output=True, timeout=2)
                 if result.returncode == 0:
-                    logger.info("Found gitstatusd at: %s", candidate)
-                    return candidate
-            except (subprocess.TimeoutExpired, FileNotFoundError, PermissionError):
-                continue
-
+                    logger.info("Found gitstatusd on PATH: %s", gitstatusd_cmd)
+                    return gitstatusd_cmd, None
+                return None, f"gitstatusd found on PATH but not working (exit code {result.returncode})"
+            except (subprocess.TimeoutExpired, FileNotFoundError, PermissionError) as e:
+                return None, f"gitstatusd found on PATH but failed to execute: {e}"
+            
+        return None, (
+            "gitstatusd binary not found. Please install gitstatusd and ensure it's available on PATH, "
+            "or configure gitstatusd_path in your config file. "
+            "Common installation: brew install romkatv/gitstatus/gitstatus"
+        )
+    
+    def _find_gitstatusd(self) -> str | None:
+        """Find gitstatusd binary (legacy method for backward compatibility)."""
+        gitstatusd_path, error = self._validate_gitstatusd()
+        if error:
+            logger.error(error)
+        return gitstatusd_path
+    
+    def _validate_configuration(self) -> str | None:
+        """Validate daemon configuration.
+        
+        Returns:
+            str: Error message if configuration is invalid, None if valid
+        """
+        errors = []
+        
+        # Check required paths exist
+        if not self.config.main_repo_resolved.exists():
+            errors.append(f"Main repository does not exist: {self.config.main_repo_resolved}")
+        
+        if not self.config.main_repo_resolved.is_dir():
+            errors.append(f"Main repository is not a directory: {self.config.main_repo_resolved}")
+            
+        # Check if main repo is actually a git repository
+        git_dir = self.config.main_repo_resolved / ".git"
+        if not git_dir.exists():
+            errors.append(f"Main repository is not a git repository (no .git directory): {self.config.main_repo_resolved}")
+        
+        # Check worktrees directory can be created
+        worktrees_dir = self.config.worktrees_dir_resolved
+        if worktrees_dir.exists() and not worktrees_dir.is_dir():
+            errors.append(f"Worktrees directory path exists but is not a directory: {worktrees_dir}")
+        
+        # Check daemon directory permissions
+        try:
+            self.daemon_dir.mkdir(exist_ok=True)
+        except PermissionError:
+            errors.append(f"Cannot create daemon directory (permission denied): {self.daemon_dir}")
+        except Exception as e:
+            errors.append(f"Cannot create daemon directory: {self.daemon_dir} ({e})")
+        
+        # Validate GitHub configuration if enabled
+        if self.config.github_enabled and not self.config.github_repo:
+            errors.append("GitHub is enabled but github_repo is not configured")
+        
+        if errors:
+            return "Configuration validation failed:\n" + "\n".join(f"  - {error}" for error in errors)
+        
         return None
 
     async def discover_worktrees(self) -> None:
@@ -1599,6 +1694,29 @@ class WtDaemon:
     async def start(self) -> None:
         """Start the daemon."""
         logger.info("Starting GitStatusd daemon for %s", self.config.main_repo_resolved)
+        
+        startup_errors = []
+        
+        # Validate configuration first
+        config_error = self._validate_configuration()
+        if config_error:
+            startup_errors.append(config_error)
+        
+        # Validate gitstatusd availability
+        gitstatusd_path, gitstatusd_error = self._validate_gitstatusd()
+        if gitstatusd_error:
+            startup_errors.append(gitstatusd_error)
+        
+        # If there are critical errors, write error handshake and return
+        if startup_errors:
+            error_message = "\n\n".join(startup_errors)
+            write_startup_handshake(
+                success=False, 
+                error_message=error_message,
+                protocol_version=1
+            )
+            logger.error("Daemon startup failed due to validation errors")
+            return
 
         # Clean up old socket
         if self.socket_path.exists():
@@ -1620,6 +1738,14 @@ class WtDaemon:
         await self.discover_worktrees()
 
         logger.info("GitStatusd daemon started, listening on %s", self.socket_path)
+        
+        # Write successful startup handshake
+        write_startup_handshake(
+            success=True,
+            protocol_version=1,
+            gitstatusd_path=gitstatusd_path,
+            discovered_worktrees=len(self.known_worktrees)
+        )
 
     async def stop(self) -> None:
         """Stop the daemon."""

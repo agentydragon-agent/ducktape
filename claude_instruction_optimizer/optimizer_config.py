@@ -19,8 +19,14 @@ class OptimizerConfig(BaseModel):
     # Logging configuration
     truncation_length: int = Field(default=80, description="Length to truncate log messages")
     
-    # Token management
-    max_context_tokens: int = Field(default=140000, description="Maximum tokens before context trimming")
+    # Token management (o3 model: 200k total window)
+    max_response_tokens: int = Field(default=30000, description="Tokens reserved for response generation")
+    reasoning_buffer_tokens: int = Field(default=20000, description="Tokens reserved for o3 reasoning process") 
+    max_context_tokens: int = Field(default=150000, description="Maximum input tokens (200k - response - reasoning buffers)")
+    
+    # File size limits
+    max_file_size_bytes: int = Field(default=100_000, description="Maximum file size in bytes for inclusion in grading (100KB)")
+    max_file_size_for_pattern_analysis: int = Field(default=10_000, description="Maximum file size for pattern analysis (10KB)")
     
     # File filtering
     exclude_dirs: Set[str] = Field(
@@ -37,7 +43,8 @@ class OptimizerConfig(BaseModel):
         default={
             ".pyc", ".pyo", ".pyd", ".so", ".dll", ".dylib",
             ".DS_Store", ".swp", ".swo", ".swn", ".swa", ".tmp",
-            ".bak", ".cache", ".log",
+            ".bak", ".cache", ".log", ".tar", ".gz", ".tar.gz", 
+            ".zip", ".rar", ".7z", ".xz", ".bz2", ".tgz",
         },
         description="File extensions to exclude from file gathering"
     )

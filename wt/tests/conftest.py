@@ -338,6 +338,10 @@ def real_env(real_temp_repo, config_factory):
     Creates real configuration and environment setup for tests that need
     to interact with actual daemon processes and gitstatusd.
     """
+    # Explicit requirement checks
+    import shutil
+    assert shutil.which("gitstatusd"), "gitstatusd not found on PATH - required for integration tests"
+    
     # Kill any existing daemon first
     kill_daemon_and_verify(real_temp_repo)
     
@@ -351,13 +355,7 @@ def real_env(real_temp_repo, config_factory):
     env = os.environ.copy()
     env["WT_DIR"] = str(config.wt_dir)
     
-    # Ensure subprocess can find all Python packages
-    import sys
-    python_paths = ":".join(sys.path)
-    if "PYTHONPATH" in env:
-        env["PYTHONPATH"] = f"{python_paths}:{env['PYTHONPATH']}"
-    else:
-        env["PYTHONPATH"] = python_paths
+    # Assume package is properly installed and importable
     
     yield env
     
@@ -368,6 +366,10 @@ def real_env(real_temp_repo, config_factory):
 @pytest.fixture
 def real_env_with_existing_worktrees(real_temp_repo, config_factory):
     """Set up real environment with pre-created worktrees for complex tests."""
+    # Explicit requirement checks
+    import shutil
+    assert shutil.which("gitstatusd"), "gitstatusd not found on PATH - required for integration tests"
+    
     # Kill any existing daemon first
     kill_daemon_and_verify(real_temp_repo)
     
@@ -393,13 +395,7 @@ def real_env_with_existing_worktrees(real_temp_repo, config_factory):
     env = os.environ.copy()
     env["WT_DIR"] = str(config.wt_dir)
     
-    # Ensure subprocess can find all Python packages
-    import sys
-    python_paths = ":".join(sys.path)
-    if "PYTHONPATH" in env:
-        env["PYTHONPATH"] = f"{python_paths}:{env['PYTHONPATH']}"
-    else:
-        env["PYTHONPATH"] = python_paths
+    # Assume package is properly installed and importable
     
     yield env
     

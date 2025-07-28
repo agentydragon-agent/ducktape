@@ -11,6 +11,14 @@ A worktree management tool that makes switching between git worktrees feel like 
 - **Operation logging** with XDG-compliant data storage
 - **Zsh integration** for seamless shell navigation
 
+## Requirements
+
+- **gitstatusd**: Must be installed and available on PATH. This binary provides fast git status queries.
+- **wt package**: Must be properly installed and importable (via `pip install -e .`)
+- **adgn-worktree CLI**: Must be available on PATH after package installation
+
+**Note**: Tests explicitly check for these dependencies and will fail immediately with clear error messages if any are missing, rather than producing cryptic import or subprocess errors.
+
 ## Installation
 
 * Install the package: `pip install -e .`

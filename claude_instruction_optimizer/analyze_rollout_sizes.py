@@ -20,14 +20,20 @@ def analyze_rollout_logs(log_path: Path) -> Dict[str, Any]:
     enc = tiktoken.encoding_for_model("gpt-4o")
     
     rollouts = []
+    skipped_lines = 0
     
     with open(log_path, 'r') as f:
-        for line in f:
+        for line_num, line in enumerate(f, 1):
             try:
                 rollout = json.loads(line.strip())
                 rollouts.append(rollout)
-            except json.JSONDecodeError:
+            except json.JSONDecodeError as e:
+                skipped_lines += 1
+                print(f"Warning: Skipped malformed JSON line {line_num}: {e}")
                 continue
+    
+    if skipped_lines > 0:
+        print(f"Warning: Skipped {skipped_lines} malformed lines in log file")
     
     if not rollouts:
         print("No rollouts found in log file")

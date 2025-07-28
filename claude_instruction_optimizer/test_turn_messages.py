@@ -117,7 +117,9 @@ def test_turn_messages():
     except Exception as e:
         print(f"API call failed: {e}")
         print(f"Error type: {type(e)}")
-        return False
+        import traceback
+        print(f"Full traceback: {traceback.format_exc()}")
+        raise
     
     return True
 

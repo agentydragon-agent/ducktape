@@ -175,10 +175,18 @@ class ScoreEvolutionTracker:
         # Generate plots
         try:
             plot_path = self._generate_plots(run_dir)
-            report_parts.extend(["", f"Score evolution plots saved to: {plot_path}"])
+            faceted_path = run_dir / "score_evolution_faceted.png"
+            report_parts.extend([
+                "", 
+                f"Score evolution plots saved to:",
+                f"  - Combined: {plot_path}",
+                f"  - Faceted: {faceted_path}"
+            ])
         except Exception as e:
-            logger.warning("Failed to generate plots", error=str(e))
+            logger.error("Failed to generate plots", error=str(e))
             report_parts.extend(["", f"Plot generation failed: {e}"])
+            # Plot generation failure is not critical for the core optimization process
+            # so we continue but log the error prominently
         
         report_parts.append("=" * 50)
         return "\n".join(report_parts)
@@ -188,7 +196,7 @@ class ScoreEvolutionTracker:
         import pandas as pd
         from plotnine import (
             ggplot, aes, geom_line, geom_point, geom_errorbar, 
-            facet_wrap, theme_minimal, labs, theme, element_text
+            facet_wrap, theme_minimal, labs, theme, element_text, position_dodge
         )
         import numpy as np
         
@@ -226,17 +234,19 @@ class ScoreEvolutionTracker:
         
         df = pd.DataFrame(plot_data)
         
-        # Create plot
-        plot = (
+        # Create combined plot with position dodging to prevent error bar overlap
+        dodge_width = 0.3
+        combined_plot = (
             ggplot(df, aes(x="iteration", y="mean", color="facet")) +
             geom_line(size=1) +
-            geom_point(size=2) +
-            geom_errorbar(aes(ymin="ci_lower", ymax="ci_upper"), width=0.1) +
+            geom_point(size=2, position=position_dodge(width=dodge_width)) +
+            geom_errorbar(aes(ymin="ci_lower", ymax="ci_upper"), 
+                         width=0.1, position=position_dodge(width=dodge_width)) +
             theme_minimal() +
             labs(
                 title="Score Evolution Across Iterations",
                 x="Iteration",
-                y="Score",
+                y="Score",  
                 color="Facet",
                 caption="Error bars show 69% confidence interval of the mean"
             ) +
@@ -246,9 +256,36 @@ class ScoreEvolutionTracker:
             )
         )
         
-        plot_path = run_dir / "score_evolution.png"
-        plot.save(plot_path, width=12, height=8, dpi=300)
-        return plot_path
+        # Create faceted plot - separate subplot for each facet
+        faceted_plot = (
+            ggplot(df, aes(x="iteration", y="mean")) +
+            geom_line(size=1, color="steelblue") +
+            geom_point(size=2, color="steelblue") +
+            geom_errorbar(aes(ymin="ci_lower", ymax="ci_upper"), width=0.1, color="steelblue") +
+            facet_wrap("facet", scales="free_y", ncol=3) +
+            theme_minimal() +
+            labs(
+                title="Score Evolution Across Iterations by Facet",
+                x="Iteration",
+                y="Score",
+                caption="Error bars show 69% confidence interval of the mean"
+            ) +
+            theme(
+                plot_title=element_text(size=14, ha="center"),
+                strip_text=element_text(size=10, margin={"t": 6, "b": 6}),
+                axis_text_x=element_text(angle=0),
+                panel_spacing=0.3
+            )
+        )
+        
+        # Save both plots
+        combined_plot_path = run_dir / "score_evolution.png"
+        faceted_plot_path = run_dir / "score_evolution_faceted.png"
+        
+        combined_plot.save(combined_plot_path, width=12, height=8, dpi=300)
+        faceted_plot.save(faceted_plot_path, width=12, height=8, dpi=300)
+        
+        return combined_plot_path
 
 # Global trackers
 score_tracker = ScoreEvolutionTracker()
@@ -319,6 +356,37 @@ class PatternSummarizer:
         '5. Extract actionable insights for prompt improvement (e.g., "current prompt doesn\'t emphasize specific exception handling")\n\n'
         "Output a concise summary focusing on the most impactful patterns that would help a prompt engineer improve the system prompt. Prioritize patterns that appear across multiple tasks and have clear connections to prompt weaknesses."
     )
+    
+    # Context management using config values
+    
+    def _count_tokens(self, text: str) -> int:
+        """Count tokens in text using tiktoken."""
+        encoding = tiktoken.encoding_for_model(config.openai_model)
+        return len(encoding.encode(text))
+    
+    def _truncate_file_content(self, files: Dict[str, str]) -> Dict[str, str]:
+        """Truncate file contents to reasonable size for pattern analysis."""
+        truncated = {}
+        file_content_limit = config.max_file_size_for_pattern_analysis
+        skip_threshold = config.max_file_size_for_pattern_analysis * 5  # Skip files over 50KB for pattern analysis
+        
+        for path, content in files.items():
+            if len(content) > skip_threshold:
+                # Skip extremely large files entirely for pattern analysis
+                logger.info(
+                    "File too large for pattern analysis, skipping",
+                    file_path=path,
+                    file_size=len(content),
+                    skip_threshold=skip_threshold
+                )
+                truncated[path] = f"[SKIPPED: File too large for pattern analysis ({len(content)} chars > {skip_threshold} char limit)]"
+            elif len(content) > file_content_limit:
+                # Truncate moderately large files
+                truncated[path] = content[:file_content_limit] + f"\n... [TRUNCATED FOR PATTERN ANALYSIS: {len(content)} chars total, showing first {file_content_limit}]"
+            else:
+                # Include small files fully
+                truncated[path] = content
+        return truncated
 
     async def summarize_patterns(
         self, rollout_results: List[GradedCode], openai_log_path: Path
@@ -332,8 +400,25 @@ class PatternSummarizer:
         Returns:
             Condensed pattern analysis summary
         """
-        # Build analysis prompt with rollout data
+        # Build analysis prompt with rollout data, with truncation
         rollout_summaries = []
+        original_count = len(rollout_results)
+        
+        system_tokens = self._count_tokens(self._SYSTEM_MESSAGE)
+        header_text = f"Analyze these {len(rollout_results)} coding task rollouts and identify key patterns for prompt improvement:\n\n"
+        remaining_tokens = config.max_context_tokens - system_tokens - self._count_tokens(header_text)
+        
+        logger.info(
+            "Pattern analysis context management",
+            original_rollouts=original_count,
+            system_tokens=system_tokens,
+            remaining_tokens=remaining_tokens,
+            max_input_tokens=config.max_context_tokens,
+            reserved_response_tokens=config.max_response_tokens,
+            reserved_reasoning_tokens=config.reasoning_buffer_tokens,
+            total_window=config.max_context_tokens + config.max_response_tokens + config.reasoning_buffer_tokens
+        )
+        
         for i, graded_code in enumerate(rollout_results):
             task_summary = f"Task {i+1}:\n"
             task_summary += f"  Overall Score: {graded_code.grade.overall_score}/10\n"
@@ -347,16 +432,36 @@ class PatternSummarizer:
                 )
             task_summary += f"  Facets:{''.join(facet_details)}\n"
 
-            # Add file information
+            # Add truncated file information
+            truncated_files = self._truncate_file_content(graded_code.code_result.files)
             task_summary += (
-                f"  Files: {json.dumps(graded_code.code_result.files, indent=2)}\n"
+                f"  Files: {json.dumps(truncated_files, indent=2)}\n"
             )
 
+            # Check if adding this summary would exceed context limit
+            potential_tokens = self._count_tokens("\n".join(rollout_summaries + [task_summary]))
+            if potential_tokens > remaining_tokens:
+                removed_count = original_count - len(rollout_summaries)
+                logger.warning(
+                    "PATTERN ANALYSIS TRUNCATION WARNING",
+                    removed_rollouts=removed_count,
+                    kept_rollouts=len(rollout_summaries),
+                    would_be_tokens=potential_tokens,
+                    max_tokens=remaining_tokens
+                )
+                break
+                
             rollout_summaries.append(task_summary)
 
-        analysis_prompt = (
-            f"Analyze these {len(rollout_results)} coding task rollouts and identify key patterns for prompt improvement:\n\n"
-            + "\n".join(rollout_summaries)
+        analysis_prompt = header_text + "\n".join(rollout_summaries)
+        
+        final_tokens = self._count_tokens(analysis_prompt) + system_tokens 
+        logger.info(
+            "Pattern analysis prompt prepared",
+            final_tokens=final_tokens,
+            included_rollouts=len(rollout_summaries),
+            excluded_rollouts=original_count - len(rollout_summaries),
+            context_utilization=f"{(final_tokens/self.MAX_CONTEXT_TOKENS)*100:.1f}%"
         )
 
         # Make OpenAI API call for pattern analysis
@@ -647,17 +752,43 @@ def gather_agent_files(work_dir: Path) -> List[Dict[str, str]]:
             continue
 
         relative = file_path.relative_to(work_dir).as_posix()
-        try:
-            content = file_path.read_text()
-        except UnicodeDecodeError as e:
+        
+        # Check file size before reading
+        file_size = file_path.stat().st_size
+        if file_size > config.max_file_size_bytes:
             logger.warning(
-                "Failed to decode file as UTF-8",
+                "File exceeds size limit, truncating",
                 file_path=str(file_path),
                 relative_path=relative,
-                error=str(e),
-                file_size=file_path.stat().st_size
+                file_size=file_size,
+                max_size=config.max_file_size_bytes
             )
-            content = "<<not a plaintext file>>"
+            # Read only the first portion of the file
+            try:
+                with file_path.open('r', encoding='utf-8') as f:
+                    content = f.read(config.max_file_size_bytes)
+                    content += f"\n\n... [FILE TRUNCATED: {file_size} bytes total, showing first {config.max_file_size_bytes} bytes]"
+            except UnicodeDecodeError as e:
+                logger.info(
+                    "Skipping binary file (not UTF-8 decodable)",
+                    file_path=str(file_path),
+                    relative_path=relative,
+                    file_size=file_size
+                )
+                content = "<<not a plaintext file>>"
+        else:
+            # File is within size limit, read normally
+            try:
+                content = file_path.read_text()
+            except UnicodeDecodeError as e:
+                logger.info(
+                    "Skipping binary file (not UTF-8 decodable)",
+                    file_path=str(file_path),
+                    relative_path=relative,
+                    file_size=file_size
+                )
+                content = "<<not a plaintext file>>"
+        
         files_info.append({"path": relative, "content": content})
         
     return files_info

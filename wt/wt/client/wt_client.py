@@ -83,18 +83,58 @@ class WtClient:
             # Start daemon with simple fork+function call pattern
             await self._start_daemon_background()
 
-            # Wait a bit for daemon to start up
-            for _ in range(10):  # Wait up to 1 second
-                await asyncio.sleep(0.1)
-                if self._is_daemon_running():
-                    logger.info("Daemon started successfully")
-                    return
-
-            logger.warning("Daemon may not have started properly")
+            # Wait for handshake confirmation from daemon via pipe
+            try:
+                import json
+                
+                # Read handshake from pipe with timeout
+                loop = asyncio.get_event_loop()
+                handshake_data = await asyncio.wait_for(
+                    loop.run_in_executor(None, self._read_handshake_from_pipe),
+                    timeout=5.0
+                )
+                
+                # Check protocol version
+                protocol_version = handshake_data.get("protocol_version", 0)
+                if protocol_version != 1:
+                    raise RuntimeError(f"Incompatible daemon protocol version {protocol_version}, expected 1")
+                
+                if handshake_data.get("success"):
+                    pid = handshake_data.get("pid")
+                    logger.info("Daemon startup handshake received from PID %d", pid)
+                    
+                    # Verify daemon is actually running and accessible
+                    if self._is_daemon_running():
+                        logger.info("Daemon started successfully with handshake confirmation")
+                        return
+                    else:
+                        logger.warning("Got successful handshake but daemon not accessible")
+                        raise RuntimeError("Daemon handshake successful but daemon not accessible")
+                else:
+                    # Daemon startup failed - show error to user
+                    error_message = handshake_data.get("error", "Unknown startup error")
+                    raise RuntimeError(f"Daemon startup failed:\n{error_message}")
+                    
+            except asyncio.TimeoutError:
+                logger.warning("Daemon startup timed out - no handshake received within 5 seconds")
+                raise RuntimeError("Daemon startup timed out")
+            except json.JSONDecodeError as e:
+                raise RuntimeError(f"Daemon handshake contains invalid JSON: {e}")
+            finally:
+                # Clean up pipe
+                if hasattr(self, '_handshake_pipe'):
+                    try:
+                        os.close(self._handshake_pipe)
+                    except OSError:
+                        pass
+                    delattr(self, '_handshake_pipe')
 
     async def _start_daemon_background(self) -> None:
         """Start daemon in background using proper double-fork daemonization."""
         import sys
+
+        # Create pipe for handshake communication
+        handshake_read, handshake_write = os.pipe()
 
         # First fork - create intermediate process
         pid = os.fork()
@@ -117,14 +157,21 @@ class WtClient:
                         os.dup2(null_fd, 0)  # stdin
                         os.close(null_fd)
 
-                        # Redirect stdout/stderr to daemon log
+                        # Close read end of pipe in daemon process
+                        os.close(handshake_read)
+
+                        # Use write end of pipe as stdout for handshake
+                        os.dup2(handshake_write, 1)  # stdout
+                        os.close(handshake_write)
+
+                        # Redirect stderr to log
                         log_file = self.config.daemon_dir / "daemon.log"
                         log_fd = os.open(log_file, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
-                        os.dup2(log_fd, 1)  # stdout
-                        os.dup2(log_fd, 2)  # stderr
+                        os.dup2(log_fd, 2)  # stderr to log
                         os.close(log_fd)
 
                         # Exec daemon module directly (preserve environment)
+                        # Daemon will write handshake to stdout (which is the pipe)
                         os.execve(
                             sys.executable,
                             [
@@ -148,6 +195,27 @@ class WtClient:
             # Parent process - wait for first child to exit
             os.waitpid(pid, 0)
             logger.debug("Daemon daemonization completed (double-fork)")
+            
+            # Close write end of pipe in parent
+            os.close(handshake_write)
+            
+            # Store read pipe for handshake reading
+            self._handshake_pipe = handshake_read
+    
+    def _read_handshake_from_pipe(self) -> dict:
+        """Read JSON handshake from pipe (blocking operation for thread pool)."""
+        import json
+        
+        if not hasattr(self, '_handshake_pipe'):
+            raise RuntimeError("No handshake pipe available")
+        
+        # Read from pipe until we get a complete JSON object
+        with os.fdopen(self._handshake_pipe, 'r') as pipe_file:
+            handshake_line = pipe_file.readline().strip()
+            if not handshake_line:
+                raise RuntimeError("Daemon closed handshake pipe without sending data")
+            
+            return json.loads(handshake_line)
 
     async def get_status(self, worktree_ids: list[WorktreeID] | None = None) -> StatusResponse:
         """Get comprehensive status data from daemon for all specified worktree IDs.

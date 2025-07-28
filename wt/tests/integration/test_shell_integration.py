@@ -11,7 +11,7 @@ exit code semantics, and process boundary interactions.
 # - Use the actual wt shell function that users interact with
 # - Test the wt shell function *AND* the Python binary TOGETHER as a system, as they're used by user in shell
 # - Test exit codes: 0=success, 1=unhandled error (no fd3), 2=managed error (with fd3)
-# - Shell subprocess needs PYTHONPATH to find wt module
+# - Assumes wt package is properly installed
 # - click.echo() outputs to stdout by default, not stderr
 # - DON'T mock across process boundaries - create real error conditions instead
 
@@ -34,16 +34,22 @@ def create_shell_script(wt_args: list[str]) -> str:
     return f"wt {' '.join(wt_args)}"
 
 
-def run_shell_script(script_content: str, cwd: str) -> subprocess.CompletedProcess:
+def run_shell_script(script_content: str, cwd: str, env: dict = None) -> subprocess.CompletedProcess:
     """Execute a shell script with wt function setup and return the result."""
-    # Prepare environment with PYTHONPATH for the subprocess
-    env = os.environ.copy()
+    # Explicit requirement checks
+    import importlib.util
+    import shutil
+    assert importlib.util.find_spec("wt"), "wt package not installed - required for shell integration tests"
+    assert shutil.which("adgn-worktree"), "adgn-worktree CLI not found on PATH - required for shell integration tests"
     
-    # Get current Python's site-packages to ensure dependencies are available
-    import site
-    site_packages = site.getsitepackages() + [site.getusersitepackages()]
-    python_path_parts = [str(PROJECT_ROOT)] + site_packages + [env.get('PYTHONPATH', '')]
-    env["PYTHONPATH"] = ":".join(filter(None, python_path_parts))
+    # Use provided environment or create a new one
+    if env is None:
+        env = os.environ.copy()
+        
+        # Assume package is properly installed and importable
+    else:
+        # Make a copy to avoid modifying the original
+        env = env.copy()
 
     # Create script with wt function setup and hashbang
     full_script = f"""#!/bin/bash

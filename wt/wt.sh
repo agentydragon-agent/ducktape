@@ -18,7 +18,7 @@ wt() {
     trap 'rm -f "$wt_command_file"' EXIT
     
     # Run our Python script with fd 3 redirected to the temp file
-    python -m wt.cli sh "$@" 3>"$wt_command_file"
+    $(python3 -c "import sys; print(sys.executable)") -m wt.cli sh "$@" 3>"$wt_command_file"
     local wt_exit_code=$?
     
     # Execute commands on success (0) or controlled error (2)
