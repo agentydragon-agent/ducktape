@@ -9,6 +9,8 @@ from typing import Literal
 
 import click
 
+from .constants import MAIN_WORKTREE_DISPLAY_NAME
+
 
 @dataclass
 class Worktree:
@@ -25,7 +27,7 @@ class Worktree:
 
     @classmethod
     def main_repo(cls, repo_path: Path, branch: str) -> Worktree:
-        return cls(name="main", path=repo_path, branch=branch, is_main=True)
+        return cls(name=MAIN_WORKTREE_DISPLAY_NAME, path=repo_path, branch=branch, is_main=True)
 
     def exists(self) -> bool:
         return self.path.exists()
@@ -126,25 +128,6 @@ class CommitInfo:
     def short_hash(self) -> str:
         return self.last_commit[:8]
 
-
-@dataclass
-class EnhancedWorktreeStatus:
-    """Enhanced worktree status with proper domain separation."""
-
-    worktree: Worktree
-    commit_info: CommitInfo
-    sync_status: SyncStatus
-    working_status: WorkingStatus
-    pr_status: PRStatus | None = None
-    error: str | None = None
-
-    @property
-    def has_error(self) -> bool:
-        return self.error is not None
-
-    @property
-    def is_healthy(self) -> bool:
-        return not self.has_error and self.working_status.is_clean
 
 
 @dataclass

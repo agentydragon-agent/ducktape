@@ -94,7 +94,7 @@ def set_test_env_vars(test_config: Configuration):
             "WT_MAIN_REPO": str(test_config.main_repo),
             "WT_WORKTREES_DIR": str(test_config.worktrees_dir),
             "WT_BRANCH_PREFIX": test_config.branch_prefix,
-            "WT_DEFAULT_WORKTREE_BASE_BRANCH": test_config.default_worktree_base_branch,
+            "WT_UPSTREAM_BRANCH": test_config.upstream_branch,
             "WT_LOG_OPERATIONS": "true" if test_config.log_operations else "false",
             "WT_COW_METHOD": test_config.cow_method,
         },
@@ -160,7 +160,7 @@ def test_config(git_repo: Path, worktrees_dir: Path) -> Configuration:
     return build_test_configuration(
         git_repo,
         worktrees_dir=str(worktrees_dir),
-        default_worktree_base_branch="HEAD"
+        upstream_branch="HEAD"
     )
 
 
@@ -179,17 +179,17 @@ def mock_github_interface():
 
 
 @pytest.fixture
-def real_git_interface(test_config):
-    """Real GitInterface for integration tests."""
-    from wt.shared.git_interface import GitInterface
+def real_git_manager(test_config):
+    """Real GitManager for integration tests."""
+    from wt.server.git_manager import GitManager
 
-    return GitInterface(test_config.main_repo, test_config.github_repo)
+    return GitManager(config=test_config)
 
 
 @pytest.fixture
-def real_worktree_service(real_git_interface, mock_github_interface):
+def real_worktree_service(real_git_manager, mock_github_interface):
     """Real WorktreeService with mocked GitHub interface."""
-    return WorktreeService(real_git_interface, mock_github_interface)
+    return WorktreeService(real_git_manager, mock_github_interface)
 
 
 @pytest.fixture
@@ -207,40 +207,10 @@ def sample_commit_info():
     )
 
 
-@pytest.fixture
-def sample_worktree_status(sample_commit_info):
-    """Sample WorktreeStatus for testing."""
-    from wt.shared.git_interface import WorktreeStatus
-
-    return WorktreeStatus(
-        name="feature-work",
-        branch="test/feature-work",
-        ahead=1,
-        behind=0,
-        dirty_files=[],
-        untracked_files=[],
-        default_branch="master",
-        commit_info=sample_commit_info,
-        error=None,
-    )
+# sample_worktree_status fixture deleted - use create_test_status_response helper instead
 
 
-@pytest.fixture
-def sample_worktree_status_with_changes(sample_commit_info):
-    """Sample WorktreeStatus with uncommitted changes for testing."""
-    from wt.shared.git_interface import WorktreeStatus
-
-    return WorktreeStatus(
-        name="main-work",
-        branch="test/main-work",
-        ahead=0,
-        behind=2,
-        dirty_files=["modified.txt"],
-        untracked_files=["new.txt"],
-        default_branch="master",
-        commit_info=sample_commit_info,
-        error=None,
-    )
+# sample_worktree_status_with_changes fixture deleted - use create_test_status_response helper instead
 
 
 @pytest.fixture
@@ -249,15 +219,7 @@ def empty_worktree_status():
     return {}
 
 
-@pytest.fixture
-def populated_worktree_status(
-    existing_worktrees, sample_worktree_status, sample_worktree_status_with_changes
-):
-    """Populated worktree status dict for testing with multiple worktrees."""
-    return {
-        str(existing_worktrees[0]): sample_worktree_status,
-        str(existing_worktrees[1]): sample_worktree_status_with_changes,
-    }
+# populated_worktree_status fixture deleted - use create_test_status_response helper instead
 
 
 @pytest.fixture
@@ -270,12 +232,11 @@ def temp_config_file(test_config):
     """Write out a temporary config file for testing."""
     import tempfile
 
-    # Create temp config directory
+    # Create temp config directory - deliberately separate from main repo
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)
-        config_dir = temp_path / "config" / "adgn-wt"
-        config_dir.mkdir(parents=True)
-        wt_dir = config_dir / "adgn-wt" / ".wt"
+        # Put WT_DIR in separate location to test for baked-in assumptions
+        wt_dir = temp_path / "WTDIR" / ".wt"
         
         # Use centralized helper to create configuration
         build_test_configuration(
@@ -283,21 +244,21 @@ def temp_config_file(test_config):
             wt_dir=wt_dir,
             worktrees_dir=str(test_config.worktrees_dir),
             branch_prefix=test_config.branch_prefix,
-            default_worktree_base_branch=test_config.default_worktree_base_branch,
+            upstream_branch=test_config.upstream_branch,
             github_repo=test_config.github_repo,
             log_operations=test_config.log_operations,
-            cache_expiration=test_config.cache_expiration,
-            cache_refresh_age=test_config.cache_refresh_age,
+            cache_expiration=3600,
+            cache_refresh_age=300,
             hidden_worktree_patterns=test_config.hidden_worktree_patterns,
             gitstatusd_path=GITSTATUSD_PATH,
-            cow_method="rsync",
+            cow_method="copy",
             github_enabled=False
         )
         
         config_file = wt_dir / "config.yaml"
         
-        # Set XDG_CONFIG_HOME to use our temp config
-        with patch.dict(os.environ, {"XDG_CONFIG_HOME": str(temp_path / "config")}):
+        # Set WT_DIR to use our temp wt directory (new config system)
+        with patch.dict(os.environ, {"WT_DIR": str(wt_dir)}):
             yield config_file
 
 
@@ -309,7 +270,7 @@ def mock_cli_dependencies(temp_config_file):
     @contextmanager
     def _mock_cli_dependencies(worktree_status_return_value):
         with patch(
-            "wt.client.daemon_client.GitStatusdDaemonClient.get_all_worktree_status"
+            "wt.client.daemon_client.GitStatusdDaemonClient.get_status"
         ) as mock_get_status:
             mock_get_status.return_value = worktree_status_return_value
             yield mock_get_status
@@ -526,8 +487,9 @@ def kill_daemon_and_verify(repo_path: Path, timeout: float = 5.0):
                 pytest.fail(
                     f"Daemon with PID {pid_content} did not shut down within {timeout} seconds"
                 )
-        except:
-            pass
+        except (OSError, UnicodeDecodeError) as e:
+            # If we can't read the PID file, still fail but with a more specific error
+            pytest.fail(f"Daemon cleanup verification failed - could not read PID file: {e}")
 
     pytest.fail(f"Daemon cleanup verification failed after {timeout} seconds")
 
@@ -535,16 +497,18 @@ def kill_daemon_and_verify(repo_path: Path, timeout: float = 5.0):
 def create_integration_test_config_file(repo_path: Path) -> Path:
     """Create a test config file for integration tests using centralized helper.
 
-    Creates config in .wt directory consistent with rationalized config system.
+    Creates config in separate WT_DIR to test for baked-in assumptions.
     """
-    wt_dir = repo_path / ".wt"
+    # Put WT_DIR in separate location to test for baked-in assumptions about WT_DIR = MAIN_REPO/.wt
+    temp_parent = repo_path.parent
+    wt_dir = temp_parent / "WTDIR" / ".wt"
     
     # Use centralized helper to create configuration
     build_test_configuration(
         repo_path,
         wt_dir=wt_dir,
         branch_prefix="test/",
-        default_worktree_base_branch="HEAD",
+        upstream_branch="HEAD",
         log_operations=False,
         cow_method="copy",
         github_enabled=False,
@@ -614,9 +578,12 @@ def real_env(real_temp_repo):
     # Create config file in the repo's .wt directory
     create_integration_test_config_file(real_temp_repo)
 
-    # Use WT_MAIN_REPO environment variable (consistent with other tests)
+    # Use WT_DIR environment variable (new config system)
+    # Put WT_DIR in separate location to test for baked-in assumptions about WT_DIR = MAIN_REPO/.wt
     env = os.environ.copy()
-    env["WT_MAIN_REPO"] = str(real_temp_repo.resolve())
+    temp_parent = real_temp_repo.parent
+    wt_dir = temp_parent / "WTDIR" / ".wt"
+    env["WT_DIR"] = str(wt_dir)
 
     yield env
 
@@ -637,7 +604,7 @@ def build_test_configuration(repo_path: Path, wt_dir: Optional[Path] = None, **c
         "main_repo": str(repo_path),
         "worktrees_dir": str(repo_path / "worktrees"),
         "branch_prefix": "test/",
-        "default_worktree_base_branch": "main", 
+        "upstream_branch": "main", 
         "github_repo": "test-user/test-repo",
         "github_enabled": False,
         "log_operations": True,

@@ -24,10 +24,9 @@ def show_help() -> None:
     click.echo("wt - Enhanced worktree management")
     click.echo()
     click.echo("USAGE:")
-    click.echo("  wt [--verbose] [command] [args...]")
+    click.echo("  wt [command] [args...]")
     click.echo()
     click.echo("FLAGS:")
-    click.echo("  --verbose  Show verbose enumeration steps and timings")
     click.echo("  --help     Show this help")
     click.echo()
     click.echo("COMMANDS:")
@@ -56,10 +55,9 @@ def show_help() -> None:
     invoke_without_command=True,
     context_settings={"ignore_unknown_options": True, "help_option_names": []},
 )
-@click.option("--verbose", is_flag=True, help="Show verbose enumeration steps and timings")
 @click.option("-h", "--help", is_flag=True, help="Show this help and exit")
 @click.pass_context
-def main(ctx, verbose, help):
+def main(ctx, help):
     """Main CLI entry point."""
     init()  # colorama
 
@@ -68,16 +66,10 @@ def main(ctx, verbose, help):
         ctx.exit(0)
 
     if ctx.invoked_subcommand is None:
-        # Set up logging if verbose
-        if verbose:
-            import logging
-
-            logging.basicConfig(level=logging.DEBUG, format="%(name)s:%(levelname)s:%(message)s")
-
         try:
             import asyncio
 
-            asyncio.run(_async_main(verbose))
+            asyncio.run(_async_main())
         except RuntimeError as e:
             if "OpenAI repository not found" in str(e):
                 click.echo(f"Error: {e}", err=True)
@@ -87,7 +79,7 @@ def main(ctx, verbose, help):
                 raise
 
 
-async def _async_main(verbose: bool):
+async def _async_main():
     """Async main function."""
     config = load_config()
     formatter = ViewFormatter()
@@ -104,9 +96,8 @@ async def _async_main(verbose: bool):
     }
 )
 @click.argument("args", nargs=-1)
-@click.option("--verbose", is_flag=True, help="Show verbose enumeration steps and timings")
 @click.pass_context
-def sh(ctx, args, verbose):
+def sh(ctx, args):
     """Handle shell integration with argument parsing."""
     # Combine args from Click with any extra args
     all_args = list(args) + ctx.args
@@ -116,9 +107,7 @@ def sh(ctx, args, verbose):
 
     # Process arguments to extract flags
     for arg in all_args:
-        if arg == "--verbose":
-            verbose = True
-        elif arg == "--help" or arg == "-h":
+        if arg == "--help" or arg == "-h":
             show_help()
             return
         elif arg in ["-c", "--force"]:
@@ -127,12 +116,6 @@ def sh(ctx, args, verbose):
             continue
         else:
             filtered_args.append(arg)
-
-    # Set up logging if verbose
-    if verbose:
-        import logging
-
-        logging.basicConfig(level=logging.DEBUG, format="%(name)s:%(levelname)s:%(message)s")
 
     try:
         config = load_config()
@@ -149,10 +132,10 @@ def sh(ctx, args, verbose):
     # Run async command handler
     import asyncio
 
-    asyncio.run(_async_sh_main(daemon_client, formatter, config, filtered_args, verbose, ctx))
+    asyncio.run(_async_sh_main(daemon_client, formatter, config, filtered_args, ctx))
 
 
-async def _async_sh_main(daemon_client, formatter, config, filtered_args, verbose, ctx):
+async def _async_sh_main(daemon_client, formatter, config, filtered_args, ctx):
     """Async version of sh command handler."""
     # Route to appropriate handlers
     if not filtered_args:
@@ -180,9 +163,9 @@ async def _async_sh_main(daemon_client, formatter, config, filtered_args, verbos
 
     elif cmd == "cp":
         if len(remaining_args) == 1:
-            handle_copy_worktree(config, remaining_args[0])
+            await handle_copy_worktree(config, remaining_args[0])
         elif len(remaining_args) == 2:
-            handle_copy_worktree(config, remaining_args[0], remaining_args[1])
+            await handle_copy_worktree(config, remaining_args[0], remaining_args[1])
         else:
             click.echo("Error: cp requires 1 or 2 arguments")
             ctx.exit(1)
@@ -191,7 +174,7 @@ async def _async_sh_main(daemon_client, formatter, config, filtered_args, verbos
         if not remaining_args:
             click.echo("Error: -c requires a worktree name")
             ctx.exit(1)
-        handle_create_worktree(config, remaining_args[0])
+        await handle_create_worktree(config, remaining_args[0])
 
     elif cmd == "path":
         worktree_name = remaining_args[0] if remaining_args else None
@@ -214,7 +197,7 @@ async def _async_sh_main(daemon_client, formatter, config, filtered_args, verbos
 
     else:
         # Default case: wt <x> - navigate to worktree
-        handle_navigate_to_worktree(config, cmd)
+        await handle_navigate_to_worktree(config, cmd)
 
 
 if __name__ == "__main__":

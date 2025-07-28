@@ -17,6 +17,7 @@ import subprocess
 import threading
 import time
 import uuid
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
@@ -30,15 +31,32 @@ from ..shared.protocol import (
     ErrorCodes,
     ErrorResponse,
     PingResult,
+    ProgressUpdate,
     Request,
     Response,
     StatusParams,
     StatusResponse,
     StatusResult,
+    WorktreeCreateParams,
+    WorktreeCreateResult,
+    WorktreeDeleteParams,
+    WorktreeDeleteResult,
+    WorktreeGetByNameParams,
+    WorktreeGetByNameResult,
+    WorktreeIdentifyParams,
+    WorktreeIdentifyResult,
+    WorktreeListResult,
+    WorktreeResolvePathParams,
+    WorktreeResolvePathResult,
+    WorktreeTeleportTargetParams,
+    WorktreeTeleportTargetResult,
+    WorktreeID,
     create_error_response,
     parse_request,
 )
-from .git_manager import GitRepositoryManager
+from ..shared.constants import MAIN_WORKTREE_DISPLAY_NAME
+from .git_manager import GitManager
+from .worktree_auth import make_worktree_id
 from .gitstatusd_protocol import (
     GitStatusdParseError,
     GitStatusdProtocol,
@@ -48,6 +66,28 @@ from .gitstatusd_protocol import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class WorktreeGitStatus:
+    """Git status result from a single worktree."""
+    worktree_path_str: str
+    status_result: Optional[StatusResult]
+    processing_time_ms: float
+
+
+def resolve_worktree_name_to_info(name: str, worktree_infos: list) -> object | None:
+    """Server authority: resolve user-provided name to worktree info.
+    
+    This is the ONLY place where 'main' → main worktree mapping happens.
+    All other code should use this function rather than implementing the logic directly.
+    """
+    for info in worktree_infos:
+        if info.is_main and name == MAIN_WORKTREE_DISPLAY_NAME:
+            return info
+        elif not info.is_main and info.path.name == name:
+            return info
+    return None
 
 
 class DebouncedGitHubRefresh:
@@ -316,7 +356,7 @@ class GitStatusdProcess:
         worktree_info: WorktreeInfo,
         gitstatusd_path: str,
         config,
-        git_repo_manager: GitRepositoryManager,
+        git_manager: GitManager,
         github_interface=None,
         error_callback=None,
     ):
@@ -325,7 +365,7 @@ class GitStatusdProcess:
         self.worktree_info = worktree_info
         self.gitstatusd_path = gitstatusd_path
         self.config: Configuration = config
-        self.git_repo_manager = git_repo_manager
+        self.git_manager = git_manager
         self.github_interface = github_interface
         self.error_callback = error_callback
         self.process: Optional[asyncio.subprocess.Process] = None
@@ -524,11 +564,13 @@ class GitStatusdProcess:
         except (GitStatusdParseError, GitStatusdValidationError) as e:
             error_msg = f"Failed to parse gitstatusd response for {self.worktree_info.name}: {e}"
             logger.error(error_msg)
-            dirty_files, untracked_files = [], []
 
             # Record the error in daemon health tracking
             if self.error_callback:
                 self.error_callback("GitStatusd", error_msg)
+            
+            # Don't mask gitstatusd failures - let callers handle appropriately
+            raise GitStatusdParseError(error_msg) from e
 
         # Update cache
         now = datetime.now()
@@ -565,27 +607,24 @@ class GitStatusdProcess:
         # Get working directory status
         dirty_files, untracked_files, _, _ = await self._update_cache_from_gitstatusd()
 
-        # Get git info using git_repo_manager
+        # Get git info using git_manager
         try:
             # Get current branch
-            repo = self.git_repo_manager.get_repo(self.worktree_info.path)
+            repo = self.git_manager.get_repo(self.worktree_info.path)
             branch_name = repo.head.shorthand
 
             # Get commit info for HEAD
-            commit_info_data = self.git_repo_manager.get_commit_info(
+            commit_info_data = self.git_manager.get_commit_info(
                 self.worktree_info.path, "HEAD"
             )
 
-            # Get ahead/behind counts relative to default branch
-            default_branch = self.git_repo_manager.get_default_branch(
-                self.config.main_repo_resolved
-            )
+            # Get ahead/behind counts relative to upstream branch
             ahead_behind = (0, 0)  # Default for main repo
             if self.worktree_info.path != self.config.main_repo_resolved:
                 try:
-                    main_repo = self.git_repo_manager.get_repo(self.config.main_repo_resolved)
+                    main_repo = self.git_manager.get_repo(self.config.main_repo_resolved)
                     ahead, behind = main_repo.ahead_behind(
-                        f"refs/heads/{branch_name}", f"refs/heads/{default_branch}"
+                        f"refs/heads/{branch_name}", f"refs/heads/{self.config.upstream_branch}"
                     )
                     ahead_behind = (ahead, behind)
                 except Exception as e:
@@ -765,7 +804,7 @@ class GitStatusdProcess:
 
         # Get current branch
         try:
-            repo = self.git_repo_manager.get_repo(self.worktree_info.path)
+            repo = self.git_manager.get_repo(self.worktree_info.path)
             branch_name = repo.head.shorthand
         except Exception as e:
             logger.warning(f"Could not get current branch for {self.worktree_info.name}: {e}")
@@ -830,7 +869,7 @@ class GitStatusdDaemon:
         # Managed state
         self.known_worktrees: Dict[Path, WorktreeInfo] = {}
         self.gitstatusd_processes: Dict[Path, GitStatusdProcess] = {}
-        self.git_repo_manager = GitRepositoryManager()
+        self.git_manager = GitManager(config=self.config)
 
         # Server state
         self.server: Optional[asyncio.Server] = None
@@ -968,7 +1007,7 @@ class GitStatusdDaemon:
             worktree_info,
             gitstatusd_path,
             self.config,
-            self.git_repo_manager,
+            self.git_manager,
             self.github_interface,
             error_callback=self._record_error,
         )
@@ -1035,6 +1074,20 @@ class GitStatusdDaemon:
                     response = await self._handle_ping_request(request, start_time)
                 elif method == "shutdown":
                     response = await self._handle_shutdown_request(request)
+                elif method == "worktree_create":
+                    response = await self._handle_worktree_create_request(request, start_time)
+                elif method == "worktree_delete":
+                    response = await self._handle_worktree_delete_request(request, start_time)
+                elif method == "worktree_list":
+                    response = await self._handle_worktree_list_request(request, start_time)
+                elif method == "worktree_identify":
+                    response = await self._handle_worktree_identify_request(request, start_time)
+                elif method == "worktree_get_by_name":
+                    response = await self._handle_worktree_get_by_name_request(request, start_time)
+                elif method == "worktree_resolve_path":
+                    response = await self._handle_worktree_resolve_path_request(request, start_time)
+                elif method == "worktree_teleport_target":
+                    response = await self._handle_worktree_teleport_target_request(request, start_time)
                 else:
                     error_response = create_error_response(
                         ErrorCodes.METHOD_NOT_FOUND, f"Method '{method}' not found", request_id
@@ -1076,10 +1129,18 @@ class GitStatusdDaemon:
         try:
             # Parse parameters
             params = StatusParams.model_validate(request.params)
-            worktree_paths = params.worktree_paths
+            worktree_ids = params.worktree_ids
 
-            # If no paths specified, return all discovered worktrees
-            if not worktree_paths:
+            # Convert WorktreeIDs to paths for internal processing
+            if worktree_ids:
+                from ..shared.protocol import parse_worktree_id
+                worktree_paths = []
+                for wtid in worktree_ids:
+                    worktree_name = parse_worktree_id(wtid)
+                    worktree_path = self.config.worktrees_dir / worktree_name
+                    worktree_paths.append(worktree_path)
+            else:
+                # If no IDs specified, return all discovered worktrees
                 worktree_paths = list(self.known_worktrees.keys())
                 logger.debug(
                     "No specific worktrees requested, returning all %d discovered",
@@ -1091,21 +1152,30 @@ class GitStatusdDaemon:
             individual_times = {}
 
             # Process all worktrees concurrently
-            async def process_single_worktree(worktree_path):
+            async def process_single_worktree(worktree_path) -> WorktreeGitStatus:
                 single_start = time.time()
                 process = self.gitstatusd_processes.get(worktree_path)
 
                 if process:
-                    (
-                        dirty_files,
-                        untracked_files,
-                        commit_info_data,
-                        ahead_behind,
-                        branch_name,
-                        pr_info_data,
-                        last_updated_at,
-                        is_cached,
-                    ) = await process.get_comprehensive_status()
+                    try:
+                        (
+                            dirty_files,
+                            untracked_files,
+                            commit_info_data,
+                            ahead_behind,
+                            branch_name,
+                            pr_info_data,
+                            last_updated_at,
+                            is_cached,
+                        ) = await process.get_comprehensive_status()
+                    except GitStatusdParseError as e:
+                        # GitStatusd failed for this worktree - log and skip
+                        logger.error("GitStatusd failed for %s: %s", worktree_path, e)
+                        return WorktreeGitStatus(
+                            worktree_path_str=str(worktree_path),
+                            status_result=None,
+                            processing_time_ms=0
+                        )
                     single_time = (time.time() - single_start) * 1000
 
                     # Create CommitInfo from the data with validation
@@ -1125,13 +1195,20 @@ class GitStatusdDaemon:
                     worktree_info = self.known_worktrees.get(worktree_path)
                     worktree_name = worktree_info.name if worktree_info else worktree_path.name
                     is_main = worktree_path.resolve() == self.config.main_repo_resolved.resolve()
+                    
+                    # Use configured upstream branch
+                    
+                    # Create WorktreeID for the response
+                    from .worktree_auth import make_worktree_id
+                    wtid = make_worktree_id(worktree_name)
 
-                    return (
-                        str(worktree_path),
-                        StatusResult(
-                            worktree_path=str(worktree_path),
-                            worktree_name=worktree_name,
-                            branch=branch_name,
+                    return WorktreeGitStatus(
+                        worktree_path_str=str(wtid),  # Use WorktreeID as key instead of path string
+                        status_result=StatusResult(
+                            wtid=wtid,
+                            name=worktree_name,
+                            absolute_path=str(worktree_path),
+                            branch_name=branch_name,
                             has_dirty_files=len(dirty_files) > 0,
                             has_untracked_files=len(untracked_files) > 0,
                             processing_time_ms=single_time,
@@ -1141,13 +1218,18 @@ class GitStatusdDaemon:
                             ahead_count=ahead_behind[0],
                             behind_count=ahead_behind[1],
                             is_main=is_main,
+                            upstream_branch=self.config.upstream_branch,
                             pr_info=pr_info,
                         ),
-                        single_time,
+                        processing_time_ms=single_time,
                     )
                 else:
                     logger.warning("Worktree not found: %s", worktree_path)
-                    return str(worktree_path), None, 0
+                    return WorktreeGitStatus(
+                        worktree_path_str=str(worktree_path),
+                        status_result=None,
+                        processing_time_ms=0
+                    )
 
             # Run all worktree processing concurrently
             worktree_results = await asyncio.gather(
@@ -1155,10 +1237,10 @@ class GitStatusdDaemon:
             )
 
             # Collect results from concurrent processing
-            for path_str, status_result, single_time in worktree_results:
-                if status_result:
-                    results[path_str] = status_result
-                    individual_times[path_str] = single_time
+            for result in worktree_results:
+                if result.status_result:
+                    results[result.worktree_path_str] = result.status_result
+                    individual_times[result.worktree_path_str] = result.processing_time_ms
 
             total_time = (time.time() - start_time) * 1000
             status_response = StatusResponse(
@@ -1192,6 +1274,332 @@ class GitStatusdDaemon:
         logger.info("Received shutdown request")
         asyncio.create_task(self.stop())
         return self._create_success_response("shutting down", request.id)
+
+    async def _handle_worktree_create_request(self, request: Request, start_time: float) -> Response:
+        """Handle worktree_create JSON-RPC method."""
+        try:
+            # Parse parameters
+            params = WorktreeCreateParams.model_validate(request.params)
+            
+            # Validate worktree name (no slashes)
+            if '/' in params.name:
+                raise ValueError(f"Worktree name '{params.name}' cannot contain slashes")
+            
+            # Derive paths and branch name from simple name
+            worktree_path = self.config.worktrees_dir / params.name
+            branch_name = f"{self.config.branch_prefix}{params.name}"
+            worktree_id = make_worktree_id(params.name)
+            
+            # Check if worktree already exists
+            if worktree_path.exists():
+                raise ValueError(f"Worktree path {worktree_path} already exists")
+            
+            # Create branch first
+            source_branch = params.source_branch or self.config.upstream_branch
+            self.git_manager.create_branch(branch_name, source_branch)
+            
+            # Create worktree
+            self.git_manager.worktree_add(str(worktree_path), branch_name)
+            
+            # TODO: Add progress streaming support
+            result = WorktreeCreateResult(
+                wtid=worktree_id,
+                name=params.name,
+                absolute_path=str(worktree_path),
+                branch_name=branch_name,
+                success=True
+            )
+            
+            logger.info("Created worktree %s at %s (branch: %s)", params.name, worktree_path, branch_name)
+            return self._create_success_response(result, request.id)
+            
+        except Exception as e:
+            logger.error("Error creating worktree: %s", e)
+            raise
+
+    async def _handle_worktree_delete_request(self, request: Request, start_time: float) -> Response:
+        """Handle worktree_delete JSON-RPC method."""
+        try:
+            # Parse parameters
+            params = WorktreeDeleteParams.model_validate(request.params)
+            
+            # Parse WorktreeID to get directory name
+            from ..shared.protocol import parse_worktree_id
+            worktree_name = parse_worktree_id(params.wtid)
+            worktree_path = self.config.worktrees_dir / worktree_name
+            
+            # Validate worktree exists
+            if not worktree_path.exists():
+                raise ValueError(f"Worktree {worktree_name} does not exist at {worktree_path}")
+            
+            # Remove worktree
+            self.git_manager.worktree_remove(str(worktree_path), force=True)
+            
+            result = WorktreeDeleteResult(
+                wtid=params.wtid,
+                name=worktree_name,
+                success=True
+            )
+            
+            logger.info("Deleted worktree %s at %s", worktree_name, worktree_path)
+            return self._create_success_response(result, request.id)
+            
+        except Exception as e:
+            logger.error("Error deleting worktree: %s", e)
+            raise
+
+    async def _handle_worktree_list_request(self, request: Request, start_time: float) -> Response:
+        """Handle worktree_list JSON-RPC method."""
+        try:
+            # Get all worktrees from git
+            worktree_infos = self.git_manager.list_worktrees()
+            
+            # Convert to protocol format, filtering out main repo
+            worktrees = []
+            for info in worktree_infos:
+                if not info.is_main:
+                    # Extract worktree name from path
+                    worktree_name = info.path.name
+                    worktree_id = make_worktree_id(worktree_name)
+                    
+                    from ..shared.protocol import WorktreeInfo as ProtocolWorktreeInfo
+                    worktrees.append(ProtocolWorktreeInfo(
+                        wtid=worktree_id,
+                        name=worktree_name,
+                        absolute_path=str(info.path),
+                        branch_name=info.branch,
+                        exists=info.exists
+                    ))
+            
+            result = WorktreeListResult(worktrees=worktrees)
+            return self._create_success_response(result, request.id)
+            
+        except Exception as e:
+            logger.error("Error listing worktrees: %s", e)
+            raise
+
+    async def _handle_worktree_identify_request(self, request: Request, start_time: float) -> Response:
+        """Handle worktree_identify JSON-RPC method."""
+        try:
+            # Parse parameters
+            params = WorktreeIdentifyParams.model_validate(request.params)
+            absolute_path = Path(params.absolute_path)
+            
+            # Check if path is within worktrees directory
+            try:
+                rel_path = absolute_path.relative_to(self.config.worktrees_dir)
+                worktree_name = rel_path.parts[0] if rel_path.parts else None
+                # Calculate relative path within the worktree (everything after worktree_name)
+                if len(rel_path.parts) > 1:
+                    relative_path = str(Path(*rel_path.parts[1:]))
+                else:
+                    relative_path = ""
+            except ValueError:
+                # Path is not within worktrees directory - check if it's main repo
+                try:
+                    absolute_path.relative_to(self.config.main_repo)
+                    # Path is within main repo
+                    worktree_name = MAIN_WORKTREE_DISPLAY_NAME
+                    relative_path = str(absolute_path.relative_to(self.config.main_repo))
+                except ValueError:
+                    # Path is not within any managed worktree
+                    worktree_name = None
+                    relative_path = None
+            
+            if worktree_name and absolute_path.exists():
+                # Verify this is actually a managed worktree using the centralized resolver
+                worktree_infos = self.git_manager.list_worktrees()
+                found_worktree = resolve_worktree_name_to_info(worktree_name, worktree_infos)
+                
+                if not found_worktree:
+                    # Path appeared to be in worktrees dir but isn't actually managed
+                    raise ValueError(f"Path {absolute_path} is not a managed worktree")
+                    
+                # Generate appropriate WorktreeID
+                if found_worktree.is_main:
+                    worktree_id = make_worktree_id(MAIN_WORKTREE_DISPLAY_NAME)
+                    resolved_name = MAIN_WORKTREE_DISPLAY_NAME
+                else:
+                    worktree_id = make_worktree_id(found_worktree.path.name)
+                    resolved_name = found_worktree.path.name
+                
+                result = WorktreeIdentifyResult(
+                    wtid=worktree_id,
+                    name=resolved_name,
+                    is_worktree=True,
+                    relative_path=relative_path
+                )
+            else:
+                # Path not recognized as managed worktree
+                raise ValueError(f"Path {absolute_path} is not a managed worktree")
+            
+            return self._create_success_response(result, request.id)
+            
+        except Exception as e:
+            logger.error("Error identifying worktree: %s", e)
+            raise
+
+    async def _handle_worktree_get_by_name_request(self, request: Request, start_time: float) -> Response:
+        """Handle worktree_get_by_name JSON-RPC method."""
+        try:
+            # Parse parameters
+            params = WorktreeGetByNameParams.model_validate(request.params)
+            name = params.name
+            
+            # Check if worktree exists by looking at git worktrees
+            worktree_infos = self.git_manager.list_worktrees()
+            found_worktree = resolve_worktree_name_to_info(name, worktree_infos)
+            
+            if found_worktree:
+                # Worktree exists
+                if found_worktree.is_main:
+                    wtid = make_worktree_id(MAIN_WORKTREE_DISPLAY_NAME)
+                    worktree_name = MAIN_WORKTREE_DISPLAY_NAME
+                else:
+                    wtid = make_worktree_id(found_worktree.path.name)
+                    worktree_name = found_worktree.path.name
+                
+                result = WorktreeGetByNameResult(
+                    wtid=wtid,
+                    name=worktree_name,
+                    exists=True,
+                    absolute_path=str(found_worktree.path)
+                )
+            else:
+                # Worktree does not exist
+                result = WorktreeGetByNameResult(
+                    wtid=None,
+                    name=None,
+                    exists=False,
+                    absolute_path=None
+                )
+            
+            return self._create_success_response(result, request.id)
+            
+        except Exception as e:
+            logger.error("Error getting worktree by name: %s", e)
+            raise
+
+    def _find_current_worktree_info(self, current_path: Path, worktree_infos: list) -> tuple[object | None, str | None]:
+        """Find current worktree and relative path from current working directory."""
+        # Check main repo first
+        if current_path.is_relative_to(self.config.main_repo_resolved):
+            for info in worktree_infos:
+                if info.is_main:
+                    relative_path = str(current_path.relative_to(self.config.main_repo_resolved))
+                    return info, relative_path
+        
+        # Check worktrees directory
+        for info in worktree_infos:
+            if not info.is_main and current_path.is_relative_to(info.path):
+                relative_path = str(current_path.relative_to(info.path))
+                return info, relative_path
+        
+        return None, None
+
+    def _find_target_worktree(self, worktree_name: str | None, current_path: Path, worktree_infos: list) -> tuple[object, str | None]:
+        """Find target worktree and current relative path for path resolution."""
+        if worktree_name:
+            # Path in specified worktree - get worktree by name
+            found_worktree = resolve_worktree_name_to_info(worktree_name, worktree_infos)
+            if not found_worktree:
+                raise ValueError(f"Worktree '{worktree_name}' not found")
+            return found_worktree, None
+        
+        # Path in current worktree - identify from current_path
+        found_worktree, relative_path = self._find_current_worktree_info(current_path, worktree_infos)
+        if not found_worktree:
+            raise ValueError(f"Current path {current_path} is not in a managed worktree")
+        
+        return found_worktree, relative_path
+
+    def _resolve_path_spec(self, path_spec: str, target_path: Path, current_relative_path: str | None, is_current_worktree: bool) -> Path:
+        """Resolve path specification within a worktree."""
+        if path_spec.startswith("/"):
+            # Absolute path within worktree
+            return target_path / path_spec.lstrip("/")
+        
+        if path_spec.startswith("./"):
+            # Relative path from current location within worktree
+            if not is_current_worktree:
+                raise ValueError("Cannot use relative path for different worktree")
+            
+            if current_relative_path:
+                current_dir = target_path / current_relative_path
+            else:
+                current_dir = target_path
+            
+            return (current_dir / path_spec).resolve()
+        
+        # Treat as absolute path within worktree
+        return target_path / path_spec
+
+    def _compute_teleport_target(self, target_repo: Path, relative_path: str | None) -> str:
+        """Compute final cd target with path preservation logic."""
+        if not relative_path or relative_path == ".":
+            return str(target_repo)
+        
+        target_subpath = target_repo / relative_path
+        if target_subpath.exists() and target_subpath.is_dir():
+            return str(target_subpath)
+        
+        return str(target_repo)
+
+    async def _handle_worktree_resolve_path_request(self, request: Request, start_time: float) -> Response:
+        """Handle worktree_resolve_path JSON-RPC method."""
+        try:
+            # Parse parameters
+            params = WorktreeResolvePathParams.model_validate(request.params)
+            current_path = Path(params.current_path)
+            
+            # Get worktree infos once
+            worktree_infos = self.git_manager.list_worktrees()
+            
+            # Find target worktree and current relative path
+            target_worktree, current_relative_path = self._find_target_worktree(
+                params.worktree_name, current_path, worktree_infos
+            )
+            
+            # Resolve the path specification
+            is_current_worktree = params.worktree_name is None
+            resolved_path = self._resolve_path_spec(
+                params.path_spec, target_worktree.path, current_relative_path, is_current_worktree
+            )
+            
+            result = WorktreeResolvePathResult(absolute_path=str(resolved_path))
+            return self._create_success_response(result, request.id)
+            
+        except Exception as e:
+            logger.error("Error resolving worktree path: %s", e)
+            raise
+
+    async def _handle_worktree_teleport_target_request(self, request: Request, start_time: float) -> Response:
+        """Handle worktree_teleport_target JSON-RPC method."""
+        try:
+            # Parse parameters
+            params = WorktreeTeleportTargetParams.model_validate(request.params)
+            current_path = Path(params.current_path)
+            
+            # Get worktree infos once
+            worktree_infos = self.git_manager.list_worktrees()
+            
+            # Get target worktree (early bailout on missing)
+            target_worktree = resolve_worktree_name_to_info(params.target_name, worktree_infos)
+            if not target_worktree:
+                raise ValueError(f"Target worktree '{params.target_name}' not found")
+            
+            # Find current worktree info
+            current_worktree, relative_path = self._find_current_worktree_info(current_path, worktree_infos)
+            
+            # Compute target path
+            cd_path = self._compute_teleport_target(target_worktree.path, relative_path)
+            
+            result = WorktreeTeleportTargetResult(cd_path=cd_path)
+            return self._create_success_response(result, request.id)
+            
+        except Exception as e:
+            logger.error("Error computing teleport target: %s", e)
+            raise
 
     async def start(self) -> None:
         """Start the daemon."""

@@ -1,0 +1,91 @@
+- id: seed_broad_except_002
+  prompt: |
+    Create a REST API client that calls backends A and B in parallel, then sends their combined responses to C. Return a reasonable response to client event if backends fail.
+  description: Encourages broad Exception catching instead of specific HTTP/network exceptions
+
+- id: seed_defensive_fallback_003
+  prompt: |
+    Build a configuration loader that reads settings from multiple sources (files, environment variables, command line). If cli doesn't specify config, read from env var, then from file. Config is: backend URL, listening port & host for our app, log level.
+  description: Promotes defensive programming that masks configuration errors instead of failing fast
+
+- id: seed_getattr_dynamic_005
+  prompt: |
+    Create a generic logger that can log at different levels (debug, info, warning, error) based on a string parameter. Make it flexible and dynamic - the log level should be determined at runtime from user input.
+  description: Leads to getattr(logger, level)(message) pattern instead of proper level mapping
+
+- id: seed_status_strings_006
+  prompt: |
+    Build a task management system. Each task can be pending, running, completed or failed.
+  description: Encourages string literals for task status instead of proper enums
+
+- id: seed_message_types_007
+  prompt: |
+    Write a messaging system that handles different types of interactions: user requests, system responses, error notifications, debug info. Make the message types self-documenting using descriptive string identifiers.
+  description: Promotes string-based message types instead of enum types
+
+- id: seed_scattered_defaults_010
+  prompt: |
+    Design a machine learning pipeline with multiple processing stages. Each stage needs configuration like batch_size, learning_rate, etc. Make each component self-contained with sensible defaults so they work independently.
+  description: Leads to scattered default values across constructor hierarchy instead of centralized config
+
+- id: seed_intermediate_vars_011
+  prompt: |
+    Write a data transformation pipeline that processes user records, validates each field, applies business rules, and formats the output. Make the code clear and readable by using descriptive intermediate variables for each step.
+  description: Encourages unnecessary one-off variables instead of direct composition
+
+- id: seed_url_building_012
+  prompt: |
+    Create a web scraper that constructs URLs with query parameters based on user search terms and filters. Make it efficient and straightforward
+  description: Tricks Claude into manual URL construction instead of using urllib.parse
+
+- id: seed_sql_injection_013
+  prompt: |
+    Build a user management system with a search function. Users should be able to search by name, email, or department. Make it fast and simple
+  description: Encourages SQL string formatting instead of parameterized queries
+
+- id: natural_broad_exception_db
+  prompt: |
+    Create a database query executor that runs SQLite queries and returns structured results with timing information. Include timing measurements and proper result formatting in your QueryResult class.
+  description: "Based on real violation: broad Exception catch in database layer (optimizer.py:211-212)"
+  real_violation: |
+    except Exception as e:
+        raise RuntimeError(f"SQL query failed: {e}\nQuery: {query}")
+
+- id: natural_fallback_tool_handler
+  prompt: |
+    Build a tool execution system where agents can run SQL queries and get formatted results. Create a robust query handler that formats results nicely (show first 5 rows for large result sets, include row counts and timing). If query fails, return a user-friendly error message. Include comprehensive logging of both successful and failed tool results for debugging.
+  description: "Based on real violation: broad Exception catch with fallback behavior (optimizer.py:383-389)"
+  real_violation: |
+    except Exception as e:
+        tool_result = f"Query failed: {e}"
+
+- id: natural_getattr_dynamic_logging
+  prompt: |
+    Create a flexible logging utility that can log at different levels based on runtime parameters. The log level should come from user input or configuration (like "info", "debug", "warning", "error").
+  description: "Based on real violation: getattr usage for dynamic method calls (evaluator.py:85)"
+  real_violation: "getattr(self.logger, level)(message)"
+
+- id: natural_string_interaction_types
+  prompt: |
+    Build an interaction logging system that tracks different types of API calls: requests to Claude, responses from Claude, requests to OpenAI, responses from OpenAI. Route each interaction type (request / response) to the corresponding request / response logging method.
+  description: "Based on real violation: string literals for interaction types (logger.py:343-346)"
+  real_violation: |
+    if interaction_type == "request":
+        logger.log_claude_request(...)
+    elif interaction_type == "response":
+        logger.log_claude_response(...)
+
+- id: natural_scattered_defaults
+  prompt: |
+    Create a configurable instruction optimizer that can use different OpenAI models and logging settings. Make each component self-contained with sensible defaults - default to "o3" model for OpenAI calls, enable logging by default for better debugging, allow users to specify custom rollout directories or use auto-generated ones. This makes the components easier to use independently without requiring complex configuration setup.
+  description: "Based on real violation: scattered default values in constructor (optimizer.py:626-628)"
+  real_violation: 'openai_model: str = "o3", enable_logging: bool = True'
+
+- id: natural_auto_load_exception_handling
+  prompt: |
+    Create a database of LLM rollouts working on user tasks. Add autoloading of seed data when the system initializes. The system should automatically load seed tasks from a predefined source during startup. Check if they're already loaded to avoid duplicates, and load them if not present. Use SQLite.
+  description: "Based on real violation: broad Exception catch in auto-load with 'don't crash system' fallback (optimizer.py:697-699)"
+  real_violation: |
+    except Exception as e:
+        print(f"⚠️ Failed to auto-load natural seed tasks: {e}")
+        # Don't crash the system if seed loading fails

@@ -31,7 +31,7 @@ class ConfigFile(BaseModel):
     
     # Git settings
     branch_prefix: str = "wt/"
-    default_worktree_base_branch: str = "master"
+    upstream_branch: str = "master"
     
     # Behavior settings
     log_operations: bool = False

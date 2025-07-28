@@ -6,7 +6,7 @@ from colorama import Style
 from tabulate import tabulate
 
 from ..shared.constants import FILE_DISPLAY_LIMIT
-from ..shared.git_interface import WorktreeStatus
+from ..shared.protocol import StatusResult
 from ..shared.github_models import PRInfo, PRState, PRStatus
 
 # PR status display mapping - moved from formatters.py
@@ -72,28 +72,22 @@ class ViewFormatter:
             return pr_state.value.lower()
 
     def format_status_row(
-        self, name: str, status: WorktreeStatus, pr_info: PRInfo | None, name_width: int = 22
+        self, name: str, status: StatusResult, pr_info: PRInfo | None, name_width: int = 22
     ) -> str:
         """Format a status row with nice alignment."""
-        if status.error:
-            return f"{name:<{name_width}} ❌ Error: {status.error}"
-
         # Commit hash - vertically aligned column
-        commit_short = status.commit_info.last_commit if status.commit_info else "????????"
+        commit_short = status.commit_info.short_hash if status.commit_info else "????????"
 
         # Ahead/behind status with light colors, aligned around center point
-        sync_status = format_sync_status(status.ahead, status.behind)
+        sync_status = format_sync_status(status.ahead_count, status.behind_count)
 
         # Working directory status
-        dirty_count = len(status.dirty_files)
-        untracked_count = len(status.untracked_files)
-
-        if dirty_count > 0 or untracked_count > 0:
+        if status.has_dirty_files or status.has_untracked_files:
             changes = []
-            if dirty_count > 0:
-                changes.append(f"M{dirty_count}")
-            if untracked_count > 0:
-                changes.append(f"?{untracked_count}")
+            if status.has_dirty_files:
+                changes.append("M")
+            if status.has_untracked_files:
+                changes.append("?")
             work_status = "+".join(changes)
         else:
             work_status = "clean"
@@ -134,35 +128,32 @@ class ViewFormatter:
         else:
             click.echo("No worktrees found")
 
-    def _get_commit_column(self, status: WorktreeStatus) -> str:
+    def _get_commit_column(self, status: StatusResult) -> str:
         """Get commit hash column."""
-        return status.commit_info.last_commit[:8] if status.commit_info else "????????"
+        return status.commit_info.short_hash if status.commit_info else "????????"
 
-    def _get_sync_column(self, status: WorktreeStatus) -> str:
+    def _get_sync_column(self, status: StatusResult) -> str:
         """Get ahead/behind sync status column."""
         parts = []
-        if status.behind > 0:
-            parts.append(f"↓{status.behind}")
-        if status.ahead > 0:
-            parts.append(f"↑{status.ahead}")
+        if status.behind_count > 0:
+            parts.append(f"↓{status.behind_count}")
+        if status.ahead_count > 0:
+            parts.append(f"↑{status.ahead_count}")
         return "+".join(parts) if parts else ""
 
-    def _get_work_status_column(self, status: WorktreeStatus) -> str:
+    def _get_work_status_column(self, status: StatusResult) -> str:
         """Get working directory status column."""
-        dirty_count = len(status.dirty_files)
-        untracked_count = len(status.untracked_files)
-
-        if dirty_count > 0 or untracked_count > 0:
+        if status.has_dirty_files or status.has_untracked_files:
             changes = []
-            if dirty_count > 0:
-                changes.append(f"M{dirty_count}")
-            if untracked_count > 0:
-                changes.append(f"?{untracked_count}")
+            if status.has_dirty_files:
+                changes.append("M")
+            if status.has_untracked_files:
+                changes.append("?")
             return "+".join(changes)
         else:
             return "clean"
 
-    def _get_pr_link_column(self, status: WorktreeStatus) -> str:
+    def _get_pr_link_column(self, status: StatusResult) -> str:
         """Get PR link column."""
         if not (status.pr_info and status.pr_info.github_pr):
             return ""
@@ -171,7 +162,7 @@ class ViewFormatter:
         pr_number = pr["number"]
         return self.make_hyperlink(f"http://go/pull/{pr_number}", f"#{pr_number}")
 
-    def _get_pr_status_column(self, status: WorktreeStatus) -> str:
+    def _get_pr_status_column(self, status: StatusResult) -> str:
         """Get PR status text column."""
         if not (status.pr_info and status.pr_info.github_pr):
             return ""
@@ -182,7 +173,7 @@ class ViewFormatter:
             pr_state, pr.get("mergeable"), pr.get("draft", False), pr.get("merged_at")
         )
 
-    def _get_pr_changes_column(self, status: WorktreeStatus) -> str:
+    def _get_pr_changes_column(self, status: StatusResult) -> str:
         """Get PR changes (+lines/-lines) column."""
         if not (status.pr_info and status.pr_info.github_pr):
             return ""
@@ -192,7 +183,7 @@ class ViewFormatter:
             return f"+{pr['additions']}/-{pr['deletions']}"
         return ""
 
-    def render_worktree_status_all(self, sorted_items: list[tuple[str, WorktreeStatus]]) -> None:
+    def render_worktree_status_all(self, sorted_items: list[tuple[str, StatusResult]]) -> None:
         if not sorted_items:
             click.echo("🤷 No worktrees found")
             return
@@ -200,10 +191,6 @@ class ViewFormatter:
         # Build table data
         table_data = []
         for name, status in sorted_items:
-            if status.error:
-                table_data.append([name, "❌ Error: " + status.error, "", ""])
-                continue
-
             # Build PR info as a single combined column if it exists
             pr_info = ""
             pr_link = self._get_pr_link_column(status)
@@ -229,39 +216,26 @@ class ViewFormatter:
         click.echo(tabulate(table_data, tablefmt="plain"))
 
     def render_worktree_status_single(
-        self, worktree_name: str, status: WorktreeStatus, pr_info: PRInfo | None
+        self, worktree_name: str, status: StatusResult, pr_info: PRInfo | None
     ) -> None:
-        if status.error:
-            click.echo(f"❌ Error: {status.error}")
-            return
-
         click.echo(f"📊 Status for worktree: {worktree_name}")
         click.echo(f"🔄 {self.format_status_row(worktree_name, status, pr_info)}")
 
         # Show recent commit details
         if status.commit_info:
-            click.echo(f"💬 Last commit: {status.commit_info.last_commit_message}")
+            click.echo(f"💬 Last commit: {status.commit_info.message}")
             click.echo(
-                f"👤 Author: {status.commit_info.last_commit_author} ({status.commit_info.format_date()})"
+                f"👤 Author: {status.commit_info.author} ({status.commit_info.date})"
             )
         else:
             click.echo("💬 Last commit: (unknown)")
             click.echo("👤 Author: (unknown)")
 
-        # Show file details if there are changes
-        if status.dirty_files:
-            click.echo("📝 Modified files:")
-            for file_status in status.dirty_files[:FILE_DISPLAY_LIMIT]:
-                click.echo(f"   {file_status}")
-            if len(status.dirty_files) > FILE_DISPLAY_LIMIT:
-                click.echo(f"   ... and {len(status.dirty_files) - FILE_DISPLAY_LIMIT} more")
-
-        if status.untracked_files:
-            click.echo("❓ Untracked files:")
-            for file_name in status.untracked_files[:FILE_DISPLAY_LIMIT]:
-                click.echo(f"   ?? {file_name}")
-            if len(status.untracked_files) > FILE_DISPLAY_LIMIT:
-                click.echo(f"   ... and {len(status.untracked_files) - FILE_DISPLAY_LIMIT} more")
+        # Show file status flags (detailed file lists not available in protocol)
+        if status.has_dirty_files:
+            click.echo("📝 Has modified files")
+        if status.has_untracked_files:
+            click.echo("❓ Has untracked files")
 
         # Show PR details if available
         if pr_info and pr_info.github_pr:

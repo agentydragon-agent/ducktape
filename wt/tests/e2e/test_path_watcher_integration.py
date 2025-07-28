@@ -43,7 +43,7 @@ def create_test_repo_and_config():
     config_content = f"""main_repo: "{repo_path}"
 worktrees_dir: "{worktrees_dir}"
 branch_prefix: "test/"
-default_worktree_base_branch: "HEAD"
+upstream_branch: "HEAD"
 log_operations: false
 cow_method: "copy"
 github_enabled: false

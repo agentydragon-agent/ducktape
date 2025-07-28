@@ -6,6 +6,7 @@ Consider using PyGithub or the official GitHub API client.
 """
 
 import os
+import subprocess
 from typing import List
 
 from github import Github
@@ -39,13 +40,18 @@ class GitHubInterface:
         token = token or os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
         if not token:
             try:
-                import subprocess
-
                 token = subprocess.run(
                     ["gh", "auth", "token"], capture_output=True, text=True, check=True
                 ).stdout.strip()
-            except Exception:
+            except (FileNotFoundError, subprocess.CalledProcessError):
+                # Expected cases: gh not installed or not authenticated
                 token = None
+            except subprocess.TimeoutExpired:
+                # Command hung - this is unexpected, let caller handle it
+                raise RuntimeError("GitHub CLI command timed out")
+            except (OSError, PermissionError) as e:
+                # Unexpected system errors that should be visible
+                raise RuntimeError(f"Failed to execute GitHub CLI: {e}")
         self.github_repo = github_repo
         self._gh = Github(token) if token else Github()
         self._repo = None  # Lazy initialization

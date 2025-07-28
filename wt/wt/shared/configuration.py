@@ -38,7 +38,7 @@ class Configuration:
     main_repo: Path
     worktrees_dir: Path
     branch_prefix: str
-    default_worktree_base_branch: str
+    upstream_branch: str
     github_repo: str
     github_enabled: bool
     log_operations: bool
@@ -136,7 +136,7 @@ class Configuration:
             main_repo=main_repo,
             worktrees_dir=worktrees_dir,
             branch_prefix=config_file.branch_prefix,
-            default_worktree_base_branch=config_file.default_worktree_base_branch,
+            upstream_branch=config_file.upstream_branch,
             github_repo=config_file.github_repo,
             github_enabled=config_file.github_enabled,
             log_operations=config_file.log_operations,

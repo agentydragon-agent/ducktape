@@ -6,14 +6,30 @@ between clients and the GitStatusd multiplexing daemon.
 
 import json
 import uuid
+from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, NewType, Optional, Union
 
 from pydantic import BaseModel, Field
 
-from ..shared.github_models import PRInfo
+from .github_models import PRInfo
+from .models import CommitInfo
+
+
+# WorktreeID: Deliberately scrambled identifier to prevent accidental misuse
+WorktreeID = NewType('WorktreeID', str)  # Format: 'wtid:<dirname>'
+
+
+# make_worktree_id moved to server-only module to prevent client access
+
+
+def parse_worktree_id(wtid: WorktreeID) -> str:
+    """Extract directory name from worktree ID."""
+    if not wtid.startswith("wtid:"):
+        raise ValueError(f"Invalid worktree ID format: {wtid}")
+    return wtid[5:]  # Remove 'wtid:' prefix
 
 
 class DaemonHealthStatus(str, Enum):
@@ -51,7 +67,18 @@ class Response(BaseModel):
     model_config = {"extra": "forbid"}
 
     jsonrpc: str = "2.0"
-    result: Union["StatusResponse", "PingResult", str] = Field(..., description="Result data")
+    result: Union[
+        "StatusResponse", 
+        "PingResult", 
+        "WorktreeCreateResult",
+        "WorktreeDeleteResult", 
+        "WorktreeListResult",
+        "WorktreeIdentifyResult",
+        "WorktreeGetByNameResult",
+        "WorktreeResolvePathResult",
+        "WorktreeTeleportTargetResult",
+        str
+    ] = Field(..., description="Result data")
     id: uuid.UUID = Field(..., description="Request ID from original request")
 
 
@@ -93,10 +120,63 @@ class StatusParams(BaseModel):
 
     model_config = {"extra": "forbid"}
 
-    worktree_paths: List[Path] = Field(
+    worktree_ids: List[WorktreeID] = Field(
         default_factory=list,
-        description="List of absolute paths to worktree directories. If empty, returns all discovered worktrees.",
+        description="List of worktree IDs. If empty, returns all discovered worktrees.",
     )
+
+
+class WorktreeCreateParams(BaseModel):
+    """Parameters for worktree creation."""
+
+    model_config = {"extra": "forbid"}
+
+    name: str = Field(..., description="Simple worktree name (no slashes)")
+    source_branch: Optional[str] = Field(None, description="Source branch for copying")
+
+
+class WorktreeDeleteParams(BaseModel):
+    """Parameters for worktree deletion."""
+
+    model_config = {"extra": "forbid"}
+
+    wtid: WorktreeID = Field(..., description="Worktree identifier to delete")
+    force: bool = Field(default=False, description="Force deletion")
+
+
+class WorktreeIdentifyParams(BaseModel):
+    """Parameters for worktree identification."""
+
+    model_config = {"extra": "forbid"}
+
+    absolute_path: str = Field(..., description="Absolute filesystem path")
+
+
+class WorktreeGetByNameParams(BaseModel):
+    """Parameters for worktree lookup by name."""
+
+    model_config = {"extra": "forbid"}
+
+    name: str = Field(..., description="Worktree name to look up")
+
+
+class WorktreeResolvePathParams(BaseModel):
+    """Parameters for path resolution within worktrees."""
+
+    model_config = {"extra": "forbid"}
+
+    worktree_name: Optional[str] = Field(default=None, description="Target worktree name, or None for current")
+    path_spec: str = Field(..., description="Path to resolve (/, ./, or unprefixed)")
+    current_path: str = Field(..., description="Current working directory for relative resolution")
+
+
+class WorktreeTeleportTargetParams(BaseModel):
+    """Parameters for computing cd target with path preservation."""
+
+    model_config = {"extra": "forbid"}
+
+    target_name: str = Field(..., description="Target worktree name")
+    current_path: str = Field(..., description="Current working directory")
 
 
 # Method result schemas
@@ -113,9 +193,10 @@ class CommitInfo(BaseModel):
 class StatusResult(BaseModel):
     """Result for individual worktree status."""
 
-    worktree_path: str = Field(..., description="Path that was queried")
-    worktree_name: str = Field(..., description="Name of the worktree")
-    branch: str = Field(..., description="Branch name")
+    wtid: WorktreeID = Field(..., description="Worktree identifier")
+    name: str = Field(..., description="Human-readable name")
+    absolute_path: str = Field(..., description="Absolute filesystem path")
+    branch_name: str = Field(..., description="Git branch name")
     has_dirty_files: bool = Field(..., description="Whether there are modified files")
     has_untracked_files: bool = Field(..., description="Whether there are untracked files")
     processing_time_ms: float = Field(..., description="Processing time in milliseconds")
@@ -125,9 +206,10 @@ class StatusResult(BaseModel):
     is_cached: bool = Field(default=False, description="Whether this result came from cache")
     # Commit and branch info
     commit_info: CommitInfo = Field(..., description="Latest commit information")
-    ahead_count: int = Field(default=0, description="Number of commits ahead of default branch")
-    behind_count: int = Field(default=0, description="Number of commits behind default branch")
+    ahead_count: int = Field(default=0, description="Number of commits ahead of upstream branch")
+    behind_count: int = Field(default=0, description="Number of commits behind upstream branch")
     is_main: bool = Field(default=False, description="Whether this is the main repository")
+    upstream_branch: str = Field(..., description="Upstream branch name for ahead/behind calculations")
     # GitHub PR info
     pr_info: Optional[PRInfo] = Field(
         default=None, description="GitHub pull request information if available"
@@ -137,13 +219,13 @@ class StatusResult(BaseModel):
 class StatusResponse(BaseModel):
     """Unified response for get_status method (always returns results for multiple worktrees)."""
 
-    results: Dict[str, StatusResult] = Field(
-        ..., description="Map of worktree path to status results"
+    results: Dict[WorktreeID, StatusResult] = Field(
+        ..., description="Map of worktree ID to status results"
     )
     total_processing_time_ms: float = Field(
         ..., description="Total processing time in milliseconds"
     )
-    individual_processing_times_ms: Dict[str, float] = Field(
+    individual_processing_times_ms: Dict[WorktreeID, float] = Field(
         default_factory=dict, description="Detailed processing time per worktree"
     )
     discovery_time_ms: float = Field(default=0.0, description="Time spent on worktree discovery")
@@ -166,6 +248,80 @@ class PingResult(BaseModel):
     )
 
 
+class WorktreeInfo(BaseModel):
+    """Information about a worktree."""
+
+    wtid: WorktreeID = Field(..., description="Worktree identifier")
+    name: str = Field(..., description="Human-readable name")
+    absolute_path: str = Field(..., description="Absolute filesystem path")
+    branch_name: str = Field(..., description="Git branch name")
+    exists: bool = Field(..., description="Whether directory exists")
+    is_main: bool = Field(..., description="Whether this is main repo")
+
+
+class WorktreeCreateResult(BaseModel):
+    """Result for worktree creation."""
+
+    wtid: WorktreeID = Field(..., description="Created worktree ID")
+    name: str = Field(..., description="Human-readable name")
+    absolute_path: str = Field(..., description="Absolute filesystem path")
+    branch_name: str = Field(..., description="Git branch name")
+    success: bool = Field(..., description="Operation success")
+
+
+class WorktreeDeleteResult(BaseModel):
+    """Result for worktree deletion."""
+
+    wtid: WorktreeID = Field(..., description="Deleted worktree ID")
+    success: bool = Field(..., description="Deletion success")
+    message: str = Field(..., description="Operation message")
+
+
+class WorktreeListResult(BaseModel):
+    """Result for worktree listing."""
+
+    worktrees: List[WorktreeInfo] = Field(..., description="List of worktrees")
+
+
+class WorktreeIdentifyResult(BaseModel):
+    """Result for worktree identification."""
+
+    wtid: Optional[WorktreeID] = Field(..., description="Worktree ID if identified")
+    name: Optional[str] = Field(..., description="Human-readable name if identified")
+    is_worktree: bool = Field(..., description="Whether path is a managed worktree")
+    relative_path: Optional[str] = Field(..., description="Relative path within worktree if identified")
+
+
+class WorktreeGetByNameResult(BaseModel):
+    """Result for worktree lookup by name."""
+
+    wtid: Optional[WorktreeID] = Field(..., description="Worktree ID if found")
+    name: Optional[str] = Field(..., description="Human-readable name if found")
+    exists: bool = Field(..., description="Whether worktree exists")
+    absolute_path: Optional[str] = Field(..., description="Absolute path if found")
+
+
+class WorktreeResolvePathResult(BaseModel):
+    """Result for path resolution within worktrees."""
+
+    absolute_path: str = Field(..., description="Resolved absolute filesystem path")
+
+
+class WorktreeTeleportTargetResult(BaseModel):
+    """Result for teleport target computation."""
+
+    cd_path: str = Field(..., description="Path to cd to (preserves relative position if possible)")
+
+
+class ProgressUpdate(BaseModel):
+    """Progress update for streaming operations."""
+
+    operation: str = Field(..., description="Operation name")
+    step: str = Field(..., description="Current step")
+    progress: float = Field(..., description="Progress 0.0-1.0")
+    message: str = Field(..., description="Progress message")
+
+
 def create_error_response(
     code: int, message: str, request_id: Union[uuid.UUID, None] = None, data: Any = None
 ) -> ErrorResponse:
@@ -185,7 +341,19 @@ def parse_request(data: str) -> Request:
 
 # Method registry for type safety
 SUPPORTED_METHODS = {
+    # Existing methods
     "get_status": (StatusParams, StatusResponse),
     "ping": (None, PingResult),  # No parameters
     "shutdown": (None, str),  # No parameters, simple string response
+    
+    # New worktree operations
+    "worktree_create": (WorktreeCreateParams, WorktreeCreateResult),
+    "worktree_delete": (WorktreeDeleteParams, WorktreeDeleteResult),
+    "worktree_list": (None, WorktreeListResult),  # No parameters
+    "worktree_identify": (WorktreeIdentifyParams, WorktreeIdentifyResult),
+    "worktree_get_by_name": (WorktreeGetByNameParams, WorktreeGetByNameResult),
+    "worktree_resolve_path": (WorktreeResolvePathParams, WorktreeResolvePathResult),
+    "worktree_teleport_target": (WorktreeTeleportTargetParams, WorktreeTeleportTargetResult),
 }
+
+

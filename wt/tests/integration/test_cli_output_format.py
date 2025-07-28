@@ -8,9 +8,34 @@ import pytest
 from click.testing import CliRunner
 
 from wt.cli import main
-from wt.shared.git_interface import WorktreeStatus
+from wt.shared.protocol import StatusResult, StatusResponse, WorktreeID, CommitInfo
 from wt.shared.github_models import PRData, PRInfo, PRState
-from wt.shared.models import CommitInfo
+
+
+def create_test_status_response(results_dict=None):
+    """Helper to create StatusResponse for testing."""
+    if results_dict is None:
+        results_dict = {}
+    
+    return StatusResponse(
+        results=results_dict,
+        total_processing_time_ms=sum(r.processing_time_ms for r in results_dict.values()) if results_dict else 0.0,
+        daemon_health={
+            "status": "ok",
+            "last_error": None,
+            "last_error_time": None,
+            "github_errors": 0,
+            "gitstatusd_errors": 0,
+        },
+    )
+
+
+def run_cli_with_mocked_status(cli_runner, temp_config_file, status_response, cli_args):
+    """Helper to run CLI with mocked status response and proper environment setup."""
+    with patch.dict("os.environ", {"WT_DIR": str(temp_config_file.parent)}), \
+         patch("wt.client.daemon_client.GitStatusdDaemonClient.get_status") as mock_get_status:
+        mock_get_status.return_value = status_response
+        return cli_runner.invoke(main, cli_args)
 
 
 @pytest.mark.integration
@@ -19,82 +44,106 @@ class TestCLIOutputFormat:
         self,
         cli_runner: CliRunner,
         temp_config_file,
-        sample_worktree_status,
-        sample_worktree_status_with_changes,
     ):
         """Test that the status table renders correctly with real formatting."""
         # Create status data
         commit_info = CommitInfo(
-            last_commit="abc12345",
-            last_commit_message="Add new feature",
-            last_commit_author="Test Author",
-            last_commit_date=datetime(2024, 1, 15, 10, 30, 0),
+            hash="abcdef1234567890abcdef1234567890abcdef12",
+            short_hash="abcdef12",
+            message="Add new feature",
+            author="Test Author",
+            date="2024-01-15T10:30:00",
         )
 
-        status_dict = {
-            "main": WorktreeStatus(
+        # Create test results
+        results = {
+            WorktreeID("wtid:main"): StatusResult(
+                wtid=WorktreeID("wtid:main"),
                 name="main",
-                branch="master",
-                ahead=2,
-                behind=0,
-                dirty_files=["file1.py", "file2.py"],
-                untracked_files=["new_file.py"],
-                default_branch="master",
+                absolute_path="/test/main",
+                branch_name="master",
+                has_dirty_files=True,
+                has_untracked_files=True,
+                processing_time_ms=10.0,
+                last_updated_at=datetime.now(),
                 commit_info=commit_info,
+                ahead_count=2,
+                behind_count=0,
+                is_main=True,
+                upstream_branch="master",
             ),
-            "feature-branch": sample_worktree_status,
-            "error-branch": WorktreeStatus(
-                name="error-branch",
-                branch="test/error-branch",
-                ahead=0,
-                behind=0,
-                dirty_files=[],
-                untracked_files=[],
-                default_branch="master",
-                commit_info=None,
-                error="Stale worktree: branch was deleted",
+            WorktreeID("wtid:feature-branch"): StatusResult(
+                wtid=WorktreeID("wtid:feature-branch"),
+                name="feature-branch",
+                absolute_path="/test/feature-branch",
+                branch_name="feature/test",
+                has_dirty_files=False,
+                has_untracked_files=False,
+                processing_time_ms=8.0,
+                last_updated_at=datetime.now(),
+                commit_info=commit_info,
+                ahead_count=1,
+                behind_count=0,
+                is_main=False,
+                upstream_branch="master",
             ),
         }
+        
+        status_response = create_test_status_response(results)
+        result = run_cli_with_mocked_status(cli_runner, temp_config_file, status_response, ["sh"])
 
-        with patch(
-            "wt.client.daemon_client.GitStatusdDaemonClient.get_all_worktree_status"
-        ) as mock_get_status:
-            mock_get_status.return_value = status_dict
-            result = cli_runner.invoke(main, ["sh"])
-
+        print("Exit code:", result.exit_code)
+        print("Output:", repr(result.output))
+        print("Exception:", result.exception if result.exception else "None")
         assert result.exit_code == 0
         output = result.output
-        print("Actual output:")
-        print(repr(output))
 
         # Verify content appears in output
         assert "main" in output
         assert "feature-branch" in output
-        assert "error-branch" in output
 
     def test_list_worktrees_empty(self, cli_runner: CliRunner, temp_config_file):
         """Test ls command with no worktrees."""
-        with patch(
-            "wt.client.daemon_client.GitStatusdDaemonClient.get_all_worktree_status"
-        ) as mock_get_status:
-            mock_get_status.return_value = {}
-            result = cli_runner.invoke(main, ["sh", "ls"])
+        status_response = create_test_status_response({})
+        result = run_cli_with_mocked_status(cli_runner, temp_config_file, status_response, ["sh", "ls"])
 
         assert result.exit_code == 0
         assert "No worktrees found" in result.output
 
     def test_list_worktrees_with_data(
-        self, cli_runner: CliRunner, temp_config_file, populated_worktree_status
+        self, cli_runner: CliRunner, temp_config_file
     ):
         """Test ls command with actual worktree data."""
-        with patch(
-            "wt.client.daemon_client.GitStatusdDaemonClient.get_all_worktree_status"
-        ) as mock_get_status:
-            mock_get_status.return_value = populated_worktree_status
-            result = cli_runner.invoke(main, ["sh", "ls"])
+        # Create test results
+        results = {
+            WorktreeID("wtid:test1"): StatusResult(
+                wtid=WorktreeID("wtid:test1"),
+                name="test1",
+                absolute_path="/test/test1",
+                branch_name="test/test1",
+                has_dirty_files=False,
+                has_untracked_files=False,
+                processing_time_ms=5.0,
+                last_updated_at=datetime.now(),
+                commit_info=CommitInfo(
+                    hash="abc123",
+                    short_hash="abc123",
+                    message="Test commit",
+                    author="Test Author",
+                    date="2024-01-01T00:00:00",
+                ),
+                ahead_count=0,
+                behind_count=0,
+                is_main=False,
+                upstream_branch="master",
+            ),
+        }
+        
+        status_response = create_test_status_response(results)
+        result = run_cli_with_mocked_status(cli_runner, temp_config_file, status_response, ["sh", "ls"])
 
         assert result.exit_code == 0
-        # Should show some worktree content - the exact names depend on the fixture
+        # Should show some worktree content
         assert len(result.output.strip()) > 0
 
     def test_help_command(self, cli_runner: CliRunner, temp_config_file):

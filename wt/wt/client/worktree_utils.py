@@ -4,7 +4,7 @@ import os
 import shlex
 from pathlib import Path
 
-from ..shared.git_interface import GitInterface
+# GitInterface no longer needed - using RPC calls instead
 
 
 def get_worktree_path(config, name: str) -> Path:
@@ -107,80 +107,67 @@ def emit_cd_command(dest_repo: Path, config) -> None:
     emit_command(f"cd {shlex.quote(str(dest_path))}")
 
 
-def create_worktree(
+async def create_worktree(
     config, name: str, source_worktree: Path | None = None, from_default: bool = True
 ) -> Path:
-    """Create a new worktree."""
-    from ..server.git_manager import GitRepositoryManager
+    """Create a new worktree via RPC."""
     from ..shared.error_handling import validate_worktree_name
+    from .daemon_client import GitStatusdDaemonClient
 
     validate_worktree_name(name)
 
-    target_path = config.worktrees_dir_resolved / name
-
-    if target_path.exists():
-        raise RuntimeError(f"Worktree '{name}' already exists")
-
-    # Create git interface
-    git = GitInterface(config.main_repo_resolved, config.github_repo)
-    manager = GitRepositoryManager()
+    # Create daemon client
+    daemon_client = GitStatusdDaemonClient(config)
 
     if source_worktree:
-        # Copy from existing worktree
-        if not source_worktree.exists():
-            raise RuntimeError(f"Source worktree does not exist: {source_worktree}")
-
-        # Get the branch of the source worktree
+        # Copy from existing worktree - identify the source worktree to get its branch
         try:
-            # Find the branch for this worktree path
-            worktree_list = git.parse_worktree_list(git.worktree_list())
-            source_branch = None
-            for wt_path, wt_branch in worktree_list:
-                if wt_path.resolve() == source_worktree.resolve() and wt_branch:
-                    source_branch = wt_branch
-                    break
-
-            if not source_branch:
-                raise RuntimeError(
-                    f"Cannot determine branch for source worktree: {source_worktree}"
-                )
-
-            # Create new branch from source
-            new_branch = f"{config.branch_prefix}{name}"
-            git.branch_create(new_branch, source_branch)
-            git.worktree_add(str(target_path), new_branch)
+            identify_result = await daemon_client.identify_worktree(str(source_worktree))
+            source_branch = identify_result.branch_name
+            
+            # Create worktree via RPC with source branch
+            result = await daemon_client.create_worktree(name, source_branch=source_branch)
+            return Path(result.absolute_path)
+            
         except Exception as e:
             raise RuntimeError(f"Failed to copy worktree: {e}") from e
     else:
-        # Create from master/default branch
+        # Create from default branch or HEAD
         try:
-            # Get the default branch
-            default_branch = manager.get_default_branch(config.main_repo_resolved)
-            new_branch = f"{config.branch_prefix}{name}"
-
-            if from_default:
-                git.branch_create(new_branch, config.default_worktree_base_branch)
-            else:
-                git.branch_create(new_branch, "HEAD")
-
-            git.worktree_add(str(target_path), new_branch)
+            source_branch = config.upstream_branch if from_default else "HEAD"
+            result = await daemon_client.create_worktree(name, source_branch=source_branch)
+            return Path(result.absolute_path)
+            
         except Exception as e:
             raise RuntimeError(f"Failed to create worktree: {e}") from e
 
-    return target_path
-
 
 async def remove_worktree(config, name: str, force: bool = False) -> None:
-    """Remove a worktree."""
-    worktree_path = config.worktrees_dir_resolved / name
-    if not worktree_path.exists():
-        raise RuntimeError(f"Worktree '{name}' does not exist at {worktree_path}")
+    """Remove a worktree via RPC."""
+    from .daemon_client import GitStatusdDaemonClient 
 
-    # Create git interface
-    git = GitInterface(config.main_repo_resolved, config.github_repo)
+    # Create daemon client
+    daemon_client = GitStatusdDaemonClient(config)
 
     try:
-        # Use git worktree remove
-        git.worktree_remove(str(worktree_path), force=force)
+        # Get WorktreeID from server by listing all worktrees and finding the match
+        worktree_list = await daemon_client.list_worktrees()
+        
+        # Find the worktree by name
+        target_wtid = None
+        for worktree in worktree_list.worktrees:
+            if worktree.name == name:
+                target_wtid = worktree.wtid
+                break
+        
+        if target_wtid is None:
+            raise RuntimeError(f"Worktree '{name}' not found")
+        
+        # Delete via RPC using server-provided WorktreeID
+        result = await daemon_client.delete_worktree(target_wtid)
+        
+        if not result.success:
+            raise RuntimeError(f"Failed to remove worktree '{name}'")
+            
     except Exception as e:
         raise RuntimeError(f"Failed to remove worktree: {e}") from e

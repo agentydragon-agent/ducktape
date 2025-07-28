@@ -7,7 +7,7 @@ from typing import Any, Callable, TypeVar, cast
 import click
 import psutil
 
-from .git_interface import GitError, GitTimeoutError, WorktreeError
+from ..server.git_manager import GitError, GitTimeoutError, WorktreeError
 from .github_models import GitHubError
 
 logger = logging.getLogger(__name__)
@@ -44,9 +44,12 @@ def handle_git_errors(func: Callable[..., T]) -> Callable[..., T]:
     def wrapper(*args, **kwargs) -> T:
         try:
             return func(*args, **kwargs)
-        except (gitpython.exc.GitError, gitpython.exc.InvalidGitRepositoryError) as e:
-            logger.error(f"Git operation failed in {func.__name__}: {e}")
-            raise RuntimeError(f"Git operation failed: {e}") from e
+        except Exception as e:
+            # Handle any git-related exceptions from pygit2
+            if "git" in str(e).lower() or "repository" in str(e).lower():
+                logger.error(f"Git operation failed in {func.__name__}: {e}")
+                raise RuntimeError(f"Git operation failed: {e}") from e
+            raise  # Re-raise non-git exceptions
         except (GitError, WorktreeError) as e:
             logger.error(f"Git interface error in {func.__name__}: {e}")
             raise RuntimeError(f"Git interface error: {e}") from e

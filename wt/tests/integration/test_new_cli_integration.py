@@ -7,43 +7,119 @@ import pytest
 from click.testing import CliRunner
 
 from wt.cli import main
+from wt.shared.protocol import StatusResponse, StatusResult, DaemonHealth, DaemonHealthStatus
+
+
+def create_empty_status_response() -> StatusResponse:
+    """Create empty StatusResponse for testing."""
+    return StatusResponse(
+        results={},
+        total_processing_time_ms=0.0,
+        individual_processing_times_ms={},
+        concurrent_requests=1,
+        daemon_health=DaemonHealth(status=DaemonHealthStatus.OK),
+    )
+
+
+def create_test_status_response() -> StatusResponse:
+    """Create StatusResponse with test data."""
+    from wt.shared.constants import MAIN_WORKTREE_DISPLAY_NAME
+    from wt.shared.protocol import CommitInfo
+    from datetime import datetime
+    
+    test_commit_info = CommitInfo(
+        hash="abc123def456",
+        short_hash="abc123de",
+        message="Test commit",
+        author="Test Author",
+        date="2024-01-15T10:30:00",
+    )
+    
+    test_result = StatusResult(
+        wtid="test-worktree",
+        name="test-worktree",
+        branch_name="test/test-branch",
+        upstream_branch="main",
+        absolute_path="/tmp/test-worktree",
+        has_dirty_files=False,
+        has_untracked_files=False,
+        ahead_count=0,
+        behind_count=0,
+        pr_info=None,
+        commit_info=test_commit_info,
+        processing_time_ms=25.0,
+        last_updated_at=datetime.now(),
+    )
+    
+    main_result = StatusResult(
+        wtid="main",
+        name=MAIN_WORKTREE_DISPLAY_NAME,
+        branch_name="main",
+        upstream_branch="main",
+        absolute_path="/tmp/main",
+        has_dirty_files=False,
+        has_untracked_files=False,
+        ahead_count=0,
+        behind_count=0,
+        pr_info=None,
+        commit_info=test_commit_info,
+        processing_time_ms=25.0,
+        last_updated_at=datetime.now(),
+    )
+    
+    return StatusResponse(
+        results={
+            "test-worktree": test_result,
+            "main": main_result,
+        },
+        total_processing_time_ms=50.0,
+        individual_processing_times_ms={
+            "test-worktree": 25.0,
+            "main": 25.0,
+        },
+        concurrent_requests=1,
+        daemon_health=DaemonHealth(status=DaemonHealthStatus.OK),
+    )
 
 
 @pytest.mark.integration
 class TestNewCLIIntegration:
     def test_default_status_command(
-        self, cli_runner: CliRunner, temp_config_file, empty_worktree_status
+        self, cli_runner: CliRunner, temp_config_file
     ):
         """Test that default command (no args) shows worktree status."""
         with patch(
-            "wt.client.daemon_client.GitStatusdDaemonClient.get_all_worktree_status"
+            "wt.client.daemon_client.GitStatusdDaemonClient.get_status"
         ) as mock_get_status:
-            mock_get_status.return_value = empty_worktree_status
+            mock_get_status.return_value = create_empty_status_response()
             result = cli_runner.invoke(main, ["sh"])
 
+        if result.exit_code != 0:
+            print(f"CLI output: {result.output}")
+            print(f"CLI stderr: {result.stderr_bytes}")
         assert result.exit_code == 0
         assert "No worktrees found" in result.output
 
     def test_list_worktrees_command(
-        self, cli_runner: CliRunner, temp_config_file, empty_worktree_status
+        self, cli_runner: CliRunner, temp_config_file
     ):
         """Test ls command works with new CLI."""
         with patch(
-            "wt.client.daemon_client.GitStatusdDaemonClient.get_all_worktree_status"
+            "wt.client.daemon_client.GitStatusdDaemonClient.get_status"
         ) as mock_get_status:
-            mock_get_status.return_value = empty_worktree_status
+            mock_get_status.return_value = create_empty_status_response()
             result = cli_runner.invoke(main, ["sh", "ls"])
 
         assert result.exit_code == 0
 
     def test_list_worktrees_with_data(
-        self, cli_runner: CliRunner, temp_config_file, populated_worktree_status
+        self, cli_runner: CliRunner, temp_config_file
     ):
         """Test ls command with actual worktree data."""
         with patch(
-            "wt.client.daemon_client.GitStatusdDaemonClient.get_all_worktree_status"
+            "wt.client.daemon_client.GitStatusdDaemonClient.get_status"
         ) as mock_get_status:
-            mock_get_status.return_value = populated_worktree_status
+            mock_get_status.return_value = create_test_status_response()
             result = cli_runner.invoke(main, ["sh", "ls"])
 
         assert result.exit_code == 0
@@ -66,16 +142,14 @@ class TestNewCLIIntegration:
         assert "USAGE:" in result.output  # Custom help format
 
     def test_status_command_with_pr_flag(
-        self, cli_runner: CliRunner, temp_config_file, sample_worktree_status
+        self, cli_runner: CliRunner, temp_config_file
     ):
         """Test status command with --pr flag."""
-        status_dict = {"test-wt": sample_worktree_status}
-
         with patch(
-            "wt.client.daemon_client.GitStatusdDaemonClient.get_all_worktree_status"
+            "wt.client.daemon_client.GitStatusdDaemonClient.get_status"
         ) as mock_get_status:
-            mock_get_status.return_value = status_dict
+            mock_get_status.return_value = create_test_status_response()
             result = cli_runner.invoke(main, ["sh", "--pr"])
 
         assert result.exit_code == 0
-        assert "test-wt" in result.output  # from our test data
+        assert "test-worktree" in result.output  # from our test data

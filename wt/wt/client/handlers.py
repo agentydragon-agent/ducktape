@@ -3,8 +3,8 @@
 
 async def handle_status(daemon_client, formatter) -> None:
     """Handle the default status display command."""
-    # Get all worktree status from daemon
-    all_status = await daemon_client.get_all_worktree_status()
+    # Get all worktree status from daemon (empty list = all worktrees)
+    all_status = await daemon_client.get_status([])
 
     if not all_status:
         import click
@@ -17,18 +17,18 @@ async def handle_status(daemon_client, formatter) -> None:
 
     def sort_key(item):
         name, status = item
-        if status.error:
-            return (2, name)  # Errors last
-        # Always prioritize the default branch
-        if name == MAIN_WORKTREE_DISPLAY_NAME or status.branch == status.default_branch:
-            return (0, "default")  # default branch always first
+        # Always prioritize the main worktree
+        if name == MAIN_WORKTREE_DISPLAY_NAME:
+            return (0, "main")  # main worktree always first
         else:
             return (1, name)  # others alphabetically
 
-    sorted_items = sorted(all_status.items(), key=sort_key)
+    sorted_items = sorted(all_status.results.items(), key=lambda x: sort_key((x[1].name, x[1])))
+    # Convert to (name, status) tuples for display
+    display_items = [(result.name, result) for wtid, result in sorted_items]
 
     # Render the status
-    formatter.render_worktree_status_all(sorted_items)
+    formatter.render_worktree_status_all(display_items)
 
 
 async def handle_list_worktrees(daemon_client, formatter) -> None:
@@ -41,19 +41,25 @@ async def handle_list_worktrees(daemon_client, formatter) -> None:
 async def handle_status_single(daemon_client, formatter, worktree_name: str) -> None:
     """Handle status command for a single worktree."""
     # Get all status and find the specific worktree
-    all_status = await daemon_client.get_all_worktree_status()
+    all_status = await daemon_client.get_status([])
 
-    if worktree_name not in all_status:
+    # Find the worktree by name in the results
+    status = None
+    for result in all_status.results.values():
+        if result.name == worktree_name:
+            status = result
+            break
+    
+    if not status:
         import click
 
         click.echo(f"❌ No status available for '{worktree_name}'")
         return
 
-    status = all_status[worktree_name]
     formatter.render_worktree_status_single(worktree_name, status, status.pr_info)
 
 
-def handle_create_worktree(config, name: str, from_default: bool = True) -> None:
+async def handle_create_worktree(config, name: str, from_default: bool = True) -> None:
     """Handle worktree creation."""
     try:
         import click
@@ -61,7 +67,7 @@ def handle_create_worktree(config, name: str, from_default: bool = True) -> None
         click.echo(f"Creating worktree at: {config.worktrees_dir_resolved / name}")
         from .worktree_utils import create_worktree, emit_cd_command
 
-        new_path = create_worktree(config, name, from_default=from_default)
+        new_path = await create_worktree(config, name, from_default=from_default)
         emit_cd_command(new_path, config)
     except RuntimeError as e:
         import click
@@ -100,7 +106,7 @@ async def handle_remove_worktree(config, name: str, force: bool = False) -> None
         sys.exit(1)
 
 
-def handle_copy_worktree(config, source: str, dest: str = None) -> None:
+async def handle_copy_worktree(config, source: str, dest: str = None) -> None:
     """Handle worktree copying."""
     import sys
 
@@ -120,7 +126,7 @@ def handle_copy_worktree(config, source: str, dest: str = None) -> None:
             click.echo(f"Creating worktree at: {config.worktrees_dir_resolved / new_name}")
             from .worktree_utils import create_worktree, emit_cd_command
 
-            new_path = create_worktree(
+            new_path = await create_worktree(
                 config, new_name, source_worktree=current_wt, from_default=False
             )
             emit_cd_command(new_path, config)
@@ -132,7 +138,7 @@ def handle_copy_worktree(config, source: str, dest: str = None) -> None:
             source_path = require_worktree_exists(config, source_name)
 
             click.echo(f"Creating worktree at: {config.worktrees_dir_resolved / target_name}")
-            new_path = create_worktree(
+            new_path = await create_worktree(
                 config, target_name, source_worktree=source_path, from_default=False
             )
             emit_cd_command(new_path, config)
@@ -186,7 +192,7 @@ def handle_path_command(config, worktree_name: str = None, subpath: str = None) 
         sys.exit(1)
 
 
-def handle_navigate_to_worktree(config, worktree_name: str) -> None:
+async def handle_navigate_to_worktree(config, worktree_name: str) -> None:
     """Handle navigation to worktree (with creation if needed)."""
     import sys
 
@@ -212,7 +218,7 @@ def handle_navigate_to_worktree(config, worktree_name: str) -> None:
             click.echo(f"Creating worktree at: {wt_path}")
             from .worktree_utils import create_worktree, emit_cd_command
 
-            new_path = create_worktree(config, worktree_name, from_default=True)
+            new_path = await create_worktree(config, worktree_name, from_default=True)
             emit_cd_command(new_path, config)
         except RuntimeError as e:
             click.echo(f"Error: {e}")

@@ -8,7 +8,7 @@ import pytest
 
 from wt.server.worktree_service import WorktreeService
 from wt.shared.configuration import Configuration
-from wt.shared.git_interface import GitInterface
+from wt.server.git_manager import GitManager
 from wt.server.github_client import GitHubInterface
 
 
@@ -24,17 +24,17 @@ class TestWorktreeService:
         config = build_test_configuration(
             real_temp_repo,
             branch_prefix="test/",
-            default_worktree_base_branch="main",
+            upstream_branch="main",
             github_repo="test-user/test-repo",
             github_enabled=False,
             log_operations=True
         )
         
-        # Create real GitInterface with proper initialization
-        git = GitInterface(config=config)
+        # Create real GitManager with proper initialization
+        git_manager = GitManager(config=config)
         github = Mock()  # Keep GitHub mocked for now
         
-        return WorktreeService(git, github), config
+        return WorktreeService(git_manager, github), config
 
     def test_list_worktrees_empty_repo(self, service):
         """Test listing worktrees in empty repository."""
@@ -125,7 +125,7 @@ echo "Script executed with arg: $1" > "$1/script_output.txt"
         config = build_test_configuration(
             real_temp_repo,
             branch_prefix="test/",
-            default_worktree_base_branch="main",
+            upstream_branch="main",
             github_repo="test-user/test-repo",
             github_enabled=False,
             log_operations=True,
@@ -133,9 +133,9 @@ echo "Script executed with arg: $1" > "$1/script_output.txt"
         )
         
         # Create WorktreeService with the script-enabled config
-        git = GitInterface(config=config)
+        git_manager = GitManager(config=config)
         github = Mock()
-        worktree_service = WorktreeService(git, github)
+        worktree_service = WorktreeService(git_manager, github)
         
         # Create worktree - script should execute
         worktree_path = worktree_service.create_worktree(config, "script-test")

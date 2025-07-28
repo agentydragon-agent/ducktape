@@ -9,7 +9,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from ..shared.git_interface import (
+from .git_manager import (
     CannotCreateWorktree,
     CannotDeleteWorktree,
     GitError,
@@ -17,26 +17,26 @@ from ..shared.git_interface import (
     NoSuchRef,
     WorktreeError,
     WorktreeInfo,
-    WorktreeStatus,
 )
+from ..shared.protocol import StatusResponse, StatusResult
 from ..shared.github_models import PRInfo
 from ..shared.models import CommitInfo, ProcessInfo
 
 if TYPE_CHECKING:
-    from ..shared.git_interface import GitInterface
+    from .git_manager import GitManager
     from .github_client import GitHubInterface
 
 
 class WorktreeService:
     """Pure business logic for worktree operations."""
 
-    def __init__(self, git: "GitInterface", github: "GitHubInterface"):
-        self.git = git
+    def __init__(self, git_manager: "GitManager", github: "GitHubInterface"):
+        self.git_manager = git_manager
         self.github = github
 
     def list_worktrees(self, config) -> list[tuple[str, Path, bool]]:
         """List all managed worktrees with their existence status."""
-        worktree_infos = self.git.list_worktrees()
+        worktree_infos = self.git_manager.list_worktrees()
         worktrees = []
 
         for info in worktree_infos:
@@ -58,40 +58,13 @@ class WorktreeService:
         # Filter out hidden worktrees using configurable patterns
         return not any(path.name.startswith(pattern) for pattern in config.hidden_worktree_patterns)
 
-    def _create_worktree_status(
-        self, name: str, path: Path, branch: str, default_branch: str
-    ) -> WorktreeStatus:
-        """Create status for a single worktree."""
-        # Check if branch still exists
-        try:
-            self.git.verify_branch_exists(branch)
-        except NoSuchRef as e:
-            raise RuntimeError(f"Stale worktree {name}: branch {branch} was deleted") from e
-
-        # Get ahead/behind counts
-        ahead_count = self.git.rev_count(default_branch, branch)
-        behind_count = self.git.rev_count(branch, default_branch)
-
-        # Get commit info and working directory status
-        commit_info = self._get_commit_info(branch)
-        # Note: Working directory status would need to be fetched separately for sync operation
-        dirty_files, untracked_files = [], []
-
-        return WorktreeStatus(
-            name=name,
-            branch=branch,
-            ahead=ahead_count,
-            behind=behind_count,
-            dirty_files=dirty_files,
-            untracked_files=untracked_files,
-            default_branch=default_branch,
-            commit_info=commit_info,
-        )
+    # Note: This method was deleted as part of WorktreeStatus compatibility cleanup.
+    # Status creation is now handled by the daemon using proper protocol types.
 
     def _get_commit_info(self, branch_name: str) -> CommitInfo | None:
         """Get commit information for a branch."""
         try:
-            commit_data = self.git.log_format(branch_name, "%H|%s|%an|%ai")
+            commit_data = self.git_manager.log_format(branch_name, "%H|%s|%an|%ai")
             hash_str, message, author, date_str = commit_data.split("|", 3)
 
             date = datetime.fromisoformat(date_str.replace(" ", "T"))
@@ -103,68 +76,28 @@ class WorktreeService:
                 last_commit_date=date,
             )
         except (ValueError, GitError) as e:
-            # Expected errors: invalid date format, git command failures
-            logging.warning(f"Failed to get commit info for branch {branch_name}: {e}")
-            return None
+            # Let callers handle git errors appropriately instead of masking them
+            raise GitError(f"Failed to get commit info for branch {branch_name}: {e}") from e
 
     async def _get_working_directory_status(
         self, worktree_path: Path, main_repo: Path = None
     ) -> tuple[list[str], list[str]]:
         """Get working directory status for a worktree."""
         try:
-            from .git_manager import GitRepositoryManager
+            return await self.git_manager.get_working_directory_status(worktree_path, main_repo)
+        except Exception as e:
+            # Let callers handle git errors appropriately instead of masking them
+            raise RuntimeError(f"Failed to get working directory status for {worktree_path}: {e}") from e
 
-            git_repo_manager = GitRepositoryManager()
-            return await git_repo_manager.get_working_directory_status(worktree_path, main_repo)
-        except (RuntimeError, OSError) as e:
-            # Expected errors: repository access issues, file system problems
-            logging.warning(f"Failed to get working directory status for {worktree_path}: {e}")
-            return [], []
+    # Note: This method was deleted as part of WorktreeStatus compatibility cleanup.
+    # Status creation is now handled by the daemon using proper protocol types.
 
-    async def _create_main_repo_status(
-        self, name: str, path: Path, branch: str, default_branch: str
-    ) -> WorktreeStatus:
-        """Create status for main repository."""
-        # Main repo has no ahead/behind counts
-        ahead_count = 0
-        behind_count = 0
-
-        # Get commit info and working directory status
-        commit_info = self._get_commit_info("HEAD")
-        dirty_files, untracked_files = await self._get_working_directory_status(path)
-
-        return WorktreeStatus(
-            name=name,
-            branch=branch,
-            ahead=ahead_count,
-            behind=behind_count,
-            dirty_files=dirty_files,
-            untracked_files=untracked_files,
-            default_branch=default_branch,
-            commit_info=commit_info,
-        )
-
-    def _create_error_status(
-        self, name: str, branch: str, error_msg: str, default_branch: str
-    ) -> WorktreeStatus:
-        """Create error status for a worktree."""
-        return WorktreeStatus(
-            name=name,
-            branch=branch,
-            ahead=0,
-            behind=0,
-            dirty_files=[],
-            untracked_files=[],
-            default_branch=default_branch,
-            commit_info=None,
-            error=error_msg,
-        )
+    # Note: This method was deleted as part of WorktreeStatus compatibility cleanup.
+    # Error handling is now part of the daemon's StatusResult protocol.
 
     def create_worktree(self, config, name: str, source_worktree: Path | None = None) -> Path:
         """Create a new worktree."""
         from ..shared.error_handling import ErrorContext, validate_worktree_name
-        from .git_manager import GitRepositoryManager
-
         validate_worktree_name(name)
         worktree_path = config.worktrees_dir_resolved / name
 
@@ -177,13 +110,11 @@ class WorktreeService:
         with ErrorContext("create_worktree", name):
             branch_name = f"{config.branch_prefix}{name}"
 
-            # Get default branch and create branch if needed
-            git_repo_manager = GitRepositoryManager()
-            default_branch = git_repo_manager.get_default_branch(config.main_repo_resolved)
-            git_repo_manager.create_branch(config.main_repo_resolved, branch_name, default_branch)
+            # Use configured upstream branch as source for new branches
+            self.git_manager.create_branch(branch_name, config.upstream_branch, config.main_repo_resolved)
 
             # Create worktree
-            self.git.worktree_add(str(worktree_path), branch_name)
+            self.git_manager.worktree_add(str(worktree_path), branch_name)
 
             # Hydrate with dirty state if source provided
             if source_worktree:
@@ -222,7 +153,7 @@ class WorktreeService:
                 )
 
         # Remove worktree
-        self.git.worktree_remove(str(worktree_path), force=force)
+        self.git_manager.worktree_remove(str(worktree_path), force=force)
 
         # Clean up directory if it still exists
         if worktree_path.exists():
@@ -251,7 +182,7 @@ class WorktreeService:
 
         try:
             # Try to find git repo root
-            repo_root = self.git.repo_root(cwd=cwd)
+            repo_root = self.git_manager.repo_root(cwd=cwd)
 
             # Check if we're in a worktree (not the main repo)
             if repo_root != config.main_repo_resolved:
@@ -388,58 +319,33 @@ class WorktreeService:
                 continue
         return procs
 
-    async def get_all_worktree_status_daemon(
-        self, config, daemon_client
-    ) -> dict[str, WorktreeStatus]:
-        """Get comprehensive status for all worktrees using daemon."""
-        if daemon_client is None:
-            raise RuntimeError("Daemon client is required for status operations")
 
-        # Single comprehensive daemon RPC call for all status data
-        return await daemon_client.get_all_worktree_status()
-
-    def get_sorted_worktree_items(
-        self, all_status: dict[str, WorktreeStatus], config
-    ) -> list[tuple[str, WorktreeStatus]]:
-        """Sort worktree status items for display."""
-        from ..shared.constants import MAIN_WORKTREE_DISPLAY_NAME
-        from .git_manager import GitRepositoryManager
-
-        # Get the actual default branch from git config
-        git_repo_manager = GitRepositoryManager()
-        default_branch = git_repo_manager.get_default_branch(config.main_repo_resolved)
-
-        def sort_key(item):
-            name, status = item
-            if status.error:
-                return (2, name)  # Errors last
-            # Always prioritize the default branch
-            if name == MAIN_WORKTREE_DISPLAY_NAME or status.branch == default_branch:
-                return (0, "default")  # default branch always first
-            else:
-                return (1, name)  # others alphabetically
-
-        return sorted(all_status.items(), key=sort_key)
+    # Note: This method was moved to handlers.py for client-side sorting.
 
     async def get_single_worktree_status_daemon(
         self, config, worktree_name: str, daemon_client=None
-    ) -> tuple[WorktreeStatus, dict[str, PRInfo]]:
+    ) -> tuple[StatusResult, dict[str, PRInfo]]:
         """Get status for a specific worktree using daemon."""
         # Verify the worktree exists
         self.require_worktree_exists(config, worktree_name)
 
         # Get status for all worktrees and find the one we want
-        all_status = await self.get_all_worktree_status_daemon(config, daemon_client)
+        all_status = await daemon_client.get_status([])
 
-        if worktree_name not in all_status:
+        # Find the worktree by name
+        status = None
+        for result in all_status.results.values():
+            if result.name == worktree_name:
+                status = result
+                break
+
+        if not status:
             raise RuntimeError(f"Could not get status for worktree '{worktree_name}'")
-
-        status = all_status[worktree_name]
 
         # Extract PR info from daemon-provided data
         pr_results = {}
         if status.pr_info:
-            pr_results[status.branch] = status.pr_info
+            pr_results[status.branch_name] = status.pr_info
 
         return status, pr_results
 
@@ -473,9 +379,15 @@ class WorktreeService:
         """Show status for a single worktree."""
         self.require_worktree_exists(config, worktree_name)
 
-        all_status = await self.get_all_worktree_status_daemon(config, daemon_client)
-        status = all_status.get(worktree_name)
-
+        all_status = await daemon_client.get_status([])
+        
+        # Find the worktree by name in the results
+        status = None
+        for result in all_status.results.values():
+            if result.name == worktree_name:
+                status = result
+                break
+        
         if not status:
             import click
 
@@ -486,7 +398,7 @@ class WorktreeService:
 
     async def _show_all_worktrees_status(self, config, daemon_client, formatter) -> None:
         """Show status for all worktrees."""
-        all_status = await self.get_all_worktree_status_daemon(config, daemon_client)
+        all_status = await daemon_client.get_status([])
 
         if not all_status:
             import click
@@ -494,6 +406,19 @@ class WorktreeService:
             click.echo("🤷 No worktrees found")
             return
 
-        sorted_items = self.get_sorted_worktree_items(all_status, config)
+        # Sort results for display
+        from ..shared.constants import MAIN_WORKTREE_DISPLAY_NAME
+        
+        def sort_key(item):
+            wtid, status = item
+            # Always prioritize the main worktree
+            if status.name == MAIN_WORKTREE_DISPLAY_NAME:
+                return (0, "main")  # main worktree always first
+            else:
+                return (1, status.name)  # others alphabetically
 
-        formatter.render_worktree_status_all(sorted_items)
+        sorted_items = sorted(all_status.results.items(), key=sort_key)
+        # Convert to (name, status) tuples for display
+        display_items = [(result.name, result) for wtid, result in sorted_items]
+
+        formatter.render_worktree_status_all(display_items)
