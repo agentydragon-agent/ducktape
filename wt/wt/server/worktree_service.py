@@ -113,8 +113,12 @@ class WorktreeService:
                 self._hydrate_worktree(config, source_worktree, worktree_path)
 
             # Execute post-creation script if configured
+            logger.info(f"Post-creation script configured: {config.post_creation_script}")
             if config.post_creation_script:
+                logger.info(f"Executing post-creation script for worktree: {worktree_path}")
                 self._execute_post_creation_script(config.post_creation_script, worktree_path)
+            else:
+                logger.info("No post-creation script configured, skipping")
 
             return worktree_path
 
@@ -253,15 +257,24 @@ class WorktreeService:
         import logging
         import subprocess
         
+        logger = logging.getLogger(__name__)
+        logger.info(f"Starting post-creation script execution: script={script_path}, worktree={worktree_path}")
+        
         script = Path(script_path).expanduser().resolve()
+        logger.info(f"Resolved script path: {script}")
+        
         if not script.exists():
-            logging.warning(f"Post-creation script not found: {script}")
+            logger.warning(f"Post-creation script not found: {script}")
             return
         
         if not script.is_file():
-            logging.warning(f"Post-creation script is not a file: {script}")
+            logger.warning(f"Post-creation script is not a file: {script}")
             return
+        
+        if not script.stat().st_mode & 0o111:  # Check if executable
+            logger.warning(f"Post-creation script is not executable: {script}")
             
+        logger.info(f"Executing post-creation script: {script} {worktree_path}")
         try:
             # Execute script with worktree path as argv[1]
             result = subprocess.run(
@@ -273,18 +286,22 @@ class WorktreeService:
             )
             
             if result.returncode != 0:
-                logging.warning(
+                logger.warning(
                     f"Post-creation script failed (exit {result.returncode}): {script}\n"
                     f"stdout: {result.stdout}\n"
                     f"stderr: {result.stderr}",
                 )
             else:
-                logging.info(f"Post-creation script completed successfully: {script}")
+                logger.info(f"Post-creation script completed successfully: {script}")
+                if result.stdout:
+                    logger.info(f"Post-creation script stdout: {result.stdout}")
+                if result.stderr:
+                    logger.info(f"Post-creation script stderr: {result.stderr}")
                 
-        except subprocess.TimeoutExpired:
-            logging.error(f"Post-creation script timed out: {script}")
+        except subprocess.TimeoutExpired as e:
+            logger.error(f"Post-creation script timed out: {script}", exc_info=True)
         except Exception as e:
-            logging.error(f"Error executing post-creation script {script}: {e}")
+            logger.error(f"Error executing post-creation script {script}: {e}", exc_info=True)
 
     def _get_processes_in_directory(self, directory: Path) -> list:
         """Get processes running in a directory."""

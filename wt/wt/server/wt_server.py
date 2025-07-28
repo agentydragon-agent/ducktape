@@ -212,7 +212,7 @@ class DebouncedGitHubRefresh:
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                logger.error(f"Error in periodic refresh: {e}")
+                logger.error(f"Error in periodic refresh: {e}", exc_info=True)
                 await asyncio.sleep(10)  # Back off on errors
 
     async def _do_refresh(self, reason: str):
@@ -387,8 +387,8 @@ class GitStatusdProcess:
             self.github_refresh = DebouncedGitHubRefresh(
                 worktree_info.path,
                 self._refresh_github_cache,
-                debounce_delay=self.config.github_debounce_delay,
-                periodic_interval=self.config.github_periodic_interval,
+                debounce_delay=self.config.github_debounce_delay.total_seconds(),
+                periodic_interval=self.config.github_periodic_interval.total_seconds(),
             )
 
     async def start(self) -> None:
@@ -828,8 +828,12 @@ class WtDaemon:
         )
         logger.info(
             "GitHub refresh configuration - debounce_delay: %.1fs, periodic_interval: %.1fs",
-            self.config.github_debounce_delay,
-            self.config.github_periodic_interval,
+            self.config.github_debounce_delay.total_seconds(),
+            self.config.github_periodic_interval.total_seconds(),
+        )
+        logger.info(
+            "Post-creation script configuration: %s",
+            self.config.post_creation_script or "None"
         )
 
         # Initialize GitHub interface
@@ -1029,7 +1033,7 @@ class WtDaemon:
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                logger.error("Error in periodic discovery: %s", e)
+                logger.error("Error in periodic discovery: %s", e, exc_info=True)
                 await asyncio.sleep(30)
 
     async def handle_client_request(
