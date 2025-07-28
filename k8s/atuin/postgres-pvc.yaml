@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-pvc
+  labels:
+    app: atuin
+    component: postgres
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: local-path  # k3s default storage class
+  resources:
+    requests:
+      storage: 1Gi

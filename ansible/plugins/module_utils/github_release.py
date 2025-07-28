@@ -217,13 +217,26 @@ class ArchiveInstall(GitHubInstaller):
 
     dest_path: str | None = None
     creates_file: str | None = None
+    extract_file: str | None = None  # Optional: extract only this file from archive
 
     @property
     def module_name(self) -> str:
+        # When extracting a specific file, we need to handle it differently
+        if self.extract_file:
+            return "_multi_step_archive_extract"
         return "ansible.builtin.unarchive"
 
     def install_module_args(self, asset_url: str) -> dict[str, Any]:
         """Return arguments for extracting and installing the archive."""
+        if self.extract_file:
+            # For single file extraction, we'll handle this in the action plugin
+            return {
+                "asset_url": asset_url,
+                "extract_file": self.extract_file,
+                "dest_path": self.dest_path,
+            }
+        
+        # Normal full archive extraction
         args = {
             "src": asset_url,
             "dest": self.dest_path,
@@ -237,6 +250,8 @@ class ArchiveInstall(GitHubInstaller):
         super().validate()
         if not self.dest_path:
             raise ActionError("dest_path is required for archive installation")
+        if self.extract_file and self.creates_file:
+            raise ActionError("creates_file cannot be used with extract_file")
 
     def get_additional_info(self, asset_url: str) -> dict[str, Any]:
         """Determine extracted directory name and pattern from asset URL."""

@@ -76,6 +76,11 @@
         executable: /bin/bash
       # Note: Cargo is configured to use sccache via ~/.cargo/config.toml dotfile
 
+    - name: Install atuin via cargo
+      ansible.builtin.command: cargo install atuin --locked
+      args:
+        creates: "~/.cargo/bin/atuin"
+
     # Import claude-mcp after Claude Code is installed
     - import_role:
         name: claude-mcp
@@ -96,3 +101,7 @@
 # Install gitstatus for wt tool
 - import_tasks: gitstatus.yml
   tags: [gitstatus, dev-tools]
+
+# Install kubeseal for Sealed Secrets
+- import_tasks: kubeseal.yml
+  tags: [kubeseal, k8s, dev-tools]

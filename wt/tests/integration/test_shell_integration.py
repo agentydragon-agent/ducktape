@@ -168,11 +168,11 @@ echo "$create_exit:$nav_exit:$pwd_before:$pwd_after"
 """
 
         with daemon_cleanup():
-            result = run_shell_script(shell_script, str(real_temp_repo))
+            result = run_shell_script(shell_script, str(real_temp_repo), env=real_env)
 
             data = parse_teleport_output(result)
             
-            assert data['create_exit'] == 0, f"Create failed: {result.stderr}"
+            assert data['create_exit'] == 0, f"Create failed: stdout={result.stdout}, stderr={result.stderr}"
             assert data['nav_exit'] == 0, f"Navigate failed: {result.stderr}"
             
             expected_dir = str(real_temp_repo / "worktrees" / "teleport-test")

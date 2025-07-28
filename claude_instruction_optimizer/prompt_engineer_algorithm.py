@@ -1,15 +1,17 @@
-"""
-prompt_engineer_algorithm.py
-=================================
+"""Parallel prompt optimization system for Claude Code agents.
 
-This module implements a parallel prompt optimization system for Claude Code agents.
-The goal is to iteratively improve a system prompt by running multiple agent rollouts
-in parallel on seed programming tasks, grading solutions using OpenAI's Responses API
-(o3 model), and using a PromptEngineer to propose improved prompts. All data is logged
-to JSONL files for analysis.
+Iteratively improves CLAUDE.md by running multiple agent rollouts in parallel
+on seed programming tasks, grading solutions using OpenAI's Responses API (o3 model),
+and using a PromptEngineer to propose improved prompts. All data is logged to JSONL
+files for analysis.
+
+Usage:
+    python3 prompt_engineer_algorithm.py [--iterations N] [--rollouts-per-task N]
+
+    --iterations N          Number of optimization iterations (default: 10)
+    --rollouts-per-task N   Number of agent rollouts per seed task (default: 5)
 
 Key Features:
-------------
 * Fully parallel rollouts with semaphore-based concurrency control
 * Docker containerization for isolated Claude Code agent execution
 * OpenAI Responses API integration for grading and prompt engineering
@@ -17,24 +19,13 @@ Key Features:
 * Structured logging with JSON output for comprehensive tracking
 
 Architecture:
-------------
 * Claude Code agents run in isolated Docker containers for safety
 * Rollouts execute in parallel (configurable max concurrency)
 * OpenAI o3 model handles both grading and prompt engineering
 * Context trimming preserves reasoning token validity
 * JSONL logs capture all API interactions and results
 
-External Dependencies:
----------------------
-* Anthropic Claude Code SDK: For running coding agents in containers
-* OpenAI SDK: For grading (o3) and prompt engineering (o3 with reasoning)
-* Docker: Required for isolated agent execution
-* PyYAML: For loading seed tasks and grading criteria
-* tiktoken: For token counting and context management
-
 Configuration:
--------------
-* API keys: Set ANTHROPIC_API_KEY and OPENAI_API_KEY environment variables
 * Parallelism: Adjust MAX_PARALLEL_ROLLOUTS constant (default: 8)
 * Context limits: PromptEngineer handles 200k token o3 context automatically
 """
@@ -69,7 +60,6 @@ from claude_code_sdk import (
 )
 from openai import OpenAI
 from openai.types.responses.response import Response
-from openai.types.responses.response_reasoning_item import ResponseReasoningItem
 from openai.types.responses.response_function_tool_call import ResponseFunctionToolCall
 from pydantic import BaseModel
 
@@ -175,108 +165,6 @@ def create_openai_request(
     if max_tokens:
         request["max_output_tokens"] = max_tokens
     return request
-
-
-# -----------------------------------------------------------------------------
-# Helper functions for summarising Claude Code interactions
-#
-# These functions encapsulate logic for extracting and formatting information
-# from messages and blocks returned by the Claude Code SDK.  They produce
-# concise summaries of tool invocations and text content for logging.
-# -----------------------------------------------------------------------------
-
-
-def _format_args_for_display(args: Any, max_len: int = TRUNCATION_LENGTH) -> str:
-    """Format tool arguments for display.
-
-    If ``args`` is a mapping, render key:value pairs without braces or quotes.
-    Otherwise, serialise to JSON or str and truncate.  Long values are
-    truncated to ``max_len`` characters with an ellipsis.
-
-    Parameters
-    ----------
-    args : Any
-        The arguments to format.
-    max_len : int
-        Maximum length of each value before truncation.
-
-    Returns
-    -------
-    str
-        A formatted string representation of the arguments.
-    """
-    # Handle dict separately for key: value formatting
-    if isinstance(args, dict):
-        parts: List[str] = []
-        for k, v in args.items():
-            v_str = truncate_string(str(v), max_len)
-            parts.append(f"{k}: {v_str}")
-        return ", ".join(parts)
-    # Non-dict: attempt JSON serialisation
-    try:
-        arg_str = json.dumps(args)
-    except (TypeError, ValueError):
-        arg_str = str(args)
-    return truncate_string(arg_str, max_len)
-
-
-def _extract_text_prefix(content: Any, limit: int = 120) -> str:
-    """Extract a preview of textual content.
-
-    Parameters
-    ----------
-    content : Any
-        The message content, which may be a string or a list of blocks.
-    limit : int
-        The maximum number of characters to return.
-
-    Returns
-    -------
-    str
-        The first ``limit`` characters of text from the content, with
-        newlines replaced by spaces.
-    """
-    if isinstance(content, str):
-        return content.strip().replace("\n", " ")[:limit]
-    if isinstance(content, (list, tuple)):
-        for block in content:
-            if hasattr(block, "text"):
-                text = getattr(block, "text")
-                if isinstance(text, str):
-                    return text.strip().replace("\n", " ")[:limit]
-    return ""
-
-
-def _summarise_tool_block(block: Any) -> Optional[str]:
-    """Return a summary string for a tool invocation block.
-
-    Inspect a content block for attributes indicating tool usage (``tool``, ``name``)
-    and return a concise summary of the form ``ToolName(arg1: val1, arg2: val2)``.
-    If no tool is detected, return ``None``.
-    """
-    try:
-        tool_name: Optional[str] = None
-        args: Any = None
-        # Block may have a tool object with a name
-        if hasattr(block, "tool"):
-            tool_obj = getattr(block, "tool")
-            tool_name = getattr(tool_obj, "name", None) or str(tool_obj)
-            args = getattr(block, "arguments", None) or getattr(block, "args", None)
-        elif hasattr(block, "name"):
-            tool_name = getattr(block, "name")
-            # For ToolUseBlock, arguments are in input/arguments/args
-            if hasattr(block, "input"):
-                args = getattr(block, "input")
-            else:
-                args = getattr(block, "arguments", None) or getattr(block, "args", None)
-        if tool_name:
-            if args is not None:
-                arg_str = _format_args_for_display(args)
-                return f"{tool_name}({arg_str})"
-            return tool_name
-        return None
-    except (AttributeError, KeyError, TypeError):
-        return None
 
 
 # ----------------------------------------------------------------------------
@@ -440,11 +328,6 @@ def extract_text_prefix(text: str, limit: int = 120) -> str:
         The text to extract from.
     limit : int
         Maximum number of characters to return.
-
-    Returns
-    -------
-    str
-        The extracted prefix.
     """
     try:
         if not isinstance(text, str):
@@ -569,15 +452,6 @@ def summarise_tool_result(content: Any) -> Optional[str]:
         return None
 
 
-# Import the Claude Code SDK and OpenAI library.  If these imports fail,
-# the script should terminate rather than falling back to mock behaviour.
-# Import Claude Code SDK from the official claude_code_sdk package.  The
-# repository is available at https://github.com/anthropics/claude-code-sdk-python.
-# We import the query function and ClaudeCodeOptions to interact with the
-# Claude Code service.  The query function handles asynchronous streaming of
-# events from the model, and ClaudeCodeOptions configures the agent.
-
-
 # -----------------------------------------------------------------------------
 # Prompt templates
 #
@@ -593,29 +467,10 @@ def summarise_tool_result(content: Any) -> Optional[str]:
 PROMPT_ENGINEER_SYSTEM_MESSAGE = (
     "You are a prompt engineer tasked with refining system prompts for a Python coding assistant. "
     "When you are given rollouts and grades from the last prompt, call the `submit_prompt` function with "
-    "a single argument `prompt` containing your improved system prompt. Do not output anything else."
+    "a single argument `prompt` containing your improved system prompt. Do not output anything else. "
+    "The coding assistant works through tools providing it I/O access to a filesystem and to shell "
+    "command execution."
 )
-
-# Template for the grading evaluation prompt.  It describes the task, lists
-# all submitted code files, enumerates the grading axes, and specifies the
-# required JSON output schema.  It instructs the model to compute the
-# overall score as the average of the axis scores and to provide a rationale.
-EVALUATION_PROMPT_TEMPLATE = """
-You are an expert Python instructor and code reviewer.  A student has submitted code for the following task:
-{task}
-
-Here are the code files:
-{combined_code}
-
-Please evaluate the submission on the following axes:
-
-{axes_text}
-
-Return your evaluation as a JSON object with the following structure:
-{json_structure}
-
-Compute the overall score as the average of the axis scores and provide a brief rationale explaining the overall grade.
-"""
 
 # -----------------------------------------------------------------------------
 # Helper functions for logging API requests and responses
@@ -720,7 +575,8 @@ class Grade(BaseModel):
     A Grade stores a mapping from criterion keys to scores and rationales, as
     well as an overall score and rationale.  This structure allows for a
     variable number of grading axes defined by the user via the Criterion
-    list.  The overall score is computed as the average of the axis scores.
+    list.  The overall score is provided by the grader and should reflect
+    holistic quality, not a simple average of axis scores.
     """
 
     task: str
@@ -1083,9 +939,49 @@ async def grade_code(
 class Turn:
     """A complete conversational turn in the PromptEngineer."""
 
-    tool_result: Dict[str, Any]  # Grading results (response to function call)
-    reasoning: List[Any]  # OpenAI SDK reasoning objects
-    function_call: Any  # OpenAI SDK function call object
+    reasoning: List[Any]  # OpenAI reasoning from propose()
+    proposed_prompt: str  # The prompt that was proposed
+    grades: str  # Grading results from testing the prompt
+
+    @property
+    def messages(self) -> List[Dict[str, Any]]:
+        """Convert turn into OpenAI API message sequence."""
+        msgs = []
+
+        # Convert reasoning messages to proper format with verbose logging
+        for i, reasoning_item in enumerate(self.reasoning):
+            logger.info(f"Processing reasoning item {i}: type={type(reasoning_item)}, repr={repr(reasoning_item)}")
+            
+            if hasattr(reasoning_item, 'model_dump'):
+                # OpenAI SDK object - convert to dict and filter out response-only fields
+                msg_dict = reasoning_item.model_dump()
+                logger.info(f"Reasoning item {i} model_dump: {msg_dict}")
+                
+                # Filter out fields that are valid in response but not input (like 'status')
+                # Based on OpenAI docs, reasoning items should have: id, type, summary, encrypted_content
+                if 'status' in msg_dict:
+                    del msg_dict['status']
+                    logger.info(f"Reasoning item {i} after removing status: {msg_dict}")
+                msgs.append(msg_dict)
+            elif isinstance(reasoning_item, dict):
+                # Already a dict
+                logger.info(f"Reasoning item {i} is dict: {reasoning_item}")
+                msgs.append(reasoning_item)
+            else:
+                # Unknown format - crash with details
+                logger.error(f"Unknown reasoning item format at index {i}: type={type(reasoning_item)}, repr={repr(reasoning_item)}")
+                raise ValueError(f"Unknown reasoning item format: {type(reasoning_item)} - {repr(reasoning_item)}")
+
+        # Add user message with grading results instead of recreating function call structure
+        # The Responses API expects simple conversation format, not tool_calls reconstruction
+        user_msg = {
+            "role": "user", 
+            "content": f"Here are the grading results for the prompt:\n\n{self.grades}"
+        }
+        logger.info(f"User grades message: {user_msg}")
+        msgs.append(user_msg)
+
+        return msgs
 
 
 class PromptEngineer:
@@ -1109,11 +1005,9 @@ class PromptEngineer:
         """Get conversation messages with system message prepended."""
         messages = [self._SYSTEM_MESSAGE]
 
-        # Flatten all turns into a single message list
+        # Flatten all turns using their message getter
         for turn in self._turns:
-            messages.append(turn.tool_result)
-            messages.extend(turn.reasoning)
-            messages.append(turn.function_call)
+            messages.extend(turn.messages)
 
         return messages
 
@@ -1187,7 +1081,7 @@ Full Messages:
         """Make OpenAI API call to get next prompt proposal.
 
         Returns:
-            (reasoning_messages, claude_prompt)
+            (reasoning_messages, proposed_prompt)
         """
         # Trim context if needed before API call
         self._trim_context_if_needed()
@@ -1269,33 +1163,17 @@ Full Messages:
 
         return reasoning_messages, claude_prompt
 
-    def append_turn(
-        self, reasoning: List[Any], claude_prompt: str, grades: str
+    def add_result(
+        self, reasoning: List[Any], proposed_prompt: str, grades: str
     ) -> None:
         """Add completed turn to conversation history.
 
         Args:
             reasoning: OpenAI's reasoning messages from propose_prompt()
-            claude_prompt: The function call (submit_prompt with this prompt)
-            grades: Tool result (grading results from testing this prompt)
+            proposed_prompt: The prompt that was proposed and tested
+            grades: Grading results from testing this prompt
         """
-        # Build tool result message from grades
-        tool_result = {"role": "user", "content": grades}
-
-        # Create synthetic function call from the claude_prompt
-        # Generate a unique call_id for this turn
-        call_id = f"synthetic_call_{len(self._turns)}"
-        function_call = {
-            "type": "function_call",
-            "name": "submit_prompt",
-            "call_id": call_id,
-            "arguments": json.dumps({"prompt": claude_prompt}),
-        }
-
-        # Create complete turn
-        turn = Turn(
-            tool_result=tool_result, reasoning=reasoning, function_call=function_call
-        )
+        turn = Turn(reasoning=reasoning, proposed_prompt=proposed_prompt, grades=grades)
         self._turns.append(turn)
 
         logger.info(
@@ -1346,8 +1224,6 @@ async def optimize_prompts(
     ----------
     seed_tasks : List[SeedTask]
         The programming tasks to use as the benchmark for optimisation.
-    initial_prompt : str
-        The initial system prompt used for all Claude Code agents.
     iterations : int, optional
         The number of optimisation iterations to perform (default 3).
     rollouts_per_task : int, optional
@@ -1397,7 +1273,7 @@ async def optimize_prompts(
     # Define grading criteria.  Each criterion has a key used in the JSON
     # evaluation and a description explaining what to look for.  Additional
     # criteria can be added to this list without changing other parts of the
-    # program.  The overall score is computed as the average of these axes.
+    # program.  The overall score is provided by the grader based on holistic assessment.
     # Load grading criteria from YAML configuration file.
     # The file 'graders.yaml' should contain a top-level 'graders' list with objects
     # having keys: id, name, description, evaluation_criteria.
@@ -1436,24 +1312,25 @@ async def optimize_prompts(
 
     # Initialize the prompt engineer for the entire optimization process.
     # The PromptEngineer manages conversation state and context trimming internally.
-    # PE starts empty and generates the initial prompt from scratch.
-    
-    # Generate initial prompt from PE (iteration 0)
-    logger.info("Generating initial prompt from PromptEngineer")
-    reasoning, current_prompt = await engineer.propose_prompt(openai_api_log_path)
-    # Track the version of the system prompt. The initial prompt is version 0,
-    # and each time we obtain a new prompt from the prompt engineer, we
-    # increment this counter. This version number is used to name the
-    # corresponding CLAUDE-XXXX.md file for each iteration.
-    prompt_version = 0
-    # Initialize ONE PromptEngineer for the entire optimization process
+    # PE starts with just system message, generates prompts in the main loop.
     engineer = PromptEngineer()
+
+    # Track the version of the system prompt. Each prompt gets incremented version.
+    prompt_version = 0
 
     # Token limits for PromptEngineer context management
     # The o3 model can handle up to 200k tokens. Context trimming is handled
     # internally by PromptEngineer to preserve reasoning token validity.
     MAX_TOKENS = 200_000
     DROP_THRESHOLD = int(0.7 * MAX_TOKENS)  # Unused: kept for reference
+
+    # Generate initial prompt without any rollout data
+    prev_reasoning, current_prompt = await engineer.propose_prompt(openai_api_log_path)
+
+    # Write initial prompt to versioned file
+    prompt_version += 1
+    versioned_prompt_path = base_dir / f"CLAUDE-{prompt_version:04d}.md"
+    versioned_prompt_path.write_text(current_prompt)
 
     # Create semaphore for controlling parallel rollouts
     rollout_semaphore = asyncio.Semaphore(max_parallel_rollouts)
@@ -1486,10 +1363,6 @@ async def optimize_prompts(
             )
 
             return code_result, grade
-
-    # Save the initial prompt in the run directory for reference.  The version is 0.
-    initial_prompt_path = base_dir / f"CLAUDE-{prompt_version:04d}.md"
-    initial_prompt_path.write_text(initial_prompt)
 
     # Log experiment configuration
     logger.info(
@@ -1551,12 +1424,12 @@ async def optimize_prompts(
             "Iteration complete", average_overall_score=round(avg_overall, 2)
         )
 
-        # Append completed turn to PE conversation (current prompt + grades)
+        # Add completed turn to PE conversation (current prompt + grades)
         grades = engineer.build_grades_message(iteration_results)
-        engineer.append_turn(reasoning, current_prompt, grades)
-        
-        # Generate next prompt using PE  
-        reasoning, new_prompt = await engineer.propose_prompt(openai_api_log_path)
+        engineer.add_result(prev_reasoning, current_prompt, grades)
+
+        # Generate next prompt using PE
+        prev_reasoning, new_prompt = await engineer.propose_prompt(openai_api_log_path)
 
         # Log the new prompt in JSONL
         with prompt_log_path.open("a") as f:

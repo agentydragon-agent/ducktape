@@ -33,6 +33,11 @@ Usage:
       name: archive
       dest_path: "/opt/app"         # Directory where archive will be extracted
       creates_file: "/opt/app/bin"  # Optional path that should exist after install
+    
+    method:
+      name: archive
+      dest_path: "/usr/local/bin/tool"  # Where to install extracted file
+      extract_file: "tool"              # Extract only this file from archive
 
 Example:
   # One-step installation process
@@ -83,6 +88,120 @@ ENSURE_PRESENT = "present"
 
 class ActionModule(ActionBase):
     """GitHub Release Install action plugin."""
+
+    def _handle_archive_extract_file(
+        self, args: dict[str, Any], task_vars: dict, tmp: Any
+    ) -> dict[str, Any]:
+        """Handle extraction of a specific file from an archive.
+        
+        This performs a multi-step process:
+        1. Download archive to temp location
+        2. Extract to temp directory
+        3. Copy specific file to destination
+        4. Clean up temp files
+        """
+        import tempfile
+        import os
+        
+        asset_url = args["asset_url"]
+        extract_file = args["extract_file"]
+        dest_path = args["dest_path"]
+        
+        # Use ansible temp dir if available, otherwise system temp
+        temp_base = tmp or tempfile.gettempdir()
+        temp_archive = os.path.join(temp_base, "github_release_archive.tar.gz")
+        temp_extract_dir = os.path.join(temp_base, "github_release_extract")
+        
+        result = {"changed": False}
+        
+        # Step 1: Download archive
+        download_result = self._execute_module(
+            module_name="ansible.builtin.get_url",
+            module_args={
+                "url": asset_url,
+                "dest": temp_archive,
+                "mode": "0644",
+            },
+            task_vars=task_vars,
+            tmp=tmp,
+        )
+        if download_result.get("failed"):
+            return download_result
+        
+        # Step 2: Create temp directory and extract archive
+        mkdir_result = self._execute_module(
+            module_name="ansible.builtin.file",
+            module_args={
+                "path": temp_extract_dir,
+                "state": "directory",
+                "mode": "0755",
+            },
+            task_vars=task_vars,
+            tmp=tmp,
+        )
+        if mkdir_result.get("failed"):
+            # Clean up downloaded archive
+            self._execute_module(
+                module_name="ansible.builtin.file",
+                module_args={"path": temp_archive, "state": "absent"},
+                task_vars=task_vars,
+                tmp=tmp,
+            )
+            return mkdir_result
+        
+        extract_result = self._execute_module(
+            module_name="ansible.builtin.unarchive",
+            module_args={
+                "src": temp_archive,
+                "dest": temp_extract_dir,
+                "remote_src": True,
+            },
+            task_vars=task_vars,
+            tmp=tmp,
+        )
+        if extract_result.get("failed"):
+            # Clean up downloaded archive
+            self._execute_module(
+                module_name="ansible.builtin.file",
+                module_args={"path": temp_archive, "state": "absent"},
+                task_vars=task_vars,
+                tmp=tmp,
+            )
+            return extract_result
+        
+        # Step 3: Copy specific file to destination
+        source_file = os.path.join(temp_extract_dir, extract_file)
+        copy_result = self._execute_module(
+            module_name="ansible.builtin.copy",
+            module_args={
+                "src": source_file,
+                "dest": dest_path,
+                "mode": "0755",
+                "remote_src": True,
+            },
+            task_vars=task_vars,
+            tmp=tmp,
+        )
+        
+        # Step 4: Clean up temp files
+        for path in [temp_archive, temp_extract_dir]:
+            self._execute_module(
+                module_name="ansible.builtin.file",
+                module_args={"path": path, "state": "absent"},
+                task_vars=task_vars,
+                tmp=tmp,
+            )
+        
+        if copy_result.get("failed"):
+            return copy_result
+        
+        result["changed"] = any([
+            download_result.get("changed", False),
+            extract_result.get("changed", False),
+            copy_result.get("changed", False),
+        ])
+        
+        return result
 
     def _create_installer(self, args: dict[str, Any]) -> GitHubInstaller:
         """Create installer instance based on method.
@@ -159,12 +278,22 @@ class ActionModule(ActionBase):
             installer = self._create_installer(args)
         except ActionError as e:
             return _fail(result, str(e))
-        install_result = self._execute_module(
-            module_name=installer.module_name,
-            module_args=installer.install_module_args(asset_url),
-            task_vars=task_vars,
-            tmp=tmp,
-        ) | installer.get_additional_info(asset_url)
+        
+        # Handle special case for archive extraction with specific file
+        if installer.module_name == "_multi_step_archive_extract":
+            install_result = self._handle_archive_extract_file(
+                installer.install_module_args(asset_url),
+                task_vars,
+                tmp,
+            )
+        else:
+            install_result = self._execute_module(
+                module_name=installer.module_name,
+                module_args=installer.install_module_args(asset_url),
+                task_vars=task_vars,
+                tmp=tmp,
+            ) | installer.get_additional_info(asset_url)
+        
         result["install_result"] = install_result
 
         if install_result.get("failed"):
