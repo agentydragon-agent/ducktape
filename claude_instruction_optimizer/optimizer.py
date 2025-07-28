@@ -236,12 +236,23 @@ class ScoreEvolutionTracker:
         
         # Create combined plot with position dodging to prevent error bar overlap
         dodge_width = 0.3
+        
+        # Separate overall and other facets for different styling
+        df_overall = df[df["facet"] == "overall"]
+        df_other = df[df["facet"] != "overall"]
+        
         combined_plot = (
-            ggplot(df, aes(x="iteration", y="mean", color="facet")) +
-            geom_line(size=1) +
-            geom_point(size=2, position=position_dodge(width=dodge_width)) +
-            geom_errorbar(aes(ymin="ci_lower", ymax="ci_upper"), 
-                         width=0.1, position=position_dodge(width=dodge_width)) +
+            ggplot() +
+            # Other facets - thinner lines
+            geom_line(df_other, aes(x="iteration", y="mean", color="facet"), size=0.8, alpha=0.7) +
+            geom_point(df_other, aes(x="iteration", y="mean", color="facet"), size=1.5, position=position_dodge(width=dodge_width), alpha=0.7) +
+            geom_errorbar(df_other, aes(x="iteration", ymin="ci_lower", ymax="ci_upper", color="facet"), 
+                         width=0.1, position=position_dodge(width=dodge_width), alpha=0.7) +
+            # Overall facet - bold solid line
+            geom_line(df_overall, aes(x="iteration", y="mean"), color="black", size=2.5) +
+            geom_point(df_overall, aes(x="iteration", y="mean"), color="black", size=3, position=position_dodge(width=dodge_width)) +
+            geom_errorbar(df_overall, aes(x="iteration", ymin="ci_lower", ymax="ci_upper"), 
+                         width=0.1, position=position_dodge(width=dodge_width), color="black", size=1) +
             theme_minimal() +
             labs(
                 title="Score Evolution Across Iterations",
