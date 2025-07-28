@@ -29,7 +29,7 @@ The global configuration at `~/.wt/config.toml` will define repository mappings,
 
 Commands will support both explicit repository specification and intelligent context-aware resolution:
 
-- `wt branch-name` - operates on the default repository (typically the OpenAI monorepo)
+- `wt branch-name` - operates on the default repository
 - `wt --repo=other-project branch-name` - explicit repository selection  
 - `wt other-project/branch-name` - repository/worktree syntax
 - When inside a worktree, commands operate on that repository by default

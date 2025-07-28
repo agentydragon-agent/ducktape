@@ -821,8 +821,8 @@ class GitStatusdProcess:
         return self.process and self.process.returncode is None
 
 
-class GitStatusdDaemon:
-    """Multiplexing daemon that manages gitstatusd processes for all worktrees."""
+class WtDaemon:
+    """Main worktree management daemon that handles all worktree operations."""
 
     def __init__(self, config):
         from ..shared.configuration import Configuration
@@ -1662,7 +1662,7 @@ class GitStatusdDaemon:
 
 async def run_daemon(config) -> None:
     """Run the daemon with proper signal handling."""
-    daemon = GitStatusdDaemon(config)
+    daemon = WtDaemon(config)
 
     # Signal handling
     def signal_handler():

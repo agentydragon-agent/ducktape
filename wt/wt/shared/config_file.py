@@ -30,8 +30,8 @@ class ConfigFile(BaseModel):
     worktrees_dir: str  # Absolute path
     
     # Git settings
-    branch_prefix: str = "wt/"
-    upstream_branch: str = "master"
+    branch_prefix: str
+    upstream_branch: str
     
     # Behavior settings
     log_operations: bool = False

@@ -40,8 +40,8 @@ from ..shared.protocol import (
 logger = logging.getLogger(__name__)
 
 
-class GitStatusdDaemonClient:
-    """Client for communicating with GitStatusd multiplexing daemon."""
+class WtClient:
+    """JSON-RPC client for communicating with the worktree management daemon."""
 
     # Class-level lock to prevent multiple daemon startups
     _daemon_start_lock = asyncio.Lock()

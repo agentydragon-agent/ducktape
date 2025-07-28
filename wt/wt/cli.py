@@ -3,7 +3,7 @@
 import click
 from colorama import init
 
-from .client.daemon_client import GitStatusdDaemonClient
+from .client.daemon_client import WtClient
 from .client.handlers import (
     handle_copy_worktree,
     handle_create_worktree,
@@ -66,25 +66,21 @@ def main(ctx, help):
         ctx.exit(0)
 
     if ctx.invoked_subcommand is None:
-        try:
-            import asyncio
+        import asyncio
+        asyncio.run(_async_main())
 
-            asyncio.run(_async_main())
-        except RuntimeError as e:
-            if "OpenAI repository not found" in str(e):
-                click.echo(f"Error: {e}", err=True)
-                click.echo("Aborted!", err=True)
-                ctx.exit(1)
-            else:
-                raise
+
+def _create_cli_dependencies():
+    """Create common CLI dependencies."""
+    config = load_config()
+    formatter = ViewFormatter()
+    daemon_client = WtClient(config)
+    return config, formatter, daemon_client
 
 
 async def _async_main():
     """Async main function."""
-    config = load_config()
-    formatter = ViewFormatter()
-    daemon_client = GitStatusdDaemonClient(config)
-
+    config, formatter, daemon_client = _create_cli_dependencies()
     await handle_status(daemon_client, formatter)
 
 
@@ -117,17 +113,7 @@ def sh(ctx, args):
         else:
             filtered_args.append(arg)
 
-    try:
-        config = load_config()
-        formatter = ViewFormatter()
-        daemon_client = GitStatusdDaemonClient(config)
-    except RuntimeError as e:
-        if "OpenAI repository not found" in str(e):
-            click.echo(f"Error: {e}", err=True)
-            click.echo("Aborted!", err=True)
-            ctx.exit(1)
-        else:
-            raise
+    config, formatter, daemon_client = _create_cli_dependencies()
 
     # Run async command handler
     import asyncio

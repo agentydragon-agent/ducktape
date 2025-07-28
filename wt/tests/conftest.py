@@ -270,7 +270,7 @@ def mock_cli_dependencies(temp_config_file):
     @contextmanager
     def _mock_cli_dependencies(worktree_status_return_value):
         with patch(
-            "wt.client.daemon_client.GitStatusdDaemonClient.get_status"
+            "wt.client.daemon_client.WtClient.get_status"
         ) as mock_get_status:
             mock_get_status.return_value = worktree_status_return_value
             yield mock_get_status

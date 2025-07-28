@@ -33,7 +33,7 @@ def create_test_status_response(results_dict=None):
 def run_cli_with_mocked_status(cli_runner, temp_config_file, status_response, cli_args):
     """Helper to run CLI with mocked status response and proper environment setup."""
     with patch.dict("os.environ", {"WT_DIR": str(temp_config_file.parent)}), \
-         patch("wt.client.daemon_client.GitStatusdDaemonClient.get_status") as mock_get_status:
+         patch("wt.client.daemon_client.WtClient.get_status") as mock_get_status:
         mock_get_status.return_value = status_response
         return cli_runner.invoke(main, cli_args)
 

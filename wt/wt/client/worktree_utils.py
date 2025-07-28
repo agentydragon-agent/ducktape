@@ -112,12 +112,12 @@ async def create_worktree(
 ) -> Path:
     """Create a new worktree via RPC."""
     from ..shared.error_handling import validate_worktree_name
-    from .daemon_client import GitStatusdDaemonClient
+    from .daemon_client import WtClient
 
     validate_worktree_name(name)
 
     # Create daemon client
-    daemon_client = GitStatusdDaemonClient(config)
+    daemon_client = WtClient(config)
 
     if source_worktree:
         # Copy from existing worktree - identify the source worktree to get its branch
@@ -144,10 +144,10 @@ async def create_worktree(
 
 async def remove_worktree(config, name: str, force: bool = False) -> None:
     """Remove a worktree via RPC."""
-    from .daemon_client import GitStatusdDaemonClient 
+    from .daemon_client import WtClient 
 
     # Create daemon client
-    daemon_client = GitStatusdDaemonClient(config)
+    daemon_client = WtClient(config)
 
     try:
         # Get WorktreeID from server by listing all worktrees and finding the match

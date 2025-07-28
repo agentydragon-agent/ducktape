@@ -52,7 +52,7 @@ wt --verbose
 ### Special Destinations
 
 ```bash
-# Switch to main OpenAI repo
+# Switch to main repo
 wt main
 wt master
 ```

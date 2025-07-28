@@ -39,11 +39,43 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-from pydantic import BaseModel
+import structlog
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Any, Tuple
 import shutil  # used for finding executables
+from pydantic import BaseModel
+
+# Configure structured logging
+structlog.configure(
+    processors=[
+        structlog.stdlib.filter_by_level,
+        structlog.stdlib.add_logger_name,
+        structlog.stdlib.add_log_level,
+        structlog.stdlib.PositionalArgumentsFormatter(),
+        structlog.processors.TimeStamper(fmt="iso"),
+        structlog.processors.StackInfoRenderer(),
+        structlog.processors.format_exc_info,
+        structlog.processors.UnicodeDecoder(),
+        structlog.processors.JSONRenderer()
+    ],
+    context_class=dict,
+    logger_factory=structlog.stdlib.LoggerFactory(),
+    wrapper_class=structlog.stdlib.BoundLogger,
+    cache_logger_on_first_use=True,
+)
+
+logger = structlog.get_logger()
+
+class SeedTask(BaseModel):
+    id: str
+    prompt: str
+    description: str
+
+class Criterion(BaseModel):
+    name: str
+    description: str
+    evaluation_criteria: str
 
 # Capture original PATH and binary locations before any modifications.  This
 # ensures that when we create firejail wrappers for Claude Code, we refer to
@@ -237,37 +269,45 @@ def print_message_summary(message: Any, agent_id: int) -> None:
     from claude_code_sdk import AssistantMessage, UserMessage, SystemMessage, ResultMessage
     from claude_code_sdk import TextBlock, ToolUseBlock, ToolResultBlock
     
+    def truncate(text: str, limit: int = 100) -> str:
+        return text[:limit] + "..." if len(text) > limit else text
+    
+    def clean_text(text: str) -> str:
+        return text.replace('\n', ' ')
+    
     if isinstance(message, SystemMessage):
-        print(f"Agent {agent_id} action: SystemMessage")
+        print(f"[Agent {agent_id}] SystemMessage({message.subtype})")
+        
     elif isinstance(message, AssistantMessage):
-        content_preview = ""
         tool_uses = []
+        text_content = ""
         
         for block in message.content:
             if isinstance(block, TextBlock):
-                content_preview = block.text[:100] + "..." if len(block.text) > 100 else block.text
+                text_content = block.text
             elif isinstance(block, ToolUseBlock):
-                tool_uses.append(f"{block.name}({', '.join(f'{k}={str(v)[:50]}' for k, v in block.input.items())})")
+                args = ', '.join(f'{k}={truncate(str(v), 30)}' for k, v in block.input.items())
+                tool_uses.append(f"{block.name}({args})")
+            elif isinstance(block, ToolResultBlock):
+                content = block.content if isinstance(block.content, str) else str(block.content)
+                print(f"[Agent {agent_id}] ToolResult({block.tool_use_id[:8]}) - \"{clean_text(truncate(content, 60))}\"")
         
         if tool_uses:
-            print(f"Agent {agent_id} action: AssistantMessage - {', '.join(tool_uses)}")
-        else:
-            print(f'Agent {agent_id} action: AssistantMessage - "{content_preview.replace(chr(10), " ")}"')
+            print(f"[Agent {agent_id}] {', '.join(tool_uses)}")
+        elif text_content:
+            print(f'[Agent {agent_id}] AssistantMessage - "{clean_text(truncate(text_content))}"')
+        # Note: ToolResultBlock printing is handled above in the loop
             
     elif isinstance(message, UserMessage):
-        # UserMessage.content can be a string or list according to actual usage
-        if isinstance(message.content, str):
-            content_preview = message.content[:100] + "..." if len(message.content) > 100 else message.content
-            print(f'Agent {agent_id} action: UserMessage - "{content_preview.replace(chr(10), " ")}"')
-        else:
-            # Handle list content (e.g., tool results)
-            content_preview = str(message.content)[:100] + "..." if len(str(message.content)) > 100 else str(message.content)
-            print(f'Agent {agent_id} action: UserMessage - "{content_preview.replace(chr(10), " ")}"')
+        # UserMessage.content is just a string according to the SDK
+        print(f'[Agent {agent_id}] UserMessage - "{clean_text(truncate(message.content))}"')
                     
     elif isinstance(message, ResultMessage):
-        print(f"Agent {agent_id} action: ResultMessage (duration: {message.duration_ms}ms, cost: ${message.total_cost_usd}, error: {message.is_error})")
+        cost_str = f"${message.total_cost_usd}" if message.total_cost_usd else "unknown"
+        print(f"[Agent {agent_id}] ResultMessage (duration: {message.duration_ms}ms, cost: {cost_str}, error: {message.is_error})")
+        
     else:
-        print(f"Agent {agent_id} action: {type(message).__name__}")
+        print(f"[Agent {agent_id}] {type(message).__name__}")
 
 
 def extract_text_prefix(text: str, limit: int = 120) -> str:
@@ -579,19 +619,7 @@ class CodeResult(BaseModel):
     files: List[Dict[str, str]]
 
 
-class Criterion(BaseModel):
-    """Defines a single grading criterion (facet) for code evaluation.
-
-    Each facet has a unique ``name`` used as the JSON property key when
-    submitting grades, a human‑readable ``description`` of the facet, and an
-    ``evaluation_criteria`` string that explains how the grader should assess
-    the facet.  Users can extend the list of facets by adding instances
-    of this model without modifying the rest of the program.
-    """
-
-    name: str
-    description: str
-    evaluation_criteria: str
+# Criterion class already defined above with Pydantic
 
 
 class Grade(BaseModel):
@@ -616,7 +644,7 @@ async def run_claude_code(
     task: str,
     system_prompt: str,
     agent_id: int,
-    task_id: int,
+    task_id: str,
     base_dir: Path,
     anthropic_log_path: Path,
     prompt_version: int,
@@ -673,8 +701,8 @@ async def run_claude_code(
     # Print the working directory for this agent to the console so that users
     # know where the agent's files are being saved.  This occurs at the start
     # of each agent run.
-    print(f"Agent {agent_id} working directory: {work_dir}")
-    print(f"Agent {agent_id} task: {task[:100]}...")
+    agent_logger = logger.bind(agent_id=agent_id, task_id=task_id)
+    agent_logger.info("Agent starting", work_dir=str(work_dir), task_preview=task[:100])
 
     # Write the system prompt into CLAUDE.md inside the agent's working directory.
     # The actual prompt version files are stored at the run directory level.
@@ -683,6 +711,9 @@ async def run_claude_code(
 
     # No additional scaffolding is added; the task itself serves as the prompt for Claude Code.
 
+    # Set bash timeout environment variable (30 seconds)
+    os.environ["BASH_MAX_TIMEOUT_MS"] = "30000"
+    
     # Configure Claude Code options.  We always expect the SDK and API key to be present.
     options = ClaudeCodeOptions(
         # Enable ALL tools including dangerous ones like Bash for full execution
@@ -694,6 +725,8 @@ async def run_claude_code(
         max_turns=100,
         # Auto‑accept ALL permissions - dangerous but needed for full execution
         permission_mode="bypassPermissions",  # Bypass all permissions automatically
+        # Disable all MCP servers to prevent interference and resource usage
+        mcp_servers={},  # Empty dict means no MCP servers
     )
     # Collect the full sequence of messages/events from the Claude Code agent.  Each
     # event returned by the SDK is appended verbatim to a list so that the
@@ -712,7 +745,7 @@ async def run_claude_code(
     log_anthropic_request_event(anthropic_log_path, anthropic_request, "request_sent")
     
     # Debug: Print what command would be generated
-    print(f"Agent {agent_id} DEBUG: Using ClaudeSDKClient with task: {task[:50]}...")
+    agent_logger.info("Starting Claude Code session")
     # Import the correct message types from the SDK and use ClaudeSDKClient for streaming mode
     from claude_code_sdk import AssistantMessage, UserMessage, SystemMessage, ResultMessage
     from claude_code_sdk import TextBlock, ToolUseBlock, ToolResultBlock, ClaudeSDKClient
@@ -730,6 +763,14 @@ async def run_claude_code(
 
             # Print message summary
             print_message_summary(message, agent_id)
+            
+            # Break out of the loop when we receive a ResultMessage (conversation is complete)
+            if isinstance(message, ResultMessage):
+                agent_logger.info("Session completed", 
+                                duration_ms=message.duration_ms, 
+                                cost_usd=message.total_cost_usd, 
+                                is_error=message.is_error)
+                break
 
     # After the conversation completes, gather all files in the agent directory
     files_info: List[Dict[str, str]] = []
@@ -863,6 +904,9 @@ async def grade_code(
 
     # Call the model.  We enforce the tool choice so the model must call
     # submit_grades and return the grading JSON according to the schema.
+    grade_logger = logger.bind(agent_id=result.agent_id, task_id=getattr(result, 'task_id', 'unknown'))
+    grade_logger.info("Making OpenAI grading call")
+    
     response = client.responses.create(
         model="o3",
         input=input_messages,
@@ -871,6 +915,22 @@ async def grade_code(
     )
     # Log request and response
     log_openai_request_response(openai_log_path, openai_request, response)
+    grade_logger.info("OpenAI grading completed")
+    
+    # Extract and log grading results before processing
+    args_str = (
+        call.arguments if hasattr(call, "arguments") else call.get("arguments")
+    )
+    if isinstance(args_str, str):
+        grades_data = json.loads(args_str)
+        facet_results = {}
+        for facet_name, facet_data in grades_data.items():
+            if isinstance(facet_data, dict) and "score" in facet_data:
+                score = facet_data.get("score", 0)
+                rationale = facet_data.get("rationale", "")
+                facet_results[facet_name] = {"score": score, "rationale": rationale}
+        
+        grade_logger.info("Grading results", facets=facet_results)
 
     # Extract the function_call item from the response.  The output may
     # include reasoning items before the function call, so we iterate to find
@@ -1286,14 +1346,16 @@ async def optimize_prompts(
     criteria: List[Criterion] = []
     for entry in grader_entries:
         try:
-            crit = Criterion(
-                name=str(entry["id"]),
-                description=str(entry.get("description", "")),
-                evaluation_criteria=str(entry.get("evaluation_criteria", "")),
-            )
+            # Map 'id' field to 'name' for Criterion model
+            criterion_data = {
+                "name": entry["id"],
+                "description": entry.get("description", ""),
+                "evaluation_criteria": entry.get("evaluation_criteria", "")
+            }
+            crit = Criterion(**criterion_data)
             criteria.append(crit)
-        except KeyError as e:
-            raise ValueError(f"Missing required key in graders entry: {e}")
+        except Exception as e:
+            raise ValueError(f"Invalid grader entry {entry}: {e}")
     # Build a human-readable definition of the criteria to share with the prompt engineer
     criteria_definition_lines = ["The grader uses the following axes:"]
     for crit in criteria:
@@ -1355,19 +1417,34 @@ async def optimize_prompts(
     # Save the initial prompt in the run directory for reference.  The version is 0.
     initial_prompt_path = base_dir / f"CLAUDE-{prompt_version:04d}.md"
     initial_prompt_path.write_text(initial_prompt)
+    
+    # Log experiment configuration
+    logger.info("Prompt optimization experiment starting",
+                task_count=len(seed_tasks),
+                task_ids=[task.id for task in seed_tasks],
+                rollouts_per_task=rollouts_per_task,
+                total_iterations=iterations,
+                total_agents=len(seed_tasks) * rollouts_per_task * iterations,
+                grading_criteria_count=len(criteria),
+                initial_prompt=current_prompt)
 
     for iteration in range(1, iterations + 1):
-        print(f"\n=== Iteration {iteration}/{iterations} ===")
+        iter_logger = logger.bind(iteration=iteration, total_iterations=iterations)
+        iter_logger.info("Iteration starting")
         iteration_results: List[Tuple[CodeResult, Grade]] = []
 
         # Run rollouts for each task
-        for task_id, task in enumerate(seed_tasks):
+        for task_idx, task in enumerate(seed_tasks):
+            task_id = task.id  # Use the readable task ID from YAML
+            task_prompt = task.prompt
+            task_logger = logger.bind(task_id=task_id, iteration=iteration)
+            
             # Launch multiple agents concurrently for the same task.  Pass the
             # current prompt version to run_claude_code so that the prompt
             # file is saved with the appropriate version number.
             tasks = [
                 run_claude_code(
-                    task,
+                    task_prompt,
                     current_prompt,
                     agent_id=i,
                     task_id=task_id,
@@ -1378,12 +1455,16 @@ async def optimize_prompts(
                 for i in range(rollouts_per_task)
             ]
             code_results = await asyncio.gather(*tasks)
+            task_logger.info("Code generation completed", agent_count=len(code_results))
+            
             # Grade each result
+            task_logger.info("Grading starting")
             grade_tasks = [
                 grade_code(result, criteria, openai_api_log_path)
                 for result in code_results
             ]
             grades = await asyncio.gather(*grade_tasks)
+            task_logger.info("Grading completed")
             # Append to iteration summary
             iteration_results.extend(zip(code_results, grades))
 
@@ -1478,9 +1559,11 @@ def main() -> None:
         raise ValueError("seeds.yaml must contain a list of seed task objects.")
     seed_tasks = []
     for entry in seeds_data:
-        if "prompt" not in entry:
-            raise ValueError(f"Seed entry missing 'prompt': {entry}")
-        seed_tasks.append(str(entry["prompt"]))
+        try:
+            seed_task = SeedTask(**entry)
+            seed_tasks.append(seed_task)
+        except Exception as e:
+            raise ValueError(f"Invalid seed task entry {entry}: {e}")
 
     # Initial system prompt instructing the coding assistant how to behave.  The assistant
     # is described simply as a helpful coding assistant; more detailed guidance will be
