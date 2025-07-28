@@ -46,9 +46,9 @@ import tiktoken
 import yaml
 from dataclasses import asdict, dataclass
 from datetime import datetime
-from enum import Enum
 from pathlib import Path
 from typing import List, Dict, Any, Tuple, Optional, Union, TypedDict, Literal
+from enum import Enum
 
 
 from claude_code_sdk import (
@@ -76,6 +76,7 @@ from pydantic import BaseModel
 # Import new modules
 from optimizer_config import OptimizerConfig
 from docker_manager import DockerManager
+from message_formatter import log_message_summary
 
 # Configure structured logging
 import logging
@@ -252,127 +253,6 @@ def create_openai_request(
     return request
 
 
-# ----------------------------------------------------------------------------
-# Helper functions for message summarisation
-#
-# The logging logic inside run_claude_code originally contained a large block
-# of repetitive code to detect tool invocations, extract argument strings and
-# derive text prefixes.  To improve clarity and maintainability, this
-# functionality is refactored into a few small helper functions.  These
-# helpers encapsulate the common patterns of formatting arguments, summarising
-# tool calls, summarising tool results, and extracting text prefixes.  By
-# delegating to these helpers, the main loop in run_claude_code becomes
-# easier to read and future changes to the summarisation logic can be
-# made in one place.
-
-
-def _truncate(text: str, limit: int = 100) -> str:
-    """Truncate text to limit with ellipsis."""
-    return text[:limit] + "..." if len(text) > limit else text
-
-
-def _clean_text(text: str) -> str:
-    """Replace newlines with spaces for logging."""
-    return text.replace("\n", " ")
-
-
-def _safe_content_to_str(content: Union[str, List[Union[str, Dict[str, str]]]]) -> str:
-    """Safely convert content to string, handling both str and list types."""
-    if isinstance(content, str):
-        return content
-    elif isinstance(content, list):
-        return str(content)
-    else:
-        return str(content)
-
-
-def _log_assistant_message(message: AssistantMessage, message_logger) -> None:
-    """Log assistant message with tool usage details."""
-    tool_uses = []
-    text_content = ""
-    
-    for block in message.content:
-        if isinstance(block, TextBlock):
-            text_content = block.text
-        elif isinstance(block, ToolUseBlock):
-            args = ", ".join(
-                f"{k}={_truncate(str(v), 30)}" for k, v in block.input.items()
-            )
-            tool_uses.append(f"{block.name}({args})")
-        elif isinstance(block, ToolResultBlock):
-            content = (
-                block.content
-                if isinstance(block.content, str)
-                else str(block.content)
-            )
-            message_logger.info(
-                "Tool result",
-                tool_use_id=block.tool_use_id[:8],
-                content_preview=_clean_text(_truncate(content, 60)),
-            )
-    
-    if tool_uses:
-        message_logger.info("Tool usage", tools=tool_uses)
-    elif text_content:
-        message_logger.info(
-            "Assistant message", content_preview=_clean_text(_truncate(text_content))
-        )
-
-
-def _log_user_message(message: UserMessage, message_logger) -> None:
-    """Log user message, handling both string and list content."""
-    content_str = _safe_content_to_str(message.content)
-    
-    # Handle list content (e.g., tool results)
-    if isinstance(message.content, list) and message.content:
-        first_item = message.content[0]
-        if isinstance(first_item, dict) and first_item.get("type") == "tool_result":
-            tool_id = first_item.get("tool_use_id", "unknown")[:8]
-            content = first_item.get("content", "")
-            content_str = content if isinstance(content, str) else str(content)
-            message_logger.info(
-                "Tool result",
-                tool_use_id=tool_id,
-                content_preview=_clean_text(_truncate(content_str, 60)),
-            )
-            return
-    
-    # Handle string content or fallback
-    if content_str and content_str != "[]":  # Don't log empty lists
-        message_logger.info(
-            "User message", content_preview=_clean_text(_truncate(content_str))
-        )
-    else:
-        message_logger.info("User message", content="empty")
-
-
-def _log_result_message(message: ResultMessage, message_logger) -> None:
-    """Log result message with execution details."""
-    message_logger.info(
-        "Result message",
-        duration_ms=message.duration_ms,
-        cost_usd=message.total_cost_usd,
-        is_error=message.is_error,
-    )
-
-
-def log_message_summary(
-    message: Union[SystemMessage, AssistantMessage, UserMessage, ResultMessage],
-    agent_id: int,
-) -> None:
-    """Log a structured summary of a Claude Code SDK message."""
-    message_logger = logger.bind(agent_id=agent_id, message_type=type(message).__name__)
-
-    if isinstance(message, SystemMessage):
-        message_logger.info("System message", subtype=message.subtype)
-    elif isinstance(message, AssistantMessage):
-        _log_assistant_message(message, message_logger)
-    elif isinstance(message, UserMessage):
-        _log_user_message(message, message_logger)
-    elif isinstance(message, ResultMessage):
-        _log_result_message(message, message_logger)
-    else:
-        message_logger.info("Unknown message type")
 
 
 # -----------------------------------------------------------------------------
@@ -532,7 +412,7 @@ async def execute_claude_session(
         async for message in client.receive_messages():
             log_anthropic_request_event(anthropic_log_path, anthropic_request, message)
             message_sequence.append(asdict(message))
-            log_message_summary(message, agent_id)
+            log_message_summary(message, logger, agent_id)
             
             if isinstance(message, ResultMessage):
                 agent_logger.info(
@@ -577,7 +457,18 @@ def gather_agent_files(work_dir: Path) -> List[Dict[str, str]]:
             continue
 
         relative = file_path.relative_to(work_dir).as_posix()
-        files_info.append({"path": relative, "content": file_path.read_text()})
+        try:
+            content = file_path.read_text()
+        except UnicodeDecodeError as e:
+            logger.warning(
+                "Failed to decode file as UTF-8",
+                file_path=str(file_path),
+                relative_path=relative,
+                error=str(e),
+                file_size=file_path.stat().st_size
+            )
+            content = "<<not a plaintext file>>"
+        files_info.append({"path": relative, "content": content})
         
     return files_info
 
@@ -908,7 +799,7 @@ class Turn:
 
     @property
     def messages(self) -> List[Dict[str, Any]]:
-        """Convert turn into OpenAI API message sequence with function calling format."""
+        """Convert turn into OpenAI API message sequence."""
         msgs = []
 
         # Add all reasoning items (filtered to remove response-only fields)
@@ -1187,13 +1078,13 @@ Full Messages:
 
 
 async def optimize_prompts(
-    seed_tasks: List[str],
+    seed_tasks: List[SeedTask],
     iterations: int = 3,
     rollouts_per_task: int = 2,
-    processing_mode: ProcessingMode = ProcessingMode.FULL_ROLLOUTS,
     base_output_dir: str = "./agent_output",
     max_parallel_rollouts: Optional[int] = None,
     tasks_per_iteration: Optional[int] = None,
+    processing_mode: ProcessingMode = ProcessingMode.FULL_ROLLOUTS,
 ) -> None:
     """Run the prompt optimisation loop.
 
@@ -1278,6 +1169,7 @@ async def optimize_prompts(
         # Create semaphore for controlling parallel rollouts
         rollout_semaphore = asyncio.Semaphore(max_parallel_rollouts)
 
+        # Define the inner rollout function
         async def run_single_rollout(
             task: SeedTask, rollout_id: int, iteration: int
         ) -> GradedCode:
@@ -1500,16 +1392,17 @@ Examples:
     for entry in seeds_data:
         seed_tasks.append(SeedTask(**entry))
 
-    # Run the optimisation loop with parsed arguments
+    # Run the optimisation loop.  Adjust iterations and rollouts per task as desired.
+    # The PromptEngineer will generate the initial prompt automatically.
     asyncio.run(
         optimize_prompts(
             seed_tasks,
             iterations=args.iterations,
             rollouts_per_task=args.rollouts_per_task,
-            processing_mode=processing_mode,
             base_output_dir="./agent_output",
             max_parallel_rollouts=args.max_parallel,
             tasks_per_iteration=args.tasks_per_iteration,
+            processing_mode=processing_mode,
         )
     )
 
