@@ -684,6 +684,7 @@ async def execute_claude_session(
     options: ClaudeCodeOptions,
     agent_id: int,
     anthropic_log_path: Path,
+    rollout_id: int,
 ) -> List[Dict[str, Any]]:
     """Execute coding agent session and collect messages.
     
@@ -692,11 +693,13 @@ async def execute_claude_session(
         options: Coding agent configuration options
         agent_id: Agent identifier for logging
         anthropic_log_path: Path to log Anthropic API calls
+        rollout_id: Rollout ID for database logging
         
     Returns:
         List of serialized messages from the session
     """
     message_sequence: List[Dict[str, Any]] = []
+    seq_order = 0
     anthropic_request = {
         "prompt": task,
         "options": (
@@ -715,8 +718,18 @@ async def execute_claude_session(
         await client.query(task)
         async for message in client.receive_messages():
             log_anthropic_request_event(anthropic_log_path, anthropic_request, message)
-            message_sequence.append(asdict(message))
+            message_dict = asdict(message)
+            message_sequence.append(message_dict)
             log_message_summary(message, logger, agent_id)
+            
+            # Log message to database in real-time
+            db_service.log_rollout_message(
+                rollout_id=rollout_id,
+                sequence_order=seq_order,
+                message_type=message_dict.get('role', type(message).__name__.lower()),
+                message_content=message_dict
+            )
+            seq_order += 1
             
             if isinstance(message, ResultMessage):
                 agent_logger.info(
@@ -922,6 +935,7 @@ async def run_claude_code(
     task_id: str,
     base_dir: Path,
     anthropic_log_path: Path,
+    rollout_id: int,
 ) -> CodeResult:
     """Run a single coding agent on the given task.
 
@@ -979,7 +993,7 @@ async def run_claude_code(
     
     # Execute coding agent session and collect messages
     message_sequence = await execute_claude_session(
-        task, options, agent_id, anthropic_log_path
+        task, options, agent_id, anthropic_log_path, rollout_id
     )
 
     # Gather all files created by the agent
@@ -1635,16 +1649,10 @@ async def optimize_prompts(
                     task_id=task.id,
                     base_dir=base_dir / f"iter_{iteration}",
                     anthropic_log_path=anthropic_api_log_path,
+                    rollout_id=db_rollout_id,
                 )
 
-                # Store rollout messages in database
-                for seq_order, message in enumerate(code_result.messages):
-                    db_service.log_rollout_message(
-                        rollout_id=db_rollout_id,
-                        sequence_order=seq_order,
-                        message_type=message.get('role', 'unknown'),
-                        message_content=message
-                    )
+                # Messages are now logged in real-time during execute_claude_session
                 
                 # Store rollout files in database
                 db_service.store_rollout_files(
