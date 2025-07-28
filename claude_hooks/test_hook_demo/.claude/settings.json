@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Edit(*)",
+      "MultiEdit(*)",
+      "Write(*)"
+    ],
+    "deny": []
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|MultiEdit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "adgn-claude-autofixer",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}

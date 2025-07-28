@@ -1,0 +1,18 @@
+[project]
+name = "claude_hooks"
+version = "0.1.0"
+description = "Claude Code hooks library and implementations"
+dependencies = [
+    "pydantic>=2.0.0",
+    "pyyaml",
+    "platformdirs",
+    "gitpython",
+    "pre-commit",
+    "typing-extensions",
+]
+
+[project.scripts]
+claude-autofixer = "claude_hooks.precommit_autofix:main"
+
+[tool.setuptools]
+packages = ["claude_hooks"]
