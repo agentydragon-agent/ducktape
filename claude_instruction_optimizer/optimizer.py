@@ -40,7 +40,7 @@ import json
 import os
 import random
 import shutil
-import structlog
+import signal
 import sys
 import tiktoken
 import yaml
@@ -77,35 +77,223 @@ from pydantic import BaseModel
 from optimizer_config import OptimizerConfig
 from docker_manager import DockerManager
 from message_formatter import log_message_summary
+from logging_utils import DualOutputLogging
 
-# Configure structured logging
-import logging
+# Setup logging using utility class
+DualOutputLogging.setup_logging()
+logger = DualOutputLogging.get_logger()
 
-logging.basicConfig(
-    format="%(message)s",
-    stream=sys.stdout,
-    level=logging.INFO,
-)
+# Score evolution tracking
+class ScoreEvolutionTracker:
+    """Tracks how scores evolve across optimization iterations."""
+    
+    def __init__(self):
+        self.iterations_data = []  # List of iteration score summaries
+        
+    def add_iteration(self, iteration: int, graded_codes: List[GradedCode]):
+        """Add scores from an iteration."""
+        # Extract all scores
+        overall_scores = [gc.grade.overall_score for gc in graded_codes]
+        
+        # Extract facet scores
+        facet_scores = {}
+        if graded_codes:
+            # Get all facet names from first result
+            facet_names = list(graded_codes[0].grade.axes.keys())
+            for facet_name in facet_names:
+                facet_scores[facet_name] = [
+                    gc.grade.axes[facet_name].score for gc in graded_codes
+                ]
+        
+        # Calculate statistics
+        import statistics
+        
+        def safe_stats(scores):
+            if not scores:
+                return {"mean": 0, "stdev": 0, "min": 0, "max": 0}
+            return {
+                "mean": statistics.mean(scores),
+                "stdev": statistics.stdev(scores) if len(scores) > 1 else 0,
+                "min": min(scores),
+                "max": max(scores),
+                "count": len(scores)
+            }
+        
+        iteration_summary = {
+            "iteration": iteration,
+            "overall": safe_stats(overall_scores),
+            "facets": {name: safe_stats(scores) for name, scores in facet_scores.items()},
+            "timestamp": datetime.now().isoformat()
+        }
+        
+        self.iterations_data.append(iteration_summary)
+        
+        logger.info(
+            "Score evolution tracked",
+            iteration=iteration,
+            overall_mean=round(iteration_summary["overall"]["mean"], 2),
+            overall_stdev=round(iteration_summary["overall"]["stdev"], 2),
+            rollout_count=iteration_summary["overall"]["count"]
+        )
+    
+    def generate_report(self, run_dir: Path, log_path: Path) -> str:
+        """Generate final score evolution report and plots."""
+        if not self.iterations_data:
+            return "No score data to report."
+        
+        report_parts = [
+            "=== SCORE EVOLUTION REPORT ===",
+            f"Total iterations: {len(self.iterations_data)}",
+            f"Log files location: {log_path}",
+            "",
+            "Overall Score Evolution:"
+        ]
+        
+        # Overall scores table
+        for iter_data in self.iterations_data:
+            overall = iter_data["overall"]
+            report_parts.append(
+                f"  Iteration {iter_data['iteration']:2d}: "
+                f"{overall['mean']:5.2f} ± {overall['stdev']:4.2f} "
+                f"(range: {overall['min']:4.1f}-{overall['max']:4.1f}, n={overall['count']})"
+            )
+        
+        # Facet evolution
+        if self.iterations_data[0]["facets"]:
+            report_parts.extend(["", "Facet Score Evolution:"])
+            facet_names = list(self.iterations_data[0]["facets"].keys())
+            
+            for facet in facet_names:
+                report_parts.append(f"  {facet}:")
+                for iter_data in self.iterations_data:
+                    facet_stats = iter_data["facets"][facet]
+                    report_parts.append(
+                        f"    Iter {iter_data['iteration']:2d}: "
+                        f"{facet_stats['mean']:5.2f} ± {facet_stats['stdev']:4.2f}"
+                    )
+        
+        # Generate plots
+        try:
+            plot_path = self._generate_plots(run_dir)
+            report_parts.extend(["", f"Score evolution plots saved to: {plot_path}"])
+        except Exception as e:
+            logger.warning("Failed to generate plots", error=str(e))
+            report_parts.extend(["", f"Plot generation failed: {e}"])
+        
+        report_parts.append("=" * 50)
+        return "\n".join(report_parts)
+    
+    def _generate_plots(self, run_dir: Path) -> Path:
+        """Generate score evolution plots using plotnine."""
+        import pandas as pd
+        from plotnine import (
+            ggplot, aes, geom_line, geom_point, geom_errorbar, 
+            facet_wrap, theme_minimal, labs, theme, element_text
+        )
+        import numpy as np
+        
+        # Prepare data for plotting
+        plot_data = []
+        
+        # Overall scores
+        for iter_data in self.iterations_data:
+            overall = iter_data["overall"]
+            # 69% CI (approximately 1 standard error)
+            error = overall["stdev"] / np.sqrt(max(1, overall["count"]))
+            plot_data.append({
+                "iteration": iter_data["iteration"],
+                "facet": "overall",
+                "mean": overall["mean"],
+                "error": error,
+                "ci_lower": overall["mean"] - error,
+                "ci_upper": overall["mean"] + error
+            })
+        
+        # Facet scores
+        if self.iterations_data[0]["facets"]:
+            for facet_name in self.iterations_data[0]["facets"].keys():
+                for iter_data in self.iterations_data:
+                    facet_stats = iter_data["facets"][facet_name]
+                    error = facet_stats["stdev"] / np.sqrt(max(1, facet_stats["count"]))
+                    plot_data.append({
+                        "iteration": iter_data["iteration"],
+                        "facet": facet_name,
+                        "mean": facet_stats["mean"],
+                        "error": error,
+                        "ci_lower": facet_stats["mean"] - error,
+                        "ci_upper": facet_stats["mean"] + error
+                    })
+        
+        df = pd.DataFrame(plot_data)
+        
+        # Create plot
+        plot = (
+            ggplot(df, aes(x="iteration", y="mean", color="facet")) +
+            geom_line(size=1) +
+            geom_point(size=2) +
+            geom_errorbar(aes(ymin="ci_lower", ymax="ci_upper"), width=0.1) +
+            theme_minimal() +
+            labs(
+                title="Score Evolution Across Iterations",
+                x="Iteration",
+                y="Score",
+                color="Facet",
+                caption="Error bars show 69% confidence interval of the mean"
+            ) +
+            theme(
+                plot_title=element_text(size=14, ha="center"),
+                legend_position="right"
+            )
+        )
+        
+        plot_path = run_dir / "score_evolution.png"
+        plot.save(plot_path, width=12, height=8, dpi=300)
+        return plot_path
 
-structlog.configure(
-    processors=[
-        structlog.stdlib.filter_by_level,
-        structlog.stdlib.add_logger_name,
-        structlog.stdlib.add_log_level,
-        structlog.stdlib.PositionalArgumentsFormatter(),
-        structlog.processors.TimeStamper(fmt="iso"),
-        structlog.processors.StackInfoRenderer(),
-        structlog.processors.format_exc_info,
-        structlog.processors.UnicodeDecoder(),
-        structlog.processors.JSONRenderer(),
-    ],
-    context_class=dict,
-    logger_factory=structlog.stdlib.LoggerFactory(),
-    wrapper_class=structlog.stdlib.BoundLogger,
-    cache_logger_on_first_use=True,
-)
+# Global trackers
+score_tracker = ScoreEvolutionTracker()
 
-logger = structlog.get_logger()
+# Global cost tracking
+class CostTracker:
+    """Tracks total costs across all Claude Code rollouts."""
+    
+    def __init__(self):
+        self.total_cost_usd = 0.0
+        self.rollout_count = 0
+    
+    def add_rollout_cost(self, cost_usd: float):
+        """Add cost from a completed rollout."""
+        self.total_cost_usd += cost_usd
+        self.rollout_count += 1
+        logger.info(
+            "Rollout cost added",
+            rollout_cost_usd=cost_usd,
+            total_cost_usd=self.total_cost_usd,
+            rollout_count=self.rollout_count,
+        )
+    
+    def report_final_cost(self):
+        """Report final cost summary."""
+        logger.info(
+            "FINAL COST SUMMARY",
+            total_cost_usd=self.total_cost_usd,
+            rollout_count=self.rollout_count,
+            avg_cost_per_rollout_usd=self.total_cost_usd / max(1, self.rollout_count),
+        )
+
+# Global cost tracker instance
+cost_tracker = CostTracker()
+
+def setup_signal_handlers():
+    """Setup signal handlers for graceful cost reporting on interruption."""
+    
+    def signal_handler(signum, frame):
+        logger.info("Interrupt received, reporting costs before exit", signal=signum)
+        cost_tracker.report_final_cost()
+        sys.exit(1)
+    
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
 
 # Load configuration
 config = OptimizerConfig()
@@ -421,6 +609,8 @@ async def execute_claude_session(
                     cost_usd=message.total_cost_usd,
                     is_error=message.is_error,
                 )
+                # Track rollout cost
+                cost_tracker.add_rollout_cost(message.total_cost_usd)
                 break
                 
     return message_sequence
@@ -1085,7 +1275,7 @@ async def optimize_prompts(
     max_parallel_rollouts: Optional[int] = None,
     tasks_per_iteration: Optional[int] = None,
     processing_mode: ProcessingMode = ProcessingMode.FULL_ROLLOUTS,
-) -> None:
+) -> Path:
     """Run the prompt optimisation loop.
 
     This is the main entry point for running multiple iterations of the algorithm. It
@@ -1280,6 +1470,19 @@ async def optimize_prompts(
             iter_logger.info(
                 "Iteration complete", average_overall_score=round(avg_overall, 2)
             )
+            
+            # Track score evolution for this iteration
+            score_tracker.add_iteration(iteration, iteration_results)
+            
+            # Generate and save score evolution report and plots after each iteration
+            evolution_report = score_tracker.generate_report(base_dir, base_dir / "logs")
+            report_path = base_dir / f"score_evolution_iter_{iteration}.txt"
+            report_path.write_text(evolution_report)
+            iter_logger.info(
+                "Score evolution report generated", 
+                report_path=str(report_path),
+                iteration=iteration
+            )
 
             # Add completed turn to PE conversation (current prompt + grades or pattern summary)
             if processing_mode == ProcessingMode.FULL_ROLLOUTS:
@@ -1319,6 +1522,7 @@ async def optimize_prompts(
             current_prompt = new_prompt
 
         logger.info("Optimization complete", logs_directory=str(base_dir))
+        return base_dir
     finally:
         # Always cleanup Docker wrapper
         docker_manager.cleanup()
@@ -1374,6 +1578,9 @@ Examples:
 
     args = parser.parse_args()
 
+    # Setup signal handlers for graceful cost reporting on interruption
+    setup_signal_handlers()
+
     # Convert string mode back to enum
     processing_mode = ProcessingMode(args.mode)
 
@@ -1394,7 +1601,7 @@ Examples:
 
     # Run the optimisation loop.  Adjust iterations and rollouts per task as desired.
     # The PromptEngineer will generate the initial prompt automatically.
-    asyncio.run(
+    run_dir = asyncio.run(
         optimize_prompts(
             seed_tasks,
             iterations=args.iterations,
@@ -1405,6 +1612,24 @@ Examples:
             processing_mode=processing_mode,
         )
     )
+    
+    # Generate final score evolution report
+    final_evolution_report = score_tracker.generate_report(run_dir, run_dir)
+    final_report_path = run_dir / "final_score_evolution_report.txt"
+    final_report_path.write_text(final_evolution_report)
+    
+    print("\n" + "="*60)
+    print(final_evolution_report)
+    print("="*60)
+    
+    logger.info(
+        "Final score evolution report generated",
+        report_path=str(final_report_path),
+        run_directory=str(run_dir)
+    )
+    
+    # Report final cost summary
+    cost_tracker.report_final_cost()
 
 
 if __name__ == "__main__":

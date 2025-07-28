@@ -48,18 +48,18 @@ def log_system_message(logger: Any, message: SystemMessage) -> None:
 
 def log_assistant_message(logger: Any, message: AssistantMessage) -> None:
     """Log assistant message with tool usage details."""
-    tool_uses = []
+    tool_uses_full = []  # Complete data for JSON logs
     text_content = ""
     
     for block in message.content:
         if isinstance(block, TextBlock):
             text_content = block.text
         elif isinstance(block, ToolUseBlock):
-            args = ", ".join(
-                f"{k}={MessageFormatter.truncate(str(v), MessageFormatter.ARG_TRUNCATE)}" 
-                for k, v in block.input.items()
-            )
-            tool_uses.append(f"{block.name}({args})")
+            # Store complete tool usage data (no truncation for structured logs)
+            tool_uses_full.append({
+                "name": block.name,
+                "args": dict(block.input)
+            })
         elif isinstance(block, ToolResultBlock):
             content_str = MessageFormatter.safe_str(block.content)
             logger.info(
@@ -70,8 +70,8 @@ def log_assistant_message(logger: Any, message: AssistantMessage) -> None:
                 ),
             )
     
-    if tool_uses:
-        logger.info("Tool usage", tools=tool_uses)
+    if tool_uses_full:
+        logger.info("Tool usage", tools=tool_uses_full)
     elif text_content:
         logger.info(
             "Assistant message", 
