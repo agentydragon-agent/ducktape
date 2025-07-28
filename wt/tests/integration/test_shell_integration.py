@@ -24,38 +24,31 @@ from unittest.mock import patch
 import pytest
 
 
-def _get_shell_setup() -> str:
-    """Get the shell setup commands for PYTHONPATH and sourcing wt function."""
-    wt_function_path = Path(__file__).parent.parent / "wt.sh"
-    project_root = Path(__file__).parent.parent
-    return f"""# Set PYTHONPATH so the shell function can find the wt module
-export PYTHONPATH="{project_root}:$PYTHONPATH"
-
-# Source the official wt shell function
-source {wt_function_path}"""
+# Global constants for paths
+PROJECT_ROOT = Path(__file__).parent.parent.parent
+WT_FUNCTION_PATH = PROJECT_ROOT / "wt.sh"
 
 
 def create_shell_script(wt_args: list[str]) -> str:
     """Create a shell script that calls wt with the given arguments."""
-    return f"""#!/bin/bash
-# Call wt with the specified arguments
-wt {" ".join(wt_args)}
-"""
+    return f"wt {' '.join(wt_args)}"
 
 
 def run_shell_script(script_content: str, cwd: str) -> subprocess.CompletedProcess:
     """Execute a shell script with wt function setup and return the result."""
-    wt_function_path = Path(__file__).parent.parent / "wt.sh"
-    project_root = Path(__file__).parent.parent
-
     # Prepare environment with PYTHONPATH for the subprocess
     env = os.environ.copy()
-    env["PYTHONPATH"] = f"{project_root}:{env.get('PYTHONPATH', '')}"
+    
+    # Get current Python's site-packages to ensure dependencies are available
+    import site
+    site_packages = site.getsitepackages() + [site.getusersitepackages()]
+    python_path_parts = [str(PROJECT_ROOT)] + site_packages + [env.get('PYTHONPATH', '')]
+    env["PYTHONPATH"] = ":".join(filter(None, python_path_parts))
 
-    # Create script with wt function setup
+    # Create script with wt function setup and hashbang
     full_script = f"""#!/bin/bash
 # Set up wt shell function
-source {wt_function_path}
+source {WT_FUNCTION_PATH}
 
 # Original script content
 {script_content}
@@ -108,25 +101,20 @@ class TestShellIntegration:
 
     def test_shell_script_execution_basic(self, test_config):
         """Test that shell script can execute basic wt commands."""
-        wt_function_path = Path(__file__).parent.parent / "wt.sh"
-
         # Basic test that the shell function exists and can be sourced
-        if wt_function_path.exists():
-            shell_setup = _get_shell_setup()
-
-            test_script = f"""#!/bin/bash
-{shell_setup}
-
-# Test that wt function is available
+        if not WT_FUNCTION_PATH.exists():
+            pytest.fail(f"wt.sh not found at {WT_FUNCTION_PATH}")
+            
+        test_script = """# Test that wt function is available
 type wt
 echo "Shell function loaded successfully"
 """
 
-            result = run_shell_script(test_script, str(test_config.main_repo))
+        result = run_shell_script(test_script, str(test_config.main_repo))
 
-            # Should be able to source the function
-            assert result.returncode == 0, f"Shell setup failed: {result.stderr}"
-            assert "Shell function loaded successfully" in result.stdout
+        # Should be able to source the function
+        assert result.returncode == 0, f"Shell setup failed: {result.stderr}"
+        assert "Shell function loaded successfully" in result.stdout
 
     def test_successful_teleport_with_pwd_verification(self, real_temp_repo, real_env):
         """Test that wt teleport actually changes directory using pwd verification."""
@@ -141,19 +129,6 @@ echo "Shell function loaded successfully"
             finally:
                 kill_daemon_and_verify(real_temp_repo)
 
-        @contextmanager 
-        def temp_script(content):
-            with tempfile.NamedTemporaryFile(mode="w", suffix=".sh", delete=False) as f:
-                f.write(content)
-                f.flush()
-                script_path = f.name
-            
-            os.chmod(script_path, 0o755)
-            try:
-                yield script_path
-            finally:
-                if os.path.exists(script_path):
-                    os.unlink(script_path)
 
         def parse_teleport_output(result):
             output_lines = [line for line in result.stdout.strip().split('\n') if line]
@@ -173,13 +148,8 @@ echo "Shell function loaded successfully"
                 'pwd_after': parts[3]
             }
 
-        # Main test logic - get correct path to wt.sh (it's in the project root, not tests/)
-        wt_function_path = Path(__file__).parent.parent.parent / "wt.sh"
-        
-        shell_script = f"""#!/bin/bash
-source {wt_function_path}
-
-# Verify shell function is loaded
+        # Main test logic
+        shell_script = """# Verify shell function is loaded
 if ! declare -f wt > /dev/null; then
     echo "ERROR: wt function not loaded"
     exit 99
@@ -197,19 +167,8 @@ pwd_after=$(pwd)
 echo "$create_exit:$nav_exit:$pwd_before:$pwd_after"
 """
 
-        with daemon_cleanup(), temp_script(shell_script) as script_path:
-            # Ensure PYTHONPATH is set for the subprocess so it can find wt module
-            env = real_env.copy()
-            project_root = Path(__file__).parent.parent.parent
-            env["PYTHONPATH"] = f"{project_root}:{env.get('PYTHONPATH', '')}"
-            
-            result = subprocess.run(
-                ["/bin/bash", script_path],
-                capture_output=True,
-                text=True, 
-                cwd=str(real_temp_repo),
-                env=env,
-            )
+        with daemon_cleanup():
+            result = run_shell_script(shell_script, str(real_temp_repo))
 
             data = parse_teleport_output(result)
             
@@ -229,8 +188,7 @@ class TestShellIntegrationEdgeCases:
     def test_shell_environment_isolation(self, test_config):
         """Test that shell environment is properly isolated."""
         # Basic environment test
-        env_test_script = """#!/bin/bash
-echo "Environment test completed"
+        env_test_script = """echo "Environment test completed"
 """
 
         result = run_shell_script(env_test_script, str(test_config.main_repo))

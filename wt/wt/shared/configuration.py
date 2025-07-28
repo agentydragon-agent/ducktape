@@ -10,7 +10,6 @@ from dataclasses import dataclass
 from datetime import timedelta
 from enum import Enum
 from pathlib import Path
-from typing import Optional
 
 import click
 import yaml
@@ -28,7 +27,6 @@ class CowMethod(Enum):
 
 class ConfigError(Exception):
     """Configuration validation or loading error."""
-    pass
 
 
 @dataclass(frozen=True)
@@ -43,8 +41,8 @@ class Configuration:
     github_enabled: bool
     log_operations: bool
     cow_method: CowMethod
-    gitstatusd_path: Optional[Path]
-    post_creation_script: Optional[Path]
+    gitstatusd_path: Path | None
+    post_creation_script: Path | None
     cache_expiration: timedelta
     cache_refresh_age: timedelta
     hidden_worktree_patterns: list[str]

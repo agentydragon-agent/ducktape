@@ -20,86 +20,70 @@ from wt.shared.config_file import ConfigFile
 from wt.shared.models import PRStatus
 
 from .test_constants import GITSTATUSD_PATH
+from .test_data import TestData, ConfigPresets
+from .mock_factory import MockFactory, ServiceBuilder
+from .repo_factory import GitRepoFactory, RepoPresets
+from .config_factory import ConfigFactory, ConfigBuilder
 
-# Services container removed - tests now use direct dependencies
 
+# =============================================================================
+# Factory Fixtures - Modern pytest pattern for test setup
+#
+# These factories replace the old pattern of many specific fixtures with
+# flexible, parameterizable factories. Use these patterns:
+#
+# OLD WAY (being phased out):
+#   def test_something(git_repo, mock_github_interface):
+#       # Uses hard-coded test repo and mock
+#
+# NEW WAY (preferred):
+#   def test_something(repo_factory, mock_factory):
+#       repo = repo_factory.create_repo(**RepoPresets.with_branches())
+#       github = mock_factory.github_client(pr_list_returns=[...])
+#
+# Benefits:
+# - Explicit test data (no hidden setup)
+# - Parameterizable (different configs per test) 
+# - Less fixture coupling
+# - Easier to understand and maintain
+# =============================================================================
 
-# mock_cli_services removed - CLI no longer uses Services container
+@pytest.fixture
+def mock_factory():
+    """Factory for creating configured mocks with standard behaviors."""
+    return MockFactory
 
 
 @pytest.fixture
-def mock_git():
-    """Mock git interface - penance: mocking because external subprocess calls are not suitable for unit tests."""
-    return Mock()
+def repo_factory(temp_dir, isolated_git_env):
+    """Factory for creating git repositories with different configurations."""
+    return GitRepoFactory(temp_dir, isolated_git_env)
 
 
 @pytest.fixture
-def mock_daemon_client():
-    """Mock daemon client - penance: mocking because tests shouldn't start real daemons."""
-    return Mock()
+def config_factory(temp_dir):
+    """Factory for creating test configurations with presets and overrides."""
+    def _factory_for_repo(repo_path: Path):
+        return ConfigFactory(repo_path, temp_dir)
+    return _factory_for_repo
 
 
-@pytest.fixture
-def view_formatter():
-    """Real view formatter - no mocking needed."""
-    from wt.client.view_formatter import ViewFormatter
-
-    return ViewFormatter()
-
+# Service builder and env var fixtures removed - configure directly in tests with factories
 
 @pytest.fixture
-def worktree_service(mock_git, mock_github_interface):
-    """Real WorktreeService with mocked dependencies."""
-    from wt.server.worktree_service import WorktreeService
-
-    return WorktreeService(mock_git, mock_github_interface)
-
-
-# Services container removed - tests now use direct dependencies
-# Individual mock fixtures are available: mock_git, mock_github_interface, mock_daemon_client, etc.
-
-
-@pytest.fixture
-def mock_services_container(
-    test_config, mock_github_interface, mock_daemon_client, view_formatter, real_worktree_service
-):
-    """Minimal mock services container for backward compatibility with integration tests.
-
-    Note: This is a temporary fixture to ease the transition away from Services containers.
-    Eventually, integration tests should use direct dependencies.
+def cli_test_env(repo_factory, config_factory):
+    """Create test environment for CLI integration tests.
+    
+    Returns the WT_DIR path that can be used with patch.dict for environment setup.
+    CLI tests use this to set up proper configuration without external dependencies.
     """
-    from types import SimpleNamespace
-
-    return SimpleNamespace(
-        config=test_config,
-        github=mock_github_interface,
-        daemon_client=mock_daemon_client,
-        formatter=view_formatter,
-        worktree_service=real_worktree_service,
-    )
-
-
-@pytest.fixture
-def mock_config(test_config):
-    """Alias for test_config for backward compatibility."""
-    return test_config
-
-
-@pytest.fixture
-def set_test_env_vars(test_config: Configuration):
-    """Apply environment variable overrides for unit tests that need them."""
-    with patch.dict(
-        os.environ,
-        {
-            "WT_MAIN_REPO": str(test_config.main_repo),
-            "WT_WORKTREES_DIR": str(test_config.worktrees_dir),
-            "WT_BRANCH_PREFIX": test_config.branch_prefix,
-            "WT_UPSTREAM_BRANCH": test_config.upstream_branch,
-            "WT_LOG_OPERATIONS": "true" if test_config.log_operations else "false",
-            "WT_COW_METHOD": test_config.cow_method,
-        },
-    ):
-        yield
+    # Create repo and config using factories
+    repo_path = repo_factory.create_repo()
+    factory = config_factory(repo_path)
+    config = factory.minimal()
+    
+    # Return the WT_DIR path (the .wt directory)
+    return config.wt_dir
 
 
 @pytest.fixture
@@ -123,73 +107,15 @@ def isolated_git_env(temp_dir: Path):
         yield git_env
 
 
-@pytest.fixture
-def git_repo(temp_dir: Path, isolated_git_env: dict[str, str]) -> Path:
-    repo_path = temp_dir / "repo"
-    repo_path.mkdir()
-
-    # Initialize git repo using pygit2 in isolated environment
-    repo = pygit2.init_repository(str(repo_path), initial_head="master")
-
-    # Configure git user for testing
-    repo.config["user.name"] = "Test User"
-    repo.config["user.email"] = "test@example.com"
-
-    # Create initial commit
-    (repo_path / "README.md").write_text("# Test Repository\n")
-    repo.index.add("README.md")
-    repo.index.write()
-
-    # Create signature for the commit
-    signature = pygit2.Signature("Test User", "test@example.com")
-    tree = repo.index.write_tree()
-    repo.create_commit("HEAD", signature, signature, "Initial commit", tree, [])
-
-    return repo_path
-
-
-@pytest.fixture
-def worktrees_dir(temp_dir: Path) -> Path:
-    wt_dir = temp_dir / "worktrees"
-    wt_dir.mkdir()
-    return wt_dir
-
-
-@pytest.fixture
-def test_config(git_repo: Path, worktrees_dir: Path) -> Configuration:
-    return build_test_configuration(
-        git_repo,
-        worktrees_dir=str(worktrees_dir),
-        upstream_branch="HEAD"
-    )
+# Repository fixtures removed - use repo_factory.create_repo() instead
 
 
 
 
-@pytest.fixture
-def mock_github_interface():
-    mock = Mock(spec=GitHubInterface)
-
-    # Default mock responses
-    mock.pr_list.return_value = []
-    mock.pr_search.return_value = []
-    mock.pr_view.return_value = None
-
-    return mock
+# Mock fixtures removed - use mock_factory directly instead
 
 
-@pytest.fixture
-def real_git_manager(test_config):
-    """Real GitManager for integration tests."""
-    from wt.server.git_manager import GitManager
-
-    return GitManager(config=test_config)
-
-
-@pytest.fixture
-def real_worktree_service(real_git_manager, mock_github_interface):
-    """Real WorktreeService with mocked GitHub interface."""
-    return WorktreeService(real_git_manager, mock_github_interface)
+# Git manager and worktree service fixtures removed - use service_builder instead
 
 
 @pytest.fixture
@@ -227,126 +153,13 @@ def cli_runner() -> CliRunner:
     return CliRunner()
 
 
-@pytest.fixture
-def temp_config_file(test_config):
-    """Write out a temporary config file for testing."""
-    import tempfile
-
-    # Create temp config directory - deliberately separate from main repo
-    with tempfile.TemporaryDirectory() as temp_dir:
-        temp_path = Path(temp_dir)
-        # Put WT_DIR in separate location to test for baked-in assumptions
-        wt_dir = temp_path / "WTDIR" / ".wt"
-        
-        # Use centralized helper to create configuration
-        build_test_configuration(
-            test_config.main_repo,
-            wt_dir=wt_dir,
-            worktrees_dir=str(test_config.worktrees_dir),
-            branch_prefix=test_config.branch_prefix,
-            upstream_branch=test_config.upstream_branch,
-            github_repo=test_config.github_repo,
-            log_operations=test_config.log_operations,
-            cache_expiration=3600,
-            cache_refresh_age=300,
-            hidden_worktree_patterns=test_config.hidden_worktree_patterns,
-            gitstatusd_path=GITSTATUSD_PATH,
-            cow_method="copy",
-            github_enabled=False
-        )
-        
-        config_file = wt_dir / "config.yaml"
-        
-        # Set WT_DIR to use our temp wt directory (new config system)
-        with patch.dict(os.environ, {"WT_DIR": str(wt_dir)}):
-            yield config_file
+# Temp config fixtures removed - use config_factory directly instead
 
 
-@pytest.fixture
-def mock_cli_dependencies(temp_config_file):
-    """Context manager that mocks CLI dependencies for testing."""
-    from contextlib import contextmanager
-
-    @contextmanager
-    def _mock_cli_dependencies(worktree_status_return_value):
-        with patch(
-            "wt.client.daemon_client.WtClient.get_status"
-        ) as mock_get_status:
-            mock_get_status.return_value = worktree_status_return_value
-            yield mock_get_status
-
-    return _mock_cli_dependencies
+# CLI and worktree fixtures removed - use factories directly instead
 
 
-@pytest.fixture
-def populated_repo(git_repo: Path) -> Path:
-    repo = pygit2.Repository(str(git_repo))
-
-    # Create feature branch
-    master_ref = repo.references["refs/heads/master"]
-    feature_ref = repo.references.create("refs/heads/feature-branch", master_ref.target)
-    repo.checkout(feature_ref)
-
-    # Add some commits to feature branch
-    (git_repo / "feature.txt").write_text("Feature code\n")
-    repo.index.add("feature.txt")
-    repo.index.write()
-
-    signature = pygit2.Signature("Test User", "test@example.com")
-    tree = repo.index.write_tree()
-    repo.create_commit("HEAD", signature, signature, "Add feature", tree, [master_ref.target])
-
-    # Create another branch
-    another_ref = repo.references.create("refs/heads/another-branch", feature_ref.target)
-    repo.checkout(another_ref)
-
-    (git_repo / "another.txt").write_text("Another feature\n")
-    repo.index.add("another.txt")
-    repo.index.write()
-
-    tree = repo.index.write_tree()
-    repo.create_commit(
-        "HEAD", signature, signature, "Add another feature", tree, [feature_ref.target]
-    )
-
-    # Switch back to master
-    repo.checkout("refs/heads/master")
-
-    return git_repo
-
-
-@pytest.fixture
-def existing_worktrees(test_config, real_worktree_service) -> list[Path]:
-    """Create existing worktrees for testing."""
-    worktrees = []
-
-    # Create test worktrees using real service
-    feature_wt = real_worktree_service.create_worktree(test_config, "feature-work")
-    worktrees.append(feature_wt)
-
-    # Create worktree from master
-    main_wt = real_worktree_service.create_worktree(test_config, "main-work")
-    worktrees.append(main_wt)
-
-    return worktrees
-
-
-@pytest.fixture
-def mock_pr_responses(mock_github_interface):
-    def setup_pr_response(branch: str, pr_number: int, state: str = "open", mergeable: bool = True):
-        pr_status = PRStatus(state=state, number=pr_number, mergeable=mergeable)
-
-        # Mock the pr_list method that's actually used by the WorktreeService
-        mock_github_interface.pr_list.return_value = [
-            {
-                "number": pr_number,
-                "headRefName": branch,
-                "state": state,
-                "title": f"PR for {branch}",
-            }
-        ]
-
-    return setup_pr_response
+# PR response fixtures removed - use mock_factory.github_client() with specific behaviors
 
 
 @pytest.fixture
@@ -356,7 +169,7 @@ def capture_commands() -> Generator[list[str], None, None]:
     def mock_emit_command(cmd: str):
         commands.append(cmd)
 
-    with patch("wt.shared.shell_utils.emit_command", side_effect=mock_emit_command):
+    with patch("wt.client.shell_utils.emit_command", side_effect=mock_emit_command):
         yield commands
 
 
@@ -370,20 +183,7 @@ def mock_process_check():
         yield mock
 
 
-@pytest.fixture
-def dirty_worktree(existing_worktrees: list[Path]) -> Path:
-    worktree_path = existing_worktrees[0]
-
-    # Add some uncommitted changes
-    (worktree_path / "dirty.txt").write_text("Uncommitted changes\n")
-    (worktree_path / "untracked.txt").write_text("Untracked file\n")
-
-    # Stage one file using pygit2
-    repo = pygit2.Repository(str(worktree_path))
-    repo.index.add("dirty.txt")
-    repo.index.write()
-
-    return worktree_path
+# Dirty worktree fixture removed - create test state directly in tests
 
 
 @pytest.fixture
@@ -519,76 +319,104 @@ def create_integration_test_config_file(repo_path: Path) -> Path:
     return wt_dir / "config.yaml"
 
 
+# Integration test fixtures removed - use repo_factory and config_factory directly
+
 @pytest.fixture
-def real_temp_repo(tmp_path):
-    """Create a real temporary git repository using pytest's tmp_path.
-
-    CRITICAL: Uses pytest's tmp_path instead of tempfile.TemporaryDirectory for
-    proper test isolation. The Unix socket path length issue is automatically
-    handled by Config.daemon_socket_file fallback logic.
-
-    This fixture is shared across integration tests to avoid duplication.
+def real_temp_repo(repo_factory):
+    """Create real temporary git repository for integration tests.
+    
+    Uses modern repo_factory internally but maintains compatibility with
+    existing integration tests that need real git repositories.
     """
-    repo_path = tmp_path / "test_repo"
-    repo_path.mkdir()
-
-    # Initialize git repository with pygit2
-    repo = pygit2.init_repository(str(repo_path), initial_head="main")
-
-    # Configure git user
-    repo.config["user.name"] = "Test User"
-    repo.config["user.email"] = "test@example.com"
-
-    # Create initial commit
-    readme_file = repo_path / "README.md"
-    readme_file.write_text("# Test Repository")
-    repo.index.add("README.md")
-    repo.index.write()
-
-    signature = pygit2.Signature("Test User", "test@example.com")
-    tree = repo.index.write_tree()
-    repo.create_commit("HEAD", signature, signature, "Initial commit", tree, [])
-
-    # Create a distinctive test branch that worktree creation can use
-    main_commit = repo.head.target
-    test_branch_name = "XXX-ADGN-WT-INTERACTION-TEST-BRANCH-NAME-XXX"
-    repo.create_branch(test_branch_name, repo.get(main_commit))
-
-    # Set up worktrees directory
-    worktrees_dir = repo_path / "worktrees"
-    worktrees_dir.mkdir()
-
-    yield repo_path
+    return repo_factory.create_repo(name="test_repo")
 
 
 @pytest.fixture
-def real_env(real_temp_repo):
-    """Set up real environment variables for integration tests with proper cleanup.
-
-    Creates config file and sets up WT_MAIN_REPO environment variable.
-    Includes daemon cleanup before and after test execution.
+def real_env(real_temp_repo, config_factory):
+    """Set up real environment for integration tests with proper cleanup.
+    
+    Creates real configuration and environment setup for tests that need
+    to interact with actual daemon processes and gitstatusd.
     """
-    import time
-
-    import yaml
-
     # Kill any existing daemon first
     kill_daemon_and_verify(real_temp_repo)
-
-    # Create config file in the repo's .wt directory
-    create_integration_test_config_file(real_temp_repo)
-
-    # Use WT_DIR environment variable (new config system)
-    # Put WT_DIR in separate location to test for baked-in assumptions about WT_DIR = MAIN_REPO/.wt
+    
+    # Create config using factory pattern
+    factory = config_factory(real_temp_repo)
+    config = factory.integration(
+        gitstatusd_path=GITSTATUSD_PATH
+    )
+    
+    # Set up environment
     env = os.environ.copy()
-    temp_parent = real_temp_repo.parent
-    wt_dir = temp_parent / "WTDIR" / ".wt"
-    env["WT_DIR"] = str(wt_dir)
-
+    env["WT_DIR"] = str(config.wt_dir)
+    
+    # Ensure subprocess can find all Python packages
+    import sys
+    python_paths = ":".join(sys.path)
+    if "PYTHONPATH" in env:
+        env["PYTHONPATH"] = f"{python_paths}:{env['PYTHONPATH']}"
+    else:
+        env["PYTHONPATH"] = python_paths
+    
     yield env
-
+    
     # Cleanup: Kill daemon after test
     kill_daemon_and_verify(real_temp_repo)
+
+
+@pytest.fixture
+def real_env_with_existing_worktrees(real_temp_repo, config_factory):
+    """Set up real environment with pre-created worktrees for complex tests."""
+    # Kill any existing daemon first
+    kill_daemon_and_verify(real_temp_repo)
+    
+    # Create config using factory pattern
+    factory = config_factory(real_temp_repo) 
+    config = factory.integration(
+        gitstatusd_path=GITSTATUSD_PATH
+    )
+    
+    # Create some test worktrees using real worktree service
+    from wt.server.git_manager import GitManager
+    from wt.server.worktree_service import WorktreeService
+    
+    git_manager = GitManager(config=config)
+    github_mock = Mock()  # GitHub not needed for worktree creation
+    worktree_service = WorktreeService(git_manager, github_mock)
+    
+    # Create a couple of test worktrees
+    worktree_service.create_worktree(config, "existing-1")
+    worktree_service.create_worktree(config, "existing-2")
+    
+    # Set up environment
+    env = os.environ.copy()
+    env["WT_DIR"] = str(config.wt_dir)
+    
+    # Ensure subprocess can find all Python packages
+    import sys
+    python_paths = ":".join(sys.path)
+    if "PYTHONPATH" in env:
+        env["PYTHONPATH"] = f"{python_paths}:{env['PYTHONPATH']}"
+    else:
+        env["PYTHONPATH"] = python_paths
+    
+    yield env
+    
+    # Cleanup: Kill daemon after test
+    kill_daemon_and_verify(real_temp_repo)
+
+
+@pytest.fixture
+def test_config(repo_factory, config_factory) -> Configuration:
+    """Create test configuration for simple unit tests.
+    
+    Uses modern factory pattern internally but maintains compatibility
+    with existing tests that need basic configuration.
+    """
+    repo_path = repo_factory.create_repo()
+    factory = config_factory(repo_path)
+    return factory.minimal(upstream_branch="main")
 
 
 def build_test_configuration(repo_path: Path, wt_dir: Optional[Path] = None, **config_overrides) -> Configuration:
@@ -627,10 +455,4 @@ def build_test_configuration(repo_path: Path, wt_dir: Optional[Path] = None, **c
     return Configuration.resolve(wt_dir)
 
 
-@pytest.fixture
-def config_builder(real_temp_repo):
-    """Helper to build and resolve configurations for tests."""
-    def _build_config(**config_overrides):
-        return build_test_configuration(real_temp_repo, **config_overrides)
-    
-    return _build_config
+# Config builder fixture removed - use config_factory directly

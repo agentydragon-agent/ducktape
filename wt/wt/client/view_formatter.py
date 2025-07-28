@@ -5,9 +5,8 @@ import click
 from colorama import Style
 from tabulate import tabulate
 
-from ..shared.constants import FILE_DISPLAY_LIMIT
-from ..shared.protocol import StatusResult
 from ..shared.github_models import PRInfo, PRState, PRStatus
+from ..shared.protocol import StatusResult
 
 # PR status display mapping - moved from formatters.py
 PR_STATUS_DISPLAY_MAP = {
@@ -38,18 +37,16 @@ class ViewFormatter:
     def format_list_with_more(self, items: list[str], max_items: int = 3) -> str:
         if len(items) <= max_items:
             return ", ".join(items)
-        else:
-            shown = ", ".join(items[:max_items])
-            return f"{shown} and {len(items) - max_items} more"
+        shown = ", ".join(items[:max_items])
+        return f"{shown} and {len(items) - max_items} more"
 
     def make_hyperlink(self, url: str, text: str) -> str:
         if os.getenv("TERM_PROGRAM") in ("iTerm.app", "vscode") or os.getenv("COLORTERM"):
             return f"\033]8;;{url}\007{text}\033]8;;\007"
-        else:
-            return text
+        return text
 
     def get_pr_status_text(
-        self, pr_state: PRState, pr_mergeable, is_draft: bool = False, merged_at: str | None = None
+        self, pr_state: PRState, pr_mergeable, is_draft: bool = False, merged_at: str | None = None,
     ) -> str:
         # Show draft status first if it's a draft
         if is_draft:
@@ -59,20 +56,17 @@ class ViewFormatter:
         if pr_state == PRState.CLOSED:
             if merged_at:
                 return "merged"
-            else:
-                return "closed"
-        elif pr_state == PRState.OPEN:
+            return "closed"
+        if pr_state == PRState.OPEN:
             if pr_mergeable is None:
                 return PRStatus.OPEN_UNKNOWN.display_text
-            elif pr_mergeable:
+            if pr_mergeable:
                 return PRStatus.OPEN_MERGEABLE.display_text
-            else:
-                return PRStatus.OPEN_CONFLICTING.display_text
-        else:
-            return pr_state.value.lower()
+            return PRStatus.OPEN_CONFLICTING.display_text
+        return pr_state.value.lower()
 
     def format_status_row(
-        self, name: str, status: StatusResult, pr_info: PRInfo | None, name_width: int = 22
+        self, name: str, status: StatusResult, pr_info: PRInfo | None, name_width: int = 22,
     ) -> str:
         """Format a status row with nice alignment."""
         # Commit hash - vertically aligned column
@@ -108,7 +102,7 @@ class ViewFormatter:
                 lines_info = f" +{pr['additions']}/-{pr['deletions']}"
 
             pr_status_text = self.get_pr_status_text(
-                pr_state, pr.get("mergeable"), pr.get("draft", False), pr.get("merged_at")
+                pr_state, pr.get("mergeable"), pr.get("draft", False), pr.get("merged_at"),
             )
 
             pr_status = f"{clickable_link} {pr_status_text}{lines_info}"
@@ -150,8 +144,7 @@ class ViewFormatter:
             if status.has_untracked_files:
                 changes.append("?")
             return "+".join(changes)
-        else:
-            return "clean"
+        return "clean"
 
     def _get_pr_link_column(self, status: StatusResult) -> str:
         """Get PR link column."""
@@ -170,7 +163,7 @@ class ViewFormatter:
         pr = status.pr_info.github_pr
         pr_state = PRState(pr["state"])
         return self.get_pr_status_text(
-            pr_state, pr.get("mergeable"), pr.get("draft", False), pr.get("merged_at")
+            pr_state, pr.get("mergeable"), pr.get("draft", False), pr.get("merged_at"),
         )
 
     def _get_pr_changes_column(self, status: StatusResult) -> str:
@@ -209,14 +202,14 @@ class ViewFormatter:
                 name,
                 self._get_commit_column(status),
                 self._get_work_status_column(status),
-                pr_info
+                pr_info,
             ])
 
         # Render table with no headers, no grid lines, just clean aligned columns
         click.echo(tabulate(table_data, tablefmt="plain"))
 
     def render_worktree_status_single(
-        self, worktree_name: str, status: StatusResult, pr_info: PRInfo | None
+        self, worktree_name: str, status: StatusResult, pr_info: PRInfo | None,
     ) -> None:
         click.echo(f"📊 Status for worktree: {worktree_name}")
         click.echo(f"🔄 {self.format_status_row(worktree_name, status, pr_info)}")
@@ -225,7 +218,7 @@ class ViewFormatter:
         if status.commit_info:
             click.echo(f"💬 Last commit: {status.commit_info.message}")
             click.echo(
-                f"👤 Author: {status.commit_info.author} ({status.commit_info.date})"
+                f"👤 Author: {status.commit_info.author} ({status.commit_info.date})",
             )
         else:
             click.echo("💬 Last commit: (unknown)")
@@ -245,12 +238,12 @@ class ViewFormatter:
 
             # Create clickable link for detailed view
             click.echo(
-                f"🔗 PR #{pr_number} ({self.make_hyperlink(f'http://go/pull/{pr_number}', f'go/pull/{pr_number}')})"
+                f"🔗 PR #{pr_number} ({self.make_hyperlink(f'http://go/pull/{pr_number}', f'go/pull/{pr_number}')})",
             )
 
             # Format detailed PR status
             status_text = self.get_pr_status_text(
-                pr_state, pr.get("mergeable"), pr.get("draft", False), pr.get("merged_at")
+                pr_state, pr.get("mergeable"), pr.get("draft", False), pr.get("merged_at"),
             )
             if status_text in PR_STATUS_DISPLAY_MAP:
                 icon, message = PR_STATUS_DISPLAY_MAP[status_text]

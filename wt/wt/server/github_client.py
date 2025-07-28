@@ -7,7 +7,6 @@ Consider using PyGithub or the official GitHub API client.
 
 import os
 import subprocess
-from typing import List
 
 from github import Github
 
@@ -22,11 +21,11 @@ class DisabledGitHubInterface:
     def __init__(self, github_repo: str):
         self.github_repo = github_repo
 
-    def pr_list(self) -> List[PullRequestList]:
+    def pr_list(self) -> list[PullRequestList]:
         """Return empty list when GitHub is disabled."""
         return []
 
-    def pr_search(self, branch: str) -> List[PullRequestSearch]:
+    def pr_search(self, branch: str) -> list[PullRequestSearch]:
         """Return empty list when GitHub is disabled."""
         return []
 
@@ -41,7 +40,7 @@ class GitHubInterface:
         if not token:
             try:
                 token = subprocess.run(
-                    ["gh", "auth", "token"], capture_output=True, text=True, check=True
+                    ["gh", "auth", "token"], capture_output=True, text=True, check=True,
                 ).stdout.strip()
             except (FileNotFoundError, subprocess.CalledProcessError):
                 # Expected cases: gh not installed or not authenticated
@@ -66,7 +65,7 @@ class GitHubInterface:
         return self._repo
 
     @handle_github_errors
-    def pr_list(self) -> List[PullRequestList]:
+    def pr_list(self) -> list[PullRequestList]:
         repo = self._get_repo()
         pulls = repo.get_pulls(state="all", sort="created", direction="desc")
         return [
@@ -81,7 +80,7 @@ class GitHubInterface:
         ]
 
     @handle_github_errors
-    def pr_search(self, branch_name: str) -> List:
+    def pr_search(self, branch_name: str) -> list:
         """Search for PRs by branch name using GitHub search API instead of paginating all PRs."""
         repo = self._get_repo()
 

@@ -10,7 +10,6 @@ See: https://github.com/romkatv/gitstatus for full protocol specification.
 import logging
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional, Tuple, Union
 
 logger = logging.getLogger(__name__)
 
@@ -18,19 +17,16 @@ logger = logging.getLogger(__name__)
 class GitStatusdError(Exception):
     """Base exception for gitstatusd protocol errors."""
 
-    pass
 
 
 class GitStatusdParseError(GitStatusdError):
     """Error parsing gitstatusd response."""
 
-    pass
 
 
 class GitStatusdValidationError(GitStatusdError):
     """Error validating gitstatusd response fields."""
 
-    pass
 
 
 class RepositoryState(Enum):
@@ -71,45 +67,45 @@ class GitStatusdResponse:
     is_git_repository: bool
 
     # Repository information (only present if is_git_repository=True)
-    git_workdir: Optional[str] = None
-    commit_hash: Optional[str] = None
-    local_branch: Optional[str] = None
-    upstream_branch: Optional[str] = None
-    remote_name: Optional[str] = None
-    remote_url: Optional[str] = None
-    repository_state: Optional[RepositoryState] = None
+    git_workdir: str | None = None
+    commit_hash: str | None = None
+    local_branch: str | None = None
+    upstream_branch: str | None = None
+    remote_name: str | None = None
+    remote_url: str | None = None
+    repository_state: RepositoryState | None = None
 
     # File counts
-    index_file_count: Optional[int] = None
-    staged_changes: Optional[int] = None
-    unstaged_changes: Optional[int] = None
-    conflicted_changes: Optional[int] = None
-    untracked_files: Optional[int] = None
+    index_file_count: int | None = None
+    staged_changes: int | None = None
+    unstaged_changes: int | None = None
+    conflicted_changes: int | None = None
+    untracked_files: int | None = None
 
     # Branch tracking
-    commits_ahead_upstream: Optional[int] = None
-    commits_behind_upstream: Optional[int] = None
-    stash_count: Optional[int] = None
+    commits_ahead_upstream: int | None = None
+    commits_behind_upstream: int | None = None
+    stash_count: int | None = None
 
     # Additional metadata
-    last_tag: Optional[str] = None
-    unstaged_deleted_files: Optional[int] = None
-    staged_new_files: Optional[int] = None
-    staged_deleted_files: Optional[int] = None
+    last_tag: str | None = None
+    unstaged_deleted_files: int | None = None
+    staged_new_files: int | None = None
+    staged_deleted_files: int | None = None
 
     # Push remote information
-    push_remote_name: Optional[str] = None
-    push_remote_url: Optional[str] = None
-    commits_ahead_push_remote: Optional[int] = None
-    commits_behind_push_remote: Optional[int] = None
+    push_remote_name: str | None = None
+    push_remote_url: str | None = None
+    commits_ahead_push_remote: int | None = None
+    commits_behind_push_remote: int | None = None
 
     # Index flags
-    skip_worktree_files: Optional[int] = None
-    assume_unchanged_files: Optional[int] = None
+    skip_worktree_files: int | None = None
+    assume_unchanged_files: int | None = None
 
     # Commit message
-    commit_message_encoding: Optional[str] = None
-    commit_message_summary: Optional[str] = None
+    commit_message_encoding: str | None = None
+    commit_message_summary: str | None = None
 
     @property
     def has_changes(self) -> bool:
@@ -163,12 +159,11 @@ class GitStatusdResponse:
 
         if ahead == 0 and behind == 0:
             return f"on {self.local_branch} (up to date)"
-        elif ahead > 0 and behind == 0:
+        if ahead > 0 and behind == 0:
             return f"on {self.local_branch} (ahead {ahead})"
-        elif ahead == 0 and behind > 0:
+        if ahead == 0 and behind > 0:
             return f"on {self.local_branch} (behind {behind})"
-        else:
-            return f"on {self.local_branch} (ahead {ahead}, behind {behind})"
+        return f"on {self.local_branch} (ahead {ahead}, behind {behind})"
 
 
 class GitStatusdProtocol:
@@ -202,7 +197,7 @@ class GitStatusdProtocol:
             # Validate minimum field count
             if len(fields) < 2:
                 raise GitStatusdParseError(
-                    f"Invalid response: expected at least 2 fields, got {len(fields)}"
+                    f"Invalid response: expected at least 2 fields, got {len(fields)}",
                 )
 
             # Parse core fields
@@ -223,7 +218,7 @@ class GitStatusdProtocol:
             if len(fields) < GitStatusdProtocol.MIN_GIT_REPO_FIELDS:
                 raise GitStatusdParseError(
                     f"Incomplete git repository response: expected {GitStatusdProtocol.MIN_GIT_REPO_FIELDS} fields, "
-                    f"got {len(fields)}"
+                    f"got {len(fields)}",
                 )
 
             # Parse git repository fields with proper validation
@@ -276,7 +271,7 @@ class GitStatusdProtocol:
             raise GitStatusdValidationError(f"Missing required field {index}")
 
     @staticmethod
-    def _safe_get_optional_string(fields: list[str], index: int) -> Optional[str]:
+    def _safe_get_optional_string(fields: list[str], index: int) -> str | None:
         """Get optional string field, returning None for empty strings."""
         try:
             value = fields[index]
@@ -285,7 +280,7 @@ class GitStatusdProtocol:
             return None
 
     @staticmethod
-    def _safe_get_int(fields: list[str], index: int) -> Optional[int]:
+    def _safe_get_int(fields: list[str], index: int) -> int | None:
         """Get integer field with validation."""
         try:
             value = fields[index]
@@ -298,7 +293,7 @@ class GitStatusdProtocol:
             raise GitStatusdValidationError(f"Invalid integer in field {index}: {e}")
 
     @staticmethod
-    def _safe_get_commit_hash(fields: list[str], index: int) -> Optional[str]:
+    def _safe_get_commit_hash(fields: list[str], index: int) -> str | None:
         """Get commit hash with validation."""
         try:
             value = fields[index]
@@ -314,7 +309,7 @@ class GitStatusdProtocol:
             return None
 
     @staticmethod
-    def _safe_get_repository_state(fields: list[str], index: int) -> Optional[RepositoryState]:
+    def _safe_get_repository_state(fields: list[str], index: int) -> RepositoryState | None:
         """Get repository state enum with validation."""
         try:
             value = fields[index]
@@ -341,7 +336,7 @@ def parse_gitstatusd_response(raw_response: str) -> GitStatusdResponse:
 
 
 def create_gitstatusd_request(
-    request_id: str, directory_path: str, disable_index: bool = False
+    request_id: str, directory_path: str, disable_index: bool = False,
 ) -> str:
     """Create gitstatusd request (convenience function)."""
     request = GitStatusdRequest(request_id, directory_path, disable_index)
@@ -350,7 +345,7 @@ def create_gitstatusd_request(
 
 def gitstatusd_response_to_legacy_format(
     response: GitStatusdResponse,
-) -> Tuple[list[str], list[str]]:
+) -> tuple[list[str], list[str]]:
     """Convert GitStatusdResponse to legacy (dirty_files, untracked_files) format."""
     if not response.is_git_repository:
         return [], []

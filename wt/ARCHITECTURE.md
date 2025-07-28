@@ -10,19 +10,24 @@
 wt/
 ├── cli.py                   # Main CLI entry point
 ├── client/                  # Client-side code (no GitHub APIs)
-│   ├── daemon_client.py     # Unix socket communication with daemon
+│   ├── wt_client.py         # Unix socket communication (WtClient)
 │   ├── handlers.py          # Pure handler functions
 │   ├── view_formatter.py    # Display formatting
-│   └── worktree_utils.py    # Direct git/filesystem operations
+│   ├── worktree_utils.py    # Direct git/filesystem operations
+│   └── shell_utils.py       # Shell command emission
 ├── server/                  # Server-side code (daemon only)
-│   ├── daemon.py            # Main daemon process
-│   ├── git_repo_manager.py  # Git operations for daemon
-│   ├── github_interface.py  # GitHub API client
+│   ├── wt_server.py         # Main daemon process (WtDaemon)
+│   ├── git_manager.py       # Git operations for daemon
+│   ├── github_client.py     # GitHub API client
+│   ├── gitstatusd_client.py # GitStatusd communication
+│   ├── worktree_ids.py      # WorktreeID generation
 │   └── worktree_service.py  # Business logic for daemon
 └── shared/                  # Shared models and utilities
-    ├── config.py            # Configuration management
-    ├── daemon_protocol.py    # JSON-RPC protocol definitions (shared)
-    ├── git_interface.py     # Git command wrapper
+    ├── config_file.py       # Configuration file schema
+    ├── configuration.py     # Resolved configuration
+    ├── protocol.py          # JSON-RPC protocol definitions
+    ├── constants.py         # Shared constants
+    ├── error_handling.py    # Error utilities
     ├── github_models.py     # GitHub data models
     └── models.py            # Core data structures
 ```
@@ -33,6 +38,7 @@ wt/
 - **Strict boundary**: Client-side code cannot import GitHub interfaces
 - **All GitHub operations** delegated to daemon via JSON-RPC
 - **Clean separation** between local operations and remote API calls
+- **Server authority**: All path manipulation logic moved to server
 
 ### **Pure Handler Functions**
 - Each handler declares exactly what it needs
@@ -48,21 +54,41 @@ def handle_create_worktree(config, name: str, from_master: bool = True) -> None:
 ## Protocol Example
 
 ```python
-# Client sends
+# Client sends status request
 {
-    "method": "get_all_worktree_status", 
+    "method": "get_status", 
     "id": "uuid-123",
-    "params": {}
+    "params": {"force_refresh": false}
 }
 
-# Daemon responds  
+# Daemon responds with WorktreeGitStatus results
 {
     "id": "uuid-123",
     "result": {
-        "worktrees": {
-            "main": {"branch": "master", "ahead": 0, "pr_info": {...}},
-            "feature": {"branch": "adgn/feature", "ahead": 2, "pr_info": {...}}
-        }
+        "results": {
+            "wtid:main": {"name": "main", "branch_name": "master", "ahead_count": 0, ...},
+            "wtid:feature": {"name": "feature", "branch_name": "test/feature", "ahead_count": 2, ...}
+        },
+        "total_processing_time_ms": 150.5,
+        "daemon_health": {"status": "ok"}
+    }
+}
+
+# New path resolution methods
+{
+    "method": "worktree_resolve_path",
+    "params": {
+        "worktree_name": "feature",
+        "path_spec": "/src/main.py",
+        "current_path": "/current/working/dir"
+    }
+}
+
+{
+    "method": "worktree_teleport_target", 
+    "params": {
+        "target_name": "feature",
+        "current_path": "/current/working/dir"
     }
 }
 ```
@@ -89,9 +115,13 @@ CLI → handle_status() → daemon_client.get_all_worktree_status()
                         Console Output
 ```
 
-### 2. **Worktree Operations** (Direct CLI - Future: Daemon)
+### 2. **Worktree Operations** (Mixed CLI/Daemon)
 
 ```
+# Path Operations (Server-side)
+CLI → daemon_client.resolve_path() → Unix Socket → Daemon → Path Resolution
+
+# Create/Delete Operations (CLI direct)
 CLI → handle_create_worktree() → worktree_utils.create_worktree()
                                         ↓
                                 Direct Git Commands
@@ -124,14 +154,16 @@ CLI → handle_create_worktree() → worktree_utils.create_worktree()
 
 ## Error Handling Strategy
 
-### 1. **Fail Fast in Client**
-- Let programming errors crash
-- Only catch expected conditions (file not found, network issues)
+### 1. **Proper Error Propagation**
+- **No error swallowing**: Eliminated 9+ error masking patterns
+- **JSON-RPC errors**: Proper error responses via create_error_response
+- **Explicit failures**: Let programming errors crash with clear messages
 
 ### 2. **Graceful Daemon Errors**  
 - Network failures → cached responses when possible
 - GitHub API errors → status without PR info
-- Git command failures → error status in response
+- Git command failures → proper GitError exceptions
+- **WorktreeGitStatus**: Structured error information in results
 
 ### 3. **Shell Integration Safety**
 - Exit code 0: Execute shell commands
@@ -140,21 +172,24 @@ CLI → handle_create_worktree() → worktree_utils.create_worktree()
 
 ## Future Architecture Evolution
 
-### Phase 1: Complete Daemon Migration
-Move remaining git operations to daemon:
+### Phase 1: Complete Daemon Migration ✅ **Partially Complete**
+Path operations moved to daemon, worktree creation/deletion still CLI-direct:
 
 ```python
-# Current CLI-direct operations
-handle_create_worktree(config, name) → Direct git commands
+# ✅ Path operations now in daemon
+handle_resolve_path(daemon_client, ...) → JSON-RPC request
+handle_teleport_target(daemon_client, ...) → JSON-RPC request
 
-# Target daemon operations  
-handle_create_worktree(daemon_client, name) → JSON-RPC request
+# 🔄 Still CLI-direct (planned for migration)
+handle_create_worktree(config, name) → Direct git commands
+handle_delete_worktree(config, name) → Direct git commands
 ```
 
-**Benefits**:
-- Consistent error handling
+**Benefits Achieved**:
+- Server authority for path operations
+- Consistent error handling for status/path ops
 - Better testing isolation
-- Centralized git operation logic
+- Enhanced type safety with structured responses
 
 ### Phase 2: Enhanced GitHub Refresh
 - **File Watcher Integration**: Watch `.git` directory for changes
@@ -213,4 +248,28 @@ handle_create_worktree(daemon_client, name) → JSON-RPC request
 - **Path validation**: Prevent directory traversal attacks
 - **Permission checks**: Validate write access before operations
 
-This architecture enables clean separation of concerns while maintaining performance and reliability.
+## Recent Refactoring Completed (January 2025)
+
+Major architecture improvements completed:
+
+### Configuration System Overhaul
+- **WT_DIR-based**: Single environment variable for all configuration
+- **Frozen dataclass**: Immutable Configuration with upfront validation  
+- **No defaults**: All configuration fields now explicitly required
+- **Clean separation**: WT_DIR for daemon/state, main_repo for git operations
+
+### Naming and Structure Cleanup  
+- **GitStatusdDaemon → WtDaemon**: Removed misleading terminology
+- **GitStatusdDaemonClient → WtClient**: Consistent naming throughout
+- **Dead code removal**: Deleted unused timing utilities and --verbose flag
+- **Duplicate elimination**: Consolidated client initialization logic
+
+### Error Handling Improvements
+- **Error propagation**: Fixed 9+ patterns that masked errors with fallbacks
+- **Structured results**: Replaced tuple returns with WorktreeGitStatus dataclass
+- **Helper extraction**: Reduced code nesting in daemon handlers
+
+### Protocol Enhancements
+- **Server authority**: Moved path manipulation from client to server
+- **New RPC methods**: Added worktree_resolve_path and worktree_teleport_target
+- **Type safety**: Enhanced Pydantic models throughout protocol

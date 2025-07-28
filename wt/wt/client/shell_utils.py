@@ -1,7 +1,6 @@
 """Shell utilities for command emission and error handling."""
 
 import sys
-from typing import Any
 
 
 def emit_command(cmd: str) -> None:

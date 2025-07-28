@@ -27,7 +27,7 @@ class ClonefileCopyStrategy(CopyStrategy):
     def copy(self, src: Path, dst: Path) -> None:
         entries = _get_copyable_entries(src)
         if entries:
-            cmd = ["cp", "-c", "-R"] + entries + [str(dst)]
+            cmd = ["cp", "-c", "-R", *entries, str(dst)]
             subprocess.run(cmd, check=True)
 
     @property
@@ -39,7 +39,7 @@ class ReflinkCopyStrategy(CopyStrategy):
     def copy(self, src: Path, dst: Path) -> None:
         entries = _get_copyable_entries(src)
         if entries:
-            cmd = ["cp", "--archive", "--reflink=auto"] + entries + [str(dst)]
+            cmd = ["cp", "--archive", "--reflink=auto", *entries, str(dst)]
             subprocess.run(cmd, check=True)
 
     @property
@@ -93,7 +93,6 @@ def _test_reflink_support() -> bool:
 def get_copy_strategy() -> CopyStrategy:
     if sys.platform == "darwin" and shutil.which("cp"):
         return ClonefileCopyStrategy()
-    elif _test_reflink_support():
+    if _test_reflink_support():
         return ReflinkCopyStrategy()
-    else:
-        return RsyncCopyStrategy()
+    return RsyncCopyStrategy()

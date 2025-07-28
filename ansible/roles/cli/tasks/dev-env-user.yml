@@ -92,3 +92,7 @@
 # Install GitLab CLI (glab) for GitLab operations
 - import_tasks: glab.yml
   tags: [glab, gitlab, dev-tools]
+
+# Install gitstatus for wt tool
+- import_tasks: gitstatus.yml
+  tags: [gitstatus, dev-tools]

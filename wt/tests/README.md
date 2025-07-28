@@ -61,9 +61,36 @@ The shell integration tests (`test_shell_integration.py`) test the **actual shel
 The test suite uses comprehensive fixtures defined in `conftest.py`:
 
 - `git_repo` - Creates a real git repository with initial commit
-- `worktrees_dir` - Creates worktrees directory
-- `test_config` - Provides test configuration
-- `worktree_manager` - Configured WorktreeManager instance
+- `worktrees_dir` - Creates worktrees directory  
+- `test_config` - Provides test configuration using build_test_configuration helper
+- `real_worktree_service` - Real WorktreeService with mocked GitHub interface
 - `mock_github_interface` - Mocks GitHub API to avoid network calls
-- `capture_commands` - Captures shell commands emitted via fd3
-- `mock_process_check` - Mocks process checking for deterministic tests
+- `temp_config_file` - Creates temporary WT_DIR configuration for testing
+- `config_builder` - Helper to build custom configurations for tests
+- `real_temp_repo` - Real git repository for integration tests
+- `real_env` - Sets up WT_DIR environment with daemon cleanup
+
+## Recent Test Improvements
+
+### ✅ Modern Mock Patterns
+All tests now use **decorator-style patches** instead of context managers:
+```python
+@patch("wt.client.wt_client.WtClient.get_status")
+def test_something(self, mock_get_status, ...):
+    mock_get_status.return_value = create_test_status_response()
+```
+
+### ✅ Centralized Configuration Building  
+Tests use the `build_test_configuration()` helper for consistent config creation:
+```python
+config = build_test_configuration(
+    repo_path,
+    branch_prefix="test/",
+    upstream_branch="main"
+)
+```
+
+### ✅ Better Fixture Organization
+- Removed deprecated `Services` container patterns
+- Direct dependency injection in tests
+- Cleaner test setup with explicit dependencies

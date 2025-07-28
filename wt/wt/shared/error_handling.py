@@ -1,8 +1,9 @@
 """Standardized error handling for adgn-worktree."""
 
 import logging
+from collections.abc import Callable
 from functools import wraps
-from typing import Any, Callable, TypeVar, cast
+from typing import Any, TypeVar, cast
 
 import click
 import psutil
@@ -93,7 +94,7 @@ def handle_process_errors(func: Callable[..., T]) -> Callable[..., T]:
 
 
 def convert_to_click_exception(
-    exception_type: type[Exception], message_prefix: str = ""
+    exception_type: type[Exception], message_prefix: str = "",
 ) -> Callable[[Callable[..., T]], Callable[..., T]]:
     def decorator(func: Callable[..., T]) -> Callable[..., T]:
         @wraps(func)

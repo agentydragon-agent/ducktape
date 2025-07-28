@@ -43,10 +43,9 @@ class Worktree:
     def resolve_subpath(self, subpath: str) -> Path:
         if subpath.startswith("/"):
             return self.path / subpath[1:]
-        elif subpath.startswith("./"):
+        if subpath.startswith("./"):
             return self.path / subpath[2:]
-        else:
-            return self.path / subpath
+        return self.path / subpath
 
 
 @dataclass
@@ -61,16 +60,15 @@ class PRStatus:
     def display_status(self) -> str:
         if self.state == "merged":
             return "merged"
-        elif self.state == "closed":
+        if self.state == "closed":
             return "closed"
-        elif self.state == "draft":
+        if self.state == "draft":
             return "draft"
-        elif self.mergeable is True:
+        if self.mergeable is True:
             return "can merge"
-        elif self.mergeable is False:
+        if self.mergeable is False:
             return "conflict"
-        else:
-            return "open"  # mergeable status unknown
+        return "open"  # mergeable status unknown
 
 
 @dataclass

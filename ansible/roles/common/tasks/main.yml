@@ -3,10 +3,12 @@
   command: dpkg --print-architecture
   register: raw_dpkg_arch
   changed_when: false
+  tags: [always]
 
 - name: Set dpkg_arch fact to architecture string
   set_fact:
     dpkg_arch: "{{ raw_dpkg_arch.stdout }}"
+  tags: [always]
 
 # Python environment health checks
 - name: Check for problematic packages in global Python environment

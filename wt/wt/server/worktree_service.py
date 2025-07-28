@@ -1,26 +1,16 @@
 """Pure business logic for worktree operations - no I/O, no formatting."""
 
-import asyncio
-import concurrent.futures
 import logging
-import shutil
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from .git_manager import (
-    CannotCreateWorktree,
-    CannotDeleteWorktree,
-    GitError,
-    GitTimeoutError,
-    NoSuchRef,
-    WorktreeError,
-    WorktreeInfo,
-)
-from ..shared.protocol import StatusResponse, StatusResult
 from ..shared.github_models import PRInfo
 from ..shared.models import CommitInfo, ProcessInfo
+from ..shared.protocol import StatusResult
+from .git_manager import (
+    GitError,
+)
 
 if TYPE_CHECKING:
     from .git_manager import GitManager
@@ -80,7 +70,7 @@ class WorktreeService:
             raise GitError(f"Failed to get commit info for branch {branch_name}: {e}") from e
 
     async def _get_working_directory_status(
-        self, worktree_path: Path, main_repo: Path = None
+        self, worktree_path: Path, main_repo: Path | None = None,
     ) -> tuple[list[str], list[str]]:
         """Get working directory status for a worktree."""
         try:
@@ -141,7 +131,7 @@ class WorktreeService:
             if processes:
                 proc_strings = [f"PID {p.pid} ({p.name})" for p in processes]
                 raise RuntimeError(
-                    f"Worktree is in use by: {', '.join(proc_strings)}\nUse --force to remove anyway"
+                    f"Worktree is in use by: {', '.join(proc_strings)}\nUse --force to remove anyway",
                 )
 
         # Check for uncommitted changes
@@ -149,7 +139,7 @@ class WorktreeService:
             dirty_files, untracked_files = await self._get_working_directory_status(worktree_path)
             if dirty_files or untracked_files:
                 raise RuntimeError(
-                    f"Worktree '{name}' has uncommitted changes. Use --force to remove anyway"
+                    f"Worktree '{name}' has uncommitted changes. Use --force to remove anyway",
                 )
 
         # Remove worktree
@@ -174,7 +164,6 @@ class WorktreeService:
 
     def get_current_worktree_info(self, config) -> tuple[Path | None, str | None]:
         """Get current worktree information."""
-        import os
         from pathlib import Path
 
         # Get current directory
@@ -190,8 +179,8 @@ class WorktreeService:
                 try:
                     rel_path = cwd.relative_to(repo_root)
                 except ValueError:
-                    rel_path = Path(".")
-                return repo_root, str(rel_path) if rel_path != Path(".") else None
+                    rel_path = Path()
+                return repo_root, str(rel_path) if rel_path != Path() else None
 
             return None, None
         except (GitError, OSError) as e:
@@ -214,15 +203,14 @@ class WorktreeService:
         if path_spec.startswith("/"):
             # Absolute path from worktree root
             return target_path / path_spec[1:]
-        elif path_spec.startswith("./"):
+        if path_spec.startswith("./"):
             # Relative to current position in worktree
             current_wt, rel_path = self.get_current_worktree_info(config)
             if not current_wt:
                 raise RuntimeError("Not in a worktree")
             base_path = current_wt / (rel_path or "")
             return base_path / path_spec[2:]
-        else:
-            raise RuntimeError("Path must start with / (absolute) or ./ (relative)")
+        raise RuntimeError("Path must start with / (absolute) or ./ (relative)")
 
     def emit_cd_command(self, dest_repo: Path, config) -> None:
         """Emit a cd command for shell execution."""
@@ -243,7 +231,7 @@ class WorktreeService:
 
             dest_repo = final_dest
 
-        from ..shared.shell_utils import emit_command
+        from ..client.shell_utils import emit_command
 
         emit_command(f"cd {shlex.quote(str(dest_repo))}")
 
@@ -262,8 +250,8 @@ class WorktreeService:
 
     def _execute_post_creation_script(self, script_path: str, worktree_path: Path) -> None:
         """Execute post-creation script with worktree path as argument."""
-        import subprocess
         import logging
+        import subprocess
         
         script = Path(script_path).expanduser().resolve()
         if not script.exists():
@@ -278,17 +266,17 @@ class WorktreeService:
             # Execute script with worktree path as argv[1]
             result = subprocess.run(
                 [str(script), str(worktree_path)],
-                cwd=worktree_path,
+                check=False, cwd=worktree_path,
                 capture_output=True,
                 text=True,
-                timeout=60  # 60 second timeout
+                timeout=60,  # 60 second timeout
             )
             
             if result.returncode != 0:
                 logging.warning(
                     f"Post-creation script failed (exit {result.returncode}): {script}\n"
                     f"stdout: {result.stdout}\n"
-                    f"stderr: {result.stderr}"
+                    f"stderr: {result.stderr}",
                 )
             else:
                 logging.info(f"Post-creation script completed successfully: {script}")
@@ -302,7 +290,6 @@ class WorktreeService:
         """Get processes running in a directory."""
         import psutil
 
-        from ..shared.models import ProcessInfo
 
         procs = []
         for proc in psutil.process_iter(["pid", "name", "cwd"]):
@@ -323,7 +310,7 @@ class WorktreeService:
     # Note: This method was moved to handlers.py for client-side sorting.
 
     async def get_single_worktree_status_daemon(
-        self, config, worktree_name: str, daemon_client=None
+        self, config, worktree_name: str, daemon_client=None,
     ) -> tuple[StatusResult, dict[str, PRInfo]]:
         """Get status for a specific worktree using daemon."""
         # Verify the worktree exists
@@ -374,7 +361,7 @@ class WorktreeService:
             await self._show_all_worktrees_status(config, daemon_client, formatter)
 
     async def _show_single_worktree_status(
-        self, config, daemon_client, formatter, worktree_name: str
+        self, config, daemon_client, formatter, worktree_name: str,
     ) -> None:
         """Show status for a single worktree."""
         self.require_worktree_exists(config, worktree_name)
@@ -414,8 +401,7 @@ class WorktreeService:
             # Always prioritize the main worktree
             if status.name == MAIN_WORKTREE_DISPLAY_NAME:
                 return (0, "main")  # main worktree always first
-            else:
-                return (1, status.name)  # others alphabetically
+            return (1, status.name)  # others alphabetically
 
         sorted_items = sorted(all_status.results.items(), key=sort_key)
         # Convert to (name, status) tuples for display

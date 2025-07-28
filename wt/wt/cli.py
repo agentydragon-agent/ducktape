@@ -3,7 +3,6 @@
 import click
 from colorama import init
 
-from .client.daemon_client import WtClient
 from .client.handlers import (
     handle_copy_worktree,
     handle_create_worktree,
@@ -15,6 +14,7 @@ from .client.handlers import (
     handle_status_single,
 )
 from .client.view_formatter import ViewFormatter
+from .client.wt_client import WtClient
 from .shared.configuration import load_config
 from .shared.constants import MAIN_REPO_ALIASES
 
@@ -89,7 +89,7 @@ async def _async_main():
         "ignore_unknown_options": True,
         "allow_extra_args": True,
         "help_option_names": [],
-    }
+    },
 )
 @click.argument("args", nargs=-1)
 @click.pass_context
@@ -103,10 +103,10 @@ def sh(ctx, args):
 
     # Process arguments to extract flags
     for arg in all_args:
-        if arg == "--help" or arg == "-h":
+        if arg in {"--help", "-h"}:
             show_help()
             return
-        elif arg in ["-c", "--force"]:
+        if arg in ["-c", "--force"]:
             filtered_args.append(arg)
         elif arg.startswith("-"):
             continue
@@ -144,7 +144,7 @@ async def _async_sh_main(daemon_client, formatter, config, filtered_args, ctx):
             click.echo("Error: rm requires a worktree name")
             ctx.exit(1)
         force = "--force" in remaining_args
-        name = [arg for arg in remaining_args if arg != "--force"][0]
+        name = next(arg for arg in remaining_args if arg != "--force")
         await handle_remove_worktree(config, name, force)
 
     elif cmd == "cp":

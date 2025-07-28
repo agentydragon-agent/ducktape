@@ -1,6 +1,5 @@
 """Direct worktree utility functions for CLI handlers."""
 
-import os
 import shlex
 from pathlib import Path
 
@@ -41,7 +40,7 @@ def get_current_worktree_info(config) -> tuple[Path | None, str | None]:
     worktrees_dir = config.worktrees_dir_resolved
     if cwd.is_relative_to(worktrees_dir):
         # Find the worktree root
-        for parent in [cwd] + list(cwd.parents):
+        for parent in [cwd, *list(cwd.parents)]:
             if parent.parent == worktrees_dir:
                 # This is a worktree root
                 try:
@@ -69,27 +68,23 @@ def resolve_path(config, worktree_name: str | None, path_spec: str) -> Path:
     if path_spec.startswith("/"):
         # Absolute path within worktree
         return target_path / path_spec.lstrip("/")
-    elif path_spec.startswith("./"):
+    if path_spec.startswith("./"):
         # Relative path from current location within worktree
         current_wt, rel_path = get_current_worktree_info(config)
         if current_wt != target_path:
             raise RuntimeError("Cannot use relative path for different worktree")
 
         # Get current position within the worktree
-        if rel_path:
-            current_dir = target_path / rel_path
-        else:
-            current_dir = target_path
+        current_dir = target_path / rel_path if rel_path else target_path
 
         return (current_dir / path_spec).resolve()
-    else:
-        # Treat as absolute path within worktree
-        return target_path / path_spec
+    # Treat as absolute path within worktree
+    return target_path / path_spec
 
 
 def emit_cd_command(dest_repo: Path, config) -> None:
     """Emit a cd command for shell execution."""
-    from ..shared.shell_utils import emit_command
+    from .shell_utils import emit_command
     
     # Try to preserve relative path when switching between worktrees
     current_wt, rel_path = get_current_worktree_info(config)
@@ -108,11 +103,11 @@ def emit_cd_command(dest_repo: Path, config) -> None:
 
 
 async def create_worktree(
-    config, name: str, source_worktree: Path | None = None, from_default: bool = True
+    config, name: str, source_worktree: Path | None = None, from_default: bool = True,
 ) -> Path:
     """Create a new worktree via RPC."""
     from ..shared.error_handling import validate_worktree_name
-    from .daemon_client import WtClient
+    from .wt_client import WtClient
 
     validate_worktree_name(name)
 
@@ -144,7 +139,7 @@ async def create_worktree(
 
 async def remove_worktree(config, name: str, force: bool = False) -> None:
     """Remove a worktree via RPC."""
-    from .daemon_client import WtClient 
+    from .wt_client import WtClient
 
     # Create daemon client
     daemon_client = WtClient(config)

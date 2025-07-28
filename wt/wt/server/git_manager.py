@@ -92,7 +92,7 @@ class GitManager:
             repo.branches.local.create(branch_name, target_commit)
 
     async def get_working_directory_status(
-        self, repo_path: Path | None = None
+        self, repo_path: Path | None = None,
     ) -> tuple[list[str], list[str]]:
         """Get working directory status using fastest available method."""
         try:
@@ -149,7 +149,7 @@ class GitManager:
 
         author_name = commit.author.name
         # Convert timestamp to ISO format
-        from datetime import datetime, timezone
+        from datetime import timezone
 
         date_obj = datetime.fromtimestamp(commit.commit_time, timezone.utc)
         date_str = date_obj.isoformat()
@@ -210,7 +210,7 @@ class GitManager:
             path=self.config.main_repo,
             branch=current_branch,
             exists=True,
-            is_main=True
+            is_main=True,
         ))
         
         # Add all other worktrees
@@ -219,7 +219,7 @@ class GitManager:
                 path=Path(self._main_repo.lookup_worktree(wt_name).path),
                 branch=wt_name,
                 exists=Path(self._main_repo.lookup_worktree(wt_name).path).exists(),
-                is_main=False
+                is_main=False,
             )
             for wt_name in self._main_repo.list_worktrees()
         )

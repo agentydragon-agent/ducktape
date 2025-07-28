@@ -2,51 +2,86 @@
 prompt_engineer_algorithm.py
 =================================
 
-This module implements a simplified version of the Prompt Engineer algorithm
-described by the user.  The goal is to iteratively improve a system prompt
-for a coding assistant (Claude Code) by running multiple agent rollouts on a
-set of seed programming tasks, grading the generated solutions using the
-OpenAI Responses API, and then using another model to propose an improved
-prompt based on the previous rollouts.  Metrics and logs are written to
-JSONL files for later analysis.
+This module implements a parallel prompt optimization system for Claude Code agents.
+The goal is to iteratively improve a system prompt by running multiple agent rollouts
+in parallel on seed programming tasks, grading solutions using OpenAI's Responses API
+(o3 model), and using a PromptEngineer to propose improved prompts. All data is logged
+to JSONL files for analysis.
 
-The design uses asynchronous functions so that multiple API calls can be
-scheduled concurrently.  In a production environment you must
-configure API keys for Anthropic (Claude Code) and OpenAI via
-environment variables.  The script does not include any fallback or mock
-behaviour; both SDKs must be installed and properly configured.
+Key Features:
+------------
+* Fully parallel rollouts with semaphore-based concurrency control
+* Docker containerization for isolated Claude Code agent execution
+* OpenAI Responses API integration for grading and prompt engineering
+* PromptEngineer class with persistent conversation state and context trimming
+* Structured logging with JSON output for comprehensive tracking
 
-External references:
--------------------
-* Anthropic Claude Code Python SDK: supports specifying a working directory
-  and limiting available tools via ``ClaudeCodeOptions``.  Example usage:
-  ``options = ClaudeCodeOptions(allowed_tools=["Read", "Edit", "MultiEdit"], cwd="/path/to/dir", max_turns=10)``【672369408494918†L220-L229】.
-* OpenAI Responses API: provides a ``client.responses.create`` method that
-  accepts ``input`` messages and an optional list of ``tools`` representing
-  functions the model may call.  The API returns structured outputs which
-  may include function calls that your code must execute【672369408494918†L220-L229】.  In this
-  script we use the API for grading code and for proposing improved
-  prompts.
+Architecture:
+------------
+* Claude Code agents run in isolated Docker containers for safety
+* Rollouts execute in parallel (configurable max concurrency)
+* OpenAI o3 model handles both grading and prompt engineering
+* Context trimming preserves reasoning token validity
+* JSONL logs capture all API interactions and results
 
-Note: This script is designed for educational purposes and does not
-constitute a complete production-ready implementation.  It leaves room
-for replacing the placeholder logic with actual API calls once credentials
-are provided.
+External Dependencies:
+---------------------
+* Anthropic Claude Code SDK: For running coding agents in containers
+* OpenAI SDK: For grading (o3) and prompt engineering (o3 with reasoning)
+* Docker: Required for isolated agent execution
+* PyYAML: For loading seed tasks and grading criteria
+* tiktoken: For token counting and context management
+
+Configuration:
+-------------
+* API keys: Set ANTHROPIC_API_KEY and OPENAI_API_KEY environment variables
+* Parallelism: Adjust MAX_PARALLEL_ROLLOUTS constant (default: 8)
+* Context limits: PromptEngineer handles 200k token o3 context automatically
 """
 
 from __future__ import annotations
 
+import ast
 import asyncio
 import json
 import os
+import shutil
 import structlog
+import sys
+import tiktoken
+import yaml
+from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Any, Tuple
-import shutil  # used for finding executables
+from typing import List, Dict, Any, Tuple, Optional
+
+from claude_code_sdk import (
+    query as claude_query,
+    ClaudeCodeOptions,
+    ClaudeSDKClient,
+    SystemMessage,
+    UserMessage,
+    AssistantMessage,
+    ResultMessage,
+    TextBlock,
+    ToolUseBlock,
+    ToolResultBlock,
+)
+from openai import OpenAI
+from openai.types.responses.response import Response
+from openai.types.responses.response_reasoning_item import ResponseReasoningItem
+from openai.types.responses.response_function_tool_call import ResponseFunctionToolCall
 from pydantic import BaseModel
 
 # Configure structured logging
+import logging
+
+logging.basicConfig(
+    format="%(message)s",
+    stream=sys.stdout,
+    level=logging.INFO,
+)
+
 structlog.configure(
     processors=[
         structlog.stdlib.filter_by_level,
@@ -57,7 +92,7 @@ structlog.configure(
         structlog.processors.StackInfoRenderer(),
         structlog.processors.format_exc_info,
         structlog.processors.UnicodeDecoder(),
-        structlog.processors.JSONRenderer()
+        structlog.processors.JSONRenderer(),
     ],
     context_class=dict,
     logger_factory=structlog.stdlib.LoggerFactory(),
@@ -67,37 +102,80 @@ structlog.configure(
 
 logger = structlog.get_logger()
 
+# Configuration constants
+OPENAI_MODEL = "o3"
+REASONING_EFFORT = "medium"
+MAX_OUTPUT_TOKENS = 4000
+BASH_TIMEOUT_MS = "30000"
+TRUNCATION_LENGTH = 80
+MAX_PARALLEL_ROLLOUTS = 8  # Maximum concurrent Claude Code rollouts
+
+
 class SeedTask(BaseModel):
     id: str
     prompt: str
-    description: str
+
 
 class Criterion(BaseModel):
     name: str
     description: str
     evaluation_criteria: str
 
-# Capture original PATH and binary locations before any modifications.  This
-# ensures that when we create firejail wrappers for Claude Code, we refer to
-# Determine absolute paths to the real ``claude`` and ``firejail`` binaries using
-# the original PATH environment variable.  We capture these paths once at
-# module load time so that subsequent modifications to ``os.environ['PATH']``
-# (for example, when injecting wrapper scripts) do not shadow the real binaries.
-# If either binary cannot be located, we immediately raise a RuntimeError
-# because running the script without them is unsupported.
-_ORIGINAL_PATH = os.environ.get("PATH", "")
-_ORIGINAL_CLAUDE_PATH = shutil.which("claude", path=_ORIGINAL_PATH)
-_ORIGINAL_FIREJAIL_PATH = shutil.which("firejail", path=_ORIGINAL_PATH)
 
+# Capture original PATH and binary locations before any modifications.
+# We use Docker to run Claude Code agents in isolated containers for safety.
+# This ensures that when we inject wrapper scripts into PATH, we can still
+# locate the real Docker binary. The absolute path is captured once at
+# module load time so that subsequent PATH modifications don't shadow it.
+_ORIGINAL_PATH = os.environ.get("PATH", "")
 _ORIGINAL_DOCKER_PATH = shutil.which("docker", path=_ORIGINAL_PATH)
-if _ORIGINAL_CLAUDE_PATH is None:
-    raise RuntimeError(
-        "Claude CLI binary not found on PATH; ensure the `claude` executable is installed and available."
-    )
 if _ORIGINAL_DOCKER_PATH is None:
     raise RuntimeError(
-        "Docker is required to run Claude Code in a container. Install Docker and ensure it is in your PATH."
+        "Docker is required to run Claude Code agents in isolated containers. "
+        "Install Docker and ensure it is in your PATH."
     )
+
+# -----------------------------------------------------------------------------
+# Helper functions for deduplication and common operations
+# -----------------------------------------------------------------------------
+
+
+def truncate_string(text: str, max_len: int = TRUNCATION_LENGTH) -> str:
+    """Truncate string to max_len chars with ellipsis if needed."""
+    return text[:max_len] + "..." if len(text) > max_len else text
+
+
+def safe_model_dump(obj: Any) -> Dict[str, Any]:
+    """Convert object to dict using proper type checking."""
+    if isinstance(obj, BaseModel):
+        return obj.model_dump()
+    elif isinstance(obj, dict):
+        return obj
+    else:
+        return {"value": obj}
+
+
+def create_openai_request(
+    model: str,
+    input_data: List[Dict[str, Any]],
+    tools: List[Dict[str, Any]],
+    tool_choice: Dict[str, Any],
+    reasoning_effort: str = REASONING_EFFORT,
+    max_tokens: int = MAX_OUTPUT_TOKENS,
+) -> Dict[str, Any]:
+    """Create standardized OpenAI request dictionary."""
+    request = {
+        "model": model,
+        "input": input_data,
+        "tools": tools,
+        "tool_choice": tool_choice,
+    }
+    if reasoning_effort:
+        request["reasoning"] = {"effort": reasoning_effort}
+    if max_tokens:
+        request["max_output_tokens"] = max_tokens
+    return request
+
 
 # -----------------------------------------------------------------------------
 # Helper functions for summarising Claude Code interactions
@@ -108,7 +186,7 @@ if _ORIGINAL_DOCKER_PATH is None:
 # -----------------------------------------------------------------------------
 
 
-def _format_args_for_display(args: Any, max_len: int = 80) -> str:
+def _format_args_for_display(args: Any, max_len: int = TRUNCATION_LENGTH) -> str:
     """Format tool arguments for display.
 
     If ``args`` is a mapping, render key:value pairs without braces or quotes.
@@ -131,19 +209,15 @@ def _format_args_for_display(args: Any, max_len: int = 80) -> str:
     if isinstance(args, dict):
         parts: List[str] = []
         for k, v in args.items():
-            v_str = str(v)
-            if len(v_str) > max_len:
-                v_str = v_str[:max_len] + "..."
+            v_str = truncate_string(str(v), max_len)
             parts.append(f"{k}: {v_str}")
         return ", ".join(parts)
     # Non-dict: attempt JSON serialisation
     try:
         arg_str = json.dumps(args)
-    except Exception:
+    except (TypeError, ValueError):
         arg_str = str(args)
-    if len(arg_str) > max_len:
-        arg_str = arg_str[:max_len] + "..."
-    return arg_str
+    return truncate_string(arg_str, max_len)
 
 
 def _extract_text_prefix(content: Any, limit: int = 120) -> str:
@@ -162,18 +236,15 @@ def _extract_text_prefix(content: Any, limit: int = 120) -> str:
         The first ``limit`` characters of text from the content, with
         newlines replaced by spaces.
     """
-    try:
-        if isinstance(content, str):
-            return content.strip().replace("\n", " ")[:limit]
-        if isinstance(content, (list, tuple)):
-            for block in content:
-                if hasattr(block, "text"):
-                    text = getattr(block, "text")
-                    if isinstance(text, str):
-                        return text.strip().replace("\n", " ")[:limit]
-        return ""
-    except Exception:
-        return ""
+    if isinstance(content, str):
+        return content.strip().replace("\n", " ")[:limit]
+    if isinstance(content, (list, tuple)):
+        for block in content:
+            if hasattr(block, "text"):
+                text = getattr(block, "text")
+                if isinstance(text, str):
+                    return text.strip().replace("\n", " ")[:limit]
+    return ""
 
 
 def _summarise_tool_block(block: Any) -> Optional[str]:
@@ -204,7 +275,7 @@ def _summarise_tool_block(block: Any) -> Optional[str]:
                 return f"{tool_name}({arg_str})"
             return tool_name
         return None
-    except Exception:
+    except (AttributeError, KeyError, TypeError):
         return None
 
 
@@ -222,7 +293,7 @@ def _summarise_tool_block(block: Any) -> Optional[str]:
 # made in one place.
 
 
-def format_args(args: Any, max_length: int = 80) -> str:
+def format_args(args: Any, max_length: int = TRUNCATION_LENGTH) -> str:
     """Format tool arguments for display in logs.
 
     If ``args`` is a dictionary, render it as ``key: value`` pairs separated
@@ -259,55 +330,103 @@ def format_args(args: Any, max_length: int = 80) -> str:
             if len(arg_str) > max_length:
                 arg_str = arg_str[:max_length] + "..."
             return arg_str
-    except Exception:
+    except (AttributeError, TypeError):
         # If formatting fails, return a simple representation
         return str(args)[:max_length] + ("..." if len(str(args)) > max_length else "")
 
 
-def print_message_summary(message: Any, agent_id: int) -> None:
-    """Print a one-line summary of a Claude Code SDK message."""
-    from claude_code_sdk import AssistantMessage, UserMessage, SystemMessage, ResultMessage
-    from claude_code_sdk import TextBlock, ToolUseBlock, ToolResultBlock
-    
+def log_message_summary(message: Any, agent_id: int) -> None:
+    """Log a structured summary of a Claude Code SDK message."""
+
     def truncate(text: str, limit: int = 100) -> str:
         return text[:limit] + "..." if len(text) > limit else text
-    
+
     def clean_text(text: str) -> str:
-        return text.replace('\n', ' ')
-    
+        return text.replace("\n", " ")
+
+    def safe_content_to_str(content: Any) -> str:
+        """Safely convert content to string, handling both str and list types."""
+        if isinstance(content, str):
+            return content
+        elif isinstance(content, list):
+            # Handle list content by converting to string representation
+            return str(content)
+        else:
+            return str(content)
+
+    message_logger = logger.bind(agent_id=agent_id, message_type=type(message).__name__)
+
     if isinstance(message, SystemMessage):
-        print(f"[Agent {agent_id}] SystemMessage({message.subtype})")
-        
+        message_logger.info("System message", subtype=message.subtype)
+
     elif isinstance(message, AssistantMessage):
         tool_uses = []
         text_content = ""
-        
+
         for block in message.content:
             if isinstance(block, TextBlock):
                 text_content = block.text
             elif isinstance(block, ToolUseBlock):
-                args = ', '.join(f'{k}={truncate(str(v), 30)}' for k, v in block.input.items())
+                args = ", ".join(
+                    f"{k}={truncate(str(v), 30)}" for k, v in block.input.items()
+                )
                 tool_uses.append(f"{block.name}({args})")
             elif isinstance(block, ToolResultBlock):
-                content = block.content if isinstance(block.content, str) else str(block.content)
-                print(f"[Agent {agent_id}] ToolResult({block.tool_use_id[:8]}) - \"{clean_text(truncate(content, 60))}\"")
-        
+                content = (
+                    block.content
+                    if isinstance(block.content, str)
+                    else str(block.content)
+                )
+                message_logger.info(
+                    "Tool result",
+                    tool_use_id=block.tool_use_id[:8],
+                    content_preview=clean_text(truncate(content, 60)),
+                )
+
         if tool_uses:
-            print(f"[Agent {agent_id}] {', '.join(tool_uses)}")
+            message_logger.info("Tool usage", tools=tool_uses)
         elif text_content:
-            print(f'[Agent {agent_id}] AssistantMessage - "{clean_text(truncate(text_content))}"')
-        # Note: ToolResultBlock printing is handled above in the loop
-            
+            message_logger.info(
+                "Assistant message", content_preview=clean_text(truncate(text_content))
+            )
+
     elif isinstance(message, UserMessage):
-        # UserMessage.content is just a string according to the SDK
-        print(f'[Agent {agent_id}] UserMessage - "{clean_text(truncate(message.content))}"')
-                    
+        # UserMessage.content can be a string or list - handle both safely
+        content_str = safe_content_to_str(message.content)
+
+        if isinstance(message.content, list) and message.content:
+            # Handle list content (e.g., tool results)
+            first_item = message.content[0]
+            if isinstance(first_item, dict) and first_item.get("type") == "tool_result":
+                tool_id = first_item.get("tool_use_id", "unknown")[:8]
+                content = first_item.get("content", "")
+                content_str = content if isinstance(content, str) else str(content)
+                message_logger.info(
+                    "Tool result",
+                    tool_use_id=tool_id,
+                    content_preview=clean_text(truncate(content_str, 60)),
+                )
+            else:
+                message_logger.info(
+                    "User message", content_preview=clean_text(truncate(content_str))
+                )
+        elif content_str:
+            message_logger.info(
+                "User message", content_preview=clean_text(truncate(content_str))
+            )
+        else:
+            message_logger.info("User message", content="empty")
+
     elif isinstance(message, ResultMessage):
-        cost_str = f"${message.total_cost_usd}" if message.total_cost_usd else "unknown"
-        print(f"[Agent {agent_id}] ResultMessage (duration: {message.duration_ms}ms, cost: {cost_str}, error: {message.is_error})")
-        
+        message_logger.info(
+            "Result message",
+            duration_ms=message.duration_ms,
+            cost_usd=message.total_cost_usd,
+            is_error=message.is_error,
+        )
+
     else:
-        print(f"[Agent {agent_id}] {type(message).__name__}")
+        message_logger.info("Unknown message type")
 
 
 def extract_text_prefix(text: str, limit: int = 120) -> str:
@@ -332,8 +451,8 @@ def extract_text_prefix(text: str, limit: int = 120) -> str:
             text = str(text)
         single_line = text.replace("\n", " ").strip()
         return single_line[:limit]
-    except Exception:
-        return ""
+    except (AttributeError, TypeError):
+        return str(text)[:limit] if text else ""
 
 
 def summarise_tool(block: Any) -> Optional[str]:
@@ -366,7 +485,7 @@ def summarise_tool(block: Any) -> Optional[str]:
                     if hasattr(tool_obj, "name")
                     else str(tool_obj)
                 )
-            except Exception:
+            except (AttributeError, TypeError):
                 tool_name = str(tool_obj)
             args = None
             # The block may expose arguments on itself
@@ -383,7 +502,7 @@ def summarise_tool(block: Any) -> Optional[str]:
             tool_name = None
             try:
                 tool_name = getattr(block, "name")
-            except Exception:
+            except AttributeError:
                 tool_name = None
             if tool_name:
                 # Collect arguments from possible attributes
@@ -399,7 +518,7 @@ def summarise_tool(block: Any) -> Optional[str]:
                 else:
                     return tool_name
         return None
-    except Exception:
+    except (AttributeError, KeyError, TypeError):
         return None
 
 
@@ -443,10 +562,10 @@ def summarise_tool_result(content: Any) -> Optional[str]:
                         result_text = str(result_text)
                     result_text_str = extract_text_prefix(str(result_text), limit=120)
                     return f"tool_result({result_text_str})"
-            except Exception:
+            except (AttributeError, TypeError):
                 pass
         return None
-    except Exception:
+    except (AttributeError, TypeError):
         return None
 
 
@@ -457,10 +576,6 @@ def summarise_tool_result(content: Any) -> Optional[str]:
 # We import the query function and ClaudeCodeOptions to interact with the
 # Claude Code service.  The query function handles asynchronous streaming of
 # events from the model, and ClaudeCodeOptions configures the agent.
-from claude_code_sdk import query as claude_query
-from claude_code_sdk import ClaudeCodeOptions
-from openai import OpenAI
-import tiktoken
 
 
 # -----------------------------------------------------------------------------
@@ -480,26 +595,6 @@ PROMPT_ENGINEER_SYSTEM_MESSAGE = (
     "When you are given rollouts and grades from the last prompt, call the `submit_prompt` function with "
     "a single argument `prompt` containing your improved system prompt. Do not output anything else."
 )
-
-# The initial user message given to the prompt engineer.  It embeds the
-# starting system prompt and a description of the grading criteria.  It is
-# formatted with initial_prompt and criteria_definition.
-PROMPT_ENGINEER_INITIAL_USER_MESSAGE_TEMPLATE = (
-    "Initial system prompt:\n{initial_prompt}\n\n{criteria_definition}"
-)
-
-# Template for summarising rollouts to the prompt engineer.  It includes the
-# current prompt and the detailed rollout summaries.  It instructs the model
-# to propose a better system prompt without extra commentary.
-PROMPT_ENGINEER_ROLLOUT_SUMMARY_TEMPLATE = """
-Current system prompt:
-{current_prompt}
-
-Here are the latest rollouts and their grades:
-{rollouts_text}
-
-Please identify the failures or shortcomings of the current system prompt based on these rollouts.  Suggest a revised system prompt that addresses these issues and improves performance on the grading axes.  Respond only with the new system prompt without any additional commentary.
-"""
 
 # Template for the grading evaluation prompt.  It describes the task, lists
 # all submitted code files, enumerates the grading axes, and specifies the
@@ -550,16 +645,13 @@ def log_openai_request_response(
     # Attempt to serialise the response object.  OpenAI responses implement a
     # model_dump() method; if unavailable, fall back to dict(), json(), or str().
     try:
-        if hasattr(response, "model_dump"):
-            response_data = response.model_dump()
-        elif hasattr(response, "dict"):
-            response_data = response.dict()
-        elif hasattr(response, "json"):
-            response_data = json.loads(response.json())
-        else:
-            response_data = str(response)
-    except Exception:
-        response_data = str(response)
+        response_data = (
+            response.model_dump()
+            if isinstance(response, BaseModel)
+            else {"value": str(response)}
+        )
+    except (AttributeError, TypeError):
+        response_data = {"value": str(response)}
     record = {
         "timestamp": datetime.utcnow().isoformat(),
         "request": request,
@@ -591,7 +683,7 @@ def log_anthropic_request_event(
     """
     try:
         event_data = event if isinstance(event, dict) else str(event)
-    except Exception:
+    except (AttributeError, TypeError):
         event_data = str(event)
     record = {
         "timestamp": datetime.utcnow().isoformat(),
@@ -683,22 +775,7 @@ async def run_claude_code(
     work_dir = (base_dir / f"task_{task_id}" / f"agent_{agent_id}").resolve()
     work_dir.mkdir(parents=True, exist_ok=True)
 
-    # Ensure a local settings directory exists for Claude Code.  We create
-    # `.claude/settings.local.json` with an empty JSON object so that each
-    # agent's session starts with a clean configuration.  The use of
-    # settings.local.json allows per‑project overrides in Claude Code.
-    try:
-        claude_settings_dir = work_dir / ".claude"
-        claude_settings_dir.mkdir(parents=True, exist_ok=True)
-        settings_file = claude_settings_dir / "settings.local.json"
-        # Write an empty JSON object if the file does not already exist or is empty.
-        if not settings_file.exists() or not settings_file.read_text().strip():
-            settings_file.write_text("{}")
-    except Exception:
-        # Silently ignore any errors creating settings; they are optional.
-        pass
-
-    # Print the working directory for this agent to the console so that users
+    # Log the working directory for this agent so that users
     # know where the agent's files are being saved.  This occurs at the start
     # of each agent run.
     agent_logger = logger.bind(agent_id=agent_id, task_id=task_id)
@@ -712,8 +789,8 @@ async def run_claude_code(
     # No additional scaffolding is added; the task itself serves as the prompt for Claude Code.
 
     # Set bash timeout environment variable (30 seconds)
-    os.environ["BASH_MAX_TIMEOUT_MS"] = "30000"
-    
+    os.environ["BASH_MAX_TIMEOUT_MS"] = BASH_TIMEOUT_MS
+
     # Configure Claude Code options.  We always expect the SDK and API key to be present.
     options = ClaudeCodeOptions(
         # Enable ALL tools including dangerous ones like Bash for full execution
@@ -738,38 +815,39 @@ async def run_claude_code(
     anthropic_request = {
         "prompt": task,
         "options": (
-            options.model_dump() if hasattr(options, "model_dump") else str(options)
+            options.model_dump() if isinstance(options, BaseModel) else str(options)
         ),
     }
     # Log the request before sending
     log_anthropic_request_event(anthropic_log_path, anthropic_request, "request_sent")
-    
-    # Debug: Print what command would be generated
+
+    # Debug: Log session start
     agent_logger.info("Starting Claude Code session")
     # Import the correct message types from the SDK and use ClaudeSDKClient for streaming mode
-    from claude_code_sdk import AssistantMessage, UserMessage, SystemMessage, ResultMessage
-    from claude_code_sdk import TextBlock, ToolUseBlock, ToolResultBlock, ClaudeSDKClient
-    from dataclasses import asdict
-    
-    # Use ClaudeSDKClient to force streaming mode instead of print mode
+    from claude_code_sdk import (
+        ResultMessage,
+    )
+
+    # Use ClaudeSDKClient to force streaming mode
     async with ClaudeSDKClient(options=options) as client:
         await client.query(task)
         async for message in client.receive_messages():
             # Log each event from the Claude Code API
             log_anthropic_request_event(anthropic_log_path, anthropic_request, message)
-            
+
             # Store the message using dataclasses.asdict() for proper serialization
             message_sequence.append(asdict(message))
 
-            # Print message summary
-            print_message_summary(message, agent_id)
-            
+            log_message_summary(message, agent_id)
+
             # Break out of the loop when we receive a ResultMessage (conversation is complete)
             if isinstance(message, ResultMessage):
-                agent_logger.info("Session completed", 
-                                duration_ms=message.duration_ms, 
-                                cost_usd=message.total_cost_usd, 
-                                is_error=message.is_error)
+                agent_logger.info(
+                    "Session completed",
+                    duration_ms=message.duration_ms,
+                    cost_usd=message.total_cost_usd,
+                    is_error=message.is_error,
+                )
                 break
 
     # After the conversation completes, gather all files in the agent directory
@@ -779,7 +857,7 @@ async def run_claude_code(
             relative = file_path.relative_to(work_dir).as_posix()
             try:
                 content = file_path.read_text()
-            except Exception:
+            except (OSError, UnicodeDecodeError):
                 content = ""
             files_info.append({"path": relative, "content": content})
 
@@ -817,16 +895,11 @@ async def grade_code(
     result : CodeResult
         The code result to be graded.
     criteria : List[Criterion]
-        A list of grading facets to evaluate.  Each facet will appear as a
+        Facets to evaluate.  Each facet will appear as a
         property in the function schema.
     openai_log_path : Path
-        Path to a JSONL file where requests and responses to the OpenAI API
+        Path to JSONL file where requests and responses to the OpenAI API
         will be logged.
-
-    Returns
-    -------
-    Grade
-        A dataclass containing the grading information.
     """
     client = OpenAI()
 
@@ -904,23 +977,38 @@ async def grade_code(
 
     # Call the model.  We enforce the tool choice so the model must call
     # submit_grades and return the grading JSON according to the schema.
-    grade_logger = logger.bind(agent_id=result.agent_id, task_id=getattr(result, 'task_id', 'unknown'))
-    grade_logger.info("Making OpenAI grading call")
-    
-    response = client.responses.create(
-        model="o3",
-        input=input_messages,
-        tools=[grading_tool],
-        tool_choice={"type": "function", "name": "submit_grades"},
+    grade_logger = logger.bind(
+        agent_id=result.agent_id, task_id=getattr(result, "task_id", "unknown")
     )
+    grade_logger.info("Making OpenAI grading call")
+
+    openai_request = create_openai_request(
+        OPENAI_MODEL,
+        input_messages,
+        [grading_tool],
+        {"type": "function", "name": "submit_grades"},
+        REASONING_EFFORT,
+    )
+    response = client.responses.create(**openai_request)
     # Log request and response
     log_openai_request_response(openai_log_path, openai_request, response)
     grade_logger.info("OpenAI grading completed")
-    
+
+    # Extract the function_call item from the response first
+    call = None
+    for item in response.output or []:
+        item_type = getattr(item, "type", None) or (
+            item.get("type") if isinstance(item, dict) else None
+        )
+        if item_type == "function_call":
+            call = item
+            break
+
+    if call is None:
+        raise RuntimeError("No function_call found in grading response")
+
     # Extract and log grading results before processing
-    args_str = (
-        call.arguments if hasattr(call, "arguments") else call.get("arguments")
-    )
+    args_str = call.arguments if hasattr(call, "arguments") else call.get("arguments")
     if isinstance(args_str, str):
         grades_data = json.loads(args_str)
         facet_results = {}
@@ -929,34 +1017,24 @@ async def grade_code(
                 score = facet_data.get("score", 0)
                 rationale = facet_data.get("rationale", "")
                 facet_results[facet_name] = {"score": score, "rationale": rationale}
-        
+
         grade_logger.info("Grading results", facets=facet_results)
 
-    # Extract the function_call item from the response.  The output may
-    # include reasoning items before the function call, so we iterate to find
-    # the first item with type == "function_call".  Items may be Pydantic
-    # models or dictionaries.
-    call = None
-    for item in response.output or []:
-        # Determine item type
-        item_type = None
-        try:
-            if hasattr(item, "type"):
-                item_type = item.type
-            elif isinstance(item, dict):
-                item_type = item.get("type")
-        except Exception:
-            item_type = None
-        if item_type == "function_call":
-            call = item
-            break
+        # Also log readable results for each facet
+        for facet_name, facet_data in facet_results.items():
+            score = facet_data["score"]
+            rationale = truncate_string(facet_data["rationale"], TRUNCATION_LENGTH)
+            grade_logger.info(
+                "Facet graded",
+                facet=facet_name,
+                score=score,
+                rationale=truncate_string(rationale, TRUNCATION_LENGTH),
+            )
+
     if call is None:
         raise RuntimeError("The grader did not call submit_grades as required.")
     # Determine the function name
-    try:
-        call_name = call.name if hasattr(call, "name") else call.get("name")
-    except Exception:
-        call_name = None
+    call_name = call.name if hasattr(call, "name") else call.get("name")
     if call_name != "submit_grades":
         raise RuntimeError(f"Unexpected function name: {call_name}")
     # Extract the arguments string
@@ -964,17 +1042,14 @@ async def grade_code(
         args_str = (
             call.arguments if hasattr(call, "arguments") else call.get("arguments")
         )
-    except Exception:
+    except (AttributeError, KeyError, TypeError):
         args_str = None
     if not isinstance(args_str, str):
         raise ValueError(
             f"Could not retrieve arguments from submit_grades call: {call}"
         )
     # Parse the JSON string into a dict
-    try:
-        result_data = json.loads(args_str)
-    except json.JSONDecodeError:
-        raise ValueError(f"Failed to parse grading JSON: {args_str}")
+    result_data = json.loads(args_str)
 
     # Map scores and rationales back into the Grade object
     axis_scores: Dict[str, float] = {}
@@ -1004,279 +1079,272 @@ async def grade_code(
     )
 
 
-async def propose_new_prompt(
-    messages: List[Dict[str, Any]],
-    reasoning_items: List[Dict[str, Any]],
-    current_prompt: str,
-    new_rollouts: List[Tuple[CodeResult, Grade]],
-    openai_log_path: Path,
-) -> Tuple[str, List[Dict[str, Any]], List[Dict[str, Any]]]:
-    """Propose an improved system prompt based on cumulative rollouts.
+@dataclass
+class Turn:
+    """A complete conversational turn in the PromptEngineer."""
 
-    The prompt engineer maintains a persistent conversation across iterations.  Each
-    time this function is called, it appends a new user message describing the
-    latest rollouts and asks the assistant to generate an improved system prompt.
+    tool_result: Dict[str, Any]  # Grading results (response to function call)
+    reasoning: List[Any]  # OpenAI SDK reasoning objects
+    function_call: Any  # OpenAI SDK function call object
 
-    Parameters
-    ----------
-    messages : list of dict
-        The current conversation history between the prompt engineer and the model.
-    current_prompt : str
-        The system prompt currently in use by the coding agents.
-    new_rollouts : list of tuples (CodeResult, Grade)
-        The rollouts and their associated grades from the most recent iteration.
 
-    Returns
-    -------
-    tuple (str, list)
-        A pair containing the improved prompt and the updated conversation history.
-    """
-    # Build detailed summaries of the new rollouts.  Each rollout summary
-    # includes the task, scores, rationales, the full conversation log as
-    # JSON lines, and the generated code files.  These summaries will be
-    # appended to the conversation as a function_call_output so the model can
-    # analyse them when producing the next prompt.
-    rollout_summaries: List[str] = []
-    for code_result, grade in new_rollouts:
-        # Serialize full message sequence for this rollout
-        message_lines: List[str] = []
-        for evt in code_result.messages:
-            message_lines.append(json.dumps(evt))
-        messages_text = "\n".join(message_lines)
-        # Serialize full code by listing each file
-        code_lines: List[str] = []
-        for file_info in code_result.files:
-            code_lines.append(f"### {file_info['path']}\n{file_info['content']}")
-        full_code = "\n\n".join(code_lines)
-        # Build dynamic score and rationale lines based on the axes present in the grade
-        score_parts: List[str] = []
-        rationale_parts: List[str] = []
-        for key, score in grade.axis_scores.items():
-            score_parts.append(f"  {key}={score}")
-        for key, rationale in grade.axis_rationales.items():
-            rationale_parts.append(f"  {key}: {rationale}")
-        score_str = ", ".join(score_parts)
-        rationale_str = "\n".join(rationale_parts)
-        # Compose the summary for this rollout
-        rollout_summaries.append(
-            f"ROLLOUT for task: {code_result.task}\n"
-            f"Agent {code_result.agent_id} scores:\n{score_str}, overall={grade.overall_score}\n"
-            f"Rationales:\n{rationale_str}\n  overall: {grade.overall_rationale}\n"
-            f"Conversation log (JSON lines):\n{messages_text}\n"
-            f"Generated code files:\n{full_code}\n"
-        )
-    summary_text = "\n".join(rollout_summaries).strip()
+class PromptEngineer:
+    """Manages conversation state and token counting for prompt optimization."""
 
-    # Determine the call_id of the last submit_prompt call.  We need this to
-    # attach our summary as the output of that call.  Search the messages in
-    # reverse order for the most recent item with type "function_call" and name
-    # "submit_prompt".  If none is found (only possible for the initial synthetic
-    # call), use the call_id of the synthetic seed.
-    last_call_id = None
-    for m in reversed(messages):
-        if m.get("type") == "function_call" and m.get("name") == "submit_prompt":
-            last_call_id = m.get("call_id")
-            break
-    if last_call_id is None:
-        # Fallback to synthetic call id if not found
-        last_call_id = "synthetic_0"
-
-    # Append a function_call_output summarising the new rollouts.  This message
-    # provides the model with the full results of the last prompt.  We do not
-    # include any additional commentary or instructions here; the system
-    # message already tells the model how to behave.
-    messages.append(
-        {
-            "type": "function_call_output",
-            "call_id": last_call_id,
-            "output": summary_text,
-        }
-    )
-
-    # Prepare the input for the model by combining conversation messages and
-    # accumulated reasoning items.  The model will read the rollouts summary
-    # from the function_call_output and produce a new prompt via a call to
-    # submit_prompt.
-    input_items: List[Dict[str, Any]] = []
-    input_items.extend(messages)
-    input_items.extend(reasoning_items)
-
-    client = OpenAI()
-    # Define the submit_prompt function for the model.  We enforce strict
-    # schema compliance via "strict": True.
-    tools = [
-        {
-            "type": "function",
-            "name": "submit_prompt",
-            "description": "Submit an improved system prompt.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "prompt": {
-                        "type": "string",
-                        "description": "The revised system prompt for the coding assistant.",
-                    }
-                },
-                "required": ["prompt"],
-                "additionalProperties": False,
-            },
-            "strict": True,
-        }
-    ]
-    # Log the OpenAI request
-    openai_request = {
-        "model": "o3",
-        "input": input_items,
-        "tools": tools,
-        "tool_choice": {"type": "function", "name": "submit_prompt"},
-        "reasoning": {"effort": "medium"},
-        "max_output_tokens": 4000,
-        "include": ["reasoning.encrypted_content"],
+    # System message preserved across all context trims
+    # Note: PE does not get the full text of the grading criteria - only the
+    # scores and rationales from the grader. This keeps the context compact
+    # and lets the PE focus on patterns in the results rather than memorizing criteria.
+    _SYSTEM_MESSAGE = {
+        "role": "system",
+        "content": "You are a prompt engineer. Your job is to analyze rollouts from coding tasks and iteratively improve the system prompt to get better results.",
     }
-    response = client.responses.create(
-        model="o3",
-        input=input_items,
-        tools=tools,
-        tool_choice={"type": "function", "name": "submit_prompt"},
-        reasoning={"effort": "medium"},
-        max_output_tokens=4000,
-        include=["reasoning.encrypted_content"],
-    )
-    # Log the response
-    log_openai_request_response(openai_log_path, openai_request, response)
 
-    # Extract reasoning items and function calls from the response.  The API
-    # returns reasoning items before function calls.  Items may be Pydantic
-    # models or dictionaries.  We convert them to dicts when appending to
-    # reasoning_items to avoid mixing object types.
-    new_reasoning_items: List[Dict[str, Any]] = []
-    for item in response.output or []:
-        # Determine item type
-        item_type = None
-        try:
-            if hasattr(item, "type"):
-                item_type = item.type
-            elif isinstance(item, dict):
-                item_type = item.get("type")
-        except Exception:
-            item_type = None
-        if item_type == "reasoning":
-            # Convert to dictionary for consistency
-            try:
-                item_dict = (
-                    item.model_dump()
-                    if hasattr(item, "model_dump")
-                    else (item.dict() if hasattr(item, "dict") else item)
-                )
-            except Exception:
-                item_dict = item
-            new_reasoning_items.append(item_dict)
-        elif item_type in {"function_call", "function_call_output"}:
-            try:
-                item_dict = (
-                    item.model_dump()
-                    if hasattr(item, "model_dump")
-                    else (item.dict() if hasattr(item, "dict") else item)
-                )
-            except Exception:
-                item_dict = item
-            new_reasoning_items.append(item_dict)
+    def __init__(self) -> None:
+        """Initialize empty conversation state."""
+        self._turns: List[Turn] = []
 
-    # Find the first function_call item; this should be our submit_prompt call
-    call_item = None
-    for item in response.output or []:
-        item_type = None
+    @property
+    def prompt_messages(self) -> List[Any]:
+        """Get conversation messages with system message prepended."""
+        messages = [self._SYSTEM_MESSAGE]
+
+        # Flatten all turns into a single message list
+        for turn in self._turns:
+            messages.append(turn.tool_result)
+            messages.extend(turn.reasoning)
+            messages.append(turn.function_call)
+
+        return messages
+
+    def _count_tokens(self, model: str = "gpt-4o") -> int:
+        """Private: Count tokens in current conversation."""
+        enc = tiktoken.encoding_for_model(model)
+        tokens = 0
+
+        # Use the same logic as before - just count all messages in prompt_messages
+        for m in self.prompt_messages:
+            if hasattr(m, "model_dump"):
+                # OpenAI SDK object - serialize it
+                m_str = str(m.model_dump())
+                tokens += len(enc.encode(m_str))
+            elif isinstance(m, dict):
+                # Dict message - serialize relevant fields
+                if "content" in m:
+                    tokens += len(enc.encode(str(m["content"])))
+                if "arguments" in m:
+                    tokens += len(enc.encode(str(m["arguments"])))
+                if "output" in m:
+                    tokens += len(enc.encode(str(m["output"])))
+            else:
+                # Fallback - serialize the whole thing
+                tokens += len(enc.encode(str(m)))
+
+        return tokens
+
+    def _trim_context_if_needed(self, max_tokens: int = 140000) -> None:
+        """Private: Trim conversation if it exceeds token limit."""
+        if self._count_tokens() > max_tokens and len(self._turns) > 2:
+            # Keep only last 2 complete turns - each turn is atomic and complete
+            self._turns = self._turns[-2:]
+            logger.info(
+                "Trimmed context",
+                remaining_turns=len(self._turns),
+                estimated_tokens=self._count_tokens(),
+            )
+
+    def _build_rollout_summaries(
+        self, rollouts: List[Tuple[CodeResult, Grade]]
+    ) -> List[str]:
+        """Build summaries of rollout results for conversation."""
+        summaries = []
+        for code_result, grade in rollouts:
+            # Keep messages as SDK objects, serialize them simply as JSON for the LLM
+            message_lines = [json.dumps(evt) for evt in code_result.messages]
+            code_lines = [f"### {f['path']}\n{f['content']}" for f in code_result.files]
+            score_parts = [f"  {k}={v}" for k, v in grade.axis_scores.items()]
+            rationale_parts = [f"  {k}: {v}" for k, v in grade.axis_rationales.items()]
+
+            summary = f"""Task: {code_result.task}
+Overall Grade: {grade.overall_score}
+Axis Scores:
+{chr(10).join(score_parts)}
+Axis Rationales:
+{chr(10).join(rationale_parts)}
+Full Code:
+{chr(10).join(code_lines)}
+Full Messages:
+{chr(10).join(message_lines)}"""
+            summaries.append(summary)
+        return summaries
+
+    def build_grades_message(self, rollouts: List[Tuple[CodeResult, Grade]]) -> str:
+        """Build grades message from rollout results."""
+        rollout_summaries = self._build_rollout_summaries(rollouts)
+        return f"Here are the results from testing the current system prompt on {len(rollouts)} coding tasks. Please analyze these results and propose an improved system prompt.\n\n{chr(10).join(['---'] * 2).join(rollout_summaries)}"
+
+    async def propose_prompt(self, openai_log_path: Path) -> Tuple[List[Any], str]:
+        """Make OpenAI API call to get next prompt proposal.
+
+        Returns:
+            (reasoning_messages, claude_prompt)
+        """
+        # Trim context if needed before API call
+        self._trim_context_if_needed()
+
+        # Create OpenAI Responses API tools schema
+        tools = [
+            {
+                "type": "function",
+                "name": "submit_prompt",
+                "description": "Submit an improved system prompt",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "prompt": {
+                            "type": "string",
+                            "description": "The improved system prompt",
+                        }
+                    },
+                    "required": ["prompt"],
+                },
+            }
+        ]
+
+        # Call OpenAI Responses API with current conversation
+        client = OpenAI()
+        openai_request = create_openai_request(
+            OPENAI_MODEL,
+            self.prompt_messages,
+            tools,
+            {"type": "function", "name": "submit_prompt"},
+        )
+        response: Response = client.responses.create(**openai_request)
+        log_openai_request_response(openai_log_path, openai_request, response)
+
+        # Separate reasoning messages from function call
+        reasoning_messages = []
+        function_call_item: Optional[Any] = None
+
+        for item in response.output:
+            if getattr(item, "type", None) == "function_call":
+                function_call_item = item
+            else:
+                reasoning_messages.append(item)
+
+        if function_call_item is None:
+            raise RuntimeError("No function_call found in response")
+
+        # Extract function call details with proper type checking
+        if isinstance(function_call_item, ResponseFunctionToolCall):
+            call_name = function_call_item.name
+            arguments_str = function_call_item.arguments
+        elif isinstance(function_call_item, dict):
+            call_name = function_call_item.get("name")
+            arguments_str = function_call_item.get("arguments")
+        else:
+            call_name = getattr(function_call_item, "name", None)
+            arguments_str = getattr(function_call_item, "arguments", None)
+
+        if call_name != "submit_prompt":
+            raise RuntimeError(f"Unexpected function name: {call_name}")
+
+        if not isinstance(arguments_str, str):
+            raise ValueError(f"Invalid arguments format: {arguments_str}")
+
         try:
-            if hasattr(item, "type"):
-                item_type = item.type
-            elif isinstance(item, dict):
-                item_type = item.get("type")
-        except Exception:
-            item_type = None
-        if item_type == "function_call":
-            call_item = item
-            break
-    if call_item is None:
-        raise RuntimeError(
-            "Prompt engineer model did not call submit_prompt as expected."
+            args_dict = json.loads(arguments_str)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Could not parse arguments: {arguments_str}") from e
+
+        claude_prompt = args_dict.get("prompt", "").strip()
+        if not claude_prompt:
+            raise ValueError("Empty prompt returned")
+
+        logger.info(
+            "Generated new prompt",
+            prompt_length=len(claude_prompt),
+            conversation_turns=len(self._turns),
         )
-    # Extract function name
-    try:
-        call_name = (
-            call_item.name if hasattr(call_item, "name") else call_item.get("name")
-        )
-    except Exception:
-        call_name = None
-    if call_name != "submit_prompt":
-        raise RuntimeError(f"Unexpected function name: {call_name}")
-    # Extract call_id
-    try:
-        call_id = (
-            call_item.call_id
-            if hasattr(call_item, "call_id")
-            else call_item.get("call_id")
-        )
-    except Exception:
-        call_id = None
-    # Extract arguments string
-    try:
-        arguments_str = (
-            call_item.arguments
-            if hasattr(call_item, "arguments")
-            else call_item.get("arguments")
-        )
-    except Exception:
-        arguments_str = None
-    if not isinstance(arguments_str, str):
-        raise ValueError(
-            f"Could not retrieve arguments from submit_prompt call: {call_item}"
-        )
-    try:
-        args_dict = json.loads(arguments_str)
-    except json.JSONDecodeError:
-        raise ValueError(f"Could not parse submit_prompt arguments: {arguments_str}")
-    new_prompt = args_dict.get("prompt", "").strip()
-    # Convert the call_item to a dict for storing in the conversation
-    try:
-        call_dict = (
-            call_item.model_dump()
-            if hasattr(call_item, "model_dump")
-            else (call_item.dict() if hasattr(call_item, "dict") else call_item)
-        )
-    except Exception:
-        call_dict = call_item
-    messages.append(call_dict)
-    # Acknowledge the prompt by appending a function_call_output.  We do not
-    # repeat the prompt itself; the presence of the call in the messages is
-    # sufficient for the model to incorporate it into its reasoning.
-    messages.append(
-        {
-            "type": "function_call_output",
+
+        return reasoning_messages, claude_prompt
+
+    def append_turn(
+        self, reasoning: List[Any], claude_prompt: str, grades: str
+    ) -> None:
+        """Add completed turn to conversation history.
+
+        Args:
+            reasoning: OpenAI's reasoning messages from propose_prompt()
+            claude_prompt: The function call (submit_prompt with this prompt)
+            grades: Tool result (grading results from testing this prompt)
+        """
+        # Build tool result message from grades
+        tool_result = {"role": "user", "content": grades}
+
+        # Create synthetic function call from the claude_prompt
+        # Generate a unique call_id for this turn
+        call_id = f"synthetic_call_{len(self._turns)}"
+        function_call = {
+            "type": "function_call",
+            "name": "submit_prompt",
             "call_id": call_id,
-            "output": "Prompt accepted.",
+            "arguments": json.dumps({"prompt": claude_prompt}),
         }
-    )
-    # Return the new prompt, updated conversation, and new reasoning items
-    return new_prompt, messages, new_reasoning_items
+
+        # Create complete turn
+        turn = Turn(
+            tool_result=tool_result, reasoning=reasoning, function_call=function_call
+        )
+        self._turns.append(turn)
+
+        logger.info(
+            "Added turn to conversation",
+            conversation_turns=len(self._turns),
+            grades_length=len(grades),
+        )
+
+
+def load_criteria_from_yaml(graders_yaml_path: Path) -> List[Criterion]:
+    """Load grading criteria from YAML file."""
+    with graders_yaml_path.open("r") as f:
+        data = yaml.safe_load(f)
+
+    criteria = []
+    for entry in data["graders"]:
+        try:
+            criterion = Criterion(
+                id=entry["id"],
+                name=entry["name"],
+                description=entry["description"],
+                evaluation_criteria=entry["evaluation_criteria"],
+            )
+            criteria.append(criterion)
+        except KeyError as e:
+            raise ValueError(f"Invalid grader entry {entry}: missing key {e}") from e
+        except Exception as e:
+            raise ValueError(f"Invalid grader entry {entry}: {e}") from e
+
+    return criteria
 
 
 async def optimize_prompts(
     seed_tasks: List[str],
-    initial_prompt: str,
     iterations: int = 3,
     rollouts_per_task: int = 2,
     base_output_dir: str = "./agent_output",
+    max_parallel_rollouts: int = MAX_PARALLEL_ROLLOUTS,
 ) -> None:
     """Run the prompt optimisation loop.
 
-    This is the main entry point for running multiple iterations of the algorithm.  It
-    repeatedly executes batches of Claude Code agents on the seed tasks, grades
-    the generated solutions, updates the system prompt using a prompt engineer,
-    and logs results to CSV files.
+    This is the main entry point for running multiple iterations of the algorithm. It
+    repeatedly executes batches of Claude Code agents on the seed tasks in parallel,
+    grades the generated solutions using OpenAI's Responses API, updates the system
+    prompt using a prompt engineer (OpenAI o3), and logs results to JSONL files.
 
     Parameters
     ----------
-    seed_tasks : list of str
+    seed_tasks : List[SeedTask]
         The programming tasks to use as the benchmark for optimisation.
     initial_prompt : str
         The initial system prompt used for all Claude Code agents.
@@ -1286,6 +1354,8 @@ async def optimize_prompts(
         The number of Claude Code agents to sample per task in each iteration (default 2).
     base_output_dir : str, optional
         Base directory where agent working directories and logs will be stored.
+    max_parallel_rollouts : int, optional
+        Maximum number of concurrent Claude Code rollouts (default 8).
     """
     # Create a unique prefix for this run to avoid collisions with previous
     # executions.  The prefix is based on the current UTC timestamp.  All
@@ -1294,24 +1364,27 @@ async def optimize_prompts(
     run_prefix = datetime.utcnow().strftime("%Y%m%d%H%M%S")
     base_dir = (Path(base_output_dir) / run_prefix).resolve()
     base_dir.mkdir(parents=True, exist_ok=True)
-    print(f"[Run] Using unique run directory: {base_dir}")
+    logger.info(
+        "Run directory created", run_directory=str(base_dir), run_prefix=run_prefix
+    )
 
     # ---------------------------------------------------------------------
     # Docker wrapper setup
     #
-    # Use external docker wrapper script as a transparent claude proxy
+    # Use external docker wrapper script as a transparent Claude Code proxy
+    # This enables running Claude Code agents in isolated Docker containers
     wrapper_dir = base_dir / "bin"
     wrapper_dir.mkdir(parents=True, exist_ok=True)
     wrapper_script = wrapper_dir / "claude"
-    
-    # Copy the external wrapper script
+
+    # Copy the external Docker wrapper script that runs Claude Code in containers
     external_wrapper = Path(__file__).parent / "docker_claude_wrapper.sh"
     shutil.copy2(external_wrapper, wrapper_script)
     wrapper_script.chmod(0o755)
-    
-    # Prepend wrapper directory to PATH
+
+    # Prepend wrapper directory to PATH so Claude Code SDK uses our Docker wrapper
     os.environ["PATH"] = f"{wrapper_dir}:{_ORIGINAL_PATH}"
-    print(f"[Run] Docker wrapper installed at {wrapper_script}, PATH updated")
+    logger.info("Docker wrapper configured", wrapper_script=str(wrapper_script))
 
     # Prepare JSONL log files
     inner_log_path = base_dir / "inner_agent_log.jsonl"
@@ -1325,16 +1398,13 @@ async def optimize_prompts(
     # evaluation and a description explaining what to look for.  Additional
     # criteria can be added to this list without changing other parts of the
     # program.  The overall score is computed as the average of these axes.
-    # Load grading facets (criteria) from an external YAML configuration.  The
-    # file 'graders.yaml' should contain a top-level key 'graders' whose value
-    # is a list of objects with keys: id, name, description, evaluation_criteria.
-    # The 'id' field is used as the dict key in the grading output, while
-    # 'description' and 'evaluation_criteria' become the Pydantic fields.  If
-    # the YAML file cannot be loaded, an exception will propagate.
+    # Load grading criteria from YAML configuration file.
+    # The file 'graders.yaml' should contain a top-level 'graders' list with objects
+    # having keys: id, name, description, evaluation_criteria.
+    # The 'id' field becomes the criterion name, used as dict key in grading output.
     graders_path = Path("graders.yaml")
     if not graders_path.exists():
         raise FileNotFoundError("graders.yaml file is required but was not found.")
-    import yaml  # Imported here to avoid dependency if YAML not needed elsewhere
 
     with graders_path.open("r") as f:
         graders_data = yaml.safe_load(f)
@@ -1346,181 +1416,147 @@ async def optimize_prompts(
     criteria: List[Criterion] = []
     for entry in grader_entries:
         try:
-            # Map 'id' field to 'name' for Criterion model
+            # Map YAML 'id' field to Criterion 'name' field for consistency
             criterion_data = {
                 "name": entry["id"],
                 "description": entry.get("description", ""),
-                "evaluation_criteria": entry.get("evaluation_criteria", "")
+                "evaluation_criteria": entry.get("evaluation_criteria", ""),
             }
             crit = Criterion(**criterion_data)
             criteria.append(crit)
-        except Exception as e:
-            raise ValueError(f"Invalid grader entry {entry}: {e}")
-    # Build a human-readable definition of the criteria to share with the prompt engineer
+        except (TypeError, ValueError, KeyError) as e:
+            raise ValueError(f"Invalid grader entry {entry}: {e}") from e
+    # Build human-readable criteria definition for context (currently unused)
+    # This could be passed to the PromptEngineer for better context awareness
     criteria_definition_lines = ["The grader uses the following axes:"]
     for crit in criteria:
         criteria_definition_lines.append(f"- {crit.name}: {crit.description}")
     criteria_definition_lines.append("The overall score is determined by the grader.")
-    criteria_definition = "\n".join(criteria_definition_lines)
+    criteria_definition = "\n".join(criteria_definition_lines)  # Currently unused
 
-    # Initialise the prompt engineer conversation.  The system message instructs
-    # the model to call submit_prompt with improved prompts whenever rollouts
-    # and grades are shown.  There is no user message; instead we start
-    # with a synthetic function_call representing the initial prompt.
-    current_prompt = initial_prompt
-    # Track the version of the system prompt.  The initial prompt is version 0,
+    # Initialize the prompt engineer for the entire optimization process.
+    # The PromptEngineer manages conversation state and context trimming internally.
+    # PE starts empty and generates the initial prompt from scratch.
+    
+    # Generate initial prompt from PE (iteration 0)
+    logger.info("Generating initial prompt from PromptEngineer")
+    reasoning, current_prompt = await engineer.propose_prompt(openai_api_log_path)
+    # Track the version of the system prompt. The initial prompt is version 0,
     # and each time we obtain a new prompt from the prompt engineer, we
-    # increment this counter.  This version number is used to name the
+    # increment this counter. This version number is used to name the
     # corresponding CLAUDE-XXXX.md file for each iteration.
     prompt_version = 0
-    pe_messages: List[Dict[str, Any]] = [
-        {
-            "role": "system",
-            "content": PROMPT_ENGINEER_SYSTEM_MESSAGE,
-        },
-        {
-            # Synthetic function call seeding the loop with the initial prompt
-            "type": "function_call",
-            "name": "submit_prompt",
-            "call_id": "synthetic_0",
-            "arguments": json.dumps({"prompt": initial_prompt}),
-        },
-    ]
-    # List to store reasoning items returned by the model.  It starts empty
-    # because the synthetic call does not generate reasoning.
-    pe_reasoning_items: List[Dict[str, Any]] = []
+    # Initialize ONE PromptEngineer for the entire optimization process
+    engineer = PromptEngineer()
 
-    # Function to estimate token count for the conversation using tiktoken
-    def count_tokens(msgs: List[Dict[str, Any]], model: str = "gpt-4.1") -> int:
-        """Estimate the number of tokens used by the given messages."""
-        enc = tiktoken.encoding_for_model(model)
-        tokens = 0
-        for m in msgs:
-            # Compute token count based on available fields.  The Responses API
-            # stores text in 'content' for system/user/assistant messages,
-            # 'arguments' for function_call items, and 'output' for
-            # function_call_output items.  We sum tokens from all these
-            # fields if present to approximate the true context length.
-            if "content" in m:
-                tokens += len(enc.encode(str(m["content"])))
-            if "arguments" in m:
-                tokens += len(enc.encode(str(m["arguments"])))
-            if "output" in m:
-                tokens += len(enc.encode(str(m["output"])))
-        return tokens
-
-    # Set token budgets.  The model can handle up to 200k tokens.  We trigger
-    # dropoff when the conversation exceeds 70% of that capacity.
+    # Token limits for PromptEngineer context management
+    # The o3 model can handle up to 200k tokens. Context trimming is handled
+    # internally by PromptEngineer to preserve reasoning token validity.
     MAX_TOKENS = 200_000
-    DROP_THRESHOLD = int(0.7 * MAX_TOKENS)
+    DROP_THRESHOLD = int(0.7 * MAX_TOKENS)  # Unused: kept for reference
+
+    # Create semaphore for controlling parallel rollouts
+    rollout_semaphore = asyncio.Semaphore(max_parallel_rollouts)
+
+    async def run_single_rollout(
+        task: SeedTask, rollout_id: int, iteration: int, prompt_version: int
+    ) -> Tuple[CodeResult, Grade]:
+        """Run a single rollout with semaphore control."""
+        async with rollout_semaphore:
+            # Run Claude Code agent
+            code_result = await run_claude_code(
+                task.prompt,
+                current_prompt,
+                agent_id=rollout_id,
+                task_id=task.id,
+                base_dir=base_dir / f"iter_{iteration}",
+                anthropic_log_path=anthropic_api_log_path,
+                prompt_version=prompt_version,
+            )
+
+            # Grade the result
+            grade = await grade_code(code_result, criteria, openai_api_log_path)
+
+            logger.info(
+                "Rollout completed",
+                task_id=task.id,
+                rollout_id=rollout_id,
+                iteration=iteration,
+                overall_score=grade.overall_score,
+            )
+
+            return code_result, grade
 
     # Save the initial prompt in the run directory for reference.  The version is 0.
     initial_prompt_path = base_dir / f"CLAUDE-{prompt_version:04d}.md"
     initial_prompt_path.write_text(initial_prompt)
-    
+
     # Log experiment configuration
-    logger.info("Prompt optimization experiment starting",
-                task_count=len(seed_tasks),
-                task_ids=[task.id for task in seed_tasks],
-                rollouts_per_task=rollouts_per_task,
-                total_iterations=iterations,
-                total_agents=len(seed_tasks) * rollouts_per_task * iterations,
-                grading_criteria_count=len(criteria),
-                initial_prompt=current_prompt)
+    logger.info(
+        "Prompt optimization experiment starting",
+        task_count=len(seed_tasks),
+        task_ids=[task.id for task in seed_tasks],
+        rollouts_per_task=rollouts_per_task,
+        total_iterations=iterations,
+        total_agents=len(seed_tasks) * rollouts_per_task * iterations,
+        grading_criteria_count=len(criteria),
+        initial_prompt=current_prompt,
+    )
 
     for iteration in range(1, iterations + 1):
         iter_logger = logger.bind(iteration=iteration, total_iterations=iterations)
         iter_logger.info("Iteration starting")
-        iteration_results: List[Tuple[CodeResult, Grade]] = []
 
-        # Run rollouts for each task
-        for task_idx, task in enumerate(seed_tasks):
-            task_id = task.id  # Use the readable task ID from YAML
-            task_prompt = task.prompt
-            task_logger = logger.bind(task_id=task_id, iteration=iteration)
-            
-            # Launch multiple agents concurrently for the same task.  Pass the
-            # current prompt version to run_claude_code so that the prompt
-            # file is saved with the appropriate version number.
-            tasks = [
-                run_claude_code(
-                    task_prompt,
-                    current_prompt,
-                    agent_id=i,
-                    task_id=task_id,
-                    base_dir=base_dir / f"iter_{iteration}",
-                    anthropic_log_path=anthropic_api_log_path,
-                    prompt_version=prompt_version,
+        # Create all rollout tasks for fully parallel execution
+        # Each rollout runs: Claude Code agent → grading → logging
+        # Semaphore controls max concurrent rollouts to prevent resource exhaustion
+        all_rollouts = []
+        for task in seed_tasks:
+            for rollout_id in range(rollouts_per_task):
+                rollout_task = run_single_rollout(
+                    task, rollout_id, iteration, prompt_version
                 )
-                for i in range(rollouts_per_task)
-            ]
-            code_results = await asyncio.gather(*tasks)
-            task_logger.info("Code generation completed", agent_count=len(code_results))
-            
-            # Grade each result
-            task_logger.info("Grading starting")
-            grade_tasks = [
-                grade_code(result, criteria, openai_api_log_path)
-                for result in code_results
-            ]
-            grades = await asyncio.gather(*grade_tasks)
-            task_logger.info("Grading completed")
-            # Append to iteration summary
-            iteration_results.extend(zip(code_results, grades))
+                all_rollouts.append(rollout_task)
 
-            # Log inner agent results to JSONL
-            with inner_log_path.open("a") as f:
-                for result in code_results:
-                    record = {"iteration": iteration, **result.model_dump()}
-                    f.write(json.dumps(record) + "\n")
-            # Log grading results to JSONL
-            with grader_log_path.open("a") as f:
-                for grade in grades:
-                    record = {"iteration": iteration, **grade.model_dump()}
-                    f.write(json.dumps(record) + "\n")
+        iter_logger.info(
+            "Starting parallel rollouts",
+            total_rollouts=len(all_rollouts),
+            max_parallel=max_parallel_rollouts,
+        )
+
+        # Execute all rollouts in parallel with semaphore-based concurrency control
+        iteration_results = await asyncio.gather(*all_rollouts)
+
+        iter_logger.info(
+            "All rollouts completed", completed_rollouts=len(iteration_results)
+        )
+
+        # Log results to JSONL files
+        with inner_log_path.open("a") as f:
+            for code_result, _ in iteration_results:
+                record = {"iteration": iteration, **code_result.model_dump()}
+                f.write(json.dumps(record) + "\n")
+
+        with grader_log_path.open("a") as f:
+            for _, grade in iteration_results:
+                record = {"iteration": iteration, **grade.model_dump()}
+                f.write(json.dumps(record) + "\n")
 
         # Display simple metrics to CLI
         overall_scores = [grade.overall_score for _, grade in iteration_results]
         avg_overall = (
             sum(overall_scores) / len(overall_scores) if overall_scores else 0.0
         )
-        print(f"Average overall score: {avg_overall:.2f}")
-
-        # Update the system prompt using the prompt engineer with cumulative messages
-        new_prompt, pe_messages, pe_reasoning_items = await propose_new_prompt(
-            pe_messages,
-            pe_reasoning_items,
-            current_prompt,
-            iteration_results,
-            openai_api_log_path,
+        iter_logger.info(
+            "Iteration complete", average_overall_score=round(avg_overall, 2)
         )
 
-        # After obtaining a new prompt, report current context length and
-        # truncate the conversation if it exceeds the drop threshold.
-        before_tokens = count_tokens(pe_messages)
-        drop_occurred = False
-        if before_tokens > DROP_THRESHOLD and len(pe_messages) > 5:
-            # Keep the system message and the last two iterations.  Each iteration
-            # appends approximately three messages: a function_call_output summarising
-            # the rollouts, the assistant's function_call submitting the new
-            # prompt, and a function_call_output acknowledging the prompt.  To
-            # preserve the last two iterations, keep the last six messages plus
-            # the system message at index 0.
-            pe_messages = [pe_messages[0]] + pe_messages[-6:]
-            # For reasoning models, drop any accumulated reasoning items when we
-            # truncate the context.  This prevents stale reasoning tokens from
-            # polluting the context after old messages are removed.  Clear the
-            # list in-place to preserve the original reference.
-            pe_reasoning_items.clear()
-            drop_occurred = True
-        after_tokens = count_tokens(pe_messages)
-        # Log context length and whether drop occurred
-        if drop_occurred:
-            print(
-                f"[PromptEngineer] Context trimmed: {before_tokens} → {after_tokens} tokens (dropped older rollouts)"
-            )
-        else:
-            print(f"[PromptEngineer] Context length: {before_tokens} tokens")
+        # Append completed turn to PE conversation (current prompt + grades)
+        grades = engineer.build_grades_message(iteration_results)
+        engineer.append_turn(reasoning, current_prompt, grades)
+        
+        # Generate next prompt using PE  
+        reasoning, new_prompt = await engineer.propose_prompt(openai_api_log_path)
 
         # Log the new prompt in JSONL
         with prompt_log_path.open("a") as f:
@@ -1540,7 +1576,7 @@ async def optimize_prompts(
         versioned_prompt_path = base_dir / f"CLAUDE-{prompt_version:04d}.md"
         versioned_prompt_path.write_text(current_prompt)
 
-    print("\nOptimization complete.  Logs have been saved to:", base_dir)
+    logger.info("Optimization complete", logs_directory=str(base_dir))
 
 
 def main() -> None:
@@ -1551,7 +1587,6 @@ def main() -> None:
     seeds_path = Path("seeds.yaml")
     if not seeds_path.exists():
         raise FileNotFoundError("seeds.yaml file is required but was not found.")
-    import yaml  # Imported here to avoid dependency if YAML not needed elsewhere
 
     with seeds_path.open("r") as f:
         seeds_data = yaml.safe_load(f)
@@ -1559,29 +1594,20 @@ def main() -> None:
         raise ValueError("seeds.yaml must contain a list of seed task objects.")
     seed_tasks = []
     for entry in seeds_data:
-        try:
-            seed_task = SeedTask(**entry)
-            seed_tasks.append(seed_task)
-        except Exception as e:
-            raise ValueError(f"Invalid seed task entry {entry}: {e}")
-
-    # Initial system prompt instructing the coding assistant how to behave.  The assistant
-    # is described simply as a helpful coding assistant; more detailed guidance will be
-    # provided through iterative prompt optimisation.
-    initial_prompt = "You are a helpful coding assistant."
+        seed_tasks.append(SeedTask(**entry))
 
     # Run the optimisation loop.  Adjust iterations and rollouts per task as desired.
+    # The PromptEngineer will generate the initial prompt automatically.
     asyncio.run(
         optimize_prompts(
             seed_tasks,
-            initial_prompt,
-            iterations=3,
+            iterations=10,
             rollouts_per_task=1,
             base_output_dir="./agent_output",
+            max_parallel_rollouts=4,  # Configurable parallelism limit
         )
     )
 
 
 if __name__ == "__main__":
     main()
-

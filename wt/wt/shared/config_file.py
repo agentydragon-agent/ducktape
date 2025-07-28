@@ -9,8 +9,6 @@ resolvers, no computed properties - just the raw data structure.
 For runtime configuration with logic and resolvers, see config.py.
 """
 
-from pathlib import Path
-from typing import Optional
 
 from pydantic import BaseModel
 
@@ -42,8 +40,8 @@ class ConfigFile(BaseModel):
     github_repo: str = ""  # Format: "owner/repo"
     
     # Tool paths
-    gitstatusd_path: Optional[str] = None
-    post_creation_script: Optional[str] = None
+    gitstatusd_path: str | None = None
+    post_creation_script: str | None = None
     
     # Cache settings
     cache_expiration: int = 3600  # seconds

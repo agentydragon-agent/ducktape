@@ -123,3 +123,635 @@ graders:
       - Proper initialization ensuring all attributes exist
       - Using hasattr/getattr only for truly dynamic cases with unknown types
       - Letting AttributeError crash loudly to expose initialization bugs
+
+  - id: no_valueless_comments
+    name: No Valueless Comments
+    description: Prevents redundant comments that merely restate what is already obvious from code structure, names, and type signatures
+    evaluation_criteria: |
+      Comments should only exist when they provide important context that is NOT obvious from reading the code itself. Comments that just restate the obvious add noise without value.
+      
+      Problematic patterns:
+      - Docstring redundancy: 'def add_two_numbers(x: int, y: int) -> int' with docstring saying "Method that adds two numbers" and "x: the first number to be added"
+      - Obvious inline comments: '# increment counter' above 'counter += 1'
+      - Type restatement: '# returns a string' when return type annotation already says '-> str'
+      - Name restatement: Comments that just repeat what a well-named variable/function already communicates
+      - Class/method purpose restatement: When the class name and method names already make the purpose clear
+      
+      Good patterns:
+      - Algorithm explanations: Comments explaining WHY a particular approach was chosen or HOW a complex algorithm works
+      - Business logic context: Comments explaining business rules, edge cases, or non-obvious requirements
+      - Warning comments: Comments about gotchas, performance implications, or security considerations
+      - TODO/FIXME comments: Marking technical debt or future improvements
+      - External references: Links to documentation, issue trackers, or design decisions
+      - Non-obvious behavior: When code does something surprising or counter-intuitive for good reason
+
+  - id: use_proper_parsers
+    name: Use Proper Parsers and Tools
+    description: Requires using appropriate libraries for parsing/formatting instead of manual string manipulation or regex
+    evaluation_criteria: |
+      Use specialized parsing libraries and tools instead of manual string manipulation. Manual parsing is error-prone, insecure, and harder to maintain.
+      
+      Problematic patterns:
+      - HTML parsing with regex: Using regex patterns to extract data from HTML instead of BeautifulSoup/lxml
+      - Manual URL building: String concatenation/formatting for URLs instead of urllib.parse
+      - Manual URL parsing: Splitting URLs with string methods instead of urlparse
+      - HTML generation via strings: Building HTML with string concatenation/f-strings instead of Jinja2/template engines
+      - JSON extraction with regex: Using regex to pull values from JSON instead of json.loads()
+      - JavaScript extraction with regex: Regex parsing JS objects/modules instead of proper AST parsing
+      - SQL string formatting: f-strings or % formatting for SQL instead of parameterized queries
+      - CSV parsing with split(): Using line.split(',') instead of csv module
+      - XML parsing with regex: Pattern matching XML instead of ElementTree/lxml
+      - Email parsing with regex: Manual email extraction instead of email.parser
+      - Manual datetime parsing: Custom string parsing instead of datetime.strptime or dateutil
+      
+      Good patterns:
+      - HTML: BeautifulSoup, lxml, html.parser for parsing
+      - URLs: urllib.parse for building/parsing URLs (urlparse, urljoin, urlencode)
+      - Templates: Jinja2, Django templates, or similar for HTML generation
+      - JSON: json module for parsing/serialization
+      - SQL: Parameterized queries with placeholders (?,%s,:name)
+      - CSV: csv.reader/csv.DictReader/pandas for CSV files
+      - XML: ElementTree, lxml for XML parsing
+      - Dates: datetime.strptime, dateutil.parser for date parsing
+      - Config files: configparser for INI, yaml/toml libraries for those formats
+      - Command-line args: argparse instead of manual sys.argv parsing
+
+  - id: strongest_types
+    name: Use Strongest Reasonable Types
+    description: Requires using the most specific and constraining types to make invalid states unrepresentable
+    evaluation_criteria: |
+      Use the strongest, most specific types available. This makes invalid states unrepresentable at the type level, catching errors at development time rather than runtime.
+      
+      Problematic patterns:
+      - Paths as strings: Using str for file paths instead of pathlib.Path
+      - Times as primitives: Using float/int/str for timestamps instead of datetime.datetime
+      - URLs as strings: Using str for URLs instead of urllib.parse.ParseResult or a URL type
+      - IDs as primitives: Using int/str for IDs instead of NewType or dedicated ID classes
+      - Money as float: Using float for currency instead of Decimal or dedicated Money type
+      - Coordinates as tuples: Using (float, float) instead of a Coordinate class
+      - One big union: Single class with many optional fields instead of specific variant types
+      - String type codes: Using str like "active"/"inactive" instead of enums or variant types
+      - Dict for structured data: Using Dict[str, Any] instead of typed dataclasses/Pydantic models
+      - Any type: Using Any when a more specific type or Union would work
+      - Overly broad exceptions: Catching Exception instead of specific exception types
+      
+      Good patterns:
+      - File paths: pathlib.Path for all file system paths
+      - Timestamps: datetime.datetime for points in time, timedelta for durations
+      - URLs: urllib.parse.ParseResult or custom URL types
+      - IDs: NewType('UserId', int) or dedicated ID classes
+      - Money: decimal.Decimal or dedicated Money/Currency types
+      - Coordinates: Dedicated Point/Coordinate classes with validation
+      - Variant types: Union[FooBar, Xyzzy] where each variant has only its required fields
+      - State machines: Separate classes for each state rather than nullable fields
+      - Structured data: Pydantic models, dataclasses, or TypedDict for all structured data
+      - Specific exceptions: Custom exception hierarchies that convey meaning
+      - NonEmptyList: Custom types that enforce invariants (e.g., list must not be empty)
+      - Validated strings: Email, URL, PhoneNumber types that validate on construction
+
+  - id: concise_functional_code
+    name: Concise and Functional Code
+    description: Encourages concise, functional programming patterns and eliminates unnecessary verbosity and duplication
+    evaluation_criteria: |
+      Code should be concise, functional, and DRY (Don't Repeat Yourself). Prefer functional composition over imperative loops when readable.
+      
+      Problematic patterns:
+      - Imperative loops for simple transforms: for x in items: result.append(transform(x)) instead of list comprehension
+      - Temporary variables: a = foo.bar; baz(a) instead of baz(foo.bar)
+      - Trivial functions: def get_name(obj): return obj.name (unless needed for interface/abstraction)
+      - Manual accumulation: result = []; for x in items: if condition(x): result.append(x)
+      - Nested loops for filtering/mapping: Should use comprehensions or functional tools
+      - Duplicate code blocks: Copy-pasted or structurally similar code
+      - Repeated magic constants: Same string/number literals used multiple times
+      - Verbose None checks: if x is not None: y = x else: y = default instead of y = x or default
+      - Manual min/max: Implementing min/max logic instead of using built-ins
+      - Re-implementing built-ins: Writing code that duplicates existing functions like any(), all(), sum()
+      
+      Good patterns:
+      - List comprehensions: [transform(x) for x in items if condition(x)]
+      - Generator expressions: sum(x.value for x in items)
+      - Functional built-ins: map(), filter(), any(), all(), sum(), min(), max()
+      - Direct composition: process(transform(parse(data)))
+      - Constants/enums: Define magic values once as constants
+      - Conditional expressions: value if condition else default
+      - Unpacking: x, y = point instead of x = point[0]; y = point[1]
+      - Method chaining: text.strip().lower().replace(' ', '_')
+      - functools: Use partial, reduce when they improve readability
+      - itertools: Use for efficient iteration patterns
+      - One-liners when readable: return all(validate(x) for x in items)
+      - Extract common patterns: Factor out repeated logic into functions
+
+  - id: defensive_programming
+    name: Defensive Programming
+    description: Requires fail-fast behavior and proper error boundaries - code must loudly crash on unexpected states rather than silently continue
+    evaluation_criteria: |
+      Code must be defensive: operate only in well-understood states and fail loudly when encountering unexpected conditions. Scripts and CLI tools MUST crash on errors. Long-running services MUST log errors with context and raise to error boundaries.
+      
+      Problematic patterns:
+      - Silent failures: Catching exceptions without logging or re-raising
+      - Continuing after errors: Code that keeps running after encountering invalid state
+      - No validation: Missing input validation or state assertions
+      - Optimistic assumptions: Assuming operations succeed without checking
+      - Missing error context: Exceptions without helpful messages about what went wrong
+      - Global error suppression: try/except around entire program
+      - Default fallbacks hiding bugs: Returning None/empty on errors instead of crashing
+      - No state invariant checks: Not asserting expected conditions between operations
+      - Swallowing unexpected exceptions: Catching Exception or BaseException without re-raising
+      - CLI tools that exit(0) on failure: Scripts must use non-zero exit codes
+      
+      Good patterns for scripts/CLIs/notebooks:
+      - Let exceptions crash the program immediately
+      - Use assertions liberally: assert expected_condition, "Context about what failed"
+      - Validate inputs early and fail fast
+      - Exit with non-zero codes on any error
+      - Include context in error messages
+      - Check return values and error conditions
+      
+      Good patterns for long-running services:
+      - Log errors with full context before re-raising
+      - Define clear error boundaries (e.g., request handlers)
+      - Raise exceptions to error boundaries, don't swallow
+      - Use structured logging with request IDs
+      - Monitor and alert on errors
+      - Graceful degradation only with explicit business logic
+      - Health checks that verify system invariants
+      
+      Good patterns for all code:
+      - State machines with explicit transitions
+      - Precondition/postcondition checks
+      - Type checking and validation at boundaries
+      - Fail fast on unexpected inputs
+      - Clear error messages with actionable information
+
+  - id: no_dead_code
+    name: No Dead Code
+    description: Prohibits unreachable code and code paths that are never executed under expected inputs
+    evaluation_criteria: |
+      There must be no dead code. This includes code that type checkers can prove unreachable, code after unconditional returns/raises, and code paths that will never execute under expected application inputs.
+      
+      Problematic patterns:
+      - Unreachable after return: Code after return/raise/break/continue statements
+      - Type-impossible branches: if isinstance(x, str) when type checker knows x is int
+      - Redundant type checks: Checking types already guaranteed by type annotations
+      - Always-false conditions: if False:, if 0:, or conditions provably false
+      - Never-called functions: Functions defined but never referenced
+      - Impossible enum cases: Handling enum values that don't exist in the enum
+      - Dead exception handlers: except blocks for exceptions that can't be raised
+      - Unused imports: Imported but never used modules/functions
+      - Redundant else after return: else block when all if branches return/raise
+      - Never-true validation: Checks for conditions prevented by prior validation
+      - Platform-specific dead code: Code for platforms the app doesn't support
+      
+      Allowed exceptions:
+      - Defensive assertions: assert False, "This should never happen"
+      - Explicit not-implemented: raise NotImplementedError("TODO: implement")
+      - Type exhaustiveness checks: assert_never() for enum/union exhaustiveness
+      - Debug-only code: if __debug__: blocks for development assertions
+      
+      Good patterns:
+      - Remove unreachable code entirely
+      - Use type system to eliminate impossible states
+      - Delete unused functions and imports
+      - Simplify control flow to eliminate dead branches
+      - Use match/case with exhaustiveness for enums
+      - For "impossible" cases that could happen due to bugs: log error and crash
+      - Keep only code paths that handle real application scenarios
+
+  - id: low_cognitive_load
+    name: Low Cognitive Load
+    description: Enforces code structure that minimizes cognitive load through early returns, shallow nesting, and short functions
+    evaluation_criteria: |
+      Code must be easy to read by a stressed human with limited working memory (5±2 items). Minimize nesting, use early returns, keep functions short, and limit variable scope.
+      
+      Problematic patterns:
+      - Deep nesting: if/else chains more than 2-3 levels deep
+      - Happy path in else: if condition: short_error_case else: long_happy_path
+      - Missing early returns: Not using return/raise to bail out early
+      - Long functions: Functions longer than one screen (>40-50 lines)
+      - Wide scope variables: Variables used across 100+ lines
+      - Inline long literals: HTML/SQL/CSS literals >5 lines embedded in code
+      - Arrow anti-pattern: Code that looks like > due to deep nesting
+      - Complex conditionals: Boolean expressions with >3 terms without extraction
+      - Nested loops: More than 2 levels of nested loops
+      - Long parameter lists: Functions with >5 parameters
+      
+      Good patterns:
+      - Early bailout: if error_condition: raise/return immediately
+      - Guard clauses: Check preconditions and exit early at function start
+      - Flat is better: Keep nesting to 2 levels max
+      - Extract functions: Move complex logic to well-named functions
+      - Short functions: Each function fits on one screen
+      - Extract constants: Long literals in constants or separate files
+      - Limited scope: Variables live close to where they're used
+      - Table-driven code: Use data structures instead of nested ifs
+      - Early continue: In loops, skip iterations early with continue
+      - Composition: Build complex behavior from simple functions
+      
+      Example transformation:
+      # BAD: Deep nesting
+      if user:
+        if user.is_active:
+          if user.has_permission:
+            # long happy path
+          else:
+            raise PermissionError()
+        else:
+          raise InactiveError()
+      else:
+        raise NoUserError()
+      
+      # GOOD: Early returns
+      if not user:
+        raise NoUserError()
+      if not user.is_active:
+        raise InactiveError()
+      if not user.has_permission:
+        raise PermissionError()
+      # long happy path at base indentation
+
+  - id: optimally_refined_code
+    name: Optimally Refined Code
+    description: Code should be in its most crisp, compact, readable form with no obvious improvements
+    evaluation_criteria: |
+      After 5 minutes of reading, no obvious improvements should jump out. Code must be refined to its optimal form - crisp, compact, and maximally readable without sacrificing critical requirements.
+      
+      Problematic patterns:
+      - Near-duplicate functions: Two functions doing almost the same thing with minor variations
+      - Extractable patterns: Repeated code structure that could be parameterized
+      - Verbose where terse works: Using 10 lines where 3 would be clearer
+      - Over-abstraction: Unnecessary layers that add complexity without benefit
+      - Inconsistent style: Same operation done differently in different places
+      - Missed stdlib usage: Re-implementing what Python already provides
+      - Unmerged conditionals: Adjacent if statements with same condition
+      - Parallel structure waste: Similar code blocks that could share structure
+      - Inefficient data flow: Data transformed multiple times unnecessarily
+      - Poor method chains: Operations that could elegantly chain but don't
+      - Extractable comprehensions: Loops that are clearly comprehension candidates
+      - Unexploited symmetry: Similar patterns treated as completely different
+      
+      Good patterns:
+      - DRY without sacrificing clarity: Extract similarities, parameterize differences
+      - Appropriate abstraction level: Not too high, not too low
+      - Consistent patterns: Similar problems solved similarly
+      - Exploit language features: Use Python's strengths appropriately
+      - Unified data flow: Transform data minimally and purposefully
+      - Clear intent: Code structure matches problem structure
+      - No redundancy: Each piece of code has a single clear purpose
+      - Balanced tradeoffs: Performance/readability/maintainability in harmony
+      
+      Examples of refinement:
+      # BAD: Near-duplicate with different post-processing
+      def get_user_name(user_id):
+        user = fetch_user(user_id)
+        if not user:
+          return "Unknown"
+        return user.name.upper()
+      
+      def get_user_email(user_id):
+        user = fetch_user(user_id)
+        if not user:
+          return "no-email@example.com"
+        return user.email.lower()
+      
+      # GOOD: Unified with clear parameterization
+      def get_user_field(user_id, field, default, transform=lambda x: x):
+        user = fetch_user(user_id)
+        return transform(getattr(user, field)) if user else default
+      
+      get_user_name = lambda uid: get_user_field(uid, 'name', "Unknown", str.upper)
+      get_user_email = lambda uid: get_user_field(uid, 'email', "no-email@example.com", str.lower)
+
+  - id: modern_language_features
+    name: Use Modern Language Features
+    description: Code must use modern language features to their fullest to achieve clarity and conciseness
+    evaluation_criteria: |
+      Use all language features available in the target version to maximize clarity, safety, and conciseness. Avoid outdated patterns when modern alternatives exist.
+      
+      Problematic patterns (Python):
+      - Union[X, Y, Z] instead of X | Y | Z (Python 3.10+)
+      - Dict merge with {**x, **y} instead of x | y (Python 3.9+)
+      - Type hints in comments instead of annotations
+      - if/elif chains instead of match/case where appropriate (Python 3.10+)
+      - Manual None checks instead of walrus operator (Python 3.8+)
+      - str.format() or % formatting instead of f-strings (Python 3.6+)
+      - List[str] instead of list[str] (Python 3.9+)
+      - Traditional for loops where comprehensions work better
+      - getattr with string literals instead of normal attribute access
+      - dict() constructor instead of {} literals
+      
+      Problematic patterns (JavaScript):
+      - var instead of const/let
+      - function() {} instead of arrow functions where appropriate
+      - Manual promise chains instead of async/await
+      - for loops instead of map/filter/reduce
+      - == instead of ===
+      - Callback hell instead of promises
+      - String concatenation instead of template literals
+      
+      Problematic patterns (C++):
+      - Raw pointers instead of smart pointers (unique_ptr, shared_ptr)
+      - malloc/free instead of new/delete or RAII
+      - C-style casts instead of static_cast/dynamic_cast
+      - NULL instead of nullptr
+      - typedef instead of using
+      - Manual resource management instead of RAII
+      
+      Good patterns (Python):
+      - Union types: str | int | None
+      - Dict merge: result = defaults | overrides
+      - Match statements for complex conditionals
+      - Walrus operator: if (match := pattern.search(text)):
+      - F-strings: f"Hello {name}"
+      - Type hints: def foo(x: list[str]) -> dict[str, int]:
+      - Dataclasses for simple classes
+      - Context managers for resource handling
+      - Pathlib for file operations
+      - Enum for constants
+      
+      Good patterns (JavaScript):
+      - const by default, let when needed
+      - Arrow functions for callbacks
+      - async/await for asynchronous code
+      - Destructuring: const {x, y} = point
+      - Template literals: `Hello ${name}`
+      - Optional chaining: obj?.prop?.method?.()
+      - Nullish coalescing: value ?? default
+      - Array/Object spread: {...obj, newProp: value}
+      
+      Good patterns (C++):
+      - Smart pointers: auto ptr = std::make_unique<T>()
+      - Range-based for loops
+      - Auto type deduction where clear
+      - Move semantics
+      - constexpr for compile-time computation
+      - std::optional for nullable values
+
+  - id: consistent_logical_naming
+    name: Consistent and Logical Naming
+    description: Enforces consistent terminology and logical naming conventions throughout the codebase
+    evaluation_criteria: |
+      Code must use consistent names for the same concepts throughout. No confusing naming, ambiguity, or mixed metaphors. The same concept should have the same name everywhere.
+      
+      Problematic patterns:
+      - Mixed terminology: Using "client/backend" instead of "client/server" or "frontend/backend"
+      - Inconsistent pairs: "left/right" in one place, "first/second" in another for same concept
+      - Name/verb mismatches: NoveltyDetector class but construct_novelty_classifier() function
+      - Mixed metaphors: "push/pop" mixed with "enqueue/dequeue" for same data structure
+      - Synonym proliferation: get/fetch/retrieve/obtain all used for same operation
+      - Case inconsistency: userId in one place, user_id in another
+      - Abbreviation inconsistency: max in one place, maximum in another
+      - Plural inconsistency: getUsers() but fetch_user_list()
+      - Domain confusion: Mixing technical and business terms randomly
+      - Ambiguous names: "data", "info", "temp", "obj", "item" without context
+      - Boolean confusion: is_not_valid instead of is_invalid
+      - Misleading names: Functions that don't do what their name suggests
+      
+      Good patterns:
+      - Consistent pairs: Always use client/server OR frontend/backend, not mixed
+      - Matching terminology: If it's a Detector, use detect(); if Classifier, use classify()
+      - Clear opposites: start/stop, open/close, begin/end (pick one pair and stick to it)
+      - Consistent verbs: Always get_X() or always fetch_X(), not both
+      - Domain clarity: Technical terms for technical concepts, business terms for business logic
+      - Descriptive names: user_authentication_token instead of "token" or "auth"
+      - Positive booleans: is_valid, has_permission, can_edit (not is_not_invalid)
+      - Predictable patterns: If list_users() returns all, get_user(id) returns one
+      - Noun/verb agreement: UserManager manages users, RequestHandler handles requests
+      - Consistent plurality: get_users() returns list, get_user() returns single
+      - Symmetrical APIs: encode/decode, serialize/deserialize, compress/decompress
+      
+      Examples:
+      # BAD: Inconsistent naming
+      class NoveltyDetector:
+        def __init__(self):
+          self.classifier_model = load_model()
+        
+      def construct_novelty_classifier():
+        return NoveltyDetector()
+      
+      def check_if_novel(detector, item):
+        return detector.classify(item)
+      
+      # GOOD: Consistent naming
+      class NoveltyDetector:
+        def __init__(self):
+          self.detection_model = load_model()
+        
+      def create_novelty_detector():
+        return NoveltyDetector()
+      
+      def detect_novelty(detector, item):
+        return detector.detect(item)
+
+  - id: consistent_codebase_state
+    name: Consistent Codebase State
+    description: Prohibits half-finished migrations and requires proper documentation for any transitional code
+    evaluation_criteria: |
+      Code must be in a consistent state. Half-finished migrations are only acceptable with proper TODO/XXX documentation explaining WHY, WHEN, and WHAT prevents completion.
+      
+      Problematic patterns:
+      - Mixed old/new patterns without documentation
+      - Vague migration comments: "// legacy code" or "// for migration"
+      - Incomplete refactoring: Some files use new pattern, others use old
+      - Dual implementations: Both old and new systems active without clear plan
+      - Missing timeline: TODO comments without completion criteria
+      - False documentation: Comments that don't match actual state
+      - Orphaned compatibility code: Old adapters with no clear removal plan
+      - Inconsistent abstractions: Half the codebase uses one pattern, half uses another
+      - No migration ownership: TODOs without assignee or team
+      - Permanent "temporary" code: Years-old workarounds still in place
+      
+      BAD TODO examples:
+      - "TODO: Migrate this"
+      - "Legacy - will remove"
+      - "Temporary workaround"
+      - "Old implementation"
+      
+      GOOD TODO examples:
+      - "TODO(#1234): Migrate from FooService to BarService after Q3 2024 when legacy clients are sunset. Currently blocked by mobile app v2.x still in production (10% of users as of 2024-01)."
+      - "XXX: Using synchronous API here instead of async because CustomerDB doesn't support async transactions yet. Recheck after CustomerDB v3.0 release (tracked in JIRA-5678)."
+      - "TODO(@john, 2024-Q2): Complete migration to new auth system. 3/5 endpoints migrated. Remaining: /api/orders and /api/payments blocked by PCI compliance review."
+      
+      Good patterns:
+      - Complete migrations: Finish the migration or don't start
+      - Clear documentation: TODO with WHY blocked, WHEN to recheck, WHO owns it
+      - Feature flags: Use flags to switch between old/new, not permanent dual code
+      - Atomic transitions: Migrate entire modules/features at once
+      - Migration tracking: Link to tickets/issues tracking the work
+      - Honest status: Comments reflect actual state and blockers
+      - Sunset dates: Clear deadlines for removing old code
+      - Progress indicators: "Step 2/5 of migration" with clear next steps
+      
+      Example:
+      # BAD: Inconsistent state without proper documentation
+      def get_user(id):
+        # Try new service first
+        try:
+          return new_user_service.get(id)
+        except:
+          # Fall back to old service
+          return old_user_service.fetch(id)  # legacy
+      
+      # GOOD: Properly documented transitional state
+      def get_user(id):
+        # TODO(#4567, @alice, 2024-03): Migration to new_user_service in progress.
+        # Currently at 70% traffic. Old service removal blocked until:
+        # 1. Admin panel migrated (JIRA-890, Q1 2024)
+        # 2. Batch jobs updated (owner: data-team)
+        # 3. 30-day metrics show <0.01% errors
+        # Recheck metrics dashboard after 2024-02-15.
+        if feature_flags.use_new_user_service(id):
+          return new_user_service.get(id)
+        else:
+          return old_user_service.fetch(id)
+
+  - id: meaningful_tests
+    name: Meaningful Tests
+    description: Requires non-trivial tests that actually test business logic, not language features or constants
+    evaluation_criteria: |
+      Tests must be meaningful, testing actual business logic and behavior. Avoid change-detector tests, excessive mocking, and redundant test cases.
+      
+      Problematic patterns:
+      - Change-detector tests: Testing constants like assert FOO == "foo"
+      - Testing language features: Tests that verify Python/JS basics work
+      - Excessive mocking: Mocking simple value objects (Pydantic models, dataclasses)
+      - Custom fixtures for standard needs: Writing custom tmpdir instead of pytest's tmp_path
+      - No assertion libraries: Complex assertions without matchers/helpers
+      - Redundant tests: Multiple tests for same code path with trivial variations
+      - Testing framework behavior: Tests that Pydantic validation works
+      - Mock-heavy integration tests: Mocking everything instead of using real components
+      - Tautological tests: def add(a, b): return a + b; assert add(2, 3) == 5
+      - No edge cases: Only testing happy path
+      
+      Good patterns:
+      - Test behavior, not implementation: Focus on what, not how
+      - Minimal mocking: Only mock external services, not value objects
+      - Real components: Use real filesystem (tmp_path), real objects
+      - Standard fixtures: pytest's tmp_path, caplog, monkeypatch
+      - Assertion libraries: PyHamcrest for complex assertions (assert_that(x, has_properties(foo=has_length(greater_than(3))))
+      - One test per behavior: Each test exercises different logic path
+      - Edge case coverage: Empty lists, None values, boundary conditions
+      - Demonstrative failures: Multiple "should fail" examples for validators
+      - Integration where sensible: Test components together when low-risk
+      
+      Examples:
+      # BAD: Change-detector test
+      class Config:
+        API_KEY = "secret123"
+      
+      def test_api_key():
+        assert Config.API_KEY == "secret123"  # Worthless test
+      
+      # BAD: Excessive mocking
+      def test_user_creation():
+        mock_user = Mock(spec=User)
+        mock_user.name = "John"
+        mock_user.validate.return_value = True
+        # Not testing anything real
+      
+      # GOOD: Testing actual behavior
+      def test_user_validation_rejects_invalid_usernames():
+        # Multiple examples demonstrate edge cases
+        invalid_names = [
+          "https://evil.com",  # URLs not allowed
+          "admin",            # Reserved word
+          "user name",        # Spaces not allowed
+          "a",                # Too short
+        ]
+        for name in invalid_names:
+          with pytest.raises(ValidationError) as exc:
+            User(username=name)
+          assert "username" in str(exc.value)
+      
+      # GOOD: Real components with standard fixtures
+      def test_config_file_loading(tmp_path):
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("database: postgresql://localhost/test")
+        
+        config = load_config(config_file)
+        assert_that(config, has_properties(
+          database_url=starts_with("postgresql://"),
+          parsed_host=equal_to("localhost")
+        ))
+
+  - id: use_data_structures
+    name: Use Appropriate Data Structures
+    description: Requires using dataclasses, Pydantic models, or similar instead of manual boilerplate for data containers
+    evaluation_criteria: |
+      Low-logic classes that primarily hold data should use appropriate data structures (dataclass, Pydantic, etc.) to reduce boilerplate and leverage built-in features.
+      
+      Problematic patterns (Python):
+      - Manual __init__ for data holders: Writing constructors that just assign fields
+      - Manual __repr__/__str__: Implementing string representation for simple data
+      - Manual __eq__: Writing equality for value objects
+      - No validation: Plain classes when validation is needed
+      - String parsing in __init__: Manual parsing instead of Pydantic
+      - Manual to_dict/from_dict: Custom serialization for simple objects
+      - Mutable defaults: Using [] or {} as default values without field()
+      - No type hints: Data classes without proper typing
+      
+      Problematic patterns (JavaScript/TypeScript):
+      - Plain objects for structured data: Using {} instead of classes/interfaces
+      - Manual constructors: Writing boilerplate assignment code
+      - No validation: Missing runtime validation for API data
+      - Manual serialization: Custom toJSON methods for simple objects
+      
+      Problematic patterns (C++):
+      - Manual constructors/destructors: For simple aggregate types
+      - No aggregate initialization: Not using C++20 designated initializers
+      - Manual comparison operators: Writing ==, <, etc. for data types
+      
+      Good patterns (Python):
+      - Dataclass for simple data: @dataclass for non-serialized value objects
+      - Pydantic for validation: When parsing JSON/YAML or need validation
+      - Frozen dataclasses: @dataclass(frozen=True) for immutables
+      - Field defaults: field(default_factory=list) for mutable defaults
+      - attrs for features: When you need more than dataclass offers
+      - TypedDict for type hints: For dict-like structures with known keys
+      - NamedTuple for simple: Small immutable data containers
+      
+      Good patterns (other languages):
+      - Records (Java/C#): For immutable data holders
+      - case classes (Scala): For pattern matching and data
+      - structs (Go/Rust): With derived traits for common operations
+      - Interfaces (TypeScript): With validation libraries like zod
+      
+      Examples:
+      # BAD: Manual boilerplate
+      class User:
+        def __init__(self, name: str, email: str, age: int):
+          self.name = name
+          self.email = email
+          self.age = age
+        
+        def __repr__(self):
+          return f"User(name={self.name}, email={self.email}, age={self.age})"
+        
+        def __eq__(self, other):
+          if not isinstance(other, User):
+            return False
+          return self.name == other.name and self.email == other.email
+        
+        def to_dict(self):
+          return {"name": self.name, "email": self.email, "age": self.age}
+      
+      # GOOD: Dataclass (no serialization needed)
+      @dataclass
+      class User:
+        name: str
+        email: str
+        age: int
+      
+      # GOOD: Pydantic (with validation/serialization)
+      class User(BaseModel):
+        name: str = Field(..., min_length=1)
+        email: EmailStr
+        age: int = Field(..., ge=0, le=150)
+      
+      # GOOD: Frozen dataclass for immutables
+      @dataclass(frozen=True)
+      class Point:
+        x: float
+        y: float
+        
+        def distance_to(self, other: Point) -> float:
+          return ((self.x - other.x)**2 + (self.y - other.y)**2)**0.5

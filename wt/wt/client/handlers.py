@@ -20,8 +20,7 @@ async def handle_status(daemon_client, formatter) -> None:
         # Always prioritize the main worktree
         if name == MAIN_WORKTREE_DISPLAY_NAME:
             return (0, "main")  # main worktree always first
-        else:
-            return (1, name)  # others alphabetically
+        return (1, name)  # others alphabetically
 
     sorted_items = sorted(all_status.results.items(), key=lambda x: sort_key((x[1].name, x[1])))
     # Convert to (name, status) tuples for display
@@ -106,7 +105,7 @@ async def handle_remove_worktree(config, name: str, force: bool = False) -> None
         sys.exit(1)
 
 
-async def handle_copy_worktree(config, source: str, dest: str = None) -> None:
+async def handle_copy_worktree(config, source: str, dest: str | None = None) -> None:
     """Handle worktree copying."""
     import sys
 
@@ -127,19 +126,23 @@ async def handle_copy_worktree(config, source: str, dest: str = None) -> None:
             from .worktree_utils import create_worktree, emit_cd_command
 
             new_path = await create_worktree(
-                config, new_name, source_worktree=current_wt, from_default=False
+                config, new_name, source_worktree=current_wt, from_default=False,
             )
             emit_cd_command(new_path, config)
         else:
             # wt cp <x> <y> - copy worktree x to new worktree y
             source_name, target_name = source, dest
-            from .worktree_utils import create_worktree, emit_cd_command, require_worktree_exists
+            from .worktree_utils import (
+                create_worktree,
+                emit_cd_command,
+                require_worktree_exists,
+            )
 
             source_path = require_worktree_exists(config, source_name)
 
             click.echo(f"Creating worktree at: {config.worktrees_dir_resolved / target_name}")
             new_path = await create_worktree(
-                config, target_name, source_worktree=source_path, from_default=False
+                config, target_name, source_worktree=source_path, from_default=False,
             )
             emit_cd_command(new_path, config)
 
@@ -148,7 +151,7 @@ async def handle_copy_worktree(config, source: str, dest: str = None) -> None:
         sys.exit(1)
 
 
-def handle_path_command(config, worktree_name: str = None, subpath: str = None) -> None:
+def handle_path_command(config, worktree_name: str | None = None, subpath: str | None = None) -> None:
     """Handle path resolution command."""
     import sys
 
@@ -199,7 +202,7 @@ async def handle_navigate_to_worktree(config, worktree_name: str) -> None:
     import click
 
     from ..shared.constants import RESERVED_NAMES
-    from ..shared.shell_utils import controlled_error
+    from .shell_utils import controlled_error
 
     if worktree_name in RESERVED_NAMES:
         click.echo(f"Error: '{worktree_name}' is a reserved name")
@@ -229,11 +232,9 @@ async def handle_navigate_to_worktree(config, worktree_name: str) -> None:
 
 async def handle_kill_daemon(config) -> None:
     """Handle kill-daemon command to stop the wt daemon."""
-    from pathlib import Path
 
     import click
 
-    daemon_dir = config.daemon_dir
     pid_file = config.daemon_pid_file
     socket_file = config.daemon_socket_file
 
@@ -242,7 +243,7 @@ async def handle_kill_daemon(config) -> None:
         return
 
     try:
-        with open(pid_file, "r") as f:
+        with open(pid_file) as f:
             pid_str = f.read().strip()
 
         if not pid_str:
@@ -296,7 +297,6 @@ async def handle_kill_daemon(config) -> None:
 
 def _cleanup_daemon_files(pid_file, socket_file) -> None:
     """Clean up daemon PID and socket files."""
-    from pathlib import Path
 
     import click
 

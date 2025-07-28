@@ -6,17 +6,15 @@ between clients and the GitStatusd multiplexing daemon.
 
 import json
 import uuid
-from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, NewType, Optional, Union
+from typing import Any, NewType, Union
 
 from pydantic import BaseModel, Field
 
 from .github_models import PRInfo
 from .models import CommitInfo
-
 
 # WorktreeID: Deliberately scrambled identifier to prevent accidental misuse
 WorktreeID = NewType('WorktreeID', str)  # Format: 'wtid:<dirname>'
@@ -44,8 +42,8 @@ class DaemonHealth(BaseModel):
     """Daemon health information."""
 
     status: DaemonHealthStatus
-    last_error: Optional[str] = None
-    last_error_time: Optional[datetime] = None
+    last_error: str | None = None
+    last_error_time: datetime | None = None
     github_errors: int = 0
     gitstatusd_errors: int = 0
 
@@ -57,7 +55,7 @@ class Request(BaseModel):
 
     jsonrpc: str = "2.0"
     method: str = Field(..., description="Method name to call")
-    params: Dict[str, Any] = Field(default_factory=dict, description="Method parameters")
+    params: dict[str, Any] = Field(default_factory=dict, description="Method parameters")
     id: uuid.UUID = Field(..., description="Request ID")
 
 
@@ -77,7 +75,7 @@ class Response(BaseModel):
         "WorktreeGetByNameResult",
         "WorktreeResolvePathResult",
         "WorktreeTeleportTargetResult",
-        str
+        str,
     ] = Field(..., description="Result data")
     id: uuid.UUID = Field(..., description="Request ID from original request")
 
@@ -120,7 +118,7 @@ class StatusParams(BaseModel):
 
     model_config = {"extra": "forbid"}
 
-    worktree_ids: List[WorktreeID] = Field(
+    worktree_ids: list[WorktreeID] = Field(
         default_factory=list,
         description="List of worktree IDs. If empty, returns all discovered worktrees.",
     )
@@ -132,7 +130,7 @@ class WorktreeCreateParams(BaseModel):
     model_config = {"extra": "forbid"}
 
     name: str = Field(..., description="Simple worktree name (no slashes)")
-    source_branch: Optional[str] = Field(None, description="Source branch for copying")
+    source_branch: str | None = Field(None, description="Source branch for copying")
 
 
 class WorktreeDeleteParams(BaseModel):
@@ -165,7 +163,7 @@ class WorktreeResolvePathParams(BaseModel):
 
     model_config = {"extra": "forbid"}
 
-    worktree_name: Optional[str] = Field(default=None, description="Target worktree name, or None for current")
+    worktree_name: str | None = Field(default=None, description="Target worktree name, or None for current")
     path_spec: str = Field(..., description="Path to resolve (/, ./, or unprefixed)")
     current_path: str = Field(..., description="Current working directory for relative resolution")
 
@@ -201,7 +199,7 @@ class StatusResult(BaseModel):
     has_untracked_files: bool = Field(..., description="Whether there are untracked files")
     processing_time_ms: float = Field(..., description="Processing time in milliseconds")
     last_updated_at: datetime = Field(
-        ..., description="When gitstatusd was last queried for this worktree"
+        ..., description="When gitstatusd was last queried for this worktree",
     )
     is_cached: bool = Field(default=False, description="Whether this result came from cache")
     # Commit and branch info
@@ -211,29 +209,29 @@ class StatusResult(BaseModel):
     is_main: bool = Field(default=False, description="Whether this is the main repository")
     upstream_branch: str = Field(..., description="Upstream branch name for ahead/behind calculations")
     # GitHub PR info
-    pr_info: Optional[PRInfo] = Field(
-        default=None, description="GitHub pull request information if available"
+    pr_info: PRInfo | None = Field(
+        default=None, description="GitHub pull request information if available",
     )
 
 
 class StatusResponse(BaseModel):
     """Unified response for get_status method (always returns results for multiple worktrees)."""
 
-    results: Dict[WorktreeID, StatusResult] = Field(
-        ..., description="Map of worktree ID to status results"
+    results: dict[WorktreeID, StatusResult] = Field(
+        ..., description="Map of worktree ID to status results",
     )
     total_processing_time_ms: float = Field(
-        ..., description="Total processing time in milliseconds"
+        ..., description="Total processing time in milliseconds",
     )
-    individual_processing_times_ms: Dict[WorktreeID, float] = Field(
-        default_factory=dict, description="Detailed processing time per worktree"
+    individual_processing_times_ms: dict[WorktreeID, float] = Field(
+        default_factory=dict, description="Detailed processing time per worktree",
     )
     discovery_time_ms: float = Field(default=0.0, description="Time spent on worktree discovery")
     concurrent_requests: int = Field(
-        default=1, description="Number of requests processed concurrently"
+        default=1, description="Number of requests processed concurrently",
     )
     daemon_health: DaemonHealth = Field(
-        ..., description="Current daemon health status and error information"
+        ..., description="Current daemon health status and error information",
     )
 
 
@@ -243,8 +241,8 @@ class PingResult(BaseModel):
     message: str = "pong"
     daemon_pid: int = Field(..., description="Process ID of the daemon")
     started_at: datetime = Field(..., description="When the daemon was started")
-    discovered_worktrees: List[Path] = Field(
-        default_factory=list, description="List of discovered worktree paths"
+    discovered_worktrees: list[Path] = Field(
+        default_factory=list, description="List of discovered worktree paths",
     )
 
 
@@ -280,25 +278,25 @@ class WorktreeDeleteResult(BaseModel):
 class WorktreeListResult(BaseModel):
     """Result for worktree listing."""
 
-    worktrees: List[WorktreeInfo] = Field(..., description="List of worktrees")
+    worktrees: list[WorktreeInfo] = Field(..., description="List of worktrees")
 
 
 class WorktreeIdentifyResult(BaseModel):
     """Result for worktree identification."""
 
-    wtid: Optional[WorktreeID] = Field(..., description="Worktree ID if identified")
-    name: Optional[str] = Field(..., description="Human-readable name if identified")
+    wtid: WorktreeID | None = Field(..., description="Worktree ID if identified")
+    name: str | None = Field(..., description="Human-readable name if identified")
     is_worktree: bool = Field(..., description="Whether path is a managed worktree")
-    relative_path: Optional[str] = Field(..., description="Relative path within worktree if identified")
+    relative_path: str | None = Field(..., description="Relative path within worktree if identified")
 
 
 class WorktreeGetByNameResult(BaseModel):
     """Result for worktree lookup by name."""
 
-    wtid: Optional[WorktreeID] = Field(..., description="Worktree ID if found")
-    name: Optional[str] = Field(..., description="Human-readable name if found")
+    wtid: WorktreeID | None = Field(..., description="Worktree ID if found")
+    name: str | None = Field(..., description="Human-readable name if found")
     exists: bool = Field(..., description="Whether worktree exists")
-    absolute_path: Optional[str] = Field(..., description="Absolute path if found")
+    absolute_path: str | None = Field(..., description="Absolute path if found")
 
 
 class WorktreeResolvePathResult(BaseModel):
@@ -323,7 +321,7 @@ class ProgressUpdate(BaseModel):
 
 
 def create_error_response(
-    code: int, message: str, request_id: Union[uuid.UUID, None] = None, data: Any = None
+    code: int, message: str, request_id: uuid.UUID | None = None, data: Any = None,
 ) -> ErrorResponse:
     """Create a JSON-RPC 2.0 error response."""
     error = Error(code=code, message=message, data=data)

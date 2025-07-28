@@ -2,18 +2,18 @@
 
 This document captures the vision for evolving `wt` from a single-repository worktree manager into a comprehensive multi-repository development environment. The design emphasizes simplicity in the immediate term while laying foundations for more sophisticated workflows.
 
-## Current State and Rationalization Plan
+## Current State (Completed Rationalization)
 
-The existing system suffers from configuration scattered across environment variables, config files, and auto-detection logic. The immediate priority is rationalizing this into a clean, predictable system before adding new capabilities.
+The configuration system has been fully rationalized into a clean, predictable system using WT_DIR-based configuration.
 
-### Discovery and Configuration Hierarchy
+### ✅ Completed Configuration System
 
-The rationalized system will use a single discovery chain:
-1. `WT_MAIN_REPO` environment variable (when explicitly set)
-2. Auto-detection from current directory's git repository
-3. Error if no git repository context is found
+The rationalized system now uses a single, clear configuration approach:
+1. `WT_DIR` environment variable points to configuration directory
+2. `$WT_DIR/config.yaml` contains explicit configuration with no defaults
+3. All paths are explicit and validated upfront during Configuration.resolve()
 
-All configuration and daemon state will live under `{main_repo}/.wt/`, eliminating the confusion around multiple config sources. This creates a clean one-to-one mapping between git repositories and their worktree management state.
+All configuration and daemon state live under the configured WT_DIR location, providing clean separation between configuration storage and git repository location. This eliminates confusion around multiple config sources and provides flexible deployment options.
 
 ## Multi-Repository Vision
 
@@ -73,14 +73,23 @@ Operations like "move file from branch A to branch B" become literal `mv` comman
 
 ## Implementation Phases
 
-### Phase 1: Rationalization (Immediate)
-The first phase focuses on cleaning up the current system without adding new features. This involves consolidating configuration sources, implementing the single discovery hierarchy, and ensuring all tests work with the simplified model. The daemon will continue to operate per-repository, but with predictable configuration locations and clear error handling when dependencies like `gitstatusd` are unavailable.
+### ✅ Phase 1: Rationalization (Completed)
+**Status: COMPLETE** - The current system has been fully rationalized with:
+- WT_DIR-based configuration system with explicit, validated paths
+- Frozen Configuration dataclass with upfront validation  
+- Eliminated error swallowing patterns throughout codebase
+- Proper server authority for path operations via new RPC methods
+- Clean naming (WtDaemon, WtClient) and removed dead code
+- Modern test patterns with decorator-style patches
 
-### Phase 2: Global Foundation  
-The second phase introduces the global daemon architecture while maintaining backward compatibility. The global daemon will initially just coordinate multiple single-repository instances, gradually centralizing state management and cross-repository operations.
+### 🔄 Phase 2: Complete Daemon Migration (In Progress)  
+Move remaining worktree create/delete operations to daemon while maintaining the global daemon foundation work. Path operations have been successfully moved to server authority.
 
-### Phase 3: Advanced Multi-Repository Features
-The final phase adds sophisticated features like structured directory management, repository cloning operations, and cross-repository workflows. These features will build naturally on the solid foundation established in earlier phases.
+### 📋 Phase 3: Global Foundation
+Introduce global daemon architecture while maintaining backward compatibility. The global daemon will coordinate multiple single-repository instances, gradually centralizing state management and cross-repository operations.
+
+### 🚀 Phase 4: Advanced Multi-Repository Features
+Add sophisticated features like structured directory management, repository cloning operations, and cross-repository workflows. These features will build on the solid foundation established in earlier phases.
 
 ## Technical Implementation Details
 

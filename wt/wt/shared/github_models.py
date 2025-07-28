@@ -34,16 +34,15 @@ class PRStatus(Enum):
     def display_text(self) -> str:
         if self == PRStatus.MERGED:
             return "merged"
-        elif self == PRStatus.CLOSED:
+        if self == PRStatus.CLOSED:
             return "closed"
-        elif self == PRStatus.OPEN_MERGEABLE:
+        if self == PRStatus.OPEN_MERGEABLE:
             return "can merge"
-        elif self == PRStatus.OPEN_CONFLICTING:
+        if self == PRStatus.OPEN_CONFLICTING:
             return "conflict"
-        elif self == PRStatus.OPEN_UNKNOWN:
+        if self == PRStatus.OPEN_UNKNOWN:
             return "open"
-        else:
-            return self.value.lower()
+        return self.value.lower()
 
 
 # Legacy enums for backward compatibility
@@ -123,7 +122,7 @@ class PullRequestCache(BaseModel):
 
     @classmethod
     def get_or_refresh(
-        cls, cache_file, cache_expiration: int, github_interface
+        cls, cache_file, cache_expiration: int, github_interface,
     ) -> "PullRequestCache":
         cache = cls.load(cache_file)
         if cache is None or cache.should_invalidate(cache_expiration):

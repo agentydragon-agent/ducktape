@@ -8,33 +8,25 @@ import asyncio
 import json
 import logging
 import os
-import subprocess
-import time
 import uuid
-from datetime import datetime
 from pathlib import Path
-from typing import Optional, Tuple
 
 from ..shared.protocol import (
-    ErrorCodes,
     ErrorResponse,
     Request,
     Response,
     StatusParams,
     StatusResponse,
-    StatusResult,
     WorktreeCreateParams,
     WorktreeCreateResult,
     WorktreeDeleteParams,
     WorktreeDeleteResult,
     WorktreeGetByNameParams,
     WorktreeGetByNameResult,
+    WorktreeID,
     WorktreeIdentifyParams,
     WorktreeIdentifyResult,
     WorktreeListResult,
-    WorktreeID,
-    create_error_response,
-    parse_request,
 )
 
 logger = logging.getLogger(__name__)
@@ -70,10 +62,7 @@ class WtClient:
             # Check if process exists and socket is accessible
             import psutil
 
-            if psutil.pid_exists(pid) and self.config.daemon_socket_file.exists():
-                return True
-            else:
-                return False
+            return bool(psutil.pid_exists(pid) and self.config.daemon_socket_file.exists())
 
         except (ValueError, OSError):
             return False
@@ -105,7 +94,6 @@ class WtClient:
 
     async def _start_daemon_background(self) -> None:
         """Start daemon in background using proper double-fork daemonization."""
-        import os
         import sys
 
         # First fork - create intermediate process
@@ -142,7 +130,7 @@ class WtClient:
                             [
                                 sys.executable,
                                 "-m",
-                                "wt.server.daemon",
+                                "wt.server.wt_server",
                             ],
                             os.environ.copy(),
                         )
@@ -161,7 +149,7 @@ class WtClient:
             os.waitpid(pid, 0)
             logger.debug("Daemon daemonization completed (double-fork)")
 
-    async def get_status(self, worktree_ids: list[WorktreeID] = None) -> StatusResponse:
+    async def get_status(self, worktree_ids: list[WorktreeID] | None = None) -> StatusResponse:
         """Get comprehensive status data from daemon for all specified worktree IDs.
 
         If worktree_ids is empty or None, returns status for all discovered worktrees.
@@ -200,14 +188,13 @@ class WtClient:
                 if "error" in response_json:
                     error_response = ErrorResponse.model_validate(response_json)
                     raise RuntimeError(
-                        f"Daemon status request failed: {error_response.error.message}"
+                        f"Daemon status request failed: {error_response.error.message}",
                     )
 
                 # Parse successful response - let Pydantic validate everything
                 success_response = Response.model_validate(response_json)
-                status_response = StatusResponse.model_validate(success_response.result)
+                return StatusResponse.model_validate(success_response.result)
 
-                return status_response
 
             except json.JSONDecodeError as e:
                 raise RuntimeError(f"Invalid JSON response from daemon: {e}")
@@ -222,8 +209,8 @@ class WtClient:
 
 
     async def get_working_directory_status(
-        self, worktree_path: Path
-    ) -> Tuple[list[str], list[str]]:
+        self, worktree_path: Path,
+    ) -> tuple[list[str], list[str]]:
         """Get working directory status for a single worktree (legacy compatibility method)."""
         # Use server-side identification to safely convert path to WorktreeID
         try:
@@ -240,14 +227,14 @@ class WtClient:
             return [], []
 
         # Extract the single result
-        result = list(status_response.results.values())[0]
+        result = next(iter(status_response.results.values()))
 
         # Convert boolean flags back to file lists for backward compatibility
         dirty_files = ["<files present>"] if result.has_dirty_files else []
         untracked_files = ["<files present>"] if result.has_untracked_files else []
         return dirty_files, untracked_files
 
-    async def create_worktree(self, name: str, source_branch: str = None) -> WorktreeCreateResult:
+    async def create_worktree(self, name: str, source_branch: str | None = None) -> WorktreeCreateResult:
         """Create a new worktree via RPC."""
         await self._start_daemon_if_needed()
 
@@ -283,13 +270,12 @@ class WtClient:
                 if "error" in response_json:
                     error_response = ErrorResponse.model_validate(response_json)
                     raise RuntimeError(
-                        f"Daemon worktree_create request failed: {error_response.error.message}"
+                        f"Daemon worktree_create request failed: {error_response.error.message}",
                     )
 
                 # Parse successful response
                 success_response = Response.model_validate(response_json)
-                result = WorktreeCreateResult.model_validate(success_response.result)
-                return result
+                return WorktreeCreateResult.model_validate(success_response.result)
 
             except json.JSONDecodeError as e:
                 raise RuntimeError(f"Invalid JSON response from daemon: {e}")
@@ -338,13 +324,12 @@ class WtClient:
                 if "error" in response_json:
                     error_response = ErrorResponse.model_validate(response_json)
                     raise RuntimeError(
-                        f"Daemon worktree_delete request failed: {error_response.error.message}"
+                        f"Daemon worktree_delete request failed: {error_response.error.message}",
                     )
 
                 # Parse successful response
                 success_response = Response.model_validate(response_json)
-                result = WorktreeDeleteResult.model_validate(success_response.result)
-                return result
+                return WorktreeDeleteResult.model_validate(success_response.result)
 
             except json.JSONDecodeError as e:
                 raise RuntimeError(f"Invalid JSON response from daemon: {e}")
@@ -393,13 +378,12 @@ class WtClient:
                 if "error" in response_json:
                     error_response = ErrorResponse.model_validate(response_json)
                     raise RuntimeError(
-                        f"Daemon worktree_list request failed: {error_response.error.message}"
+                        f"Daemon worktree_list request failed: {error_response.error.message}",
                     )
 
                 # Parse successful response
                 success_response = Response.model_validate(response_json)
-                result = WorktreeListResult.model_validate(success_response.result)
-                return result
+                return WorktreeListResult.model_validate(success_response.result)
 
             except json.JSONDecodeError as e:
                 raise RuntimeError(f"Invalid JSON response from daemon: {e}")
@@ -448,13 +432,12 @@ class WtClient:
                 if "error" in response_json:
                     error_response = ErrorResponse.model_validate(response_json)
                     raise RuntimeError(
-                        f"Daemon worktree_identify request failed: {error_response.error.message}"
+                        f"Daemon worktree_identify request failed: {error_response.error.message}",
                     )
 
                 # Parse successful response
                 success_response = Response.model_validate(response_json)
-                result = WorktreeIdentifyResult.model_validate(success_response.result)
-                return result
+                return WorktreeIdentifyResult.model_validate(success_response.result)
 
             except json.JSONDecodeError as e:
                 raise RuntimeError(f"Invalid JSON response from daemon: {e}")
@@ -503,13 +486,12 @@ class WtClient:
                 if "error" in response_json:
                     error_response = ErrorResponse.model_validate(response_json)
                     raise RuntimeError(
-                        f"Daemon worktree_get_by_name request failed: {error_response.error.message}"
+                        f"Daemon worktree_get_by_name request failed: {error_response.error.message}",
                     )
 
                 # Parse successful response
                 success_response = Response.model_validate(response_json)
-                result = WorktreeGetByNameResult.model_validate(success_response.result)
-                return result
+                return WorktreeGetByNameResult.model_validate(success_response.result)
 
             except json.JSONDecodeError as e:
                 raise RuntimeError(f"Invalid JSON response from daemon: {e}")

@@ -30,20 +30,25 @@ def create_test_status_response(results_dict=None):
     )
 
 
-def run_cli_with_mocked_status(cli_runner, temp_config_file, status_response, cli_args):
-    """Helper to run CLI with mocked status response and proper environment setup."""
-    with patch.dict("os.environ", {"WT_DIR": str(temp_config_file.parent)}), \
-         patch("wt.client.daemon_client.WtClient.get_status") as mock_get_status:
+@pytest.fixture
+def cli_runner_with_env(cli_runner, cli_test_env, monkeypatch):
+    """Factory fixture for running CLI with mocked environment."""
+    def _run_with_mocked_status(status_response, cli_args, mock_get_status):
+        """Run CLI with mocked status response and proper environment setup."""
+        monkeypatch.setenv("WT_DIR", str(cli_test_env))
         mock_get_status.return_value = status_response
         return cli_runner.invoke(main, cli_args)
+    
+    return _run_with_mocked_status
 
 
 @pytest.mark.integration
 class TestCLIOutputFormat:
+    @patch("wt.client.wt_client.WtClient.get_status")
     def test_status_table_rendering(
         self,
-        cli_runner: CliRunner,
-        temp_config_file,
+        mock_get_status,
+        cli_runner_with_env,
     ):
         """Test that the status table renders correctly with real formatting."""
         # Create status data
@@ -90,7 +95,7 @@ class TestCLIOutputFormat:
         }
         
         status_response = create_test_status_response(results)
-        result = run_cli_with_mocked_status(cli_runner, temp_config_file, status_response, ["sh"])
+        result = cli_runner_with_env(status_response, ["sh"], mock_get_status)
 
         print("Exit code:", result.exit_code)
         print("Output:", repr(result.output))
@@ -102,16 +107,18 @@ class TestCLIOutputFormat:
         assert "main" in output
         assert "feature-branch" in output
 
-    def test_list_worktrees_empty(self, cli_runner: CliRunner, temp_config_file):
+    @patch("wt.client.wt_client.WtClient.get_status")
+    def test_list_worktrees_empty(self, mock_get_status, cli_runner_with_env):
         """Test ls command with no worktrees."""
         status_response = create_test_status_response({})
-        result = run_cli_with_mocked_status(cli_runner, temp_config_file, status_response, ["sh", "ls"])
+        result = cli_runner_with_env(status_response, ["sh", "ls"], mock_get_status)
 
         assert result.exit_code == 0
         assert "No worktrees found" in result.output
 
+    @patch("wt.client.wt_client.WtClient.get_status")
     def test_list_worktrees_with_data(
-        self, cli_runner: CliRunner, temp_config_file
+        self, mock_get_status, cli_runner_with_env
     ):
         """Test ls command with actual worktree data."""
         # Create test results
@@ -140,23 +147,27 @@ class TestCLIOutputFormat:
         }
         
         status_response = create_test_status_response(results)
-        result = run_cli_with_mocked_status(cli_runner, temp_config_file, status_response, ["sh", "ls"])
+        result = cli_runner_with_env(status_response, ["sh", "ls"], mock_get_status)
 
         assert result.exit_code == 0
         # Should show some worktree content
         assert len(result.output.strip()) > 0
 
-    def test_help_command(self, cli_runner: CliRunner, temp_config_file):
+    def test_help_command(self, cli_runner_with_env, monkeypatch, cli_test_env):
         """Test help command works with new CLI."""
-        result = cli_runner.invoke(main, ["sh", "help"])
+        monkeypatch.setenv("WT_DIR", str(cli_test_env))
+        from click.testing import CliRunner
+        result = CliRunner().invoke(main, ["sh", "help"])
 
         assert result.exit_code == 0
         assert "wt - Enhanced worktree management" in result.output
         assert "USAGE:" in result.output
 
-    def test_help_flag(self, cli_runner: CliRunner, temp_config_file):
+    def test_help_flag(self, cli_runner_with_env, monkeypatch, cli_test_env):
         """Test --help flag works with new CLI."""
-        result = cli_runner.invoke(main, ["sh", "--help"])
+        monkeypatch.setenv("WT_DIR", str(cli_test_env))
+        from click.testing import CliRunner
+        result = CliRunner().invoke(main, ["sh", "--help"])
 
         assert result.exit_code == 0
         assert "USAGE:" in result.output  # Custom help format

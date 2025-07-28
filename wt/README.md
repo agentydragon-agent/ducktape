@@ -42,13 +42,6 @@ wt rm old-feature --force
 
 All worktree status commands automatically include GitHub pull request information via the background daemon.
 
-### Verbose Mode
-
-```bash
-# Show detailed stages and timings
-wt --verbose
-```
-
 ### Special Destinations
 
 ```bash
@@ -105,6 +98,7 @@ wt path ./relative/file.py
 - JSON-RPC server over Unix socket
 - Proper daemonization with file logging
 - Auto-starts when needed by client
+- Renamed from GitStatusdDaemon → WtDaemon for clarity
 
 #### **Handler Functions** (`handlers.py`)
 - Pure functions with explicit dependencies
@@ -179,26 +173,46 @@ When switching between worktrees, the tool:
 
 ### Branch Naming
 
-- All worktrees use `adgn/<name>` branch naming scheme
+- All worktrees use configurable branch naming scheme (no defaults)
 - Reserved names (`ls`, `rm`, `status`, etc.) are blocked
 - Special cases (`main`, `master`) teleport to main repo
+
+## Configuration
+
+The tool uses WT_DIR environment variable to locate configuration:
+
+```bash
+export WT_DIR=/path/to/.wt
+```
+
+Configuration file at `$WT_DIR/config.yaml` specifies:
+- `main_repo`: Path to main git repository (required)
+- `worktrees_dir`: Directory for worktrees (required) 
+- `branch_prefix`: Prefix for worktree branches (required)
+- `upstream_branch`: Default upstream branch (required)
+- `github_repo`: GitHub repository identifier (required)
 
 ## Directory Structure
 
 ```
 ~/code/
 ├── repo/              # Main repository
-└── worktrees/           # Worktree directory
-    ├── feature-a/
-    ├── experiment/
-    └── bugfix/
+│   └── .git/
+├── worktrees/         # Worktree directory
+│   ├── feature-a/
+│   ├── experiment/
+│   └── bugfix/
+└── .wt/               # Configuration and daemon state
+    ├── config.yaml
+    ├── daemon.sock
+    └── daemon.pid
 ```
 
 ## Logs and Data
 
-Uses XDG-compliant directories:
-- **Logs**: `~/.local/share/adgn-worktree/` (operations.jsonl)
-- **Data**: `~/.local/share/adgn-worktree/` (future config)
+- **Configuration**: `$WT_DIR/config.yaml` 
+- **Daemon state**: `$WT_DIR/daemon.sock`, `$WT_DIR/daemon.pid`
+- **Logs**: Daemon logs to configured location
 
 ## Examples
 
