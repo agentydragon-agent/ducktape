@@ -585,6 +585,7 @@ class CodeResult(BaseModel):
     """
 
     task: str
+    task_id: str  # Task identifier from database
     agent_id: int
     timestamp: str
     messages: List[Dict[str, Any]]  # Serialized Claude SDK messages via asdict()
@@ -602,6 +603,7 @@ class Grade(BaseModel):
     """
 
     task: str
+    task_id: str  # Task identifier from database
     agent_id: int
     axes: Dict[str, ScoreWithRationale]
     overall_score: float
@@ -620,6 +622,7 @@ async def execute_claude_session(
     task: str,
     options: ClaudeCodeOptions,
     agent_id: int,
+    task_id: str,
     anthropic_log_path: Path,
     rollout_id: int,
 ) -> List[Dict[str, Any]]:
@@ -629,6 +632,7 @@ async def execute_claude_session(
         task: The task prompt for the coding agent
         options: Coding agent configuration options
         agent_id: Agent identifier for logging
+        task_id: Task identifier for logging
         anthropic_log_path: Path to log Anthropic API calls
         rollout_id: Rollout ID for database logging
         
@@ -770,11 +774,12 @@ async def run_claude_code(
     # Log the working directory for this agent so that users
     # know where the agent's files are being saved.  This occurs at the start
     # of each agent run.
-    agent_logger = logger.bind(agent_id=agent_id, task_id=task_id)
-    agent_logger.info("Agent starting", work_dir=str(work_dir), task_preview=task[:100])
+    task_logger = logger.bind(task_id=task_id, agent_id=agent_id)
+    task_logger.info("Agent starting", work_dir=str(work_dir), task_preview=task[:100])
 
     # Write the system prompt into CLAUDE.md inside the agent's working directory.
     # The actual prompt version files are stored at the run directory level.
+    # TODO: THIS IS WRONG - IT HAS TO LAND INSIDE THE CONTAINER!
     (work_dir / "CLAUDE.md").write_text(system_prompt)
 
     os.environ["BASH_MAX_TIMEOUT_MS"] = str(config.rollouts.bash_timeout_ms)
@@ -798,6 +803,7 @@ async def run_claude_code(
     timestamp = datetime.utcnow().isoformat()
     return CodeResult(
         task=task,
+        task_id=task_id,
         agent_id=agent_id,
         timestamp=timestamp,
         messages=message_sequence,
@@ -906,7 +912,8 @@ async def grade_code(
     # Call the model.  We enforce the tool choice so the model must call
     # submit_grades and return the grading JSON according to the schema.
     grade_logger = logger.bind(
-        agent_id=result.agent_id, task_id=getattr(result, "task_id", "unknown")
+        agent_id=result.agent_id, 
+        task_id=result.task_id
     )
     grade_logger.info("Making OpenAI grading call")
 
@@ -1028,6 +1035,7 @@ async def grade_code(
     timestamp = datetime.utcnow().isoformat()
     return Grade(
         task=result.task,
+        task_id=result.task_id,
         agent_id=result.agent_id,
         axes=axes,
         overall_score=overall_score,
@@ -1381,9 +1389,6 @@ async def optimize_prompts(
         config_snapshot=config.model_dump_json()
     )
 
-    # Task-specific Docker images are now managed by task_claude context manager
-    logger.info("Using task_claude for Docker container management")
-    
     try:
         # Prepare API log files for both OpenAI and Anthropic (keeping these for debugging)
         openai_api_log_path = base_dir / "openai_api_log.jsonl"
@@ -1437,7 +1442,6 @@ async def optimize_prompts(
                 
                 # Use task_claude context manager for Docker container management
                 async with task_claude(task.id, config, rollout_dir) as claude_client:
-                    # Run coding agent with task-specific Docker image
                     code_result = await run_claude_code(
                         task.prompt,
                         current_prompt,
@@ -1448,8 +1452,6 @@ async def optimize_prompts(
                         rollout_id=db_rollout_id,
                     )
 
-                # Messages are now logged in real-time during execute_claude_session
-                
                 # Store rollout files in database
                 db_service.store_rollout_files(
                     rollout_id=db_rollout_id,
@@ -1457,7 +1459,6 @@ async def optimize_prompts(
                     rollout_dir=rollout_dir
                 )
 
-                # Grade the result
                 grade = await grade_code(code_result, criteria, openai_api_log_path)
 
                 # Store grading results in database
