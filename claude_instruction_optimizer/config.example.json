@@ -9,7 +9,6 @@
   
   "prompt_engineer": {
     "model": "o3",
-    "max_turns": 50,
     "reasoning_effort": "high"
   },
   

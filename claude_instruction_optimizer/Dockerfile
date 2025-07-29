@@ -183,12 +183,6 @@ RUN --mount=type=cache,target=/root/.gem \
 # Stage 12: Final environment setup
 FROM packages-complete as final
 
-# Set up shell environment and workspace
-RUN echo 'alias ll="ls -la"' >> /root/.bashrc && \
-    echo 'alias la="ls -A"' >> /root/.bashrc && \
-    echo 'alias l="ls -CF"' >> /root/.bashrc && \
-    echo 'export PS1="\[\033[01;32m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ "' >> /root/.bashrc
-
 # Create workspace
 RUN mkdir -p /workspace
 WORKDIR /workspace

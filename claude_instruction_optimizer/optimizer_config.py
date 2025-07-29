@@ -16,7 +16,6 @@ class RolloutConfig(BaseModel):
 class PromptEngineerConfig(BaseModel):
     """Configuration for prompt engineering."""
     model: str = Field(description="Model to use for prompt engineering")
-    max_turns: int = Field(description="Maximum turns for conversation")
     reasoning_effort: str = Field(description="Reasoning effort level")
 
 class GraderConfig(BaseModel):
