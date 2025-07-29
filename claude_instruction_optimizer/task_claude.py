@@ -56,30 +56,36 @@ class TaskClaude:
                 raise ValueError(f"Task '{self.task_id}' not found in database")
             return task
     
-    def _setup_wrapper(self, working_dir: Path) -> Path:
-        """Set up Claude wrapper script."""
+    def _setup_wrapper(self, working_dir: Path, container_id: str) -> Path:
+        """Set up Claude wrapper script with container ID."""
         wrapper_dir = working_dir / "bin"
         wrapper_dir.mkdir(parents=True, exist_ok=True)
         
         wrapper_script = wrapper_dir / "claude" 
-        external_wrapper = Path(__file__).parent / "docker_claude_wrapper.sh"
         
-        if not external_wrapper.exists():
-            raise FileNotFoundError(f"Docker wrapper not found: {external_wrapper}")
-            
-        shutil.copy2(external_wrapper, wrapper_script)
+        # Find docker binary path
+        docker_path = shutil.which("docker")
+        if not docker_path:
+            raise RuntimeError("Docker binary not found in PATH")
+        
+        # Generate wrapper script inline with container ID
+        wrapper_content = f"""#!/bin/sh
+# Docker wrapper for Claude CLI
+exec {docker_path} exec -i {container_id} /usr/local/bin/claude --dangerously-skip-permissions "$@"
+"""
+        
+        wrapper_script.write_text(wrapper_content)
         wrapper_script.chmod(0o755)
         
         self._wrapper_dir = wrapper_dir
         return wrapper_dir
         
     def _get_env(self) -> Dict[str, str]:
-        """Get environment for subprocess calls."""
+        """Get environment for subprocess calls with isolated PATH."""
         env = os.environ.copy()
         if self._wrapper_dir:
-            env["PATH"] = f"{self._wrapper_dir}:{env.get('PATH', '')}"
-        if self._container:
-            env["CLAUDE_CONTAINER_ID"] = self._container.id
+            # Use ONLY the wrapper directory - no host PATH
+            env["PATH"] = str(self._wrapper_dir)
         return env
         
     async def _start_container(self, working_dir: Path):
@@ -192,9 +198,9 @@ async def task_claude(task_id: str, config, working_dir: Path = None) -> AsyncIt
     claude = TaskClaude(task_id, config)
     
     try:
-        # Setup wrapper and container
-        claude._setup_wrapper(working_dir)
+        # Start container first, then setup wrapper with container ID
         await claude._start_container(working_dir)
+        claude._setup_wrapper(working_dir, claude._container.id)
         
         yield claude
         

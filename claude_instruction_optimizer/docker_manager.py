@@ -44,7 +44,7 @@ class DockerManager:
             wrapper_script_path: Path to the docker_claude_wrapper.sh script
             
         Yields:
-            str: Modified PATH with wrapper directory prepended
+            str: Isolated PATH containing only wrapper and essential binaries
         """
         wrapper_dir = base_dir / "bin"
         wrapper_dir.mkdir(parents=True, exist_ok=True)
@@ -55,12 +55,29 @@ class DockerManager:
             raise FileNotFoundError(f"Docker wrapper script not found: {wrapper_script_path}")
             
         try:
-            shutil.copy2(wrapper_script_path, wrapper_script)
+            # Find docker binary path  
+            docker_path = shutil.which("docker", path=self._original_path)
+            if not docker_path:
+                raise RuntimeError("Docker binary not found in PATH")
+            
+            # Generate wrapper script inline
+            wrapper_content = f"""#!/bin/sh
+# Docker wrapper for Claude CLI using long-running containers
+if [ -z "$CLAUDE_CONTAINER_ID" ]; then
+    echo "ERROR: CLAUDE_CONTAINER_ID environment variable not set" >&2
+    exit 1
+fi
+exec {docker_path} exec -i "$CLAUDE_CONTAINER_ID" /usr/local/bin/claude --dangerously-skip-permissions "$@"
+"""
+            
+            wrapper_script.write_text(wrapper_content)
             wrapper_script.chmod(0o755)
             
-            # Yield modified PATH for subprocess calls
-            wrapper_path = f"{wrapper_dir}:{self._original_path}"
-            yield wrapper_path
+            # No symlinks needed - wrapper script uses absolute paths
+            
+            # Use ONLY the wrapper directory in PATH - no host PATH at all
+            isolated_path = str(wrapper_dir)
+            yield isolated_path
             
         finally:
             # Clean up wrapper script

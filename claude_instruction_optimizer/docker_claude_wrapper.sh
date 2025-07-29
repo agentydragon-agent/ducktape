@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 # Docker wrapper for Claude CLI using long-running containers
 # Executes claude command inside the pre-configured container
 
