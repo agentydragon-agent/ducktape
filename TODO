@@ -24,5 +24,3 @@ TODO: prompt on vps is currently not p10k; just set to agnoster with dirty index
 TODO: get rid of login_event_webhook_reporter -- already got activitywatch. might combine with halinuxcompanion => have it work
 
 TODO: rcm has symlink_dirs -- use
-
-TODO: install atuin
