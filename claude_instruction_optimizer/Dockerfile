@@ -160,12 +160,18 @@ RUN --mount=type=cache,target=/root/.npm \
     typescript \
     prettier
 
+# Switch to non-root user
+USER 1000
+
 # Stage 10: Ruby standalone  
 FROM system-base AS ruby
 
 # Install Ruby gems
 RUN --mount=type=cache,target=/root/.gem \
     gem install bundler sqlite3 httparty colorize pry
+
+# Switch to non-root user
+USER 1000
 
 # Stage 11: Node.js and Ruby combined packages
 FROM python-complete AS packages-complete

@@ -118,6 +118,7 @@ class OptimizerConfig(BaseModel):
     
     # Pre-task setup script configuration
     pre_task_setup_script: str | None = Field(description="Path to global pre-task setup script (runs outside container with docker access)")
+    pre_task_always_script: str | None = Field(description="Path to pre-task script that runs before every task (for authentication, etc.)")
     seeds_file: str = Field(default="seeds.yaml", description="Path to seeds YAML file containing tasks")
     graders_file: str = Field(default="graders_consolidated.yaml", description="Path to graders YAML file containing task graders")
     

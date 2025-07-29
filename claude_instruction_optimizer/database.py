@@ -270,18 +270,20 @@ class RolloutFile(Base):
     
     def verify_file_integrity(self) -> bool:
         """Verify that the file on disk matches the stored SHA256 hash."""
+        file_path = Path(self.absolute_path)
+        if not file_path.exists():
+            return False
+        
         try:
-            file_path = Path(self.absolute_path)
-            if not file_path.exists():
-                return False
-            
             with open(file_path, 'rb') as f:
                 content = f.read()
             
             actual_hash = hashlib.sha256(content).hexdigest()
             return actual_hash == self.content_sha256
-        except Exception:
-            return False
+        except (OSError, IOError) as e:
+            # File system errors (permissions, disk full, etc.) should not be hidden
+            # These are unrecoverable and indicate serious problems
+            raise RuntimeError(f"Failed to verify file integrity for {self.absolute_path}: {e}") from e
     
     def read_content(self) -> str:
         """Read and return file content, verifying integrity."""

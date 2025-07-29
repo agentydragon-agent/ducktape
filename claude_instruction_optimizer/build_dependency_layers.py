@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Build all Docker dependency layers and per-task images with proper tags using buildx caching."""
+"""Build all Docker dependency layers and per-task images with proper tags using buildx caching.
+
+For debugging Docker build issues, see DEBUGGING.md - especially Critical Issue #1
+about Docker buildx context isolation problems.
+"""
 
 import subprocess
 import sys
@@ -9,8 +13,21 @@ import tempfile
 from pathlib import Path
 from typing import List, Optional, Dict
 
-def run_command(cmd: List[str], description: str, step: int, total: int) -> bool:
-    """Run a command with nice progress display and real-time output."""
+
+class BuildError(Exception):
+    """Raised when Docker build operations fail."""
+    pass
+
+
+class SetupError(Exception):
+    """Raised when build environment setup fails."""
+    pass
+
+def run_command(cmd: List[str], description: str, step: int, total: int) -> None:
+    """Run a command with nice progress display and real-time output.
+    
+    Raises BuildError on failure.
+    """
     print(f"[{step}/{total}] {description}")
     print(f"🔨 Command: {' '.join(cmd)}")
     
@@ -47,27 +64,31 @@ def run_command(cmd: List[str], description: str, step: int, total: int) -> bool
                     elapsed = time.time() - start_time
                     print(f"   [{elapsed:6.1f}s] {line}")
         
+        elapsed = time.time() - start_time
+        
         if process.returncode == 0:
-            elapsed = time.time() - start_time
             print(f"   ✅ Complete in {elapsed:.1f}s")
-            return True
         else:
-            elapsed = time.time() - start_time
             print(f"   ❌ Failed after {elapsed:.1f}s")
             
-            # Show last few lines of output for context (errors already shown above with timestamps)
+            # Show last few lines of output for context
             all_output_text = "".join(all_output)
             if all_output_text.strip():
                 print(f"   📋 Last output:")
                 for line in all_output_text.strip().split('\n')[-3:]:  # Last 3 lines
                     if line.strip():
                         print(f"      {line.strip()}")
-                
-            return False
             
+            raise BuildError(f"Command failed: {description}")
+            
+    except subprocess.SubprocessError as e:
+        elapsed = time.time() - start_time
+        print(f"   ❌ Process error after {elapsed:.1f}s: {e}")
+        raise BuildError(f"Process error in {description}: {e}") from e
     except Exception as e:
-        print(f"   ❌ Error: {e}")
-        return False
+        elapsed = time.time() - start_time
+        print(f"   ❌ Unexpected error after {elapsed:.1f}s: {e}")
+        raise BuildError(f"Unexpected error in {description}: {e}") from e
 
 def build_docker_image(
     tag: str, 
@@ -78,10 +99,12 @@ def build_docker_image(
     target: Optional[str] = None,
     build_args: Optional[Dict[str, str]] = None,
     platform: Optional[str] = None,
-    context: str = ".",
-    builder: Optional[str] = None
-) -> bool:
-    """Shared helper for building Docker images with verbose progress and cache fallback."""
+    context: str = "."
+) -> None:
+    """Shared helper for building Docker images with verbose progress and cache fallback.
+    
+    Raises BuildError on failure.
+    """
     
     print(f"🔍 Build details:")
     print(f"   🎯 Tag: {tag}")
@@ -95,11 +118,8 @@ def build_docker_image(
     if build_args:
         print(f"   🔧 Build args: {build_args}")
     
-    # Build base command
-    if builder:
-        cmd_base = ["docker", "--context", builder, "buildx", "build", "--progress=plain"]
-    else:
-        cmd_base = ["docker", "buildx", "build", "--progress=plain"]
+    # Build base command - use claude-builder for consistent image access
+    cmd_base = ["docker", "buildx", "build", "--builder", "claude-builder", "--progress=plain"]
     
     if dockerfile:
         cmd_base.extend(["-f", dockerfile])
@@ -121,19 +141,22 @@ def build_docker_image(
         context
     ]
     
-    if run_command(cmd_with_cache, f"Building {description}", step, total):
-        return True
-    
-    print("   ⚠️  Cache failed, retrying without cache...")
-    
-    # Fallback without cache
-    cmd_no_cache = cmd_base + ["--load", context]
-    return run_command(cmd_no_cache, f"Building {description} (no cache)", step, total)
+    try:
+        run_command(cmd_with_cache, f"Building {description}", step, total)
+    except BuildError:
+        print("   ⚠️  Cache failed, retrying without cache...")
+        
+        # Fallback without cache
+        cmd_no_cache = cmd_base + ["--load", context]
+        run_command(cmd_no_cache, f"Building {description} (no cache)", step, total)
 
 
-def build_layer(target: str, tag: str, step: int, total: int) -> bool:
-    """Build a single Docker layer with buildx caching."""
-    return build_docker_image(
+def build_layer(target: str, tag: str, step: int, total: int) -> None:
+    """Build a single Docker layer with buildx caching.
+    
+    Raises BuildError on failure.
+    """
+    build_docker_image(
         tag=tag,
         description=f"{target} → {tag}",
         step=step,
@@ -141,8 +164,11 @@ def build_layer(target: str, tag: str, step: int, total: int) -> bool:
         target=target
     )
 
-def setup_buildx_builder():
-    """Set up buildx builder that supports caching."""
+def setup_buildx_builder() -> None:
+    """Set up buildx builder that supports caching.
+    
+    Raises SetupError on failure.
+    """
     print("🔧 Setting up buildx builder with cache support...")
     
     # Check if claude-builder already exists and is running
@@ -156,7 +182,7 @@ def setup_buildx_builder():
             # Switch to use the existing builder
             subprocess.run(["docker", "buildx", "use", "claude-builder"], 
                           check=True, capture_output=True)
-            return True
+            return
     except subprocess.CalledProcessError:
         pass  # Builder doesn't exist, we'll create it
     
@@ -166,7 +192,7 @@ def setup_buildx_builder():
     
     # Create a new builder instance with docker-container driver (supports caching)
     try:
-        result = subprocess.run([
+        subprocess.run([
             "docker", "buildx", "create", 
             "--name", "claude-builder",
             "--driver", "docker-container",
@@ -175,17 +201,16 @@ def setup_buildx_builder():
         print("   ✅ Created claude-builder with docker-container driver")
     except subprocess.CalledProcessError as e:
         print(f"   ❌ Failed to create builder: {e}")
-        raise RuntimeError("Failed to create buildx builder with caching support. Buildx with docker-container driver is required.")
+        raise SetupError("Failed to create buildx builder with caching support. Buildx with docker-container driver is required.") from e
     
     # Bootstrap the builder
     try:
         subprocess.run(["docker", "buildx", "inspect", "--bootstrap"], 
                       check=True, capture_output=True)
         print("   ✅ Builder ready")
-        return True
-    except subprocess.CalledProcessError:
-        print("   ❌ Builder bootstrap failed")
-        raise RuntimeError("Failed to bootstrap buildx builder. Builder setup is required for caching.")
+    except subprocess.CalledProcessError as e:
+        print(f"   ❌ Builder bootstrap failed: {e}")
+        raise SetupError("Failed to bootstrap buildx builder. Builder setup is required for caching.") from e
 
 def load_dependency_config(config_path: str = "config.yaml"):
     """Load dependency configuration from main config YAML file."""
@@ -202,14 +227,17 @@ def load_dependency_config(config_path: str = "config.yaml"):
         
     return full_config["docker"]
 
-def build_external_image_with_claude(base_image: str, target_tag: str, platform: Optional[str] = None) -> bool:
-    """Build external image layered with Claude Code."""
+def build_external_image_with_claude(base_image: str, target_tag: str, platform: Optional[str] = None) -> None:
+    """Build external image layered with Claude Code.
+    
+    Raises BuildError on failure.
+    """
     dockerfile_path = Path("Dockerfile.external")
     
     if not dockerfile_path.exists():
         raise FileNotFoundError(f"External Dockerfile not found: {dockerfile_path}")
     
-    return build_docker_image(
+    build_docker_image(
         tag=target_tag,
         description=f"External {target_tag} from {base_image}",
         dockerfile=str(dockerfile_path),
@@ -256,8 +284,11 @@ def sync_yaml_to_database(config):
         print(f"❌ Failed to sync YAML to database: {e}")
         sys.exit(1)
 
-def build_task_image(task_db, docker_config) -> bool:
-    """Build Docker image for a specific task based on its dependencies."""
+def build_task_image(task_db, docker_config) -> None:
+    """Build Docker image for a specific task based on its dependencies.
+    
+    Raises BuildError on failure.
+    """
     task_id = task_db.task_id
     dependencies = task_db.dependencies_list
     docker_image_tag = task_db.docker_image_tag
@@ -300,6 +331,10 @@ LABEL task.image_tag="{docker_image_tag}"
 # Additional task-specific setup could go here
 # (e.g., pre-installing packages, setting up environment)
 
+# Ensure container runs as non-root user (required for Claude Code security)
+# See DEBUGGING.md Critical Issue #2 for why this is necessary at final stage
+USER 1000
+
 WORKDIR /workspace
 CMD ["sleep", "infinity"]
 '''
@@ -310,80 +345,125 @@ CMD ["sleep", "infinity"]
         temp_dockerfile = temp_file.name
     
     try:
-        return build_docker_image(
-            tag=docker_image_tag,
-            description=f"Task {task_id}",
-            dockerfile=temp_dockerfile,
-            builder="colima"  # Use colima builder (docker driver) for access to local images
+        # Use regular docker build for task images to access local base images
+        print(f"🔨 Building task image with regular docker build (accessing local images)")
+        
+        # Set DOCKER_BUILDKIT=0 to avoid buildx context isolation (see DEBUGGING.md Critical Issue #1)
+        import os
+        env = os.environ.copy()
+        env['DOCKER_BUILDKIT'] = '0'
+        
+        build_cmd = [
+            "docker", "build", 
+            "-f", temp_dockerfile,
+            "-t", docker_image_tag,
+            "."
+        ]
+        
+        import subprocess
+        import time
+        
+        start_time = time.time()
+        print(f"🔨 Command: {' '.join(build_cmd)}")
+        
+        # Run command with real-time output streaming
+        # IMPORTANT LESSON: Docker buildx (including claude-builder) maintains its own container-based
+        # image registry separate from the host Docker daemon. When we use buildx with --load to export
+        # images back to the host Docker, subsequent builds that reference those images as base images
+        # will fail because buildx tries to resolve them from Docker Hub first, not local registry.
+        # Solution: Use legacy Docker builder (DOCKER_BUILDKIT=0) for task images to directly access
+        # local base images built by buildx.
+        process = subprocess.Popen(
+            build_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, 
+            text=True, bufsize=0, universal_newlines=True,
+            env=env  # Pass environment with DOCKER_BUILDKIT=0
         )
+        
+        # Stream output directly
+        while True:
+            if process.poll() is not None:
+                # Get any remaining output
+                remaining_output = process.stdout.read()
+                if remaining_output:
+                    for line in remaining_output.strip().split('\n'):
+                        if line.strip():
+                            elapsed = time.time() - start_time
+                            print(f"   [{elapsed:6.1f}s] {line}")
+                break
+                
+            # Read available output and show it immediately
+            output = process.stdout.readline()
+            if output:
+                line = output.strip()
+                if line:
+                    elapsed = time.time() - start_time
+                    print(f"   [{elapsed:6.1f}s] {line}")
+        
+        elapsed = time.time() - start_time
+        
+        if process.returncode == 0:
+            print(f"   ✅ Complete in {elapsed:.1f}s")
+        else:
+            print(f"   ❌ Failed after {elapsed:.1f}s")
+            raise BuildError(f"Failed to build task image {docker_image_tag}")
     finally:
         # Clean up temp dockerfile
         Path(temp_dockerfile).unlink(missing_ok=True)
 
-def build_all_task_images(yaml_loader, docker_config):
-    """Build Docker images for all tasks in the database."""
+def build_all_task_images(yaml_loader, docker_config) -> int:
+    """Build Docker images for all tasks in the database.
+    
+    Returns number of images built successfully.
+    Raises BuildError on any build failure.
+    """
     print(f"\n🎯 Building per-task Docker images...")
     
-    try:
-        # Get active tasks from database (like optimizer.py)
-        from database import get_db_session
+    # Get active tasks from database (like optimizer.py)
+    from database import get_db_session
+    
+    with get_db_session() as session:
+        seed_tasks_db = yaml_loader.get_active_seed_tasks(session)
         
-        with get_db_session() as session:
-            seed_tasks_db = yaml_loader.get_active_seed_tasks(session)
+        if not seed_tasks_db:
+            print("   ⚠️  No active tasks found in database")
+            return 0
             
-            if not seed_tasks_db:
-                print("   ⚠️  No active tasks found in database")
-                return 0
-                
-            print(f"   Found {len(seed_tasks_db)} active tasks to build images for")
-            
-            success_count = 0
-            for i, task_db in enumerate(seed_tasks_db, 1):
-                print(f"\n📦 Task {i}/{len(seed_tasks_db)}: {task_db.task_id}")
-                
-                if build_task_image(task_db, docker_config):
-                    success_count += 1
-                else:
-                    print(f"❌ Failed to build image for task: {task_db.task_id}")
-                    sys.exit(1)
-            
-            print(f"\n✅ Built {success_count}/{len(seed_tasks_db)} task images")
-            return success_count
-            
-    except Exception as e:
-        print(f"❌ Error building task images: {e}")
-        return 0
+        print(f"   Found {len(seed_tasks_db)} active tasks to build images for")
+        
+        for i, task_db in enumerate(seed_tasks_db, 1):
+            print(f"\n📦 Task {i}/{len(seed_tasks_db)}: {task_db.task_id}")
+            build_task_image(task_db, docker_config)
+        
+        print(f"\n✅ Built {len(seed_tasks_db)}/{len(seed_tasks_db)} task images")
+        return len(seed_tasks_db)
 
 def main():
     """Build all dependency layers and per-task images."""
     print("🐳 === Building Claude Development Environment Dependency Layers & Task Images ===\n")
     
-    # Step 1: Load configuration using pydantic
-    print("📋 Loading configuration...")
     try:
+        # Step 1: Load configuration using pydantic
+        print("📋 Loading configuration...")
         from config import OptimizerConfig
         full_config = OptimizerConfig.from_file()
         layers_config = full_config.docker.layers
         external_images = full_config.docker.external_images
         print(f"   ✅ Loaded config with {len(layers_config)} layers and {len(external_images)} external images")
-    except Exception as e:
-        print(f"❌ Failed to load configuration: {e}")
-        sys.exit(1)
     
-    # Step 2: Sync YAML to database  
-    yaml_loader = sync_yaml_to_database(full_config)
-    
-    # Show how many tasks are now active
-    from database import get_db_session
-    with get_db_session() as session:
-        active_tasks = yaml_loader.get_active_seed_tasks(session)
-        print(f"   📋 Active tasks in database: {len(active_tasks)}")
-        for task in active_tasks:
-            print(f"      - {task.task_id} ({task.dependencies_list})")
-    
-    # Set up buildx builder first - must succeed for caching to work
-    setup_buildx_builder()
-    print()
+        # Step 2: Sync YAML to database  
+        yaml_loader = sync_yaml_to_database(full_config)
+        
+        # Show how many tasks are now active
+        from database import get_db_session
+        with get_db_session() as session:
+            active_tasks = yaml_loader.get_active_seed_tasks(session)
+            print(f"   📋 Active tasks in database: {len(active_tasks)}")
+            for task in active_tasks:
+                print(f"      - {task.task_id} ({task.dependencies_list})")
+        
+        # Set up buildx builder first - must succeed for caching to work
+        setup_buildx_builder()
+        print()
     
     # Build layers in topological order (dependencies first)
     build_order_list = full_config.docker.get_build_order()
@@ -407,26 +487,20 @@ def main():
     
     for i, (layer_name, image_tag, description) in enumerate(build_layers, 1):
         print(f"📦 Layer {i}: {description}")
-        if build_layer(layer_name, image_tag, i, total_steps):
-            success_count += 1
-            print()
-        else:
-            print(f"❌ Build failed at layer {i}/{total_steps}")
-            sys.exit(1)
+        build_layer(layer_name, image_tag, i, total_steps)
+        success_count += 1
+        print()
     
     # Build final full image
     print(f"📦 Final Image: Complete development environment")
-    if build_docker_image(
+    build_docker_image(
         tag="claude-dev:latest",
         description="Complete development environment",
         step=total_steps,
         total=total_steps
-    ):
-        success_count += 1
-        print()
-    else:
-        print("❌ Failed to build final image")
-        sys.exit(1)
+    )
+    success_count += 1
+    print()
     
     # Build external images with Claude layering
     for ext_name, ext_config in external_images.items():
@@ -436,43 +510,54 @@ def main():
             target_tag = f"claude-dev:{ext_name}"
             
             platform = getattr(ext_config, 'platform', None)
-            if build_external_image_with_claude(base_image, target_tag, platform):
-                success_count += 1
-                print(f"   ✅ Built {target_tag} from {base_image}")
-                print()
-            else:
-                print(f"❌ Failed to build {target_tag} - base image not available")
-                sys.exit(1)
+            build_external_image_with_claude(base_image, target_tag, platform)
+            success_count += 1
+            print(f"   ✅ Built {target_tag} from {base_image}")
+            print()
     
     # Build per-task images
     task_images_built = build_all_task_images(yaml_loader, full_config.docker)
     success_count += task_images_built
     
-    total_elapsed = time.time() - total_start_time
-    
-    print("=" * 60)
-    print(f"🎉 BUILD COMPLETE - {success_count} images built")
-    print(f"⏱️  Total time: {total_elapsed:.1f} seconds")
-    
-    # Show available images with sizes
-    print(f"\n📊 Available dependency images:")
-    try:
-        result = subprocess.run(
-            ["docker", "images", "--format", "table {{.Repository}}:{{.Tag}}\t{{.Size}}"],
-            capture_output=True, text=True, check=True
-        )
+        total_elapsed = time.time() - total_start_time
         
-        lines = result.stdout.strip().split('\n')
-        print(f"   {lines[0]}")  # Header
-        for line in lines[1:]:
-            if 'claude-dev' in line:
-                print(f"   {line}")
-                
-    except subprocess.CalledProcessError:
-        print("   Could not list Docker images")
-    
-    print(f"\n🚀 Next step: python3 optimizer.py")
-    print("=" * 60)
+        print("=" * 60)
+        print(f"🎉 BUILD COMPLETE - {success_count} images built")
+        print(f"⏱️  Total time: {total_elapsed:.1f} seconds")
+        
+        # Show available images with sizes
+        print(f"\n📊 Available dependency images:")
+        try:
+            result = subprocess.run(
+                ["docker", "images", "--format", "table {{.Repository}}:{{.Tag}}\t{{.Size}}"],
+                capture_output=True, text=True, check=True
+            )
+            
+            lines = result.stdout.strip().split('\n')
+            print(f"   {lines[0]}")  # Header
+            for line in lines[1:]:
+                if 'claude-dev' in line:
+                    print(f"   {line}")
+                    
+        except subprocess.CalledProcessError:
+            print("   Could not list Docker images")
+        
+        print(f"\n🚀 Next step: python3 optimizer.py")
+        print("=" * 60)
+        
+    except (BuildError, SetupError) as e:
+        print(f"\n❌ BUILD FAILED: {e}")
+        sys.exit(1)
+    except Exception as e:
+        print(f"\n❌ UNEXPECTED ERROR: {e}")
+        sys.exit(1)
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\n\n⚠️  Build interrupted by user")
+        sys.exit(1)
+    except Exception as e:
+        print(f"\n\n❌ FATAL ERROR: {e}")
+        sys.exit(1)

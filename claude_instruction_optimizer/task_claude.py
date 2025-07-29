@@ -1,4 +1,21 @@
-"""Safe containerized Claude interface with ClaudeSDKClient compatibility."""
+"""Safe containerized Claude interface with ClaudeSDKClient compatibility.
+
+# DEBUGGING REFERENCE
+
+For comprehensive debugging information about containerized Claude execution,
+including critical issues and solutions, see:
+
+    DEBUGGING.md
+    
+This file contains detailed documentation about:
+- Docker buildx context isolation issues
+- Container user permission problems  
+- AWS Bedrock authentication setup
+- File exclusion for grader
+- Debugging commands and common failure modes
+
+Preserve DEBUGGING.md - it will save hours when things break.
+"""
 
 import asyncio
 import fnmatch
@@ -36,7 +53,11 @@ class ContainerizedClaudeCodeOptions(ClaudeCodeOptions):
 
 
 def _monkey_patch_claude_sdk_for_containerization():
-    """Monkeypatch Claude SDK to use our containerized wrapper instead of PATH lookup."""
+    """Monkeypatch Claude SDK to use our containerized wrapper instead of PATH lookup.
+    
+    Injects claude_binary option to override hardcoded PATH lookup.
+    See DEBUGGING.md for implementation details and failure modes.
+    """
     import claude_code_sdk
     
     # Replace the options class so we can pass claude_binary
@@ -102,7 +123,10 @@ class TaskClaude:
         self._wrapper_script_path = None
         self._message_queue = asyncio.Queue()
         self._query_task = None
-        self._logger = None
+        
+        # Set up logger immediately - needed for all error reporting
+        from logging_utils import DualOutputLogging
+        self._logger = DualOutputLogging.get_logger().bind(task_id=task_id)
         
         # Find docker path for wrapper creation
         self._docker_path = shutil.which("docker")
@@ -149,6 +173,7 @@ class TaskClaude:
                          wrapper_path=self._wrapper_script_path)
         
         # Create ClaudeCodeOptions with containerization settings
+        # See DEBUGGING.md for details on critical containerization settings
         options = ContainerizedClaudeCodeOptions(
             allowed_tools=None,  # Full tool access for autonomous execution
             cwd=".",  # Use current directory for SDK check - container wrapper handles actual cwd
@@ -167,13 +192,18 @@ class TaskClaude:
         self._ensure_container_ready()
         
         # Use the actual ClaudeSDKClient but with PATH isolation active
+        # ClaudeSDKClient uses our wrapper script (claude_binary option) instead of PATH lookup
         async with ClaudeSDKClient(options=self._claude_options) as client:
             await client.query(self._task)
             async for message in client.receive_messages():
                 yield message
     
     def setup_system_prompt(self, system_prompt: str):
-        """Write CLAUDE.md inside the container (call before PATH isolation)."""
+        """Write CLAUDE.md inside the container (call before PATH isolation).
+        
+        Writes system prompt to container /workspace using Docker API.
+        See DEBUGGING.md for timing requirements and failure modes.
+        """
         if not self._container:
             raise RuntimeError("Container must be started before setting up system prompt")
         
@@ -198,7 +228,11 @@ class TaskClaude:
         return FileCollection(self._output_dir)
         
     async def _copy_files_from_container(self) -> None:
-        """Copy files from container to host directory for grader access."""
+        """Copy files from container to host directory for grader access.
+        
+        Applies exclusion patterns to avoid passing authentication files to grader.
+        See DEBUGGING.md for file exclusion details and troubleshooting commands.
+        """
         try:
             # List all files in the container workspace
             list_cmd = [
@@ -310,7 +344,11 @@ class TaskClaude:
             return task
             
     def _setup_wrapper(self, container_id: str) -> None:
-        """Set up Claude wrapper script with container ID."""
+        """Set up Claude wrapper script with container ID.
+        
+        Creates wrapper script that redirects 'claude' commands to 'docker exec'.
+        See DEBUGGING.md for details on PATH isolation and failure modes.
+        """
         wrapper_dir = self._output_dir / "bin"
         wrapper_dir.mkdir(parents=True, exist_ok=True)
         
@@ -323,6 +361,9 @@ class TaskClaude:
         bash_timeout = str(self.config.rollouts.bash_timeout_ms)
         wrapper_content = f"""#!/bin/sh
 # Docker wrapper for Claude CLI with environment variables and working directory
+# 
+# PERMISSION NOTE: Container runs as user 1000 (for Claude security compliance)
+# Setup scripts handle any necessary permission fixes before Claude execution
 exec {docker_path} exec -i -w /workspace -e BASH_MAX_TIMEOUT_MS={bash_timeout} {container_id} /usr/local/bin/claude "$@"
 """
         
@@ -338,7 +379,11 @@ exec {docker_path} exec -i -w /workspace -e BASH_MAX_TIMEOUT_MS={bash_timeout} {
         self._wrapper_script_path = str(wrapper_script)
         
     async def _start_container(self):
-        """Start Docker container for the task."""
+        """Start Docker container for the task.
+        
+        Multi-stage startup: initial container -> setup scripts -> remount -> wrapper.
+        See DEBUGGING.md for detailed process and failure modes.
+        """
         task_db = self._get_task_from_db()
         docker_image = task_db.docker_image_tag
         
@@ -356,7 +401,7 @@ exec {docker_path} exec -i -w /workspace -e BASH_MAX_TIMEOUT_MS={bash_timeout} {
                 git_volume_name: {"bind": "/git", "mode": "rw"}
             }
             
-            self._logger.debug("Starting initial container",
+            self._logger.info("Starting initial container",
                              docker_image=docker_image,
                              volumes=volumes)
             
@@ -368,10 +413,46 @@ exec {docker_path} exec -i -w /workspace -e BASH_MAX_TIMEOUT_MS={bash_timeout} {
                 detach=True
             )
             
-            self._logger.debug("Initial container started",
+            self._logger.info("Initial container created - waiting for running status",
+                             container_id=self._container.id,
+                             status=self._container.status)
+                             
+            # Wait for container to actually start running
+            max_wait = 30  # seconds
+            for i in range(max_wait):
+                self._container.reload()
+                if self._container.status == 'running':
+                    break
+                elif self._container.status in ['exited', 'dead']:
+                    logs = self._container.logs().decode('utf-8', errors='replace')
+                    self._logger.error("Container died during startup",
+                                     container_id=self._container.id,
+                                     status=self._container.status,
+                                     logs=logs,
+                                     debug_hint=f"Run: docker logs {self._container.id}")
+                    raise RuntimeError(f"Container {self._container.id} died during startup: {self._container.status}")
+                    
+                await asyncio.sleep(1)
+            
+            if self._container.status != 'running':
+                logs = self._container.logs().decode('utf-8', errors='replace')
+                self._logger.error("Container failed to start within timeout",
+                                 container_id=self._container.id,
+                                 status=self._container.status,
+                                 timeout=max_wait,
+                                 logs=logs,
+                                 debug_hint=f"Run: docker logs {self._container.id}")
+                raise RuntimeError(f"Container {self._container.id} failed to start within {max_wait}s: {self._container.status}")
+            
+            self._logger.info("Initial container running",
                              container_id=self._container.id,
                              status=self._container.status)
             
+            # Run always pre-task setup if configured (runs before every task)
+            # This is where AWS Bedrock authentication gets set up (see DEBUGGING.md)
+            if self.config.pre_task_always_script:
+                await self._run_pre_task_always_setup(task_db)
+                
             # Run pre-task setup if configured
             if self.config.pre_task_setup_script:
                 await self._run_pre_task_setup(task_db)
@@ -388,20 +469,17 @@ exec {docker_path} exec -i -w /workspace -e BASH_MAX_TIMEOUT_MS={bash_timeout} {
                                  container_id=self._container.id,
                                  error=str(e),
                                  debug_hint=f"Run: docker logs {self._container.id}")
-                # Don't cleanup container on error - leave it running for debugging
+                # Don't cleanup container on error - leave running for debugging (see DEBUGGING.md)
                 self._container = None  # Prevent cleanup in __aexit__
             raise
     
-    async def _run_pre_task_setup(self, task_db):
-        """Run pre-task setup script."""
-        if not self.config.pre_task_setup_script:
-            return
-            
-        setup_script = Path(self.config.pre_task_setup_script)
+    async def _run_setup_script(self, script_path: str, script_type: str, log_prefix: str):
+        """Run a setup script with streaming output and error handling."""
+        setup_script = Path(script_path)
         if not setup_script.exists():
-            raise FileNotFoundError(f"Pre-task setup script not found: {setup_script}")
+            raise FileNotFoundError(f"{script_type} script not found: {setup_script}")
             
-        self._logger.info("Running pre-task setup script",
+        self._logger.info(f"Running {script_type.lower()} script",
                          script=str(setup_script),
                          container_id=self._container.id,
                          task_id=self.task_id)
@@ -416,29 +494,52 @@ exec {docker_path} exec -i -w /workspace -e BASH_MAX_TIMEOUT_MS={bash_timeout} {
         )
         
         # Stream output in real-time
-        async for line in process.stdout:
+        while True:
+            line = await process.stdout.readline()
+            if not line:
+                break
             line_text = line.decode('utf-8', errors='replace').rstrip()
             if line_text:  # Only log non-empty lines
-                self._logger.info("pre-task-setup", 
+                print(f"[{log_prefix.upper()}] {line_text}")  # Console output
+                self._logger.info(log_prefix.lower(), 
                                 container_id=self._container.id,
                                 output=line_text)
         
         exit_code = await process.wait()
         
         if exit_code != 0:
-            self._logger.error("Pre-task setup script failed - CONTAINER LEFT RUNNING FOR DEBUG",
+            self._logger.error(f"{script_type} script failed - CONTAINER LEFT RUNNING FOR DEBUG",
                              container_id=self._container.id,
                              exit_code=exit_code,
                              debug_hint=f"Run: docker logs {self._container.id}")
-            raise RuntimeError(f"Pre-task setup script failed with exit code {exit_code}")
+            raise RuntimeError(f"{script_type} script failed with exit code {exit_code}")
         else:
-            self._logger.info("Pre-task setup script completed successfully",
+            self._logger.info(f"{script_type} script completed successfully",
                             container_id=self._container.id)
+
+    async def _run_pre_task_always_setup(self, task_db):
+        """Run always pre-task setup script (runs before every task)."""
+        if not self.config.pre_task_always_script:
+            return
+        await self._run_setup_script(self.config.pre_task_always_script, "Always pre-task setup", "setup-always")
+    
+    async def _run_pre_task_setup(self, task_db):
+        """Run pre-task setup script."""
+        if not self.config.pre_task_setup_script:
+            return
+        await self._run_setup_script(self.config.pre_task_setup_script, "Pre-task setup", "pre-task-setup")
     
     async def _remount_git_readonly(self, docker_image: str):
-        """Remount git volume as read-only for security."""
+        """Remount git volume as read-only for security.
+        
+        Restarts container with RO git mount. Wrapper script recreated with new container ID.
+        See DEBUGGING.md for security rationale and troubleshooting.
+        """
         # Stop current container
         old_container_id = self._container.id
+        self._logger.info("Remounting git volume as read-only",
+                        old_container_id=old_container_id)
+        
         self._container.remove(force=True)
         
         # Start new container with RO git mount
@@ -448,6 +549,10 @@ exec {docker_path} exec -i -w /workspace -e BASH_MAX_TIMEOUT_MS={bash_timeout} {
             git_volume_name: {"bind": "/git", "mode": "ro"}  # Now read-only
         }
         
+        self._logger.info("Starting remounted container",
+                        docker_image=docker_image,
+                        volumes=volumes)
+        
         self._container = self._docker_client.containers.run(
             docker_image,
             command=["sleep", "infinity"],
@@ -455,31 +560,74 @@ exec {docker_path} exec -i -w /workspace -e BASH_MAX_TIMEOUT_MS={bash_timeout} {
             working_dir="/workspace",
             detach=True
         )
+        
+        self._logger.info("Remounted container created - waiting for running status",
+                        new_container_id=self._container.id,
+                        old_container_id=old_container_id,
+                        status=self._container.status)
+                        
+        # Wait for remounted container to actually start running
+        max_wait = 30  # seconds
+        for i in range(max_wait):
+            self._container.reload()
+            if self._container.status == 'running':
+                break
+            elif self._container.status in ['exited', 'dead']:
+                logs = self._container.logs().decode('utf-8', errors='replace')
+                self._logger.error("Remounted container died during startup",
+                                 container_id=self._container.id,
+                                 status=self._container.status,
+                                 logs=logs,
+                                 debug_hint=f"Run: docker logs {self._container.id}")
+                raise RuntimeError(f"Remounted container {self._container.id} died during startup: {self._container.status}")
+                
+            await asyncio.sleep(1)
+        
+        if self._container.status != 'running':
+            logs = self._container.logs().decode('utf-8', errors='replace')
+            self._logger.error("Remounted container failed to start within timeout",
+                             container_id=self._container.id,
+                             status=self._container.status,
+                             timeout=max_wait,
+                             logs=logs,
+                             debug_hint=f"Run: docker logs {self._container.id}")
+            raise RuntimeError(f"Remounted container {self._container.id} failed to start within {max_wait}s: {self._container.status}")
+        
+        self._logger.info("Remounted container running",
+                        container_id=self._container.id,
+                        status=self._container.status)
     
     async def _cleanup(self):
         """Clean up container and wrapper."""
+        cleanup_errors = []
+        
         if self._container:
             try:
                 self._container.remove(force=True)
-            except:
-                pass  # Ignore cleanup errors
-            self._container = None
+            except Exception as e:
+                cleanup_errors.append(f"Failed to remove container {self._container.id}: {e}")
+            finally:
+                self._container = None
             
         if self._wrapper_script_path and Path(self._wrapper_script_path).exists():
             try:
                 # Remove the wrapper script and its parent directory
                 wrapper_path = Path(self._wrapper_script_path)
                 shutil.rmtree(wrapper_path.parent)
-            except:
-                pass  # Ignore cleanup errors
-            self._wrapper_script_path = None
+            except Exception as e:
+                cleanup_errors.append(f"Failed to remove wrapper script {self._wrapper_script_path}: {e}")
+            finally:
+                self._wrapper_script_path = None
+        
+        # If cleanup failed, log all errors and raise
+        if cleanup_errors:
+            error_msg = "Cleanup failed: " + "; ".join(cleanup_errors)
+            # If _logger is None here, that's a programming error - let it crash
+            self._logger.error("Container cleanup failed", errors=cleanup_errors)
+            raise RuntimeError(error_msg)
     
     async def __aenter__(self) -> "TaskClaude":
         """Context manager entry - setup container and wrapper."""
-        # Set up logger
-        from logging_utils import DualOutputLogging
-        self._logger = DualOutputLogging.get_logger().bind(task_id=self.task_id)
-        
         # Start container (includes wrapper setup after remounting)
         await self._start_container()
         
@@ -505,10 +653,6 @@ class _TaskClaudeProxy:
     async def setup_system_prompt(self, system_prompt: str):
         """Setup system prompt after container and wrapper initialization."""
         # Start container and setup wrapper first
-        from logging_utils import DualOutputLogging
-        self._claude._logger = DualOutputLogging.get_logger().bind(task_id=self._claude.task_id)
-        
-        # Start container (includes wrapper setup after remounting)
         await self._claude._start_container()
         
         # Now write system prompt to container

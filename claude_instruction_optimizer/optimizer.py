@@ -1647,7 +1647,24 @@ async def optimize_prompts(
             )
 
             # Execute all rollouts in parallel with semaphore-based concurrency control
-            iteration_results = await asyncio.gather(*all_rollouts)
+            # Fail fast on any setup errors - don't continue if container setup fails
+            try:
+                iteration_results = await asyncio.gather(*all_rollouts, return_exceptions=False)
+            except Exception as e:
+                # Cancel all remaining tasks immediately
+                iter_logger.error("Critical failure during rollouts - cancelling all tasks", error=str(e), error_type=type(e).__name__)
+                for rollout_task in all_rollouts:
+                    if not rollout_task.done():
+                        rollout_task.cancel()
+                        iter_logger.info("Cancelled rollout task", task_cancelled=True)
+                
+                # Wait a moment for cancellation to complete
+                await asyncio.sleep(0.1)
+                
+                # Exit the entire program immediately
+                iter_logger.error("FATAL: Container setup failed - terminating optimization", error=str(e))
+                import sys
+                sys.exit(1)
 
             iter_logger.info(
                 "All rollouts completed", completed_rollouts=len(iteration_results)

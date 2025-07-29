@@ -36,8 +36,6 @@ class TaskContainer:
         if self._claude and hasattr(self, '_context_manager'):
             try:
                 await self._context_manager.__aexit__(None, None, None)
-            except Exception:
-                pass  # Ignore cleanup errors
             finally:
                 self._claude = None
                 del self._context_manager
