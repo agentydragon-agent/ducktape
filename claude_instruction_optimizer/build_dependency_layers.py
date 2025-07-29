@@ -249,7 +249,7 @@ def main():
     except subprocess.CalledProcessError:
         print("   Could not list Docker images")
     
-    print(f"\n🚀 Next step: python3 load_seed_tasks_enhanced.py")
+    print(f"\n🚀 Next step: python3 optimizer.py")
     print("=" * 60)
 
 if __name__ == "__main__":

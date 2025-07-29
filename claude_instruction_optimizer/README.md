@@ -1,15 +1,236 @@
 # Claude Instruction Optimizer
 
-A sophisticated system for optimizing Claude system prompts through iterative agent rollouts, pattern analysis, and automated prompt engineering. Features advanced Docker layer optimization with generic multi-repository support and intelligent dependency resolution.
+A parallel prompt optimization system for coding agents that iteratively improves system prompts by running multiple agent rollouts, grading solutions with OpenAI's o3 model, and using AI-powered prompt engineering.
+
+## Overview
+
+The optimizer runs coding agents on programming tasks, grades their solutions, and uses those results to automatically improve the system prompt. It uses Docker containers for isolated execution and stores all results in a database for analysis.
+
+**Key Features:**
+- Fully parallel rollouts with configurable concurrency
+- Docker containerization for isolated agent execution  
+- OpenAI o3 model for grading and prompt engineering
+- Automatic task dependency resolution to optimal Docker images
+- Comprehensive logging and cost tracking
+- Real-time score evolution plots
 
 ## Quick Start
 
-### Prerequisites
-- Docker (with Colima on macOS)
-- Python 3.8+
-- Git
+### 1. Build Docker Layers
 
-### 0. Install Docker Buildx (One-time Setup)
+```bash
+python3 build_dependency_layers.py
+```
+
+This builds independent Docker layers (system-base, python-core, rust, node, etc.) with proper caching.
+
+### 2. Run Optimization
+
+```bash
+# Typical production run
+python3 optimizer.py --iterations 10 --rollouts-per-task 3 --tasks-per-iteration 10
+
+# Quick test
+python3 optimizer.py --iterations 3 --rollouts-per-task 1 --tasks-per-iteration 5
+```
+
+## Usage
+
+### Basic Commands
+
+```bash
+# Default: 10 iterations, 1 rollout per task, all 25 tasks
+python3 optimizer.py
+
+# Recommended production settings
+python3 optimizer.py --iterations 10 --rollouts-per-task 3 --tasks-per-iteration 10
+
+# Development/testing
+python3 optimizer.py --iterations 3 --rollouts-per-task 1 --tasks-per-iteration 5
+```
+
+### Command Line Options
+
+| Flag | Description | Default | Example |
+|------|-------------|---------|---------|
+| `--iterations` | Number of optimization iterations | 10 | `--iterations 15` |
+| `--rollouts-per-task` | Agent rollouts per task | 1 | `--rollouts-per-task 4` |
+| `--tasks-per-iteration` | Random tasks per iteration (with replacement) | All tasks | `--tasks-per-iteration 10` |
+| `--max-parallel` | Maximum concurrent rollouts | 8 | `--max-parallel 16` |
+| `--mode` | Processing mode: `full_rollouts` or `summary` | `full_rollouts` | `--mode summary` |
+
+### Typical Configurations
+
+**Production Run (Recommended):**
+```bash
+python3 optimizer.py --iterations 10 --rollouts-per-task 3 --tasks-per-iteration 10 --max-parallel 8
+```
+- 10 iterations of prompt improvement
+- 3 rollouts per task for statistical reliability
+- 10 random tasks per iteration (faster than all 25)
+- 8 concurrent rollouts (30 total per iteration)
+
+**Intensive Evaluation:**
+```bash
+python3 optimizer.py --iterations 15 --rollouts-per-task 4 --tasks-per-iteration 15 --max-parallel 12
+```
+
+**Quick Development Testing:**
+```bash
+python3 optimizer.py --iterations 3 --rollouts-per-task 1 --tasks-per-iteration 5 --max-parallel 4
+```
+
+## Architecture
+
+### Task Dependencies
+
+Tasks specify their runtime dependencies in `seeds.yaml`:
+
+```yaml
+- id: my_python_task
+  dependencies: ["python-data"]  # Python + pandas/numpy/jupyter
+  
+- id: web_task  
+  dependencies: ["python-core", "node"]  # Python + Node.js
+  
+- id: rust_task
+  dependencies: ["rust"]  # Rust toolchain
+```
+
+Available dependencies: `system`, `python`, `python-core`, `python-dev`, `python-data`, `python-complete`, `rust`, `go`, `node`, `ruby`
+
+### Per-Task Docker Images
+
+Each task automatically gets its own Docker image: `claude-dev:task-{task_id}`
+
+The system builds minimal Dockerfiles that inherit from the optimal base layer:
+
+```dockerfile
+# Per-task image for: my_python_task
+FROM claude-dev:python-data
+LABEL task_id="my_python_task"
+WORKDIR /workspace
+```
+
+### Git Repository Handling
+
+Tasks can specify git repositories that get mounted at runtime:
+
+```yaml
+git_repos:
+  "https://github.com/user/repo":
+    commit: "abc123def"
+    main: true
+```
+
+Repositories are cloned to `/git/{repo_url}` during agent execution.
+
+### Docker Build Optimization
+
+The system uses a **multi-stage Dockerfile** with several optimizations:
+
+**Independent Layers:**
+- `system-base`: System packages (rebuild rarely)
+- `python-core`: Core Python packages  
+- `python-dev`: Development tools (pytest, ruff)
+- `python-data`: Data science packages (pandas, numpy)
+- `rust`: Rust toolchain
+- `node`: Node.js and npm
+- `ruby`: Ruby and gems
+
+**Cache Optimizations:**
+- **BuildKit cache mounts**: Package managers reuse downloads across builds
+- **Buildx external cache**: Persistent `.docker-cache/` between builds
+- **Layer isolation**: Only rebuild what changed
+
+**Benefits:**
+- Code change → only rebuilds final stage
+- New package → rebuilds from relevant layer onwards  
+- Runtime update → rebuilds from runtime layer onwards
+
+## Output
+
+### Run Directory Structure
+```
+agent_output/{timestamp}/
+├── iter_1/CLAUDE.md              # System prompt for iteration 1
+├── iter_1/task_X/agent_Y/        # Agent working directories
+├── score_evolution.png           # Score trends over time
+├── score_evolution_faceted.png   # Per-facet score evolution
+├── openai_api_log.jsonl          # OpenAI API calls
+└── anthropic_api_log.jsonl       # Anthropic API calls
+```
+
+### Database Storage
+
+All results stored in `optimizer.db`:
+- **optimization_runs**: Run metadata and configuration
+- **system_prompts**: Generated prompts with reasoning
+- **rollouts**: Individual agent executions with costs
+- **rollout_messages**: Complete conversation logs
+- **rollout_files**: Generated code files
+- **grading_results**: Scores and rationales per facet
+
+### Real-Time Monitoring
+
+The optimizer provides:
+- **Cost tracking** per rollout and cumulative
+- **Score evolution** plots after each iteration
+- **Progress indicators** during parallel execution
+- **Graceful interruption** with Ctrl+C and final cost summary
+
+Example output:
+```
+[1/30] Task: web_dashboard_task → Overall: 8.2/10 (Cost: $0.45)
+[2/30] Task: rust_parser_task → Overall: 7.1/10 (Cost: $0.52)
+...
+Iteration 3 complete - Average score: 7.8/10 (Total cost: $24.50)
+```
+
+## Configuration Files
+
+- **`seeds.yaml`**: Programming tasks with dependencies and git repos
+- **`graders.yaml`**: Detailed grading criteria with 23 specific evaluators
+- **`graders_consolidated.yaml`**: Condensed grading rubrics (6 broad categories)
+- **`dependency_config.yaml`**: Docker layer definitions and capabilities
+- **`optimizer_config.py`**: System configuration (timeouts, limits, etc.)
+
+### Grading System
+
+The optimizer uses two complementary grading configurations:
+
+**`graders.yaml`** - High-resolution evaluation with 23 specific graders:
+- Individual concerns like `exception_handling`, `nullable_types`, `enum_types`
+- Detailed evaluation criteria and examples for each grader
+- Use when you need granular feedback on specific coding practices
+- Err on the side of adding new graders here for specific issues
+
+**`graders_consolidated.yaml`** - Broad evaluation with 6 consolidated categories:
+- `type_safety_data_design`: Strong typing and data structures
+- `code_quality_clarity`: Readability and modern language features  
+- `robustness_error_handling`: Defensive programming and error boundaries
+- `architecture_design`: Separation of concerns and proper tools
+- `implementation_completeness`: Full implementation without cruft
+- `test_quality`: Meaningful tests that verify business logic
+- Err on the side of consolidating related concerns here
+
+Choose based on your evaluation needs:
+- **Development/debugging**: Use `graders.yaml` for specific feedback
+- **Production evaluation**: Use `graders_consolidated.yaml` for broader assessment
+
+## Requirements
+
+- Docker with buildx support
+- Python 3.11+ with required packages
+- OpenAI API key (for o3 grading and prompt engineering)
+- Anthropic API key (for Claude coding agents)
+
+### Docker Buildx Setup (One-time)
+
+**Install buildx** to avoid "legacy builder" warnings:
+```bash
+docker buildx install
+```
 
 **For macOS with Colima:**
 ```bash
@@ -27,335 +248,27 @@ docker buildx install
 docker buildx version
 ```
 
-**For Linux:**
-```bash
-# Install buildx plugin
-sudo apt-get update && sudo apt-get install docker-buildx-plugin
-# OR
-docker buildx install
-```
-
-### 1. Build Docker Dependency Layers
-
-```bash
-# Set Colima Docker socket (if using Colima)
-export DOCKER_HOST=unix://$HOME/.colima/default/docker.sock
-
-# Build all dependency layers (system-base → packages-complete)
-python3 build_dependency_layers.py
-```
-
-### 2. Initialize Database and Load Tasks
-
-```bash
-# Load all seed tasks into database with dependency tracking
-python3 load_seed_tasks_enhanced.py
-```
-
-### 3. Analyze Task Dependencies
-
-```bash
-# Analyze task requirements and plan optimal Docker layers
-python3 build_repo_layers.py
-```
-
-### 4. Run Optimization Loop
-
-```bash
-# Run the main optimization with specific parameters
-python3 optimizer.py --mode summary --iterations 5 --rollouts-per-task 3 --tasks-per-iteration 7
-```
-
-## Architecture Overview
-
-### Core Components
-
-#### 1. Task Management System
-- **seeds.yaml**: Task definitions with dependencies, repositories, and tool permissions
-- **Database persistence**: SQLAlchemy-based storage with change detection
-- **Generic dependency resolution**: Intelligent Docker layer selection
-
-#### 2. Docker Layer Optimization
-- **Multi-stage builds**: 7 optimized layers from minimal to full-stack
-- **Dependency-aware resolution**: Tasks automatically get minimal required environment
-- **Multi-repository support**: Git repository mounting with optimal layer sharing
-- **BuildKit caching**: Persistent cache for faster rebuilds
-
-#### 3. Agent Execution System
-- **Containerized rollouts**: Each task runs in optimized Docker environment
-- **Repository mounting**: `/git/repo-url/` structure with `/workspace` symlinks
-- **Tool restrictions**: Per-task allowed tool lists for security
-- **Result tracking**: Comprehensive logging and file integrity verification
-
-## Task Configuration Format
-
-Tasks in `seeds.yaml` use this comprehensive format:
-
-```yaml
-- id: rust_trading_system
-  prompt: |
-    Build a high-frequency trading system in Rust...
-  dependencies: ["rust"]                    # Docker layer dependencies
-  git_repos:                               # Repository requirements
-    "git@github.com:user/repo":
-      commit: "abc123"
-      main: true                           # Symlinked to /workspace
-  internet_needed: false                   # Network access
-  allowed_tools: ["Read", "Write", "Bash"] # Tool permissions
-
-- id: python_data_analysis
-  prompt: |
-    Analyze cryptocurrency data using pandas...
-  dependencies: ["python-data"]            # Includes pandas, numpy, matplotlib
-  git_repos: {}                           # No repositories needed
-  internet_needed: false
-  allowed_tools: ["Read", "Write", "Edit"]
-
-- id: full_stack_webapp
-  prompt: |
-    Build React frontend with FastAPI backend...
-  dependencies: ["web-dev"]               # Python + Node.js + TypeScript
-  git_repos: {}
-  internet_needed: true
-  allowed_tools: ["Read", "Write", "Edit", "Bash"]
-```
-
-## Dependency System
-
-### Available Dependencies
-
-| Dependency | Docker Layer | Includes |
-|------------|--------------|----------|
-| `minimal` | `system-base` | Basic system tools only |
-| `rust` | `runtimes` | Rust toolchain + system tools |
-| `go` | `runtimes` | Go runtime + system tools |
-| `python` | `python-core` | Python + core packages (requests, flask, etc.) |
-| `python-dev` | `python-dev` | Python + testing tools (pytest, black, mypy) |
-| `python-data` | `python-data` | Python + data science (pandas, numpy, matplotlib) |
-| `python-complete` | `python-complete` | Python + all utilities |
-| `node`/`javascript` | `packages-complete` | All languages + Node.js + TypeScript |
-| `ruby` | `packages-complete` | All languages + Ruby gems |
-
-### Dependency Aliases
-
-| Alias | Expands To |
-|-------|------------|
-| `web-dev` | `["python-core", "node"]` |
-| `data-science` | `["python-data"]` |
-| `full-stack` | `["python-complete", "node", "ruby"]` |
-
-## Docker Layer Strategy
-
-### Layer Architecture
-
-```
-claude-dev:system-base      (90MB)  ← Basic system tools
-    ↓
-claude-dev:runtimes         (+200MB) ← + Rust + Go
-    ↓  
-claude-dev:python-core      (+150MB) ← + Python + core packages
-    ↓
-claude-dev:python-dev       (+100MB) ← + Development tools
-    ↓
-claude-dev:python-data      (+300MB) ← + Data science packages
-    ↓
-claude-dev:python-complete  (+80MB)  ← + Utility packages
-    ↓
-claude-dev:packages-complete (+120MB) ← + Node.js + Ruby
-```
-
-### Build Optimization Benefits
-
-- **Storage efficiency**: 95% reduction vs building full image per task
-- **Build speed**: Incremental builds with BuildKit cache mounts
-- **Runtime performance**: Minimal images start faster
-- **Resource usage**: Lower memory footprint for simple tasks
-
-## Multi-Repository Support
-
-### Repository Layout
-
-```
-Container filesystem:
-/git/
-├── git@github.com:foo/
-│   └── bar/                    # Full repo at specified commit
-├── git@github.com:numpy/  
-│   └── numpy/                     # Additional repo at specified commit
-└── ...
-
-/workspace → /git/git@github.com:foo/bar  # Symlink for main repo
-```
-
-### Repository Build Process
-
-1. **Base layers**: Copy full repository from local checkout
-2. **Commit layers**: Incremental `git checkout` operations  
-3. **Layer optimization**: Merge-base analysis minimizes total layers
-4. **Automatic symlinks**: Main repository available at `/workspace`
-
-## Commands Reference
-
-### Development Commands
-
-```bash
-# Test dependency resolution system
-python3 test_dependency_system.py
-
-# Build specific dependency layer
-docker build --target python-data -t claude-dev:python-data .
-
-# Test task loading with validation
-python3 -c "
-import yaml
-from dependency_manager import DependencyResolver
-resolver = DependencyResolver()
-print('Available dependencies:', resolver.get_available_dependencies())
-"
-```
-
-### Build Commands
-
-```bash
-# Build all dependency layers with caching
-DOCKER_BUILDKIT=1 ./build_dependency_layers.sh
-
-# Build with registry cache (CI/CD)
-docker buildx build \
-  --cache-from type=registry,ref=registry.com/claude-dev:cache \
-  --cache-to type=registry,ref=registry.com/claude-dev:cache,mode=max \
-  -t claude-dev:latest \
-  --push .
-```
-
-### Analysis Commands
-
-```bash
-# Analyze Docker layer usage across all tasks  
-python3 build_repo_layers.py
-
-# Show detailed task dependency breakdown
-python3 -c "
-from build_repo_layers import load_task_configs
-from dependency_manager import DependencyResolver, TaskDependencies
-
-configs = load_task_configs()
-resolver = DependencyResolver()
-deps = [TaskDependencies(dependencies=c.dependencies) for c in configs]
-analysis = resolver.analyze_dependencies_across_tasks(deps)
-
-for image, count in analysis['image_priority']:
-    print(f'{image}: {count} tasks')
-"
-```
-
-## Environment Variables
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `DOCKER_HOST` | Docker socket path | `/var/run/docker.sock` |
-| `DOCKER_BUILDKIT` | Enable BuildKit | `1` |
-| `DATABASE_URL` | SQLite database path | `sqlite:///optimizer.db` |
-
-## File Structure
-
-```
-.
-├── seeds.yaml                    # Task definitions with dependencies
-├── dependency_manager.py         # Generic dependency resolution system
-├── generic_repo_manager.py       # Multi-repository Docker layer management
-├── build_repo_layers.py         # Main build script and analysis
-├── load_seed_tasks_enhanced.py  # Database persistence with validation
-├── database.py                  # SQLAlchemy models and schema
-├── optimizer.py                 # Main optimization loop
-├── Dockerfile                   # Multi-stage dependency layers
-├── Dockerfile.repo-base         # Repository base layer template  
-├── Dockerfile.repo-commit       # Repository commit layer template
-├── build_dependency_layers.sh   # Build script for all Docker layers
-└── README.md                    # This file
-```
-
-## Troubleshooting
-
-### Docker Issues
-
-```bash
-# Check Docker daemon
-docker info
-
-# For Colima users
-export DOCKER_HOST=unix://$HOME/.colima/default/docker.sock
-
-# Clear build cache
-docker builder prune -a
-```
-
-### Database Issues
-
-```bash
-# Reset database schema
-rm -f optimizer.db && python3 load_seed_tasks_enhanced.py
-
-# Check task loading
-python3 -c "
-from load_seed_tasks_enhanced import get_db_session
-from database import SeedTask
-session = get_db_session()
-print(f'Loaded {session.query(SeedTask).count()} tasks')
-session.close()
-"
-```
-
-### Layer Build Issues
-
-```bash
-# Build layers individually to debug
-docker build --target system-base -t claude-dev:system-base .
-docker build --target runtimes -t claude-dev:runtimes .
-# ... continue for each layer
-
-# Check layer sizes
-docker images | grep claude-dev | sort
-```
-
-## Contributing
-
-1. Add new tasks to `seeds.yaml` with appropriate dependencies
-2. Test dependency resolution with `python3 test_dependency_system.py`
-3. Update database schema in `database.py` if needed
-4. Run full system test with `python3 build_repo_layers.py`
-
 ## Advanced Usage
 
-### Custom Dependency Configuration
+### Pattern Analysis Mode
+```bash
+python3 optimizer.py --mode summary --iterations 5
+```
+Uses condensed pattern analysis instead of full rollout data for prompt engineering.
 
-Create `dependency_config.yaml` to customize the dependency resolution:
-
-```yaml
-layers:
-  custom-ml:
-    image_tag: "claude-dev:custom-ml"
-    provides: ["system", "python", "tensorflow", "pytorch"]
-    build_order: 8
-aliases:
-  ai-dev: ["python-data", "tensorflow", "pytorch"]
+### Custom Parallelism
+```bash
+python3 optimizer.py --max-parallel 16  # High-end machine
+python3 optimizer.py --max-parallel 4   # Resource-constrained
 ```
 
-### Multi-Repository Task Example
-
-```yaml
-- id: cross_platform_analysis
-  prompt: "Compare Python and Rust implementations..."
-  dependencies: ["python-data", "rust"]
-  git_repos:
-    "git@github.com:python/cpython":
-      commit: "main"
-      main: true
-    "git@github.com:rust-lang/rust":
-      commit: "stable"  
-      main: false
-  internet_needed: false
-  allowed_tools: ["Read", "Write", "Edit", "Bash", "Grep"]
+### Monitoring Costs
+The system tracks costs in real-time. Use Ctrl+C for graceful interruption:
+```
+Interrupt received, reporting costs before exit
+FINAL COST SUMMARY: total_cost_usd=45.67, rollout_count=120, avg_cost_per_rollout_usd=0.38
 ```
 
-This creates a container with both CPython and Rust source code available, with the agent starting in the CPython repository but having access to analyze both codebases.
+---
+
+**For development questions or issues, see the inline code documentation in `optimizer.py`, `dependency_manager.py`, and `yaml_loader.py`.**
