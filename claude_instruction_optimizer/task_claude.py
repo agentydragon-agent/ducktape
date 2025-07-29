@@ -125,6 +125,29 @@ class TaskClaude:
         """Start Claude query - matches ClaudeSDKClient.query() signature."""
         self._ensure_container_ready()
         
+        # Debug: Check wrapper script path and container status
+        if not self._wrapper_script_path:
+            raise RuntimeError(f"Wrapper script path not set - container setup incomplete")
+            
+        # Check if container is actually running
+        try:
+            self._container.reload()  # Refresh container status
+            if self._container.status != 'running':
+                # Get container logs to debug why it stopped
+                logs = self._container.logs().decode('utf-8', errors='replace')
+                self._logger.error("Container not running - logs:", 
+                                 container_id=self._container.id,
+                                 status=self._container.status,
+                                 logs=logs)
+                raise RuntimeError(f"Container {self._container.id} is not running, status: {self._container.status}")
+        except Exception as e:
+            raise RuntimeError(f"Container {self._container.id} check failed: {e}")
+            
+        self._logger.debug("Query starting", 
+                         container_id=self._container.id,
+                         container_status=self._container.status,
+                         wrapper_path=self._wrapper_script_path)
+        
         # Create ClaudeCodeOptions with containerization settings
         options = ContainerizedClaudeCodeOptions(
             allowed_tools=None,  # Full tool access for autonomous execution
@@ -319,33 +342,55 @@ exec {docker_path} exec -i -w /workspace -e BASH_MAX_TIMEOUT_MS={bash_timeout} {
         task_db = self._get_task_from_db()
         docker_image = task_db.docker_image_tag
         
-        # Ensure shared git volume exists
-        git_volume_name = "claude_shared_git"
         try:
-            self._docker_client.volumes.get(git_volume_name)
-        except docker.errors.NotFound:
-            self._docker_client.volumes.create(name=git_volume_name)
-        
-        # Start container
-        volumes = {
-            str(self._output_dir): {"bind": "/workspace", "mode": "rw"},
-            git_volume_name: {"bind": "/git", "mode": "rw"}
-        }
-        
-        self._container = self._docker_client.containers.run(
-            docker_image,
-            command=["sleep", "infinity"],
-            volumes=volumes,
-            working_dir="/workspace",
-            detach=True
-        )
-        
-        # Run pre-task setup if configured
-        if self.config.pre_task_setup_script:
-            await self._run_pre_task_setup(task_db)
+            # Ensure shared git volume exists
+            git_volume_name = "claude_shared_git"
+            try:
+                self._docker_client.volumes.get(git_volume_name)
+            except docker.errors.NotFound:
+                self._docker_client.volumes.create(name=git_volume_name)
             
-        # ALWAYS remount git as read-only for security
-        await self._remount_git_readonly(docker_image)
+            # Start container
+            volumes = {
+                str(self._output_dir): {"bind": "/workspace", "mode": "rw"},
+                git_volume_name: {"bind": "/git", "mode": "rw"}
+            }
+            
+            self._logger.debug("Starting initial container",
+                             docker_image=docker_image,
+                             volumes=volumes)
+            
+            self._container = self._docker_client.containers.run(
+                docker_image,
+                command=["sleep", "infinity"],
+                volumes=volumes,
+                working_dir="/workspace",
+                detach=True
+            )
+            
+            self._logger.debug("Initial container started",
+                             container_id=self._container.id,
+                             status=self._container.status)
+            
+            # Run pre-task setup if configured
+            if self.config.pre_task_setup_script:
+                await self._run_pre_task_setup(task_db)
+                
+            # ALWAYS remount git as read-only for security
+            await self._remount_git_readonly(docker_image)
+            
+            # Create wrapper script with final container ID (after remounting)
+            self._setup_wrapper(self._container.id)
+            
+        except Exception as e:
+            if self._container:
+                self._logger.error("Container setup failed - CONTAINER LEFT RUNNING FOR DEBUG",
+                                 container_id=self._container.id,
+                                 error=str(e),
+                                 debug_hint=f"Run: docker logs {self._container.id}")
+                # Don't cleanup container on error - leave it running for debugging
+                self._container = None  # Prevent cleanup in __aexit__
+            raise
     
     async def _run_pre_task_setup(self, task_db):
         """Run pre-task setup script."""
@@ -356,15 +401,39 @@ exec {docker_path} exec -i -w /workspace -e BASH_MAX_TIMEOUT_MS={bash_timeout} {
         if not setup_script.exists():
             raise FileNotFoundError(f"Pre-task setup script not found: {setup_script}")
             
+        self._logger.info("Running pre-task setup script",
+                         script=str(setup_script),
+                         container_id=self._container.id,
+                         task_id=self.task_id)
+            
         process = await asyncio.create_subprocess_exec(
             str(setup_script),
             self._container.id,
             self.task_id,
-            str(self._output_dir)
+            str(self._output_dir),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT  # Merge stderr into stdout for simpler streaming
         )
         
-        if await process.wait() != 0:
-            raise RuntimeError("Pre-task setup script failed")
+        # Stream output in real-time
+        async for line in process.stdout:
+            line_text = line.decode('utf-8', errors='replace').rstrip()
+            if line_text:  # Only log non-empty lines
+                self._logger.info("pre-task-setup", 
+                                container_id=self._container.id,
+                                output=line_text)
+        
+        exit_code = await process.wait()
+        
+        if exit_code != 0:
+            self._logger.error("Pre-task setup script failed - CONTAINER LEFT RUNNING FOR DEBUG",
+                             container_id=self._container.id,
+                             exit_code=exit_code,
+                             debug_hint=f"Run: docker logs {self._container.id}")
+            raise RuntimeError(f"Pre-task setup script failed with exit code {exit_code}")
+        else:
+            self._logger.info("Pre-task setup script completed successfully",
+                            container_id=self._container.id)
     
     async def _remount_git_readonly(self, docker_image: str):
         """Remount git volume as read-only for security."""
@@ -411,10 +480,8 @@ exec {docker_path} exec -i -w /workspace -e BASH_MAX_TIMEOUT_MS={bash_timeout} {
         from logging_utils import DualOutputLogging
         self._logger = DualOutputLogging.get_logger().bind(task_id=self.task_id)
         
-        # Start container first, then setup wrapper with container ID
+        # Start container (includes wrapper setup after remounting)
         await self._start_container()
-        # Note: _start_container includes remounting, so container.id is final after it returns
-        self._setup_wrapper(self._container.id)
         
         return self
         
@@ -441,9 +508,8 @@ class _TaskClaudeProxy:
         from logging_utils import DualOutputLogging
         self._claude._logger = DualOutputLogging.get_logger().bind(task_id=self._claude.task_id)
         
+        # Start container (includes wrapper setup after remounting)
         await self._claude._start_container()
-        # Note: _start_container includes remounting, so container.id is final after it returns
-        self._claude._setup_wrapper(self._claude._container.id)
         
         # Now write system prompt to container
         self._claude.setup_system_prompt(system_prompt)
