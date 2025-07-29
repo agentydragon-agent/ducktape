@@ -1,11 +1,9 @@
 ARG BASE_IMAGE
 FROM ${BASE_IMAGE}
 
-# Install Claude Code binary
-RUN curl -fsSL https://claude.ai/install.sh | bash || echo "Claude install script not available"
-
-# Ensure Claude Code is in PATH
-ENV PATH="/root/.local/bin:${PATH}"
+# Install Claude Code binary to system location
+RUN curl -fsSL https://claude.ai/install.sh | bash && \
+    mv /root/.local/bin/claude /usr/local/bin/claude
 
 # Install additional development tools
 RUN if command -v apt-get >/dev/null 2>&1; then \

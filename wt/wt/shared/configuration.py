@@ -49,6 +49,7 @@ class Configuration:
     hidden_worktree_patterns: list[str]
     github_debounce_delay: timedelta
     github_periodic_interval: timedelta
+    startup_timeout: timedelta
     
     @property
     def daemon_socket_path(self) -> Path:
@@ -147,6 +148,7 @@ class Configuration:
             hidden_worktree_patterns=config_file.hidden_worktree_patterns.copy(),
             github_debounce_delay=timedelta(seconds=config_file.github_debounce_delay),
             github_periodic_interval=timedelta(seconds=config_file.github_periodic_interval),
+            startup_timeout=timedelta(seconds=config_file.startup_timeout),
         )
 
 

@@ -91,7 +91,7 @@ class WtClient:
                 loop = asyncio.get_event_loop()
                 handshake_data = await asyncio.wait_for(
                     loop.run_in_executor(None, self._read_handshake_from_pipe),
-                    timeout=5.0
+                    timeout=self.config.startup_timeout.total_seconds()
                 )
                 
                 # Check protocol version
@@ -116,8 +116,9 @@ class WtClient:
                     raise RuntimeError(f"Daemon startup failed:\n{error_message}")
                     
             except asyncio.TimeoutError:
-                logger.warning("Daemon startup timed out - no handshake received within 5 seconds")
-                raise RuntimeError("Daemon startup timed out")
+                timeout_secs = self.config.startup_timeout.total_seconds()
+                logger.warning("Daemon startup timed out - no handshake received within %.1f seconds", timeout_secs)
+                raise RuntimeError(f"Daemon startup timed out after {timeout_secs:.1f} seconds")
             except json.JSONDecodeError as e:
                 raise RuntimeError(f"Daemon handshake contains invalid JSON: {e}")
             finally:

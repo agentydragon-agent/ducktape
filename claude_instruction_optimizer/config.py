@@ -131,9 +131,7 @@ class OptimizerConfig(BaseModel):
     docker: DockerConfig = Field(default_factory=DockerConfig, description="Docker image management configuration")
     
     # File filtering
-    exclude_dirs: Set[str] = Field(description="Directories to exclude from file gathering")
-    exclude_extensions: Set[str] = Field(description="File extensions to exclude from file gathering") 
-    exclude_files: Set[str] = Field(description="Specific files to exclude from file gathering")
+    exclude_patterns: List[str] = Field(description="Glob patterns for files/directories to exclude from file gathering")
     
     class Config:
         """Pydantic configuration."""

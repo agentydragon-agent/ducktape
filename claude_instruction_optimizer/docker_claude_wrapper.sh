@@ -12,4 +12,4 @@ fi
 echo "DEBUG: Container ID: $CLAUDE_CONTAINER_ID, Docker args: $@" >> /tmp/claude_debug.log
 
 # Execute claude inside the existing Docker container
-exec docker exec -i "$CLAUDE_CONTAINER_ID" claude --dangerously-skip-permissions "$@"
+exec docker exec -i "$CLAUDE_CONTAINER_ID" /usr/local/bin/claude --dangerously-skip-permissions "$@"

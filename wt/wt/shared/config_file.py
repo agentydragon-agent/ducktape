@@ -53,3 +53,6 @@ class ConfigFile(BaseModel):
     # GitHub refresh system configuration
     github_debounce_delay: float = 5.0
     github_periodic_interval: float = 60.0
+    
+    # Daemon settings
+    startup_timeout: float = 15.0  # seconds to wait for daemon startup

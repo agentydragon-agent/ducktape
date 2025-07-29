@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import fnmatch
 import json
 import os
 import random
@@ -696,19 +697,10 @@ def gather_agent_files(work_dir: Path) -> List[Dict[str, str]]:
         if not file_path.is_file():
             continue
 
-        if file_path.name in config.exclude_files:
-            continue
-
-        if any(file_path.suffix == ext for ext in config.exclude_extensions):
-            continue
-
-        if any(excluded_dir in file_path.parts for excluded_dir in config.exclude_dirs):
-            continue
-
-        if file_path.name.startswith(".") and not file_path.name in {
-            ".env",
-            ".env.example",
-        }:
+        # Check if file matches any exclusion pattern
+        relative_path = file_path.relative_to(work_dir).as_posix()
+        if any(fnmatch.fnmatch(relative_path, pattern) or fnmatch.fnmatch(file_path.name, pattern) 
+               for pattern in config.exclude_patterns):
             continue
 
         relative = file_path.relative_to(work_dir).as_posix()
