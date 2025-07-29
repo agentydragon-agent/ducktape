@@ -4,7 +4,7 @@
 ARG BASE_IMAGE=gendosu/claude-code-docker:latest
 
 # Generic repository base layer
-FROM ${BASE_IMAGE} as repo-base
+FROM ${BASE_IMAGE} AS repo-base
 
 ARG REPO_URL
 ARG REPO_MOUNT_NAME  
@@ -16,7 +16,7 @@ COPY ${LOCAL_REPO_PATH} /git/${REPO_MOUNT_NAME}/
 WORKDIR /git/${REPO_MOUNT_NAME}
 
 # Stage 1: System packages (rebuild rarely)
-FROM ${BASE_IMAGE} as system-base
+FROM ${BASE_IMAGE} AS system-base
 USER root
 
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
@@ -60,7 +60,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     ruby-dev
 
 # Stage 2: Rust runtime
-FROM system-base as rust
+FROM system-base AS rust
 
 # Install Rust
 RUN --mount=type=cache,target=/root/.cargo/registry \
@@ -69,7 +69,7 @@ RUN --mount=type=cache,target=/root/.cargo/registry \
 ENV PATH="/root/.cargo/bin:${PATH}"
 
 # Stage 3: Go runtime
-FROM system-base as go
+FROM system-base AS go
 
 # Install Go
 RUN --mount=type=cache,target=/tmp/go-download \
@@ -81,7 +81,7 @@ ENV GOPATH="/root/go"
 ENV PATH="${GOPATH}/bin:${PATH}"
 
 # Stage 4: Combined runtimes (for layers that need both)
-FROM system-base as runtimes
+FROM system-base AS runtimes
 
 # Install Rust
 RUN --mount=type=cache,target=/root/.cargo/registry \
@@ -99,7 +99,7 @@ ENV GOPATH="/root/go"
 ENV PATH="${GOPATH}/bin:${PATH}"
 
 # Stage 5: Core Python dependencies (rebuild when core packages change)
-FROM runtimes as python-core
+FROM runtimes AS python-core
 
 # Core Python packages (rarely change)
 RUN --mount=type=cache,target=/root/.cache/pip \
@@ -113,7 +113,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     sqlalchemy
 
 # Stage 6: Development tools (rebuild when dev tools change)
-FROM python-core as python-dev
+FROM python-core AS python-dev
 
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip3 install --break-system-packages \
@@ -124,7 +124,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     jupyter
 
 # Stage 7: Data science packages (rebuild when data packages change)  
-FROM python-dev as python-data
+FROM python-dev AS python-data
 
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip3 install --break-system-packages \
@@ -134,7 +134,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     seaborn
 
 # Stage 8: Utility packages (rebuild when utilities change)
-FROM python-data as python-complete
+FROM python-data AS python-complete
 
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip3 install --break-system-packages \
@@ -152,7 +152,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     pyhamcrest
 
 # Stage 9: Node.js standalone
-FROM system-base as node
+FROM system-base AS node
 
 # Install Node.js packages
 RUN --mount=type=cache,target=/root/.npm \
@@ -161,14 +161,14 @@ RUN --mount=type=cache,target=/root/.npm \
     prettier
 
 # Stage 10: Ruby standalone  
-FROM system-base as ruby
+FROM system-base AS ruby
 
 # Install Ruby gems
 RUN --mount=type=cache,target=/root/.gem \
     gem install bundler sqlite3 httparty colorize pry
 
 # Stage 11: Node.js and Ruby combined packages
-FROM python-complete as packages-complete
+FROM python-complete AS packages-complete
 
 # Install Node.js packages
 RUN --mount=type=cache,target=/root/.npm \
@@ -181,7 +181,7 @@ RUN --mount=type=cache,target=/root/.gem \
     gem install bundler sqlite3 httparty colorize pry
 
 # Stage 12: Final environment setup
-FROM packages-complete as final
+FROM packages-complete AS final
 
 # Create workspace
 RUN mkdir -p /workspace

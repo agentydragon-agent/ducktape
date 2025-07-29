@@ -26,28 +26,22 @@ This builds independent Docker layers (system-base, python-core, rust, node, etc
 
 ### 2. Run Optimization
 
+**Production Run (Recommended):**
 ```bash
-# Typical production run
-python3 optimizer.py --iterations 10 --rollouts-per-task 3 --tasks-per-iteration 10
+python3 optimizer.py --iterations 10 --rollouts-per-task 3 --tasks-per-iteration 10 --max-parallel 8 --mode summary
+```
+- 10 iterations of prompt improvement
+- 3 rollouts per task for statistical reliability
+- 10 random tasks per iteration (faster than all 25)
+- 8 concurrent rollouts (30 total per iteration)
+```
 
-# Quick test
-python3 optimizer.py --iterations 3 --rollouts-per-task 1 --tasks-per-iteration 5
+**Quick Development Testing:**
+```bash
+python3 optimizer.py --iterations 3 --rollouts-per-task 1 --tasks-per-iteration 5 --max-parallel 4 --mode summary
 ```
 
 ## Usage
-
-### Basic Commands
-
-```bash
-# Default: 10 iterations, 1 rollout per task, all 25 tasks
-python3 optimizer.py
-
-# Recommended production settings
-python3 optimizer.py --iterations 10 --rollouts-per-task 3 --tasks-per-iteration 10
-
-# Development/testing
-python3 optimizer.py --iterations 3 --rollouts-per-task 1 --tasks-per-iteration 5
-```
 
 ### Command Line Options
 
@@ -59,27 +53,6 @@ python3 optimizer.py --iterations 3 --rollouts-per-task 1 --tasks-per-iteration 
 | `--max-parallel` | Maximum concurrent rollouts | 8 | `--max-parallel 16` |
 | `--mode` | Processing mode: `full_rollouts` or `summary` | `full_rollouts` | `--mode summary` |
 
-### Typical Configurations
-
-**Production Run (Recommended):**
-```bash
-python3 optimizer.py --iterations 10 --rollouts-per-task 3 --tasks-per-iteration 10 --max-parallel 8
-```
-- 10 iterations of prompt improvement
-- 3 rollouts per task for statistical reliability
-- 10 random tasks per iteration (faster than all 25)
-- 8 concurrent rollouts (30 total per iteration)
-
-**Intensive Evaluation:**
-```bash
-python3 optimizer.py --iterations 15 --rollouts-per-task 4 --tasks-per-iteration 15 --max-parallel 12
-```
-
-**Quick Development Testing:**
-```bash
-python3 optimizer.py --iterations 3 --rollouts-per-task 1 --tasks-per-iteration 5 --max-parallel 4
-```
-
 ## Architecture
 
 ### Task Dependencies
@@ -87,14 +60,8 @@ python3 optimizer.py --iterations 3 --rollouts-per-task 1 --tasks-per-iteration 
 Tasks specify their runtime dependencies in `seeds.yaml`:
 
 ```yaml
-- id: my_python_task
-  dependencies: ["python-data"]  # Python + pandas/numpy/jupyter
-  
 - id: web_task  
   dependencies: ["python-core", "node"]  # Python + Node.js
-  
-- id: rust_task
-  dependencies: ["rust"]  # Rust toolchain
 ```
 
 Available dependencies: `system`, `python`, `python-core`, `python-dev`, `python-data`, `python-complete`, `rust`, `go`, `node`, `ruby`
@@ -279,32 +246,6 @@ export DOCKER_BUILDKIT=1
 
 # Try building individual layers if main build fails
 docker buildx build --target system-base -t claude-dev:system-base --load .
-```
-
-### Verification Commands
-```bash
-# Check dependency resolution is working
-python3 -c "
-from dependency_manager import DependencyResolver
-resolver = DependencyResolver()
-print('Rust task resolves to:', resolver.resolve_dependencies(['rust'], 'test'))
-print('Python data resolves to:', resolver.resolve_dependencies(['python-data'], 'test'))
-"
-
-# List built Docker images
-docker images | grep claude-dev | sort
-```
-
-### Expected Docker Images
-After running `build_dependency_layers.py`, you should see:
-```
-claude-dev:system-base     # ~900MB - Ubuntu + basic tools
-claude-dev:python-core     # ~1.4GB - Python basics
-claude-dev:python-dev      # ~1.5GB - Python + dev tools
-claude-dev:python-data     # ~1.8GB - Python + data science
-claude-dev:rust           # ~1.2GB - Rust toolchain
-claude-dev:node           # ~1.1GB - Node.js
-claude-dev:ruby           # ~1.0GB - Ruby
 ```
 
 ---

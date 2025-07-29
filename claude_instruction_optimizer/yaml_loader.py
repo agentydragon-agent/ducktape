@@ -19,7 +19,6 @@ class TaskDataModel(BaseModel):
     prompt: str
     dependencies: List[str]
     git_repos: Dict[str, Any]
-    internet_needed: bool
     allowed_tools: List[str]
     pre_task_setup_script: Optional[str] = None
     
@@ -150,7 +149,6 @@ class YamlLoader:
             prompt = validated_task.prompt
             dependencies = validated_task.dependencies
             git_repos = validated_task.git_repos
-            internet_needed = validated_task.internet_needed
             allowed_tools = validated_task.allowed_tools
             pre_task_setup_script = validated_task.pre_task_setup_script
             
@@ -164,7 +162,6 @@ class YamlLoader:
                 prompt=prompt,
                 git_repos=git_repos_json,
                 allowed_tools=allowed_tools_json,
-                internet_needed=internet_needed,
                 dependencies=dependencies_json,
                 pre_task_setup_script=pre_task_setup_script
             )
@@ -178,7 +175,6 @@ class YamlLoader:
                     task_id=task_id,
                     prompt=prompt,
                     git_repos=git_repos_json,
-                    internet_needed=internet_needed,
                     allowed_tools=allowed_tools_json,
                     dependencies=dependencies_json,
                     pre_task_setup_script=pre_task_setup_script,
@@ -204,7 +200,6 @@ class YamlLoader:
                 # Update existing task
                 existing_task.prompt = prompt
                 existing_task.git_repos = git_repos_json
-                existing_task.internet_needed = internet_needed
                 existing_task.allowed_tools = allowed_tools_json
                 existing_task.dependencies = dependencies_json
                 existing_task.pre_task_setup_script = pre_task_setup_script

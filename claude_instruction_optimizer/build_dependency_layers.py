@@ -12,7 +12,7 @@ from typing import List, Optional, Dict
 def run_command(cmd: List[str], description: str, step: int, total: int) -> bool:
     """Run a command with nice progress display and real-time output."""
     print(f"[{step}/{total}] {description}")
-    print(f"🔨 Command: {' '.join(cmd[:3])} ... {cmd[-1]}")
+    print(f"🔨 Command: {' '.join(cmd)}")
     
     start_time = time.time()
     try:
@@ -78,7 +78,8 @@ def build_docker_image(
     target: Optional[str] = None,
     build_args: Optional[Dict[str, str]] = None,
     platform: Optional[str] = None,
-    context: str = "."
+    context: str = ".",
+    builder: Optional[str] = None
 ) -> bool:
     """Shared helper for building Docker images with verbose progress and cache fallback."""
     
@@ -95,7 +96,10 @@ def build_docker_image(
         print(f"   🔧 Build args: {build_args}")
     
     # Build base command
-    cmd_base = ["docker", "buildx", "build", "--progress=plain"]
+    if builder:
+        cmd_base = ["docker", "--context", builder, "buildx", "build", "--progress=plain"]
+    else:
+        cmd_base = ["docker", "buildx", "build", "--progress=plain"]
     
     if dockerfile:
         cmd_base.extend(["-f", dockerfile])
@@ -309,7 +313,8 @@ CMD ["sleep", "infinity"]
         return build_docker_image(
             tag=docker_image_tag,
             description=f"Task {task_id}",
-            dockerfile=temp_dockerfile
+            dockerfile=temp_dockerfile,
+            builder="colima"  # Use colima builder (docker driver) for access to local images
         )
     finally:
         # Clean up temp dockerfile

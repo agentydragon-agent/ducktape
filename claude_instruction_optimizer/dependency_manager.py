@@ -122,7 +122,7 @@ class DependencyResolver:
     # Aliases removed - use direct dependency specification
     
     def generate_task_dockerfile(self, task_id: str, dependencies: List[str], 
-                                 git_repos: Dict = None, internet_needed: bool = False) -> str:
+                                 git_repos: Dict = None) -> str:
         """Generate Dockerfile for a specific task - usually just inherits from optimal base layer."""
         if not dependencies:
             dependencies = ["system"]
@@ -138,7 +138,6 @@ class DependencyResolver:
             "",
             f"LABEL task_id=\"{task_id}\"",
             f"LABEL dependencies=\"{','.join(dependencies)}\"",
-            f"LABEL internet_needed=\"{internet_needed}\"",
             "",
             "WORKDIR /workspace",
             "",
@@ -179,20 +178,3 @@ def parse_task_dependencies(task_data: Dict) -> TaskDependencies:
         return TaskDependencies(dependencies=deps)
     else:
         raise ValueError(f"Invalid dependencies format: {deps}. Must be string or list of strings.")
-
-# Helper functions for common use cases
-def create_minimal_task() -> TaskDependencies:
-    """Create task with minimal dependencies (just system tools)."""
-    return TaskDependencies(dependencies=["system"])
-
-def create_python_task(level: str = "python") -> TaskDependencies:
-    """Create Python task with specified level (python/python-dev/python-data)."""
-    return TaskDependencies(dependencies=[level])
-
-def create_rust_task() -> TaskDependencies:
-    """Create Rust-only task.""" 
-    return TaskDependencies(dependencies=["rust"])
-
-def create_full_stack_task() -> TaskDependencies:
-    """Create full-stack development task."""
-    return TaskDependencies(dependencies=["python-complete", "node", "ruby"])
