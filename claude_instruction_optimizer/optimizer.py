@@ -618,72 +618,6 @@ class GradedCode(BaseModel):
     grade: Grade
 
 
-async def execute_claude_session(
-    task: str,
-    options: ClaudeCodeOptions,
-    agent_id: int,
-    task_id: str,
-    anthropic_log_path: Path,
-    rollout_id: int,
-) -> List[Dict[str, Any]]:
-    """Execute coding agent session and collect messages.
-    
-    Args:
-        task: The task prompt for the coding agent
-        options: Coding agent configuration options
-        agent_id: Agent identifier for logging
-        task_id: Task identifier for logging
-        anthropic_log_path: Path to log Anthropic API calls
-        rollout_id: Rollout ID for database logging
-        
-    Returns:
-        List of serialized messages from the session
-    """
-    message_sequence: List[Dict[str, Any]] = []
-    seq_order = 0
-    anthropic_request = {
-        "prompt": task,
-        "options": (
-            options.model_dump() if isinstance(options, BaseModel) else str(options)
-        ),
-    }
-    
-    log_anthropic_request_event(anthropic_log_path, anthropic_request, "request_sent")
-    
-    agent_logger = logger.bind(agent_id=agent_id)
-    agent_logger.info("Starting coding agent session")
-    
-    from claude_code_sdk import ResultMessage
-    
-    async with ClaudeSDKClient(options=options) as client:
-        await client.query(task)
-        async for message in client.receive_messages():
-            log_anthropic_request_event(anthropic_log_path, anthropic_request, message)
-            message_dict = asdict(message)
-            message_sequence.append(message_dict)
-            log_message_summary(message, logger, agent_id)
-            
-            # Log message to database in real-time
-            db_service.log_rollout_message(
-                rollout_id=rollout_id,
-                sequence_order=seq_order,
-                message_type=message_dict.get('role', type(message).__name__.lower()),
-                message_content=message_dict
-            )
-            seq_order += 1
-            
-            if isinstance(message, ResultMessage):
-                agent_logger.info(
-                    "Session completed",
-                    duration_ms=message.duration_ms,
-                    cost_usd=message.total_cost_usd,
-                    is_error=message.is_error,
-                )
-                # Track rollout cost
-                cost_tracker.add_rollout_cost(message.total_cost_usd)
-                break
-                
-    return message_sequence
 
 
 def gather_agent_files(work_dir: Path) -> List[Dict[str, str]]:
@@ -726,6 +660,108 @@ def gather_agent_files(work_dir: Path) -> List[Dict[str, str]]:
     return files_info
 
 
+def should_exclude_file(relative_path: str, filename: str) -> bool:
+    """Check if a file should be excluded based on configuration patterns.
+    
+    Args:
+        relative_path: File path relative to working directory
+        filename: Just the filename part
+        
+    Returns:
+        True if file should be excluded
+    """
+    return any(fnmatch.fnmatch(relative_path, pattern) or fnmatch.fnmatch(filename, pattern) 
+               for pattern in config.exclude_patterns)
+
+
+async def copy_files_from_container(container_id: str, container_workdir: str, host_workdir: Path, task_logger) -> None:
+    """Copy files from container to host directory for grader access.
+    
+    Args:
+        container_id: Docker container ID
+        container_workdir: Working directory inside container (e.g., '/workspace')
+        host_workdir: Host working directory to copy files to
+        task_logger: Logger instance for this task
+    """
+    try:
+        # List all files in the container workspace
+        list_cmd = [
+            "docker", "exec", container_id,
+            "find", container_workdir, "-type", "f"
+        ]
+        
+        result = await asyncio.create_subprocess_exec(
+            *list_cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await result.communicate()
+        
+        if result.returncode != 0:
+            error_msg = stderr.decode()
+            task_logger.error("Failed to list container files", error=error_msg)
+            raise RuntimeError(f"Failed to list container files: {error_msg}")
+            
+        # Process each file found in container
+        container_files = stdout.decode().strip().split('\n')
+        copied_count = 0
+        excluded_count = 0
+        
+        for container_file_path in container_files:
+            if not container_file_path.strip():
+                continue
+                
+            # Calculate relative path from container workdir
+            if not container_file_path.startswith(container_workdir):
+                continue
+                
+            # Remove the container workdir prefix to get relative path
+            relative_path = container_file_path[len(container_workdir):].lstrip('/')
+            filename = Path(container_file_path).name
+            
+            # Apply same exclusion logic as gather_agent_files
+            if should_exclude_file(relative_path, filename):
+                excluded_count += 1
+                continue
+                
+            # Create host destination path
+            host_file_path = host_workdir / relative_path
+            host_file_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            # Copy file from container to host
+            copy_cmd = [
+                "docker", "cp", 
+                f"{container_id}:{container_file_path}",
+                str(host_file_path)
+            ]
+            
+            copy_result = await asyncio.create_subprocess_exec(
+                *copy_cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            await copy_result.wait()
+            
+            if copy_result.returncode == 0:
+                copied_count += 1
+            else:
+                copy_stderr = await copy_result.stderr.read() if copy_result.stderr else b""
+                error_msg = copy_stderr.decode()
+                task_logger.error("Failed to copy file", 
+                                container_path=container_file_path,
+                                host_path=str(host_file_path),
+                                error=error_msg)
+                raise RuntimeError(f"Failed to copy file {container_file_path}: {error_msg}")
+                
+        task_logger.info("Container files copied", 
+                        copied_files=copied_count,
+                        excluded_files=excluded_count)
+        
+    except Exception as e:
+        task_logger.error("Error copying files from container", error=str(e))
+        raise
+
+
 
 
 async def run_claude_code(
@@ -733,18 +769,15 @@ async def run_claude_code(
     system_prompt: str,
     agent_id: int,
     task_id: str,
-    base_dir: Path,
+    output_dir: Path,
     anthropic_log_path: Path,
     rollout_id: int,
 ) -> CodeResult:
-    """Run a single coding agent on the given task.
+    """Run a single coding agent on the given task using containerized Claude.
 
-    This function sets up an isolated working directory for the agent,
-    writes the system prompt to a uniquely numbered ``CLAUDE-XXXX.md``
-    file (where XXXX is the prompt version), and then queries the
-    coding agent model to generate code that solves the task.  The returned
-    CodeResult contains the generated code and any rationale provided
-    by the model.
+    This function uses the TaskClaude proxy to run Claude inside a Docker container
+    with proper PATH isolation. The system prompt is written inside the container,
+    and files are automatically copied to the host for grader access.
 
     Parameters
     ----------
@@ -754,51 +787,75 @@ async def run_claude_code(
         The system prompt guiding the agent's behaviour.
     agent_id : int
         An identifier distinguishing this agent instance within a batch.
-    base_dir : Path
-        The path where the agent's working directory should be created.
+    task_id : str
+        Task identifier from database.
+    output_dir : Path
+        Directory where agent output files will be saved.
+    anthropic_log_path : Path
+        Path for logging Anthropic API calls.
+    rollout_id : int
+        Rollout ID for database logging.
 
     Returns
     -------
     CodeResult
-        A dataclass containing the task, agent identifier, generated code,
-        rationale, and timestamp.
+        A dataclass containing the task, agent identifier, generated code, and timestamp.
     """
-    # Create a unique working directory for this agent
-    # Use an absolute path for the working directory to ensure the SDK runs in
-    # the intended location regardless of the current working directory.  The
-    # resolved path also prevents relative path traversal issues.
-    # Include task_id and agent_id to avoid conflicts when multiple agents work on different tasks
-    work_dir = (base_dir / f"task_{task_id}" / f"agent_{agent_id}").resolve()
-    work_dir.mkdir(parents=True, exist_ok=True)
-
-    # Log the working directory for this agent so that users
-    # know where the agent's files are being saved.  This occurs at the start
-    # of each agent run.
+    # Set up task logger
     task_logger = logger.bind(task_id=task_id, agent_id=agent_id)
-    task_logger.info("Agent starting", work_dir=str(work_dir), task_preview=task[:100])
+    task_logger.info("Starting containerized agent", output_dir=str(output_dir), task_preview=task[:100])
 
-    # Write the system prompt into CLAUDE.md inside the agent's working directory.
-    # The actual prompt version files are stored at the run directory level.
-    # TODO: THIS IS WRONG - IT HAS TO LAND INSIDE THE CONTAINER!
-    (work_dir / "CLAUDE.md").write_text(system_prompt)
-
-    os.environ["BASH_MAX_TIMEOUT_MS"] = str(config.rollouts.bash_timeout_ms)
-
-    options = ClaudeCodeOptions(
-        allowed_tools=None,  # Full tool access for autonomous execution
-        cwd=work_dir,
-        max_turns=config.rollouts.max_turns,
-        permission_mode="bypassPermissions",  # Required for Docker container execution
-        mcp_servers={},
-    )
+    # Use containerized Claude with automatic file collection
+    from task_claude import task_claude
+    from claude_code_sdk import ResultMessage
     
-    # Execute coding agent session and collect messages
-    message_sequence = await execute_claude_session(
-        task, options, agent_id, anthropic_log_path, rollout_id
-    )
-
-    # Gather all files created by the agent
-    files_info = gather_agent_files(work_dir)
+    async with task_claude(task_id, config, output_dir) as client:
+        # Write system prompt inside container
+        await client.setup_system_prompt(system_prompt)
+        
+        # Execute Claude session using the containerized client
+        message_sequence = []
+        anthropic_request = {
+            "prompt": task,
+            "options": f"containerized_claude_task_{task_id}",
+        }
+        
+        log_anthropic_request_event(anthropic_log_path, anthropic_request, "request_sent")
+        
+        await client.query(task)
+        seq_order = 0
+        
+        async for message in client.receive_messages():
+            log_anthropic_request_event(anthropic_log_path, anthropic_request, message)
+            message_dict = asdict(message)
+            message_sequence.append(message_dict)
+            log_message_summary(message, logger, agent_id)
+            
+            # Log message to database in real-time
+            db_service.log_rollout_message(
+                rollout_id=rollout_id,
+                sequence_order=seq_order,
+                message_type=message_dict.get('role', type(message).__name__.lower()),
+                message_content=message_dict
+            )
+            seq_order += 1
+            
+            if isinstance(message, ResultMessage):
+                task_logger.info(
+                    "Containerized session completed",
+                    duration_ms=message.duration_ms,
+                    cost_usd=message.total_cost_usd,
+                    is_error=message.is_error,
+                )
+                # Track rollout cost
+                cost_tracker.add_rollout_cost(message.total_cost_usd)
+                break
+        
+        # Copy files from container to host (automatic on context exit)
+        file_collection = await client.collect_outputs()
+        
+    # Convert to grader format
+    files_info = file_collection.to_grader_format()
 
     timestamp = datetime.utcnow().isoformat()
     return CodeResult(
@@ -1440,17 +1497,16 @@ async def optimize_prompts(
                     output_dir_path=str(rollout_dir)
                 )
                 
-                # Use task_claude context manager for Docker container management
-                async with task_claude(task.id, config, rollout_dir) as claude_client:
-                    code_result = await run_claude_code(
-                        task.prompt,
-                        current_prompt,
-                        agent_id=rollout_id,
-                        task_id=task.id,
-                        base_dir=base_dir / f"iter_{iteration}",
-                        anthropic_log_path=anthropic_api_log_path,
-                        rollout_id=db_rollout_id,
-                    )
+                # Run containerized Claude (task_claude context managed inside run_claude_code)
+                code_result = await run_claude_code(
+                    task.prompt,
+                    current_prompt,
+                    agent_id=rollout_id,
+                    task_id=task.id,
+                    output_dir=rollout_dir,
+                    anthropic_log_path=anthropic_api_log_path,
+                    rollout_id=db_rollout_id,
+                )
 
                 # Store rollout files in database
                 db_service.store_rollout_files(

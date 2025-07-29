@@ -1,106 +1,81 @@
 #!/usr/bin/env python3
-"""Utility to prep and start a container for a specific task without killing it.
+"""Interactive container setup for testing containerized Claude execution.
+
+This script sets up a container for a specific task and drops you into an interactive
+shell where you can test the containerized Claude directly.
 
 Usage:
-    python prep_task_container.py <task_id>
+    python prep_task_container.py [task_id]
     
-Example:
-    python prep_task_container.py my_coding_task
+Examples:
+    python prep_task_container.py test-task
+    python prep_task_container.py my-debugging-task
+    
+Inside the container shell, you can run:
+    claude -p "check whether you're on a real machine or in a container"
+    claude -p "what files are in the current directory?"
+    claude -p "create a simple Python script and run it"
 """
 
-import sys
-import argparse
 import asyncio
+import sys
+import subprocess
 from pathlib import Path
-from task_context import TaskContainer
-from config import OptimizerConfig
 
-async def prep_and_start_container(task_id: str) -> str:
-    """Prepare and start a container for the given task.
-    
-    Args:
-        task_id: ID of the task to prepare container for
+from config import OptimizerConfig
+from task_claude import task_claude
+
+
+async def main():
+    """Interactive container setup for testing."""
+    if len(sys.argv) > 1:
+        task_id = sys.argv[1]
+    else:
+        task_id = "test-task"
         
-    Returns:
-        str: Container ID of the running container
-    """
-    print(f"🚀 Preparing container for task: {task_id}")
+    config = OptimizerConfig.from_file()
+    test_output_dir = Path.cwd() / "test_container_output" / task_id
+    test_output_dir.mkdir(parents=True, exist_ok=True)
+    
+    print(f"🐳 Setting up container for task: {task_id}")
+    print(f"📁 Output directory: {test_output_dir}")
     
     try:
-        # Load configuration
-        config = OptimizerConfig.from_file()
-        
-        # Create task container
-        task_container = TaskContainer(task_id, config)
-        print(f"✅ Found task: {task_id}")
-        
-        # Create working directory for this container
-        base_dir = Path("./task_containers")
-        base_dir.mkdir(exist_ok=True)
-        
-        container_dir = base_dir / f"task_{task_id}"
-        container_dir.mkdir(exist_ok=True)
-        
-        print(f"📁 Working directory: {container_dir}")
-        print(f"🐳 Using Docker image: claude-task-{task_id}")
-        
-        # Start container (keeps running until manually stopped)
-        container_id = await task_container.start(container_dir)
-        
-        print(f"✅ Container started: {container_id[:12]}")
-        print("✅ Container setup completed")
-        
-        print(f"""
-🎉 Container ready for task: {task_id}
-
-📋 Container Details:
-   ID: {container_id}
-   Working Dir: {container_dir}
-
-🔗 Connect to container:
-   docker exec -it {container_id} bash
-
-⚠️  Note: Container will remain running until manually stopped.
-   To stop: docker stop {container_id}
-   Or call: await task_container.stop()
-""")
-        
-        return container_id
-        
-    except (FileNotFoundError, ValueError) as e:
-        print(f"❌ Error loading task: {e}")
-        return None
+        async with task_claude(task_id, config, test_output_dir) as client:
+            print("✅ Container ready with PATH isolation active")
+            print(f"🔐 Container ID: {client.container_id}")
+            print()
+            print("🚀 Launching interactive Claude session...")
+            print("💡 Try these commands:")
+            print("   claude -p 'check whether you're on a real machine or in a container'")
+            print("   claude -p 'what files are in the current directory?'")
+            print("   claude -p 'create a test Python file and show me its contents'")
+            print("   claude -p 'run a bash command to show the environment'")
+            print()
+            print("📝 All files you create will be copied to the host output directory")
+            print("🚪 Type 'exit' to close the container and return to host")
+            print("-" * 60)
+            
+            # Interactive mode - spawn shell with containerized claude in PATH
+            result = subprocess.run([
+                "docker", "exec", "-it", client.container_id,
+                "/bin/bash"
+            ])
+            
+            if result.returncode != 0:
+                print(f"⚠️  Interactive session ended with code {result.returncode}")
+            else:
+                print("✨ Interactive session completed successfully")
+                
+    except KeyboardInterrupt:
+        print("\n🛑 Interrupted by user")
     except Exception as e:
-        print(f"❌ Error setting up container: {e}")
-        # TaskContext handles its own cleanup in start() method
-        return None
+        print(f"❌ Error during container setup: {e}")
+        raise
+        
+    print("🧹 Container cleaned up automatically")
+    print(f"📂 Check output files in: {test_output_dir}")
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="Prep and start container for a specific task",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  %(prog)s my_coding_task
-  %(prog)s python_web_scraper
-        """
-    )
-    
-    parser.add_argument(
-        "task_id",
-        help="ID of the task to prepare container for"
-    )
-    
-    args = parser.parse_args()
-    
-    container_id = asyncio.run(prep_and_start_container(args.task_id))
-    
-    if container_id:
-        print(f"Container ID: {container_id}")
-        sys.exit(0)
-    else:
-        print("Failed to start container")
-        sys.exit(1)
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
