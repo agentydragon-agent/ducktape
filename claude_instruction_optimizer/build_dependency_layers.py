@@ -16,10 +16,10 @@ def run_command(cmd: List[str], description: str, step: int, total: int) -> bool
     
     start_time = time.time()
     try:
-        # Run command with real-time output streaming (capture both stdout and stderr)
+        # Run command with real-time output streaming (Docker writes to stderr)
         process = subprocess.Popen(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, 
-            text=True, bufsize=1, universal_newlines=True
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, 
+            text=True, bufsize=0, universal_newlines=True
         )
         
         # Stream Docker output directly with timestamps
@@ -29,22 +29,19 @@ def run_command(cmd: List[str], description: str, step: int, total: int) -> bool
             # Check if process is done
             if process.poll() is not None:
                 # Get any remaining output
-                stdout_remaining = process.stdout.read()
-                stderr_remaining = process.stderr.read()
-                if stdout_remaining:
-                    all_output.append(("stdout", stdout_remaining))
-                    for line in stdout_remaining.strip().split('\n'):
+                remaining_output = process.stdout.read()
+                if remaining_output:
+                    all_output.append(remaining_output)
+                    for line in remaining_output.strip().split('\n'):
                         if line.strip():
                             elapsed = time.time() - start_time
                             print(f"   [{elapsed:6.1f}s] {line}")
-                if stderr_remaining:
-                    all_output.append(("stderr", stderr_remaining))
                 break
                 
             # Read available output and show it immediately
             output = process.stdout.readline()
             if output:
-                all_output.append(("stdout", output))
+                all_output.append(output)
                 line = output.strip()
                 if line:
                     elapsed = time.time() - start_time
@@ -58,22 +55,18 @@ def run_command(cmd: List[str], description: str, step: int, total: int) -> bool
             elapsed = time.time() - start_time
             print(f"   ❌ Failed after {elapsed:.1f}s")
             
-            # Show stderr if any (errors are already shown above with timestamps)
-            stderr_content = ""
-            for source, content in all_output:
-                if source == "stderr" and content.strip():
-                    stderr_content += content
-            
-            if stderr_content:
-                print(f"   📋 Error output:")
-                for line in stderr_content.strip().split('\n')[-5:]:  # Last 5 stderr lines
+            # Show last few lines of output for context (errors already shown above with timestamps)
+            all_output_text = "".join(all_output)
+            if all_output_text.strip():
+                print(f"   📋 Last output:")
+                for line in all_output_text.strip().split('\n')[-3:]:  # Last 3 lines
                     if line.strip():
                         print(f"      {line.strip()}")
                 
             return False
             
     except Exception as e:
-        print(f"\r   ❌ Error: {e}")
+        print(f"   ❌ Error: {e}")
         return False
 
 def build_docker_image(
@@ -102,7 +95,7 @@ def build_docker_image(
         print(f"   🔧 Build args: {build_args}")
     
     # Build base command
-    cmd_base = ["docker", "buildx", "build"]
+    cmd_base = ["docker", "buildx", "build", "--progress=plain"]
     
     if dockerfile:
         cmd_base.extend(["-f", dockerfile])
