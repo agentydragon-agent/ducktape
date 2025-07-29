@@ -4,7 +4,7 @@ import json
 import tiktoken
 from typing import List, Dict, Any
 from pathlib import Path
-from optimizer_config import OptimizerConfig
+from config import OptimizerConfig
 from openai.types.responses.response import Response
 from openai.types.responses.response_output_message import ResponseOutputMessage
 from openai.types.responses.response_output_text import ResponseOutputText

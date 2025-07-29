@@ -54,6 +54,36 @@ class YamlLoader:
     def __init__(self, seeds_yaml_path: Path, graders_yaml_path: Path):
         self.seeds_yaml_path = Path(seeds_yaml_path)
         self.graders_yaml_path = Path(graders_yaml_path)
+        self._seeds_data = None
+        self._graders_data = None
+        
+    def _load_yaml_file(self, path: Path, file_type: str) -> Any:
+        """Load and cache YAML file content."""
+        if not path.exists():
+            raise FileNotFoundError(f"FATAL: {file_type} YAML file not found: {path}. Check your config.yaml!")
+            
+        with open(path, 'r', encoding='utf-8') as f:
+            return yaml.safe_load(f)
+    
+    @property
+    def seeds_data(self) -> List[Dict]:
+        """Load seeds YAML data (cached)."""
+        if self._seeds_data is None:
+            data = self._load_yaml_file(self.seeds_yaml_path, "Seeds")
+            if not isinstance(data, list):
+                raise ValueError(f"Seeds YAML must contain a list of tasks, got {type(data)}")
+            self._seeds_data = data
+        return self._seeds_data
+    
+    @property 
+    def graders_data(self) -> List[Dict]:
+        """Load graders YAML data (cached)."""
+        if self._graders_data is None:
+            data = self._load_yaml_file(self.graders_yaml_path, "Graders")
+            if not isinstance(data, dict) or 'graders' not in data:
+                raise ValueError(f"Graders YAML must be a dict with 'graders' key, got {type(data)}")
+            self._graders_data = data['graders']
+        return self._graders_data
         
     def load_and_sync_all(self, session: Optional[Session] = None) -> Dict[str, int]:
         """Load and sync both seeds and graders YAML files to database.
@@ -104,21 +134,10 @@ class YamlLoader:
         Returns:
             Dict with 'seeds_added' and 'seeds_updated' counts
         """
-        if not self.seeds_yaml_path.exists():
-            logger.warning("Seeds YAML not found", path=str(self.seeds_yaml_path))
-            return {'seeds_added': 0, 'seeds_updated': 0}
-            
-        # Load YAML content
-        with open(self.seeds_yaml_path, 'r', encoding='utf-8') as f:
-            yaml_data = yaml.safe_load(f)
-            
-        if not isinstance(yaml_data, list):
-            raise ValueError(f"Seeds YAML must contain a list of tasks, got {type(yaml_data)}")
-            
         seeds_added = 0
         seeds_updated = 0
         
-        for task_data in yaml_data:
+        for task_data in self.seeds_data:
             # Validate with Pydantic - will crash on invalid data
             try:
                 validated_task = TaskDataModel(**task_data)
@@ -220,26 +239,10 @@ class YamlLoader:
         Returns:
             Dict with 'graders_added' and 'graders_updated' counts
         """
-        if not self.graders_yaml_path.exists():
-            logger.warning("Graders YAML not found", path=str(self.graders_yaml_path))
-            return {'graders_added': 0, 'graders_updated': 0}
-            
-        # Load YAML content
-        with open(self.graders_yaml_path, 'r', encoding='utf-8') as f:
-            yaml_data = yaml.safe_load(f)
-            
-        # Handle both old format (list) and new format (dict with 'graders' key)
-        if isinstance(yaml_data, dict) and 'graders' in yaml_data:
-            graders_list = yaml_data['graders']
-        elif isinstance(yaml_data, list):
-            graders_list = yaml_data
-        else:
-            raise ValueError(f"Graders YAML must contain 'graders' key or be a list, got {type(yaml_data)}")
-            
         graders_added = 0
         graders_updated = 0
         
-        for grader_data in graders_list:
+        for grader_data in self.graders_data:
             if not isinstance(grader_data, dict):
                 logger.warning("Skipping invalid grader data", data=grader_data)
                 continue

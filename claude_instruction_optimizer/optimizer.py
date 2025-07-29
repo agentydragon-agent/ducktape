@@ -75,8 +75,8 @@ from openai.types.responses.response_reasoning_item import ResponseReasoningItem
 from pydantic import BaseModel
 
 # Import new modules
-from optimizer_config import OptimizerConfig
-from docker_manager import DockerManager
+from config import OptimizerConfig
+from task_claude import task_claude
 from message_formatter import log_message_summary
 from logging_utils import DualOutputLogging
 from database import init_database, get_db_session, OptimizationRun, SystemPrompt, Rollout
@@ -1389,10 +1389,8 @@ async def optimize_prompts(
         config_snapshot=config.model_dump_json()
     )
 
-    # Set up Docker wrapper for isolated coding agent execution
-    external_wrapper = Path(__file__).parent / "docker_claude_wrapper.sh"
-    wrapper_script = docker_manager.setup_wrapper(base_dir, external_wrapper)
-    logger.info("Docker wrapper configured", wrapper_script=str(wrapper_script))
+    # Task-specific Docker images are now managed by task_claude context manager
+    logger.info("Using task_claude for Docker container management")
     
     try:
         # Prepare API log files for both OpenAI and Anthropic (keeping these for debugging)
@@ -1434,9 +1432,6 @@ async def optimize_prompts(
         ) -> GradedCode:
             """Run a single rollout with semaphore control."""
             async with rollout_semaphore:
-                # Initialize Docker manager for this rollout
-                docker_manager = DockerManager()
-                
                 # Create rollout record in database
                 rollout_dir = base_dir / f"iter_{iteration}" / f"task_{task.id}" / f"agent_{rollout_id}"
                 db_rollout_id = db_service.create_rollout(
@@ -1448,35 +1443,18 @@ async def optimize_prompts(
                     output_dir_path=str(rollout_dir)
                 )
                 
-                try:
-                    # Setup Docker wrapper for this rollout
-                    wrapper_script = docker_manager.setup_wrapper(rollout_dir, external_wrapper)
-                    
-                    # Use container context manager for isolated execution
-                    with docker_manager.container("claude-dev:latest", f"task_{task.id}_agent_{rollout_id}", rollout_dir) as container_id:
-                        # Run pre-task setup if configured (with /git mounted RW)
-                        docker_manager.run_pre_task_setup(container_id, task.id, rollout_dir, config)
-                        
-                        # Remount /git as read-only for security during agent execution
-                        container_id = docker_manager.remount_git_readonly(
-                            container_id, 
-                            "claude-dev:latest", 
-                            rollout_dir
-                        )
-                        
-                        # Run coding agent (with /git now read-only)
-                        code_result = await run_claude_code(
-                            task.prompt,
-                            current_prompt,
-                            agent_id=rollout_id,
-                            task_id=task.id,
-                            base_dir=base_dir / f"iter_{iteration}",
-                            anthropic_log_path=anthropic_api_log_path,
-                            rollout_id=db_rollout_id,
-                        )
-                finally:
-                    # Clean up Docker resources for this rollout
-                    docker_manager.cleanup()
+                # Use task_claude context manager for Docker container management
+                async with task_claude(task.id, config, rollout_dir) as claude_client:
+                    # Run coding agent with task-specific Docker image
+                    code_result = await run_claude_code(
+                        task.prompt,
+                        current_prompt,
+                        agent_id=rollout_id,
+                        task_id=task.id,
+                        base_dir=base_dir / f"iter_{iteration}",
+                        anthropic_log_path=anthropic_api_log_path,
+                        rollout_id=db_rollout_id,
+                    )
 
                 # Messages are now logged in real-time during execute_claude_session
                 
