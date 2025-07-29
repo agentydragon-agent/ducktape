@@ -1,14 +1,51 @@
 """YAML loader with content hashing and database synchronization."""
 
+import json
 import yaml
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 from sqlalchemy.orm import Session
+from pydantic import BaseModel, validator
 
-from database import SeedTask, GradingCriteria, get_db_session
+from database import SeedTask, TaskRepository, GradingCriteria, get_db_session
 from logging_utils import DualOutputLogging
 
 logger = DualOutputLogging.get_logger()
+
+
+class TaskDataModel(BaseModel):
+    """Pydantic model for task data validation."""
+    id: str
+    prompt: str
+    description: Optional[str] = ""
+    dependencies: List[str]
+    git_repos: Dict[str, Any]
+    internet_needed: bool
+    allowed_tools: List[str]
+    
+    @validator('id')
+    def validate_id(cls, v):
+        if not v or not v.strip():
+            raise ValueError("Task ID cannot be empty")
+        return v.strip()
+    
+    @validator('prompt') 
+    def validate_prompt(cls, v):
+        if not v or not v.strip():
+            raise ValueError("Task prompt cannot be empty")
+        return v.strip()
+    
+    @validator('dependencies')
+    def validate_dependencies(cls, v):
+        if not isinstance(v, list):
+            raise ValueError("Dependencies must be a list")
+        return v
+    
+    @validator('allowed_tools')
+    def validate_allowed_tools(cls, v):
+        if not isinstance(v, list):
+            raise ValueError("Allowed tools must be a list")
+        return v
 
 
 class YamlLoader:
@@ -82,20 +119,35 @@ class YamlLoader:
         seeds_updated = 0
         
         for task_data in yaml_data:
-            if not isinstance(task_data, dict):
-                logger.warning("Skipping invalid task data", data=task_data)
-                continue
-                
-            task_id = task_data.get('id')
-            prompt = task_data.get('prompt')
-            description = task_data.get('description', '')
+            # Validate with Pydantic - will crash on invalid data
+            try:
+                validated_task = TaskDataModel(**task_data)
+            except Exception as e:
+                logger.error("Invalid task data - failing fast", task_data=task_data, error=str(e))
+                raise ValueError(f"Task validation failed: {e}") from e
             
-            if not task_id or not prompt:
-                logger.warning("Skipping task missing id or prompt", task_data=task_data)
-                continue
+            # Extract validated fields
+            task_id = validated_task.id
+            prompt = validated_task.prompt
+            description = validated_task.description
+            dependencies = validated_task.dependencies
+            git_repos = validated_task.git_repos
+            internet_needed = validated_task.internet_needed
+            allowed_tools = validated_task.allowed_tools
+            
+            # Serialize for storage
+            dependencies_json = json.dumps(dependencies)
+            git_repos_json = json.dumps(git_repos) if git_repos else '{}'
+            allowed_tools_json = json.dumps(allowed_tools)
                 
-            # Compute content hash
-            content_hash = SeedTask.compute_content_hash(prompt, description)
+            # Compute content hash with available fields in database model
+            content_hash = SeedTask.compute_content_hash(
+                prompt=prompt,
+                description=description,
+                git_repos=git_repos_json,
+                allowed_tools=allowed_tools_json,
+                internet_needed=internet_needed
+            )
             
             # Check if task exists
             existing_task = session.query(SeedTask).filter_by(task_id=task_id).first()
@@ -106,15 +158,24 @@ class YamlLoader:
                     task_id=task_id,
                     prompt=prompt,
                     description=description,
+                    git_repos=git_repos_json,
+                    internet_needed=internet_needed,
+                    allowed_tools=allowed_tools_json,
                     content_hash=content_hash,
                     is_active=True
                 )
                 session.add(new_task)
+                session.flush()  # Get the task ID for repository sync
                 seeds_added += 1
+                
+                # Sync repository requirements
+                if git_repos:
+                    self._sync_task_repositories(session, new_task, git_repos)
                 
                 logger.info(
                     "Added new seed task",
                     task_id=task_id,
+                    dependencies=dependencies,
                     content_hash=content_hash[:8]
                 )
                 
@@ -122,9 +183,18 @@ class YamlLoader:
                 # Update existing task
                 existing_task.prompt = prompt
                 existing_task.description = description
+                existing_task.git_repos = git_repos_json
+                existing_task.internet_needed = internet_needed
+                existing_task.allowed_tools = allowed_tools_json
                 existing_task.content_hash = content_hash
                 existing_task.is_active = True
                 seeds_updated += 1
+                
+                # Clear and re-sync repository requirements
+                session.query(TaskRepository).filter_by(task_id=existing_task.id).delete()
+                session.flush()
+                if git_repos:
+                    self._sync_task_repositories(session, existing_task, git_repos)
                 
                 logger.info(
                     "Updated seed task",
@@ -317,6 +387,38 @@ class YamlLoader:
             )
             
         return deactivated_count
+    
+    def _sync_task_repositories(self, session: Session, task: SeedTask, git_repos: Dict[str, Any]):
+        """Sync repository requirements for a task."""
+        for repo_url, repo_config in git_repos.items():
+            if not isinstance(repo_config, dict):
+                raise ValueError(f"Repository config for {repo_url} must be dict with 'commit' and 'main' fields")
+            if 'commit' not in repo_config:
+                raise ValueError(f"Repository config for {repo_url} missing required 'commit' field")
+            if 'main' not in repo_config:
+                raise ValueError(f"Repository config for {repo_url} missing required 'main' field")
+                
+            commit = repo_config['commit']
+            is_main = repo_config['main']
+            
+            # Generate mount path
+            mount_path = self._generate_mount_path(repo_url)
+            
+            # Create repository requirement
+            task_repo = TaskRepository(
+                task_id=task.id,
+                repo_url=repo_url,
+                required_commit=commit,
+                is_main_repo=is_main,
+                mount_path=mount_path
+            )
+            session.add(task_repo)
+    
+    def _generate_mount_path(self, repo_url: str) -> str:
+        """Generate mount path from repository URL - user provides whatever format they want."""
+        # Just use the URL as-is for the mount path structure
+        # User is responsible for providing consistent URL format
+        return f"/git/{repo_url}"
 
 
 def load_yaml_files(

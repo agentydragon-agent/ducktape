@@ -81,7 +81,7 @@ class SystemPrompt(Base):
 
 class SeedTask(Base):
     """
-    Seed tasks loaded from seeds.yaml, stored with full content.
+    Seed tasks loaded from seeds.yaml, stored with full content and requirements.
     
     These are the programming tasks that agents attempt to solve. Each task
     is designed to test specific coding patterns and behaviors. Tasks are
@@ -96,8 +96,14 @@ class SeedTask(Base):
     prompt = Column(Text, nullable=False, 
                    comment='Full task description that agents receive (searchable)')
     description = Column(Text, comment='Optional human-readable description of what this task tests')
+    
+    # Task execution requirements
+    git_repos = Column(Text, comment='JSON of git repositories required: {url: {commit, main}}')
+    internet_needed = Column(Boolean, default=False, comment='Whether task needs internet access')
+    allowed_tools = Column(Text, comment='JSON list of allowed tools for this task')
+    
     content_hash = Column(Text, nullable=False, 
-                         comment='SHA256 hash of prompt+description for change detection')
+                         comment='SHA256 hash of all task content for change detection')
     created_at = Column(DateTime, default=datetime.utcnow, comment='When this task was first added')
     updated_at = Column(DateTime, default=datetime.utcnow, comment='When this task was last modified')
     is_active = Column(Boolean, default=True, 
@@ -105,12 +111,24 @@ class SeedTask(Base):
     
     # Relationships
     rollouts = relationship("Rollout", back_populates="task")
+    task_repositories = relationship("TaskRepository", back_populates="task")
     
     @classmethod
-    def compute_content_hash(cls, prompt: str, description: str = None) -> str:
-        """Compute SHA256 hash of task content for change detection."""
-        content = f"{prompt}|{description or ''}"
+    def compute_content_hash(cls, prompt: str, description: str = None, git_repos: str = None, 
+                           allowed_tools: str = None, internet_needed: bool = False) -> str:
+        """Compute SHA256 hash of all task content for change detection."""
+        content = f"{prompt}|{description or ''}|{git_repos or '{}'}|{allowed_tools or '[]'}|{internet_needed}"
         return hashlib.sha256(content.encode('utf-8')).hexdigest()
+        
+    @property
+    def git_repos_dict(self) -> Dict:
+        """Parse git_repos JSON into dictionary."""
+        return json.loads(self.git_repos) if self.git_repos else {}
+        
+    @property
+    def allowed_tools_list(self) -> List[str]:
+        """Parse allowed_tools JSON into list."""
+        return json.loads(self.allowed_tools) if self.allowed_tools else []
 
 
 class GradingCriteria(Base):
@@ -328,6 +346,60 @@ class PatternAnalysisRollout(Base):
     
     # Relationships
     pattern_analysis = relationship("PatternAnalysis", back_populates="rollouts")
+    rollout = relationship("Rollout")
+
+
+class TaskRepository(Base):
+    """Repository requirements for tasks, extracted from git_repos field."""
+    __tablename__ = 'task_repositories'
+    __table_args__ = {'comment': 'Git repository requirements for each task'}
+    
+    id = Column(Integer, primary_key=True, comment='Unique identifier')
+    task_id = Column(Integer, ForeignKey('seed_tasks.id'), nullable=False,
+                    comment='Which task requires this repository')
+    repo_url = Column(Text, nullable=False, comment='Git repository URL')
+    required_commit = Column(Text, nullable=False, comment='Required commit hash or ref')
+    is_main_repo = Column(Boolean, default=False, 
+                         comment='Whether this repo should be symlinked to /workspace')
+    mount_path = Column(Text, comment='Container mount path (e.g., /git/git@github.com:foo/bar)')
+    
+    # Relationships
+    task = relationship("SeedTask", back_populates="task_repositories")
+
+
+class DockerLayer(Base):
+    """Tracks Docker layers built for repository requirements."""
+    __tablename__ = 'docker_layers'
+    __table_args__ = {'comment': 'Docker layers built for git repositories'}
+    
+    id = Column(Integer, primary_key=True, comment='Unique identifier')
+    layer_tag = Column(Text, unique=True, nullable=False, comment='Docker image tag')
+    repo_url = Column(Text, nullable=False, comment='Git repository URL')
+    commit_hash = Column(Text, comment='Commit hash (None for base layers)')
+    layer_type = Column(Text, nullable=False, comment='base, merge_base, or commit')
+    parent_layer_tag = Column(Text, comment='Parent Docker layer tag')
+    created_at = Column(DateTime, default=datetime.utcnow, comment='When layer was built')
+    size_bytes = Column(Integer, comment='Layer size in bytes')
+    
+    # Usage tracking
+    last_used = Column(DateTime, comment='When layer was last used in a rollout')
+    usage_count = Column(Integer, default=0, comment='Number of times layer has been used')
+
+
+class RolloutDockerInfo(Base):
+    """Tracks Docker information for each rollout execution."""
+    __tablename__ = 'rollout_docker_info'
+    __table_args__ = {'comment': 'Docker execution details for rollouts'}
+    
+    id = Column(Integer, primary_key=True, comment='Unique identifier')
+    rollout_id = Column(Integer, ForeignKey('rollouts.id'), unique=True, nullable=False,
+                       comment='Which rollout this Docker info belongs to')
+    docker_image_tag = Column(Text, nullable=False, comment='Docker image used for execution')
+    container_id = Column(Text, comment='Docker container ID')
+    internet_enabled = Column(Boolean, default=False, comment='Whether internet was enabled')
+    git_repos_used = Column(Text, comment='JSON of git repositories mounted in container')
+    
+    # Relationships
     rollout = relationship("Rollout")
 
 

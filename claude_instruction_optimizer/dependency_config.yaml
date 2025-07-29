@@ -1,0 +1,51 @@
+# Docker Dependency Layer Configuration
+# This file defines the available Docker layers, what dependencies they provide,
+# and convenience aliases for common dependency combinations.
+
+layers:
+  system-base:
+    image_tag: "claude-dev:system-base"
+    provides: ["system", "bash", "git", "basic-tools"]
+    build_order: 1
+    
+  rust:
+    image_tag: "claude-dev:rust"
+    provides: ["system", "bash", "git", "basic-tools", "rust"]
+    build_order: 2
+    
+  go:
+    image_tag: "claude-dev:go"
+    provides: ["system", "bash", "git", "basic-tools", "go"]
+    build_order: 3
+    
+  python-core:
+    image_tag: "claude-dev:python-core"
+    provides: ["system", "bash", "git", "basic-tools", "python", "python-core"]
+    build_order: 4
+    
+  python-dev:
+    image_tag: "claude-dev:python-dev"
+    provides: ["system", "bash", "git", "basic-tools", "python", "python-core", "python-dev", "pytest", "testing"]
+    build_order: 5
+    
+  python-data:
+    image_tag: "claude-dev:python-data"
+    provides: ["system", "bash", "git", "basic-tools", "python", "python-core", "python-dev", "pytest", "testing", "python-data", "pandas", "numpy", "matplotlib"]
+    build_order: 6
+    
+  python-complete:
+    image_tag: "claude-dev:python-complete"
+    provides: ["system", "bash", "git", "basic-tools", "python", "python-core", "python-dev", "pytest", "testing", "python-data", "pandas", "numpy", "matplotlib", "python-complete"]
+    build_order: 7
+    
+  node:
+    image_tag: "claude-dev:node"
+    provides: ["system", "bash", "git", "basic-tools", "node", "javascript", "typescript"]
+    build_order: 8
+    
+  ruby:
+    image_tag: "claude-dev:ruby"
+    provides: ["system", "bash", "git", "basic-tools", "ruby"]
+    build_order: 9
+
+# No aliases - use direct dependency specification for clarity

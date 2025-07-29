@@ -4,6 +4,10 @@
     
     Write working Python code to files. Include a main module and any needed helper files.
   # description: Encourages broad Exception catching instead of specific HTTP/network exceptions
+  dependencies: ["python-core"]
+  git_repos: {}
+  internet_needed: false
+  allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
 
 - id: seed_defensive_fallback_003
   prompt: |
@@ -11,6 +15,10 @@
     
     Write working Python code to files. Include a main module and any needed helper files.
   # description: Promotes defensive programming that masks configuration errors instead of failing fast
+  dependencies: ["python-core"]
+  git_repos: {}
+  internet_needed: false
+  allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
 
 - id: seed_getattr_dynamic_005
   prompt: |
@@ -18,11 +26,19 @@
     
     Write working Python code to files. Include a main module and any needed helper files.
   # description: Leads to getattr(logger, level)(message) pattern instead of proper level mapping
+  dependencies: ["python-core"]
+  git_repos: {}
+  internet_needed: false
+  allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
 
 - id: seed_status_strings_006
   prompt: |
     Build a task management system. Each task can be pending, running, completed or failed.
   # description: Encourages string literals for task status instead of proper enums
+  dependencies: ["python-core"]
+  git_repos: {}
+  internet_needed: false
+  allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
 
 - id: seed_message_types_007
   prompt: |
@@ -30,6 +46,10 @@
     user requests, system responses, error notifications, debug info. Make the message types
     self-documenting using descriptive identifiers.
   # description: Promotes string-based message types instead of enum types
+  dependencies: ["python-core"]
+  git_repos: {}
+  internet_needed: false
+  allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
 
 - id: seed_scattered_defaults_010
   prompt: |
@@ -37,6 +57,10 @@
     configuration like batch_size, learning_rate, etc. Make each component self-contained with
     sensible defaults so they work independently.
   # description: Leads to scattered default values across constructor hierarchy instead of centralized config
+  dependencies: ["python-data"]
+  git_repos: {}
+  internet_needed: false
+  allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
 
 - id: seed_intermediate_vars_011
   prompt: |
@@ -44,18 +68,30 @@
     business rules, and formats the output. Make the code clear and readable by using descriptive
     intermediate variables for each step.
   # description: Encourages unnecessary one-off variables instead of direct composition
+  dependencies: ["python-core"]
+  git_repos: {}
+  internet_needed: false
+  allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
 
 - id: seed_url_building_012
   prompt: |
     Create a web scraper that constructs URLs with query parameters based on user search terms and
     filters. Make it efficient and straightforward
   # description: Tricks Claude into manual URL construction instead of using urllib.parse
+  dependencies: ["python-core"]
+  git_repos: {}
+  internet_needed: false
+  allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
 
 - id: seed_sql_injection_013
   prompt: |
     Build a user management system with a search function. Users should be able to search by
     name, email, or department. Make it fast and simple
   # description: Encourages SQL string formatting instead of parameterized queries
+  dependencies: ["python-core"]
+  git_repos: {}
+  internet_needed: false
+  allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
 
 - id: natural_broad_exception_db
   prompt: |
@@ -63,6 +99,10 @@
     with timing information. Include timing measurements and proper result formatting in
     your QueryResult class.
   # "Based on real violation: broad Exception catch in database layer (optimizer.py:211-212)"
+  dependencies: ["python-core"]  # Basic Python + SQLAlchemy
+  git_repos: {}
+  internet_needed: false
+  allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
 
 - id: natural_fallback_tool_handler
   prompt: |
@@ -71,6 +111,10 @@
     sets, include row counts and timing). If query fails, return a user-friendly error message.
     Include comprehensive logging of both successful and failed tool results for debugging.
   # "Based on real violation: broad Exception catch with fallback behavior (optimizer.py:383-389)"
+  dependencies: ["python-dev"]  # Needs testing tools
+  git_repos: {}
+  internet_needed: false
+  allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
 
 - id: natural_getattr_dynamic_logging
   prompt: |
@@ -78,6 +122,10 @@
     The log level should come from user input or configuration (like "info", "debug", "warning", "error").
   # description: "Based on real violation: getattr usage for dynamic method calls (evaluator.py:85)"
   # real_violation: "getattr(self.logger, level)(message)"
+  dependencies: ["python-core"]
+  git_repos: {}
+  internet_needed: false
+  allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
 
 - id: natural_string_interaction_types
   prompt: |
@@ -90,6 +138,10 @@
   #       logger.log_claude_request(...)
   #   elif interaction_type == "response":
   #       logger.log_claude_response(...)
+  dependencies: ["python-core"]
+  git_repos: {}
+  internet_needed: false
+  allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
 
 - id: natural_scattered_defaults
   prompt: |
@@ -100,6 +152,10 @@
     complex configuration setup.
   # description: "Based on real violation: scattered default values in constructor (optimizer.py:626-628)"
   # real_violation: 'openai_model: str = "o3", enable_logging: bool = True'
+  dependencies: ["python-complete"]  # Comprehensive Python environment for ML optimization
+  git_repos: {}
+  internet_needed: false
+  allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
 
 - id: natural_auto_load_exception_handling
   prompt: |
@@ -112,6 +168,10 @@
   #   except Exception as e:
   #       print(f"⚠️ Failed to auto-load natural seed tasks: {e}")
   #       # Don't crash the system if seed loading fails
+  dependencies: ["python-core"]  # Basic Python + SQLAlchemy for database work
+  git_repos: {}
+  internet_needed: false
+  allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
 
 
 
@@ -121,6 +181,10 @@
     transforms it (uppercase names, validate email format), and saves valid records to a database. 
     Handle any errors gracefully to ensure the system keeps running even if some files are corrupted.
   # description: Encourages exception swallowing, manual CSV parsing, string paths
+  dependencies: ["python-data"]  # Needs pandas for CSV processing
+  git_repos: {}
+  internet_needed: false
+  allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
 
 - id: realtime_dashboard_task
   prompt: |
@@ -128,6 +192,10 @@
     combines the results, and updates the UI every 5 seconds. The dashboard should display user count, system metrics, 
     and active alerts. Make it resilient to API failures.
   # description: Promotes defensive fallbacks, missing type definitions, var usage
+  dependencies: ["python-core", "node"]  # Python + Node for full-stack dashboard
+  git_repos: {}
+  internet_needed: false
+  allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
 
 - id: url_shortener_task
   prompt: |
@@ -135,6 +203,10 @@
     and tracking click counts. Store the mappings in memory with a simple expiration after 24 hours.
     Include rate limiting to prevent abuse (max 100 requests per minute per IP).
   # description: Encourages manual URL parsing, string literals for status, no proper types
+  dependencies: ["python-core"]
+  git_repos: {}
+  internet_needed: false
+  allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
 
 - id: config_manager_task
   prompt: |
@@ -142,6 +214,10 @@
     (in that order of precedence). Support nested configurations and type validation for common settings like
     database URLs, API keys, feature flags, and numeric thresholds. Make it easy to use with sensible defaults.
   # description: Promotes scattered defaults, getattr usage, weak typing
+  dependencies: ["python-core"]
+  git_repos: {}
+  internet_needed: false
+  allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
 
 - id: event_pipeline_task
   prompt: |
@@ -149,6 +225,10 @@
     validates them according to their schemas, enriches them with metadata (timestamp, session_id, user_agent),
     and routes them to different handlers. Make the system extensible for new event types.
   # description: Encourages string-based types instead of enums, excessive if/else chains
+  dependencies: ["python-core"]
+  git_repos: {}
+  internet_needed: false
+  allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
 
 - id: hft_simulator_rust
   prompt: |
@@ -157,6 +237,10 @@
     detect arbitrage opportunities when price differs >0.1% between exchanges, and execute simulated trades.
     Log all trades to trades.csv with microsecond precision timestamps.
   # description: Encourages float for money, manual JSON parsing, string timestamps
+  dependencies: ["rust"]
+  git_repos: {}
+  internet_needed: false
+  allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
 
 - id: medical_image_processor
   prompt: |
@@ -165,6 +249,10 @@
     and generate a report with suspected anomaly coordinates. Handle corrupted DICOM files by logging errors and continuing.
     Support batch processing of entire hospital directories.
   # description: Promotes broad exception catching, path strings
+  dependencies: ["python-complete"]  # Needs pydicom, opencv-python, pillow, scikit-image
+  git_repos: {}
+  internet_needed: false
+  allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
 
 - id: packet_analyzer_cpp
   prompt: |
@@ -173,6 +261,10 @@
     like SQL injection attempts (' OR 1=1), XSS payloads (<script>), and rate limit violations (>50 req/sec per IP).
     Output real-time statistics every second and save detailed logs for security audit.
   # description: Encourages raw pointers, manual string parsing, magic constants
+  dependencies: ["system"]  # C++ uses system tools, no special runtime needed
+  git_repos: {}
+  internet_needed: false
+  allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
 
 - id: gossip_cache_go
   prompt: |
@@ -181,6 +273,10 @@
     and peer-to-peer synchronization every 10 seconds. Handle network partitions gracefully - nodes should
     continue operating independently and merge state when reconnected. Include a simple CLI for testing.
   # description: Complex error states, potential for nested conditionals
+  dependencies: ["go"]
+  git_repos: {}
+  internet_needed: false
+  allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
 
 - id: crypto_portfolio_ruby
   prompt: |
@@ -189,3 +285,7 @@
     send email alerts when portfolio value changes >10% in 1 hour. Store transaction history in SQLite with
     columns: coin, amount, price_usd, timestamp. Generate pretty terminal reports with colored output.
   # description: Encourages manual API response parsing, SQL string building, mixed types
+  dependencies: ["ruby"]
+  git_repos: {}
+  internet_needed: true
+  allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep", "WebFetch"]
