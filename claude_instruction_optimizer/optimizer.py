@@ -811,7 +811,7 @@ async def run_claude_code(
     from claude_code_sdk import ResultMessage
     
     async with task_claude(task_id, config, output_dir) as client:
-        # Write system prompt inside container
+        # Write system prompt inside container (before PATH isolation)
         await client.setup_system_prompt(system_prompt)
         
         # Execute Claude session using the containerized client
@@ -1143,6 +1143,34 @@ class Turn:
         return msgs
 
 
+def build_statistical_summary(rollouts: List[GradedCode]) -> str:
+    """Build purely statistical summary for stats-only processing mode."""
+    import statistics
+    import math
+    
+    if not rollouts:
+        return "No rollout data available."
+    
+    # Extract overall scores
+    overall_scores = [gc.grade.overall_score for gc in rollouts]
+    
+    # Calculate statistics
+    mean_score = statistics.mean(overall_scores)
+    n = len(overall_scores)
+    
+    # Calculate 69% confidence interval (approximately 1 standard error)
+    if n > 1:
+        std_err = statistics.stdev(overall_scores) / math.sqrt(n)
+        # 69% CI is approximately mean ± 1 * standard_error
+        ci_lower = mean_score - std_err
+        ci_upper = mean_score + std_err
+    else:
+        # Single data point - no meaningful CI
+        ci_lower = ci_upper = mean_score
+    
+    return f"Performance Statistics:\nMean Overall Score: {mean_score:.3f}\n69% Confidence Interval: [{ci_lower:.3f}, {ci_upper:.3f}]\nSample Size: {n}"
+
+
 class PromptEngineer:
     """Manages conversation state and token counting for prompt optimization."""
 
@@ -1160,9 +1188,13 @@ class PromptEngineer:
 
         if mode == ProcessingMode.FULL_ROLLOUTS:
             analysis_part = "analyze rollouts from coding tasks"
-        else:  # ProcessingMode.SUMMARY
+        elif mode == ProcessingMode.SUMMARY:
             analysis_part = (
                 "analyze pattern summaries and insights from coding task rollouts"
+            )
+        else:  # ProcessingMode.STATS_ONLY
+            analysis_part = (
+                "analyze statistical performance metrics"
             )
 
         shared_end = " and iteratively improve the system prompt to get better results. The coding assistant should write working code to files, not just show code in conversation. Focus on prompts that encourage creating actual file artifacts. "
@@ -1656,7 +1688,7 @@ async def optimize_prompts(
                     mode="full_rollouts",
                     grades_length=len(grades)
                 )
-            else:  # ProcessingMode.SUMMARY
+            elif processing_mode == ProcessingMode.SUMMARY:
                 summarizer = PatternSummarizer()
                 grades = await summarizer.summarize_patterns(
                     iteration_results, openai_api_log_path
@@ -1675,6 +1707,13 @@ async def optimize_prompts(
                     summary_text=grades,
                     tokens_used=None,
                     analysis_reasoning=None
+                )
+            else:  # ProcessingMode.STATS_ONLY
+                grades = build_statistical_summary(iteration_results)
+                iter_logger.info(
+                    "ITERATION_FEEDBACK_MODE",
+                    mode="stats_only",
+                    stats_length=len(grades)
                 )
 
             engineer.add_result(prev_reasoning, prev_function_call, current_prompt, grades)
@@ -1714,6 +1753,7 @@ def main() -> None:
 Examples:
   %(prog)s --iterations 5 --rollouts-per-task 3
   %(prog)s --mode summary --iterations 1 --rollouts-per-task 1
+  %(prog)s --mode stats_only --iterations 3 --rollouts-per-task 2
         """,
     )
 
@@ -1736,7 +1776,7 @@ Examples:
         type=str,
         choices=[mode.value for mode in ProcessingMode],
         default=ProcessingMode.FULL_ROLLOUTS.value,
-        help="Processing mode: full_rollouts runs complete agent sessions, summary uses condensed feedback (default: %(default)s)",
+        help="Processing mode: full_rollouts runs complete agent sessions, summary uses condensed feedback, stats_only provides only statistical metrics (default: %(default)s)",
     )
 
     parser.add_argument(

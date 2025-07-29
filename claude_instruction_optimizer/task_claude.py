@@ -2,9 +2,11 @@
 
 import asyncio
 import fnmatch
+import io
 import json
 import os
 import shutil
+import tarfile
 import tempfile
 from contextlib import asynccontextmanager
 from dataclasses import asdict
@@ -23,6 +25,41 @@ from claude_code_sdk import (
     ToolUseBlock,
     ToolResultBlock,
 )
+
+
+from dataclasses import dataclass
+
+@dataclass  
+class ContainerizedClaudeCodeOptions(ClaudeCodeOptions):
+    """ClaudeCodeOptions with containerization support."""
+    claude_binary: str | None = None
+
+
+def _monkey_patch_claude_sdk_for_containerization():
+    """Monkeypatch Claude SDK to use our containerized wrapper instead of PATH lookup."""
+    import claude_code_sdk
+    
+    # Replace the options class so we can pass claude_binary
+    claude_code_sdk.types.ClaudeCodeOptions = ContainerizedClaudeCodeOptions
+    claude_code_sdk.ClaudeCodeOptions = ContainerizedClaudeCodeOptions
+    
+    # Override _find_cli to use claude_binary from options
+    from claude_code_sdk._internal.transport.subprocess_cli import SubprocessCLITransport
+    
+    def _patched_find_cli(self) -> str:
+        """Use claude_binary from options if provided, otherwise use PATH."""
+        claude_binary = getattr(self._options, 'claude_binary', None)
+        if claude_binary:
+            return claude_binary
+        
+        # This should never happen in containerized mode
+        raise RuntimeError("No claude_binary specified in options")
+    
+    SubprocessCLITransport._find_cli = _patched_find_cli
+
+
+# Apply monkeypatch once at module level  
+_monkey_patch_claude_sdk_for_containerization()
 
 
 class FileCollection:
@@ -62,12 +99,15 @@ class TaskClaude:
         self._output_dir = output_dir
         self._docker_client = docker.from_env()
         self._container = None
-        self._wrapper_dir = None
-        self._original_path = None
-        self._path_isolated = False
+        self._wrapper_script_path = None
         self._message_queue = asyncio.Queue()
         self._query_task = None
         self._logger = None
+        
+        # Find docker path for wrapper creation
+        self._docker_path = shutil.which("docker")
+        if not self._docker_path:
+            raise RuntimeError("Docker binary not found in PATH")
         
     @property
     def container_id(self) -> str:
@@ -76,46 +116,23 @@ class TaskClaude:
             raise RuntimeError("Container not started")
         return self._container.id
         
-    def _ensure_path_isolated(self):
-        """Runtime safety check - call before any subprocess operations."""
-        if not self._path_isolated:
-            raise RuntimeError(
-                "PATH isolation not active - TaskClaude must be used as context manager"
-            )
+    def _ensure_container_ready(self):
+        """Runtime safety check - call before any container operations."""
+        if not self._container:
+            raise RuntimeError("Container not started - TaskClaude must be used as context manager")
             
-    def _isolate_path(self):
-        """Apply PATH isolation - makes host claude unreachable."""
-        if not self._wrapper_dir:
-            raise RuntimeError("Wrapper not setup before PATH isolation")
-        
-        self._original_path = os.environ.get("PATH", "")
-        os.environ["PATH"] = str(self._wrapper_dir)  # ONLY wrapper directory
-        self._path_isolated = True
-        
-    def _restore_path(self):
-        """Restore original PATH - critical for cleanup."""
-        if self._original_path is not None:
-            os.environ["PATH"] = self._original_path
-            self._path_isolated = False
-            
-    def _get_isolated_env(self) -> Dict[str, str]:
-        """Get environment with PATH isolation for subprocess calls."""
-        env = os.environ.copy()
-        if self._wrapper_dir:
-            env["PATH"] = str(self._wrapper_dir)
-        return env
-        
     async def query(self, task: str) -> None:
         """Start Claude query - matches ClaudeSDKClient.query() signature."""
-        self._ensure_path_isolated()
+        self._ensure_container_ready()
         
-        # Create ClaudeCodeOptions pointing to container workspace
-        options = ClaudeCodeOptions(
+        # Create ClaudeCodeOptions with containerization settings
+        options = ContainerizedClaudeCodeOptions(
             allowed_tools=None,  # Full tool access for autonomous execution
-            cwd=Path("/workspace"),  # Container workspace path
+            cwd=".",  # Use current directory for SDK check - container wrapper handles actual cwd
             max_turns=self.config.rollouts.max_turns,
-            permission_mode="bypassPermissions",  # Required for Docker container execution
+            permission_mode="bypassPermissions",  # Required for Docker container execution  
             mcp_servers={},
+            claude_binary=str(self._wrapper_script_path),  # Use our containerized wrapper
         )
         
         # Store options for receive_messages
@@ -124,7 +141,7 @@ class TaskClaude:
         
     async def receive_messages(self) -> AsyncIterator[Any]:
         """Receive messages from Claude - matches ClaudeSDKClient.receive_messages()."""
-        self._ensure_path_isolated()
+        self._ensure_container_ready()
         
         # Use the actual ClaudeSDKClient but with PATH isolation active
         async with ClaudeSDKClient(options=self._claude_options) as client:
@@ -132,35 +149,22 @@ class TaskClaude:
             async for message in client.receive_messages():
                 yield message
     
-    async def setup_system_prompt(self, system_prompt: str):
-        """Write CLAUDE.md inside the container."""
-        self._ensure_path_isolated()
+    def setup_system_prompt(self, system_prompt: str):
+        """Write CLAUDE.md inside the container (call before PATH isolation)."""
+        if not self._container:
+            raise RuntimeError("Container must be started before setting up system prompt")
         
-        # Write CLAUDE.md inside the container
-        write_cmd = [
-            "docker", "exec", "-i", self._container.id,
-            "sh", "-c", "cat > /workspace/CLAUDE.md"
-        ]
+        self._logger.debug("Writing system prompt to container", 
+                         container_id=self._container.id,
+                         prompt_length=len(system_prompt))
         
-        process = await asyncio.create_subprocess_exec(
-            *write_cmd,
-            stdin=asyncio.subprocess.PIPE,
-            env=self._get_isolated_env()
-        )
-        await process.communicate(input=system_prompt.encode('utf-8'))
-        
-        # Set environment variables inside container
-        bash_timeout = str(self.config.rollouts.bash_timeout_ms)
-        env_cmd = [
-            "docker", "exec", self._container.id,
-            "sh", "-c", f"echo 'export BASH_MAX_TIMEOUT_MS={bash_timeout}' >> /workspace/.bashrc"
-        ]
-        
-        await asyncio.create_subprocess_exec(*env_cmd, env=self._get_isolated_env())
+        # Write CLAUDE.md using Docker SDK
+        self._container.put_archive('/workspace', 
+            self._create_tar_archive('CLAUDE.md', system_prompt))
         
     async def collect_outputs(self) -> FileCollection:
         """Copy files from container to host with filtering applied."""
-        self._ensure_path_isolated()
+        self._ensure_container_ready()
         
         if not self._container:
             raise RuntimeError("No container to collect from")
@@ -256,6 +260,22 @@ class TaskClaude:
         return any(fnmatch.fnmatch(relative_path, pattern) or fnmatch.fnmatch(filename, pattern) 
                    for pattern in self.config.exclude_patterns)
             
+    def _create_tar_archive(self, filename: str, content: str) -> bytes:
+        """Create a tar archive containing a single file."""
+        tar_buffer = io.BytesIO()
+        
+        with tarfile.open(fileobj=tar_buffer, mode='w') as tar:
+            # Create tarinfo for the file
+            tarinfo = tarfile.TarInfo(name=filename)
+            tarinfo.size = len(content.encode('utf-8'))
+            tarinfo.mode = 0o644
+            
+            # Add file to archive
+            tar.addfile(tarinfo, io.BytesIO(content.encode('utf-8')))
+        
+        tar_buffer.seek(0)
+        return tar_buffer.read()
+            
     def _get_task_from_db(self):
         """Get task from database."""
         from database import get_db_session, SeedTask
@@ -273,21 +293,26 @@ class TaskClaude:
         
         wrapper_script = wrapper_dir / "claude"
         
-        # Find docker binary path
-        docker_path = shutil.which("docker")
-        if not docker_path:
-            raise RuntimeError("Docker binary not found in PATH")
+        # Use pre-found docker path (found before PATH isolation)
+        docker_path = self._docker_path
         
-        # Generate wrapper script inline with container ID
+        # Generate wrapper script inline with container ID and environment
+        bash_timeout = str(self.config.rollouts.bash_timeout_ms)
         wrapper_content = f"""#!/bin/sh
-# Docker wrapper for Claude CLI
-exec {docker_path} exec -i {container_id} /usr/local/bin/claude --dangerously-skip-permissions "$@"
+# Docker wrapper for Claude CLI with environment variables and working directory
+exec {docker_path} exec -i -w /workspace -e BASH_MAX_TIMEOUT_MS={bash_timeout} {container_id} /usr/local/bin/claude "$@"
 """
         
         wrapper_script.write_text(wrapper_content)
         wrapper_script.chmod(0o755)
         
-        self._wrapper_dir = wrapper_dir
+        self._logger.debug("Claude wrapper created", 
+                         wrapper_path=str(wrapper_script),
+                         docker_path=docker_path,
+                         container_id=container_id)
+        
+        # Store the wrapper script path for ClaudeCodeOptions
+        self._wrapper_script_path = str(wrapper_script)
         
     async def _start_container(self):
         """Start Docker container for the task."""
@@ -371,33 +396,30 @@ exec {docker_path} exec -i {container_id} /usr/local/bin/claude --dangerously-sk
                 pass  # Ignore cleanup errors
             self._container = None
             
-        if self._wrapper_dir and self._wrapper_dir.exists():
+        if self._wrapper_script_path and Path(self._wrapper_script_path).exists():
             try:
-                shutil.rmtree(self._wrapper_dir)
+                # Remove the wrapper script and its parent directory
+                wrapper_path = Path(self._wrapper_script_path)
+                shutil.rmtree(wrapper_path.parent)
             except:
                 pass  # Ignore cleanup errors
-            self._wrapper_dir = None
+            self._wrapper_script_path = None
     
     async def __aenter__(self) -> "TaskClaude":
-        """Context manager entry - setup container and PATH isolation."""
+        """Context manager entry - setup container and wrapper."""
         # Set up logger
         from logging_utils import DualOutputLogging
         self._logger = DualOutputLogging.get_logger().bind(task_id=self.task_id)
         
         # Start container first, then setup wrapper with container ID
         await self._start_container()
+        # Note: _start_container includes remounting, so container.id is final after it returns
         self._setup_wrapper(self._container.id)
-        
-        # Apply PATH isolation - CRITICAL SECTION
-        self._isolate_path()
         
         return self
         
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        """Context manager exit - restore PATH and cleanup container."""
-        # Restore PATH FIRST - critical for cleanup
-        self._restore_path()
-        
+        """Context manager exit - cleanup container and wrapper."""
         # Stop query task if running
         if self._query_task and not self._query_task.done():
             self._query_task.cancel()
@@ -406,8 +428,52 @@ exec {docker_path} exec -i {container_id} /usr/local/bin/claude --dangerously-sk
         await self._cleanup()
 
 
-@asynccontextmanager
-async def task_claude(task_id: str, config, output_dir: Path) -> AsyncIterator[TaskClaude]:
+class _TaskClaudeProxy:
+    """Proxy to handle system prompt setup after container initialization."""
+    
+    def __init__(self, claude: TaskClaude):
+        self._claude = claude
+        self._setup_done = False
+        
+    async def setup_system_prompt(self, system_prompt: str):
+        """Setup system prompt after container and wrapper initialization."""
+        # Start container and setup wrapper first
+        from logging_utils import DualOutputLogging
+        self._claude._logger = DualOutputLogging.get_logger().bind(task_id=self._claude.task_id)
+        
+        await self._claude._start_container()
+        # Note: _start_container includes remounting, so container.id is final after it returns
+        self._claude._setup_wrapper(self._claude._container.id)
+        
+        # Now write system prompt to container
+        self._claude.setup_system_prompt(system_prompt)
+        self._setup_done = True
+        
+    async def query(self, task: str) -> None:
+        """Delegate to actual TaskClaude."""
+        if not self._setup_done:
+            raise RuntimeError("Must call setup_system_prompt first")
+        return await self._claude.query(task)
+        
+    async def receive_messages(self) -> AsyncIterator[Any]:
+        """Delegate to actual TaskClaude.""" 
+        if not self._setup_done:
+            raise RuntimeError("Must call setup_system_prompt first")
+        async for message in self._claude.receive_messages():
+            yield message
+            
+    async def collect_outputs(self) -> FileCollection:
+        """Delegate to actual TaskClaude."""
+        return await self._claude.collect_outputs()
+        
+    @property
+    def container_id(self) -> str:
+        """Delegate to actual TaskClaude."""
+        return self._claude.container_id
+
+
+@asynccontextmanager  
+async def task_claude(task_id: str, config, output_dir: Path) -> AsyncIterator[_TaskClaudeProxy]:
     """Context manager for Claude task execution.
     
     Args:
@@ -416,9 +482,14 @@ async def task_claude(task_id: str, config, output_dir: Path) -> AsyncIterator[T
         output_dir: Directory for output files
         
     Yields:
-        TaskClaude: Containerized Claude interface with ClaudeSDKClient compatibility
+        _TaskClaudeProxy: Proxy that handles system prompt setup before PATH isolation
     """
     claude = TaskClaude(task_id, config, output_dir)
+    proxy = _TaskClaudeProxy(claude)
     
-    async with claude as client:
-        yield client
+    try:
+        yield proxy
+    finally:
+        # Cleanup via the actual TaskClaude instance
+        if proxy._setup_done:
+            await claude._cleanup()
