@@ -1,18 +1,15 @@
 #!/bin/bash
-# Simple transparent Docker wrapper for Claude CLI
-# Just passes all arguments through to the containerized claude command
+# Docker wrapper for Claude CLI using long-running containers
+# Executes claude command inside the pre-configured container
 
-# Capture the current working directory for volume mounting
-_cwd=$(pwd)
+# Check if container ID is provided
+if [ -z "$CLAUDE_CONTAINER_ID" ]; then
+    echo "ERROR: CLAUDE_CONTAINER_ID environment variable not set" >&2
+    exit 1
+fi
 
 # Optional: Debug logging (remove in production)
-echo "DEBUG: Docker args: $@" >> /tmp/claude_debug.log
+echo "DEBUG: Container ID: $CLAUDE_CONTAINER_ID, Docker args: $@" >> /tmp/claude_debug.log
 
-# Execute claude inside Docker container, passing through all arguments unchanged
-# Mount current directory as /workspace so files created in container are accessible on host
-exec docker run --rm -i \
-  -e ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY}" \
-  -v "${_cwd}:/workspace" \
-  -w /workspace \
-  claude-dev:latest \
-  claude --dangerously-skip-permissions "$@"
+# Execute claude inside the existing Docker container
+exec docker exec -i "$CLAUDE_CONTAINER_ID" claude --dangerously-skip-permissions "$@"

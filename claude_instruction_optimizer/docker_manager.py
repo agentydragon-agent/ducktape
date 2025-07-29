@@ -2,8 +2,11 @@
 
 import shutil
 import os
+import subprocess
 from pathlib import Path
 from typing import Optional
+from contextlib import contextmanager
+import docker
 
 
 class DockerManager:
@@ -14,6 +17,7 @@ class DockerManager:
         self._original_path = os.environ.get("PATH", "")
         self._docker_path = self._find_docker()
         self._wrapper_setup = False
+        self._docker_client = docker.from_env()
         
     def _find_docker(self) -> str:
         """Find the real Docker binary.
@@ -74,3 +78,77 @@ class DockerManager:
     def is_setup(self) -> bool:
         """Check if wrapper is currently set up."""
         return self._wrapper_setup
+    
+    @contextmanager
+    def container(self, image: str, task_id: str, working_dir: Path):
+        """Context manager for a long-running container.
+        
+        Args:
+            image: Docker image name (e.g., 'claude-dev:task-123')
+            task_id: Task identifier
+            working_dir: Working directory to mount
+            
+        Yields:
+            str: Container ID for use with setup scripts and docker exec
+        """
+        container = None
+        try:
+            # Build volumes dict
+            volumes = {str(working_dir): {"bind": "/workspace", "mode": "rw"}}
+            
+            # Start long-running container using Docker SDK
+            container = self._docker_client.containers.run(
+                image,
+                command=["sleep", "infinity"],
+                volumes=volumes,
+                working_dir="/workspace",
+                detach=True
+            )
+            
+            container_id = container.id
+            
+            # Set environment variable for wrapper script
+            os.environ["CLAUDE_CONTAINER_ID"] = container_id
+            
+            yield container_id
+            
+        except docker.errors.DockerException as e:
+            raise RuntimeError(f"Failed to start container: {e}")
+        finally:
+            # Clean up environment variable
+            if "CLAUDE_CONTAINER_ID" in os.environ:
+                del os.environ["CLAUDE_CONTAINER_ID"]
+                
+            # Clean up container
+            if container:
+                try:
+                    container.remove(force=True)
+                except docker.errors.DockerException:
+                    # Log but don't fail - container might already be gone
+                    pass
+    
+    def run_pre_task_setup(self, container_id: str, task_id: str, working_dir: Path, config) -> None:
+        """Run pre-task setup script if configured.
+        
+        Args:
+            container_id: Container ID to configure
+            task_id: Task identifier
+            working_dir: Working directory path
+            config: OptimizerConfig instance containing setup script path
+        """
+        if not config.pre_task_setup_script:
+            return
+            
+        setup_script_path = Path(config.pre_task_setup_script)
+        if not setup_script_path.exists():
+            raise RuntimeError(f"Pre-task setup script not found: {setup_script_path}")
+            
+        try:
+            subprocess.run([
+                str(setup_script_path),
+                container_id,
+                task_id,
+                str(working_dir)
+            ], check=True)
+        except subprocess.CalledProcessError as e:
+            raise RuntimeError(f"Pre-task setup script failed: {e}")

@@ -82,6 +82,8 @@ from logging_utils import DualOutputLogging
 from database import init_database, get_db_session, OptimizationRun, SystemPrompt, Rollout
 from yaml_loader import load_yaml_files
 from database_service import db_service
+from truncation_utils import TruncationManager, extract_text_from_openai_response
+from plots import create_plot_data_point
 
 # Setup logging using utility class
 DualOutputLogging.setup_logging()
@@ -209,32 +211,13 @@ class ScoreEvolutionTracker:
         
         # Overall scores
         for iter_data in self.iterations_data:
-            overall = iter_data["overall"]
-            # 69% CI (approximately 1 standard error)
-            error = overall["stdev"] / np.sqrt(max(1, overall["count"]))
-            plot_data.append({
-                "iteration": iter_data["iteration"],
-                "facet": "overall",
-                "mean": overall["mean"],
-                "error": error,
-                "ci_lower": overall["mean"] - error,
-                "ci_upper": overall["mean"] + error
-            })
+            plot_data.append(create_plot_data_point(iter_data, "overall"))
         
         # Facet scores
         if self.iterations_data[0]["facets"]:
             for facet_name in self.iterations_data[0]["facets"].keys():
                 for iter_data in self.iterations_data:
-                    facet_stats = iter_data["facets"][facet_name]
-                    error = facet_stats["stdev"] / np.sqrt(max(1, facet_stats["count"]))
-                    plot_data.append({
-                        "iteration": iter_data["iteration"],
-                        "facet": facet_name,
-                        "mean": facet_stats["mean"],
-                        "error": error,
-                        "ci_lower": facet_stats["mean"] - error,
-                        "ci_upper": facet_stats["mean"] + error
-                    })
+                    plot_data.append(create_plot_data_point(iter_data, facet_name))
         
         df = pd.DataFrame(plot_data)
         
@@ -348,7 +331,10 @@ def setup_signal_handlers():
     signal.signal(signal.SIGTERM, signal_handler)
 
 # Load configuration
-config = OptimizerConfig()
+config = OptimizerConfig.from_file()
+
+# Initialize truncation manager
+truncation_manager = TruncationManager(config)
 
 
 class ProcessingMode(Enum):
@@ -372,39 +358,10 @@ class PatternSummarizer:
         "Output a concise summary focusing on the most impactful patterns that would help a prompt engineer improve the system prompt. Prioritize patterns that appear across multiple tasks and have clear connections to prompt weaknesses."
     )
     
-    # Context management using config values
-    MAX_CONTEXT_TOKENS = config.max_context_tokens
     
     def _count_tokens(self, text: str) -> int:
         """Count tokens in text using tiktoken."""
-        encoding = tiktoken.encoding_for_model(config.openai_model)
-        return len(encoding.encode(text))
-    
-    def _truncate_file_content(self, files: List[Dict[str, str]]) -> Dict[str, str]:
-        """Truncate file contents to reasonable size for pattern analysis."""
-        truncated = {}
-        file_content_limit = config.max_file_size_for_pattern_analysis
-        skip_threshold = config.max_file_size_for_pattern_analysis * 5  # Skip files over 50KB for pattern analysis
-        
-        for file_info in files:
-            path = file_info["path"]
-            content = file_info["content"]
-            if len(content) > skip_threshold:
-                # Skip extremely large files entirely for pattern analysis
-                logger.info(
-                    "File too large for pattern analysis, skipping",
-                    file_path=path,
-                    file_size=len(content),
-                    skip_threshold=skip_threshold
-                )
-                truncated[path] = f"[SKIPPED: File too large for pattern analysis ({len(content)} chars > {skip_threshold} char limit)]"
-            elif len(content) > file_content_limit:
-                # Truncate moderately large files
-                truncated[path] = content[:file_content_limit] + f"\n... [TRUNCATED FOR PATTERN ANALYSIS: {len(content)} chars total, showing first {file_content_limit}]"
-            else:
-                # Include small files fully
-                truncated[path] = content
-        return truncated
+        return truncation_manager.count_tokens(text)
 
     async def summarize_patterns(
         self, rollout_results: List[GradedCode], openai_log_path: Path
@@ -424,17 +381,17 @@ class PatternSummarizer:
         
         system_tokens = self._count_tokens(self._SYSTEM_MESSAGE)
         header_text = f"Analyze these {len(rollout_results)} coding task rollouts and identify key patterns for prompt improvement:\n\n"
-        remaining_tokens = config.max_context_tokens - system_tokens - self._count_tokens(header_text)
+        remaining_tokens = config.tokens.max_context_tokens - system_tokens - self._count_tokens(header_text)
         
         logger.info(
             "Pattern analysis context management",
             original_rollouts=original_count,
             system_tokens=system_tokens,
             remaining_tokens=remaining_tokens,
-            max_input_tokens=config.max_context_tokens,
-            reserved_response_tokens=config.max_response_tokens,
-            reserved_reasoning_tokens=config.reasoning_buffer_tokens,
-            total_window=config.max_context_tokens + config.max_response_tokens + config.reasoning_buffer_tokens
+            max_input_tokens=config.tokens.max_context_tokens,
+            reserved_response_tokens=config.tokens.max_response_tokens,
+            reserved_reasoning_tokens=config.tokens.reasoning_buffer_tokens,
+            total_window=config.tokens.max_context_tokens + config.tokens.max_response_tokens + config.tokens.reasoning_buffer_tokens
         )
         
         for i, graded_code in enumerate(rollout_results):
@@ -451,7 +408,11 @@ class PatternSummarizer:
             task_summary += f"  Facets:{''.join(facet_details)}\n"
 
             # Add truncated file information
-            truncated_files = self._truncate_file_content(graded_code.code_result.files)
+            truncated_files = truncation_manager.truncate_file_content_by_size(
+                graded_code.code_result.files,
+                config.truncation.max_file_size_pattern_analysis,
+                "pattern analysis"
+            )
             task_summary += (
                 f"  Files: {json.dumps(truncated_files, indent=2)}\n"
             )
@@ -479,13 +440,13 @@ class PatternSummarizer:
             final_tokens=final_tokens,
             included_rollouts=len(rollout_summaries),
             excluded_rollouts=original_count - len(rollout_summaries),
-            context_utilization=f"{(final_tokens/self.MAX_CONTEXT_TOKENS)*100:.1f}%"
+            context_utilization=f"{(final_tokens/config.tokens.max_context_tokens)*100:.1f}%"
         )
 
         # Make OpenAI API call for pattern analysis
         client = OpenAI()
         openai_request = create_openai_request(
-            config.openai_model,
+            config.grader.model,
             [
                 {"role": "system", "content": self._SYSTEM_MESSAGE},
                 {"role": "user", "content": analysis_prompt},
@@ -498,23 +459,17 @@ class PatternSummarizer:
         log_openai_request_response(openai_log_path, openai_request, response)
 
         # Extract pattern summary from response
-        for item in response.output:
-            if isinstance(item, ResponseOutputMessage) and item.type == "message":
-                for content_item in item.content:
-                    if isinstance(content_item, ResponseOutputText):
-                        pattern_summary = content_item.text
-                        
-                        # Log the pattern summary with a distinctive tag for easy grepping
-                        logger.info(
-                            "PATTERN_ANALYSIS_SUMMARY",
-                            summary_text=pattern_summary,
-                            rollout_count=len(rollout_results),
-                            avg_score=sum(r.grade.overall_score for r in rollout_results) / len(rollout_results) if rollout_results else 0
-                        )
-                        
-                        return pattern_summary
-
-        raise RuntimeError("No pattern summary found in response")
+        pattern_summary = extract_text_from_openai_response(response)
+        
+        # Log the pattern summary with a distinctive tag for easy grepping
+        logger.info(
+            "PATTERN_ANALYSIS_SUMMARY",
+            summary_text=pattern_summary,
+            rollout_count=len(rollout_results),
+            avg_score=sum(r.grade.overall_score for r in rollout_results) / len(rollout_results) if rollout_results else 0
+        )
+        
+        return pattern_summary
 
 
 class SeedTask(BaseModel):
@@ -535,9 +490,6 @@ class ScoreWithRationale(BaseModel):
     rationale: str
 
 
-# Initialize Docker manager at module load time
-docker_manager = DockerManager()
-
 # -----------------------------------------------------------------------------
 # Helper functions for deduplication and common operations
 # -----------------------------------------------------------------------------
@@ -552,7 +504,7 @@ def create_openai_request(
 ) -> Dict[str, Any]:
     """Create standardized OpenAI request dictionary."""
     if reasoning_effort is None:
-        reasoning_effort = config.reasoning_effort
+        reasoning_effort = config.grader.reasoning_effort
     request = {
         "model": model,
         "input": input_data,
@@ -567,14 +519,6 @@ def create_openai_request(
 
 
 # -----------------------------------------------------------------------------
-# Helper functions for logging API requests and responses
-#
-# These functions write JSONL entries for every call to the OpenAI and Anthropic
-# APIs.  Each entry includes a timestamp, the request parameters, and the
-# response or event data.  They are used throughout the script to aid in
-# debugging and auditing of API interactions.
-
-
 # JSONL logging functions for API debugging (still kept for OpenAI/Anthropic API logs)
 
 def log_openai_request_response(
@@ -582,17 +526,7 @@ def log_openai_request_response(
     request: Dict[str, Any],
     response: Any,
 ) -> None:
-    """Append a record of an OpenAI request and response to a JSONL file.
-
-    Parameters
-    ----------
-    log_path : Path
-        The path to the JSONL log file.
-    request : dict
-        The request parameters sent to OpenAI.
-    response : Any
-        The response received from OpenAI.
-    """
+    """Append a record of an OpenAI request and response to a JSONL file."""
     try:
         response_data = response.model_dump() if hasattr(response, 'model_dump') else str(response)
     except (AttributeError, TypeError):
@@ -620,8 +554,6 @@ def log_anthropic_request_event(
 
     Parameters
     ----------
-    log_path : Path
-        The path to the JSONL log file.
     request : dict
         The request parameters sent to the coding agent, typically containing
         messages and options.
@@ -781,155 +713,23 @@ def gather_agent_files(work_dir: Path) -> List[Dict[str, str]]:
 
         relative = file_path.relative_to(work_dir).as_posix()
         
-        # Check file size before reading
-        file_size = file_path.stat().st_size
-        if file_size > config.max_file_size_bytes:
-            logger.warning(
-                "File exceeds size limit, truncating",
-                file_path=str(file_path),
-                relative_path=relative,
-                file_size=file_size,
-                max_size=config.max_file_size_bytes
-            )
-            # Read only the first portion of the file
-            try:
-                with file_path.open('r', encoding='utf-8') as f:
-                    content = f.read(config.max_file_size_bytes)
-                    content += f"\n\n... [FILE TRUNCATED: {file_size} bytes total, showing first {config.max_file_size_bytes} bytes]"
-            except UnicodeDecodeError as e:
-                logger.info(
-                    "Skipping binary file (not UTF-8 decodable)",
-                    file_path=str(file_path),
-                    relative_path=relative,
-                    file_size=file_size
-                )
-                content = "<<not a plaintext file>>"
-        else:
-            # File is within size limit, read normally
-            try:
-                content = file_path.read_text()
-            except UnicodeDecodeError as e:
-                logger.info(
-                    "Skipping binary file (not UTF-8 decodable)",
-                    file_path=str(file_path),
-                    relative_path=relative,
-                    file_size=file_size
-                )
-                content = "<<not a plaintext file>>"
+        # Use unified truncation for file reading
+        content = truncation_manager.truncate_file_by_bytes(
+            file_path, 
+            config.truncation.max_file_size_grading
+        )
         
         files_info.append({"path": relative, "content": content})
     
-    # Apply centralized token-based truncation to stay under OpenAI o3 limits
-    files_info = _truncate_files_by_tokens(files_info)
+    # Apply centralized token-based truncation to stay under OpenAI API limits
+    files_info = truncation_manager.truncate_files_by_tokens(
+        files_info,
+        config.tokens.max_files_tokens
+    )
     
     return files_info
 
 
-def _truncate_files_by_tokens(files_info: List[Dict[str, str]]) -> List[Dict[str, str]]:
-    """Centralized truncation logic using tiktoken to ensure files fit in OpenAI o3 context.
-    
-    Args:
-        files_info: List of file dicts with 'path' and 'content' keys
-        
-    Returns:
-        Truncated files_info that will fit in OpenAI API calls
-    """
-    # OpenAI o3 has 200k token context limit
-    # Reserve tokens for: task description, system prompt, grading schema, response
-    MAX_FILES_TOKENS = 150_000  # Conservative limit for files content
-    
-    encoding = tiktoken.encoding_for_model("gpt-4o")  # Use gpt-4o encoding as proxy for o3
-    
-    def count_files_tokens(files: List[Dict[str, str]]) -> int:
-        """Count tokens for the JSON serialization of files as used in API calls."""
-        files_json = json.dumps(files, indent=2)
-        return len(encoding.encode(files_json))
-    
-    current_tokens = count_files_tokens(files_info)
-    
-    if current_tokens <= MAX_FILES_TOKENS:
-        # Files already fit, return as-is
-        logger.info(
-            "Files within token limit",
-            total_files=len(files_info),
-            total_tokens=current_tokens,
-            limit=MAX_FILES_TOKENS
-        )
-        return files_info
-    
-    logger.warning(
-        "Files exceed token limit, applying truncation",
-        total_files=len(files_info),
-        current_tokens=current_tokens,
-        limit=MAX_FILES_TOKENS
-    )
-    
-    # Strategy: Truncate files from largest to smallest until we fit
-    truncated_files = []
-    remaining_budget = MAX_FILES_TOKENS
-    
-    # Sort by content size (largest first) to truncate big files first
-    sorted_files = sorted(files_info, key=lambda f: len(f["content"]), reverse=True)
-    
-    for file_info in sorted_files:
-        path = file_info["path"]
-        content = file_info["content"]
-        
-        # Calculate tokens for this file in JSON format
-        single_file_json = json.dumps([{"path": path, "content": content}], indent=2)
-        file_tokens = len(encoding.encode(single_file_json))
-        
-        if file_tokens <= remaining_budget:
-            # File fits, include it
-            truncated_files.append(file_info)
-            remaining_budget -= file_tokens
-        else:
-            # File doesn't fit, try to truncate it
-            if remaining_budget > 1000:  # Only try if we have reasonable space
-                # Binary search to find max content that fits
-                max_chars = len(content)
-                min_chars = 0
-                
-                while min_chars < max_chars:
-                    mid_chars = (min_chars + max_chars + 1) // 2
-                    truncated_content = content[:mid_chars] + f"\n... [TRUNCATED FOR API LIMITS: {len(content)} total chars, showing first {mid_chars}]"
-                    test_file_json = json.dumps([{"path": path, "content": truncated_content}], indent=2)
-                    test_tokens = len(encoding.encode(test_file_json))
-                    
-                    if test_tokens <= remaining_budget:
-                        min_chars = mid_chars
-                    else:
-                        max_chars = mid_chars - 1
-                
-                if min_chars > 0:
-                    final_content = content[:min_chars] + f"\n... [TRUNCATED FOR API LIMITS: {len(content)} total chars, showing first {min_chars}]"
-                    truncated_files.append({"path": path, "content": final_content})
-                    final_file_json = json.dumps([{"path": path, "content": final_content}], indent=2)
-                    remaining_budget -= len(encoding.encode(final_file_json))
-            
-            # Skip remaining files as we're at the limit
-            logger.warning(
-                "Skipping remaining files due to token limit",
-                skipped_file=path,
-                remaining_budget_tokens=remaining_budget
-            )
-            break
-    
-    final_tokens = count_files_tokens(truncated_files)
-    
-    # Add assertion to ensure we're under the limit
-    assert final_tokens <= MAX_FILES_TOKENS, f"File truncation failed: {final_tokens} tokens > {MAX_FILES_TOKENS} limit"
-    
-    logger.info(
-        "File truncation completed",
-        original_files=len(files_info),
-        final_files=len(truncated_files),
-        original_tokens=current_tokens,
-        final_tokens=final_tokens,
-        limit=MAX_FILES_TOKENS
-    )
-    
-    return truncated_files
 
 
 async def run_claude_code(
@@ -985,12 +785,12 @@ async def run_claude_code(
     # The actual prompt version files are stored at the run directory level.
     (work_dir / "CLAUDE.md").write_text(system_prompt)
 
-    os.environ["BASH_MAX_TIMEOUT_MS"] = str(config.bash_timeout_ms)
+    os.environ["BASH_MAX_TIMEOUT_MS"] = str(config.rollouts.bash_timeout_ms)
 
     options = ClaudeCodeOptions(
         allowed_tools=None,  # Full tool access for autonomous execution
         cwd=work_dir,
-        max_turns=config.max_turns,
+        max_turns=config.rollouts.max_turns,
         permission_mode="bypassPermissions",  # Required for Docker container execution
         mcp_servers={},
     )
@@ -1119,7 +919,7 @@ async def grade_code(
     grade_logger.info("Making OpenAI grading call")
 
     openai_request = create_openai_request(
-        config.openai_model,
+        config.grader.model,
         input_messages,
         [grading_tool],
         {"type": "function", "name": "submit_grades"},
@@ -1192,10 +992,10 @@ async def grade_code(
         # Also log readable results for each facet
         for facet_name, facet_data in facet_results.items():
             score = facet_data["score"]
-            rationale = (
-                facet_data["rationale"][:config.truncation_length] + "..."
-                if len(facet_data["rationale"]) > config.truncation_length
-                else facet_data["rationale"]
+            rationale = truncation_manager.truncate_text(
+                facet_data["rationale"],
+                config.truncation.log_message_length,
+                "..."
             )
             grade_logger.info(
                 "Facet graded",
@@ -1375,7 +1175,7 @@ class PromptEngineer:
     def _trim_context_if_needed(self, max_tokens: Optional[int] = None) -> None:
         """Private: Trim conversation if it exceeds token limit."""
         if max_tokens is None:
-            max_tokens = config.max_context_tokens
+            max_tokens = config.tokens.max_context_tokens
         if self._count_tokens() > max_tokens and len(self._turns) > 2:
             # Keep only last 2 complete turns - each turn is atomic and complete
             self._turns = self._turns[-2:]
@@ -1451,7 +1251,7 @@ Full Messages:
         # Call OpenAI Responses API with current conversation
         client = OpenAI()
         openai_request = create_openai_request(
-            config.openai_model,
+            config.grader.model,
             self.prompt_messages,
             tools,
             {"type": "function", "name": "submit_prompt"},
@@ -1570,7 +1370,7 @@ async def optimize_prompts(
         If None, uses all seed tasks (default None).
     """
     if max_parallel_rollouts is None:
-        max_parallel_rollouts = config.max_parallel_rollouts
+        max_parallel_rollouts = config.rollouts.max_parallel
     # Create a unique prefix for this run to avoid collisions with previous
     # executions.  The prefix is based on the current UTC timestamp.  All
     # working directories and logs for this run will be stored under
@@ -1634,6 +1434,9 @@ async def optimize_prompts(
         ) -> GradedCode:
             """Run a single rollout with semaphore control."""
             async with rollout_semaphore:
+                # Initialize Docker manager for this rollout
+                docker_manager = DockerManager()
+                
                 # Create rollout record in database
                 rollout_dir = base_dir / f"iter_{iteration}" / f"task_{task.id}" / f"agent_{rollout_id}"
                 db_rollout_id = db_service.create_rollout(
@@ -1645,16 +1448,25 @@ async def optimize_prompts(
                     output_dir_path=str(rollout_dir)
                 )
                 
-                # Run coding agent
-                code_result = await run_claude_code(
-                    task.prompt,
-                    current_prompt,
-                    agent_id=rollout_id,
-                    task_id=task.id,
-                    base_dir=base_dir / f"iter_{iteration}",
-                    anthropic_log_path=anthropic_api_log_path,
-                    rollout_id=db_rollout_id,
-                )
+                try:
+                    # Setup Docker wrapper for this rollout
+                    wrapper_script = docker_manager.setup_wrapper(rollout_dir, external_wrapper)
+                    
+                    # Use container context manager for isolated execution
+                    with docker_manager.container("claude-dev:latest", f"task_{task.id}_agent_{rollout_id}", rollout_dir):
+                        # Run coding agent
+                        code_result = await run_claude_code(
+                            task.prompt,
+                            current_prompt,
+                            agent_id=rollout_id,
+                            task_id=task.id,
+                            base_dir=base_dir / f"iter_{iteration}",
+                            anthropic_log_path=anthropic_api_log_path,
+                            rollout_id=db_rollout_id,
+                        )
+                finally:
+                    # Clean up Docker resources for this rollout
+                    docker_manager.cleanup()
 
                 # Messages are now logged in real-time during execute_claude_session
                 
@@ -1851,8 +1663,8 @@ async def optimize_prompts(
         logger.info("Optimization complete", logs_directory=str(base_dir))
         return base_dir
     finally:
-        # Always cleanup Docker wrapper
-        docker_manager.cleanup()
+        # Docker cleanup handled per rollout, no global cleanup needed
+        pass
 
 
 def main() -> None:
@@ -1893,7 +1705,7 @@ Examples:
         "--max-parallel",
         type=int,
         default=None,
-        help=f"Maximum parallel rollouts (default: {config.max_parallel_rollouts})",
+        help=f"Maximum parallel rollouts (default: {config.rollouts.max_parallel})",
     )
 
     parser.add_argument(
@@ -1911,6 +1723,46 @@ Examples:
     # Initialize database
     logger.info("Initializing database")
     init_database("sqlite:///optimizer.db")
+    
+    # Check if Docker dependency layers are built
+    logger.info("Checking Docker dependency layers")
+    try:
+        import subprocess
+        result = subprocess.run(['docker', 'images', '--format', 'table {{.Repository}}:{{.Tag}}'], 
+                               capture_output=True, text=True, check=True)
+        claude_images = [line for line in result.stdout.split('\n') if 'claude-dev:' in line and 'claude-dev:latest' not in line]
+        
+        required_layers = ['system-base', 'python-core', 'python-dev', 'python-data', 'rust', 'node', 'ruby']
+        missing_layers = []
+        
+        for layer in required_layers:
+            if not any(f'claude-dev:{layer}' in img for img in claude_images):
+                missing_layers.append(layer)
+        
+        if missing_layers:
+            logger.error(
+                "Missing Docker dependency layers - run build script first",
+                missing_layers=missing_layers,
+                found_images=len(claude_images)
+            )
+            print(f"\n❌ Missing Docker layers: {', '.join(missing_layers)}")
+            print("🔨 Run this command first: python3 build_dependency_layers.py")
+            sys.exit(1)
+        else:
+            logger.info(
+                "Docker dependency layers verified", 
+                available_layers=len(claude_images),
+                layers=[img.split(':')[1] for img in claude_images if ':' in img]
+            )
+            
+    except subprocess.CalledProcessError as e:
+        logger.error("Failed to check Docker images - is Docker running?", error=str(e))
+        print("❌ Could not check Docker images. Is Docker running?")
+        sys.exit(1)
+    except FileNotFoundError:
+        logger.error("Docker command not found - is Docker installed?")
+        print("❌ Docker command not found. Is Docker installed?")
+        sys.exit(1)
     
     # Load and sync YAML files to database
     logger.info("Loading YAML files and syncing to database")

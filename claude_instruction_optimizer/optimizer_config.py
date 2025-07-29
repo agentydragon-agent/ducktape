@@ -1,60 +1,91 @@
 """Configuration management for the Claude instruction optimizer."""
 
+import os
+import json
+from pathlib import Path
 from typing import Set
 from pydantic import BaseModel, Field
 
 
+class RolloutConfig(BaseModel):
+    """Configuration for coding agent rollouts."""
+    max_parallel: int = Field(description="Maximum concurrent rollouts")
+    max_turns: int = Field(description="Maximum conversation turns per rollout")
+    bash_timeout_ms: int = Field(description="Timeout for bash commands")
+
+class PromptEngineerConfig(BaseModel):
+    """Configuration for prompt engineering."""
+    model: str = Field(description="Model to use for prompt engineering")
+    max_turns: int = Field(description="Maximum turns for conversation")
+    reasoning_effort: str = Field(description="Reasoning effort level")
+
+class GraderConfig(BaseModel):
+    """Configuration for code grading."""
+    model: str = Field(description="Model to use for grading")
+    reasoning_effort: str = Field(description="Reasoning effort level")
+
+class SummarizerConfig(BaseModel):
+    """Configuration for summarization tasks."""
+    model: str = Field(description="Model to use for summarization")
+    max_tokens: int = Field(description="Max tokens for responses")
+
+class TokenConfig(BaseModel):
+    """Token management configuration."""
+    max_response_tokens: int = Field(description="Tokens reserved for response generation")
+    reasoning_buffer_tokens: int = Field(description="Tokens reserved for reasoning")
+    max_context_tokens: int = Field(description="Maximum input tokens")
+    max_files_tokens: int = Field(description="Maximum tokens for file content in API calls")
+
+class TruncationConfig(BaseModel):
+    """File content truncation configuration.""" 
+    max_file_size_grading: int = Field(description="Max file size in bytes before truncation for grading (affects what grader sees)")
+    max_file_size_pattern_analysis: int = Field(description="Max file size in bytes before truncation for pattern analysis (affects prompt engineering)")
+    log_message_length: int = Field(description="Max length for truncating log messages")
+
 class OptimizerConfig(BaseModel):
     """Central configuration for the optimizer."""
     
-    # Model configuration
-    openai_model: str = Field(default="o3", description="OpenAI model to use for grading and prompt engineering")
-    reasoning_effort: str = Field(default="high", description="Reasoning effort level for OpenAI responses")
+    # Pre-task setup script configuration
+    pre_task_setup_script: str | None = Field(description="Path to global pre-task setup script (runs outside container with docker access)")
     
-    # Execution limits
-    bash_timeout_ms: int = Field(default=10000, description="Timeout for bash commands in milliseconds")
-    max_parallel_rollouts: int = Field(default=16, description="Maximum concurrent coding agent rollouts")
-    max_turns: int = Field(default=100, description="Maximum conversation turns for coding agent")
-    
-    # Logging configuration
-    truncation_length: int = Field(default=80, description="Length to truncate log messages")
-    
-    # Token management (o3 model: 200k total window)
-    max_response_tokens: int = Field(default=30000, description="Tokens reserved for response generation")
-    reasoning_buffer_tokens: int = Field(default=20000, description="Tokens reserved for o3 reasoning process") 
-    max_context_tokens: int = Field(default=150000, description="Maximum input tokens (200k - response - reasoning buffers)")
-    
-    # File size limits
-    max_file_size_bytes: int = Field(default=100_000, description="Maximum file size in bytes for inclusion in grading (100KB)")
-    max_file_size_for_pattern_analysis: int = Field(default=10_000, description="Maximum file size for pattern analysis (10KB)")
+    # Component configurations
+    rollouts: RolloutConfig = Field(description="Rollout execution configuration")
+    prompt_engineer: PromptEngineerConfig = Field(description="Prompt engineering configuration")
+    grader: GraderConfig = Field(description="Code grading configuration")
+    summarizer: SummarizerConfig = Field(description="Summarization configuration")
+    tokens: TokenConfig = Field(description="Token management configuration")
+    truncation: TruncationConfig = Field(description="File and message truncation configuration")
     
     # File filtering
-    exclude_dirs: Set[str] = Field(
-        default={
-            "__pycache__", ".pytest_cache", ".mypy_cache", ".tox",
-            ".coverage", ".idea", ".vscode", "node_modules", "venv",
-            ".venv", "env", ".env", ".git", ".svn", ".hg", "build",
-            "dist", "*.egg-info", ".eggs", "target",
-        },
-        description="Directories to exclude from file gathering"
-    )
-    
-    exclude_extensions: Set[str] = Field(
-        default={
-            ".pyc", ".pyo", ".pyd", ".so", ".dll", ".dylib",
-            ".DS_Store", ".swp", ".swo", ".swn", ".swa", ".tmp",
-            ".bak", ".cache", ".log", ".tar", ".gz", ".tar.gz", 
-            ".zip", ".rar", ".7z", ".xz", ".bz2", ".tgz",
-        },
-        description="File extensions to exclude from file gathering"
-    )
-    
-    exclude_files: Set[str] = Field(
-        default={"CLAUDE.md", ".gitignore", ".dockerignore"},
-        description="Specific files to exclude from file gathering"
-    )
+    exclude_dirs: Set[str] = Field(description="Directories to exclude from file gathering")
+    exclude_extensions: Set[str] = Field(description="File extensions to exclude from file gathering") 
+    exclude_files: Set[str] = Field(description="Specific files to exclude from file gathering")
     
     class Config:
         """Pydantic configuration."""
         validate_assignment = True
         extra = "forbid"
+    
+    @classmethod
+    def from_file(cls, config_path: str | Path | None = None) -> "OptimizerConfig":
+        """Load configuration from JSON file.
+        
+        Args:
+            config_path: Path to config file. If None, looks for config.json in current directory.
+            
+        Returns:
+            OptimizerConfig instance
+        """
+        if config_path is None:
+            config_path = Path.cwd() / "config.json"
+        else:
+            config_path = Path(config_path)
+            
+        if not config_path.exists():
+            # Return default configuration if file doesn't exist
+            return cls()
+            
+        with open(config_path) as f:
+            config_data = json.load(f)
+            
+        return cls(**config_data)

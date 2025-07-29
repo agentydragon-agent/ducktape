@@ -201,3 +201,38 @@ graders:
       - PyHamcrest for complex assertions
       - Tests for boundary conditions
       - Using real files instead of mocks
+
+  - name: organization_hygiene
+    description: Clean repository structure with concise, current documentation
+    evaluation_criteria: |
+      Maintain professional repository organization with minimal cruft and documentation that respects developer competence.
+      
+      REQUIRED practices:
+      - Clean project structure (frontend/, backend/, docs/, tests/ at top level)
+      - Remove debug scripts and temporary files before finishing
+      - Organized temporary files in appropriate subdirectories when needed
+      - Current documentation that matches code reality
+      - Essential-only documentation (survival kit: build, test, deploy)
+      - Inline-first approach (docstrings over separate markdown when possible)
+      - Assume reader competence (document THIS project, not ecosystem basics)
+      - Single source of truth for information
+      
+      RED FLAGS that lower score:
+      - Debug script proliferation: test_the_thing.py, final_test.py, foo.py scattered in top-level
+      - Stale documentation that contradicts current code reality
+      - Documentation spam: explaining every obscure CLI flag
+      - Obvious redundancy: "# Runs x.py" above python x.py
+      - Ecosystem tutorials for competent developers
+      - Information repeated across multiple locations
+      - Vertical waste: 20 lines for what 3 could say clearly
+      - Condescending explanations of language basics
+      - False documentation worse than no documentation
+      
+      GOOD examples:
+      - Professional folder structure with clear boundaries
+      - "We use pytest, tests in tests/" (not pytest tutorial)
+      - "Top 5 flags, see config.py for full list"
+      - Consistent naming: debug_session_2024-01-15.py
+      - Documentation updated when APIs change
+      - Screen-friendly information density
+      - Project-specific documentation focus

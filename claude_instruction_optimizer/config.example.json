@@ -1,0 +1,56 @@
+{
+  "pre_task_setup_script": "",
+  
+  "rollouts": {
+    "max_parallel": 16,
+    "max_turns": 100,
+    "bash_timeout_ms": 10000
+  },
+  
+  "prompt_engineer": {
+    "model": "o3",
+    "max_turns": 50,
+    "reasoning_effort": "high"
+  },
+  
+  "grader": {
+    "model": "o3", 
+    "reasoning_effort": "medium"
+  },
+  
+  "summarizer": {
+    "model": "o3",
+    "max_tokens": 15000
+  },
+  
+  "tokens": {
+    "max_response_tokens": 30000,
+    "reasoning_buffer_tokens": 20000,
+    "max_context_tokens": 150000,
+    "max_files_tokens": 100000
+  },
+  
+  "truncation": {
+    "max_file_size_grading": 30000,
+    "max_file_size_pattern_analysis": 30000,
+    "log_message_length": 120
+  },
+  
+  "exclude_dirs": [
+    "__pycache__", ".pytest_cache", ".mypy_cache", ".tox",
+    ".coverage", ".idea", ".vscode", "node_modules", "venv",
+    ".venv", "env", ".env", ".git", ".svn", ".hg", "build",
+    "dist", "*.egg-info", ".eggs", "target"
+  ],
+  
+  "exclude_extensions": [
+    ".pyc", ".pyo", ".pyd", ".so", ".dll", ".dylib",
+    ".DS_Store", ".swp", ".swo", ".swn", ".swa", ".tmp",
+    ".bak", ".cache", ".log", ".tar", ".gz", ".tar.gz", 
+    ".zip", ".rar", ".7z", ".xz", ".bz2", ".tgz"
+  ],
+  
+  "exclude_files": [
+    "CLAUDE.md", ".gitignore", ".dockerignore"
+  ]
+}

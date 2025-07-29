@@ -59,7 +59,28 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     ruby-full \
     ruby-dev
 
-# Stage 2: Language runtimes (rebuild when versions change)
+# Stage 2: Rust runtime
+FROM system-base as rust
+
+# Install Rust
+RUN --mount=type=cache,target=/root/.cargo/registry \
+    --mount=type=cache,target=/root/.cargo/git \
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+# Stage 3: Go runtime
+FROM system-base as go
+
+# Install Go
+RUN --mount=type=cache,target=/tmp/go-download \
+    cd /tmp/go-download && \
+    wget -q https://go.dev/dl/go1.21.6.linux-amd64.tar.gz && \
+    tar -C /usr/local -xzf go1.21.6.linux-amd64.tar.gz
+ENV PATH="/usr/local/go/bin:${PATH}"
+ENV GOPATH="/root/go"
+ENV PATH="${GOPATH}/bin:${PATH}"
+
+# Stage 4: Combined runtimes (for layers that need both)
 FROM system-base as runtimes
 
 # Install Rust
@@ -77,7 +98,7 @@ ENV PATH="/usr/local/go/bin:${PATH}"
 ENV GOPATH="/root/go"
 ENV PATH="${GOPATH}/bin:${PATH}"
 
-# Stage 3: Core Python dependencies (rebuild when core packages change)
+# Stage 5: Core Python dependencies (rebuild when core packages change)
 FROM runtimes as python-core
 
 # Core Python packages (rarely change)
@@ -91,7 +112,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     django \
     sqlalchemy
 
-# Stage 4: Development tools (rebuild when dev tools change)
+# Stage 6: Development tools (rebuild when dev tools change)
 FROM python-core as python-dev
 
 RUN --mount=type=cache,target=/root/.cache/pip \
@@ -102,7 +123,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     mypy \
     jupyter
 
-# Stage 5: Data science packages (rebuild when data packages change)  
+# Stage 7: Data science packages (rebuild when data packages change)  
 FROM python-dev as python-data
 
 RUN --mount=type=cache,target=/root/.cache/pip \
@@ -112,7 +133,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     matplotlib \
     seaborn
 
-# Stage 6: Utility packages (rebuild when utilities change)
+# Stage 8: Utility packages (rebuild when utilities change)
 FROM python-data as python-complete
 
 RUN --mount=type=cache,target=/root/.cache/pip \
@@ -130,7 +151,23 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     lxml \
     pyhamcrest
 
-# Stage 7: Node.js and Ruby packages
+# Stage 9: Node.js standalone
+FROM system-base as node
+
+# Install Node.js packages
+RUN --mount=type=cache,target=/root/.npm \
+    npm install -g \
+    typescript \
+    prettier
+
+# Stage 10: Ruby standalone  
+FROM system-base as ruby
+
+# Install Ruby gems
+RUN --mount=type=cache,target=/root/.gem \
+    gem install bundler sqlite3 httparty colorize pry
+
+# Stage 11: Node.js and Ruby combined packages
 FROM python-complete as packages-complete
 
 # Install Node.js packages
@@ -143,7 +180,7 @@ RUN --mount=type=cache,target=/root/.npm \
 RUN --mount=type=cache,target=/root/.gem \
     gem install bundler sqlite3 httparty colorize pry
 
-# Stage 8: Final environment setup
+# Stage 12: Final environment setup
 FROM packages-complete as final
 
 # Set up shell environment and workspace

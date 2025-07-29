@@ -199,19 +199,20 @@ Iteration 3 complete - Average score: 7.8/10 (Total cost: $24.50)
 
 The optimizer uses two complementary grading configurations:
 
-**`graders.yaml`** - High-resolution evaluation with 23 specific graders:
-- Individual concerns like `exception_handling`, `nullable_types`, `enum_types`
+**`graders.yaml`** - High-resolution evaluation with 24 specific graders:
+- Individual concerns like `exception_handling`, `nullable_types`, `enum_types`, `organization`
 - Detailed evaluation criteria and examples for each grader
 - Use when you need granular feedback on specific coding practices
 - Err on the side of adding new graders here for specific issues
 
-**`graders_consolidated.yaml`** - Broad evaluation with 6 consolidated categories:
+**`graders_consolidated.yaml`** - Broad evaluation with 7 consolidated categories:
 - `type_safety_data_design`: Strong typing and data structures
 - `code_quality_clarity`: Readability and modern language features  
 - `robustness_error_handling`: Defensive programming and error boundaries
 - `architecture_design`: Separation of concerns and proper tools
 - `implementation_completeness`: Full implementation without cruft
 - `test_quality`: Meaningful tests that verify business logic
+- `organization_hygiene`: Clean repository structure with concise documentation
 - Err on the side of consolidating related concerns here
 
 Choose based on your evaluation needs:
