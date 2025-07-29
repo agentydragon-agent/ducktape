@@ -343,6 +343,7 @@ class ProcessingMode(Enum):
 
     FULL_ROLLOUTS = "full_rollouts"
     SUMMARY = "summary"
+    STATS_ONLY = "stats_only"
 
 
 class PatternSummarizer:
