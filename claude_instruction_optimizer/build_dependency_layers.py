@@ -22,9 +22,7 @@ def run_command(cmd: List[str], description: str, step: int, total: int) -> bool
             text=True, bufsize=1, universal_newlines=True
         )
         
-        # Stream output in real-time with progress updates
-        import select
-        last_line = ""
+        # Stream Docker output directly with timestamps
         all_output = []
         
         while True:
@@ -35,57 +33,42 @@ def run_command(cmd: List[str], description: str, step: int, total: int) -> bool
                 stderr_remaining = process.stderr.read()
                 if stdout_remaining:
                     all_output.append(("stdout", stdout_remaining))
+                    for line in stdout_remaining.strip().split('\n'):
+                        if line.strip():
+                            elapsed = time.time() - start_time
+                            print(f"   [{elapsed:6.1f}s] {line}")
                 if stderr_remaining:
                     all_output.append(("stderr", stderr_remaining))
                 break
                 
-            # Read available output
+            # Read available output and show it immediately
             output = process.stdout.readline()
             if output:
                 all_output.append(("stdout", output))
                 line = output.strip()
-                if line and not line.startswith('#') and 'cache' not in line.lower():
-                    if len(line) > 80:
-                        line = line[:77] + "..."
-                    last_line = line
+                if line:
                     elapsed = time.time() - start_time
-                    print(f"\r   🔄 [{elapsed:6.1f}s] {last_line}", end="", flush=True)
+                    print(f"   [{elapsed:6.1f}s] {line}")
         
         if process.returncode == 0:
             elapsed = time.time() - start_time
-            print(f"\r   ✅ Complete in {elapsed:.1f}s" + " " * 60)  # Clear the line
+            print(f"   ✅ Complete in {elapsed:.1f}s")
             return True
         else:
             elapsed = time.time() - start_time
-            print(f"\r   ❌ Failed after {elapsed:.1f}s" + " " * 60)
+            print(f"   ❌ Failed after {elapsed:.1f}s")
             
-            # Show error output for debugging
-            print(f"\n   📋 Error details:")
-            if last_line:
-                print(f"      Last: {last_line}")
-            
-            # Show stderr output (errors)
-            stderr_lines = []
-            stdout_lines = []
+            # Show stderr if any (errors are already shown above with timestamps)
+            stderr_content = ""
             for source, content in all_output:
                 if source == "stderr" and content.strip():
-                    stderr_lines.extend(content.strip().split('\n'))
-                elif source == "stdout" and content.strip():
-                    stdout_lines.extend(content.strip().split('\n'))
+                    stderr_content += content
             
-            # Show last few stderr lines (most important)
-            if stderr_lines:
-                print(f"      STDERR:")
-                for line in stderr_lines[-3:]:  # Last 3 stderr lines
+            if stderr_content:
+                print(f"   📋 Error output:")
+                for line in stderr_content.strip().split('\n')[-5:]:  # Last 5 stderr lines
                     if line.strip():
-                        print(f"        {line.strip()}")
-            
-            # Show last few stdout lines if no stderr
-            if not stderr_lines and stdout_lines:
-                print(f"      STDOUT:")
-                for line in stdout_lines[-3:]:  # Last 3 stdout lines
-                    if line.strip():
-                        print(f"        {line.strip()}")
+                        print(f"      {line.strip()}")
                 
             return False
             
