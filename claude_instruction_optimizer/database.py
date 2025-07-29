@@ -101,6 +101,8 @@ class SeedTask(Base):
     git_repos = Column(Text, comment='JSON of git repositories required: {url: {commit, main}}')
     internet_needed = Column(Boolean, default=False, comment='Whether task needs internet access')
     allowed_tools = Column(Text, comment='JSON list of allowed tools for this task')
+    dependencies = Column(Text, comment='JSON list of Docker layer dependencies required by this task')
+    pre_task_setup_script = Column(Text, comment='Path to per-task setup script that runs before agent execution')
     
     content_hash = Column(Text, nullable=False, 
                          comment='SHA256 hash of all task content for change detection')
@@ -115,9 +117,11 @@ class SeedTask(Base):
     
     @classmethod
     def compute_content_hash(cls, prompt: str, description: str = None, git_repos: str = None, 
-                           allowed_tools: str = None, internet_needed: bool = False) -> str:
+                           allowed_tools: str = None, internet_needed: bool = False,
+                           dependencies: str = None, pre_task_setup_script: str = None) -> str:
         """Compute SHA256 hash of all task content for change detection."""
-        content = f"{prompt}|{description or ''}|{git_repos or '{}'}|{allowed_tools or '[]'}|{internet_needed}"
+        content = (f"{prompt}|{description or ''}|{git_repos or '{}'}|{allowed_tools or '[]'}|{internet_needed}|"
+                  f"{dependencies or '[]'}|{pre_task_setup_script or ''}")
         return hashlib.sha256(content.encode('utf-8')).hexdigest()
         
     @property
@@ -129,6 +133,18 @@ class SeedTask(Base):
     def allowed_tools_list(self) -> List[str]:
         """Parse allowed_tools JSON into list."""
         return json.loads(self.allowed_tools) if self.allowed_tools else []
+        
+    @property
+    def dependencies_list(self) -> List[str]:
+        """Parse dependencies JSON into list."""
+        return json.loads(self.dependencies) if self.dependencies else []
+        
+    @property
+    def docker_image_tag(self) -> str:
+        """Compute Docker image tag for this task."""
+        # Generate deterministic tag from task content
+        task_hash = self.content_hash[:12]  # Use first 12 chars of content hash
+        return f"claude-task-{self.task_id}-{task_hash}"
 
 
 class GradingCriteria(Base):

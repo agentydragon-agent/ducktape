@@ -1,3 +1,6 @@
 *.db
 .docker-cache
 logs/
+agent_output/
+task_containers/
+config.yaml

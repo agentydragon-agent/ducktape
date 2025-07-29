@@ -1453,8 +1453,18 @@ async def optimize_prompts(
                     wrapper_script = docker_manager.setup_wrapper(rollout_dir, external_wrapper)
                     
                     # Use container context manager for isolated execution
-                    with docker_manager.container("claude-dev:latest", f"task_{task.id}_agent_{rollout_id}", rollout_dir):
-                        # Run coding agent
+                    with docker_manager.container("claude-dev:latest", f"task_{task.id}_agent_{rollout_id}", rollout_dir) as container_id:
+                        # Run pre-task setup if configured (with /git mounted RW)
+                        docker_manager.run_pre_task_setup(container_id, task.id, rollout_dir, config)
+                        
+                        # Remount /git as read-only for security during agent execution
+                        container_id = docker_manager.remount_git_readonly(
+                            container_id, 
+                            "claude-dev:latest", 
+                            rollout_dir
+                        )
+                        
+                        # Run coding agent (with /git now read-only)
                         code_result = await run_claude_code(
                             task.prompt,
                             current_prompt,

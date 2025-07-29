@@ -1,0 +1,22 @@
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+
+# Install Claude Code binary
+RUN curl -fsSL https://claude.ai/install.sh | bash || echo "Claude install script not available"
+
+# Ensure Claude Code is in PATH
+ENV PATH="/root/.local/bin:${PATH}"
+
+# Install additional development tools
+RUN if command -v apt-get >/dev/null 2>&1; then \
+        apt-get update && apt-get install -y git curl vim less tree jq rsync && \
+        rm -rf /var/lib/apt/lists/*; \
+    elif command -v yum >/dev/null 2>&1; then \
+        yum install -y git curl vim less tree jq rsync; \
+    fi
+
+# Set working directory
+WORKDIR /workspace
+
+# Default command
+CMD ["sleep", "infinity"]

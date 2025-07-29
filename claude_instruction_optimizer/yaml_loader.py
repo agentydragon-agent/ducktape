@@ -17,11 +17,11 @@ class TaskDataModel(BaseModel):
     """Pydantic model for task data validation."""
     id: str
     prompt: str
-    description: Optional[str] = ""
     dependencies: List[str]
     git_repos: Dict[str, Any]
     internet_needed: bool
     allowed_tools: List[str]
+    pre_task_setup_script: Optional[str] = None
     
     @validator('id')
     def validate_id(cls, v):
@@ -129,11 +129,11 @@ class YamlLoader:
             # Extract validated fields
             task_id = validated_task.id
             prompt = validated_task.prompt
-            description = validated_task.description
             dependencies = validated_task.dependencies
             git_repos = validated_task.git_repos
             internet_needed = validated_task.internet_needed
             allowed_tools = validated_task.allowed_tools
+            pre_task_setup_script = validated_task.pre_task_setup_script
             
             # Serialize for storage
             dependencies_json = json.dumps(dependencies)
@@ -143,10 +143,11 @@ class YamlLoader:
             # Compute content hash with available fields in database model
             content_hash = SeedTask.compute_content_hash(
                 prompt=prompt,
-                description=description,
                 git_repos=git_repos_json,
                 allowed_tools=allowed_tools_json,
-                internet_needed=internet_needed
+                internet_needed=internet_needed,
+                dependencies=dependencies_json,
+                pre_task_setup_script=pre_task_setup_script
             )
             
             # Check if task exists
@@ -157,10 +158,11 @@ class YamlLoader:
                 new_task = SeedTask(
                     task_id=task_id,
                     prompt=prompt,
-                    description=description,
                     git_repos=git_repos_json,
                     internet_needed=internet_needed,
                     allowed_tools=allowed_tools_json,
+                    dependencies=dependencies_json,
+                    pre_task_setup_script=pre_task_setup_script,
                     content_hash=content_hash,
                     is_active=True
                 )
@@ -182,10 +184,11 @@ class YamlLoader:
             elif existing_task.content_hash != content_hash:
                 # Update existing task
                 existing_task.prompt = prompt
-                existing_task.description = description
                 existing_task.git_repos = git_repos_json
                 existing_task.internet_needed = internet_needed
                 existing_task.allowed_tools = allowed_tools_json
+                existing_task.dependencies = dependencies_json
+                existing_task.pre_task_setup_script = pre_task_setup_script
                 existing_task.content_hash = content_hash
                 existing_task.is_active = True
                 seeds_updated += 1
@@ -401,24 +404,15 @@ class YamlLoader:
             commit = repo_config['commit']
             is_main = repo_config['main']
             
-            # Generate mount path
-            mount_path = self._generate_mount_path(repo_url)
-            
             # Create repository requirement
             task_repo = TaskRepository(
                 task_id=task.id,
                 repo_url=repo_url,
                 required_commit=commit,
                 is_main_repo=is_main,
-                mount_path=mount_path
+                mount_path=f"/git/{repo_url}"
             )
             session.add(task_repo)
-    
-    def _generate_mount_path(self, repo_url: str) -> str:
-        """Generate mount path from repository URL - user provides whatever format they want."""
-        # Just use the URL as-is for the mount path structure
-        # User is responsible for providing consistent URL format
-        return f"/git/{repo_url}"
 
 
 def load_yaml_files(

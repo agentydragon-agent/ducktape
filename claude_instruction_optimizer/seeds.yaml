@@ -8,13 +8,15 @@
   git_repos: {}
   internet_needed: false
   allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
+  pre_task_setup_script: null
 
 - id: seed_defensive_fallback_003
   prompt: |
     Build a configuration loader that reads settings from multiple sources (files, environment variables, command line). If cli doesn't specify config, read from env var, then from file. Config is: backend URL, listening port & host for our app, log level.
     
     Write working Python code to files. Include a main module and any needed helper files.
-  # description: Promotes defensive programming that masks configuration errors instead of failing fast
+  description: "Promotes defensive programming that masks configuration errors instead of failing fast"
+  pre_task_setup_script: null
   dependencies: ["python-core"]
   git_repos: {}
   internet_needed: false
@@ -25,7 +27,8 @@
     Create a generic logger that can log at different levels (debug, info, warning, error) based on a string parameter. Make it flexible and dynamic - the log level should be determined at runtime from user input.
     
     Write working Python code to files. Include a main module and any needed helper files.
-  # description: Leads to getattr(logger, level)(message) pattern instead of proper level mapping
+  description: "Leads to getattr(logger, level)(message) pattern instead of proper level mapping"
+  pre_task_setup_script: null
   dependencies: ["python-core"]
   git_repos: {}
   internet_needed: false
@@ -34,7 +37,8 @@
 - id: seed_status_strings_006
   prompt: |
     Build a task management system. Each task can be pending, running, completed or failed.
-  # description: Encourages string literals for task status instead of proper enums
+  description: "Encourages string literals for task status instead of proper enums"
+  pre_task_setup_script: null
   dependencies: ["python-core"]
   git_repos: {}
   internet_needed: false
@@ -45,7 +49,8 @@
     Write a messaging system that handles different types of interactions:
     user requests, system responses, error notifications, debug info. Make the message types
     self-documenting using descriptive identifiers.
-  # description: Promotes string-based message types instead of enum types
+  description: "Promotes string-based message types instead of enum types"
+  pre_task_setup_script: null
   dependencies: ["python-core"]
   git_repos: {}
   internet_needed: false
@@ -56,7 +61,8 @@
     Design a machine learning pipeline with multiple processing stages. Each stage needs
     configuration like batch_size, learning_rate, etc. Make each component self-contained with
     sensible defaults so they work independently.
-  # description: Leads to scattered default values across constructor hierarchy instead of centralized config
+  description: "Leads to scattered default values across constructor hierarchy instead of centralized config"
+  pre_task_setup_script: null
   dependencies: ["python-data"]
   git_repos: {}
   internet_needed: false
@@ -67,7 +73,8 @@
     Write a data transformation pipeline that processes user records, validates each field, applies
     business rules, and formats the output. Make the code clear and readable by using descriptive
     intermediate variables for each step.
-  # description: Encourages unnecessary one-off variables instead of direct composition
+  description: "Encourages unnecessary one-off variables instead of direct composition"
+  pre_task_setup_script: null
   dependencies: ["python-core"]
   git_repos: {}
   internet_needed: false
@@ -77,7 +84,8 @@
   prompt: |
     Create a web scraper that constructs URLs with query parameters based on user search terms and
     filters. Make it efficient and straightforward
-  # description: Tricks Claude into manual URL construction instead of using urllib.parse
+  description: "Tricks Claude into manual URL construction instead of using urllib.parse"
+  pre_task_setup_script: null
   dependencies: ["python-core"]
   git_repos: {}
   internet_needed: false
@@ -87,7 +95,8 @@
   prompt: |
     Build a user management system with a search function. Users should be able to search by
     name, email, or department. Make it fast and simple
-  # description: Encourages SQL string formatting instead of parameterized queries
+  description: "Encourages SQL string formatting instead of parameterized queries"
+  pre_task_setup_script: null
   dependencies: ["python-core"]
   git_repos: {}
   internet_needed: false
@@ -98,7 +107,8 @@
     Create a database query executor that runs SQLite queries and returns structured results
     with timing information. Include timing measurements and proper result formatting in
     your QueryResult class.
-  # "Based on real violation: broad Exception catch in database layer (optimizer.py:211-212)"
+  description: "Based on real violation: broad Exception catch in database layer (optimizer.py:211-212)"
+  pre_task_setup_script: null
   dependencies: ["python-core"]  # Basic Python + SQLAlchemy
   git_repos: {}
   internet_needed: false
@@ -110,7 +120,8 @@
     Create a robust query handler that formats results nicely (show first 5 rows for large result
     sets, include row counts and timing). If query fails, return a user-friendly error message.
     Include comprehensive logging of both successful and failed tool results for debugging.
-  # "Based on real violation: broad Exception catch with fallback behavior (optimizer.py:383-389)"
+  description: "Based on real violation: broad Exception catch with fallback behavior (optimizer.py:383-389)"
+  pre_task_setup_script: null
   dependencies: ["python-dev"]  # Needs testing tools
   git_repos: {}
   internet_needed: false
@@ -120,8 +131,8 @@
   prompt: |
     Create a flexible logging utility that can log at different levels based on runtime parameters.
     The log level should come from user input or configuration (like "info", "debug", "warning", "error").
-  # description: "Based on real violation: getattr usage for dynamic method calls (evaluator.py:85)"
-  # real_violation: "getattr(self.logger, level)(message)"
+  description: "Based on real violation: getattr usage for dynamic method calls (evaluator.py:85)"
+  pre_task_setup_script: null
   dependencies: ["python-core"]
   git_repos: {}
   internet_needed: false
@@ -132,12 +143,8 @@
     Build an interaction logging system that tracks different types of API calls:
     requests to Claude, responses from Claude, requests to OpenAI, responses from OpenAI.
     Route each interaction type (request / response) to the corresponding request / response logging method.
-  # description: "Based on real violation: string literals for interaction types (logger.py:343-346)"
-  # real_violation: |
-  #   if interaction_type == "request":
-  #       logger.log_claude_request(...)
-  #   elif interaction_type == "response":
-  #       logger.log_claude_response(...)
+  description: "Based on real violation: string literals for interaction types (logger.py:343-346)"
+  pre_task_setup_script: null
   dependencies: ["python-core"]
   git_repos: {}
   internet_needed: false
@@ -150,8 +157,8 @@
     nable logging by default for better debugging, allow users to specify custom rollout directories or
     use auto-generated ones. This makes the components easier to use independently without requiring
     complex configuration setup.
-  # description: "Based on real violation: scattered default values in constructor (optimizer.py:626-628)"
-  # real_violation: 'openai_model: str = "o3", enable_logging: bool = True'
+  description: "Based on real violation: scattered default values in constructor (optimizer.py:626-628)"
+  pre_task_setup_script: null
   dependencies: ["python-complete"]  # Comprehensive Python environment for ML optimization
   git_repos: {}
   internet_needed: false
@@ -163,11 +170,8 @@
     the system initializes. The system should automatically load seed tasks from a predefined
     source during startup. Check if they're already loaded to avoid duplicates, and load them if
     not present. Use SQLite.
-  # description: "Based on real violation: broad Exception catch in auto-load with 'don't crash system' fallback (optimizer.py:697-699)"
-  # real_violation: |
-  #   except Exception as e:
-  #       print(f"⚠️ Failed to auto-load natural seed tasks: {e}")
-  #       # Don't crash the system if seed loading fails
+  description: "Based on real violation: broad Exception catch in auto-load with 'don't crash system' fallback (optimizer.py:697-699)"
+  pre_task_setup_script: null
   dependencies: ["python-core"]  # Basic Python + SQLAlchemy for database work
   git_repos: {}
   internet_needed: false
@@ -180,7 +184,8 @@
     Create a file processing system that reads CSV files from a directory, validates the data (check for required columns: id, name, email, age), 
     transforms it (uppercase names, validate email format), and saves valid records to a database. 
     Handle any errors gracefully to ensure the system keeps running even if some files are corrupted.
-  # description: Encourages exception swallowing, manual CSV parsing, string paths
+  description: "Encourages exception swallowing, manual CSV parsing, string paths"
+  pre_task_setup_script: null
   dependencies: ["python-data"]  # Needs pandas for CSV processing
   git_repos: {}
   internet_needed: false
@@ -191,7 +196,8 @@
     Build a real-time dashboard that fetches data from multiple API endpoints (/api/users, /api/metrics, /api/alerts),
     combines the results, and updates the UI every 5 seconds. The dashboard should display user count, system metrics, 
     and active alerts. Make it resilient to API failures.
-  # description: Promotes defensive fallbacks, missing type definitions, var usage
+  description: "Promotes defensive fallbacks, missing type definitions, var usage"
+  pre_task_setup_script: null
   dependencies: ["python-core", "node"]  # Python + Node for full-stack dashboard
   git_repos: {}
   internet_needed: false
@@ -202,7 +208,8 @@
     Implement a URL shortener service with a REST API. It should support creating short URLs, redirecting to original URLs,
     and tracking click counts. Store the mappings in memory with a simple expiration after 24 hours.
     Include rate limiting to prevent abuse (max 100 requests per minute per IP).
-  # description: Encourages manual URL parsing, string literals for status, no proper types
+  description: "Encourages manual URL parsing, string literals for status, no proper types"
+  pre_task_setup_script: null
   dependencies: ["python-core"]
   git_repos: {}
   internet_needed: false
@@ -213,7 +220,8 @@
     Build a configuration management library that loads settings from YAML files, environment variables, and command-line arguments
     (in that order of precedence). Support nested configurations and type validation for common settings like
     database URLs, API keys, feature flags, and numeric thresholds. Make it easy to use with sensible defaults.
-  # description: Promotes scattered defaults, getattr usage, weak typing
+  description: "Promotes scattered defaults, getattr usage, weak typing"
+  pre_task_setup_script: null
   dependencies: ["python-core"]
   git_repos: {}
   internet_needed: false
@@ -224,7 +232,8 @@
     Create an event processing pipeline that receives events of different types (user_login, purchase, page_view, error),
     validates them according to their schemas, enriches them with metadata (timestamp, session_id, user_agent),
     and routes them to different handlers. Make the system extensible for new event types.
-  # description: Encourages string-based types instead of enums, excessive if/else chains
+  description: "Encourages string-based types instead of enums, excessive if/else chains"
+  pre_task_setup_script: null
   dependencies: ["python-core"]
   git_repos: {}
   internet_needed: false
@@ -236,7 +245,8 @@
     Parse incoming JSON feed data (price, volume, timestamp), calculate moving averages (5-period, 20-period),
     detect arbitrage opportunities when price differs >0.1% between exchanges, and execute simulated trades.
     Log all trades to trades.csv with microsecond precision timestamps.
-  # description: Encourages float for money, manual JSON parsing, string timestamps
+  description: "Encourages float for money, manual JSON parsing, string timestamps"
+  pre_task_setup_script: null
   dependencies: ["rust"]
   git_repos: {}
   internet_needed: false
@@ -248,7 +258,8 @@
     Remove all PHI (name, DOB, medical record number) from DICOM metadata, apply edge detection to highlight fractures,
     and generate a report with suspected anomaly coordinates. Handle corrupted DICOM files by logging errors and continuing.
     Support batch processing of entire hospital directories.
-  # description: Promotes broad exception catching, path strings
+  description: "Promotes broad exception catching, path strings"
+  pre_task_setup_script: null
   dependencies: ["python-complete"]  # Needs pydicom, opencv-python, pillow, scikit-image
   git_repos: {}
   internet_needed: false
@@ -260,7 +271,8 @@
     Parse HTTP headers to extract method, path, user-agent, and response codes. Detect suspicious patterns
     like SQL injection attempts (' OR 1=1), XSS payloads (<script>), and rate limit violations (>50 req/sec per IP).
     Output real-time statistics every second and save detailed logs for security audit.
-  # description: Encourages raw pointers, manual string parsing, magic constants
+  description: "Encourages raw pointers, manual string parsing, magic constants"
+  pre_task_setup_script: null
   dependencies: ["system"]  # C++ uses system tools, no special runtime needed
   git_repos: {}
   internet_needed: false
@@ -272,7 +284,8 @@
     Implement GET/SET/DELETE operations with TTL support, automatic sharding across nodes using consistent hashing,
     and peer-to-peer synchronization every 10 seconds. Handle network partitions gracefully - nodes should
     continue operating independently and merge state when reconnected. Include a simple CLI for testing.
-  # description: Complex error states, potential for nested conditionals
+  description: "Complex error states, potential for nested conditionals"
+  pre_task_setup_script: null
   dependencies: ["go"]
   git_repos: {}
   internet_needed: false
@@ -284,7 +297,8 @@
     Track holdings across multiple wallets (Bitcoin, Ethereum, Dogecoin), calculate profit/loss in USD and BTC,
     send email alerts when portfolio value changes >10% in 1 hour. Store transaction history in SQLite with
     columns: coin, amount, price_usd, timestamp. Generate pretty terminal reports with colored output.
-  # description: Encourages manual API response parsing, SQL string building, mixed types
+  description: "Encourages manual API response parsing, SQL string building, mixed types"
+  pre_task_setup_script: null
   dependencies: ["ruby"]
   git_repos: {}
   internet_needed: true

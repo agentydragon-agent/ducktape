@@ -16,7 +16,6 @@ class DockerManager:
         """Initialize DockerManager and locate Docker binary."""
         self._original_path = os.environ.get("PATH", "")
         self._docker_path = self._find_docker()
-        self._wrapper_setup = False
         self._docker_client = docker.from_env()
         
     def _find_docker(self) -> str:
@@ -36,15 +35,16 @@ class DockerManager:
             )
         return docker_path
     
-    def setup_wrapper(self, base_dir: Path, wrapper_script_path: Path) -> Path:
-        """Set up Docker wrapper script for coding agent isolation.
+    @contextmanager
+    def wrapper(self, base_dir: Path, wrapper_script_path: Path):
+        """Set up Docker wrapper script with automatic cleanup.
         
         Args:
             base_dir: Base directory for the run
             wrapper_script_path: Path to the docker_claude_wrapper.sh script
             
-        Returns:
-            Path to the installed wrapper script
+        Yields:
+            str: Modified PATH with wrapper directory prepended
         """
         wrapper_dir = base_dir / "bin"
         wrapper_dir.mkdir(parents=True, exist_ok=True)
@@ -54,20 +54,51 @@ class DockerManager:
         if not wrapper_script_path.exists():
             raise FileNotFoundError(f"Docker wrapper script not found: {wrapper_script_path}")
             
-        shutil.copy2(wrapper_script_path, wrapper_script)
-        wrapper_script.chmod(0o755)
+        try:
+            shutil.copy2(wrapper_script_path, wrapper_script)
+            wrapper_script.chmod(0o755)
+            
+            # Yield modified PATH for subprocess calls
+            wrapper_path = f"{wrapper_dir}:{self._original_path}"
+            yield wrapper_path
+            
+        finally:
+            # Clean up wrapper script
+            if wrapper_script.exists():
+                wrapper_script.unlink()
         
-        # Prepend wrapper directory to PATH
-        os.environ["PATH"] = f"{wrapper_dir}:{self._original_path}"
-        self._wrapper_setup = True
+    def get_subprocess_env(self, container_id: str, wrapper_path: str) -> dict:
+        """Get environment variables for subprocess calls.
         
-        return wrapper_script
+        Args:
+            container_id: Container ID to set for Claude wrapper
+            wrapper_path: Modified PATH with wrapper directory
+            
+        Returns:
+            Environment dict with modified PATH and CLAUDE_CONTAINER_ID
+        """
+        env = os.environ.copy()
+        env["PATH"] = wrapper_path
+        env["CLAUDE_CONTAINER_ID"] = container_id
+        return env
+    
+    @contextmanager
+    def wrapper_and_container(self, working_dir: Path, wrapper_script_path: Path, 
+                             docker_image: str, container_name: str):
+        """Set up wrapper and container with automatic cleanup.
         
-    def cleanup(self) -> None:
-        """Restore original PATH."""
-        if self._wrapper_setup:
-            os.environ["PATH"] = self._original_path
-            self._wrapper_setup = False
+        Args:
+            working_dir: Working directory to mount
+            wrapper_script_path: Path to the wrapper script
+            docker_image: Docker image to use
+            container_name: Unique container identifier
+            
+        Yields:
+            tuple: (wrapper_path, container_id)
+        """
+        with self.wrapper(working_dir, wrapper_script_path) as wrapper_path, \
+             self.container(docker_image, container_name, working_dir) as container_id:
+            yield wrapper_path, container_id
             
     @property
     def docker_path(self) -> str:
@@ -92,9 +123,22 @@ class DockerManager:
             str: Container ID for use with setup scripts and docker exec
         """
         container = None
+        self._current_container = None  # Track current container for cleanup
         try:
+            # Use shared git volume (created once, reused across all tasks)
+            git_volume_name = "claude_shared_git"
+            
+            # Ensure the shared git volume exists
+            try:
+                self._docker_client.volumes.get(git_volume_name)
+            except docker.errors.NotFound:
+                self._docker_client.volumes.create(name=git_volume_name)
+            
             # Build volumes dict
-            volumes = {str(working_dir): {"bind": "/workspace", "mode": "rw"}}
+            volumes = {
+                str(working_dir): {"bind": "/workspace", "mode": "rw"},
+                git_volume_name: {"bind": "/git", "mode": "rw"}  # RW during setup
+            }
             
             # Start long-running container using Docker SDK
             container = self._docker_client.containers.run(
@@ -106,28 +150,66 @@ class DockerManager:
             )
             
             container_id = container.id
-            
-            # Set environment variable for wrapper script
-            os.environ["CLAUDE_CONTAINER_ID"] = container_id
+            self._current_container = container  # Track for cleanup
             
             yield container_id
             
         except docker.errors.DockerException as e:
             raise RuntimeError(f"Failed to start container: {e}")
         finally:
-            # Clean up environment variable
-            if "CLAUDE_CONTAINER_ID" in os.environ:
-                del os.environ["CLAUDE_CONTAINER_ID"]
                 
-            # Clean up container
-            if container:
+            # Clean up container (use tracked container in case of remounting)
+            cleanup_container = self._current_container or container
+            if cleanup_container:
                 try:
-                    container.remove(force=True)
+                    cleanup_container.remove(force=True)
                 except docker.errors.DockerException:
                     # Log but don't fail - container might already be gone
                     pass
     
-    def run_pre_task_setup(self, container_id: str, task_id: str, working_dir: Path, config) -> None:
+    def remount_git_readonly(self, container_id: str, image: str, working_dir: Path) -> str:
+        """Recreate container with /git mounted read-only for security after pre-task setup.
+        
+        Args:
+            container_id: Current container ID to replace
+            image: Docker image to use for new container
+            working_dir: Working directory to mount
+            
+        Returns:
+            str: New container ID with read-only /git mount
+        """
+        try:
+            # Stop and remove the current container
+            old_container = self._docker_client.containers.get(container_id)
+            old_container.remove(force=True)
+            
+            # Create new container with read-only /git volume
+            git_volume_name = "claude_shared_git"
+            volumes = {
+                str(working_dir): {"bind": "/workspace", "mode": "rw"},
+                git_volume_name: {"bind": "/git", "mode": "ro"}  # Now read-only
+            }
+            
+            # Start new container
+            new_container = self._docker_client.containers.run(
+                image,
+                command=["sleep", "infinity"],
+                volumes=volumes,
+                working_dir="/workspace", 
+                detach=True
+            )
+            
+            # Update current container tracking
+            new_container_id = new_container.id
+            self._current_container = new_container  # Update tracked container
+            
+            return new_container_id
+            
+        except docker.errors.DockerException as e:
+            # If remounting fails, return original container ID (keep working)
+            return container_id
+    
+    def run_pre_task_setup(self, container_id: str, task_id: str, working_dir: Path, config, wrapper_path: str) -> None:
         """Run pre-task setup script if configured.
         
         Args:
@@ -135,6 +217,7 @@ class DockerManager:
             task_id: Task identifier
             working_dir: Working directory path
             config: OptimizerConfig instance containing setup script path
+            wrapper_path: Modified PATH with wrapper directory
         """
         if not config.pre_task_setup_script:
             return
@@ -149,6 +232,6 @@ class DockerManager:
                 container_id,
                 task_id,
                 str(working_dir)
-            ], check=True)
+            ], check=True, env=self.get_subprocess_env(container_id, wrapper_path))
         except subprocess.CalledProcessError as e:
             raise RuntimeError(f"Pre-task setup script failed: {e}")
