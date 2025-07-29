@@ -978,3 +978,51 @@ graders:
         
         def distance_to(self, other: Point) -> float:
           return ((self.x - other.x)**2 + (self.y - other.y)**2)**0.5
+
+  - id: organization
+    name: Repository Organization and Documentation Quality
+    description: Maintains clean repository structure with concise, current documentation that respects the reader's competence
+    evaluation_criteria: |
+      The repository should be professionally organized with minimal cruft. Documentation should exist only when worthwhile and follow the same conciseness principles as code.
+      
+      Problematic patterns:
+      - Debug script proliferation: test_the_thing.py, final_test.py, comprehensive_test.py, foo.py scattered in top-level
+      - Top-level pollution: Debug files mixed with proper project structure (frontend/, backend/, docs/, tests/)
+      - Stale documentation: Outdated markdown files with conflicting plans that don't match current reality
+      - Inconsistent naming: No clear convention for temporary vs. permanent files
+      - Poor folder organization: Debug logs scattered instead of in debug/ or logs/
+      - Documentation spam: README explaining every obscure CLI flag instead of focusing on essentials
+      - Obvious redundancy: "# Runs x.py" comment above python x.py command
+      - Ecosystem tutorials: Explaining pytest basics to Python developers
+      - Documentation repetition: Same information in README, docstrings, and inline comments
+      - Vertical waste: 20 lines explaining what 3 lines could say clearly
+      - Over-documentation: Separate markdown files for simple functions that need only docstrings
+      - Condescending docs: Explaining language basics to competent developers
+      - False documentation: Outdated installation steps, wrong API examples, incorrect configuration
+      - Documentation debt: Creating extensive docs the agent won't maintain
+      
+      Good patterns:
+      - Clean project structure: frontend/, backend/, docs/, tests/, README.md at top level
+      - Organized temporary files: debug/session-2024-01-15/, logs/integration-test/
+      - Consistent naming conventions: debug_user_auth_2024-01-15.py not foo.py
+      - Remove artifacts: Clean up debug scripts and temporary files before finishing
+      - Current documentation: Update docs when changing APIs, schemas, dependencies
+      - Essential-only README: Build, test, deploy instructions - the survival kit
+      - Selective documentation: "Top 5 flags, see config.py for full list" not explaining 37 obscure options
+      - Inline-first: Prefer docstrings and comments where code lives
+      - Self-describing code: Clear structure and names reduce documentation need
+      - Assume competence: "We use pytest, tests in tests/" not pytest tutorial
+      - Project-specific focus: Document YOUR conventions, not ecosystem basics
+      - Single source of truth: Each fact lives in exactly one place
+      - Screen-friendly density: Pack useful information efficiently without sacrificing clarity
+      - Maintenance-aware: Only create documentation worth keeping current
+      - Breakout sparingly: Separate markdown only for architecture, security, conventions that would make docstrings unwieldy
+      
+      Documentation quality principles:
+      - False docs have negative value - better to have none than misleading information
+      - Target competent developers who don't know THIS project
+      - Follow DRY principles - don't repeat information across multiple locations
+      - Respect vertical space - fit more useful information per screen
+      - Maintain invariants - don't leave docs less accurate than when you started
+      
+      Key evaluation question: Would a competent developer new to this project be able to navigate and understand it efficiently without wading through cruft or misleading information?

@@ -269,6 +269,43 @@ Interrupt received, reporting costs before exit
 FINAL COST SUMMARY: total_cost_usd=45.67, rollout_count=120, avg_cost_per_rollout_usd=0.38
 ```
 
+## Troubleshooting
+
+### Docker Build Issues
+```bash
+# Check Docker BuildKit is enabled
+export DOCKER_BUILDKIT=1
+
+# Try building individual layers if main build fails
+docker buildx build --target system-base -t claude-dev:system-base --load .
+```
+
+### Verification Commands
+```bash
+# Check dependency resolution is working
+python3 -c "
+from dependency_manager import DependencyResolver
+resolver = DependencyResolver()
+print('Rust task resolves to:', resolver.resolve_dependencies(['rust'], 'test'))
+print('Python data resolves to:', resolver.resolve_dependencies(['python-data'], 'test'))
+"
+
+# List built Docker images
+docker images | grep claude-dev | sort
+```
+
+### Expected Docker Images
+After running `build_dependency_layers.py`, you should see:
+```
+claude-dev:system-base     # ~900MB - Ubuntu + basic tools
+claude-dev:python-core     # ~1.4GB - Python basics
+claude-dev:python-dev      # ~1.5GB - Python + dev tools
+claude-dev:python-data     # ~1.8GB - Python + data science
+claude-dev:rust           # ~1.2GB - Rust toolchain
+claude-dev:node           # ~1.1GB - Node.js
+claude-dev:ruby           # ~1.0GB - Ruby
+```
+
 ---
 
 **For development questions or issues, see the inline code documentation in `optimizer.py`, `dependency_manager.py`, and `yaml_loader.py`.**
