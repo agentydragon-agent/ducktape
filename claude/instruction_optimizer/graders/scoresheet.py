@@ -5,7 +5,6 @@ Abstract interface for grader scoresheets that evaluate CLAUDE.md behavior.
 Each scoresheet defines a specific behavioral requirement and how to test it.
 """
 
-import asyncio
 import datetime
 import uuid
 from abc import ABC, abstractmethod
@@ -112,7 +111,7 @@ class GraderScoresheet(ABC):
         self.interactions.append(interaction)
 
     def _generate_summary(
-        self, results: list[GradeResult], overall_score: float
+        self, results: list[GradeResult], overall_score: float,
     ) -> str:
         """Generate a human-readable summary of the grading results."""
         if not results:

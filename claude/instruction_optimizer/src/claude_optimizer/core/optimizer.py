@@ -547,7 +547,7 @@ async def run_claude_code(
     # Use containerized Claude with automatic file collection
     # task_claude already imported above
     
-    async with task_claude(task_id, config, output_dir) as client:
+    async with task_claude(task_id, config, output_dir, task) as client:
         # Write system prompt inside container (before PATH isolation)
         await client.setup_system_prompt(system_prompt)
         
@@ -560,7 +560,7 @@ async def run_claude_code(
         
         anthropic_log.log(request=anthropic_request, event="request_sent")
         
-        await client.query(task)
+        await client.query()
         seq_order = 0
         
         async for message in client.receive_messages():

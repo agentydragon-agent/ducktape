@@ -26,10 +26,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+import claude_code_sdk
+import docker
 import pathspec
 from claude_code_sdk import ClaudeCodeOptions, ClaudeSDKClient
-
-import docker
+from claude_code_sdk._internal.transport.subprocess_cli import SubprocessCLITransport
+from logging_utils import DualOutputLogging
 
 if TYPE_CHECKING:
     from claude_optimizer.database.models import SeedTask
@@ -82,25 +84,15 @@ def _monkey_patch_claude_sdk_for_containerization():
     Injects claude_binary option to override hardcoded PATH lookup.
     See DEBUGGING.md for implementation details and failure modes.
     """
-    import claude_code_sdk
-
+    # Override _find_cli to use claude_binary from options
     # Replace the options class so we can pass claude_binary
     claude_code_sdk.types.ClaudeCodeOptions = ContainerizedClaudeCodeOptions
     claude_code_sdk.ClaudeCodeOptions = ContainerizedClaudeCodeOptions
 
-    # Override _find_cli to use claude_binary from options
-    from claude_code_sdk._internal.transport.subprocess_cli import (
-        SubprocessCLITransport,
-    )
-
     def _patched_find_cli(self) -> str:
-        """Use claude_binary from options if provided, otherwise use PATH."""
-        claude_binary = getattr(self._options, "claude_binary", None)
-        if claude_binary:
-            return claude_binary
-
-        # This should never happen in containerized mode
-        raise RuntimeError("No claude_binary specified in options")
+        if not isinstance(self._options, ContainerizedClaudeCodeOptions):
+            raise RuntimeError("No claude_binary in options")
+        return self._options.claude_binary
 
     SubprocessCLITransport._find_cli = _patched_find_cli
 
@@ -116,10 +108,11 @@ class TaskClaude:
     with proper PATH isolation and automatic file collection.
     """
 
-    def __init__(self, task_id: str, config, output_dir: Path):
+    def __init__(self, task_id: str, config, output_dir: Path, task: str):
         self.task_id = task_id
         self.config = config
         self._output_dir = output_dir
+        self._task = task
         self._docker_client = docker.from_env()
         self._container = None
         self._message_queue = asyncio.Queue()
@@ -127,15 +120,10 @@ class TaskClaude:
         # Docker image will be set from task configuration
         self._docker_image = None
         self._git_volume_name = "claude_shared_git"  # Shared git volume
-
-        # Set up logger immediately - needed for all error reporting
-        from logging_utils import DualOutputLogging
-
+        # Setup logger immediately for all error logging
         self._logger = DualOutputLogging.get_logger().bind(task_id=task_id)
-
-        # Create gitignore-style exclusion spec
         self._exclusion_spec = pathspec.PathSpec.from_lines(
-            "gitwildmatch", config.exclude_patterns
+            "gitwildmatch", config.exclude_patterns,
         )
 
         # Find docker path for wrapper creation
@@ -154,7 +142,7 @@ class TaskClaude:
         """Runtime safety check - call before any container operations."""
         if not self._container:
             raise RuntimeError(
-                "Container not started - TaskClaude must be used as context manager"
+                "Container not started - TaskClaude must be used as context manager",
             )
 
     def _get_container_volumes(self, git_readonly: bool) -> dict:
@@ -217,48 +205,36 @@ class TaskClaude:
             working_dir="/workspace",
         )
 
-    async def query(self, task: str) -> None:
-        """Start Claude query - matches ClaudeSDKClient.query() signature."""
+    async def query(self) -> None:
+        """Prepare containerized Claude query (setup options)."""
         self._ensure_container_ready()
 
-        # Check if container is actually running
+        # Validate running status
         try:
-            self._container.reload()  # Refresh container status
+            self._container.reload()
             if self._container.status != "running":
-                # Get container logs to debug why it stopped
                 logs = self._container.logs().decode("utf-8", errors="replace")
                 self._logger.error(
-                    "Container not running - logs:",
-                    container_id=self._container.id,
-                    status=self._container.status,
-                    logs=logs,
+                    "Container not running - logs:", container_id=self._container.id,
+                    status=self._container.status, logs=logs,
                 )
-                raise RuntimeError(
-                    f"Container {self._container.id} is not running, status: {self._container.status}"
-                )
+                raise RuntimeError(f"Container {self._container.id} is not running, status: {self._container.status}")
         except Exception as e:
             raise RuntimeError(f"Container {self._container.id} check failed: {e}")
 
-        self._logger.info(
-            "Query starting",
-            container_id=self._container.id,
-            container_status=self._container.status,
-        )
+        self._logger.info("Query starting", container_id=self._container.id,
+                          container_status=self._container.status)
 
-        # Create ClaudeCodeOptions with containerization settings
-        # See DEBUGGING.md for details on critical containerization settings
         options = ContainerizedClaudeCodeOptions(
-            allowed_tools=None,  # Full tool access for autonomous execution
-            cwd=str(self._output_dir),  # Use container workspace as working directory
+            allowed_tools=None,
+            cwd=str(self._output_dir),
             max_turns=self.config.rollouts.max_turns,
-            permission_mode="bypassPermissions",  # Required for Docker container execution
+            permission_mode="bypassPermissions",
             mcp_servers={},
-            claude_binary=self._get_docker_exec_wrapper_path(),  # Use docker exec wrapper
+            claude_binary=self._get_docker_exec_wrapper_path(),
         )
 
-        # Store options for receive_messages
         self._claude_options = options
-        self._task = task
 
     async def receive_messages(self) -> AsyncIterator[Any]:
         """Receive messages from Claude - matches ClaudeSDKClient.receive_messages()."""
@@ -290,7 +266,7 @@ class TaskClaude:
         """
         if not self._container:
             raise RuntimeError(
-                "Container must be started before setting up system prompt"
+                "Container must be started before setting up system prompt",
             )
 
         self._logger.debug(
@@ -354,24 +330,21 @@ class TaskClaude:
         """
         if not self._container:
             raise RuntimeError(
-                "Container must be started before getting Claude binary path"
+                "Container must be started before getting Claude binary path",
             )
 
         # Use committed wrapper script from repo
         wrapper_script = Path(__file__).parent / "scripts" / "claude_docker_wrapper"
         if not wrapper_script.exists():
             raise RuntimeError(
-                f"Claude docker wrapper script not found: {wrapper_script}"
+                f"Claude docker wrapper script not found: {wrapper_script}",
             )
-
-        # Environment variables will be set when wrapper is actually called
 
         self._logger.debug(
             "Using committed Claude docker wrapper",
             wrapper_path=str(wrapper_script),
             container_id=self._container.id,
         )
-
         return str(wrapper_script)
 
     async def _start_container(self):
@@ -391,17 +364,14 @@ class TaskClaude:
                 docker_image=self._docker_image,
                 volumes=volumes,
             )
-
             self._container = self._create_container(volumes)
             self._container.start()
 
             self._logger.info(
-                "Initial container created - waiting for running status",
+                "Waiting for running status",
                 container_id=self._container.id,
                 status=self._container.status,
             )
-
-            # Wait for container to actually start running
             max_wait = 30  # seconds
             for _i in range(max_wait):
                 self._container.reload()
@@ -417,7 +387,7 @@ class TaskClaude:
                         debug_hint=f"Run: docker logs {self._container.id}",
                     )
                     raise RuntimeError(
-                        f"Container {self._container.id} died during startup: {self._container.status}"
+                        f"Container {self._container.id} died during startup: {self._container.status}",
                     )
 
                 await asyncio.sleep(1)
@@ -433,7 +403,7 @@ class TaskClaude:
                     debug_hint=f"Run: docker logs {self._container.id}",
                 )
                 raise RuntimeError(
-                    f"Container {self._container.id} failed to start within {max_wait}s: {self._container.status}"
+                    f"Container {self._container.id} failed to start within {max_wait}s: {self._container.status}",
                 )
 
             self._logger.info(
@@ -473,7 +443,7 @@ class TaskClaude:
             raise
 
     async def _run_setup_script(
-        self, script_path: str, script_type: str, log_prefix: str
+        self, script_path: str, script_type: str, log_prefix: str,
     ):
         """Run a setup script with streaming output and error handling."""
         setup_script = Path(script_path)
@@ -543,7 +513,7 @@ class TaskClaude:
                 debug_hint=f"Run: docker logs {self._container.id}",
             )
             raise RuntimeError(
-                f"{script_type} script failed with exit code {exit_code}"
+                f"{script_type} script failed with exit code {exit_code}",
             )
         self._logger.info(
             f"{script_type} script completed successfully",
@@ -555,7 +525,7 @@ class TaskClaude:
         if not self.config.pre_task_always_script:
             return
         await self._run_setup_script(
-            self.config.pre_task_always_script, "Always pre-task setup", "setup-always"
+            self.config.pre_task_always_script, "Always pre-task setup", "setup-always",
         )
 
     async def _run_pre_task_setup(self, task_db):
@@ -563,7 +533,7 @@ class TaskClaude:
         if not self.config.pre_task_setup_script:
             return
         await self._run_setup_script(
-            self.config.pre_task_setup_script, "Pre-task setup", "pre-task-setup"
+            self.config.pre_task_setup_script, "Pre-task setup", "pre-task-setup",
         )
 
     async def _run_pre_task_commands(self, commands: str):
@@ -620,7 +590,7 @@ class TaskClaude:
             )
             raise RuntimeError(f"Pre-task commands failed with exit code {exit_code}")
         self._logger.info(
-            "Pre-task commands completed successfully", container_id=self._container.id
+            "Pre-task commands completed successfully", container_id=self._container.id,
         )
 
     async def _remount_git_readonly(self):
@@ -632,7 +602,7 @@ class TaskClaude:
         # Stop current container
         old_container_id = self._container.id
         self._logger.info(
-            "Remounting git volume as read-only", old_container_id=old_container_id
+            "Remounting git volume as read-only", old_container_id=old_container_id,
         )
 
         self._container.remove(force=True)
@@ -672,7 +642,7 @@ class TaskClaude:
                     debug_hint=f"Run: docker logs {self._container.id}",
                 )
                 raise RuntimeError(
-                    f"Remounted container {self._container.id} died during startup: {self._container.status}"
+                    f"Remounted container {self._container.id} died during startup: {self._container.status}",
                 )
 
             await asyncio.sleep(1)
@@ -688,7 +658,7 @@ class TaskClaude:
                 debug_hint=f"Run: docker logs {self._container.id}",
             )
             raise RuntimeError(
-                f"Remounted container {self._container.id} failed to start within {max_wait}s: {self._container.status}"
+                f"Remounted container {self._container.id} failed to start within {max_wait}s: {self._container.status}",
             )
 
         self._logger.info(
@@ -706,7 +676,7 @@ class TaskClaude:
                 self._container.remove(force=True)
             except Exception as e:
                 cleanup_errors.append(
-                    f"Failed to remove container {self._container.id}: {e}"
+                    f"Failed to remove container {self._container.id}: {e}",
                 )
             finally:
                 self._container = None
@@ -763,11 +733,11 @@ class _TaskClaudeProxy:
         self._claude.setup_system_prompt(system_prompt)
         self._setup_done = True
 
-    async def query(self, task: str) -> None:
+    async def query(self) -> None:
         """Delegate to actual TaskClaude."""
         if not self._setup_done:
             raise RuntimeError("Must call setup_system_prompt first")
-        return await self._claude.query(task)
+        return await self._claude.query()
 
     async def receive_messages(self) -> AsyncIterator[Any]:
         """Delegate to actual TaskClaude."""
@@ -788,7 +758,7 @@ class _TaskClaudeProxy:
 
 @asynccontextmanager
 async def task_claude(
-    task_id: str, config, output_dir: Path
+    task_id: str, config, output_dir: Path, task: str,
 ) -> AsyncIterator[_TaskClaudeProxy]:
     """Context manager for Claude task execution.
 
@@ -800,7 +770,7 @@ async def task_claude(
     Yields:
         _TaskClaudeProxy: Proxy that handles system prompt setup before PATH isolation
     """
-    claude = TaskClaude(task_id, config, output_dir)
+    claude = TaskClaude(task_id, config, output_dir, task)
     proxy = _TaskClaudeProxy(claude)
 
     try:
@@ -809,4 +779,3 @@ async def task_claude(
         # Cleanup via the actual TaskClaude instance
         if proxy._setup_done:
             await claude._cleanup()
-

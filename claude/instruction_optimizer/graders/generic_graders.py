@@ -140,7 +140,7 @@ class CodeGrader(GraderScoresheet):
                         requirement_description=self.requirement.description,
                         evaluation_criteria=self.requirement.evaluation_criteria,
                     ),
-                }
+                },
             ]
 
             openai_response = self.openai_client.responses.create(
@@ -151,7 +151,7 @@ class CodeGrader(GraderScoresheet):
                         "type": "function",
                         "name": self.requirement.function_schema["name"],
                         **self.requirement.function_schema,
-                    }
+                    },
                 ],
                 tool_choice={
                     "type": "function",
@@ -194,10 +194,10 @@ class CodeGrader(GraderScoresheet):
             # Extract standardized fields from analysis_data
             # Different requirements may have different field names, so we use common patterns
             has_problems = analysis_data.get(
-                "has_problems", analysis_data.get("has_violations", True)
+                "has_problems", analysis_data.get("has_violations", True),
             )
             problems = analysis_data.get(
-                "problems", analysis_data.get("violations", [])
+                "problems", analysis_data.get("violations", []),
             )
             assessment = analysis_data.get("assessment", "Analysis completed")
             score = analysis_data.get("score", 0.0)
@@ -216,10 +216,10 @@ class CodeGrader(GraderScoresheet):
                         # Handle different problem formats
                         if isinstance(problem, dict):
                             pattern = problem.get(
-                                "pattern", problem.get("issue", "Unknown")
+                                "pattern", problem.get("issue", "Unknown"),
                             )
                             reason = problem.get(
-                                "reason", problem.get("description", "No reason")
+                                "reason", problem.get("description", "No reason"),
                             )
                             feedback += f"{i}. {pattern}: {reason}\n"
                         else:
@@ -340,7 +340,7 @@ class ActionSequenceGrader(GraderScoresheet):
                     requirement_description=self.requirement.description,
                     evaluation_criteria=self.requirement.evaluation_criteria,
                 ),
-            }
+            },
         ]
 
         openai_response = self.openai_client.responses.create(
@@ -351,7 +351,7 @@ class ActionSequenceGrader(GraderScoresheet):
                     "type": "function",
                     "name": self.requirement.function_schema["name"],
                     **self.requirement.function_schema,
-                }
+                },
             ],
             tool_choice={
                 "type": "function",
@@ -385,7 +385,7 @@ class ActionSequenceGrader(GraderScoresheet):
 
         # Process results (same logic as CodeGrader)
         has_problems = analysis_data.get(
-            "has_problems", analysis_data.get("has_violations", True)
+            "has_problems", analysis_data.get("has_violations", True),
         )
         problems = analysis_data.get("problems", analysis_data.get("violations", []))
         assessment = analysis_data.get("assessment", "Analysis completed")
@@ -404,7 +404,7 @@ class ActionSequenceGrader(GraderScoresheet):
                     if isinstance(problem, dict):
                         issue = problem.get("action", problem.get("issue", "Unknown"))
                         reason = problem.get(
-                            "reason", problem.get("description", "No reason")
+                            "reason", problem.get("description", "No reason"),
                         )
                         feedback += f"{i}. {issue}: {reason}\n"
                     else:
