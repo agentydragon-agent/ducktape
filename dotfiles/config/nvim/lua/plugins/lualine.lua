@@ -1,3 +1,6 @@
+-- disable in vscode
+if vim.g.vscode then return {} end
+
 -- status line, like airline
 return {
 	"nvim-lualine/lualine.nvim",

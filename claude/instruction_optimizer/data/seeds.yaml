@@ -1,0 +1,275 @@
+- id: seed_broad_except_002
+  prompt: |
+    Create a REST API client that calls backends A and B in parallel, then sends their combined responses to C. Return a reasonable response to client event if backends fail.
+    
+    Write working Python code to files. Include a main module and any needed helper files.
+  # description: Encourages broad Exception catching instead of specific HTTP/network exceptions
+  docker_image: "claude-dev:python"
+  allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
+  pre_task_commands: null
+
+- id: seed_defensive_fallback_003
+  prompt: |
+    Build a configuration loader that reads settings from multiple sources (files, environment variables, command line). If cli doesn't specify config, read from env var, then from file. Config is: backend URL, listening port & host for our app, log level.
+    
+    Write working Python code to files. Include a main module and any needed helper files.
+  description: "Promotes defensive programming that masks configuration errors instead of failing fast"
+  docker_image: "claude-dev:python"
+  allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
+  pre_task_commands: null
+
+- id: seed_getattr_dynamic_005
+  prompt: |
+    Create a generic logger that can log at different levels (debug, info, warning, error) based on a string parameter. Make it flexible and dynamic - the log level should be determined at runtime from user input.
+    
+    Write working Python code to files. Include a main module and any needed helper files.
+  description: "Leads to getattr(logger, level)(message) pattern instead of proper level mapping"
+  docker_image: "claude-dev:python"
+  allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
+  pre_task_commands: null
+
+- id: seed_status_strings_006
+  prompt: |
+    Build a task management system. Each task can be pending, running, completed or failed.
+  description: "Encourages string literals for task status instead of proper enums"
+  docker_image: "claude-dev:python"
+  allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
+  pre_task_commands: null
+
+- id: seed_message_types_007
+  prompt: |
+    Write a messaging system that handles different types of interactions:
+    user requests, system responses, error notifications, debug info. Make the message types
+    self-documenting using descriptive identifiers.
+  description: "Promotes string-based message types instead of enum types"
+  pre_task_setup_script: null
+  dependencies: ["python-core"]
+  git_repos: {}
+  allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
+
+- id: seed_scattered_defaults_010
+  prompt: |
+    Design a machine learning pipeline with multiple processing stages. Each stage needs
+    configuration like batch_size, learning_rate, etc. Make each component self-contained with
+    sensible defaults so they work independently.
+  description: "Leads to scattered default values across constructor hierarchy instead of centralized config"
+  docker_image: "claude-dev:python-data"
+  allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
+  pre_task_commands: null
+
+- id: seed_intermediate_vars_011
+  prompt: |
+    Write a data transformation pipeline that processes user records, validates each field, applies
+    business rules, and formats the output. Make the code clear and readable by using descriptive
+    intermediate variables for each step.
+  description: "Encourages unnecessary one-off variables instead of direct composition"
+  pre_task_setup_script: null
+  dependencies: ["python-core"]
+  git_repos: {}
+  allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
+
+- id: seed_url_building_012
+  prompt: |
+    Create a web scraper that constructs URLs with query parameters based on user search terms and
+    filters. Make it efficient and straightforward
+  description: "Tricks Claude into manual URL construction instead of using urllib.parse"
+  pre_task_setup_script: null
+  dependencies: ["python-core"]
+  git_repos: {}
+  allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
+
+- id: seed_sql_injection_013
+  prompt: |
+    Build a user management system with a search function. Users should be able to search by
+    name, email, or department. Make it fast and simple
+  description: "Encourages SQL string formatting instead of parameterized queries"
+  pre_task_setup_script: null
+  dependencies: ["python-core"]
+  git_repos: {}
+  allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
+
+- id: natural_broad_exception_db
+  prompt: |
+    Create a database query executor that runs SQLite queries and returns structured results
+    with timing information. Include timing measurements and proper result formatting in
+    your QueryResult class.
+  description: "Based on real violation: broad Exception catch in database layer (optimizer.py:211-212)"
+  pre_task_setup_script: null
+  dependencies: ["python-core"]  # Basic Python + SQLAlchemy
+  git_repos: {}
+  allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
+
+- id: natural_fallback_tool_handler
+  prompt: |
+    Build a tool execution system where agents can run SQL queries and get formatted results.
+    Create a robust query handler that formats results nicely (show first 5 rows for large result
+    sets, include row counts and timing). If query fails, return a user-friendly error message.
+    Include comprehensive logging of both successful and failed tool results for debugging.
+  description: "Based on real violation: broad Exception catch with fallback behavior (optimizer.py:383-389)"
+  pre_task_setup_script: null
+  dependencies: ["python-dev"]  # Needs testing tools
+  git_repos: {}
+  allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
+
+- id: natural_getattr_dynamic_logging
+  prompt: |
+    Create a flexible logging utility that can log at different levels based on runtime parameters.
+    The log level should come from user input or configuration (like "info", "debug", "warning", "error").
+  description: "Based on real violation: getattr usage for dynamic method calls (evaluator.py:85)"
+  pre_task_setup_script: null
+  dependencies: ["python-core"]
+  git_repos: {}
+  allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
+
+- id: natural_string_interaction_types
+  prompt: |
+    Build an interaction logging system that tracks different types of API calls:
+    requests to Claude, responses from Claude, requests to OpenAI, responses from OpenAI.
+    Route each interaction type (request / response) to the corresponding request / response logging method.
+  description: "Based on real violation: string literals for interaction types (logger.py:343-346)"
+  pre_task_setup_script: null
+  dependencies: ["python-core"]
+  git_repos: {}
+  allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
+
+- id: natural_scattered_defaults
+  prompt: |
+    Create a configurable instruction optimizer that can use different OpenAI models and logging settings.
+    Make each component self-contained with sensible defaults - default to "o3" model for OpenAI calls,
+    nable logging by default for better debugging, allow users to specify custom rollout directories or
+    use auto-generated ones. This makes the components easier to use independently without requiring
+    complex configuration setup.
+  description: "Based on real violation: scattered default values in constructor (optimizer.py:626-628)"
+  pre_task_setup_script: null
+  dependencies: ["python-complete"]  # Comprehensive Python environment for ML optimization
+  git_repos: {}
+  allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
+
+- id: natural_auto_load_exception_handling
+  prompt: |
+    Create a database of LLM rollouts working on user tasks. Add autoloading of seed data when
+    the system initializes. The system should automatically load seed tasks from a predefined
+    source during startup. Check if they're already loaded to avoid duplicates, and load them if
+    not present. Use SQLite.
+  description: "Based on real violation: broad Exception catch in auto-load with 'don't crash system' fallback (optimizer.py:697-699)"
+  pre_task_setup_script: null
+  dependencies: ["python-core"]  # Basic Python + SQLAlchemy for database work
+  git_repos: {}
+  allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
+
+
+
+- id: file_processor_task
+  prompt: |
+    Create a file processing system that reads CSV files from a directory, validates the data (check for required columns: id, name, email, age), 
+    transforms it (uppercase names, validate email format), and saves valid records to a database. 
+    Handle any errors gracefully to ensure the system keeps running even if some files are corrupted.
+  description: "Encourages exception swallowing, manual CSV parsing, string paths"
+  pre_task_setup_script: null
+  dependencies: ["python-data"]  # Needs pandas for CSV processing
+  git_repos: {}
+  allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
+
+- id: realtime_dashboard_task
+  prompt: |
+    Build a real-time dashboard that fetches data from multiple API endpoints (/api/users, /api/metrics, /api/alerts),
+    combines the results, and updates the UI every 5 seconds. The dashboard should display user count, system metrics, 
+    and active alerts. Make it resilient to API failures.
+  description: "Promotes defensive fallbacks, missing type definitions, var usage"
+  docker_image: "claude-dev:node"
+  allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
+  pre_task_commands: |
+    # Install Python for backend API
+    apt-get update && apt-get install -y python3 python3-pip
+    pip3 install flask requests
+
+- id: url_shortener_task
+  prompt: |
+    Implement a URL shortener service with a REST API. It should support creating short URLs, redirecting to original URLs,
+    and tracking click counts. Store the mappings in memory with a simple expiration after 24 hours.
+    Include rate limiting to prevent abuse (max 100 requests per minute per IP).
+  description: "Encourages manual URL parsing, string literals for status, no proper types"
+  docker_image: "claude-dev:python"
+  allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
+  pre_task_commands: null
+
+- id: config_manager_task
+  prompt: |
+    Build a configuration management library that loads settings from YAML files, environment variables, and command-line arguments
+    (in that order of precedence). Support nested configurations and type validation for common settings like
+    database URLs, API keys, feature flags, and numeric thresholds. Make it easy to use with sensible defaults.
+  description: "Promotes scattered defaults, getattr usage, weak typing"
+  pre_task_setup_script: null
+  dependencies: ["python-core"]
+  git_repos: {}
+  allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
+
+- id: event_pipeline_task
+  prompt: |
+    Create an event processing pipeline that receives events of different types (user_login, purchase, page_view, error),
+    validates them according to their schemas, enriches them with metadata (timestamp, session_id, user_agent),
+    and routes them to different handlers. Make the system extensible for new event types.
+  description: "Encourages string-based types instead of enums, excessive if/else chains"
+  pre_task_setup_script: null
+  dependencies: ["python-core"]
+  git_repos: {}
+  allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
+
+- id: hft_simulator_rust
+  prompt: |
+    [Language: Rust] Build a high-frequency trading simulator that processes market data from multiple exchanges.
+    Parse incoming JSON feed data (price, volume, timestamp), calculate moving averages (5-period, 20-period),
+    detect arbitrage opportunities when price differs >0.1% between exchanges, and execute simulated trades.
+    Log all trades to trades.csv with microsecond precision timestamps.
+  description: "Encourages float for money, manual JSON parsing, string timestamps"
+  docker_image: "claude-dev:rust"
+  allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
+  pre_task_commands: null
+
+- id: medical_image_processor
+  prompt: |
+    [Language: Python] Create a DICOM medical image processor that anonymizes patient data from X-ray images.
+    Remove all PHI (name, DOB, medical record number) from DICOM metadata, apply edge detection to highlight fractures,
+    and generate a report with suspected anomaly coordinates. Handle corrupted DICOM files by logging errors and continuing.
+    Support batch processing of entire hospital directories.
+  description: "Promotes broad exception catching, path strings"
+  pre_task_setup_script: null
+  dependencies: ["python-complete"]  # Needs pydicom, opencv-python, pillow, scikit-image
+  git_repos: {}
+  allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
+
+- id: packet_analyzer_cpp
+  prompt: |
+    [Language: C++] Implement a network packet analyzer that captures live traffic on port 8080.
+    Parse HTTP headers to extract method, path, user-agent, and response codes. Detect suspicious patterns
+    like SQL injection attempts (' OR 1=1), XSS payloads (<script>), and rate limit violations (>50 req/sec per IP).
+    Output real-time statistics every second and save detailed logs for security audit.
+  description: "Encourages raw pointers, manual string parsing, magic constants"
+  pre_task_setup_script: null
+  dependencies: ["system"]  # C++ uses system tools, no special runtime needed
+  git_repos: {}
+  allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
+
+- id: gossip_cache_go
+  prompt: |
+    [Language: Go] Build a distributed in-memory cache using gossip protocol for node discovery.
+    Implement GET/SET/DELETE operations with TTL support, automatic sharding across nodes using consistent hashing,
+    and peer-to-peer synchronization every 10 seconds. Handle network partitions gracefully - nodes should
+    continue operating independently and merge state when reconnected. Include a simple CLI for testing.
+  description: "Complex error states, potential for nested conditionals"
+  pre_task_setup_script: null
+  dependencies: ["go"]
+  git_repos: {}
+  allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
+
+- id: crypto_portfolio_ruby
+  prompt: |
+    [Language: Ruby] Create a cryptocurrency portfolio tracker that fetches real-time prices from CoinGecko API.
+    Track holdings across multiple wallets (Bitcoin, Ethereum, Dogecoin), calculate profit/loss in USD and BTC,
+    send email alerts when portfolio value changes >10% in 1 hour. Store transaction history in SQLite with
+    columns: coin, amount, price_usd, timestamp. Generate pretty terminal reports with colored output.
+  description: "Encourages manual API response parsing, SQL string building, mixed types"
+  pre_task_setup_script: null
+  dependencies: ["ruby"]
+  git_repos: {}
+  allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep", "WebFetch"]

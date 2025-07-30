@@ -30,7 +30,7 @@ export ZSH=$HOME/.oh-my-zsh
 DISABLE_CORRECTION="true"
 
 # Uncomment the following line to display red dots whilst waiting for completion.
-# COMPLETION_WAITING_DOTS="true"
+COMPLETION_WAITING_DOTS="%F{yellow}...%f"
 
 # Disable marking untracked files under VCS as dirty.
 # This makes repository status check for large repositories much, much faster.
@@ -101,11 +101,14 @@ zstyle ':completion:*' matcher-list ''
 #autoload -Uz compinit
 #compinit
 
-HISTFILE=~/.histfile
 # https://github.com/bamos/zsh-history-analysis#increasing-the-history-file-size
 HISTSIZE=10000000
 SAVEHIST=10000000
-setopt EXTENDED_HISTORY
+
+setopt SHARE_HISTORY      # Combine history between sessions
+setopt INC_APPEND_HISTORY # Append to history immediately, not only at session end
+setopt EXTENDED_HISTORY   # Timestamps in history
+setopt HIST_REDUCE_BLANKS # Trim whitespace
 
 setopt autocd
 
@@ -119,10 +122,6 @@ bindkey -e
 # alias vim='vim -w ~/.vim-keylog "$@"'
 
 ZSH_THEME_TERM_TITLE_IDLE="%n: %~ $"
-
-# have terminals share history entirely and live
-setopt inc_append_history # Append to history file immediately, not at the end of the session
-setopt share_history # Read history from history file continuously (not just at start of session)
 
 #eval `dircolors ~/.dir_colors/dircolors`
 export MC_SKIN=~/.config/mc/solarized.ini
@@ -172,7 +171,7 @@ export AIDER_MODEL=o1
 export BUN_INSTALL="$HOME/.bun"
 export PATH="$BUN_INSTALL/bin:$PATH"
 
-eval "$(atuin init zsh)"
+eval "$(atuin init zsh --disable-up-arrow)"
 
 # Loads reload-env etc.
 source ~/.config/shell/lib.sh

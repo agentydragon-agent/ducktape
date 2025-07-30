@@ -1,4 +1,0 @@
-precommit_autofixer:
-  enabled: true
-  timeout_secs: 30
-  dry_run: false

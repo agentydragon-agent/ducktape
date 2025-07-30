@@ -1,3 +1,6 @@
+-- disable in vscode
+if vim.g.vscode then return {} end
+
 local M = {
 	"nvim-treesitter/nvim-treesitter",
 	build = ":TSUpdate",

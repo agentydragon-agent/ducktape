@@ -1,0 +1,1 @@
+"""Core optimization engine and utilities."""

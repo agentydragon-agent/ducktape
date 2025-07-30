@@ -1,3 +1,6 @@
+-- disable in vscode - vscode has built-in whitespace highlighting/trimming
+if vim.g.vscode then return {} end
+
 return {
 	"ntpeters/vim-better-whitespace",
 	event = { "BufReadPre", "BufNewFile" },

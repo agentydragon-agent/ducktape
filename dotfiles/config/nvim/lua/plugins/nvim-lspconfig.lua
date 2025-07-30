@@ -1,3 +1,6 @@
+-- disable in vscode
+if vim.g.vscode then return {} end
+
 -- 6. **LSP & Syntax (Treesitter)** - (Optional modern additions)
 return {
 	"neovim/nvim-lspconfig",

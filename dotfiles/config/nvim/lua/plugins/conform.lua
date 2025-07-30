@@ -1,3 +1,6 @@
+-- disable in vscode - vscode has its own formatting system
+if vim.g.vscode then return {} end
+
 return {
 	"stevearc/conform.nvim",
 	opts = {

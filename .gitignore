@@ -13,3 +13,7 @@ dotfiles/config/cronomix/**
 dotfiles/config/OrcaSlicer/**
 
 **/*.egg-info
+
+.DS_Store
+
+.venv/
