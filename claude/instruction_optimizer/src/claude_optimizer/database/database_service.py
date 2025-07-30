@@ -10,6 +10,7 @@ from claude_code_sdk import AssistantMessage, ResultMessage, SystemMessage, User
 
 from claude_optimizer.core.logging_utils import DualOutputLogging
 from claude_optimizer.database.models import (
+    DatabaseManager,
     GraderFacetResult,
     GraderRun,
     GradingCriteria,
@@ -21,7 +22,6 @@ from claude_optimizer.database.models import (
     RolloutMessage,
     SeedTask,
     SystemPrompt,
-    get_db_session,
 )
 
 logger = DualOutputLogging.get_logger()
@@ -29,8 +29,10 @@ logger = DualOutputLogging.get_logger()
 
 class DatabaseService:
     """Service for managing database operations during optimization runs."""
-    
-    def __init__(self):
+
+    def __init__(self, db_manager: DatabaseManager):
+        """Initialize service with database manager for DI."""
+        self.db_manager = db_manager
         self.current_run_id: Optional[int] = None
         self.current_rollout_id: Optional[int] = None
     
@@ -45,7 +47,7 @@ class DatabaseService:
         Returns:
             The ID of the created optimization run
         """
-        with get_db_session() as session:
+        with self.db_manager.get_session() as session:
             run = OptimizationRun(
                 start_time=datetime.utcnow(),
                 base_output_dir=base_output_dir,
@@ -73,7 +75,7 @@ class DatabaseService:
             logger.warning("No run ID available to complete")
             return
             
-        with get_db_session() as session:
+        with self.db_manager.get_session() as session:
             run = session.query(OptimizationRun).filter_by(id=run_id).first()
             if run:
                 run.end_time = datetime.utcnow()
@@ -96,7 +98,7 @@ class DatabaseService:
         """
         content_hash = SystemPrompt.compute_content_hash(content)
         
-        with get_db_session() as session:
+        with self.db_manager.get_session() as session:
             # Check if this exact prompt already exists for this run
             existing = session.query(SystemPrompt).filter_by(
                 run_id=run_id,
@@ -146,7 +148,7 @@ class DatabaseService:
         Returns:
             The ID of the created rollout
         """
-        with get_db_session() as session:
+        with self.db_manager.get_session() as session:
             # Get the task ID from database
             task = session.query(SeedTask).filter_by(task_id=task_id, is_active=True).first()
             if not task:
@@ -183,7 +185,7 @@ class DatabaseService:
         duration_ms: Optional[int] = None,
     ):
         """Complete a rollout record with final metrics."""
-        with get_db_session() as session:
+        with self.db_manager.get_session() as session:
             rollout = session.query(Rollout).filter_by(id=rollout_id).first()
             if rollout:
                 rollout.end_time = datetime.utcnow()
@@ -226,7 +228,7 @@ class DatabaseService:
             )
             content_json = json.dumps({"error": "Failed to serialize", "type": str(type(message_content))})
         
-        with get_db_session() as session:
+        with self.db_manager.get_session() as session:
             message = RolloutMessage(
                 rollout_id=rollout_id,
                 sequence_order=sequence_order,
@@ -244,7 +246,7 @@ class DatabaseService:
         rollout_dir: Path,
     ):
         """Store file information for a rollout."""
-        with get_db_session() as session:
+        with self.db_manager.get_session() as session:
             for file_info in files_info:
                 relative_path = file_info["path"]
                 content = file_info["content"]
@@ -321,7 +323,7 @@ class DatabaseService:
         Returns:
             The ID of the created grader run
         """
-        with get_db_session() as session:
+        with self.db_manager.get_session() as session:
             # Create grader run
             grader_run = GraderRun(
                 rollout_id=rollout_id,
@@ -383,7 +385,7 @@ class DatabaseService:
         Returns:
             The ID of the created pattern analysis
         """
-        with get_db_session() as session:
+        with self.db_manager.get_session() as session:
             analysis = PatternAnalysis(
                 run_id=run_id,
                 iteration=iteration,
@@ -418,17 +420,17 @@ class DatabaseService:
     
     def get_active_seed_tasks(self) -> list[SeedTask]:
         """Get all active seed tasks."""
-        with get_db_session() as session:
+        with self.db_manager.get_session() as session:
             return session.query(SeedTask).filter_by(is_active=True).all()
     
     def get_active_grading_criteria(self) -> list[GradingCriteria]:
         """Get all active grading criteria."""
-        with get_db_session() as session:
+        with self.db_manager.get_session() as session:
             return session.query(GradingCriteria).filter_by(is_active=True).all()
     
     def get_rollouts_for_iteration(self, run_id: int, iteration: int) -> list[Rollout]:
         """Get all rollouts for a specific iteration."""
-        with get_db_session() as session:
+        with self.db_manager.get_session() as session:
             return session.query(Rollout).filter_by(
                 run_id=run_id,
                 iteration=iteration,

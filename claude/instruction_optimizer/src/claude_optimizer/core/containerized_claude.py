@@ -300,9 +300,10 @@ class TaskClaude:
 
     def _get_task_from_db(self) -> "SeedTask":
         """Get task from database."""
-        from claude_optimizer.database.models import SeedTask, get_db_session
+        from claude_optimizer.database.models import SeedTask, create_database
 
-        with get_db_session() as session:
+        db_manager = create_database()
+        with db_manager.get_session() as session:
             task = (
                 session.query(SeedTask).filter(SeedTask.task_id == self.task_id).first()
             )

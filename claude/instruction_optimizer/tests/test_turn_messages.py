@@ -122,10 +122,3 @@ def test_turn_messages():
     
     return True
 
-
-if __name__ == "__main__":
-    success = test_turn_messages()
-    if success:
-        print("\n✅ Turn.messages implementation works correctly!")
-    else:
-        print("\n❌ Turn.messages implementation has issues")

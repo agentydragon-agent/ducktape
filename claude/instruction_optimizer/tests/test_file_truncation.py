@@ -143,8 +143,6 @@ def main():
     """Main entry point."""
     print("Hello, world!")
     
-if __name__ == "__main__":
-    main()
 ''',
             },
             {
@@ -170,6 +168,3 @@ This is a test project for file truncation.
         assert all(isinstance(f["path"], str) for f in result)
         assert all(isinstance(f["content"], str) for f in result)
 
-
-if __name__ == "__main__":
-    pytest.main([__file__, "-v"])

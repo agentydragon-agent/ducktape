@@ -124,7 +124,7 @@ def log_message_summary(
 ) -> None:
     """Log a structured summary of a coding agent SDK message."""
     message_logger = logger.bind(agent_id=agent_id, message_type=type(message).__name__)
-    
+
     if isinstance(message, SystemMessage):
         log_system_message(message_logger, message)
     elif isinstance(message, AssistantMessage):
@@ -135,3 +135,29 @@ def log_message_summary(
         log_result_message(message_logger, message)
     else:
         message_logger.info("Unknown message type")
+
+
+class MessageLogger:
+    """Adapter providing structured message logging using MessageFormatter utilities."""
+
+    def __init__(self, logger: Any):
+        self.logger = logger
+
+    def log_system(self, message: SystemMessage) -> None:
+        log_system_message(self.logger, message)
+
+    def log_assistant(self, message: AssistantMessage) -> None:
+        log_assistant_message(self.logger, message)
+
+    def log_user(self, message: UserMessage) -> None:
+        log_user_message(self.logger, message)
+
+    def log_result(self, message: ResultMessage) -> None:
+        log_result_message(self.logger, message)
+
+    def log_summary(
+        self,
+        message: Union[SystemMessage, AssistantMessage, UserMessage, ResultMessage],
+        agent_id: int,
+    ) -> None:
+        log_message_summary(message, self.logger, agent_id)

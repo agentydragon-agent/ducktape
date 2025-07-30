@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Optional
 
 from claude_optimizer.core.containerized_claude import TaskClaude, task_claude
-from claude_optimizer.database.models import SeedTask, get_db_session
+from claude_optimizer.database.models import SeedTask, create_database
 
 
 class TaskContainer:
@@ -28,7 +28,8 @@ class TaskContainer:
         self._working_dir = working_dir
         
         # Fetch task prompt and start container context
-        with get_db_session() as session:
+        db_manager = create_database()
+        with db_manager.get_session() as session:
             task_db = session.query(SeedTask).filter(SeedTask.task_id == self.task_id).first()
             if not task_db:
                 raise ValueError(f"Task '{self.task_id}' not found in database")

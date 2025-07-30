@@ -72,7 +72,7 @@ from claude_optimizer.core.truncation_utils import (
 )
 from claude_optimizer.core.yaml_loader import load_yaml_files
 from claude_optimizer.database.database_service import db_service
-from claude_optimizer.database.models import get_db_session, init_database
+from claude_optimizer.database.models import create_database
 from claude_optimizer.plots import ScoreEvolutionTracker
 
 # Setup logging using utility class
@@ -1525,12 +1525,13 @@ Examples:
     
     # Initialize database
     logger.info("Initializing database")
-    init_database("sqlite:///optimizer.db")
+    db_manager = create_database("sqlite:///optimizer.db")
     
     # Load and sync YAML files to database
     logger.info("Loading YAML files and syncing to database")
     yaml_loader = load_yaml_files(config.seeds_file, config.graders_file)
-    sync_stats = yaml_loader.load_and_sync_all()
+    with db_manager.get_session() as session:
+        sync_stats = yaml_loader.load_and_sync_all(session)
     logger.info("YAML sync completed", **sync_stats)
     
     # Get active seed tasks from database

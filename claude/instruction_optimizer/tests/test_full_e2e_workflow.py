@@ -18,8 +18,7 @@ from database import (
     RolloutMessage,
     SeedTask,
     SystemPrompt,
-    get_db_session,
-    init_database,
+    create_database,
 )
 from yaml_loader import YamlLoader
 
@@ -27,7 +26,7 @@ from yaml_loader import YamlLoader
 @pytest.fixture
 def temp_db():
     """Create a temporary in-memory database for testing."""
-    db_manager = init_database("sqlite:///:memory:")
+    db_manager = create_database("sqlite:///:memory:")
     yield db_manager
     db_manager.close()
 
@@ -435,14 +434,15 @@ class ConfigLoader:
         
         # Setup YAML files and database
         yaml_loader = YamlLoader(sample_seeds_yaml, sample_graders_yaml)
-        sync_stats = yaml_loader.load_and_sync_all()
+        with temp_db.get_session() as session:
+            sync_stats = yaml_loader.load_and_sync_all(session)
         
         # Verify initial data load
         assert sync_stats['seeds_added'] == 2
         assert sync_stats['graders_added'] == 3
         
         # Create optimization run
-        with get_db_session() as session:
+        with db_manager.get_session() as session:
             run = OptimizationRun(
                 start_time=datetime.utcnow(),
                 base_output_dir=str(tmp_path),
@@ -461,7 +461,7 @@ Write clean, well-documented Python code that follows best practices.
 Use proper error handling and type annotations.
 """
         
-        with get_db_session() as session:
+        with db_manager.get_session() as session:
             initial_prompt = SystemPrompt(
                 run_id=run_id,
                 iteration=0,
@@ -473,7 +473,7 @@ Use proper error handling and type annotations.
             initial_prompt_id = initial_prompt.id
         
         # ITERATION 0: Initial rollouts
-        with get_db_session() as session:
+        with db_manager.get_session() as session:
             tasks = session.query(SeedTask).filter_by(is_active=True).all()
             criteria = session.query(GradingCriteria).filter_by(is_active=True).all()
             
@@ -557,9 +557,9 @@ Use proper error handling and type annotations.
                 })
             
             session.commit()
-        
+
         # Create pattern analysis for iteration 0
-        with get_db_session() as session:
+        with temp_db.get_session() as session:
             rollouts = session.query(Rollout).filter_by(iteration=0).all()
             
             pattern_analysis = PatternAnalysis(
@@ -598,7 +598,7 @@ Strengths:
         improved_prompt_content = mock_openai_prompt_engineering_response.output[0].function_call.arguments
         improved_prompt_data = json.loads(improved_prompt_content)
         
-        with get_db_session() as session:
+        with db_manager.get_session() as session:
             improved_prompt = SystemPrompt(
                 run_id=run_id,
                 iteration=1,
@@ -611,7 +611,7 @@ Strengths:
             improved_prompt_id = improved_prompt.id
         
         # ITERATION 1: Improved rollouts (simulate better scores)
-        with get_db_session() as session:
+        with db_manager.get_session() as session:
             tasks = session.query(SeedTask).filter_by(is_active=True).all()
             criteria = session.query(GradingCriteria).filter_by(is_active=True).all()
             
@@ -659,14 +659,14 @@ Strengths:
             session.commit()
         
         # Complete the optimization run
-        with get_db_session() as session:
+    with db_manager.get_session() as session:
             run = session.query(OptimizationRun).filter_by(id=run_id).first()
             run.end_time = datetime.utcnow()
             run.status = 'completed'
             session.commit()
         
         # VERIFICATION: Test that all data was stored correctly
-        with get_db_session() as session:
+    with db_manager.get_session() as session:
             # Check optimization run
             run = session.query(OptimizationRun).filter_by(id=run_id).first()
             assert run.status == 'completed'
@@ -741,7 +741,3 @@ Strengths:
         print(f"   - Database contains complete optimization run with {len(rollouts)} rollouts")
         print(f"   - Score improvement verified: {max(iter0_scores):.1f} → {max(iter1_scores):.1f}")
         print("   - All data relationships and queries working correctly")
-
-
-if __name__ == "__main__":
-    pytest.main([__file__, "-v", "-s"])

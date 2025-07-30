@@ -430,22 +430,11 @@ class DatabaseManager:
 
 
 # Global database manager instance
-db_manager: Optional[DatabaseManager] = None
-
-
-def init_database(database_url: str = "sqlite:///optimizer.db") -> DatabaseManager:
-    """Initialize the global database manager."""
-    global db_manager
-    db_manager = DatabaseManager(database_url)
-    db_manager.create_tables()
-    return db_manager
-
-
-def get_db_session() -> Session:
-    """Get a database session from the global manager."""
-    if db_manager is None:
-        raise RuntimeError("Database not initialized. Call init_database() first.")
-    return db_manager.get_session()
+def create_database(database_url: str = "sqlite:///optimizer.db") -> DatabaseManager:
+    """Create a DatabaseManager, ensure tables exist, and return it."""
+    manager = DatabaseManager(database_url)
+    manager.create_tables()
+    return manager
 
 
 # Auto-update timestamps on updates

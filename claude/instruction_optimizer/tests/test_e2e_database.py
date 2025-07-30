@@ -14,8 +14,7 @@ from database import (
     RolloutFile,
     SeedTask,
     SystemPrompt,
-    get_db_session,
-    init_database,
+    create_database,
 )
 from yaml_loader import YamlLoader
 
@@ -23,7 +22,7 @@ from yaml_loader import YamlLoader
 @pytest.fixture
 def temp_db():
     """Create a temporary in-memory database for testing."""
-    db_manager = init_database("sqlite:///:memory:")
+    db_manager = create_database("sqlite:///:memory:")
     yield db_manager
     db_manager.close()
 
@@ -82,23 +81,23 @@ class TestYamlDatabaseSync:
     def test_sync_seed_tasks(self, temp_db, sample_seeds_yaml):
         """Test syncing seed tasks from YAML to database."""
         yaml_loader = YamlLoader(sample_seeds_yaml, Path("nonexistent.yaml"))
-        
-        with get_db_session() as session:
+
+        with temp_db.get_session() as session:
             stats = yaml_loader.sync_seed_tasks(session)
             session.commit()
-            
+
             # Check statistics
             assert stats['seeds_added'] == 2
             assert stats['seeds_updated'] == 0
-            
+
             # Check database content
             tasks = session.query(SeedTask).all()
             assert len(tasks) == 2
-            
+
             task_ids = [t.task_id for t in tasks]
             assert 'test_task_001' in task_ids
             assert 'test_task_002' in task_ids
-            
+
             # Check content is stored properly
             task_001 = session.query(SeedTask).filter_by(task_id='test_task_001').first()
             assert 'REST API client' in task_001.prompt
@@ -108,23 +107,23 @@ class TestYamlDatabaseSync:
     def test_sync_grading_criteria(self, temp_db, sample_graders_yaml):
         """Test syncing grading criteria from YAML to database."""
         yaml_loader = YamlLoader(Path("nonexistent.yaml"), sample_graders_yaml)
-        
-        with get_db_session() as session:
+
+        with temp_db.get_session() as session:
             stats = yaml_loader.sync_grading_criteria(session)
             session.commit()
-            
+
             # Check statistics
             assert stats['graders_added'] == 2
             assert stats['graders_updated'] == 0
-            
+
             # Check database content
             criteria = session.query(GradingCriteria).all()
             assert len(criteria) == 2
-            
+
             names = [c.name for c in criteria]
             assert 'type_safety_test' in names
             assert 'code_quality_test' in names
-            
+
             # Check content is stored properly
             type_safety = session.query(GradingCriteria).filter_by(name='type_safety_test').first()
             assert 'type annotations' in type_safety.evaluation_criteria
@@ -133,32 +132,34 @@ class TestYamlDatabaseSync:
     def test_content_hash_change_detection(self, temp_db, sample_seeds_yaml):
         """Test that content hash changes are properly detected."""
         yaml_loader = YamlLoader(sample_seeds_yaml, Path("nonexistent.yaml"))
-        
-        with get_db_session() as session:
+
+        with temp_db.get_session() as session:
             # Initial sync
             yaml_loader.sync_seed_tasks(session)
             session.commit()
-            
+
             # Get original hash
             task = session.query(SeedTask).filter_by(task_id='test_task_001').first()
             original_hash = task.content_hash
-            
+
             # Modify YAML file
             with sample_seeds_yaml.open() as f:
                 data = yaml.safe_load(f)
             data[0]['prompt'] = 'MODIFIED: Create a different REST API client.'
             with sample_seeds_yaml.open('w') as f:
                 yaml.dump(data, f)
-            
-            # Sync again
+
+        # Sync again
+        with temp_db.get_session() as session:
             stats = yaml_loader.sync_seed_tasks(session)
             session.commit()
-            
-            # Check that update was detected
-            assert stats['seeds_added'] == 0
-            assert stats['seeds_updated'] == 1
-            
-            # Check that hash changed
+
+        # Check that update was detected
+        assert stats['seeds_added'] == 0
+        assert stats['seeds_updated'] == 1
+
+        # Check that hash changed
+        with temp_db.get_session() as session:
             task = session.query(SeedTask).filter_by(task_id='test_task_001').first()
             assert task.content_hash != original_hash
             assert 'MODIFIED:' in task.prompt
@@ -169,7 +170,7 @@ class TestDatabaseModels:
     
     def test_optimization_run_creation(self, temp_db):
         """Test creating an optimization run record."""
-        with get_db_session() as session:
+        with db_manager.get_session() as session:
             run = OptimizationRun(
                 start_time=datetime.utcnow(),
                 base_output_dir="/tmp/test_run",
@@ -188,7 +189,7 @@ class TestDatabaseModels:
     
     def test_system_prompt_with_content_hash(self, temp_db):
         """Test system prompt storage with content hashing."""
-        with get_db_session() as session:
+        with db_manager.get_session() as session:
             # Create run first
             run = OptimizationRun(
                 start_time=datetime.utcnow(),
@@ -223,7 +224,7 @@ class TestDatabaseModels:
         test_content = "print('Hello, world!')\n"
         test_file.write_text(test_content)
         
-        with get_db_session() as session:
+        with db_manager.get_session() as session:
             # Create necessary parent records
             run = OptimizationRun(start_time=datetime.utcnow(), base_output_dir="/tmp", status='running')
             session.add(run)
@@ -323,13 +324,14 @@ class TestEndToEndWorkflow:
         """Test that the basic database workflow works."""
         # Load YAML files
         yaml_loader = YamlLoader(sample_seeds_yaml, sample_graders_yaml)
-        stats = yaml_loader.load_and_sync_all()
+        with temp_db.get_session() as session:
+            stats = yaml_loader.load_and_sync_all(session)
         
         assert stats['seeds_added'] == 2
         assert stats['graders_added'] == 2
         
         # Create optimization run
-        with get_db_session() as session:
+        with temp_db.get_session() as session:
             run = OptimizationRun(
                 start_time=datetime.utcnow(),
                 base_output_dir=str(tmp_path),
@@ -341,7 +343,7 @@ class TestEndToEndWorkflow:
             run_id = run.id
         
         # Verify we can query everything properly
-        with get_db_session() as session:
+        with temp_db.get_session() as session:
             # Check run exists
             run = session.query(OptimizationRun).filter_by(id=run_id).first()
             assert run is not None
@@ -362,7 +364,3 @@ class TestEndToEndWorkflow:
                 GradingCriteria.evaluation_criteria.like('%type annotations%'),
             ).all()
             assert len(type_criteria) == 1
-
-
-if __name__ == "__main__":
-    pytest.main([__file__, "-v"])

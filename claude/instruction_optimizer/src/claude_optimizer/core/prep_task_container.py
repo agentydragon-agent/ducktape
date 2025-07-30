@@ -14,16 +14,15 @@ from pathlib import Path
 
 from claude_optimizer.config import OptimizerConfig
 from claude_optimizer.core.containerized_claude import task_claude
-from claude_optimizer.database.models import SeedTask, get_db_session, init_database
+from claude_optimizer.database.models import SeedTask, create_database
 
 
 async def main():
     """Interactive container setup for testing."""
     config = OptimizerConfig.from_file()
 
-    init_database()
-
-    with get_db_session() as session:
+    db_manager = create_database()
+    with db_manager.get_session() as session:
         task_db = session.query(SeedTask).filter(SeedTask.is_active is True).first()
         task_id = task_db.task_id
         task = task_db.prompt

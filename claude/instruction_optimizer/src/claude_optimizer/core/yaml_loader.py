@@ -13,7 +13,6 @@ from claude_optimizer.database.models import (
     GradingCriteria,
     SeedTask,
     TaskRepository,
-    get_db_session,
 )
 
 logger = DualOutputLogging.get_logger()
@@ -101,48 +100,30 @@ class YamlLoader:
             self._graders_data = data["graders"]
         return self._graders_data
 
-    def load_and_sync_all(self, session: Optional[Session] = None) -> dict[str, int]:
+    def load_and_sync_all(self, session: Session) -> dict[str, int]:
         """Load and sync both seeds and graders YAML files to database.
 
         Returns:
             Dict with counts: {'seeds_added': N, 'seeds_updated': N, 'graders_added': N, 'graders_updated': N}
         """
-        if session is None:
-            session = get_db_session()
-            should_close = True
-        else:
-            should_close = False
+        stats: dict[str, int] = {}
 
-        try:
-            stats = {}
+        # Sync seed tasks
+        stats.update(self.sync_seed_tasks(session))
 
-            # Sync seed tasks
-            seed_stats = self.sync_seed_tasks(session)
-            stats.update(seed_stats)
+        # Sync grading criteria
+        stats.update(self.sync_grading_criteria(session))
 
-            # Sync grading criteria
-            grader_stats = self.sync_grading_criteria(session)
-            stats.update(grader_stats)
+        session.commit()
+        logger.info(
+            "YAML sync completed",
+            seeds_added=stats.get("seeds_added", 0),
+            seeds_updated=stats.get("seeds_updated", 0),
+            graders_added=stats.get("graders_added", 0),
+            graders_updated=stats.get("graders_updated", 0),
+        )
 
-            session.commit()
-
-            logger.info(
-                "YAML sync completed",
-                seeds_added=stats.get("seeds_added", 0),
-                seeds_updated=stats.get("seeds_updated", 0),
-                graders_added=stats.get("graders_added", 0),
-                graders_updated=stats.get("graders_updated", 0),
-            )
-
-            return stats
-
-        except Exception as e:
-            session.rollback()
-            logger.error("YAML sync failed", error=str(e))
-            raise
-        finally:
-            if should_close:
-                session.close()
+        return stats
 
     def sync_seed_tasks(self, session: Session) -> dict[str, int]:
         """Sync seed tasks from YAML to database.
