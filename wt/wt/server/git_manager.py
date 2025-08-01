@@ -250,7 +250,18 @@ class GitManager:
         branch_ref = self._main_repo.lookup_branch(branch)
         if branch_ref is None:
             raise CannotCreateWorktree(f"Branch {branch} does not exist")
-        self._main_repo.add_worktree(Path(path).name, path, branch_ref)
+        import subprocess
+        try:
+            subprocess.run(
+                ["git", "worktree", "add", "--no-checkout", str(path), branch],
+                cwd=str(self.config.main_repo),
+                check=True,
+                capture_output=True,
+            )
+        except subprocess.CalledProcessError as e:
+            raise CannotCreateWorktree(
+                f"git worktree add failed: {e.stderr.decode(errors='replace').strip()}"
+            ) from e
 
     def worktree_remove(self, path: str, force: bool = False) -> None:
         # Get worktree name from path

@@ -9,7 +9,6 @@ from pathlib import Path
 import pytest
 
 from ..conftest import kill_daemon_and_verify
-from ..test_constants import GITSTATUSD_PATH
 from ..test_utils import run_cli_command
 
 # real_temp_repo fixture now provided by conftest.py
@@ -95,7 +94,8 @@ async def test_real_daemon_startup_and_communication(real_temp_repo, real_env):
         assert result.returncode == 0
 
         # Check that daemon files were created
-        daemon_dir = real_temp_repo / ".wt"
+        from pathlib import Path
+        daemon_dir = Path(real_env["WT_DIR"]).resolve()
         assert daemon_dir.exists(), "Daemon directory not created"
 
         pid_file = daemon_dir / "daemon.pid"

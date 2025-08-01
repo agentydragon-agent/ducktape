@@ -1,4 +1,4 @@
-"""GitStatusd multiplexing daemon with auto-discovery.
+"""wt server: handles multiplexing gitstatusd, GitHub and worktree management.
 
 One daemon per main git repository that:
 - Auto-discovers worktrees by filesystem scanning
@@ -12,8 +12,8 @@ import contextlib
 import json
 import logging
 import os
-import signal
 import shutil
+import signal
 import subprocess
 import threading
 import time
@@ -27,51 +27,35 @@ from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
 from ..shared.constants import MAIN_WORKTREE_DISPLAY_NAME
-from ..shared.protocol import (
-    CommitInfo,
-    ErrorCodes,
-    ErrorResponse,
-    PingResult,
-    Request,
-    Response,
-    StatusParams,
-    StatusResponse,
-    StatusResult,
-    WorktreeCreateParams,
-    WorktreeCreateResult,
-    WorktreeDeleteParams,
-    WorktreeDeleteResult,
-    WorktreeGetByNameParams,
-    WorktreeGetByNameResult,
-    WorktreeIdentifyParams,
-    WorktreeIdentifyResult,
-    WorktreeListResult,
-    WorktreeResolvePathParams,
-    WorktreeResolvePathResult,
-    WorktreeTeleportTargetParams,
-    WorktreeTeleportTargetResult,
-    create_error_response,
-    parse_request,
-)
+from ..shared.protocol import (CommitInfo, ErrorCodes, ErrorResponse,
+                               PingResult, Request, Response, StatusParams,
+                               StatusResponse, StatusResult,
+                               WorktreeCreateParams, WorktreeCreateResult,
+                               WorktreeDeleteParams, WorktreeDeleteResult,
+                               WorktreeGetByNameParams,
+                               WorktreeGetByNameResult, WorktreeIdentifyParams,
+                               WorktreeIdentifyResult, WorktreeListResult,
+                               WorktreeResolvePathParams,
+                               WorktreeResolvePathResult,
+                               WorktreeTeleportTargetParams,
+                               WorktreeTeleportTargetResult,
+                               create_error_response, parse_request)
 from .git_manager import GitManager
-from .gitstatusd_client import (
-    GitStatusdParseError,
-    GitStatusdProtocol,
-    GitStatusdRequest,
-    GitStatusdValidationError,
-    gitstatusd_response_to_legacy_format,
-)
+from .gitstatusd_client import (GitStatusdParseError, GitStatusdProtocol,
+                                GitStatusdRequest, GitStatusdValidationError,
+                                gitstatusd_response_to_legacy_format)
 from .worktree_ids import make_worktree_id
 
 logger = logging.getLogger(__name__)
 
 
-def write_startup_handshake(success: bool, error_message: str = None, **extra_data):
-    """Write startup handshake JSON to stdout, then redirect stdout to log.
+def write_startup_handshake(success: bool, error_message: str = None, *, redirect_after: bool = True, **extra_data):
+    """Write startup handshake/progress JSON to stdout; optionally redirect stdout to log.
     
     Args:
         success: Whether startup was successful
         error_message: Error message if startup failed
+        redirect_after: If True, redirect stdout to daemon log after writing JSON
         **extra_data: Additional data to include in handshake
     """
     import sys
@@ -87,27 +71,21 @@ def write_startup_handshake(success: bool, error_message: str = None, **extra_da
         handshake_data["error"] = error_message
     
     try:
-        # Write handshake to stdout (which is the pipe to parent)
         print(json.dumps(handshake_data), flush=True)
         
-        # Now redirect stdout to log file for regular daemon output
-        # Get daemon log from environment or use stderr (already redirected)
-        try:
-            from wt.shared.configuration import load_config
-            daemon_log = load_config().daemon_dir / "daemon.log"
-            log_fd = os.open(daemon_log, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
-            os.dup2(log_fd, 1)  # redirect stdout to log
-            os.close(log_fd)
-        except Exception:
-            # Fallback: redirect stdout to stderr (already goes to log)
-            os.dup2(2, 1)
-        
-        # Log to the new stdout (log file)
-        logger.info("Startup handshake sent: success=%s", success)
-        if not success:
-            logger.error("Startup failed: %s", error_message)
+        if redirect_after:
+            try:
+                from wt.shared.configuration import load_config
+                daemon_log = load_config().daemon_dir / "daemon.log"
+                log_fd = os.open(daemon_log, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
+                os.dup2(log_fd, 1)
+                os.close(log_fd)
+            except Exception:
+                os.dup2(2, 1)
+            logger.info("Startup handshake sent: success=%s", success)
+            if not success:
+                logger.error("Startup failed: %s", error_message)
     except Exception as e:
-        # This will go to stderr (which is already redirected to log)
         print(f"Failed to send startup handshake: {e}", file=sys.stderr)
 
 
@@ -1390,6 +1368,8 @@ class WtDaemon:
             
             # Create worktree
             self.git_manager.worktree_add(str(worktree_path), branch_name)
+
+            # No sparse-checkout; worktree created with --no-checkout
             
             # TODO: Add progress streaming support
             result = WorktreeCreateResult(
@@ -1424,11 +1404,17 @@ class WtDaemon:
             
             # Remove worktree
             self.git_manager.worktree_remove(str(worktree_path), force=True)
+            try:
+                import shutil
+                if worktree_path.exists():
+                    shutil.rmtree(worktree_path)
+            except Exception as e:
+                logger.warning("Filesystem cleanup failed for %s: %s", worktree_path, e)
             
             result = WorktreeDeleteResult(
                 wtid=params.wtid,
-                name=worktree_name,
                 success=True,
+                message=f"Deleted worktree {worktree_name}",
             )
             
             logger.info("Deleted worktree %s at %s", worktree_name, worktree_path)
@@ -1452,13 +1438,15 @@ class WtDaemon:
                     worktree_name = info.path.name
                     worktree_id = make_worktree_id(worktree_name)
                     
-                    from ..shared.protocol import WorktreeInfo as ProtocolWorktreeInfo
+                    from ..shared.protocol import \
+                        WorktreeInfo as ProtocolWorktreeInfo
                     worktrees.append(ProtocolWorktreeInfo(
                         wtid=worktree_id,
                         name=worktree_name,
                         absolute_path=str(info.path),
                         branch_name=info.branch,
                         exists=info.exists,
+                        is_main=False,
                     ))
             
             result = WorktreeListResult(worktrees=worktrees)
@@ -1718,34 +1706,52 @@ class WtDaemon:
             logger.error("Daemon startup failed due to validation errors")
             return
 
-        # Clean up old socket
-        if self.socket_path.exists():
-            self.socket_path.unlink()
-
-        # Start server
-        self.server = await asyncio.start_unix_server(self.handle_client_request, self.socket_path)
-
-        # Write PID file
-        with open(self.pid_file, "w") as f:
-            f.write(str(os.getpid()))
-
-        self.running = True
-
-        # Start periodic discovery
-        self.discovery_task = asyncio.create_task(self._periodic_discovery())
-
-        # Initial discovery
-        await self.discover_worktrees()
-
-        logger.info("GitStatusd daemon started, listening on %s", self.socket_path)
-        
-        # Write successful startup handshake
+        # Initial progress before any discovery
         write_startup_handshake(
             success=True,
             protocol_version=1,
-            gitstatusd_path=gitstatusd_path,
-            discovered_worktrees=len(self.known_worktrees)
+            phase="starting",
+            discovered_worktrees=[],
+            redirect_after=False,
         )
+
+        # Initial discovery and warmup
+        await self.discover_worktrees()
+        write_startup_handshake(
+            success=True,
+            protocol_version=1,
+            phase="discovering",
+            discovered_worktrees=[p.name for p in self.known_worktrees.keys()],
+            redirect_after=False,
+        )
+        for process in list(self.gitstatusd_processes.values()):
+            try:
+                await process.get_comprehensive_status()
+            except Exception as e:
+                logger.warning("Warmup failed for %s: %s", process.worktree_info.name, e)
+
+        # Bind socket only after initial sync
+        if self.socket_path.exists():
+            self.socket_path.unlink()
+        self.server = await asyncio.start_unix_server(self.handle_client_request, self.socket_path)
+        with open(self.pid_file, "w") as f:
+            f.write(str(os.getpid()))
+        self.running = True
+
+        # Final ready handshake; redirect stdout to log afterward
+        write_startup_handshake(
+            success=True,
+            protocol_version=1,
+            ready=True,
+            gitstatusd_path=gitstatusd_path,
+            discovered_worktrees=[p.name for p in self.known_worktrees.keys()],
+            redirect_after=True,
+        )
+
+        logger.info("GitStatusd daemon started, listening on %s", self.socket_path)
+
+        # Start periodic discovery in the background
+        self.discovery_task = asyncio.create_task(self._periodic_discovery())
 
     async def stop(self) -> None:
         """Stop the daemon."""

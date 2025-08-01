@@ -246,6 +246,25 @@ class PingResult(BaseModel):
     )
 
 
+class StartupPhase(str, Enum):
+    STARTING = "starting"
+    DISCOVERING = "discovering"
+    WARMING_UP = "warming_up"
+    READY = "ready"
+
+
+class StartupMessage(BaseModel):
+    success: bool
+    protocol_version: int = 1
+    pid: int
+    timestamp: float
+    ready: bool = False
+    phase: StartupPhase | None = None
+    discovered_worktrees: list[str] = Field(default_factory=list)
+    gitstatusd_path: str | None = None
+    error: str | None = None
+
+
 class WorktreeInfo(BaseModel):
     """Information about a worktree."""
 

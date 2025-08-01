@@ -17,6 +17,8 @@ if TYPE_CHECKING:
     from .github_client import GitHubInterface
 
 
+logger = logging.getLogger(__name__)
+
 class WorktreeService:
     """Pure business logic for worktree operations."""
 

@@ -50,11 +50,26 @@ class Configuration:
     github_debounce_delay: timedelta
     github_periodic_interval: timedelta
     startup_timeout: timedelta
+    sparse_checkout_empty_cone: bool = False
     
     @property
     def daemon_socket_path(self) -> Path:
-        """Path to daemon socket file."""
-        return self.wt_dir / "daemon.sock"
+        """Path to daemon UNIX socket with macOS length-safe fallback.
+        
+        macOS enforces a relatively short maximum length for UNIX domain socket paths
+        (historically ~104 bytes). Pytest creates deeply nested temporary directories
+        that can push WT_DIR over this limit, causing AF_UNIX path too long errors
+        when binding the socket. To avoid flaky failures in such environments, we:
+        
+        1) Prefer WT_DIR/daemon.sock when short enough
+        2) Otherwise fall back to a stable short path under /tmp using a hash of WT_DIR
+        """
+        from hashlib import md5
+        p = self.wt_dir / "daemon.sock"
+        if len(str(p)) <= 100:
+            return p
+        h = md5(str(self.wt_dir).encode()).hexdigest()[:12]
+        return Path("/tmp") / f"wt_daemon_{h}.sock"
     
     @property
     def daemon_pid_path(self) -> Path:
@@ -149,6 +164,7 @@ class Configuration:
             github_debounce_delay=timedelta(seconds=config_file.github_debounce_delay),
             github_periodic_interval=timedelta(seconds=config_file.github_periodic_interval),
             startup_timeout=timedelta(seconds=config_file.startup_timeout),
+            sparse_checkout_empty_cone=config_file.sparse_checkout_empty_cone,
         )
 
 

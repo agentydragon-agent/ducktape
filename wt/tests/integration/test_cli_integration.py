@@ -43,7 +43,6 @@ import pytest
 import yaml
 
 from ..conftest import kill_daemon_and_verify
-from ..test_constants import GITSTATUSD_PATH
 from ..test_utils import run_cli_command
 
 # Very distinctive test branch name to avoid conflicts
@@ -244,3 +243,43 @@ class TestRealGitOperations:
         assert result.returncode == 0
         # Status should show the worktree (exact format depends on implementation)
         assert "status-test" in result.stdout
+
+    def test_sparse_empty_cone_then_extend(self, real_temp_repo, config_factory):
+        kill_daemon_and_verify(real_temp_repo)
+
+        # Create a repo with nested content
+        (real_temp_repo / "foo").mkdir()
+        (real_temp_repo / "foo" / "bar").mkdir(parents=True, exist_ok=True)
+        (real_temp_repo / "foo" / "bar" / "baz.txt").write_text("baz")
+        (real_temp_repo / "top.txt").write_text("top")
+
+        repo = pygit2.Repository(str(real_temp_repo))
+        repo.index.add_all()
+        repo.index.write()
+        sig = pygit2.Signature("Test User", "test@example.com")
+        tree = repo.index.write_tree()
+        parent = repo.head.target
+        repo.create_commit("HEAD", sig, sig, "Seed content", tree, [parent])
+
+        # Create config with sparse empty cone enabled
+        factory = config_factory(real_temp_repo)
+        config = factory.integration(sparse_checkout_empty_cone=True)
+        env = os.environ.copy()
+        env["WT_DIR"] = str(config.wt_dir)
+
+        # Create worktree via CLI
+        result = run_cli_command(["sh", "-c", "cone-test"], env=env)
+        assert result.returncode == 0, f"Create failed: {result.stderr}"
+        wt_path = real_temp_repo / "worktrees" / "cone-test"
+        assert wt_path.exists()
+
+        # Verify worktree is initially empty (no files except .git)
+        entries = [p for p in wt_path.iterdir() if p.name != ".git"]
+        assert entries == []
+
+        # Extend cone using git, then verify files appear
+        subprocess.run(["git", "sparse-checkout", "init", "--no-cone"], cwd=wt_path, check=True)
+        subprocess.run(["git", "sparse-checkout", "set", "--no-cone", "--stdin"], cwd=wt_path, check=True, input=b"foo\n")
+        subprocess.run(["git", "checkout", "-f"], cwd=wt_path, check=True)
+        assert (wt_path / "foo" / "bar" / "baz.txt").exists()
+        assert not (wt_path / "top.txt").exists()

@@ -204,19 +204,41 @@ class WtClient:
             self._handshake_pipe = handshake_read
     
     def _read_handshake_from_pipe(self) -> dict:
-        """Read JSON handshake from pipe (blocking operation for thread pool)."""
+        """Read streaming JSON handshake/progress until ready or failure.
+        
+        The daemon emits multiple JSON lines:
+        - initial {success=True, phase="starting"}
+        - progress {success=True, phase=..., discovered_worktrees=N}
+        - final    {success=True, ready=True, ...}
+        or a single failure {success=False, error=...}
+        """
         import json
         
         if not hasattr(self, '_handshake_pipe'):
             raise RuntimeError("No handshake pipe available")
         
-        # Read from pipe until we get a complete JSON object
         with os.fdopen(self._handshake_pipe, 'r') as pipe_file:
-            handshake_line = pipe_file.readline().strip()
-            if not handshake_line:
-                raise RuntimeError("Daemon closed handshake pipe without sending data")
-            
-            return json.loads(handshake_line)
+            last_obj = None
+            while True:
+                line = pipe_file.readline()
+                if not line:
+                    # EOF before ready - treat last_obj if it indicates failure, else error
+                    if last_obj and not last_obj.get("success", True):
+                        return last_obj
+                    raise RuntimeError("Daemon closed handshake pipe before ready")
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    from wt.shared.protocol import StartupMessage
+                    obj = StartupMessage.model_validate_json(line)
+                except Exception:
+                    continue
+                last_obj = obj.model_dump()
+                if not obj.success:
+                    return last_obj
+                if obj.ready:
+                    return last_obj
 
     async def get_status(self, worktree_ids: list[WorktreeID] | None = None) -> StatusResponse:
         """Get comprehensive status data from daemon for all specified worktree IDs.
@@ -256,9 +278,8 @@ class WtClient:
                 # Check for error response first
                 if "error" in response_json:
                     error_response = ErrorResponse.model_validate(response_json)
-                    raise RuntimeError(
-                        f"Daemon status request failed: {error_response.error.message}",
-                    )
+                    # Surface daemon error directly
+                    raise RuntimeError(error_response.error.message)
 
                 # Parse successful response - let Pydantic validate everything
                 success_response = Response.model_validate(response_json)
@@ -338,9 +359,7 @@ class WtClient:
                 # Check for error response first
                 if "error" in response_json:
                     error_response = ErrorResponse.model_validate(response_json)
-                    raise RuntimeError(
-                        f"Daemon worktree_create request failed: {error_response.error.message}",
-                    )
+                    raise RuntimeError(error_response.error.message)
 
                 # Parse successful response
                 success_response = Response.model_validate(response_json)
@@ -351,11 +370,11 @@ class WtClient:
             except Exception as e:
                 logger.error("Failed to parse daemon worktree_create response: %s", e)
                 logger.error("Raw response: %s", response_text[:200])
-                raise RuntimeError(f"Failed to parse daemon worktree_create response: {e}")
+                raise
 
         except Exception as e:
             logger.error("Failed to communicate with daemon for worktree_create: %s", e)
-            raise RuntimeError(f"Daemon worktree_create communication failed: {e}")
+            raise
 
     async def delete_worktree(self, wtid: WorktreeID) -> WorktreeDeleteResult:
         """Delete a worktree via RPC."""
@@ -392,9 +411,7 @@ class WtClient:
                 # Check for error response first
                 if "error" in response_json:
                     error_response = ErrorResponse.model_validate(response_json)
-                    raise RuntimeError(
-                        f"Daemon worktree_delete request failed: {error_response.error.message}",
-                    )
+                    raise RuntimeError(error_response.error.message)
 
                 # Parse successful response
                 success_response = Response.model_validate(response_json)

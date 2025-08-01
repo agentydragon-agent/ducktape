@@ -188,6 +188,53 @@ echo "$create_exit:$nav_exit:$pwd_before:$pwd_after"
             assert worktree_path.exists() and worktree_path.is_dir()
 
 
+
+    def test_wt_main_changes_directory(self, real_temp_repo, real_env):
+        from contextlib import contextmanager
+        from ..conftest import kill_daemon_and_verify
+        
+        @contextmanager
+        def daemon_cleanup():
+            kill_daemon_and_verify(real_temp_repo)
+            try:
+                yield
+            finally:
+                kill_daemon_and_verify(real_temp_repo)
+        
+        def parse_output(result):
+            lines = [l for l in result.stdout.strip().split('\n') if l]
+            s = lines[-1]
+            parts = s.split(':', 4)
+            if len(parts) != 5:
+                pytest.fail(f"Bad output: {s}")
+            return int(parts[0]), int(parts[1]), int(parts[2]), parts[3], parts[4]
+        
+        shell_script = """# Verify shell function is loaded
+if ! declare -f wt > /dev/null; then
+    echo "ERROR: wt function not loaded"
+    exit 99
+fi
+wt -c to-main
+create_exit=$?
+wt to-main
+to_wt_exit=$?
+pwd_before=$(pwd)
+wt main
+to_main_exit=$?
+pwd_after=$(pwd)
+echo "$create_exit:$to_wt_exit:$to_main_exit:$pwd_before:$pwd_after"
+"""
+        
+        with daemon_cleanup():
+            result = run_shell_script(shell_script, str(real_temp_repo), env=real_env)
+            c, e1, e2, before, after = parse_output(result)
+            assert c == 0, f"Create failed: stdout={result.stdout}, stderr={result.stderr}"
+            assert e1 == 0, f"Navigate to worktree failed: {result.stderr}"
+            assert e2 == 0, f"Navigate to main failed: {result.stderr}"
+            expected_before = str(real_temp_repo / "worktrees" / "to-main")
+            assert before == expected_before
+            assert after == str(real_temp_repo)
+
 @pytest.mark.integration
 @pytest.mark.shell
 class TestShellIntegrationEdgeCases:

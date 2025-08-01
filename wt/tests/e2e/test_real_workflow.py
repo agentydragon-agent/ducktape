@@ -50,7 +50,6 @@ import pytest
 import yaml
 
 from ..conftest import create_integration_test_config_file, kill_daemon_and_verify
-from ..test_constants import GITSTATUSD_PATH
 from ..test_utils import run_cli_command
 
 # real_temp_repo fixture now provided by conftest.py
@@ -63,13 +62,17 @@ def real_env_with_existing_worktrees(real_temp_repo):
     kill_daemon_and_verify(real_temp_repo)
 
     config_file = create_integration_test_config_file(real_temp_repo)
+    (real_temp_repo / ".wt").mkdir(parents=True, exist_ok=True)
+    (real_temp_repo / ".wt" / "config.yaml").write_text(Path(config_file).read_text())
 
-    # Use rationalized config system with WT_MAIN_REPO
     env = os.environ.copy()
-    env["WT_MAIN_REPO"] = str(real_temp_repo.resolve())  # Ensure absolute path
+    env["WT_DIR"] = str((real_temp_repo / ".wt").resolve())
 
     repo = pygit2.Repository(str(real_temp_repo))
     signature = pygit2.Signature("Test User", "test@example.com")
+
+    # Ensure WT_DIR exists for the daemon
+    Path(env["WT_DIR"]).mkdir(parents=True, exist_ok=True)
 
     # Create existing worktree 1
     worktree1_path = real_temp_repo / "worktrees" / "existing1"
@@ -314,7 +317,8 @@ def test_real_daemon_startup_and_kill(real_temp_repo, real_env):
         assert result.returncode == 0
 
         # Step 2: Check that daemon files were created
-        daemon_dir = real_temp_repo / ".wt"
+        from pathlib import Path
+        daemon_dir = Path(real_env["WT_DIR"]).resolve()
         assert daemon_dir.exists(), "Daemon directory not created"
 
         pid_file = daemon_dir / "daemon.pid"

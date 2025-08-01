@@ -10,7 +10,6 @@ import tempfile
 import time
 from pathlib import Path
 
-from ..test_constants import GITSTATUSD_PATH
 from ..test_utils import run_cli_sh_command as run_cli_command
 
 
@@ -48,7 +47,6 @@ log_operations: false
 cow_method: "copy"
 github_enabled: false
 github_repo: "test/test"
-gitstatusd_path: "{GITSTATUSD_PATH}"
 """
 
     config_file = config_dir / "config.yaml"

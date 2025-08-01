@@ -23,31 +23,27 @@ def get_current_worktree_info(config) -> tuple[Path | None, str | None]:
     """Get current worktree information."""
     cwd = Path.cwd()
 
-    # Check if we're in the main repo
-    main_repo = config.main_repo_resolved
-    if cwd.is_relative_to(main_repo):
-        if cwd == main_repo:
-            return main_repo, None
-
-        # Try to get relative path from main repo
-        try:
-            rel_path = cwd.relative_to(main_repo)
-            return main_repo, str(rel_path)
-        except ValueError:
-            pass
-
-    # Check if we're in a worktree directory
+    # Prefer detecting managed worktrees first (they live under worktrees dir)
     worktrees_dir = config.worktrees_dir_resolved
     if cwd.is_relative_to(worktrees_dir):
-        # Find the worktree root
         for parent in [cwd, *list(cwd.parents)]:
             if parent.parent == worktrees_dir:
-                # This is a worktree root
                 try:
                     rel_path = cwd.relative_to(parent)
                     return parent, str(rel_path) if str(rel_path) != "." else None
                 except ValueError:
                     return parent, None
+
+    # Otherwise, check if we're in the main repo
+    main_repo = config.main_repo_resolved
+    if cwd.is_relative_to(main_repo):
+        if cwd == main_repo:
+            return main_repo, None
+        try:
+            rel_path = cwd.relative_to(main_repo)
+            return main_repo, str(rel_path)
+        except ValueError:
+            pass
 
     return None, None
 
