@@ -15,6 +15,7 @@ from .client.handlers import (
 )
 from .client.view_formatter import ViewFormatter
 from .client.wt_client import WtClient
+from .plugins import get_manager, resolve_command, get_plugin_commands, PluginIO
 from .shared.configuration import load_config
 from .shared.constants import MAIN_REPO_ALIASES
 
@@ -75,12 +76,13 @@ def _create_cli_dependencies():
     config = load_config()
     formatter = ViewFormatter()
     daemon_client = WtClient(config)
-    return config, formatter, daemon_client
+    plugin_manager = get_manager(config)
+    return config, formatter, daemon_client, plugin_manager
 
 
 async def _async_main():
     """Async main function."""
-    config, formatter, daemon_client = _create_cli_dependencies()
+    config, formatter, daemon_client, plugin_manager = _create_cli_dependencies()
     await handle_status(daemon_client, formatter)
 
 
@@ -113,15 +115,15 @@ def sh(ctx, args):
         else:
             filtered_args.append(arg)
 
-    config, formatter, daemon_client = _create_cli_dependencies()
+    config, formatter, daemon_client, plugin_manager = _create_cli_dependencies()
 
     # Run async command handler
     import asyncio
 
-    asyncio.run(_async_sh_main(daemon_client, formatter, config, filtered_args, ctx))
+    asyncio.run(_async_sh_main(daemon_client, formatter, config, plugin_manager, filtered_args, ctx))
 
 
-async def _async_sh_main(daemon_client, formatter, config, filtered_args, ctx):
+async def _async_sh_main(daemon_client, formatter, config, plugin_manager, filtered_args, ctx):
     """Async version of sh command handler."""
     # Route to appropriate handlers
     if not filtered_args:
@@ -130,9 +132,23 @@ async def _async_sh_main(daemon_client, formatter, config, filtered_args, ctx):
 
     cmd, *remaining_args = filtered_args
 
+    # Plugin subcommand dispatch: wt <plugin> <args>
+    plugin_callable = resolve_command(plugin_manager, cmd)
+    if plugin_callable:
+        io = PluginIO()
+        result = plugin_callable(remaining_args, daemon_client, config, io)
+        if hasattr(result, "__await__"):
+            result = await result
+        if isinstance(result, int):
+            import sys
+            sys.exit(result)
+        return
+
     # Handle special worktree names
     if cmd in MAIN_REPO_ALIASES:
         click.echo(f"Navigating to main repo ({cmd})")
+        from .client.worktree_utils import emit_cd_command
+        emit_cd_command(config.main_repo_resolved, config)
         return
 
     # Handle commands - pure argument parsing, delegate to handlers
