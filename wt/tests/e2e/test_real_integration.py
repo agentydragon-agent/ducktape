@@ -1,12 +1,13 @@
 """Real integration test - runs actual unmodified CLI against temporary repo."""
 
 import os
-import subprocess
-import tempfile
 import time
-from pathlib import Path
 
 import pytest
+
+from wt.shared.git_utils import git_run
+
+pytestmark = pytest.mark.timeout(10)
 
 from ..conftest import kill_daemon_and_verify
 from ..test_utils import run_cli_command
@@ -21,6 +22,7 @@ from ..test_utils import run_cli_command
 
 
 @pytest.mark.asyncio
+@pytest.mark.timeout(10)
 async def test_real_program_workflow(real_temp_repo, real_env):
     """
     Test full workflow: git repo -> make worktrees 1,2 -> jump to worktree -> rm other -> status
@@ -29,12 +31,12 @@ async def test_real_program_workflow(real_temp_repo, real_env):
 
     try:
         # Step 1: Initial status (should show empty)
-        result = run_cli_command(["sh"], env=real_env)
+        result = run_cli_command(["sh"], env=real_env, timeout=10.0)
         assert result.returncode == 0
         print(f"Initial status output: {result.stdout}")
 
         # Step 2: Create first worktree
-        result = run_cli_command(["sh", "-c", "feature1"], env=real_env)
+        result = run_cli_command(["sh", "-c", "feature1"], env=real_env, timeout=10.0)
         assert result.returncode == 0
         print(f"Create feature1 output: {result.stdout}")
 
@@ -44,7 +46,7 @@ async def test_real_program_workflow(real_temp_repo, real_env):
         assert (worktree1_path / ".git").exists(), "Worktree 1 missing .git"
 
         # Step 3: Create second worktree
-        result = run_cli_command(["sh", "-c", "feature2"], env=real_env)
+        result = run_cli_command(["sh", "-c", "feature2"], env=real_env, timeout=10.0)
         assert result.returncode == 0
         print(f"Create feature2 output: {result.stdout}")
 
@@ -53,27 +55,27 @@ async def test_real_program_workflow(real_temp_repo, real_env):
         assert worktree2_path.exists(), f"Worktree 2 not created at {worktree2_path}"
 
         # Step 4: Check status shows both worktrees
-        result = run_cli_command(["sh"], env=real_env)
+        result = run_cli_command(["sh"], env=real_env, timeout=10.0)
         assert result.returncode == 0
         print(f"Status with both worktrees: {result.stdout}")
         assert "feature1" in result.stdout
         assert "feature2" in result.stdout
 
         # Step 5: Navigate to feature1 (test cd command emission)
-        result = run_cli_command(["sh", "feature1"], env=real_env)
+        result = run_cli_command(["sh", "feature1"], env=real_env, timeout=10.0)
         assert result.returncode == 0
         print(f"Navigate to feature1: {result.stdout}")
         # Note: cd command is emitted to fd3, we can't easily verify it here
 
         # Step 6: Remove feature2
-        result = run_cli_command(["sh", "rm", "feature2"], env=real_env, cwd=worktree1_path)
+        result = run_cli_command(["sh", "rm", "feature2", "--force"], env=real_env, cwd=worktree1_path, timeout=10.0)
         # This might prompt for confirmation - let's try with force
         if result.returncode != 0:
             print(f"Remove failed, trying with input: {result.stdout} {result.stderr}")
             # The remove might need confirmation, let's skip this complex interaction for now
 
         # Step 7: Final status check
-        result = run_cli_command(["sh"], env=real_env)
+        result = run_cli_command(["sh"], env=real_env, timeout=10.0)
         assert result.returncode == 0
         print(f"Final status: {result.stdout}")
 
@@ -90,7 +92,7 @@ async def test_real_daemon_startup_and_communication(real_temp_repo, real_env):
 
     try:
         # This should start the daemon if not already running
-        result = run_cli_command(["sh"], env=real_env)
+        result = run_cli_command(["sh"], env=real_env, timeout=10.0)
         assert result.returncode == 0
 
         # Check that daemon files were created
@@ -136,14 +138,12 @@ def test_real_git_operations(real_temp_repo, real_env):
         test_file.write_text("Hello from worktree!")
 
         # Add and commit
-        subprocess.run(["git", "add", "test.txt"], cwd=worktree_path, check=True)
-        subprocess.run(["git", "commit", "-m", "Test commit"], cwd=worktree_path, check=True)
+        git_run(["add", "test.txt"], cwd=worktree_path)
+        git_run(["commit", "-m", "Test commit"], cwd=worktree_path)
 
         # Verify branch was created correctly
-        result = subprocess.run(
-            ["git", "branch", "--show-current"], cwd=worktree_path, capture_output=True, text=True
-        )
-        assert "test/git-test" in result.stdout
+        result = git_run(["branch", "--show-current"], cwd=worktree_path, capture_output=True)
+        assert "test/git-test" in result.stdout.decode()
 
         print("✅ Real git operations test passed!")
 

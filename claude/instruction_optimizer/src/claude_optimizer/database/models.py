@@ -4,7 +4,7 @@ import hashlib
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import ClassVar, Optional
+from typing import ClassVar
 
 from sqlalchemy import (
     Boolean,
@@ -120,9 +120,9 @@ class SeedTask(Base):
     task_repositories = relationship("TaskRepository", back_populates="task")
     
     @classmethod
-    def compute_content_hash(cls, prompt: str, description: Optional[str] = None, 
-                           allowed_tools: Optional[str] = None, docker_image: Optional[str] = None, 
-                           pre_task_commands: Optional[str] = None) -> str:
+    def compute_content_hash(cls, prompt: str, description: str | None = None, 
+                           allowed_tools: str | None = None, docker_image: str | None = None, 
+                           pre_task_commands: str | None = None) -> str:
         """Compute SHA256 hash of all task content for change detection."""
         content = f"{prompt}|{description or ''}|{allowed_tools or '[]'}|{docker_image or ''}|{pre_task_commands or ''}"
         return hashlib.sha256(content.encode('utf-8')).hexdigest()
@@ -207,7 +207,7 @@ class Rollout(Base):
     grader_run = relationship("GraderRun", back_populates="rollout", uselist=False)
     
     @property
-    def duration_seconds(self) -> Optional[float]:
+    def duration_seconds(self) -> float | None:
         """Duration in seconds, computed from duration_ms."""
         return self.duration_ms / 1000.0 if self.duration_ms is not None else None
 

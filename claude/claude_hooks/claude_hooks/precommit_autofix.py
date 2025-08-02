@@ -1,15 +1,18 @@
 """Pre-commit autofix hook implementation."""
 
 import ast
-from dataclasses import dataclass
-import os
-from pathlib import Path
 import subprocess
 import textwrap
+from dataclasses import dataclass
+from pathlib import Path
 
 import git
 
-from claude_hooks.actions import PostToolAction, PostToolContinue, PostToolFeedbackToClaude
+from claude_hooks.actions import (
+    PostToolAction,
+    PostToolContinue,
+    PostToolFeedbackToClaude,
+)
 from claude_hooks.base import PostToolUseHook
 from claude_hooks.config import AutofixerConfig
 from claude_hooks.inputs import HookContext, PostToolInput
@@ -22,14 +25,12 @@ PRECOMMIT_CONFIG_FILE = ".pre-commit-config.yaml"
 class ChangesMade:
     """Pre-commit ran successfully and made changes to the file."""
 
-    pass
 
 
 @dataclass
 class NoChanges:
     """Pre-commit ran successfully but made no changes to the file."""
 
-    pass
 
 
 @dataclass
@@ -123,7 +124,7 @@ def check_python_syntax(file_path: Path) -> tuple[bool, str | None]:
     except SyntaxError as e:
         error_msg = f"SyntaxError in {file_path.name}:{e.lineno}:{e.offset}: {e.msg}"
         return False, error_msg
-    except (OSError, IOError, UnicodeDecodeError) as e:
+    except (OSError, UnicodeDecodeError) as e:
         error_msg = f"Error reading {file_path.name}: {e}"
         return False, error_msg
 
@@ -137,7 +138,7 @@ class PreCommitAutoFixerHook(PostToolUseHook):
 
     def execute(self, hook_input: PostToolInput, context: HookContext) -> PostToolAction:
         self.logger.info(
-            f"Config: enabled={self.autofixer_config.enabled}, dry_run={self.autofixer_config.dry_run}, tools={self.autofixer_config.tools}"
+            f"Config: enabled={self.autofixer_config.enabled}, dry_run={self.autofixer_config.dry_run}, tools={self.autofixer_config.tools}",
         )
 
         if not self.autofixer_config.enabled:
@@ -171,13 +172,13 @@ class PreCommitAutoFixerHook(PostToolUseHook):
                 message = "🧹 pre-commit autofixes applied"
                 self.logger.info(message)
                 return PostToolFeedbackToClaude(feedback_to_claude=message)
-            elif isinstance(result, Crashed):
+            if isinstance(result, Crashed):
                 # Pre-commit failed unexpectedly, show user feedback with formatted output
                 formatted_output = format_crashed_output(
-                    result.stdout, result.stderr, result.exit_code
+                    result.stdout, result.stderr, result.exit_code,
                 )
                 return PostToolFeedbackToClaude(
-                    feedback_to_claude=f"⚠️ Pre-commit failed on {file_path.name}\nCommand: pre-commit run --files {file_path}\n\n{formatted_output}"
+                    feedback_to_claude=f"⚠️ Pre-commit failed on {file_path.name}\nCommand: pre-commit run --files {file_path}\n\n{formatted_output}",
                 )
         except Exception as e:
             # Catch all exceptions to provide user-friendly error messages instead of crashing Claude Code.
@@ -198,7 +199,7 @@ class PreCommitAutoFixerHook(PostToolUseHook):
             log_path = Path(user_state_dir("adgn-claude-hooks")) / f"{self.hook_name}.log"
 
             debug_message = textwrap.dedent(f"""
-                Unhandled {type(e).__name__} from PreCommitAutoFixerHook: {str(e)}
+                Unhandled {type(e).__name__} from PreCommitAutoFixerHook: {e!s}
                 Logs: {log_path}
                 Look for invocation ID: {invocation_id}
                 Traceback:
@@ -255,12 +256,11 @@ class PreCommitAutoFixerHook(PostToolUseHook):
                 new_mtime = file_path.stat().st_mtime
                 self.logger.info(f"New mtime: {new_mtime}, changed: {new_mtime > original_mtime}")
                 return ChangesMade() if new_mtime > original_mtime else NoChanges()
-            else:
-                # Exit code 3: "An unexpected error", 130: "interrupted by ^C", etc.
-                self.logger.warning(f"Pre-commit unexpected exit code {result.returncode}")
-                return Crashed(
-                    stdout=result.stdout, stderr=result.stderr, exit_code=result.returncode
-                )
+            # Exit code 3: "An unexpected error", 130: "interrupted by ^C", etc.
+            self.logger.warning(f"Pre-commit unexpected exit code {result.returncode}")
+            return Crashed(
+                stdout=result.stdout, stderr=result.stderr, exit_code=result.returncode,
+            )
         except Exception as e:
             self.logger.exception(f"Error in _run_precommit_autofix: {e}")
             # Re-raise exceptions that aren't pre-commit failures

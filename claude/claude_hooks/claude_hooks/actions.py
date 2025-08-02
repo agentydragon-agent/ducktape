@@ -31,7 +31,6 @@ class HookAction(ABC):
     @abstractmethod
     def to_protocol(self) -> HookOutput:
         """Convert to Claude Code protocol JSON format."""
-        pass
 
 
 @dataclass

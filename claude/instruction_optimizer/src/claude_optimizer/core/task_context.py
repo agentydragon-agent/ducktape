@@ -1,7 +1,6 @@
 """Simplified task container management using the new task_claude interface."""
 
 from pathlib import Path
-from typing import Optional
 
 from claude_optimizer.core.containerized_claude import TaskClaude, task_claude
 from claude_optimizer.database.models import SeedTask, create_database
@@ -13,8 +12,8 @@ class TaskContainer:
     def __init__(self, task_id: str, config):
         self.task_id = task_id
         self.config = config
-        self._claude: Optional[TaskClaude] = None
-        self._working_dir: Optional[Path] = None
+        self._claude: TaskClaude | None = None
+        self._working_dir: Path | None = None
         
     async def start(self, working_dir: Path) -> str:
         """Start container and return container ID for external scripts.
@@ -48,6 +47,6 @@ class TaskContainer:
                 self._claude = None
                 del self._context_manager
     
-    def get_container_id(self) -> Optional[str]:
+    def get_container_id(self) -> str | None:
         """Get current container ID if running."""
         return self._claude._container.id if self._claude and self._claude._container else None

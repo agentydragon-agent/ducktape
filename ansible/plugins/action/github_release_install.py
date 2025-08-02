@@ -90,7 +90,7 @@ class ActionModule(ActionBase):
     """GitHub Release Install action plugin."""
 
     def _handle_archive_extract_file(
-        self, args: dict[str, Any], task_vars: dict, tmp: Any
+        self, args: dict[str, Any], task_vars: dict, tmp: Any,
     ) -> dict[str, Any]:
         """Handle extraction of a specific file from an archive.
         
@@ -100,8 +100,8 @@ class ActionModule(ActionBase):
         3. Copy specific file to destination
         4. Clean up temp files
         """
-        import tempfile
         import os
+        import tempfile
         
         asset_url = args["asset_url"]
         extract_file = args["extract_file"]

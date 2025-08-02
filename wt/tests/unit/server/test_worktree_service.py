@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from wt.server.worktree_service import WorktreeService
 from wt.server.git_manager import GitManager
+from wt.server.worktree_service import WorktreeService
 
 
 class TestWorktreeService:
@@ -107,7 +107,7 @@ class TestWorktreeService:
         assert worktree_service._is_managed_worktree(inside_path, config)
 
     def test_post_creation_script_execution(
-        self, repo_factory, config_factory, mock_factory
+        self, repo_factory, config_factory, mock_factory,
     ):
         """Test that post-creation script is executed when configured."""
         # Create repo and config using factories
@@ -118,7 +118,7 @@ class TestWorktreeService:
         script_path.write_text(
             """#!/bin/bash
 echo "Script executed with arg: $1" > "$1/script_output.txt"
-"""
+""",
         )
         script_path.chmod(0o755)
 

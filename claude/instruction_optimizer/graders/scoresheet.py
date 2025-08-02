@@ -9,7 +9,7 @@ import datetime
 import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 
 
 @dataclass
@@ -32,9 +32,7 @@ class GradeResult:
     passed: bool
     score: float  # 0.0 to 1.0
     feedback: str
-    generated_code: Optional[
-        str
-    ]  # None if code generation failed, string if succeeded (even if empty)
+    generated_code: str | None  # None if code generation failed, string if succeeded (even if empty)
     analysis_details: dict[str, Any]  # Always present - analysis is required step
 
 
@@ -94,7 +92,7 @@ class GraderScoresheet(ABC):
         claude_request: dict[str, Any],
         claude_response: dict[str, Any],
         success: bool,
-        error_message: Optional[str] = None,
+        error_message: str | None = None,
     ):
         """Log a Claude API interaction for comprehensive tracking."""
         interaction = ClaudeInteraction(

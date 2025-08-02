@@ -300,7 +300,7 @@ class WorktreeService:
                 if result.stderr:
                     logger.info(f"Post-creation script stderr: {result.stderr}")
                 
-        except subprocess.TimeoutExpired as e:
+        except subprocess.TimeoutExpired:
             logger.error(f"Post-creation script timed out: {script}", exc_info=True)
         except Exception as e:
             logger.error(f"Error executing post-creation script {script}: {e}", exc_info=True)

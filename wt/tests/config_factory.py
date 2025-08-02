@@ -1,18 +1,20 @@
 """Configuration factory to reduce duplication in test configuration building."""
 
-import yaml
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Any
 
-from wt.shared.configuration import Configuration
+import yaml
+
 from wt.shared.config_file import ConfigFile
+from wt.shared.configuration import Configuration
+
 from .test_data import ConfigPresets, TestData
 
 
 class ConfigFactory:
     """Factory for creating test configurations with different presets."""
     
-    def __init__(self, repo_path: Path, temp_base_dir: Optional[Path] = None):
+    def __init__(self, repo_path: Path, temp_base_dir: Path | None = None):
         """Initialize factory with repository path.
         
         Args:
@@ -25,7 +27,7 @@ class ConfigFactory:
     def create(self, 
                preset: str = "MINIMAL",
                *,
-               wt_dir: Optional[Path] = None,
+               wt_dir: Path | None = None,
                **config_overrides) -> Configuration:
         """Create a configuration with specified preset and overrides.
         
@@ -173,6 +175,6 @@ class ConfigBuilder:
         self._overrides[field_name] = value
         return self
     
-    def build(self, wt_dir: Optional[Path] = None) -> Configuration:
+    def build(self, wt_dir: Path | None = None) -> Configuration:
         """Build the final configuration."""
         return self.factory.create(self._preset, wt_dir=wt_dir, **self._overrides)

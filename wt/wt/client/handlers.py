@@ -23,11 +23,25 @@ async def handle_status(daemon_client, formatter) -> None:
         return (1, name)  # others alphabetically
 
     sorted_items = sorted(all_status.results.items(), key=lambda x: sort_key((x[1].name, x[1])))
-    # Convert to (name, status) tuples for display
     display_items = [(result.name, result) for wtid, result in sorted_items]
 
-    # Render the status
+    formatter.render_top_status_bar(all_status)
     formatter.render_worktree_status_all(display_items)
+
+    components = getattr(all_status, "components", None)
+    if components:
+        msgs = []
+        if components.github and getattr(components.github, "state", None) and str(components.github.state) not in ("ok", "ComponentState.OK"):
+            last_err = getattr(components.github, "last_error", None) or ""
+            msgs.append(f"github: {last_err}".strip())
+        if components.gitstatusd and components.gitstatusd.metrics:
+            total = int(components.gitstatusd.metrics.get("total", 0))
+            running = int(components.gitstatusd.metrics.get("running", 0))
+            if running < total:
+                msgs.append(f"gitstatusd {running}/{total}")
+        if msgs:
+            import click as _click
+            _click.echo("; ".join(msgs))
 
 
 async def handle_list_worktrees(daemon_client, formatter) -> None:

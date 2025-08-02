@@ -7,21 +7,18 @@ A unified code quality and permission management system for Claude Code.
 
 import json
 import logging
-import subprocess
+import shutil
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
-import shutil
 
 import click
 from pytimeparse import parse as parse_duration
-from .session import SessionManager
 
 from . import __version__
 from .hooks.exceptions import HookBugError
 from .hooks.handler import HOOK_REQUEST_TYPES, handle
-from .types import parse_session_id
 from .session import SessionManager
 
 logger = logging.getLogger(__name__)

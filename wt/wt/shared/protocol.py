@@ -4,12 +4,14 @@ Uses standard JSON-RPC 2.0 for type-safe, standardized RPC communication
 between clients and the GitStatusd multiplexing daemon.
 """
 
+from __future__ import annotations
+
 import json
 import uuid
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, NewType, Union
+from typing import Any, NewType
 
 from pydantic import BaseModel, Field
 
@@ -65,18 +67,7 @@ class Response(BaseModel):
     model_config = {"extra": "forbid"}
 
     jsonrpc: str = "2.0"
-    result: Union[
-        "StatusResponse", 
-        "PingResult", 
-        "WorktreeCreateResult",
-        "WorktreeDeleteResult", 
-        "WorktreeListResult",
-        "WorktreeIdentifyResult",
-        "WorktreeGetByNameResult",
-        "WorktreeResolvePathResult",
-        "WorktreeTeleportTargetResult",
-        str,
-    ] = Field(..., description="Result data")
+    result: StatusResponse | PingResult | WorktreeCreateResult | WorktreeDeleteResult | WorktreeListResult | WorktreeIdentifyResult | WorktreeGetByNameResult | WorktreeResolvePathResult | WorktreeTeleportTargetResult | str = Field(..., description="Result data")
     id: uuid.UUID = Field(..., description="Request ID from original request")
 
 
@@ -202,16 +193,17 @@ class StatusResult(BaseModel):
         ..., description="When gitstatusd was last queried for this worktree",
     )
     is_cached: bool = Field(default=False, description="Whether this result came from cache")
-    # Commit and branch info
-    commit_info: CommitInfo = Field(..., description="Latest commit information")
+    commit_info: CommitInfo | None = Field(default=None, description="Latest commit information if available")
     ahead_count: int = Field(default=0, description="Number of commits ahead of upstream branch")
     behind_count: int = Field(default=0, description="Number of commits behind upstream branch")
     is_main: bool = Field(default=False, description="Whether this is the main repository")
     upstream_branch: str = Field(..., description="Upstream branch name for ahead/behind calculations")
-    # GitHub PR info
     pr_info: PRInfo | None = Field(
         default=None, description="GitHub pull request information if available",
     )
+    gitstatusd_state: GitstatusdState | None = Field(default=None, description="gitstatusd runtime state")
+    restarts: int = Field(default=0, description="Number of restarts observed")
+    last_error: str | None = Field(default=None, description="Last error message if any")
 
 
 class StatusResponse(BaseModel):
@@ -232,6 +224,12 @@ class StatusResponse(BaseModel):
     )
     daemon_health: DaemonHealth = Field(
         ..., description="Current daemon health status and error information",
+    )
+    readiness_summary: ReadinessSummary | None = Field(
+        default=None, description="Overall readiness summary (optional)",
+    )
+    components: ComponentsStatus | None = Field(
+        default=None, description="Top-level component states (discovery/github/gitstatusd)",
     )
 
 
@@ -262,6 +260,7 @@ class StartupMessage(BaseModel):
     phase: StartupPhase | None = None
     discovered_worktrees: list[str] = Field(default_factory=list)
     gitstatusd_path: str | None = None
+    socket_path: str | None = None
     error: str | None = None
 
 
@@ -337,6 +336,40 @@ class ProgressUpdate(BaseModel):
     step: str = Field(..., description="Current step")
     progress: float = Field(..., description="Progress 0.0-1.0")
     message: str = Field(..., description="Progress message")
+
+
+class ComponentState(str, Enum):
+    OK = "ok"
+    SCANNING = "scanning"
+    ERROR = "error"
+    DISABLED = "disabled"
+
+
+class GitstatusdState(str, Enum):
+    STARTING = "starting"
+    RUNNING = "running"
+    RESTARTING = "restarting"
+    FAILED = "failed"
+    STOPPED = "stopped"
+
+
+class ComponentStatus(BaseModel):
+    state: ComponentState
+    last_error: str | None = None
+    metrics: dict[str, int | float] = Field(default_factory=dict)
+
+
+class ComponentsStatus(BaseModel):
+    discovery: ComponentStatus
+    github: ComponentStatus
+    gitstatusd: ComponentStatus
+
+
+class ReadinessSummary(BaseModel):
+    total_worktrees: int = Field(..., description="Total discovered worktrees")
+    with_gitstatusd: int = Field(..., description="Worktrees with running gitstatusd")
+    discovery_scanning: bool = Field(default=False, description="Discovery currently scanning")
+    github: ComponentState = Field(default=ComponentState.DISABLED, description="GitHub component state")
 
 
 def create_error_response(

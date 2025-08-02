@@ -4,7 +4,6 @@ import json
 import subprocess
 
 import pytest
-
 from claude_hooks.actions import PostToolContinue, PostToolFeedbackToClaude
 from claude_hooks.precommit_autofix import PreCommitAutoFixerHook
 
@@ -98,7 +97,7 @@ def test_edit_vs_write_operations(integration_env):
     new_code = "def hello():\n    print('hello world')"
 
     hook_input = integration_env.build_post_tool_edit_input(
-        "test.py", old_string=original_code, new_string=new_code
+        "test.py", old_string=original_code, new_string=new_code,
     )
 
     # Execute hook
@@ -117,7 +116,7 @@ def test_precommit_actually_works(integration_env, monkeypatch):
     monkeypatch.chdir(integration_env.project_dir)
 
     # Run pre-commit directly on the file
-    subprocess.run(["pre-commit", "run", "--files", "test.py"], cwd=integration_env.project_dir)
+    subprocess.run(["pre-commit", "run", "--files", "test.py"], cwd=integration_env.project_dir, check=False)
 
     final_content = integration_env.read_file("test.py")
     compile(final_content, "test.py", "exec")

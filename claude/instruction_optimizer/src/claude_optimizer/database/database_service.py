@@ -4,7 +4,7 @@ import hashlib
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional, Union
+from typing import Any
 
 from claude_code_sdk import AssistantMessage, ResultMessage, SystemMessage, UserMessage
 
@@ -33,8 +33,8 @@ class DatabaseService:
     def __init__(self, db_manager: DatabaseManager):
         """Initialize service with database manager for DI."""
         self.db_manager = db_manager
-        self.current_run_id: Optional[int] = None
-        self.current_rollout_id: Optional[int] = None
+        self.current_run_id: int | None = None
+        self.current_rollout_id: int | None = None
     
     def create_optimization_run(
         self, 
@@ -68,7 +68,7 @@ class DatabaseService:
             
             return run.id
     
-    def complete_optimization_run(self, run_id: Optional[int] = None):
+    def complete_optimization_run(self, run_id: int | None = None):
         """Mark an optimization run as completed."""
         run_id = run_id or self.current_run_id
         if not run_id:
@@ -89,7 +89,7 @@ class DatabaseService:
         run_id: int,
         iteration: int,
         content: str,
-        prompt_engineer_reasoning: Optional[str] = None,
+        prompt_engineer_reasoning: str | None = None,
     ) -> int:
         """Create a system prompt record.
         
@@ -180,9 +180,9 @@ class DatabaseService:
     def complete_rollout(
         self,
         rollout_id: int,
-        total_cost_usd: Optional[float] = None,
+        total_cost_usd: float | None = None,
         is_error: bool = False,
-        duration_ms: Optional[int] = None,
+        duration_ms: int | None = None,
     ):
         """Complete a rollout record with final metrics."""
         with self.db_manager.get_session() as session:
@@ -207,7 +207,7 @@ class DatabaseService:
         rollout_id: int,
         sequence_order: int,
         message_type: str,
-        message_content: Union[dict[str, Any], SystemMessage, UserMessage, AssistantMessage, ResultMessage, str],
+        message_content: dict[str, Any] | SystemMessage | UserMessage | AssistantMessage | ResultMessage | str,
     ):
         """Log a message from the Claude SDK conversation."""
         try:
@@ -308,7 +308,7 @@ class DatabaseService:
         overall_rationale: str,
         facet_scores: dict[str, dict[str, Any]],
         grader_model: str = "o3",
-        grader_reasoning: Optional[str] = None,
+        grader_reasoning: str | None = None,
     ) -> int:
         """Store grading results for a rollout.
         
@@ -377,8 +377,8 @@ class DatabaseService:
         iteration: int,
         rollout_ids: list[int],
         summary_text: str,
-        tokens_used: Optional[int] = None,
-        analysis_reasoning: Optional[str] = None,
+        tokens_used: int | None = None,
+        analysis_reasoning: str | None = None,
     ) -> int:
         """Store pattern analysis results.
         

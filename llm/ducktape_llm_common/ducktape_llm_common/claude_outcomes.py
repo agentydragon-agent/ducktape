@@ -143,9 +143,9 @@ class SubagentStopPrevent(HookOutcome):
             llm_message="Cannot stop: Must complete remaining analysis tasks."
         )
     """
-    
+
     llm_message: str
-    
+
     def to_claude_response(self) -> StopResponse:
         return StopResponse(decision="block", reason=self.llm_message)
 

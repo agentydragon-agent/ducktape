@@ -5,7 +5,6 @@ This test runs everything as subprocess calls, NOT through pytest fixtures or Py
 
 import os
 import shutil
-import subprocess
 import tempfile
 import time
 from pathlib import Path
@@ -21,15 +20,16 @@ def create_test_repo_and_config():
     repo_path.mkdir()
 
     # Initialize git repository using subprocess git
-    subprocess.run(["git", "init", "--initial-branch=master"], cwd=repo_path, check=True)
-    subprocess.run(["git", "config", "user.name", "Test User"], cwd=repo_path, check=True)
-    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo_path, check=True)
+    from wt.shared.git_utils import git_run
+    git_run(["init", "--initial-branch=master"], cwd=repo_path)
+    git_run(["config", "user.name", "Test User"], cwd=repo_path)
+    git_run(["config", "user.email", "test@example.com"], cwd=repo_path)
 
     # Create initial commit
     readme_file = repo_path / "README.md"
     readme_file.write_text("# Test Repository")
-    subprocess.run(["git", "add", "README.md"], cwd=repo_path, check=True)
-    subprocess.run(["git", "commit", "-m", "Initial commit"], cwd=repo_path, check=True)
+    git_run(["add", "README.md"], cwd=repo_path)
+    git_run(["commit", "-m", "Initial commit"], cwd=repo_path)
 
     # Set up worktrees directory
     worktrees_dir = repo_path / "worktrees"
@@ -52,9 +52,13 @@ github_repo: "test/test"
     config_file = config_dir / "config.yaml"
     config_file.write_text(config_content)
 
-    # Create test environment with WT_DIR (new configuration system)
+    # Create test environment with WT_DIR and PYTHONPATH for -m wt.cli
     env = os.environ.copy()
     env["WT_DIR"] = str(config_dir)
+    # Ensure -m wt.cli importable
+    from pathlib import Path as _P
+    project_root = str(_P(__file__).resolve().parents[2])
+    env["PYTHONPATH"] = f"{project_root}:{env.get('PYTHONPATH','')}"
 
     return repo_path, env, temp_dir
 
@@ -72,7 +76,7 @@ def test_path_watcher_full_lifecycle():
     repo_path, env, temp_dir = create_test_repo_and_config()
 
     try:
-        print(f"=== Test setup complete ===")
+        print("=== Test setup complete ===")
         print(f"Repo: {repo_path}")
         print(f"Config: {repo_path}/.wt/config.yaml")
 
@@ -91,7 +95,7 @@ def test_path_watcher_full_lifecycle():
 
             daemon_log = daemon_dir / "daemon.log"
             if daemon_log.exists():
-                print(f"\n=== Daemon Log ===")
+                print("\n=== Daemon Log ===")
                 print(daemon_log.read_text())
 
             pid_file = daemon_dir / "daemon.pid"

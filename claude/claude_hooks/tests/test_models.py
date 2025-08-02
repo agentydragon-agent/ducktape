@@ -3,12 +3,11 @@
 from pathlib import Path
 from uuid import uuid4
 
-from hamcrest import assert_that, has_properties
-from pydantic import ValidationError
 import pytest
-
 from claude_hooks.inputs import PostToolInput, PreToolInput, UserPromptSubmitInput
 from claude_hooks.tool_models import BashInput, EditInput, WriteInput
+from hamcrest import assert_that, has_properties
+from pydantic import ValidationError
 
 
 def test_edit_input_valid():
@@ -47,7 +46,7 @@ def test_write_input_valid():
 
     write_input = WriteInput.model_validate(data)
     assert_that(
-        write_input, has_properties(file_path=Path("/tmp/test.py"), content="print('hello')")
+        write_input, has_properties(file_path=Path("/tmp/test.py"), content="print('hello')"),
     )
 
 

@@ -34,13 +34,10 @@ This ensures each test runs in complete isolation without daemon interference.
 
 import os
 import subprocess
-import tempfile
 import time
-from pathlib import Path
 
 import pygit2
 import pytest
-import yaml
 
 from ..conftest import kill_daemon_and_verify
 from ..test_utils import run_cli_command
@@ -214,7 +211,7 @@ class TestRealGitOperations:
         tree = worktree_repo.index.write_tree()
         parent = worktree_repo.head.target
         commit_id = worktree_repo.create_commit(
-            "HEAD", signature, signature, "Test commit", tree, [parent]
+            "HEAD", signature, signature, "Test commit", tree, [parent],
         )
 
         # Verify commit exists
@@ -278,8 +275,9 @@ class TestRealGitOperations:
         assert entries == []
 
         # Extend cone using git, then verify files appear
-        subprocess.run(["git", "sparse-checkout", "init", "--no-cone"], cwd=wt_path, check=True)
-        subprocess.run(["git", "sparse-checkout", "set", "--no-cone", "--stdin"], cwd=wt_path, check=True, input=b"foo\n")
-        subprocess.run(["git", "checkout", "-f"], cwd=wt_path, check=True)
+        from wt.shared.git_utils import git_run
+        git_run(["sparse-checkout", "init", "--no-cone"], cwd=wt_path)
+        git_run(["sparse-checkout", "set", "--no-cone", "--stdin"], cwd=wt_path, input=b"foo\n")
+        git_run(["checkout", "-f"], cwd=wt_path)
         assert (wt_path / "foo" / "bar" / "baz.txt").exists()
         assert not (wt_path / "top.txt").exists()

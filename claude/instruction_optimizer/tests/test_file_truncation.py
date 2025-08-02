@@ -2,7 +2,6 @@
 
 import json
 
-import pytest
 import tiktoken
 from optimizer import _truncate_files_by_tokens
 

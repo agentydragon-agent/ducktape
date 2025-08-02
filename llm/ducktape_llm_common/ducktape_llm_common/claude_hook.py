@@ -4,9 +4,7 @@ import json
 import logging
 import sys
 import uuid
-from abc import ABC, abstractmethod
-from functools import singledispatch
-from typing import Union
+from abc import ABC
 
 from .claude_code_api import (
     HookRequest,
@@ -17,28 +15,22 @@ from .claude_code_api import (
     StopRequest,
     SubagentStopRequest,
 )
-from .hook_logging import InvocationID, get_session_logger
 from .claude_outcomes import (
     HookError,
-    HookOutcome,
     NotificationAcknowledge,
     NotificationOutcome,
-    PostToolNotifyLLM,
     PostToolOutcome,
     PostToolSuccess,
     PreCompactAllow,
     PreCompactOutcome,
-    PreToolApprove,
-    PreToolDeny,
     PreToolNoOpinion,
     PreToolOutcome,
     StopAllow,
     StopOutcome,
-    StopPrevent,
     SubagentStopAllow,
     SubagentStopOutcome,
-    SubagentStopPrevent,
 )
+from .hook_logging import InvocationID, get_session_logger
 
 
 class ClaudeCodeHookBase(ABC):
@@ -66,13 +58,13 @@ class ClaudeCodeHookBase(ABC):
         if __name__ == '__main__':
             MyClaudeHook.entrypoint()
     """
-    
+
     hook_name: str  # Must be defined by subclass
-    
+
     def __init__(self):
         if not hasattr(self, "hook_name"):
             raise ValueError("ClaudeCodeHookBase requires 'hook_name' class attribute")
-        
+
         self.logger: logging.Logger = None
 
     def pre_tool_use(self, request: PreToolUseRequest) -> PreToolOutcome:
@@ -116,13 +108,13 @@ class ClaudeCodeHookBase(ABC):
         try:
             # Read JSON from stdin
             input_data = json.load(sys.stdin)
-            
+
             # Extract hook event name
             hook_event_name = input_data.get("hook_event_name", "")
-            
+
             # Create instance
             hook_instance = cls()
-            
+
             # Parse request using discriminated union
             try:
                 request = HookRequest.model_validate(input_data)
@@ -132,20 +124,20 @@ class ClaudeCodeHookBase(ABC):
                 response = outcome.to_claude_response()
                 print(response.model_dump_json(by_alias=True))
                 sys.exit(0)
-            
+
             # Generate invocation ID and set up logging
             invocation_id = InvocationID(uuid.uuid4())
-            
+
             # Set up logger for this session/invocation
             logger = get_session_logger(hook_instance.hook_name, request.session_id, invocation_id)
             hook_instance.logger = logger
-            
+
             # Log the input
             logger.info("Hook input", extra={
                 "hook_event": request.hook_event_name,
                 "request_data": request.model_dump()
             })
-            
+
             try:
                 # Dispatch to appropriate method using discriminated union
                 if isinstance(request, PreToolUseRequest):
@@ -162,22 +154,22 @@ class ClaudeCodeHookBase(ABC):
                     outcome = hook_instance.pre_compact(request)
                 else:
                     raise ValueError(f"Unknown request type: {type(request)}")
-                
+
                 # Convert to response once for both logging and return
                 response = outcome.to_claude_response()
                 logger.info("Hook output", extra={
                     "response_data": response.model_dump()
                 })
-                
+
             except Exception:
                 # Log the exception
                 logger.error("Hook execution failed", exc_info=True)
                 raise
-            
+
             # Output JSON response
             print(response.model_dump_json(by_alias=True))
             sys.exit(0)
-            
+
         except Exception as e:
             # On any error, return error outcome
             error_outcome = HookError(f"Hook execution failed: {str(e)}")

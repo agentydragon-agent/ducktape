@@ -8,7 +8,6 @@ from uuid import UUID
 import git
 import pytest
 import yaml
-
 from claude_hooks.config import AutofixerConfig
 from claude_hooks.inputs import HookContext, PostToolInput
 from claude_hooks.precommit_autofix import PreCommitAutoFixerHook
@@ -67,10 +66,10 @@ sys.exit(1 if changed else 0)
                         "entry": f"python3 {fixer_script}",
                         "language": "system",
                         "pass_filenames": True,
-                    }
+                    },
                 ],
-            }
-        ]
+            },
+        ],
     }
 
     config_file = git_repo / ".pre-commit-config.yaml"
@@ -119,11 +118,11 @@ precommit_autofix:
                             "type": "command",
                             "command": "python -m claude_hooks.precommit_autofix",
                             "timeout": 10,
-                        }
+                        },
                     ],
-                }
-            ]
-        }
+                },
+            ],
+        },
     }
     (claude_dir / "settings.json").write_text(json.dumps(claude_settings, indent=2))
 
@@ -267,11 +266,11 @@ def integration_env(precommit_repo, claude_config_dir, xdg_env, monkeypatch):
                 file_path if Path(file_path).is_absolute() else str(precommit_repo / file_path)
             )
             return self.create_hook_input(
-                "Write", WriteInput(file_path=Path(full_path), content=content)
+                "Write", WriteInput(file_path=Path(full_path), content=content),
             )
 
         def build_post_tool_edit_input(
-            self, file_path: str, old_string: str, new_string: str
+            self, file_path: str, old_string: str, new_string: str,
         ) -> PostToolInput:
             """Create a PostToolInput for Edit operations."""
             full_path = (

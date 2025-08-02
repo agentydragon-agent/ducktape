@@ -1,14 +1,14 @@
 """Mock factory to reduce fixture proliferation and provide flexible test doubles."""
 
+from typing import Any
 from unittest.mock import Mock
-from typing import Any, Dict, List, Optional
 
-from wt.server.github_client import GitHubInterface
-from wt.server.git_manager import GitManager
 from wt.client.wt_client import WtClient
-from wt.shared.protocol import StatusResponse, DaemonHealth, DaemonHealthStatus
+from wt.server.git_manager import GitManager
+from wt.server.github_client import GitHubInterface
+from wt.shared.protocol import DaemonHealth, DaemonHealthStatus, StatusResponse
 
-from .test_data import MockBehaviors, TestData
+from .test_data import MockBehaviors
 
 
 class MockFactory:
@@ -16,9 +16,9 @@ class MockFactory:
     
     @staticmethod
     def github_client(*, 
-                     pr_list_returns: Optional[List[Dict[str, Any]]] = None,
-                     pr_search_returns: Optional[List[Dict[str, Any]]] = None,
-                     pr_view_returns: Optional[Dict[str, Any]] = None,
+                     pr_list_returns: list[dict[str, Any]] | None = None,
+                     pr_search_returns: list[dict[str, Any]] | None = None,
+                     pr_view_returns: dict[str, Any] | None = None,
                      **kwargs) -> Mock:
         """Create a configured GitHub client mock."""
         mock = Mock(spec=GitHubInterface)
@@ -37,9 +37,9 @@ class MockFactory:
     
     @staticmethod
     def git_manager(*,
-                   branches: Optional[List[str]] = None,
-                   worktrees: Optional[List[str]] = None,
-                   working_status: Optional[tuple[List[str], List[str]]] = None,
+                   branches: list[str] | None = None,
+                   worktrees: list[str] | None = None,
+                   working_status: tuple[list[str], list[str]] | None = None,
                    **kwargs) -> Mock:
         """Create a configured git manager mock."""
         mock = Mock(spec=GitManager)
@@ -63,8 +63,8 @@ class MockFactory:
     
     @staticmethod
     def daemon_client(*,
-                     status_response: Optional[StatusResponse] = None,
-                     get_status_returns: Optional[StatusResponse] = None,
+                     status_response: StatusResponse | None = None,
+                     get_status_returns: StatusResponse | None = None,
                      **kwargs) -> Mock:
         """Create a configured daemon client mock."""
         mock = Mock(spec=WtClient)
@@ -108,7 +108,7 @@ class MockFactory:
     
     @staticmethod
     def process_info_list(*, 
-                         running_processes: Optional[List[Dict[str, Any]]] = None) -> List[Mock]:
+                         running_processes: list[dict[str, Any]] | None = None) -> list[Mock]:
         """Create a list of process info mocks."""
         if running_processes is None:
             return []
@@ -159,9 +159,9 @@ class ServiceBuilder:
     
     def build_worktree_service(self):
         """Build WorktreeService with configured dependencies."""
-        from wt.server.worktree_service import WorktreeService
         from wt.server.git_manager import GitManager
         from wt.server.github_client import GitHubInterface
+        from wt.server.worktree_service import WorktreeService
         
         # Create real instances for components marked as 'real'
         if 'git' in self._use_real:

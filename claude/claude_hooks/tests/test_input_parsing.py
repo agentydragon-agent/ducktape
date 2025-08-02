@@ -14,7 +14,6 @@ Notes about hook behavior observed during testing:
 from pathlib import Path
 
 import pytest
-
 from claude_hooks.tool_models import (
     BashInput,
     GlobInput,
@@ -23,6 +22,7 @@ from claude_hooks.tool_models import (
     LSInput,
     TaskInput,
 )
+
 from .test_helpers import assert_tool_input_parsing, load_test_json
 
 
@@ -75,7 +75,7 @@ from .test_helpers import assert_tool_input_parsing, load_test_json
                         "priority": "high",
                         "id": "todo1",
                     },
-                ]
+                ],
             },
         ),
         ("Glob", "pattern_only", GlobInput(pattern="*.md", path=None)),

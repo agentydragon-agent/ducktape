@@ -47,7 +47,8 @@ from pathlib import Path
 
 import pygit2
 import pytest
-import yaml
+
+pytestmark = pytest.mark.timeout(10)
 
 from ..conftest import create_integration_test_config_file, kill_daemon_and_verify
 from ..test_utils import run_cli_command
@@ -67,6 +68,10 @@ def real_env_with_existing_worktrees(real_temp_repo):
 
     env = os.environ.copy()
     env["WT_DIR"] = str((real_temp_repo / ".wt").resolve())
+    # Ensure python -m wt.cli is importable
+    from pathlib import Path as _P
+    project_root = str(_P(__file__).resolve().parents[2])
+    env["PYTHONPATH"] = f"{project_root}:{env.get('PYTHONPATH','')}"
 
     repo = pygit2.Repository(str(real_temp_repo))
     signature = pygit2.Signature("Test User", "test@example.com")
@@ -80,11 +85,8 @@ def real_env_with_existing_worktrees(real_temp_repo):
     branch1 = repo.create_branch("test/existing1", repo.get(master_commit))
 
     # Use git CLI for worktree creation since pygit2 doesn't support worktrees directly
-    subprocess.run(
-        ["git", "worktree", "add", str(worktree1_path), "test/existing1"],
-        cwd=real_temp_repo,
-        check=True,
-    )
+    from wt.shared.git_utils import git_run
+    git_run(["worktree", "add", str(worktree1_path), "test/existing1"], cwd=real_temp_repo)
 
     # Add a file to existing worktree 1 using pygit2
     repo1 = pygit2.Repository(str(worktree1_path))
@@ -93,17 +95,13 @@ def real_env_with_existing_worktrees(real_temp_repo):
     repo1.index.write()
     tree1 = repo1.index.write_tree()
     repo1.create_commit(
-        "HEAD", signature, signature, "Add existing1 content", tree1, [repo1.head.target]
+        "HEAD", signature, signature, "Add existing1 content", tree1, [repo1.head.target],
     )
 
     # Create existing worktree 2
     worktree2_path = real_temp_repo / "worktrees" / "existing2"
     branch2 = repo.create_branch("test/existing2", repo.get(master_commit))
-    subprocess.run(
-        ["git", "worktree", "add", str(worktree2_path), "test/existing2"],
-        cwd=real_temp_repo,
-        check=True,
-    )
+    git_run(["worktree", "add", str(worktree2_path), "test/existing2"], cwd=real_temp_repo)
 
     # Add a file to existing worktree 2 using pygit2
     repo2 = pygit2.Repository(str(worktree2_path))
@@ -112,7 +110,7 @@ def real_env_with_existing_worktrees(real_temp_repo):
     repo2.index.write()
     tree2 = repo2.index.write_tree()
     repo2.create_commit(
-        "HEAD", signature, signature, "Add existing2 content", tree2, [repo2.head.target]
+        "HEAD", signature, signature, "Add existing2 content", tree2, [repo2.head.target],
     )
 
     yield env, real_temp_repo
@@ -132,7 +130,7 @@ def test_real_workflow_with_existing_worktrees(real_env_with_existing_worktrees)
         # Step 1: Status should show existing worktrees
         result = run_cli_command(["sh"], env=env)
         print(
-            f"Status with existing worktrees (exit={result.returncode}):\n{result.stdout}\n{result.stderr}"
+            f"Status with existing worktrees (exit={result.returncode}):\n{result.stdout}\n{result.stderr}",
         )
         assert result.returncode == 0
         assert "existing1" in result.stdout
@@ -150,7 +148,7 @@ def test_real_workflow_with_existing_worktrees(real_env_with_existing_worktrees)
         # Step 3: Status should now show all three worktrees
         result = run_cli_command(["sh"], env=env)
         print(
-            f"Status with all worktrees (exit={result.returncode}):\n{result.stdout}\n{result.stderr}"
+            f"Status with all worktrees (exit={result.returncode}):\n{result.stdout}\n{result.stderr}",
         )
         assert result.returncode == 0
         assert "existing1" in result.stdout
@@ -164,6 +162,7 @@ def test_real_workflow_with_existing_worktrees(real_env_with_existing_worktrees)
         pass
 
 
+@pytest.mark.timeout(10)
 def test_real_workflow_git_repo_to_worktrees_to_status(real_temp_repo, real_env):
     """
     Test workflow: git repo -> make worktrees 1,2 -> jump to worktree -> rm other -> status
@@ -172,12 +171,12 @@ def test_real_workflow_git_repo_to_worktrees_to_status(real_temp_repo, real_env)
 
     try:
         # Step 1: Initial status (should show empty or main repo only)
-        result = run_cli_command(["sh"], env=real_env)
+        result = run_cli_command(["sh"], env=real_env, timeout=10.0)
         print(f"Initial status (exit={result.returncode}):\n{result.stdout}\n{result.stderr}")
         assert result.returncode == 0
 
         # Step 2: Create first worktree
-        result = run_cli_command(["sh", "-c", "feature1"], env=real_env)
+        result = run_cli_command(["sh", "-c", "feature1"], env=real_env, timeout=10.0)
         print(f"Create feature1 (exit={result.returncode}):\n{result.stdout}\n{result.stderr}")
         assert result.returncode == 0
 
@@ -194,7 +193,7 @@ def test_real_workflow_git_repo_to_worktrees_to_status(real_temp_repo, real_env)
         )
 
         # Step 3: Create second worktree
-        result = run_cli_command(["sh", "-c", "feature2"], env=real_env)
+        result = run_cli_command(["sh", "-c", "feature2"], env=real_env, timeout=10.0)
         print(f"Create feature2 (exit={result.returncode}):\n{result.stdout}\n{result.stderr}")
         assert result.returncode == 0
 
@@ -203,16 +202,16 @@ def test_real_workflow_git_repo_to_worktrees_to_status(real_temp_repo, real_env)
         assert worktree2_path.exists(), f"Worktree 2 not created at {worktree2_path}"
 
         # Step 4: Check status shows both worktrees
-        result = run_cli_command(["sh"], env=real_env)
+        result = run_cli_command(["sh"], env=real_env, timeout=10.0)
         print(
-            f"Status with both worktrees (exit={result.returncode}):\n{result.stdout}\n{result.stderr}"
+            f"Status with both worktrees (exit={result.returncode}):\n{result.stdout}\n{result.stderr}",
         )
         assert result.returncode == 0
         assert "feature1" in result.stdout
         assert "feature2" in result.stdout
 
         # Step 5: Navigate to feature1 (test cd command emission)
-        result = run_cli_command(["sh", "feature1"], env=real_env)
+        result = run_cli_command(["sh", "feature1"], env=real_env, timeout=10.0)
         print(f"Navigate to feature1 (exit={result.returncode}):\n{result.stdout}\n{result.stderr}")
         assert result.returncode == 0
         # Note: cd command is emitted to fd3, we can't easily verify it here
@@ -226,7 +225,7 @@ def test_real_workflow_git_repo_to_worktrees_to_status(real_temp_repo, real_env)
         subprocess.run(["git", "commit", "-m", "Add test file"], cwd=worktree1_path, check=True)
 
         # Step 7: Final status check should show the changes
-        result = run_cli_command(["sh"], env=real_env)
+        result = run_cli_command(["sh"], env=real_env, timeout=10.0)
         print(f"Final status (exit={result.returncode}):\n{result.stdout}\n{result.stderr}")
         assert result.returncode == 0
 
@@ -253,7 +252,7 @@ def test_real_git_operations_in_worktrees(real_temp_repo, real_env):
         # Create worktree
         result = run_cli_command(["sh", "-c", "git-test"], env=real_env)
         print(
-            f"Create git-test worktree (exit={result.returncode}):\n{result.stdout}\n{result.stderr}"
+            f"Create git-test worktree (exit={result.returncode}):\n{result.stdout}\n{result.stderr}",
         )
         assert result.returncode == 0
 
@@ -284,7 +283,7 @@ def test_real_git_operations_in_worktrees(real_temp_repo, real_env):
 
         # Verify branch was created correctly
         result = subprocess.run(
-            ["git", "branch", "--show-current"], cwd=worktree_path, capture_output=True, text=True
+            ["git", "branch", "--show-current"], cwd=worktree_path, capture_output=True, text=True, check=False,
         )
         assert "test/git-test" in result.stdout
 
@@ -294,7 +293,7 @@ def test_real_git_operations_in_worktrees(real_temp_repo, real_env):
 
         # Verify commit was made
         result = subprocess.run(
-            ["git", "log", "--oneline"], cwd=worktree_path, capture_output=True, text=True
+            ["git", "log", "--oneline"], cwd=worktree_path, capture_output=True, text=True, check=False,
         )
         assert "Test commit" in result.stdout
 
@@ -310,9 +309,9 @@ def test_real_daemon_startup_and_kill(real_temp_repo, real_env):
 
     try:
         # Step 1: Initial command should start the daemon
-        result = run_cli_command(["sh"], env=real_env)
+        result = run_cli_command(["sh"], env=real_env, timeout=10.0)
         print(
-            f"Initial status (should start daemon) (exit={result.returncode}):\n{result.stdout}\n{result.stderr}"
+            f"Initial status (should start daemon) (exit={result.returncode}):\n{result.stdout}\n{result.stderr}",
         )
         assert result.returncode == 0
 

@@ -1,10 +1,7 @@
 import os
-import subprocess
 import time
-from dataclasses import dataclass
-from functools import wraps
+from collections.abc import Generator
 from pathlib import Path
-from typing import Generator, Optional
 from unittest.mock import Mock, patch
 
 # Removed GitPython dependency; use pygit2 for repo fixtures if needed
@@ -13,16 +10,13 @@ import pytest
 import yaml
 from click.testing import CliRunner
 
-from wt.server.github_client import GitHubInterface
 from wt.server.worktree_service import WorktreeService
 from wt.shared.config_file import ConfigFile
 from wt.shared.configuration import Configuration
-from wt.shared.models import PRStatus
 
-from .config_factory import ConfigBuilder, ConfigFactory
-from .mock_factory import MockFactory, ServiceBuilder
-from .repo_factory import GitRepoFactory, RepoPresets
-from .test_data import ConfigPresets, TestData
+from .config_factory import ConfigFactory
+from .mock_factory import MockFactory
+from .repo_factory import GitRepoFactory
 
 # =============================================================================
 # Factory Fixtures - Modern pytest pattern for test setup
@@ -150,7 +144,7 @@ def capture_commands() -> Generator[list[str], None, None]:
 def mock_process_check():
     """Mock process checking to avoid system dependencies."""
     with patch(
-        "wt.server.worktree_service.WorktreeService._get_processes_in_directory"
+        "wt.server.worktree_service.WorktreeService._get_processes_in_directory",
     ) as mock:
         mock.return_value = []  # No processes by default
         yield mock
@@ -219,6 +213,10 @@ def kill_daemon_and_verify(repo_path: Path, timeout: float = 5.0):
 
     env = os.environ.copy()
     env["WT_DIR"] = str((repo_path / ".wt").resolve())
+    # Ensure -m wt.cli works without install
+    from pathlib import Path as _P
+    project_root = str(_P(__file__).resolve().parents[1])
+    env["PYTHONPATH"] = f"{project_root}:{env.get('PYTHONPATH','')}"
 
     # Run kill-daemon command
     result = run_cli_command(["sh", "kill-daemon"], env=env)
@@ -257,12 +255,12 @@ def kill_daemon_and_verify(repo_path: Path, timeout: float = 5.0):
             pid_content = pid_file.read_text().strip()
             if pid_content:
                 pytest.fail(
-                    f"Daemon with PID {pid_content} did not shut down within {timeout} seconds"
+                    f"Daemon with PID {pid_content} did not shut down within {timeout} seconds",
                 )
         except (OSError, UnicodeDecodeError) as e:
             # If we can't read the PID file, still fail but with a more specific error
             pytest.fail(
-                f"Daemon cleanup verification failed - could not read PID file: {e}"
+                f"Daemon cleanup verification failed - could not read PID file: {e}",
             )
 
     pytest.fail(f"Daemon cleanup verification failed after {timeout} seconds")
@@ -322,7 +320,7 @@ def real_env(real_temp_repo, config_factory):
 
     # Create config using factory pattern
     factory = config_factory(real_temp_repo)
-    config = factory.integration()
+    config = factory.integration(github_enabled=False)
 
     # Set up environment
     env = os.environ.copy()
@@ -346,11 +344,10 @@ def real_env_with_existing_worktrees(real_temp_repo, config_factory):
 
     # Create config using factory pattern
     factory = config_factory(real_temp_repo)
-    config = factory.integration()
+    config = factory.integration(github_enabled=False)
 
     # Create some test worktrees using real worktree service
     from wt.server.git_manager import GitManager
-    from wt.server.worktree_service import WorktreeService
 
     git_manager = GitManager(config=config)
     github_mock = Mock()  # GitHub not needed for worktree creation
@@ -385,7 +382,7 @@ def test_config(repo_factory, config_factory) -> Configuration:
 
 
 def build_test_configuration(
-    repo_path: Path, wt_dir: Optional[Path] = None, **config_overrides
+    repo_path: Path, wt_dir: Path | None = None, **config_overrides,
 ) -> Configuration:
     """Centralized helper to build test configurations with the standard pattern.
 

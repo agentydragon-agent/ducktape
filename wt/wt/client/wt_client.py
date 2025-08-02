@@ -91,7 +91,7 @@ class WtClient:
                 loop = asyncio.get_event_loop()
                 handshake_data = await asyncio.wait_for(
                     loop.run_in_executor(None, self._read_handshake_from_pipe),
-                    timeout=self.config.startup_timeout.total_seconds()
+                    timeout=self.config.startup_timeout.total_seconds(),
                 )
                 
                 # Check protocol version
@@ -107,13 +107,11 @@ class WtClient:
                     if self._is_daemon_running():
                         logger.info("Daemon started successfully with handshake confirmation")
                         return
-                    else:
-                        logger.warning("Got successful handshake but daemon not accessible")
-                        raise RuntimeError("Daemon handshake successful but daemon not accessible")
-                else:
-                    # Daemon startup failed - show error to user
-                    error_message = handshake_data.get("error", "Unknown startup error")
-                    raise RuntimeError(f"Daemon startup failed:\n{error_message}")
+                    logger.warning("Got successful handshake but daemon not accessible")
+                    raise RuntimeError("Daemon handshake successful but daemon not accessible")
+                # Daemon startup failed - show error to user
+                error_message = handshake_data.get("error", "Unknown startup error")
+                raise RuntimeError(f"Daemon startup failed:\n{error_message}")
                     
             except asyncio.TimeoutError:
                 timeout_secs = self.config.startup_timeout.total_seconds()
@@ -212,7 +210,6 @@ class WtClient:
         - final    {success=True, ready=True, ...}
         or a single failure {success=False, error=...}
         """
-        import json
         
         if not hasattr(self, '_handshake_pipe'):
             raise RuntimeError("No handshake pipe available")

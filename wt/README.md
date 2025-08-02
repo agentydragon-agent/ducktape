@@ -22,7 +22,7 @@ A worktree management tool that makes switching between git worktrees feel like 
 ## Installation
 
 * Install the package: `pip install -e .`
-* Source `wt.sh` in your shell `.bashrc` / `.zshrc` / ...
+* Add the wt shell function in your shell init (e.g. `.bashrc` / `.zshrc`): `eval "$(python -m wt.shell.install)"`
 * Reload your shell / source the same dotfile.
 
 ## Usage
@@ -269,15 +269,19 @@ wt path main ./test.py            # /Users/you/code/repo/src/components/test.py
 
 ## Troubleshooting
 
-### Alias Not Working
+### Shell Function Not Working
 
-Ensure the alias is correctly added to `~/.zshrc` and you've reloaded your shell:
+Ensure the function is installed in your shell init and reload:
 
 ```bash
-# Check if alias exists
-alias wt
+# Check if function is defined
+type wt
 
-# Manually source if needed
+# Install into current shell session
+eval "$(python -m wt.shell.install)"
+
+# Add permanently to ~/.zshrc and reload
+echo 'eval "$(python -m wt.shell.install)"' >> ~/.zshrc
 source ~/.zshrc
 ```
 

@@ -1,8 +1,8 @@
 """Git repository factory to eliminate fixture duplication."""
 
-import pygit2
 from pathlib import Path
-from typing import List, Dict, Optional, Union
+
+import pygit2
 
 from .test_data import TestData
 
@@ -17,10 +17,10 @@ class GitRepoFactory:
     
     def create_repo(self, *,
                    name: str = "repo",
-                   branches: Optional[List[str]] = None,
+                   branches: list[str] | None = None,
                    commits_per_branch: int = 1,
-                   with_worktrees: Union[bool, List[str]] = False,
-                   initial_files: Optional[Dict[str, str]] = None) -> Path:
+                   with_worktrees: bool | list[str] = False,
+                   initial_files: dict[str, str] | None = None) -> Path:
         """Create a git repository with specified configuration.
         
         Args:
@@ -55,7 +55,7 @@ class GitRepoFactory:
         signature = TestData.Git.signature()
         tree = repo.index.write_tree()
         initial_commit = repo.create_commit(
-            "HEAD", signature, signature, TestData.Commits.INITIAL, tree, []
+            "HEAD", signature, signature, TestData.Commits.INITIAL, tree, [],
         )
         
         # Create additional branches if requested
@@ -69,7 +69,7 @@ class GitRepoFactory:
         return repo_path
     
     def _create_branches(self, repo: pygit2.Repository, repo_path: Path, 
-                        branches: List[str], commits_per_branch: int,
+                        branches: list[str], commits_per_branch: int,
                         signature: pygit2.Signature) -> None:
         """Create additional branches with commits."""
         main_commit = repo.head.target
@@ -97,15 +97,15 @@ class GitRepoFactory:
                 # Get parent commit
                 parent_commit = repo.head.target
                 repo.create_commit(
-                    "HEAD", signature, signature, commit_message, tree, [parent_commit]
+                    "HEAD", signature, signature, commit_message, tree, [parent_commit],
                 )
         
         # Switch back to main
         repo.checkout("refs/heads/main")
     
     def _create_worktrees(self, repo: pygit2.Repository, repo_path: Path,
-                         with_worktrees: Union[bool, List[str]], 
-                         branches: Optional[List[str]]) -> None:
+                         with_worktrees: bool | list[str], 
+                         branches: list[str] | None) -> None:
         """Create worktrees for branches."""
         if isinstance(with_worktrees, bool) and with_worktrees:
             # Create worktrees for all non-main branches
@@ -128,12 +128,12 @@ class GitRepoFactory:
                 # Use git command to create worktree (pygit2 doesn't support worktrees well)
                 import subprocess
                 subprocess.run([
-                    "git", "worktree", "add", str(worktree_path), branch_name
+                    "git", "worktree", "add", str(worktree_path), branch_name,
                 ], cwd=repo_path, check=True, capture_output=True)
             except subprocess.CalledProcessError:
                 # If branch doesn't exist, create it first
                 subprocess.run([
-                    "git", "worktree", "add", "-b", branch_name, str(worktree_path)
+                    "git", "worktree", "add", "-b", branch_name, str(worktree_path),
                 ], cwd=repo_path, check=True, capture_output=True)
 
 

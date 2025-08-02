@@ -2,7 +2,7 @@
 
 import ast
 import logging
-from typing import Callable
+from collections.abc import Callable
 
 from .context import PredicateContext
 

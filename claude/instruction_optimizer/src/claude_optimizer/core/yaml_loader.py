@@ -2,7 +2,7 @@
 
 import json
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import yaml
 from pydantic import BaseModel, field_validator
@@ -26,7 +26,7 @@ class TaskDataModel(BaseModel):
     docker_image: str
     git_repos: dict[str, Any]
     allowed_tools: list[str]
-    pre_task_setup_script: Optional[str] = None
+    pre_task_setup_script: str | None = None
 
     @field_validator("id")
     @classmethod
@@ -63,8 +63,8 @@ class YamlLoader:
     def __init__(self, seeds_yaml_path: Path, graders_yaml_path: Path):
         self.seeds_yaml_path = Path(seeds_yaml_path)
         self.graders_yaml_path = Path(graders_yaml_path)
-        self._seeds_data: Optional[list[dict]] = None
-        self._graders_data: Optional[list[dict]] = None
+        self._seeds_data: list[dict] | None = None
+        self._graders_data: list[dict] | None = None
 
     def _load_yaml_file(self, path: Path, file_type: str) -> Any:
         """Load and cache YAML file content."""
@@ -303,7 +303,7 @@ class YamlLoader:
         return {"graders_added": graders_added, "graders_updated": graders_updated}
 
     def get_active_seed_tasks(
-        self, session: Optional[Session] = None,
+        self, session: Session | None = None,
     ) -> list[SeedTask]:
         """Get all active seed tasks from database."""
         if session is None:
@@ -319,7 +319,7 @@ class YamlLoader:
                 session.close()
 
     def get_active_grading_criteria(
-        self, session: Optional[Session] = None,
+        self, session: Session | None = None,
     ) -> list[GradingCriteria]:
         """Get all active grading criteria from database."""
         if session is None:

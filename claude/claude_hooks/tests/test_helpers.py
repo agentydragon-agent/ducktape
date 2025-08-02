@@ -1,10 +1,10 @@
 """Shared test helpers for Claude Code hook input parsing tests."""
 
-from importlib import resources
 import json
+import uuid
+from importlib import resources
 from pathlib import Path
 from typing import Any
-import uuid
 
 from claude_hooks.inputs import PostToolInput
 
@@ -36,7 +36,7 @@ def create_test_session_id(test_name: str) -> uuid.UUID:
 
 
 def assert_tool_input_parsing(
-    raw_json: dict[str, Any], expected_tool_input: Any, description: str = ""
+    raw_json: dict[str, Any], expected_tool_input: Any, description: str = "",
 ) -> None:
     """Test that a raw JSON input parses correctly to expected tool input.
 
@@ -72,7 +72,7 @@ def assert_tool_input_parsing(
 
 
 def load_and_test_tool_scenario(
-    tool_name: str, scenario: str, expected_tool_input: Any, description: str = ""
+    tool_name: str, scenario: str, expected_tool_input: Any, description: str = "",
 ) -> None:
     """Load test JSON and verify it parses to expected tool input.
 

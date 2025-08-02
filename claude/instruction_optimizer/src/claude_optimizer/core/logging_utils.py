@@ -3,7 +3,7 @@
 import logging
 import sys
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import structlog
 
@@ -108,7 +108,7 @@ class DualOutputLogging:
         root_logger.addHandler(file_handler)
     
     @staticmethod
-    def get_logger(name: Optional[str] = None) -> Any:
+    def get_logger(name: str | None = None) -> Any:
         """Get a structured logger instance.
         
         Args:

@@ -2,6 +2,7 @@
 
 import logging
 import re
+import subprocess
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -250,17 +251,12 @@ class GitManager:
         branch_ref = self._main_repo.lookup_branch(branch)
         if branch_ref is None:
             raise CannotCreateWorktree(f"Branch {branch} does not exist")
-        import subprocess
+        from ..shared.git_utils import git_run
         try:
-            subprocess.run(
-                ["git", "worktree", "add", "--no-checkout", str(path), branch],
-                cwd=str(self.config.main_repo),
-                check=True,
-                capture_output=True,
-            )
+            git_run(["worktree", "add", "--no-checkout", str(path), branch], cwd=self.config.main_repo)
         except subprocess.CalledProcessError as e:
             raise CannotCreateWorktree(
-                f"git worktree add failed: {e.stderr.decode(errors='replace').strip()}"
+                f"git worktree add failed: {e.stderr.decode(errors='replace').strip()}",
             ) from e
 
     def worktree_remove(self, path: str, force: bool = False) -> None:

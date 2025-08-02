@@ -1,6 +1,6 @@
 """Message formatting utilities for structured logging."""
 
-from typing import Any, Union
+from typing import Any
 
 from claude_code_sdk import (
     AssistantMessage,
@@ -118,7 +118,7 @@ def log_result_message(logger: Any, message: ResultMessage) -> None:
 
 
 def log_message_summary(
-    message: Union[SystemMessage, AssistantMessage, UserMessage, ResultMessage],
+    message: SystemMessage | AssistantMessage | UserMessage | ResultMessage,
     logger: Any,
     agent_id: int,
 ) -> None:
@@ -157,7 +157,7 @@ class MessageLogger:
 
     def log_summary(
         self,
-        message: Union[SystemMessage, AssistantMessage, UserMessage, ResultMessage],
+        message: SystemMessage | AssistantMessage | UserMessage | ResultMessage,
         agent_id: int,
     ) -> None:
         log_message_summary(message, self.logger, agent_id)

@@ -1,7 +1,6 @@
 """Configuration management for the Claude instruction optimizer."""
 
 from pathlib import Path
-from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -83,7 +82,7 @@ class ExternalImageConfig(BaseModel):
     add_claude: bool = Field(
         default=True, description="Whether to layer Claude Code on top of this image",
     )
-    platform: Optional[str] = Field(
+    platform: str | None = Field(
         default=None, description="Docker platform (e.g., 'linux/amd64', 'linux/arm64')",
     )
 

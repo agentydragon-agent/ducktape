@@ -7,7 +7,7 @@ each requirement to specify only its unique characteristics.
 """
 
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 
 from .generic_graders import BehavioralRequirement
 
@@ -22,7 +22,7 @@ class RequirementSpec:
     problematic_patterns: list[str]
     good_patterns: list[str]
     problem_fields: dict[str, Any]  # field_name -> schema definition (can be string or dict)
-    extra_response_fields: Optional[dict[str, Any]] = None  # Additional schema fields
+    extra_response_fields: dict[str, Any] | None = None  # Additional schema fields
 
 
 def create_behavioral_requirement(spec: RequirementSpec) -> BehavioralRequirement:

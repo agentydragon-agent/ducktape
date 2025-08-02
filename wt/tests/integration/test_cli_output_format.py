@@ -1,15 +1,13 @@
 """Integration tests that verify actual CLI output formatting."""
 
 from datetime import datetime
-from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 import pytest
 from click.testing import CliRunner
 
 from wt.cli import main
-from wt.shared.protocol import StatusResult, StatusResponse, WorktreeID, CommitInfo
-from wt.shared.github_models import PRData, PRInfo, PRState
+from wt.shared.protocol import CommitInfo, StatusResponse, StatusResult, WorktreeID
 
 
 def create_test_status_response(results_dict=None):
@@ -118,7 +116,7 @@ class TestCLIOutputFormat:
 
     @patch("wt.client.wt_client.WtClient.get_status")
     def test_list_worktrees_with_data(
-        self, mock_get_status, cli_runner_with_env
+        self, mock_get_status, cli_runner_with_env,
     ):
         """Test ls command with actual worktree data."""
         # Create test results
@@ -156,7 +154,6 @@ class TestCLIOutputFormat:
     def test_help_command(self, cli_runner_with_env, monkeypatch, cli_test_env):
         """Test help command works with new CLI."""
         monkeypatch.setenv("WT_DIR", str(cli_test_env))
-        from click.testing import CliRunner
         result = CliRunner().invoke(main, ["sh", "help"])
 
         assert result.exit_code == 0
@@ -166,7 +163,6 @@ class TestCLIOutputFormat:
     def test_help_flag(self, cli_runner_with_env, monkeypatch, cli_test_env):
         """Test --help flag works with new CLI."""
         monkeypatch.setenv("WT_DIR", str(cli_test_env))
-        from click.testing import CliRunner
         result = CliRunner().invoke(main, ["sh", "--help"])
 
         assert result.exit_code == 0

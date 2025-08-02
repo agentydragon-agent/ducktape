@@ -4,7 +4,7 @@ import json
 import statistics
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import pandas as pd
 import tiktoken
@@ -15,7 +15,7 @@ logger = DualOutputLogging.get_logger()
 
 
 def create_plot_data_point(
-    iter_data: dict[str, Any], facet_name: str
+    iter_data: dict[str, Any], facet_name: str,
 ) -> dict[str, Any]:
     """Create a plot data point for a given iteration and facet."""
     if facet_name == "overall":
@@ -213,7 +213,7 @@ class ScoreEvolutionPlotter:
             + geom_line(size=1, color="steelblue")
             + geom_point(size=2, color="steelblue")
             + geom_errorbar(
-                aes(ymin="ci_lower", ymax="ci_upper"), width=0.1, color="steelblue"
+                aes(ymin="ci_lower", ymax="ci_upper"), width=0.1, color="steelblue",
             )
             + facet_wrap("facet", scales="free_y", ncol=3)
             + theme_minimal()
@@ -242,7 +242,7 @@ class ScoreEvolutionReporter:
         self,
         run_dir: Path,
         log_path: Path,
-        plot_paths: Optional[tuple[Path, Path]] = None,
+        plot_paths: tuple[Path, Path] | None = None,
     ) -> str:
         """Generate final score evolution report."""
         if not self.iterations_data:
@@ -288,7 +288,7 @@ class ScoreEvolutionReporter:
                     "Score evolution plots saved to:",
                     f"  - Combined: {combined_path}",
                     f"  - Faceted: {faceted_path}",
-                ]
+                ],
             )
 
         report_parts.append("=" * 50)
@@ -367,7 +367,7 @@ def analyze_rollout_logs(log_path: Path) -> dict[str, Any]:
             except json.JSONDecodeError as e:
                 skipped_lines += 1
                 logger.warning(
-                    "Skipped malformed JSON line", line_num=line_num, error=str(e)
+                    "Skipped malformed JSON line", line_num=line_num, error=str(e),
                 )
                 continue
 
@@ -406,7 +406,7 @@ def analyze_rollout_logs(log_path: Path) -> dict[str, Any]:
                 "total_tokens": total_tokens,
                 "task_id": rollout.get("agent_id", "unknown"),
                 "iteration": rollout.get("iteration", 1),
-            }
+            },
         )
 
     # Create DataFrame for efficient statistics computation
@@ -430,7 +430,7 @@ def analyze_rollout_logs(log_path: Path) -> dict[str, Any]:
 
 
 def analyze_rollout_capacity(
-    log_path: Path, context_limit: int = 200000
+    log_path: Path, context_limit: int = 200000,
 ) -> dict[str, Any]:
     """Analyze rollout logs and estimate context capacity."""
     stats = analyze_rollout_logs(log_path)
@@ -462,7 +462,7 @@ def analyze_rollout_capacity(
 
 
 def print_rollout_analysis_report(
-    log_path: Path, context_limits: Optional[list[int]] = None
+    log_path: Path, context_limits: list[int] | None = None,
 ) -> None:
     """Print comprehensive rollout analysis report."""
     if context_limits is None:
@@ -485,17 +485,17 @@ def print_rollout_analysis_report(
         f"  Total tokens - Min: {stats['token_stats']['total_tokens']['min']:,}, "
         f"Max: {stats['token_stats']['total_tokens']['max']:,}, "
         f"Avg: {stats['token_stats']['total_tokens']['avg']:,.0f}, "
-        f"Median: {stats['token_stats']['total_tokens']['median']:,.0f}"
+        f"Median: {stats['token_stats']['total_tokens']['median']:,.0f}",
     )
     print(
         f"  Code tokens - Min: {stats['token_stats']['code_tokens']['min']:,}, "
         f"Max: {stats['token_stats']['code_tokens']['max']:,}, "
-        f"Avg: {stats['token_stats']['code_tokens']['avg']:,.0f}"
+        f"Avg: {stats['token_stats']['code_tokens']['avg']:,.0f}",
     )
     print(
         f"  Messages tokens - Min: {stats['token_stats']['messages_tokens']['min']:,}, "
         f"Max: {stats['token_stats']['messages_tokens']['max']:,}, "
-        f"Avg: {stats['token_stats']['messages_tokens']['avg']:,.0f}"
+        f"Avg: {stats['token_stats']['messages_tokens']['avg']:,.0f}",
     )
     print()
 
@@ -506,13 +506,13 @@ def print_rollout_analysis_report(
         print(f"  Usable context: {capacity['usable_context']:,} tokens")
         print("  Estimated capacity:")
         print(
-            f"    By average rollout size: {capacity['estimated_capacity']['by_average']} rollouts"
+            f"    By average rollout size: {capacity['estimated_capacity']['by_average']} rollouts",
         )
         print(
-            f"    By median rollout size: {capacity['estimated_capacity']['by_median']} rollouts"
+            f"    By median rollout size: {capacity['estimated_capacity']['by_median']} rollouts",
         )
         print(
-            f"    Conservative (max size): {capacity['estimated_capacity']['conservative_max']} rollouts"
+            f"    Conservative (max size): {capacity['estimated_capacity']['conservative_max']} rollouts",
         )
         print()
 

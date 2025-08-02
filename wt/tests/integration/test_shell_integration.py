@@ -1,7 +1,7 @@
 """
 Integration tests for shell function interaction with the CLI.
 
-Tests the actual wt.sh that users interact with, including fd3 redirection,
+Tests the shell function installed via python -m wt.shell.install that users interact with, including fd3 redirection,
 exit code semantics, and process boundary interactions.
 """
 
@@ -19,14 +19,11 @@ import os
 import subprocess
 import tempfile
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
-
 # Global constants for paths
 PROJECT_ROOT = Path(__file__).parent.parent.parent
-WT_FUNCTION_PATH = PROJECT_ROOT / "wt.sh"
 
 
 def create_shell_script(wt_args: list[str]) -> str:
@@ -45,16 +42,26 @@ def run_shell_script(script_content: str, cwd: str, env: dict = None) -> subproc
     # Use provided environment or create a new one
     if env is None:
         env = os.environ.copy()
-        
-        # Assume package is properly installed and importable
     else:
-        # Make a copy to avoid modifying the original
         env = env.copy()
+    # Ensure local wt package importable for python -m wt.cli
+    from pathlib import Path as _P
+    project_root = str(_P(__file__).resolve().parents[2])
+    env["PYTHONPATH"] = f"{project_root}:{env.get('PYTHONPATH','')}"
 
-    # Create script with wt function setup and hashbang
+    # Create script with wt function setup using builtin installer
+    import contextlib
+    import io
+
+    from wt.shell.install import main as emit_function
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        emit_function()
+    wt_fn = buf.getvalue()
+
     full_script = f"""#!/bin/bash
-# Set up wt shell function
-source {WT_FUNCTION_PATH}
+# Install wt function via builtin
+{wt_fn}
 
 # Original script content
 {script_content}
@@ -73,7 +80,7 @@ source {WT_FUNCTION_PATH}
             capture_output=True,
             text=True,
             cwd=cwd,
-            env=env,
+            env=env, check=False,
         )
         return result
 
@@ -107,10 +114,6 @@ class TestShellIntegration:
 
     def test_shell_script_execution_basic(self, test_config):
         """Test that shell script can execute basic wt commands."""
-        # Basic test that the shell function exists and can be sourced
-        if not WT_FUNCTION_PATH.exists():
-            pytest.fail(f"wt.sh not found at {WT_FUNCTION_PATH}")
-            
         test_script = """# Test that wt function is available
 type wt
 echo "Shell function loaded successfully"
@@ -125,6 +128,7 @@ echo "Shell function loaded successfully"
     def test_successful_teleport_with_pwd_verification(self, real_temp_repo, real_env):
         """Test that wt teleport actually changes directory using pwd verification."""
         from contextlib import contextmanager
+
         from ..conftest import kill_daemon_and_verify
         
         @contextmanager
@@ -151,7 +155,7 @@ echo "Shell function loaded successfully"
                 'create_exit': int(parts[0]),
                 'nav_exit': int(parts[1]), 
                 'pwd_before': parts[2],
-                'pwd_after': parts[3]
+                'pwd_after': parts[3],
             }
 
         # Main test logic
@@ -191,6 +195,7 @@ echo "$create_exit:$nav_exit:$pwd_before:$pwd_after"
 
     def test_wt_main_changes_directory(self, real_temp_repo, real_env):
         from contextlib import contextmanager
+
         from ..conftest import kill_daemon_and_verify
         
         @contextmanager

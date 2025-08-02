@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import importlib.metadata as md
+from collections.abc import Callable
+
 import pluggy
-from typing import Callable
 
 PROJECT_NAME = "wt"
 ENTRYPOINT_GROUP = "wt.plugins"

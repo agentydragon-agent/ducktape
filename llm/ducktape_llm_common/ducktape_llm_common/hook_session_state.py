@@ -51,29 +51,29 @@ class StatefulHookMixin:
                 self.state.tool_calls += 1
                 return PreToolApprove()
     """
-    
+
     hook_name: str
     StateModel: type[StateModel]
-    
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         if not hasattr(self, "hook_name"):
             raise ValueError("StatefulHookMixin requires 'hook_name' class attribute")
         if not hasattr(self, "StateModel"):
             raise ValueError("StatefulHookMixin requires 'StateModel' class attribute")
-        
+
         self.state: StateModel = None
         self._current_session: SessionID = None
-    
+
     def _get_state_file(self, session_id: SessionID) -> Path:
         """Get the state file path for a session."""
         session_dir = get_session_dir(self.hook_name, session_id)
         return session_dir / "state.json"
-    
+
     def _load_state(self, session_id: SessionID) -> None:
         """Load state from file or create new instance."""
         state_file = self._get_state_file(session_id)
-        
+
         if state_file.exists():
             try:
                 self.state = self.StateModel.model_validate_json(state_file.read_text())
@@ -82,21 +82,21 @@ class StatefulHookMixin:
             except Exception:
                 # If corrupted, start fresh
                 pass
-        
+
         self.state = self.StateModel()
         self._current_session = session_id
-    
+
     def _save_state(self) -> None:
         """Save current state to file."""
         if self.state is not None and self._current_session is not None:
             state_file = self._get_state_file(self._current_session)
             state_file.write_text(self.state.model_dump_json(indent=2))
-    
+
     def dispatch_hook(self, request) -> any:
         """Override dispatch to load state before hook execution."""
         self._load_state(request.session_id)
         return super().dispatch_hook(request)
-    
+
     def __del__(self):
         """Auto-save state on destruction."""
         try:

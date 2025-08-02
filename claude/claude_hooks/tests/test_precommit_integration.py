@@ -5,7 +5,6 @@ from unittest.mock import patch
 from uuid import UUID
 
 import pytest
-
 from claude_hooks.actions import PostToolContinue, PostToolFeedbackToClaude
 from claude_hooks.inputs import HookContext, PostToolInput
 from claude_hooks.precommit_autofix import PreCommitAutoFixerHook

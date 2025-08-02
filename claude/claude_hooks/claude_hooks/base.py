@@ -1,14 +1,14 @@
 """Base hook framework with JSON I/O handling."""
 
-from abc import ABC, abstractmethod
 import json
 import logging
-from pathlib import Path
 import sys
+from abc import ABC, abstractmethod
+from pathlib import Path
 from typing import Any, Generic, TypeVar
 
-from platformdirs import user_config_dir, user_state_dir
 import yaml
+from platformdirs import user_config_dir, user_state_dir
 
 from claude_hooks.actions import (
     HookAction,
@@ -90,12 +90,11 @@ class HookBase(ABC, Generic[InputT, OutputT]):
             def truncate_strings(obj, maxlen=100):
                 if isinstance(obj, str):
                     return obj[:maxlen] + "..." if len(obj) > maxlen else obj
-                elif isinstance(obj, dict):
+                if isinstance(obj, dict):
                     return {k: truncate_strings(v, maxlen) for k, v in obj.items()}
-                elif isinstance(obj, list):
+                if isinstance(obj, list):
                     return [truncate_strings(item, maxlen) for item in obj]
-                else:
-                    return obj
+                return obj
 
             truncated_data = truncate_strings(input_data, 100)
             self.logger.info(f"Parsed JSON: {json.dumps(truncated_data, indent=2)}")

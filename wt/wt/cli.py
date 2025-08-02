@@ -15,7 +15,7 @@ from .client.handlers import (
 )
 from .client.view_formatter import ViewFormatter
 from .client.wt_client import WtClient
-from .plugins import get_manager, resolve_command, get_plugin_commands, PluginIO
+from .plugins import PluginIO, get_manager, resolve_command
 from .shared.configuration import load_config
 from .shared.constants import MAIN_REPO_ALIASES
 

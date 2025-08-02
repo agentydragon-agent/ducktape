@@ -2,13 +2,16 @@
 
 from pathlib import Path
 
-from hamcrest import assert_that, contains_string
 import pytest
-
 from claude_hooks.actions import PostToolFeedbackToClaude
 from claude_hooks.config import AutofixerConfig
-from claude_hooks.precommit_autofix import NoChanges, PreCommitAutoFixerHook, extract_file_path
+from claude_hooks.precommit_autofix import (
+    NoChanges,
+    PreCommitAutoFixerHook,
+    extract_file_path,
+)
 from claude_hooks.tool_models import EditInput, WriteInput
+from hamcrest import assert_that, contains_string
 
 
 @pytest.mark.parametrize(
@@ -66,7 +69,7 @@ class TestPreCommitAutoFixerHook:
         test_file = integration_env.write_file("test_file.py", "print('foo world')")
 
         changes_made = autofixer_hook._run_precommit_autofix(
-            test_file, integration_env.create_context()
+            test_file, integration_env.create_context(),
         )
         final_content = integration_env.read_file("test_file.py")
 
@@ -135,7 +138,7 @@ class TestPreCommitAutoFixerHook:
     def test_execute_precommit_failure(self, autofixer_hook, integration_env):
         # Test error handling by using a file that doesn't exist
         hook_input = integration_env.build_post_tool_edit_input(
-            "/nonexistent/path/test.py", "old", "new"
+            "/nonexistent/path/test.py", "old", "new",
         )
 
         # The hook should catch exceptions and continue gracefully

@@ -31,33 +31,33 @@ class EarlyBailoutVisitor(ast.NodeVisitor):
         self.current_function: ast.FunctionDef | ast.AsyncFunctionDef | None = None
         self.loop_depth = 0
 
-    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:  # noqa: N802
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
         """Track current function context."""
         old_function = self.current_function
         self.current_function = node
         self.generic_visit(node)
         self.current_function = old_function
 
-    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:  # noqa: N802
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
         """Track current async function context."""
         old_function = self.current_function
         self.current_function = node
         self.generic_visit(node)
         self.current_function = old_function
 
-    def visit_For(self, node: ast.For) -> None:  # noqa: N802
+    def visit_For(self, node: ast.For) -> None:
         """Track loop depth."""
         self.loop_depth += 1
         self.generic_visit(node)
         self.loop_depth -= 1
 
-    def visit_While(self, node: ast.While) -> None:  # noqa: N802
+    def visit_While(self, node: ast.While) -> None:
         """Track loop depth."""
         self.loop_depth += 1
         self.generic_visit(node)
         self.loop_depth -= 1
 
-    def visit_If(self, node: ast.If) -> None:  # noqa: N802
+    def visit_If(self, node: ast.If) -> None:
         """Check if statements for early bailout opportunities."""
         # Check if this if has an else clause
         if node.orelse:

@@ -176,6 +176,20 @@ class ViewFormatter:
             return f"+{pr['additions']}/-{pr['deletions']}"
         return ""
 
+    def render_top_status_bar(self, status_response) -> None:
+        summary = getattr(status_response, "readiness_summary", None)
+        components = getattr(status_response, "components", None)
+        if not summary and not components:
+            return
+        discovery = "⟳" if (summary and summary.discovery_scanning) else "✓"
+        github_state = "ok"
+        if components and components.github:
+            github_state = components.github.state.value if hasattr(components.github.state, "value") else str(components.github.state)
+        elif summary:
+            github_state = summary.github.value if hasattr(summary.github, "value") else str(summary.github)
+        x_of_y = f"{summary.with_gitstatusd}/{summary.total_worktrees}" if summary else "-/-"
+        click.echo(f"{discovery} discovery | gitstatusd {x_of_y} | github {github_state}")
+
     def render_worktree_status_all(self, sorted_items: list[tuple[str, StatusResult]]) -> None:
         if not sorted_items:
             click.echo("🤷 No worktrees found")
@@ -184,12 +198,12 @@ class ViewFormatter:
         # Build table data
         table_data = []
         for name, status in sorted_items:
-            # Build PR info as a single combined column if it exists
             pr_info = ""
             pr_link = self._get_pr_link_column(status)
             pr_status = self._get_pr_status_column(status) 
             pr_changes = self._get_pr_changes_column(status)
-            
+            state_map = {"running": "▶", "restarting": "↻", "failed": "✖", "stopped": "✖", "starting": "…"}
+            state = state_map.get(status.gitstatusd_state or "", "")
             if pr_link:
                 pr_parts = [pr_link]
                 if pr_status:
@@ -202,6 +216,7 @@ class ViewFormatter:
                 name,
                 self._get_commit_column(status),
                 self._get_work_status_column(status),
+                state,
                 pr_info,
             ])
 
