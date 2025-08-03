@@ -44,34 +44,43 @@ import signal
 import sys
 from dataclasses import asdict, dataclass
 from datetime import datetime
-from enum import Enum
 from pathlib import Path
-from typing import Any
 
-import tiktoken
 from claude_code_sdk import ResultMessage
 from openai import OpenAI
-from openai.types.responses.response import Response
-from openai.types.responses.response_function_tool_call import ResponseFunctionToolCall
-from openai.types.responses.response_function_tool_call_item import (
-    ResponseFunctionToolCallItem,
-)
-from openai.types.responses.response_output_message import ResponseOutputMessage
-from openai.types.responses.response_output_text import ResponseOutputText
-from openai.types.responses.response_reasoning_item import ResponseReasoningItem
-from pydantic import BaseModel
 
 from claude_optimizer.config import OptimizerConfig
 from claude_optimizer.core.containerized_claude import task_claude
+from claude_optimizer.core.file_ops import should_exclude_file
+from claude_optimizer.core.grader import grade_code
 from claude_optimizer.core.jsonl_logger import JSONLLogger, safe_serialize
+from claude_optimizer.core.logging_openai_client import (
+    LoggingOpenAIClient,
+    LoggingOpenAIModel,
+)
 from claude_optimizer.core.logging_utils import DualOutputLogging
 from claude_optimizer.core.message_formatter import log_message_summary
-from claude_optimizer.core.truncation_utils import (
-    TruncationManager,
-    extract_text_from_openai_response,
+from claude_optimizer.core.models import CodeResult, Criterion, GradedCode, SeedTask
+from claude_optimizer.core.prompt_engineer import (
+    FeedbackMode,
+    FullRolloutsFeedbackProvider,
+    PromptEngineer,
+    StatsOnlyFeedbackProvider,
 )
+from claude_optimizer.core.summarizer import PatternSummarizer
+from claude_optimizer.core.truncation_utils import TruncationManager
 from claude_optimizer.core.yaml_loader import load_yaml_files
-from claude_optimizer.database.database_service import db_service
+from sqlalchemy.orm import Session
+from claude_optimizer.database.database_service import (
+    init_db,
+    create_optimization_run,
+    get_active_grading_criteria,
+    create_rollout,
+    store_rollout_files,
+    store_grading_results,
+    complete_optimization_run,
+    log_rollout_message,
+)
 from claude_optimizer.database.models import create_database
 from claude_optimizer.plots import ScoreEvolutionTracker
 
@@ -82,14 +91,15 @@ logger = DualOutputLogging.get_logger()
 # Global trackers
 score_tracker = ScoreEvolutionTracker()
 
+
 # Global cost tracking
+@dataclass
 class CostTracker:
     """Tracks total costs across all coding agent rollouts."""
-    
-    def __init__(self):
-        self.total_cost_usd = 0.0
-        self.rollout_count = 0
-    
+
+    total_cost_usd = 0.0
+    rollout_count = 0
+
     def add_rollout_cost(self, cost_usd: float):
         """Add cost from a completed rollout."""
         self.total_cost_usd += cost_usd
@@ -100,7 +110,7 @@ class CostTracker:
             total_cost_usd=self.total_cost_usd,
             rollout_count=self.rollout_count,
         )
-    
+
     def report_final_cost(self):
         """Report final cost summary."""
         logger.info(
@@ -110,178 +120,21 @@ class CostTracker:
             avg_cost_per_rollout_usd=self.total_cost_usd / max(1, self.rollout_count),
         )
 
+
 # Global cost tracker instance
 cost_tracker = CostTracker()
 
+
 def setup_signal_handlers():
     """Setup signal handlers for graceful cost reporting on interruption."""
-    
+
     def signal_handler(signum, frame):
         logger.info("Interrupt received, reporting costs before exit", signal=signum)
         cost_tracker.report_final_cost()
         sys.exit(1)
-    
+
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
-
-# Load configuration
-config = OptimizerConfig.from_file()
-
-# Initialize truncation manager
-truncation_manager = TruncationManager(config)
-
-
-class ProcessingMode(Enum):
-    """Processing mode for prompt optimization."""
-
-    FULL_ROLLOUTS = "full_rollouts"
-    SUMMARY = "summary"
-    STATS_ONLY = "stats_only"
-
-
-class PatternSummarizer:
-    """Analyzes rollout patterns and produces insights for prompt engineering."""
-
-    _SYSTEM_MESSAGE = (
-        "You are a pattern analysis expert. Your job is to analyze multiple coding task rollouts with their grades and identify key patterns, trends, and insights.\n\n"
-        "Given rollout results, you should:\n"
-        '1. Identify common failure patterns across tasks (e.g., "broad exception handling appears in 8/10 rollouts")\n'
-        '2. Spot recurring code quality issues (e.g., "missing type hints in 70% of solutions")\n'
-        '3. Note architectural trends (e.g., "agents consistently choose async approaches for API tasks")\n'
-        '4. Highlight grading patterns (e.g., "defensive programming scores consistently low due to exception swallowing")\n'
-        '5. Extract actionable insights for prompt improvement (e.g., "current prompt doesn\'t emphasize specific exception handling")\n\n'
-        "Output a concise summary focusing on the most impactful patterns that would help a prompt engineer improve the system prompt. Prioritize patterns that appear across multiple tasks and have clear connections to prompt weaknesses."
-    )
-    
-    def __init__(self, openai_log: JSONLLogger):
-        self.openai_log = openai_log
-    
-    def _count_tokens(self, text: str) -> int:
-        """Count tokens in text using tiktoken."""
-        return truncation_manager.count_tokens(text)
-
-    async def summarize_patterns(self, rollout_results: list[GradedCode]) -> str:
-        """Analyze rollout patterns and produce summary for PromptEngineer.
-
-        Args:
-            rollout_results: List of GradedCode objects from rollouts
-
-        Returns:
-            Condensed pattern analysis summary
-        """
-        # Build analysis prompt with rollout data, with truncation
-        rollout_summaries = []
-        original_count = len(rollout_results)
-        
-        system_tokens = self._count_tokens(self._SYSTEM_MESSAGE)
-        header_text = f"Analyze these {len(rollout_results)} coding task rollouts and identify key patterns for prompt improvement:\n\n"
-        remaining_tokens = config.tokens.max_context_tokens - system_tokens - self._count_tokens(header_text)
-        
-        logger.info(
-            "Pattern analysis context management",
-            original_rollouts=original_count,
-            system_tokens=system_tokens,
-            remaining_tokens=remaining_tokens,
-            max_input_tokens=config.tokens.max_context_tokens,
-            reserved_response_tokens=config.tokens.max_response_tokens,
-            reserved_reasoning_tokens=config.tokens.reasoning_buffer_tokens,
-            total_window=config.tokens.max_context_tokens + config.tokens.max_response_tokens + config.tokens.reasoning_buffer_tokens,
-        )
-        
-        for i, graded_code in enumerate(rollout_results):
-            task_summary = f"Task {i+1}:\n"
-            task_summary += f"  Overall Score: {graded_code.grade.overall_score}/10\n"
-            task_summary += f"  Key Issues: {graded_code.grade.overall_rationale}\n"
-
-            # Add facet breakdown with scores and rationales
-            facet_details = []
-            for facet_name, score_with_rationale in graded_code.grade.axes.items():
-                facet_details.append(
-                    f"\n    {facet_name}: {score_with_rationale.score}/10 - {score_with_rationale.rationale}",
-                )
-            task_summary += f"  Facets:{''.join(facet_details)}\n"
-
-            # Add truncated file information
-            truncated_files = truncation_manager.truncate_file_content_by_size(
-                graded_code.code_result.files,
-                config.truncation.max_file_size_pattern_analysis,
-                "pattern analysis",
-            )
-            task_summary += (
-                f"  Files: {json.dumps(truncated_files, indent=2)}\n"
-            )
-
-            # Check if adding this summary would exceed context limit
-            potential_tokens = self._count_tokens("\n".join([*rollout_summaries, task_summary]))
-            if potential_tokens > remaining_tokens:
-                removed_count = original_count - len(rollout_summaries)
-                logger.warning(
-                    "PATTERN ANALYSIS TRUNCATION WARNING",
-                    removed_rollouts=removed_count,
-                    kept_rollouts=len(rollout_summaries),
-                    would_be_tokens=potential_tokens,
-                    max_tokens=remaining_tokens,
-                )
-                break
-                
-            rollout_summaries.append(task_summary)
-
-        analysis_prompt = header_text + "\n".join(rollout_summaries)
-        
-        final_tokens = self._count_tokens(analysis_prompt) + system_tokens 
-        logger.info(
-            "Pattern analysis prompt prepared",
-            final_tokens=final_tokens,
-            included_rollouts=len(rollout_summaries),
-            excluded_rollouts=original_count - len(rollout_summaries),
-            context_utilization=f"{(final_tokens/config.tokens.max_context_tokens)*100:.1f}%",
-        )
-
-        # Make OpenAI API call for pattern analysis
-        client = OpenAI()
-        openai_request = create_openai_request(
-            config.grader.model,
-            [
-                {"role": "system", "content": self._SYSTEM_MESSAGE},
-                {"role": "user", "content": analysis_prompt},
-            ],
-            tools=[],
-            tool_choice="auto",
-        )
-
-        response = client.responses.create(**openai_request)
-        self.openai_log.log(request=openai_request, response=safe_serialize(response))
-
-        # Extract pattern summary from response
-        pattern_summary = extract_text_from_openai_response(response)
-        
-        # Log the pattern summary with a distinctive tag for easy grepping
-        logger.info(
-            "PATTERN_ANALYSIS_SUMMARY",
-            summary_text=pattern_summary,
-            rollout_count=len(rollout_results),
-            avg_score=sum(r.grade.overall_score for r in rollout_results) / len(rollout_results) if rollout_results else 0,
-        )
-        
-        return pattern_summary
-
-
-class SeedTask(BaseModel):
-    id: str
-    prompt: str
-
-
-class Criterion(BaseModel):
-    name: str
-    description: str
-    evaluation_criteria: str
-
-
-class ScoreWithRationale(BaseModel):
-    """Represents a score with its accompanying rationale."""
-
-    score: float
-    rationale: str
 
 
 # -----------------------------------------------------------------------------
@@ -289,218 +142,164 @@ class ScoreWithRationale(BaseModel):
 # -----------------------------------------------------------------------------
 
 
-def create_openai_request(
-    model: str,
-    input_data: list[dict[str, Any]],
-    tools: list[dict[str, Any]],
-    tool_choice: dict[str, Any],
-    reasoning_effort: str | None = None,
-) -> dict[str, Any]:
-    """Create standardized OpenAI request dictionary."""
-    if reasoning_effort is None:
-        reasoning_effort = config.grader.reasoning_effort
-    request = {
-        "model": model,
-        "input": input_data,
-        "tools": tools,
-        "tool_choice": tool_choice,
-    }
-    if reasoning_effort:
-        request["reasoning"] = {"effort": reasoning_effort}
-    return request
-
-
-
-
-# Note: JSONL logging now handled by JSONLLogger class
-
-
-class CodeResult(BaseModel):
-    """Represents the outcome of running a coding agent on a programming task.
-
-    A CodeResult contains only the essential metadata for an agent rollout: the
-    task description, the agent identifier, the generated source code files, and a
-    timestamp.  It deliberately omits any rationale, since explanations belong
-    to the grading step rather than the code generation step.
-    """
-
-    task: str
-    task_id: str  # Task identifier from database
-    agent_id: int
-    timestamp: str
-    messages: list[dict[str, Any]]  # Serialized Claude SDK messages via asdict()
-    files: list[dict[str, str]]
-
-
-class Grade(BaseModel):
-    """Represents the grading information for a piece of code.
-
-    A Grade stores a mapping from criterion keys to score/rationale pairs,
-    as well as an overall score and rationale.  This structure allows for a
-    variable number of grading axes defined by the user via the Criterion
-    list.  The overall score is provided by the grader and should reflect
-    holistic quality, not a simple average of axis scores.
-    """
-
-    task: str
-    task_id: str  # Task identifier from database
-    agent_id: int
-    axes: dict[str, ScoreWithRationale]
-    overall_score: float
-    overall_rationale: str
-    timestamp: str
-
-
-class GradedCode(BaseModel):
-    """Combines CodeResult with its Grade for unified handling."""
-
-    code_result: CodeResult
-    grade: Grade
-
-
-
-
-def gather_agent_files(work_dir: Path) -> list[dict[str, str]]:
+def gather_agent_files(
+    work_dir: Path,
+    cfg: OptimizerConfig,
+    trunc_mgr: TruncationManager | None = None,
+) -> list[dict[str, str]]:
     """Gather all relevant files from agent working directory.
-    
+
     Args:
         work_dir: The agent's working directory
-        
+
     Returns:
         List of dicts with 'path' and 'content' keys for each file
     """
     files_info: list[dict[str, str]] = []
-    
+    t_mgr = trunc_mgr or TruncationManager(cfg)
+
     for file_path in work_dir.rglob("*"):
         if not file_path.is_file():
             continue
 
-        # Check if file matches any exclusion pattern
         relative_path = file_path.relative_to(work_dir).as_posix()
-        if any(fnmatch.fnmatch(relative_path, pattern) or fnmatch.fnmatch(file_path.name, pattern) 
-               for pattern in config.exclude_patterns):
+        if any(
+            fnmatch.fnmatch(relative_path, pattern)
+            or fnmatch.fnmatch(file_path.name, pattern)
+            for pattern in cfg.exclude_patterns
+        ):
             continue
 
         relative = file_path.relative_to(work_dir).as_posix()
-        
-        # Use unified truncation for file reading
-        content = truncation_manager.truncate_file_by_bytes(
-            file_path, 
-            config.truncation.max_file_size_grading,
+        content = t_mgr.truncate_file_by_bytes(
+            file_path,
+            cfg.truncation.max_file_size_grading,
         )
-        
+
         files_info.append({"path": relative, "content": content})
-    
-    # Apply centralized token-based truncation to stay under OpenAI API limits
-    return truncation_manager.truncate_files_by_tokens(
+
+    return t_mgr.truncate_files_by_tokens(
         files_info,
-        config.tokens.max_files_tokens,
+        cfg.tokens.max_files_tokens,
     )
-    
 
 
-def should_exclude_file(relative_path: str, filename: str) -> bool:
+def should_exclude_file(
+    relative_path: str,
+    filename: str,
+    cfg: OptimizerConfig,
+) -> bool:
     """Check if a file should be excluded based on configuration patterns.
-    
+
     Args:
         relative_path: File path relative to working directory
         filename: Just the filename part
-        
-    Returns:
-        True if file should be excluded
     """
-    return any(fnmatch.fnmatch(relative_path, pattern) or fnmatch.fnmatch(filename, pattern) 
-               for pattern in config.exclude_patterns)
+    return any(
+        fnmatch.fnmatch(relative_path, pattern) or fnmatch.fnmatch(filename, pattern)
+        for pattern in cfg.exclude_patterns
+    )
 
 
-async def copy_files_from_container(container_id: str, container_workdir: str, host_workdir: Path, task_logger) -> None:
+async def copy_files_from_container(
+    container_id: str,
+    container_workdir: str,
+    host_workdir: Path,
+    task_logger,
+    cfg: OptimizerConfig,
+) -> None:
     """Copy files from container to host directory for grader access.
-    
+
     Args:
         container_id: Docker container ID
         container_workdir: Working directory inside container (e.g., '/workspace')
         host_workdir: Host working directory to copy files to
         task_logger: Logger instance for this task
     """
-    try:
-        # List all files in the container workspace
-        list_cmd = [
-            "docker", "exec", container_id,
-            "find", container_workdir, "-type", "f",
+    # List all files in the container workspace
+    list_cmd = [
+        "docker",
+        "exec",
+        container_id,
+        "find",
+        container_workdir,
+        "-type",
+        "f",
+    ]
+
+    result = await asyncio.create_subprocess_exec(
+        *list_cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, stderr = await result.communicate()
+
+    if result.returncode != 0:
+        error_msg = stderr.decode("utf-8", errors="replace")
+        task_logger.error("Failed to list container files", error=error_msg)
+        raise RuntimeError(f"Failed to list container files: {error_msg}")
+
+    # Process each file found in container
+    container_files = stdout.decode("utf-8", errors="replace").strip().split("\n")
+    copied_count = 0
+    excluded_count = 0
+
+    for container_file_path in container_files:
+        if not container_file_path.strip():
+            continue
+
+        # Calculate relative path from container workdir
+        if not container_file_path.startswith(container_workdir):
+            continue
+
+        # Remove the container workdir prefix to get relative path
+        relative_path = container_file_path[len(container_workdir) :].lstrip("/")
+        filename = Path(container_file_path).name
+
+        # Apply same exclusion logic as gather_agent_files
+        if should_exclude_file(relative_path, filename, cfg):
+            excluded_count += 1
+            continue
+
+        # Create host destination path
+        host_file_path = host_workdir / relative_path
+        host_file_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Copy file from container to host
+        copy_cmd = [
+            "docker",
+            "cp",
+            f"{container_id}:{container_file_path}",
+            str(host_file_path),
         ]
-        
-        result = await asyncio.create_subprocess_exec(
-            *list_cmd,
+
+        copy_result = await asyncio.create_subprocess_exec(
+            *copy_cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        stdout, stderr = await result.communicate()
-        
-        if result.returncode != 0:
-            error_msg = stderr.decode('utf-8', errors='replace')
-            task_logger.error("Failed to list container files", error=error_msg)
-            raise RuntimeError(f"Failed to list container files: {error_msg}")
-            
-        # Process each file found in container
-        container_files = stdout.decode('utf-8', errors='replace').strip().split('\n')
-        copied_count = 0
-        excluded_count = 0
-        
-        for container_file_path in container_files:
-            if not container_file_path.strip():
-                continue
-                
-            # Calculate relative path from container workdir
-            if not container_file_path.startswith(container_workdir):
-                continue
-                
-            # Remove the container workdir prefix to get relative path
-            relative_path = container_file_path[len(container_workdir):].lstrip('/')
-            filename = Path(container_file_path).name
-            
-            # Apply same exclusion logic as gather_agent_files
-            if should_exclude_file(relative_path, filename):
-                excluded_count += 1
-                continue
-                
-            # Create host destination path
-            host_file_path = host_workdir / relative_path
-            host_file_path.parent.mkdir(parents=True, exist_ok=True)
-            
-            # Copy file from container to host
-            copy_cmd = [
-                "docker", "cp", 
-                f"{container_id}:{container_file_path}",
-                str(host_file_path),
-            ]
-            
-            copy_result = await asyncio.create_subprocess_exec(
-                *copy_cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
+        await copy_result.wait()
+
+        if copy_result.returncode == 0:
+            copied_count += 1
+        else:
+            copy_stderr = await copy_result.stderr.read() if copy_result.stderr else b""
+            error_msg = copy_stderr.decode("utf-8", errors="replace")
+            task_logger.error(
+                "Failed to copy file",
+                container_path=container_file_path,
+                host_path=str(host_file_path),
+                error=error_msg,
             )
-            await copy_result.wait()
-            
-            if copy_result.returncode == 0:
-                copied_count += 1
-            else:
-                copy_stderr = await copy_result.stderr.read() if copy_result.stderr else b""
-                error_msg = copy_stderr.decode('utf-8', errors='replace')
-                task_logger.error("Failed to copy file", 
-                                container_path=container_file_path,
-                                host_path=str(host_file_path),
-                                error=error_msg)
-                raise RuntimeError(f"Failed to copy file {container_file_path}: {error_msg}")
-                
-        task_logger.info("Container files copied", 
-                        copied_files=copied_count,
-                        excluded_files=excluded_count)
-        
-    except Exception as e:
-        task_logger.error("Error copying files from container", error=str(e))
-        raise
+            raise RuntimeError(
+                f"Failed to copy file {container_file_path}: {error_msg}",
+            )
 
-
+    task_logger.info(
+        "Container files copied",
+        copied_files=copied_count,
+        excluded_files=excluded_count,
+    )
 
 
 async def run_claude_code(
@@ -511,6 +310,8 @@ async def run_claude_code(
     output_dir: Path,
     anthropic_log: JSONLLogger,
     rollout_id: int,
+    cfg: OptimizerConfig,
+    db: Session,
 ) -> CodeResult:
     """Run a single coding agent on the given task using containerized Claude.
 
@@ -542,42 +343,47 @@ async def run_claude_code(
     """
     # Set up task logger
     task_logger = logger.bind(task_id=task_id, agent_id=agent_id)
-    task_logger.info("Starting containerized agent", output_dir=str(output_dir), task_preview=task[:100])
+    task_logger.info(
+        "Starting containerized agent",
+        output_dir=str(output_dir),
+        task_preview=task[:100],
+    )
 
     # Use containerized Claude with automatic file collection
     # task_claude already imported above
-    
-    async with task_claude(task_id, config, output_dir, task) as client:
+
+    async with task_claude(task_id, cfg, output_dir, task, task_logger, db) as client:
         # Write system prompt inside container (before PATH isolation)
         await client.setup_system_prompt(system_prompt)
-        
+
         # Execute Claude session using the containerized client
         message_sequence = []
         anthropic_request = {
             "prompt": task,
             "options": f"containerized_claude_task_{task_id}",
         }
-        
+
         anthropic_log.log(request=anthropic_request, event="request_sent")
-        
+
         await client.query()
         seq_order = 0
-        
+
         async for message in client.receive_messages():
             anthropic_log.log(request=anthropic_request, event=safe_serialize(message))
             message_dict = asdict(message)
             message_sequence.append(message_dict)
             log_message_summary(message, logger, agent_id)
-            
+
             # Log message to database in real-time
-            db_service.log_rollout_message(
+            log_rollout_message(
+                db,
                 rollout_id=rollout_id,
                 sequence_order=seq_order,
-                message_type=message_dict.get('role', type(message).__name__.lower()),
+                message_type=message_dict.get("role", type(message).__name__.lower()),
                 message_content=message_dict,
             )
             seq_order += 1
-            
+
             if isinstance(message, ResultMessage):
                 task_logger.info(
                     "Containerized session completed",
@@ -588,14 +394,17 @@ async def run_claude_code(
                 # Track rollout cost
                 cost_tracker.add_rollout_cost(message.total_cost_usd)
                 break
-        
+
         # Copy files from container to host (automatic on context exit)
         file_collection = await client.collect_outputs()
-        
-    # Convert to grader format
-    files_info = file_collection.to_grader_format()
 
-    timestamp = datetime.utcnow().isoformat()
+    # Convert to grader format
+    files_info = [
+        FileInfo(path=fi["path"], content=fi["content"]) if isinstance(fi, dict) else fi
+        for fi in file_collection
+    ]
+
+    timestamp = datetime.utcnow()
     return CodeResult(
         task=task,
         task_id=task_id,
@@ -606,553 +415,18 @@ async def run_claude_code(
     )
 
 
-async def grade_code(
-    result: CodeResult, criteria: list[Criterion], openai_log: JSONLLogger,
-) -> Grade:
-    """Grade a piece of code using the OpenAI Responses API with function calling.
-
-    The grader evaluates the code on a set of facets (criteria) defined by the
-    caller.  Each facet must have a unique key, a description, and an
-    evaluation criteria explaining how to assess it.  The grader uses a
-    function call (`submit_grades`) to return scores and rationales for each
-    facet plus an overall score and rationale.  The overall score is left to
-    the model's discretion; it is not computed as the average of the facet
-    scores.
-
-    Parameters
-    ----------
-    result : CodeResult
-        The code result to be graded.
-    criteria : List[Criterion]
-        Facets to evaluate.  Each facet will appear as a
-        property in the function schema.
-    openai_log : JSONLLogger
-        Logger for OpenAI API requests and responses.
-    """
-    client = OpenAI()
-
-    # Dynamically build the function schema for the grader based on the
-    # provided criteria.  Each facet becomes a property in the function
-    # parameters with its own score and rationale fields.  We also include
-    # an 'overall' property for the overall assessment.
-    properties: dict[str, Any] = {}
-    required_keys: list[str] = []
-    for crit in criteria:
-        properties[crit.name] = {
-            "type": "object",
-            "description": f"{crit.description} {crit.evaluation_criteria}",
-            "properties": {
-                "score": {"type": "number"},
-                "rationale": {"type": "string"},
-            },
-            "required": ["score", "rationale"],
-            "additionalProperties": False,
-        }
-        required_keys.append(crit.name)
-    # Add overall property
-    properties["overall"] = {
-        "type": "object",
-        "description": "Overall assessment of the solution, including a score from 0 to 10 and a brief rationale.",
-        "properties": {
-            "score": {"type": "number"},
-            "rationale": {"type": "string"},
-        },
-        "required": ["score", "rationale"],
-        "additionalProperties": False,
-    }
-    required_keys.append("overall")
-
-    grading_tool = {
-        "type": "function",
-        "name": "submit_grades",
-        "description": (
-            "Return scores and rationales for each grading facet. Evaluate the code on the specified facets and "
-            "provide an overall score and rationale."
-        ),
-        "parameters": {
-            "type": "object",
-            "properties": properties,
-            "required": required_keys,
-            "additionalProperties": False,
-        },
-        "strict": True,
-    }
-
-    # Build the input messages.  We give the model the task description and
-    # concatenated code, and instruct it to evaluate according to the facets.
-    input_messages: list[dict[str, Any]] = [
-        {
-            "role": "system",
-            "content": (
-                "You are an expert Python instructor and code reviewer. For the given task and code, "
-                "evaluate the submission according to the provided facets and then call the submit_grades "
-                "function with your scores and rationales."
-            ),
-        },
-        {
-            "role": "user",
-            "content": f"Task: {result.task}\n\nFiles:\n{json.dumps(result.files, indent=2)}",
-        },
-    ]
-
-    # Prepare request for logging
-    openai_request = {
-        "model": "o3",
-        "input": input_messages,
-        "tools": [grading_tool],
-        "tool_choice": {"type": "function", "name": "submit_grades"},
-    }
-
-    # Call the model.  We enforce the tool choice so the model must call
-    # submit_grades and return the grading JSON according to the schema.
-    grade_logger = logger.bind(
-        agent_id=result.agent_id, 
-        task_id=result.task_id,
-    )
-    grade_logger.info("Making OpenAI grading call")
-
-    openai_request = create_openai_request(
-        config.grader.model,
-        input_messages,
-        [grading_tool],
-        {"type": "function", "name": "submit_grades"},
-    )
-    response = client.responses.create(**openai_request)
-    # Log request and response
-    openai_log.log(request=openai_request, response=safe_serialize(response))
-    grade_logger.info("OpenAI grading completed")
-
-    # Extract the function_call item from the response first
-    call: ResponseFunctionToolCall | ResponseFunctionToolCallItem | None = None
-    for item in response.output or []:
-        if (
-            isinstance(item, ResponseFunctionToolCallItem)
-            and item.type == "function_call"
-        ) or isinstance(item, ResponseFunctionToolCall):
-            call = item
-            break
-
-    if call is None:
-        # Log the response output for debugging
-        output_types = []
-        for item in response.output or []:
-            output_types.append(
-                {
-                    "type": str(type(item)),
-                    "has_type_attr": hasattr(item, "type"),
-                    "type_value": (
-                        getattr(item, "type", None) if hasattr(item, "type") else None
-                    ),
-                },
-            )
-
-        grade_logger.error(
-            "No function_call found in grading response",
-            response_output=output_types,
-            tool_choice=openai_request.get("tool_choice"),
-        )
-
-        # Check if we got a message instead
-        for item in response.output or []:
-            if isinstance(item, ResponseOutputMessage) and item.type == "message":
-                for content_item in item.content:
-                    if isinstance(content_item, ResponseOutputText):
-                        grade_logger.error(
-                            "Got text response instead of function call",
-                            text=content_item.text[:200],
-                        )
-
-        raise RuntimeError(
-            "No function_call found in grading response - check logs for details",
-        )
-
-    # Extract and log grading results before processing
-    args_str = call.arguments
-    if isinstance(args_str, str):
-        grades_data = json.loads(args_str)
-        facet_results = {}
-        for facet_name, facet_data in grades_data.items():
-            if isinstance(facet_data, dict) and "score" in facet_data:
-                score = facet_data.get("score", 0)
-                rationale = facet_data.get("rationale", "")
-                facet_results[facet_name] = {"score": score, "rationale": rationale}
-
-        grade_logger.info("Grading results", facets=facet_results)
-
-        # Also log readable results for each facet
-        for facet_name, facet_data in facet_results.items():
-            score = facet_data["score"]
-            rationale = truncation_manager.truncate_text(
-                facet_data["rationale"],
-                config.truncation.log_message_length,
-                "...",
-            )
-            grade_logger.info(
-                "Facet graded",
-                facet=facet_name,
-                score=score,
-                rationale=rationale,
-            )
-
-    # Determine the function name
-    if call.name != "submit_grades":
-        raise RuntimeError(f"Unexpected function name: {call.name}")
-
-    # Extract the arguments string
-    if not isinstance(call.arguments, str):
-        raise ValueError(
-            f"Could not retrieve arguments from submit_grades call: {call}",
-        )
-    # Parse the JSON string into a dict
-    result_data = json.loads(call.arguments)
-
-    # Map scores and rationales back into the Grade object
-    axes: dict[str, ScoreWithRationale] = {}
-    for crit in criteria:
-        section = result_data.get(crit.name)
-        if not section:
-            raise ValueError(
-                f"Grading output missing facet '{crit.name}': {result_data}",
-            )
-        axes[crit.name] = ScoreWithRationale(
-            score=float(section.get("score", 0)),
-            rationale=str(section.get("rationale", "")),
-        )
-    overall_section = result_data.get("overall")
-    if not overall_section:
-        raise ValueError(f"Grading output missing 'overall' section: {result_data}")
-    overall_score = float(overall_section.get("score", 0))
-    overall_rationale = str(overall_section.get("rationale", ""))
-    timestamp = datetime.utcnow().isoformat()
-    return Grade(
-        task=result.task,
-        task_id=result.task_id,
-        agent_id=result.agent_id,
-        axes=axes,
-        overall_score=overall_score,
-        overall_rationale=overall_rationale,
-        timestamp=timestamp,
-    )
-
-
-@dataclass
-class Turn:
-    """A complete conversational turn in the PromptEngineer."""
-
-    reasoning: list[
-        ResponseOutputMessage | ResponseReasoningItem
-    ]  # OpenAI reasoning from propose()
-    function_call_message: ResponseFunctionToolCall | ResponseFunctionToolCallItem  # The original function call message from OpenAI
-    proposed_prompt: str  # The prompt that was proposed (extracted from function call)
-    grades: str  # Grading results from testing the prompt
-
-    @property
-    def messages(self) -> list[dict[str, Any]]:
-        """Convert turn into OpenAI API message sequence."""
-        msgs = []
-
-        # Add all reasoning items (filtered to remove response-only fields)
-        for reasoning_item in self.reasoning:
-            msg_dict = reasoning_item.model_dump()
-            if "status" in msg_dict:
-                del msg_dict["status"]
-            msgs.append(msg_dict)
-
-        # Add the original function call message (preserving OpenAI's original object/IDs)
-        function_call_dict = self.function_call_message.model_dump()
-        if "status" in function_call_dict:
-            del function_call_dict["status"]
-        msgs.append(function_call_dict)
-
-        # Add function call output with grading results
-        msgs.append({
-            "type": "function_call_output",
-            "call_id": self.function_call_message.call_id,
-            "output": self.grades,
-        })
-
-        return msgs
-
-
-def build_statistical_summary(rollouts: list[GradedCode]) -> str:
-    """Build purely statistical summary for stats-only processing mode."""
-    import math
-    import statistics
-    
-    if not rollouts:
-        return "No rollout data available."
-    
-    # Extract overall scores
-    overall_scores = [gc.grade.overall_score for gc in rollouts]
-    
-    # Calculate statistics
-    mean_score = statistics.mean(overall_scores)
-    n = len(overall_scores)
-    
-    # Calculate 69% confidence interval (approximately 1 standard error)
-    if n > 1:
-        std_err = statistics.stdev(overall_scores) / math.sqrt(n)
-        # 69% CI is approximately mean ± 1 * standard_error
-        ci_lower = mean_score - std_err
-        ci_upper = mean_score + std_err
-    else:
-        # Single data point - no meaningful CI
-        ci_lower = ci_upper = mean_score
-    
-    return f"Performance Statistics:\nMean Overall Score: {mean_score:.3f}\n69% Confidence Interval: [{ci_lower:.3f}, {ci_upper:.3f}]\nSample Size: {n}"
-
-
-class PromptEngineer:
-    """Manages conversation state and token counting for prompt optimization."""
-
-    def __init__(
-        self, 
-        openai_log: JSONLLogger,
-        processing_mode: ProcessingMode = ProcessingMode.FULL_ROLLOUTS,
-    ) -> None:
-        """Initialize empty conversation state with mode-specific system message."""
-        self.openai_log = openai_log
-        self._turns: list[Turn] = []
-        self._processing_mode = processing_mode
-        self._system_message = self._build_system_message(processing_mode)
-
-    def _build_system_message(self, mode: ProcessingMode) -> dict[str, str]:
-        """Build system message based on processing mode."""
-        base_content = "You are a prompt engineer. Your job is to "
-
-        if mode == ProcessingMode.FULL_ROLLOUTS:
-            analysis_part = "analyze rollouts from coding tasks"
-        elif mode == ProcessingMode.SUMMARY:
-            analysis_part = (
-                "analyze pattern summaries and insights from coding task rollouts"
-            )
-        else:  # ProcessingMode.STATS_ONLY
-            analysis_part = (
-                "analyze statistical performance metrics"
-            )
-
-        shared_end = " and iteratively improve the system prompt to get better results. The coding assistant should write working code to files, not just show code in conversation. Focus on prompts that encourage creating actual file artifacts. "
-        shared_end += (
-            "The coding assistant works through tools providing it I/O access to a filesystem and to shell "
-            "command execution. The assistant should write working code to files, not just show code in conversation. "
-            "It already comes equipped with a system prompt that teaches it how to use its tools correctly to write code. "
-            "Do not try to tell it how to do the low-level mechanics of code editing/execution - it already has the correct instructions "
-            "on what tools to use, how to use them, etc. in a fixed prompt and your instructions would likely just "
-            "conflict and make it worse."
-        )
-        return {"role": "system", "content": base_content + analysis_part + shared_end}
-
-    @property
-    def prompt_messages(
-        self,
-    ) -> list[
-        dict[str, Any] | ResponseOutputMessage | ResponseReasoningItem | ResponseFunctionToolCall | ResponseFunctionToolCallItem
-    ]:
-        """Get conversation messages with system message prepended."""
-        messages: list[
-            dict[str, Any] | ResponseOutputMessage | ResponseReasoningItem | ResponseFunctionToolCall | ResponseFunctionToolCallItem
-        ] = [self._system_message]
-
-        # Flatten all turns using their message getter
-        for turn in self._turns:
-            messages.extend(turn.messages)
-
-        return messages
-
-    def _count_tokens(self, model: str = "gpt-4o") -> int:
-        """Private: Count tokens in current conversation."""
-        enc = tiktoken.encoding_for_model(model)
-        tokens = 0
-
-        # Use the same logic as before - just count all messages in prompt_messages
-        for m in self.prompt_messages:
-            if hasattr(m, "model_dump"):
-                # OpenAI SDK object - serialize it
-                m_str = str(m.model_dump())
-                tokens += len(enc.encode(m_str))
-            elif isinstance(m, dict):
-                # Dict message - serialize relevant fields
-                if "content" in m:
-                    tokens += len(enc.encode(str(m["content"])))
-                if "arguments" in m:
-                    tokens += len(enc.encode(str(m["arguments"])))
-                if "output" in m:
-                    tokens += len(enc.encode(str(m["output"])))
-            else:
-                # Fallback - serialize the whole thing
-                tokens += len(enc.encode(str(m)))
-
-        return tokens
-
-    def _trim_context_if_needed(self, max_tokens: int | None = None) -> None:
-        """Private: Trim conversation if it exceeds token limit."""
-        if max_tokens is None:
-            max_tokens = config.tokens.max_context_tokens
-        if self._count_tokens() > max_tokens and len(self._turns) > 2:
-            # Keep only last 2 complete turns - each turn is atomic and complete
-            self._turns = self._turns[-2:]
-            logger.info(
-                "Trimmed context",
-                remaining_turns=len(self._turns),
-                estimated_tokens=self._count_tokens(),
-            )
-
-    def _build_rollout_summaries(self, rollouts: list[GradedCode]) -> list[str]:
-        """Build summaries of rollout results for conversation."""
-        summaries = []
-        for graded_code in rollouts:
-            # Keep messages as SDK objects, serialize them simply as JSON for the LLM
-            message_lines = [
-                json.dumps(evt) for evt in graded_code.code_result.messages
-            ]
-            files_json = json.dumps(graded_code.code_result.files, indent=2)
-            axis_parts = []
-            for axis_name, score_with_rationale in graded_code.grade.axes.items():
-                axis_parts.append(
-                    f"  {axis_name}: {score_with_rationale.score}/10 - {score_with_rationale.rationale}",
-                )
-
-            summary = f"""Task: {graded_code.code_result.task}
-Overall Grade: {graded_code.grade.overall_score}
-Axes:
-{chr(10).join(axis_parts)}
-Files:
-{files_json}
-Full Messages:
-{chr(10).join(message_lines)}"""
-            summaries.append(summary)
-        return summaries
-
-    def build_grades_message(self, rollouts: list[GradedCode]) -> str:
-        """Build grades message from rollout results."""
-        rollout_summaries = self._build_rollout_summaries(rollouts)
-        return f"Here are the results from testing the current system prompt on {len(rollouts)} coding tasks. Analyze these results and propose an improved system prompt.\n\n{chr(10).join(['---'] * 2).join(rollout_summaries)}"
-
-    async def propose_prompt(self) -> tuple[
-        list[ResponseOutputMessage | ResponseReasoningItem],
-        ResponseFunctionToolCall | ResponseFunctionToolCallItem,
-        str,
-    ]:
-        """Make OpenAI API call to get next prompt proposal.
-
-        Returns:
-            (reasoning_messages, function_call_message, proposed_prompt)
-        """
-        # Trim context if needed before API call
-        self._trim_context_if_needed()
-
-        # Create OpenAI Responses API tools schema
-        tools = [
-            {
-                "type": "function",
-                "name": "submit_prompt",
-                "description": "Submit an improved system prompt",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "prompt": {
-                            "type": "string",
-                            "description": "The improved system prompt",
-                        },
-                    },
-                    "required": ["prompt"],
-                },
-            },
-        ]
-
-        # Call OpenAI Responses API with current conversation
-        client = OpenAI()
-        openai_request = create_openai_request(
-            config.grader.model,
-            self.prompt_messages,
-            tools,
-            {"type": "function", "name": "submit_prompt"},
-        )
-        response: Response = client.responses.create(**openai_request)
-        self.openai_log.log(request=openai_request, response=safe_serialize(response))
-
-        # Separate reasoning messages from function call
-        reasoning_messages: list[
-            ResponseOutputMessage | ResponseReasoningItem
-        ] = []
-        function_call_item: ResponseFunctionToolCall | ResponseFunctionToolCallItem | None = None
-
-        for item in response.output:
-            if isinstance(
-                item, (ResponseFunctionToolCall, ResponseFunctionToolCallItem),
-            ):
-                function_call_item = item
-            elif isinstance(item, (ResponseOutputMessage, ResponseReasoningItem)):
-                reasoning_messages.append(item)
-
-        if function_call_item is None:
-            raise RuntimeError("No function_call found in response")
-
-        # Extract function call details with proper type checking
-        call_name = function_call_item.name
-        arguments_str = function_call_item.arguments
-
-        if call_name != "submit_prompt":
-            raise RuntimeError(f"Unexpected function name: {call_name}")
-
-        if not isinstance(arguments_str, str):
-            raise ValueError(f"Invalid arguments format: {arguments_str}")
-
-        try:
-            args_dict = json.loads(arguments_str)
-        except json.JSONDecodeError as e:
-            raise ValueError(f"Could not parse arguments: {arguments_str}") from e
-
-        claude_prompt = args_dict.get("prompt", "").strip()
-        if not claude_prompt:
-            raise ValueError("Empty prompt returned")
-
-        logger.info(
-            "Generated new prompt",
-            prompt_length=len(claude_prompt),
-            conversation_turns=len(self._turns),
-        )
-
-        return reasoning_messages, function_call_item, claude_prompt
-
-    def add_result(
-        self,
-        reasoning: list[ResponseOutputMessage | ResponseReasoningItem],
-        function_call_message: ResponseFunctionToolCall | ResponseFunctionToolCallItem,
-        proposed_prompt: str,
-        grades: str,
-    ) -> None:
-        """Add completed turn to conversation history.
-
-        Args:
-            reasoning: OpenAI's reasoning messages from propose_prompt()
-            function_call_message: The original function call message from OpenAI
-            proposed_prompt: The prompt that was proposed and tested
-            grades: Grading results from testing this prompt
-        """
-        turn = Turn(
-            reasoning=reasoning,
-            function_call_message=function_call_message,
-            proposed_prompt=proposed_prompt,
-            grades=grades,
-        )
-        self._turns.append(turn)
-
-        logger.info(
-            "Added turn to conversation",
-            conversation_turns=len(self._turns),
-            grades_length=len(grades),
-        )
-
-
 async def optimize_prompts(
+    *,
+    anthropic_log,
+    openai_client: LoggingOpenAIClient,
     seed_tasks: list[SeedTask],
+    cfg: OptimizerConfig,
+    db: Session,
     iterations: int = 3,
     rollouts_per_task: int = 2,
-    base_output_dir: str = "./agent_output",
     max_parallel_rollouts: int | None = None,
     tasks_per_iteration: int | None = None,
-    processing_mode: ProcessingMode = ProcessingMode.FULL_ROLLOUTS,
+    feedback_mode: FeedbackMode = FeedbackMode.FULL_ROLLOUTS,
 ) -> Path:
     """Run the prompt optimisation loop.
 
@@ -1169,60 +443,76 @@ async def optimize_prompts(
         The number of optimisation iterations to perform (default 3).
     rollouts_per_task : int, optional
         The number of coding agents to sample per task in each iteration (default 2).
-    base_output_dir : str, optional
-        Base directory where agent working directories and logs will be stored.
     max_parallel_rollouts : int, optional
         Maximum number of concurrent coding agent rollouts (default from config).
     tasks_per_iteration : int, optional
-        Number of tasks to randomly sample (with replacement) per iteration. 
+        Number of tasks to randomly sample (with replacement) per iteration.
         If None, uses all seed tasks (default None).
     """
     if max_parallel_rollouts is None:
-        max_parallel_rollouts = config.rollouts.max_parallel
-    # Create a unique prefix for this run to avoid collisions with previous
-    # executions.  The prefix is based on the current UTC timestamp.  All
-    # working directories and logs for this run will be stored under
-    # base_output_dir / run_prefix.
-    run_prefix = datetime.utcnow().strftime("%Y%m%d%H%M%S")
-    base_dir = (Path(base_output_dir) / run_prefix).resolve()
-    base_dir.mkdir(parents=True, exist_ok=True)
-    logger.info(
-        "Run directory created", run_directory=str(base_dir), run_prefix=run_prefix,
-    )
-    
-    # Create optimization run record using database service
-    run_id = db_service.create_optimization_run(
-        base_output_dir=str(base_dir),
+        max_parallel_rollouts = cfg.rollouts.max_parallel
+
+    run_id = create_optimization_run(
+        db,
         total_iterations=iterations,
-        config_snapshot=config.model_dump_json(),
+        config_snapshot=cfg.model_dump(),
     )
 
     # Prepare API loggers for both OpenAI and Anthropic (keeping these for debugging)
-    openai_log = JSONLLogger(base_dir / "openai_api_log.jsonl")
-    anthropic_log = JSONLLogger(base_dir / "anthropic_api_log.jsonl")
 
     # Get grading criteria from database (loaded from YAML sync in main())
-    criteria_db = db_service.get_active_grading_criteria()
-    criteria: list[Criterion] = []
-    for crit_db in criteria_db:
-        criteria.append(Criterion(
+    criteria: list[Criterion] = [
+        Criterion(
             name=crit_db.name,
             description=crit_db.description,
             evaluation_criteria=crit_db.evaluation_criteria,
-        ))
+        )
+        for crit_db in get_active_grading_criteria(db)
+    ]
 
     # Initialize the prompt engineer for the entire optimization process.
-    engineer = PromptEngineer(openai_log, processing_mode)
+    if feedback_mode == FeedbackMode.SUMMARY:
+        feedback_provider = PatternSummarizer(
+            model=LoggingOpenAIModel(
+                openai_client=openai_client,
+                model=cfg.grader.model,
+                context_window_tokens=cfg.tokens.max_context_tokens,
+            ),
+            # UGH
+            truncation_manager=TruncationManager(cfg),
+            max_file_pattern_analysis=self.config.truncation.max_file_pattern_analysis,
+        )
+    elif feedback_mode == FeedbackMode.STATS_ONLY:
+        feedback_provider = StatsOnlyFeedbackProvider()
+    elif feedback_mode == FeedbackMode.FULL_ROLLOUTS:
+        feedback_provider = FullRolloutsFeedbackProvider()
+    else:
+        raise ValueError(f"Invalid {feedback_mode = }.")
+
+    engineer = PromptEngineer(
+        model=LoggingOpenAIModel(
+            openai_client=openai_client,
+            model=cfg.prompt_engineer.model,
+            context_window_tokens=cfg.tokens.max_context_tokens,
+            reasoning_effort=cfg.grader.reasoning_effort,
+        ),
+        feedback_provider=feedback_provider,
+    )
 
     # Generate initial prompt without any rollout data
     prev_reasoning, prev_function_call, current_prompt = await engineer.propose_prompt()
-    
+
     # Store initial system prompt in database
-    initial_prompt_id = db_service.create_system_prompt(
+    initial_prompt_id = db.create_system_prompt(
         run_id=run_id,
         iteration=0,
         content=current_prompt,
-        prompt_engineer_reasoning=json.dumps([r.model_dump() if hasattr(r, 'model_dump') else str(r) for r in prev_reasoning]),
+        prompt_engineer_reasoning=json.dumps(
+            [
+                r.model_dump() if hasattr(r, "model_dump") else str(r)
+                for r in prev_reasoning
+            ],
+        ),
     )
 
     # Create semaphore for controlling parallel rollouts
@@ -1230,21 +520,30 @@ async def optimize_prompts(
 
     # Define the inner rollout function
     async def run_single_rollout(
-        task: SeedTask, rollout_id: int, iteration: int, system_prompt_id: int,
+        task: SeedTask,
+        rollout_id: int,
+        iteration: int,
+        system_prompt_id: int,
     ) -> GradedCode:
         """Run a single rollout with semaphore control."""
         async with rollout_semaphore:
             # Create rollout record in database
-            rollout_dir = base_dir / f"iter_{iteration}" / f"task_{task.id}" / f"agent_{rollout_id}"
-            db_rollout_id = db_service.create_rollout(
+            rollout_dir = (
+                base_dir
+                / f"iter_{iteration}"
+                / f"task_{task.id}"
+                / f"agent_{rollout_id}"
+            )
+            db_rollout_id = create_rollout(
+                db,
                 run_id=run_id,
                 iteration=iteration,
-                task_id=task.id,
+                seed_task_db_id=task.id,
                 agent_id=f"agent_{rollout_id}",
                 system_prompt_id=system_prompt_id,
                 output_dir_path=str(rollout_dir),
             )
-            
+
             # Run containerized Claude (task_claude context managed inside run_claude_code)
             code_result = await run_claude_code(
                 task.prompt,
@@ -1254,42 +553,57 @@ async def optimize_prompts(
                 output_dir=rollout_dir,
                 anthropic_log=anthropic_log,
                 rollout_id=db_rollout_id,
+                cfg=cfg,
+                db=db,
             )
 
             # Store rollout files in database
-            db_service.store_rollout_files(
+            store_rollout_files(
+                db,
                 rollout_id=db_rollout_id,
-                files_info=code_result.files,
+                files_info=[fi.model_dump() for fi in code_result.files],
                 rollout_dir=rollout_dir,
             )
 
-            grade = await grade_code(code_result, criteria, openai_log)
+            grade = await grade_code(
+                code_result,
+                criteria,
+                model=LoggingOpenAIModel(
+                    openai_client=openai_client,
+                    model=cfg.grader.model,
+                    context_window_tokens=cfg.tokens.max_context_tokens,
+                    reasoning_effort=cfg.grader.reasoning_effort,
+                ),
+                cfg=cfg,
+            )
 
             # Store grading results in database
-            facet_scores = {name: {"score": score_rat.score, "rationale": score_rat.rationale} 
-                           for name, score_rat in grade.axes.items()}
-            db_service.store_grading_results(
+            facet_scores = {
+                name: {"score": score_rat.score, "rationale": score_rat.rationale}
+                for name, score_rat in grade.axes.items()
+            }
+            db.store_grading_results(
                 rollout_id=db_rollout_id,
                 overall_score=grade.overall_score,
-                overall_rationale=grade.overall_rationale,
+                overall_rationale=grade.overall_rationale,  # TODO aarrggh should be one of facets
                 facet_scores=facet_scores,
-                grader_model="o3",
+                grader_model="o3",  # TODO: aaarrggghh shitty
             )
-            
+
             # Complete rollout record with final metrics
             # Extract cost from the last message if it's a ResultMessage
             total_cost = 0.0
             duration_ms = None
             is_error = False
-            
+
             if code_result.messages:
                 last_msg = code_result.messages[-1]
-                if last_msg.get('role') == 'result' and 'total_cost_usd' in last_msg:
-                    total_cost = last_msg.get('total_cost_usd', 0.0)
-                    duration_ms = last_msg.get('duration_ms')
-                    is_error = last_msg.get('is_error', False)
-            
-            db_service.complete_rollout(
+                if last_msg.get("role") == "result" and "total_cost_usd" in last_msg:
+                    total_cost = last_msg.get("total_cost_usd", 0.0)
+                    duration_ms = last_msg.get("duration_ms")
+                    is_error = last_msg.get("is_error", False)
+
+            db.complete_rollout(
                 rollout_id=db_rollout_id,
                 total_cost_usd=total_cost,
                 is_error=is_error,
@@ -1308,7 +622,9 @@ async def optimize_prompts(
             return GradedCode(code_result=code_result, grade=grade)
 
     # Log experiment configuration
-    tasks_per_iter = tasks_per_iteration if tasks_per_iteration is not None else len(seed_tasks)
+    tasks_per_iter = (
+        tasks_per_iteration if tasks_per_iteration is not None else len(seed_tasks)
+    )
     logger.info(
         "Prompt optimization experiment starting",
         task_count=len(seed_tasks),
@@ -1323,7 +639,7 @@ async def optimize_prompts(
 
     # Track current system prompt ID for each iteration
     current_prompt_id = initial_prompt_id
-    
+
     for iteration in range(1, iterations + 1):
         iter_logger = logger.bind(iteration=iteration, total_iterations=iterations)
         iter_logger.info("Iteration starting")
@@ -1333,138 +649,127 @@ async def optimize_prompts(
         iter_dir.mkdir(parents=True, exist_ok=True)
         (iter_dir / "CLAUDE.md").write_text(current_prompt)
 
-        # Select tasks for this iteration
-        if tasks_per_iteration is not None:
-            # Randomly sample tasks with replacement
-            iteration_tasks = random.choices(seed_tasks, k=tasks_per_iteration)
-            iter_logger.info(
-                "Sampled tasks for iteration",
-                sampled_count=tasks_per_iteration,
-                unique_tasks=len({task.id for task in iteration_tasks}),
-                task_ids=[task.id for task in iteration_tasks],
-            )
-        else:
-            # Use all seed tasks
-            iteration_tasks = seed_tasks
+        # Randomly sample tasks with replacement
+        iteration_tasks = random.choices(seed_tasks, k=tasks_per_iteration)
+        iter_logger.info(
+            "Sampled tasks for iteration",
+            sampled_count=tasks_per_iteration,
+            unique_tasks=len({task.id for task in iteration_tasks}),
+            task_ids=[task.id for task in iteration_tasks],
+        )
 
         # Create all rollout tasks for fully parallel execution
         # Each rollout runs: coding agent → grading → database storage
         # Semaphore controls max concurrent rollouts to prevent resource exhaustion
-        all_rollouts = []
-        for task in iteration_tasks:
-            for rollout_id in range(rollouts_per_task):
-                all_rollouts.append(run_single_rollout(task, rollout_id, iteration, current_prompt_id))
+        rollout_futures = [
+            run_single_rollout(task, rollout_id, iteration, current_prompt_id)
+            for task in iteration_tasks
+            for rollout_id in range(rollouts_per_task)
+        ]
 
         iter_logger.info(
             "Starting parallel rollouts",
-            total_rollouts=len(all_rollouts),
+            total_rollouts=len(rollout_futures),
             max_parallel=max_parallel_rollouts,
         )
 
         # Execute all rollouts in parallel with semaphore-based concurrency control
         # Fail fast on any setup errors - don't continue if container setup fails
         try:
-            iteration_results = await asyncio.gather(*all_rollouts, return_exceptions=False)
-        except Exception as e:
+            all_rollouts = await asyncio.gather(
+                *rollout_futures,
+                return_exceptions=False,
+            )
+        except (asyncio.CancelledError, RuntimeError, OSError) as e:
             # Cancel all remaining tasks immediately
-            iter_logger.error("Critical failure during rollouts - cancelling all tasks", error=str(e), error_type=type(e).__name__)
+            iter_logger.error(
+                "Critical failure during rollouts - cancelling all tasks",
+                error=str(e),
+                error_type=type(e).__name__,
+            )
             for rollout_task in all_rollouts:
                 if not rollout_task.done():
                     rollout_task.cancel()
                     iter_logger.info("Cancelled rollout task", task_cancelled=True)
-            
+
             # Wait a moment for cancellation to complete
             await asyncio.sleep(0.1)
-            
+
             # Exit the entire program immediately
-            iter_logger.error("FATAL: Container setup failed - terminating optimization", error=str(e))
+            iter_logger.error(
+                "FATAL: Container setup failed - terminating optimization",
+                error=str(e),
+            )
             import sys
+
             sys.exit(1)
 
         iter_logger.info(
-            "All rollouts completed", completed_rollouts=len(iteration_results),
+            "All rollouts completed",
+            completed_rollouts=len(all_rollouts),
         )
 
         # Display simple metrics to CLI
         overall_scores = [
-            graded_code.grade.overall_score for graded_code in iteration_results
+            graded_code.grade.overall_score for graded_code in all_rollouts
         ]
         avg_overall = (
             sum(overall_scores) / len(overall_scores) if overall_scores else 0.0
         )
         iter_logger.info(
-            "Iteration complete", average_overall_score=round(avg_overall, 2),
+            "Iteration complete",
+            average_overall_score=round(avg_overall, 2),
         )
-        
+
         # Track score evolution for this iteration
         score_tracker.add_iteration(iteration, iteration_results)
-        
+
         # Generate and save score evolution report and plots after each iteration
         evolution_report = score_tracker.generate_report(base_dir, base_dir / "logs")
         report_path = base_dir / f"score_evolution_iter_{iteration}.txt"
         report_path.write_text(evolution_report)
         iter_logger.info(
-            "Score evolution report generated", 
+            "Score evolution report generated",
             report_path=str(report_path),
             iteration=iteration,
         )
 
         # Store pattern analysis in database and prepare feedback for PE
-        rollout_ids = db_service.get_rollouts_for_iteration(run_id, iteration)
-        rollout_db_ids = [r.id for r in rollout_ids]
-        
-        if processing_mode == ProcessingMode.FULL_ROLLOUTS:
-            grades = engineer.build_grades_message(iteration_results)
-            iter_logger.info(
-                "ITERATION_FEEDBACK_MODE",
-                mode="full_rollouts",
-                grades_length=len(grades),
-            )
-        elif processing_mode == ProcessingMode.SUMMARY:
-            summarizer = PatternSummarizer(openai_log)
-            grades = await summarizer.summarize_patterns(iteration_results)
-            iter_logger.info(
-                "ITERATION_FEEDBACK_MODE",
-                mode="pattern_summary",
-                summary_length=len(grades),
-            )
-            
-            # Store pattern analysis in database
-            db_service.store_pattern_analysis(
-                run_id=run_id,
-                iteration=iteration,
-                rollout_ids=rollout_db_ids,
-                summary_text=grades,
-                tokens_used=None,
-                analysis_reasoning=None,
-            )
-        else:  # ProcessingMode.STATS_ONLY
-            grades = build_statistical_summary(iteration_results)
-            iter_logger.info(
-                "ITERATION_FEEDBACK_MODE",
-                mode="stats_only",
-                stats_length=len(grades),
-            )
+        # rollout_ids = db.get_rollouts_for_iteration(run_id, iteration)
+        # rollout_db_ids = [r.id for r in rollout_ids]
 
-        engineer.add_result(prev_reasoning, prev_function_call, current_prompt, grades)
+        await engineer.add_result(
+            prev_reasoning,
+            prev_function_call,
+            current_prompt,
+            iteration_results,
+        )
 
         # Generate next prompt using PE (if not the last iteration)
         if iteration < iterations:
-            prev_reasoning, prev_function_call, new_prompt = await engineer.propose_prompt()
+            (
+                prev_reasoning,
+                prev_function_call,
+                new_prompt,
+            ) = await engineer.propose_prompt()
 
             # Store new system prompt in database
-            current_prompt_id = db_service.create_system_prompt(
+            current_prompt_id = db.create_system_prompt(
                 run_id=run_id,
                 iteration=iteration + 1,
                 content=new_prompt,
-                prompt_engineer_reasoning=json.dumps([r.model_dump() if hasattr(r, 'model_dump') else str(r) for r in prev_reasoning]),
+                prompt_engineer_reasoning=json.dumps(
+                    [
+                        r.model_dump() if hasattr(r, "model_dump") else str(r)
+                        for r in prev_reasoning
+                    ],
+                ),
             )
 
             current_prompt = new_prompt
 
-    # Complete the optimization run in database
-    db_service.complete_optimization_run(run_id)
-    
+    complete_optimization_run(db, run_id)
+
     logger.info("Optimization complete", logs_directory=str(base_dir))
     return base_dir
 
@@ -1499,8 +804,8 @@ Examples:
     parser.add_argument(
         "--mode",
         type=str,
-        choices=[mode.value for mode in ProcessingMode],
-        default=ProcessingMode.FULL_ROLLOUTS.value,
+        choices=[mode.value for mode in FeedbackMode],
+        default=FeedbackMode.FULL_ROLLOUTS.value,
         help="Processing mode: full_rollouts runs complete agent sessions, summary uses condensed feedback, stats_only provides only statistical metrics (default: %(default)s)",
     )
 
@@ -1508,7 +813,7 @@ Examples:
         "--max-parallel",
         type=int,
         default=None,
-        help=f"Maximum parallel rollouts (default: {config.rollouts.max_parallel})",
+        help="Maximum parallel rollouts (default: from config file)",
     )
 
     parser.add_argument(
@@ -1522,63 +827,63 @@ Examples:
 
     # Setup signal handlers for graceful cost reporting on interruption
     setup_signal_handlers()
-    
+
+    # Load configuration
+    cfg = OptimizerConfig.from_file()
+
     # Initialize database
     logger.info("Initializing database")
-    db_manager = create_database("sqlite:///optimizer.db")
-    
+    SessionLocal = init_db("sqlite:///optimizer.db")
+    db = SessionLocal()
+
     # Load and sync YAML files to database
     logger.info("Loading YAML files and syncing to database")
-    yaml_loader = load_yaml_files(config.seeds_file, config.graders_file)
-    with db_manager.get_session() as session:
-        sync_stats = yaml_loader.load_and_sync_all(session)
+    yaml_loader = load_yaml_files(cfg.seeds_file, cfg.graders_file)
+    sync_stats = yaml_loader.load_and_sync_all(db)
+    seed_tasks = [
+        SeedTask(id=task_db.task_id, prompt=task_db.prompt)
+        for task_db in yaml_loader.get_active_seed_tasks(db)
+    ]
     logger.info("YAML sync completed", **sync_stats)
-    
-    # Get active seed tasks from database
-    with get_db_session() as session:
-        seed_tasks_db = yaml_loader.get_active_seed_tasks(session)
-        seed_tasks = []
-        for task_db in seed_tasks_db:
-            # Convert database model to the existing SeedTask dataclass
-            seed_tasks.append(SeedTask(
-                id=task_db.task_id,
-                prompt=task_db.prompt,
-                description=task_db.description,
-            ))
 
-    # Convert string mode back to enum
-    processing_mode = ProcessingMode(args.mode)
-
-    # Run the optimisation loop.  Adjust iterations and rollouts per task as desired.
-    # The PromptEngineer will generate the initial prompt automatically.
+    run_prefix = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+    base_dir = (Path("./agent_output") / run_prefix).resolve()
+    base_dir.mkdir(parents=True, exist_ok=True)
+    openai_client = LoggingOpenAIClient(
+        openai_client=OpenAI(),
+        jsonl_logger=JSONLLogger(base_dir / "openai_api_log.jsonl"),
+    )
+    # Run the optimisation loop
+    anthropic_log = JSONLLogger(base_dir / "anthropic_api_log.jsonl")
     run_dir = asyncio.run(
         optimize_prompts(
-            seed_tasks,
+            anthropic_log=anthropic_log,
+            openai_client=openai_client,
+            seed_tasks=seed_tasks,
+            cfg=cfg,
+            db=db,
             iterations=args.iterations,
             rollouts_per_task=args.rollouts_per_task,
-            base_output_dir="./agent_output",
             max_parallel_rollouts=args.max_parallel,
             tasks_per_iteration=args.tasks_per_iteration,
-            processing_mode=processing_mode,
+            feedback_mode=FeedbackMode(args.mode),
         ),
     )
-    
+
     # Generate final score evolution report
     final_evolution_report = score_tracker.generate_report(run_dir, run_dir)
     final_report_path = run_dir / "final_score_evolution_report.txt"
     final_report_path.write_text(final_evolution_report)
-    
-    print("\n" + "="*60)
+
+    print("\n" + "=" * 60)
     print(final_evolution_report)
-    print("="*60)
-    
+    print("=" * 60)
+
     logger.info(
-        "Final score evolution report generated",
+        "Score evolution report generated",
         report_path=str(final_report_path),
         run_directory=str(run_dir),
     )
-    
-    # Report final cost summary
     cost_tracker.report_final_cost()
 
 

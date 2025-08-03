@@ -38,7 +38,7 @@ def compute_correct_option(key_value: str, nonce_value: str, num_options: int) -
 COMPUTE_OPTION_SOURCE = inspect.getsource(compute_correct_option)
 
 
-def _create_options(num_options: int) -> List[str]:
+def _create_options(num_options: int) -> list[str]:
     """Create list of option strings."""
     return [str(i) for i in range(num_options)]
 

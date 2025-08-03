@@ -40,7 +40,10 @@ class GitHubInterface:
         if not token:
             try:
                 token = subprocess.run(
-                    ["gh", "auth", "token"], capture_output=True, text=True, check=True,
+                    ["gh", "auth", "token"],
+                    capture_output=True,
+                    text=True,
+                    check=True,
                 ).stdout.strip()
             except (FileNotFoundError, subprocess.CalledProcessError):
                 # Expected cases: gh not installed or not authenticated
@@ -61,7 +64,9 @@ class GitHubInterface:
             try:
                 self._repo = self._gh.get_repo(self.github_repo)
             except Exception as e:
-                raise GitHubUnavailableError(f"Cannot access GitHub repo {self.github_repo}: {e}")
+                raise GitHubUnavailableError(
+                    f"Cannot access GitHub repo {self.github_repo}: {e}",
+                )
         return self._repo
 
     @handle_github_errors

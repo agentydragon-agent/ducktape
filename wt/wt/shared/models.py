@@ -27,7 +27,12 @@ class Worktree:
 
     @classmethod
     def main_repo(cls, repo_path: Path, branch: str) -> Worktree:
-        return cls(name=MAIN_WORKTREE_DISPLAY_NAME, path=repo_path, branch=branch, is_main=True)
+        return cls(
+            name=MAIN_WORKTREE_DISPLAY_NAME,
+            path=repo_path,
+            branch=branch,
+            is_main=True,
+        )
 
     def exists(self) -> bool:
         return self.path.exists()
@@ -125,7 +130,6 @@ class CommitInfo:
     @property
     def short_hash(self) -> str:
         return self.last_commit[:8]
-
 
 
 @dataclass

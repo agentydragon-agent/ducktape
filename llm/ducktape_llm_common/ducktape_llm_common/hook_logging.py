@@ -38,24 +38,50 @@ class JSONFormatter(logging.Formatter):
             log_entry["exception"] = {
                 "type": record.exc_info[0].__name__ if record.exc_info[0] else None,
                 "message": str(record.exc_info[1]) if record.exc_info[1] else None,
-                "traceback": self.formatException(record.exc_info) if record.exc_info != (None, None, None) else None
+                "traceback": self.formatException(record.exc_info) if record.exc_info != (None, None, None) else None,
             }
 
         # Add standard logging fields that are useful for debugging
-        standard_fields = ['module', 'lineno', 'filename', 'funcName', 'pathname',
-                          'process', 'processName', 'thread', 'threadName']
+        standard_fields = [
+            "module",
+            "lineno",
+            "filename",
+            "funcName",
+            "pathname",
+            "process",
+            "processName",
+            "thread",
+            "threadName",
+        ]
         for field in standard_fields:
             log_entry[field] = getattr(record, field)
 
         # Add any extra fields under 'extra' key to avoid conflicts
         extra_fields = {}
         for key, value in record.__dict__.items():
-            if key not in ['name', 'msg', 'args', 'levelname', 'levelno', 'created', 'msecs',
-                          'relativeCreated', 'getMessage', 'exc_info', 'exc_text', 'stack_info', 'message'] + standard_fields:
+            if (
+                key
+                not in [
+                    "name",
+                    "msg",
+                    "args",
+                    "levelname",
+                    "levelno",
+                    "created",
+                    "msecs",
+                    "relativeCreated",
+                    "getMessage",
+                    "exc_info",
+                    "exc_text",
+                    "stack_info",
+                    "message",
+                ]
+                + standard_fields
+            ):
                 extra_fields[key] = value
 
         if extra_fields:
-            log_entry['extra'] = extra_fields
+            log_entry["extra"] = extra_fields
 
         return json.dumps(log_entry, default=str)
 
@@ -63,14 +89,14 @@ class JSONFormatter(logging.Formatter):
 def get_session_logger(hook_name: str, session_id: SessionID, invocation_id: InvocationID) -> logging.Logger:
     """
     Get a session-scoped logger that logs to the session directory.
-    
+
     Returns a proper Python logger with exc_info support.
-    
+
     Args:
         hook_name: Name of the hook
-        session_id: Claude session ID  
+        session_id: Claude session ID
         invocation_id: Unique ID for this hook invocation
-        
+
     Returns:
         Logger instance that logs to session directory in JSON format
     """
@@ -92,5 +118,3 @@ def get_session_logger(hook_name: str, session_id: SessionID, invocation_id: Inv
         logger.addHandler(handler)
 
     return logger
-
-

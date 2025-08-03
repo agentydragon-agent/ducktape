@@ -16,10 +16,9 @@ from typing import Any, NewType
 from pydantic import BaseModel, Field
 
 from .github_models import PRInfo
-from .models import CommitInfo
 
 # WorktreeID: Deliberately scrambled identifier to prevent accidental misuse
-WorktreeID = NewType('WorktreeID', str)  # Format: 'wtid:<dirname>'
+WorktreeID = NewType("WorktreeID", str)  # Format: 'wtid:<dirname>'
 
 
 # make_worktree_id moved to server-only module to prevent client access
@@ -57,7 +56,10 @@ class Request(BaseModel):
 
     jsonrpc: str = "2.0"
     method: str = Field(..., description="Method name to call")
-    params: dict[str, Any] = Field(default_factory=dict, description="Method parameters")
+    params: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Method parameters",
+    )
     id: uuid.UUID = Field(..., description="Request ID")
 
 
@@ -67,7 +69,18 @@ class Response(BaseModel):
     model_config = {"extra": "forbid"}
 
     jsonrpc: str = "2.0"
-    result: StatusResponse | PingResult | WorktreeCreateResult | WorktreeDeleteResult | WorktreeListResult | WorktreeIdentifyResult | WorktreeGetByNameResult | WorktreeResolvePathResult | WorktreeTeleportTargetResult | str = Field(..., description="Result data")
+    result: (
+        StatusResponse
+        | PingResult
+        | WorktreeCreateResult
+        | WorktreeDeleteResult
+        | WorktreeListResult
+        | WorktreeIdentifyResult
+        | WorktreeGetByNameResult
+        | WorktreeResolvePathResult
+        | WorktreeTeleportTargetResult
+        | str
+    ) = Field(..., description="Result data")
     id: uuid.UUID = Field(..., description="Request ID from original request")
 
 
@@ -154,9 +167,15 @@ class WorktreeResolvePathParams(BaseModel):
 
     model_config = {"extra": "forbid"}
 
-    worktree_name: str | None = Field(default=None, description="Target worktree name, or None for current")
+    worktree_name: str | None = Field(
+        default=None,
+        description="Target worktree name, or None for current",
+    )
     path_spec: str = Field(..., description="Path to resolve (/, ./, or unprefixed)")
-    current_path: str = Field(..., description="Current working directory for relative resolution")
+    current_path: str = Field(
+        ...,
+        description="Current working directory for relative resolution",
+    )
 
 
 class WorktreeTeleportTargetParams(BaseModel):
@@ -187,49 +206,91 @@ class StatusResult(BaseModel):
     absolute_path: str = Field(..., description="Absolute filesystem path")
     branch_name: str = Field(..., description="Git branch name")
     has_dirty_files: bool = Field(..., description="Whether there are modified files")
-    has_untracked_files: bool = Field(..., description="Whether there are untracked files")
-    processing_time_ms: float = Field(..., description="Processing time in milliseconds")
+    has_untracked_files: bool = Field(
+        ...,
+        description="Whether there are untracked files",
+    )
+    processing_time_ms: float = Field(
+        ...,
+        description="Processing time in milliseconds",
+    )
     last_updated_at: datetime = Field(
-        ..., description="When gitstatusd was last queried for this worktree",
+        ...,
+        description="When gitstatusd was last queried for this worktree",
     )
-    is_cached: bool = Field(default=False, description="Whether this result came from cache")
-    commit_info: CommitInfo | None = Field(default=None, description="Latest commit information if available")
-    ahead_count: int = Field(default=0, description="Number of commits ahead of upstream branch")
-    behind_count: int = Field(default=0, description="Number of commits behind upstream branch")
-    is_main: bool = Field(default=False, description="Whether this is the main repository")
-    upstream_branch: str = Field(..., description="Upstream branch name for ahead/behind calculations")
+    is_cached: bool = Field(
+        default=False,
+        description="Whether this result came from cache",
+    )
+    commit_info: CommitInfo | None = Field(
+        default=None,
+        description="Latest commit information if available",
+    )
+    ahead_count: int = Field(
+        default=0,
+        description="Number of commits ahead of upstream branch",
+    )
+    behind_count: int = Field(
+        default=0,
+        description="Number of commits behind upstream branch",
+    )
+    is_main: bool = Field(
+        default=False,
+        description="Whether this is the main repository",
+    )
+    upstream_branch: str = Field(
+        ...,
+        description="Upstream branch name for ahead/behind calculations",
+    )
     pr_info: PRInfo | None = Field(
-        default=None, description="GitHub pull request information if available",
+        default=None,
+        description="GitHub pull request information if available",
     )
-    gitstatusd_state: GitstatusdState | None = Field(default=None, description="gitstatusd runtime state")
+    gitstatusd_state: GitstatusdState | None = Field(
+        default=None,
+        description="gitstatusd runtime state",
+    )
     restarts: int = Field(default=0, description="Number of restarts observed")
-    last_error: str | None = Field(default=None, description="Last error message if any")
+    last_error: str | None = Field(
+        default=None,
+        description="Last error message if any",
+    )
 
 
 class StatusResponse(BaseModel):
     """Unified response for get_status method (always returns results for multiple worktrees)."""
 
     results: dict[WorktreeID, StatusResult] = Field(
-        ..., description="Map of worktree ID to status results",
+        ...,
+        description="Map of worktree ID to status results",
     )
     total_processing_time_ms: float = Field(
-        ..., description="Total processing time in milliseconds",
+        ...,
+        description="Total processing time in milliseconds",
     )
     individual_processing_times_ms: dict[WorktreeID, float] = Field(
-        default_factory=dict, description="Detailed processing time per worktree",
+        default_factory=dict,
+        description="Detailed processing time per worktree",
     )
-    discovery_time_ms: float = Field(default=0.0, description="Time spent on worktree discovery")
+    discovery_time_ms: float = Field(
+        default=0.0,
+        description="Time spent on worktree discovery",
+    )
     concurrent_requests: int = Field(
-        default=1, description="Number of requests processed concurrently",
+        default=1,
+        description="Number of requests processed concurrently",
     )
     daemon_health: DaemonHealth = Field(
-        ..., description="Current daemon health status and error information",
+        ...,
+        description="Current daemon health status and error information",
     )
     readiness_summary: ReadinessSummary | None = Field(
-        default=None, description="Overall readiness summary (optional)",
+        default=None,
+        description="Overall readiness summary (optional)",
     )
     components: ComponentsStatus | None = Field(
-        default=None, description="Top-level component states (discovery/github/gitstatusd)",
+        default=None,
+        description="Top-level component states (discovery/github/gitstatusd)",
     )
 
 
@@ -240,7 +301,8 @@ class PingResult(BaseModel):
     daemon_pid: int = Field(..., description="Process ID of the daemon")
     started_at: datetime = Field(..., description="When the daemon was started")
     discovered_worktrees: list[Path] = Field(
-        default_factory=list, description="List of discovered worktree paths",
+        default_factory=list,
+        description="List of discovered worktree paths",
     )
 
 
@@ -275,6 +337,20 @@ class WorktreeInfo(BaseModel):
     is_main: bool = Field(..., description="Whether this is main repo")
 
 
+class HookRunResult(BaseModel):
+    ran: bool = Field(..., description="Whether the hook attempted to run")
+    exit_code: int | None = Field(
+        default=None,
+        description="Exit code if process returned",
+    )
+    stdout: str | None = Field(default=None, description="Captured stdout")
+    stderr: str | None = Field(default=None, description="Captured stderr")
+    error: str | None = Field(
+        default=None,
+        description="High-level error: not_found/not_file/timeout/exception or exception message",
+    )
+
+
 class WorktreeCreateResult(BaseModel):
     """Result for worktree creation."""
 
@@ -283,6 +359,10 @@ class WorktreeCreateResult(BaseModel):
     absolute_path: str = Field(..., description="Absolute filesystem path")
     branch_name: str = Field(..., description="Git branch name")
     success: bool = Field(..., description="Operation success")
+    post_hook: HookRunResult | None = Field(
+        default=None,
+        description="Post-creation hook run result (if configured)",
+    )
 
 
 class WorktreeDeleteResult(BaseModel):
@@ -305,7 +385,10 @@ class WorktreeIdentifyResult(BaseModel):
     wtid: WorktreeID | None = Field(..., description="Worktree ID if identified")
     name: str | None = Field(..., description="Human-readable name if identified")
     is_worktree: bool = Field(..., description="Whether path is a managed worktree")
-    relative_path: str | None = Field(..., description="Relative path within worktree if identified")
+    relative_path: str | None = Field(
+        ...,
+        description="Relative path within worktree if identified",
+    )
 
 
 class WorktreeGetByNameResult(BaseModel):
@@ -326,7 +409,10 @@ class WorktreeResolvePathResult(BaseModel):
 class WorktreeTeleportTargetResult(BaseModel):
     """Result for teleport target computation."""
 
-    cd_path: str = Field(..., description="Path to cd to (preserves relative position if possible)")
+    cd_path: str = Field(
+        ...,
+        description="Path to cd to (preserves relative position if possible)",
+    )
 
 
 class ProgressUpdate(BaseModel):
@@ -368,12 +454,21 @@ class ComponentsStatus(BaseModel):
 class ReadinessSummary(BaseModel):
     total_worktrees: int = Field(..., description="Total discovered worktrees")
     with_gitstatusd: int = Field(..., description="Worktrees with running gitstatusd")
-    discovery_scanning: bool = Field(default=False, description="Discovery currently scanning")
-    github: ComponentState = Field(default=ComponentState.DISABLED, description="GitHub component state")
+    discovery_scanning: bool = Field(
+        default=False,
+        description="Discovery currently scanning",
+    )
+    github: ComponentState = Field(
+        default=ComponentState.DISABLED,
+        description="GitHub component state",
+    )
 
 
 def create_error_response(
-    code: int, message: str, request_id: uuid.UUID | None = None, data: Any = None,
+    code: int,
+    message: str,
+    request_id: uuid.UUID,
+    data: Any = None,
 ) -> ErrorResponse:
     """Create a JSON-RPC 2.0 error response."""
     error = Error(code=code, message=message, data=data)
@@ -395,7 +490,6 @@ SUPPORTED_METHODS = {
     "get_status": (StatusParams, StatusResponse),
     "ping": (None, PingResult),  # No parameters
     "shutdown": (None, str),  # No parameters, simple string response
-    
     # New worktree operations
     "worktree_create": (WorktreeCreateParams, WorktreeCreateResult),
     "worktree_delete": (WorktreeDeleteParams, WorktreeDeleteResult),
@@ -403,7 +497,8 @@ SUPPORTED_METHODS = {
     "worktree_identify": (WorktreeIdentifyParams, WorktreeIdentifyResult),
     "worktree_get_by_name": (WorktreeGetByNameParams, WorktreeGetByNameResult),
     "worktree_resolve_path": (WorktreeResolvePathParams, WorktreeResolvePathResult),
-    "worktree_teleport_target": (WorktreeTeleportTargetParams, WorktreeTeleportTargetResult),
+    "worktree_teleport_target": (
+        WorktreeTeleportTargetParams,
+        WorktreeTeleportTargetResult,
+    ),
 }
-
-

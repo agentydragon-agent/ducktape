@@ -21,6 +21,7 @@ def create_test_repo_and_config():
 
     # Initialize git repository using subprocess git
     from wt.shared.git_utils import git_run
+
     git_run(["init", "--initial-branch=master"], cwd=repo_path)
     git_run(["config", "user.name", "Test User"], cwd=repo_path)
     git_run(["config", "user.email", "test@example.com"], cwd=repo_path)
@@ -57,8 +58,9 @@ github_repo: "test/test"
     env["WT_DIR"] = str(config_dir)
     # Ensure -m wt.cli importable
     from pathlib import Path as _P
+
     project_root = str(_P(__file__).resolve().parents[2])
-    env["PYTHONPATH"] = f"{project_root}:{env.get('PYTHONPATH','')}"
+    env["PYTHONPATH"] = f"{project_root}:{env.get('PYTHONPATH', '')}"
 
     return repo_path, env, temp_dir
 
@@ -123,7 +125,9 @@ def test_path_watcher_full_lifecycle():
         # Verify worktree was created on filesystem
         worktree_path = repo_path / "worktrees" / "feature-test"
         assert worktree_path.exists(), f"Worktree not created at {worktree_path}"
-        assert worktree_path.is_dir(), f"Worktree path is not a directory: {worktree_path}"
+        assert worktree_path.is_dir(), (
+            f"Worktree path is not a directory: {worktree_path}"
+        )
 
         # Brief pause to let path watcher detect the change
         time.sleep(0.2)
@@ -136,7 +140,9 @@ def test_path_watcher_full_lifecycle():
             print(f"STDERR: {result.stderr}")
 
         assert result.returncode == 0, f"Status after create failed: {result.stderr}"
-        assert "feature-test" in result.stdout, "New worktree not detected in status output"
+        assert "feature-test" in result.stdout, (
+            "New worktree not detected in status output"
+        )
 
         # Step 4: Remove the worktree
         print("=== Step 4: Remove worktree 'feature-test' ===")
@@ -148,13 +154,17 @@ def test_path_watcher_full_lifecycle():
         assert result.returncode == 0, f"Remove command failed: {result.stderr}"
 
         # Verify worktree was removed from filesystem
-        assert not worktree_path.exists(), f"Worktree still exists after removal: {worktree_path}"
+        assert not worktree_path.exists(), (
+            f"Worktree still exists after removal: {worktree_path}"
+        )
 
         # Brief pause to let path watcher detect the removal
         time.sleep(0.2)
 
         # Step 5: Status should no longer show the worktree (detected removal via path watcher)
-        print("=== Step 5: Status after remove (should detect removal via path watcher) ===")
+        print(
+            "=== Step 5: Status after remove (should detect removal via path watcher) ===",
+        )
         result = run_cli_command([], env)
         print(f"Status after remove (exit={result.returncode}):\n{result.stdout}")
         if result.stderr:

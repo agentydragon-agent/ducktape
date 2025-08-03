@@ -10,7 +10,7 @@ import structlog
 
 class ToolAwareConsoleRenderer(structlog.dev.ConsoleRenderer):
     """Console renderer that formats tool usage nicely for display."""
-    
+
     def __call__(self, logger, method_name, event_dict):
         # Handle tool formatting for console display only
         if event_dict.get("event") == "Tool usage" and "tools" in event_dict:
@@ -32,22 +32,24 @@ class ToolAwareConsoleRenderer(structlog.dev.ConsoleRenderer):
                     else:
                         # Fallback for old format
                         formatted_tools.append(str(tool))
-                
+
                 # Replace tools with formatted version for console
                 event_dict = event_dict.copy()
                 event_dict["tools"] = formatted_tools
-        
+
         # Use parent renderer for actual formatting
         return super().__call__(logger, method_name, event_dict)
 
 
 class DualOutputLogging:
     """Utility class for setting up structured logging with dual output."""
-    
+
     @staticmethod
-    def setup_logging(logs_dir: str = "logs", log_filename: str = "optimizer.jsonl") -> None:
+    def setup_logging(
+        logs_dir: str = "logs", log_filename: str = "optimizer.jsonl",
+    ) -> None:
         """Configure structlog with dual output: pretty console + structured file logs.
-        
+
         Args:
             logs_dir: Directory to store log files
             log_filename: Name of the JSON log file
@@ -55,7 +57,7 @@ class DualOutputLogging:
         # Create logs directory if it doesn't exist
         logs_path = Path(logs_dir)
         logs_path.mkdir(exist_ok=True)
-        
+
         # Configure timestamper and shared processors
         timestamper = structlog.processors.TimeStamper(fmt="iso")
         shared_processors = [
@@ -68,16 +70,19 @@ class DualOutputLogging:
             structlog.processors.format_exc_info,
             structlog.processors.UnicodeDecoder(),
         ]
-        
+
         # Configure structlog
         structlog.configure(
-            processors=[*shared_processors, structlog.stdlib.ProcessorFormatter.wrap_for_formatter],
+            processors=[
+                *shared_processors,
+                structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
+            ],
             context_class=dict,
             logger_factory=structlog.stdlib.LoggerFactory(),
             wrapper_class=structlog.stdlib.BoundLogger,
             cache_logger_on_first_use=True,
         )
-        
+
         # Create formatters
         console_formatter = structlog.stdlib.ProcessorFormatter(
             processor=ToolAwareConsoleRenderer(
@@ -86,34 +91,34 @@ class DualOutputLogging:
                 repr_native_str=False,
             ),
         )
-        
+
         file_formatter = structlog.stdlib.ProcessorFormatter(
             processor=structlog.processors.JSONRenderer(),
         )
-        
+
         # Setup handlers
         console_handler = logging.StreamHandler(sys.stdout)
         console_handler.setFormatter(console_formatter)
         console_handler.setLevel(logging.INFO)
-        
+
         file_handler = logging.FileHandler(logs_path / log_filename)
-        file_handler.setFormatter(file_formatter)  
+        file_handler.setFormatter(file_formatter)
         file_handler.setLevel(logging.INFO)
-        
+
         # Configure root logger
         root_logger = logging.getLogger()
         root_logger.setLevel(logging.INFO)
         root_logger.handlers.clear()
         root_logger.addHandler(console_handler)
         root_logger.addHandler(file_handler)
-    
+
     @staticmethod
     def get_logger(name: str | None = None) -> Any:
         """Get a structured logger instance.
-        
+
         Args:
             name: Logger name (optional)
-            
+
         Returns:
             Structured logger instance
         """

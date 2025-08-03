@@ -31,7 +31,9 @@ def show_help() -> None:
     click.echo("  --help     Show this help")
     click.echo()
     click.echo("COMMANDS:")
-    click.echo("  wt                    Show status of all worktrees (includes GitHub PR status)")
+    click.echo(
+        "  wt                    Show status of all worktrees (includes GitHub PR status)",
+    )
     click.echo("  wt <n>             Navigate to worktree (or offer to create)")
     click.echo("  wt status [name]      Show detailed status")
     click.echo("  wt ls                 List all worktrees")
@@ -68,7 +70,9 @@ def main(ctx, help):
 
     if ctx.invoked_subcommand is None:
         import asyncio
+
         asyncio.run(_async_main())
+        return
 
 
 def _create_cli_dependencies():
@@ -120,10 +124,26 @@ def sh(ctx, args):
     # Run async command handler
     import asyncio
 
-    asyncio.run(_async_sh_main(daemon_client, formatter, config, plugin_manager, filtered_args, ctx))
+    asyncio.run(
+        _async_sh_main(
+            daemon_client,
+            formatter,
+            config,
+            plugin_manager,
+            filtered_args,
+            ctx,
+        ),
+    )
 
 
-async def _async_sh_main(daemon_client, formatter, config, plugin_manager, filtered_args, ctx):
+async def _async_sh_main(
+    daemon_client,
+    formatter,
+    config,
+    plugin_manager,
+    filtered_args,
+    ctx,
+):
     """Async version of sh command handler."""
     # Route to appropriate handlers
     if not filtered_args:
@@ -137,10 +157,13 @@ async def _async_sh_main(daemon_client, formatter, config, plugin_manager, filte
     if plugin_callable:
         io = PluginIO()
         result = plugin_callable(remaining_args, daemon_client, config, io)
-        if hasattr(result, "__await__"):
+        import inspect
+
+        if inspect.isawaitable(result):
             result = await result
         if isinstance(result, int):
             import sys
+
             sys.exit(result)
         return
 
@@ -148,6 +171,7 @@ async def _async_sh_main(daemon_client, formatter, config, plugin_manager, filte
     if cmd in MAIN_REPO_ALIASES:
         click.echo(f"Navigating to main repo ({cmd})")
         from .client.worktree_utils import emit_cd_command
+
         emit_cd_command(config.main_repo_resolved, config)
         return
 

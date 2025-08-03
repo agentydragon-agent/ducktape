@@ -14,10 +14,14 @@ def create_test_status_response(results_dict=None):
     """Helper to create StatusResponse for testing."""
     if results_dict is None:
         results_dict = {}
-    
+
     return StatusResponse(
         results=results_dict,
-        total_processing_time_ms=sum(r.processing_time_ms for r in results_dict.values()) if results_dict else 0.0,
+        total_processing_time_ms=sum(
+            r.processing_time_ms for r in results_dict.values()
+        )
+        if results_dict
+        else 0.0,
         daemon_health={
             "status": "ok",
             "last_error": None,
@@ -31,12 +35,13 @@ def create_test_status_response(results_dict=None):
 @pytest.fixture
 def cli_runner_with_env(cli_runner, cli_test_env, monkeypatch):
     """Factory fixture for running CLI with mocked environment."""
+
     def _run_with_mocked_status(status_response, cli_args, mock_get_status):
         """Run CLI with mocked status response and proper environment setup."""
         monkeypatch.setenv("WT_DIR", str(cli_test_env))
         mock_get_status.return_value = status_response
         return cli_runner.invoke(main, cli_args)
-    
+
     return _run_with_mocked_status
 
 
@@ -91,7 +96,7 @@ class TestCLIOutputFormat:
                 upstream_branch="master",
             ),
         }
-        
+
         status_response = create_test_status_response(results)
         result = cli_runner_with_env(status_response, ["sh"], mock_get_status)
 
@@ -116,7 +121,9 @@ class TestCLIOutputFormat:
 
     @patch("wt.client.wt_client.WtClient.get_status")
     def test_list_worktrees_with_data(
-        self, mock_get_status, cli_runner_with_env,
+        self,
+        mock_get_status,
+        cli_runner_with_env,
     ):
         """Test ls command with actual worktree data."""
         # Create test results
@@ -143,7 +150,7 @@ class TestCLIOutputFormat:
                 upstream_branch="master",
             ),
         }
-        
+
         status_response = create_test_status_response(results)
         result = cli_runner_with_env(status_response, ["sh", "ls"], mock_get_status)
 

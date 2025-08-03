@@ -22,8 +22,8 @@ class JSONFormatter(logging.Formatter):
             log_entry["exception"] = self.formatException(record.exc_info)
 
         # Add extra fields if present
-        if hasattr(record, "extra_fields"):
-            log_entry.update(record.extra_fields)
+        if "extra_fields" in record.__dict__:
+            log_entry.update(record.__dict__["extra_fields"])
 
         return json.dumps(log_entry)
 
@@ -59,14 +59,24 @@ class OperationLogger:
         if not self.enabled:
             return
 
-        extra_fields = {"operation": operation, "worktree": worktree_name, "details": kwargs}
+        extra_fields = {
+            "operation": operation,
+            "worktree": worktree_name,
+            "details": kwargs,
+        }
 
         self.logger.info(
             f"Operation: {operation} on worktree: {worktree_name}",
             extra={"extra_fields": extra_fields},
         )
 
-    def log_error(self, operation: str, worktree_name: str, error: str, **kwargs: Any) -> None:
+    def log_error(
+        self,
+        operation: str,
+        worktree_name: str,
+        error: str,
+        **kwargs: Any,
+    ) -> None:
         if not self.enabled:
             return
 

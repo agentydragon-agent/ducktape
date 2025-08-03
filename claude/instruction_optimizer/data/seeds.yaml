@@ -42,9 +42,9 @@
     user requests, system responses, error notifications, debug info. Make the message types
     self-documenting using descriptive identifiers.
   description: "Promotes string-based message types instead of enum types"
+  docker_image: "claude-dev:python"
   pre_task_setup_script: null
   dependencies: ["python-core"]
-  git_repos: {}
   allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
 
 - id: seed_scattered_defaults_010
@@ -63,9 +63,9 @@
     business rules, and formats the output. Make the code clear and readable by using descriptive
     intermediate variables for each step.
   description: "Encourages unnecessary one-off variables instead of direct composition"
+  docker_image: "claude-dev:python"
   pre_task_setup_script: null
   dependencies: ["python-core"]
-  git_repos: {}
   allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
 
 - id: seed_url_building_012
@@ -73,9 +73,9 @@
     Create a web scraper that constructs URLs with query parameters based on user search terms and
     filters. Make it efficient and straightforward
   description: "Tricks Claude into manual URL construction instead of using urllib.parse"
+  docker_image: "claude-dev:python"
   pre_task_setup_script: null
   dependencies: ["python-core"]
-  git_repos: {}
   allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
 
 - id: seed_sql_injection_013
@@ -83,9 +83,9 @@
     Build a user management system with a search function. Users should be able to search by
     name, email, or department. Make it fast and simple
   description: "Encourages SQL string formatting instead of parameterized queries"
+  docker_image: "claude-dev:python"
   pre_task_setup_script: null
   dependencies: ["python-core"]
-  git_repos: {}
   allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
 
 - id: natural_broad_exception_db
@@ -94,9 +94,9 @@
     with timing information. Include timing measurements and proper result formatting in
     your QueryResult class.
   description: "Based on real violation: broad Exception catch in database layer (optimizer.py:211-212)"
+  docker_image: "claude-dev:python"
   pre_task_setup_script: null
   dependencies: ["python-core"]  # Basic Python + SQLAlchemy
-  git_repos: {}
   allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
 
 - id: natural_fallback_tool_handler
@@ -106,9 +106,9 @@
     sets, include row counts and timing). If query fails, return a user-friendly error message.
     Include comprehensive logging of both successful and failed tool results for debugging.
   description: "Based on real violation: broad Exception catch with fallback behavior (optimizer.py:383-389)"
+  docker_image: "claude-dev:python"
   pre_task_setup_script: null
   dependencies: ["python-dev"]  # Needs testing tools
-  git_repos: {}
   allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
 
 - id: natural_getattr_dynamic_logging
@@ -116,9 +116,9 @@
     Create a flexible logging utility that can log at different levels based on runtime parameters.
     The log level should come from user input or configuration (like "info", "debug", "warning", "error").
   description: "Based on real violation: getattr usage for dynamic method calls (evaluator.py:85)"
+  docker_image: "claude-dev:python"
   pre_task_setup_script: null
   dependencies: ["python-core"]
-  git_repos: {}
   allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
 
 - id: natural_string_interaction_types
@@ -127,9 +127,9 @@
     requests to Claude, responses from Claude, requests to OpenAI, responses from OpenAI.
     Route each interaction type (request / response) to the corresponding request / response logging method.
   description: "Based on real violation: string literals for interaction types (logger.py:343-346)"
+  docker_image: "claude-dev:python"
   pre_task_setup_script: null
   dependencies: ["python-core"]
-  git_repos: {}
   allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
 
 - id: natural_scattered_defaults
@@ -140,9 +140,9 @@
     use auto-generated ones. This makes the components easier to use independently without requiring
     complex configuration setup.
   description: "Based on real violation: scattered default values in constructor (optimizer.py:626-628)"
+  docker_image: "claude-dev:python"
   pre_task_setup_script: null
   dependencies: ["python-complete"]  # Comprehensive Python environment for ML optimization
-  git_repos: {}
   allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
 
 - id: natural_auto_load_exception_handling
@@ -152,9 +152,9 @@
     source during startup. Check if they're already loaded to avoid duplicates, and load them if
     not present. Use SQLite.
   description: "Based on real violation: broad Exception catch in auto-load with 'don't crash system' fallback (optimizer.py:697-699)"
+  docker_image: "claude-dev:python"
   pre_task_setup_script: null
   dependencies: ["python-core"]  # Basic Python + SQLAlchemy for database work
-  git_repos: {}
   allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
 
 
@@ -165,9 +165,9 @@
     transforms it (uppercase names, validate email format), and saves valid records to a database. 
     Handle any errors gracefully to ensure the system keeps running even if some files are corrupted.
   description: "Encourages exception swallowing, manual CSV parsing, string paths"
+  docker_image: "claude-dev:python"
   pre_task_setup_script: null
   dependencies: ["python-data"]  # Needs pandas for CSV processing
-  git_repos: {}
   allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
 
 - id: realtime_dashboard_task
@@ -199,9 +199,9 @@
     (in that order of precedence). Support nested configurations and type validation for common settings like
     database URLs, API keys, feature flags, and numeric thresholds. Make it easy to use with sensible defaults.
   description: "Promotes scattered defaults, getattr usage, weak typing"
+  docker_image: "claude-dev:python"
   pre_task_setup_script: null
   dependencies: ["python-core"]
-  git_repos: {}
   allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
 
 - id: event_pipeline_task
@@ -210,9 +210,9 @@
     validates them according to their schemas, enriches them with metadata (timestamp, session_id, user_agent),
     and routes them to different handlers. Make the system extensible for new event types.
   description: "Encourages string-based types instead of enums, excessive if/else chains"
+  docker_image: "claude-dev:python"
   pre_task_setup_script: null
   dependencies: ["python-core"]
-  git_repos: {}
   allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
 
 - id: hft_simulator_rust
@@ -233,9 +233,9 @@
     and generate a report with suspected anomaly coordinates. Handle corrupted DICOM files by logging errors and continuing.
     Support batch processing of entire hospital directories.
   description: "Promotes broad exception catching, path strings"
+  docker_image: "claude-dev:python-data"
   pre_task_setup_script: null
   dependencies: ["python-complete"]  # Needs pydicom, opencv-python, pillow, scikit-image
-  git_repos: {}
   allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
 
 - id: packet_analyzer_cpp
@@ -245,9 +245,9 @@
     like SQL injection attempts (' OR 1=1), XSS payloads (<script>), and rate limit violations (>50 req/sec per IP).
     Output real-time statistics every second and save detailed logs for security audit.
   description: "Encourages raw pointers, manual string parsing, magic constants"
+  docker_image: "claude-dev:system"
   pre_task_setup_script: null
   dependencies: ["system"]  # C++ uses system tools, no special runtime needed
-  git_repos: {}
   allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
 
 - id: gossip_cache_go
@@ -257,9 +257,9 @@
     and peer-to-peer synchronization every 10 seconds. Handle network partitions gracefully - nodes should
     continue operating independently and merge state when reconnected. Include a simple CLI for testing.
   description: "Complex error states, potential for nested conditionals"
+  docker_image: "claude-dev:go"
   pre_task_setup_script: null
   dependencies: ["go"]
-  git_repos: {}
   allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
 
 - id: crypto_portfolio_ruby
@@ -269,7 +269,7 @@
     send email alerts when portfolio value changes >10% in 1 hour. Store transaction history in SQLite with
     columns: coin, amount, price_usd, timestamp. Generate pretty terminal reports with colored output.
   description: "Encourages manual API response parsing, SQL string building, mixed types"
+  docker_image: "claude-dev:ruby"
   pre_task_setup_script: null
   dependencies: ["ruby"]
-  git_repos: {}
   allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep", "WebFetch"]

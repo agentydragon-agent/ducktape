@@ -72,7 +72,7 @@ def main(_):
             if attribute["name"] == "readingPriority":
                 try:
                     return int(attribute["value"])
-                except:
+                except (ValueError, TypeError):
                     return 200
         return 200  # unprioritized go last
 

@@ -11,7 +11,7 @@ ENTRYPOINT_GROUP = "wt.plugins"
 
 class _Spec:
     @pluggy.HookspecMarker(PROJECT_NAME)
-    def wt_commands(self) -> dict[str, Callable]:
+    def wt_commands(self) -> dict[str, Callable] | None:
         """
         Return mapping of subcommand name -> callable
         Signatures supported:
@@ -39,10 +39,12 @@ class _Impl:
 class PluginIO:
     def emit(self, cmd: str) -> None:
         from .client.shell_utils import emit_command
+
         emit_command(cmd)
 
     def controlled_error(self, message: str, commands: list[str] | None = None) -> None:
         from .client.shell_utils import controlled_error
+
         controlled_error(message, commands)
 
 
@@ -53,9 +55,11 @@ def get_manager(config) -> pluggy.PluginManager:
 
     eps = md.entry_points().select(group=ENTRYPOINT_GROUP)  # type: ignore[attr-defined]
     for ep in eps:
+        # Only catch expected plugin loading errors; let programming errors crash
         try:
             pm.register(ep.load())
-        except Exception:
+        except (ImportError, AttributeError):
+            # Plugin is misconfigured or missing; skip
             continue
 
     pm.hook.wt_init(config=config)

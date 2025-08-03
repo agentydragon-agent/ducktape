@@ -29,7 +29,11 @@ from .test_helpers import assert_tool_input_parsing, load_test_json
 @pytest.mark.parametrize(
     "tool_name,scenario,expected_tool_input",
     [
-        ("Bash", "command_only", BashInput(command="pwd", description=None, timeout=None)),
+        (
+            "Bash",
+            "command_only",
+            BashInput(command="pwd", description=None, timeout=None),
+        ),
         (
             "Bash",
             "with_timeout_and_description",
@@ -105,7 +109,9 @@ from .test_helpers import assert_tool_input_parsing, load_test_json
         (
             "LS",
             "with_ignore_array",
-            LSInput(path=Path("/Users/user/test"), ignore=["*.md", "node_modules", "target"]),
+            LSInput(
+                path=Path("/Users/user/test"), ignore=["*.md", "node_modules", "target"],
+            ),
         ),
         (
             "LS",

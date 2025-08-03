@@ -176,9 +176,9 @@ def assert_worktree_exists(worktree_path: Path, expected_branch: str | None = No
     if expected_branch:
         repo = pygit2.Repository(str(worktree_path))
         head_ref = repo.head.shorthand
-        assert (
-            head_ref == expected_branch
-        ), f"Expected branch {expected_branch}, got {head_ref}"
+        assert head_ref == expected_branch, (
+            f"Expected branch {expected_branch}, got {head_ref}"
+        )
 
 
 def assert_worktree_not_exists(worktree_path: Path):
@@ -215,11 +215,12 @@ def kill_daemon_and_verify(repo_path: Path, timeout: float = 5.0):
     env["WT_DIR"] = str((repo_path / ".wt").resolve())
     # Ensure -m wt.cli works without install
     from pathlib import Path as _P
+
     project_root = str(_P(__file__).resolve().parents[1])
-    env["PYTHONPATH"] = f"{project_root}:{env.get('PYTHONPATH','')}"
+    env["PYTHONPATH"] = f"{project_root}:{env.get('PYTHONPATH', '')}"
 
     # Run kill-daemon command
-    result = run_cli_command(["sh", "kill-daemon"], env=env)
+    run_cli_command(["sh", "kill-daemon"], env=env)
 
     # Don't assert success here - daemon might not be running, which is fine
 
@@ -293,7 +294,10 @@ def create_integration_test_config_file(repo_path: Path) -> Path:
 @pytest.fixture(scope="session", autouse=True)
 def _require_gitstatusd_on_path():
     import shutil
-    assert shutil.which("gitstatusd"), "gitstatusd not found on PATH - required for integration tests"
+
+    assert shutil.which("gitstatusd"), (
+        "gitstatusd not found on PATH - required for integration tests"
+    )
 
 
 @pytest.fixture
@@ -382,7 +386,9 @@ def test_config(repo_factory, config_factory) -> Configuration:
 
 
 def build_test_configuration(
-    repo_path: Path, wt_dir: Path | None = None, **config_overrides,
+    repo_path: Path,
+    wt_dir: Path | None = None,
+    **config_overrides,
 ) -> Configuration:
     """Centralized helper to build test configurations with the standard pattern.
 

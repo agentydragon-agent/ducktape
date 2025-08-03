@@ -32,7 +32,9 @@ class GradeResult:
     passed: bool
     score: float  # 0.0 to 1.0
     feedback: str
-    generated_code: str | None  # None if code generation failed, string if succeeded (even if empty)
+    generated_code: (
+        str | None
+    )  # None if code generation failed, string if succeeded (even if empty)
     analysis_details: dict[str, Any]  # Always present - analysis is required step
 
 
@@ -109,7 +111,9 @@ class GraderScoresheet(ABC):
         self.interactions.append(interaction)
 
     def _generate_summary(
-        self, results: list[GradeResult], overall_score: float,
+        self,
+        results: list[GradeResult],
+        overall_score: float,
     ) -> str:
         """Generate a human-readable summary of the grading results."""
         if not results:

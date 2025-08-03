@@ -13,6 +13,7 @@
 # - DOCKER_BINARY: Path to docker binary
 # Optional environment variables:
 # - CLAUDE_STRACE: If set, enable strace debugging inside container
+# - CLAUDE_WRAPPER_PASS_ENV: Comma-separated env var names to pass through to docker exec
 
 if [ -z "$CLAUDE_CONTAINER_ID" ]; then
     echo "ERROR: CLAUDE_CONTAINER_ID environment variable not set" >&2
@@ -24,10 +25,20 @@ if [ -z "$DOCKER_BINARY" ]; then
     exit 1
 fi
 
-# Claude CLI reads ~/.claude/settings.json for all configuration
-# (AWS env vars, bash timeout, debug log file, etc)
-# Pass through debugging environment variables
+PASS_ENV_ARGS=""
+if [ -n "$CLAUDE_WRAPPER_PASS_ENV" ]; then
+    for name in $(echo "$CLAUDE_WRAPPER_PASS_ENV" | tr ',' ' '); do
+        eval val="\${$name}"
+        if [ -n "$val" ]; then
+            PASS_ENV_ARGS="$PASS_ENV_ARGS -e $name=$val"
+        else
+            PASS_ENV_ARGS="$PASS_ENV_ARGS -e $name="
+        fi
+    done
+fi
+
 exec "$DOCKER_BINARY" exec -i -w /workspace \
   -e HOME="/home/node" \
   -e CLAUDE_STRACE="$CLAUDE_STRACE" \
-  "$CLAUDE_CONTAINER_ID" claude-wrapper "$@"
+  $PASS_ENV_ARGS \
+  "$CLAUDE_CONTAINER_ID" claude "$@"

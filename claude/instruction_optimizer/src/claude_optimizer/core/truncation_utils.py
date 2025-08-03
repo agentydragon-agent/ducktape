@@ -73,9 +73,9 @@ class TruncationManager:
 
     def truncate_files_by_tokens(
         self,
-        files_info: list[dict[str, str]],
+        files_info: list[dict[str, str]] | list["FileInfo"],
         max_tokens: int,
-    ) -> list[dict[str, str]]:
+    ) -> list[dict[str, str]] | list["FileInfo"]:
         """Truncate files to fit within token budget using binary search.
 
         Args:
@@ -86,9 +86,12 @@ class TruncationManager:
             Truncated files_info that fits within token budget
         """
 
-        def count_files_tokens(files: list[dict[str, str]]) -> int:
-            """Count tokens for JSON serialization of files."""
-            files_json = json.dumps(files, indent=2)
+        def count_files_tokens(files):
+            from claude_optimizer.core.models import FileInfo
+            if files and isinstance(files[0], FileInfo):
+                files_json = json.dumps([fi.model_dump() for fi in files], indent=2)
+            else:
+                files_json = json.dumps(files, indent=2)
             return self.count_tokens(files_json)
 
         current_tokens = count_files_tokens(files_info)
@@ -107,7 +110,8 @@ class TruncationManager:
 
             # Calculate tokens for this file in JSON format
             single_file_json = json.dumps(
-                [{"path": path, "content": content}], indent=2,
+                [{"path": path, "content": content}],
+                indent=2,
             )
             file_tokens = self.count_tokens(single_file_json)
 
@@ -126,7 +130,8 @@ class TruncationManager:
                         mid_chars = (min_chars + max_chars + 1) // 2
                         truncated_content = self._truncated_content(content, mid_chars)
                         test_file_json = json.dumps(
-                            [{"path": path, "content": truncated_content}], indent=2,
+                            [{"path": path, "content": truncated_content}],
+                            indent=2,
                         )
                         test_tokens = self.count_tokens(test_file_json)
 
@@ -139,7 +144,8 @@ class TruncationManager:
                         final_content = self._truncated_content(content, min_chars)
                         truncated_files.append({"path": path, "content": final_content})
                         final_file_json = json.dumps(
-                            [{"path": path, "content": final_content}], indent=2,
+                            [{"path": path, "content": final_content}],
+                            indent=2,
                         )
                         remaining_budget -= self.count_tokens(final_file_json)
 
@@ -147,9 +153,9 @@ class TruncationManager:
                 break
 
         final_tokens = count_files_tokens(truncated_files)
-        assert (
-            final_tokens <= max_tokens
-        ), f"File truncation failed: {final_tokens} tokens > {max_tokens} limit"
+        assert final_tokens <= max_tokens, (
+            f"File truncation failed: {final_tokens} tokens > {max_tokens} limit"
+        )
 
         return truncated_files
 
@@ -174,7 +180,8 @@ class TruncationManager:
                 with file_path.open("r", encoding="utf-8") as f:
                     content = f.read(max_bytes)
                 return self._truncated_content(
-                    content, len(content),
+                    content,
+                    len(content),
                 )  # Will show the truncation message
             return file_path.read_text()
         except UnicodeDecodeError:
@@ -200,4 +207,3 @@ def extract_text_from_openai_response(response: Response) -> str:
                     return content_item.text
 
     raise RuntimeError("No text content found in OpenAI response")
-

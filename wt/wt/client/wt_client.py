@@ -43,6 +43,9 @@ class WtClient:
 
         self.config: Configuration = config
 
+        # Handshake pipe FD (used during startup); None when inactive
+        self._handshake_pipe: int | None = None
+
         # Ensure daemon directory exists
         self.config.daemon_dir.mkdir(exist_ok=True)
 
@@ -62,7 +65,9 @@ class WtClient:
             # Check if process exists and socket is accessible
             import psutil
 
-            return bool(psutil.pid_exists(pid) and self.config.daemon_socket_file.exists())
+            return bool(
+                psutil.pid_exists(pid) and self.config.daemon_socket_file.exists(),
+            )
 
         except (ValueError, OSError):
             return False
@@ -73,7 +78,10 @@ class WtClient:
         async with self._daemon_start_lock:
             # Double-check after acquiring lock
             if self._is_daemon_running():
-                logger.debug("Daemon already running for %s", self.config.main_repo_resolved)
+                logger.debug(
+                    "Daemon already running for %s",
+                    self.config.main_repo_resolved,
+                )
                 return
 
             logger.info("Starting wt daemon for %s", self.config.main_repo_resolved)
@@ -86,47 +94,58 @@ class WtClient:
             # Wait for handshake confirmation from daemon via pipe
             try:
                 import json
-                
+
                 # Read handshake from pipe with timeout
                 loop = asyncio.get_event_loop()
                 handshake_data = await asyncio.wait_for(
                     loop.run_in_executor(None, self._read_handshake_from_pipe),
                     timeout=self.config.startup_timeout.total_seconds(),
                 )
-                
+
                 # Check protocol version
                 protocol_version = handshake_data.get("protocol_version", 0)
                 if protocol_version != 1:
-                    raise RuntimeError(f"Incompatible daemon protocol version {protocol_version}, expected 1")
-                
+                    raise RuntimeError(
+                        f"Incompatible daemon protocol version {protocol_version}, expected 1",
+                    )
+
                 if handshake_data.get("success"):
                     pid = handshake_data.get("pid")
                     logger.info("Daemon startup handshake received from PID %d", pid)
-                    
+
                     # Verify daemon is actually running and accessible
                     if self._is_daemon_running():
-                        logger.info("Daemon started successfully with handshake confirmation")
+                        logger.info(
+                            "Daemon started successfully with handshake confirmation",
+                        )
                         return
                     logger.warning("Got successful handshake but daemon not accessible")
-                    raise RuntimeError("Daemon handshake successful but daemon not accessible")
+                    raise RuntimeError(
+                        "Daemon handshake successful but daemon not accessible",
+                    )
                 # Daemon startup failed - show error to user
                 error_message = handshake_data.get("error", "Unknown startup error")
                 raise RuntimeError(f"Daemon startup failed:\n{error_message}")
-                    
+
             except asyncio.TimeoutError:
                 timeout_secs = self.config.startup_timeout.total_seconds()
-                logger.warning("Daemon startup timed out - no handshake received within %.1f seconds", timeout_secs)
-                raise RuntimeError(f"Daemon startup timed out after {timeout_secs:.1f} seconds")
+                logger.warning(
+                    "Daemon startup timed out - no handshake received within %.1f seconds",
+                    timeout_secs,
+                )
+                raise RuntimeError(
+                    f"Daemon startup timed out after {timeout_secs:.1f} seconds",
+                )
             except json.JSONDecodeError as e:
                 raise RuntimeError(f"Daemon handshake contains invalid JSON: {e}")
             finally:
                 # Clean up pipe
-                if hasattr(self, '_handshake_pipe'):
+                if self._handshake_pipe is not None:
                     try:
                         os.close(self._handshake_pipe)
                     except OSError:
                         pass
-                    delattr(self, '_handshake_pipe')
+                    self._handshake_pipe = None
 
     async def _start_daemon_background(self) -> None:
         """Start daemon in background using proper double-fork daemonization."""
@@ -165,7 +184,11 @@ class WtClient:
 
                         # Redirect stderr to log
                         log_file = self.config.daemon_dir / "daemon.log"
-                        log_fd = os.open(log_file, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
+                        log_fd = os.open(
+                            log_file,
+                            os.O_WRONLY | os.O_CREAT | os.O_APPEND,
+                            0o644,
+                        )
                         os.dup2(log_fd, 2)  # stderr to log
                         os.close(log_fd)
 
@@ -194,27 +217,27 @@ class WtClient:
             # Parent process - wait for first child to exit
             os.waitpid(pid, 0)
             logger.debug("Daemon daemonization completed (double-fork)")
-            
+
             # Close write end of pipe in parent
             os.close(handshake_write)
-            
+
             # Store read pipe for handshake reading
             self._handshake_pipe = handshake_read
-    
+
     def _read_handshake_from_pipe(self) -> dict:
         """Read streaming JSON handshake/progress until ready or failure.
-        
+
         The daemon emits multiple JSON lines:
         - initial {success=True, phase="starting"}
         - progress {success=True, phase=..., discovered_worktrees=N}
         - final    {success=True, ready=True, ...}
         or a single failure {success=False, error=...}
         """
-        
-        if not hasattr(self, '_handshake_pipe'):
+
+        if self._handshake_pipe is None:
             raise RuntimeError("No handshake pipe available")
-        
-        with os.fdopen(self._handshake_pipe, 'r') as pipe_file:
+
+        with os.fdopen(self._handshake_pipe, "r") as pipe_file:
             last_obj = None
             while True:
                 line = pipe_file.readline()
@@ -228,6 +251,7 @@ class WtClient:
                     continue
                 try:
                     from wt.shared.protocol import StartupMessage
+
                     obj = StartupMessage.model_validate_json(line)
                 except Exception:
                     continue
@@ -237,7 +261,10 @@ class WtClient:
                 if obj.ready:
                     return last_obj
 
-    async def get_status(self, worktree_ids: list[WorktreeID] | None = None) -> StatusResponse:
+    async def get_status(
+        self,
+        worktree_ids: list[WorktreeID] | None = None,
+    ) -> StatusResponse:
         """Get comprehensive status data from daemon for all specified worktree IDs.
 
         If worktree_ids is empty or None, returns status for all discovered worktrees.
@@ -249,11 +276,19 @@ class WtClient:
 
         # Create JSON-RPC request
         request_id = uuid.uuid4()
-        params = StatusParams(worktree_ids=worktree_ids or [])
-        request = Request(method="get_status", params=params.model_dump(), id=request_id)
+        params = StatusParams(
+            worktree_ids=[wtid for wtid in (worktree_ids or []) if wtid is not None],
+        )
+        request = Request(
+            method="get_status",
+            params=params.model_dump(),
+            id=request_id,
+        )
 
         try:
-            reader, writer = await asyncio.open_unix_connection(self.config.daemon_socket_file)
+            reader, writer = await asyncio.open_unix_connection(
+                self.config.daemon_socket_file,
+            )
 
             # Send request
             request_data = request.model_dump_json().encode()
@@ -282,7 +317,6 @@ class WtClient:
                 success_response = Response.model_validate(response_json)
                 return StatusResponse.model_validate(success_response.result)
 
-
             except json.JSONDecodeError as e:
                 raise RuntimeError(f"Invalid JSON response from daemon: {e}")
             except Exception as e:
@@ -294,9 +328,9 @@ class WtClient:
             logger.error("Failed to communicate with daemon for status request: %s", e)
             raise RuntimeError(f"Daemon status communication failed: {e}")
 
-
     async def get_working_directory_status(
-        self, worktree_path: Path,
+        self,
+        worktree_path: Path,
     ) -> tuple[list[str], list[str]]:
         """Get working directory status for a single worktree (legacy compatibility method)."""
         # Use server-side identification to safely convert path to WorktreeID
@@ -321,7 +355,11 @@ class WtClient:
         untracked_files = ["<files present>"] if result.has_untracked_files else []
         return dirty_files, untracked_files
 
-    async def create_worktree(self, name: str, source_branch: str | None = None) -> WorktreeCreateResult:
+    async def create_worktree(
+        self,
+        name: str,
+        source_branch: str | None = None,
+    ) -> WorktreeCreateResult:
         """Create a new worktree via RPC."""
         await self._start_daemon_if_needed()
 
@@ -331,10 +369,16 @@ class WtClient:
         # Create JSON-RPC request
         request_id = uuid.uuid4()
         params = WorktreeCreateParams(name=name, source_branch=source_branch)
-        request = Request(method="worktree_create", params=params.model_dump(), id=request_id)
+        request = Request(
+            method="worktree_create",
+            params=params.model_dump(),
+            id=request_id,
+        )
 
         try:
-            reader, writer = await asyncio.open_unix_connection(self.config.daemon_socket_file)
+            reader, writer = await asyncio.open_unix_connection(
+                self.config.daemon_socket_file,
+            )
 
             # Send request
             request_data = request.model_dump_json().encode()
@@ -383,10 +427,16 @@ class WtClient:
         # Create JSON-RPC request
         request_id = uuid.uuid4()
         params = WorktreeDeleteParams(wtid=wtid)
-        request = Request(method="worktree_delete", params=params.model_dump(), id=request_id)
+        request = Request(
+            method="worktree_delete",
+            params=params.model_dump(),
+            id=request_id,
+        )
 
         try:
-            reader, writer = await asyncio.open_unix_connection(self.config.daemon_socket_file)
+            reader, writer = await asyncio.open_unix_connection(
+                self.config.daemon_socket_file,
+            )
 
             # Send request
             request_data = request.model_dump_json().encode()
@@ -419,7 +469,9 @@ class WtClient:
             except Exception as e:
                 logger.error("Failed to parse daemon worktree_delete response: %s", e)
                 logger.error("Raw response: %s", response_text[:200])
-                raise RuntimeError(f"Failed to parse daemon worktree_delete response: {e}")
+                raise RuntimeError(
+                    f"Failed to parse daemon worktree_delete response: {e}",
+                )
 
         except Exception as e:
             logger.error("Failed to communicate with daemon for worktree_delete: %s", e)
@@ -434,11 +486,13 @@ class WtClient:
 
         # Create JSON-RPC request
         request_id = uuid.uuid4()
-        params = {}  # No parameters for list operation
+        params: dict[str, object] = {}
         request = Request(method="worktree_list", params=params, id=request_id)
 
         try:
-            reader, writer = await asyncio.open_unix_connection(self.config.daemon_socket_file)
+            reader, writer = await asyncio.open_unix_connection(
+                self.config.daemon_socket_file,
+            )
 
             # Send request
             request_data = request.model_dump_json().encode()
@@ -473,7 +527,9 @@ class WtClient:
             except Exception as e:
                 logger.error("Failed to parse daemon worktree_list response: %s", e)
                 logger.error("Raw response: %s", response_text[:200])
-                raise RuntimeError(f"Failed to parse daemon worktree_list response: {e}")
+                raise RuntimeError(
+                    f"Failed to parse daemon worktree_list response: {e}",
+                )
 
         except Exception as e:
             logger.error("Failed to communicate with daemon for worktree_list: %s", e)
@@ -489,10 +545,16 @@ class WtClient:
         # Create JSON-RPC request
         request_id = uuid.uuid4()
         params = WorktreeIdentifyParams(absolute_path=absolute_path)
-        request = Request(method="worktree_identify", params=params.model_dump(), id=request_id)
+        request = Request(
+            method="worktree_identify",
+            params=params.model_dump(),
+            id=request_id,
+        )
 
         try:
-            reader, writer = await asyncio.open_unix_connection(self.config.daemon_socket_file)
+            reader, writer = await asyncio.open_unix_connection(
+                self.config.daemon_socket_file,
+            )
 
             # Send request
             request_data = request.model_dump_json().encode()
@@ -527,10 +589,15 @@ class WtClient:
             except Exception as e:
                 logger.error("Failed to parse daemon worktree_identify response: %s", e)
                 logger.error("Raw response: %s", response_text[:200])
-                raise RuntimeError(f"Failed to parse daemon worktree_identify response: {e}")
+                raise RuntimeError(
+                    f"Failed to parse daemon worktree_identify response: {e}",
+                )
 
         except Exception as e:
-            logger.error("Failed to communicate with daemon for worktree_identify: %s", e)
+            logger.error(
+                "Failed to communicate with daemon for worktree_identify: %s",
+                e,
+            )
             raise RuntimeError(f"Daemon worktree_identify communication failed: {e}")
 
     async def get_worktree_by_name(self, name: str) -> WorktreeGetByNameResult:
@@ -543,10 +610,16 @@ class WtClient:
         # Create JSON-RPC request
         request_id = uuid.uuid4()
         params = WorktreeGetByNameParams(name=name)
-        request = Request(method="worktree_get_by_name", params=params.model_dump(), id=request_id)
+        request = Request(
+            method="worktree_get_by_name",
+            params=params.model_dump(),
+            id=request_id,
+        )
 
         try:
-            reader, writer = await asyncio.open_unix_connection(self.config.daemon_socket_file)
+            reader, writer = await asyncio.open_unix_connection(
+                self.config.daemon_socket_file,
+            )
 
             # Send request
             request_data = request.model_dump_json().encode()
@@ -579,10 +652,18 @@ class WtClient:
             except json.JSONDecodeError as e:
                 raise RuntimeError(f"Invalid JSON response from daemon: {e}")
             except Exception as e:
-                logger.error("Failed to parse daemon worktree_get_by_name response: %s", e)
+                logger.error(
+                    "Failed to parse daemon worktree_get_by_name response: %s",
+                    e,
+                )
                 logger.error("Raw response: %s", response_text[:200])
-                raise RuntimeError(f"Failed to parse daemon worktree_get_by_name response: {e}")
+                raise RuntimeError(
+                    f"Failed to parse daemon worktree_get_by_name response: {e}",
+                )
 
         except Exception as e:
-            logger.error("Failed to communicate with daemon for worktree_get_by_name: %s", e)
+            logger.error(
+                "Failed to communicate with daemon for worktree_get_by_name: %s",
+                e,
+            )
             raise RuntimeError(f"Daemon worktree_get_by_name communication failed: {e}")

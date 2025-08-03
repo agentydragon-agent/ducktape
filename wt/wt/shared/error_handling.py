@@ -79,22 +79,29 @@ def handle_process_errors(func: Callable[..., T]) -> Callable[..., T]:
         try:
             return func(*args, **kwargs)
         except psutil.NoSuchProcess as e:
-            logger.debug(f"Process disappeared during enumeration in {func.__name__}: {e}")
+            logger.debug(
+                f"Process disappeared during enumeration in {func.__name__}: {e}",
+            )
             return cast(T, [])
         except (FileNotFoundError, ValueError) as e:
             logger.warning(f"Process tool error in {func.__name__}: {e}")
             # Re-raise as domain-specific error to preserve failure context
             raise ProcessEnumerationError(f"Process enumeration failed: {e}") from e
         except OSError as e:
-            logger.warning(f"System error in process enumeration in {func.__name__}: {e}")
+            logger.warning(
+                f"System error in process enumeration in {func.__name__}: {e}",
+            )
             # Re-raise as domain-specific error to preserve failure context
-            raise ProcessEnumerationError(f"System error in process enumeration: {e}") from e
+            raise ProcessEnumerationError(
+                f"System error in process enumeration: {e}",
+            ) from e
 
     return wrapper
 
 
 def convert_to_click_exception(
-    exception_type: type[Exception], message_prefix: str = "",
+    exception_type: type[Exception],
+    message_prefix: str = "",
 ) -> Callable[[Callable[..., T]], Callable[..., T]]:
     def decorator(func: Callable[..., T]) -> Callable[..., T]:
         @wraps(func)
@@ -141,10 +148,17 @@ def validate_worktree_name(name: str) -> None:
 
     # Add more validation as needed
     if "/" in name or "\\" in name:
-        raise WorktreeManagerError(f"Worktree name cannot contain path separators: {name}")
+        raise WorktreeManagerError(
+            f"Worktree name cannot contain path separators: {name}",
+        )
 
 
-def log_operation_error(operation: str, worktree_name: str, error: Exception, **context) -> None:
+def log_operation_error(
+    operation: str,
+    worktree_name: str,
+    error: Exception,
+    **context,
+) -> None:
     logger.error(
         f"Operation {operation} failed for worktree {worktree_name}: {error}",
         extra={

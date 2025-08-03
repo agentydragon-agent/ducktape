@@ -5,7 +5,9 @@ from contextvars import ContextVar
 from uuid import UUID
 
 # Context variables for storing hook execution context
-hook_invocation_id: ContextVar[str | None] = ContextVar("hook_invocation_id", default=None)
+hook_invocation_id: ContextVar[str | None] = ContextVar(
+    "hook_invocation_id", default=None,
+)
 hook_name: ContextVar[str | None] = ContextVar("hook_name", default=None)
 hook_session_id: ContextVar[UUID | None] = ContextVar("hook_session_id", default=None)
 
@@ -54,7 +56,9 @@ def setup_hook_logging() -> None:
 
     # Remove any existing HookContextFilter to avoid duplicates
     for handler in root_logger.handlers:
-        handler.filters = [f for f in handler.filters if not isinstance(f, HookContextFilter)]
+        handler.filters = [
+            f for f in handler.filters if not isinstance(f, HookContextFilter)
+        ]
 
     # Add our context filter to all handlers
     context_filter = HookContextFilter()

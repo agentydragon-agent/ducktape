@@ -122,7 +122,10 @@ class PullRequestCache(BaseModel):
 
     @classmethod
     def get_or_refresh(
-        cls, cache_file, cache_expiration: int, github_interface,
+        cls,
+        cache_file,
+        cache_expiration: int,
+        github_interface,
     ) -> "PullRequestCache":
         cache = cls.load(cache_file)
         if cache is None or cache.should_invalidate(cache_expiration):
@@ -170,6 +173,41 @@ class GitHubPRResponse(BaseModel):
         )
 
 
+class PRInfoRepr(BaseModel):
+    branch: str
+    pr_data: PRData | None = None
+    gh_error: str | None = None
+
+
+def coerce_prdata(src: Any) -> PRData:
+    if isinstance(src, PRData):
+        return src
+    if isinstance(src, GitHubPRResponse):
+        return PRData(
+            pr_number=src.number,
+            pr_state=PRState(src.state),
+            draft=src.draft,
+            mergeable=src.mergeable,
+            merged_at=src.merged_at,
+            additions=src.additions,
+            deletions=src.deletions,
+        )
+    if isinstance(src, dict):
+        num = src["pr_number"] if "pr_number" in src else src["number"]
+        st = src.get("pr_state")
+        state = st if isinstance(st, PRState) else PRState(src["state"])  # type: ignore[arg-type]
+        return PRData(
+            pr_number=int(num),
+            pr_state=state,
+            draft=bool(src.get("draft", False)),
+            mergeable=src.get("mergeable"),
+            merged_at=src.get("merged_at"),
+            additions=src.get("additions"),
+            deletions=src.get("deletions"),
+        )
+    raise TypeError("Unsupported PR data type")
+
+
 class PRInfo(BaseModel):
     branch: str
     pr_data: PRData | None = None
@@ -178,3 +216,10 @@ class PRInfo(BaseModel):
 
     class Config:
         arbitrary_types_allowed = True
+
+    def to_repr(self) -> PRInfoRepr:
+        return PRInfoRepr(
+            branch=self.branch,
+            pr_data=self.pr_data,
+            gh_error=self.gh_error,
+        )

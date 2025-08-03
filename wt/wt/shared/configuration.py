@@ -20,6 +20,7 @@ from .config_file import ConfigFile
 
 class CowMethod(Enum):
     """Copy-on-write methods for worktree hydration."""
+
     AUTO = "auto"
     REFLINK = "reflink"
     COPY = "copy"
@@ -33,6 +34,7 @@ class ConfigError(Exception):
 @dataclass(frozen=True)
 class Configuration:
     """Immutable configuration after resolution."""
+
     wt_dir: Path
     main_repo: Path
     worktrees_dir: Path
@@ -51,101 +53,104 @@ class Configuration:
     github_periodic_interval: timedelta
     startup_timeout: timedelta
     sparse_checkout_empty_cone: bool = False
-    
+
     @property
     def daemon_socket_path(self) -> Path:
         """Path to daemon UNIX socket with macOS length-safe fallback.
-        
+
         macOS enforces a relatively short maximum length for UNIX domain socket paths
         (historically ~104 bytes). Pytest creates deeply nested temporary directories
         that can push WT_DIR over this limit, causing AF_UNIX path too long errors
         when binding the socket. To avoid flaky failures in such environments, we:
-        
+
         1) Prefer WT_DIR/daemon.sock when short enough
         2) Otherwise fall back to a stable short path under /tmp using a hash of WT_DIR
         """
         from hashlib import md5
+
         p = self.wt_dir / "daemon.sock"
         if len(str(p)) <= 100:
             return p
         h = md5(str(self.wt_dir).encode()).hexdigest()[:12]
         return Path("/tmp") / f"wt_daemon_{h}.sock"
-    
+
     @property
     def daemon_pid_path(self) -> Path:
-        """Path to daemon PID file.""" 
+        """Path to daemon PID file."""
         return self.wt_dir / "daemon.pid"
-    
+
     @property
     def operations_log_file(self) -> Path:
         """Path to operations log file."""
         return self.wt_dir / "operations.log"
-    
+
     @property
     def pr_cache_file(self) -> Path:
         """Path to PR cache file."""
         return self.wt_dir / "pr_cache.json"
-    
+
     # Legacy property aliases for compatibility during transition
     @property
     def main_repo_resolved(self) -> Path:
         """Legacy alias for main_repo."""
         return self.main_repo
-    
+
     @property
     def worktrees_dir_resolved(self) -> Path:
         """Legacy alias for worktrees_dir."""
         return self.worktrees_dir
-    
+
     @property
     def daemon_dir(self) -> Path:
         """Legacy alias for wt_dir."""
         return self.wt_dir
-    
+
     @property
     def daemon_socket_file(self) -> Path:
         """Legacy alias for daemon_socket_path."""
         return self.daemon_socket_path
-    
+
     @property
     def daemon_pid_file(self) -> Path:
         """Legacy alias for daemon_pid_path."""
         return self.daemon_pid_path
-    
+
     @classmethod
     def resolve(cls, wt_dir: Path) -> "Configuration":
         """Resolve configuration from WT_DIR - does all filesystem validation upfront."""
         config_path = wt_dir / "config.yaml"
-        
+
         if not config_path.exists():
             raise ConfigError(f"Config file not found: {config_path}")
-            
+
         with open(config_path) as f:
             data = yaml.safe_load(f)
-        
+
         try:
             config_file = ConfigFile(**data)  # Pydantic validation
         except ValidationError as e:
             raise ConfigError(f"Configuration validation errors: {e}")
-        
+
         # Resolve and validate all paths NOW
         main_repo = Path(config_file.main_repo).expanduser().resolve()
         if not main_repo.exists():
             raise ConfigError(f"Main repo not found: {main_repo}")
         if not (main_repo / ".git").exists():
             raise ConfigError(f"Not a git repository: {main_repo}")
-            
+
         worktrees_dir = Path(config_file.worktrees_dir).expanduser().resolve()
-        
+
         # Resolve optional paths
         gitstatusd_path = None
         if config_file.gitstatusd_path:
             gitstatusd_path = Path(config_file.gitstatusd_path).expanduser().resolve()
-        
+
         post_creation_script = None
         if config_file.post_creation_script:
-            post_creation_script = Path(config_file.post_creation_script).expanduser().resolve()
-        
+            post_creation_script = (
+                Path(config_file.post_creation_script).expanduser().resolve()
+            )
+
         return cls(
             wt_dir=wt_dir,
             main_repo=main_repo,
@@ -162,7 +167,9 @@ class Configuration:
             cache_refresh_age=timedelta(seconds=config_file.cache_refresh_age),
             hidden_worktree_patterns=config_file.hidden_worktree_patterns.copy(),
             github_debounce_delay=timedelta(seconds=config_file.github_debounce_delay),
-            github_periodic_interval=timedelta(seconds=config_file.github_periodic_interval),
+            github_periodic_interval=timedelta(
+                seconds=config_file.github_periodic_interval,
+            ),
             startup_timeout=timedelta(seconds=config_file.startup_timeout),
             sparse_checkout_empty_cone=config_file.sparse_checkout_empty_cone,
         )
@@ -174,16 +181,14 @@ def load_config() -> Configuration:
     if not wt_dir_env:
         click.echo("Error: WT_DIR environment variable must be set")
         sys.exit(1)
-    
+
     wt_dir = Path(wt_dir_env).expanduser().resolve()
     if not wt_dir.exists():
         click.echo(f"Error: WT_DIR does not exist: {wt_dir}")
         sys.exit(1)
-        
+
     try:
         return Configuration.resolve(wt_dir)
     except ConfigError as e:
         click.echo(f"Configuration error: {e}")
         sys.exit(1)
-
-

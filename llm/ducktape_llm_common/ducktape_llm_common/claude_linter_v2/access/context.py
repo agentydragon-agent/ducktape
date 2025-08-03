@@ -19,4 +19,3 @@ class PredicateContext:
     args: dict[str, Any]  # Tool arguments as key-value pairs
     session_id: SessionID
     timestamp: datetime = datetime.now()
-

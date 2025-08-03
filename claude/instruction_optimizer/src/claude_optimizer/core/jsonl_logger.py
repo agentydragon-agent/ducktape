@@ -8,10 +8,10 @@ from typing import Any
 
 class JSONLLogger:
     """Simple JSONL logger with automatic timestamps."""
-    
+
     def __init__(self, log_path: Path):
         self.log_path = log_path
-    
+
     def log(self, **fields: Any) -> None:
         """Log fields as JSON record with timestamp."""
         record = {
@@ -25,7 +25,7 @@ class JSONLLogger:
 def safe_serialize(obj: Any) -> Any:
     """Safely serialize an object for JSON logging."""
     try:
-        if hasattr(obj, 'model_dump'):
+        if hasattr(obj, "model_dump"):
             return obj.model_dump()
         if isinstance(obj, dict):
             return obj

@@ -33,9 +33,7 @@ class PredicateEvaluator:
             logger.error(f"Failed to evaluate predicate function: {e}")
             # Include first line of predicate for context
             first_line = predicate.strip().split("\n")[0][:50]
-            raise ValueError(
-                f"Invalid predicate function starting with '{first_line}...': {e}"
-            ) from e
+            raise ValueError(f"Invalid predicate function starting with '{first_line}...': {e}") from e
 
     def _validate_and_extract_function(self, predicate_code: str) -> Callable:
         """Parse and validate that predicate is exactly one function."""
@@ -48,20 +46,16 @@ class PredicateEvaluator:
         functions = [node for node in tree.body if isinstance(node, ast.FunctionDef)]
         if len(functions) != 1:
             raise ValueError(
-                "Predicate must contain exactly one function definition. "
-                f"Found {len(functions)} functions."
+                f"Predicate must contain exactly one function definition. Found {len(functions)} functions."
             )
 
         # Check for other top-level statements (imports are allowed)
         non_function_statements = [
-            node
-            for node in tree.body
-            if not isinstance(node, (ast.FunctionDef, ast.Import, ast.ImportFrom))
+            node for node in tree.body if not isinstance(node, (ast.FunctionDef, ast.Import, ast.ImportFrom))
         ]
         if non_function_statements:
             raise ValueError(
-                "Predicate can only contain one function definition and imports. "
-                "No other statements allowed."
+                "Predicate can only contain one function definition and imports. No other statements allowed."
             )
 
         func_node = functions[0]

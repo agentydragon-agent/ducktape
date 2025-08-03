@@ -41,12 +41,18 @@ class ViewFormatter:
         return f"{shown} and {len(items) - max_items} more"
 
     def make_hyperlink(self, url: str, text: str) -> str:
-        if os.getenv("TERM_PROGRAM") in ("iTerm.app", "vscode") or os.getenv("COLORTERM"):
+        if os.getenv("TERM_PROGRAM") in ("iTerm.app", "vscode") or os.getenv(
+            "COLORTERM",
+        ):
             return f"\033]8;;{url}\007{text}\033]8;;\007"
         return text
 
     def get_pr_status_text(
-        self, pr_state: PRState, pr_mergeable, is_draft: bool = False, merged_at: str | None = None,
+        self,
+        pr_state: PRState,
+        pr_mergeable,
+        is_draft: bool = False,
+        merged_at: str | None = None,
     ) -> str:
         # Show draft status first if it's a draft
         if is_draft:
@@ -66,11 +72,17 @@ class ViewFormatter:
         return pr_state.value.lower()
 
     def format_status_row(
-        self, name: str, status: StatusResult, pr_info: PRInfo | None, name_width: int = 22,
+        self,
+        name: str,
+        status: StatusResult,
+        pr_info: PRInfo | None,
+        name_width: int = 22,
     ) -> str:
         """Format a status row with nice alignment."""
         # Commit hash - vertically aligned column
-        commit_short = status.commit_info.short_hash if status.commit_info else "????????"
+        commit_short = (
+            status.commit_info.short_hash if status.commit_info else "????????"
+        )
 
         # Ahead/behind status with light colors, aligned around center point
         sync_status = format_sync_status(status.ahead_count, status.behind_count)
@@ -94,7 +106,10 @@ class ViewFormatter:
             pr_state = PRState(pr["state"])
 
             # Create clickable hyperlink - fall back to plain text if not supported
-            clickable_link = self.make_hyperlink(f"http://go/pull/{pr_number}", f"#{pr_number}")
+            clickable_link = self.make_hyperlink(
+                f"http://go/pull/{pr_number}",
+                f"#{pr_number}",
+            )
 
             # Add lines changed info if available
             lines_info = ""
@@ -102,16 +117,17 @@ class ViewFormatter:
                 lines_info = f" +{pr['additions']}/-{pr['deletions']}"
 
             pr_status_text = self.get_pr_status_text(
-                pr_state, pr.get("mergeable"), pr.get("draft", False), pr.get("merged_at"),
+                pr_state,
+                pr.get("mergeable"),
+                pr.get("draft", False),
+                pr.get("merged_at"),
             )
 
             pr_status = f"{clickable_link} {pr_status_text}{lines_info}"
 
         # Format with nice alignment - commitish as separate column
         # Note: sync_status contains ANSI codes, so we pad the content to exactly 9 chars
-        return (
-            f"{name:<{name_width}} {commit_short:<10} {sync_status} {work_status:<10} {pr_status}"
-        )
+        return f"{name:<{name_width}} {commit_short:<10} {sync_status} {work_status:<10} {pr_status}"
 
     def render_worktree_list(self, worktrees: list[tuple[str, Path, bool]]) -> None:
         if worktrees:
@@ -150,7 +166,7 @@ class ViewFormatter:
         """Get PR link column."""
         if not (status.pr_info and status.pr_info.github_pr):
             return ""
-        
+
         pr = status.pr_info.github_pr
         pr_number = pr["number"]
         return self.make_hyperlink(f"http://go/pull/{pr_number}", f"#{pr_number}")
@@ -159,38 +175,48 @@ class ViewFormatter:
         """Get PR status text column."""
         if not (status.pr_info and status.pr_info.github_pr):
             return ""
-        
+
         pr = status.pr_info.github_pr
         pr_state = PRState(pr["state"])
         return self.get_pr_status_text(
-            pr_state, pr.get("mergeable"), pr.get("draft", False), pr.get("merged_at"),
+            pr_state,
+            pr.get("mergeable"),
+            pr.get("draft", False),
+            pr.get("merged_at"),
         )
 
     def _get_pr_changes_column(self, status: StatusResult) -> str:
         """Get PR changes (+lines/-lines) column."""
         if not (status.pr_info and status.pr_info.github_pr):
             return ""
-        
+
         pr = status.pr_info.github_pr
         if pr.get("additions") is not None and pr.get("deletions") is not None:
             return f"+{pr['additions']}/-{pr['deletions']}"
         return ""
 
     def render_top_status_bar(self, status_response) -> None:
-        summary = getattr(status_response, "readiness_summary", None)
-        components = getattr(status_response, "components", None)
+        summary = status_response.readiness_summary
+        components = status_response.components
         if not summary and not components:
             return
         discovery = "⟳" if (summary and summary.discovery_scanning) else "✓"
         github_state = "ok"
         if components and components.github:
-            github_state = components.github.state.value if hasattr(components.github.state, "value") else str(components.github.state)
+            github_state = components.github.state.value
         elif summary:
-            github_state = summary.github.value if hasattr(summary.github, "value") else str(summary.github)
-        x_of_y = f"{summary.with_gitstatusd}/{summary.total_worktrees}" if summary else "-/-"
-        click.echo(f"{discovery} discovery | gitstatusd {x_of_y} | github {github_state}")
+            github_state = summary.github.value
+        x_of_y = (
+            f"{summary.with_gitstatusd}/{summary.total_worktrees}" if summary else "-/-"
+        )
+        click.echo(
+            f"{discovery} discovery | gitstatusd {x_of_y} | github {github_state}",
+        )
 
-    def render_worktree_status_all(self, sorted_items: list[tuple[str, StatusResult]]) -> None:
+    def render_worktree_status_all(
+        self,
+        sorted_items: list[tuple[str, StatusResult]],
+    ) -> None:
         if not sorted_items:
             click.echo("🤷 No worktrees found")
             return
@@ -200,9 +226,15 @@ class ViewFormatter:
         for name, status in sorted_items:
             pr_info = ""
             pr_link = self._get_pr_link_column(status)
-            pr_status = self._get_pr_status_column(status) 
+            pr_status = self._get_pr_status_column(status)
             pr_changes = self._get_pr_changes_column(status)
-            state_map = {"running": "▶", "restarting": "↻", "failed": "✖", "stopped": "✖", "starting": "…"}
+            state_map = {
+                "running": "▶",
+                "restarting": "↻",
+                "failed": "✖",
+                "stopped": "✖",
+                "starting": "…",
+            }
             state = state_map.get(status.gitstatusd_state or "", "")
             if pr_link:
                 pr_parts = [pr_link]
@@ -212,19 +244,24 @@ class ViewFormatter:
                     pr_parts.append(pr_changes)
                 pr_info = " ".join(pr_parts)
 
-            table_data.append([
-                name,
-                self._get_commit_column(status),
-                self._get_work_status_column(status),
-                state,
-                pr_info,
-            ])
+            table_data.append(
+                [
+                    name,
+                    self._get_commit_column(status),
+                    self._get_work_status_column(status),
+                    state,
+                    pr_info,
+                ],
+            )
 
         # Render table with no headers, no grid lines, just clean aligned columns
         click.echo(tabulate(table_data, tablefmt="plain"))
 
     def render_worktree_status_single(
-        self, worktree_name: str, status: StatusResult, pr_info: PRInfo | None,
+        self,
+        worktree_name: str,
+        status: StatusResult,
+        pr_info: PRInfo | None,
     ) -> None:
         click.echo(f"📊 Status for worktree: {worktree_name}")
         click.echo(f"🔄 {self.format_status_row(worktree_name, status, pr_info)}")
@@ -258,7 +295,10 @@ class ViewFormatter:
 
             # Format detailed PR status
             status_text = self.get_pr_status_text(
-                pr_state, pr.get("mergeable"), pr.get("draft", False), pr.get("merged_at"),
+                pr_state,
+                pr.get("mergeable"),
+                pr.get("draft", False),
+                pr.get("merged_at"),
             )
             if status_text in PR_STATUS_DISPLAY_MAP:
                 icon, message = PR_STATUS_DISPLAY_MAP[status_text]
@@ -280,7 +320,12 @@ class ViewFormatter:
         click.echo(f"🔍 Checking worktree '{name}' for removal...")
         click.echo("  Checking for running processes...")
 
-    def render_worktree_removal_git_status(self, name: str, has_changes: bool, force: bool) -> None:
+    def render_worktree_removal_git_status(
+        self,
+        name: str,
+        has_changes: bool,
+        force: bool,
+    ) -> None:
         click.echo("  Checking for uncommitted changes...")
         if not has_changes:
             click.echo("  ✓ Working directory is clean")
@@ -290,8 +335,14 @@ class ViewFormatter:
             # This should trigger an error in the business logic
             pass
 
-    def render_worktree_removal_confirmation(self, name: str, worktree_path: Path) -> None:
-        click.echo(f"⚠️  About to permanently remove worktree '{name}' at {worktree_path}")
+    def render_worktree_removal_confirmation(
+        self,
+        name: str,
+        worktree_path: Path,
+    ) -> None:
+        click.echo(
+            f"⚠️  About to permanently remove worktree '{name}' at {worktree_path}",
+        )
 
     def render_worktree_removal_success(self, name: str) -> None:
         click.echo(f"✅ Successfully removed worktree '{name}'")

@@ -21,11 +21,19 @@ def load_test_json(tool_name: str, scenario: str) -> dict[str, Any]:
     """
     try:
         testdata_path = resources.files("claude_hooks") / "testdata"
-        json_path = testdata_path / "hook_inputs" / "PostToolUse" / tool_name / f"{scenario}.json"
+        json_path = (
+            testdata_path
+            / "hook_inputs"
+            / "PostToolUse"
+            / tool_name
+            / f"{scenario}.json"
+        )
         json_content = json_path.read_text()
         return json.loads(json_content)
     except Exception as e:
-        raise FileNotFoundError(f"Could not load test data for {tool_name}/{scenario}: {e}") from e
+        raise FileNotFoundError(
+            f"Could not load test data for {tool_name}/{scenario}: {e}",
+        ) from e
 
 
 def create_test_session_id(test_name: str) -> uuid.UUID:
@@ -36,7 +44,9 @@ def create_test_session_id(test_name: str) -> uuid.UUID:
 
 
 def assert_tool_input_parsing(
-    raw_json: dict[str, Any], expected_tool_input: Any, description: str = "",
+    raw_json: dict[str, Any],
+    expected_tool_input: Any,
+    description: str = "",
 ) -> None:
     """Test that a raw JSON input parses correctly to expected tool input.
 
@@ -72,7 +82,10 @@ def assert_tool_input_parsing(
 
 
 def load_and_test_tool_scenario(
-    tool_name: str, scenario: str, expected_tool_input: Any, description: str = "",
+    tool_name: str,
+    scenario: str,
+    expected_tool_input: Any,
+    description: str = "",
 ) -> None:
     """Load test JSON and verify it parses to expected tool input.
 

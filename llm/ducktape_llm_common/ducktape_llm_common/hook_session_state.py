@@ -14,14 +14,14 @@ StateModel = TypeVar("StateModel", bound=BaseModel)
 def get_session_dir(hook_name: str, session_id: SessionID) -> Path:
     """
     Get the session-scoped directory for a hook.
-    
+
     Directory is created if it doesn't exist.
     Uses platformdirs for proper cross-platform state directory.
-    
+
     Args:
         hook_name: Unique identifier for the hook
         session_id: Claude Code session ID
-        
+
     Returns:
         Path to the session directory
     """
@@ -34,19 +34,19 @@ def get_session_dir(hook_name: str, session_id: SessionID) -> Path:
 class StatefulHookMixin:
     """
     Mixin for hooks that need Pydantic-based session state.
-    
+
     Automatically loads state before hook dispatch and saves on destruction.
     Hook can access state via self.state.
-    
+
     Example:
         class MyHookState(BaseModel):
             tool_calls: int = 0
             blocked_files: list[str] = []
-            
+
         class MyHook(ClaudeCodeHookBase, StatefulHookMixin):
-            hook_name = "my-security-hook" 
+            hook_name = "my-security-hook"
             StateModel = MyHookState
-            
+
             def pre_tool_use(self, request: PreToolUseRequest) -> PreToolOutcome:
                 self.state.tool_calls += 1
                 return PreToolApprove()

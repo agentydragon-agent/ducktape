@@ -14,6 +14,7 @@ def build_sanitized_git_env(env: Mapping[str, str] | None = None) -> dict[str, s
     e.setdefault("GIT_SSH_COMMAND", "ssh -o BatchMode=yes")
     return e
 
+
 def git_run(
     args: list[str],
     cwd: Path | str,

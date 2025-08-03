@@ -70,8 +70,9 @@ def real_env_with_existing_worktrees(real_temp_repo):
     env["WT_DIR"] = str((real_temp_repo / ".wt").resolve())
     # Ensure python -m wt.cli is importable
     from pathlib import Path as _P
+
     project_root = str(_P(__file__).resolve().parents[2])
-    env["PYTHONPATH"] = f"{project_root}:{env.get('PYTHONPATH','')}"
+    env["PYTHONPATH"] = f"{project_root}:{env.get('PYTHONPATH', '')}"
 
     repo = pygit2.Repository(str(real_temp_repo))
     signature = pygit2.Signature("Test User", "test@example.com")
@@ -82,11 +83,15 @@ def real_env_with_existing_worktrees(real_temp_repo):
     # Create existing worktree 1
     worktree1_path = real_temp_repo / "worktrees" / "existing1"
     master_commit = repo.head.target
-    branch1 = repo.create_branch("test/existing1", repo.get(master_commit))
+    _branch1 = repo.create_branch("test/existing1", repo.get(master_commit))
 
     # Use git CLI for worktree creation since pygit2 doesn't support worktrees directly
     from wt.shared.git_utils import git_run
-    git_run(["worktree", "add", str(worktree1_path), "test/existing1"], cwd=real_temp_repo)
+
+    git_run(
+        ["worktree", "add", str(worktree1_path), "test/existing1"],
+        cwd=real_temp_repo,
+    )
 
     # Add a file to existing worktree 1 using pygit2
     repo1 = pygit2.Repository(str(worktree1_path))
@@ -95,13 +100,21 @@ def real_env_with_existing_worktrees(real_temp_repo):
     repo1.index.write()
     tree1 = repo1.index.write_tree()
     repo1.create_commit(
-        "HEAD", signature, signature, "Add existing1 content", tree1, [repo1.head.target],
+        "HEAD",
+        signature,
+        signature,
+        "Add existing1 content",
+        tree1,
+        [repo1.head.target],
     )
 
     # Create existing worktree 2
     worktree2_path = real_temp_repo / "worktrees" / "existing2"
-    branch2 = repo.create_branch("test/existing2", repo.get(master_commit))
-    git_run(["worktree", "add", str(worktree2_path), "test/existing2"], cwd=real_temp_repo)
+    _branch2 = repo.create_branch("test/existing2", repo.get(master_commit))
+    git_run(
+        ["worktree", "add", str(worktree2_path), "test/existing2"],
+        cwd=real_temp_repo,
+    )
 
     # Add a file to existing worktree 2 using pygit2
     repo2 = pygit2.Repository(str(worktree2_path))
@@ -110,7 +123,12 @@ def real_env_with_existing_worktrees(real_temp_repo):
     repo2.index.write()
     tree2 = repo2.index.write_tree()
     repo2.create_commit(
-        "HEAD", signature, signature, "Add existing2 content", tree2, [repo2.head.target],
+        "HEAD",
+        signature,
+        signature,
+        "Add existing2 content",
+        tree2,
+        [repo2.head.target],
     )
 
     yield env, real_temp_repo
@@ -138,7 +156,9 @@ def test_real_workflow_with_existing_worktrees(real_env_with_existing_worktrees)
 
         # Step 2: Create a new worktree alongside existing ones
         result = run_cli_command(["sh", "-c", "new-feature"], env=env)
-        print(f"Create new-feature (exit={result.returncode}):\n{result.stdout}\n{result.stderr}")
+        print(
+            f"Create new-feature (exit={result.returncode}):\n{result.stdout}\n{result.stderr}",
+        )
         assert result.returncode == 0
 
         # Verify new worktree created
@@ -172,12 +192,16 @@ def test_real_workflow_git_repo_to_worktrees_to_status(real_temp_repo, real_env)
     try:
         # Step 1: Initial status (should show empty or main repo only)
         result = run_cli_command(["sh"], env=real_env, timeout=10.0)
-        print(f"Initial status (exit={result.returncode}):\n{result.stdout}\n{result.stderr}")
+        print(
+            f"Initial status (exit={result.returncode}):\n{result.stdout}\n{result.stderr}",
+        )
         assert result.returncode == 0
 
         # Step 2: Create first worktree
         result = run_cli_command(["sh", "-c", "feature1"], env=real_env, timeout=10.0)
-        print(f"Create feature1 (exit={result.returncode}):\n{result.stdout}\n{result.stderr}")
+        print(
+            f"Create feature1 (exit={result.returncode}):\n{result.stdout}\n{result.stderr}",
+        )
         assert result.returncode == 0
 
         # Verify worktree was actually created with real git
@@ -194,7 +218,9 @@ def test_real_workflow_git_repo_to_worktrees_to_status(real_temp_repo, real_env)
 
         # Step 3: Create second worktree
         result = run_cli_command(["sh", "-c", "feature2"], env=real_env, timeout=10.0)
-        print(f"Create feature2 (exit={result.returncode}):\n{result.stdout}\n{result.stderr}")
+        print(
+            f"Create feature2 (exit={result.returncode}):\n{result.stdout}\n{result.stderr}",
+        )
         assert result.returncode == 0
 
         # Verify second worktree was created
@@ -212,7 +238,9 @@ def test_real_workflow_git_repo_to_worktrees_to_status(real_temp_repo, real_env)
 
         # Step 5: Navigate to feature1 (test cd command emission)
         result = run_cli_command(["sh", "feature1"], env=real_env, timeout=10.0)
-        print(f"Navigate to feature1 (exit={result.returncode}):\n{result.stdout}\n{result.stderr}")
+        print(
+            f"Navigate to feature1 (exit={result.returncode}):\n{result.stdout}\n{result.stderr}",
+        )
         assert result.returncode == 0
         # Note: cd command is emitted to fd3, we can't easily verify it here
 
@@ -222,11 +250,17 @@ def test_real_workflow_git_repo_to_worktrees_to_status(real_temp_repo, real_env)
 
         # Add and commit in the worktree
         subprocess.run(["git", "add", "test.txt"], cwd=worktree1_path, check=True)
-        subprocess.run(["git", "commit", "-m", "Add test file"], cwd=worktree1_path, check=True)
+        subprocess.run(
+            ["git", "commit", "-m", "Add test file"],
+            cwd=worktree1_path,
+            check=True,
+        )
 
         # Step 7: Final status check should show the changes
         result = run_cli_command(["sh"], env=real_env, timeout=10.0)
-        print(f"Final status (exit={result.returncode}):\n{result.stdout}\n{result.stderr}")
+        print(
+            f"Final status (exit={result.returncode}):\n{result.stdout}\n{result.stderr}",
+        )
         assert result.returncode == 0
 
         print("✅ Real integration test passed!")
@@ -279,11 +313,19 @@ def test_real_git_operations_in_worktrees(real_temp_repo, real_env):
 
         # Add and commit
         subprocess.run(["git", "add", "test.txt"], cwd=worktree_path, check=True)
-        subprocess.run(["git", "commit", "-m", "Test commit"], cwd=worktree_path, check=True)
+        subprocess.run(
+            ["git", "commit", "-m", "Test commit"],
+            cwd=worktree_path,
+            check=True,
+        )
 
         # Verify branch was created correctly
         result = subprocess.run(
-            ["git", "branch", "--show-current"], cwd=worktree_path, capture_output=True, text=True, check=False,
+            ["git", "branch", "--show-current"],
+            cwd=worktree_path,
+            capture_output=True,
+            text=True,
+            check=False,
         )
         assert "test/git-test" in result.stdout
 
@@ -293,7 +335,11 @@ def test_real_git_operations_in_worktrees(real_temp_repo, real_env):
 
         # Verify commit was made
         result = subprocess.run(
-            ["git", "log", "--oneline"], cwd=worktree_path, capture_output=True, text=True, check=False,
+            ["git", "log", "--oneline"],
+            cwd=worktree_path,
+            capture_output=True,
+            text=True,
+            check=False,
         )
         assert "Test commit" in result.stdout
 
@@ -317,11 +363,12 @@ def test_real_daemon_startup_and_kill(real_temp_repo, real_env):
 
         # Step 2: Check that daemon files were created
         from pathlib import Path
+
         daemon_dir = Path(real_env["WT_DIR"]).resolve()
         assert daemon_dir.exists(), "Daemon directory not created"
 
         pid_file = daemon_dir / "daemon.pid"
-        socket_file = daemon_dir / "daemon.sock"
+        _socket_file = daemon_dir / "daemon.sock"
 
         # Give daemon a moment to start up
         time.sleep(0.5)
@@ -344,7 +391,9 @@ def test_real_daemon_startup_and_kill(real_temp_repo, real_env):
 
         # Step 4: Test kill-daemon command
         result = run_cli_command(["sh", "kill-daemon"], env=real_env)
-        print(f"Kill daemon command (exit={result.returncode}):\n{result.stdout}\n{result.stderr}")
+        print(
+            f"Kill daemon command (exit={result.returncode}):\n{result.stdout}\n{result.stderr}",
+        )
         assert result.returncode == 0
 
         # Step 5: Verify daemon is no longer running

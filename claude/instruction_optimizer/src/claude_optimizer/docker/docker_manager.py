@@ -17,6 +17,7 @@ class DockerManager:
         self._original_path = os.environ.get("PATH", "")
         self._docker_path = self._find_docker()
         self._docker_client = docker.from_env()
+        self._wrapper_setup = False
 
     def _find_docker(self) -> str:
         docker_path = shutil.which("docker", path=self._original_path)
@@ -120,11 +121,6 @@ exec {docker_path} exec -i "$CLAUDE_CONTAINER_ID" /usr/local/bin/claude --danger
         """Get the path to the real Docker binary."""
         return self._docker_path
 
-    @property
-    def is_setup(self) -> bool:
-        """Check if wrapper is currently set up."""
-        return self._wrapper_setup
-
     @contextmanager
     def container(self, image: str, task_id: str, working_dir: Path):
         """Context manager for a long-running container.
@@ -172,7 +168,6 @@ exec {docker_path} exec -i "$CLAUDE_CONTAINER_ID" /usr/local/bin/claude --danger
         except docker.errors.DockerException as e:
             raise RuntimeError(f"Failed to start container: {e}")
         finally:
-
             # Clean up container (use tracked container in case of remounting)
             cleanup_container = self._current_container or container
             if cleanup_container:
@@ -181,7 +176,10 @@ exec {docker_path} exec -i "$CLAUDE_CONTAINER_ID" /usr/local/bin/claude --danger
                     cleanup_container.remove(force=True)
 
     def remount_git_readonly(
-        self, container_id: str, image: str, working_dir: Path,
+        self,
+        container_id: str,
+        image: str,
+        working_dir: Path,
     ) -> str:
         """Recreate container with /git mounted read-only for security after pre-task setup.
 
@@ -251,4 +249,3 @@ exec {docker_path} exec -i "$CLAUDE_CONTAINER_ID" /usr/local/bin/claude --danger
             )
         except subprocess.CalledProcessError as e:
             raise RuntimeError("Pre-task setup script failed") from e
-

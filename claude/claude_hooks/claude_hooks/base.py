@@ -75,7 +75,6 @@ class HookBase(ABC, Generic[InputT, OutputT]):
                 return config_data.get(self.hook_name, {})
         return {}
 
-
     def run_hook(self) -> None:
         """Main pipeline: read → json → hook input → execute → hook output → json → exit"""
         try:

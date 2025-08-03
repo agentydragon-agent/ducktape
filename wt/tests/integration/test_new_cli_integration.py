@@ -31,7 +31,7 @@ def create_test_status_response() -> StatusResponse:
 
     from wt.shared.constants import MAIN_WORKTREE_DISPLAY_NAME
     from wt.shared.protocol import CommitInfo
-    
+
     test_commit_info = CommitInfo(
         hash="abc123def456",
         short_hash="abc123de",
@@ -39,7 +39,7 @@ def create_test_status_response() -> StatusResponse:
         author="Test Author",
         date="2024-01-15T10:30:00",
     )
-    
+
     test_result = StatusResult(
         wtid="test-worktree",
         name="test-worktree",
@@ -55,7 +55,7 @@ def create_test_status_response() -> StatusResponse:
         processing_time_ms=25.0,
         last_updated_at=datetime.now(),
     )
-    
+
     main_result = StatusResult(
         wtid="main",
         name=MAIN_WORKTREE_DISPLAY_NAME,
@@ -71,7 +71,7 @@ def create_test_status_response() -> StatusResponse:
         processing_time_ms=25.0,
         last_updated_at=datetime.now(),
     )
-    
+
     return StatusResponse(
         results={
             "test-worktree": test_result,
@@ -91,12 +91,15 @@ def create_test_status_response() -> StatusResponse:
 class TestNewCLIIntegration:
     @patch("wt.client.wt_client.WtClient.get_status")
     def test_default_status_command(
-        self, mock_get_status, cli_test_env, monkeypatch,
+        self,
+        mock_get_status,
+        cli_test_env,
+        monkeypatch,
     ):
         """Test that default command (no args) shows worktree status."""
         mock_get_status.return_value = create_empty_status_response()
         monkeypatch.setenv("WT_DIR", str(cli_test_env))
-        
+
         result = CliRunner().invoke(main, ["sh"])
 
         if result.exit_code != 0:
@@ -107,24 +110,30 @@ class TestNewCLIIntegration:
 
     @patch("wt.client.wt_client.WtClient.get_status")
     def test_list_worktrees_command(
-        self, mock_get_status, cli_test_env, monkeypatch,
+        self,
+        mock_get_status,
+        cli_test_env,
+        monkeypatch,
     ):
         """Test ls command works with new CLI."""
         mock_get_status.return_value = create_empty_status_response()
         monkeypatch.setenv("WT_DIR", str(cli_test_env))
-        
+
         result = CliRunner().invoke(main, ["sh", "ls"])
 
         assert result.exit_code == 0
 
     @patch("wt.client.wt_client.WtClient.get_status")
     def test_list_worktrees_with_data(
-        self, mock_get_status, cli_test_env, monkeypatch,
+        self,
+        mock_get_status,
+        cli_test_env,
+        monkeypatch,
     ):
         """Test ls command with actual worktree data."""
         mock_get_status.return_value = create_test_status_response()
         monkeypatch.setenv("WT_DIR", str(cli_test_env))
-        
+
         result = CliRunner().invoke(main, ["sh", "ls"])
 
         assert result.exit_code == 0
@@ -134,7 +143,7 @@ class TestNewCLIIntegration:
     def test_help_command(self, cli_test_env, monkeypatch):
         """Test help command works with new CLI."""
         monkeypatch.setenv("WT_DIR", str(cli_test_env))
-        
+
         result = CliRunner().invoke(main, ["sh", "help"])
 
         assert result.exit_code == 0
@@ -144,7 +153,7 @@ class TestNewCLIIntegration:
     def test_help_flag(self, cli_test_env, monkeypatch):
         """Test --help flag works with new CLI."""
         monkeypatch.setenv("WT_DIR", str(cli_test_env))
-        
+
         result = CliRunner().invoke(main, ["sh", "--help"])
 
         assert result.exit_code == 0
@@ -152,12 +161,15 @@ class TestNewCLIIntegration:
 
     @patch("wt.client.wt_client.WtClient.get_status")
     def test_status_command_with_pr_flag(
-        self, mock_get_status, cli_test_env, monkeypatch,
+        self,
+        mock_get_status,
+        cli_test_env,
+        monkeypatch,
     ):
         """Test status command with --pr flag."""
         mock_get_status.return_value = create_test_status_response()
         monkeypatch.setenv("WT_DIR", str(cli_test_env))
-        
+
         result = CliRunner().invoke(main, ["sh", "--pr"])
 
         assert result.exit_code == 0

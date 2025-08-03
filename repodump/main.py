@@ -171,7 +171,7 @@ def main(ctx, output_flag, copy_output):
     if "repos" not in config:
         config["repos"] = {}
     if "global" not in config:
-        config["global"] = DEFAULT_CONFIG["global"]
+        config["global"] = {"include": [], "exclude": []}
 
     repo_cfg = config["repos"].get(root_dir, {})
     includes = repo_cfg.get("include", []) + config["global"].get("include", [])

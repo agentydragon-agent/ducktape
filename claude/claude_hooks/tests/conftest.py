@@ -260,21 +260,31 @@ def integration_env(precommit_repo, claude_config_dir, xdg_env, monkeypatch):
                 cwd=precommit_repo,
             )
 
-        def build_post_tool_write_input(self, file_path: str, content: str) -> PostToolInput:
+        def build_post_tool_write_input(
+            self, file_path: str, content: str,
+        ) -> PostToolInput:
             """Create a PostToolInput for Write operations."""
             full_path = (
-                file_path if Path(file_path).is_absolute() else str(precommit_repo / file_path)
+                file_path
+                if Path(file_path).is_absolute()
+                else str(precommit_repo / file_path)
             )
             return self.create_hook_input(
-                "Write", WriteInput(file_path=Path(full_path), content=content),
+                "Write",
+                WriteInput(file_path=Path(full_path), content=content),
             )
 
         def build_post_tool_edit_input(
-            self, file_path: str, old_string: str, new_string: str,
+            self,
+            file_path: str,
+            old_string: str,
+            new_string: str,
         ) -> PostToolInput:
             """Create a PostToolInput for Edit operations."""
             full_path = (
-                file_path if Path(file_path).is_absolute() else str(precommit_repo / file_path)
+                file_path
+                if Path(file_path).is_absolute()
+                else str(precommit_repo / file_path)
             )
             return self.create_hook_input(
                 "Edit",

@@ -107,7 +107,10 @@ class TestWorktreeService:
         assert worktree_service._is_managed_worktree(inside_path, config)
 
     def test_post_creation_script_execution(
-        self, repo_factory, config_factory, mock_factory,
+        self,
+        repo_factory,
+        config_factory,
+        mock_factory,
     ):
         """Test that post-creation script is executed when configured."""
         # Create repo and config using factories
@@ -147,4 +150,3 @@ echo "Script executed with arg: $1" > "$1/script_output.txt"
         content = output_file.read_text()
         assert str(worktree_path) in content
         assert "Script executed with arg:" in content
-

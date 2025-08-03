@@ -11,6 +11,7 @@ SessionID = NewType("SessionID", UUID)
 # Base input types for Claude Code hook requests
 class BaseHookRequest(BaseModel):
     """Base request for all hooks."""
+
     session_id: SessionID
     transcript_path: str
     hook_event_name: str
@@ -18,10 +19,9 @@ class BaseHookRequest(BaseModel):
     model_config = {"discriminator": "hook_event_name"}
 
 
-
-
 class PreToolUseRequest(BaseHookRequest):
     """PreToolUse hook request."""
+
     hook_event_name: Literal["PreToolUse"]
     tool_name: str
     tool_input: dict[str, Any]
@@ -29,6 +29,7 @@ class PreToolUseRequest(BaseHookRequest):
 
 class PostToolUseRequest(BaseHookRequest):
     """PostToolUse hook request."""
+
     hook_event_name: Literal["PostToolUse"]
     tool_name: str
     tool_input: dict[str, Any]
@@ -37,24 +38,28 @@ class PostToolUseRequest(BaseHookRequest):
 
 class NotificationRequest(BaseHookRequest):
     """Notification hook request."""
+
     hook_event_name: Literal["Notification"]
     message: str
 
 
 class StopRequest(BaseHookRequest):
     """Stop hook request."""
+
     hook_event_name: Literal["Stop"]
     stop_hook_active: bool
 
 
 class SubagentStopRequest(BaseHookRequest):
     """SubagentStop hook request."""
+
     hook_event_name: Literal["SubagentStop"]
     stop_hook_active: bool
 
 
 class PreCompactRequest(BaseHookRequest):
     """PreCompact hook request."""
+
     hook_event_name: Literal["PreCompact"]
     trigger: Literal["manual", "auto"]
     custom_instructions: str
@@ -116,7 +121,9 @@ class PostToolResponse(BaseResponse):
     """
 
     decision: Literal["block"] | None = Field(None)
-    reason: str | None = Field(None, description="Explanation for decision - automatically prompts Claude if decision=block")
+    reason: str | None = Field(
+        None, description="Explanation for decision - automatically prompts Claude if decision=block"
+    )
 
 
 class StopResponse(BaseResponse):
@@ -137,8 +144,6 @@ class StopResponse(BaseResponse):
         if info.data.get("decision") == "block" and not v:
             raise ValueError("reason required when decision=block")
         return v
-
-
 
 
 # Union type for automatic discrimination

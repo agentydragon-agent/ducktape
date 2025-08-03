@@ -18,10 +18,15 @@ from hamcrest import assert_that, contains_string
     "tool_input,expected",
     [
         (
-            EditInput(file_path=Path("/tmp/test.py"), old_string="old", new_string="new"),
+            EditInput(
+                file_path=Path("/tmp/test.py"), old_string="old", new_string="new",
+            ),
             Path("/tmp/test.py"),
         ),
-        (WriteInput(file_path=Path("/tmp/test.py"), content="content"), Path("/tmp/test.py")),
+        (
+            WriteInput(file_path=Path("/tmp/test.py"), content="content"),
+            Path("/tmp/test.py"),
+        ),
         ({"command": "ls"}, None),
     ],
 )
@@ -41,7 +46,9 @@ class TestPreCommitAutoFixerHook:
 
     def test_unsupported_tool(self, autofixer_hook, integration_env):
         unsupported_tool = "Grep"
-        hook_input = integration_env.create_hook_input(unsupported_tool, {"file_path": "test.py"})
+        hook_input = integration_env.create_hook_input(
+            unsupported_tool, {"file_path": "test.py"},
+        )
 
         result = autofixer_hook.execute(hook_input, integration_env.create_context())
 
@@ -69,7 +76,8 @@ class TestPreCommitAutoFixerHook:
         test_file = integration_env.write_file("test_file.py", "print('foo world')")
 
         changes_made = autofixer_hook._run_precommit_autofix(
-            test_file, integration_env.create_context(),
+            test_file,
+            integration_env.create_context(),
         )
         final_content = integration_env.read_file("test_file.py")
 
@@ -83,7 +91,9 @@ class TestPreCommitAutoFixerHook:
         good_content = 'print("hello world")\n'
         test_file = unit_env.write_file("good_file.py", good_content)
 
-        changes_made = autofixer_hook._run_precommit_autofix(test_file, unit_env.create_context())
+        changes_made = autofixer_hook._run_precommit_autofix(
+            test_file, unit_env.create_context(),
+        )
 
         # Well-formatted file should not be changed
         assert isinstance(changes_made, NoChanges)
@@ -122,7 +132,9 @@ class TestPreCommitAutoFixerHook:
         assert isinstance(result, PostToolFeedbackToClaude)
         protocol = result.to_protocol()
         assert protocol["decision"] == "block"
-        assert_that(protocol["reason"], contains_string("🧹 pre-commit autofixes applied"))
+        assert_that(
+            protocol["reason"], contains_string("🧹 pre-commit autofixes applied"),
+        )
 
     def test_execute_success_no_changes(self, autofixer_hook, integration_env):
         # Create a well-formatted file that won't be changed
@@ -138,7 +150,9 @@ class TestPreCommitAutoFixerHook:
     def test_execute_precommit_failure(self, autofixer_hook, integration_env):
         # Test error handling by using a file that doesn't exist
         hook_input = integration_env.build_post_tool_edit_input(
-            "/nonexistent/path/test.py", "old", "new",
+            "/nonexistent/path/test.py",
+            "old",
+            "new",
         )
 
         # The hook should catch exceptions and continue gracefully

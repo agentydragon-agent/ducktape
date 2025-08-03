@@ -37,10 +37,14 @@ class SummarizerConfig(BaseModel):
 class TokenConfig(BaseModel):
     """Token management configuration."""
 
-    max_response_tokens: int = Field(description="Tokens reserved for response generation")
+    max_response_tokens: int = Field(
+        description="Tokens reserved for response generation",
+    )
     reasoning_buffer_tokens: int = Field(description="Tokens reserved for reasoning")
     max_context_tokens: int = Field(description="Maximum input tokens")
-    max_files_tokens: int = Field(description="Maximum tokens for file content in API calls")
+    max_files_tokens: int = Field(
+        description="Maximum tokens for file content in API calls",
+    )
 
 
 class TruncationConfig(BaseModel):
@@ -52,14 +56,17 @@ class TruncationConfig(BaseModel):
     max_file_size_pattern_analysis: int = Field(
         description="Max file size in bytes before truncation for pattern analysis (affects prompt engineering)",
     )
-    log_message_length: int = Field(description="Max length for truncating log messages")
+    log_message_length: int = Field(
+        description="Max length for truncating log messages",
+    )
 
 
 class DebugConfig(BaseModel):
     """Debugging and development configuration."""
 
     enable_strace: bool = Field(
-        default=False, description="Enable strace debugging of Claude CLI execution",
+        default=False,
+        description="Enable strace debugging of Claude CLI execution",
     )
 
 
@@ -67,9 +74,13 @@ class DockerLayerConfig(BaseModel):
     """Configuration for a single Docker layer."""
 
     image_tag: str = Field(description="Docker image tag")
-    depends_on: list[str] = Field(default_factory=list, description="Layer dependencies")
+    depends_on: list[str] = Field(
+        default_factory=list,
+        description="Layer dependencies",
+    )
     capabilities: list[str] = Field(
-        default_factory=list, description="New capabilities this layer adds",
+        default_factory=list,
+        description="New capabilities this layer adds",
     )
 
 
@@ -77,13 +88,17 @@ class ExternalImageConfig(BaseModel):
     """Configuration for external/proprietary Docker images."""
 
     base_image: str = Field(description="Base image name/tag from external registry")
-    source: str = Field(description="Source identifier (e.g., 'azure_cr', 'external_registry')")
+    source: str = Field(
+        description="Source identifier (e.g., 'azure_cr', 'external_registry')",
+    )
     description: str = Field(description="Human-readable description of this image")
     add_claude: bool = Field(
-        default=True, description="Whether to layer Claude Code on top of this image",
+        default=True,
+        description="Whether to layer Claude Code on top of this image",
     )
     platform: str | None = Field(
-        default=None, description="Docker platform (e.g., 'linux/amd64', 'linux/arm64')",
+        default=None,
+        description="Docker platform (e.g., 'linux/amd64', 'linux/arm64')",
     )
 
 
@@ -92,13 +107,16 @@ class OptimizerConfig(BaseModel):
 
     # Pre-task setup script configuration
     pre_task_setup_script: str | None = Field(
+        default=None,
         description="Path to global pre-task setup script (runs outside container with docker access)",
     )
     pre_task_always_script: str | None = Field(
+        default=None,
         description="Path to pre-task script that runs before every task (for authentication, etc.)",
     )
     seeds_file: str = Field(
-        default="seeds.yaml", description="Path to seeds YAML file containing tasks",
+        default="seeds.yaml",
+        description="Path to seeds YAML file containing tasks",
     )
     graders_file: str = Field(
         default="graders_consolidated.yaml",
@@ -107,16 +125,29 @@ class OptimizerConfig(BaseModel):
 
     # Component configurations
     rollouts: RolloutConfig = Field(description="Rollout execution configuration")
-    prompt_engineer: PromptEngineerConfig = Field(description="Prompt engineering configuration")
+    prompt_engineer: PromptEngineerConfig = Field(
+        description="Prompt engineering configuration",
+    )
     grader: GraderConfig = Field(description="Code grading configuration")
     summarizer: SummarizerConfig = Field(description="Summarization configuration")
     tokens: TokenConfig = Field(description="Token management configuration")
-    truncation: TruncationConfig = Field(description="File and message truncation configuration")
-    debug: DebugConfig = Field(default_factory=DebugConfig, description="Debugging configuration")
+    truncation: TruncationConfig = Field(
+        description="File and message truncation configuration",
+    )
+    debug: DebugConfig = Field(
+        default_factory=DebugConfig,
+        description="Debugging configuration",
+    )
 
     # File filtering
     exclude_patterns: list[str] = Field(
         description="Glob patterns for files/directories to exclude from file gathering",
+    )
+
+    # Wrapper environment variables for containerized Claude wrapper
+    wrapper_env: dict[str, str] = Field(
+        default_factory=dict,
+        description="Additional environment variables for the docker wrapper",
     )
 
     class Config:
@@ -155,4 +186,3 @@ class OptimizerConfig(BaseModel):
             config_data = yaml.safe_load(f)
 
         return cls(**config_data)
-

@@ -36,17 +36,17 @@ from .hook_logging import InvocationID, get_session_logger
 class ClaudeCodeHookBase(ABC):
     """
     Base class for implementing Claude Code hooks.
-    
+
     Automatically provides session-scoped logging via self.logger.
     Subclasses must define hook_name and implement hook methods.
-    
+
     Example:
         class MyClaudeHook(ClaudeCodeHookBase):
             hook_name = "my-hook"
-            
+
             def pre_tool_use(self, request: PreToolUseRequest) -> PreToolOutcome:
                 self.logger.info("Processing tool", extra={"tool": request.tool_name})
-                
+
                 try:
                     if request.tool_name == "Bash" and "rm -rf" in (request.tool_input.get("command", "")):
                         return PreToolDeny("Dangerous command blocked")
@@ -54,18 +54,18 @@ class ClaudeCodeHookBase(ABC):
                 except Exception:
                     self.logger.error("Tool processing failed", exc_info=True)
                     raise
-        
+
         if __name__ == '__main__':
             MyClaudeHook.entrypoint()
     """
 
-    hook_name: str  # Must be defined by subclass
+    hook_name: str = ""  # Must be defined by subclass
 
     def __init__(self):
-        if not hasattr(self, "hook_name"):
-            raise ValueError("ClaudeCodeHookBase requires 'hook_name' class attribute")
+        if not self.hook_name:
+            raise ValueError("ClaudeCodeHookBase requires non-empty 'hook_name'")
 
-        self.logger: logging.Logger = None
+        self.logger: logging.Logger | None = None
 
     def pre_tool_use(self, request: PreToolUseRequest) -> PreToolOutcome:
         """Handle PreToolUse hook. Default: no opinion (let permission system decide)."""
@@ -95,12 +95,12 @@ class ClaudeCodeHookBase(ABC):
     def entrypoint(cls) -> None:
         """
         Main entrypoint for Claude Code hooks.
-        
-        Reads JSON from stdin, dispatches to appropriate method, 
+
+        Reads JSON from stdin, dispatches to appropriate method,
         returns JSON to stdout, exits with code 0.
-        
+
         Automatically sets up session-scoped logging.
-        
+
         Usage:
             if __name__ == '__main__':
                 MyClaudeHook.entrypoint()
@@ -109,8 +109,8 @@ class ClaudeCodeHookBase(ABC):
             # Read JSON from stdin
             input_data = json.load(sys.stdin)
 
-            # Extract hook event name
-            hook_event_name = input_data.get("hook_event_name", "")
+            # Extract hook event name (not used yet)
+            _hook_event_name = input_data.get("hook_event_name", "")
 
             # Create instance
             hook_instance = cls()
@@ -133,10 +133,9 @@ class ClaudeCodeHookBase(ABC):
             hook_instance.logger = logger
 
             # Log the input
-            logger.info("Hook input", extra={
-                "hook_event": request.hook_event_name,
-                "request_data": request.model_dump()
-            })
+            logger.info(
+                "Hook input", extra={"hook_event": request.hook_event_name, "request_data": request.model_dump()}
+            )
 
             try:
                 # Dispatch to appropriate method using discriminated union
@@ -157,9 +156,7 @@ class ClaudeCodeHookBase(ABC):
 
                 # Convert to response once for both logging and return
                 response = outcome.to_claude_response()
-                logger.info("Hook output", extra={
-                    "response_data": response.model_dump()
-                })
+                logger.info("Hook output", extra={"response_data": response.model_dump()})
 
             except Exception:
                 # Log the exception

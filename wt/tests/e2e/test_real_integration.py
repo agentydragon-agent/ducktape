@@ -68,7 +68,12 @@ async def test_real_program_workflow(real_temp_repo, real_env):
         # Note: cd command is emitted to fd3, we can't easily verify it here
 
         # Step 6: Remove feature2
-        result = run_cli_command(["sh", "rm", "feature2", "--force"], env=real_env, cwd=worktree1_path, timeout=10.0)
+        result = run_cli_command(
+            ["sh", "rm", "feature2", "--force"],
+            env=real_env,
+            cwd=worktree1_path,
+            timeout=10.0,
+        )
         # This might prompt for confirmation - let's try with force
         if result.returncode != 0:
             print(f"Remove failed, trying with input: {result.stdout} {result.stderr}")
@@ -97,11 +102,12 @@ async def test_real_daemon_startup_and_communication(real_temp_repo, real_env):
 
         # Check that daemon files were created
         from pathlib import Path
+
         daemon_dir = Path(real_env["WT_DIR"]).resolve()
         assert daemon_dir.exists(), "Daemon directory not created"
 
         pid_file = daemon_dir / "daemon.pid"
-        socket_file = daemon_dir / "daemon.sock"
+        _socket_file = daemon_dir / "daemon.sock"
 
         # Give daemon a moment to start up
         time.sleep(0.5)
@@ -142,7 +148,11 @@ def test_real_git_operations(real_temp_repo, real_env):
         git_run(["commit", "-m", "Test commit"], cwd=worktree_path)
 
         # Verify branch was created correctly
-        result = git_run(["branch", "--show-current"], cwd=worktree_path, capture_output=True)
+        result = git_run(
+            ["branch", "--show-current"],
+            cwd=worktree_path,
+            capture_output=True,
+        )
         assert "test/git-test" in result.stdout.decode()
 
         print("✅ Real git operations test passed!")

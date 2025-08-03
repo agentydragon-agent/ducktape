@@ -47,7 +47,6 @@ from .validation import validate_hook_outcome
 logger = logging.getLogger(__name__)
 
 
-
 class HookHandler:
     """Handles all hook types with type safety."""
 

@@ -10,11 +10,14 @@ from pathlib import Path
 
 
 def _get_copyable_entries(src: Path) -> list[str]:
-    return [str(src / p.name) for p in src.iterdir() if p.name not in (".worktrees", ".git")]
+    return [
+        str(src / p.name) for p in src.iterdir() if p.name not in (".worktrees", ".git")
+    ]
 
 
 class StrategyType(Enum):
     """Copy strategy types."""
+
     CLONEFILE = "clonefile"
     REFLINK = "reflink"
     RSYNC = "rsync"
@@ -29,7 +32,7 @@ class CopyStrategy(ABC):
     @abstractmethod
     def method_name(self) -> str:
         pass
-    
+
     @property
     @abstractmethod
     def strategy_type(self) -> StrategyType:
@@ -46,7 +49,7 @@ class ClonefileCopyStrategy(CopyStrategy):
     @property
     def method_name(self) -> str:
         return "CoW clonefile"
-    
+
     @property
     def strategy_type(self) -> StrategyType:
         return StrategyType.CLONEFILE
@@ -62,7 +65,7 @@ class ReflinkCopyStrategy(CopyStrategy):
     @property
     def method_name(self) -> str:
         return "CoW reflink"
-    
+
     @property
     def strategy_type(self) -> StrategyType:
         return StrategyType.REFLINK
@@ -84,11 +87,10 @@ class RsyncCopyStrategy(CopyStrategy):
     @property
     def method_name(self) -> str:
         return "rsync copy"
-    
+
     @property
     def strategy_type(self) -> StrategyType:
         return StrategyType.RSYNC
-
 
 
 def _test_reflink_support() -> bool:
@@ -119,11 +121,11 @@ def _test_reflink_support() -> bool:
 def get_copy_strategy(cow_method=None) -> CopyStrategy:
     """Get copy strategy based on cow_method preference or auto-detection."""
     from ..shared.configuration import CowMethod
-    
+
     # If cow_method is specified and not AUTO, try to use it
     if cow_method and cow_method != CowMethod.AUTO:
         return _get_strategy_for_method(cow_method)
-    
+
     # Auto-detection logic (default behavior)
     if sys.platform == "darwin" and shutil.which("cp"):
         return ClonefileCopyStrategy()
@@ -135,12 +137,12 @@ def get_copy_strategy(cow_method=None) -> CopyStrategy:
 def _get_strategy_for_method(cow_method) -> CopyStrategy:
     """Get strategy for specific CowMethod, with availability validation."""
     from ..shared.configuration import CowMethod
-    
+
     if cow_method == CowMethod.REFLINK:
         if _test_reflink_support():
             return ReflinkCopyStrategy()
         raise RuntimeError("Reflink copy is not supported on this system")
-    
+
     if cow_method == CowMethod.COPY:
         # "copy" maps to clonefile on macOS, reflink elsewhere
         if sys.platform == "darwin" and shutil.which("cp"):
@@ -148,10 +150,10 @@ def _get_strategy_for_method(cow_method) -> CopyStrategy:
         if _test_reflink_support():
             return ReflinkCopyStrategy()
         return RsyncCopyStrategy()
-    
+
     if cow_method == CowMethod.RSYNC:
         if not shutil.which("rsync"):
             raise RuntimeError("rsync is not available on this system")
         return RsyncCopyStrategy()
-    
+
     raise RuntimeError(f"Unknown copy method: {cow_method}")

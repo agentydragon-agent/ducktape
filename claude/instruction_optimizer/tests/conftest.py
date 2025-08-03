@@ -5,7 +5,7 @@ from collections.abc import Generator
 from pathlib import Path
 
 import pytest
-from claude_optimizer.config.settings import OptimizerConfig
+from claude_optimizer.config import OptimizerConfig
 
 
 @pytest.fixture

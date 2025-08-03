@@ -235,7 +235,7 @@ class ArchiveInstall(GitHubInstaller):
                 "extract_file": self.extract_file,
                 "dest_path": self.dest_path,
             }
-        
+
         # Normal full archive extraction
         args = {
             "src": asset_url,

@@ -47,4 +47,7 @@ def test_python_syntax_error_skips_precommit(tmp_path):
 
     # Verify syntax error feedback with exact string
     assert isinstance(result, PostToolFeedbackToClaude)
-    assert result.feedback_to_claude == "⚠️ Fix SyntaxError in broken.py:1:8: '(' was never closed."
+    assert (
+        result.feedback_to_claude
+        == "⚠️ Fix SyntaxError in broken.py:1:8: '(' was never closed."
+    )

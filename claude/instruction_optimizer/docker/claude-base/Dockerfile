@@ -23,28 +23,28 @@ RUN curl -fsSL https://deb.nodesource.com/setup_18.x | bash - \
 # Install Claude Code CLI
 RUN npm install -g @anthropic-ai/claude-code
 
-# Create generic Claude wrapper for SDK integration
-# NOTE: This wrapper may be redundant since we override the SDK's binary path entirely,
-# but kept temporarily to:
-# 1. Document stdin/JSON stream concerns (avoid TTY/raw mode issues)
-# 2. Provide debugging hook point if needed
-# 3. Maintain working tested code
-# Could simplify to call 'claude' directly in task_claude.py later
-RUN cat > /usr/bin/claude-wrapper << 'EOF'
-#!/bin/sh
-# Generic Claude wrapper for SDK integration with optional strace debugging
-# Direct execution without stdin/stdout interference
-
-# Build command line by wrapping base command
-CMDLINE="claude"
-if [ -n "$CLAUDE_STRACE" ]; then
-    CMDLINE="strace -f -o /logs/claude_strace.log ${CMDLINE}"
-fi
-
-exec $CMDLINE "$@"
-EOF
-
-RUN chmod +x /usr/bin/claude-wrapper
+## Create generic Claude wrapper for SDK integration
+## NOTE: This wrapper may be redundant since we override the SDK's binary path entirely,
+## but kept temporarily to:
+## 1. Document stdin/JSON stream concerns (avoid TTY/raw mode issues)
+## 2. Provide debugging hook point if needed
+## 3. Maintain working tested code
+## Could simplify to call 'claude' directly in task_claude.py later
+#RUN cat > /usr/bin/claude-wrapper << 'EOF'
+##!/bin/sh
+## Generic Claude wrapper for SDK integration with optional strace debugging
+## Direct execution without stdin/stdout interference
+#
+## Build command line by wrapping base command
+#CMDLINE="claude"
+#if [ -n "$CLAUDE_STRACE" ]; then
+#    CMDLINE="strace -f -o /logs/claude_strace.log ${CMDLINE}"
+#fi
+#
+#exec $CMDLINE "$@"
+#EOF
+#
+#RUN chmod +x /usr/bin/claude-wrapper
 
 # Create user matching Claude Code expectations
 RUN useradd -m -u 1000 -s /bin/bash node

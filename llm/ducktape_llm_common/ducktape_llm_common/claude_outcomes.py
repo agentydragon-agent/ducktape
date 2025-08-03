@@ -135,9 +135,9 @@ class SubagentStopAllow(HookOutcome):
 class SubagentStopPrevent(HookOutcome):
     """
     Prevent subagent from stopping.
-    
+
     Must provide reason for the subagent to understand how to proceed.
-    
+
     Example:
         SubagentStopPrevent(
             llm_message="Cannot stop: Must complete remaining analysis tasks."

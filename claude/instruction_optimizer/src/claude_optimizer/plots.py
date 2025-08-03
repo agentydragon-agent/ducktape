@@ -15,7 +15,8 @@ logger = DualOutputLogging.get_logger()
 
 
 def create_plot_data_point(
-    iter_data: dict[str, Any], facet_name: str,
+    iter_data: dict[str, Any],
+    facet_name: str,
 ) -> dict[str, Any]:
     """Create a plot data point for a given iteration and facet."""
     if facet_name == "overall":
@@ -213,7 +214,9 @@ class ScoreEvolutionPlotter:
             + geom_line(size=1, color="steelblue")
             + geom_point(size=2, color="steelblue")
             + geom_errorbar(
-                aes(ymin="ci_lower", ymax="ci_upper"), width=0.1, color="steelblue",
+                aes(ymin="ci_lower", ymax="ci_upper"),
+                width=0.1,
+                color="steelblue",
             )
             + facet_wrap("facet", scales="free_y", ncol=3)
             + theme_minimal()
@@ -367,7 +370,9 @@ def analyze_rollout_logs(log_path: Path) -> dict[str, Any]:
             except json.JSONDecodeError as e:
                 skipped_lines += 1
                 logger.warning(
-                    "Skipped malformed JSON line", line_num=line_num, error=str(e),
+                    "Skipped malformed JSON line",
+                    line_num=line_num,
+                    error=str(e),
                 )
                 continue
 
@@ -430,7 +435,8 @@ def analyze_rollout_logs(log_path: Path) -> dict[str, Any]:
 
 
 def analyze_rollout_capacity(
-    log_path: Path, context_limit: int = 200000,
+    log_path: Path,
+    context_limit: int = 200000,
 ) -> dict[str, Any]:
     """Analyze rollout logs and estimate context capacity."""
     stats = analyze_rollout_logs(log_path)
@@ -462,7 +468,8 @@ def analyze_rollout_capacity(
 
 
 def print_rollout_analysis_report(
-    log_path: Path, context_limits: list[int] | None = None,
+    log_path: Path,
+    context_limits: list[int] | None = None,
 ) -> None:
     """Print comprehensive rollout analysis report."""
     if context_limits is None:
@@ -515,4 +522,3 @@ def print_rollout_analysis_report(
             f"    Conservative (max size): {capacity['estimated_capacity']['conservative_max']} rollouts",
         )
         print()
-

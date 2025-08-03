@@ -15,26 +15,26 @@ from claude_code_sdk import (
 
 class MessageFormatter:
     """Utilities for formatting message content for logging."""
-    
+
     DEFAULT_TRUNCATE = 100
     ARG_TRUNCATE = 30
     CONTENT_TRUNCATE = 60
-    
+
     @staticmethod
     def truncate(text: str, limit: int) -> str:
         """Truncate text to specified limit with ellipsis."""
         return text[:limit] + "..." if len(text) > limit else text
-    
+
     @staticmethod
     def clean_text(text: str) -> str:
         """Remove newlines for cleaner log output."""
         return text.replace("\n", " ")
-    
+
     @classmethod
     def format_preview(cls, content: str, limit: int = DEFAULT_TRUNCATE) -> str:
         """Clean and truncate text for preview."""
         return cls.clean_text(cls.truncate(content, limit))
-    
+
     @staticmethod
     def safe_str(content: Any) -> str:
         """Safely convert any content to string."""
@@ -50,31 +50,34 @@ def log_assistant_message(logger: Any, message: AssistantMessage) -> None:
     """Log assistant message with tool usage details."""
     tool_uses_full = []  # Complete data for JSON logs
     text_content = ""
-    
+
     for block in message.content:
         if isinstance(block, TextBlock):
             text_content = block.text
         elif isinstance(block, ToolUseBlock):
             # Store complete tool usage data (no truncation for structured logs)
-            tool_uses_full.append({
-                "name": block.name,
-                "args": dict(block.input),
-            })
+            tool_uses_full.append(
+                {
+                    "name": block.name,
+                    "args": dict(block.input),
+                },
+            )
         elif isinstance(block, ToolResultBlock):
             content_str = MessageFormatter.safe_str(block.content)
             logger.info(
                 "Tool result",
                 tool_use_id=block.tool_use_id[:8],
                 content_preview=MessageFormatter.format_preview(
-                    content_str, MessageFormatter.CONTENT_TRUNCATE,
+                    content_str,
+                    MessageFormatter.CONTENT_TRUNCATE,
                 ),
             )
-    
+
     if tool_uses_full:
         logger.info("Tool usage", tools=tool_uses_full)
     elif text_content:
         logger.info(
-            "Assistant message", 
+            "Assistant message",
             content_preview=MessageFormatter.format_preview(text_content),
         )
 
@@ -91,16 +94,17 @@ def log_user_message(logger: Any, message: UserMessage) -> None:
                 "Tool result",
                 tool_use_id=tool_id,
                 content_preview=MessageFormatter.format_preview(
-                    content, MessageFormatter.CONTENT_TRUNCATE,
+                    content,
+                    MessageFormatter.CONTENT_TRUNCATE,
                 ),
             )
             return
-    
+
     # Handle string content or fallback
     content_str = MessageFormatter.safe_str(message.content)
     if content_str and content_str != "[]":  # Don't log empty lists
         logger.info(
-            "User message", 
+            "User message",
             content_preview=MessageFormatter.format_preview(content_str),
         )
     else:
@@ -120,7 +124,7 @@ def log_result_message(logger: Any, message: ResultMessage) -> None:
 def log_message_summary(
     message: SystemMessage | AssistantMessage | UserMessage | ResultMessage,
     logger: Any,
-    agent_id: int,
+    agent_id: int | None = None,
 ) -> None:
     """Log a structured summary of a coding agent SDK message."""
     message_logger = logger.bind(agent_id=agent_id, message_type=type(message).__name__)

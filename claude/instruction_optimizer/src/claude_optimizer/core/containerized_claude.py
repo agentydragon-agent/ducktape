@@ -21,54 +21,41 @@ import asyncio
 import os
 import shutil
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager, contextmanager
+from contextlib import asynccontextmanager, contextmanager, ExitStack
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import claude_code_sdk
-import docker
 import pathspec
 from claude_code_sdk import ClaudeCodeOptions, ClaudeSDKClient
 from claude_code_sdk._internal.transport.subprocess_cli import SubprocessCLITransport
-from logging_utils import DualOutputLogging
+
+import docker
 
 if TYPE_CHECKING:
     from claude_optimizer.database.models import SeedTask
 
 
 @contextmanager
-def temporary_env(overrides: dict[str, str]):
-    """Context manager for temporarily setting environment variables.
-
-    Args:
-        overrides: Dict of env var name -> value to set temporarily
-
-    Yields:
-        None
-
-    Example:
-        with temporary_env({"DEBUG": "1", "MODE": "test"}):
-            # Environment has DEBUG=1 and MODE=test
-            subprocess.run(["some_command"])
-        # Original environment restored
-    """
-    original_values = {}
-
-    # Save original values and set new ones
-    for key, value in overrides.items():
-        original_values[key] = os.environ.get(key)
-        os.environ[key] = value
-
+def temporary_env_var(key: str, value: str):
+    prev = os.environ.get(key)
+    os.environ[key] = value
     try:
         yield
     finally:
-        # Restore original state
-        for key, original_value in original_values.items():
-            if original_value is None:
-                os.environ.pop(key, None)
-            else:
-                os.environ[key] = original_value
+        if prev is None:
+            os.environ.pop(key, None)
+        else:
+            os.environ[key] = prev
+
+
+@contextmanager
+def temporary_env(overrides: dict[str, str]):
+    with ExitStack() as stack:
+        for k, v in overrides.items():
+            stack.enter_context(temporary_env_var(k, v))
+        yield
 
 
 @dataclass
@@ -108,7 +95,7 @@ class TaskClaude:
     with proper PATH isolation and automatic file collection.
     """
 
-    def __init__(self, task_id: str, config, output_dir: Path, task: str):
+    def __init__(self, task_id: str, config, output_dir: Path, task: str, db_session, logger):
         self.task_id = task_id
         self.config = config
         self._output_dir = output_dir
@@ -117,13 +104,13 @@ class TaskClaude:
         self._container = None
         self._message_queue = asyncio.Queue()
         self._query_task = None
-        # Docker image will be set from task configuration
         self._docker_image = None
-        self._git_volume_name = "claude_shared_git"  # Shared git volume
-        # Setup logger immediately for all error logging
-        self._logger = DualOutputLogging.get_logger().bind(task_id=task_id)
+        self._db_session = db_session
+        self._git_volume_name = "claude_shared_git"
+        self._logger = logger
         self._exclusion_spec = pathspec.PathSpec.from_lines(
-            "gitwildmatch", config.exclude_patterns,
+            "gitwildmatch",
+            config.exclude_patterns,
         )
 
         # Find docker path for wrapper creation
@@ -215,15 +202,22 @@ class TaskClaude:
             if self._container.status != "running":
                 logs = self._container.logs().decode("utf-8", errors="replace")
                 self._logger.error(
-                    "Container not running - logs:", container_id=self._container.id,
-                    status=self._container.status, logs=logs,
+                    "Container not running - logs:",
+                    container_id=self._container.id,
+                    status=self._container.status,
+                    logs=logs,
                 )
-                raise RuntimeError(f"Container {self._container.id} is not running, status: {self._container.status}")
+                raise RuntimeError(
+                    f"Container {self._container.id} is not running, status: {self._container.status}",
+                )
         except Exception as e:
             raise RuntimeError(f"Container {self._container.id} check failed: {e}")
 
-        self._logger.info("Query starting", container_id=self._container.id,
-                          container_status=self._container.status)
+        self._logger.info(
+            "Query starting",
+            container_id=self._container.id,
+            container_status=self._container.status,
+        )
 
         options = ContainerizedClaudeCodeOptions(
             allowed_tools=None,
@@ -246,12 +240,14 @@ class TaskClaude:
             "DOCKER_BINARY": self._docker_path,
         }
 
-        # Add debugging flags from config
-        if self.config.debug.enable_strace:
+        if getattr(self.config, "debug", None) and self.config.debug.enable_strace:
             wrapper_env["CLAUDE_STRACE"] = "1"
+        if hasattr(self.config, "wrapper_env") and self.config.wrapper_env:
+            wrapper_env.update(self.config.wrapper_env)
+        pass_keys = [k for k in wrapper_env.keys() if k not in ("CLAUDE_CONTAINER_ID", "DOCKER_BINARY")]
+        if pass_keys:
+            wrapper_env["CLAUDE_WRAPPER_PASS_ENV"] = ",".join(pass_keys)
 
-        # Use the actual ClaudeSDKClient but with PATH isolation active
-        # ClaudeSDKClient uses our wrapper script (claude_binary option) instead of PATH lookup
         with temporary_env(wrapper_env):
             async with ClaudeSDKClient(options=self._claude_options) as client:
                 await client.query(self._task)
@@ -279,37 +275,33 @@ class TaskClaude:
         claude_md_path = self._output_dir / "CLAUDE.md"
         claude_md_path.write_text(system_prompt, encoding="utf-8")
 
-    async def collect_outputs(self) -> dict[str, str]:
-        """Collect files from bind-mounted workspace with filtering applied."""
+    async def collect_outputs(self) -> list[dict[str, str]]:
         self._ensure_container_ready()
 
-        files = {}
+        files: list[dict[str, str]] = []
         for file_path in self._output_dir.rglob("*"):
             if not file_path.is_file():
                 continue
 
             relative_path = file_path.relative_to(self._output_dir).as_posix()
-
-            # Skip excluded files - don't pass to grader (gitignore-style matching)
             if self._exclusion_spec.match_file(relative_path):
                 continue
 
-            files[relative_path] = file_path.read_text()
+            files.append({"path": relative_path, "content": file_path.read_text()})
 
         return files
 
     def _get_task_from_db(self) -> "SeedTask":
-        """Get task from database."""
-        from claude_optimizer.database.models import SeedTask, create_database
+        from claude_optimizer.database.models import SeedTask
 
-        db_manager = create_database()
-        with db_manager.get_session() as session:
-            task = (
-                session.query(SeedTask).filter(SeedTask.task_id == self.task_id).first()
-            )
-            if not task:
-                raise ValueError(f"Task '{self.task_id}' not found in database")
-            return task
+        task = (
+            self._db_session.query(SeedTask)
+            .filter(SeedTask.task_id == self.task_id, SeedTask.is_active == True)
+            .first()
+        )
+        if not task:
+            raise ValueError(f"Task '{self.task_id}' not found in database")
+        return task
 
     def _setup_docker_image(self):
         """Set docker image from task configuration."""
@@ -416,18 +408,15 @@ class TaskClaude:
             # ALWAYS remount git as read-only for security (do this BEFORE setup scripts)
             await self._remount_git_readonly()
 
-            # Get task from database for pre-task commands
             task_db = self._get_task_from_db()
 
-            # Run always pre-task setup if configured (runs after remount so installs persist)
+            # Run pre-task setup after remount so installs persist
             if self.config.pre_task_always_script:
                 await self._run_pre_task_always_setup(task_db)
 
-            # Run pre-task setup if configured
             if self.config.pre_task_setup_script:
                 await self._run_pre_task_setup(task_db)
 
-            # Run task-specific pre-task commands inside container
             if task_db.pre_task_commands:
                 await self._run_pre_task_commands(task_db.pre_task_commands)
 
@@ -444,7 +433,10 @@ class TaskClaude:
             raise
 
     async def _run_setup_script(
-        self, script_path: str, script_type: str, log_prefix: str,
+        self,
+        script_path: str,
+        script_type: str,
+        log_prefix: str,
     ):
         """Run a setup script with streaming output and error handling."""
         setup_script = Path(script_path)
@@ -526,7 +518,9 @@ class TaskClaude:
         if not self.config.pre_task_always_script:
             return
         await self._run_setup_script(
-            self.config.pre_task_always_script, "Always pre-task setup", "setup-always",
+            self.config.pre_task_always_script,
+            "Always pre-task setup",
+            "setup-always",
         )
 
     async def _run_pre_task_setup(self, task_db):
@@ -534,7 +528,9 @@ class TaskClaude:
         if not self.config.pre_task_setup_script:
             return
         await self._run_setup_script(
-            self.config.pre_task_setup_script, "Pre-task setup", "pre-task-setup",
+            self.config.pre_task_setup_script,
+            "Pre-task setup",
+            "pre-task-setup",
         )
 
     async def _run_pre_task_commands(self, commands: str):
@@ -591,7 +587,8 @@ class TaskClaude:
             )
             raise RuntimeError(f"Pre-task commands failed with exit code {exit_code}")
         self._logger.info(
-            "Pre-task commands completed successfully", container_id=self._container.id,
+            "Pre-task commands completed successfully",
+            container_id=self._container.id,
         )
 
     async def _remount_git_readonly(self):
@@ -603,7 +600,8 @@ class TaskClaude:
         # Stop current container
         old_container_id = self._container.id
         self._logger.info(
-            "Remounting git volume as read-only", old_container_id=old_container_id,
+            "Remounting git volume as read-only",
+            old_container_id=old_container_id,
         )
 
         self._container.remove(force=True)
@@ -670,26 +668,16 @@ class TaskClaude:
 
     async def _cleanup(self):
         """Clean up container and wrapper."""
-        cleanup_errors = []
 
         if self._container:
             try:
                 self._container.remove(force=True)
             except Exception as e:
-                cleanup_errors.append(
-                    f"Failed to remove container {self._container.id}: {e}",
+                raise RuntimeError(
+                    f"Failed to remove container {self._container.id}: {e}"
                 )
             finally:
                 self._container = None
-
-        # Wrapper scripts are now committed files - no cleanup needed
-
-        # If cleanup failed, log all errors and raise
-        if cleanup_errors:
-            error_msg = "Cleanup failed: " + "; ".join(cleanup_errors)
-            # If _logger is None here, that's a programming error - let it crash
-            self._logger.error("Container cleanup failed", errors=cleanup_errors)
-            raise RuntimeError(error_msg)
 
     async def __aenter__(self) -> "TaskClaude":
         """Context manager entry - setup container and wrapper."""
@@ -759,7 +747,12 @@ class _TaskClaudeProxy:
 
 @asynccontextmanager
 async def task_claude(
-    task_id: str, config, output_dir: Path, task: str,
+    task_id: str,
+    config,
+    output_dir: Path,
+    task: str,
+    logger,
+    db_session,
 ) -> AsyncIterator[_TaskClaudeProxy]:
     """Context manager for Claude task execution.
 
@@ -771,7 +764,7 @@ async def task_claude(
     Yields:
         _TaskClaudeProxy: Proxy that handles system prompt setup before PATH isolation
     """
-    claude = TaskClaude(task_id, config, output_dir, task)
+    claude = TaskClaude(task_id, config, output_dir, task, db_session, logger)
     proxy = _TaskClaudeProxy(claude)
 
     try:

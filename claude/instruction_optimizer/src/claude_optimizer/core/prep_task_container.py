@@ -23,7 +23,7 @@ async def main():
 
     db_manager = create_database()
     with db_manager.get_session() as session:
-        task_db = session.query(SeedTask).filter(SeedTask.is_active is True).first()
+        task_db = session.query(SeedTask).filter(SeedTask.is_active == True).first()
         task_id = task_db.task_id
         task = task_db.prompt
 
@@ -34,7 +34,7 @@ async def main():
         f"🐳 Setting up container for task: {task_id}, output directory: {test_output_dir}",
     )
 
-    async with task_claude(task_id, config, test_output_dir, task) as client:
+    async with task_claude(task_id, config, test_output_dir, task, logger=None, db_session=session) as client:
         # Setup system prompt (this starts container and runs pre-task scripts)
         print("🔧 Starting container and running pre-task scripts...")
         await client.setup_system_prompt("You are a helpful assistant.")
@@ -50,7 +50,11 @@ async def main():
 
         # Interactive mode - spawn shell with containerized claude in PATH
         process = await asyncio.create_subprocess_exec(
-            "docker", "exec", "-it", client.container_id, "/bin/bash",
+            "docker",
+            "exec",
+            "-it",
+            client.container_id,
+            "/bin/bash",
         )
         await process.wait()
 

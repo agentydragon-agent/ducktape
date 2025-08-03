@@ -31,14 +31,23 @@ def create_shell_script(wt_args: list[str]) -> str:
     return f"wt {' '.join(wt_args)}"
 
 
-def run_shell_script(script_content: str, cwd: str, env: dict = None) -> subprocess.CompletedProcess:
+def run_shell_script(
+    script_content: str,
+    cwd: str,
+    env: dict = None,
+) -> subprocess.CompletedProcess:
     """Execute a shell script with wt function setup and return the result."""
     # Explicit requirement checks
     import importlib.util
     import shutil
-    assert importlib.util.find_spec("wt"), "wt package not installed - required for shell integration tests"
-    assert shutil.which("adgn-worktree"), "adgn-worktree CLI not found on PATH - required for shell integration tests"
-    
+
+    assert importlib.util.find_spec("wt"), (
+        "wt package not installed - required for shell integration tests"
+    )
+    assert shutil.which("adgn-worktree"), (
+        "adgn-worktree CLI not found on PATH - required for shell integration tests"
+    )
+
     # Use provided environment or create a new one
     if env is None:
         env = os.environ.copy()
@@ -46,14 +55,16 @@ def run_shell_script(script_content: str, cwd: str, env: dict = None) -> subproc
         env = env.copy()
     # Ensure local wt package importable for python -m wt.cli
     from pathlib import Path as _P
+
     project_root = str(_P(__file__).resolve().parents[2])
-    env["PYTHONPATH"] = f"{project_root}:{env.get('PYTHONPATH','')}"
+    env["PYTHONPATH"] = f"{project_root}:{env.get('PYTHONPATH', '')}"
 
     # Create script with wt function setup using builtin installer
     import contextlib
     import io
 
     from wt.shell.install import main as emit_function
+
     buf = io.StringIO()
     with contextlib.redirect_stdout(buf):
         emit_function()
@@ -80,7 +91,8 @@ def run_shell_script(script_content: str, cwd: str, env: dict = None) -> subproc
             capture_output=True,
             text=True,
             cwd=cwd,
-            env=env, check=False,
+            env=env,
+            check=False,
         )
         return result
 
@@ -130,7 +142,7 @@ echo "Shell function loaded successfully"
         from contextlib import contextmanager
 
         from ..conftest import kill_daemon_and_verify
-        
+
         @contextmanager
         def daemon_cleanup():
             kill_daemon_and_verify(real_temp_repo)
@@ -139,23 +151,24 @@ echo "Shell function loaded successfully"
             finally:
                 kill_daemon_and_verify(real_temp_repo)
 
-
         def parse_teleport_output(result):
-            output_lines = [line for line in result.stdout.strip().split('\n') if line]
+            output_lines = [line for line in result.stdout.strip().split("\n") if line]
             if not output_lines:
                 pytest.fail(f"No output from script. Stderr: {result.stderr}")
-            
+
             output_line = output_lines[-1]
-            parts = output_line.split(':', 3)
-            
+            parts = output_line.split(":", 3)
+
             if len(parts) != 4:
-                pytest.fail(f"Expected 4 parts in output, got {len(parts)}. Output: {output_line}")
-            
+                pytest.fail(
+                    f"Expected 4 parts in output, got {len(parts)}. Output: {output_line}",
+                )
+
             return {
-                'create_exit': int(parts[0]),
-                'nav_exit': int(parts[1]), 
-                'pwd_before': parts[2],
-                'pwd_after': parts[3],
+                "create_exit": int(parts[0]),
+                "nav_exit": int(parts[1]),
+                "pwd_before": parts[2],
+                "pwd_after": parts[3],
             }
 
         # Main test logic
@@ -181,23 +194,25 @@ echo "$create_exit:$nav_exit:$pwd_before:$pwd_after"
             result = run_shell_script(shell_script, str(real_temp_repo), env=real_env)
 
             data = parse_teleport_output(result)
-            
-            assert data['create_exit'] == 0, f"Create failed: stdout={result.stdout}, stderr={result.stderr}"
-            assert data['nav_exit'] == 0, f"Navigate failed: {result.stderr}"
-            
+
+            assert data["create_exit"] == 0, (
+                f"Create failed: stdout={result.stdout}, stderr={result.stderr}"
+            )
+            assert data["nav_exit"] == 0, f"Navigate failed: {result.stderr}"
+
             expected_dir = str(real_temp_repo / "worktrees" / "teleport-test")
-            assert data['pwd_after'] == expected_dir, f"Directory change failed. Expected: {expected_dir}, Got: {data['pwd_after']}"
-            
+            assert data["pwd_after"] == expected_dir, (
+                f"Directory change failed. Expected: {expected_dir}, Got: {data['pwd_after']}"
+            )
+
             worktree_path = real_temp_repo / "worktrees" / "teleport-test"
             assert worktree_path.exists() and worktree_path.is_dir()
-
-
 
     def test_wt_main_changes_directory(self, real_temp_repo, real_env):
         from contextlib import contextmanager
 
         from ..conftest import kill_daemon_and_verify
-        
+
         @contextmanager
         def daemon_cleanup():
             kill_daemon_and_verify(real_temp_repo)
@@ -205,15 +220,15 @@ echo "$create_exit:$nav_exit:$pwd_before:$pwd_after"
                 yield
             finally:
                 kill_daemon_and_verify(real_temp_repo)
-        
+
         def parse_output(result):
-            lines = [l for l in result.stdout.strip().split('\n') if l]
+            lines = [l for l in result.stdout.strip().split("\n") if l]
             s = lines[-1]
-            parts = s.split(':', 4)
+            parts = s.split(":", 4)
             if len(parts) != 5:
                 pytest.fail(f"Bad output: {s}")
             return int(parts[0]), int(parts[1]), int(parts[2]), parts[3], parts[4]
-        
+
         shell_script = """# Verify shell function is loaded
 if ! declare -f wt > /dev/null; then
     echo "ERROR: wt function not loaded"
@@ -229,16 +244,19 @@ to_main_exit=$?
 pwd_after=$(pwd)
 echo "$create_exit:$to_wt_exit:$to_main_exit:$pwd_before:$pwd_after"
 """
-        
+
         with daemon_cleanup():
             result = run_shell_script(shell_script, str(real_temp_repo), env=real_env)
             c, e1, e2, before, after = parse_output(result)
-            assert c == 0, f"Create failed: stdout={result.stdout}, stderr={result.stderr}"
+            assert c == 0, (
+                f"Create failed: stdout={result.stdout}, stderr={result.stderr}"
+            )
             assert e1 == 0, f"Navigate to worktree failed: {result.stderr}"
             assert e2 == 0, f"Navigate to main failed: {result.stderr}"
             expected_before = str(real_temp_repo / "worktrees" / "to-main")
             assert before == expected_before
             assert after == str(real_temp_repo)
+
 
 @pytest.mark.integration
 @pytest.mark.shell

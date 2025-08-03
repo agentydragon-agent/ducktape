@@ -19,6 +19,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+
 class WorktreeService:
     """Pure business logic for worktree operations."""
 
@@ -48,7 +49,9 @@ class WorktreeService:
             return False
 
         # Filter out hidden worktrees using configurable patterns
-        return not any(path.name.startswith(pattern) for pattern in config.hidden_worktree_patterns)
+        return not any(
+            path.name.startswith(pattern) for pattern in config.hidden_worktree_patterns
+        )
 
     # Note: This method was deleted as part of WorktreeStatus compatibility cleanup.
     # Status creation is now handled by the daemon using proper protocol types.
@@ -69,17 +72,22 @@ class WorktreeService:
             )
         except (ValueError, GitError) as e:
             # Let callers handle git errors appropriately instead of masking them
-            raise GitError(f"Failed to get commit info for branch {branch_name}: {e}") from e
+            raise GitError(
+                f"Failed to get commit info for branch {branch_name}: {e}",
+            ) from e
 
     async def _get_working_directory_status(
-        self, worktree_path: Path, main_repo: Path | None = None,
+        self,
+        worktree_path: Path,
     ) -> tuple[list[str], list[str]]:
         """Get working directory status for a worktree."""
         try:
-            return await self.git_manager.get_working_directory_status(worktree_path, main_repo)
+            return await self.git_manager.get_working_directory_status(worktree_path)
         except Exception as e:
             # Let callers handle git errors appropriately instead of masking them
-            raise RuntimeError(f"Failed to get working directory status for {worktree_path}: {e}") from e
+            raise RuntimeError(
+                f"Failed to get working directory status for {worktree_path}: {e}",
+            ) from e
 
     # Note: This method was deleted as part of WorktreeStatus compatibility cleanup.
     # Status creation is now handled by the daemon using proper protocol types.
@@ -87,9 +95,15 @@ class WorktreeService:
     # Note: This method was deleted as part of WorktreeStatus compatibility cleanup.
     # Error handling is now part of the daemon's StatusResult protocol.
 
-    def create_worktree(self, config, name: str, source_worktree: Path | None = None) -> Path:
+    def create_worktree(
+        self,
+        config,
+        name: str,
+        source_worktree: Path | None = None,
+    ) -> Path:
         """Create a new worktree."""
         from ..shared.error_handling import ErrorContext, validate_worktree_name
+
         validate_worktree_name(name)
         worktree_path = config.worktrees_dir_resolved / name
 
@@ -103,7 +117,11 @@ class WorktreeService:
             branch_name = f"{config.branch_prefix}{name}"
 
             # Use configured upstream branch as source for new branches
-            self.git_manager.create_branch(branch_name, config.upstream_branch, config.main_repo_resolved)
+            self.git_manager.create_branch(
+                branch_name,
+                config.upstream_branch,
+                config.main_repo_resolved,
+            )
 
             # Create worktree
             self.git_manager.worktree_add(str(worktree_path), branch_name)
@@ -111,14 +129,22 @@ class WorktreeService:
             # Hydrate with dirty state if source provided
             if source_worktree:
                 if not source_worktree.exists():
-                    raise RuntimeError(f"Source worktree does not exist: {source_worktree}")
+                    raise RuntimeError(
+                        f"Source worktree does not exist: {source_worktree}",
+                    )
                 self._hydrate_worktree(config, source_worktree, worktree_path)
 
-            # Execute post-creation script if configured
-            logger.info(f"Post-creation script configured: {config.post_creation_script}")
+            logger.info(
+                f"Post-creation script configured: {config.post_creation_script}",
+            )
             if config.post_creation_script:
-                logger.info(f"Executing post-creation script for worktree: {worktree_path}")
-                self._execute_post_creation_script(config.post_creation_script, worktree_path)
+                logger.info(
+                    f"Executing post-creation script for worktree: {worktree_path}",
+                )
+                WorktreeService.execute_post_creation_script(
+                    str(config.post_creation_script),
+                    worktree_path,
+                )
             else:
                 logger.info("No post-creation script configured, skipping")
 
@@ -142,7 +168,9 @@ class WorktreeService:
 
         # Check for uncommitted changes
         if not force:
-            dirty_files, untracked_files = await self._get_working_directory_status(worktree_path)
+            dirty_files, untracked_files = await self._get_working_directory_status(
+                worktree_path,
+            )
             if dirty_files or untracked_files:
                 raise RuntimeError(
                     f"Worktree '{name}' has uncommitted changes. Use --force to remove anyway",
@@ -254,39 +282,53 @@ class WorktreeService:
         strategy = get_copy_strategy(config.cow_method)
         strategy.copy(src, dst)
 
-    def _execute_post_creation_script(self, script_path: str, worktree_path: Path) -> None:
-        """Execute post-creation script with worktree path as argument."""
+    @staticmethod
+    def execute_post_creation_script(script_path: str, worktree_path: Path) -> dict:
         import logging
         import subprocess
-        
+
         logger = logging.getLogger(__name__)
-        logger.info(f"Starting post-creation script execution: script={script_path}, worktree={worktree_path}")
-        
+        logger.info(
+            f"Starting post-creation script execution: script={script_path}, worktree={worktree_path}",
+        )
+
         script = Path(script_path).expanduser().resolve()
         logger.info(f"Resolved script path: {script}")
-        
+
         if not script.exists():
             logger.warning(f"Post-creation script not found: {script}")
-            return
-        
+            return {
+                "ran": False,
+                "exit_code": None,
+                "stdout": None,
+                "stderr": None,
+                "error": "not_found",
+            }
+
         if not script.is_file():
             logger.warning(f"Post-creation script is not a file: {script}")
-            return
-        
-        if not script.stat().st_mode & 0o111:  # Check if executable
+            return {
+                "ran": False,
+                "exit_code": None,
+                "stdout": None,
+                "stderr": None,
+                "error": "not_file",
+            }
+
+        if not script.stat().st_mode & 0o111:
             logger.warning(f"Post-creation script is not executable: {script}")
-            
+
         logger.info(f"Executing post-creation script: {script} {worktree_path}")
         try:
-            # Execute script with worktree path as argv[1]
             result = subprocess.run(
                 [str(script), str(worktree_path)],
-                check=False, cwd=worktree_path,
+                check=False,
+                cwd=worktree_path,
                 capture_output=True,
                 text=True,
-                timeout=60,  # 60 second timeout
+                timeout=60,
             )
-            
+
             if result.returncode != 0:
                 logger.warning(
                     f"Post-creation script failed (exit {result.returncode}): {script}\n"
@@ -299,23 +341,47 @@ class WorktreeService:
                     logger.info(f"Post-creation script stdout: {result.stdout}")
                 if result.stderr:
                     logger.info(f"Post-creation script stderr: {result.stderr}")
-                
+            return {
+                "ran": True,
+                "exit_code": result.returncode,
+                "stdout": result.stdout,
+                "stderr": result.stderr,
+                "error": None,
+            }
         except subprocess.TimeoutExpired:
             logger.error(f"Post-creation script timed out: {script}", exc_info=True)
+            return {
+                "ran": True,
+                "exit_code": None,
+                "stdout": None,
+                "stderr": None,
+                "error": "timeout",
+            }
         except Exception as e:
-            logger.error(f"Error executing post-creation script {script}: {e}", exc_info=True)
+            logger.error(
+                f"Error executing post-creation script {script}: {e}",
+                exc_info=True,
+            )
+            return {
+                "ran": True,
+                "exit_code": None,
+                "stdout": None,
+                "stderr": None,
+                "error": str(e),
+            }
 
     def _get_processes_in_directory(self, directory: Path) -> list:
         """Get processes running in a directory."""
         import psutil
-
 
         procs = []
         for proc in psutil.process_iter(["pid", "name", "cwd"]):
             try:
                 cwd = proc.info.get("cwd")
                 if cwd and Path(cwd).is_relative_to(directory):
-                    procs.append(ProcessInfo(pid=proc.info["pid"], name=proc.info["name"]))
+                    procs.append(
+                        ProcessInfo(pid=proc.info["pid"], name=proc.info["name"]),
+                    )
                     continue
                 for fl in proc.open_files():
                     if fl.path and Path(fl.path).is_relative_to(directory):
@@ -325,11 +391,13 @@ class WorktreeService:
                 continue
         return procs
 
-
     # Note: This method was moved to handlers.py for client-side sorting.
 
     async def get_single_worktree_status_daemon(
-        self, config, worktree_name: str, daemon_client=None,
+        self,
+        config,
+        worktree_name: str,
+        daemon_client=None,
     ) -> tuple[StatusResult, dict[str, PRInfo]]:
         """Get status for a specific worktree using daemon."""
         # Verify the worktree exists
@@ -361,6 +429,8 @@ class WorktreeService:
         if not prs:
             return PRInfo(branch=branch_name)
         pr = prs[0]
+        from ..shared.github_models import PRData
+
         return PRInfo(
             branch=branch_name,
             pr_data=PRData(pr_number=pr.number, pr_state=pr.state),
@@ -375,25 +445,34 @@ class WorktreeService:
     ) -> None:
         """Show worktree status - single worktree or all worktrees."""
         if worktree_name:
-            await self._show_single_worktree_status(config, daemon_client, formatter, worktree_name)
+            await self._show_single_worktree_status(
+                config,
+                daemon_client,
+                formatter,
+                worktree_name,
+            )
         else:
             await self._show_all_worktrees_status(config, daemon_client, formatter)
 
     async def _show_single_worktree_status(
-        self, config, daemon_client, formatter, worktree_name: str,
+        self,
+        config,
+        daemon_client,
+        formatter,
+        worktree_name: str,
     ) -> None:
         """Show status for a single worktree."""
         self.require_worktree_exists(config, worktree_name)
 
         all_status = await daemon_client.get_status([])
-        
+
         # Find the worktree by name in the results
         status = None
         for result in all_status.results.values():
             if result.name == worktree_name:
                 status = result
                 break
-        
+
         if not status:
             import click
 
@@ -402,7 +481,12 @@ class WorktreeService:
 
         formatter.render_worktree_status_single(worktree_name, status, status.pr_info)
 
-    async def _show_all_worktrees_status(self, config, daemon_client, formatter) -> None:
+    async def _show_all_worktrees_status(
+        self,
+        config,
+        daemon_client,
+        formatter,
+    ) -> None:
         """Show status for all worktrees."""
         all_status = await daemon_client.get_status([])
 
@@ -414,7 +498,7 @@ class WorktreeService:
 
         # Sort results for display
         from ..shared.constants import MAIN_WORKTREE_DISPLAY_NAME
-        
+
         def sort_key(item):
             wtid, status = item
             # Always prioritize the main worktree

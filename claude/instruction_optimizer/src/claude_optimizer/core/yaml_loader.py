@@ -9,11 +9,7 @@ from pydantic import BaseModel, field_validator
 from sqlalchemy.orm import Session
 
 from claude_optimizer.core.logging_utils import DualOutputLogging
-from claude_optimizer.database.models import (
-    GradingCriteria,
-    SeedTask,
-    TaskRepository,
-)
+from claude_optimizer.database.models import GradingCriteria, SeedTask
 
 logger = DualOutputLogging.get_logger()
 
@@ -23,8 +19,8 @@ class TaskDataModel(BaseModel):
 
     id: str
     prompt: str
+    description: str | None = None
     docker_image: str
-    git_repos: dict[str, Any]
     allowed_tools: list[str]
     pre_task_setup_script: str | None = None
 
@@ -63,7 +59,7 @@ class YamlLoader:
     def __init__(self, seeds_yaml_path: Path, graders_yaml_path: Path):
         self.seeds_yaml_path = Path(seeds_yaml_path)
         self.graders_yaml_path = Path(graders_yaml_path)
-        self._seeds_data: list[dict] | None = None
+        self._seeds_models: list[TaskDataModel] | None = None
         self._graders_data: list[dict] | None = None
 
     def _load_yaml_file(self, path: Path, file_type: str) -> Any:
@@ -77,16 +73,21 @@ class YamlLoader:
             return yaml.safe_load(f)
 
     @property
-    def seeds_data(self) -> list[dict]:
-        """Load seeds YAML data (cached)."""
-        if self._seeds_data is None:
+    def seeds_data(self) -> list[TaskDataModel]:
+        """Load and validate seeds YAML as Pydantic models (cached)."""
+        if self._seeds_models is None:
             data = self._load_yaml_file(self.seeds_yaml_path, "Seeds")
             if not isinstance(data, list):
                 raise ValueError(
                     f"Seeds YAML must contain a list of tasks, got {type(data)}",
                 )
-            self._seeds_data = data
-        return self._seeds_data
+            models: list[TaskDataModel] = []
+            for item in data:
+                if not isinstance(item, dict):
+                    raise ValueError("Each seed task must be a mapping")
+                models.append(TaskDataModel(**item))
+            self._seeds_models = models
+        return self._seeds_models
 
     @property
     def graders_data(self) -> list[dict]:
@@ -134,35 +135,20 @@ class YamlLoader:
         seeds_added = 0
         seeds_updated = 0
 
-        for task_data in self.seeds_data:
-            # Validate with Pydantic - will crash on invalid data
-            try:
-                validated_task = TaskDataModel(**task_data)
-            except Exception as e:
-                logger.error(
-                    "Invalid task data - failing fast",
-                    task_data=task_data,
-                    error=str(e),
-                )
-                raise ValueError(f"Task validation failed: {e}") from e
-
-            # Extract validated fields
+        self._seeds_models = None
+        for validated_task in self.seeds_data:
             task_id = validated_task.id
             prompt = validated_task.prompt
+            description = validated_task.description
             docker_image = validated_task.docker_image
-            git_repos = validated_task.git_repos
             allowed_tools = validated_task.allowed_tools
             pre_task_setup_script = validated_task.pre_task_setup_script
-
-            # Serialize for storage
-            json.dumps(git_repos) if git_repos else "{}"
-            allowed_tools_json = json.dumps(allowed_tools)
 
             # Compute content hash with available fields in database model
             content_hash = SeedTask.compute_content_hash(
                 prompt=prompt,
-                description=None,  # Not available in YAML schema
-                allowed_tools=allowed_tools_json,
+                description=description,
+                allowed_tools=allowed_tools,
                 docker_image=docker_image,
                 pre_task_commands=pre_task_setup_script,
             )
@@ -175,8 +161,8 @@ class YamlLoader:
                 new_task = SeedTask(
                     task_id=task_id,
                     prompt=prompt,
-                    description=None,  # Not available in current YAML schema
-                    allowed_tools=allowed_tools_json,
+                    description=description,
+                    allowed_tools=allowed_tools,
                     docker_image=docker_image,
                     pre_task_commands=pre_task_setup_script,
                     content_hash=content_hash,
@@ -185,10 +171,6 @@ class YamlLoader:
                 session.add(new_task)
                 session.flush()  # Get the task ID for repository sync
                 seeds_added += 1
-
-                # Sync repository requirements
-                if git_repos:
-                    self._sync_task_repositories(session, new_task, git_repos)
 
                 logger.info(
                     "Added new seed task",
@@ -200,21 +182,13 @@ class YamlLoader:
             elif existing_task.content_hash != content_hash:
                 # Update existing task
                 existing_task.prompt = prompt
-                existing_task.description = None  # Not available in current YAML schema
-                existing_task.allowed_tools = allowed_tools_json
+                existing_task.description = description
+                existing_task.allowed_tools = allowed_tools
                 existing_task.docker_image = docker_image
                 existing_task.pre_task_commands = pre_task_setup_script
                 existing_task.content_hash = content_hash
                 existing_task.is_active = True
                 seeds_updated += 1
-
-                # Clear and re-sync repository requirements
-                session.query(TaskRepository).filter_by(
-                    task_id=existing_task.id,
-                ).delete()
-                session.flush()
-                if git_repos:
-                    self._sync_task_repositories(session, existing_task, git_repos)
 
                 logger.info(
                     "Updated seed task",
@@ -254,7 +228,8 @@ class YamlLoader:
 
             # Compute content hash
             content_hash = GradingCriteria.compute_content_hash(
-                description, evaluation_criteria,
+                description,
+                evaluation_criteria,
             )
 
             # Check if criteria exists
@@ -303,39 +278,29 @@ class YamlLoader:
         return {"graders_added": graders_added, "graders_updated": graders_updated}
 
     def get_active_seed_tasks(
-        self, session: Session | None = None,
+        self,
+        session: Session | None = None,
     ) -> list[SeedTask]:
         """Get all active seed tasks from database."""
         if session is None:
-            session = get_db_session()
-            should_close = True
-        else:
-            should_close = False
+            raise ValueError("Session is required for get_active_seed_tasks")
 
-        try:
-            return session.query(SeedTask).filter_by(is_active=True).all()
-        finally:
-            if should_close:
-                session.close()
+        return session.query(SeedTask).filter_by(is_active=True).all()
 
     def get_active_grading_criteria(
-        self, session: Session | None = None,
+        self,
+        session: Session | None = None,
     ) -> list[GradingCriteria]:
         """Get all active grading criteria from database."""
         if session is None:
-            session = get_db_session()
-            should_close = True
-        else:
-            should_close = False
+            raise ValueError("Session is required for get_active_grading_criteria")
 
-        try:
-            return session.query(GradingCriteria).filter_by(is_active=True).all()
-        finally:
-            if should_close:
-                session.close()
+        return session.query(GradingCriteria).filter_by(is_active=True).all()
 
     def deactivate_missing_tasks(
-        self, session: Session, yaml_task_ids: list[str],
+        self,
+        session: Session,
+        yaml_task_ids: list[str],
     ) -> int:
         """Deactivate tasks that are no longer in YAML files.
 
@@ -351,7 +316,7 @@ class YamlLoader:
         # Find active tasks not in current YAML
         missing_tasks = (
             session.query(SeedTask)
-            .filter(SeedTask.is_active is True)
+            .filter(SeedTask.is_active == True)
             .filter(~SeedTask.task_id.in_(yaml_task_ids))
             .all()
         )
@@ -365,7 +330,9 @@ class YamlLoader:
         return deactivated_count
 
     def deactivate_missing_criteria(
-        self, session: Session, yaml_criteria_names: list[str],
+        self,
+        session: Session,
+        yaml_criteria_names: list[str],
     ) -> int:
         """Deactivate criteria that are no longer in YAML files.
 
@@ -381,7 +348,7 @@ class YamlLoader:
         # Find active criteria not in current YAML
         missing_criteria = (
             session.query(GradingCriteria)
-            .filter(GradingCriteria.is_active is True)
+            .filter(GradingCriteria.is_active == True)
             .filter(~GradingCriteria.name.in_(yaml_criteria_names))
             .all()
         )
@@ -394,40 +361,10 @@ class YamlLoader:
 
         return deactivated_count
 
-    def _sync_task_repositories(
-        self, session: Session, task: SeedTask, git_repos: dict[str, Any],
-    ):
-        """Sync repository requirements for a task."""
-        for repo_url, repo_config in git_repos.items():
-            if not isinstance(repo_config, dict):
-                raise ValueError(
-                    f"Repository config for {repo_url} must be dict with 'commit' and 'main' fields",
-                )
-            if "commit" not in repo_config:
-                raise ValueError(
-                    f"Repository config for {repo_url} missing required 'commit' field",
-                )
-            if "main" not in repo_config:
-                raise ValueError(
-                    f"Repository config for {repo_url} missing required 'main' field",
-                )
-
-            commit = repo_config["commit"]
-            is_main = repo_config["main"]
-
-            # Create repository requirement
-            task_repo = TaskRepository(
-                task_id=task.id,
-                repo_url=repo_url,
-                required_commit=commit,
-                is_main_repo=is_main,
-                mount_path=f"/git/{repo_url}",
-            )
-            session.add(task_repo)
-
 
 def load_yaml_files(seeds_yaml_path: str, graders_yaml_path: str) -> YamlLoader:
     """Create and return a configured YAML loader."""
     return YamlLoader(
-        seeds_yaml_path=Path(seeds_yaml_path), graders_yaml_path=Path(graders_yaml_path),
+        seeds_yaml_path=Path(seeds_yaml_path),
+        graders_yaml_path=Path(graders_yaml_path),
     )

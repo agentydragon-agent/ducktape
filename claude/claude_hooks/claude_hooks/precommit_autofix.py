@@ -26,11 +26,9 @@ class ChangesMade:
     """Pre-commit ran successfully and made changes to the file."""
 
 
-
 @dataclass
 class NoChanges:
     """Pre-commit ran successfully but made no changes to the file."""
-
 
 
 @dataclass
@@ -75,7 +73,9 @@ def truncate_output(output: str, max_lines: int = 20) -> str:
     last_part = lines[-max_lines:]
     omitted_count = total_lines - (max_lines * 2)
 
-    return "\n".join(first_part + [f"... {omitted_count} lines omitted ..."] + last_part)
+    return "\n".join(
+        first_part + [f"... {omitted_count} lines omitted ..."] + last_part,
+    )
 
 
 def format_crashed_output(stdout: str, stderr: str, exit_code: int) -> str:
@@ -136,7 +136,9 @@ class PreCommitAutoFixerHook(PostToolUseHook):
         super().__init__("precommit_autofix")
         self.autofixer_config = AutofixerConfig.model_validate(self.config)
 
-    def execute(self, hook_input: PostToolInput, context: HookContext) -> PostToolAction:
+    def execute(
+        self, hook_input: PostToolInput, context: HookContext,
+    ) -> PostToolAction:
         self.logger.info(
             f"Config: enabled={self.autofixer_config.enabled}, dry_run={self.autofixer_config.dry_run}, tools={self.autofixer_config.tools}",
         )
@@ -163,7 +165,9 @@ class PreCommitAutoFixerHook(PostToolUseHook):
         # Check Python syntax before running pre-commit
         is_valid, syntax_error = check_python_syntax(file_path)
         if not is_valid:
-            self.logger.warning(f"Skipping pre-commit due to syntax error: {syntax_error}")
+            self.logger.warning(
+                f"Skipping pre-commit due to syntax error: {syntax_error}",
+            )
             return PostToolFeedbackToClaude(feedback_to_claude=f"⚠️ Fix {syntax_error}.")
 
         try:
@@ -175,7 +179,9 @@ class PreCommitAutoFixerHook(PostToolUseHook):
             if isinstance(result, Crashed):
                 # Pre-commit failed unexpectedly, show user feedback with formatted output
                 formatted_output = format_crashed_output(
-                    result.stdout, result.stderr, result.exit_code,
+                    result.stdout,
+                    result.stderr,
+                    result.exit_code,
                 )
                 return PostToolFeedbackToClaude(
                     feedback_to_claude=f"⚠️ Pre-commit failed on {file_path.name}\nCommand: pre-commit run --files {file_path}\n\n{formatted_output}",
@@ -196,7 +202,9 @@ class PreCommitAutoFixerHook(PostToolUseHook):
 
             tb_str = traceback.format_exc()
             invocation_id = get_current_invocation_id() or "unknown"
-            log_path = Path(user_state_dir("adgn-claude-hooks")) / f"{self.hook_name}.log"
+            log_path = (
+                Path(user_state_dir("adgn-claude-hooks")) / f"{self.hook_name}.log"
+            )
 
             debug_message = textwrap.dedent(f"""
                 Unhandled {type(e).__name__} from PreCommitAutoFixerHook: {e!s}
@@ -209,7 +217,9 @@ class PreCommitAutoFixerHook(PostToolUseHook):
             return PostToolFeedbackToClaude(feedback_to_claude=debug_message)
         return PostToolContinue()
 
-    def _run_precommit_autofix(self, file_path: Path, context: HookContext) -> PreCommitResult:
+    def _run_precommit_autofix(
+        self, file_path: Path, context: HookContext,
+    ) -> PreCommitResult:
         """Run pre-commit on specific file.
 
         Returns:
@@ -229,7 +239,14 @@ class PreCommitAutoFixerHook(PostToolUseHook):
             config_root = self._get_precommit_root(file_path)
 
             config_file = config_root / PRECOMMIT_CONFIG_FILE
-            cmd = ["pre-commit", "run", "--config", str(config_file), "--files", str(file_path)]
+            cmd = [
+                "pre-commit",
+                "run",
+                "--config",
+                str(config_file),
+                "--files",
+                str(file_path),
+            ]
             self.logger.info(f"Running command: {cmd}")
 
             result = subprocess.run(
@@ -254,12 +271,16 @@ class PreCommitAutoFixerHook(PostToolUseHook):
                 # Exit code 0: Success (standard Unix convention)
                 # Exit code 1: "A detected / expected error" - hooks found issues and possibly fixed them
                 new_mtime = file_path.stat().st_mtime
-                self.logger.info(f"New mtime: {new_mtime}, changed: {new_mtime > original_mtime}")
+                self.logger.info(
+                    f"New mtime: {new_mtime}, changed: {new_mtime > original_mtime}",
+                )
                 return ChangesMade() if new_mtime > original_mtime else NoChanges()
             # Exit code 3: "An unexpected error", 130: "interrupted by ^C", etc.
             self.logger.warning(f"Pre-commit unexpected exit code {result.returncode}")
             return Crashed(
-                stdout=result.stdout, stderr=result.stderr, exit_code=result.returncode,
+                stdout=result.stdout,
+                stderr=result.stderr,
+                exit_code=result.returncode,
             )
         except Exception as e:
             self.logger.exception(f"Error in _run_precommit_autofix: {e}")
@@ -277,7 +298,9 @@ class PreCommitAutoFixerHook(PostToolUseHook):
             repo_root = Path(repo.working_dir)
             self.logger.info(f"Found git repo root: {repo_root}")
             if (repo_root / PRECOMMIT_CONFIG_FILE).exists():
-                self.logger.info(f"Found pre-commit config at: {repo_root / PRECOMMIT_CONFIG_FILE}")
+                self.logger.info(
+                    f"Found pre-commit config at: {repo_root / PRECOMMIT_CONFIG_FILE}",
+                )
                 return repo_root
 
             raise RuntimeError(f"No pre-commit config in git repo root: {repo_root}")
@@ -288,7 +311,6 @@ class PreCommitAutoFixerHook(PostToolUseHook):
         except Exception as e:
             self.logger.exception(f"Unexpected error finding pre-commit root: {e}")
             raise
-
 
 
 def main():

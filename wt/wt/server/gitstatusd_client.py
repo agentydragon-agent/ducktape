@@ -18,15 +18,12 @@ class GitStatusdError(Exception):
     """Base exception for gitstatusd protocol errors."""
 
 
-
 class GitStatusdParseError(GitStatusdError):
     """Error parsing gitstatusd response."""
 
 
-
 class GitStatusdValidationError(GitStatusdError):
     """Error validating gitstatusd response fields."""
-
 
 
 class RepositoryState(Enum):
@@ -211,8 +208,14 @@ class GitStatusdProtocol:
 
             # If not a git repository, return minimal response
             if not is_git_repository:
-                logger.debug("Directory is not a git repository (request_id=%s)", request_id)
-                return GitStatusdResponse(request_id=request_id, is_git_repository=False)
+                logger.debug(
+                    "Directory is not a git repository (request_id=%s)",
+                    request_id,
+                )
+                return GitStatusdResponse(
+                    request_id=request_id,
+                    is_git_repository=False,
+                )
 
             # For git repositories, validate we have enough fields
             if len(fields) < GitStatusdProtocol.MIN_GIT_REPO_FIELDS:
@@ -231,7 +234,10 @@ class GitStatusdProtocol:
                 upstream_branch=GitStatusdProtocol._safe_get_optional_string(fields, 5),
                 remote_name=GitStatusdProtocol._safe_get_optional_string(fields, 6),
                 remote_url=GitStatusdProtocol._safe_get_optional_string(fields, 7),
-                repository_state=GitStatusdProtocol._safe_get_repository_state(fields, 8),
+                repository_state=GitStatusdProtocol._safe_get_repository_state(
+                    fields,
+                    8,
+                ),
                 index_file_count=GitStatusdProtocol._safe_get_int(fields, 9),
                 staged_changes=GitStatusdProtocol._safe_get_int(fields, 10),
                 unstaged_changes=GitStatusdProtocol._safe_get_int(fields, 11),
@@ -244,20 +250,34 @@ class GitStatusdProtocol:
                 unstaged_deleted_files=GitStatusdProtocol._safe_get_int(fields, 18),
                 staged_new_files=GitStatusdProtocol._safe_get_int(fields, 19),
                 staged_deleted_files=GitStatusdProtocol._safe_get_int(fields, 20),
-                push_remote_name=GitStatusdProtocol._safe_get_optional_string(fields, 21),
-                push_remote_url=GitStatusdProtocol._safe_get_optional_string(fields, 22),
+                push_remote_name=GitStatusdProtocol._safe_get_optional_string(
+                    fields,
+                    21,
+                ),
+                push_remote_url=GitStatusdProtocol._safe_get_optional_string(
+                    fields,
+                    22,
+                ),
                 commits_ahead_push_remote=GitStatusdProtocol._safe_get_int(fields, 23),
                 commits_behind_push_remote=GitStatusdProtocol._safe_get_int(fields, 24),
                 skip_worktree_files=GitStatusdProtocol._safe_get_int(fields, 25),
                 assume_unchanged_files=GitStatusdProtocol._safe_get_int(fields, 26),
-                commit_message_encoding=GitStatusdProtocol._safe_get_optional_string(fields, 27),
-                commit_message_summary=GitStatusdProtocol._safe_get_optional_string(fields, 28),
+                commit_message_encoding=GitStatusdProtocol._safe_get_optional_string(
+                    fields,
+                    27,
+                ),
+                commit_message_summary=GitStatusdProtocol._safe_get_optional_string(
+                    fields,
+                    28,
+                ),
             )
 
         except (GitStatusdParseError, GitStatusdValidationError):
             raise
         except Exception as e:
-            raise GitStatusdParseError(f"Unexpected error parsing gitstatusd response: {e}") from e
+            raise GitStatusdParseError(
+                f"Unexpected error parsing gitstatusd response: {e}",
+            ) from e
 
     @staticmethod
     def _safe_get_string(fields: list[str], index: int) -> str:
@@ -301,7 +321,9 @@ class GitStatusdProtocol:
                 return None
 
             # Validate commit hash format (40 hex characters)
-            if len(value) != 40 or not all(c in "0123456789abcdef" for c in value.lower()):
+            if len(value) != 40 or not all(
+                c in "0123456789abcdef" for c in value.lower()
+            ):
                 raise GitStatusdValidationError(f"Invalid commit hash format: {value}")
 
             return value
@@ -309,7 +331,10 @@ class GitStatusdProtocol:
             return None
 
     @staticmethod
-    def _safe_get_repository_state(fields: list[str], index: int) -> RepositoryState | None:
+    def _safe_get_repository_state(
+        fields: list[str],
+        index: int,
+    ) -> RepositoryState | None:
         """Get repository state enum with validation."""
         try:
             value = fields[index]
@@ -336,7 +361,9 @@ def parse_gitstatusd_response(raw_response: str) -> GitStatusdResponse:
 
 
 def create_gitstatusd_request(
-    request_id: str, directory_path: str, disable_index: bool = False,
+    request_id: str,
+    directory_path: str,
+    disable_index: bool = False,
 ) -> str:
     """Create gitstatusd request (convenience function)."""
     request = GitStatusdRequest(request_id, directory_path, disable_index)

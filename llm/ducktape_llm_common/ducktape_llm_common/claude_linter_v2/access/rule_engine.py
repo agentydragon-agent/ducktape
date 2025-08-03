@@ -151,9 +151,7 @@ class RuleEngine:
             # Count how many allows were overridden
             allow_count = sum(1 for m in matches if m.action == RuleAction.ALLOW)
             if allow_count > 0:
-                message_parts.append(
-                    f"Note: {allow_count} allow rule(s) were overridden by this deny rule"
-                )
+                message_parts.append(f"Note: {allow_count} allow rule(s) were overridden by this deny rule")
 
         message = ". ".join(message_parts) if message_parts else None
 
