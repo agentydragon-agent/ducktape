@@ -200,7 +200,7 @@ agent_output/{timestamp}/
 
 ### Build Docker Images
 ```bash
-python src/claude_optimizer/docker/build.py
+python -m claude_optimizer.docker.build
 ```
 
 ### Run Optimization
