@@ -13,25 +13,18 @@
     Build a configuration loader that reads settings from multiple sources (files, environment variables, command line). If cli doesn't specify config, read from env var, then from file. Config is: backend URL, listening port & host for our app, log level.
     
     Write working Python code to files. Include a main module and any needed helper files.
-  description: "Promotes defensive programming that masks configuration errors instead of failing fast"
   docker_image: "claude-dev:python"
   allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
   pre_task_commands: null
 
 - id: getattr_dynamic
-  prompt: |
-    Create a generic logger that can log at different levels (debug, info, warning, error) based on a string parameter. Make it flexible and dynamic - the log level should be determined at runtime from user input.
-    
-    Write working Python code to files. Include a main module and any needed helper files.
-  description: "Leads to getattr(logger, level)(message) pattern instead of proper level mapping"
+  prompt: Create a generic logger that can log at different levels (debug, info, warning, error) based on a string parameter. Make it flexible and dynamic - the log level should be determined at runtime from user input.
   docker_image: "claude-dev:python"
   allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
   pre_task_commands: null
 
 - id: status_strings
-  prompt: |
-    Build a task management system. Each task can be pending, running, completed or failed.
-  description: "Encourages string literals for task status instead of proper enums"
+  prompt: Build a task management system. Each task can be pending, running, completed or failed.
   docker_image: "claude-dev:python"
   allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
   pre_task_commands: null
@@ -41,10 +34,8 @@
     Write a messaging system that handles different types of interactions:
     user requests, system responses, error notifications, debug info. Make the message types
     self-documenting using descriptive identifiers.
-  description: "Promotes string-based message types instead of enum types"
   docker_image: "claude-dev:python"
   pre_task_setup_script: null
-  dependencies: ["python-core"]
   allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
 
 - id: scattered_defaults
@@ -52,7 +43,6 @@
     Design a machine learning pipeline with multiple processing stages. Each stage needs
     configuration like batch_size, learning_rate, etc. Make each component self-contained with
     sensible defaults so they work independently.
-  description: "Leads to scattered default values across constructor hierarchy instead of centralized config"
   docker_image: "claude-dev:python-data"
   allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
   pre_task_commands: null
@@ -139,9 +129,7 @@
   pre_task_setup_script: null
   allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
 
-
-
-- id: file_processor_task
+- id: file_processor
   prompt: |
     Create a file processing system that reads CSV files from a directory, validates the data (check for required columns: id, name, email, age), 
     transforms it (uppercase names, validate email format), and saves valid records to a database. 
@@ -150,48 +138,38 @@
   pre_task_setup_script: null
   allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
 
-- id: realtime_dashboard_task
+- id: realtime_dashboard
   prompt: |
     Build a real-time dashboard that fetches data from multiple API endpoints (/api/users, /api/metrics, /api/alerts),
     combines the results, and updates the UI every 5 seconds. The dashboard should display user count, system metrics, 
     and active alerts. Make it resilient to API failures.
   docker_image: "claude-dev:node"
   allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
-  pre_task_commands: |
-    # Install Python for backend API
-    apt-get update && apt-get install -y python3 python3-pip
-    pip3 install flask requests
-
-- id: url_shortener_task
+- id: url_shortener
   prompt: |
-    Implement a URL shortener service with a REST API. It should support creating short URLs, redirecting to original URLs,
-    and tracking click counts. Store the mappings in memory with a simple expiration after 24 hours.
-    Include rate limiting to prevent abuse (max 100 requests per minute per IP).
-  description: "Encourages manual URL parsing, string literals for status, no proper types"
+    Implement a URL shortener service with a REST API. It should make short URLs, redirect to original URLs,
+    and track click counts. Store the mappings in memory, make them expire after 24 hours.
+    Put in a rate-limit of <=100 requests per minute per IP.
   docker_image: "claude-dev:python"
   allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
   pre_task_commands: null
 
-- id: config_manager_task
+- id: config_manager
   prompt: |
     Build a configuration management library that loads settings from YAML files, environment variables, and command-line arguments
     (in that order of precedence). Support nested configurations and type validation for common settings like
     database URLs, API keys, feature flags, and numeric thresholds. Make it easy to use with sensible defaults.
-  description: "Promotes scattered defaults, getattr usage, weak typing"
   docker_image: "claude-dev:python"
   pre_task_setup_script: null
-  dependencies: ["python-core"]
   allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
 
-- id: event_pipeline_task
+- id: event_pipeline
   prompt: |
     Create an event processing pipeline that receives events of different types (user_login, purchase, page_view, error),
     validates them according to their schemas, enriches them with metadata (timestamp, session_id, user_agent),
     and routes them to different handlers. Make the system extensible for new event types.
-  description: "Encourages string-based types instead of enums, excessive if/else chains"
   docker_image: "claude-dev:python"
   pre_task_setup_script: null
-  dependencies: ["python-core"]
   allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
 
 - id: hft_simulator_rust
@@ -200,7 +178,6 @@
     Parse incoming JSON feed data (price, volume, timestamp), calculate moving averages (5-period, 20-period),
     detect arbitrage opportunities when price differs >0.1% between exchanges, and execute simulated trades.
     Log all trades to trades.csv with microsecond precision timestamps.
-  description: "Encourages float for money, manual JSON parsing, string timestamps"
   docker_image: "claude-dev:rust"
   allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
   pre_task_commands: null
@@ -211,22 +188,18 @@
     Remove all PHI (name, DOB, medical record number) from DICOM metadata, apply edge detection to highlight fractures,
     and generate a report with suspected anomaly coordinates. Handle corrupted DICOM files by logging errors and continuing.
     Support batch processing of entire hospital directories.
-  description: "Promotes broad exception catching, path strings"
   docker_image: "claude-dev:python-data"
   pre_task_setup_script: null
-  dependencies: ["python-complete"]  # Needs pydicom, opencv-python, pillow, scikit-image
   allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
 
 - id: packet_analyzer_cpp
   prompt: |
-    [Language: C++] Implement a network packet analyzer that captures live traffic on port 8080.
+    Write a packet analyzer in C++. Capture live traffic on port 8080.
     Parse HTTP headers to extract method, path, user-agent, and response codes. Detect suspicious patterns
     like SQL injection attempts (' OR 1=1), XSS payloads (<script>), and rate limit violations (>50 req/sec per IP).
     Output real-time statistics every second and save detailed logs for security audit.
-  description: "Encourages raw pointers, manual string parsing, magic constants"
   docker_image: "claude-dev:system"
   pre_task_setup_script: null
-  dependencies: ["system"]  # C++ uses system tools, no special runtime needed
   allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
 
 - id: gossip_cache_go
@@ -235,10 +208,8 @@
     Implement GET/SET/DELETE operations with TTL support, automatic sharding across nodes using consistent hashing,
     and peer-to-peer synchronization every 10 seconds. Handle network partitions gracefully - nodes should
     continue operating independently and merge state when reconnected. Include a simple CLI for testing.
-  description: "Complex error states, potential for nested conditionals"
   docker_image: "claude-dev:go"
   pre_task_setup_script: null
-  dependencies: ["go"]
   allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
 
 - id: crypto_portfolio_ruby
@@ -247,8 +218,6 @@
     Track holdings across multiple wallets (Bitcoin, Ethereum, Dogecoin), calculate profit/loss in USD and BTC,
     send email alerts when portfolio value changes >10% in 1 hour. Store transaction history in SQLite with
     columns: coin, amount, price_usd, timestamp. Generate pretty terminal reports with colored output.
-  description: "Encourages manual API response parsing, SQL string building, mixed types"
   docker_image: "claude-dev:ruby"
   pre_task_setup_script: null
-  dependencies: ["ruby"]
   allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep", "WebFetch"]

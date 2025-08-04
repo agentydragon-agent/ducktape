@@ -255,9 +255,9 @@ async def run_claude_code(
 
         async for message in claude.receive_messages():
             anthropic_log.log(request=anthropic_request, event=safe_serialize(message))
-            message_dict = asdict(message)
-            message_sequence.append(message_dict)
-            log_message_summary(message, logger, agent_id)
+            message_sequence.append(message)  # Store the actual message object
+            # Only log to console, not to the JSON file
+            # TODO: Consider a console-only logger for real-time updates
 
             seq_order += 1
 
@@ -409,10 +409,7 @@ async def optimize_prompts(
                 "agent_id": rollout_id,
                 "iteration": iteration,
                 "timestamp": datetime.utcnow().isoformat(),
-                "messages": [
-                    msg.model_dump() if hasattr(msg, 'model_dump') else str(msg)
-                    for msg in code_result.messages
-                ],
+                "messages": [asdict(msg) for msg in code_result.messages],  # Convert Message objects to dicts
                 "files": [f.model_dump() for f in code_result.files],
             }
             rollout_json_path = rollout_dir / "rollout.json"

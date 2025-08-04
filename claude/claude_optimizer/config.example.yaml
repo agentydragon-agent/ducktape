@@ -1,5 +1,6 @@
 pre_task_setup_script: ""
-seeds_file: "seeds.yaml"
+seeds_file: "data/seeds.yaml"
+seeds_file: "data/graders_consolidated.yaml"
 
 rollouts:
   max_parallel: 16
@@ -12,7 +13,7 @@ prompt_engineer:
 
 grader:
   model: "o3" 
-  reasoning_effort: "medium"
+  reasoning_effort: "high"
 
 summarizer:
   model: "o3"
@@ -21,7 +22,7 @@ summarizer:
 tokens:
   max_response_tokens: 30000
   reasoning_buffer_tokens: 20000
-  max_context_tokens: 150000
+  max_context_tokens: 200000
   max_files_tokens: 100000
 
 truncation:

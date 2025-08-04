@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Any
 
 from pydantic import BaseModel, model_validator
+from claude_code_sdk import Message
 
 
 class FileInfo(BaseModel):
@@ -35,8 +36,11 @@ class CodeResult(BaseModel):
     task_id: str
     agent_id: int
     timestamp: datetime
-    messages: list[dict[str, Any]]
+    messages: list[Message]
     files: list[FileInfo]
+    
+    class Config:
+        arbitrary_types_allowed = True
 
 
 class Grade(BaseModel):

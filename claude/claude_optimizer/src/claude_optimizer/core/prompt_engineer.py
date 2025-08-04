@@ -151,9 +151,43 @@ class PromptEngineer:
         return sum(self._count_message_tokens(msg) for msg in self.prompt_messages)
 
     def _trim_context_if_needed(self) -> None:
-        # TODO: trim context
-        if self.prompt_token_count >= self.model.context_window_tokens:
-            raise NotImplementedError()
+        """Trim context by removing oldest complete turns if needed."""
+        # Trim when we exceed 80% of context window
+        trim_threshold = int(self.model.context_window_tokens * 0.8)
+        # Trim down to 50% of context window
+        target_tokens = int(self.model.context_window_tokens * 0.5)
+        
+        current_tokens = self.prompt_token_count
+        if current_tokens < trim_threshold:
+            return
+        
+        logger.warning(
+            "Context window approaching limit, trimming oldest turns",
+            current_tokens=current_tokens,
+            trim_threshold=trim_threshold,
+            target_tokens=target_tokens,
+            context_window=self.model.context_window_tokens,
+            total_turns=len(self._turns)
+        )
+        
+        # Remove oldest turns until we're under the target
+        # Always keep at least the most recent turn
+        while len(self._turns) > 1 and self.prompt_token_count > target_tokens:
+            removed_turn = self._turns.pop(0)
+            logger.info(
+                "Removed turn from context",
+                remaining_turns=len(self._turns),
+                current_tokens=self.prompt_token_count
+            )
+        
+        # If still over target with just one turn, we have a problem
+        if self.prompt_token_count > target_tokens and len(self._turns) == 1:
+            logger.error(
+                "Single turn exceeds target size",
+                tokens=self.prompt_token_count,
+                target_tokens=target_tokens
+            )
+            # Don't fail, just warn - we'll still try to continue
 
     async def propose_prompt(
         self,
