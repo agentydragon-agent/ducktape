@@ -473,10 +473,10 @@ async def optimize_prompts(
 
             if code_result.messages:
                 last_msg = code_result.messages[-1]
-                if last_msg.get("role") == "result" and "total_cost_usd" in last_msg:
-                    total_cost = last_msg.get("total_cost_usd", 0.0)
-                    duration_ms = last_msg.get("duration_ms")
-                    is_error = last_msg.get("is_error", False)
+                if isinstance(last_msg, ResultMessage):
+                    total_cost = last_msg.total_cost_usd
+                    duration_ms = last_msg.duration_ms
+                    is_error = last_msg.is_error
             
             # Add metrics to rollout data
             rollout_data["total_cost_usd"] = total_cost
