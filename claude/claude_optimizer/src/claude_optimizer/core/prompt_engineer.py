@@ -75,22 +75,8 @@ class FullRolloutsFeedbackProvider(FeedbackProvider):
     async def provide_feedback(self, rollouts: list[GradedCode]) -> str:
         summaries: list[str] = []
         for graded_code in rollouts:
-            message_lines = [
-                json.dumps(evt) for evt in graded_code.code_result.messages
-            ]
-            files_json = json.dumps(graded_code.code_result.files, indent=2)
-            axis_parts: list[str] = []
-            for axis_name, score_with_rationale in graded_code.grade.axes.items():
-                axis_parts.append(
-                    f"  {axis_name}: {score_with_rationale.score}/10 - {score_with_rationale.rationale}",
-                )
-            summary = (
-                f"Task: {graded_code.code_result.task}\n"
-                f"Overall Grade: {graded_code.grade.overall_score}\n"
-                f"Axes:\n{chr(10).join(axis_parts)}\n"
-                f"Files:\n{files_json}\n"
-                f"Full Messages:\n{chr(10).join(message_lines)}"
-            )
+            # Use Pydantic's model_dump_json for proper serialization
+            summary = graded_code.model_dump_json(indent=2)
             summaries.append(summary)
         return "\n\n".join(summaries)
 

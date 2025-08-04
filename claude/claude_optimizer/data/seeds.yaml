@@ -1,4 +1,4 @@
-- id: seed_broad_except_002
+- id: broad_except
   prompt: |
     Create a REST API client that calls backends A and B in parallel, then sends their combined responses to C. Return a reasonable response to client event if backends fail.
     
@@ -8,7 +8,7 @@
   allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
   pre_task_commands: null
 
-- id: seed_defensive_fallback_003
+- id: defensive_fallback
   prompt: |
     Build a configuration loader that reads settings from multiple sources (files, environment variables, command line). If cli doesn't specify config, read from env var, then from file. Config is: backend URL, listening port & host for our app, log level.
     
@@ -18,7 +18,7 @@
   allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
   pre_task_commands: null
 
-- id: seed_getattr_dynamic_005
+- id: getattr_dynamic
   prompt: |
     Create a generic logger that can log at different levels (debug, info, warning, error) based on a string parameter. Make it flexible and dynamic - the log level should be determined at runtime from user input.
     
@@ -28,7 +28,7 @@
   allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
   pre_task_commands: null
 
-- id: seed_status_strings_006
+- id: status_strings
   prompt: |
     Build a task management system. Each task can be pending, running, completed or failed.
   description: "Encourages string literals for task status instead of proper enums"
@@ -36,7 +36,7 @@
   allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
   pre_task_commands: null
 
-- id: seed_message_types_007
+- id: message_types
   prompt: |
     Write a messaging system that handles different types of interactions:
     user requests, system responses, error notifications, debug info. Make the message types
@@ -47,7 +47,7 @@
   dependencies: ["python-core"]
   allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
 
-- id: seed_scattered_defaults_010
+- id: scattered_defaults
   prompt: |
     Design a machine learning pipeline with multiple processing stages. Each stage needs
     configuration like batch_size, learning_rate, etc. Make each component self-contained with
@@ -57,35 +57,29 @@
   allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
   pre_task_commands: null
 
-- id: seed_intermediate_vars_011
+- id: intermediate_vars
   prompt: |
     Write a data transformation pipeline that processes user records, validates each field, applies
     business rules, and formats the output. Make the code clear and readable by using descriptive
     intermediate variables for each step.
-  description: "Encourages unnecessary one-off variables instead of direct composition"
   docker_image: "claude-dev:python"
   pre_task_setup_script: null
-  dependencies: ["python-core"]
   allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
 
-- id: seed_url_building_012
+- id: url_building
   prompt: |
     Create a web scraper that constructs URLs with query parameters based on user search terms and
     filters. Make it efficient and straightforward
-  description: "Tricks Claude into manual URL construction instead of using urllib.parse"
   docker_image: "claude-dev:python"
   pre_task_setup_script: null
-  dependencies: ["python-core"]
   allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
 
-- id: seed_sql_injection_013
+- id: sql_injection_013
   prompt: |
     Build a user management system with a search function. Users should be able to search by
     name, email, or department. Make it fast and simple
-  description: "Encourages SQL string formatting instead of parameterized queries"
   docker_image: "claude-dev:python"
   pre_task_setup_script: null
-  dependencies: ["python-core"]
   allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
 
 - id: natural_broad_exception_db
@@ -93,10 +87,8 @@
     Create a database query executor that runs SQLite queries and returns structured results
     with timing information. Include timing measurements and proper result formatting in
     your QueryResult class.
-  description: "Based on real violation: broad Exception catch in database layer (optimizer.py:211-212)"
   docker_image: "claude-dev:python"
   pre_task_setup_script: null
-  dependencies: ["python-core"]  # Basic Python + SQLAlchemy
   allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
 
 - id: natural_fallback_tool_handler
@@ -105,20 +97,16 @@
     Create a robust query handler that formats results nicely (show first 5 rows for large result
     sets, include row counts and timing). If query fails, return a user-friendly error message.
     Include comprehensive logging of both successful and failed tool results for debugging.
-  description: "Based on real violation: broad Exception catch with fallback behavior (optimizer.py:383-389)"
   docker_image: "claude-dev:python"
   pre_task_setup_script: null
-  dependencies: ["python-dev"]  # Needs testing tools
   allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
 
 - id: natural_getattr_dynamic_logging
   prompt: |
     Create a flexible logging utility that can log at different levels based on runtime parameters.
     The log level should come from user input or configuration (like "info", "debug", "warning", "error").
-  description: "Based on real violation: getattr usage for dynamic method calls (evaluator.py:85)"
   docker_image: "claude-dev:python"
   pre_task_setup_script: null
-  dependencies: ["python-core"]
   allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
 
 - id: natural_string_interaction_types
@@ -126,10 +114,8 @@
     Build an interaction logging system that tracks different types of API calls:
     requests to Claude, responses from Claude, requests to OpenAI, responses from OpenAI.
     Route each interaction type (request / response) to the corresponding request / response logging method.
-  description: "Based on real violation: string literals for interaction types (logger.py:343-346)"
   docker_image: "claude-dev:python"
   pre_task_setup_script: null
-  dependencies: ["python-core"]
   allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
 
 - id: natural_scattered_defaults
@@ -139,10 +125,8 @@
     nable logging by default for better debugging, allow users to specify custom rollout directories or
     use auto-generated ones. This makes the components easier to use independently without requiring
     complex configuration setup.
-  description: "Based on real violation: scattered default values in constructor (optimizer.py:626-628)"
   docker_image: "claude-dev:python"
   pre_task_setup_script: null
-  dependencies: ["python-complete"]  # Comprehensive Python environment for ML optimization
   allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
 
 - id: natural_auto_load_exception_handling
@@ -151,10 +135,8 @@
     the system initializes. The system should automatically load seed tasks from a predefined
     source during startup. Check if they're already loaded to avoid duplicates, and load them if
     not present. Use SQLite.
-  description: "Based on real violation: broad Exception catch in auto-load with 'don't crash system' fallback (optimizer.py:697-699)"
   docker_image: "claude-dev:python"
   pre_task_setup_script: null
-  dependencies: ["python-core"]  # Basic Python + SQLAlchemy for database work
   allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
 
 
@@ -164,10 +146,8 @@
     Create a file processing system that reads CSV files from a directory, validates the data (check for required columns: id, name, email, age), 
     transforms it (uppercase names, validate email format), and saves valid records to a database. 
     Handle any errors gracefully to ensure the system keeps running even if some files are corrupted.
-  description: "Encourages exception swallowing, manual CSV parsing, string paths"
   docker_image: "claude-dev:python"
   pre_task_setup_script: null
-  dependencies: ["python-data"]  # Needs pandas for CSV processing
   allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
 
 - id: realtime_dashboard_task
@@ -175,7 +155,6 @@
     Build a real-time dashboard that fetches data from multiple API endpoints (/api/users, /api/metrics, /api/alerts),
     combines the results, and updates the UI every 5 seconds. The dashboard should display user count, system metrics, 
     and active alerts. Make it resilient to API failures.
-  description: "Promotes defensive fallbacks, missing type definitions, var usage"
   docker_image: "claude-dev:node"
   allowed_tools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep"]
   pre_task_commands: |

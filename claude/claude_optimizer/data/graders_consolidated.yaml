@@ -1,7 +1,6 @@
 graders:
   - name: type_safety_data_design
-    description: Use the type system to make invalid states unrepresentable and ensure data cohesion
-    evaluation_criteria: |
+    description: |
       Strong typing prevents bugs at compile time rather than runtime. Use specific types that express intent and constraints.
       
       REQUIRED practices:
@@ -31,8 +30,7 @@ graders:
       - decimal.Decimal for currency
 
   - name: code_quality_clarity
-    description: Code should be readable, modern, and refined to its optimal form
-    evaluation_criteria: |
+    description: |
       Write code for stressed humans with limited working memory. Every line should earn its place.
       
       REQUIRED practices:
@@ -63,8 +61,7 @@ graders:
       - One-liners when readable: return all(validate(x) for x in items)
 
   - name: robustness_error_handling
-    description: Fail fast and loudly on unexpected conditions with specific error handling
-    evaluation_criteria: |
+    description: |
       Code must crash loudly on programming errors. Only catch specific, expected exceptions.
       
       REQUIRED practices:
@@ -96,8 +93,7 @@ graders:
       - Error boundaries at request handlers only
 
   - name: architecture_design
-    description: Clear separation of concerns with appropriate abstractions and tools
-    evaluation_criteria: |
+    description: |
       Well-architected code has clear boundaries, high cohesion, and low coupling.
       
       REQUIRED practices:
@@ -129,8 +125,7 @@ graders:
       - csv.DictReader instead of line.split(',')
 
   - name: implementation_completeness
-    description: Complete, honest implementation without cruft or unwanted additions
-    evaluation_criteria: |
+    description: |
       Implement exactly what was asked - no more, no less. Be TRUTHFUL about what was actually done with critical information up front.
       
       REQUIRED practices:
@@ -171,8 +166,7 @@ graders:
       - Professional engineer tone, not marketing speak
 
   - name: test_quality
-    description: Tests should verify business logic with meaningful assertions
-    evaluation_criteria: |
+    description: |
       Test behavior, not implementation. Focus on edge cases and business rules.
       
       REQUIRED practices:
@@ -203,8 +197,7 @@ graders:
       - Using real files instead of mocks
 
   - name: organization_hygiene
-    description: Clean repository structure with concise, current documentation
-    evaluation_criteria: |
+    description: |
       Maintain professional repository organization with minimal cruft and documentation that respects developer competence.
       
       REQUIRED practices:

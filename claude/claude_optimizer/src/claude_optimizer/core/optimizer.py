@@ -50,7 +50,7 @@ from claude_code_sdk import ResultMessage
 from openai import OpenAI
 
 from claude_optimizer.config import OptimizerConfig
-from claude_optimizer.core.containerized_claude import task_claude
+from claude_optimizer.core.containerized_claude import TaskClaude
 from claude_optimizer.core.file_ops import should_exclude_file
 from claude_optimizer.core.grader import grade_code
 from claude_optimizer.core.jsonl_logger import JSONLLogger, safe_serialize
@@ -60,7 +60,7 @@ from claude_optimizer.core.logging_openai_client import (
 )
 from claude_optimizer.core.logging_utils import DualOutputLogging
 from claude_optimizer.core.message_formatter import log_message_summary
-from claude_optimizer.core.models import CodeResult, Criterion, GradedCode, SeedTask
+from claude_optimizer.core.models import CodeResult, Criterion, FileInfo, GradedCode, SeedTask
 from claude_optimizer.core.prompt_engineer import (
     FeedbackMode,
     FullRolloutsFeedbackProvider,
@@ -70,18 +70,8 @@ from claude_optimizer.core.prompt_engineer import (
 from claude_optimizer.core.summarizer import PatternSummarizer
 from claude_optimizer.core.truncation_utils import TruncationManager
 from claude_optimizer.core.yaml_loader import load_yaml_files
-from sqlalchemy.orm import Session
-from claude_optimizer.database.database_service import (
-    init_db,
-    create_optimization_run,
-    get_active_grading_criteria,
-    create_rollout,
-    store_rollout_files,
-    store_grading_results,
-    complete_optimization_run,
-    log_rollout_message,
-)
-from claude_optimizer.database.models import create_database
+from claude_optimizer.core.exceptions import ContextWindowExceededException
+# Database removed - using JSON files instead
 from claude_optimizer.plots import ScoreEvolutionTracker
 
 # Setup logging using utility class
@@ -201,117 +191,14 @@ def should_exclude_file(
     )
 
 
-async def copy_files_from_container(
-    container_id: str,
-    container_workdir: str,
-    host_workdir: Path,
-    task_logger,
-    cfg: OptimizerConfig,
-) -> None:
-    """Copy files from container to host directory for grader access.
-
-    Args:
-        container_id: Docker container ID
-        container_workdir: Working directory inside container (e.g., '/workspace')
-        host_workdir: Host working directory to copy files to
-        task_logger: Logger instance for this task
-    """
-    # List all files in the container workspace
-    list_cmd = [
-        "docker",
-        "exec",
-        container_id,
-        "find",
-        container_workdir,
-        "-type",
-        "f",
-    ]
-
-    result = await asyncio.create_subprocess_exec(
-        *list_cmd,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    stdout, stderr = await result.communicate()
-
-    if result.returncode != 0:
-        error_msg = stderr.decode("utf-8", errors="replace")
-        task_logger.error("Failed to list container files", error=error_msg)
-        raise RuntimeError(f"Failed to list container files: {error_msg}")
-
-    # Process each file found in container
-    container_files = stdout.decode("utf-8", errors="replace").strip().split("\n")
-    copied_count = 0
-    excluded_count = 0
-
-    for container_file_path in container_files:
-        if not container_file_path.strip():
-            continue
-
-        # Calculate relative path from container workdir
-        if not container_file_path.startswith(container_workdir):
-            continue
-
-        # Remove the container workdir prefix to get relative path
-        relative_path = container_file_path[len(container_workdir) :].lstrip("/")
-        filename = Path(container_file_path).name
-
-        # Apply same exclusion logic as gather_agent_files
-        if should_exclude_file(relative_path, filename, cfg):
-            excluded_count += 1
-            continue
-
-        # Create host destination path
-        host_file_path = host_workdir / relative_path
-        host_file_path.parent.mkdir(parents=True, exist_ok=True)
-
-        # Copy file from container to host
-        copy_cmd = [
-            "docker",
-            "cp",
-            f"{container_id}:{container_file_path}",
-            str(host_file_path),
-        ]
-
-        copy_result = await asyncio.create_subprocess_exec(
-            *copy_cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        await copy_result.wait()
-
-        if copy_result.returncode == 0:
-            copied_count += 1
-        else:
-            copy_stderr = await copy_result.stderr.read() if copy_result.stderr else b""
-            error_msg = copy_stderr.decode("utf-8", errors="replace")
-            task_logger.error(
-                "Failed to copy file",
-                container_path=container_file_path,
-                host_path=str(host_file_path),
-                error=error_msg,
-            )
-            raise RuntimeError(
-                f"Failed to copy file {container_file_path}: {error_msg}",
-            )
-
-    task_logger.info(
-        "Container files copied",
-        copied_files=copied_count,
-        excluded_files=excluded_count,
-    )
-
 
 async def run_claude_code(
-    task: str,
+    seed_task: SeedTask,
     system_prompt: str,
     agent_id: int,
-    task_id: str,
     output_dir: Path,
     anthropic_log: JSONLLogger,
-    rollout_id: int,
     cfg: OptimizerConfig,
-    db: Session,
 ) -> CodeResult:
     """Run a single coding agent on the given task using containerized Claude.
 
@@ -321,14 +208,12 @@ async def run_claude_code(
 
     Parameters
     ----------
-    task : str
-        The user-facing task description for which code should be generated.
+    seed_task : SeedTask
+        The task object containing prompt and configuration.
     system_prompt : str
         The system prompt guiding the agent's behaviour.
     agent_id : int
         An identifier distinguishing this agent instance within a batch.
-    task_id : str
-        Task identifier from database.
     output_dir : Path
         Directory where agent output files will be saved.
     anthropic_log : JSONLLogger
@@ -342,46 +227,38 @@ async def run_claude_code(
         A dataclass containing the task, agent identifier, generated code, and timestamp.
     """
     # Set up task logger
-    task_logger = logger.bind(task_id=task_id, agent_id=agent_id)
+    task_logger = logger.bind(task_id=seed_task.id, agent_id=agent_id)
     task_logger.info(
         "Starting containerized agent",
         output_dir=str(output_dir),
-        task_preview=task[:100],
+        task_preview=seed_task.prompt[:100],
     )
 
     # Use containerized Claude with automatic file collection
     # task_claude already imported above
 
-    async with task_claude(task_id, cfg, output_dir, task, task_logger, db) as client:
+    async with TaskClaude(seed_task.id, cfg, output_dir, seed_task, task_logger) as claude:
         # Write system prompt inside container (before PATH isolation)
-        await client.setup_system_prompt(system_prompt)
+        claude.setup_system_prompt(system_prompt)
 
         # Execute Claude session using the containerized client
         message_sequence = []
         anthropic_request = {
-            "prompt": task,
-            "options": f"containerized_claude_task_{task_id}",
+            "prompt": seed_task.prompt,
+            "options": f"containerized_claude_task_{seed_task.id}",
         }
 
         anthropic_log.log(request=anthropic_request, event="request_sent")
 
-        await client.query()
+        await claude.query()
         seq_order = 0
 
-        async for message in client.receive_messages():
+        async for message in claude.receive_messages():
             anthropic_log.log(request=anthropic_request, event=safe_serialize(message))
             message_dict = asdict(message)
             message_sequence.append(message_dict)
             log_message_summary(message, logger, agent_id)
 
-            # Log message to database in real-time
-            log_rollout_message(
-                db,
-                rollout_id=rollout_id,
-                sequence_order=seq_order,
-                message_type=message_dict.get("role", type(message).__name__.lower()),
-                message_content=message_dict,
-            )
             seq_order += 1
 
             if isinstance(message, ResultMessage):
@@ -395,8 +272,8 @@ async def run_claude_code(
                 cost_tracker.add_rollout_cost(message.total_cost_usd)
                 break
 
-        # Copy files from container to host (automatic on context exit)
-        file_collection = await client.collect_outputs()
+        # Copy files from container to host
+        file_collection = await claude.collect_outputs()
 
     # Convert to grader format
     files_info = [
@@ -406,8 +283,8 @@ async def run_claude_code(
 
     timestamp = datetime.utcnow()
     return CodeResult(
-        task=task,
-        task_id=task_id,
+        task=seed_task.prompt,
+        task_id=seed_task.id,
         agent_id=agent_id,
         timestamp=timestamp,
         messages=message_sequence,
@@ -420,13 +297,14 @@ async def optimize_prompts(
     anthropic_log,
     openai_client: LoggingOpenAIClient,
     seed_tasks: list[SeedTask],
+    criteria: list[Criterion],
     cfg: OptimizerConfig,
-    db: Session,
     iterations: int = 3,
     rollouts_per_task: int = 2,
     max_parallel_rollouts: int | None = None,
     tasks_per_iteration: int | None = None,
     feedback_mode: FeedbackMode = FeedbackMode.FULL_ROLLOUTS,
+    base_dir: Path,
 ) -> Path:
     """Run the prompt optimisation loop.
 
@@ -452,23 +330,9 @@ async def optimize_prompts(
     if max_parallel_rollouts is None:
         max_parallel_rollouts = cfg.rollouts.max_parallel
 
-    run_id = create_optimization_run(
-        db,
-        total_iterations=iterations,
-        config_snapshot=cfg.model_dump(),
-    )
-
     # Prepare API loggers for both OpenAI and Anthropic (keeping these for debugging)
 
-    # Get grading criteria from database (loaded from YAML sync in main())
-    criteria: list[Criterion] = [
-        Criterion(
-            name=crit_db.name,
-            description=crit_db.description,
-            evaluation_criteria=crit_db.evaluation_criteria,
-        )
-        for crit_db in get_active_grading_criteria(db)
-    ]
+    # Criteria already passed as parameter
 
     # Initialize the prompt engineer for the entire optimization process.
     if feedback_mode == FeedbackMode.SUMMARY:
@@ -501,19 +365,9 @@ async def optimize_prompts(
 
     # Generate initial prompt without any rollout data
     prev_reasoning, prev_function_call, current_prompt = await engineer.propose_prompt()
-
-    # Store initial system prompt in database
-    initial_prompt_id = db.create_system_prompt(
-        run_id=run_id,
-        iteration=0,
-        content=current_prompt,
-        prompt_engineer_reasoning=json.dumps(
-            [
-                r.model_dump() if hasattr(r, "model_dump") else str(r)
-                for r in prev_reasoning
-            ],
-        ),
-    )
+    
+    # Track prompts
+    prompts_by_iteration = {0: current_prompt}
 
     # Create semaphore for controlling parallel rollouts
     rollout_semaphore = asyncio.Semaphore(max_parallel_rollouts)
@@ -523,74 +377,98 @@ async def optimize_prompts(
         task: SeedTask,
         rollout_id: int,
         iteration: int,
-        system_prompt_id: int,
     ) -> GradedCode:
         """Run a single rollout with semaphore control."""
         async with rollout_semaphore:
-            # Create rollout record in database
+            # Create rollout directory structure
             rollout_dir = (
                 base_dir
-                / f"iter_{iteration}"
-                / f"task_{task.id}"
+                / f"iter_{iteration:03d}"
+                / task.id
                 / f"agent_{rollout_id}"
             )
-            db_rollout_id = create_rollout(
-                db,
-                run_id=run_id,
-                iteration=iteration,
-                seed_task_db_id=task.id,
-                agent_id=f"agent_{rollout_id}",
-                system_prompt_id=system_prompt_id,
-                output_dir_path=str(rollout_dir),
-            )
+            rollout_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Create work subdirectory for Claude
+            work_dir = rollout_dir / "work"
+            work_dir.mkdir(parents=True, exist_ok=True)
 
-            # Run containerized Claude (task_claude context managed inside run_claude_code)
+            # Run containerized Claude in work subdirectory
             code_result = await run_claude_code(
-                task.prompt,
+                task,
                 current_prompt,
                 agent_id=rollout_id,
-                task_id=task.id,
-                output_dir=rollout_dir,
+                output_dir=work_dir,
                 anthropic_log=anthropic_log,
-                rollout_id=db_rollout_id,
-                cfg=cfg,
-                db=db,
-            )
-
-            # Store rollout files in database
-            store_rollout_files(
-                db,
-                rollout_id=db_rollout_id,
-                files_info=[fi.model_dump() for fi in code_result.files],
-                rollout_dir=rollout_dir,
-            )
-
-            grade = await grade_code(
-                code_result,
-                criteria,
-                model=LoggingOpenAIModel(
-                    openai_client=openai_client,
-                    model=cfg.grader.model,
-                    context_window_tokens=cfg.tokens.max_context_tokens,
-                    reasoning_effort=cfg.grader.reasoning_effort,
-                ),
                 cfg=cfg,
             )
-
-            # Store grading results in database
-            facet_scores = {
-                name: {"score": score_rat.score, "rationale": score_rat.rationale}
-                for name, score_rat in grade.axes.items()
+            
+            # Save rollout data as JSON in agent directory
+            rollout_data = {
+                "task_id": task.id,
+                "agent_id": rollout_id,
+                "iteration": iteration,
+                "timestamp": datetime.utcnow().isoformat(),
+                "messages": [
+                    msg.model_dump() if hasattr(msg, 'model_dump') else str(msg)
+                    for msg in code_result.messages
+                ],
+                "files": [f.model_dump() for f in code_result.files],
             }
-            db.store_grading_results(
-                rollout_id=db_rollout_id,
-                overall_score=grade.overall_score,
-                overall_rationale=grade.overall_rationale,  # TODO aarrggh should be one of facets
-                facet_scores=facet_scores,
-                grader_model="o3",  # TODO: aaarrggghh shitty
-            )
+            rollout_json_path = rollout_dir / "rollout.json"
+            with open(rollout_json_path, "w") as f:
+                json.dump(rollout_data, f, indent=2)
 
-            # Complete rollout record with final metrics
+            try:
+                grade = await grade_code(
+                    code_result,
+                    criteria,
+                    model=LoggingOpenAIModel(
+                        openai_client=openai_client,
+                        model=cfg.grader.model,
+                        context_window_tokens=cfg.tokens.max_context_tokens,
+                        reasoning_effort=cfg.grader.reasoning_effort,
+                    ),
+                    cfg=cfg,
+                )
+            except ContextWindowExceededException as e:
+                logger.warning(
+                    "Skipping rollout due to context window exceeded",
+                    task_id=e.task_id,
+                    agent_id=e.agent_id,
+                    iteration=iteration,
+                    error=str(e)
+                )
+                # Save error info to grading.json
+                grading_data = {
+                    "error": "context_window_exceeded",
+                    "error_message": str(e),
+                    "grader_model": cfg.grader.model,
+                    "timestamp": datetime.utcnow().isoformat(),
+                }
+                with open(rollout_dir / "grading_error.json", "w") as f:
+                    json.dump(grading_data, f, indent=2)
+                
+                # Return None to indicate this rollout should be excluded
+                return None
+
+            # Save grading results as JSON
+            grading_data = {
+                "overall_score": grade.overall_score,
+                "overall_rationale": grade.overall_rationale,
+                "axes": {
+                    name: {
+                        "score": score_rat.score,
+                        "rationale": score_rat.rationale
+                    }
+                    for name, score_rat in grade.axes.items()
+                },
+                "grader_model": cfg.grader.model,
+                "timestamp": datetime.utcnow().isoformat(),
+            }
+            with open(rollout_dir / "grading.json", "w") as f:
+                json.dump(grading_data, f, indent=2)
+
             # Extract cost from the last message if it's a ResultMessage
             total_cost = 0.0
             duration_ms = None
@@ -602,13 +480,13 @@ async def optimize_prompts(
                     total_cost = last_msg.get("total_cost_usd", 0.0)
                     duration_ms = last_msg.get("duration_ms")
                     is_error = last_msg.get("is_error", False)
-
-            db.complete_rollout(
-                rollout_id=db_rollout_id,
-                total_cost_usd=total_cost,
-                is_error=is_error,
-                duration_ms=duration_ms,
-            )
+            
+            # Add metrics to rollout data
+            rollout_data["total_cost_usd"] = total_cost
+            rollout_data["duration_ms"] = duration_ms
+            rollout_data["is_error"] = is_error
+            with open(rollout_json_path, "w") as f:
+                json.dump(rollout_data, f, indent=2)
 
             logger.info(
                 "Rollout completed",
@@ -616,7 +494,6 @@ async def optimize_prompts(
                 rollout_id=rollout_id,
                 iteration=iteration,
                 overall_score=grade.overall_score,
-                db_rollout_id=db_rollout_id,
             )
 
             return GradedCode(code_result=code_result, grade=grade)
@@ -637,23 +514,21 @@ async def optimize_prompts(
         initial_prompt=current_prompt,
     )
 
-    # Track current system prompt ID for each iteration
-    current_prompt_id = initial_prompt_id
 
     for iteration in range(1, iterations + 1):
         iter_logger = logger.bind(iteration=iteration, total_iterations=iterations)
         iter_logger.info("Iteration starting")
 
         # Write the current prompt to this iteration's directory
-        iter_dir = base_dir / f"iter_{iteration}"
+        iter_dir = base_dir / f"iter_{iteration:03d}"
         iter_dir.mkdir(parents=True, exist_ok=True)
         (iter_dir / "CLAUDE.md").write_text(current_prompt)
 
         # Randomly sample tasks with replacement
-        iteration_tasks = random.choices(seed_tasks, k=tasks_per_iteration)
+        iteration_tasks = random.choices(seed_tasks, k=tasks_per_iter)
         iter_logger.info(
             "Sampled tasks for iteration",
-            sampled_count=tasks_per_iteration,
+            sampled_count=tasks_per_iter,
             unique_tasks=len({task.id for task in iteration_tasks}),
             task_ids=[task.id for task in iteration_tasks],
         )
@@ -662,7 +537,7 @@ async def optimize_prompts(
         # Each rollout runs: coding agent → grading → database storage
         # Semaphore controls max concurrent rollouts to prevent resource exhaustion
         rollout_futures = [
-            run_single_rollout(task, rollout_id, iteration, current_prompt_id)
+            run_single_rollout(task, rollout_id, iteration)
             for task in iteration_tasks
             for rollout_id in range(rollouts_per_task)
         ]
@@ -675,8 +550,9 @@ async def optimize_prompts(
 
         # Execute all rollouts in parallel with semaphore-based concurrency control
         # Fail fast on any setup errors - don't continue if container setup fails
+        all_rollouts_raw = []
         try:
-            all_rollouts = await asyncio.gather(
+            all_rollouts_raw = await asyncio.gather(
                 *rollout_futures,
                 return_exceptions=False,
             )
@@ -687,10 +563,6 @@ async def optimize_prompts(
                 error=str(e),
                 error_type=type(e).__name__,
             )
-            for rollout_task in all_rollouts:
-                if not rollout_task.done():
-                    rollout_task.cancel()
-                    iter_logger.info("Cancelled rollout task", task_cancelled=True)
 
             # Wait a moment for cancellation to complete
             await asyncio.sleep(0.1)
@@ -704,9 +576,30 @@ async def optimize_prompts(
 
             sys.exit(1)
 
+        # Filter out None values (failed grading due to context window)
+        all_rollouts = [r for r in all_rollouts_raw if r is not None]
+        skipped_count = len(all_rollouts_raw) - len(all_rollouts)
+        
+        if skipped_count > 0:
+            iter_logger.warning(
+                "Some rollouts skipped due to context window issues",
+                total_rollouts=len(all_rollouts_raw),
+                successful_rollouts=len(all_rollouts),
+                skipped_rollouts=skipped_count
+            )
+        
+        # Check if we have any successful rollouts
+        if not all_rollouts:
+            iter_logger.error(
+                "No successful rollouts in this iteration",
+                iteration=iteration
+            )
+            continue
+        
         iter_logger.info(
             "All rollouts completed",
             completed_rollouts=len(all_rollouts),
+            skipped_rollouts=skipped_count,
         )
 
         # Display simple metrics to CLI
@@ -722,7 +615,7 @@ async def optimize_prompts(
         )
 
         # Track score evolution for this iteration
-        score_tracker.add_iteration(iteration, iteration_results)
+        score_tracker.add_iteration(iteration, all_rollouts)
 
         # Generate and save score evolution report and plots after each iteration
         evolution_report = score_tracker.generate_report(base_dir, base_dir / "logs")
@@ -742,7 +635,7 @@ async def optimize_prompts(
             prev_reasoning,
             prev_function_call,
             current_prompt,
-            iteration_results,
+            all_rollouts,
         )
 
         # Generate next prompt using PE (if not the last iteration)
@@ -753,22 +646,13 @@ async def optimize_prompts(
                 new_prompt,
             ) = await engineer.propose_prompt()
 
-            # Store new system prompt in database
-            current_prompt_id = db.create_system_prompt(
-                run_id=run_id,
-                iteration=iteration + 1,
-                content=new_prompt,
-                prompt_engineer_reasoning=json.dumps(
-                    [
-                        r.model_dump() if hasattr(r, "model_dump") else str(r)
-                        for r in prev_reasoning
-                    ],
-                ),
-            )
-
+            # Store new system prompt
+            prompts_by_iteration[iteration + 1] = new_prompt
             current_prompt = new_prompt
-
-    complete_optimization_run(db, run_id)
+    
+    # Save all prompts to a file
+    with open(base_dir / "prompts.json", "w") as f:
+        json.dump(prompts_by_iteration, f, indent=2)
 
     logger.info("Optimization complete", logs_directory=str(base_dir))
     return base_dir
@@ -831,22 +715,22 @@ Examples:
     # Load configuration
     cfg = OptimizerConfig.from_file()
 
-    # Initialize database
-    logger.info("Initializing database")
-    SessionLocal = init_db("sqlite:///optimizer.db")
-    db = SessionLocal()
-
-    # Load and sync YAML files to database
-    logger.info("Loading YAML files and syncing to database")
+    # Load tasks and criteria from YAML
+    logger.info("Loading YAML files")
     yaml_loader = load_yaml_files(cfg.seeds_file, cfg.graders_file)
-    sync_stats = yaml_loader.load_and_sync_all(db)
-    seed_tasks = [
-        SeedTask(id=task_db.task_id, prompt=task_db.prompt)
-        for task_db in yaml_loader.get_active_seed_tasks(db)
-    ]
-    logger.info("YAML sync completed", **sync_stats)
+    
+    # Load tasks - yaml_loader.seeds_data already returns the right type
+    seed_tasks = list(yaml_loader.seeds_data)
+    
+    # Load grading criteria
+    criteria = []
+    for grader_data in yaml_loader.graders_data:
+        criteria.append(Criterion(
+            name=grader_data.id,
+            description=grader_data.description,
+        ))
 
-    run_prefix = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+    run_prefix = datetime.utcnow().strftime("%Y-%m-%d-%H%M%S")
     base_dir = (Path("./agent_output") / run_prefix).resolve()
     base_dir.mkdir(parents=True, exist_ok=True)
     openai_client = LoggingOpenAIClient(
@@ -860,13 +744,14 @@ Examples:
             anthropic_log=anthropic_log,
             openai_client=openai_client,
             seed_tasks=seed_tasks,
+            criteria=criteria,
             cfg=cfg,
-            db=db,
             iterations=args.iterations,
             rollouts_per_task=args.rollouts_per_task,
             max_parallel_rollouts=args.max_parallel,
             tasks_per_iteration=args.tasks_per_iteration,
             feedback_mode=FeedbackMode(args.mode),
+            base_dir=base_dir,
         ),
     )
 

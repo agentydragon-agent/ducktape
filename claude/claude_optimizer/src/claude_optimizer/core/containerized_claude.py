@@ -34,7 +34,7 @@ from claude_code_sdk._internal.transport.subprocess_cli import SubprocessCLITran
 import docker
 
 if TYPE_CHECKING:
-    from claude_optimizer.database.models import SeedTask
+    from claude_optimizer.core.models import SeedTask
 
 
 @contextmanager
@@ -95,17 +95,19 @@ class TaskClaude:
     with proper PATH isolation and automatic file collection.
     """
 
-    def __init__(self, task_id: str, config, output_dir: Path, task: str, db_session, logger):
+    def __init__(
+        self, task_id: str, config, output_dir: Path, seed_task: "SeedTask", logger
+    ):
         self.task_id = task_id
         self.config = config
         self._output_dir = output_dir
-        self._task = task
+        self._task = seed_task.prompt
+        self._seed_task = seed_task
         self._docker_client = docker.from_env()
         self._container = None
         self._message_queue = asyncio.Queue()
         self._query_task = None
-        self._docker_image = None
-        self._db_session = db_session
+        self._docker_image = seed_task.docker_image
         self._git_volume_name = "claude_shared_git"
         self._logger = logger
         self._exclusion_spec = pathspec.PathSpec.from_lines(
@@ -160,7 +162,7 @@ class TaskClaude:
 
         # Ensure logs directory exists on host
         logs_dir = self._output_dir / "logs"
-        logs_dir.mkdir(exist_ok=True)
+        logs_dir.mkdir(parents=True, exist_ok=True)
 
         git_mode = "ro" if git_readonly else "rw"
 
@@ -244,7 +246,11 @@ class TaskClaude:
             wrapper_env["CLAUDE_STRACE"] = "1"
         if hasattr(self.config, "wrapper_env") and self.config.wrapper_env:
             wrapper_env.update(self.config.wrapper_env)
-        pass_keys = [k for k in wrapper_env.keys() if k not in ("CLAUDE_CONTAINER_ID", "DOCKER_BINARY")]
+        pass_keys = [
+            k
+            for k in wrapper_env.keys()
+            if k not in ("CLAUDE_CONTAINER_ID", "DOCKER_BINARY")
+        ]
         if pass_keys:
             wrapper_env["CLAUDE_WRAPPER_PASS_ENV"] = ",".join(pass_keys)
 
@@ -287,32 +293,25 @@ class TaskClaude:
             if self._exclusion_spec.match_file(relative_path):
                 continue
 
-            files.append({"path": relative_path, "content": file_path.read_text()})
+            # Try to read as text, skip binary files
+            try:
+                content = file_path.read_text(encoding='utf-8')
+                files.append({"path": relative_path, "content": content})
+            except UnicodeDecodeError:
+                # Skip binary files
+                self._logger.debug(
+                    "Skipping binary file",
+                    path=relative_path,
+                    size=file_path.stat().st_size
+                )
+                continue
 
         return files
 
-    def _get_task_from_db(self) -> "SeedTask":
-        from claude_optimizer.database.models import SeedTask
-
-        task = (
-            self._db_session.query(SeedTask)
-            .filter(SeedTask.task_id == self.task_id, SeedTask.is_active == True)
-            .first()
-        )
-        if not task:
-            raise ValueError(f"Task '{self.task_id}' not found in database")
-        return task
-
     def _setup_docker_image(self):
-        """Set docker image from task configuration."""
-        if self._docker_image is not None:
-            return  # Already set
-
-        task_db = self._get_task_from_db()
-        if not task_db.docker_image:
+        """Validate docker image from task configuration."""
+        if not self._docker_image:
             raise ValueError(f"Task '{self.task_id}' has no docker_image specified")
-
-        self._docker_image = task_db.docker_image
         self._logger.info("Using Docker image", docker_image=self._docker_image)
 
     def _get_docker_exec_wrapper_path(self) -> str:
@@ -327,7 +326,11 @@ class TaskClaude:
             )
 
         # Use committed wrapper script from repo
-        wrapper_script = Path(__file__).parent / "scripts" / "claude_docker_wrapper"
+        wrapper_script = (
+            Path(__file__).parent.parent.parent.parent
+            / "scripts"
+            / "claude_docker_wrapper"
+        )
         if not wrapper_script.exists():
             raise RuntimeError(
                 f"Claude docker wrapper script not found: {wrapper_script}",
@@ -408,17 +411,15 @@ class TaskClaude:
             # ALWAYS remount git as read-only for security (do this BEFORE setup scripts)
             await self._remount_git_readonly()
 
-            task_db = self._get_task_from_db()
-
             # Run pre-task setup after remount so installs persist
             if self.config.pre_task_always_script:
-                await self._run_pre_task_always_setup(task_db)
+                await self._run_pre_task_always_setup()
 
             if self.config.pre_task_setup_script:
-                await self._run_pre_task_setup(task_db)
+                await self._run_pre_task_setup()
 
-            if task_db.pre_task_commands:
-                await self._run_pre_task_commands(task_db.pre_task_commands)
+            if self._seed_task.pre_task_commands:
+                await self._run_pre_task_commands(self._seed_task.pre_task_commands)
 
         except Exception as e:
             if self._container:
@@ -513,7 +514,7 @@ class TaskClaude:
             container_id=self._container.id,
         )
 
-    async def _run_pre_task_always_setup(self, task_db):
+    async def _run_pre_task_always_setup(self):
         """Run always pre-task setup script (runs before every task)."""
         if not self.config.pre_task_always_script:
             return
@@ -523,7 +524,7 @@ class TaskClaude:
             "setup-always",
         )
 
-    async def _run_pre_task_setup(self, task_db):
+    async def _run_pre_task_setup(self):
         """Run pre-task setup script."""
         if not self.config.pre_task_setup_script:
             return
@@ -696,80 +697,3 @@ class TaskClaude:
         await self._cleanup()
 
 
-class _TaskClaudeProxy:
-    """Proxy to handle system prompt setup after container initialization."""
-
-    def __init__(self, claude: TaskClaude):
-        self._claude = claude
-        self._setup_done = False
-
-    async def setup_system_prompt(self, system_prompt: str):
-        """Setup system prompt after container and wrapper initialization.
-
-        TODO: This method name is misleading! It actually:
-        1. Starts the Docker container
-        2. Runs global use-specified pre-task setup scripts
-        3. Handles container remounting for security
-        4. Creates wrapper scripts
-        5. THEN writes the system prompt
-
-        Should be refactored to separate container initialization from prompt setup.
-        """
-        # Start container and setup wrapper first
-        await self._claude._start_container()
-
-        # Now write system prompt to container
-        self._claude.setup_system_prompt(system_prompt)
-        self._setup_done = True
-
-    async def query(self) -> None:
-        """Delegate to actual TaskClaude."""
-        if not self._setup_done:
-            raise RuntimeError("Must call setup_system_prompt first")
-        return await self._claude.query()
-
-    async def receive_messages(self) -> AsyncIterator[Any]:
-        """Delegate to actual TaskClaude."""
-        if not self._setup_done:
-            raise RuntimeError("Must call setup_system_prompt first")
-        async for message in self._claude.receive_messages():
-            yield message
-
-    async def collect_outputs(self) -> dict[str, str]:
-        """Delegate to actual TaskClaude."""
-        return await self._claude.collect_outputs()
-
-    @property
-    def container_id(self) -> str:
-        """Delegate to actual TaskClaude."""
-        return self._claude.container_id
-
-
-@asynccontextmanager
-async def task_claude(
-    task_id: str,
-    config,
-    output_dir: Path,
-    task: str,
-    logger,
-    db_session,
-) -> AsyncIterator[_TaskClaudeProxy]:
-    """Context manager for Claude task execution.
-
-    Args:
-        task_id: Task identifier from database
-        config: OptimizerConfig instance
-        output_dir: Directory for output files
-
-    Yields:
-        _TaskClaudeProxy: Proxy that handles system prompt setup before PATH isolation
-    """
-    claude = TaskClaude(task_id, config, output_dir, task, db_session, logger)
-    proxy = _TaskClaudeProxy(claude)
-
-    try:
-        yield proxy
-    finally:
-        # Cleanup via the actual TaskClaude instance
-        if proxy._setup_done:
-            await claude._cleanup()

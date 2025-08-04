@@ -4,6 +4,7 @@ import json
 from datetime import datetime
 from typing import Any
 
+import openai
 from openai.types.responses.response_function_tool_call import ResponseFunctionToolCall
 from openai.types.responses.response_function_tool_call_item import (
     ResponseFunctionToolCallItem,
@@ -17,6 +18,11 @@ from claude_optimizer.core.models import (
     Grade,
     ScoreWithRationale,
 )
+from claude_optimizer.core.truncation_utils import TruncationManager
+from claude_optimizer.core.logging_utils import DualOutputLogging
+from claude_optimizer.core.exceptions import ContextWindowExceededException
+
+logger = DualOutputLogging.get_logger()
 
 SUBMIT_GRADES_FUNCTION_NAME = "submit_grades"
 
@@ -32,7 +38,7 @@ async def grade_code(
     for crit in criteria:
         properties[crit.name] = {
             "type": "object",
-            "description": f"{crit.description} {crit.evaluation_criteria}",
+            "description": crit.description,
             "properties": {
                 "score": {"type": "number"},
                 "rationale": {"type": "string"},
@@ -70,6 +76,59 @@ async def grade_code(
         "strict": True,
     }
 
+    # Log files being sent to grader
+    logger.info(
+        "Files being sent to grader",
+        task_id=result.task_id,
+        agent_id=result.agent_id,
+        file_count=len(result.files),
+        files=[
+            {
+                "path": fi.path,
+                "size": len(fi.content),
+                "truncated": len(fi.content) > cfg.truncation.max_file_size_grading
+            }
+            for fi in result.files
+        ],
+        total_content_size=sum(len(fi.content) for fi in result.files)
+    )
+    
+    # Truncate files for grading to avoid context length issues
+    t_mgr = TruncationManager(cfg)
+    truncated_files = []
+    for file_info in result.files:
+        truncated_content = t_mgr.truncate_text(
+            file_info.content,
+            cfg.truncation.max_file_size_grading,
+            "... [truncated for grading]"
+        )
+        truncated_files.append({
+            "path": file_info.path,
+            "content": truncated_content
+        })
+    
+    # Further truncate total files by token count
+    truncated_files = t_mgr.truncate_files_by_tokens(
+        truncated_files,
+        cfg.tokens.max_files_tokens
+    )
+    
+    # Log after truncation
+    logger.info(
+        "Files after truncation for grader",
+        task_id=result.task_id,
+        agent_id=result.agent_id,
+        file_count=len(truncated_files),
+        files=[
+            {
+                "path": f["path"],
+                "size": len(f["content"])
+            }
+            for f in truncated_files
+        ],
+        total_content_size=sum(len(f["content"]) for f in truncated_files)
+    )
+    
     input: list[dict[str, Any]] = [
         {
             "role": "system",
@@ -81,16 +140,35 @@ async def grade_code(
         },
         {
             "role": "user",
-            "content": f"Task: {result.task}\n\nFiles:\n{json.dumps([fi.model_dump() for fi in result.files], indent=2)}",
+            "content": f"Task: {result.task}\n\nFiles:\n{json.dumps(truncated_files, indent=2)}",
         },
     ]
 
-    response = model.responses_create(
-        messages=input,
-        tools=[grading_tool],
-        tool_use={"type": "function", "name": SUBMIT_GRADES_FUNCTION_NAME},
-        reasoning_effort=cfg.grader.reasoning_effort,
-    )
+    try:
+        response = model.responses_create(
+            messages=input,
+            tools=[grading_tool],
+            tool_use={"type": "function", "name": SUBMIT_GRADES_FUNCTION_NAME},
+            reasoning_effort=cfg.grader.reasoning_effort,
+        )
+    except openai.BadRequestError as e:
+        if "context_length_exceeded" in str(e):
+            logger.error(
+                "Context window exceeded during grading",
+                task_id=result.task_id,
+                agent_id=result.agent_id,
+                total_content_size=sum(len(f["content"]) for f in truncated_files),
+                file_count=len(truncated_files),
+                error=str(e)
+            )
+            raise ContextWindowExceededException(
+                f"Context window exceeded for task {result.task_id}, agent {result.agent_id}: {str(e)}",
+                task_id=result.task_id,
+                agent_id=result.agent_id
+            )
+        else:
+            # Re-raise other BadRequestErrors
+            raise
 
     call: ResponseFunctionToolCall | ResponseFunctionToolCallItem | None = None
     for item in response.output:

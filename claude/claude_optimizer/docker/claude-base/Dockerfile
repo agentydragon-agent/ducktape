@@ -48,6 +48,10 @@ RUN npm install -g @anthropic-ai/claude-code
 
 # Create user matching Claude Code expectations
 RUN useradd -m -u 1000 -s /bin/bash node
+
+# Create workspace directory with proper ownership
+RUN mkdir -p /workspace && chown -R node:node /workspace
+
 USER 1000
 
 # Use tini as init system to reap zombie processes

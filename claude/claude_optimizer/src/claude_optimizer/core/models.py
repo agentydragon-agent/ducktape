@@ -14,6 +14,7 @@ class FileInfo(BaseModel):
 class SeedTask(BaseModel):
     id: str
     prompt: str
+    description: str | None = None
     docker_image: str | None = None
     allowed_tools: list[str] | None = None
     pre_task_commands: str | None = None
@@ -22,7 +23,6 @@ class SeedTask(BaseModel):
 class Criterion(BaseModel):
     name: str
     description: str
-    evaluation_criteria: str
 
 
 class ScoreWithRationale(BaseModel):
@@ -57,6 +57,7 @@ class Grade(BaseModel):
     @model_validator(mode="after")
     def _ensure_overall_axis(self):
         assert "overall" in self.axes
+        return self
 
 
 class GradedCode(BaseModel):

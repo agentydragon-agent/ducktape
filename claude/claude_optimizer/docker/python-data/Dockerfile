@@ -1,5 +1,8 @@
 FROM claude-base:latest
 
+# Switch to root for installations
+USER root
+
 # Install Python with data science packages
 RUN apt-get update && apt-get install -y \
     python3 \
@@ -9,8 +12,14 @@ RUN apt-get update && apt-get install -y \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Install data science packages
-RUN pip3 install --no-cache-dir \
+# Set Python as default
+RUN ln -sf /usr/bin/python3 /usr/bin/python
+
+# Switch back to node user
+USER node
+
+# Install data science packages in user space
+RUN pip3 install --user --no-cache-dir \
     pandas \
     numpy \
     scikit-learn \
@@ -24,8 +33,8 @@ RUN pip3 install --no-cache-dir \
     black \
     ruff
 
-# Set Python as default
-RUN ln -sf /usr/bin/python3 /usr/bin/python
+# Add user pip bin to PATH
+ENV PATH="/home/node/.local/bin:${PATH}"
 
 LABEL dev.environment="python-data"
 LABEL dev.description="Python data science environment with pandas, numpy, sklearn"

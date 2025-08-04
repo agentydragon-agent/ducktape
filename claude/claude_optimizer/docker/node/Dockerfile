@@ -1,8 +1,7 @@
 FROM claude-base:latest
 
-# Install Node.js via NodeSource repository
-RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
-    && apt-get install -y nodejs
+# Switch to root for global npm installs
+USER root
 
 # Install global npm packages
 RUN npm install -g \
@@ -13,6 +12,9 @@ RUN npm install -g \
     eslint \
     prettier \
     nodemon
+
+# Switch back to node user
+USER node
 
 LABEL dev.environment="node"
 LABEL dev.description="Node.js development environment with TypeScript and common tools"

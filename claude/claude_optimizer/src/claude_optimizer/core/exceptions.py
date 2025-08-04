@@ -1,0 +1,9 @@
+"""Custom exceptions for the Claude optimizer."""
+
+class ContextWindowExceededException(Exception):
+    """Raised when input exceeds the model's context window."""
+    
+    def __init__(self, message: str, task_id: str = None, agent_id: int = None):
+        super().__init__(message)
+        self.task_id = task_id
+        self.agent_id = agent_id

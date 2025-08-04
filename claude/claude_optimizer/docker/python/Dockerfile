@@ -15,8 +15,8 @@ RUN ln -sf /usr/bin/python3 /usr/bin/python
 
 USER node
 
-# Install common Python packages
-RUN pip3 install --no-cache-dir \
+# Install common Python packages in user space
+RUN pip3 install --user --no-cache-dir \
     requests \
     flask \
     fastapi \
@@ -25,6 +25,9 @@ RUN pip3 install --no-cache-dir \
     black \
     ruff \
     mypy
+
+# Add user pip bin to PATH
+ENV PATH="/home/node/.local/bin:${PATH}"
 
 
 LABEL dev.environment="python"
