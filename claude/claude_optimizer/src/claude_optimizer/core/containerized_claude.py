@@ -692,8 +692,19 @@ class TaskClaude:
         # Stop query task if running
         if self._query_task and not self._query_task.done():
             self._query_task.cancel()
+            try:
+                await self._query_task
+            except asyncio.CancelledError:
+                pass
 
         # Cleanup container and wrapper
-        await self._cleanup()
+        try:
+            await self._cleanup()
+        except Exception as e:
+            self._logger.error(
+                "Error during cleanup",
+                error=str(e),
+                container_id=self._container.id if self._container else None
+            )
 
 

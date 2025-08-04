@@ -3,8 +3,9 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, model_validator, field_serializer
 from claude_code_sdk import Message
+from dataclasses import asdict
 
 
 class FileInfo(BaseModel):
@@ -41,6 +42,14 @@ class CodeResult(BaseModel):
     
     class Config:
         arbitrary_types_allowed = True
+    
+    @field_serializer('timestamp')
+    def serialize_timestamp(self, timestamp: datetime) -> str:
+        return timestamp.isoformat()
+    
+    @field_serializer('messages')
+    def serialize_messages(self, messages: list[Message]) -> list[dict]:
+        return [asdict(msg) for msg in messages]
 
 
 class Grade(BaseModel):
@@ -62,6 +71,10 @@ class Grade(BaseModel):
     def _ensure_overall_axis(self):
         assert "overall" in self.axes
         return self
+    
+    @field_serializer('timestamp')
+    def serialize_timestamp(self, timestamp: datetime) -> str:
+        return timestamp.isoformat()
 
 
 class GradedCode(BaseModel):

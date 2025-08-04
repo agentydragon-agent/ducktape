@@ -15,7 +15,6 @@ from openai.types.responses.response_function_tool_call_item import (
 from openai.types.responses.response_output_message import ResponseOutputMessage
 from openai.types.responses.response_reasoning_item import ResponseReasoningItem
 
-from claude_optimizer.config import OptimizerConfig
 from claude_optimizer.core.logging_utils import DualOutputLogging
 from claude_optimizer.core.models import GradedCode
 
@@ -29,7 +28,7 @@ class Turn:
     reasoning: list[ResponseOutputMessage | ResponseReasoningItem]
     function_call_message: ResponseFunctionToolCall | ResponseFunctionToolCallItem
     proposed_prompt: str
-    feedback: dict[str, Any]
+    feedback: str
 
     @property
     def messages(self) -> list[dict[str, Any]]:
@@ -75,7 +74,7 @@ class FullRolloutsFeedbackProvider(FeedbackProvider):
     async def provide_feedback(self, rollouts: list[GradedCode]) -> str:
         summaries: list[str] = []
         for graded_code in rollouts:
-            # Use Pydantic's model_dump_json for proper serialization
+            # Use Pydantic's model_dump_json which will use our custom serializers
             summary = graded_code.model_dump_json(indent=2)
             summaries.append(summary)
         return "\n\n".join(summaries)
@@ -89,7 +88,8 @@ class StatsOnlyFeedbackProvider(FeedbackProvider):
         """Provide feedback string based on a batch of rollouts."""
         assert len(rollouts) > 1
         overall_scores = [graded_code.grade.overall_score for graded_code in rollouts]
-        mean_score = sum(overall_scores) / len(overall_scores)
+        n = len(overall_scores)
+        mean_score = sum(overall_scores) / n
         std_err = statistics.stdev(overall_scores) / math.sqrt(n)
         return f"Mean overall score: {mean_score:.2f} (standard error {std_err:.2f})"
 
@@ -152,42 +152,40 @@ class PromptEngineer:
 
     def _trim_context_if_needed(self) -> None:
         """Trim context by removing oldest complete turns if needed."""
-        # Trim when we exceed 80% of context window
+        # When we exceed 80% of context window, trim down to 50%
         trim_threshold = int(self.model.context_window_tokens * 0.8)
-        # Trim down to 50% of context window
         target_tokens = int(self.model.context_window_tokens * 0.5)
-        
-        current_tokens = self.prompt_token_count
-        if current_tokens < trim_threshold:
+
+        if self.prompt_token_count < trim_threshold:
             return
-        
+
         logger.warning(
             "Context window approaching limit, trimming oldest turns",
-            current_tokens=current_tokens,
+            current_tokens=self.prompt_token_count,
             trim_threshold=trim_threshold,
             target_tokens=target_tokens,
             context_window=self.model.context_window_tokens,
-            total_turns=len(self._turns)
+            total_turns=len(self._turns),
         )
-        
+
         # Remove oldest turns until we're under the target
         # Always keep at least the most recent turn
         while len(self._turns) > 1 and self.prompt_token_count > target_tokens:
-            removed_turn = self._turns.pop(0)
+            self._turns.pop(0)
             logger.info(
                 "Removed turn from context",
                 remaining_turns=len(self._turns),
-                current_tokens=self.prompt_token_count
+                current_tokens=self.prompt_token_count,
             )
-        
+
         # If still over target with just one turn, we have a problem
         if self.prompt_token_count > target_tokens and len(self._turns) == 1:
             logger.error(
                 "Single turn exceeds target size",
                 tokens=self.prompt_token_count,
-                target_tokens=target_tokens
+                target_tokens=target_tokens,
             )
-            # Don't fail, just warn - we'll still try to continue
+            raise Exception("No turns left after trimming")
 
     async def propose_prompt(
         self,
@@ -246,10 +244,24 @@ class PromptEngineer:
         if not isinstance(arguments_str, str):
             raise ValueError(f"Invalid arguments format: {arguments_str}")
 
-        args_dict = json.loads(arguments_str)
+        try:
+            args_dict = json.loads(arguments_str)
+        except json.JSONDecodeError as e:
+            logger.error(
+                "Failed to parse function arguments",
+                arguments=arguments_str,
+                error=str(e),
+            )
+            raise ValueError(f"Invalid JSON in function arguments: {e}")
+
         claude_prompt = args_dict.get("prompt", "").strip()
         if not claude_prompt:
-            raise ValueError("Empty prompt returned")
+            logger.error(
+                "Empty prompt returned by model",
+                args_dict=args_dict,
+                conversation_turns=len(self._turns),
+            )
+            raise ValueError("Empty prompt returned by model")
 
         logger.info(
             "Generated new prompt",

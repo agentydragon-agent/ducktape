@@ -303,7 +303,6 @@ async def optimize_prompts(
     rollouts_per_task: int = 2,
     max_parallel_rollouts: int | None = None,
     tasks_per_iteration: int | None = None,
-    feedback_mode: FeedbackMode = FeedbackMode.FULL_ROLLOUTS,
     base_dir: Path,
 ) -> Path:
     """Run the prompt optimisation loop.
@@ -335,6 +334,7 @@ async def optimize_prompts(
     # Criteria already passed as parameter
 
     # Initialize the prompt engineer for the entire optimization process.
+    feedback_mode = FeedbackMode(cfg.prompt_engineer.feedback_mode)
     if feedback_mode == FeedbackMode.SUMMARY:
         feedback_provider = PatternSummarizer(
             model=LoggingOpenAIModel(
@@ -344,7 +344,7 @@ async def optimize_prompts(
             ),
             # UGH
             truncation_manager=TruncationManager(cfg),
-            max_file_pattern_analysis=self.config.truncation.max_file_pattern_analysis,
+            max_file_pattern_analysis=cfg.truncation.max_file_pattern_analysis,
         )
     elif feedback_mode == FeedbackMode.STATS_ONLY:
         feedback_provider = StatsOnlyFeedbackProvider()
@@ -682,13 +682,6 @@ Examples:
         help="Number of agent rollouts per seed task (default: %(default)s)",
     )
 
-    parser.add_argument(
-        "--mode",
-        type=str,
-        choices=[mode.value for mode in FeedbackMode],
-        default=FeedbackMode.FULL_ROLLOUTS.value,
-        help="Processing mode: full_rollouts runs complete agent sessions, summary uses condensed feedback, stats_only provides only statistical metrics (default: %(default)s)",
-    )
 
     parser.add_argument(
         "--max-parallel",
@@ -747,7 +740,6 @@ Examples:
             rollouts_per_task=args.rollouts_per_task,
             max_parallel_rollouts=args.max_parallel,
             tasks_per_iteration=args.tasks_per_iteration,
-            feedback_mode=FeedbackMode(args.mode),
             base_dir=base_dir,
         ),
     )
