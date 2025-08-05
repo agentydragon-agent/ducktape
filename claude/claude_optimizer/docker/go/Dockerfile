@@ -3,10 +3,13 @@ FROM claude-base:latest
 # Switch to root to install Go
 USER root
 
-# Install Go
-RUN curl -L https://go.dev/dl/go1.21.5.linux-amd64.tar.gz -o go1.21.5.linux-amd64.tar.gz \
-    && tar -C /usr/local -xzf go1.21.5.linux-amd64.tar.gz \
-    && rm go1.21.5.linux-amd64.tar.gz \
+# Install Go (architecture-aware)
+ARG GO_VERSION=1.21.5
+ARG TARGETARCH
+RUN curl -L "https://go.dev/dl/go${GO_VERSION}.linux-${TARGETARCH}.tar.gz" -o \
+        "go${GO_VERSION}.linux-${TARGETARCH}.tar.gz" \
+    && tar -C /usr/local -xzf "go${GO_VERSION}.linux-${TARGETARCH}.tar.gz" \
+    && rm "go${GO_VERSION}.linux-${TARGETARCH}.tar.gz" \
     && chmod -R 755 /usr/local/go
 
 # Switch back to node user
