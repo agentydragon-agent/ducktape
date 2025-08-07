@@ -1,12 +1,9 @@
 DOTFILES_DIRS="$HOME/code/ducktape/dotfiles"
 TAGS=""
-EXCLUDE="
-    README.md
-    .config/cronomix/**
-    .config/OrcaSlicer/**
-"
+EXCLUDES="README.md docs"
 # Symlink these as directories instead of individual files
 SYMLINK_DIRS="
+    claude/agents
     claude/commands
     config/OrcaSlicer
 "

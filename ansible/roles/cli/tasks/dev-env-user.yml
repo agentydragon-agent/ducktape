@@ -39,12 +39,51 @@
         global: true  # Install globally within user's npm environment
       loop:
         - '@openai/codex'
-        - '@anthropic-ai/claude-code'
+        # - '@anthropic-ai/claude-code'  # Now installed via official script below
         - '@bazel/bazelisk'
         - '@ast-grep/cli'  # For semantic code queries across multiple languages
         - 'jscpd'  # Copy/paste detector for 150+ languages including Python, TypeScript
         - 'madge'  # Dependency graph visualization tool
         - 'pyright'  # Python language server for static type checking
+
+    # Check for npm-global Claude installation
+    - name: Check if Claude is installed via npm-global
+      ansible.builtin.stat:
+        path: "{{ ansible_user_dir }}/.npm-global/bin/claude"
+      register: npm_global_claude
+      changed_when: false
+
+    - name: Fail if npm-global Claude installation exists
+      ansible.builtin.fail:
+        msg: |
+          ERROR: Claude is installed via npm-global at ~/.npm-global/bin/claude
+          This conflicts with the native installation.
+          Remove it with: npm uninstall -g @anthropic-ai/claude-code
+          Then re-run this playbook.
+      when: npm_global_claude.stat.exists
+
+    # Check if claude binary is actually executable
+    - name: Check if Claude binary exists and is executable
+      ansible.builtin.stat:
+        path: "{{ ansible_user_dir }}/.local/bin/claude"
+      register: claude_binary_check
+
+    # Install Claude via official installation script
+    # TODO: Not super fond of curl|bash pattern but eh ... *cringe and look away*
+    # Note: Native official Claude avoids issues with built-in ripgrep.node breakage
+    - name: Install Claude Code via official script
+      ansible.builtin.shell: |
+        curl -fsSL https://claude.ai/install.sh | bash -s latest
+      environment:
+        HOME: "{{ ansible_user_dir }}"
+      when: not claude_binary_check.stat.exists or not claude_binary_check.stat.executable
+
+    # Verify installation succeeded
+    - name: Verify Claude installation
+      ansible.builtin.command: "{{ ansible_user_dir }}/.local/bin/claude --version"
+      register: claude_version_check
+      changed_when: false
+      failed_when: claude_version_check.rc != 0
 
     # Install Rust development tools
     - name: Check if cargo is installed

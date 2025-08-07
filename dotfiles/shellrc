@@ -1,0 +1,78 @@
+# ~/.shellrc - Shell-agnostic interactive configuration (sourced by bash/zsh)
+# For: aliases, interactive settings, completions, tool loading. NOT for: env vars
+# See: ~/code/ducktape/dotfiles/docs/shell-configuration.md
+
+# Source environment setup first
+. "/etc/profile"
+. "$HOME/.profile"
+
+# Interactive-only environment variables
+export LESS="-F -X -R"  # -F: exit if one screen, -X: no clear screen, -R: raw ANSI colors
+export PYTHONSTARTUP="$HOME/.config/pythonstartup.py"
+
+# Setup dircolors if available
+if [ -x /usr/bin/dircolors ]; then
+    if [ -r ~/.dir_colors/dircolors ]; then
+        eval "$(dircolors -b ~/.dir_colors/dircolors)"
+    elif [ -r ~/.dircolors ]; then
+        eval "$(dircolors -b ~/.dircolors)"
+    else
+        eval "$(dircolors -b)"
+    fi
+fi
+
+# Load nvm (Node Version Manager) - shell-agnostic
+[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"
+
+# Bun completions - work in both bash and zsh
+[ -s "$HOME/.bun/_bun" ] && source "$HOME/.bun/_bun"
+
+# Shell-agnostic interactive functions
+
+
+# Run after changes in ~/.config/environment.d/*.conf to apply them in this shell.
+reload-env() {
+  # 1. re-run the environment-d generator ⇒ manager picks up new *.conf vars
+  systemctl --user daemon-reload   # re-runs generators on systemd ≥250
+
+  # 2. pull the manager's block into *this* shell
+  while IFS='=' read -r k v; do
+      [ "$k" ] && export "$k=$v"
+  done < <(systemctl --user show-environment)   # prints the refreshed env
+}
+
+# ==============================================================================
+# ALIASES
+# ==============================================================================
+
+alias ..='cd ..'
+alias suspend='systemctl suspend'
+
+# Git aliases
+alias gs='git status --short --branch'
+
+# Quickly create a GitLab merge request
+# "git merge request create"
+alias gmrc='glab mr create --fill --remove-source-branch --yes'
+
+# "git ReCent Branches"
+# TODO: slightly nicer version at https://stackoverflow.com/a/5188364 also
+# has colors, human-readable dates, authors, ahead/behind against master
+alias grcb='git for-each-ref --sort=-committerdate'
+
+alias vimdiff='nvim -d'
+
+# Add an "alert" alias for long running commands.  Use like so:
+#   sleep 10; alert
+alias alert='notify-send --urgency=low -i "$([ $? = 0 ] && echo terminal || echo error)" "$(history|tail -n1|sed -e '\''s/^\s*[0-9]\+\s*//;s/[;&|]\s*alert$//'\'')"'
+
+# Simple function for mosh + tmux
+function bmosh() {
+  # Use like: bmosh root@agentydragon.com
+  mosh "$1" -- tmux new-session -A -s bmosh
+}
+
+# (testing)
+# alias gc='git_commit_ai.py'
+# alias gca='git_commit_ai.py --all'

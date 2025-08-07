@@ -1,5 +1,3 @@
-[ -d "$HOME/.pyenv" ] && {
-    export PYENV_ROOT="$HOME/.pyenv"
-    export PATH="$PYENV_ROOT/bin:$PATH"
-    eval "$(pyenv init --path)"
-}
+# ~/.zprofile - Zsh login shell configuration
+# Currently empty as ~/.zshrc sources ~/.profile for all interactive shells
+# See: ~/code/ducktape/dotfiles/docs/shell-configuration.md

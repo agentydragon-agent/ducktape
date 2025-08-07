@@ -113,7 +113,7 @@ class ScoreEvolutionPlotter:
         faceted_plot_path = run_dir / "score_evolution_faceted.png"
 
         combined_plot.save(combined_plot_path, width=12, height=8, dpi=300)
-        faceted_plot.save(faceted_plot_path, width=12, height=8, dpi=300)
+        faceted_plot.save(faceted_plot_path, width=16, height=12, dpi=300)
 
         return combined_plot_path, faceted_plot_path
 
@@ -218,7 +218,7 @@ class ScoreEvolutionPlotter:
                 width=0.1,
                 color="steelblue",
             )
-            + facet_wrap("facet", scales="free_y", ncol=3)
+            + facet_wrap("facet", scales="free_y", ncol=2)
             + theme_minimal()
             + labs(
                 title="Score Evolution Across Iterations by Facet",
@@ -230,7 +230,8 @@ class ScoreEvolutionPlotter:
                 plot_title=element_text(size=14, ha="center"),
                 strip_text=element_text(size=10, margin={"t": 6, "b": 6}),
                 axis_text_x=element_text(angle=0),
-                panel_spacing=0.3,
+                panel_spacing=0.5,
+                figure_size=(16, 12),
             )
         )
 
