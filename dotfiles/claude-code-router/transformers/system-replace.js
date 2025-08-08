@@ -13,7 +13,7 @@ class SystemMessageTransformer {
     this.log = (msg) => {
       if (!this.enableLogging) return;
       const fs = require('fs');
-      fs.appendFileSync('/home/agentydragon/.claude-code-router/transformer-debug.log', `[${new Date().toISOString()}] ${msg}\n`);
+      fs.appendFileSync(require('path').join(require('os').homedir(), '.claude-code-router', 'transformer-debug.log'), `[${new Date().toISOString()}] ${msg}\n`);
     };
   }
 
