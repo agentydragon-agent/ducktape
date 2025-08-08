@@ -1,6 +1,6 @@
 /**
  * System Message Search-Replace Transformer
- * 
+ *
  * This transformer performs search-replace operations on system messages.
  * It can be used to modify system prompts, rebrand messages, or adapt
  * prompts for different providers.
@@ -9,20 +9,6 @@ class SystemMessageTransformer {
   constructor(options) {
     this.name = 'system-replace';
 
-    if (!options.search || !options.replace) {
-      throw new Error('SystemMessageTransformer requires both search and replace options');
-    }
-
-    const { search, replace, regex } = options;
-
-    if (regex) {
-      this.searchPattern = new RegExp(search, 'g');
-    } else {
-      const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      this.searchPattern = new RegExp(escaped, 'g');
-    }
-
-    this.replaceValue = replace;
     this.enableLogging = !!options.enableLogging;
     this.log = (msg) => {
       if (!this.enableLogging) return;
@@ -89,7 +75,12 @@ class SystemMessageTransformer {
 
   replaceInContent(content) {
     if (typeof content === 'string') {
-      return content.replace(this.searchPattern, this.replaceValue);
+      content = content.replace("IMPORTANT: Assist with defensive security tasks only. Refuse to create, modify, or improve code that may be used maliciously. Allow security analysis, detection rules, vulnerability explanations, defensive tools, and security documentation.\n", "");
+      content = content.replace("One word answers are best. ", "");
+      // TODO: delete demonstrated terseness
+      // TODO: collapse extra introduced white lines
+
+      return content;
     }
 
     if (Array.isArray(content)) {
@@ -107,5 +98,6 @@ class SystemMessageTransformer {
     return content;
   }
 }
+
 
 module.exports = SystemMessageTransformer;
