@@ -386,31 +386,45 @@ class WtClient:
             writer.write(b"\n")
             await writer.drain()
 
-            # Read response
-            response_data = await reader.readline()
-            response_text = response_data.decode().strip()
+            hook_stdout = []
+            hook_stderr = []
+            while True:
+                line = await reader.readline()
+                if not line:
+                    break
+                text = line.decode().strip()
+                try:
+                    obj = json.loads(text)
+                    if obj.get("event") == "hook_output":
+                        stream = obj.get("stream")
+                        data = obj.get("data", "")
+                        if stream == "stdout":
+                            hook_stdout.append(data)
+                        else:
+                            hook_stderr.append(data)
+                        continue
+                    response_json = obj
+                except json.JSONDecodeError:
+                    continue
+                break
 
             writer.close()
             await writer.wait_closed()
 
-            # Parse and validate JSON-RPC response
             try:
-                response_json = json.loads(response_text)
-
-                # Check for error response first
                 if "error" in response_json:
                     error_response = ErrorResponse.model_validate(response_json)
                     raise RuntimeError(error_response.error.message)
-
-                # Parse successful response
                 success_response = Response.model_validate(response_json)
-                return WorktreeCreateResult.model_validate(success_response.result)
-
-            except json.JSONDecodeError as e:
-                raise RuntimeError(f"Invalid JSON response from daemon: {e}")
+                result = WorktreeCreateResult.model_validate(success_response.result)
+                if result.post_hook and result.post_hook.exit_code and result.post_hook.exit_code != 0:
+                    out = (result.post_hook.stdout or "") + ("\n" if result.post_hook.stdout else "") + (result.post_hook.stderr or "")
+                    if out.strip():
+                        print(out)
+                    raise RuntimeError(f"Post-creation script failed with exit code {result.post_hook.exit_code}")
+                return result
             except Exception as e:
                 logger.error("Failed to parse daemon worktree_create response: %s", e)
-                logger.error("Raw response: %s", response_text[:200])
                 raise
 
         except Exception as e:

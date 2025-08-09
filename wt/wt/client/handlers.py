@@ -93,7 +93,7 @@ async def handle_create_worktree(config, name: str, from_default: bool = True) -
     except RuntimeError as e:
         import click
 
-        click.echo(f"Error: {e}", err=True)
+        click.echo(str(e), err=True)
         import sys
 
         sys.exit(1)

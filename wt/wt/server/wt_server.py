@@ -1476,6 +1476,7 @@ class WtDaemon:
                     response = await self._handle_worktree_create_request(
                         request,
                         start_time,
+                        writer,
                     )
                 elif method == "worktree_delete":
                     response = await self._handle_worktree_delete_request(
@@ -1845,6 +1846,7 @@ class WtDaemon:
         self,
         request: Request,
         start_time: float,
+        writer: asyncio.StreamWriter | None = None,
     ) -> Response:
         """Handle worktree_create JSON-RPC method."""
         try:
@@ -1876,12 +1878,60 @@ class WtDaemon:
             post = None
             if self.config.post_creation_script:
                 try:
-                    from .worktree_service import WorktreeService
+                    if writer is None:
+                        from .worktree_service import WorktreeService
 
-                    post = WorktreeService.execute_post_creation_script(
-                        str(self.config.post_creation_script),
-                        worktree_path,
-                    )
+                        post = WorktreeService.execute_post_creation_script(
+                            str(self.config.post_creation_script),
+                            worktree_path,
+                        )
+                    else:
+                        script_path = str(self.config.post_creation_script)
+                        proc = await asyncio.create_subprocess_exec(
+                            script_path,
+                            str(worktree_path),
+                            cwd=worktree_path,
+                            stdout=asyncio.subprocess.PIPE,
+                            stderr=asyncio.subprocess.PIPE,
+                        )
+
+                        stdout_buf: list[str] = []
+                        stderr_buf: list[str] = []
+
+                        async def _forward(stream, name):
+                            while True:
+                                line = await stream.readline()
+                                if not line:
+                                    break
+                                text = line.decode(errors="replace")
+                                if name == "stdout":
+                                    stdout_buf.append(text)
+                                else:
+                                    stderr_buf.append(text)
+                                try:
+                                    event = {"event": "hook_output", "stream": name, "data": text}
+                                    writer.write((json.dumps(event) + "\n").encode())
+                                    await writer.drain()
+                                except Exception:
+                                    pass
+
+                        t1 = asyncio.create_task(_forward(proc.stdout, "stdout")) if proc.stdout else None
+                        t2 = asyncio.create_task(_forward(proc.stderr, "stderr")) if proc.stderr else None
+                        await proc.wait()
+                        if t1:
+                            with contextlib.suppress(Exception):
+                                await t1
+                        if t2:
+                            with contextlib.suppress(Exception):
+                                await t2
+
+                        post = {
+                            "ran": True,
+                            "exit_code": proc.returncode,
+                            "stdout": "".join(stdout_buf) if stdout_buf else None,
+                            "stderr": "".join(stderr_buf) if stderr_buf else None,
+                            "error": None,
+                        }
                 except Exception as e:
                     post = {
                         "ran": True,
