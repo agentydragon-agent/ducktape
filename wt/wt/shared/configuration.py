@@ -52,7 +52,7 @@ class Configuration:
     github_debounce_delay: timedelta
     github_periodic_interval: timedelta
     startup_timeout: timedelta
-    sparse_checkout_empty_cone: bool = False
+    hydrate_worktrees: bool = True
 
     @property
     def daemon_socket_path(self) -> Path:
@@ -171,7 +171,7 @@ class Configuration:
                 seconds=config_file.github_periodic_interval,
             ),
             startup_timeout=timedelta(seconds=config_file.startup_timeout),
-            sparse_checkout_empty_cone=config_file.sparse_checkout_empty_cone,
+            hydrate_worktrees=config_file.hydrate_worktrees,
         )
 
 

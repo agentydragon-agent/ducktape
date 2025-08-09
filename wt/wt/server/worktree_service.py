@@ -127,12 +127,20 @@ class WorktreeService:
             self.git_manager.worktree_add(str(worktree_path), branch_name)
 
             # Hydrate with dirty state if source provided
-            if source_worktree:
-                if not source_worktree.exists():
-                    raise RuntimeError(
-                        f"Source worktree does not exist: {source_worktree}",
-                    )
-                self._hydrate_worktree(config, source_worktree, worktree_path)
+            if config.hydrate_worktrees:
+                if source_worktree:
+                    if not source_worktree.exists():
+                        raise RuntimeError(
+                            f"Source worktree does not exist: {source_worktree}",
+                        )
+                    self._hydrate_worktree(config, source_worktree, worktree_path)
+                else:
+                    repo = self.git_manager.get_repo(worktree_path)
+                    try:
+                        repo.set_head(f"refs/heads/{branch_name}")
+                    except Exception:
+                        pass
+                    repo.checkout_head(strategy=getattr(__import__('pygit2'), 'GIT_CHECKOUT_FORCE', 0))
 
             logger.info(
                 f"Post-creation script configured: {config.post_creation_script}",

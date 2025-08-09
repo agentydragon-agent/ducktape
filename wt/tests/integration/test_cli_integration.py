@@ -267,9 +267,8 @@ class TestRealGitOperations:
         parent = repo.head.target
         repo.create_commit("HEAD", sig, sig, "Seed content", tree, [parent])
 
-        # Create config with sparse empty cone enabled
         factory = config_factory(real_temp_repo)
-        config = factory.integration(sparse_checkout_empty_cone=True)
+        config = factory.integration()
         env = os.environ.copy()
         env["WT_DIR"] = str(config.wt_dir)
 

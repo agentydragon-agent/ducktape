@@ -12,24 +12,28 @@ class TestWorktreeService:
     """Test the WorktreeService with real git repositories."""
 
     @pytest.fixture(scope="function")
-    def service(self, repo_factory, config_factory, mock_factory):
-        """Create WorktreeService with real dependencies and real git repo."""
-        # Create real repo and config using factories
+    def service(self, repo_factory, config_factory):
         repo_path = repo_factory.create_repo()
-        factory = config_factory(repo_path)
-        config = factory.minimal(
+        config = config_factory(repo_path).minimal(
             branch_prefix="test/",
             upstream_branch="main",
             github_repo="test-user/test-repo",
             github_enabled=False,
             log_operations=True,
         )
+        from tests.mock_factory import ServiceBuilder
 
-        # Create real GitManager with mock GitHub
-        git_manager = GitManager(config=config)
-        github = mock_factory.github_client()
+        service = ServiceBuilder(config).with_real_git().with_mock_github().build_worktree_service()
+        return service, config
 
-        return WorktreeService(git_manager, github), config
+    def _make_service(self, repo_factory, config_factory, repo_path=None, **minimal_kwargs):
+        if repo_path is None:
+            repo_path = repo_factory.create_repo()
+        factory = config_factory(repo_path)
+        config = factory.minimal(**minimal_kwargs)
+        from tests.mock_factory import ServiceBuilder
+        service = ServiceBuilder(config).with_real_git().with_mock_github().build_worktree_service()
+        return service, config
 
     def test_list_worktrees_empty_repo(self, service):
         """Test listing worktrees in empty repository."""
@@ -126,23 +130,10 @@ echo "Script executed with arg: $1" > "$1/script_output.txt"
         script_path.chmod(0o755)
 
         # Create config with post-creation script
-        factory = config_factory(repo_path)
-        config = factory.minimal(
-            branch_prefix="test/",
-            upstream_branch="main",
-            github_repo="test-user/test-repo",
-            github_enabled=False,
-            log_operations=True,
-            post_creation_script=str(script_path),
-        )
-
-        # Create WorktreeService with the script-enabled config
-        git_manager = GitManager(config=config)
-        github = mock_factory.github_client()
-        worktree_service = WorktreeService(git_manager, github)
+        service, config = self._make_service(repo_factory, config_factory, repo_path=repo_path, post_creation_script=str(script_path))
 
         # Create worktree - script should execute
-        worktree_path = worktree_service.create_worktree(config, "script-test")
+        worktree_path = service.create_worktree(config, "script-test")
 
         # Verify script was executed
         output_file = worktree_path / "script_output.txt"
@@ -150,3 +141,28 @@ echo "Script executed with arg: $1" > "$1/script_output.txt"
         content = output_file.read_text()
         assert str(worktree_path) in content
         assert "Script executed with arg:" in content
+
+    def test_copy_hydrates_when_enabled(self, repo_factory, config_factory):
+        service, config = self._make_service(repo_factory, config_factory, hydrate_worktrees=True)
+        src = service.create_worktree(config, "src")
+        (src / "untracked.txt").write_text("x")
+        dst = service.create_worktree(config, "dst", source_worktree=src)
+        assert (dst / "untracked.txt").exists()
+
+    def test_copy_skips_hydration_when_disabled(self, repo_factory, config_factory):
+        service, config = self._make_service(repo_factory, config_factory, hydrate_worktrees=False)
+        src = service.create_worktree(config, "src")
+        (src / "untracked.txt").write_text("x")
+        dst = service.create_worktree(config, "dst", source_worktree=src)
+        assert not (dst / "untracked.txt").exists()
+
+    def test_create_hydrates_when_enabled(self, repo_factory, config_factory):
+        service, config = self._make_service(repo_factory, config_factory, hydrate_worktrees=True)
+        dst = service.create_worktree(config, "dst")
+        assert (dst / "README.md").exists()
+
+    def test_create_skips_hydration_when_disabled(self, repo_factory, config_factory):
+        service, config = self._make_service(repo_factory, config_factory, hydrate_worktrees=False)
+        dst = service.create_worktree(config, "dst")
+        entries = [p for p in dst.iterdir() if p.name != ".git"]
+        assert entries == []

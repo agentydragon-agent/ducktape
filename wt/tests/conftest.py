@@ -411,7 +411,6 @@ def build_test_configuration(
         "hidden_worktree_patterns": [],
         "gitstatusd_path": None,
         "cow_method": "copy",
-        "sparse_checkout_empty_cone": False,
     }
 
     config_file = ConfigFile(**{**defaults, **config_overrides})

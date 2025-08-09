@@ -200,6 +200,36 @@ Configuration file at `$WT_DIR/config.yaml` specifies:
 - `upstream_branch`: Default upstream branch (required)
 - `github_repo`: GitHub repository identifier (required)
 
+Optional settings:
+- `log_operations`: Enable operation logging (default: false)
+- `cow_method`: auto | reflink | copy | rsync (default: auto)
+- `hydrate_worktrees`: If false, newly created or copied worktrees are left unpopulated (default: true)
+- `github_enabled`: Enable GitHub integration (default: true)
+- `gitstatusd_path`: Path to gitstatusd binary (optional)
+- `post_creation_script`: Script to run after creating a worktree (optional)
+
+Sample config.yaml:
+
+```yaml
+main_repo: /path/to/repo
+worktrees_dir: /path/to/repo/worktrees
+branch_prefix: feature/
+upstream_branch: main
+
+# Optional
+github_enabled: false
+github_repo: owner/repo
+log_operations: true
+cow_method: auto       # macOS: clonefile; Linux: reflink; fallback: rsync
+hydrate_worktrees: true  # set false to leave new worktrees empty
+```
+
+cow_method behavior:
+- auto: clonefile on macOS; reflink if supported; else rsync
+- reflink: force reflink, error if unsupported
+- copy: clonefile on macOS, else reflink if available, else rsync
+- rsync: always use rsync
+
 ## Directory Structure
 
 ```

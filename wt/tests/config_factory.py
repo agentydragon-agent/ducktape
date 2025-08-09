@@ -70,7 +70,6 @@ class ConfigFactory:
             "cache_refresh_age": 300,
             "hidden_worktree_patterns": [],
             "cow_method": "copy",
-            "sparse_checkout_empty_cone": False,
             "gitstatusd_path": None,  # Will be filled by tests that need it
             "post_creation_script": None,
         }

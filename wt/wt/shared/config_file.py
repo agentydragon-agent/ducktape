@@ -33,7 +33,7 @@ class ConfigFile(BaseModel):
     # Behavior settings
     log_operations: bool = False
     cow_method: str = "auto"  # "auto", "reflink", "copy", or "rsync"
-    sparse_checkout_empty_cone: bool = False
+    hydrate_worktrees: bool = True
 
     # GitHub integration
     github_enabled: bool = True
