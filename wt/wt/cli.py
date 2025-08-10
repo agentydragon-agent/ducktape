@@ -1,6 +1,7 @@
 """Thin CLI layer - just argument parsing and handler coordination."""
 
 import click
+import logging
 from colorama import init
 
 from .client.handlers import (
@@ -21,37 +22,57 @@ from .shared.constants import MAIN_REPO_ALIASES
 
 
 def show_help() -> None:
-    """Display help information."""
+    """Display help information with aligned columns."""
     click.echo("wt - Enhanced worktree management")
     click.echo()
     click.echo("USAGE:")
     click.echo("  wt [command] [args...]")
     click.echo()
+
+    # Flags with dynamic padding
+    flags = [
+        ("--help", "Show this help"),
+        ("--verbose", "Show client progress and daemon startup info"),
+    ]
+    max_flag = max(len(name) for name, _ in flags)
     click.echo("FLAGS:")
-    click.echo("  --help     Show this help")
+    for name, desc in flags:
+        click.echo(f"  {name:<{max_flag}}  {desc}")
     click.echo()
+
+    # Commands with dynamic padding
+    commands = [
+        ("wt", "Show status of all worktrees (includes GitHub PR status)"),
+        ("wt <n>", "Navigate to worktree (or offer to create)"),
+        ("wt status [name]", "Show detailed status"),
+        ("wt ls", "List all worktrees"),
+        ("wt -c <n>", "Create new worktree from main branch"),
+        ("wt cp <src> <dst>", "Copy worktree (with dirty state)"),
+        ("wt cp <n>", "Copy current worktree to new name"),
+        ("wt rm <n>", "Remove worktree (with safety checks)"),
+        ("wt path [name] [/path]", "Resolve worktree paths"),
+        ("wt main", "Navigate to main repo"),
+        ("wt kill-daemon", "Kill the wt daemon"),
+        ("wt help", "Show this help"),
+    ]
+    max_cmd = max(len(cmd) for cmd, _ in commands)
     click.echo("COMMANDS:")
-    click.echo(
-        "  wt                    Show status of all worktrees (includes GitHub PR status)",
-    )
-    click.echo("  wt <n>             Navigate to worktree (or offer to create)")
-    click.echo("  wt status [name]      Show detailed status")
-    click.echo("  wt ls                 List all worktrees")
-    click.echo("  wt -c <n>          Create new worktree from main branch")
-    click.echo("  wt cp <src> <dst>     Copy worktree (with dirty state)")
-    click.echo("  wt cp <n>          Copy current worktree to new name")
-    click.echo("  wt rm <n>          Remove worktree (with safety checks)")
-    click.echo("  wt path [name] [/path] Resolve worktree paths")
-    click.echo("  wt main               Navigate to main repo")
-    click.echo("  wt kill-daemon        Kill the GitStatusd daemon")
-    click.echo("  wt help               Show this help")
+    for cmd, desc in commands:
+        click.echo(f"  {cmd:<{max_cmd}}  {desc}")
     click.echo()
+
+    # Examples (left as simple lines, not a table)
+    examples = [
+        ("wt", "Show all worktrees with PR status"),
+        ("wt feature-branch", "Navigate to feature-branch worktree"),
+        ("wt -c new-feature", "Create new worktree for new-feature"),
+        ("wt cp experiment", "Copy current worktree to 'experiment'"),
+        ("wt rm old-branch", "Remove old-branch worktree"),
+    ]
+    max_ex = max(len(cmd) for cmd, _ in examples)
     click.echo("EXAMPLES:")
-    click.echo("  wt                    # Show all worktrees with PR status")
-    click.echo("  wt feature-branch     # Navigate to feature-branch worktree")
-    click.echo("  wt -c new-feature     # Create new worktree for new-feature")
-    click.echo("  wt cp experiment      # Copy current worktree to 'experiment'")
-    click.echo("  wt rm old-branch      # Remove old-branch worktree")
+    for cmd, desc in examples:
+        click.echo(f"  {cmd:<{max_ex}}  # {desc}")
 
 
 @click.group(
@@ -59,8 +80,9 @@ def show_help() -> None:
     context_settings={"ignore_unknown_options": True, "help_option_names": []},
 )
 @click.option("-h", "--help", is_flag=True, help="Show this help and exit")
+@click.option("--verbose", is_flag=True, help="Show client progress and daemon startup info")
 @click.pass_context
-def main(ctx, help):
+def main(ctx, help, verbose):
     """Main CLI entry point."""
     init()  # colorama
 
@@ -68,25 +90,35 @@ def main(ctx, help):
         show_help()
         ctx.exit(0)
 
+    # Accept --verbose anywhere (even after args like 'status')
+    effective_verbose = bool(verbose) or ("--verbose" in (ctx.args or []))
+
+    # Stash verbose in context for later
+    ctx.obj = ctx.obj or {}
+    ctx.obj["verbose"] = effective_verbose
+
     if ctx.invoked_subcommand is None:
         import asyncio
 
-        asyncio.run(_async_main())
+        asyncio.run(_async_main(verbose=effective_verbose))
         return
 
 
-def _create_cli_dependencies():
+def _create_cli_dependencies(verbose: bool = False):
     """Create common CLI dependencies."""
     config = load_config()
     formatter = ViewFormatter()
-    daemon_client = WtClient(config)
+    # Route verbose flag into logging: show INFO logs when verbose, else WARNING
+    logging_level = logging.INFO if verbose else logging.WARNING
+    logging.basicConfig(level=logging_level)
+    daemon_client = WtClient(config, verbose=verbose)
     plugin_manager = get_manager(config)
     return config, formatter, daemon_client, plugin_manager
 
 
-async def _async_main():
+async def _async_main(verbose: bool = False):
     """Async main function."""
-    config, formatter, daemon_client, plugin_manager = _create_cli_dependencies()
+    config, formatter, daemon_client, plugin_manager = _create_cli_dependencies(verbose=verbose)
     await handle_status(daemon_client, formatter)
 
 
@@ -119,7 +151,8 @@ def sh(ctx, args):
         else:
             filtered_args.append(arg)
 
-    config, formatter, daemon_client, plugin_manager = _create_cli_dependencies()
+    verbose = bool((ctx.obj or {}).get("verbose", False))
+    config, formatter, daemon_client, plugin_manager = _create_cli_dependencies(verbose=verbose)
 
     # Run async command handler
     import asyncio

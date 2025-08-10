@@ -88,15 +88,19 @@ class ViewFormatter:
         sync_status = format_sync_status(status.ahead_count, status.behind_count)
 
         # Working directory status
-        if status.has_dirty_files or status.has_untracked_files:
+        if not status.is_cached:
+            work_status = "unknown"
+        elif status.has_dirty_files or status.has_untracked_files:
             changes = []
             if status.has_dirty_files:
-                changes.append("M")
+                changes.append("modified")
             if status.has_untracked_files:
-                changes.append("?")
+                changes.append("untracked")
             work_status = "+".join(changes)
         else:
             work_status = "clean"
+        if status.is_cached and status.is_stale:
+            work_status += " (stale)"
 
         # GitHub PR status with clickable hyperlinks and clear text
         pr_status = ""
@@ -153,14 +157,17 @@ class ViewFormatter:
 
     def _get_work_status_column(self, status: StatusResult) -> str:
         """Get working directory status column."""
+        if not status.is_cached:
+            return "unknown"
         if status.has_dirty_files or status.has_untracked_files:
             changes = []
             if status.has_dirty_files:
                 changes.append("M")
             if status.has_untracked_files:
                 changes.append("?")
-            return "+".join(changes)
-        return "clean"
+            s = "+".join(changes)
+            return f"{s} (stale)" if status.is_stale else s
+        return "clean (stale)" if status.is_stale else "clean"
 
     def _get_pr_link_column(self, status: StatusResult) -> str:
         """Get PR link column."""
@@ -229,11 +236,11 @@ class ViewFormatter:
             pr_status = self._get_pr_status_column(status)
             pr_changes = self._get_pr_changes_column(status)
             state_map = {
-                "running": "▶",
-                "restarting": "↻",
-                "failed": "✖",
-                "stopped": "✖",
-                "starting": "…",
+                "running": "running",
+                "restarting": "restarting",
+                "failed": "failed",
+                "stopped": "stopped",
+                "starting": "starting",
             }
             state = state_map.get(status.gitstatusd_state or "", "")
             if pr_link:

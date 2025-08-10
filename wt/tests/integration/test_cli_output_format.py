@@ -174,3 +174,36 @@ class TestCLIOutputFormat:
 
         assert result.exit_code == 0
         assert "USAGE:" in result.output  # Custom help format
+
+    @patch("wt.client.wt_client.WtClient.get_status")
+    def test_status_unknown_when_not_cached(self, mock_get_status, cli_runner_with_env):
+        """When status isn't cached yet, show 'unknown' instead of 'clean'."""
+        commit_info = CommitInfo(
+            hash="abcdef1234567890abcdef1234567890abcdef12",
+            short_hash="abcdef12",
+            message="Init",
+            author="Test",
+            date="2024-01-15T10:30:00",
+        )
+        results = {
+            WorktreeID("wtid:test1"): StatusResult(
+                wtid=WorktreeID("wtid:test1"),
+                name="test1",
+                absolute_path="/test/test1",
+                branch_name="test/test1",
+                has_dirty_files=False,
+                has_untracked_files=False,
+                processing_time_ms=1.0,
+                last_updated_at=datetime.now(),
+                commit_info=commit_info,
+                ahead_count=0,
+                behind_count=0,
+                is_main=False,
+                upstream_branch="master",
+                is_cached=False,
+            ),
+        }
+        status_response = create_test_status_response(results)
+        result = cli_runner_with_env(status_response, ["sh"], mock_get_status)
+        assert result.exit_code == 0
+        assert "unknown" in result.output

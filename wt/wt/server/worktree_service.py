@@ -146,11 +146,16 @@ class WorktreeService:
                 f"Post-creation script configured: {config.post_creation_script}",
             )
             if config.post_creation_script:
+                script = config.post_creation_script
+                if not script.exists() or not script.is_file():
+                    raise RuntimeError(
+                        f"Post-creation script configured but not found or not a file: {script}",
+                    )
                 logger.info(
                     f"Executing post-creation script for worktree: {worktree_path}",
                 )
                 WorktreeService.execute_post_creation_script(
-                    str(config.post_creation_script),
+                    str(script),
                     worktree_path,
                 )
             else:

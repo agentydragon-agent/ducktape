@@ -1,7 +1,7 @@
-"""JSON-RPC 2.0 protocol for GitStatusd daemon communication.
+"""JSON-RPC 2.0 protocol for wt daemon communication.
 
 Uses standard JSON-RPC 2.0 for type-safe, standardized RPC communication
-between clients and the GitStatusd multiplexing daemon.
+between clients and the wt multiplexing daemon.
 """
 
 from __future__ import annotations
@@ -222,6 +222,14 @@ class StatusResult(BaseModel):
         default=False,
         description="Whether this result came from cache",
     )
+    cache_age_ms: float | None = Field(
+        default=None,
+        description="Age of cached data in milliseconds (None if not cached)",
+    )
+    is_stale: bool = Field(
+        default=False,
+        description="Whether cached data is considered stale by server policy",
+    )
     commit_info: CommitInfo | None = Field(
         default=None,
         description="Latest commit information if available",
@@ -427,6 +435,7 @@ class ProgressUpdate(BaseModel):
 class ComponentState(str, Enum):
     OK = "ok"
     SCANNING = "scanning"
+    STARTING = "starting"
     ERROR = "error"
     DISABLED = "disabled"
 

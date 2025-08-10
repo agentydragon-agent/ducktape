@@ -428,11 +428,16 @@ class WorktreeRuntime:
 
 
 class GitstatusdClient:
-    def __init__(self, worktree_info: WorktreeInfo, config, git_manager: GitManager):
+    def __init__(self, worktree_info: WorktreeInfo, config, git_manager: GitManager, error_callback=None):
         self.worktree_info = worktree_info
         self.config = config
         self.git_manager = git_manager
+        self.error_callback = error_callback
         self.process: asyncio.subprocess.Process | None = None
+        # Cache for working status
+        self.cached_working_status: tuple[list[str], list[str]] | None = None
+        self.last_updated_at: datetime | None = None
+        self._status_updating: bool = False
 
     async def start(self) -> None:
         if self.process and self.process.returncode is None:
@@ -476,31 +481,57 @@ class GitstatusdClient:
     async def request_working_status(
         self,
     ) -> tuple[list[str], list[str], datetime, bool]:
+        # Legacy compatibility: perform a synchronous update of the cache,
+        # then return cached values
+        await self.update_working_status()
+        if self.cached_working_status and self.last_updated_at:
+            df, uf = self.cached_working_status
+            return df, uf, self.last_updated_at, True
+        now = datetime.now()
+        return [], [], now, False
+
+    async def update_working_status(self) -> None:
         if not self.process or self.process.returncode is not None:
             await self.start()
-        request_id = str(uuid.uuid4())[:8]
-        gitstatusd_request = GitStatusdRequest(
-            request_id=request_id,
-            directory_path=str(self.worktree_info.path),
-            disable_index_computation=False,
-        )
-        request_data = gitstatusd_request.to_wire_format()
         if not self.process or not self.process.stdin or not self.process.stdout:
-            now = datetime.now()
-            return [], [], now, False
-        self.process.stdin.write(request_data.encode())
-        await self.process.stdin.drain()
-        response = await asyncio.wait_for(
-            self.process.stdout.readuntil(b"\x1e"),
-            timeout=5.0,
-        )
-        response_str = response.decode("utf-8")
-        parsed_response = GitStatusdProtocol.parse_response(response_str)
-        dirty_files, untracked_files = gitstatusd_response_to_legacy_format(
-            parsed_response,
-        )
-        now = datetime.now()
-        return dirty_files, untracked_files, now, False
+            self.cached_working_status = ([], [])
+            self.last_updated_at = datetime.now()
+            return
+        if self._status_updating:
+            return
+        self._status_updating = True
+        try:
+            request_id = str(uuid.uuid4())[:8]
+            gitstatusd_request = GitStatusdRequest(
+                request_id=request_id,
+                directory_path=str(self.worktree_info.path),
+                disable_index_computation=False,
+            )
+            request_data = gitstatusd_request.to_wire_format()
+            self.process.stdin.write(request_data.encode())
+            await self.process.stdin.drain()
+            response = await asyncio.wait_for(
+                self.process.stdout.readuntil(b"\x1e"),
+                timeout=2.0,
+            )
+            response_str = response.decode("utf-8")
+            parsed_response = GitStatusdProtocol.parse_response(response_str)
+            dirty_files, untracked_files = gitstatusd_response_to_legacy_format(
+                parsed_response,
+            )
+            self.cached_working_status = (dirty_files, untracked_files)
+            self.last_updated_at = datetime.now()
+        except Exception:
+            if not self.last_updated_at:
+                self.last_updated_at = datetime.now()
+        finally:
+            self._status_updating = False
+
+    def get_cached_working_status(self) -> tuple[list[str], list[str], datetime | None, bool]:
+        if self.cached_working_status and self.last_updated_at:
+            df, uf = self.cached_working_status
+            return df, uf, self.last_updated_at, True
+        return [], [], None, False
 
 
 class RepoMetaService:
@@ -689,8 +720,8 @@ class GitStatusdProcess:
         if self.github_refresh:
             await self.github_refresh.start()
 
-        # Perform initial status query to populate cache
-        await self._update_cache_from_gitstatusd()
+        # Perform initial status query to populate cache, but don't block status calls
+        asyncio.create_task(self._update_cache_from_gitstatusd())
 
     async def stop(self) -> None:
         """Stop the gitstatusd process."""
@@ -733,7 +764,6 @@ class GitStatusdProcess:
         self.request_count += 1
 
         with self.cache_lock:
-            # Return cached result if all components are available and fresh
             if (
                 self.cached_working_status
                 and self.cached_commit_info
@@ -1353,9 +1383,11 @@ class WtDaemon:
 
         # Scan worktree directory
         for path in worktrees_dir.iterdir():
-            if path.is_dir() and (path / ".git").exists():
-                worktree_info = WorktreeInfo(path, path.name)
-                current_worktrees.add(worktree_info)
+            if path.is_dir():
+                # Accept both full clones and linked worktrees
+                if (path / ".git").exists() or (path / ".git").is_file():
+                    worktree_info = WorktreeInfo(path, path.name)
+                    current_worktrees.add(worktree_info)
 
                 # Update existing or add new
                 if path in self.known_worktrees:
@@ -1395,7 +1427,12 @@ class WtDaemon:
 
         if worktree_info.path in self.gitstatusd_clients:
             return
-        gs_client = GitstatusdClient(worktree_info, self.config, self.git_manager)
+        gs_client = GitstatusdClient(
+            worktree_info,
+            self.config,
+            self.git_manager,
+            error_callback=self._record_gitstatusd_error,
+        )
         await gs_client.start()
         self.gitstatusd_clients[worktree_info.path] = gs_client
         prsvc = PRService(self.github_interface, self.config, worktree_info)
@@ -1461,8 +1498,9 @@ class WtDaemon:
                 await self._send_response(writer, error_response)
                 return
 
-            # Trigger discovery to ensure we have up-to-date worktrees
-            await self.discover_worktrees()
+            # Kick discovery opportunistically but do not block request handling
+            if not self.known_worktrees and not self.discovery_scanning:
+                asyncio.create_task(self.discover_worktrees())
 
             # Handle different method types
             try:
@@ -1522,17 +1560,19 @@ class WtDaemon:
                 await self._send_response(writer, response)
 
             except Exception as e:
-                logger.error("Error handling method %s: %s", method, e)
+                logger.exception("Error handling method %s", method)
                 error_response = create_error_response(
                     ErrorCodes.INTERNAL_ERROR,
                     f"Internal error: {e}",
                     request_id,
-                    request_id,
                 )
-                await self._send_response(writer, error_response)
+                try:
+                    await self._send_response(writer, error_response)
+                except Exception:
+                    pass
 
-        except Exception as e:
-            logger.error("Error handling client request: %s", e)
+        except Exception:
+            logger.exception("Error handling client request")
         finally:
             writer.close()
             await writer.wait_closed()
@@ -1577,6 +1617,19 @@ class WtDaemon:
                 if not self.known_worktrees:
                     await self.discover_worktrees()
                 worktree_paths = list(self.known_worktrees.keys())
+                # If discovery found fewer paths than git knows about (newly added), cross-check via git
+                try:
+                    git_paths = [wt.path for wt in self.git_manager.list_worktrees() if not wt.is_main]
+                except Exception:
+                    git_paths = []
+                if git_paths and len(worktree_paths) < len(git_paths):
+                    # Merge any missing git paths into known_worktrees and schedule their startup
+                    for p in git_paths:
+                        if p not in self.known_worktrees and p.exists():
+                            wt_info = WorktreeInfo(p, p.name)
+                            self.known_worktrees[p] = wt_info
+                            asyncio.create_task(self._start_gitstatusd_for_worktree(wt_info))
+                    worktree_paths = list(self.known_worktrees.keys())
                 logger.debug(
                     "No specific worktrees requested, returning all %d discovered",
                     len(worktree_paths),
@@ -1590,59 +1643,96 @@ class WtDaemon:
             async def process_single_worktree(worktree_path) -> WorktreeGitStatus:
                 single_start = time.time()
                 gs_client = self.gitstatusd_clients.get(worktree_path)
+                worktree_last_error: str | None = None
 
                 if gs_client:
                     try:
-                        (
-                            dirty_files,
-                            untracked_files,
-                            last_updated_at,
-                            _,
-                        ) = await asyncio.wait_for(
-                            gs_client.request_working_status(),
-                            timeout=10.0,
+                        # Non-blocking: use cache and trigger background refresh
+                        dirty_files, untracked_files, last_updated_at, have_cache = (
+                            gs_client.get_cached_working_status()
                         )
-                        commit_info_data, ahead_behind, branch_name = (
-                            self.repo_meta.compute_meta(worktree_path)
+                        cache_age_ms = (
+                            (time.time() - last_updated_at.timestamp()) * 1000
+                            if last_updated_at
+                            else None
                         )
+                        if not have_cache:
+                            # Try a small bounded refresh to avoid showing misleading 'clean'
+                            try:
+                                await asyncio.wait_for(gs_client.update_working_status(), timeout=1.0)
+                                dirty_files, untracked_files, last_updated_at, have_cache = (
+                                    gs_client.get_cached_working_status()
+                                )
+                                cache_age_ms = (
+                                    (time.time() - last_updated_at.timestamp()) * 1000
+                                    if last_updated_at
+                                    else None
+                                )
+                            except asyncio.TimeoutError:
+                                asyncio.create_task(gs_client.update_working_status())
+                        if last_updated_at is None:
+                            last_updated_at = datetime.now()
+                            cache_age_ms = None
+                        try:
+                            commit_info_data, ahead_behind, branch_name = (
+                                self.repo_meta.compute_meta(worktree_path)
+                            )
+                        except Exception as e:
+                            commit_info_data = None
+                            ahead_behind = (0, 0)
+                            branch_name = "HEAD"
+                            worktree_last_error = f"meta: {e}"
                         prsvc = self.pr_services.get(worktree_path)
-                        pr_info_data = (
-                            await prsvc.get_pr_info(branch_name) if prsvc else None
-                        )
-                        is_cached = False
+                        pr_info_data = None
+                        if prsvc:
+                            try:
+                                pr_info_data = await asyncio.wait_for(
+                                    prsvc.get_pr_info(branch_name),
+                                    timeout=0.75,
+                                )
+                            except asyncio.TimeoutError:
+                                pr_info_data = None
+                        is_cached = have_cache
+                        is_stale = bool(cache_age_ms and cache_age_ms > self.config.cache_refresh_age.total_seconds() * 1000)
                         state = "running" if gs_client.is_running else "stopped"
                     except asyncio.TimeoutError:
                         single_time = (time.time() - single_start) * 1000
                         state = "starting"
-                        (
-                            dirty_files,
-                            untracked_files,
-                        ) = await self.git_manager.get_working_directory_status(
-                            worktree_path,
-                        )
-                        commit_info_data, ahead_behind, branch_name = (
-                            self.repo_meta.compute_meta(worktree_path)
-                        )
+                        dirty_files, untracked_files = [], []
+                        try:
+                            commit_info_data, ahead_behind, branch_name = (
+                                self.repo_meta.compute_meta(worktree_path)
+                            )
+                        except Exception as e:
+                            commit_info_data = None
+                            ahead_behind = (0, 0)
+                            branch_name = "HEAD"
+                            worktree_last_error = f"meta: {e}"
                         last_updated_at = datetime.now()
                         pr_info_data = None
                         is_cached = False
+                        cache_age_ms = None
+                        is_stale = False
                 else:
                     single_time = (time.time() - single_start) * 1000
                     state = "stopped"
-                    (
-                        dirty_files,
-                        untracked_files,
-                    ) = await self.git_manager.get_working_directory_status(
-                        worktree_path,
-                    )
-                    commit_info_data, ahead_behind, branch_name = (
-                        self.repo_meta.compute_meta(worktree_path)
-                    )
+                    dirty_files, untracked_files = [], []
+                    try:
+                        commit_info_data, ahead_behind, branch_name = (
+                            self.repo_meta.compute_meta(worktree_path)
+                        )
+                    except Exception as e:
+                        commit_info_data = None
+                        ahead_behind = (0, 0)
+                        branch_name = "HEAD"
+                        worktree_last_error = f"meta: {e}"
                     last_updated_at = datetime.now()
                     pr_info_data = None
                     is_cached = False
+                    cache_age_ms = None
+                    is_stale = False
 
-                commit_info = CommitInfo.model_validate(commit_info_data)
+                commit_info = (CommitInfo.model_validate(commit_info_data) if commit_info_data else None)
                 from .worktree_ids import make_worktree_id
 
                 wtid = make_worktree_id(worktree_path.name)
@@ -1667,6 +1757,8 @@ class WtDaemon:
                         processing_time_ms=single_time,
                         last_updated_at=last_updated_at,
                         is_cached=is_cached,
+                        cache_age_ms=cache_age_ms,
+                        is_stale=is_stale,
                         commit_info=commit_info,
                         ahead_count=ahead_behind[0],
                         behind_count=ahead_behind[1],
@@ -1690,7 +1782,7 @@ class WtDaemon:
                             )
                         ),
                         restarts=0,
-                        last_error=None,
+                        last_error=worktree_last_error,
                     ),
                     processing_time_ms=single_time,
                 )
@@ -1707,7 +1799,7 @@ class WtDaemon:
                         "HEAD",
                         worktree_path,
                     )
-                    commit_info = CommitInfo.model_validate(commit_info_data)
+                    commit_info = (CommitInfo.model_validate(commit_info_data) if commit_info_data else None)
                     branch_name = (
                         self.git_manager.get_repo(worktree_path).head.shorthand
                         if not self.git_manager.get_repo(worktree_path).head_is_detached
@@ -1735,6 +1827,8 @@ class WtDaemon:
                         processing_time_ms=single_time,
                         last_updated_at=datetime.now(),
                         is_cached=False,
+                        cache_age_ms=None,
+                        is_stale=False,
                         commit_info=commit_info,
                         ahead_count=0,
                         behind_count=0,
@@ -1744,7 +1838,7 @@ class WtDaemon:
                         pr_info=None,
                         gitstatusd_state=GitstatusdState.STOPPED,
                         restarts=0,
-                        last_error=None,
+                        last_error=worktree_last_error,
                     ),
                     processing_time_ms=single_time,
                 )
@@ -1771,9 +1865,15 @@ class WtDaemon:
 
             total_wt = len(self.known_worktrees)
             with_git = sum(1 for p in self.gitstatusd_clients.values() if p.is_running)
+            any_wt_error = any(r.last_error for r in results.values())
             github_state = ComponentState.DISABLED
             if self.github_interface:
                 github_state = ComponentState.OK
+                # If any PRService hasn't fetched yet, reflect warming-up state
+                for prsvc in self.pr_services.values():
+                    if prsvc.cached_pr_info is None:
+                        github_state = ComponentState.STARTING
+                        break
             readiness = ReadinessSummary(
                 total_worktrees=total_wt,
                 with_gitstatusd=with_git,
@@ -1798,7 +1898,7 @@ class WtDaemon:
                 ),
                 gitstatusd=ComponentStatus(
                     state=ComponentState.OK
-                    if with_git == total_wt and total_wt > 0
+                    if (with_git == total_wt and total_wt > 0 and not any_wt_error)
                     else ComponentState.ERROR,
                     metrics={"running": with_git, "total": total_wt},
                 ),
@@ -1868,6 +1968,14 @@ class WtDaemon:
             if worktree_path.exists():
                 raise ValueError(f"Worktree path {worktree_path} already exists")
 
+            # If a post-creation script is configured, validate it exists before any side effects
+            if self.config.post_creation_script:
+                script = self.config.post_creation_script
+                if not script.exists() or not script.is_file():
+                    raise ValueError(
+                        f"Post-creation script configured but not found or not a file: {script}",
+                    )
+
             # Create branch first
             source_branch = params.source_branch or self.config.upstream_branch
             self.git_manager.create_branch(branch_name, source_branch)
@@ -1878,60 +1986,26 @@ class WtDaemon:
             post = None
             if self.config.post_creation_script:
                 try:
+                    # Double-check just before execution in case it disappeared since pre-check
+                    script = self.config.post_creation_script
+                    if not script.exists() or not script.is_file():
+                        raise FileNotFoundError(
+                            f"Post-creation script not found at execution time: {script}",
+                        )
                     if writer is None:
                         from .worktree_service import WorktreeService
 
                         post = WorktreeService.execute_post_creation_script(
-                            str(self.config.post_creation_script),
+                            str(script),
                             worktree_path,
                         )
                     else:
-                        script_path = str(self.config.post_creation_script)
-                        proc = await asyncio.create_subprocess_exec(
+                        script_path = str(script)
+                        post = await self._run_post_creation_script_streaming(
                             script_path,
-                            str(worktree_path),
-                            cwd=worktree_path,
-                            stdout=asyncio.subprocess.PIPE,
-                            stderr=asyncio.subprocess.PIPE,
+                            worktree_path,
+                            writer,
                         )
-
-                        stdout_buf: list[str] = []
-                        stderr_buf: list[str] = []
-
-                        async def _forward(stream, name):
-                            while True:
-                                line = await stream.readline()
-                                if not line:
-                                    break
-                                text = line.decode(errors="replace")
-                                if name == "stdout":
-                                    stdout_buf.append(text)
-                                else:
-                                    stderr_buf.append(text)
-                                try:
-                                    event = {"event": "hook_output", "stream": name, "data": text}
-                                    writer.write((json.dumps(event) + "\n").encode())
-                                    await writer.drain()
-                                except Exception:
-                                    pass
-
-                        t1 = asyncio.create_task(_forward(proc.stdout, "stdout")) if proc.stdout else None
-                        t2 = asyncio.create_task(_forward(proc.stderr, "stderr")) if proc.stderr else None
-                        await proc.wait()
-                        if t1:
-                            with contextlib.suppress(Exception):
-                                await t1
-                        if t2:
-                            with contextlib.suppress(Exception):
-                                await t2
-
-                        post = {
-                            "ran": True,
-                            "exit_code": proc.returncode,
-                            "stdout": "".join(stdout_buf) if stdout_buf else None,
-                            "stderr": "".join(stderr_buf) if stderr_buf else None,
-                            "error": None,
-                        }
                 except Exception as e:
                     post = {
                         "ran": True,
@@ -1966,6 +2040,54 @@ class WtDaemon:
         except Exception as e:
             logger.error("Error creating worktree: %s", e)
             raise
+
+    async def _run_post_creation_script_streaming(
+        self,
+        script_path: str,
+        worktree_path: Path,
+        writer: asyncio.StreamWriter,
+    ) -> dict:
+        proc = await asyncio.create_subprocess_exec(
+            script_path,
+            str(worktree_path),
+            cwd=worktree_path,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout_buf: list[str] = []
+        stderr_buf: list[str] = []
+        async def _forward(stream, name):
+            while True:
+                line = await stream.readline()
+                if not line:
+                    break
+                text = line.decode(errors="replace")
+                if name == "stdout":
+                    stdout_buf.append(text)
+                else:
+                    stderr_buf.append(text)
+                try:
+                    event = {"event": "hook_output", "stream": name, "data": text}
+                    writer.write((json.dumps(event) + "\n").encode())
+                    await writer.drain()
+                except Exception:
+                    pass
+        t1 = asyncio.create_task(_forward(proc.stdout, "stdout")) if proc.stdout else None
+        t2 = asyncio.create_task(_forward(proc.stderr, "stderr")) if proc.stderr else None
+        await proc.wait()
+        if t1:
+            with contextlib.suppress(Exception):
+                await t1
+        if t2:
+            with contextlib.suppress(Exception):
+                await t2
+        return {
+            "ran": True,
+            "exit_code": proc.returncode,
+            "stdout": "".join(stdout_buf) if stdout_buf else None,
+            "stderr": "".join(stderr_buf) if stderr_buf else None,
+            "error": None,
+        }
 
     async def _handle_worktree_delete_request(
         self,
@@ -2336,7 +2458,7 @@ class WtDaemon:
 
     async def start(self) -> None:
         """Start the daemon."""
-        logger.info("Starting GitStatusd daemon for %s", self.config.main_repo_resolved)
+        logger.info("Starting wt daemon for %s", self.config.main_repo_resolved)
 
         startup_errors = []
 
@@ -2344,6 +2466,14 @@ class WtDaemon:
         config_error = self._validate_configuration()
         if config_error:
             startup_errors.append(config_error)
+
+        # Validate post-creation script existence if configured (hard fail at startup)
+        if self.config.post_creation_script:
+            script = self.config.post_creation_script
+            if not script.exists() or not script.is_file():
+                startup_errors.append(
+                    f"Post-creation script configured but not found or not a file: {script}",
+                )
 
         # Validate gitstatusd availability
         gitstatusd_path, gitstatusd_error = self._validate_gitstatusd()
@@ -2386,14 +2516,14 @@ class WtDaemon:
         # Kick off initial discovery asynchronously
         asyncio.create_task(self.discover_worktrees())
 
-        logger.info("GitStatusd daemon started, listening on %s", self.socket_path)
+        logger.info("wt daemon started, listening on %s", self.socket_path)
 
         # Start periodic discovery in the background
         self.discovery_task = asyncio.create_task(self._periodic_discovery())
 
     async def stop(self) -> None:
         """Stop the daemon."""
-        logger.info("Stopping GitStatusd daemon")
+        logger.info("Stopping wt daemon")
 
         self.running = False
 
@@ -2420,7 +2550,7 @@ class WtDaemon:
         if self.pid_file.exists():
             self.pid_file.unlink()
 
-        logger.info("GitStatusd daemon stopped")
+        logger.info("wt daemon stopped")
 
 
 async def run_daemon(config) -> None:

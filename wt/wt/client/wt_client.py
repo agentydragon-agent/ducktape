@@ -1,6 +1,6 @@
-"""GitStatusd daemon client for fast working directory status.
+"""wt daemon client for fast working directory status.
 
-This client connects to the GitStatusd multiplexing daemon via socket,
+This client connects to the wt multiplexing daemon via socket,
 providing both low-level daemon communication and high-level status operations.
 """
 
@@ -38,10 +38,11 @@ class WtClient:
     # Class-level lock to prevent multiple daemon startups
     _daemon_start_lock = asyncio.Lock()
 
-    def __init__(self, config):
+    def __init__(self, config, verbose: bool = False):
         from ..shared.configuration import Configuration
 
         self.config: Configuration = config
+        self.verbose: bool = bool(verbose)
 
         # Handshake pipe FD (used during startup); None when inactive
         self._handshake_pipe: int | None = None
@@ -87,6 +88,8 @@ class WtClient:
             logger.info("Starting wt daemon for %s", self.config.main_repo_resolved)
             logger.debug("Daemon socket: %s", self.config.daemon_socket_file)
             logger.debug("Daemon logs: %s", self.config.daemon_dir / "daemon.log")
+            if self.verbose:
+                logger.info("wt: starting daemon … (%s)", self.config.daemon_socket_file)
 
             # Start daemon with simple fork+function call pattern
             await self._start_daemon_background()
@@ -97,10 +100,24 @@ class WtClient:
 
                 # Read handshake from pipe with timeout
                 loop = asyncio.get_event_loop()
-                handshake_data = await asyncio.wait_for(
-                    loop.run_in_executor(None, self._read_handshake_from_pipe),
-                    timeout=self.config.startup_timeout.total_seconds(),
-                )
+                # Emit immediate progress if verbose
+                if self.verbose:
+                    logger.info("wt: waiting for daemon handshake…")
+                # Start a single background reader; don't create multiple competing readers
+                reader_future = loop.run_in_executor(None, self._read_handshake_from_pipe)
+                # Bound the time we wait before surfacing any progress
+                first_wait = min(1.0, self.config.startup_timeout.total_seconds())
+                try:
+                    handshake_data = await asyncio.wait_for(reader_future, timeout=first_wait)
+                except asyncio.TimeoutError:
+                    if self.verbose:
+                        logger.info("wt: daemon is starting… waiting for ready signal")
+                    # Keep waiting up to the remaining timeout
+                    remaining = max(
+                        0.0,
+                        self.config.startup_timeout.total_seconds() - first_wait,
+                    )
+                    handshake_data = await asyncio.wait_for(reader_future, timeout=remaining if remaining > 0 else 0.1)
 
                 # Check protocol version
                 protocol_version = handshake_data.get("protocol_version", 0)
@@ -111,6 +128,8 @@ class WtClient:
 
                 if handshake_data.get("success"):
                     pid = handshake_data.get("pid")
+                    if self.verbose:
+                        logger.info("wt daemon: startup handshake ok (pid %s)", pid)
                     logger.info("Daemon startup handshake received from PID %d", pid)
 
                     # Verify daemon is actually running and accessible
@@ -133,19 +152,16 @@ class WtClient:
                     "Daemon startup timed out - no handshake received within %.1f seconds",
                     timeout_secs,
                 )
+                if self.verbose:
+                    logger.info("wt daemon: startup timed out after %.1fs", timeout_secs)
                 raise RuntimeError(
                     f"Daemon startup timed out after {timeout_secs:.1f} seconds",
                 )
             except json.JSONDecodeError as e:
                 raise RuntimeError(f"Daemon handshake contains invalid JSON: {e}")
             finally:
-                # Clean up pipe
-                if self._handshake_pipe is not None:
-                    try:
-                        os.close(self._handshake_pipe)
-                    except OSError:
-                        pass
-                    self._handshake_pipe = None
+                # Mark pipe as inactive (reader thread closes underlying FD)
+                self._handshake_pipe = None
 
     async def _start_daemon_background(self) -> None:
         """Start daemon in background using proper double-fork daemonization."""
@@ -417,11 +433,29 @@ class WtClient:
                     raise RuntimeError(error_response.error.message)
                 success_response = Response.model_validate(response_json)
                 result = WorktreeCreateResult.model_validate(success_response.result)
-                if result.post_hook and result.post_hook.exit_code and result.post_hook.exit_code != 0:
-                    out = (result.post_hook.stdout or "") + ("\n" if result.post_hook.stdout else "") + (result.post_hook.stderr or "")
-                    if out.strip():
-                        print(out)
-                    raise RuntimeError(f"Post-creation script failed with exit code {result.post_hook.exit_code}")
+                if result.post_hook:
+                    # Non-zero exit code => fail
+                    if result.post_hook.exit_code and result.post_hook.exit_code != 0:
+                        out = (result.post_hook.stdout or "") + ("\n" if result.post_hook.stdout else "") + (result.post_hook.stderr or "")
+                        if out.strip():
+                            print(out)
+                        raise RuntimeError(
+                            f"Post-creation script failed with exit code {result.post_hook.exit_code}",
+                        )
+                    # Execution error surfaced by server (e.g. script disappeared)
+                    if result.post_hook.error:
+                        out = (result.post_hook.stdout or "") + ("\n" if result.post_hook.stdout else "") + (result.post_hook.stderr or "")
+                        if out.strip():
+                            print(out)
+                        raise RuntimeError(
+                            f"Post-creation script error: {result.post_hook.error}",
+                        )
+                    # Ran flag false (e.g. not_found/not_file in legacy path) => fail
+                    if not result.post_hook.ran:
+                        out = (result.post_hook.stdout or "") + ("\n" if result.post_hook.stdout else "") + (result.post_hook.stderr or "")
+                        if out.strip():
+                            print(out)
+                        raise RuntimeError("Post-creation script did not run")
                 return result
             except Exception as e:
                 logger.error("Failed to parse daemon worktree_create response: %s", e)
