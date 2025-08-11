@@ -21,9 +21,8 @@ from ..test_utils import run_cli_command
 # kill_daemon_and_verify function now provided by conftest.py
 
 
-@pytest.mark.asyncio
 @pytest.mark.timeout(10)
-async def test_real_program_workflow(real_temp_repo, real_env):
+def test_real_program_workflow(real_temp_repo, real_env):
     """
     Test full workflow: git repo -> make worktrees 1,2 -> jump to worktree -> rm other -> status
     This tests the ACTUAL UNMODIFIED UNMOCKED program.
@@ -91,8 +90,7 @@ async def test_real_program_workflow(real_temp_repo, real_env):
         kill_daemon_and_verify(real_temp_repo)
 
 
-@pytest.mark.asyncio
-async def test_real_daemon_startup_and_communication(real_temp_repo, real_env):
+def test_real_daemon_startup_and_communication(real_temp_repo, real_env):
     """Test that daemon actually starts and responds to real requests."""
 
     try:

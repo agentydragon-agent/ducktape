@@ -54,9 +54,9 @@ def run_shell_script(
     else:
         env = env.copy()
     # Ensure local wt package importable for python -m wt.cli
-    from pathlib import Path as _P
+    from pathlib import Path
 
-    project_root = str(_P(__file__).resolve().parents[2])
+    project_root = str(Path(__file__).resolve().parents[2])
     env["PYTHONPATH"] = f"{project_root}:{env.get('PYTHONPATH', '')}"
 
     # Create script with wt function setup using builtin installer

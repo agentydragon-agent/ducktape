@@ -48,10 +48,10 @@ from pathlib import Path
 import pygit2
 import pytest
 
-pytestmark = pytest.mark.timeout(10)
-
 from ..conftest import create_integration_test_config_file, kill_daemon_and_verify
 from ..test_utils import run_cli_command
+
+pytestmark = pytest.mark.timeout(10)
 
 # real_temp_repo fixture now provided by conftest.py
 
@@ -69,10 +69,7 @@ def real_env_with_existing_worktrees(real_temp_repo):
     env = os.environ.copy()
     env["WT_DIR"] = str((real_temp_repo / ".wt").resolve())
     # Ensure python -m wt.cli is importable
-    from pathlib import Path as _P
-
-    project_root = str(_P(__file__).resolve().parents[2])
-    env["PYTHONPATH"] = f"{project_root}:{env.get('PYTHONPATH', '')}"
+    # Now handled by session autouse fixture in conftest.py
 
     repo = pygit2.Repository(str(real_temp_repo))
     signature = pygit2.Signature("Test User", "test@example.com")

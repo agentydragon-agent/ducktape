@@ -1,17 +1,10 @@
 """Direct worktree utility functions for CLI handlers."""
 
-import asyncio
 import shlex
-import uuid
 from pathlib import Path
 
 from wt.shared.error_handling import validate_worktree_name
-from wt.shared.protocol import (
-    Request,
-    Response,
-    WorktreeResolvePathParams,
-    WorktreeResolvePathResult,
-)
+from wt.shared.protocol import WorktreeResolvePathParams
 
 from .shell_utils import emit_command
 from .wt_client import WtClient
@@ -70,17 +63,8 @@ async def resolve_path(config, worktree_name: str | None, path_spec: str) -> Pat
         path_spec=path_spec,
         current_path=str(Path.cwd()),
     )
-    req = Request(method="worktree_resolve_path", params=params.model_dump(), id=uuid.uuid4())
-    reader, writer = await asyncio.open_unix_connection(config.daemon_socket_file)
-    writer.write(req.model_dump_json().encode())
-    writer.write(b"\n")
-    await writer.drain()
-    resp = await reader.readline()
-    writer.close()
-    await writer.wait_closed()
-    res = Response.model_validate_json(resp.decode())
-    out = WorktreeResolvePathResult.model_validate(res.result)
-    return Path(out.absolute_path)
+    absolute = await client.resolve_path(params)
+    return Path(absolute)
 
 
 def emit_cd_command(dest_repo: Path, config) -> None:

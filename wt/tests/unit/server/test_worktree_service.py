@@ -8,7 +8,7 @@ import pytest
 class TestWorktreeService:
     """Test the WorktreeService with real git repositories."""
 
-    @pytest.fixture(scope="function")
+    @pytest.fixture
     def service(self, repo_factory, config_factory):
         repo_path = repo_factory.create_repo()
         config = config_factory(repo_path).minimal(

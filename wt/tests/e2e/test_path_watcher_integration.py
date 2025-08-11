@@ -57,10 +57,7 @@ github_repo: "test/test"
     env = os.environ.copy()
     env["WT_DIR"] = str(config_dir)
     # Ensure -m wt.cli importable
-    from pathlib import Path as _P
-
-    project_root = str(_P(__file__).resolve().parents[2])
-    env["PYTHONPATH"] = f"{project_root}:{env.get('PYTHONPATH', '')}"
+    # Now handled by session autouse fixture in conftest.py
 
     return repo_path, env, temp_dir
 

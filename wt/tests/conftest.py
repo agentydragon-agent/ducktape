@@ -18,6 +18,15 @@ from .config_factory import ConfigFactory
 from .mock_factory import MockFactory
 from .repo_factory import GitRepoFactory
 
+
+@pytest.fixture(scope="session", autouse=True)
+def _project_root_on_pythonpath():
+    from pathlib import Path
+
+    project_root = str(Path(__file__).resolve().parents[1])
+    existing = os.environ.get("PYTHONPATH", "")
+    os.environ["PYTHONPATH"] = f"{project_root}:{existing}" if existing else project_root
+
 # =============================================================================
 # Factory Fixtures - Modern pytest pattern for test setup
 #
@@ -150,23 +159,6 @@ def mock_process_check():
         yield mock
 
 
-@pytest.fixture
-def set_cwd():
-    class CwdManager:
-        def __init__(self):
-            self.original_cwd = os.getcwd()
-
-        def __call__(self, path: Path):
-            os.chdir(str(path))
-            return self
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *args):
-            os.chdir(self.original_cwd)
-
-    return CwdManager()
 
 
 def assert_worktree_exists(worktree_path: Path, expected_branch: str | None = None):
@@ -214,9 +206,9 @@ def kill_daemon_and_verify(repo_path: Path, timeout: float = 5.0):
     env = os.environ.copy()
     env["WT_DIR"] = str((repo_path / ".wt").resolve())
     # Ensure -m wt.cli works without install
-    from pathlib import Path as _P
+    from pathlib import Path
 
-    project_root = str(_P(__file__).resolve().parents[1])
+    project_root = str(Path(__file__).resolve().parents[1])
     env["PYTHONPATH"] = f"{project_root}:{env.get('PYTHONPATH', '')}"
 
     # Run kill-daemon command
@@ -419,7 +411,7 @@ def build_test_configuration(
     wt_dir.mkdir(parents=True, exist_ok=True)
     config_path = wt_dir / "config.yaml"
 
-    with open(config_path, "w") as f:
+    with config_path.open("w") as f:
         yaml.dump(config_file.model_dump(), f)
 
     return Configuration.resolve(wt_dir)
