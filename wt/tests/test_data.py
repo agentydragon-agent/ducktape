@@ -1,5 +1,7 @@
 """Centralized test data to reduce duplication across test fixtures."""
 
+from typing import ClassVar
+
 import pygit2
 
 
@@ -72,29 +74,31 @@ class TestData:
         CONFIG_FILE = "config.yaml"
 
 
+
+
 class ConfigPresets:
     """Configuration presets for different test scenarios."""
 
-    MINIMAL = {
+    MINIMAL: ClassVar[dict] = {
         "github_enabled": False,
         "log_operations": False,
         "cow_method": "copy",
     }
 
-    INTEGRATION = {
+    INTEGRATION: ClassVar[dict] = {
         "github_enabled": True,
         "log_operations": True,
         "cow_method": "copy",
     }
 
-    E2E = {
+    E2E: ClassVar[dict] = {
         "github_enabled": False,
         "log_operations": True,
         "cache_expiration": 3600,
         "cache_refresh_age": 300,
     }
 
-    GITHUB_ENABLED = {
+    GITHUB_ENABLED: ClassVar[dict] = {
         "github_enabled": True,
         "github_repo": "test-user/test-repo",
     }

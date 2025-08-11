@@ -2,15 +2,16 @@
 
 import os
 import time
+from pathlib import Path
 
 import pytest
 
 from wt.shared.git_utils import git_run
 
-pytestmark = pytest.mark.timeout(10)
-
 from ..conftest import kill_daemon_and_verify
 from ..test_utils import run_cli_command
+
+pytestmark = pytest.mark.timeout(10)
 
 # real_temp_repo fixture now provided by conftest.py
 
@@ -99,8 +100,6 @@ def test_real_daemon_startup_and_communication(real_temp_repo, real_env):
         assert result.returncode == 0
 
         # Check that daemon files were created
-        from pathlib import Path
-
         daemon_dir = Path(real_env["WT_DIR"]).resolve()
         assert daemon_dir.exists(), "Daemon directory not created"
 

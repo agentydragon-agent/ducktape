@@ -19,6 +19,7 @@ import os
 import subprocess
 import tempfile
 from pathlib import Path
+from typing import Optional
 
 import pytest
 
@@ -34,7 +35,7 @@ def create_shell_script(wt_args: list[str]) -> str:
 def run_shell_script(
     script_content: str,
     cwd: str,
-    env: dict = None,
+    env: Optional[dict] = None,
 ) -> subprocess.CompletedProcess:
     """Execute a shell script with wt function setup and return the result."""
     # Explicit requirement checks
@@ -49,15 +50,8 @@ def run_shell_script(
     )
 
     # Use provided environment or create a new one
-    if env is None:
-        env = os.environ.copy()
-    else:
-        env = env.copy()
-    # Ensure local wt package importable for python -m wt.cli
-    from pathlib import Path
-
-    project_root = str(Path(__file__).resolve().parents[2])
-    env["PYTHONPATH"] = f"{project_root}:{env.get('PYTHONPATH', '')}"
+    env = os.environ.copy() if env is None else env.copy()
+    # PYTHONPATH handled by session autouse fixture
 
     # Create script with wt function setup using builtin installer
     import contextlib
@@ -82,11 +76,8 @@ def run_shell_script(
         f.write(full_script)
         f.flush()  # Ensure content is written before execution
 
-        # Make script executable
-        os.chmod(f.name, 0o755)
-
-        # Run the script and capture output
-        result = subprocess.run(
+        Path(f.name).chmod(0o755)
+        return subprocess.run(
             ["/bin/bash", f.name],
             capture_output=True,
             text=True,
@@ -94,7 +85,6 @@ def run_shell_script(
             env=env,
             check=False,
         )
-        return result
 
 
 def run_wt_command(main_repo: Path, wt_args: list[str]) -> subprocess.CompletedProcess:
@@ -206,7 +196,8 @@ echo "$create_exit:$nav_exit:$pwd_before:$pwd_after"
             )
 
             worktree_path = real_temp_repo / "worktrees" / "teleport-test"
-            assert worktree_path.exists() and worktree_path.is_dir()
+            assert worktree_path.exists()
+            assert worktree_path.is_dir()
 
     def test_wt_main_changes_directory(self, real_temp_repo, real_env):
         from contextlib import contextmanager
@@ -222,7 +213,7 @@ echo "$create_exit:$nav_exit:$pwd_before:$pwd_after"
                 kill_daemon_and_verify(real_temp_repo)
 
         def parse_output(result):
-            lines = [l for l in result.stdout.strip().split("\n") if l]
+            lines = [line for line in result.stdout.strip().split("\n") if line]
             s = lines[-1]
             parts = s.split(":", 4)
             if len(parts) != 5:
