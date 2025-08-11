@@ -234,7 +234,7 @@ async def _async_sh_main(
     elif cmd == "path":
         worktree_name = remaining_args[0] if remaining_args else None
         subpath = remaining_args[1] if len(remaining_args) > 1 else None
-        handle_path_command(config, worktree_name, subpath)
+        await handle_path_command(config, worktree_name, subpath)
 
     elif cmd == "status":
         if remaining_args:

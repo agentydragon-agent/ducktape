@@ -7,15 +7,14 @@ import time
 from pathlib import Path
 
 import click
+import psutil
 
 from ..shared.constants import MAIN_WORKTREE_DISPLAY_NAME, RESERVED_NAMES
+from ..shared.protocol import TeleportCdThere
 from .worktree_utils import (
-    create_worktree,
     emit_cd_command,
     get_current_worktree_info,
     remove_worktree,
-    require_worktree_exists,
-    resolve_path,
 )
 from .wt_client import WtClient
 
@@ -96,8 +95,8 @@ async def handle_create_worktree(config, name: str, from_default: bool = True) -
     """Handle worktree creation."""
     try:
         daemon_client = WtClient(config)
-        new_path = await create_worktree(daemon_client, name, from_default=from_default)
-        emit_cd_command(new_path)
+        new_path = await daemon_client.create_worktree_convenience(name, from_default=from_default)
+        emit_cd_command(new_path, config)
     except RuntimeError as e:
         click.echo(str(e), err=True)
         sys.exit(1)
@@ -139,66 +138,50 @@ async def handle_copy_worktree(config, source: str, dest: str | None = None) -> 
                 sys.exit(1)
 
             daemon_client = WtClient(config)
-            new_path = await create_worktree(
-                daemon_client,
+            new_path = await daemon_client.create_worktree_convenience(
                 new_name,
-                source_worktree=current_wt,
+                source_name=current_wt.name if hasattr(current_wt, 'name') else new_name,
                 from_default=False,
             )
-            emit_cd_command(new_path)
+            emit_cd_command(new_path, config)
         else:
             # wt cp <x> <y> - copy worktree x to new worktree y
             source_name, target_name = source, dest
 
             daemon_client = WtClient(config)
-            source_path = await require_worktree_exists(daemon_client, source_name)
-            new_path = await create_worktree(
-                daemon_client,
+            _ = await daemon_client.require_worktree_exists(source_name)
+            new_path = await daemon_client.create_worktree_convenience(
                 target_name,
-                source_worktree=source_path,
+                source_name=source_name,
                 from_default=False,
             )
-            emit_cd_command(new_path)
+            emit_cd_command(new_path, config)
 
     except RuntimeError as e:
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
 
 
-def handle_path_command(
+async def handle_path_command(
     config,
     worktree_name: str | None = None,
     subpath: str | None = None,
 ) -> None:
-    """Handle path resolution command."""
-    try:
-        if worktree_name is None and subpath is None:
-            # wt path - current worktree root
-            current_wt, _ = get_current_worktree_info(config)
-            if current_wt:
-                click.echo(str(current_wt))
-            else:
-                click.echo("Error: Not in a worktree")
-                sys.exit(1)
-        elif subpath is None:
-            # Single argument - could be worktree name or path spec
-            arg = worktree_name
-            if arg and arg.startswith(("/", "./")):
-                # wt path /foo or wt path ./foo - path in current worktree
-                path = resolve_path(config, None, arg or "")
-                click.echo(str(path))
-            else:
-                # wt path <worktree> - root of specified worktree
-                wt_path = require_worktree_exists(config, arg or "")
-                click.echo(str(wt_path))
+    client = WtClient(config)
+    if worktree_name is None and subpath is None:
+        p = await client.resolve_path_simple(None, "/")
+        click.echo(str(p))
+    elif subpath is None:
+        arg = worktree_name or ""
+        if arg.startswith(("/", "./")):
+            p = await client.resolve_path_simple(None, arg)
+            click.echo(str(p))
         else:
-            # wt path <worktree> /foo or wt path <worktree> ./foo
-            path = resolve_path(config, worktree_name, subpath)
-            click.echo(str(path))
-
-    except RuntimeError as e:
-        click.echo(f"Error: {e}", err=True)
-        sys.exit(1)
+            p = await client.require_worktree_exists(arg)
+            click.echo(str(p))
+    else:
+        p = await client.resolve_path_simple(worktree_name, subpath)
+        click.echo(str(p))
 
 
 async def handle_navigate_to_worktree(config, worktree_name: str) -> None:
@@ -208,8 +191,27 @@ async def handle_navigate_to_worktree(config, worktree_name: str) -> None:
         sys.exit(1)
 
     daemon_client = WtClient(config)
-    cd_path = await daemon_client.teleport_target(worktree_name, str(Path.cwd()))
-    emit_cd_command(Path(cd_path))
+
+    info = await daemon_client.get_worktree_by_name(worktree_name)
+
+    if info.exists and info.absolute_path:
+        emit_cd_command(Path(info.absolute_path), config)
+        return
+
+    tt = await daemon_client.teleport_target(worktree_name, str(Path.cwd()))
+    if isinstance(tt, TeleportCdThere):
+        emit_cd_command(Path(tt.cd_path), config)
+        return
+
+    if click.confirm(f"Worktree '{worktree_name}' does not exist. Create it?", default=False):
+        try:
+            new_path = await daemon_client.create_worktree_convenience(worktree_name, from_default=True)
+            emit_cd_command(new_path, config)
+        except RuntimeError as e:
+            click.echo(f"Error: {e}", err=True)
+            sys.exit(1)
+    else:
+        click.echo("Cancelled.")
 
 
 async def handle_kill_daemon(config) -> None:

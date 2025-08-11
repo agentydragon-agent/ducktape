@@ -268,7 +268,7 @@ class TestRealGitOperations:
         repo.create_commit("HEAD", sig, sig, "Seed content", tree, [parent])
 
         factory = config_factory(real_temp_repo)
-        config = factory.integration()
+        config = factory.integration(hydrate_worktrees=False)
         env = os.environ.copy()
         env["WT_DIR"] = str(config.wt_dir)
 

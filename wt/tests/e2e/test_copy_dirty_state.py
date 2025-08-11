@@ -3,8 +3,8 @@ from pathlib import Path
 
 import pytest
 
-from .conftest import kill_daemon_and_verify
-from .test_utils import run_cli_sh_command
+from ..conftest import kill_daemon_and_verify
+from ..test_utils import run_cli_sh_command
 
 
 

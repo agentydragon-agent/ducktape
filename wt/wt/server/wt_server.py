@@ -38,6 +38,8 @@ from ..shared.protocol import (
     StatusParams,
     StatusResponse,
     StatusResult,
+    TeleportCdThere,
+    TeleportDoesNotExist,
     WorktreeCreateParams,
     WorktreeCreateResult,
     WorktreeDeleteParams,
@@ -50,7 +52,6 @@ from ..shared.protocol import (
     WorktreeResolvePathParams,
     WorktreeResolvePathResult,
     WorktreeTeleportTargetParams,
-    WorktreeTeleportTargetResult,
     create_error_response,
     parse_request,
 )
@@ -74,7 +75,7 @@ def write_startup_handshake(
     redirect_after: bool = True,
     **extra_data,
 ):
-    """Write startup handshake/progress JSON to stdout; optionally redirect stdout to log.
+    """Write startup handshake/progress JSON to dedicated pipe FD if provided.
 
     Args:
         success: Whether startup was successful
@@ -83,6 +84,14 @@ def write_startup_handshake(
         **extra_data: Additional data to include in handshake
     """
     import sys
+
+    fd_env = os.environ.get("WT_HANDSHAKE_FD")
+    handshake_fd = None
+    if fd_env and fd_env.isdigit():
+        try:
+            handshake_fd = int(fd_env)
+        except Exception:
+            handshake_fd = None
 
     handshake_data = {
         "success": success,
@@ -95,7 +104,14 @@ def write_startup_handshake(
         handshake_data["error"] = error_message
 
     try:
-        print(json.dumps(handshake_data), flush=True)
+        payload = (json.dumps(handshake_data) + "\n").encode()
+        if handshake_fd is not None:
+            try:
+                os.write(handshake_fd, payload)
+            except Exception as e:
+                print(f"Failed to write handshake to fd {handshake_fd}: {e}", file=sys.stderr)
+        else:
+            print(payload.decode().rstrip(), flush=True)
 
         if redirect_after:
             try:
@@ -2392,9 +2408,7 @@ class WtDaemon:
         request: Request,
         start_time: float,
     ) -> Response:
-        """Handle worktree_teleport_target JSON-RPC method."""
         try:
-            # Parse parameters
             params = WorktreeTeleportTargetParams.model_validate(request.params)
             current_path = Path(params.current_path)
 
@@ -2407,7 +2421,8 @@ class WtDaemon:
                 worktree_infos,
             )
             if not target_worktree:
-                raise ValueError(f"Target worktree '{params.target_name}' not found")
+                result = TeleportDoesNotExist(type="does_not_exist", name=params.target_name)
+                return self._create_success_response(result, request.id)
 
             # Find current worktree info
             current_worktree, relative_path = self._find_current_worktree_info(
@@ -2418,7 +2433,7 @@ class WtDaemon:
             # Compute target path
             cd_path = self._compute_teleport_target(target_worktree.path, relative_path)
 
-            result = WorktreeTeleportTargetResult(cd_path=cd_path)
+            result = TeleportCdThere(type="cd_there", cd_path=cd_path)
             return self._create_success_response(result, request.id)
 
         except Exception as e:
@@ -2428,6 +2443,15 @@ class WtDaemon:
     async def start(self) -> None:
         """Start the daemon."""
         logger.info("Starting wt daemon for %s", self.config.main_repo_resolved)
+
+        # Emit initial progress handshake to ensure the client always sees at least one line
+        write_startup_handshake(
+            success=True,
+            protocol_version=1,
+            ready=False,
+            phase="starting",
+            redirect_after=False,
+        )
 
         startup_errors = []
 

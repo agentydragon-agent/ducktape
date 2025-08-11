@@ -110,55 +110,32 @@ async def create_worktree(
     daemon_client = WtClient(config)
 
     if source_worktree:
-        # Copy from existing worktree - identify on server to get WorktreeID
-        try:
-            identify_result = await daemon_client.identify_worktree(
-                str(source_worktree),
-            )
-            result = await daemon_client.create_worktree(
-                name,
-                source_wtid=identify_result.wtid,
-            )
-            return Path(result.absolute_path)
-
-        except Exception as e:
-            raise RuntimeError(f"Failed to copy worktree: {e}") from e
-    else:
-        # Create from default branch
-        try:
-            result = await daemon_client.create_worktree(
-                name,
-            )
-            return Path(result.absolute_path)
-
-        except Exception as e:
-            raise RuntimeError(f"Failed to create worktree: {e}") from e
+        identify_result = await daemon_client.identify_worktree(str(source_worktree))
+        result = await daemon_client.create_worktree(name, source_wtid=identify_result.wtid)
+        return Path(result.absolute_path)
+    result = await daemon_client.create_worktree(name)
+    return Path(result.absolute_path)
 
 
 async def remove_worktree(config, name: str, force: bool = False) -> None:
     """Remove a worktree via RPC."""
-    # Create daemon client
     daemon_client = WtClient(config)
 
-    try:
-        # Get WorktreeID from server by listing all worktrees and finding the match
-        worktree_list = await daemon_client.list_worktrees()
+    # Get WorktreeID from server by listing all worktrees and finding the match
+    worktree_list = await daemon_client.list_worktrees()
 
-        # Find the worktree by name
-        target_wtid = None
-        for worktree in worktree_list.worktrees:
-            if worktree.name == name:
-                target_wtid = worktree.wtid
-                break
+    # Find the worktree by name
+    target_wtid = None
+    for worktree in worktree_list.worktrees:
+        if worktree.name == name:
+            target_wtid = worktree.wtid
+            break
 
-        if target_wtid is None:
-            raise RuntimeError(f"Worktree '{name}' not found")
+    if target_wtid is None:
+        raise RuntimeError(f"Worktree '{name}' not found")
 
-        # Delete via RPC using server-provided WorktreeID
-        result = await daemon_client.delete_worktree(target_wtid)
+    # Delete via RPC using server-provided WorktreeID
+    result = await daemon_client.delete_worktree(target_wtid)
 
-        if not result.success:
-            raise RuntimeError(f"Failed to remove worktree '{name}'")
-
-    except Exception as e:
-        raise RuntimeError(f"Failed to remove worktree: {e}") from e
+    if not result.success:
+        raise RuntimeError(f"Failed to remove worktree '{name}'")

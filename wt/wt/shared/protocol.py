@@ -11,7 +11,7 @@ import uuid
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, NewType
+from typing import Annotated, Any, Literal, NewType
 
 from pydantic import BaseModel, Field
 
@@ -64,8 +64,6 @@ class Request(BaseModel):
 
 
 class Response(BaseModel):
-    """JSON-RPC 2.0 successful response."""
-
     model_config = {"extra": "forbid"}
 
     jsonrpc: str = "2.0"
@@ -78,7 +76,7 @@ class Response(BaseModel):
         | WorktreeIdentifyResult
         | WorktreeGetByNameResult
         | WorktreeResolvePathResult
-        | WorktreeTeleportTargetResult
+        | TeleportResult
         | str
     ) = Field(..., description="Result data")
     id: uuid.UUID = Field(..., description="Request ID from original request")
@@ -417,13 +415,17 @@ class WorktreeResolvePathResult(BaseModel):
     absolute_path: str = Field(..., description="Resolved absolute filesystem path")
 
 
-class WorktreeTeleportTargetResult(BaseModel):
-    """Result for teleport target computation."""
+class TeleportCdThere(BaseModel):
+    type: Literal["cd_there"]
+    cd_path: str
 
-    cd_path: str = Field(
-        ...,
-        description="Path to cd to (preserves relative position if possible)",
-    )
+
+class TeleportDoesNotExist(BaseModel):
+    type: Literal["does_not_exist"]
+    name: str = Field(..., description="Requested worktree name that was not found on server")
+
+
+TeleportResult = Annotated[TeleportCdThere | TeleportDoesNotExist, Field(discriminator="type")]
 
 
 class ProgressUpdate(BaseModel):
@@ -511,6 +513,6 @@ SUPPORTED_METHODS = {
     "worktree_resolve_path": (WorktreeResolvePathParams, WorktreeResolvePathResult),
     "worktree_teleport_target": (
         WorktreeTeleportTargetParams,
-        WorktreeTeleportTargetResult,
+        TeleportResult,
     ),
 }

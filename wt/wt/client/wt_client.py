@@ -13,8 +13,10 @@ import uuid
 from pathlib import Path
 
 import psutil
+from pydantic import TypeAdapter
 
 from ..shared.configuration import Configuration
+from ..shared.error_handling import validate_worktree_name
 from ..shared.protocol import (
     ErrorResponse,
     Request,
@@ -22,6 +24,8 @@ from ..shared.protocol import (
     StartupMessage,
     StatusParams,
     StatusResponse,
+    TeleportCdThere,
+    TeleportDoesNotExist,
     WorktreeCreateParams,
     WorktreeCreateResult,
     WorktreeDeleteParams,
@@ -35,14 +39,47 @@ from ..shared.protocol import (
     WorktreeResolvePathParams,
     WorktreeResolvePathResult,
     WorktreeTeleportTargetParams,
-    WorktreeTeleportTargetResult,
 )
+from .shell_utils import emit_command
 
 logger = logging.getLogger(__name__)
+
+    
 
 
 class WtClient:
     """JSON-RPC client for communicating with the worktree management daemon."""
+
+    def emit_cd_command(self, dest_repo: Path, config) -> None:
+        current_wt, rel_path = self._get_current_worktree_info(config)
+        if rel_path and current_wt:
+            target_subpath = dest_repo / rel_path
+            dest_path = target_subpath if target_subpath.exists() and target_subpath.is_dir() else dest_repo
+        else:
+            dest_path = dest_repo
+        emit_command(f"cd {shlex.quote(str(dest_path))}")
+
+    def _get_current_worktree_info(self, config) -> tuple[Path | None, str | None]:
+        cwd = Path.cwd()
+        worktrees_dir = config.worktrees_dir_resolved
+        if cwd.is_relative_to(worktrees_dir):
+            for parent in [cwd, *list(cwd.parents)]:
+                if parent.parent == worktrees_dir:
+                    try:
+                        rel_path = cwd.relative_to(parent)
+                        return parent, str(rel_path) if str(rel_path) != "." else None
+                    except ValueError:
+                        return parent, None
+        main_repo = config.main_repo_resolved
+        if cwd.is_relative_to(main_repo):
+            if cwd == main_repo:
+                return main_repo, None
+            try:
+                rel_path = cwd.relative_to(main_repo)
+                return main_repo, str(rel_path)
+            except ValueError:
+                pass
+        return None, None
 
     # Class-level lock to prevent multiple daemon startups
     _daemon_start_lock = asyncio.Lock()
@@ -162,6 +199,24 @@ class WtClient:
                 )
             except json.JSONDecodeError as e:
                 raise RuntimeError(f"Daemon handshake contains invalid JSON: {e}")
+            except Exception as e:
+                diag = []
+                try:
+                    daemon_log = self.config.daemon_dir / "daemon.log"
+                    diag.append(f"daemon.log: {daemon_log}")
+                    if daemon_log.exists():
+                        tail = daemon_log.read_text(errors="ignore").splitlines()[-50:]
+                        diag.append("daemon.log (tail):\n" + "\n".join(tail))
+                except Exception:
+                    pass
+                try:
+                    diag.append(f"pid file exists: {self.config.daemon_pid_file.exists()}")
+                    if self.config.daemon_pid_file.exists():
+                        diag.append(f"pid file contents: {self.config.daemon_pid_file.read_text().strip()}")
+                    diag.append(f"socket exists: {self.config.daemon_socket_file.exists()}")
+                except Exception:
+                    pass
+                raise RuntimeError("Daemon startup failed.\n" + "\n".join(diag)) from e
             finally:
                 # Mark pipe as inactive (reader thread closes underlying FD)
                 self._handshake_pipe = None
@@ -169,8 +224,12 @@ class WtClient:
     async def _start_daemon_background(self) -> None:
         """Start daemon in background using proper double-fork daemonization."""
 
-        # Create pipe for handshake communication
+        # Create pipe for handshake communication (dedicated FD, not stdout)
         handshake_read, handshake_write = os.pipe()
+        try:
+            os.set_inheritable(handshake_write, True)
+        except Exception:
+            pass
 
         # First fork - create intermediate process
         pid = os.fork()
@@ -196,22 +255,27 @@ class WtClient:
                         # Close read end of pipe in daemon process
                         os.close(handshake_read)
 
-                        # Use write end of pipe as stdout for handshake
-                        os.dup2(handshake_write, 1)  # stdout
-                        os.close(handshake_write)
-
-                        # Redirect stderr to log
+                        # Redirect stdout and stderr to daemon log; keep handshake_write inherited
                         log_file = self.config.daemon_dir / "daemon.log"
                         log_fd = os.open(
                             log_file,
                             os.O_WRONLY | os.O_CREAT | os.O_APPEND,
                             0o644,
                         )
-                        os.dup2(log_fd, 2)  # stderr to log
+                        os.dup2(log_fd, 1)
+                        os.dup2(log_fd, 2)
                         os.close(log_fd)
 
-                        # Exec daemon module directly (preserve environment)
-                        # Daemon will write handshake to stdout (which is the pipe)
+                        # Exec daemon module; pass handshake FD via env
+                        env = os.environ.copy()
+                        env["WT_HANDSHAKE_FD"] = str(handshake_write)
+                        try:
+                            from pathlib import Path as _P
+                            project_root = str(_P(__file__).resolve().parents[2])
+                            existing = env.get("PYTHONPATH", "")
+                            env["PYTHONPATH"] = f"{project_root}:{existing}" if existing else project_root
+                        except Exception:
+                            pass
                         os.execve(
                             sys.executable,
                             [
@@ -219,7 +283,7 @@ class WtClient:
                                 "-m",
                                 "wt.server.wt_server",
                             ],
-                            os.environ.copy(),
+                            env,
                         )
                     except Exception as e:
                         # This will go to daemon.log now
@@ -260,10 +324,11 @@ class WtClient:
             while True:
                 line = pipe_file.readline()
                 if not line:
-                    # EOF before ready - treat last_obj if it indicates failure, else error
-                    if last_obj and not last_obj.get("success", True):
+                    if last_obj:
                         return last_obj
                     raise RuntimeError("Daemon closed handshake pipe before ready")
+                if self.verbose:
+                    print(f"[daemon-handshake] {line.rstrip()}")
                 line = line.strip()
                 if not line:
                     continue
@@ -651,12 +716,79 @@ class WtClient:
     async def get_worktree_by_name(self, name: str) -> WorktreeGetByNameResult:
         return await self._rpc("worktree_get_by_name", WorktreeGetByNameParams(name=name), WorktreeGetByNameResult)
 
-    async def resolve_path(self, params: WorktreeResolvePathParams) -> str:
-        resp = await self._rpc_raw("worktree_resolve_path", params)
-        return WorktreeResolvePathResult.model_validate(resp.result).absolute_path
+    async def _rpc(self, method: str, params_model, result_model):
+        await self._start_daemon_if_needed()
+        if not self.config.daemon_socket_file.exists():
+            raise RuntimeError("Daemon socket not available")
+        req = Request(method=method, params=params_model.model_dump(), id=uuid.uuid4())
+        try:
+            reader, writer = await asyncio.open_unix_connection(self.config.daemon_socket_file)
+            writer.write(req.model_dump_json().encode()); writer.write(b"\n"); await writer.drain()
+            data = await reader.readline(); text = data.decode().strip()
+            writer.close(); await writer.wait_closed()
+            obj = json.loads(text)
+            if "error" in obj:
+                err = ErrorResponse.model_validate(obj)
+                raise RuntimeError(err.error.message)
+            resp = Response.model_validate(obj)
+            adapter = TypeAdapter(result_model)
+            return adapter.validate_python(resp.result)
+        except Exception as e:
+            logger.error("RPC %s failed: %s", method, e)
+            raise
 
-    async def teleport_target(self, target_name: str, current_path: str) -> str:
-        params = WorktreeTeleportTargetParams(target_name=target_name, current_path=current_path)
-        resp = await self._rpc_raw("worktree_teleport_target", params)
-        return WorktreeTeleportTargetResult.model_validate(resp.result).cd_path
+    async def resolve_path(self, params: WorktreeResolvePathParams) -> str:
+        result = await self._rpc("worktree_resolve_path", params, WorktreeResolvePathResult)
+        return result.absolute_path
+
+    async def resolve_path_simple(self, worktree_name: str | None, path_spec: str) -> Path:
+        params = WorktreeResolvePathParams(
+            worktree_name=worktree_name,
+            path_spec=path_spec,
+            current_path=str(Path.cwd()),
+        )
+        return Path(await self.resolve_path(params))
+
+    async def teleport_target(self, target_name: str, current_path: str) -> TeleportCdThere | TeleportDoesNotExist:
+        return await self._rpc(
+            "worktree_teleport_target",
+            WorktreeTeleportTargetParams(target_name=target_name, current_path=current_path),
+            TeleportResult,
+        )
+
+    async def require_worktree_exists(self, name: str) -> Path:
+        res = await self.get_worktree_by_name(name)
+        if not res.exists or not res.absolute_path:
+            raise RuntimeError(f"Worktree '{name}' not found")
+        return Path(res.absolute_path)
+
+    async def create_worktree_convenience(
+        self,
+        name: str,
+        *,
+        source_name: str | None = None,
+        from_default: bool = True,
+    ) -> Path:
+        validate_worktree_name(name)
+        if source_name is not None:
+            src = await self.get_worktree_by_name(source_name)
+            if not src.exists or not src.wtid:
+                raise RuntimeError(f"Worktree '{source_name}' not found")
+            result = await self.create_worktree(name, source_wtid=src.wtid)
+            return Path(result.absolute_path)
+        if from_default:
+            result = await self.create_worktree(name)
+            return Path(result.absolute_path)
+        raise RuntimeError("Invalid create_worktree request: no source and from_default=False")
+
+    async def remove_worktree_by_name(self, name: str, *, force: bool = False) -> None:
+        listing = await self.list_worktrees()
+        target = None
+        for wt in listing.worktrees:
+            if wt.name == name:
+                target = wt.wtid
+                break
+        if target is None:
+            raise RuntimeError(f"Worktree '{name}' not found")
+        await self.delete_worktree(target)
 
