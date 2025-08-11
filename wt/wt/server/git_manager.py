@@ -113,13 +113,9 @@ class GitManager:
             untracked_files = []
 
             for file_path, flags in status.items():
-                if flags & getattr(
-                    pygit2,
-                    "GIT_STATUS_WT_MODIFIED",
-                    0,
-                ) or flags & getattr(pygit2, "GIT_STATUS_INDEX_MODIFIED", 0):
+                if (flags & pygit2.GIT_STATUS_WT_MODIFIED) or (flags & pygit2.GIT_STATUS_INDEX_MODIFIED):
                     dirty_files.append(file_path)
-                elif flags & getattr(pygit2, "GIT_STATUS_WT_NEW", 0):
+                elif flags & pygit2.GIT_STATUS_WT_NEW:
                     untracked_files.append(file_path)
 
             return dirty_files, untracked_files

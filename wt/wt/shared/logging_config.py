@@ -94,8 +94,15 @@ class OperationLogger:
 
 
 def setup_logging(config, log_level: str = "INFO") -> None:
+    levels = {
+        "CRITICAL": logging.CRITICAL,
+        "ERROR": logging.ERROR,
+        "WARNING": logging.WARNING,
+        "INFO": logging.INFO,
+        "DEBUG": logging.DEBUG,
+    }
     logging.basicConfig(
-        level=getattr(logging, log_level.upper()),
+        level=levels.get(log_level.upper(), logging.INFO),
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         handlers=[
             logging.StreamHandler(),
