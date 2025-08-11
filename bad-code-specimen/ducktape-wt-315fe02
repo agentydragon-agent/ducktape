@@ -1,0 +1,18 @@
+ducktape 315fe021dbccbbb0682f10954f45d0145c92faf4 wt/
+
+#1 there are 2 implemnetraitons of the hydration+post-creeateion script invocation,
+one in worktree service, one outside. prod path is separate and not invoked by tests.
+this is clearly stupid and wrong and extreemely poor design - parallel implementations
+of which one it test-only.
+
+#2 client only sends source_branch so daemon passes None; no dirty-state copy ever happens
+
+#3 source_worktree on the RPC violates implicit contract that worktrees are identified by
+WorktreeID, not by other types of identieiers.
+
+#4 client does teleport resolution client-side, not going to the server - again clearly
+going against design intent
+
+#5 many many many inline imports which should go to the top
+
+#6 cwd manager fixture in tests completely hand-rolled duplicate of standard pytest monkeypatch
