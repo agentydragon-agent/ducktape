@@ -1,16 +1,17 @@
 """Pure business logic for worktree operations - no I/O, no formatting."""
 
+import json
 import logging
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import pygit2
+
 from ..shared.github_models import PRInfo
 from ..shared.models import CommitInfo, ProcessInfo
 from ..shared.protocol import StatusResult
-from .git_manager import (
-    GitError,
-)
+from .git_manager import GitError
 
 if TYPE_CHECKING:
     from .git_manager import GitManager
@@ -100,6 +101,8 @@ class WorktreeService:
         config,
         name: str,
         source_worktree: Path | None = None,
+        source_branch: str | None = None,
+        run_post_creation_script: bool = True,
     ) -> Path:
         """Create a new worktree."""
         from ..shared.error_handling import ErrorContext, validate_worktree_name
@@ -116,10 +119,10 @@ class WorktreeService:
         with ErrorContext("create_worktree", name):
             branch_name = f"{config.branch_prefix}{name}"
 
-            # Use configured upstream branch as source for new branches
+            # Use provided source_branch if given; otherwise configured upstream
             self.git_manager.create_branch(
                 branch_name,
-                config.upstream_branch,
+                source_branch or config.upstream_branch,
                 config.main_repo_resolved,
             )
 
@@ -129,23 +132,28 @@ class WorktreeService:
             # Hydrate with dirty state if source provided
             if config.hydrate_worktrees:
                 if source_worktree:
+                    logger.info(
+                        f"Hydrating new worktree in {worktree_path} from {source_worktree}.",
+                    )
                     if not source_worktree.exists():
                         raise RuntimeError(
                             f"Source worktree does not exist: {source_worktree}",
                         )
                     self._hydrate_worktree(config, source_worktree, worktree_path)
                 else:
+                    logger.info(
+                        f"Hydrating new worktree in {worktree_path} by checking out {branch_name}.",
+                    )
                     repo = self.git_manager.get_repo(worktree_path)
-                    try:
-                        repo.set_head(f"refs/heads/{branch_name}")
-                    except Exception:
-                        pass
-                    repo.checkout_head(strategy=getattr(__import__('pygit2'), 'GIT_CHECKOUT_FORCE', 0))
+                    repo.set_head(f"refs/heads/{branch_name}")
+                    repo.checkout_head(strategy=pygit2.GIT_CHECKOUT_FORCE)
+            else:
+                logger.info("Not hydrating worktree.")
 
             logger.info(
                 f"Post-creation script configured: {config.post_creation_script}",
             )
-            if config.post_creation_script:
+            if run_post_creation_script and config.post_creation_script:
                 script = config.post_creation_script
                 if not script.exists() or not script.is_file():
                     raise RuntimeError(
@@ -159,7 +167,7 @@ class WorktreeService:
                     worktree_path,
                 )
             else:
-                logger.info("No post-creation script configured, skipping")
+                logger.info("Post-creation script skipped")
 
             return worktree_path
 
@@ -382,6 +390,63 @@ class WorktreeService:
                 "stderr": None,
                 "error": str(e),
             }
+
+    @staticmethod
+    async def execute_post_creation_script_streaming(
+        script_path: str,
+        worktree_path: Path,
+        writer,
+    ) -> dict:
+        import asyncio
+        import contextlib
+
+        proc = await asyncio.create_subprocess_exec(
+            script_path,
+            str(worktree_path),
+            cwd=worktree_path,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout_buf: list[str] = []
+        stderr_buf: list[str] = []
+
+        async def _forward(stream, name):
+            while True:
+                line = await stream.readline()
+                if not line:
+                    break
+                text = line.decode(errors="replace")
+                if name == "stdout":
+                    stdout_buf.append(text)
+                else:
+                    stderr_buf.append(text)
+                try:
+                    event = {"event": "hook_output", "stream": name, "data": text}
+                    writer.write((json.dumps(event) + "\n").encode())
+                    await writer.drain()
+                except Exception:
+                    pass
+
+        t1 = (
+            asyncio.create_task(_forward(proc.stdout, "stdout")) if proc.stdout else None
+        )
+        t2 = (
+            asyncio.create_task(_forward(proc.stderr, "stderr")) if proc.stderr else None
+        )
+        await proc.wait()
+        if t1:
+            with contextlib.suppress(Exception):
+                await t1
+        if t2:
+            with contextlib.suppress(Exception):
+                await t2
+        return {
+            "ran": True,
+            "exit_code": proc.returncode,
+            "stdout": "".join(stdout_buf) if stdout_buf else None,
+            "stderr": "".join(stderr_buf) if stderr_buf else None,
+            "error": None,
+        }
 
     def _get_processes_in_directory(self, directory: Path) -> list:
         """Get processes running in a directory."""

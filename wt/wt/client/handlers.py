@@ -1,5 +1,24 @@
 """Pure handler functions for CLI commands."""
 
+import os
+import signal
+import sys
+import time
+from pathlib import Path
+
+import click
+
+from ..shared.constants import MAIN_WORKTREE_DISPLAY_NAME, RESERVED_NAMES
+from .worktree_utils import (
+    create_worktree,
+    emit_cd_command,
+    get_current_worktree_info,
+    remove_worktree,
+    require_worktree_exists,
+    resolve_path,
+)
+from .wt_client import WtClient
+
 
 async def handle_status(daemon_client, formatter) -> None:
     """Handle the default status display command."""
@@ -7,13 +26,10 @@ async def handle_status(daemon_client, formatter) -> None:
     all_status = await daemon_client.get_status([])
 
     if not all_status:
-        import click
-
         click.echo("🤷 No worktrees found")
         return
 
     # Sort worktree items for display
-    from ..shared.constants import MAIN_WORKTREE_DISPLAY_NAME
 
     def sort_key(item):
         name, status = item
@@ -47,9 +63,7 @@ async def handle_status(daemon_client, formatter) -> None:
             if running < total:
                 msgs.append(f"gitstatusd {running}/{total}")
         if msgs:
-            import click as _click
-
-            _click.echo("; ".join(msgs))
+            click.echo("; ".join(msgs))
 
 
 async def handle_list_worktrees(daemon_client, formatter) -> None:
@@ -72,8 +86,6 @@ async def handle_status_single(daemon_client, formatter, worktree_name: str) -> 
             break
 
     if not status:
-        import click
-
         click.echo(f"❌ No status available for '{worktree_name}'")
         return
 
@@ -83,26 +95,16 @@ async def handle_status_single(daemon_client, formatter, worktree_name: str) -> 
 async def handle_create_worktree(config, name: str, from_default: bool = True) -> None:
     """Handle worktree creation."""
     try:
-        import click
-
-        click.echo(f"Creating worktree at: {config.worktrees_dir_resolved / name}")
-        from .worktree_utils import create_worktree, emit_cd_command
-
-        new_path = await create_worktree(config, name, from_default=from_default)
-        emit_cd_command(new_path, config)
+        daemon_client = WtClient(config)
+        new_path = await create_worktree(daemon_client, name, from_default=from_default)
+        emit_cd_command(new_path)
     except RuntimeError as e:
-        import click
-
         click.echo(str(e), err=True)
-        import sys
-
         sys.exit(1)
 
 
 async def handle_remove_worktree(config, name: str, force: bool = False) -> None:
     """Handle worktree removal."""
-    import click
-
     try:
         click.echo(f"🔍 Checking worktree '{name}' for removal...")
 
@@ -117,68 +119,46 @@ async def handle_remove_worktree(config, name: str, force: bool = False) -> None
                 return
 
         click.echo(f"🗑️  Removing worktree '{name}'...")
-        from .worktree_utils import remove_worktree
-
         await remove_worktree(config, name, force=force)
         click.echo(f"✅ Successfully removed worktree '{name}'")
 
     except RuntimeError as e:
         click.echo(f"Error: {e}", err=True)
-        import sys
-
         sys.exit(1)
 
 
 async def handle_copy_worktree(config, source: str, dest: str | None = None) -> None:
     """Handle worktree copying."""
-    import sys
-
-    import click
-
     try:
         if dest is None:
             # wt cp <x> - create new worktree from current location
             new_name = source
-            from .worktree_utils import get_current_worktree_info
-
             current_wt, _ = get_current_worktree_info(config)
             if not current_wt:
                 click.echo("Error: Not in a worktree")
                 sys.exit(1)
 
-            click.echo(
-                f"Creating worktree at: {config.worktrees_dir_resolved / new_name}",
-            )
-            from .worktree_utils import create_worktree, emit_cd_command
-
+            daemon_client = WtClient(config)
             new_path = await create_worktree(
-                config,
+                daemon_client,
                 new_name,
                 source_worktree=current_wt,
                 from_default=False,
             )
-            emit_cd_command(new_path, config)
+            emit_cd_command(new_path)
         else:
             # wt cp <x> <y> - copy worktree x to new worktree y
             source_name, target_name = source, dest
-            from .worktree_utils import (
-                create_worktree,
-                emit_cd_command,
-                require_worktree_exists,
-            )
 
-            source_path = require_worktree_exists(config, source_name)
-
-            click.echo(
-                f"Creating worktree at: {config.worktrees_dir_resolved / target_name}",
-            )
+            daemon_client = WtClient(config)
+            source_path = await require_worktree_exists(daemon_client, source_name)
             new_path = await create_worktree(
-                config,
+                daemon_client,
                 target_name,
                 source_worktree=source_path,
                 from_default=False,
             )
-            emit_cd_command(new_path, config)
+            emit_cd_command(new_path)
 
     except RuntimeError as e:
         click.echo(f"Error: {e}", err=True)
@@ -191,15 +171,9 @@ def handle_path_command(
     subpath: str | None = None,
 ) -> None:
     """Handle path resolution command."""
-    import sys
-
-    import click
-
     try:
         if worktree_name is None and subpath is None:
             # wt path - current worktree root
-            from .worktree_utils import get_current_worktree_info
-
             current_wt, _ = get_current_worktree_info(config)
             if current_wt:
                 click.echo(str(current_wt))
@@ -211,20 +185,14 @@ def handle_path_command(
             arg = worktree_name
             if arg and arg.startswith(("/", "./")):
                 # wt path /foo or wt path ./foo - path in current worktree
-                from .worktree_utils import resolve_path
-
                 path = resolve_path(config, None, arg or "")
                 click.echo(str(path))
             else:
                 # wt path <worktree> - root of specified worktree
-                from .worktree_utils import require_worktree_exists
-
                 wt_path = require_worktree_exists(config, arg or "")
                 click.echo(str(wt_path))
         else:
             # wt path <worktree> /foo or wt path <worktree> ./foo
-            from .worktree_utils import resolve_path
-
             path = resolve_path(config, worktree_name, subpath)
             click.echo(str(path))
 
@@ -235,46 +203,17 @@ def handle_path_command(
 
 async def handle_navigate_to_worktree(config, worktree_name: str) -> None:
     """Handle navigation to worktree (with creation if needed)."""
-    import sys
-
-    import click
-
-    from ..shared.constants import RESERVED_NAMES
-    from .shell_utils import controlled_error
-
     if worktree_name in RESERVED_NAMES:
         click.echo(f"Error: '{worktree_name}' is a reserved name")
         sys.exit(1)
 
-    from .worktree_utils import get_worktree_path
-
-    wt_path = get_worktree_path(config, worktree_name)
-    if wt_path.exists():
-        # Teleport to existing worktree
-        from .worktree_utils import emit_cd_command
-
-        emit_cd_command(wt_path, config)
-    elif click.confirm(
-        f"Worktree '{worktree_name}' does not exist. Create it?",
-        default=False,
-    ):
-        try:
-            click.echo(f"Creating worktree at: {wt_path}")
-            from .worktree_utils import create_worktree, emit_cd_command
-
-            new_path = await create_worktree(config, worktree_name, from_default=True)
-            emit_cd_command(new_path, config)
-        except RuntimeError as e:
-            click.echo(f"Error: {e}")
-            sys.exit(1)
-    else:
-        controlled_error("Worktree creation cancelled")
+    daemon_client = WtClient(config)
+    cd_path = await daemon_client.teleport_target(worktree_name, str(Path.cwd()))
+    emit_cd_command(Path(cd_path))
 
 
 async def handle_kill_daemon(config) -> None:
     """Handle kill-daemon command to stop the wt daemon."""
-
-    import click
 
     pid_file = config.daemon_pid_file
     socket_file = config.daemon_socket_file
@@ -295,20 +234,13 @@ async def handle_kill_daemon(config) -> None:
         pid = int(pid_str)
 
         # Check if process exists and kill it
-        import psutil
-
         if psutil.pid_exists(pid):
-            import os
-            import signal
-
             click.echo(f"Killing wt daemon (PID {pid})...")
 
             try:
                 os.kill(pid, signal.SIGTERM)
 
                 # Wait a moment for graceful shutdown
-                import time
-
                 time.sleep(0.5)
 
                 # If still running, force kill
@@ -338,8 +270,6 @@ async def handle_kill_daemon(config) -> None:
 
 def _cleanup_daemon_files(pid_file, socket_file) -> None:
     """Clean up daemon PID and socket files."""
-
-    import click
 
     try:
         if pid_file.exists():

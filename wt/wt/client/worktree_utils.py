@@ -1,22 +1,36 @@
 """Direct worktree utility functions for CLI handlers."""
 
+import asyncio
 import shlex
+import uuid
 from pathlib import Path
+
+from wt.shared.error_handling import validate_worktree_name
+from wt.shared.protocol import (
+    Request,
+    Response,
+    WorktreeResolvePathParams,
+    WorktreeResolvePathResult,
+)
+
+from .shell_utils import emit_command
+from .wt_client import WtClient
 
 # GitInterface no longer needed - using RPC calls instead
 
 
-def get_worktree_path(config, name: str) -> Path:
-    """Get path for a worktree by name."""
-    return config.worktrees_dir_resolved / name
+async def get_worktree_path(config, name: str) -> Path:
+    """Get path for a worktree by name via server."""
+    client = WtClient(config)
+    res = await client.get_worktree_by_name(name)
+    if not res.exists or not res.absolute_path:
+        raise RuntimeError(f"Worktree '{name}' not found")
+    return Path(res.absolute_path)
 
 
-def require_worktree_exists(config, name: str) -> Path:
-    """Require that a worktree exists and return its path."""
-    worktree_path = get_worktree_path(config, name)
-    if not worktree_path.exists():
-        raise RuntimeError(f"Worktree '{name}' does not exist")
-    return worktree_path
+async def require_worktree_exists(config, name: str) -> Path:
+    """Require that a worktree exists and return its path (server-resolved)."""
+    return await get_worktree_path(config, name)
 
 
 def get_current_worktree_info(config) -> tuple[Path | None, str | None]:
@@ -48,50 +62,35 @@ def get_current_worktree_info(config) -> tuple[Path | None, str | None]:
     return None, None
 
 
-def resolve_path(config, worktree_name: str | None, path_spec: str) -> Path:
-    """Resolve a path specification within a worktree."""
-    if worktree_name:
-        # Path in specified worktree
-        target_path = require_worktree_exists(config, worktree_name)
-    else:
-        # Path in current worktree
-        current_wt, _ = get_current_worktree_info(config)
-        if not current_wt:
-            raise RuntimeError("Not in a worktree")
-        target_path = current_wt
-
-    # Resolve the path specification
-    if path_spec.startswith("/"):
-        # Absolute path within worktree
-        return target_path / path_spec.lstrip("/")
-    if path_spec.startswith("./"):
-        # Relative path from current location within worktree
-        current_wt, rel_path = get_current_worktree_info(config)
-        if current_wt != target_path:
-            raise RuntimeError("Cannot use relative path for different worktree")
-
-        # Get current position within the worktree
-        current_dir = target_path / rel_path if rel_path else target_path
-
-        return (current_dir / path_spec).resolve()
-    # Treat as absolute path within worktree
-    return target_path / path_spec
+async def resolve_path(config, worktree_name: str | None, path_spec: str) -> Path:
+    """Resolve a path specification within a worktree via server RPC."""
+    client = WtClient(config)
+    params = WorktreeResolvePathParams(
+        worktree_name=worktree_name,
+        path_spec=path_spec,
+        current_path=str(Path.cwd()),
+    )
+    req = Request(method="worktree_resolve_path", params=params.model_dump(), id=uuid.uuid4())
+    reader, writer = await asyncio.open_unix_connection(config.daemon_socket_file)
+    writer.write(req.model_dump_json().encode())
+    writer.write(b"\n")
+    await writer.drain()
+    resp = await reader.readline()
+    writer.close()
+    await writer.wait_closed()
+    res = Response.model_validate_json(resp.decode())
+    out = WorktreeResolvePathResult.model_validate(res.result)
+    return Path(out.absolute_path)
 
 
 def emit_cd_command(dest_repo: Path, config) -> None:
     """Emit a cd command for shell execution."""
-    from .shell_utils import emit_command
-
     # Try to preserve relative path when switching between worktrees
     current_wt, rel_path = get_current_worktree_info(config)
 
     if rel_path and current_wt:
-        # Try to preserve the relative path in the new worktree
         target_subpath = dest_repo / rel_path
-        if target_subpath.exists() and target_subpath.is_dir():
-            dest_path = target_subpath
-        else:
-            dest_path = dest_repo
+        dest_path = target_subpath if target_subpath.exists() and target_subpath.is_dir() else dest_repo
     else:
         dest_path = dest_repo
 
@@ -105,37 +104,30 @@ async def create_worktree(
     from_default: bool = True,
 ) -> Path:
     """Create a new worktree via RPC."""
-    from ..shared.error_handling import validate_worktree_name
-    from .wt_client import WtClient
-
     validate_worktree_name(name)
 
     # Create daemon client
     daemon_client = WtClient(config)
 
     if source_worktree:
-        # Copy from existing worktree - identify the source worktree to get its branch
+        # Copy from existing worktree - identify on server to get WorktreeID
         try:
             identify_result = await daemon_client.identify_worktree(
                 str(source_worktree),
             )
-            source_branch = identify_result.branch_name
-
             result = await daemon_client.create_worktree(
                 name,
-                source_branch=source_branch,
+                source_wtid=identify_result.wtid,
             )
             return Path(result.absolute_path)
 
         except Exception as e:
             raise RuntimeError(f"Failed to copy worktree: {e}") from e
     else:
-        # Create from default branch or HEAD
+        # Create from default branch
         try:
-            source_branch = config.upstream_branch if from_default else "HEAD"
             result = await daemon_client.create_worktree(
                 name,
-                source_branch=source_branch,
             )
             return Path(result.absolute_path)
 
@@ -145,8 +137,6 @@ async def create_worktree(
 
 async def remove_worktree(config, name: str, force: bool = False) -> None:
     """Remove a worktree via RPC."""
-    from .wt_client import WtClient
-
     # Create daemon client
     daemon_client = WtClient(config)
 

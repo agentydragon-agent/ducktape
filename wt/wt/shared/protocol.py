@@ -134,7 +134,10 @@ class WorktreeCreateParams(BaseModel):
     model_config = {"extra": "forbid"}
 
     name: str = Field(..., description="Simple worktree name (no slashes)")
-    source_branch: str | None = Field(None, description="Source branch for copying")
+    source_wtid: WorktreeID | None = Field(
+        default=None,
+        description="Server-minted WorktreeID of source worktree to copy from (determines source commit)",
+    )
 
 
 class WorktreeDeleteParams(BaseModel):

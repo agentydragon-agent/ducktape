@@ -5,6 +5,8 @@ from collections.abc import Callable
 
 import pluggy
 
+from .client.shell_utils import controlled_error, emit_command
+
 PROJECT_NAME = "wt"
 ENTRYPOINT_GROUP = "wt.plugins"
 
@@ -38,13 +40,9 @@ class _Impl:
 
 class PluginIO:
     def emit(self, cmd: str) -> None:
-        from .client.shell_utils import emit_command
-
         emit_command(cmd)
 
     def controlled_error(self, message: str, commands: list[str] | None = None) -> None:
-        from .client.shell_utils import controlled_error
-
         controlled_error(message, commands)
 
 

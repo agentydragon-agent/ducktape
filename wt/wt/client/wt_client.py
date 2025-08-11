@@ -8,13 +8,18 @@ import asyncio
 import json
 import logging
 import os
+import sys
 import uuid
 from pathlib import Path
 
+import psutil
+
+from ..shared.configuration import Configuration
 from ..shared.protocol import (
     ErrorResponse,
     Request,
     Response,
+    StartupMessage,
     StatusParams,
     StatusResponse,
     WorktreeCreateParams,
@@ -27,6 +32,10 @@ from ..shared.protocol import (
     WorktreeIdentifyParams,
     WorktreeIdentifyResult,
     WorktreeListResult,
+    WorktreeResolvePathParams,
+    WorktreeResolvePathResult,
+    WorktreeTeleportTargetParams,
+    WorktreeTeleportTargetResult,
 )
 
 logger = logging.getLogger(__name__)
@@ -39,8 +48,6 @@ class WtClient:
     _daemon_start_lock = asyncio.Lock()
 
     def __init__(self, config, verbose: bool = False):
-        from ..shared.configuration import Configuration
-
         self.config: Configuration = config
         self.verbose: bool = bool(verbose)
 
@@ -64,8 +71,6 @@ class WtClient:
                 pid = int(pid_str)
 
             # Check if process exists and socket is accessible
-            import psutil
-
             return bool(
                 psutil.pid_exists(pid) and self.config.daemon_socket_file.exists(),
             )
@@ -96,8 +101,6 @@ class WtClient:
 
             # Wait for handshake confirmation from daemon via pipe
             try:
-                import json
-
                 # Read handshake from pipe with timeout
                 loop = asyncio.get_event_loop()
                 # Emit immediate progress if verbose
@@ -165,7 +168,6 @@ class WtClient:
 
     async def _start_daemon_background(self) -> None:
         """Start daemon in background using proper double-fork daemonization."""
-        import sys
 
         # Create pipe for handshake communication
         handshake_read, handshake_write = os.pipe()
@@ -266,8 +268,6 @@ class WtClient:
                 if not line:
                     continue
                 try:
-                    from wt.shared.protocol import StartupMessage
-
                     obj = StartupMessage.model_validate_json(line)
                 except Exception:
                     continue
@@ -374,7 +374,7 @@ class WtClient:
     async def create_worktree(
         self,
         name: str,
-        source_branch: str | None = None,
+        source_wtid: WorktreeID | None = None,
     ) -> WorktreeCreateResult:
         """Create a new worktree via RPC."""
         await self._start_daemon_if_needed()
@@ -384,7 +384,7 @@ class WtClient:
 
         # Create JSON-RPC request
         request_id = uuid.uuid4()
-        params = WorktreeCreateParams(name=name, source_branch=source_branch)
+        params = WorktreeCreateParams(name=name, source_wtid=source_wtid)
         request = Request(
             method="worktree_create",
             params=params.model_dump(),
@@ -649,69 +649,14 @@ class WtClient:
             raise RuntimeError(f"Daemon worktree_identify communication failed: {e}")
 
     async def get_worktree_by_name(self, name: str) -> WorktreeGetByNameResult:
-        """Get a worktree by name via RPC."""
-        await self._start_daemon_if_needed()
+        return await self._rpc("worktree_get_by_name", WorktreeGetByNameParams(name=name), WorktreeGetByNameResult)
 
-        if not self.config.daemon_socket_file.exists():
-            raise RuntimeError("Daemon socket not available")
+    async def resolve_path(self, params: WorktreeResolvePathParams) -> str:
+        resp = await self._rpc_raw("worktree_resolve_path", params)
+        return WorktreeResolvePathResult.model_validate(resp.result).absolute_path
 
-        # Create JSON-RPC request
-        request_id = uuid.uuid4()
-        params = WorktreeGetByNameParams(name=name)
-        request = Request(
-            method="worktree_get_by_name",
-            params=params.model_dump(),
-            id=request_id,
-        )
+    async def teleport_target(self, target_name: str, current_path: str) -> str:
+        params = WorktreeTeleportTargetParams(target_name=target_name, current_path=current_path)
+        resp = await self._rpc_raw("worktree_teleport_target", params)
+        return WorktreeTeleportTargetResult.model_validate(resp.result).cd_path
 
-        try:
-            reader, writer = await asyncio.open_unix_connection(
-                self.config.daemon_socket_file,
-            )
-
-            # Send request
-            request_data = request.model_dump_json().encode()
-            writer.write(request_data)
-            writer.write(b"\n")
-            await writer.drain()
-
-            # Read response
-            response_data = await reader.readline()
-            response_text = response_data.decode().strip()
-
-            writer.close()
-            await writer.wait_closed()
-
-            # Parse and validate JSON-RPC response
-            try:
-                response_json = json.loads(response_text)
-
-                # Check for error response first
-                if "error" in response_json:
-                    error_response = ErrorResponse.model_validate(response_json)
-                    raise RuntimeError(
-                        f"Daemon worktree_get_by_name request failed: {error_response.error.message}",
-                    )
-
-                # Parse successful response
-                success_response = Response.model_validate(response_json)
-                return WorktreeGetByNameResult.model_validate(success_response.result)
-
-            except json.JSONDecodeError as e:
-                raise RuntimeError(f"Invalid JSON response from daemon: {e}")
-            except Exception as e:
-                logger.error(
-                    "Failed to parse daemon worktree_get_by_name response: %s",
-                    e,
-                )
-                logger.error("Raw response: %s", response_text[:200])
-                raise RuntimeError(
-                    f"Failed to parse daemon worktree_get_by_name response: {e}",
-                )
-
-        except Exception as e:
-            logger.error(
-                "Failed to communicate with daemon for worktree_get_by_name: %s",
-                e,
-            )
-            raise RuntimeError(f"Daemon worktree_get_by_name communication failed: {e}")

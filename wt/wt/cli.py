@@ -1,12 +1,17 @@
 """Thin CLI layer - just argument parsing and handler coordination."""
 
-import click
+import asyncio
+import inspect
 import logging
+import sys
+
+import click
 from colorama import init
 
 from .client.handlers import (
     handle_copy_worktree,
     handle_create_worktree,
+    handle_kill_daemon,
     handle_list_worktrees,
     handle_navigate_to_worktree,
     handle_path_command,
@@ -15,6 +20,7 @@ from .client.handlers import (
     handle_status_single,
 )
 from .client.view_formatter import ViewFormatter
+from .client.worktree_utils import emit_cd_command
 from .client.wt_client import WtClient
 from .plugins import PluginIO, get_manager, resolve_command
 from .shared.configuration import load_config
@@ -98,8 +104,6 @@ def main(ctx, help, verbose):
     ctx.obj["verbose"] = effective_verbose
 
     if ctx.invoked_subcommand is None:
-        import asyncio
-
         asyncio.run(_async_main(verbose=effective_verbose))
         return
 
@@ -155,8 +159,6 @@ def sh(ctx, args):
     config, formatter, daemon_client, plugin_manager = _create_cli_dependencies(verbose=verbose)
 
     # Run async command handler
-    import asyncio
-
     asyncio.run(
         _async_sh_main(
             daemon_client,
@@ -190,21 +192,15 @@ async def _async_sh_main(
     if plugin_callable:
         io = PluginIO()
         result = plugin_callable(remaining_args, daemon_client, config, io)
-        import inspect
-
         if inspect.isawaitable(result):
             result = await result
         if isinstance(result, int):
-            import sys
-
             sys.exit(result)
         return
 
     # Handle special worktree names
     if cmd in MAIN_REPO_ALIASES:
         click.echo(f"Navigating to main repo ({cmd})")
-        from .client.worktree_utils import emit_cd_command
-
         emit_cd_command(config.main_repo_resolved, config)
         return
 
@@ -250,8 +246,6 @@ async def _async_sh_main(
         show_help()
 
     elif cmd == "kill-daemon":
-        from .client.handlers import handle_kill_daemon
-
         await handle_kill_daemon(config)
 
     else:

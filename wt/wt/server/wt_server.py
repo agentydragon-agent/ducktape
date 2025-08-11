@@ -1202,6 +1202,8 @@ class WtDaemon:
         self.pr_services: dict[Path, PRService] = {}
         self.git_manager = GitManager(config=self.config)
         self.repo_meta = RepoMetaService(self.git_manager, self.config)
+        from .worktree_service import WorktreeService
+        self.worktree_service = WorktreeService(self.git_manager, self.github_interface)
 
         # Server state
         self.server: asyncio.Server | None = None
@@ -1976,32 +1978,46 @@ class WtDaemon:
                         f"Post-creation script configured but not found or not a file: {script}",
                     )
 
-            # Create branch first
-            source_branch = params.source_branch or self.config.upstream_branch
-            self.git_manager.create_branch(branch_name, source_branch)
+            # Create worktree via service (handles hydration). Defer script execution here for streaming.
+            svc = self.worktree_service
+            # Resolve source branch from source_wtid if provided
+            source_path = None
+            if params.source_wtid:
+                from .worktree_ids import wtid_to_path
+                source_path = wtid_to_path(self.config, params.source_wtid)
+                if not source_path.exists():
+                    raise ValueError(f"Source worktree path not found: {source_path}")
+                # Derive branch from source repo HEAD
+                src_repo = self.git_manager.get_repo(source_path)
+                src_branch = src_repo.head.shorthand
+            else:
+                src_branch = self.config.upstream_branch
 
-            # Create worktree
-            self.git_manager.worktree_add(str(worktree_path), branch_name)
+            svc.create_worktree(
+                self.config,
+                params.name,
+                source_worktree=source_path,
+                source_branch=src_branch,
+                run_post_creation_script=False,
+            )
 
             post = None
             if self.config.post_creation_script:
                 try:
-                    # Double-check just before execution in case it disappeared since pre-check
                     script = self.config.post_creation_script
                     if not script.exists() or not script.is_file():
                         raise FileNotFoundError(
                             f"Post-creation script not found at execution time: {script}",
                         )
                     if writer is None:
-                        from .worktree_service import WorktreeService
-
                         post = WorktreeService.execute_post_creation_script(
                             str(script),
                             worktree_path,
                         )
                     else:
                         script_path = str(script)
-                        post = await self._run_post_creation_script_streaming(
+                        from .worktree_service import WorktreeService as WS
+                        post = await WS.execute_post_creation_script_streaming(
                             script_path,
                             worktree_path,
                             writer,
@@ -2041,53 +2057,6 @@ class WtDaemon:
             logger.error("Error creating worktree: %s", e)
             raise
 
-    async def _run_post_creation_script_streaming(
-        self,
-        script_path: str,
-        worktree_path: Path,
-        writer: asyncio.StreamWriter,
-    ) -> dict:
-        proc = await asyncio.create_subprocess_exec(
-            script_path,
-            str(worktree_path),
-            cwd=worktree_path,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        stdout_buf: list[str] = []
-        stderr_buf: list[str] = []
-        async def _forward(stream, name):
-            while True:
-                line = await stream.readline()
-                if not line:
-                    break
-                text = line.decode(errors="replace")
-                if name == "stdout":
-                    stdout_buf.append(text)
-                else:
-                    stderr_buf.append(text)
-                try:
-                    event = {"event": "hook_output", "stream": name, "data": text}
-                    writer.write((json.dumps(event) + "\n").encode())
-                    await writer.drain()
-                except Exception:
-                    pass
-        t1 = asyncio.create_task(_forward(proc.stdout, "stdout")) if proc.stdout else None
-        t2 = asyncio.create_task(_forward(proc.stderr, "stderr")) if proc.stderr else None
-        await proc.wait()
-        if t1:
-            with contextlib.suppress(Exception):
-                await t1
-        if t2:
-            with contextlib.suppress(Exception):
-                await t2
-        return {
-            "ran": True,
-            "exit_code": proc.returncode,
-            "stdout": "".join(stdout_buf) if stdout_buf else None,
-            "stderr": "".join(stderr_buf) if stderr_buf else None,
-            "error": None,
-        }
 
     async def _handle_worktree_delete_request(
         self,
