@@ -1,8 +1,7 @@
 """GitHub interface for managing pull requests and remote operations.
 
-TODO: Consider switching to GitHub Python client libraries / API instead of CLI.
-This would be more efficient and robust than subprocess calls with JSON parsing.
-Consider using PyGithub or the official GitHub API client.
+This module uses PyGithub by default and optionally reads tokens from env or gh CLI.
+No subprocess JSON parsing is used for API calls.
 """
 
 import os

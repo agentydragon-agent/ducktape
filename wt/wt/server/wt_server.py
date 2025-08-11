@@ -644,31 +644,7 @@ class PRService:
         self.pr_last_fetched = current_time
         return pr_info_data
 
-
-
-    async def _refresh_github_cache(self, reason: str, files_changed: list[str]):
-        """Callback for debounced GitHub refresh system."""
-        logger.info(f"Refreshing GitHub cache: {reason} (files: {files_changed})")
-
-        # Get current branch
-        try:
-            repo = self.git_manager.get_repo(self.worktree_info.path)
-            branch_name = repo.head.shorthand
-        except Exception as e:
-            logger.warning(
-                f"Could not get current branch for {self.worktree_info.name}: {e}",
-            )
-            return
-
-        # Force refresh PR info (bypasses cache)
-        await self._get_github_pr_info(branch_name, force_refresh=True)
-
     # Old _parse_response method removed - now using GitStatusdProtocol
-
-    @property
-    def is_running(self) -> bool:
-        """Check if the gitstatusd process is running."""
-        return self.process and self.process.returncode is None
 
 
 class WtDaemon:
@@ -1199,11 +1175,11 @@ class WtDaemon:
                             commit_info_data, ahead_behind, branch_name = (
                                 self.repo_meta.compute_meta(worktree_path)
                             )
-                        except Exception as e:
+                        except Exception:
                             commit_info_data = None
                             ahead_behind = (0, 0)
                             branch_name = "HEAD"
-                            worktree_last_error = f"meta: {e}"
+                            worktree_last_error = "meta error"
                         prsvc = self.pr_services.get(worktree_path)
                         pr_info_data = None
                         if prsvc:
@@ -1225,11 +1201,11 @@ class WtDaemon:
                             commit_info_data, ahead_behind, branch_name = (
                                 self.repo_meta.compute_meta(worktree_path)
                             )
-                        except Exception as e:
+                        except Exception:
                             commit_info_data = None
                             ahead_behind = (0, 0)
                             branch_name = "HEAD"
-                            worktree_last_error = f"meta: {e}"
+                            worktree_last_error = "meta error"
                         last_updated_at = datetime.now()
                         pr_info_data = None
                         is_cached = False
@@ -1247,7 +1223,7 @@ class WtDaemon:
                         commit_info_data = None
                         ahead_behind = (0, 0)
                         branch_name = "HEAD"
-                        worktree_last_error = f"meta: {e}"
+                        worktree_last_error = "meta error"
                     last_updated_at = datetime.now()
                     pr_info_data = None
                     is_cached = False

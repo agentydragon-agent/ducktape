@@ -392,12 +392,12 @@ class WtClient:
             except json.JSONDecodeError as e:
                 raise RuntimeError(f"Invalid JSON response from daemon: {e}")
             except Exception as e:
-                logger.error("Failed to parse daemon status response: %s", e)
+                logger.exception("Failed to parse daemon status response")
                 logger.error("Raw response: %s", response_text[:200])
                 raise RuntimeError(f"Failed to parse daemon status response: {e}")
 
         except Exception as e:
-            logger.error("Failed to communicate with daemon for status request: %s", e)
+            logger.exception("Failed to communicate with daemon for status request")
             raise RuntimeError(f"Daemon status communication failed: {e}")
 
     async def get_working_directory_status(
@@ -513,12 +513,12 @@ class WtClient:
                             print(out)
                         raise RuntimeError("Post-creation script did not run")
                 return result
-            except Exception as e:
-                logger.error("Failed to parse daemon worktree_create response: %s", e)
+            except Exception:
+                logger.exception("Failed to parse daemon worktree_create response")
                 raise
 
-        except Exception as e:
-            logger.error("Failed to communicate with daemon for worktree_create: %s", e)
+        except Exception:
+            logger.exception("Failed to communicate with daemon for worktree_create")
             raise
 
     async def delete_worktree(self, wtid: WorktreeID) -> WorktreeDeleteResult:
@@ -571,14 +571,14 @@ class WtClient:
             except json.JSONDecodeError as e:
                 raise RuntimeError(f"Invalid JSON response from daemon: {e}")
             except Exception as e:
-                logger.error("Failed to parse daemon worktree_delete response: %s", e)
+                logger.exception("Failed to parse daemon worktree_delete response")
                 logger.error("Raw response: %s", response_text[:200])
                 raise RuntimeError(
                     f"Failed to parse daemon worktree_delete response: {e}",
                 )
 
         except Exception as e:
-            logger.error("Failed to communicate with daemon for worktree_delete: %s", e)
+            logger.exception("Failed to communicate with daemon for worktree_delete")
             raise RuntimeError(f"Daemon worktree_delete communication failed: {e}")
 
     async def list_worktrees(self) -> WorktreeListResult:
@@ -629,14 +629,14 @@ class WtClient:
             except json.JSONDecodeError as e:
                 raise RuntimeError(f"Invalid JSON response from daemon: {e}")
             except Exception as e:
-                logger.error("Failed to parse daemon worktree_list response: %s", e)
+                logger.exception("Failed to parse daemon worktree_list response")
                 logger.error("Raw response: %s", response_text[:200])
                 raise RuntimeError(
                     f"Failed to parse daemon worktree_list response: {e}",
                 )
 
         except Exception as e:
-            logger.error("Failed to communicate with daemon for worktree_list: %s", e)
+            logger.exception("Failed to communicate with daemon for worktree_list")
             raise RuntimeError(f"Daemon worktree_list communication failed: {e}")
 
     async def identify_worktree(self, absolute_path: str) -> WorktreeIdentifyResult:
@@ -691,16 +691,15 @@ class WtClient:
             except json.JSONDecodeError as e:
                 raise RuntimeError(f"Invalid JSON response from daemon: {e}")
             except Exception as e:
-                logger.error("Failed to parse daemon worktree_identify response: %s", e)
+                logger.exception("Failed to parse daemon worktree_identify response")
                 logger.error("Raw response: %s", response_text[:200])
                 raise RuntimeError(
                     f"Failed to parse daemon worktree_identify response: {e}",
                 )
 
         except Exception as e:
-            logger.error(
-                "Failed to communicate with daemon for worktree_identify: %s",
-                e,
+            logger.exception(
+                "Failed to communicate with daemon for worktree_identify",
             )
             raise RuntimeError(f"Daemon worktree_identify communication failed: {e}")
 

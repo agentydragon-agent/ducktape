@@ -46,14 +46,14 @@ def handle_git_errors(func: Callable[..., T]) -> Callable[..., T]:
         try:
             return func(*args, **kwargs)
         except GitTimeoutError as e:
-            logger.error(f"Git timeout in {func.__name__}: {e}")
+            logger.exception("Git timeout in %s", func.__name__)
             raise RuntimeError(f"Git operation timed out: {e}") from e
         except (GitError, WorktreeError) as e:
-            logger.error(f"Git interface error in {func.__name__}: {e}")
+            logger.exception("Git interface error in %s", func.__name__)
             raise RuntimeError(f"Git interface error: {e}") from e
         except Exception as e:
             if "git" in str(e).lower() or "repository" in str(e).lower():
-                logger.error(f"Git operation failed in {func.__name__}: {e}")
+                logger.exception("Git operation failed in %s", func.__name__)
                 raise RuntimeError(f"Git operation failed: {e}") from e
             raise
 
@@ -77,19 +77,15 @@ def handle_process_errors(func: Callable[..., T]) -> Callable[..., T]:
     def wrapper(*args, **kwargs) -> T:
         try:
             return func(*args, **kwargs)
-        except psutil.NoSuchProcess as e:
-            logger.debug(
-                f"Process disappeared during enumeration in {func.__name__}: {e}",
-            )
+        except psutil.NoSuchProcess:
+            logger.debug("Process disappeared during enumeration in %s", func.__name__)
             return cast(T, [])
         except (FileNotFoundError, ValueError) as e:
-            logger.warning(f"Process tool error in {func.__name__}: {e}")
+            logger.exception("Process tool error in %s", func.__name__)
             # Re-raise as domain-specific error to preserve failure context
             raise ProcessEnumerationError(f"Process enumeration failed: {e}") from e
         except OSError as e:
-            logger.warning(
-                f"System error in process enumeration in {func.__name__}: {e}",
-            )
+            logger.exception("System error in process enumeration in %s", func.__name__)
             # Re-raise as domain-specific error to preserve failure context
             raise ProcessEnumerationError(
                 f"System error in process enumeration: {e}",
@@ -128,11 +124,11 @@ def safe_execute(
         return func(*args, **kwargs)
     except expected_exceptions as e:
         if log_errors:
-            logger.warning(f"Expected error in {func.__name__}: {e}")
+            logger.warning("Expected error in %s: %s", func.__name__, e)
         return default
-    except Exception as e:
+    except Exception:
         if log_errors:
-            logger.error(f"Unexpected error in {func.__name__}: {e}")
+            logger.exception("Unexpected error in %s", func.__name__)
         raise  # Re-raise unexpected exceptions
 
 

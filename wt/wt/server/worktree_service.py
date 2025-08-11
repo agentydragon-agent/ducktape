@@ -62,8 +62,6 @@ class WorktreeService:
             path.name.startswith(pattern) for pattern in config.hidden_worktree_patterns
         )
 
-    # Note: This method was deleted as part of WorktreeStatus compatibility cleanup.
-    # Status creation is now handled by the daemon using proper protocol types.
 
     def _get_commit_info(self, branch_name: str) -> CommitInfo | None:
         """Get commit information for a branch."""
@@ -98,11 +96,7 @@ class WorktreeService:
                 f"Failed to get working directory status for {worktree_path}: {e}",
             ) from e
 
-    # Note: This method was deleted as part of WorktreeStatus compatibility cleanup.
-    # Status creation is now handled by the daemon using proper protocol types.
 
-    # Note: This method was deleted as part of WorktreeStatus compatibility cleanup.
-    # Error handling is now part of the daemon's StatusResult protocol.
 
     def create_worktree(
         self,
@@ -389,7 +383,6 @@ class WorktreeService:
                 continue
         return procs
 
-    # Note: This method was moved to handlers.py for client-side sorting.
 
     async def get_single_worktree_status_daemon(
         self,

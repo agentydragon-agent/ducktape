@@ -142,7 +142,7 @@ class GitManager:
         try:
             ahead, behind = repo.ahead_behind(rev_b, rev_a)
             return ahead if rev_a == rev_b else (ahead + behind)
-        except Exception as e:
+        except pygit2.GitError as e:
             raise NoSuchRef(
                 f"Cannot count commits between {rev_a} and {rev_b}: {e}",
             ) from e
