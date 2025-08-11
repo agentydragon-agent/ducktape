@@ -115,20 +115,17 @@ CLI → handle_status() → daemon_client.get_all_worktree_status()
                         Console Output
 ```
 
-### 2. **Worktree Operations** (Mixed CLI/Daemon)
+### 2. **Worktree Operations** (Daemon authority)
 
 ```
 # Path Operations (Server-side)
 CLI → daemon_client.resolve_path() → Unix Socket → Daemon → Path Resolution
 
-# Create/Delete Operations (CLI direct)
-CLI → handle_create_worktree() → worktree_utils.create_worktree()
-                                        ↓
-                                Direct Git Commands
-                                        ↓
-                                File System Operations
-                                        ↓
-                                emit_cd_command()
+# Create/Delete Operations (Server-side via RPC)
+CLI → handlers → WtClient → JSON-RPC → WtDaemon → WorktreeService / GitManager
+
+# Navigation emission (Client-side only)
+CLI receives resolved path from daemon and emits `cd` via client/shell_utils
 ```
 
 ## File Organization Logic

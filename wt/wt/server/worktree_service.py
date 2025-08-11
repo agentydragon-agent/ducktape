@@ -2,15 +2,23 @@
 
 import json
 import logging
+import asyncio
+import contextlib
+import shutil
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import click
+import psutil
 import pygit2
 
-from ..shared.github_models import PRInfo
+from ..shared.constants import MAIN_WORKTREE_DISPLAY_NAME
+from ..shared.error_handling import ErrorContext, validate_worktree_name
+from ..shared.github_models import PRInfo, PRData
 from ..shared.models import CommitInfo, ProcessInfo
 from ..shared.protocol import StatusResult
+from .copy_strategies import get_copy_strategy
 from .git_manager import GitError
 
 if TYPE_CHECKING:
@@ -102,11 +110,8 @@ class WorktreeService:
         name: str,
         source_worktree: Path | None = None,
         source_branch: str | None = None,
-        run_post_creation_script: bool = True,
     ) -> Path:
         """Create a new worktree."""
-        from ..shared.error_handling import ErrorContext, validate_worktree_name
-
         validate_worktree_name(name)
         worktree_path = config.worktrees_dir_resolved / name
 
@@ -153,21 +158,7 @@ class WorktreeService:
             logger.info(
                 f"Post-creation script configured: {config.post_creation_script}",
             )
-            if run_post_creation_script and config.post_creation_script:
-                script = config.post_creation_script
-                if not script.exists() or not script.is_file():
-                    raise RuntimeError(
-                        f"Post-creation script configured but not found or not a file: {script}",
-                    )
-                logger.info(
-                    f"Executing post-creation script for worktree: {worktree_path}",
-                )
-                WorktreeService.execute_post_creation_script(
-                    str(script),
-                    worktree_path,
-                )
-            else:
-                logger.info("Post-creation script skipped")
+            logger.info("Post-creation scripts are executed by the daemon during RPC; skipping here")
 
             return worktree_path
 
@@ -202,8 +193,6 @@ class WorktreeService:
 
         # Clean up directory if it still exists
         if worktree_path.exists():
-            import shutil
-
             shutil.rmtree(worktree_path)
 
     def get_worktree_path(self, config, name: str) -> Path:
@@ -219,8 +208,6 @@ class WorktreeService:
 
     def get_current_worktree_info(self, config) -> tuple[Path | None, str | None]:
         """Get current worktree information."""
-        from pathlib import Path
-
         # Get current directory
         cwd = Path.cwd().resolve()
 
@@ -267,28 +254,6 @@ class WorktreeService:
             return base_path / path_spec[2:]
         raise RuntimeError("Path must start with / (absolute) or ./ (relative)")
 
-    def emit_cd_command(self, dest_repo: Path, config) -> None:
-        """Emit a cd command for shell execution."""
-        import shlex
-
-        # Try to preserve relative path when switching between worktrees
-        current_wt, rel_path = self.get_current_worktree_info(config)
-
-        if rel_path and current_wt:
-            # Path preservation: if you're in feature-a/src/components/,
-            # try to land in feature-b/src/components/ when switching to feature-b
-            dest_subdir = dest_repo / rel_path
-
-            # Walk up the directory tree until we find a path that exists
-            final_dest = dest_subdir
-            while not final_dest.exists() and final_dest != dest_repo:
-                final_dest = final_dest.parent
-
-            dest_repo = final_dest
-
-        from ..client.shell_utils import emit_command
-
-        emit_command(f"cd {shlex.quote(str(dest_repo))}")
 
     def _hydrate_worktree(self, config, src: Path, dst: Path) -> None:
         """Hydrate worktree with files from source."""
@@ -298,139 +263,80 @@ class WorktreeService:
         if not any(src.iterdir()):
             return
 
-        from .copy_strategies import get_copy_strategy
-
         strategy = get_copy_strategy(config.cow_method)
         strategy.copy(src, dst)
 
-    @staticmethod
-    def execute_post_creation_script(script_path: str, worktree_path: Path) -> dict:
-        import logging
-        import subprocess
-
-        logger = logging.getLogger(__name__)
-        logger.info(
-            f"Starting post-creation script execution: script={script_path}, worktree={worktree_path}",
-        )
-
-        script = Path(script_path).expanduser().resolve()
-        logger.info(f"Resolved script path: {script}")
-
-        if not script.exists():
-            logger.warning(f"Post-creation script not found: {script}")
-            return {
-                "ran": False,
-                "exit_code": None,
-                "stdout": None,
-                "stderr": None,
-                "error": "not_found",
-            }
-
-        if not script.is_file():
-            logger.warning(f"Post-creation script is not a file: {script}")
-            return {
-                "ran": False,
-                "exit_code": None,
-                "stdout": None,
-                "stderr": None,
-                "error": "not_file",
-            }
-
-        if not script.stat().st_mode & 0o111:
-            logger.warning(f"Post-creation script is not executable: {script}")
-
-        logger.info(f"Executing post-creation script: {script} {worktree_path}")
-        try:
-            result = subprocess.run(
-                [
-                    str(script),
-                    f"--worktree_root={worktree_path}",
-                    f"--worktree_name={worktree_path.name}",
-                ],
-                check=False,
-                cwd=worktree_path,
-                capture_output=True,
-                text=True,
-                timeout=60,
-            )
-
-            if result.returncode != 0:
-                logger.warning(
-                    f"Post-creation script failed (exit {result.returncode}): {script}\n"
-                    f"stdout: {result.stdout}\n"
-                    f"stderr: {result.stderr}",
-                )
-            else:
-                logger.info(f"Post-creation script completed successfully: {script}")
-                if result.stdout:
-                    logger.info(f"Post-creation script stdout: {result.stdout}")
-                if result.stderr:
-                    logger.info(f"Post-creation script stderr: {result.stderr}")
-            return {
-                "ran": True,
-                "exit_code": result.returncode,
-                "stdout": result.stdout,
-                "stderr": result.stderr,
-                "error": None,
-            }
-        except subprocess.TimeoutExpired:
-            logger.error(f"Post-creation script timed out: {script}", exc_info=True)
-            return {
-                "ran": True,
-                "exit_code": None,
-                "stdout": None,
-                "stderr": None,
-                "error": "timeout",
-            }
-        except Exception as e:
-            logger.error(
-                f"Error executing post-creation script {script}: {e}",
-                exc_info=True,
-            )
-            return {
-                "ran": True,
-                "exit_code": None,
-                "stdout": None,
-                "stderr": None,
-                "error": str(e),
-            }
 
     @staticmethod
-    async def execute_post_creation_script_streaming(
+    async def run_post_creation_script(
         script_path: str,
         worktree_path: Path,
-        writer,
+        writer=None,
+        timeout: float = 60.0,
     ) -> dict:
-        import asyncio
-        import contextlib
+        logger = logging.getLogger(__name__)
+        script = Path(script_path).expanduser().resolve()
+        if not script.exists() or not script.is_file():
+            return {
+                "ran": False,
+                "exit_code": None,
+                "stdout": None,
+                "stderr": None,
+                "error": "not_found" if not script.exists() else "not_file",
+            }
 
         proc = await asyncio.create_subprocess_exec(
-            script_path,
+            str(script),
             f"--worktree_root={worktree_path}",
             f"--worktree_name={worktree_path.name}",
             cwd=worktree_path,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
+
+        if writer is None:
+            try:
+                stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+                return {
+                    "ran": True,
+                    "exit_code": proc.returncode,
+                    "stdout": stdout.decode(errors="replace") if stdout else None,
+                    "stderr": stderr.decode(errors="replace") if stderr else None,
+                    "error": None,
+                }
+            except asyncio.TimeoutError:
+                with contextlib.suppress(Exception):
+                    proc.kill(); await proc.wait()
+                return {
+                    "ran": True,
+                    "exit_code": None,
+                    "stdout": None,
+                    "stderr": None,
+                    "error": "timeout",
+                }
+
         stdout_buf: list[str] = []
         stderr_buf: list[str] = []
 
         async def _forward(stream, name):
-            while True:
-                line = await stream.readline()
-                if not line:
-                    break
-                text = line.decode(errors="replace")
-                if name == "stdout":
-                    stdout_buf.append(text)
-                else:
-                    stderr_buf.append(text)
-                try:
-                    event = {"event": "hook_output", "stream": name, "data": text}
-                    writer.write((json.dumps(event) + "\n").encode())
-                    await writer.drain()
-                except Exception:
-                    pass
+            try:
+                while True:
+                    line = await stream.readline()
+                    if not line:
+                        break
+                    text = line.decode(errors="replace")
+                    if name == "stdout":
+                        stdout_buf.append(text)
+                    else:
+                        stderr_buf.append(text)
+                    try:
+                        event = {"event": "hook_output", "stream": name, "data": text}
+                        writer.write((json.dumps(event) + "\n").encode())
+                        await writer.drain()
+                    except Exception:
+                        pass
+            except Exception:
+                pass
 
         t1 = (
             asyncio.create_task(_forward(proc.stdout, "stdout")) if proc.stdout else None
@@ -438,7 +344,18 @@ class WorktreeService:
         t2 = (
             asyncio.create_task(_forward(proc.stderr, "stderr")) if proc.stderr else None
         )
-        await proc.wait()
+        try:
+            await asyncio.wait_for(proc.wait(), timeout=timeout)
+        except asyncio.TimeoutError:
+            with contextlib.suppress(Exception):
+                proc.kill(); await proc.wait()
+            return {
+                "ran": True,
+                "exit_code": None,
+                "stdout": None,
+                "stderr": None,
+                "error": "timeout",
+            }
         if t1:
             with contextlib.suppress(Exception):
                 await t1
@@ -455,8 +372,6 @@ class WorktreeService:
 
     def _get_processes_in_directory(self, directory: Path) -> list:
         """Get processes running in a directory."""
-        import psutil
-
         procs = []
         for proc in psutil.process_iter(["pid", "name", "cwd"]):
             try:
@@ -512,7 +427,6 @@ class WorktreeService:
         if not prs:
             return PRInfo(branch=branch_name)
         pr = prs[0]
-        from ..shared.github_models import PRData
 
         return PRInfo(
             branch=branch_name,
@@ -557,8 +471,6 @@ class WorktreeService:
                 break
 
         if not status:
-            import click
-
             click.echo(f"❌ No status available for '{worktree_name}'")
             return
 
@@ -574,14 +486,10 @@ class WorktreeService:
         all_status = await daemon_client.get_status([])
 
         if not all_status:
-            import click
-
             click.echo("🤷 No worktrees found")
             return
 
         # Sort results for display
-        from ..shared.constants import MAIN_WORKTREE_DISPLAY_NAME
-
         def sort_key(item):
             wtid, status = item
             # Always prioritize the main worktree

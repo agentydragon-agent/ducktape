@@ -18,10 +18,15 @@ exit code semantics, and process boundary interactions.
 import os
 import subprocess
 import tempfile
+import importlib.util
+import shutil
+import contextlib
+import io
 from pathlib import Path
 from typing import Optional
 
 import pytest
+from wt.shell.install import main as emit_function
 
 # Global constants for paths
 PROJECT_ROOT = Path(__file__).parent.parent.parent
@@ -39,9 +44,6 @@ def run_shell_script(
 ) -> subprocess.CompletedProcess:
     """Execute a shell script with wt function setup and return the result."""
     # Explicit requirement checks
-    import importlib.util
-    import shutil
-
     assert importlib.util.find_spec("wt"), (
         "wt package not installed - required for shell integration tests"
     )
@@ -54,10 +56,6 @@ def run_shell_script(
     # PYTHONPATH handled by session autouse fixture
 
     # Create script with wt function setup using builtin installer
-    import contextlib
-    import io
-
-    from wt.shell.install import main as emit_function
 
     buf = io.StringIO()
     with contextlib.redirect_stdout(buf):

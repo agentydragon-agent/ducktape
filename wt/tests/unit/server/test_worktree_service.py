@@ -113,11 +113,9 @@ class TestWorktreeService:
         config_factory,
         mock_factory,
     ):
-        """Test that post-creation script is executed when configured."""
-        # Create repo and config using factories
+        """Test post-creation script runner executes and passes expected args."""
         repo_path = repo_factory.create_repo()
 
-        # Create a simple test script
         script_path = repo_path / "test_script.sh"
         script_path.write_text(
             """#!/usr/bin/env bash
@@ -135,13 +133,24 @@ echo "Script executed at: $worktree_root" > "$worktree_root/script_output.txt"
         )
         script_path.chmod(0o755)
 
-        # Create config with post-creation script
-        service, config = self._make_service(repo_factory, config_factory, repo_path=repo_path, post_creation_script=str(script_path))
+        service, config = self._make_service(
+            repo_factory,
+            config_factory,
+            repo_path=repo_path,
+            post_creation_script=str(script_path),
+        )
 
-        # Create worktree - script should execute
         worktree_path = service.create_worktree(config, "script-test")
 
-        # Verify script was executed
+        import asyncio
+        from wt.server.worktree_service import WorktreeService
+
+        result = asyncio.run(
+            WorktreeService.run_post_creation_script(str(script_path), worktree_path),
+        )
+        assert result["ran"] is True
+        assert result["exit_code"] == 0
+
         output_file = worktree_path / "script_output.txt"
         assert output_file.exists()
         content = output_file.read_text()

@@ -8,7 +8,7 @@ import asyncio
 import json
 import logging
 import os
-import shlex
+
 import sys
 import uuid
 from pathlib import Path
@@ -52,14 +52,6 @@ logger = logging.getLogger(__name__)
 class WtClient:
     """JSON-RPC client for communicating with the worktree management daemon."""
 
-    def emit_cd_command(self, dest_repo: Path, config) -> None:
-        current_wt, rel_path = self._get_current_worktree_info(config)
-        if rel_path and current_wt:
-            target_subpath = dest_repo / rel_path
-            dest_path = target_subpath if target_subpath.exists() and target_subpath.is_dir() else dest_repo
-        else:
-            dest_path = dest_repo
-        emit_command(f"cd {shlex.quote(str(dest_path))}")
 
     def _get_current_worktree_info(self, config) -> tuple[Path | None, str | None]:
         cwd = Path.cwd()
@@ -272,8 +264,8 @@ class WtClient:
                         env = os.environ.copy()
                         env["WT_HANDSHAKE_FD"] = str(handshake_write)
                         try:
-                            from pathlib import Path as _P
-                            project_root = str(_P(__file__).resolve().parents[2])
+                            from pathlib import Path
+                            project_root = str(Path(__file__).resolve().parents[2])
                             existing = env.get("PYTHONPATH", "")
                             env["PYTHONPATH"] = f"{project_root}:{existing}" if existing else project_root
                         except Exception:

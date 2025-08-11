@@ -54,6 +54,14 @@ from ..shared.protocol import (
     WorktreeTeleportTargetParams,
     create_error_response,
     parse_request,
+    DaemonHealth,
+    DaemonHealthStatus,
+    ComponentState,
+    ReadinessSummary,
+    ComponentsStatus,
+    ComponentStatus,
+    parse_worktree_id,
+    WorktreeInfo as ProtocolWorktreeInfo,
 )
 from .git_manager import GitManager
 from .gitstatusd_client import (
@@ -63,7 +71,19 @@ from .gitstatusd_client import (
     GitStatusdValidationError,
     gitstatusd_response_to_legacy_format,
 )
-from .worktree_ids import make_worktree_id
+from .worktree_ids import make_worktree_id, wtid_to_path
+from .worktree_service import WorktreeService
+from ..shared.protocol import (
+    DaemonHealth,
+    DaemonHealthStatus,
+    ComponentState,
+    ReadinessSummary,
+    ComponentsStatus,
+    ComponentStatus,
+    parse_worktree_id,
+    WorktreeInfo as ProtocolWorktreeInfo,
+)
+from .github_client import GitHubInterface
 
 logger = logging.getLogger(__name__)
 
@@ -645,485 +665,6 @@ class PRService:
         return pr_info_data
 
 
-class GitStatusdProcess:
-    """Managed gitstatusd process for a worktree with caching and filesystem watching."""
-
-    def __init__(
-        self,
-        worktree_info: WorktreeInfo,
-        gitstatusd_path: str,
-        config,
-        git_manager: GitManager,
-        github_interface=None,
-        error_callback=None,
-    ):
-        from ..shared.configuration import Configuration
-
-        self.worktree_info = worktree_info
-        self.gitstatusd_path = gitstatusd_path
-        self.config: Configuration = config
-        self.git_manager = git_manager
-        self.github_interface = github_interface
-        self.error_callback = error_callback
-        self.process: asyncio.subprocess.Process | None = None
-        self.created_at = time.time()
-        self.last_used = time.time()
-        self.request_count = 0
-
-        # Comprehensive caching with staleness tracking
-        self.cached_working_status: tuple[list[str], list[str]] | None = None
-        self.cached_commit_info: dict[str, Any] | None = None
-        self.cached_ahead_behind: tuple[int, int] | None = None
-        self.cached_branch: str | None = None
-        self.cached_pr_info: dict[str, Any] | None = None
-        self.last_updated_at: datetime | None = None
-        self.cache_lock = threading.Lock()
-
-        # Old filesystem watching variables removed - now handled by DebouncedGitHubRefresh
-
-        # GitHub PR cache with 1-minute TTL + push event refresh
-        self.pr_cache_ttl = 60  # 1 minute
-        self.pr_last_fetched: float | None = None
-
-        # Debounced GitHub refresh system
-        self.github_refresh: DebouncedGitHubRefresh | None = None
-        if self.github_interface:
-            self.github_refresh = DebouncedGitHubRefresh(
-                worktree_info.path,
-                self._refresh_github_cache,
-                debounce_delay=self.config.github_debounce_delay.total_seconds(),
-                periodic_interval=self.config.github_periodic_interval.total_seconds(),
-            )
-
-    async def start(self) -> None:
-        """Start the gitstatusd process."""
-        if self.process and self.process.returncode is None:
-            return  # Already running
-
-        logger.info("Starting gitstatusd for worktree %s", self.worktree_info.name)
-
-        self.process = await asyncio.create_subprocess_exec(
-            self.gitstatusd_path,
-            "--num-threads=8",
-            "--max-num-staged=-1",  # Count all files
-            "--max-num-unstaged=-1",  # Count all files
-            "--max-num-untracked=-1",  # Count all files
-            "--max-commit-summary-length=0",  # Don't need commit summaries
-            "--repo-ttl-seconds=3600",  # Keep repo cached for 1 hour
-            "--log-level=FATAL",  # Minimal logging
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.DEVNULL,
-        )
-
-        logger.debug(
-            "gitstatusd started with PID %d for %s",
-            self.process.pid,
-            self.worktree_info.name,
-        )
-
-        # Old filesystem watching replaced by debounced GitHub refresh system
-
-        # Start GitHub refresh system
-        if self.github_refresh:
-            await self.github_refresh.start()
-
-        # Perform initial status query to populate cache, but don't block status calls
-        asyncio.create_task(self._update_cache_from_gitstatusd())
-
-    async def stop(self) -> None:
-        """Stop the gitstatusd process."""
-        # Stop GitHub refresh system
-        if self.github_refresh:
-            await self.github_refresh.stop()
-
-        # Old filesystem watching cleanup removed - now handled by DebouncedGitHubRefresh
-
-        if not self.process:
-            return
-
-        logger.info("Stopping gitstatusd for worktree %s", self.worktree_info.name)
-
-        try:
-            self.process.terminate()
-            await asyncio.wait_for(self.process.wait(), timeout=5.0)
-        except asyncio.TimeoutError:
-            logger.warning("gitstatusd didn't terminate gracefully, killing it")
-            self.process.kill()
-            await self.process.wait()
-
-        self.process = None
-        logger.debug("gitstatusd stopped for %s", self.worktree_info.name)
-
-    async def build_status_snapshot(
-        self,
-    ) -> tuple[
-        list[str],
-        list[str],
-        dict[str, Any],
-        tuple[int, int],
-        str,
-        dict[str, Any] | None,
-        datetime,
-        bool,
-    ]:
-        """Get comprehensive status including working directory, commit info, ahead/behind counts, and PR info."""
-        self.last_used = time.time()
-        self.request_count += 1
-
-        with self.cache_lock:
-            if (
-                self.cached_working_status
-                and self.cached_commit_info
-                and self.cached_ahead_behind is not None
-                and self.cached_branch
-                and self.last_updated_at
-            ):
-                logger.debug(
-                    "Returning cached comprehensive status for %s (updated at %s)",
-                    self.worktree_info.name,
-                    self.last_updated_at,
-                )
-                dirty_files, untracked_files = self.cached_working_status
-                return (
-                    dirty_files,
-                    untracked_files,
-                    self.cached_commit_info,
-                    self.cached_ahead_behind,
-                    self.cached_branch,
-                    self.cached_pr_info,
-                    self.last_updated_at,
-                    True,
-                )
-
-        # No cache available - force fresh query
-        logger.debug(
-            "No comprehensive cache available for %s, querying all sources",
-            self.worktree_info.name,
-        )
-        return await self._update_comprehensive_cache()
-
-    async def get_status(self) -> tuple[list[str], list[str], datetime, bool]:
-        """Get working directory status only, using cache if available."""
-        comprehensive = await self.get_comprehensive_status()
-        return comprehensive[0], comprehensive[1], comprehensive[5], comprehensive[6]
-
-    async def _update_cache_from_gitstatusd(
-        self,
-    ) -> tuple[list[str], list[str], datetime, bool]:
-        """Query gitstatusd and update cache."""
-        if not self.process or self.process.returncode is not None:
-            await self.start()
-
-        # Send request to gitstatusd using proper protocol
-        request_id = str(uuid.uuid4())[:8]
-        gitstatusd_request = GitStatusdRequest(
-            request_id=request_id,
-            directory_path=str(self.worktree_info.path),
-            disable_index_computation=False,
-        )
-        request_data = gitstatusd_request.to_wire_format()
-
-        logger.debug(
-            "Sending gitstatusd request %s for %s",
-            request_id,
-            self.worktree_info.name,
-        )
-
-        # Check if process is healthy before sending request
-        if self.process.returncode is not None:
-            logger.warning(
-                "gitstatusd process died (returncode=%s) for %s, restarting",
-                self.process.returncode,
-                self.worktree_info.name,
-            )
-            await self.start()  # Restart the process
-
-        self.process.stdin.write(request_data.encode())
-        await self.process.stdin.drain()
-
-        # Read and parse response using proper protocol
-        response = await asyncio.wait_for(
-            self.process.stdout.readuntil(b"\x1e"),
-            timeout=5.0,
-        )
-        response_str = response.decode("utf-8")
-        logger.debug(
-            "Raw gitstatusd response for %s: %s",
-            self.worktree_info.name,
-            repr(response_str[:200]),
-        )
-
-        try:
-            parsed_response = GitStatusdProtocol.parse_response(response_str)
-            dirty_files, untracked_files = gitstatusd_response_to_legacy_format(
-                parsed_response,
-            )
-
-            # Log parsed information for debugging
-            if parsed_response.is_git_repository:
-                logger.debug(
-                    "Parsed gitstatusd for %s: %d staged, %d unstaged, %d untracked, branch=%s",
-                    self.worktree_info.name,
-                    parsed_response.staged_changes or 0,
-                    parsed_response.unstaged_changes or 0,
-                    parsed_response.untracked_files or 0,
-                    parsed_response.local_branch or "detached",
-                )
-            else:
-                logger.warning(
-                    "Directory %s is not a git repository",
-                    self.worktree_info.path,
-                )
-
-        except (GitStatusdParseError, GitStatusdValidationError) as e:
-            error_msg = f"Failed to parse gitstatusd response for {self.worktree_info.name}: {e}"
-            logger.error(error_msg)
-
-            # Record the error in daemon health tracking
-            if self.error_callback:
-                self.error_callback("GitStatusd", error_msg)
-
-            # Don't mask gitstatusd failures - let callers handle appropriately
-            raise GitStatusdParseError(error_msg) from e
-
-        # Update cache
-        now = datetime.now()
-        with self.cache_lock:
-            self.cached_result = (dirty_files, untracked_files)
-            self.cached_working_status = (dirty_files, untracked_files)
-            self.last_updated_at = now
-
-        logger.debug(
-            "Updated cache for %s: %d dirty, %d untracked",
-            self.worktree_info.name,
-            len(dirty_files),
-            len(untracked_files),
-        )
-
-        return dirty_files, untracked_files, now, False
-
-    async def _update_comprehensive_cache(
-        self,
-    ) -> tuple[
-        list[str],
-        list[str],
-        dict[str, Any],
-        tuple[int, int],
-        str,
-        dict[str, Any] | None,
-        datetime,
-        bool,
-    ]:
-        """Query all sources and update comprehensive cache."""
-        if not self.process or self.process.returncode is not None:
-            await self.start()
-
-        # Get working directory status
-        dirty_files, untracked_files, _, _ = await self._update_cache_from_gitstatusd()
-
-        # Get git info using git_manager
-        try:
-            # Get current branch
-            repo = self.git_manager.get_repo(self.worktree_info.path)
-            branch_name = repo.head.shorthand
-
-            # Get commit info for HEAD
-            commit_info_data = self.git_manager.get_commit_info(
-                "HEAD",
-                self.worktree_info.path,
-            )
-
-            # Get ahead/behind counts relative to upstream branch
-            ahead_behind = (0, 0)  # Default for main repo
-            if self.worktree_info.path != self.config.main_repo_resolved:
-                try:
-                    main_repo = self.git_manager.get_repo(
-                        self.config.main_repo_resolved,
-                    )
-                    ahead, behind = main_repo.ahead_behind(
-                        f"refs/heads/{branch_name}",
-                        f"refs/heads/{self.config.upstream_branch}",
-                    )
-                    ahead_behind = (ahead, behind)
-                except Exception as e:
-                    error_msg = (
-                        f"Failed to get ahead/behind for {self.worktree_info.name}: {e}"
-                    )
-                    logger.error(error_msg)
-
-                    # Record the error in daemon health tracking
-                    if self.error_callback:
-                        self.error_callback("GitStatusd", error_msg)
-
-            # Get GitHub PR info - check cache staleness
-            pr_info_data = await self._get_github_pr_info(branch_name)
-
-            # Update comprehensive cache
-            now = datetime.now()
-            with self.cache_lock:
-                self.cached_working_status = (dirty_files, untracked_files)
-                self.cached_commit_info = commit_info_data
-                self.cached_ahead_behind = ahead_behind
-                self.cached_branch = branch_name
-                self.cached_pr_info = pr_info_data
-                self.last_updated_at = now
-
-            logger.debug(
-                "Updated comprehensive cache for %s: %s branch, %d ahead, %d behind",
-                self.worktree_info.name,
-                branch_name,
-                ahead_behind[0],
-                ahead_behind[1],
-            )
-
-            return (
-                dirty_files,
-                untracked_files,
-                commit_info_data,
-                ahead_behind,
-                branch_name,
-                pr_info_data,
-                now,
-                False,
-            )
-
-        except Exception as e:
-            logger.error(
-                "Failed to get comprehensive status for %s: %s",
-                self.worktree_info.name,
-                e,
-            )
-            # Record the error in daemon health tracking
-            if self.error_callback:
-                self.error_callback(
-                    "GitStatusd",
-                    f"Failed to get comprehensive status for {self.worktree_info.name}: {e}",
-                )
-            raise  # Don't mask the error - let it propagate
-
-    async def _get_github_pr_info(
-        self,
-        branch_name: str,
-        force_refresh: bool = False,
-    ) -> dict[str, Any] | None:
-        """Get GitHub PR info with smart caching - refresh on git operations or every 1 minute."""
-        current_time = time.time()
-
-        # Check if we have cached PR info that's still fresh (unless forcing refresh)
-        if not force_refresh:
-            with self.cache_lock:
-                if (
-                    self.cached_pr_info is not None
-                    and self.pr_last_fetched is not None
-                    and (current_time - self.pr_last_fetched) < self.pr_cache_ttl
-                ):
-                    cache_age = current_time - self.pr_last_fetched
-                    logger.info(
-                        "GitHub PR cache HIT for branch '%s' (age: %.1fs, worktree: %s)",
-                        branch_name,
-                        cache_age,
-                        self.worktree_info.name,
-                    )
-                    return self.cached_pr_info
-
-        # Cache miss - need to fetch from GitHub
-        cache_age = (
-            (current_time - self.pr_last_fetched) if self.pr_last_fetched else "never"
-        )
-        logger.info(
-            "GitHub PR cache MISS for branch '%s' (age: %s, worktree: %s) - fetching from API",
-            branch_name,
-            cache_age,
-            self.worktree_info.name,
-        )
-
-        # Skip GitHub API if no interface provided
-        if not self.github_interface:
-            logger.warning(
-                "GitHub interface not available for branch '%s' (worktree: %s)",
-                branch_name,
-                self.worktree_info.name,
-            )
-            with self.cache_lock:
-                self.cached_pr_info = None
-                self.pr_last_fetched = current_time
-            return None
-
-        # Make actual GitHub API call
-        pr_info_data = None
-        try:
-            logger.info(
-                "GitHub PR API request: searching for PRs with head branch '%s' (worktree: %s)",
-                branch_name,
-                self.worktree_info.name,
-            )
-            logger.info("GitHub PR API call: pr_search('%s')", branch_name)
-
-            # Run the GitHub API call in thread pool since it's synchronous
-            def _fetch_pr_info():
-                return self.github_interface.pr_search(branch_name)
-
-            loop = asyncio.get_event_loop()
-            prs = await loop.run_in_executor(None, _fetch_pr_info)
-
-            if prs:
-                pr = prs[0]  # Take first PR found
-                # Extract the data we need from the PyGithub PR object for serialization
-                pr_info_data = {
-                    "number": pr.number,
-                    "title": pr.title,
-                    "state": pr.state,
-                    "draft": pr.draft,
-                    "mergeable": pr.mergeable,
-                    "merged_at": pr.merged_at.isoformat() if pr.merged_at else None,
-                    "additions": pr.additions,
-                    "deletions": pr.deletions,
-                    "html_url": pr.html_url,
-                }
-                logger.info(
-                    "GitHub PR API response: Found PR #%d (%s) for branch '%s' - title: %s",
-                    pr.number,
-                    pr.state,
-                    branch_name,
-                    pr.title[:50],
-                )
-            else:
-                logger.info(
-                    "GitHub PR API response: No PR found for branch '%s' (worktree: %s)",
-                    branch_name,
-                    self.worktree_info.name,
-                )
-
-        except Exception as e:
-            error_msg = f"GitHub PR API request failed for branch '{branch_name}' (worktree: {self.worktree_info.name}): {e}"
-            logger.error(error_msg)
-            logger.info("GitHub PR API error details: %s", str(e))
-
-            # Record the error in daemon health tracking
-            if self.error_callback:
-                self.error_callback("GitHub", error_msg)
-
-        # Update cache with result (even if None/error)
-        with self.cache_lock:
-            self.cached_pr_info = pr_info_data
-            self.pr_last_fetched = current_time
-
-        if pr_info_data:
-            logger.info(
-                "GitHub PR cache updated for branch '%s' (worktree: %s) - PR #%d found",
-                branch_name,
-                self.worktree_info.name,
-                pr_info_data["number"],
-            )
-        else:
-            logger.info(
-                "GitHub PR cache updated for branch '%s' (worktree: %s) - no PR found",
-                branch_name,
-                self.worktree_info.name,
-            )
-
-        return pr_info_data
 
     async def _refresh_github_cache(self, reason: str, files_changed: list[str]):
         """Callback for debounced GitHub refresh system."""
@@ -2003,7 +1544,6 @@ class WtDaemon:
                 params.name,
                 source_worktree=source_path,
                 source_branch=src_branch,
-                run_post_creation_script=False,
             )
 
             post = None
@@ -2014,19 +1554,12 @@ class WtDaemon:
                         raise FileNotFoundError(
                             f"Post-creation script not found at execution time: {script}",
                         )
-                    if writer is None:
-                        post = WorktreeService.execute_post_creation_script(
-                            str(script),
-                            worktree_path,
-                        )
-                    else:
-                        script_path = str(script)
-                        from .worktree_service import WorktreeService as WS
-                        post = await WS.execute_post_creation_script_streaming(
-                            script_path,
-                            worktree_path,
-                            writer,
-                        )
+                    from .worktree_service import WorktreeService
+                    post = await WorktreeService.run_post_creation_script(
+                        str(script),
+                        worktree_path,
+                        writer,
+                    )
                 except Exception as e:
                     post = {
                         "ran": True,

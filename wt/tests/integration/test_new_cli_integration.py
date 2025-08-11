@@ -1,16 +1,19 @@
 """Integration tests for the new CLI architecture."""
 
 from unittest.mock import patch
+from datetime import datetime
 
 import pytest
 from click.testing import CliRunner
 
 from wt.cli import main
+from wt.shared.constants import MAIN_WORKTREE_DISPLAY_NAME
 from wt.shared.protocol import (
     DaemonHealth,
     DaemonHealthStatus,
     StatusResponse,
     StatusResult,
+    CommitInfo,
 )
 
 
@@ -27,10 +30,6 @@ def create_empty_status_response() -> StatusResponse:
 
 def create_test_status_response() -> StatusResponse:
     """Create StatusResponse with test data."""
-    from datetime import datetime
-
-    from wt.shared.constants import MAIN_WORKTREE_DISPLAY_NAME
-    from wt.shared.protocol import CommitInfo
 
     test_commit_info = CommitInfo(
         hash="abc123def456",

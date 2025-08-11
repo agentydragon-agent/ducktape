@@ -10,6 +10,7 @@ import time
 from pathlib import Path
 
 from ..test_utils import run_cli_sh_command as run_cli_command
+from wt.shared.git_utils import git_run
 
 
 def create_test_repo_and_config():
@@ -20,8 +21,6 @@ def create_test_repo_and_config():
     repo_path.mkdir()
 
     # Initialize git repository using subprocess git
-    from wt.shared.git_utils import git_run
-
     git_run(["init", "--initial-branch=master"], cwd=repo_path)
     git_run(["config", "user.name", "Test User"], cwd=repo_path)
     git_run(["config", "user.email", "test@example.com"], cwd=repo_path)
