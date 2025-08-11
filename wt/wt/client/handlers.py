@@ -140,7 +140,7 @@ async def handle_copy_worktree(config, source: str, dest: str | None = None) -> 
             daemon_client = WtClient(config)
             new_path = await daemon_client.create_worktree_convenience(
                 new_name,
-                source_name=current_wt.name if hasattr(current_wt, 'name') else new_name,
+                source_name=current_wt.name if current_wt is not None else new_name,
                 from_default=False,
             )
             emit_cd_command(new_path, config)
