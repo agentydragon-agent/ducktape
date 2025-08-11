@@ -120,8 +120,17 @@ class TestWorktreeService:
         # Create a simple test script
         script_path = repo_path / "test_script.sh"
         script_path.write_text(
-            """#!/bin/bash
-echo "Script executed with arg: $1" > "$1/script_output.txt"
+            """#!/usr/bin/env bash
+set -euo pipefail
+worktree_root=""
+for arg in "$@"; do
+  case "$arg" in
+    --worktree_root=*) worktree_root="${arg#*=}" ;;
+  esac
+done
+if [[ -z "$worktree_root" ]]; then echo "missing --worktree_root" >&2; exit 2; fi
+echo "$@" > "$worktree_root/args.txt"
+echo "Script executed at: $worktree_root" > "$worktree_root/script_output.txt"
 """,
         )
         script_path.chmod(0o755)
@@ -137,7 +146,9 @@ echo "Script executed with arg: $1" > "$1/script_output.txt"
         assert output_file.exists()
         content = output_file.read_text()
         assert str(worktree_path) in content
-        assert "Script executed with arg:" in content
+        args_record = (worktree_path / "args.txt").read_text().strip().split()
+        assert f"--worktree_root={worktree_path}" in args_record
+        assert f"--worktree_name={worktree_path.name}" in args_record
 
     def test_copy_hydrates_when_enabled(self, repo_factory, config_factory):
         service, config = self._make_service(repo_factory, config_factory, hydrate_worktrees=True)

@@ -12,7 +12,7 @@ def real_env_with_post_script(real_temp_repo, config_factory, tmp_path):
     kill_daemon_and_verify(real_temp_repo)
     script = tmp_path / "post_create.sh"
     script.write_text(
-        '#!/usr/bin/env bash\nset -euo pipefail\nwt="$1"\ntouch "$wt/.post_create_ran"\n',
+        '#!/usr/bin/env bash\nset -euo pipefail\nwt=""\nfor a in "$@"; do case "$a" in --worktree_root=*) wt="${a#*=}";; esac; done\nif [[ -z "$wt" ]]; then echo "missing --worktree_root" >&2; exit 2; fi\ntouch "$wt/.post_create_ran"\n',
     )
     script.chmod(0o755)
     factory = config_factory(real_temp_repo)

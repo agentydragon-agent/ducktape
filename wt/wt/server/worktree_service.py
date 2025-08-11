@@ -342,7 +342,11 @@ class WorktreeService:
         logger.info(f"Executing post-creation script: {script} {worktree_path}")
         try:
             result = subprocess.run(
-                [str(script), str(worktree_path)],
+                [
+                    str(script),
+                    f"--worktree_root={worktree_path}",
+                    f"--worktree_name={worktree_path.name}",
+                ],
                 check=False,
                 cwd=worktree_path,
                 capture_output=True,
@@ -402,7 +406,8 @@ class WorktreeService:
 
         proc = await asyncio.create_subprocess_exec(
             script_path,
-            str(worktree_path),
+            f"--worktree_root={worktree_path}",
+            f"--worktree_name={worktree_path.name}",
             cwd=worktree_path,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
