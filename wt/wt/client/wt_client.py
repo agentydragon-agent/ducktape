@@ -141,7 +141,7 @@ class WtClient:
                 # Bound the time we wait before surfacing any progress
                 first_wait = min(1.0, self.config.startup_timeout.total_seconds())
                 try:
-                    handshake_data = await asyncio.wait_for(reader_future, timeout=first_wait)
+                    handshake_data = await asyncio.wait_for(asyncio.shield(reader_future), timeout=first_wait)
                 except asyncio.TimeoutError:
                     if self.verbose:
                         logger.info("wt: daemon is starting… waiting for ready signal")
@@ -150,7 +150,7 @@ class WtClient:
                         0.0,
                         self.config.startup_timeout.total_seconds() - first_wait,
                     )
-                    handshake_data = await asyncio.wait_for(reader_future, timeout=remaining if remaining > 0 else 0.1)
+                    handshake_data = await asyncio.wait_for(asyncio.shield(reader_future), timeout=remaining if remaining > 0 else 0.1)
 
                 # Check protocol version
                 protocol_version = handshake_data.get("protocol_version", 0)
@@ -460,6 +460,7 @@ class WtClient:
 
             hook_stdout = []
             hook_stderr = []
+            response_json = None
             while True:
                 line = await reader.readline()
                 if not line:
@@ -476,9 +477,11 @@ class WtClient:
                             hook_stderr.append(data)
                         continue
                     response_json = obj
+                    break
                 except json.JSONDecodeError:
                     continue
-                break
+            if response_json is None:
+                raise RuntimeError("No response from daemon for worktree_create")
 
             writer.close()
             await writer.wait_closed()

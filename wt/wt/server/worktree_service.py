@@ -9,7 +9,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import click
 import psutil
 import pygit2
 
@@ -426,72 +425,3 @@ class WorktreeService:
             pr_data=PRData(pr_number=pr.number, pr_state=pr.state),
         )
 
-    async def show_worktree_status(
-        self,
-        config,
-        daemon_client,
-        formatter,
-        worktree_name: str | None = None,
-    ) -> None:
-        """Show worktree status - single worktree or all worktrees."""
-        if worktree_name:
-            await self._show_single_worktree_status(
-                config,
-                daemon_client,
-                formatter,
-                worktree_name,
-            )
-        else:
-            await self._show_all_worktrees_status(config, daemon_client, formatter)
-
-    async def _show_single_worktree_status(
-        self,
-        config,
-        daemon_client,
-        formatter,
-        worktree_name: str,
-    ) -> None:
-        """Show status for a single worktree."""
-        self.require_worktree_exists(config, worktree_name)
-
-        all_status = await daemon_client.get_status([])
-
-        # Find the worktree by name in the results
-        status = None
-        for result in all_status.results.values():
-            if result.name == worktree_name:
-                status = result
-                break
-
-        if not status:
-            click.echo(f"❌ No status available for '{worktree_name}'")
-            return
-
-        formatter.render_worktree_status_single(worktree_name, status, status.pr_info)
-
-    async def _show_all_worktrees_status(
-        self,
-        config,
-        daemon_client,
-        formatter,
-    ) -> None:
-        """Show status for all worktrees."""
-        all_status = await daemon_client.get_status([])
-
-        if not all_status:
-            click.echo("🤷 No worktrees found")
-            return
-
-        # Sort results for display
-        def sort_key(item):
-            wtid, status = item
-            # Always prioritize the main worktree
-            if status.name == MAIN_WORKTREE_DISPLAY_NAME:
-                return (0, "main")  # main worktree always first
-            return (1, status.name)  # others alphabetically
-
-        sorted_items = sorted(all_status.results.items(), key=sort_key)
-        # Convert to (name, status) tuples for display
-        display_items = [(result.name, result) for wtid, result in sorted_items]
-
-        formatter.render_worktree_status_all(display_items)
