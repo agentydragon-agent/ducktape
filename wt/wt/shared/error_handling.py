@@ -45,18 +45,17 @@ def handle_git_errors(func: Callable[..., T]) -> Callable[..., T]:
     def wrapper(*args, **kwargs) -> T:
         try:
             return func(*args, **kwargs)
-        except Exception as e:
-            # Handle any git-related exceptions from pygit2
-            if "git" in str(e).lower() or "repository" in str(e).lower():
-                logger.error(f"Git operation failed in {func.__name__}: {e}")
-                raise RuntimeError(f"Git operation failed: {e}") from e
-            raise  # Re-raise non-git exceptions
-        except (GitError, WorktreeError) as e:
-            logger.error(f"Git interface error in {func.__name__}: {e}")
-            raise RuntimeError(f"Git interface error: {e}") from e
         except GitTimeoutError as e:
             logger.error(f"Git timeout in {func.__name__}: {e}")
             raise RuntimeError(f"Git operation timed out: {e}") from e
+        except (GitError, WorktreeError) as e:
+            logger.error(f"Git interface error in {func.__name__}: {e}")
+            raise RuntimeError(f"Git interface error: {e}") from e
+        except Exception as e:
+            if "git" in str(e).lower() or "repository" in str(e).lower():
+                logger.error(f"Git operation failed in {func.__name__}: {e}")
+                raise RuntimeError(f"Git operation failed: {e}") from e
+            raise
 
     return wrapper
 

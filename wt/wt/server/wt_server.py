@@ -83,14 +83,13 @@ def write_startup_handshake(
         redirect_after: If True, redirect stdout to daemon log after writing JSON
         **extra_data: Additional data to include in handshake
     """
-    import sys
 
     fd_env = os.environ.get("WT_HANDSHAKE_FD")
     handshake_fd = None
     if fd_env and fd_env.isdigit():
         try:
             handshake_fd = int(fd_env)
-        except Exception:
+        except (ValueError, TypeError):
             handshake_fd = None
 
     handshake_data = {
@@ -103,35 +102,28 @@ def write_startup_handshake(
     if not success and error_message:
         handshake_data["error"] = error_message
 
-    try:
-        payload = (json.dumps(handshake_data) + "\n").encode()
-        if handshake_fd is not None:
-            try:
-                os.write(handshake_fd, payload)
-            except Exception as e:
-                print(f"Failed to write handshake to fd {handshake_fd}: {e}", file=sys.stderr)
-        else:
-            print(payload.decode().rstrip(), flush=True)
+    payload = (json.dumps(handshake_data) + "\n").encode()
+    if handshake_fd is None:
+        raise RuntimeError("WT_HANDSHAKE_FD not set; cannot send startup handshake")
+    os.write(handshake_fd, payload)
 
-        if redirect_after:
-            try:
-                from wt.shared.configuration import load_config
+    if redirect_after:
+        try:
+            from wt.shared.configuration import load_config
 
-                daemon_log = load_config().daemon_dir / "daemon.log"
-                log_fd = os.open(
-                    daemon_log,
-                    os.O_WRONLY | os.O_CREAT | os.O_APPEND,
-                    0o644,
-                )
-                os.dup2(log_fd, 1)
-                os.close(log_fd)
-            except Exception:
-                os.dup2(2, 1)
-            logger.info("Startup handshake sent: success=%s", success)
-            if not success:
-                logger.error("Startup failed: %s", error_message)
-    except Exception as e:
-        print(f"Failed to send startup handshake: {e}", file=sys.stderr)
+            daemon_log = load_config().daemon_dir / "daemon.log"
+            log_fd = os.open(
+                daemon_log,
+                os.O_WRONLY | os.O_CREAT | os.O_APPEND,
+                0o644,
+            )
+            os.dup2(log_fd, 1)
+            os.close(log_fd)
+        except OSError:
+            os.dup2(2, 1)
+        logger.info("Startup handshake sent: success=%s", success)
+        if not success:
+            logger.error("Startup failed: %s", error_message)
 
 
 @dataclass
@@ -1636,10 +1628,7 @@ class WtDaemon:
                     await self.discover_worktrees()
                 worktree_paths = list(self.known_worktrees.keys())
                 # If discovery found fewer paths than git knows about (newly added), cross-check via git
-                try:
-                    git_paths = [wt.path for wt in self.git_manager.list_worktrees() if not wt.is_main]
-                except Exception:
-                    git_paths = []
+                git_paths = [wt.path for wt in self.git_manager.list_worktrees() if not wt.is_main]
                 if git_paths and len(worktree_paths) < len(git_paths):
                     # Merge any missing git paths into known_worktrees and schedule their startup
                     for p in git_paths:

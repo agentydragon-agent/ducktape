@@ -8,12 +8,13 @@ import asyncio
 import json
 import logging
 import os
+import shlex
 import sys
 import uuid
 from pathlib import Path
 
 import psutil
-from pydantic import TypeAdapter
+from pydantic import TypeAdapter, ValidationError
 
 from ..shared.configuration import Configuration
 from ..shared.error_handling import validate_worktree_name
@@ -26,6 +27,7 @@ from ..shared.protocol import (
     StatusResponse,
     TeleportCdThere,
     TeleportDoesNotExist,
+    TeleportResult,
     WorktreeCreateParams,
     WorktreeCreateResult,
     WorktreeDeleteParams,
@@ -334,7 +336,7 @@ class WtClient:
                     continue
                 try:
                     obj = StartupMessage.model_validate_json(line)
-                except Exception:
+                except ValidationError:
                     continue
                 last_obj = obj.model_dump()
                 if not obj.success:

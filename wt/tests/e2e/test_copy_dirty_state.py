@@ -1,12 +1,6 @@
-import os
 from pathlib import Path
 
-import pytest
-
-from ..conftest import kill_daemon_and_verify
 from ..test_utils import run_cli_sh_command
-
-
 
 
 def test_copy_dirty_state_cli(real_env, real_temp_repo):

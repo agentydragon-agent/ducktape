@@ -3,7 +3,6 @@ from pathlib import Path
 
 import pytest
 
-from .test_post_creation_script import real_env_with_post_script
 from ..test_utils import run_cli_command
 
 

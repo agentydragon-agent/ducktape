@@ -4,9 +4,6 @@ from pathlib import Path
 
 import pytest
 
-from wt.server.git_manager import GitManager
-from wt.server.worktree_service import WorktreeService
-
 
 class TestWorktreeService:
     """Test the WorktreeService with real git repositories."""
