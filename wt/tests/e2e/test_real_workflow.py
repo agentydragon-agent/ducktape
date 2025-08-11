@@ -48,9 +48,10 @@ from pathlib import Path
 import pygit2
 import pytest
 
+from wt.shared.git_utils import git_run
+
 from ..conftest import create_integration_test_config_file, kill_daemon_and_verify
 from ..test_utils import run_cli_command
-from wt.shared.git_utils import git_run
 
 pytestmark = pytest.mark.timeout(10)
 

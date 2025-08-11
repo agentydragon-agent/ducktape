@@ -1,7 +1,7 @@
 """Integration tests for the new CLI architecture."""
 
-from unittest.mock import patch
 from datetime import datetime
+from unittest.mock import patch
 
 import pytest
 from click.testing import CliRunner
@@ -9,11 +9,11 @@ from click.testing import CliRunner
 from wt.cli import main
 from wt.shared.constants import MAIN_WORKTREE_DISPLAY_NAME
 from wt.shared.protocol import (
+    CommitInfo,
     DaemonHealth,
     DaemonHealthStatus,
     StatusResponse,
     StatusResult,
-    CommitInfo,
 )
 
 

@@ -15,13 +15,12 @@ import os
 import shutil
 import signal
 import subprocess
-import threading
 import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
@@ -29,6 +28,8 @@ from watchdog.observers import Observer
 from ..shared.constants import MAIN_WORKTREE_DISPLAY_NAME
 from ..shared.protocol import (
     CommitInfo,
+    DaemonHealth,
+    DaemonHealthStatus,
     ErrorCodes,
     ErrorResponse,
     GitstatusdState,
@@ -54,43 +55,22 @@ from ..shared.protocol import (
     WorktreeTeleportTargetParams,
     create_error_response,
     parse_request,
-    DaemonHealth,
-    DaemonHealthStatus,
-    ComponentState,
-    ReadinessSummary,
-    ComponentsStatus,
-    ComponentStatus,
-    parse_worktree_id,
-    WorktreeInfo as ProtocolWorktreeInfo,
 )
 from .git_manager import GitManager
 from .gitstatusd_client import (
-    GitStatusdParseError,
     GitStatusdProtocol,
     GitStatusdRequest,
-    GitStatusdValidationError,
     gitstatusd_response_to_legacy_format,
 )
-from .worktree_ids import make_worktree_id, wtid_to_path
+from .worktree_ids import make_worktree_id
 from .worktree_service import WorktreeService
-from ..shared.protocol import (
-    DaemonHealth,
-    DaemonHealthStatus,
-    ComponentState,
-    ReadinessSummary,
-    ComponentsStatus,
-    ComponentStatus,
-    parse_worktree_id,
-    WorktreeInfo as ProtocolWorktreeInfo,
-)
-from .github_client import GitHubInterface
 
 logger = logging.getLogger(__name__)
 
 
 def write_startup_handshake(
     success: bool,
-    error_message: str = None,
+    error_message: Optional[str] = None,
     *,
     redirect_after: bool = True,
     **extra_data,
@@ -732,7 +712,6 @@ class WtDaemon:
                 )
 
         # Track daemon health state using proper protocol types
-        from ..shared.protocol import DaemonHealth, DaemonHealthStatus
 
         self.daemon_health = DaemonHealth(
             status=DaemonHealthStatus.OK,
@@ -751,7 +730,6 @@ class WtDaemon:
         self.pr_services: dict[Path, PRService] = {}
         self.git_manager = GitManager(config=self.config)
         self.repo_meta = RepoMetaService(self.git_manager, self.config)
-        from .worktree_service import WorktreeService
         self.worktree_service = WorktreeService(self.git_manager, self.github_interface)
 
         # Server state
@@ -765,7 +743,6 @@ class WtDaemon:
 
     def _record_error(self, error_type: str, error_message: str):
         """Record an error and update daemon health status."""
-        from ..shared.protocol import DaemonHealthStatus
 
         logger.error(f"{error_type}: {error_message}")
 
@@ -788,7 +765,6 @@ class WtDaemon:
 
     def _clear_errors_if_healthy(self):
         """Clear daemon error state if recent operations are succeeding."""
-        from ..shared.protocol import DaemonHealthStatus
 
         # Only clear if currently in error state
         if self.daemon_health.status == DaemonHealthStatus.ERROR:
@@ -1117,10 +1093,8 @@ class WtDaemon:
                     f"Internal error: {e}",
                     request_id,
                 )
-                try:
+                with contextlib.suppress(Exception):
                     await self._send_response(writer, error_response)
-                except Exception:
-                    pass
 
         except Exception:
             logger.exception("Error handling client request")
@@ -1453,7 +1427,7 @@ class WtDaemon:
             )
 
             status_response = StatusResponse(
-                results={k: v for k, v in results.items()},
+                results=dict(results.items()),
                 total_processing_time_ms=total_time,
                 individual_processing_times_ms=individual_times,
                 concurrent_requests=len(worktree_paths),

@@ -15,17 +15,18 @@ exit code semantics, and process boundary interactions.
 # - click.echo() outputs to stdout by default, not stderr
 # - DON'T mock across process boundaries - create real error conditions instead
 
+import contextlib
+import importlib.util
+import io
 import os
+import shutil
 import subprocess
 import tempfile
-import importlib.util
-import shutil
-import contextlib
-import io
 from pathlib import Path
 from typing import Optional
 
 import pytest
+
 from wt.shell.install import main as emit_function
 
 # Global constants for paths

@@ -23,7 +23,7 @@ def git_run(
     env: Mapping[str, str] | None = None,
     input: bytes | None = None,
 ) -> subprocess.CompletedProcess:
-    cmd = ["git", "-c", "core.hooksPath="] + args
+    cmd = ["git", "-c", "core.hooksPath=", *args]
     return subprocess.run(
         cmd,
         cwd=str(cwd),

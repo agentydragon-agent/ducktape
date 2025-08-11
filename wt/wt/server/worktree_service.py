@@ -1,9 +1,9 @@
 """Pure business logic for worktree operations - no I/O, no formatting."""
 
-import json
-import logging
 import asyncio
 import contextlib
+import json
+import logging
 import shutil
 from datetime import datetime
 from pathlib import Path
@@ -15,7 +15,7 @@ import pygit2
 
 from ..shared.constants import MAIN_WORKTREE_DISPLAY_NAME
 from ..shared.error_handling import ErrorContext, validate_worktree_name
-from ..shared.github_models import PRInfo, PRData
+from ..shared.github_models import PRData, PRInfo
 from ..shared.models import CommitInfo, ProcessInfo
 from ..shared.protocol import StatusResult
 from .copy_strategies import get_copy_strategy
@@ -274,7 +274,7 @@ class WorktreeService:
         writer=None,
         timeout: float = 60.0,
     ) -> dict:
-        logger = logging.getLogger(__name__)
+        logging.getLogger(__name__)
         script = Path(script_path).expanduser().resolve()
         if not script.exists() or not script.is_file():
             return {

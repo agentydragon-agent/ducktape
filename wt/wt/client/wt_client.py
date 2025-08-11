@@ -5,10 +5,10 @@ providing both low-level daemon communication and high-level status operations.
 """
 
 import asyncio
+import contextlib
 import json
 import logging
 import os
-
 import sys
 import uuid
 from pathlib import Path
@@ -42,7 +42,6 @@ from ..shared.protocol import (
     WorktreeResolvePathResult,
     WorktreeTeleportTargetParams,
 )
-from .shell_utils import emit_command
 
 logger = logging.getLogger(__name__)
 
@@ -220,10 +219,8 @@ class WtClient:
 
         # Create pipe for handshake communication (dedicated FD, not stdout)
         handshake_read, handshake_write = os.pipe()
-        try:
+        with contextlib.suppress(Exception):
             os.set_inheritable(handshake_write, True)
-        except Exception:
-            pass
 
         # First fork - create intermediate process
         pid = os.fork()

@@ -143,6 +143,7 @@ echo "Script executed at: $worktree_root" > "$worktree_root/script_output.txt"
         worktree_path = service.create_worktree(config, "script-test")
 
         import asyncio
+
         from wt.server.worktree_service import WorktreeService
 
         result = asyncio.run(

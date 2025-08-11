@@ -9,8 +9,9 @@ import tempfile
 import time
 from pathlib import Path
 
-from ..test_utils import run_cli_sh_command as run_cli_command
 from wt.shared.git_utils import git_run
+
+from ..test_utils import run_cli_sh_command as run_cli_command
 
 
 def create_test_repo_and_config():
