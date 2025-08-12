@@ -2,7 +2,6 @@
 
 import asyncio
 import contextlib
-import json
 import logging
 import shutil
 from datetime import datetime
@@ -15,12 +14,11 @@ import pygit2
 from ..shared.error_handling import ErrorContext, validate_worktree_name
 from ..shared.github_models import PRData, PRInfo
 from ..shared.models import CommitInfo, ProcessInfo
-from ..shared.protocol import StatusResult
+from ..shared.protocol import HookOutputEvent, HookStream, StatusResult
 from .copy_strategies import get_copy_strategy
-from .git_manager import GitError
+from .git_manager import GitError, GitManager
 
 if TYPE_CHECKING:
-    from .git_manager import GitManager
     from .github_client import GitHubInterface
 
 
@@ -30,7 +28,7 @@ logger = logging.getLogger(__name__)
 class WorktreeService:
     """Pure business logic for worktree operations."""
 
-    def __init__(self, git_manager: "GitManager", github: "GitHubInterface"):
+    def __init__(self, git_manager: GitManager, github: "GitHubInterface"):
         self.git_manager = git_manager
         self.github = github
 
@@ -48,38 +46,17 @@ class WorktreeService:
     def _is_managed_worktree(self, path: Path, config) -> bool:
         """Check if this worktree should be managed by our tool."""
         # Skip the main repo
-        if path.resolve() == config.main_repo_resolved.resolve():
+        if path.resolve() == config.main_repo.resolve():
             return False
 
         # Only include worktrees in our managed directory
-        if not path.is_relative_to(config.worktrees_dir_resolved):
+        if not path.is_relative_to(config.worktrees_dir):
             return False
 
         # Filter out hidden worktrees using configurable patterns
         return not any(
             path.name.startswith(pattern) for pattern in config.hidden_worktree_patterns
         )
-
-
-    def _get_commit_info(self, branch_name: str) -> CommitInfo | None:
-        """Get commit information for a branch."""
-        try:
-            commit_data = self.git_manager.log_format(branch_name, "%H|%s|%an|%ai")
-            hash_str, message, author, date_str = commit_data.split("|", 3)
-
-            date = datetime.fromisoformat(date_str.replace(" ", "T"))
-
-            return CommitInfo(
-                last_commit=hash_str,
-                last_commit_message=message,
-                last_commit_author=author,
-                last_commit_date=date,
-            )
-        except (ValueError, GitError) as e:
-            # Let callers handle git errors appropriately instead of masking them
-            raise GitError(
-                f"Failed to get commit info for branch {branch_name}: {e}",
-            ) from e
 
     async def _get_working_directory_status(
         self,
@@ -94,8 +71,6 @@ class WorktreeService:
                 f"Failed to get working directory status for {worktree_path}: {e}",
             ) from e
 
-
-
     def create_worktree(
         self,
         config,
@@ -105,13 +80,13 @@ class WorktreeService:
     ) -> Path:
         """Create a new worktree."""
         validate_worktree_name(name)
-        worktree_path = config.worktrees_dir_resolved / name
+        worktree_path = config.worktrees_dir / name
 
         if worktree_path.exists():
             raise RuntimeError(f"Worktree '{name}' already exists at {worktree_path}")
 
         # Ensure worktrees directory exists
-        config.worktrees_dir_resolved.mkdir(parents=True, exist_ok=True)
+        config.worktrees_dir.mkdir(parents=True, exist_ok=True)
 
         with ErrorContext("create_worktree", name):
             branch_name = f"{config.branch_prefix}{name}"
@@ -120,7 +95,6 @@ class WorktreeService:
             self.git_manager.create_branch(
                 branch_name,
                 source_branch or config.upstream_branch,
-                config.main_repo_resolved,
             )
 
             # Create worktree
@@ -146,50 +120,11 @@ class WorktreeService:
                     repo.checkout_head(strategy=pygit2.GIT_CHECKOUT_FORCE)
             else:
                 logger.info("Not hydrating worktree.")
-
-            logger.info(
-                f"Post-creation script configured: {config.post_creation_script}",
-            )
-            logger.info("Post-creation scripts are executed by the daemon during RPC; skipping here")
-
             return worktree_path
-
-    async def remove_worktree(self, config, name: str, force: bool = False) -> None:
-        """Remove a worktree."""
-        worktree_path = config.worktrees_dir_resolved / name
-
-        if not worktree_path.exists():
-            raise RuntimeError(f"Worktree '{name}' does not exist at {worktree_path}")
-
-        # Check for running processes unless forced
-        if not force:
-            processes = self._get_processes_in_directory(worktree_path)
-            if processes:
-                proc_strings = [f"PID {p.pid} ({p.name})" for p in processes]
-                raise RuntimeError(
-                    f"Worktree is in use by: {', '.join(proc_strings)}\nUse --force to remove anyway",
-                )
-
-        # Check for uncommitted changes
-        if not force:
-            dirty_files, untracked_files = await self._get_working_directory_status(
-                worktree_path,
-            )
-            if dirty_files or untracked_files:
-                raise RuntimeError(
-                    f"Worktree '{name}' has uncommitted changes. Use --force to remove anyway",
-                )
-
-        # Remove worktree
-        self.git_manager.worktree_remove(str(worktree_path), force=force)
-
-        # Clean up directory if it still exists
-        if worktree_path.exists():
-            shutil.rmtree(worktree_path)
 
     def get_worktree_path(self, config, name: str) -> Path:
         """Get path for a worktree by name."""
-        return config.worktrees_dir_resolved / name
+        return config.worktrees_dir / name
 
     def require_worktree_exists(self, config, name: str) -> Path:
         """Require that a worktree exists and return its path."""
@@ -208,7 +143,7 @@ class WorktreeService:
             repo_root = self.git_manager.repo_root(cwd=cwd)
 
             # Check if we're in a worktree (not the main repo)
-            if repo_root != config.main_repo_resolved:
+            if repo_root != config.main_repo:
                 # Calculate relative path within the worktree
                 try:
                     rel_path = cwd.relative_to(repo_root)
@@ -246,18 +181,10 @@ class WorktreeService:
             return base_path / path_spec[2:]
         raise RuntimeError("Path must start with / (absolute) or ./ (relative)")
 
-
     def _hydrate_worktree(self, config, src: Path, dst: Path) -> None:
         """Hydrate worktree with files from source."""
         dst.mkdir(parents=True, exist_ok=True)
-
-        # Skip if source is empty
-        if not any(src.iterdir()):
-            return
-
-        strategy = get_copy_strategy(config.cow_method)
-        strategy.copy(src, dst)
-
+        get_copy_strategy(config.cow_method).copy(src, dst)
 
     @staticmethod
     async def run_post_creation_script(
@@ -288,7 +215,9 @@ class WorktreeService:
 
         if writer is None:
             try:
-                stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+                stdout, stderr = await asyncio.wait_for(
+                    proc.communicate(), timeout=timeout
+                )
                 return {
                     "ran": True,
                     "exit_code": proc.returncode,
@@ -312,30 +241,33 @@ class WorktreeService:
         stderr_buf: list[str] = []
 
         async def _forward(stream, name):
-            try:
-                while True:
-                    line = await stream.readline()
-                    if not line:
-                        break
-                    text = line.decode(errors="replace")
-                    if name == "stdout":
-                        stdout_buf.append(text)
-                    else:
-                        stderr_buf.append(text)
-                    try:
-                        event = {"event": "hook_output", "stream": name, "data": text}
-                        writer.write((json.dumps(event) + "\n").encode())
-                        await writer.drain()
-                    except Exception:
-                        logger.debug("stream forward write failed", exc_info=True)
-            except Exception:
-                logger.debug("stream forward loop error", exc_info=True)
+            while True:
+                line = await stream.readline()
+                if not line:
+                    break
+                text = line.decode(errors="replace")
+                if name == "stdout":
+                    stdout_buf.append(text)
+                else:
+                    stderr_buf.append(text)
+                evt = HookOutputEvent(
+                    stream=(
+                        HookStream.STDOUT if name == "stdout" else HookStream.STDERR
+                    ),
+                    data=text,
+                )
+                writer.write((evt.model_dump_json() + "\n").encode())
+                await writer.drain()
 
         t1 = (
-            asyncio.create_task(_forward(proc.stdout, "stdout")) if proc.stdout else None
+            asyncio.create_task(_forward(proc.stdout, "stdout"))
+            if proc.stdout
+            else None
         )
         t2 = (
-            asyncio.create_task(_forward(proc.stderr, "stderr")) if proc.stderr else None
+            asyncio.create_task(_forward(proc.stderr, "stderr"))
+            if proc.stderr
+            else None
         )
         try:
             await asyncio.wait_for(proc.wait(), timeout=timeout)
@@ -351,11 +283,9 @@ class WorktreeService:
                 "error": "timeout",
             }
         if t1:
-            with contextlib.suppress(Exception):
-                await t1
+            await t1
         if t2:
-            with contextlib.suppress(Exception):
-                await t2
+            await t2
         return {
             "ran": True,
             "exit_code": proc.returncode,
@@ -372,7 +302,7 @@ class WorktreeService:
                 cwd = proc.info.get("cwd")
                 if cwd and Path(cwd).is_relative_to(directory):
                     procs.append(
-                        ProcessInfo(pid=proc.info["pid"], name=proc.info["name"]),
+                        ProcessInfo(pid=proc.pid, name=proc.name()),
                     )
                     continue
                 for fl in proc.open_files():
@@ -382,7 +312,6 @@ class WorktreeService:
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 continue
         return procs
-
 
     async def get_single_worktree_status_daemon(
         self,
@@ -425,4 +354,3 @@ class WorktreeService:
             branch=branch_name,
             pr_data=PRData(pr_number=pr.number, pr_state=pr.state),
         )
-

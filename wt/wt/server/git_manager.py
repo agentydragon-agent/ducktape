@@ -4,11 +4,13 @@ import logging
 import re
 import subprocess
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pygit2
+
+from ..shared.git_utils import git_run
 
 if TYPE_CHECKING:
     from ..shared.configuration import Configuration
@@ -58,62 +60,33 @@ class GitManager:
     config: "Configuration"
 
     def __post_init__(self) -> None:
-        self._repo_cache: dict[Path, pygit2.Repository] = {}
-        # Initialize main repository for batch operations
         self._main_repo = pygit2.Repository(str(self.config.main_repo))
 
-    def get_repo(self, path: Path | None = None) -> pygit2.Repository:
-        """Get repository instance, defaulting to main repo if path not specified."""
-        if path is None:
-            return self._main_repo
-
-        # Normalize path for consistent caching
-        resolved_path = path.resolve()
-
-        if resolved_path in self._repo_cache:
-            return self._repo_cache[resolved_path]
-
-        # Create new repo instance
-        try:
-            repo = pygit2.Repository(str(resolved_path))
-            self._repo_cache[resolved_path] = repo
-            return repo
-        except Exception as e:
-            raise GitError(
-                f"Failed to open git repository at {resolved_path}: {e}",
-            ) from e
-
-    def branch_exists(self, branch_name: str, repo_path: Path | None = None) -> bool:
-        repo = self.get_repo(repo_path)
-        return branch_name in repo.branches
+    def branch_exists(self, branch_name: str) -> bool:
+        return branch_name in self._main_repo.branches
 
     def create_branch(
         self,
         branch_name: str,
         source_branch: str = "HEAD",
-        repo_path: Path | None = None,
     ) -> None:
-        repo = self.get_repo(repo_path)
-        if not self.branch_exists(branch_name, repo_path):
-            target_commit = repo.revparse_single(source_branch)
-            repo.branches.local.create(branch_name, target_commit)
+        if not self.branch_exists(branch_name):
+            target_commit = self._main_repo.revparse_single(source_branch)
+            self._main_repo.branches.local.create(branch_name, target_commit)
 
-    async def get_working_directory_status(
-        self,
-        repo_path: Path | None = None,
-    ) -> tuple[list[str], list[str]]:
+    async def get_working_directory_status(self) -> tuple[list[str], list[str]]:
         """Get working directory status using fastest available method."""
         try:
-            repo = self.get_repo(repo_path)
-
             # Get status - dirty (staged/modified) and untracked files
-            status = repo.status()
+            status = self._main_repo.status()
 
             dirty_files = []
             untracked_files = []
 
             for file_path, flags in status.items():
-                if (flags & pygit2.GIT_STATUS_WT_MODIFIED) or (flags & pygit2.GIT_STATUS_INDEX_MODIFIED):
+                if (flags & pygit2.GIT_STATUS_WT_MODIFIED) or (
+                    flags & pygit2.GIT_STATUS_INDEX_MODIFIED
+                ):
                     dirty_files.append(file_path)
                 elif flags & pygit2.GIT_STATUS_WT_NEW:
                     untracked_files.append(file_path)
@@ -126,36 +99,23 @@ class GitManager:
                 f"Failed to get working directory status for {repo_path or self.config.main_repo}: {e}",
             ) from e
 
-    def get_repo_root(self, cwd: Path | None = None) -> Path:
-        if cwd is None:
-            return self.config.main_repo
-        repo = self.get_repo(cwd)
-        return Path(repo.workdir).resolve()
-
     def get_commit_count_between(
         self,
         rev_a: str,
         rev_b: str,
-        repo_path: Path | None = None,
     ) -> int:
-        repo = self.get_repo(repo_path)
         try:
-            ahead, behind = repo.ahead_behind(rev_b, rev_a)
+            ahead, behind = self._main_repo.ahead_behind(rev_b, rev_a)
             return ahead if rev_a == rev_b else (ahead + behind)
         except pygit2.GitError as e:
             raise NoSuchRef(
                 f"Cannot count commits between {rev_a} and {rev_b}: {e}",
             ) from e
 
-    def get_commit_info(
-        self,
-        ref: str,
-        repo_path: Path | None = None,
-    ) -> dict[str, str]:
-        repo = self.get_repo(repo_path)
+    def get_commit_info(self, ref: str) -> dict[str, str]:
         try:
             # Resolve reference to commit object
-            resolved = repo.resolve_refish(ref)  # type: ignore[attr-defined]
+            resolved = self._main_repo.resolve_refish(ref)  # type: ignore[attr-defined]
             commit = resolved[0]
         except KeyError as e:
             raise NoSuchRef(f"Cannot get commit object for {ref}: {e}") from e
@@ -167,8 +127,6 @@ class GitManager:
 
         author_name = commit.author.name
         # Convert timestamp to ISO format
-        from datetime import timezone
-
         date_obj = datetime.fromtimestamp(commit.commit_time, timezone.utc)
         date_str = date_obj.isoformat()
 
@@ -180,11 +138,10 @@ class GitManager:
             "date": date_str,
         }
 
-    def verify_ref_exists(self, ref: str, repo_path: Path | None = None) -> str:
+    def verify_ref_exists(self, ref: str) -> str:
         try:
-            repo = self.get_repo(repo_path)
             # Use pygit2 API to resolve the reference
-            resolved = repo.resolve_refish(ref)  # type: ignore[attr-defined]
+            resolved = self._main_repo.resolve_refish(ref)  # type: ignore[attr-defined]
             return str(resolved[0].id)
         except KeyError as e:
             # Reference does not exist
@@ -193,36 +150,9 @@ class GitManager:
             # Don't assume unknown errors mean "reference doesn't exist"
             raise GitError(f"Failed to verify reference {ref}: {e}") from e
 
-    def get_status_porcelain(self, repo_path: Path | None = None) -> str:
-        try:
-            repo = self.get_repo(repo_path)
-            # Convert pygit2 status to porcelain format
-            statuses = repo.status_file_flags()  # type: ignore[attr-defined]
-            lines = []
-            for filepath, flags in statuses.items():
-                if flags & pygit2.GIT_STATUS_INDEX_NEW:
-                    lines.append(f"A  {filepath}")
-                elif flags & pygit2.GIT_STATUS_INDEX_MODIFIED:
-                    lines.append(f"M  {filepath}")
-                elif flags & pygit2.GIT_STATUS_INDEX_DELETED:
-                    lines.append(f"D  {filepath}")
-                elif flags & pygit2.GIT_STATUS_WT_NEW:
-                    lines.append(f"?? {filepath}")
-                elif flags & pygit2.GIT_STATUS_WT_MODIFIED:
-                    lines.append(f" M {filepath}")
-                elif flags & pygit2.GIT_STATUS_WT_DELETED:
-                    lines.append(f" D {filepath}")
-            return "\n".join(lines)
-        except Exception as e:
-            raise GitError(
-                f"Git status failed for {repo_path or self.config.main_repo}: {e}",
-            ) from e
-
     # Worktree operations
     def list_worktrees(self) -> list[WorktreeInfo]:
         """List all worktrees using pygit2 API."""
-        worktree_infos = []
-
         # Main repository is always included
         current_branch = (
             self._main_repo.head.shorthand
@@ -230,14 +160,14 @@ class GitManager:
             else None
         )
 
-        worktree_infos.append(
+        worktree_infos = [
             WorktreeInfo(
                 path=self.config.main_repo,
                 branch=current_branch or "",
                 exists=True,
                 is_main=True,
-            ),
-        )
+            )
+        ]
 
         # Add all other worktrees
         worktree_infos.extend(
@@ -278,7 +208,6 @@ class GitManager:
         branch_ref = self._main_repo.lookup_branch(branch)
         if branch_ref is None:
             raise CannotCreateWorktree(f"Branch {branch} does not exist")
-        from ..shared.git_utils import git_run
 
         try:
             git_run(
@@ -291,30 +220,10 @@ class GitManager:
             ) from e
 
     def worktree_remove(self, path: str, force: bool = False) -> None:
-        # Get worktree name from path
-        worktree_name = Path(path).name
-        worktree = self._main_repo.lookup_worktree(worktree_name)
-        worktree.prune(force)
+        self._main_repo.lookup_worktree(Path(path).name).prune(force)
 
     def verify_branch_exists(self, branch_name: str) -> str:
         try:
             return self.verify_ref_exists(f"refs/heads/{branch_name}")
         except NoSuchRef as e:
             raise NoSuchBranch(str(e)) from e
-
-    # Compatibility methods for legacy API
-    def status_porcelain(self, cwd: Path | None = None) -> str:
-        return self.get_status_porcelain(cwd)
-
-    def rev_count(self, rev_a: str, rev_b: str) -> int:
-        return self.get_commit_count_between(rev_a, rev_b)
-
-    def log_format(self, ref: str, format_str: str) -> str:
-        try:
-            commit_info = self.get_commit_info(ref)
-            return f"{commit_info['hash']}|{commit_info['message']}|{commit_info['author']}|{commit_info['date']}"
-        except GitError as e:
-            raise NoSuchRef(f"Cannot get log for {ref}: {e}") from e
-
-    def repo_root(self, cwd: Path | None = None) -> Path:
-        return self.get_repo_root(cwd)

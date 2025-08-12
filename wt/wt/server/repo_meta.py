@@ -19,9 +19,9 @@ class RepoMetaService:
         branch_name = repo.head.shorthand
         commit_info_data = self.git_manager.get_commit_info("HEAD", worktree_path)
         ahead_behind = (0, 0)
-        if worktree_path != self.config.main_repo_resolved:
+        if worktree_path != self.config.main_repo:
             try:
-                main_repo = self.git_manager.get_repo(self.config.main_repo_resolved)
+                main_repo = self.git_manager.get_repo(self.config.main_repo)
                 ahead, behind = main_repo.ahead_behind(
                     f"refs/heads/{branch_name}",
                     f"refs/heads/{self.config.upstream_branch}",

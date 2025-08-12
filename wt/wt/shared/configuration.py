@@ -89,31 +89,6 @@ class Configuration:
         """Path to PR cache file."""
         return self.wt_dir / "pr_cache.json"
 
-    # Legacy property aliases for compatibility during transition
-    @property
-    def main_repo_resolved(self) -> Path:
-        """Legacy alias for main_repo."""
-        return self.main_repo
-
-    @property
-    def worktrees_dir_resolved(self) -> Path:
-        """Legacy alias for worktrees_dir."""
-        return self.worktrees_dir
-
-    @property
-    def daemon_dir(self) -> Path:
-        """Legacy alias for wt_dir."""
-        return self.wt_dir
-
-    @property
-    def daemon_socket_file(self) -> Path:
-        """Legacy alias for daemon_socket_path."""
-        return self.daemon_socket_path
-
-    @property
-    def daemon_pid_file(self) -> Path:
-        """Legacy alias for daemon_pid_path."""
-        return self.daemon_pid_path
 
     @classmethod
     def resolve(cls, wt_dir: Path) -> "Configuration":

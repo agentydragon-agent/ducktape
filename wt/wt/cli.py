@@ -20,7 +20,7 @@ from .client.handlers import (
     handle_status_single,
 )
 from .client.view_formatter import ViewFormatter
-from .client.worktree_utils import emit_cd_command
+from .client.cd_utils import emit_cd_command
 from .client.wt_client import WtClient
 from .plugins import PluginIO, get_manager, resolve_command
 from .shared.configuration import load_config
@@ -201,7 +201,7 @@ async def _async_sh_main(
     # Handle special worktree names
     if cmd in MAIN_REPO_ALIASES:
         click.echo(f"Navigating to main repo ({cmd})")
-        emit_cd_command(config.main_repo_resolved, config)
+        emit_cd_command(config.main_repo, main_repo=config.main_repo)
         return
 
     # Handle commands - pure argument parsing, delegate to handlers

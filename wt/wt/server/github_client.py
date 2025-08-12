@@ -4,6 +4,7 @@ This module uses PyGithub by default and optionally reads tokens from env or gh 
 No subprocess JSON parsing is used for API calls.
 """
 
+import logging
 import os
 import subprocess
 
@@ -12,6 +13,8 @@ from github import Github
 from ..shared.error_handling import GitHubUnavailableError, handle_github_errors
 from ..shared.github_models import PRState, PullRequestList, PullRequestSearch
 from ..shared.models import PRStatus
+
+logger = logging.getLogger(__name__)
 
 
 class DisabledGitHubInterface:
@@ -35,7 +38,7 @@ class DisabledGitHubInterface:
 
 class GitHubInterface:
     def __init__(self, github_repo: str, token: str | None = None):
-        token = token or os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+        token = token or os.environ.get("GITHUB_TOKEN")
         if not token:
             try:
                 token = subprocess.run(
@@ -57,7 +60,8 @@ class GitHubInterface:
         self._gh = Github(token) if token else Github()
         self._repo = None  # Lazy initialization
 
-    def _get_repo(self):
+    @property
+    def repo(self):
         """Lazy initialization of the GitHub repository object."""
         if self._repo is None:
             try:
@@ -70,8 +74,7 @@ class GitHubInterface:
 
     @handle_github_errors
     def pr_list(self) -> list[PullRequestList]:
-        repo = self._get_repo()
-        pulls = repo.get_pulls(state="all", sort="created", direction="desc")
+        pulls = self.repo.get_pulls(state="all", sort="created", direction="desc")
         return [
             PullRequestList(
                 number=pr.number,
@@ -86,33 +89,20 @@ class GitHubInterface:
     @handle_github_errors
     def pr_search(self, branch_name: str) -> list:
         """Search for PRs by branch name using GitHub search API instead of paginating all PRs."""
-        repo = self._get_repo()
-
         # Use GitHub search API to find PRs by head branch - much more efficient
         search_query = f"repo:{self.github_repo} type:pr head:{branch_name}"
 
         try:
             # Search for issues/PRs matching the branch
             issues = self._gh.search_issues(search_query)
-
-            result = []
-            for issue in issues:
-                # Get the actual PR object for full details and return it directly
-                pr = repo.get_pull(issue.number)
-                result.append(pr)  # Return the PyGithub PR object directly
-
-            return result
+            return [self.repo.get_pull(issue.number) for issue in issues]
 
         except Exception as e:
             # No fallback - let the error propagate to show the real issue
-            import logging
-
-            logger = logging.getLogger(__name__)
             logger.error(f"GitHub search API failed for branch '{branch_name}': {e}")
             raise
 
     @handle_github_errors
     def pr_view(self, branch_name: str) -> dict[str, str]:
-        repo = self._get_repo()
-        pr = repo.get_pull(int(branch_name))
+        pr = self.repo.get_pull(int(branch_name))
         return {"number": str(pr.number), "state": pr.state, "title": pr.title}

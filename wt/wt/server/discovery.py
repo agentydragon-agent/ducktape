@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 
 from .types import DiscoveredWorktree
 
@@ -14,7 +15,7 @@ class WorktreeDiscovery:
         self._startup_tasks: list[asyncio.Task] = []
 
     async def discover_once(self) -> None:
-        worktrees_dir = self.daemon.config.worktrees_dir_resolved
+        worktrees_dir = self.daemon.config.worktrees_dir
         if not worktrees_dir.exists():
             return
         self.daemon.discovery_scanning = True
@@ -27,11 +28,12 @@ class WorktreeDiscovery:
                     current_worktrees.add(worktree_info)
                 if path in self.daemon.known_worktrees:
                     # Update last_seen to current timestamp when seen
-                    import time as _t
-                    self.daemon.known_worktrees[path].last_seen = _t.time()
+                    self.daemon.known_worktrees[path].last_seen = time.time()
                 else:
                     logger.info("Discovered new worktree: %s", path.name)
-                    self.daemon.known_worktrees[path] = DiscoveredWorktree(path, path.name)
+                    self.daemon.known_worktrees[path] = DiscoveredWorktree(
+                        path, path.name
+                    )
                     # Ensure startup task list exists on discovery instance
                     # (avoid getattr/hasattr per style rules)
                     if self._startup_tasks is None:
@@ -43,7 +45,9 @@ class WorktreeDiscovery:
                             ),
                         ),
                     )
-        disappeared = set(self.daemon.known_worktrees.keys()) - {wt.path for wt in current_worktrees}
+        disappeared = set(self.daemon.known_worktrees.keys()) - {
+            wt.path for wt in current_worktrees
+        }
         for disappeared_path in disappeared:
             worktree_info = self.daemon.known_worktrees[disappeared_path]
             logger.info("Worktree disappeared: %s", worktree_info.name)

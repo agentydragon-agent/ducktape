@@ -13,7 +13,7 @@ wt/
 │   ├── wt_client.py         # Unix socket communication (WtClient)
 │   ├── handlers.py          # Pure handler functions
 │   ├── view_formatter.py    # Display formatting
-│   ├── worktree_utils.py    # Direct git/filesystem operations
+│   ├── cd_utils.py          # Shell 'cd' command emission helper
 │   └── shell_utils.py       # Shell command emission
 ├── server/                  # Server-side code (daemon only)
 │   ├── wt_server.py         # Main daemon process (WtDaemon)

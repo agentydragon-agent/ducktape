@@ -98,17 +98,13 @@ async def handle_worktree_create(
     def _emit_progress(step: WorktreeCreateStep, message: str, progress: float):
         if writer is None:
             return
-        import json as _json
         evt = ProgressEvent(
             operation=ProgressOperation.WORKTREE_CREATE,
             step=step,
             progress=progress,
             message=message,
         )
-        try:
-            writer.write((evt.model_dump_json() + "\n").encode())
-        except Exception:
-            logger.debug("progress write failed", exc_info=True)
+        writer.write((evt.model_dump_json() + "\n").encode())
 
     if source_path:
         _emit_progress(WorktreeCreateStep.HYDRATE_STARTED, "hydrate started", 0.0)

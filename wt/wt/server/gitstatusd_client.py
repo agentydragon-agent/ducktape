@@ -354,22 +354,6 @@ class GitStatusdProtocol:
             return RepositoryState.NORMAL
 
 
-# Convenience functions for backward compatibility
-def parse_gitstatusd_response(raw_response: str) -> GitStatusdResponse:
-    """Parse gitstatusd response (convenience function)."""
-    return GitStatusdProtocol.parse_response(raw_response)
-
-
-def create_gitstatusd_request(
-    request_id: str,
-    directory_path: str,
-    disable_index: bool = False,
-) -> str:
-    """Create gitstatusd request (convenience function)."""
-    request = GitStatusdRequest(request_id, directory_path, disable_index)
-    return request.to_wire_format()
-
-
 def gitstatusd_response_to_legacy_format(
     response: GitStatusdResponse,
 ) -> tuple[list[str], list[str]]:

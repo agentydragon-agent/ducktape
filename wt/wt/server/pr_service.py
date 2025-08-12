@@ -49,12 +49,8 @@ class PRService:
             await self.github_refresh.stop()
 
     async def _refresh_github_cache(self, reason: str, files_changed: list[str]):
-        repo = self.worktree_info.path
-        try:
-            repo_obj = GitManager(config=self.config).get_repo(repo)
-            branch_name = repo_obj.head.shorthand
-        except Exception:
-            return
+        repo_obj = GitManager(config=self.config).get_repo(self.worktree_info.path)
+        branch_name = repo_obj.head.shorthand
         await self.get_pr_info(branch_name, force_refresh=True)
 
     async def get_pr_info(

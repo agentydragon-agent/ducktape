@@ -30,4 +30,4 @@ def parse_worktree_id(wtid: WorktreeID) -> str:
 def wtid_to_path(config: Configuration, wtid: WorktreeID) -> Path:
     """Server-only: Convert WorktreeID to absolute worktree path using configured worktrees_dir."""
     name = parse_worktree_id(wtid)
-    return (config.worktrees_dir_resolved / name).resolve()
+    return (config.worktrees_dir / name).resolve()

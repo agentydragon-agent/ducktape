@@ -37,7 +37,13 @@ async def handle_status_request(daemon, request: Request, start_time: float) -> 
             worktree_paths.append(worktree_path)
     else:
         if not daemon.known_worktrees:
-            await daemon.discovery.discover_once()
+            current = await daemon.discovery_scanner.scan(daemon.config.worktrees_dir)
+            changes = daemon.registry.apply(current)
+            daemon.known_worktrees = dict(daemon.registry.known)
+            for wt in changes.added:
+                await daemon._start_gitstatusd_for_worktree(wt)
+            for wt in changes.removed:
+                await daemon._stop_gitstatusd_for_worktree(wt)
         worktree_paths = list(daemon.known_worktrees.keys())
         git_paths = [wt.path for wt in daemon.git_manager.list_worktrees() if not wt.is_main]
         if git_paths and len(worktree_paths) < len(git_paths):
@@ -158,7 +164,7 @@ async def handle_status_request(daemon, request: Request, start_time: float) -> 
                 commit_info=commit_info,
                 ahead_count=ahead_behind[0],
                 behind_count=ahead_behind[1],
-                is_main=worktree_path.resolve() == daemon.config.main_repo_resolved.resolve(),
+                is_main=worktree_path.resolve() == daemon.config.main_repo.resolve(),
                 upstream_branch=daemon.config.upstream_branch,
                 pr_info=pr_info,
                 gitstatusd_state=(
