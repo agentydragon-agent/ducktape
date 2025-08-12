@@ -421,13 +421,47 @@ class TeleportDoesNotExist(BaseModel):
 TeleportResult = Annotated[TeleportCdThere | TeleportDoesNotExist, Field(discriminator="type")]
 
 
-class ProgressUpdate(BaseModel):
-    """Progress update for streaming operations."""
+class StreamEventType(str, Enum):
+    PROGRESS = "progress"
+    HOOK_OUTPUT = "hook_output"
 
-    operation: str = Field(..., description="Operation name")
-    step: str = Field(..., description="Current step")
+
+class ProgressOperation(str, Enum):
+    WORKTREE_CREATE = "worktree_create"
+
+
+class WorktreeCreateStep(str, Enum):
+    CHECKOUT_STARTED = "checkout_started"
+    CHECKOUT_DONE = "checkout_done"
+    HYDRATE_STARTED = "hydrate_started"
+    HYDRATE_DONE = "hydrate_done"
+
+
+class HookStream(str, Enum):
+    STDOUT = "stdout"
+    STDERR = "stderr"
+
+
+class ProgressEvent(BaseModel):
+    """Progress update for streaming operations (discriminated by event='progress')."""
+
+    event: Literal["progress"] = "progress"
+    operation: ProgressOperation = Field(..., description="Operation name")
+    step: WorktreeCreateStep = Field(..., description="Current step")
     progress: float = Field(..., description="Progress 0.0-1.0")
     message: str = Field(..., description="Progress message")
+
+
+class HookOutputEvent(BaseModel):
+    """Streaming output from post-creation hook (discriminated by event='hook_output')."""
+
+    event: Literal["hook_output"] = "hook_output"
+    stream: HookStream
+    data: str
+
+
+# Discriminated union for stream messages from server
+StreamMessage = Annotated[ProgressEvent | HookOutputEvent, Field(discriminator="event")]
 
 
 class ComponentState(str, Enum):

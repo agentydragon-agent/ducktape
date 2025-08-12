@@ -10,7 +10,14 @@ import click
 import psutil
 
 from ..shared.constants import MAIN_WORKTREE_DISPLAY_NAME, RESERVED_NAMES
-from ..shared.protocol import TeleportCdThere
+from ..shared.protocol import (
+    HookOutputEvent,
+    HookStream,
+    ProgressEvent,
+    ProgressOperation,
+    TeleportCdThere,
+    WorktreeCreateStep,
+)
 from .worktree_utils import (
     emit_cd_command,
     get_current_worktree_info,
@@ -95,6 +102,30 @@ async def handle_create_worktree(config, name: str, from_default: bool = True) -
     """Handle worktree creation."""
     try:
         daemon_client = WtClient(config)
+
+        from ..shared.protocol import ProgressEvent, ProgressOperation, WorktreeCreateStep, HookOutputEvent, HookStream
+
+        def on_progress(evt: ProgressEvent):
+            if evt.operation == ProgressOperation.WORKTREE_CREATE and evt.step in {
+                WorktreeCreateStep.CHECKOUT_STARTED,
+                WorktreeCreateStep.HYDRATE_STARTED,
+            }:
+                click.echo(f"… {evt.message}")
+            elif evt.operation == ProgressOperation.WORKTREE_CREATE and evt.step in {
+                WorktreeCreateStep.CHECKOUT_DONE,
+                WorktreeCreateStep.HYDRATE_DONE,
+            }:
+                click.echo(f"✓ {evt.message}")
+
+        def on_hook(evt: HookOutputEvent):
+            if evt.stream == HookStream.STDERR:
+                click.echo(evt.data, err=True, nl=False)
+            else:
+                click.echo(evt.data, nl=False)
+
+        setattr(daemon_client, "_progress_callback", on_progress)
+        setattr(daemon_client, "_hook_output_callback", on_hook)
+
         new_path = await daemon_client.create_worktree_convenience(name, from_default=from_default)
         emit_cd_command(new_path, config)
     except RuntimeError as e:

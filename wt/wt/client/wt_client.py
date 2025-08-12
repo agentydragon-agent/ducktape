@@ -20,6 +20,8 @@ from ..shared.configuration import Configuration
 from ..shared.error_handling import validate_worktree_name
 from ..shared.protocol import (
     ErrorResponse,
+    HookOutputEvent,
+    ProgressEvent,
     Request,
     Response,
     StartupMessage,
@@ -460,25 +462,47 @@ class WtClient:
             hook_stdout = []
             hook_stderr = []
             response_json = None
+            from ..shared.protocol import HookOutputEvent, ProgressEvent
+
+            progress_cb = getattr(self, "_progress_callback", None)
+            hook_cb = getattr(self, "_hook_output_callback", None)
             while True:
                 line = await reader.readline()
                 if not line:
                     break
                 text = line.decode().strip()
+                # Try to parse as JSON object
                 try:
                     obj = json.loads(text)
-                    if obj.get("event") == "hook_output":
-                        stream = obj.get("stream")
-                        data = obj.get("data", "")
-                        if stream == "stdout":
-                            hook_stdout.append(data)
-                        else:
-                            hook_stderr.append(data)
-                        continue
-                    response_json = obj
-                    break
                 except json.JSONDecodeError:
                     continue
+                # Dispatch on event type if present
+                ev = obj.get("event") if isinstance(obj, dict) else None
+                if ev == "hook_output":
+                    try:
+                        msg = HookOutputEvent.model_validate(obj)
+                    except Exception:
+                        continue
+                    if callable(hook_cb):
+                        with contextlib.suppress(Exception):
+                            hook_cb(msg)
+                    if msg.stream.value == "stdout":
+                        hook_stdout.append(msg.data)
+                    else:
+                        hook_stderr.append(msg.data)
+                    continue
+                if ev == "progress":
+                    try:
+                        msg = ProgressEvent.model_validate(obj)
+                    except Exception:
+                        continue
+                    if callable(progress_cb):
+                        with contextlib.suppress(Exception):
+                            progress_cb(msg)
+                    continue
+                # Otherwise treat as final response
+                response_json = obj
+                break
             if response_json is None:
                 raise RuntimeError("No response from daemon for worktree_create")
 

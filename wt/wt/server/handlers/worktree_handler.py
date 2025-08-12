@@ -6,6 +6,8 @@ from pathlib import Path
 
 from ...shared.constants import MAIN_WORKTREE_DISPLAY_NAME
 from ...shared.protocol import (
+    ProgressEvent,
+    ProgressOperation,
     Request,
     Response,
     WorktreeCreateParams,
@@ -16,6 +18,7 @@ from ...shared.protocol import (
     WorktreeGetByNameResult,
     WorktreeIdentifyParams,
     WorktreeIdentifyResult,
+    WorktreeCreateStep,
 )
 from ...shared.protocol import (
     WorktreeInfo as ProtocolWorktreeInfo,
@@ -83,12 +86,47 @@ async def handle_worktree_create(
         src_branch = src_repo.head.shorthand
     else:
         src_branch = daemon.config.upstream_branch
+
+    # Emit progress events around the slow hydration/checkout step
+    from ...shared.protocol import (
+        ProgressEvent,
+        ProgressOperation,
+        StreamEventType,
+        WorktreeCreateStep,
+    )
+
+    def _emit_progress(step: WorktreeCreateStep, message: str, progress: float):
+        if writer is None:
+            return
+        import json as _json
+        evt = ProgressEvent(
+            operation=ProgressOperation.WORKTREE_CREATE,
+            step=step,
+            progress=progress,
+            message=message,
+        )
+        try:
+            writer.write((evt.model_dump_json() + "\n").encode())
+        except Exception:
+            logger.debug("progress write failed", exc_info=True)
+
+    if source_path:
+        _emit_progress(WorktreeCreateStep.HYDRATE_STARTED, "hydrate started", 0.0)
+    else:
+        _emit_progress(WorktreeCreateStep.CHECKOUT_STARTED, "checkout started", 0.0)
+
     svc.create_worktree(
         daemon.config,
         params.name,
         source_worktree=source_path,
         source_branch=src_branch,
     )
+
+    if source_path:
+        _emit_progress(WorktreeCreateStep.HYDRATE_DONE, "hydrate done", 1.0)
+    else:
+        _emit_progress(WorktreeCreateStep.CHECKOUT_DONE, "checkout done", 1.0)
+
     post = None
     if daemon.config.post_creation_script:
         script = daemon.config.post_creation_script
