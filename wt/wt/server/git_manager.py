@@ -99,6 +99,11 @@ class GitManager:
                 f"Failed to get working directory status for {repo_path or self.config.main_repo}: {e}",
             ) from e
 
+    def get_repo(self, path: Path | None = None) -> pygit2.Repository:
+        if path is None or path == self.config.main_repo:
+            return self._main_repo
+        return pygit2.Repository(str(path))
+
     def get_commit_count_between(
         self,
         rev_a: str,

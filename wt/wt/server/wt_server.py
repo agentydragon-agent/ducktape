@@ -48,6 +48,7 @@ from .registry import registry
 from .repo_meta import RepoMetaService
 from .types import DiscoveredWorktree
 from .worktree_service import WorktreeService
+from .gitstatus_refresh import DebouncedGitstatusRefresh
 
 logger = logging.getLogger(__name__)
 
@@ -272,6 +273,7 @@ class WtDaemon:
         self.known_worktrees: dict[Path, DiscoveredWorktree] = {}
         self.gitstatusd_clients: dict[Path, GitstatusdClient] = {}
         self.pr_services: dict[Path, PRService] = {}
+        self.git_watchers: dict[Path, DebouncedGitstatusRefresh] = {}
         self.git_manager = GitManager(config=self.config)
         self.repo_meta = RepoMetaService(self.git_manager, self.config)
         self.worktree_service = WorktreeService(self.git_manager, self.github_interface)
@@ -471,6 +473,9 @@ class WtDaemon:
             return
 
         if worktree_info.path in self.gitstatusd_clients:
+            # Ensure watcher exists
+            if worktree_info.path not in self.git_watchers:
+                await self._ensure_git_watcher(worktree_info)
             return
         gs_client = GitstatusdClient(
             worktree_info,
@@ -479,10 +484,15 @@ class WtDaemon:
             error_callback=self._record_gitstatusd_error,
         )
         await gs_client.start()
+        # Kick an initial nonblocking refresh; watcher/poll keeps it fresh
+        asyncio.create_task(gs_client.update_working_status())
         self.gitstatusd_clients[worktree_info.path] = gs_client
         prsvc = PRService(self.github_interface, self.config, worktree_info)
         await prsvc.start()
         self.pr_services[worktree_info.path] = prsvc
+
+        # Start .git watcher to drive status updates
+        await self._ensure_git_watcher(worktree_info)
 
         logger.info(
             "Started gitstatusd for worktree %s (GitHub: %s)",
@@ -503,6 +513,10 @@ class WtDaemon:
         if prsvc:
             await prsvc.stop()
             del self.pr_services[worktree_info.path]
+        watcher = self.git_watchers.get(worktree_info.path)
+        if watcher:
+            await watcher.stop()
+            del self.git_watchers[worktree_info.path]
 
     async def _periodic_discovery(self) -> None:
         while self.running:
@@ -644,6 +658,20 @@ class WtDaemon:
         self._shutdown_task = asyncio.create_task(self.stop())
         return self._create_success_response("shutting down", request.id)
 
+    async def _ensure_git_watcher(self, worktree_info: DiscoveredWorktree) -> None:
+        if worktree_info.path in self.git_watchers:
+            return
+        gs_client = self.gitstatusd_clients.get(worktree_info.path)
+        if not gs_client:
+            return
+
+        async def _cb(reason: str):
+            await gs_client.update_working_status()
+
+        watcher = DebouncedGitstatusRefresh(worktree_info.path, _cb, debounce_delay=0.5)
+        await watcher.start()
+        self.git_watchers[worktree_info.path] = watcher
+
     async def start(self) -> None:
         """Start the daemon."""
         logger.info("Starting wt daemon for %s", self.config.main_repo)
@@ -728,6 +756,11 @@ class WtDaemon:
             self.discovery_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await self.discovery_task
+
+        # Stop watchers
+        for watcher in list(self.git_watchers.values()):
+            await watcher.stop()
+        self.git_watchers.clear()
 
         # Stop all gitstatusd processes
         for process in list(self.gitstatusd_clients.values()):

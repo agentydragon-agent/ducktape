@@ -12,7 +12,7 @@ directories generate extremely long paths like:
 This exceeds Unix socket limits, causing daemon startup to fail with:
     OSError: AF_UNIX path too long
 
-SOLUTION: The Config.daemon_socket_file property now automatically detects
+SOLUTION: The Config.daemon_socket_path property now automatically detects
 long paths and falls back to shorter paths in /tmp with unique hashing:
     /tmp/wt_daemon_a1b2c3d4.sock
 

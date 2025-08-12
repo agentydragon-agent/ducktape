@@ -70,16 +70,7 @@ async def handle_status_request(daemon, request: Request, start_time: float) -> 
                     (time.time() - last_updated_at.timestamp()) * 1000 if last_updated_at else None
                 )
                 if not have_cache:
-                    try:
-                        await asyncio.wait_for(gs_client.update_working_status(), timeout=1.0)
-                        dirty_files, untracked_files, last_updated_at, have_cache = (
-                            gs_client.get_cached_working_status()
-                        )
-                        cache_age_ms = (
-                            (time.time() - last_updated_at.timestamp()) * 1000 if last_updated_at else None
-                        )
-                    except asyncio.TimeoutError:
-                        asyncio.create_task(gs_client.update_working_status())
+                    asyncio.create_task(gs_client.update_working_status())
                 if last_updated_at is None:
                     last_updated_at = datetime.now()
                     cache_age_ms = None
@@ -103,10 +94,10 @@ async def handle_status_request(daemon, request: Request, start_time: float) -> 
                 is_stale = bool(
                     cache_age_ms and cache_age_ms > daemon.config.cache_refresh_age.total_seconds() * 1000,
                 )
-                state = "running" if gs_client.is_running else "stopped"
+                state = GitstatusdState.RUNNING if gs_client.is_running else GitstatusdState.STOPPED
             except asyncio.TimeoutError:
                 single_time = (time.time() - single_start) * 1000
-                state = "starting"
+                state = GitstatusdState.STARTING
                 dirty_files, untracked_files = [], []
                 try:
                     commit_info_data, ahead_behind, branch_name = (
@@ -124,7 +115,7 @@ async def handle_status_request(daemon, request: Request, start_time: float) -> 
                 is_stale = False
         else:
             single_time = (time.time() - single_start) * 1000
-            state = "stopped"
+            state = GitstatusdState.STOPPED
             dirty_files, untracked_files = [], []
             try:
                 commit_info_data, ahead_behind, branch_name = (
@@ -167,11 +158,7 @@ async def handle_status_request(daemon, request: Request, start_time: float) -> 
                 is_main=worktree_path.resolve() == daemon.config.main_repo.resolve(),
                 upstream_branch=daemon.config.upstream_branch,
                 pr_info=pr_info,
-                gitstatusd_state=(
-                    GitstatusdState.RUNNING if state == "running" else (
-                        GitstatusdState.STARTING if state == "starting" else GitstatusdState.STOPPED
-                    )
-                ),
+                gitstatusd_state=state,
                 restarts=0,
                 last_error=worktree_last_error,
             ),

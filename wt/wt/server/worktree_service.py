@@ -115,9 +115,10 @@ class WorktreeService:
                     logger.info(
                         f"Hydrating new worktree in {worktree_path} by checking out {branch_name}.",
                     )
-                    repo = self.git_manager.get_repo(worktree_path)
+                    import pygit2 as _pygit2
+                    repo = _pygit2.Repository(str(worktree_path))
                     repo.set_head(f"refs/heads/{branch_name}")
-                    repo.checkout_head(strategy=pygit2.GIT_CHECKOUT_FORCE)
+                    repo.checkout_head(strategy=_pygit2.GIT_CHECKOUT_FORCE)
             else:
                 logger.info("Not hydrating worktree.")
             return worktree_path
@@ -125,6 +126,18 @@ class WorktreeService:
     def get_worktree_path(self, config, name: str) -> Path:
         """Get path for a worktree by name."""
         return config.worktrees_dir / name
+
+    async def remove_worktree(self, config, name: str, force: bool = False) -> None:
+        """Remove a worktree by name and clean up its directory."""
+        validate_worktree_name(name)
+        worktree_path = self.get_worktree_path(config, name)
+        if not worktree_path.exists():
+            return
+        self.git_manager.worktree_remove(str(worktree_path), force=force)
+        try:
+            shutil.rmtree(worktree_path, ignore_errors=True)
+        except Exception:
+            pass
 
     def require_worktree_exists(self, config, name: str) -> Path:
         """Require that a worktree exists and return its path."""

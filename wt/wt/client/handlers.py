@@ -96,98 +96,84 @@ async def handle_status_single(daemon_client, formatter, worktree_name: str) -> 
 
 async def handle_create_worktree(config, name: str, from_default: bool = True) -> None:
     """Handle worktree creation."""
-    try:
-        daemon_client = WtClient(config)
+    daemon_client = WtClient(config)
 
-        from ..shared.protocol import ProgressEvent, ProgressOperation, WorktreeCreateStep, HookOutputEvent, HookStream
+    def on_progress(evt: ProgressEvent):
+        if evt.operation == ProgressOperation.WORKTREE_CREATE and evt.step in {
+            WorktreeCreateStep.CHECKOUT_STARTED,
+            WorktreeCreateStep.HYDRATE_STARTED,
+        }:
+            click.echo(f"… {evt.message}")
+        elif evt.operation == ProgressOperation.WORKTREE_CREATE and evt.step in {
+            WorktreeCreateStep.CHECKOUT_DONE,
+            WorktreeCreateStep.HYDRATE_DONE,
+        }:
+            click.echo(f"✓ {evt.message}")
 
-        def on_progress(evt: ProgressEvent):
-            if evt.operation == ProgressOperation.WORKTREE_CREATE and evt.step in {
-                WorktreeCreateStep.CHECKOUT_STARTED,
-                WorktreeCreateStep.HYDRATE_STARTED,
-            }:
-                click.echo(f"… {evt.message}")
-            elif evt.operation == ProgressOperation.WORKTREE_CREATE and evt.step in {
-                WorktreeCreateStep.CHECKOUT_DONE,
-                WorktreeCreateStep.HYDRATE_DONE,
-            }:
-                click.echo(f"✓ {evt.message}")
+    def on_hook(evt: HookOutputEvent):
+        if evt.stream == HookStream.STDERR:
+            click.echo(evt.data, err=True, nl=False)
+        else:
+            click.echo(evt.data, nl=False)
 
-        def on_hook(evt: HookOutputEvent):
-            if evt.stream == HookStream.STDERR:
-                click.echo(evt.data, err=True, nl=False)
-            else:
-                click.echo(evt.data, nl=False)
+    daemon_client.set_progress_callback(on_progress)
+    daemon_client.set_hook_output_callback(on_hook)
 
-        daemon_client.set_progress_callback(on_progress)
-        daemon_client.set_hook_output_callback(on_hook)
-
-        new_path = await daemon_client.create_worktree_convenience(name, from_default=from_default)
-        emit_cd_command(new_path, main_repo=config.main_repo)
-    except RuntimeError as e:
-        click.echo(str(e), err=True)
-        sys.exit(1)
+    new_path = await daemon_client.create_worktree_convenience(
+        name, from_default=from_default
+    )
+    emit_cd_command(new_path, main_repo=config.main_repo)
 
 
 async def handle_remove_worktree(config, name: str, force: bool = False) -> None:
     """Handle worktree removal."""
-    try:
-        click.echo(f"🔍 Checking worktree '{name}' for removal...")
+    click.echo(f"🔍 Checking worktree '{name}' for removal...")
 
-        # Ask for confirmation unless forced
-        if not force:
-            worktree_path = config.worktrees_dir / name
-            click.echo(
-                f"⚠️  About to permanently remove worktree '{name}' at {worktree_path}",
-            )
-            if not click.confirm("Are you sure you want to continue?", default=False):
-                click.echo("Removal cancelled.")
-                return
+    # Ask for confirmation unless forced
+    if not force:
+        worktree_path = config.worktrees_dir / name
+        click.echo(
+            f"⚠️  About to permanently remove worktree '{name}' at {worktree_path}",
+        )
+        if not click.confirm("Are you sure you want to continue?", default=False):
+            click.echo("Removal cancelled.")
+            return
 
-        click.echo(f"🗑️  Removing worktree '{name}'...")
-        client = WtClient(config)
-        await client.remove_worktree_by_name(name, force=force)
-        click.echo(f"✅ Successfully removed worktree '{name}'")
-
-    except RuntimeError as e:
-        click.echo(f"Error: {e}", err=True)
-        sys.exit(1)
+    click.echo(f"🗑️  Removing worktree '{name}'...")
+    client = WtClient(config)
+    await client.remove_worktree_by_name(name, force=force)
+    click.echo(f"✅ Successfully removed worktree '{name}'")
 
 
 async def handle_copy_worktree(config, source: str, dest: str | None = None) -> None:
     """Handle worktree copying."""
-    try:
-        if dest is None:
-            # wt cp <x> - create new worktree from current location
-            new_name = source
-            daemon_client = WtClient(config)
-            current_wt_path, _ = await daemon_client.current_worktree_info()
-            if not current_wt_path:
-                click.echo("Error: Not in a worktree")
-                sys.exit(1)
-            from_name = current_wt_path.name
-            new_path = await daemon_client.create_worktree_convenience(
-                new_name,
-                source_name=from_name,
-                from_default=False,
-            )
-            emit_cd_command(new_path, main_repo=config.main_repo)
-        else:
-            # wt cp <x> <y> - copy worktree x to new worktree y
-            source_name, target_name = source, dest
+    if dest is None:
+        # wt cp <x> - create new worktree from current location
+        new_name = source
+        daemon_client = WtClient(config)
+        current_wt_path, _ = await daemon_client.current_worktree_info()
+        if not current_wt_path:
+            click.echo("Error: Not in a worktree")
+            sys.exit(1)
+        from_name = current_wt_path.name
+        new_path = await daemon_client.create_worktree_convenience(
+            new_name,
+            source_name=from_name,
+            from_default=False,
+        )
+        emit_cd_command(new_path, main_repo=config.main_repo)
+    else:
+        # wt cp <x> <y> - copy worktree x to new worktree y
+        source_name, target_name = source, dest
 
-            daemon_client = WtClient(config)
-            _ = await daemon_client.require_worktree_exists(source_name)
-            new_path = await daemon_client.create_worktree_convenience(
-                target_name,
-                source_name=source_name,
-                from_default=False,
-            )
-            emit_cd_command(new_path, main_repo=config.main_repo)
-
-    except RuntimeError as e:
-        click.echo(f"Error: {e}", err=True)
-        sys.exit(1)
+        daemon_client = WtClient(config)
+        _ = await daemon_client.require_worktree_exists(source_name)
+        new_path = await daemon_client.create_worktree_convenience(
+            target_name,
+            source_name=source_name,
+            from_default=False,
+        )
+        emit_cd_command(new_path, main_repo=config.main_repo)
 
 
 async def handle_path_command(
@@ -231,9 +217,13 @@ async def handle_navigate_to_worktree(config, worktree_name: str) -> None:
         emit_cd_command(Path(tt.cd_path), main_repo=config.main_repo)
         return
 
-    if click.confirm(f"Worktree '{worktree_name}' does not exist. Create it?", default=False):
+    if click.confirm(
+        f"Worktree '{worktree_name}' does not exist. Create it?", default=False
+    ):
         try:
-            new_path = await daemon_client.create_worktree_convenience(worktree_name, from_default=True)
+            new_path = await daemon_client.create_worktree_convenience(
+                worktree_name, from_default=True
+            )
             emit_cd_command(new_path, main_repo=config.main_repo)
         except RuntimeError as e:
             click.echo(f"Error: {e}", err=True)
@@ -245,8 +235,8 @@ async def handle_navigate_to_worktree(config, worktree_name: str) -> None:
 async def handle_kill_daemon(config) -> None:
     """Handle kill-daemon command to stop the wt daemon."""
 
-    pid_file = config.daemon_pid_file
-    socket_file = config.daemon_socket_file
+    pid_file = config.daemon_pid_path
+    socket_file = config.daemon_socket_path
 
     if not pid_file.exists():
         click.echo("No daemon PID file found - daemon is not running")

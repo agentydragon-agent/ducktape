@@ -13,7 +13,7 @@ generating paths like:
 This path (160+ characters) exceeds the Unix socket limit (~104 chars), causing:
     OSError: AF_UNIX path too long
 
-SOLUTION: Config.daemon_socket_file now automatically detects long paths and
+SOLUTION: Config.daemon_socket_path now automatically detects long paths and
 uses shorter alternatives in /tmp with MD5 hashing for uniqueness:
     /tmp/wt_daemon_a1b2c3d4.sock
 
