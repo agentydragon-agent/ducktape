@@ -26,6 +26,7 @@ def _project_root_on_pythonpath():
     project_root = str(Path(__file__).resolve().parents[1])
     existing = os.environ.get("PYTHONPATH", "")
     os.environ["PYTHONPATH"] = f"{project_root}:{existing}" if existing else project_root
+    os.environ["WT_TEST_MODE"] = "1"
 
 # =============================================================================
 # Factory Fixtures - Modern pytest pattern for test setup

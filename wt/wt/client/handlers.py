@@ -220,14 +220,9 @@ async def handle_navigate_to_worktree(config, worktree_name: str) -> None:
     if click.confirm(
         f"Worktree '{worktree_name}' does not exist. Create it?", default=False
     ):
-        try:
-            new_path = await daemon_client.create_worktree_convenience(
-                worktree_name, from_default=True
-            )
-            emit_cd_command(new_path, main_repo=config.main_repo)
-        except RuntimeError as e:
-            click.echo(f"Error: {e}", err=True)
-            sys.exit(1)
+        # Delegate to shared create handler to reuse progress/hook streaming
+        await handle_create_worktree(config, worktree_name, from_default=True)
+        return
     else:
         click.echo("Cancelled.")
 
