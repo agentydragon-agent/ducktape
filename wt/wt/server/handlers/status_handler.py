@@ -185,7 +185,7 @@ async def handle_status_request(daemon, request: Request, start_time: float) -> 
     if daemon.github_interface:
         github_state = ComponentState.OK
         for prsvc in daemon.pr_services.values():
-            if prsvc.cached_pr_info is None:
+            if prsvc.cached is None:
                 github_state = ComponentState.STARTING
                 break
     readiness = ReadinessSummary(
