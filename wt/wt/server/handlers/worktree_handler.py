@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import logging
+import shutil
 from pathlib import Path
 
 from ...shared.constants import MAIN_WORKTREE_DISPLAY_NAME
 from ...shared.protocol import (
-    ErrorCodes,
     Request,
     Response,
     WorktreeCreateParams,
@@ -16,12 +16,13 @@ from ...shared.protocol import (
     WorktreeGetByNameResult,
     WorktreeIdentifyParams,
     WorktreeIdentifyResult,
+)
+from ...shared.protocol import (
     WorktreeInfo as ProtocolWorktreeInfo,
 )
-from ..worktree_ids import make_worktree_id
-
-
 from ..registry import register
+from ..worktree_ids import make_worktree_id, parse_worktree_id, wtid_to_path
+from ..worktree_service import WorktreeService
 
 
 @register("worktree_list")
@@ -42,7 +43,9 @@ def handle_worktree_list(daemon, request: Request, start_time: float) -> Respons
                     is_main=False,
                 ),
             )
-    from ...shared.protocol import WorktreeListResult
+    from ...shared.protocol import (
+        WorktreeListResult,  # import-cycle-safe: protocol is shared schema only
+    )
 
     result = WorktreeListResult(worktrees=worktrees)
     return Response(result=result, id=request.id)
@@ -73,8 +76,6 @@ async def handle_worktree_create(
     svc = daemon.worktree_service
     source_path = None
     if params.source_wtid:
-        from ..worktree_ids import wtid_to_path
-
         source_path = wtid_to_path(daemon.config, params.source_wtid)
         if not source_path.exists():
             raise ValueError(f"Source worktree path not found: {source_path}")
@@ -90,8 +91,6 @@ async def handle_worktree_create(
     )
     post = None
     if daemon.config.post_creation_script:
-        from ..worktree_service import WorktreeService
-
         script = daemon.config.post_creation_script
         if not script.exists() or not script.is_file():
             raise FileNotFoundError(
@@ -115,16 +114,12 @@ async def handle_worktree_create(
 @register("worktree_delete")
 def handle_worktree_delete(daemon, request: Request, start_time: float) -> Response:
     params = WorktreeDeleteParams.model_validate(request.params)
-    from ...shared.protocol import parse_worktree_id
-
     worktree_name = parse_worktree_id(params.wtid)
     worktree_path = daemon.config.worktrees_dir / worktree_name
     if not worktree_path.exists():
         raise ValueError(f"Worktree {worktree_name} does not exist at {worktree_path}")
     daemon.git_manager.worktree_remove(str(worktree_path), force=True)
     try:
-        import shutil
-
         if worktree_path.exists():
             shutil.rmtree(worktree_path)
     except Exception as e:

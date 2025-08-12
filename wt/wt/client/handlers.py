@@ -1,9 +1,9 @@
 """Pure handler functions for CLI commands."""
 
+import asyncio
 import os
 import signal
 import sys
-import time
 from pathlib import Path
 
 import click
@@ -225,8 +225,7 @@ async def handle_kill_daemon(config) -> None:
         return
 
     try:
-        with open(pid_file) as f:
-            pid_str = f.read().strip()
+        pid_str = pid_file.read_text().strip()
 
         if not pid_str:
             click.echo("Empty PID file - cleaning up stale files")
@@ -243,13 +242,13 @@ async def handle_kill_daemon(config) -> None:
                 os.kill(pid, signal.SIGTERM)
 
                 # Wait a moment for graceful shutdown
-                time.sleep(0.5)
+                await asyncio.sleep(0.5)
 
                 # If still running, force kill
                 if psutil.pid_exists(pid):
                     click.echo("Daemon didn't respond to SIGTERM, sending SIGKILL...")
                     os.kill(pid, signal.SIGKILL)
-                    time.sleep(0.2)
+                    await asyncio.sleep(0.2)
 
                 if psutil.pid_exists(pid):
                     click.echo(f"Warning: Process {pid} is still running", err=True)

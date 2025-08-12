@@ -8,12 +8,11 @@ import click
 
 def emit_command(cmd: str) -> None:
     """Emit a command for shell execution via fd3."""
-    try:
+    import contextlib
+    # fd3 not available (e.g., in tests or non-shell environments)
+    # Silently ignore - this is expected in many contexts
+    with contextlib.suppress(OSError):
         os.write(3, (cmd + "\n").encode())
-    except OSError:
-        # fd3 not available (e.g., in tests or non-shell environments)
-        # Silently ignore - this is expected in many contexts
-        pass
 
 
 def controlled_error(message: str, commands: list[str] | None = None) -> None:

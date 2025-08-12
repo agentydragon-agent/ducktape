@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from pathlib import Path
 
 from .types import DiscoveredWorktree
 
@@ -12,6 +11,7 @@ logger = logging.getLogger(__name__)
 class WorktreeDiscovery:
     def __init__(self, daemon):
         self.daemon = daemon
+        self._startup_tasks: list[asyncio.Task] = []
 
     async def discover_once(self) -> None:
         worktrees_dir = self.daemon.config.worktrees_dir_resolved
@@ -26,11 +26,23 @@ class WorktreeDiscovery:
                     worktree_info = DiscoveredWorktree(path, path.name)
                     current_worktrees.add(worktree_info)
                 if path in self.daemon.known_worktrees:
-                    self.daemon.known_worktrees[path].last_seen = self.daemon.repo_meta.config.github_debounce_delay.total_seconds()  # type: ignore[attr-defined]
+                    # Update last_seen to current timestamp when seen
+                    import time as _t
+                    self.daemon.known_worktrees[path].last_seen = _t.time()
                 else:
                     logger.info("Discovered new worktree: %s", path.name)
                     self.daemon.known_worktrees[path] = DiscoveredWorktree(path, path.name)
-                    asyncio.create_task(self.daemon._start_gitstatusd_for_worktree(self.daemon.known_worktrees[path]))
+                    # Ensure startup task list exists on discovery instance
+                    # (avoid getattr/hasattr per style rules)
+                    if self._startup_tasks is None:
+                        self._startup_tasks = []
+                    self._startup_tasks.append(
+                        asyncio.create_task(
+                            self.daemon._start_gitstatusd_for_worktree(
+                                self.daemon.known_worktrees[path],
+                            ),
+                        ),
+                    )
         disappeared = set(self.daemon.known_worktrees.keys()) - {wt.path for wt in current_worktrees}
         for disappeared_path in disappeared:
             worktree_info = self.daemon.known_worktrees[disappeared_path]

@@ -12,7 +12,6 @@ from typing import TYPE_CHECKING
 import psutil
 import pygit2
 
-from ..shared.constants import MAIN_WORKTREE_DISPLAY_NAME
 from ..shared.error_handling import ErrorContext, validate_worktree_name
 from ..shared.github_models import PRData, PRInfo
 from ..shared.models import CommitInfo, ProcessInfo
@@ -299,7 +298,8 @@ class WorktreeService:
                 }
             except asyncio.TimeoutError:
                 with contextlib.suppress(Exception):
-                    proc.kill(); await proc.wait()
+                    proc.kill()
+                    await proc.wait()
                 return {
                     "ran": True,
                     "exit_code": None,
@@ -327,9 +327,9 @@ class WorktreeService:
                         writer.write((json.dumps(event) + "\n").encode())
                         await writer.drain()
                     except Exception:
-                        pass
+                        logger.debug("stream forward write failed", exc_info=True)
             except Exception:
-                pass
+                logger.debug("stream forward loop error", exc_info=True)
 
         t1 = (
             asyncio.create_task(_forward(proc.stdout, "stdout")) if proc.stdout else None
@@ -341,7 +341,8 @@ class WorktreeService:
             await asyncio.wait_for(proc.wait(), timeout=timeout)
         except asyncio.TimeoutError:
             with contextlib.suppress(Exception):
-                proc.kill(); await proc.wait()
+                proc.kill()
+                await proc.wait()
             return {
                 "ran": True,
                 "exit_code": None,

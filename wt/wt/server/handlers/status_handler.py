@@ -4,17 +4,12 @@ import asyncio
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any
 
-from ..repo_meta import RepoMetaService
-from ..types import DiscoveredWorktree
-from ..gitstatusd_client import gitstatusd_response_to_legacy_format, GitStatusdProtocol
-from ..worktree_ids import make_worktree_id
-from ...shared.constants import MAIN_WORKTREE_DISPLAY_NAME
+from ...shared.github_models import PRInfo, coerce_prdata
 from ...shared.protocol import (
     CommitInfo,
-    ComponentState,
     ComponentsStatus,
+    ComponentState,
     ComponentStatus,
     GitstatusdState,
     ReadinessSummary,
@@ -24,9 +19,9 @@ from ...shared.protocol import (
     StatusResponse,
     StatusResult,
 )
-
-
 from ..registry import register
+from ..types import DiscoveredWorktree
+from ..worktree_ids import make_worktree_id, parse_worktree_id
 
 
 @register("get_status")
@@ -35,8 +30,6 @@ async def handle_status_request(daemon, request: Request, start_time: float) -> 
     worktree_ids = params.worktree_ids
 
     if worktree_ids:
-        from ...shared.protocol import parse_worktree_id
-
         worktree_paths: list[Path] = []
         for wtid in worktree_ids:
             worktree_name = parse_worktree_id(wtid)
@@ -52,7 +45,7 @@ async def handle_status_request(daemon, request: Request, start_time: float) -> 
                 if p not in daemon.known_worktrees and p.exists():
                     wt_info = DiscoveredWorktree(p, p.name)
                     daemon.known_worktrees[p] = wt_info
-                    asyncio.create_task(daemon._start_gitstatusd_for_worktree(wt_info))
+                    daemon._startup_tasks.append(asyncio.create_task(daemon._start_gitstatusd_for_worktree(wt_info)))
             worktree_paths = list(daemon.known_worktrees.keys())
 
     results: dict[str, StatusResult] = {}
@@ -102,7 +95,7 @@ async def handle_status_request(daemon, request: Request, start_time: float) -> 
                         pr_info_data = None
                 is_cached = have_cache
                 is_stale = bool(
-                    cache_age_ms and cache_age_ms > daemon.config.cache_refresh_age.total_seconds() * 1000
+                    cache_age_ms and cache_age_ms > daemon.config.cache_refresh_age.total_seconds() * 1000,
                 )
                 state = "running" if gs_client.is_running else "stopped"
             except asyncio.TimeoutError:
@@ -146,8 +139,6 @@ async def handle_status_request(daemon, request: Request, start_time: float) -> 
         wtid = make_worktree_id(worktree_path.name)
         pr_info = None
         if pr_info_data:
-            from ...shared.github_models import PRInfo, coerce_prdata
-
             pr_info = PRInfo(branch=branch_name, pr_data=coerce_prdata(pr_info_data))
         single_time = (time.time() - single_start) * 1000
         return (

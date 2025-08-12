@@ -9,6 +9,7 @@ One daemon per main git repository that:
 
 import asyncio
 import contextlib
+import inspect
 import json
 import logging
 import os
@@ -17,61 +18,36 @@ import signal
 import subprocess
 import time
 import uuid
-import inspect
-from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
-
-from ..shared.constants import MAIN_WORKTREE_DISPLAY_NAME
 from ..shared.protocol import (
-    CommitInfo,
     DaemonHealth,
     DaemonHealthStatus,
     ErrorCodes,
     ErrorResponse,
-    GitstatusdState,
     PingResult,
     Request,
     Response,
-    StatusParams,
-    StatusResponse,
-    StatusResult,
-    TeleportCdThere,
-    TeleportDoesNotExist,
-    WorktreeCreateParams,
-    WorktreeCreateResult,
-    WorktreeDeleteParams,
-    WorktreeDeleteResult,
-    WorktreeGetByNameParams,
-    WorktreeGetByNameResult,
-    WorktreeIdentifyParams,
-    WorktreeIdentifyResult,
-    WorktreeListResult,
-    WorktreeResolvePathParams,
-    WorktreeResolvePathResult,
-    WorktreeTeleportTargetParams,
     create_error_response,
     parse_request,
 )
+from .discovery import WorktreeDiscovery
 from .git_manager import GitManager
 from .gitstatusd_client import (
     GitStatusdProtocol,
     GitStatusdRequest,
     gitstatusd_response_to_legacy_format,
 )
-from .worktree_ids import make_worktree_id
-from .worktree_service import WorktreeService
-from .github_refresh import DebouncedGitHubRefresh
-from .discovery import WorktreeDiscovery
-from .registry import registry
+from .handlers import path_handler as _path_handler  # noqa: F401
 from .handlers import status_handler as _status_handler  # noqa: F401
 from .handlers import worktree_handler as _worktree_handler  # noqa: F401
-from .handlers import path_handler as _path_handler  # noqa: F401
-from .types import DiscoveredWorktree
 from .pr_service import PRService
+from .registry import registry
 from .repo_meta import RepoMetaService
+from .types import DiscoveredWorktree
+from .worktree_service import WorktreeService
 
 logger = logging.getLogger(__name__)
 
@@ -134,311 +110,13 @@ def write_startup_handshake(
             logger.error("Startup failed: %s", error_message)
 
 
-@dataclass
-class WorktreeGitStatus:
-    """Git status result from a single worktree."""
 
-    worktree_path_str: str
-    status_result: StatusResult | None
-    processing_time_ms: float
 
 
-def resolve_worktree_name_to_info(name: str, worktree_infos: list) -> object | None:
-    """Server authority: resolve user-provided name to worktree info.
 
-    This is the ONLY place where 'main' → main worktree mapping happens.
-    All other code should use this function rather than implementing the logic directly.
-    """
-    for info in worktree_infos:
-        if (info.is_main and name == MAIN_WORKTREE_DISPLAY_NAME) or (
-            not info.is_main and info.path.name == name
-        ):
-            return info
-    return None
 
 
-    """Handles debounced GitHub refresh triggered by .git directory changes + periodic updates."""
 
-    def __init__(
-        self,
-        worktree_path: Path,
-        refresh_callback,
-        debounce_delay: float = 5.0,
-        periodic_interval: float = 60.0,
-    ):
-        self.worktree_path = worktree_path
-        self.refresh_callback = (
-            refresh_callback  # async function to call when refresh needed
-        )
-
-        # Configurable timing
-        self.debounce_delay = debounce_delay  # seconds to wait after last change
-        self.periodic_interval = periodic_interval  # seconds between periodic refreshes
-
-        # State tracking
-        self.pending_refresh_task: asyncio.Task | None = None
-        self.last_refresh_time = 0.0
-        self.pending_files: set[str] = set()
-
-        # File watcher
-        self.observer: Observer | None = None
-        self.event_handler = GitFileHandler(self)
-
-        # Background tasks
-        self.periodic_task: asyncio.Task | None = None
-        self.is_running = False
-
-    async def start(self):
-        """Start the file watcher and periodic refresh."""
-        if self.is_running:
-            return
-
-        self.is_running = True
-
-        # Start file watcher
-        self._start_file_watcher()
-
-        # Start periodic refresh task
-        self.periodic_task = asyncio.create_task(self._periodic_refresh_loop())
-
-        logger.info(f"Started GitHub refresh system for {self.worktree_path}")
-
-    def _start_file_watcher(self):
-        """Start watching .git directory for git operation changes."""
-        if self.observer:
-            return
-
-        self.observer = Observer()
-
-        # Only watch .git directory for git operations (push/pull/commit/etc)
-        git_dir = self.worktree_path / ".git"
-        if git_dir.exists():
-            self.observer.schedule(self.event_handler, str(git_dir), recursive=True)
-            logger.debug(f"Watching .git directory: {git_dir}")
-        else:
-            logger.warning(f"No .git directory found at {git_dir}")
-
-        self.observer.start()
-
-    async def stop(self):
-        """Stop the refresh system."""
-        self.is_running = False
-
-        # Stop file watcher
-        if self.observer:
-            self.observer.stop()
-            self.observer.join()
-            self.observer = None
-
-        # Cancel pending tasks
-        if self.pending_refresh_task:
-            self.pending_refresh_task.cancel()
-
-        if self.periodic_task:
-            self.periodic_task.cancel()
-
-        logger.info(f"Stopped GitHub refresh system for {self.worktree_path}")
-
-    def trigger_refresh(self, reason: str, file_path: str | None = None):
-        """Trigger a debounced refresh."""
-        current_time = time.time()
-
-        if file_path:
-            self.pending_files.add(file_path)
-
-        logger.debug(f"GitHub refresh triggered: {reason} (file: {file_path})")
-
-        # Cancel existing pending refresh
-        if self.pending_refresh_task:
-            self.pending_refresh_task.cancel()
-
-        # Schedule new debounced refresh
-        self.pending_refresh_task = asyncio.create_task(
-            self._debounced_refresh(reason, current_time),
-        )
-
-    async def _debounced_refresh(self, reason: str, trigger_time: float):
-        """Wait for debounce delay, then refresh if no newer triggers."""
-        try:
-            await asyncio.sleep(self.debounce_delay)
-
-            # Check if we're still the latest refresh request
-            if self.pending_refresh_task and not self.pending_refresh_task.done():
-                await self._do_refresh(f"debounced: {reason}")
-
-        except asyncio.CancelledError:
-            logger.debug(f"Debounced refresh cancelled: {reason}")
-
-    async def _periodic_refresh_loop(self):
-        """Background task for periodic GitHub updates."""
-        while self.is_running:
-            try:
-                await asyncio.sleep(self.periodic_interval)
-
-                if self.is_running:
-                    current_time = time.time()
-                    time_since_last = current_time - self.last_refresh_time
-
-                    # Only do periodic refresh if we haven't refreshed recently
-                    if (
-                        time_since_last >= self.periodic_interval * 0.8
-                    ):  # 80% of interval
-                        await self._do_refresh("periodic")
-
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                logger.error(f"Error in periodic refresh: {e}", exc_info=True)
-                await asyncio.sleep(10)  # Back off on errors
-
-    async def _do_refresh(self, reason: str):
-        """Actually perform the GitHub refresh."""
-        try:
-            start_time = time.time()
-            files_changed = list(self.pending_files)
-            self.pending_files.clear()
-
-            logger.info(f"Refreshing GitHub data: {reason} (files: {files_changed})")
-
-            # First, try to fetch origin/master to get latest remote info
-            fetch_success = await self._fetch_origin_master()
-
-            # Call the refresh callback (typically updates PR cache)
-            await self.refresh_callback(reason, files_changed)
-
-            self.last_refresh_time = time.time()
-            refresh_time = (self.last_refresh_time - start_time) * 1000
-
-            fetch_status = "with fetch" if fetch_success else "without fetch"
-            logger.info(
-                f"GitHub refresh completed in {refresh_time:.1f}ms ({fetch_status})",
-            )
-
-        except Exception as e:
-            logger.error(f"GitHub refresh failed: {e}")
-
-    async def _fetch_origin_master(self) -> bool:
-        """Fetch origin/master to get latest remote info. Safe if offline."""
-        try:
-            logger.debug(f"Fetching origin/master for {self.worktree_path}")
-
-            process = await asyncio.create_subprocess_exec(
-                "git",
-                "fetch",
-                "origin",
-                "master",
-                cwd=self.worktree_path,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-
-            try:
-                stdout, stderr = await asyncio.wait_for(
-                    process.communicate(),
-                    timeout=10.0,
-                )
-
-                if process.returncode == 0:
-                    logger.debug("Successfully fetched origin/master")
-                    return True
-                logger.debug(f"Git fetch failed (offline?): {stderr.decode().strip()}")
-                return False
-
-            except asyncio.TimeoutError:
-                process.kill()
-                await process.wait()
-                logger.debug("Git fetch timed out (slow network?)")
-                return False
-
-        except Exception as e:
-            logger.debug(f"Git fetch error: {e}")
-            return False
-
-
-    """Handles file system events for git-related files in .git directory."""
-
-    def __init__(self, refresh_system: DebouncedGitHubRefresh):
-        self.refresh_system = refresh_system
-
-        # Files that indicate git operations that could affect PR status
-        self.watched_patterns = {
-            "refs/heads/",  # Branch changes
-            "refs/remotes/",  # Remote changes
-            "HEAD",  # Branch switches
-            "index",  # Staged changes
-            "COMMIT_EDITMSG",  # Commits
-            "FETCH_HEAD",  # Fetch operations
-            "ORIG_HEAD",  # Merge/rebase operations
-        }
-
-    def on_modified(self, event):
-        if event.is_directory:
-            return
-
-        file_path = event.src_path
-
-        # Check if this is a git file we care about
-        if self._should_trigger_refresh(file_path):
-            reason = f"git file modified: {Path(file_path).name}"
-            self.refresh_system.trigger_refresh(reason, file_path)
-
-    def on_created(self, event):
-        if event.is_directory:
-            return
-
-        file_path = event.src_path
-
-        if self._should_trigger_refresh(file_path):
-            reason = f"git file created: {Path(file_path).name}"
-            self.refresh_system.trigger_refresh(reason, file_path)
-
-    def _should_trigger_refresh(self, file_path: str) -> bool:
-        """Check if this file change should trigger a GitHub refresh."""
-        path_str = str(file_path)
-
-        # Check against patterns
-        for pattern in self.watched_patterns:
-            if pattern in path_str:
-                logger.debug(
-                    f"Git file change detected: {path_str} (pattern: {pattern})",
-                )
-                return True
-
-        return False
-
-
-class DiscoveredWorktree:
-    """Filesystem-discovered worktree instance (daemon-internal)."""
-
-    def __init__(self, path: Path, name: str):
-        self.path = path
-        self.name = name
-        self.discovered_at = time.time()
-        self.last_seen = time.time()
-
-    def __hash__(self):
-        return hash(self.path)
-
-    def __eq__(self, other):
-        return isinstance(other, DiscoveredWorktree) and self.path == other.path
-
-
-@dataclass
-class StatusSnapshot:
-    dirty_files: list[str]
-    untracked_files: list[str]
-    commit_info: dict[str, Any]
-    ahead_behind: tuple[int, int]
-    branch_name: str
-    pr_info: dict[str, Any] | None
-    last_updated_at: datetime
-    is_cached: bool
-
-
-@dataclass
-class WorktreeRuntime:
-    gs_client: "GitstatusdClient"
-    pr_service: "PRService"
 
 
 class GitstatusdClient:
@@ -621,6 +299,7 @@ class WtDaemon:
         self.discovery_task: asyncio.Task | None = None
         self.discovery_scanning: bool = False
         self.discovery = WorktreeDiscovery(self)
+        self._startup_tasks: list[asyncio.Task] = []
 
         def _shared_async_run(awaitable):
             return asyncio.get_event_loop().run_until_complete(awaitable)
@@ -657,20 +336,15 @@ class WtDaemon:
     def _clear_errors_if_healthy(self):
         """Clear daemon error state if recent operations are succeeding."""
 
-        # Only clear if currently in error state
-        if self.daemon_health.status == DaemonHealthStatus.ERROR:
-            # Check if error is old enough to consider clearing
-            if (
-                self.daemon_health.last_error_time
-                and (
-                    datetime.now() - self.daemon_health.last_error_time
-                ).total_seconds()
-                > 60
-            ):
-                self.daemon_health.status = DaemonHealthStatus.OK
-                self.daemon_health.last_error = None
-                self.daemon_health.last_error_time = None
-                logger.info("Daemon health status cleared - operations are succeeding")
+        if (
+            self.daemon_health.status == DaemonHealthStatus.ERROR
+            and self.daemon_health.last_error_time
+            and (datetime.now() - self.daemon_health.last_error_time).total_seconds() > 60
+        ):
+            self.daemon_health.status = DaemonHealthStatus.OK
+            self.daemon_health.last_error = None
+            self.daemon_health.last_error_time = None
+            logger.info("Daemon health status cleared - operations are succeeding")
 
     def _validate_gitstatusd(self) -> tuple[str, str | None]:
         """Validate gitstatusd binary availability.
@@ -868,7 +542,7 @@ class WtDaemon:
 
             # Kick discovery opportunistically but do not block request handling
             if not self.known_worktrees and not self.discovery_scanning:
-                asyncio.create_task(self.discovery.discover_once())
+                self._discovery_kick = asyncio.create_task(self.discovery.discover_once())
 
             # Handle different method types
             try:
@@ -939,45 +613,9 @@ class WtDaemon:
     async def _handle_shutdown_request(self, request: Request, start_time: float | None = None) -> Response:
         """Handle shutdown JSON-RPC method."""
         logger.info("Received shutdown request")
-        asyncio.create_task(self.stop())
+        self._shutdown_task = asyncio.create_task(self.stop())
         return self._create_success_response("shutting down", request.id)
 
-    async def _handle_worktree_teleport_target_request(
-        self,
-        request: Request,
-        start_time: float,
-    ) -> Response:
-        try:
-            params = WorktreeTeleportTargetParams.model_validate(request.params)
-            current_path = Path(params.current_path)
-
-            # Get worktree infos once
-            worktree_infos = self.git_manager.list_worktrees()
-
-            # Get target worktree (early bailout on missing)
-            target_worktree = resolve_worktree_name_to_info(
-                params.target_name,
-                worktree_infos,
-            )
-            if not target_worktree:
-                result = TeleportDoesNotExist(type="does_not_exist", name=params.target_name)
-                return self._create_success_response(result, request.id)
-
-            # Find current worktree info
-            current_worktree, relative_path = self._find_current_worktree_info(
-                current_path,
-                worktree_infos,
-            )
-
-            # Compute target path
-            cd_path = self._compute_teleport_target(target_worktree.path, relative_path)
-
-            result = TeleportCdThere(type="cd_there", cd_path=cd_path)
-            return self._create_success_response(result, request.id)
-
-        except Exception as e:
-            logger.error("Error computing teleport target: %s", e)
-            raise
 
     async def start(self) -> None:
         """Start the daemon."""
@@ -1030,8 +668,7 @@ class WtDaemon:
             self.handle_client_request,
             self.socket_path,
         )
-        with open(self.pid_file, "w") as f:
-            f.write(str(os.getpid()))
+        self.pid_file.write_text(str(os.getpid()))
         self.running = True
 
         # Signal listening via single handshake; redirect stdout to log afterward
@@ -1046,7 +683,7 @@ class WtDaemon:
         )
 
         # Kick off initial discovery asynchronously
-        asyncio.create_task(self.discovery.discover_once())
+        self._initial_discovery = asyncio.create_task(self.discovery.discover_once())
 
         logger.info("wt daemon started, listening on %s", self.socket_path)
 
@@ -1092,7 +729,7 @@ async def run_daemon(config) -> None:
     # Signal handling
     def signal_handler():
         logger.info("Received shutdown signal")
-        asyncio.create_task(daemon.stop())
+        daemon._shutdown_task = asyncio.create_task(daemon.stop())
 
     signal.signal(signal.SIGTERM, lambda s, f: signal_handler())
     signal.signal(signal.SIGINT, lambda s, f: signal_handler())

@@ -12,7 +12,6 @@ from ...shared.protocol import (
     WorktreeResolvePathResult,
     WorktreeTeleportTargetParams,
 )
-from ..worktree_ids import make_worktree_id
 
 
 def _find_current_worktree_info(daemon, current_path: Path, worktree_infos: list):
@@ -84,7 +83,7 @@ def handle_teleport_target(daemon, request: Request, start_time: float) -> Respo
         return Response(result=result, id=request.id)
     current_worktree, relative_path = _find_current_worktree_info(daemon, current_path, worktree_infos)
     cd_path = str(target_worktree.path) if not relative_path or relative_path == "." else (
-        str((target_worktree.path / relative_path)) if (target_worktree.path / relative_path).exists() and (target_worktree.path / relative_path).is_dir() else str(target_worktree.path)
+        str(target_worktree.path / relative_path) if (target_worktree.path / relative_path).exists() and (target_worktree.path / relative_path).is_dir() else str(target_worktree.path)
     )
     result = TeleportCdThere(type="cd_there", cd_path=cd_path)
     return Response(result=result, id=request.id)

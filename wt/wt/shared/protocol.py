@@ -18,17 +18,10 @@ from pydantic import BaseModel, Field
 from .github_models import PRInfo
 
 # WorktreeID: Deliberately scrambled identifier to prevent accidental misuse
-WorktreeID = NewType("WorktreeID", str)  # Format: 'wtid:<dirname>'
+WorktreeID = NewType("WorktreeID", str)  # Opaque to clients; server owns parsing
 
 
-# make_worktree_id moved to server-only module to prevent client access
-
-
-def parse_worktree_id(wtid: WorktreeID) -> str:
-    """Extract directory name from worktree ID."""
-    if not wtid.startswith("wtid:"):
-        raise ValueError(f"Invalid worktree ID format: {wtid}")
-    return wtid[5:]  # Remove 'wtid:' prefix
+# WorktreeID helpers (make/parse) are server-only (see wt.server.worktree_ids)
 
 
 class DaemonHealthStatus(str, Enum):

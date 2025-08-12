@@ -93,12 +93,11 @@ class WtClient:
             if not self.config.daemon_pid_file.exists():
                 return False
 
-            with open(self.config.daemon_pid_file) as f:
-                pid_str = f.read().strip()
-                if not pid_str:
-                    return False
+            pid_str = self.config.daemon_pid_file.read_text().strip()
+            if not pid_str:
+                return False
 
-                pid = int(pid_str)
+            pid = int(pid_str)
 
             # Check if process exists and socket is accessible
             return bool(
@@ -716,9 +715,13 @@ class WtClient:
         req = Request(method=method, params=params_model.model_dump(), id=uuid.uuid4())
         try:
             reader, writer = await asyncio.open_unix_connection(self.config.daemon_socket_file)
-            writer.write(req.model_dump_json().encode()); writer.write(b"\n"); await writer.drain()
-            data = await reader.readline(); text = data.decode().strip()
-            writer.close(); await writer.wait_closed()
+            writer.write(req.model_dump_json().encode())
+            writer.write(b"\n")
+            await writer.drain()
+            data = await reader.readline()
+            text = data.decode().strip()
+            writer.close()
+            await writer.wait_closed()
             obj = json.loads(text)
             if "error" in obj:
                 err = ErrorResponse.model_validate(obj)

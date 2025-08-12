@@ -123,7 +123,7 @@ class Configuration:
         if not config_path.exists():
             raise ConfigError(f"Config file not found: {config_path}")
 
-        with open(config_path) as f:
+        with Path(config_path).open() as f:
             data = yaml.safe_load(f)
 
         try:

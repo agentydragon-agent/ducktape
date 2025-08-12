@@ -2,27 +2,37 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import time
-from pathlib import Path
-from typing import Any
+from dataclasses import dataclass
+from datetime import datetime
+from typing import TYPE_CHECKING
 
-from .github_refresh import DebouncedGitHubRefresh
+from ..shared.github_models import PRData, PRState
 from .git_manager import GitManager
+from .github_refresh import DebouncedGitHubRefresh
 from .types import DiscoveredWorktree
+
+if TYPE_CHECKING:
+    from ..shared.configuration import Configuration
+    from .github_client import GitHubInterface
 
 logger = logging.getLogger(__name__)
 
 
+@dataclass
+class PRCacheEntry:
+    data: PRData | None
+    fetched_at: datetime
+
+
+@dataclass
 class PRService:
     """Manages GitHub PR cache for a single worktree (server-side)."""
 
-    def __init__(self, github_interface, config, worktree_info: DiscoveredWorktree):
-        self.github_interface = github_interface
-        self.config = config
-        self.worktree_info = worktree_info
-        self.cached_pr_info: dict[str, Any] | None = None
-        self.pr_last_fetched: float | None = None
-        self.github_refresh: DebouncedGitHubRefresh | None = None
+    github_interface: GitHubInterface | None
+    config: Configuration
+    worktree_info: DiscoveredWorktree
+    cached: PRCacheEntry | None = None
+    github_refresh: DebouncedGitHubRefresh | None = None
 
     async def start(self) -> None:
         if self.github_interface:
@@ -51,20 +61,18 @@ class PRService:
         self,
         branch_name: str,
         force_refresh: bool = False,
-    ) -> dict[str, Any] | None:
-        current_time = time.time()
+    ) -> PRData | None:
+        now = datetime.now()
         if (
             not force_refresh
-            and self.cached_pr_info is not None
-            and self.pr_last_fetched is not None
-            and (current_time - self.pr_last_fetched) < 60
+            and self.cached is not None
+            and (now - self.cached.fetched_at).total_seconds() < 60
         ):
-            return self.cached_pr_info
+            return self.cached.data
         if not self.github_interface:
-            self.cached_pr_info = None
-            self.pr_last_fetched = current_time
+            self.cached = PRCacheEntry(data=None, fetched_at=now)
             return None
-        pr_info_data = None
+        pr_info_data: PRData | None = None
         try:
 
             def _fetch_pr_info():
@@ -74,19 +82,17 @@ class PRService:
             prs = await loop.run_in_executor(None, _fetch_pr_info)
             if prs:
                 pr = prs[0]
-                pr_info_data = {
-                    "number": pr.number,
-                    "title": pr.title,
-                    "state": pr.state,
-                    "draft": pr.draft,
-                    "mergeable": pr.mergeable,
-                    "merged_at": pr.merged_at.isoformat() if pr.merged_at else None,
-                    "additions": pr.additions,
-                    "deletions": pr.deletions,
-                    "html_url": pr.html_url,
-                }
-        except Exception:
+                pr_info_data = PRData(
+                    pr_number=int(pr.number),
+                    pr_state=PRState(pr.state),
+                    draft=bool(pr.draft),
+                    mergeable=pr.mergeable,
+                    merged_at=(pr.merged_at.isoformat() if pr.merged_at else None),
+                    additions=pr.additions,
+                    deletions=pr.deletions,
+                )
+        except (OSError, RuntimeError) as e:
+            logger.warning("PR fetch failed for %s: %s", branch_name, e)
             pr_info_data = None
-        self.cached_pr_info = pr_info_data
-        self.pr_last_fetched = current_time
+        self.cached = PRCacheEntry(data=pr_info_data, fetched_at=now)
         return pr_info_data

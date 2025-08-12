@@ -1,3 +1,4 @@
+import ast
 import importlib
 import pkgutil
 from pathlib import Path
@@ -20,26 +21,42 @@ def iter_modules(package_prefix: str):
             yield m.name
 
 
+def _module_path(module_name: str) -> Path:
+    if not module_name.startswith("wt."):
+        raise ValueError(module_name)
+    rel = module_name.removeprefix("wt.").replace(".", "/") + ".py"
+    return ROOT / rel
+
+
+def _resolve_from_import(module_name: str, node: ast.ImportFrom) -> str:
+    base_module = node.module or ""
+    if node.level and node.level > 0:
+        pkg = module_name.rsplit(".", 1)[0]
+        parts = pkg.split(".")
+        if node.level <= len(parts):
+            pkg_base = ".".join(parts[: len(parts) - node.level])
+        else:
+            pkg_base = "wt"
+        return pkg_base + ("." + base_module if base_module else "")
+    return base_module
+
+
 def get_imports(module_name: str) -> set[str]:
-    # Simple static scan: not a full parser, good enough to catch cross-package imports
-    import inspect
-    mod = importlib.import_module(module_name)
-    source = inspect.getsource(mod)
+    path = _module_path(module_name)
+    source = path.read_text()
+
     imports: set[str] = set()
-    for line in source.splitlines():
-        line = line.strip()
-        if line.startswith("from "):
-            parts = line.split()
-            if len(parts) >= 4 and parts[0] == "from":
-                pkg = parts[1]
-                imports.add(pkg)
-        elif line.startswith("import "):
-            parts = line.split()
-            if len(parts) >= 2 and parts[0] == "import":
-                # could be multiple imports separated by commas
-                items = parts[1].split(",")
-                for item in items:
-                    imports.add(item.strip())
+    tree = ast.parse(source, filename=str(path))
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name:
+                    imports.add(alias.name)
+        elif isinstance(node, ast.ImportFrom):
+            target = _resolve_from_import(module_name, node)
+            if target:
+                imports.add(target)
     return imports
 
 

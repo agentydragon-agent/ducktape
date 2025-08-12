@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Callable, Awaitable, Any
+from collections.abc import Awaitable
+from typing import Any, Callable
 
 Handler = Callable[..., Awaitable[Any]] | Callable[..., Any]
 

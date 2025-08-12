@@ -129,7 +129,8 @@ class DebouncedGitHubRefresh:
                 logger.debug("Git fetch failed (offline?): %s", stderr.decode().strip())
                 return False
             except asyncio.TimeoutError:
-                process.kill(); await process.wait()
+                process.kill()
+                await process.wait()
                 logger.debug("Git fetch timed out (slow network?)")
                 return False
         except Exception:

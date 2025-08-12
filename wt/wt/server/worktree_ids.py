@@ -7,7 +7,7 @@ These operations are server-authority-only to maintain the security model.
 from pathlib import Path
 
 from ..shared.configuration import Configuration
-from ..shared.protocol import WorktreeID, parse_worktree_id
+from ..shared.protocol import WorktreeID
 
 
 def make_worktree_id(dirname: str) -> WorktreeID:
@@ -19,10 +19,15 @@ def make_worktree_id(dirname: str) -> WorktreeID:
     return WorktreeID(f"wtid:{dirname}")
 
 
-def wtid_to_path(config: Configuration, wtid: WorktreeID) -> Path:
-    """Server-only: Convert WorktreeID to absolute worktree path using configured worktrees_dir.
+def parse_worktree_id(wtid: WorktreeID) -> str:
+    """Server-only: Extract directory name from WorktreeID."""
+    s = str(wtid)
+    if not s.startswith("wtid:"):
+        raise ValueError(f"Invalid worktree ID format: {wtid}")
+    return s[5:]
 
-    Uses config.worktrees_dir_resolved, not assumptions about WT_DIR layout.
-    """
+
+def wtid_to_path(config: Configuration, wtid: WorktreeID) -> Path:
+    """Server-only: Convert WorktreeID to absolute worktree path using configured worktrees_dir."""
     name = parse_worktree_id(wtid)
     return (config.worktrees_dir_resolved / name).resolve()
