@@ -20,8 +20,6 @@
       - git
       - gitk
       - gnuplot
-      - golang
-      - golang
       - jq
       - jupyter-nbconvert
       - make

@@ -48,6 +48,7 @@ reload-env() {
 
 alias ..='cd ..'
 alias suspend='systemctl suspend'
+alias npm='pnpm'  # Automatically use pnpm instead of npm
 
 # Git aliases
 alias gs='git status --short --branch'

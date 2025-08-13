@@ -20,9 +20,10 @@ add_path "$HOME/.elan/bin"   # Elan, for Lean theorem prover
 # make less more friendly for non-text input files, see lesspipe(1)
 eval "$(SHELL=/bin/sh lesspipe)"  # Force POSIX-compliant output for compatibility
 
-# Go. default GOPATH is ~/go.
-export GOPATH="$HOME/.go"
-add_path "$HOME/.go/bin"
+# Go installation
+add_path "$HOME/.local/go/bin"   # Go binaries from our Ansible-managed installation
+export GOPATH="$HOME/.go"        # Go workspace (hidden directory)
+add_path "$GOPATH/bin"           # Go-installed tools
 
 # CUDA for Tensorflow
 if [ -d /usr/lib/cuda/targets/x86_64-linux/lib ]; then
