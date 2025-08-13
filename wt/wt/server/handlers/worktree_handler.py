@@ -6,38 +6,39 @@ from pathlib import Path
 
 from ...shared.constants import MAIN_WORKTREE_DISPLAY_NAME
 from ...shared.protocol import (
+    HookRunResult,
     ProgressEvent,
     ProgressOperation,
     Request,
     Response,
     WorktreeCreateParams,
     WorktreeCreateResult,
+    WorktreeCreateStep,
     WorktreeDeleteParams,
     WorktreeDeleteResult,
     WorktreeGetByNameParams,
     WorktreeGetByNameResult,
     WorktreeIdentifyParams,
     WorktreeIdentifyResult,
-    WorktreeCreateStep,
-)
-from ...shared.protocol import (
-    WorktreeInfo as ProtocolWorktreeInfo,
+    WorktreeInfo,
+    WorktreeListResult,
 )
 from ..registry import register
 from ..worktree_ids import make_worktree_id, parse_worktree_id, wtid_to_path
 from ..worktree_service import WorktreeService
 
+logger = logging.getLogger(__name__)
+
 
 @register("worktree_list")
 def handle_worktree_list(daemon, request: Request, start_time: float) -> Response:
-    worktree_infos = daemon.git_manager.list_worktrees()
-    worktrees: list[ProtocolWorktreeInfo] = []
-    for info in worktree_infos:
+    worktrees: list[WorktreeInfo] = []
+    for info in daemon.git_manager.list_worktrees():
         if not info.is_main:
             worktree_name = info.path.name
             worktree_id = make_worktree_id(worktree_name)
             worktrees.append(
-                ProtocolWorktreeInfo(
+                WorktreeInfo(
                     wtid=worktree_id,
                     name=worktree_name,
                     absolute_path=str(info.path),
@@ -46,13 +47,8 @@ def handle_worktree_list(daemon, request: Request, start_time: float) -> Respons
                     is_main=False,
                 ),
             )
-    from ...shared.protocol import (
-        WorktreeListResult,  # import-cycle-safe: protocol is shared schema only
-    )
 
-    result = WorktreeListResult(worktrees=worktrees)
-    return Response(result=result, id=request.id)
-
+    return Response(result=WorktreeListResult(worktrees=worktrees), id=request.id)
 
 
 @register("worktree_create", needs_writer=True)
@@ -73,28 +69,18 @@ async def handle_worktree_create(
     if daemon.config.post_creation_script:
         script = daemon.config.post_creation_script
         if not script.exists() or not script.is_file():
-            raise ValueError(
-                f"Post-creation script configured but not found or not a file: {script}",
-            )
+            raise ValueError(f"Post-creation script {script} is not a file")
     svc = daemon.worktree_service
     source_path = None
     if params.source_wtid:
         source_path = wtid_to_path(daemon.config, params.source_wtid)
         if not source_path.exists():
-            raise ValueError(f"Source worktree path not found: {source_path}")
-        src_repo = daemon.git_manager.get_repo(source_path)
-        src_branch = src_repo.head.shorthand
+            raise ValueError(f"Source worktree {source_path} not found")
+        src_branch = daemon.git_manager.get_repo(source_path).head.shorthand
     else:
         src_branch = daemon.config.upstream_branch
 
     # Emit progress events around the slow hydration/checkout step
-    from ...shared.protocol import (
-        ProgressEvent,
-        ProgressOperation,
-        StreamEventType,
-        WorktreeCreateStep,
-    )
-
     def _emit_progress(step: WorktreeCreateStep, message: str, progress: float):
         if writer is None:
             return
@@ -131,8 +117,9 @@ async def handle_worktree_create(
                 f"Post-creation script not found at execution time: {script}",
             )
         # run_post_creation_script is async; we stream via the same writer
-        post = await WorktreeService.run_post_creation_script(str(script), worktree_path, writer)
-    from ...shared.protocol import HookRunResult
+        post = await WorktreeService.run_post_creation_script(
+            str(script), worktree_path, writer
+        )
 
     result = WorktreeCreateResult(
         wtid=worktree_id,
@@ -156,14 +143,16 @@ def handle_worktree_delete(daemon, request: Request, start_time: float) -> Respo
     try:
         if worktree_path.exists():
             shutil.rmtree(worktree_path)
-    except Exception as e:
-        logging.getLogger(__name__).warning("Filesystem cleanup failed for %s: %s", worktree_path, e)
-    result = WorktreeDeleteResult(
-        wtid=params.wtid,
-        success=True,
-        message=f"Deleted worktree {worktree_name}",
+    except (OSError, PermissionError) as e:
+        logger.warning("Filesystem cleanup failed for %s: %s", worktree_path, e)
+    return Response(
+        result=WorktreeDeleteResult(
+            wtid=params.wtid,
+            success=True,
+            message=f"Deleted worktree {worktree_name}",
+        ),
+        id=request.id,
     )
-    return Response(result=result, id=request.id)
 
 
 def _resolve_worktree_name_to_info(name: str, worktree_infos: list) -> object | None:
@@ -194,43 +183,41 @@ def handle_worktree_identify(daemon, request: Request, start_time: float) -> Res
         except ValueError:
             worktree_name = None
             relative_path = None
-    if worktree_name and absolute_path.exists():
-        worktree_infos = daemon.git_manager.list_worktrees()
-        found_worktree = _resolve_worktree_name_to_info(worktree_name, worktree_infos)
-        if not found_worktree:
-            raise ValueError(f"Path {absolute_path} is not a managed worktree")
-        if found_worktree.is_main:
-            worktree_id = make_worktree_id(MAIN_WORKTREE_DISPLAY_NAME)
-            resolved_name = MAIN_WORKTREE_DISPLAY_NAME
-        else:
-            worktree_id = make_worktree_id(found_worktree.path.name)
-            resolved_name = found_worktree.path.name
-        result = WorktreeIdentifyResult(
-            wtid=worktree_id,
+    if not worktree_name or not absolute_path.exists():
+        raise ValueError(f"{absolute_path} is not a managed worktree")
+    worktree_infos = daemon.git_manager.list_worktrees()
+    found_worktree = _resolve_worktree_name_to_info(worktree_name, worktree_infos)
+    if not found_worktree:
+        raise ValueError(f"{absolute_path} is not a managed worktree")
+    if found_worktree.is_main:
+        resolved_name = MAIN_WORKTREE_DISPLAY_NAME
+    else:
+        resolved_name = found_worktree.path.name
+    return Response(
+        result=WorktreeIdentifyResult(
+            wtid=make_worktree_id(resolved_name),
             name=resolved_name,
             is_worktree=True,
             relative_path=relative_path,
-        )
-    else:
-        raise ValueError(f"Path {absolute_path} is not a managed worktree")
-    return Response(result=result, id=request.id)
+        ),
+        id=request.id,
+    )
 
 
 @register("worktree_get_by_name")
-def handle_worktree_get_by_name(daemon, request: Request, start_time: float) -> Response:
+def handle_worktree_get_by_name(
+    daemon, request: Request, start_time: float
+) -> Response:
     params = WorktreeGetByNameParams.model_validate(request.params)
-    name = params.name
     worktree_infos = daemon.git_manager.list_worktrees()
-    found_worktree = _resolve_worktree_name_to_info(name, worktree_infos)
+    found_worktree = _resolve_worktree_name_to_info(params.name, worktree_infos)
     if found_worktree:
         if found_worktree.is_main:
-            wtid = make_worktree_id(MAIN_WORKTREE_DISPLAY_NAME)
             worktree_name = MAIN_WORKTREE_DISPLAY_NAME
         else:
-            wtid = make_worktree_id(found_worktree.path.name)
             worktree_name = found_worktree.path.name
         result = WorktreeGetByNameResult(
-            wtid=wtid,
+            wtid=make_worktree_id(worktree_name),
             name=worktree_name,
             exists=True,
             absolute_path=str(found_worktree.path),

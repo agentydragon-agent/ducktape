@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import pygit2
+
 from .git_manager import GitManager
 
 
@@ -27,6 +29,6 @@ class RepoMetaService:
                     f"refs/heads/{self.config.upstream_branch}",
                 )
                 ahead_behind = (ahead, behind)
-            except Exception:
+            except pygit2.GitError:
                 ahead_behind = (0, 0)
         return commit_info_data, ahead_behind, branch_name
