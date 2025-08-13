@@ -1,9 +1,9 @@
 ---
-- hosts: new-vm
+- hosts: wyrm
   vars_files:
     - vars/common_vars.yml
   vars:
-    rcup_computer: new-vm
+    rcup_computer: wyrm
     ducktape_path: "{{ ansible_user_dir }}/code/ducktape"
   remote_user: "{{ my_user }}"
 
@@ -63,7 +63,7 @@
 
     - name: Create Docker storage directory on tankshare
       ansible.builtin.file:
-        path: /mnt/tankshare/per-vm/new-vm/docker
+        path: /mnt/tankshare/per-vm/wyrm/docker
         state: directory
         owner: root
         group: root
@@ -76,7 +76,7 @@
       ansible.builtin.copy:
         content: |
           {
-            "data-root": "/mnt/tankshare/per-vm/new-vm/docker",
+            "data-root": "/mnt/tankshare/per-vm/wyrm/docker",
             "storage-driver": "vfs"
           }
         dest: /etc/docker/daemon.json
@@ -101,7 +101,7 @@
       become: true
       loop:
         - /mnt/tankshare/shared/pip-cache
-        - /mnt/tankshare/per-vm/new-vm/python-user
+        - /mnt/tankshare/per-vm/wyrm/python-user
       when: tankshare_mount.stat.exists and tankshare_mount.stat.isdir
       tags: [storage, pip]
 
@@ -129,15 +129,31 @@
       when: tankshare_mount.stat.exists and tankshare_mount.stat.isdir
       tags: [storage, pip]
 
-    # TODO: Use rcm host-specific dotfiles for pip.conf and PYTHONUSERBASE
-    # See: https://github.com/thoughtbot/rcm#host-specific-dotfiles
-    - name: Set PYTHONUSERBASE environment variable
+    # PYTHONUSERBASE is now handled via rcm host-specific dotfiles (host-wyrm/profile.machine)
+
+    # MOTD configuration for wyrm
+    - name: Set wyrm MOTD
       ansible.builtin.copy:
-        content: |
-          export PYTHONUSERBASE=/mnt/tankshare/per-vm/new-vm/python-user
-        dest: "{{ ansible_user_dir }}/.config/environment.d/python-tankshare.conf"
-        owner: "{{ my_user }}"
-        group: "{{ my_user }}"
+        content: "🐉 Welcome to wyrm!\n"
+        dest: /etc/motd
+        owner: root
+        group: root
         mode: '0644'
-      when: tankshare_mount.stat.exists and tankshare_mount.stat.isdir
-      tags: [storage, pip]
+      become: true
+      tags: [motd]
+
+    - name: Disable dynamic MOTD components
+      ansible.builtin.file:
+        path: "{{ item }}"
+        mode: 'a-x'  # Remove execute permission
+      become: true
+      loop:
+        - /etc/pop-os/update-motd.d/10-help-text  # The actual Pop!_OS script (symlink target)
+        # TODO: Future fancy ideas:
+        # - Create /etc/update-motd.d/99-wyrm-status with dynamic dragon-themed system stats
+        # - Show GPU status for AI experiments
+        # - Display current Python environment info
+        # - Show tankshare usage as "dragon hoard"
+        # - Temperature sensors as "dragon fire intensity"
+        # Keep 00-header for basic system info (OS version, kernel)
+      tags: [motd]

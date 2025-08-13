@@ -1,0 +1,9 @@
+#!/bin/sh
+# Machine-specific environment for wyrm - AI experimentation VM
+# This file is sourced by ~/.profile on wyrm only
+
+# Python packages on shared mount
+export PYTHONUSERBASE="/mnt/tankshare/per-vm/wyrm/python-user"
+
+# Add Python user binaries to PATH using the add_path function from main profile
+add_path "$PYTHONUSERBASE/bin"

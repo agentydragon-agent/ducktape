@@ -28,6 +28,11 @@ fi
 # Bun completions - work in both bash and zsh
 [ -s "$HOME/.bun/_bun" ] && source "$HOME/.bun/_bun"
 
+# Initialize pyenv for interactive shells (shims and autocompletion)
+if command -v pyenv >/dev/null 2>&1; then
+    eval "$(pyenv init -)"
+fi
+
 # Shell-agnostic interactive functions
 
 
