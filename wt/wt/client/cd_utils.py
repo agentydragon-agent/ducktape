@@ -19,6 +19,6 @@ def emit_cd_command(dest_repo: Path, *, main_repo: Path) -> None:
         try:
             rel = cwd.relative_to(dest_repo)
             dest_path = dest_repo / rel
-        except Exception:
+        except ValueError:
             dest_path = dest_repo
     emit_command(f"cd {shlex.quote(str(dest_path))}")

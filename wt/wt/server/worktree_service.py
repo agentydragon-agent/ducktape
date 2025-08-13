@@ -16,7 +16,7 @@ from ..shared.github_models import PRData, PRInfo
 from ..shared.models import CommitInfo, ProcessInfo
 from ..shared.protocol import HookOutputEvent, HookStream, StatusResult
 from .copy_strategies import get_copy_strategy
-from .git_manager import GitError, GitManager
+from .git_manager import GitError, GitManager, WorktreeCreateError, WorktreeDeleteError
 
 if TYPE_CHECKING:
     from .github_client import GitHubInterface
@@ -98,7 +98,10 @@ class WorktreeService:
             )
 
             # Create worktree
-            self.git_manager.worktree_add(str(worktree_path), branch_name)
+            try:
+                self.git_manager.worktree_add(str(worktree_path), branch_name)
+            except WorktreeCreateError as e:
+                raise
 
             # Hydrate with dirty state if source provided
             if config.hydrate_worktrees:
@@ -133,7 +136,10 @@ class WorktreeService:
         worktree_path = self.get_worktree_path(config, name)
         if not worktree_path.exists():
             return
-        self.git_manager.worktree_remove(str(worktree_path), force=force)
+        try:
+            self.git_manager.worktree_remove(str(worktree_path), force=force)
+        except WorktreeDeleteError as e:
+            raise
         try:
             shutil.rmtree(worktree_path, ignore_errors=True)
         except Exception:

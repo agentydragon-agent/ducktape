@@ -18,6 +18,7 @@ from ...shared.protocol import (
     StatusParams,
     StatusResponse,
     StatusResult,
+    WorktreeID,
 )
 from ..registry import register
 from ..types import DiscoveredWorktree
@@ -54,13 +55,18 @@ async def handle_status_request(daemon, request: Request, start_time: float) -> 
                     daemon._startup_tasks.append(asyncio.create_task(daemon._start_gitstatusd_for_worktree(wt_info)))
             worktree_paths = list(daemon.known_worktrees.keys())
 
-    results: dict[str, StatusResult] = {}
-    individual_times: dict[str, float] = {}
+    results: dict[WorktreeID, StatusResult] = {}
+    individual_times: dict[WorktreeID, float] = {}
 
     async def process_single_worktree(worktree_path: Path):
         single_start = time.time()
         gs_client = daemon.gitstatusd_clients.get(worktree_path)
         worktree_last_error: str | None = None
+        def _compute_meta_safe(path: Path):
+            try:
+                return (*daemon.repo_meta.compute_meta(path), None)
+            except Exception as e:
+                return (None, (0, 0), "HEAD", f"meta error: {e}")
         if gs_client:
             try:
                 dirty_files, untracked_files, last_updated_at, have_cache = (
@@ -70,19 +76,11 @@ async def handle_status_request(daemon, request: Request, start_time: float) -> 
                     (time.time() - last_updated_at.timestamp()) * 1000 if last_updated_at else None
                 )
                 if not have_cache:
-                    asyncio.create_task(gs_client.update_working_status())
+                    _update_task = asyncio.create_task(gs_client.update_working_status())
                 if last_updated_at is None:
                     last_updated_at = datetime.now()
                     cache_age_ms = None
-                try:
-                    commit_info_data, ahead_behind, branch_name = (
-                        daemon.repo_meta.compute_meta(worktree_path)
-                    )
-                except Exception as e:  # noqa: F841
-                    commit_info_data = None
-                    ahead_behind = (0, 0)
-                    branch_name = "HEAD"
-                    worktree_last_error = "meta error"
+                commit_info_data, ahead_behind, branch_name, worktree_last_error = _compute_meta_safe(worktree_path)
                 prsvc = daemon.pr_services.get(worktree_path)
                 pr_info_data = None
                 if prsvc:
@@ -99,15 +97,7 @@ async def handle_status_request(daemon, request: Request, start_time: float) -> 
                 single_time = (time.time() - single_start) * 1000
                 state = GitstatusdState.STARTING
                 dirty_files, untracked_files = [], []
-                try:
-                    commit_info_data, ahead_behind, branch_name = (
-                        daemon.repo_meta.compute_meta(worktree_path)
-                    )
-                except Exception as e:  # noqa: F841
-                    commit_info_data = None
-                    ahead_behind = (0, 0)
-                    branch_name = "HEAD"
-                    worktree_last_error = "meta error"
+                commit_info_data, ahead_behind, branch_name, worktree_last_error = _compute_meta_safe(worktree_path)
                 last_updated_at = datetime.now()
                 pr_info_data = None
                 is_cached = False
@@ -117,15 +107,7 @@ async def handle_status_request(daemon, request: Request, start_time: float) -> 
             single_time = (time.time() - single_start) * 1000
             state = GitstatusdState.STOPPED
             dirty_files, untracked_files = [], []
-            try:
-                commit_info_data, ahead_behind, branch_name = (
-                    daemon.repo_meta.compute_meta(worktree_path)
-                )
-            except Exception as e:  # noqa: F841
-                commit_info_data = None
-                ahead_behind = (0, 0)
-                branch_name = "HEAD"
-                worktree_last_error = "meta error"
+            commit_info_data, ahead_behind, branch_name, worktree_last_error = _compute_meta_safe(worktree_path)
             last_updated_at = datetime.now()
             pr_info_data = None
             is_cached = False
@@ -139,7 +121,7 @@ async def handle_status_request(daemon, request: Request, start_time: float) -> 
             pr_info = PRInfo(branch=branch_name, pr_data=coerce_prdata(pr_info_data))
         single_time = (time.time() - single_start) * 1000
         return (
-            str(wtid),
+            wtid,
             StatusResult(
                 wtid=wtid,
                 name=worktree_path.name,

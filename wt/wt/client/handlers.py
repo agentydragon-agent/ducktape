@@ -47,7 +47,7 @@ async def handle_status(daemon_client, formatter) -> None:
     display_items = [(result.name, result) for wtid, result in sorted_items]
 
     formatter.render_top_status_bar(all_status)
-    formatter.render_worktree_status_all(display_items)
+    formatter.render_worktree_status_all(display_items, all_status)
 
     components = all_status.components
     if components:
@@ -223,8 +223,7 @@ async def handle_navigate_to_worktree(config, worktree_name: str) -> None:
         # Delegate to shared create handler to reuse progress/hook streaming
         await handle_create_worktree(config, worktree_name, from_default=True)
         return
-    else:
-        click.echo("Cancelled.")
+    click.echo("Cancelled.")
 
 
 async def handle_kill_daemon(config) -> None:

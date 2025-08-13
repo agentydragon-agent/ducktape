@@ -27,11 +27,11 @@ class GitTimeoutError(GitError):
     pass
 
 
-class NoSuchRef(GitError):
+class NoSuchRefError(GitError):
     pass
 
 
-class NoSuchBranch(GitError):
+class NoSuchBranchError(GitError):
     pass
 
 
@@ -39,11 +39,11 @@ class WorktreeError(GitError):
     pass
 
 
-class CannotDeleteWorktree(WorktreeError):
+class WorktreeDeleteError(WorktreeError):
     pass
 
 
-class CannotCreateWorktree(WorktreeError):
+class WorktreeCreateError(WorktreeError):
     pass
 
 
@@ -96,7 +96,7 @@ class GitManager:
         except (pygit2.GitError, OSError) as e:
             # Let callers handle git errors appropriately instead of masking them
             raise GitError(
-                f"Failed to get working directory status for {repo_path or self.config.main_repo}: {e}",
+                f"Failed to get working directory status: {e}",
             ) from e
 
     def get_repo(self, path: Path | None = None) -> pygit2.Repository:
@@ -113,25 +113,24 @@ class GitManager:
             ahead, behind = self._main_repo.ahead_behind(rev_b, rev_a)
             return ahead if rev_a == rev_b else (ahead + behind)
         except pygit2.GitError as e:
-            raise NoSuchRef(
+            raise NoSuchRefError(
                 f"Cannot count commits between {rev_a} and {rev_b}: {e}",
             ) from e
 
-    def get_commit_info(self, ref: str) -> dict[str, str]:
+    def get_commit_info(self, ref: str, worktree: Path) -> dict[str, str]:
+        repo = self.get_repo(worktree)
         try:
-            # Resolve reference to commit object
-            resolved = self._main_repo.resolve_refish(ref)  # type: ignore[attr-defined]
+            # Resolve reference to commit object in the given repo
+            resolved = repo.resolve_refish(ref)  # type: ignore[attr-defined]
             commit = resolved[0]
         except KeyError as e:
-            raise NoSuchRef(f"Cannot get commit object for {ref}: {e}") from e
+            raise NoSuchRefError(f"Cannot get commit object for {ref}: {e}") from e
 
-        # Extract commit information using pygit2 API
         message = commit.message
         if isinstance(message, bytes):
             message = message.decode("utf-8", errors="replace")
 
         author_name = commit.author.name
-        # Convert timestamp to ISO format
         date_obj = datetime.fromtimestamp(commit.commit_time, timezone.utc)
         date_str = date_obj.isoformat()
 
@@ -150,7 +149,7 @@ class GitManager:
             return str(resolved[0].id)
         except KeyError as e:
             # Reference does not exist
-            raise NoSuchRef(f"Reference does not exist: {ref}") from e
+            raise NoSuchRefError(f"Reference does not exist: {ref}") from e
         except Exception as e:
             # Don't assume unknown errors mean "reference doesn't exist"
             raise GitError(f"Failed to verify reference {ref}: {e}") from e
@@ -207,12 +206,12 @@ class GitManager:
         # Check if worktree already exists for this path
         existing_worktrees = self.list_worktrees()
         if any(info.path == path_obj for info in existing_worktrees):
-            raise CannotCreateWorktree(f"Worktree already exists at {path}")
+            raise WorktreeCreateError(f"Worktree already exists at {path}")
 
         # The branch already exists (created by caller), so we reference it
         branch_ref = self._main_repo.lookup_branch(branch)
         if branch_ref is None:
-            raise CannotCreateWorktree(f"Branch {branch} does not exist")
+            raise WorktreeCreateError(f"Branch {branch} does not exist")
 
         try:
             git_run(
@@ -220,15 +219,18 @@ class GitManager:
                 cwd=self.config.main_repo,
             )
         except subprocess.CalledProcessError as e:
-            raise CannotCreateWorktree(
+            raise WorktreeCreateError(
                 f"git worktree add failed: {e.stderr.decode(errors='replace').strip()}",
             ) from e
 
     def worktree_remove(self, path: str, force: bool = False) -> None:
-        self._main_repo.lookup_worktree(Path(path).name).prune(force)
+        try:
+            self._main_repo.lookup_worktree(Path(path).name).prune(force)
+        except Exception as e:
+            raise WorktreeDeleteError(f"Failed to remove worktree at {path}: {e}") from e
 
     def verify_branch_exists(self, branch_name: str) -> str:
         try:
             return self.verify_ref_exists(f"refs/heads/{branch_name}")
-        except NoSuchRef as e:
-            raise NoSuchBranch(str(e)) from e
+        except NoSuchRefError as e:
+            raise NoSuchBranchError(str(e)) from e

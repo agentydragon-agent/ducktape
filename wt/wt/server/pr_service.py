@@ -31,6 +31,7 @@ class PRService:
     github_interface: GitHubInterface | None
     config: Configuration
     worktree_info: DiscoveredWorktree
+    git_manager: GitManager
     cached: PRCacheEntry | None = None
     github_refresh: DebouncedGitHubRefresh | None = None
 
@@ -49,7 +50,7 @@ class PRService:
             await self.github_refresh.stop()
 
     async def _refresh_github_cache(self, reason: str, files_changed: list[str]):
-        repo_obj = GitManager(config=self.config).get_repo(self.worktree_info.path)
+        repo_obj = self.git_manager.get_repo(self.worktree_info.path)
         branch_name = repo_obj.head.shorthand
         await self.get_pr_info(branch_name, force_refresh=True)
 

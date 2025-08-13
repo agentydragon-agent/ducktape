@@ -81,7 +81,7 @@ class ViewFormatter:
         """Format a status row with nice alignment."""
         # Commit hash - vertically aligned column
         commit_short = (
-            status.commit_info.short_hash if status.commit_info else "????????"
+            status.commit_info.short_hash if status.commit_info else "ERROR"
         )
 
         # Ahead/behind status with light colors, aligned around center point
@@ -144,8 +144,7 @@ class ViewFormatter:
 
     def _get_commit_column(self, status: StatusResult) -> str:
         """Get commit hash column."""
-        return status.commit_info.short_hash if status.commit_info else "????????"
-
+        return status.commit_info.short_hash if status.commit_info else "ERROR"
     def _get_sync_column(self, status: StatusResult) -> str:
         """Get ahead/behind sync status column."""
         parts = []
@@ -171,37 +170,49 @@ class ViewFormatter:
 
     def _get_pr_link_column(self, status: StatusResult) -> str:
         """Get PR link column."""
-        if not (status.pr_info and status.pr_info.github_pr):
+        if not status.pr_info:
             return ""
-
-        pr = status.pr_info.github_pr
-        pr_number = pr["number"]
-        return self.make_hyperlink(f"http://go/pull/{pr_number}", f"#{pr_number}")
+        if status.pr_info.github_pr:
+            pr = status.pr_info.github_pr
+            pr_number = pr["number"]
+            return self.make_hyperlink(f"http://go/pull/{pr_number}", f"#{pr_number}")
+        if status.pr_info.pr_data:
+            pr_number = status.pr_info.pr_data.pr_number
+            return self.make_hyperlink(f"http://go/pull/{pr_number}", f"#{pr_number}")
+        return ""
 
     def _get_pr_status_column(self, status: StatusResult) -> str:
         """Get PR status text column."""
-        if not (status.pr_info and status.pr_info.github_pr):
+        if not status.pr_info:
             return ""
-
-        pr = status.pr_info.github_pr
-        pr_state = PRState(pr["state"])
-        return self.get_pr_status_text(
-            pr_state,
-            pr.get("mergeable"),
-            pr.get("draft", False),
-            pr.get("merged_at"),
-        )
+        if status.pr_info.github_pr:
+            pr = status.pr_info.github_pr
+            pr_state = PRState(pr["state"])
+            return self.get_pr_status_text(
+                pr_state,
+                pr.get("mergeable"),
+                pr.get("draft", False),
+                pr.get("merged_at"),
+            )
+        if status.pr_info.pr_data:
+            d = status.pr_info.pr_data
+            return self.get_pr_status_text(d.pr_state, d.mergeable, d.draft, d.merged_at)
+        return ""
 
     def _get_pr_changes_column(self, status: StatusResult) -> str:
         """Get PR changes (+lines/-lines) column."""
-        if not (status.pr_info and status.pr_info.github_pr):
+        if not status.pr_info:
             return ""
-
-        pr = status.pr_info.github_pr
-        if pr.get("additions") is not None and pr.get("deletions") is not None:
-            return f"+{pr['additions']}/-{pr['deletions']}"
+        if status.pr_info.github_pr:
+            pr = status.pr_info.github_pr
+            if pr.get("additions") is not None and pr.get("deletions") is not None:
+                return f"+{pr['additions']}/-{pr['deletions']}"
+            return ""
+        if status.pr_info.pr_data:
+            d = status.pr_info.pr_data
+            if d.additions is not None and d.deletions is not None:
+                return f"+{d.additions}/-{d.deletions}"
         return ""
-
     def render_top_status_bar(self, status_response) -> None:
         summary = status_response.readiness_summary
         components = status_response.components
@@ -223,6 +234,7 @@ class ViewFormatter:
     def render_worktree_status_all(
         self,
         sorted_items: list[tuple[str, StatusResult]],
+        status_response=None,
     ) -> None:
         if not sorted_items:
             click.echo("🤷 No worktrees found")
@@ -263,6 +275,32 @@ class ViewFormatter:
 
         # Render table with no headers, no grid lines, just clean aligned columns
         click.echo(tabulate(table_data, tablefmt="plain"))
+
+        # Aggregate and show errors below the table to avoid widening columns
+        error_lines = []
+        for name, status in sorted_items:
+            if status.last_error:
+                error_lines.append(f"{name}: {status.last_error}")
+        if error_lines:
+            click.echo("")
+            click.echo("Errors:")
+            for ln in error_lines:
+                click.echo(f"  - {ln}")
+            log_path = os.getenv("WT_DIR")
+            if log_path:
+                click.echo(f"See daemon log: {Path(log_path) / 'daemon.log'}")
+
+        # Component health summary
+        if status_response and status_response.daemon_health:
+            dh = status_response.daemon_health
+            click.echo("")
+            click.echo("Health:")
+            click.echo(f"  - status: {dh.status}")
+            if dh.last_error:
+                click.echo(f"  - last_error: {dh.last_error}")
+            click.echo(
+                f"  - counters: github_errors={dh.github_errors}, gitstatusd_errors={dh.gitstatusd_errors}"
+            )
 
     def render_worktree_status_single(
         self,

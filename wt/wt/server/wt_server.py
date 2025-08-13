@@ -487,7 +487,7 @@ class WtDaemon:
         # Kick an initial nonblocking refresh; watcher/poll keeps it fresh
         asyncio.create_task(gs_client.update_working_status())
         self.gitstatusd_clients[worktree_info.path] = gs_client
-        prsvc = PRService(self.github_interface, self.config, worktree_info)
+        prsvc = PRService(self.github_interface, self.config, worktree_info, self.git_manager)
         await prsvc.start()
         self.pr_services[worktree_info.path] = prsvc
 

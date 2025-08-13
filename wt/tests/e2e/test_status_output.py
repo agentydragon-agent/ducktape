@@ -38,7 +38,7 @@ def test_status_lists_multiple_worktrees(real_temp_repo, real_env):
     wt2 = Path(real_temp_repo) / "worktrees" / "beta"
     assert wt2.exists() and (wt2 / ".git").exists()
 
-    # Poll until both worktrees are reported as clean and running
+    # Poll until both worktrees are reported as clean and running, and commit column is hex
     deadline = time.time() + 5.0
     last_out = ""
     while time.time() < deadline:
@@ -56,8 +56,15 @@ def test_status_lists_multiple_worktrees(real_temp_repo, real_env):
             return None
         l1 = line_for("alpha")
         l2 = line_for("beta")
-        if l1 and l2 and ("clean" in l1) and (" running" in l1) and ("clean" in l2) and (" running" in l2):
+        def commit_ok(line: str) -> bool:
+            import re
+            # Full-line regex: name, spaces, 8-hex, spaces, rest
+            return re.match(r"^[a-zA-Z0-9._/-]+\s+[0-9a-f]{8}\b", line) is not None
+        if (
+            l1 and l2 and ("clean" in l1) and (" running" in l1) and ("clean" in l2) and (" running" in l2)
+            and commit_ok(l1) and commit_ok(l2)
+        ):
             break
         time.sleep(0.2)
     else:
-        raise AssertionError(f"Status did not reach clean/running for both worktrees.\nLast output:\n{last_out}")
+        raise AssertionError(f"Status did not reach clean/running with hex commit for both worktrees.\nLast output:\n{last_out}")

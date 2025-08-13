@@ -18,26 +18,23 @@ from pydantic import TypeAdapter, ValidationError
 
 from ..shared.configuration import Configuration
 from ..shared.error_handling import validate_worktree_name
-from ..shared.protocol import (ErrorResponse, Request, Response,
-                               StartupMessage, StatusParams, StatusResponse,
-                               TeleportCdThere, TeleportDoesNotExist,
-                               TeleportResult, WorktreeCreateParams,
-                               WorktreeCreateResult, WorktreeDeleteParams,
-                               WorktreeDeleteResult, WorktreeGetByNameParams,
-                               WorktreeGetByNameResult, WorktreeID,
-                               WorktreeIdentifyParams, WorktreeIdentifyResult,
-                               WorktreeListResult, WorktreeResolvePathParams,
+from dataclasses import dataclass, field
+from typing import Callable
+
+from ..shared.protocol import (ErrorResponse, HookOutputEvent, ProgressEvent,
+                               Request, Response, StartupMessage,
+                               StatusParams, StatusResponse, TeleportCdThere,
+                               TeleportDoesNotExist, TeleportResult,
+                               WorktreeCreateParams, WorktreeCreateResult,
+                               WorktreeDeleteParams, WorktreeDeleteResult,
+                               WorktreeGetByNameParams, WorktreeGetByNameResult,
+                               WorktreeID, WorktreeIdentifyParams,
+                               WorktreeIdentifyResult, WorktreeListResult,
+                               WorktreeResolvePathParams,
                                WorktreeResolvePathResult,
                                WorktreeTeleportTargetParams)
 
 logger = logging.getLogger(__name__)
-
-    
-
-
-from dataclasses import dataclass, field
-from typing import Callable
-from ..shared.protocol import HookOutputEvent, ProgressEvent
 
 
 @dataclass
@@ -98,87 +95,47 @@ class WtClient:
         """Start daemon if not running."""
 
         async with self._daemon_start_lock:
-            # Double-check after acquiring lock
             if self._is_daemon_running():
-                logger.debug(
-                    "Daemon already running for %s",
-                    self.config.main_repo,
-                )
+                logger.debug("Daemon already running for %s", self.config.main_repo)
                 return
 
             logger.info("Starting wt daemon for %s", self.config.main_repo)
             logger.debug("Daemon socket: %s", self.config.daemon_socket_path)
             logger.debug("Daemon logs: %s", self.config.wt_dir / "daemon.log")
-            if self.verbose:
-                logger.info("wt: starting daemon … (%s)", self.config.daemon_socket_path)
+            logger.info("wt: starting daemon … (%s)", self.config.daemon_socket_path)
 
-            # Start daemon with simple fork+function call pattern
+            # Use original double-fork + handshake pipe approach to start the daemon
             await self._start_daemon_background()
 
-            # Wait for handshake confirmation from daemon via pipe
             try:
-                # Read handshake from pipe with timeout
                 loop = asyncio.get_event_loop()
-                # Emit immediate progress if verbose
-                if self.verbose:
-                    logger.info("wt: waiting for daemon handshake…")
-                # Start a single background reader; don't create multiple competing readers
                 reader_future = loop.run_in_executor(None, self._read_handshake_from_pipe)
-                # Bound the time we wait before surfacing any progress
                 first_wait = min(1.0, self.config.startup_timeout.total_seconds())
                 try:
                     handshake_data = await asyncio.wait_for(asyncio.shield(reader_future), timeout=first_wait)
                 except asyncio.TimeoutError:
-                    if self.verbose:
-                        logger.info("wt: daemon is starting… waiting for ready signal")
-                    # Keep waiting up to the remaining timeout
-                    remaining = max(
-                        0.0,
-                        self.config.startup_timeout.total_seconds() - first_wait,
-                    )
+                    remaining = max(0.0, self.config.startup_timeout.total_seconds() - first_wait)
                     handshake_data = await asyncio.wait_for(asyncio.shield(reader_future), timeout=remaining if remaining > 0 else 0.1)
 
-                # Check protocol version
                 protocol_version = handshake_data.get("protocol_version", 0)
                 if protocol_version != 1:
-                    raise RuntimeError(
-                        f"Incompatible daemon protocol version {protocol_version}, expected 1",
-                    )
+                    raise RuntimeError(f"Incompatible daemon protocol version {protocol_version}, expected 1")
 
                 if handshake_data.get("success"):
                     pid = handshake_data.get("pid")
-                    if self.verbose:
-                        logger.info("wt daemon: startup handshake ok (pid %s)", pid)
-                    logger.info("Daemon startup handshake received from PID %d", pid)
-
-                    # Verify daemon is actually running and accessible
+                    logger.info("wt daemon: startup handshake ok (pid %s)", pid)
                     if self._is_daemon_running():
-                        logger.info(
-                            "Daemon started successfully with handshake confirmation",
-                        )
+                        logger.info("Daemon started successfully with handshake confirmation")
                         return
-                    logger.warning("Got successful handshake but daemon not accessible")
-                    raise RuntimeError(
-                        "Daemon handshake successful but daemon not accessible",
-                    )
-                # Daemon startup failed - show error to user
+                    raise RuntimeError("Daemon handshake successful but daemon not accessible")
                 error_message = handshake_data.get("error", "Unknown startup error")
                 raise RuntimeError(f"Daemon startup failed:\n{error_message}")
 
             except asyncio.TimeoutError:
                 timeout_secs = self.config.startup_timeout.total_seconds()
-                logger.warning(
-                    "Daemon startup timed out - no handshake received within %.1f seconds",
-                    timeout_secs,
-                )
-                if self.verbose:
-                    logger.info("wt daemon: startup timed out after %.1fs", timeout_secs)
-                raise RuntimeError(
-                    f"Daemon startup timed out after {timeout_secs:.1f} seconds",
-                )
-            except json.JSONDecodeError as e:
-                raise RuntimeError(f"Daemon handshake contains invalid JSON: {e}")
-            except Exception as e:
+                logger.warning("Daemon startup timed out - no handshake received within %.1f seconds", timeout_secs)
+                raise RuntimeError(f"Daemon startup timed out after {timeout_secs:.1f} seconds")
+            except (OSError, RuntimeError, ValueError) as e:
                 diag = []
                 try:
                     daemon_log = self.config.wt_dir / "daemon.log"
@@ -186,18 +143,17 @@ class WtClient:
                     if daemon_log.exists():
                         tail = daemon_log.read_text(errors="ignore").splitlines()[-50:]
                         diag.append("daemon.log (tail):\n" + "\n".join(tail))
-                except Exception:
+                except OSError:
                     pass
                 try:
                     diag.append(f"pid file exists: {self.config.daemon_pid_path.exists()}")
                     if self.config.daemon_pid_path.exists():
                         diag.append(f"pid file contents: {self.config.daemon_pid_path.read_text().strip()}")
                     diag.append(f"socket exists: {self.config.daemon_socket_path.exists()}")
-                except Exception:
+                except OSError:
                     pass
                 raise RuntimeError("Daemon startup failed.\n" + "\n".join(diag)) from e
             finally:
-                # Mark pipe as inactive (reader thread closes underlying FD)
                 self._handshake_pipe = None
 
     async def _start_daemon_background(self) -> None:
