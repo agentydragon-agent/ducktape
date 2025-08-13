@@ -33,34 +33,49 @@
         # - libcst  # Python concrete syntax tree library for refactoring ... doesn't seem to exist in pipx:w
         - pydeps  # Python dependency graph visualization
 
-    - name: Install Node.js CLI tools globally (user-level)
-      community.general.npm:
+    - name: Install pnpm package manager
+      github_release_install:
+        release_spec:
+          repo: "pnpm/pnpm"
+          version: "latest"
+          asset_pattern: "pnpm-linux-x64$"  # The standalone binary
+        method:
+          name: binary
+          dest_path: "{{ ansible_user_dir }}/.local/bin/pnpm"
+      when: ansible_architecture == "x86_64" and ansible_system == "Linux"
+      tags: [pnpm]
+
+    - name: Install Node.js CLI tools globally with pnpm
+      community.general.pnpm:
         name: "{{ item }}"
-        global: true  # Install globally within user's npm environment
+        global: true
       loop:
         - '@openai/codex'
         # - '@anthropic-ai/claude-code'  # Now installed via official script below
         - '@bazel/bazelisk'
         - '@ast-grep/cli'  # For semantic code queries across multiple languages
+      tags: [pnpm]
         - 'jscpd'  # Copy/paste detector for 150+ languages including Python, TypeScript
         - 'madge'  # Dependency graph visualization tool
         - 'pyright'  # Python language server for static type checking
 
-    # Check for npm-global Claude installation
-    - name: Check if Claude is installed via npm-global
+    # Check for legacy npm-global directory that should be removed
+    - name: Check if npm-global directory exists
       ansible.builtin.stat:
-        path: "{{ ansible_user_dir }}/.npm-global/bin/claude"
-      register: npm_global_claude
+        path: "{{ ansible_user_dir }}/.npm-global"
+      register: npm_global_dir
       changed_when: false
+      tags: [npm-cleanup]
 
-    - name: Fail if npm-global Claude installation exists
+    - name: Fail if npm-global directory exists
       ansible.builtin.fail:
         msg: |
-          ERROR: Claude is installed via npm-global at ~/.npm-global/bin/claude
-          This conflicts with the native installation.
-          Remove it with: npm uninstall -g @anthropic-ai/claude-code
+          ERROR: npm-global directory exists at ~/.npm-global
+          We use pnpm now, not npm!
+          Remove it with: rm -rf ~/.npm-global ~/.npm
           Then re-run this playbook.
-      when: npm_global_claude.stat.exists
+      when: npm_global_dir.stat.exists and npm_global_dir.stat.isdir
+      tags: [npm-cleanup]
 
     # Check if claude binary is actually executable
     - name: Check if Claude binary exists and is executable
