@@ -14,7 +14,8 @@ class DebouncedGitstatusRefresh:
         self.refresh_callback = refresh_callback
         self.debounce_delay = debounce_delay
         self._pending: asyncio.Task | None = None
-        self.observer: Observer | None = None
+        from watchdog.observers import Observer as _Observer
+        self.observer: _Observer | None = None
         self.handler = _GitHandler(self)
         self.is_running = False
 

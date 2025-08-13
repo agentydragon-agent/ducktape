@@ -45,7 +45,7 @@ from .handlers import status_handler as _status_handler  # noqa: F401
 from .handlers import worktree_handler as _worktree_handler  # noqa: F401
 from .pr_service import PRService
 from .registry import registry
-from .repo_meta import RepoMetaService
+from .repo_meta import RepoStatusService
 from .types import DiscoveredWorktree
 from .worktree_service import WorktreeService
 from .gitstatus_refresh import DebouncedGitstatusRefresh
@@ -275,7 +275,7 @@ class WtDaemon:
         self.pr_services: dict[Path, PRService] = {}
         self.git_watchers: dict[Path, DebouncedGitstatusRefresh] = {}
         self.git_manager = GitManager(config=self.config)
-        self.repo_meta = RepoMetaService(self.git_manager, self.config)
+        self.repo_meta = RepoStatusService(self.git_manager, self.config)
         self.worktree_service = WorktreeService(self.git_manager, self.github_interface)
 
         # Server state
@@ -345,7 +345,7 @@ class WtDaemon:
             self.daemon_health.last_error_time = None
             logger.info("Daemon health status cleared - operations are succeeding")
 
-    def _validate_gitstatusd(self) -> tuple[str, str | None]:
+    def _validate_gitstatusd(self) -> tuple[str | None, str | None]:
         """Validate gitstatusd binary availability.
 
         Returns:

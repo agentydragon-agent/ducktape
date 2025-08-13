@@ -9,7 +9,7 @@ from .worktree_registry import ChangeSet
 
 @dataclass
 class WorktreeOrchestrator:
-    daemon: any  # WtDaemon
+    daemon: "WtDaemon"  # WtDaemon
 
     async def apply(self, changes: ChangeSet) -> None:
         # Stop removed

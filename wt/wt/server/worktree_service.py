@@ -98,10 +98,7 @@ class WorktreeService:
             )
 
             # Create worktree
-            try:
-                self.git_manager.worktree_add(str(worktree_path), branch_name)
-            except WorktreeCreateError as e:
-                raise
+            self.git_manager.worktree_add(str(worktree_path), branch_name)
 
             # Hydrate with dirty state if source provided
             if config.hydrate_worktrees:
@@ -136,10 +133,7 @@ class WorktreeService:
         worktree_path = self.get_worktree_path(config, name)
         if not worktree_path.exists():
             return
-        try:
-            self.git_manager.worktree_remove(str(worktree_path), force=force)
-        except WorktreeDeleteError as e:
-            raise
+        self.git_manager.worktree_remove(str(worktree_path), force=force)
         try:
             shutil.rmtree(worktree_path, ignore_errors=True)
         except Exception:

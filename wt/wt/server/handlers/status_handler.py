@@ -62,11 +62,13 @@ async def handle_status_request(daemon, request: Request, start_time: float) -> 
         single_start = time.time()
         gs_client = daemon.gitstatusd_clients.get(worktree_path)
         worktree_last_error: str | None = None
-        def _compute_meta_safe(path: Path):
+        from ..repo_meta import RepoStatusService
+        meta = RepoStatusService(daemon.git_manager, daemon.config)
+        def _compute_status(path: Path):
             try:
-                return (*daemon.repo_meta.compute_meta(path), None)
+                return (*meta.get_status(path), None)
             except Exception as e:
-                return (None, (0, 0), "HEAD", f"meta error: {e}")
+                return (None, (0, 0), "HEAD", f"status error: {e}")
         if gs_client:
             try:
                 dirty_files, untracked_files, last_updated_at, have_cache = (
@@ -80,7 +82,7 @@ async def handle_status_request(daemon, request: Request, start_time: float) -> 
                 if last_updated_at is None:
                     last_updated_at = datetime.now()
                     cache_age_ms = None
-                commit_info_data, ahead_behind, branch_name, worktree_last_error = _compute_meta_safe(worktree_path)
+                commit_info_data, ahead_behind, branch_name, worktree_last_error = _compute_status(worktree_path)
                 prsvc = daemon.pr_services.get(worktree_path)
                 pr_info_data = None
                 if prsvc:
@@ -97,7 +99,7 @@ async def handle_status_request(daemon, request: Request, start_time: float) -> 
                 single_time = (time.time() - single_start) * 1000
                 state = GitstatusdState.STARTING
                 dirty_files, untracked_files = [], []
-                commit_info_data, ahead_behind, branch_name, worktree_last_error = _compute_meta_safe(worktree_path)
+                commit_info_data, ahead_behind, branch_name, worktree_last_error = _compute_status(worktree_path)
                 last_updated_at = datetime.now()
                 pr_info_data = None
                 is_cached = False
