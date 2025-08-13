@@ -26,7 +26,17 @@ logger = logging.getLogger(__name__)
 
 
 class WorktreeService:
-    """Pure business logic for worktree operations."""
+    """Worktree operations orchestrator.
+
+    Responsibilities:
+    - Validate names and configuration
+    - Create branches and add worktrees (delegates to GitManager)
+    - Optional hydration (copy or checkout) per configuration
+    - Run post-creation hooks with streaming sink
+    - Query processes that hold files in a worktree
+
+    Note: This layer performs filesystem and subprocess I/O.
+    """
 
     def __init__(self, git_manager: GitManager, github: "GitHubInterface"):
         self.git_manager = git_manager

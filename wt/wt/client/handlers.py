@@ -69,10 +69,10 @@ async def handle_status(daemon_client, formatter) -> None:
 
 
 async def handle_list_worktrees(daemon_client, formatter) -> None:
-    """Handle the ls command to list all worktrees."""
-    # For now, delegate to status since we need the daemon for worktree discovery
-    # This could be enhanced later if needed
-    await handle_status(daemon_client, formatter)
+    """Handle the ls command to list all worktrees (excluding main)."""
+    # Use dedicated RPC for listing
+    listing = await daemon_client.list_worktrees()
+    formatter.render_worktree_list([(wt.name, Path(wt.absolute_path), wt.exists) for wt in listing.worktrees])
 
 
 async def handle_status_single(daemon_client, formatter, worktree_name: str) -> None:

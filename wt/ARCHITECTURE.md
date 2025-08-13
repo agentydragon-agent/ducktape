@@ -167,60 +167,6 @@ CLI receives resolved path from daemon and emits `cd` via client/shell_utils
 - Exit code 1: Don't execute (unrecoverable error)
 - Exit code 2: Execute (controlled error with recovery commands)
 
-## Future Architecture Evolution
-
-### Phase 1: Complete Daemon Migration ✅ **Partially Complete**
-Path operations moved to daemon, worktree creation/deletion still CLI-direct:
-
-```python
-# ✅ Path operations now in daemon
-handle_resolve_path(daemon_client, ...) → JSON-RPC request
-handle_teleport_target(daemon_client, ...) → JSON-RPC request
-
-# 🔄 Still CLI-direct (planned for migration)
-handle_create_worktree(config, name) → Direct git commands
-handle_delete_worktree(config, name) → Direct git commands
-```
-
-**Benefits Achieved**:
-- Server authority for path operations
-- Consistent error handling for status/path ops
-- Better testing isolation
-- Enhanced type safety with structured responses
-
-### Phase 2: Enhanced GitHub Refresh
-- **File Watcher Integration**: Watch `.git` directory for changes
-- **Debounced Updates**: 5-second debounce for rapid git operations  
-- **Periodic Refresh**: 1-minute intervals to catch external changes
-- **Smart Caching**: Proactive cache updates, always-fresh data
-
-### Phase 3: Enhanced Daemon Features  
-- **Batch Operations**: Multiple worktree operations in single request
-- **Advanced GitHub Integration**: PR creation, branch management
-- **Persistent Cache**: Status cache survives daemon restarts
-
-### Phase 3: Multi-Repository Support
-- **Repository Discovery**: Automatic detection of git repositories
-- **Workspace Management**: Coordinate multiple repos
-- **Cross-Repository Operations**: Copy files between different repos
-
-## Testing Strategy
-
-### Unit Testing
-- **Pure functions**: Easy to test handlers individually  
-- **Mock daemon**: Test client without real daemon
-- **Isolated components**: Test git operations separately
-
-### Integration Testing
-- **Real daemon**: Test full client-daemon communication
-- **File system**: Test actual git operations
-- **GitHub API**: Test with real API (rate-limited)
-
-### End-to-End Testing
-- **Shell integration**: Test complete zsh workflow
-- **Error scenarios**: Test various failure modes
-- **Performance**: Measure daemon startup and response times
-
 ## Performance Considerations
 
 ### Daemon Benefits
@@ -247,26 +193,17 @@ handle_delete_worktree(config, name) → Direct git commands
 
 ## Recent Refactoring Completed (January 2025)
 
-Major architecture improvements completed:
+…
 
-### Configuration System Overhaul
-- **WT_DIR-based**: Single environment variable for all configuration
-- **Frozen dataclass**: Immutable Configuration with upfront validation  
-- **No defaults**: All configuration fields now explicitly required
-- **Clean separation**: WT_DIR for daemon/state, main_repo for git operations
+## Implementation Notes (Git worktrees)
 
-### Naming and Structure Cleanup  
-- **GitStatusdDaemon → WtDaemon**: Removed misleading terminology
-- **GitStatusdDaemonClient → WtClient**: Consistent naming throughout
-- **Dead code removal**: Deleted unused timing utilities and --verbose flag
-- **Duplicate elimination**: Consolidated client initialization logic
-
-### Error Handling Improvements
-- **Error propagation**: Fixed 9+ patterns that masked errors with fallbacks
-- **Structured results**: Replaced tuple returns with WorktreeGitStatus dataclass
-- **Helper extraction**: Reduced code nesting in daemon handlers
-
-### Protocol Enhancements
-- **Server authority**: Moved path manipulation from client to server
-- **New RPC methods**: Added worktree_resolve_path and worktree_teleport_target
-- **Type safety**: Enhanced Pydantic models throughout protocol
+- The daemon creates worktrees via Git CLI using:
+  - `git worktree add --no-checkout <path> <branch>`
+- Rationale:
+  - We must support creating worktrees without incurring a full checkout for very large repositories.
+  - libgit2/pygit2’s `Repository.add_worktree(name, path, ref)` performs a checkout by design and cannot emulate `--no-checkout`.
+  - Post-creation deletion to mimic no-checkout is explicitly forbidden (wastes time and is unsafe).
+- Hydration behavior:
+  - When `hydrate_worktrees=True`, we either copy from a source worktree or perform a targeted checkout of the new branch in the worktree.
+  - When `hydrate_worktrees=False`, the worktree remains skeleton-only (no working files except `.git/`).
+- Tests enforce this contract (unit/integration), including sparse and empty-cone cases.

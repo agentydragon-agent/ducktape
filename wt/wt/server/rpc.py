@@ -28,6 +28,7 @@ class Stream(Generic[EventT]):
     def __init__(self, writer):
         self._writer = writer
         self._error_logged = False
+        # TODO(mpokorny): consider async emit with backpressure for large/continuous streams
 
     def emit(self, event: EventT) -> None:
         if not self._writer:

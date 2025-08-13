@@ -146,16 +146,24 @@ class GitManager:
             )
         ]
 
-        # Add all other worktrees
-        worktree_infos.extend(
-            WorktreeInfo(
-                path=Path(self._main_repo.lookup_worktree(wt_name).path),
-                branch=wt_name,
-                exists=Path(self._main_repo.lookup_worktree(wt_name).path).exists(),
-                is_main=False,
+        # Add all other worktrees with actual branch name read from their repo
+        for wt_name in self._main_repo.list_worktrees():
+            wt_path = Path(self._main_repo.lookup_worktree(wt_name).path)
+            branch_name = ""
+            try:
+                wt_repo = pygit2.Repository(str(wt_path))
+                if not wt_repo.head_is_detached:
+                    branch_name = wt_repo.head.shorthand or ""
+            except Exception:
+                branch_name = wt_name  # fallback
+            worktree_infos.append(
+                WorktreeInfo(
+                    path=wt_path,
+                    branch=branch_name,
+                    exists=wt_path.exists(),
+                    is_main=False,
+                )
             )
-            for wt_name in self._main_repo.list_worktrees()
-        )
 
         return worktree_infos
 

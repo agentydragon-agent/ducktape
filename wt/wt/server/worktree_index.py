@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Iterable
 
 from .types import DiscoveredWorktree
+from ..shared.constants import MAIN_WORKTREE_DISPLAY_NAME
 
 
 @dataclass
@@ -23,6 +24,10 @@ class WorktreeIndex:
             by_name[wt.name] = wt
             if wt.path.resolve() == main_repo.resolve():
                 main = wt
+        if main is None:
+            main = DiscoveredWorktree(main_repo, MAIN_WORKTREE_DISPLAY_NAME)
+            by_path.setdefault(main_repo, main)
+            by_name.setdefault(MAIN_WORKTREE_DISPLAY_NAME, main)
         return cls(by_path=by_path, by_name=by_name, main=main)
 
     def get_by_path(self, p: Path) -> DiscoveredWorktree | None:
