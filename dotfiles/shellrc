@@ -49,6 +49,7 @@ reload-env() {
 alias ..='cd ..'
 alias suspend='systemctl suspend'
 alias npm='pnpm'  # Automatically use pnpm instead of npm
+alias npx='echo "❌ No you idiot, use pnpm dlx" && false'  # npx is dead to us
 
 # Git aliases
 alias gs='git status --short --branch'

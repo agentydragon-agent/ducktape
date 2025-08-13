@@ -49,8 +49,9 @@ if [ -d "$HOME/.pyenv" ]; then
     eval "$(pyenv init --path)"
 fi
 
-# npm global packages
-add_path "$HOME/.npm-global/bin"
+# pnpm global packages
+export PNPM_HOME="$HOME/.local/share/pnpm"
+add_path "$PNPM_HOME"
 
 # tidy-up: drop helper function
 unset -f add_path 2>/dev/null

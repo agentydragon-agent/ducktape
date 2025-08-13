@@ -88,32 +88,8 @@
       notify: restart docker
       tags: [storage, docker]
 
-    - name: Install pnpm globally
-      ansible.builtin.npm:
-        name: pnpm
-        global: true
-        state: present
-      tags: [storage, pnpm]
-
-    - name: Create pnpm store directory on tankshare
-      ansible.builtin.file:
-        path: /mnt/tankshare/pnpm-store
-        state: directory
-        owner: "{{ my_user }}"
-        group: "{{ my_user }}"
-        mode: '0755'
-      become: true
-      when: tankshare_mount.stat.exists and tankshare_mount.stat.isdir
-      tags: [storage, pnpm]
-
-    - name: Configure pnpm to use tankshare store
-      ansible.builtin.shell: |
-        pnpm config set store-dir /mnt/tankshare/pnpm-store
-        pnpm config set package-import-method copy
-      become: true
-      become_user: "{{ my_user }}"
-      when: tankshare_mount.stat.exists and tankshare_mount.stat.isdir
-      tags: [storage, pnpm]
+    # pnpm is installed in dev-env-user.yml via github_release_install
+    # Configuration is managed via dotfiles/npmrc
 
     - name: Create pip cache directory on tankshare
       ansible.builtin.file:

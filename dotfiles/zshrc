@@ -128,4 +128,3 @@ ZSH_THEME_TERM_TITLE_IDLE="%n: %~ $"
 
 # Initialize atuin for better shell history
 eval "$(atuin init zsh --disable-up-arrow)"
-
