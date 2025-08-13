@@ -11,26 +11,25 @@ import logging
 import os
 import sys
 import uuid
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Callable
 
 import psutil
 from pydantic import TypeAdapter, ValidationError
 
 from ..shared.configuration import Configuration
 from ..shared.error_handling import validate_worktree_name
-from dataclasses import dataclass, field
-from typing import Callable
-
 from ..shared.protocol import (ErrorResponse, HookOutputEvent, ProgressEvent,
-                               Request, Response, StartupMessage,
-                               StatusParams, StatusResponse, TeleportCdThere,
+                               Request, Response, StartupMessage, StatusParams,
+                               StatusResponse, TeleportCdThere,
                                TeleportDoesNotExist, TeleportResult,
                                WorktreeCreateParams, WorktreeCreateResult,
                                WorktreeDeleteParams, WorktreeDeleteResult,
-                               WorktreeGetByNameParams, WorktreeGetByNameResult,
-                               WorktreeID, WorktreeIdentifyParams,
-                               WorktreeIdentifyResult, WorktreeListResult,
-                               WorktreeResolvePathParams,
+                               WorktreeGetByNameParams,
+                               WorktreeGetByNameResult, WorktreeID,
+                               WorktreeIdentifyParams, WorktreeIdentifyResult,
+                               WorktreeListResult, WorktreeResolvePathParams,
                                WorktreeResolvePathResult,
                                WorktreeTeleportTargetParams)
 
@@ -203,7 +202,6 @@ class WtClient:
                         env = os.environ.copy()
                         env["WT_HANDSHAKE_FD"] = str(handshake_write)
                         try:
-                            from pathlib import Path
                             project_root = str(Path(__file__).resolve().parents[2])
                             existing = env.get("PYTHONPATH", "")
                             env["PYTHONPATH"] = f"{project_root}:{existing}" if existing else project_root
@@ -358,11 +356,12 @@ class WtClient:
             # Let other RuntimeErrors (daemon communication failures, etc.) bubble up
             raise
 
-        if not status_response.results:
+        if not status_response.items:
             return [], []
 
         # Extract the single result
-        result = next(iter(status_response.results.values()))
+        item = next(iter(status_response.items.values()))
+        result = item.status
 
         # Convert boolean flags back to file lists for backward compatibility
         dirty_files = ["<files present>"] if result.has_dirty_files else []
@@ -400,10 +399,9 @@ class WtClient:
             writer.write(b"\n")
             await writer.drain()
 
-            hook_stdout = []
-            hook_stderr = []
+            hook_stdout: list[str] = []
+            hook_stderr: list[str] = []
             response_json = None
-            from ..shared.protocol import HookOutputEvent, ProgressEvent
 
             progress_cb = self._progress_callback
             hook_cb = self._hook_output_callback

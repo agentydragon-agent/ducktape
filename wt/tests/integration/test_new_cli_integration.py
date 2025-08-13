@@ -12,6 +12,7 @@ from wt.shared.protocol import (
     CommitInfo,
     DaemonHealth,
     DaemonHealthStatus,
+    StatusItem,
     StatusResponse,
     StatusResult,
 )
@@ -20,9 +21,8 @@ from wt.shared.protocol import (
 def create_empty_status_response() -> StatusResponse:
     """Create empty StatusResponse for testing."""
     return StatusResponse(
-        results={},
+        items={},
         total_processing_time_ms=0.0,
-        individual_processing_times_ms={},
         concurrent_requests=1,
         daemon_health=DaemonHealth(status=DaemonHealthStatus.OK),
     )
@@ -72,15 +72,11 @@ def create_test_status_response() -> StatusResponse:
     )
 
     return StatusResponse(
-        results={
-            "test-worktree": test_result,
-            "main": main_result,
+        items={
+            "test-worktree": StatusItem(status=test_result, processing_time_ms=25.0),
+            "main": StatusItem(status=main_result, processing_time_ms=25.0),
         },
         total_processing_time_ms=50.0,
-        individual_processing_times_ms={
-            "test-worktree": 25.0,
-            "main": 25.0,
-        },
         concurrent_requests=1,
         daemon_health=DaemonHealth(status=DaemonHealthStatus.OK),
     )

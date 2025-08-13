@@ -12,7 +12,7 @@ from ...shared.protocol import (
     WorktreeResolvePathResult,
     WorktreeTeleportTargetParams,
 )
-from ..registry import register
+from ..rpc import rpc, Context
 
 
 def _find_current_worktree_info(daemon, current_path: Path, worktree_infos: list):
@@ -66,13 +66,12 @@ def _resolve_path_spec(
     return target_path / path_spec
 
 
-@register("worktree_resolve_path")
-def handle_resolve_path(daemon, request: Request, start_time: float) -> Response:
-    params = WorktreeResolvePathParams.model_validate(request.params)
+@rpc.method("worktree_resolve_path", params=WorktreeResolvePathParams)
+async def handle_resolve_path(ctx: Context, params: WorktreeResolvePathParams) -> WorktreeResolvePathResult:
     current_path = Path(params.current_path)
-    worktree_infos = daemon.git_manager.list_worktrees()
+    worktree_infos = ctx.daemon.git_manager.list_worktrees()
     target_worktree, current_relative_path = _find_target_worktree(
-        daemon, params.worktree_name, current_path, worktree_infos
+        ctx.daemon, params.worktree_name, current_path, worktree_infos
     )
     resolved_path = _resolve_path_spec(
         params.path_spec,
@@ -80,17 +79,13 @@ def handle_resolve_path(daemon, request: Request, start_time: float) -> Response
         current_relative_path,
         params.worktree_name is None,
     )
-    return Response(
-        result=WorktreeResolvePathResult(absolute_path=str(resolved_path)),
-        id=request.id,
-    )
+    return WorktreeResolvePathResult(absolute_path=str(resolved_path))
 
 
-@register("worktree_teleport_target")
-def handle_teleport_target(daemon, request: Request, start_time: float) -> Response:
-    params = WorktreeTeleportTargetParams.model_validate(request.params)
+@rpc.method("worktree_teleport_target", params=WorktreeTeleportTargetParams)
+async def handle_teleport_target(ctx: Context, params: WorktreeTeleportTargetParams) -> TeleportCdThere | TeleportDoesNotExist:
     current_path = Path(params.current_path)
-    worktree_infos = daemon.git_manager.list_worktrees()
+    worktree_infos = ctx.daemon.git_manager.list_worktrees()
     target_worktree = None
     for info in worktree_infos:
         if (info.is_main and params.target_name == MAIN_WORKTREE_DISPLAY_NAME) or (
@@ -99,10 +94,9 @@ def handle_teleport_target(daemon, request: Request, start_time: float) -> Respo
             target_worktree = info
             break
     if not target_worktree:
-        result = TeleportDoesNotExist(type="does_not_exist", name=params.target_name)
-        return Response(result=result, id=request.id)
+        return TeleportDoesNotExist(type="does_not_exist", name=params.target_name)
     current_worktree, relative_path = _find_current_worktree_info(
-        daemon, current_path, worktree_infos
+        ctx.daemon, current_path, worktree_infos
     )
     cd_path = (
         target_worktree.path
@@ -114,6 +108,4 @@ def handle_teleport_target(daemon, request: Request, start_time: float) -> Respo
             else target_worktree.path
         )
     )
-    return Response(
-        result=TeleportCdThere(type="cd_there", cd_path=str(cd_path)), id=request.id
-    )
+    return TeleportCdThere(type="cd_there", cd_path=str(cd_path))

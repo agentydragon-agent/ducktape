@@ -71,6 +71,16 @@ class WorktreeService:
                 f"Failed to get working directory status for {worktree_path}: {e}",
             ) from e
 
+    def _require_post_creation_script_valid(self, config) -> None:
+        if config.post_creation_script:
+            script = config.post_creation_script
+            if not script.exists() or not script.is_file():
+                raise FileNotFoundError(f"Post-creation script {script} is not a file")
+
+    def _wtid_to_path(self, config, wtid: "WorktreeID") -> Path:
+        from .worktree_ids import wtid_to_path
+        return wtid_to_path(config, wtid)
+
     def create_worktree(
         self,
         config,
@@ -80,6 +90,7 @@ class WorktreeService:
     ) -> Path:
         """Create a new worktree."""
         validate_worktree_name(name)
+        self._require_post_creation_script_valid(config)
         worktree_path = config.worktrees_dir / name
 
         if worktree_path.exists():
@@ -98,10 +109,7 @@ class WorktreeService:
             )
 
             # Create worktree
-            try:
-                self.git_manager.worktree_add(str(worktree_path), branch_name)
-            except WorktreeCreateError as e:
-                raise
+            self.git_manager.worktree_add(str(worktree_path), branch_name)
 
             # Hydrate with dirty state if source provided
             if config.hydrate_worktrees:
@@ -136,10 +144,7 @@ class WorktreeService:
         worktree_path = self.get_worktree_path(config, name)
         if not worktree_path.exists():
             return
-        try:
-            self.git_manager.worktree_remove(str(worktree_path), force=force)
-        except WorktreeDeleteError as e:
-            raise
+        self.git_manager.worktree_remove(str(worktree_path), force=force)
         try:
             shutil.rmtree(worktree_path, ignore_errors=True)
         except Exception:

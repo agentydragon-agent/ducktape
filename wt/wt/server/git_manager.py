@@ -101,7 +101,8 @@ class GitManager:
         repo = self.get_repo(worktree)
         try:
             # Resolve reference to commit object in the given repo
-            commit = repo.resolve_refish(ref)[0]
+            resolved = repo.resolve_refish(ref)  # type: ignore[attr-defined]
+            commit = resolved[0]
         except KeyError as e:
             raise NoSuchRefError(f"Cannot get commit object for {ref}: {e}") from e
 
@@ -163,15 +164,15 @@ class GitManager:
 
         # Validate path doesn't already exist
         if path_obj.exists():
-            raise CannotCreateWorktree(f"Path {path} already exists")
+            raise WorktreeCreateError(f"Path {path} already exists")
 
         # Validate branch name format (basic check)
         if not branch or not branch.strip():
-            raise CannotCreateWorktree("Branch name cannot be empty")
+            raise WorktreeCreateError("Branch name cannot be empty")
 
         # Check if branch name contains valid characters only
         if not re.match(r"^[a-zA-Z0-9._/-]+$", branch):
-            raise CannotCreateWorktree(
+            raise WorktreeCreateError(
                 f"Branch name '{branch}' contains invalid characters",
             )
 

@@ -26,7 +26,8 @@ class DebouncedGitHubRefresh:
         self.pending_refresh_task: asyncio.Task | None = None
         self.last_refresh_time = 0.0
         self.pending_files: set[str] = set()
-        self.observer: Observer | None = None
+        from watchdog.observers import Observer as _Observer
+        self.observer: _Observer | None = None
         self.event_handler = GitFileHandler(self)
         self.periodic_task: asyncio.Task | None = None
         self.is_running = False

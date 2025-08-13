@@ -6,7 +6,7 @@ from unittest.mock import Mock
 from wt.client.wt_client import WtClient
 from wt.server.git_manager import GitManager
 from wt.server.github_client import GitHubInterface
-from wt.shared.protocol import DaemonHealth, DaemonHealthStatus, StatusResponse
+from wt.shared.protocol import DaemonHealth, DaemonHealthStatus, StatusItem, StatusResponse
 
 from .test_data import MockBehaviors
 
@@ -85,9 +85,8 @@ class MockFactory:
 
         # Default empty status response
         default_response = status_response or StatusResponse(
-            results={},
+            items={},
             total_processing_time_ms=0.0,
-            individual_processing_times_ms={},
             concurrent_requests=1,
             daemon_health=DaemonHealth(status=DaemonHealthStatus.OK),
         )

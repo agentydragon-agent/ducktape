@@ -22,6 +22,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
+from ..shared.configuration import Configuration, load_config
 from ..shared.protocol import (
     DaemonHealth,
     DaemonHealthStatus,
@@ -35,20 +36,23 @@ from ..shared.protocol import (
 )
 from ._discovery_components import DiscoveryScanner, WorktreeRegistry
 from .git_manager import GitManager
+from .github_client import GitHubInterface
+from .gitstatus_refresh import DebouncedGitstatusRefresh
 from .gitstatusd_client import (
     GitStatusdProtocol,
     GitStatusdRequest,
     gitstatusd_response_to_legacy_format,
 )
+from .pr_service import PRService
+from .rpc import rpc
+from .repo_status import RepoStatus
+from .types import DiscoveredWorktree
+from .worktree_service import WorktreeService
+from .worktree_index import WorktreeIndex
+# Force import of handlers to register RPC methods
 from .handlers import path_handler as _path_handler  # noqa: F401
 from .handlers import status_handler as _status_handler  # noqa: F401
 from .handlers import worktree_handler as _worktree_handler  # noqa: F401
-from .pr_service import PRService
-from .registry import registry
-from .repo_meta import RepoMetaService
-from .types import DiscoveredWorktree
-from .worktree_service import WorktreeService
-from .gitstatus_refresh import DebouncedGitstatusRefresh
 
 logger = logging.getLogger(__name__)
 
@@ -94,7 +98,6 @@ def write_startup_handshake(
 
     if redirect_after:
         try:
-            from wt.shared.configuration import load_config
 
             daemon_log = load_config().wt_dir / "daemon.log"
             log_fd = os.open(
@@ -220,7 +223,6 @@ class WtDaemon:
     """Main worktree management daemon that handles all worktree operations."""
 
     def __init__(self, config):
-        from ..shared.configuration import Configuration
 
         self.config: Configuration = config
         logger.info(
@@ -242,7 +244,6 @@ class WtDaemon:
         self.github_interface = None
         if self.config.github_enabled and self.config.github_repo:
             try:
-                from .github_client import GitHubInterface
 
                 self.github_interface = GitHubInterface(self.config.github_repo)
                 logger.info(
@@ -271,11 +272,12 @@ class WtDaemon:
 
         # Managed state
         self.known_worktrees: dict[Path, DiscoveredWorktree] = {}
+        self.worktree_index: WorktreeIndex | None = None
         self.gitstatusd_clients: dict[Path, GitstatusdClient] = {}
         self.pr_services: dict[Path, PRService] = {}
         self.git_watchers: dict[Path, DebouncedGitstatusRefresh] = {}
         self.git_manager = GitManager(config=self.config)
-        self.repo_meta = RepoMetaService(self.git_manager, self.config)
+        self.repo_status = RepoStatus(self.git_manager, self.config)
         self.worktree_service = WorktreeService(self.git_manager, self.github_interface)
 
         # Server state
@@ -304,10 +306,15 @@ class WtDaemon:
             # Start processes for discovered worktrees (synchronously)
             for wt in changes.added:
                 self.shared_async_run(self._start_gitstatusd_for_worktree(wt))
+            self.worktree_index = WorktreeIndex.build(self.known_worktrees.values(), self.config.main_repo)
         except Exception:
             logger.debug("Initial discovery failed", exc_info=True)
 
-        self._method_handlers = registry
+        self._method_handlers = rpc
+        try:
+            logger.info("Registered RPC methods: %s", sorted(self._method_handlers.keys()))
+        except Exception:
+            pass
 
     def _record_error(self, error_type: str, error_message: str):
         """Record an error and update daemon health status."""
@@ -345,7 +352,7 @@ class WtDaemon:
             self.daemon_health.last_error_time = None
             logger.info("Daemon health status cleared - operations are succeeding")
 
-    def _validate_gitstatusd(self) -> tuple[str, str | None]:
+    def _validate_gitstatusd(self) -> tuple[str | None, str | None]:
         """Validate gitstatusd binary availability.
 
         Returns:
@@ -415,12 +422,7 @@ class WtDaemon:
         errors = []
 
         # Check required paths exist
-        if not self.config.main_repo.exists():
-            errors.append(
-                f"Main repository does not exist: {self.config.main_repo}",
-            )
-
-        if not self.config.main_repo.is_dir():
+        if not self.config.main_repo.exists() or not self.config.main_repo.is_dir():
             errors.append(
                 f"Main repository is not a directory: {self.config.main_repo}",
             )
@@ -487,7 +489,9 @@ class WtDaemon:
         # Kick an initial nonblocking refresh; watcher/poll keeps it fresh
         asyncio.create_task(gs_client.update_working_status())
         self.gitstatusd_clients[worktree_info.path] = gs_client
-        prsvc = PRService(self.github_interface, self.config, worktree_info, self.git_manager)
+        prsvc = PRService(
+            self.github_interface, self.config, worktree_info, self.git_manager
+        )
         await prsvc.start()
         self.pr_services[worktree_info.path] = prsvc
 
@@ -528,6 +532,7 @@ class WtDaemon:
                     await self._start_gitstatusd_for_worktree(wt)
                 for wt in changes.removed:
                     await self._stop_gitstatusd_for_worktree(wt)
+                self.worktree_index = WorktreeIndex.build(self.known_worktrees.values(), self.config.main_repo)
                 await asyncio.sleep(30)
             except asyncio.CancelledError:
                 break
@@ -566,19 +571,33 @@ class WtDaemon:
 
             # Kick discovery opportunistically but do not block request handling
             if not self.known_worktrees and not self.discovery_scanning:
+
                 async def _kick():
-                    current = await self.discovery_scanner.scan(self.config.worktrees_dir)
+                    current = await self.discovery_scanner.scan(
+                        self.config.worktrees_dir
+                    )
                     changes = self.registry.apply(current)
                     self.known_worktrees = dict(self.registry.known)
                     for wt in changes.added:
                         await self._start_gitstatusd_for_worktree(wt)
                     for wt in changes.removed:
                         await self._stop_gitstatusd_for_worktree(wt)
+                    self.worktree_index = WorktreeIndex.build(self.known_worktrees.values(), self.config.main_repo)
+
                 self._discovery_kick = asyncio.create_task(_kick())
 
             # Handle different method types
             try:
-                handler_entry = self._method_handlers.get(method)
+                # First try new RPC registry
+                try:
+                    response = await self._method_handlers.dispatch(request, self, writer, start_time)  # type: ignore[attr-defined]
+                    await self._send_response(writer, response)
+                    return
+                except AttributeError:
+                    pass
+
+                # Legacy registry path
+                handler_entry = registry.get(method)
                 if not handler_entry and method in ("ping", "shutdown"):
                     handler_entry = (
                         (
@@ -692,13 +711,7 @@ class WtDaemon:
         if config_error:
             startup_errors.append(config_error)
 
-        # Validate post-creation script existence if configured (hard fail at startup)
-        if self.config.post_creation_script:
-            script = self.config.post_creation_script
-            if not script.exists() or not script.is_file():
-                startup_errors.append(
-                    f"Post-creation script configured but not found or not a file: {script}",
-                )
+        # Post-creation script is validated at use-time in WorktreeService
 
         # Validate gitstatusd availability
         gitstatusd_path, gitstatusd_error = self._validate_gitstatusd()
@@ -809,17 +822,8 @@ async def run_daemon(config) -> None:
 
 
 if __name__ == "__main__":
-    import os
-    import sys
-
     # Load config using the standard discovery system
-    from wt.shared.configuration import load_config
-
-    try:
-        config = load_config()
-    except Exception as e:
-        print(f"Error loading config: {e}", file=sys.stderr)
-        sys.exit(1)
+    config = load_config()
 
     # Configure logging to write only to daemon log file
     daemon_dir = config.wt_dir
@@ -842,4 +846,3 @@ if __name__ == "__main__":
     urllib3_logger.propagate = True  # Ensure it propagates to our file handler
 
     asyncio.run(run_daemon(config))
-

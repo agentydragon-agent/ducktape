@@ -8,6 +8,8 @@ from abc import ABC, abstractmethod
 from enum import Enum
 from pathlib import Path
 
+from ..shared.configuration import CowMethod
+
 
 def _get_copyable_entries(src: Path) -> list[str]:
     return [
@@ -120,7 +122,6 @@ def _test_reflink_support() -> bool:
 
 def get_copy_strategy(cow_method=None) -> CopyStrategy:
     """Get copy strategy based on cow_method preference or auto-detection."""
-    from ..shared.configuration import CowMethod
 
     # If cow_method is specified and not AUTO, try to use it
     if cow_method and cow_method != CowMethod.AUTO:
@@ -136,8 +137,6 @@ def get_copy_strategy(cow_method=None) -> CopyStrategy:
 
 def _get_strategy_for_method(cow_method) -> CopyStrategy:
     """Get strategy for specific CowMethod, with availability validation."""
-    from ..shared.configuration import CowMethod
-
     if cow_method == CowMethod.REFLINK:
         if _test_reflink_support():
             return ReflinkCopyStrategy()
