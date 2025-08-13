@@ -53,6 +53,10 @@ fi
 export PNPM_HOME="$HOME/.local/share/pnpm"
 add_path "$PNPM_HOME"
 
+# Source machine-specific profile if it exists
+# This allows host-specific additions without replacing the entire profile
+[ -f "$HOME/.profile.machine" ] && . "$HOME/.profile.machine"
+
 # tidy-up: drop helper function
 unset -f add_path 2>/dev/null
 

@@ -18,7 +18,7 @@ all:
       ansible_connection: local_cached_sudo
       # (pyenv breaks interpreter detection)
       ansible_python_interpreter: /usr/bin/python3
-    new-vm:
+    wyrm:
       ansible_connection: local_cached_sudo
       # (pyenv breaks interpreter detection)
       ansible_python_interpreter: /usr/bin/python3
