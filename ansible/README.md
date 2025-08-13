@@ -33,9 +33,6 @@ ansible-galaxy install -r requirements.yaml
 
 ```bash
 ansible-playbook agentydragon.yaml --ask-become-pass
-
-ansible-playbook cloudragon.yaml --ask-become-pass
-
 ansible-playbook vps.yaml
 ```
 
@@ -123,7 +120,6 @@ When provisioning a new VM or remote machine:
    ```
    You'll need to confirm overwriting default files like .bashrc with 'y'.
 6. After successful deployment, update WireGuard configs on peer machines
-
 
 - TODO: Set hostname on the VM (currently using IP address)
 - TODO: Document how to set up `gh` authentication on the new machine (for CLI operations beyond SSH)
@@ -296,9 +292,10 @@ The same IP addresses are preserved, so existing configurations (k3s, DNS, etc.)
 
 ```bash
 # Server management
-ssh vps "headscale users list"
-ssh vps "headscale nodes list"
-ssh vps "headscale routes list"
+ssh vps
+vps$ headscale users list
+vps$ headscale nodes list
+vps$ headscale routes list
 
 # Client status
 tailscale status

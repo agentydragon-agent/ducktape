@@ -7,11 +7,23 @@
     ducktape_path: "{{ ansible_user_dir }}/code/ducktape"
   remote_user: "{{ my_user }}"
 
+  handlers:
+    - name: restart docker
+      ansible.builtin.service:
+        name: docker
+        state: restarted
+      become: true
+
   roles:
     - role: cli
 
     - role: dev-env
       tags: [dev-env]
+
+    - role: golang
+      tags: [golang, go]
+      vars:
+        go_version: "1.25.0"
 
     - role: docker
     - role: gui
@@ -41,3 +53,91 @@
       when: ansible_env.DISPLAY is defined
 
     # TODO: Disable screen blanking further?
+
+    # Storage configuration for tankshare
+    - name: Check if tankshare is mounted
+      ansible.builtin.stat:
+        path: /mnt/tankshare
+      register: tankshare_mount
+      tags: [storage]
+
+    - name: Create Docker storage directory on tankshare
+      ansible.builtin.file:
+        path: /mnt/tankshare/dev-vm/docker
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+      become: true
+      when: tankshare_mount.stat.exists and tankshare_mount.stat.isdir
+      tags: [storage, docker]
+
+    - name: Configure Docker daemon for tankshare storage
+      ansible.builtin.copy:
+        content: |
+          {
+            "data-root": "/mnt/tankshare/dev-vm/docker",
+            "storage-driver": "vfs"
+          }
+        dest: /etc/docker/daemon.json
+        owner: root
+        group: root
+        mode: '0644'
+      become: true
+      when: tankshare_mount.stat.exists and tankshare_mount.stat.isdir
+      notify: restart docker
+      tags: [storage, docker]
+
+    # pnpm is installed in dev-env-user.yml via github_release_install
+    # Configuration is managed via dotfiles/npmrc
+
+    - name: Create pip cache directory on tankshare
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ my_user }}"
+        group: "{{ my_user }}"
+        mode: '0755'
+      become: true
+      loop:
+        - /mnt/tankshare/pip-cache
+        - /mnt/tankshare/python-packages
+      when: tankshare_mount.stat.exists and tankshare_mount.stat.isdir
+      tags: [storage, pip]
+
+    - name: Create pip configuration directory
+      ansible.builtin.file:
+        path: "{{ ansible_user_dir }}/.config/pip"
+        state: directory
+        owner: "{{ my_user }}"
+        group: "{{ my_user }}"
+        mode: '0755'
+      tags: [storage, pip]
+
+    - name: Configure pip to use tankshare
+      ansible.builtin.copy:
+        content: |
+          [global]
+          cache-dir = /mnt/tankshare/pip-cache
+          
+          [install]
+          user = true
+        dest: "{{ ansible_user_dir }}/.config/pip/pip.conf"
+        owner: "{{ my_user }}"
+        group: "{{ my_user }}"
+        mode: '0644'
+      when: tankshare_mount.stat.exists and tankshare_mount.stat.isdir
+      tags: [storage, pip]
+
+    # TODO: Use rcm host-specific dotfiles for pip.conf and PYTHONUSERBASE
+    # See: https://github.com/thoughtbot/rcm#host-specific-dotfiles
+    - name: Set PYTHONUSERBASE environment variable
+      ansible.builtin.copy:
+        content: |
+          export PYTHONUSERBASE=/mnt/tankshare/python-packages
+        dest: "{{ ansible_user_dir }}/.config/environment.d/python-tankshare.conf"
+        owner: "{{ my_user }}"
+        group: "{{ my_user }}"
+        mode: '0644'
+      when: tankshare_mount.stat.exists and tankshare_mount.stat.isdir
+      tags: [storage, pip]

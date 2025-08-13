@@ -54,10 +54,10 @@
         # - '@anthropic-ai/claude-code'  # Now installed via official script below
         - '@bazel/bazelisk'
         - '@ast-grep/cli'  # For semantic code queries across multiple languages
-      tags: [pnpm]
         - 'jscpd'  # Copy/paste detector for 150+ languages including Python, TypeScript
         - 'madge'  # Dependency graph visualization tool
         - 'pyright'  # Python language server for static type checking
+      tags: [pnpm]
 
     # Check for legacy npm-global directory that should be removed
     - name: Check if npm-global directory exists
