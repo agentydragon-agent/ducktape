@@ -63,7 +63,7 @@
 
     - name: Create Docker storage directory on tankshare
       ansible.builtin.file:
-        path: /mnt/tankshare/dev-vm/docker
+        path: /mnt/tankshare/per-vm/new-vm/docker
         state: directory
         owner: root
         group: root
@@ -76,7 +76,7 @@
       ansible.builtin.copy:
         content: |
           {
-            "data-root": "/mnt/tankshare/dev-vm/docker",
+            "data-root": "/mnt/tankshare/per-vm/new-vm/docker",
             "storage-driver": "vfs"
           }
         dest: /etc/docker/daemon.json
@@ -100,8 +100,8 @@
         mode: '0755'
       become: true
       loop:
-        - /mnt/tankshare/pip-cache
-        - /mnt/tankshare/python-packages
+        - /mnt/tankshare/shared/pip-cache
+        - /mnt/tankshare/per-vm/new-vm/python-user
       when: tankshare_mount.stat.exists and tankshare_mount.stat.isdir
       tags: [storage, pip]
 
@@ -118,7 +118,7 @@
       ansible.builtin.copy:
         content: |
           [global]
-          cache-dir = /mnt/tankshare/pip-cache
+          cache-dir = /mnt/tankshare/shared/pip-cache
           
           [install]
           user = true
@@ -134,7 +134,7 @@
     - name: Set PYTHONUSERBASE environment variable
       ansible.builtin.copy:
         content: |
-          export PYTHONUSERBASE=/mnt/tankshare/python-packages
+          export PYTHONUSERBASE=/mnt/tankshare/per-vm/new-vm/python-user
         dest: "{{ ansible_user_dir }}/.config/environment.d/python-tankshare.conf"
         owner: "{{ my_user }}"
         group: "{{ my_user }}"
