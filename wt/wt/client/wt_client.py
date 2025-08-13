@@ -333,12 +333,12 @@ class WtClient:
 
             except json.JSONDecodeError as e:
                 raise RuntimeError(f"Invalid JSON response from daemon: {e}")
-            except Exception as e:
+            except (ValidationError, TypeError, ValueError) as e:
                 logger.exception("Failed to parse daemon status response")
                 logger.error("Raw response: %s", response_text[:200])
                 raise RuntimeError(f"Failed to parse daemon status response: {e}")
 
-        except Exception as e:
+        except (ConnectionError, FileNotFoundError, OSError, asyncio.TimeoutError) as e:
             logger.exception("Failed to communicate with daemon for status request")
             raise RuntimeError(f"Daemon status communication failed: {e}")
 
