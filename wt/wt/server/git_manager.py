@@ -90,7 +90,7 @@ class GitManager:
             return dirty_files, untracked_files
 
         except (pygit2.GitError, OSError) as e:
-            raise GitError(f"Failed to get working directory status") from e
+            raise GitError("Failed to get working directory status") from e
 
     def get_repo(self, path: Path | None = None) -> pygit2.Repository:
         if path is None or path == self.config.main_repo:
@@ -124,8 +124,6 @@ class GitManager:
             return str(resolved[0].id)
         except KeyError as e:
             raise NoSuchRefError(f"Reference does not exist: {ref}") from e
-        except Exception as e:
-            raise GitError(f"Failed to verify reference {ref}: {e}") from e
 
     # Worktree operations
     def list_worktrees(self) -> list[WorktreeInfo]:
@@ -150,12 +148,9 @@ class GitManager:
         for wt_name in self._main_repo.list_worktrees():
             wt_path = Path(self._main_repo.lookup_worktree(wt_name).path)
             branch_name = ""
-            try:
-                wt_repo = pygit2.Repository(str(wt_path))
-                if not wt_repo.head_is_detached:
-                    branch_name = wt_repo.head.shorthand or ""
-            except Exception:
-                branch_name = wt_name  # fallback
+            wt_repo = pygit2.Repository(str(wt_path))
+            if not wt_repo.head_is_detached:
+                branch_name = wt_repo.head.shorthand or ""
             worktree_infos.append(
                 WorktreeInfo(
                     path=wt_path,

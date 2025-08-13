@@ -19,7 +19,7 @@ from ...shared.protocol import (
     StatusResult,
     WorktreeID,
 )
-from ..rpc import rpc, Context
+from ..rpc import rpc, Context, RpcError
 from ..worktree_index import WorktreeIndex
 
 from ..types import DiscoveredWorktree
@@ -34,28 +34,25 @@ async def get_status(ctx: Context, params: StatusParams) -> StatusResponse:
         worktree_paths: list[Path] = []
         for wtid in worktree_ids:
             worktree_name = parse_worktree_id(wtid)
-            worktree_path = ctx.daemon.config.worktrees_dir / worktree_name
+            worktree_path = ctx.config.worktrees_dir / worktree_name
             worktree_paths.append(worktree_path)
     else:
-        if not ctx.daemon.known_worktrees:
-            await ctx.daemon._run_discovery_once()
-        if not ctx.daemon.worktree_index:
-            await ctx.daemon.rebuild_index()
-        worktree_paths = list(ctx.daemon.worktree_index.by_path.keys())
+        if not ctx.api.d.known_worktrees:
+            await ctx.api.d._run_discovery_once()
+        if not ctx.api.d.worktree_index:
+            await ctx.api.rebuild_index()
+        worktree_paths = list(ctx.api.d.worktree_index.by_path.keys())
 
     items: dict[WorktreeID, StatusItem] = {}
 
     async def process_single_worktree(worktree_path: Path):
         single_start = time.time()
-        gs_client = ctx.daemon.gitstatusd_clients.get(worktree_path)
+        gs_client = ctx.api.d.gitstatusd_clients.get(worktree_path)
         worktree_last_error: str | None = None
-        meta = ctx.daemon.repo_status
+        meta = ctx.api.d.repo_status
 
         def _compute_status(path: Path):
-            try:
-                return (*meta.summarize_status(path), None)
-            except Exception as e:
-                return (None, (0, 0), "HEAD", f"status error: {e}")
+            return (*meta.summarize_status(path), None)
 
         if gs_client:
             try:
@@ -77,7 +74,7 @@ async def get_status(ctx: Context, params: StatusParams) -> StatusResponse:
                 commit_info_data, ahead_behind, branch_name, worktree_last_error = (
                     _compute_status(worktree_path)
                 )
-                prsvc = ctx.daemon.pr_services.get(worktree_path)
+                prsvc = ctx.api.d.pr_services.get(worktree_path)
                 pr_info_data = None
                 if prsvc:
                     try:
@@ -90,7 +87,7 @@ async def get_status(ctx: Context, params: StatusParams) -> StatusResponse:
                 is_stale = bool(
                     cache_age_ms
                     and cache_age_ms
-                    > ctx.daemon.config.cache_refresh_age.total_seconds() * 1000,
+                    > ctx.config.cache_refresh_age.total_seconds() * 1000,
                 )
                 state = (
                     GitstatusdState.RUNNING if gs_client.is_running else GitstatusdState.STOPPED
@@ -145,8 +142,8 @@ async def get_status(ctx: Context, params: StatusParams) -> StatusResponse:
                 commit_info=commit_info,
                 ahead_count=ahead_behind[0],
                 behind_count=ahead_behind[1],
-                is_main=worktree_path.resolve() == ctx.daemon.config.main_repo.resolve(),
-                upstream_branch=ctx.daemon.config.upstream_branch,
+                is_main=worktree_path.resolve() == ctx.config.main_repo.resolve(),
+                upstream_branch=ctx.config.upstream_branch,
                 pr_info=pr_info,
                 gitstatusd_state=state,
                 restarts=0,
@@ -162,13 +159,13 @@ async def get_status(ctx: Context, params: StatusParams) -> StatusResponse:
         items[wtid] = StatusItem(status=status_result, processing_time_ms=proc_ms)
 
     total_time = (time.time() - ctx.start_time) * 1000
-    total_wt = len(ctx.daemon.known_worktrees)
-    with_git = sum(1 for p in ctx.daemon.gitstatusd_clients.values() if p.is_running)
+    total_wt = len(ctx.api.d.known_worktrees)
+    with_git = sum(1 for p in ctx.api.d.gitstatusd_clients.values() if p.is_running)
     any_wt_error = any(item.status.last_error for item in items.values())
     github_state = ComponentState.DISABLED
-    if ctx.daemon.github_interface:
+    if ctx.api.d.github_interface:
         github_state = ComponentState.OK
-        for prsvc in ctx.daemon.pr_services.values():
+        for prsvc in ctx.api.d.pr_services.values():
             if prsvc.cached is None:
                 github_state = ComponentState.STARTING
                 break
@@ -183,7 +180,7 @@ async def get_status(ctx: Context, params: StatusParams) -> StatusResponse:
         discovery=ComponentStatus(
             state=(
                 ComponentState.SCANNING
-                if ctx.daemon.discovery_scanning
+                if ctx.api.d.discovery_scanning
                 else ComponentState.OK
             ),
         ),
@@ -202,7 +199,7 @@ async def get_status(ctx: Context, params: StatusParams) -> StatusResponse:
         items=dict(items.items()),
         total_processing_time_ms=total_time,
         concurrent_requests=len(worktree_paths),
-        daemon_health=ctx.daemon.daemon_health,
+        daemon_health=ctx.api.d.daemon_health,
         readiness_summary=readiness,
         components=components,
     )

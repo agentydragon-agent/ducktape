@@ -1,4 +1,4 @@
-"""Pure business logic for worktree operations - no I/O, no formatting."""
+"""Worktree operations orchestrator layer that performs I/O and subprocess work."""
 
 import asyncio
 import contextlib
@@ -8,6 +8,8 @@ import inspect
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Awaitable
+
+from .worktree_ids import wtid_to_path
 
 import psutil
 import pygit2
@@ -68,18 +70,6 @@ class WorktreeService:
             path.name.startswith(pattern) for pattern in config.hidden_worktree_patterns
         )
 
-    async def _get_working_directory_status(
-        self,
-        worktree_path: Path,
-    ) -> tuple[list[str], list[str]]:
-        """Get working directory status for a worktree."""
-        try:
-            return await self.git_manager.get_working_directory_status(worktree_path)
-        except Exception as e:
-            # Let callers handle git errors appropriately instead of masking them
-            raise RuntimeError(
-                f"Failed to get working directory status for {worktree_path}: {e}",
-            ) from e
 
     def _require_post_creation_script_valid(self, config) -> None:
         if config.post_creation_script:
@@ -88,7 +78,6 @@ class WorktreeService:
                 raise FileNotFoundError(f"Post-creation script {script} is not a file")
 
     def _wtid_to_path(self, config, wtid: "WorktreeID") -> Path:
-        from .worktree_ids import wtid_to_path
         return wtid_to_path(config, wtid)
 
     def create_worktree(
@@ -136,10 +125,9 @@ class WorktreeService:
                     logger.info(
                         f"Hydrating new worktree in {worktree_path} by checking out {branch_name}.",
                     )
-                    import pygit2 as _pygit2
-                    repo = _pygit2.Repository(str(worktree_path))
+                    repo = pygit2.Repository(str(worktree_path))
                     repo.set_head(f"refs/heads/{branch_name}")
-                    repo.checkout_head(strategy=_pygit2.GIT_CHECKOUT_FORCE)
+                    repo.checkout_head(strategy=pygit2.GIT_CHECKOUT_FORCE)
             else:
                 logger.info("Not hydrating worktree.")
             return worktree_path

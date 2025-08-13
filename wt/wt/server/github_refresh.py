@@ -96,19 +96,16 @@ class DebouncedGitHubRefresh:
                 await asyncio.sleep(10)
 
     async def _do_refresh(self, reason: str):
-        try:
-            start_time = time.time()
-            files_changed = list(self.pending_files)
-            self.pending_files.clear()
-            logger.info("Refreshing GitHub data: %s (files: %s)", reason, files_changed)
-            fetch_success = await self._fetch_origin_master()
-            await self.refresh_callback(reason, files_changed)
-            self.last_refresh_time = time.time()
-            refresh_time = (self.last_refresh_time - start_time) * 1000
-            fetch_status = "with fetch" if fetch_success else "without fetch"
-            logger.info("GitHub refresh completed in %.1fms (%s)", refresh_time, fetch_status)
-        except Exception:
-            logger.exception("GitHub refresh failed")
+        start_time = time.time()
+        files_changed = list(self.pending_files)
+        self.pending_files.clear()
+        logger.info("Refreshing GitHub data: %s (files: %s)", reason, files_changed)
+        fetch_success = await self._fetch_origin_master()
+        await self.refresh_callback(reason, files_changed)
+        self.last_refresh_time = time.time()
+        refresh_time = (self.last_refresh_time - start_time) * 1000
+        fetch_status = "with fetch" if fetch_success else "without fetch"
+        logger.info("GitHub refresh completed in %.1fms (%s)", refresh_time, fetch_status)
 
     async def _fetch_origin_master(self) -> bool:
         try:

@@ -33,7 +33,8 @@ from ..shared.protocol import (
     create_error_response,
     parse_request,
 )
-from ._discovery_components import DiscoveryScanner, WorktreeRegistry
+from .discovery_scanner import DiscoveryScanner
+from .worktree_registry import WorktreeRegistry
 from .git_manager import GitManager
 from .github_client import GitHubInterface
 from .gitstatus_refresh import DebouncedGitstatusRefresh
@@ -49,9 +50,9 @@ from .types import DiscoveredWorktree
 from .worktree_service import WorktreeService
 from .worktree_index import WorktreeIndex
 # Force import of handlers to register RPC methods
-from .handlers import path_handler as _path_handler  # noqa: F401
-from .handlers import status_handler as _status_handler  # noqa: F401
-from .handlers import worktree_handler as _worktree_handler  # noqa: F401
+from .handlers import path_handler  # noqa: F401
+from .handlers import status_handler  # noqa: F401
+from .handlers import worktree_handler  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
@@ -279,6 +280,8 @@ class WtDaemon:
         self.git_manager = GitManager(config=self.config)
         self.repo_status = RepoStatus(self.git_manager, self.config)
         self.worktree_service = WorktreeService(self.git_manager, self.github_interface)
+        from .daemon_api import DaemonAPI
+        self.api = DaemonAPI(self)
 
         # Server state
         self.server: asyncio.Server | None = None
@@ -563,39 +566,19 @@ class WtDaemon:
                 return
 
             # Parse JSON-RPC request
-            try:
-                request = parse_request(data.decode().strip())
-                request_id = request.id
-                method = request.method
-                logger.debug("Handling JSON-RPC request %s: %s", request_id, method)
-            except ValueError as e:
-                error_response = create_error_response(
-                    ErrorCodes.PARSE_ERROR,
-                    f"Parse error: {e}",
-                    uuid.uuid4(),
-                )
-                await self._send_response(writer, error_response)
-                return
+            request = parse_request(data.decode().strip())
+            request_id = request.id
+            method = request.method
+            logger.debug("Handling JSON-RPC request %s: %s", request_id, method)
 
             # Kick discovery opportunistically but do not block request handling
             if not self.known_worktrees and not self.discovery_scanning:
                 self._discovery_kick = asyncio.create_task(self._run_discovery_once())
 
             # Handle request via RPC registry only
-            try:
-                response = await self._method_handlers.dispatch(request, self, writer, start_time)  # type: ignore[attr-defined]
-                await self._send_response(writer, response)
-                return
-
-            except Exception as e:
-                logger.exception("Error handling method %s", method)
-                error_response = create_error_response(
-                    ErrorCodes.INTERNAL_ERROR,
-                    f"Internal error: {e}",
-                    request_id,
-                )
-                with contextlib.suppress(Exception):
-                    await self._send_response(writer, error_response)
+            response = await self._method_handlers.dispatch(request, self, writer, start_time)  # type: ignore[attr-defined]
+            await self._send_response(writer, response)
+            return
 
         except Exception:
             logger.exception("Error handling client request")

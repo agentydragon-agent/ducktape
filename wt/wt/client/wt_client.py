@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Callable
 
 import psutil
-from pydantic import TypeAdapter, ValidationError
+from pydantic import TypeAdapter, ValidationError, BaseModel
 
 from ..shared.configuration import Configuration
 from ..shared.error_handling import validate_worktree_name
@@ -277,68 +277,10 @@ class WtClient:
         self,
         worktree_ids: list[WorktreeID] | None = None,
     ) -> StatusResponse:
-        """Get comprehensive status data from daemon for all specified worktree IDs.
-
-        If worktree_ids is empty or None, returns status for all discovered worktrees.
-        """
         await self._start_daemon_if_needed()
-
-        if not self.config.daemon_socket_path.exists():
-            raise RuntimeError("Daemon socket not available")
-
-        # Create JSON-RPC request
-        request_id = uuid.uuid4()
-        params = StatusParams(
-            worktree_ids=[wtid for wtid in (worktree_ids or []) if wtid is not None],
-        )
-        request = Request(
-            method="get_status",
-            params=params.model_dump(),
-            id=request_id,
-        )
-
-        try:
-            reader, writer = await asyncio.open_unix_connection(
-                self.config.daemon_socket_path,
-            )
-
-            # Send request
-            request_data = request.model_dump_json().encode()
-            writer.write(request_data)
-            writer.write(b"\n")  # Add newline delimiter
-            await writer.drain()
-
-            # Read response
-            response_data = await reader.readline()
-            response_text = response_data.decode().strip()
-
-            writer.close()
-            await writer.wait_closed()
-
-            # Parse and validate JSON-RPC response
-            try:
-                response_json = json.loads(response_text)
-
-                # Check for error response first
-                if "error" in response_json:
-                    error_response = ErrorResponse.model_validate(response_json)
-                    # Surface daemon error directly
-                    raise RuntimeError(error_response.error.message)
-
-                # Parse successful response - let Pydantic validate everything
-                success_response = Response.model_validate(response_json)
-                return StatusResponse.model_validate(success_response.result)
-
-            except json.JSONDecodeError as e:
-                raise RuntimeError(f"Invalid JSON response from daemon: {e}")
-            except (ValidationError, TypeError, ValueError) as e:
-                logger.exception("Failed to parse daemon status response")
-                logger.error("Raw response: %s", response_text[:200])
-                raise RuntimeError(f"Failed to parse daemon status response: {e}")
-
-        except (ConnectionError, FileNotFoundError, OSError, asyncio.TimeoutError) as e:
-            logger.exception("Failed to communicate with daemon for status request")
-            raise RuntimeError(f"Daemon status communication failed: {e}")
+        adapter = TypeAdapter(StatusResponse)
+        params = StatusParams(worktree_ids=[wtid for wtid in (worktree_ids or []) if wtid is not None])
+        return await self._rpc("get_status", params, adapter)
 
     async def get_working_directory_status(
         self,
@@ -467,204 +409,42 @@ class WtClient:
                             print(out)
                         raise RuntimeError("Post-creation script did not run")
                 return result
-            except Exception:
+            except (json.JSONDecodeError, ValidationError, TypeError, ValueError) as e:
                 logger.exception("Failed to parse daemon worktree_create response")
-                raise
+                raise RuntimeError(f"Failed to parse daemon worktree_create response: {e}")
 
-        except Exception:
+        except (ConnectionError, FileNotFoundError, OSError, asyncio.TimeoutError) as e:
             logger.exception("Failed to communicate with daemon for worktree_create")
-            raise
+            raise RuntimeError(f"Daemon worktree_create communication failed: {e}")
 
     async def delete_worktree(self, wtid: WorktreeID) -> WorktreeDeleteResult:
-        """Delete a worktree via RPC."""
         await self._start_daemon_if_needed()
-
-        if not self.config.daemon_socket_path.exists():
-            raise RuntimeError("Daemon socket not available")
-
-        # Create JSON-RPC request
-        request_id = uuid.uuid4()
-        params = WorktreeDeleteParams(wtid=wtid)
-        request = Request(
-            method="worktree_delete",
-            params=params.model_dump(),
-            id=request_id,
-        )
-
-        try:
-            reader, writer = await asyncio.open_unix_connection(
-                self.config.daemon_socket_path,
-            )
-
-            # Send request
-            request_data = request.model_dump_json().encode()
-            writer.write(request_data)
-            writer.write(b"\n")
-            await writer.drain()
-
-            # Read response
-            response_data = await reader.readline()
-            response_text = response_data.decode().strip()
-
-            writer.close()
-            await writer.wait_closed()
-
-            # Parse and validate JSON-RPC response
-            try:
-                response_json = json.loads(response_text)
-
-                # Check for error response first
-                if "error" in response_json:
-                    error_response = ErrorResponse.model_validate(response_json)
-                    raise RuntimeError(error_response.error.message)
-
-                # Parse successful response
-                success_response = Response.model_validate(response_json)
-                return WorktreeDeleteResult.model_validate(success_response.result)
-
-            except json.JSONDecodeError as e:
-                raise RuntimeError(f"Invalid JSON response from daemon: {e}")
-            except Exception as e:
-                logger.exception("Failed to parse daemon worktree_delete response")
-                logger.error("Raw response: %s", response_text[:200])
-                raise RuntimeError(
-                    f"Failed to parse daemon worktree_delete response: {e}",
-                )
-
-        except Exception as e:
-            logger.exception("Failed to communicate with daemon for worktree_delete")
-            raise RuntimeError(f"Daemon worktree_delete communication failed: {e}")
+        return await self._rpc("worktree_delete", WorktreeDeleteParams(wtid=wtid), TypeAdapter(WorktreeDeleteResult))
 
     async def list_worktrees(self) -> WorktreeListResult:
-        """List all worktrees via RPC."""
         await self._start_daemon_if_needed()
-
-        if not self.config.daemon_socket_path.exists():
-            raise RuntimeError("Daemon socket not available")
-
-        # Create JSON-RPC request
-        request_id = uuid.uuid4()
-        params: dict[str, object] = {}
-        request = Request(method="worktree_list", params=params, id=request_id)
-
-        try:
-            reader, writer = await asyncio.open_unix_connection(
-                self.config.daemon_socket_path,
-            )
-
-            # Send request
-            request_data = request.model_dump_json().encode()
-            writer.write(request_data)
-            writer.write(b"\n")
-            await writer.drain()
-
-            # Read response
-            response_data = await reader.readline()
-            response_text = response_data.decode().strip()
-
-            writer.close()
-            await writer.wait_closed()
-
-            # Parse and validate JSON-RPC response
-            try:
-                response_json = json.loads(response_text)
-
-                # Check for error response first
-                if "error" in response_json:
-                    error_response = ErrorResponse.model_validate(response_json)
-                    raise RuntimeError(
-                        f"Daemon worktree_list request failed: {error_response.error.message}",
-                    )
-
-                # Parse successful response
-                success_response = Response.model_validate(response_json)
-                return WorktreeListResult.model_validate(success_response.result)
-
-            except json.JSONDecodeError as e:
-                raise RuntimeError(f"Invalid JSON response from daemon: {e}")
-            except Exception as e:
-                logger.exception("Failed to parse daemon worktree_list response")
-                logger.error("Raw response: %s", response_text[:200])
-                raise RuntimeError(
-                    f"Failed to parse daemon worktree_list response: {e}",
-                )
-
-        except Exception as e:
-            logger.exception("Failed to communicate with daemon for worktree_list")
-            raise RuntimeError(f"Daemon worktree_list communication failed: {e}")
+        return await self._rpc("worktree_list", {}, TypeAdapter(WorktreeListResult))
 
     async def identify_worktree(self, absolute_path: str) -> WorktreeIdentifyResult:
-        """Identify a worktree from its absolute path via RPC."""
         await self._start_daemon_if_needed()
-
-        if not self.config.daemon_socket_path.exists():
-            raise RuntimeError("Daemon socket not available")
-
-        # Create JSON-RPC request
-        request_id = uuid.uuid4()
-        params = WorktreeIdentifyParams(absolute_path=absolute_path)
-        request = Request(
-            method="worktree_identify",
-            params=params.model_dump(),
-            id=request_id,
-        )
-
-        try:
-            reader, writer = await asyncio.open_unix_connection(
-                self.config.daemon_socket_path,
-            )
-
-            # Send request
-            request_data = request.model_dump_json().encode()
-            writer.write(request_data)
-            writer.write(b"\n")
-            await writer.drain()
-
-            # Read response
-            response_data = await reader.readline()
-            response_text = response_data.decode().strip()
-
-            writer.close()
-            await writer.wait_closed()
-
-            # Parse and validate JSON-RPC response
-            try:
-                response_json = json.loads(response_text)
-
-                # Check for error response first
-                if "error" in response_json:
-                    error_response = ErrorResponse.model_validate(response_json)
-                    raise RuntimeError(
-                        f"Daemon worktree_identify request failed: {error_response.error.message}",
-                    )
-
-                # Parse successful response
-                success_response = Response.model_validate(response_json)
-                return WorktreeIdentifyResult.model_validate(success_response.result)
-
-            except json.JSONDecodeError as e:
-                raise RuntimeError(f"Invalid JSON response from daemon: {e}")
-            except Exception as e:
-                logger.exception("Failed to parse daemon worktree_identify response")
-                logger.error("Raw response: %s", response_text[:200])
-                raise RuntimeError(
-                    f"Failed to parse daemon worktree_identify response: {e}",
-                )
-
-        except Exception as e:
-            logger.exception(
-                "Failed to communicate with daemon for worktree_identify",
-            )
-            raise RuntimeError(f"Daemon worktree_identify communication failed: {e}")
+        return await self._rpc("worktree_identify", WorktreeIdentifyParams(absolute_path=absolute_path), TypeAdapter(WorktreeIdentifyResult))
 
     async def get_worktree_by_name(self, name: str) -> WorktreeGetByNameResult:
-        return await self._rpc("worktree_get_by_name", WorktreeGetByNameParams(name=name), WorktreeGetByNameResult)
+        return await self._rpc("worktree_get_by_name", WorktreeGetByNameParams(name=name), TypeAdapter(WorktreeGetByNameResult))
 
-    async def _rpc(self, method: str, params_model, result_model):
+    async def _rpc(self, method: str, params_model, result_adapter: TypeAdapter):
         await self._start_daemon_if_needed()
         if not self.config.daemon_socket_path.exists():
             raise RuntimeError("Daemon socket not available")
-        req = Request(method=method, params=params_model.model_dump(), id=uuid.uuid4())
+        if isinstance(params_model, BaseModel):
+            params = params_model.model_dump()
+        elif isinstance(params_model, dict):
+            params = params_model
+        elif params_model is None:
+            params = {}
+        else:
+            params = {}
+        req = Request(method=method, params=params, id=uuid.uuid4())
         try:
             reader, writer = await asyncio.open_unix_connection(self.config.daemon_socket_path)
             writer.write(req.model_dump_json().encode())
@@ -679,14 +459,13 @@ class WtClient:
                 err = ErrorResponse.model_validate(obj)
                 raise RuntimeError(err.error.message)
             resp = Response.model_validate(obj)
-            adapter = TypeAdapter(result_model)
-            return adapter.validate_python(resp.result)
-        except Exception as e:
+            return result_adapter.validate_python(resp.result)
+        except (ConnectionError, FileNotFoundError, OSError, asyncio.TimeoutError, json.JSONDecodeError, ValidationError) as e:
             logger.error("RPC %s failed: %s", method, e)
-            raise
+            raise RuntimeError(f"RPC {method} failed: {e}")
 
     async def resolve_path(self, params: WorktreeResolvePathParams) -> str:
-        result = await self._rpc("worktree_resolve_path", params, WorktreeResolvePathResult)
+        result = await self._rpc("worktree_resolve_path", params, TypeAdapter(WorktreeResolvePathResult))
         return result.absolute_path
 
     async def resolve_path_simple(self, worktree_name: str | None, path_spec: str) -> Path:
@@ -701,7 +480,7 @@ class WtClient:
         return await self._rpc(
             "worktree_teleport_target",
             WorktreeTeleportTargetParams(target_name=target_name, current_path=current_path),
-            TeleportResult,
+            TypeAdapter(TeleportResult),
         )
 
     async def require_worktree_exists(self, name: str) -> Path:

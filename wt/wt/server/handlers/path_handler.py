@@ -11,8 +11,9 @@ from ...shared.protocol import (
     WorktreeResolvePathParams,
     WorktreeResolvePathResult,
     WorktreeTeleportTargetParams,
+    ErrorCodes,
 )
-from ..rpc import rpc, Context
+from ..rpc import rpc, Context, RpcError
 from ..worktree_index import WorktreeIndex
 
 
@@ -20,12 +21,12 @@ def _find_target_worktree(
     daemon, worktree_name: str | None, current_path: Path
 ):
     if not daemon.worktree_index:
-        raise ValueError("Worktree index unavailable")
+        raise RpcError(code=ErrorCodes.INTERNAL_ERROR, message="Worktree index unavailable")
     if worktree_name == MAIN_WORKTREE_DISPLAY_NAME and daemon.worktree_index.main:
         return daemon.worktree_index.main, None
     resolved = daemon.worktree_index.resolve_target(worktree_name, current_path)
     if not resolved:
-        raise ValueError(f"Worktree '{worktree_name or current_path}' not found")
+        raise RpcError(code=ErrorCodes.WORKTREE_NOT_FOUND, message=f"Worktree '{worktree_name or current_path}' not found")
     return resolved
 
 
@@ -39,7 +40,7 @@ def _resolve_path_spec(
         return target_path / path_spec.lstrip("/")
     if path_spec.startswith("./"):
         if not is_current_worktree:
-            raise ValueError("Cannot use relative path for different worktree")
+            raise RpcError(code=ErrorCodes.INVALID_PARAMS, message="Cannot use relative path for different worktree")
         current_dir = (
             target_path / current_relative_path
             if current_relative_path

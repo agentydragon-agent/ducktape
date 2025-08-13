@@ -92,15 +92,9 @@ class GitHubInterface:
         # Use GitHub search API to find PRs by head branch - much more efficient
         search_query = f"repo:{self.github_repo} type:pr head:{branch_name}"
 
-        try:
-            # Search for issues/PRs matching the branch
-            issues = self._gh.search_issues(search_query)
-            return [self.repo.get_pull(issue.number) for issue in issues]
-
-        except Exception as e:
-            # No fallback - let the error propagate to show the real issue
-            logger.error(f"GitHub search API failed for branch '{branch_name}': {e}")
-            raise
+        # Search for issues/PRs matching the branch
+        issues = self._gh.search_issues(search_query)
+        return [self.repo.get_pull(issue.number) for issue in issues]
 
     @handle_github_errors
     def pr_view(self, branch_name: str) -> dict[str, str]:

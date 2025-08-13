@@ -8,6 +8,7 @@ import logging
 from pydantic import BaseModel, ValidationError
 
 from ..shared.protocol import ErrorCodes, ErrorResponse, Request, Response, create_error_response
+from ..shared.configuration import Configuration
 
 ParamsT = TypeVar("ParamsT", bound=BaseModel)
 ResultT = TypeVar("ResultT")
@@ -16,7 +17,8 @@ EventT = TypeVar("EventT", bound=BaseModel)
 
 @dataclass
 class Context:
-    daemon: "WtDaemon"
+    api: "DaemonAPI"
+    config: Configuration
     start_time: float
 
 
@@ -33,13 +35,7 @@ class Stream(Generic[EventT]):
     def emit(self, event: EventT) -> None:
         if not self._writer:
             return
-        try:
-            self._writer.write((event.model_dump_json() + "\n").encode())
-        except Exception:
-            if not self._error_logged:
-                logging.getLogger(__name__).debug("stream emit failed", exc_info=True)
-                self._error_logged = True
-            self._writer = None
+        self._writer.write((event.model_dump_json() + "\n").encode())
 
 
 class RpcError(Exception):
@@ -66,7 +62,8 @@ class RpcRegistry:
             except ValidationError as e:
                 return create_error_response(ErrorCodes.INVALID_PARAMS, str(e), req.id)
 
-            ctx = Context(daemon=daemon, start_time=start_time)
+            from .daemon_api import DaemonAPI
+            ctx = Context(api=DaemonAPI(daemon), config=daemon.config, start_time=start_time)
             try:
                 if params is None:
                     result = await cast(Callable[[Context], Awaitable[Any]], handler)(ctx)  # type: ignore[misc]
@@ -87,7 +84,8 @@ class RpcRegistry:
                 params = params_model.model_validate(req.params)
             except ValidationError as e:
                 return create_error_response(ErrorCodes.INVALID_PARAMS, str(e), req.id)
-            ctx = Context(daemon=daemon, start_time=start_time)
+            from .daemon_api import DaemonAPI
+            ctx = Context(api=DaemonAPI(daemon), config=daemon.config, start_time=start_time)
             try:
                 stream = Stream(writer)
                 result = await cast(Callable[[Context, Any, Stream[Any]], Awaitable[Any]], handler)(ctx, params, stream)  # type: ignore[misc]
