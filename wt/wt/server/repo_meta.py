@@ -38,6 +38,6 @@ class RepoStatusService:
                     f"refs/heads/{self.config.upstream_branch}",
                 )
                 ahead_behind = (ahead, behind)
-            except pygit2.GitError:
+            except Exception:
                 ahead_behind = (0, 0)
         return commit_info, ahead_behind, branch_name

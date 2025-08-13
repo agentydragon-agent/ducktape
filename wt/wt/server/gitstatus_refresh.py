@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import threading
 from pathlib import Path
 
 from watchdog.events import FileSystemEventHandler
@@ -9,13 +10,15 @@ logger = logging.getLogger(__name__)
 
 
 class DebouncedGitstatusRefresh:
-    def __init__(self, worktree_path: Path, refresh_callback, debounce_delay: float = 0.5):
+    def __init__(
+        self, worktree_path: Path, refresh_callback, debounce_delay: float = 0.5
+    ):
         self.worktree_path = worktree_path
         self.refresh_callback = refresh_callback
         self.debounce_delay = debounce_delay
         self._pending: asyncio.Task | None = None
-        from watchdog.observers import Observer as _Observer
-        self.observer: _Observer | None = None
+
+        self.observer: Observer | None = None
         self.handler = _GitHandler(self)
         self.is_running = False
 
@@ -29,7 +32,7 @@ class DebouncedGitstatusRefresh:
                 if content.startswith("gitdir:"):
                     raw = content.split(":", 1)[1].strip()
                     p = Path(raw)
-                    return (p if p.is_absolute() else (self.worktree_path / p).resolve())
+                    return p if p.is_absolute() else (self.worktree_path / p).resolve()
             except OSError:
                 return None
         return None
@@ -68,10 +71,12 @@ class DebouncedGitstatusRefresh:
             def _enqueue():
                 try:
                     loop = asyncio.get_event_loop()
-                    loop.call_soon_threadsafe(lambda: asyncio.create_task(self._debounced(reason)))
+                    loop.call_soon_threadsafe(
+                        lambda: asyncio.create_task(self._debounced(reason))
+                    )
                 except Exception:
                     pass
-            import threading
+
             threading.Thread(target=_enqueue, daemon=True).start()
 
     async def _debounced(self, reason: str):

@@ -21,12 +21,15 @@ from ...shared.protocol import (
     WorktreeID,
 )
 from ..registry import register
+from ..repo_meta import RepoStatusService
 from ..types import DiscoveredWorktree
 from ..worktree_ids import make_worktree_id, parse_worktree_id
 
 
 @register("get_status")
-async def handle_status_request(daemon, request: Request, start_time: float) -> Response:
+async def handle_status_request(
+    daemon, request: Request, start_time: float
+) -> Response:
     params = StatusParams.model_validate(request.params)
     worktree_ids = params.worktree_ids
 
@@ -46,13 +49,19 @@ async def handle_status_request(daemon, request: Request, start_time: float) -> 
             for wt in changes.removed:
                 await daemon._stop_gitstatusd_for_worktree(wt)
         worktree_paths = list(daemon.known_worktrees.keys())
-        git_paths = [wt.path for wt in daemon.git_manager.list_worktrees() if not wt.is_main]
+        git_paths = [
+            wt.path for wt in daemon.git_manager.list_worktrees() if not wt.is_main
+        ]
         if git_paths and len(worktree_paths) < len(git_paths):
             for p in git_paths:
                 if p not in daemon.known_worktrees and p.exists():
                     wt_info = DiscoveredWorktree(p, p.name)
                     daemon.known_worktrees[p] = wt_info
-                    daemon._startup_tasks.append(asyncio.create_task(daemon._start_gitstatusd_for_worktree(wt_info)))
+                    daemon._startup_tasks.append(
+                        asyncio.create_task(
+                            daemon._start_gitstatusd_for_worktree(wt_info)
+                        )
+                    )
             worktree_paths = list(daemon.known_worktrees.keys())
 
     results: dict[WorktreeID, StatusResult] = {}
@@ -62,44 +71,61 @@ async def handle_status_request(daemon, request: Request, start_time: float) -> 
         single_start = time.time()
         gs_client = daemon.gitstatusd_clients.get(worktree_path)
         worktree_last_error: str | None = None
-        from ..repo_meta import RepoStatusService
         meta = RepoStatusService(daemon.git_manager, daemon.config)
+
         def _compute_status(path: Path):
             try:
                 return (*meta.get_status(path), None)
             except Exception as e:
                 return (None, (0, 0), "HEAD", f"status error: {e}")
+
         if gs_client:
             try:
                 dirty_files, untracked_files, last_updated_at, have_cache = (
                     gs_client.get_cached_working_status()
                 )
                 cache_age_ms = (
-                    (time.time() - last_updated_at.timestamp()) * 1000 if last_updated_at else None
+                    (time.time() - last_updated_at.timestamp()) * 1000
+                    if last_updated_at
+                    else None
                 )
                 if not have_cache:
-                    _update_task = asyncio.create_task(gs_client.update_working_status())
+                    _update_task = asyncio.create_task(
+                        gs_client.update_working_status()
+                    )
                 if last_updated_at is None:
                     last_updated_at = datetime.now()
                     cache_age_ms = None
-                commit_info_data, ahead_behind, branch_name, worktree_last_error = _compute_status(worktree_path)
+                commit_info_data, ahead_behind, branch_name, worktree_last_error = (
+                    _compute_status(worktree_path)
+                )
                 prsvc = daemon.pr_services.get(worktree_path)
                 pr_info_data = None
                 if prsvc:
                     try:
-                        pr_info_data = await asyncio.wait_for(prsvc.get_pr_info(branch_name), timeout=0.75)
+                        pr_info_data = await asyncio.wait_for(
+                            prsvc.get_pr_info(branch_name), timeout=0.75
+                        )
                     except asyncio.TimeoutError:
                         pr_info_data = None
                 is_cached = have_cache
                 is_stale = bool(
-                    cache_age_ms and cache_age_ms > daemon.config.cache_refresh_age.total_seconds() * 1000,
+                    cache_age_ms
+                    and cache_age_ms
+                    > daemon.config.cache_refresh_age.total_seconds() * 1000,
                 )
-                state = GitstatusdState.RUNNING if gs_client.is_running else GitstatusdState.STOPPED
+                state = (
+                    GitstatusdState.RUNNING
+                    if gs_client.is_running
+                    else GitstatusdState.STOPPED
+                )
             except asyncio.TimeoutError:
                 single_time = (time.time() - single_start) * 1000
                 state = GitstatusdState.STARTING
                 dirty_files, untracked_files = [], []
-                commit_info_data, ahead_behind, branch_name, worktree_last_error = _compute_status(worktree_path)
+                commit_info_data, ahead_behind, branch_name, worktree_last_error = (
+                    _compute_status(worktree_path)
+                )
                 last_updated_at = datetime.now()
                 pr_info_data = None
                 is_cached = False
@@ -109,14 +135,18 @@ async def handle_status_request(daemon, request: Request, start_time: float) -> 
             single_time = (time.time() - single_start) * 1000
             state = GitstatusdState.STOPPED
             dirty_files, untracked_files = [], []
-            commit_info_data, ahead_behind, branch_name, worktree_last_error = _compute_meta_safe(worktree_path)
+            commit_info_data, ahead_behind, branch_name, worktree_last_error = (
+                _compute_status(worktree_path)
+            )
             last_updated_at = datetime.now()
             pr_info_data = None
             is_cached = False
             cache_age_ms = None
             is_stale = False
 
-        commit_info = CommitInfo.model_validate(commit_info_data) if commit_info_data else None
+        commit_info = (
+            CommitInfo.model_validate(commit_info_data) if commit_info_data else None
+        )
         wtid = make_worktree_id(worktree_path.name)
         pr_info = None
         if pr_info_data:
@@ -149,7 +179,9 @@ async def handle_status_request(daemon, request: Request, start_time: float) -> 
             single_time,
         )
 
-    worktree_results = await asyncio.gather(*[process_single_worktree(p) for p in worktree_paths])
+    worktree_results = await asyncio.gather(
+        *[process_single_worktree(p) for p in worktree_paths]
+    )
     for wtid, status_result, proc_ms in worktree_results:
         results[wtid] = status_result
         individual_times[wtid] = proc_ms
@@ -174,11 +206,19 @@ async def handle_status_request(daemon, request: Request, start_time: float) -> 
 
     components = ComponentsStatus(
         discovery=ComponentStatus(
-            state=ComponentState.SCANNING if daemon.discovery_scanning else ComponentState.OK,
+            state=(
+                ComponentState.SCANNING
+                if daemon.discovery_scanning
+                else ComponentState.OK
+            ),
         ),
         github=ComponentStatus(state=github_state),
         gitstatusd=ComponentStatus(
-            state=ComponentState.OK if (with_git == total_wt and total_wt > 0 and not any_wt_error) else ComponentState.ERROR,
+            state=(
+                ComponentState.OK
+                if (with_git == total_wt and total_wt > 0 and not any_wt_error)
+                else ComponentState.ERROR
+            ),
             metrics={"running": with_git, "total": total_wt},
         ),
     )
