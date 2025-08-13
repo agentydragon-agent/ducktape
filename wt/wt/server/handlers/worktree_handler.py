@@ -143,7 +143,13 @@ async def worktree_delete(ctx: Context, params: WorktreeDeleteParams) -> Worktre
     )
 
 
-def _resolve_worktree_name_to_info(name: str, worktree_infos: list) -> object | None:
+def _resolve_worktree_name_to_info(daemon, name: str, worktree_infos: list) -> object | None:
+    if daemon.worktree_index:
+        if name == MAIN_WORKTREE_DISPLAY_NAME and daemon.worktree_index.main:
+            return daemon.worktree_index.main
+        found = daemon.worktree_index.get_by_name(name)
+        if found:
+            return found
     for info in worktree_infos:
         if (info.is_main and name == MAIN_WORKTREE_DISPLAY_NAME) or (
             not info.is_main and info.path.name == name
@@ -174,7 +180,7 @@ async def worktree_identify(ctx: Context, params: WorktreeIdentifyParams) -> Wor
     if not worktree_name or not absolute_path.exists():
         raise ValueError(f"{absolute_path} is not a managed worktree")
     worktree_infos = ctx.daemon.git_manager.list_worktrees()
-    found_worktree = _resolve_worktree_name_to_info(worktree_name, worktree_infos)
+    found_worktree = _resolve_worktree_name_to_info(ctx.daemon, worktree_name, worktree_infos)
     if not found_worktree:
         raise ValueError(f"{absolute_path} is not a managed worktree")
     if found_worktree.is_main:
@@ -192,12 +198,13 @@ async def worktree_identify(ctx: Context, params: WorktreeIdentifyParams) -> Wor
 @rpc.method("worktree_get_by_name", params=WorktreeGetByNameParams)
 async def worktree_get_by_name(ctx: Context, params: WorktreeGetByNameParams) -> WorktreeGetByNameResult:
     worktree_infos = ctx.daemon.git_manager.list_worktrees()
-    found_worktree = _resolve_worktree_name_to_info(params.name, worktree_infos)
+    found_worktree = _resolve_worktree_name_to_info(ctx.daemon, params.name, worktree_infos)
     if found_worktree:
-        if found_worktree.is_main:
-            worktree_name = MAIN_WORKTREE_DISPLAY_NAME
-        else:
-            worktree_name = found_worktree.path.name
+        worktree_name = (
+            MAIN_WORKTREE_DISPLAY_NAME
+            if found_worktree.path.resolve() == ctx.daemon.config.main_repo.resolve()
+            else found_worktree.path.name
+        )
         result = WorktreeGetByNameResult(
             wtid=make_worktree_id(worktree_name),
             name=worktree_name,

@@ -80,8 +80,9 @@ async def handle_status_single(daemon_client, formatter, worktree_name: str) -> 
     # Get all status and find the specific worktree
     all_status = await daemon_client.get_status([])
 
-    # Find the worktree by name in the results
+    # Find the worktree by name using daemon lookups via an identify call if needed
     status = None
+    # Prefer client-side filtering of items
     for item in all_status.items.values():
         if item.status.name == worktree_name:
             status = item.status
