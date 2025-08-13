@@ -3,6 +3,8 @@
  * Order: place LAST in the transformer chain (after any Anthropic→OpenAI mapping) so it patches the final tool/function schema.
  * Matching: only applies to the exact tool/function name 'Bash'. If placed earlier with other names (e.g. 'bash'), it will not run.
  */
+
+// TODO: additional transformer: detect errors after commands that heuristically look like they would fail (e.g. python << heredoc) and augment error message.
 class BashDisclaimerTransformer {
   constructor(options = {}) {
     this.name = 'bash-disclaimer'
