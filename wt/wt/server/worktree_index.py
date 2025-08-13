@@ -30,3 +30,27 @@ class WorktreeIndex:
 
     def get_by_name(self, name: str) -> DiscoveredWorktree | None:
         return self.by_name.get(name)
+
+    def resolve_target(self, name: str | None, current_path: Path) -> tuple[DiscoveredWorktree, str | None] | None:
+        if name:
+            if name == ".":
+                # Current worktree by path
+                for wt in self.by_path.values():
+                    if current_path.is_relative_to(wt.path):
+                        rel = str(current_path.relative_to(wt.path))
+                        return wt, rel
+                return None
+            if name in self.by_name:
+                return self.by_name[name], None
+            if self.main and name == "main":
+                return self.main, None
+            return None
+        # No name provided: infer from current path
+        if current_path.is_relative_to(self.main.path) if self.main else False:
+            rel = str(current_path.relative_to(self.main.path))
+            return self.main, rel
+        for wt in self.by_path.values():
+            if current_path.is_relative_to(wt.path):
+                rel = str(current_path.relative_to(wt.path))
+                return wt, rel
+        return None

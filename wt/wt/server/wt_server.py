@@ -9,7 +9,6 @@ One daemon per main git repository that:
 
 import asyncio
 import contextlib
-import inspect
 import json
 import logging
 import os
@@ -276,6 +275,7 @@ class WtDaemon:
         self.gitstatusd_clients: dict[Path, GitstatusdClient] = {}
         self.pr_services: dict[Path, PRService] = {}
         self.git_watchers: dict[Path, DebouncedGitstatusRefresh] = {}
+        self._state_lock = asyncio.Lock()
         self.git_manager = GitManager(config=self.config)
         self.repo_status = RepoStatus(self.git_manager, self.config)
         self.worktree_service = WorktreeService(self.git_manager, self.github_interface)
@@ -312,7 +312,7 @@ class WtDaemon:
 
         self._method_handlers = rpc
         try:
-            logger.info("Registered RPC methods: %s", sorted(self._method_handlers.keys()))
+            logger.info("Registered RPC methods: %s", sorted(rpc.list_methods()))
         except Exception:
             pass
 
@@ -522,17 +522,25 @@ class WtDaemon:
             await watcher.stop()
             del self.git_watchers[worktree_info.path]
 
+    async def _run_discovery_once(self) -> None:
+        self.discovery_scanning = True
+        try:
+            current = await self.discovery_scanner.scan(self.config.worktrees_dir)
+            changes = self.registry.apply(current)
+            async with self._state_lock:
+                self.known_worktrees = dict(self.registry.known)
+                self.worktree_index = WorktreeIndex.build(self.known_worktrees.values(), self.config.main_repo)
+        finally:
+            self.discovery_scanning = False
+        for wt in changes.added:
+            await self._start_gitstatusd_for_worktree(wt)
+        for wt in changes.removed:
+            await self._stop_gitstatusd_for_worktree(wt)
+
     async def _periodic_discovery(self) -> None:
         while self.running:
             try:
-                current = await self.discovery_scanner.scan(self.config.worktrees_dir)
-                changes = self.registry.apply(current)
-                self.known_worktrees = dict(self.registry.known)
-                for wt in changes.added:
-                    await self._start_gitstatusd_for_worktree(wt)
-                for wt in changes.removed:
-                    await self._stop_gitstatusd_for_worktree(wt)
-                self.worktree_index = WorktreeIndex.build(self.known_worktrees.values(), self.config.main_repo)
+                await self._run_discovery_once()
                 await asyncio.sleep(30)
             except asyncio.CancelledError:
                 break
@@ -571,59 +579,13 @@ class WtDaemon:
 
             # Kick discovery opportunistically but do not block request handling
             if not self.known_worktrees and not self.discovery_scanning:
+                self._discovery_kick = asyncio.create_task(self._run_discovery_once())
 
-                async def _kick():
-                    current = await self.discovery_scanner.scan(
-                        self.config.worktrees_dir
-                    )
-                    changes = self.registry.apply(current)
-                    self.known_worktrees = dict(self.registry.known)
-                    for wt in changes.added:
-                        await self._start_gitstatusd_for_worktree(wt)
-                    for wt in changes.removed:
-                        await self._stop_gitstatusd_for_worktree(wt)
-                    self.worktree_index = WorktreeIndex.build(self.known_worktrees.values(), self.config.main_repo)
-
-                self._discovery_kick = asyncio.create_task(_kick())
-
-            # Handle different method types
+            # Handle request via RPC registry only
             try:
-                # First try new RPC registry
-                try:
-                    response = await self._method_handlers.dispatch(request, self, writer, start_time)  # type: ignore[attr-defined]
-                    await self._send_response(writer, response)
-                    return
-                except AttributeError:
-                    pass
-
-                # Legacy registry path
-                handler_entry = registry.get(method)
-                if not handler_entry and method in ("ping", "shutdown"):
-                    handler_entry = (
-                        (
-                            self._handle_ping_request
-                            if method == "ping"
-                            else self._handle_shutdown_request
-                        ),
-                        False,
-                    )
-                if not handler_entry:
-                    error_response = create_error_response(
-                        ErrorCodes.METHOD_NOT_FOUND,
-                        f"Method '{method}' not found",
-                        request_id,
-                        request_id,
-                    )
-                    await self._send_response(writer, error_response)
-                    return
-                handler, needs_writer = handler_entry
-                result = (
-                    handler(self, request, start_time, writer)
-                    if needs_writer
-                    else handler(self, request, start_time)
-                )
-                response = await result if inspect.isawaitable(result) else result
+                response = await self._method_handlers.dispatch(request, self, writer, start_time)  # type: ignore[attr-defined]
                 await self._send_response(writer, response)
+                return
 
             except Exception as e:
                 logger.exception("Error handling method %s", method)
@@ -750,12 +712,9 @@ class WtDaemon:
             redirect_after=True,
         )
 
-        # Kick off initial discovery asynchronously
-        self._initial_discovery = asyncio.create_task(self._periodic_discovery())
-
         logger.info("wt daemon started, listening on %s", self.socket_path)
 
-        # Start periodic discovery in the background
+        # Start periodic discovery in the background (single task)
         self.discovery_task = asyncio.create_task(self._periodic_discovery())
 
     async def stop(self) -> None:
@@ -793,6 +752,19 @@ class WtDaemon:
             self.pid_file.unlink()
 
         logger.info("wt daemon stopped")
+
+    async def rebuild_index(self) -> None:
+        async with self._state_lock:
+            self.worktree_index = WorktreeIndex.build(self.known_worktrees.values(), self.config.main_repo)
+
+    async def add_known_worktree(self, info: DiscoveredWorktree) -> None:
+        async with self._state_lock:
+            self.known_worktrees[info.path] = info
+
+    async def remove_known_worktree(self, path: Path) -> None:
+        async with self._state_lock:
+            if path in self.known_worktrees:
+                del self.known_worktrees[path]
 
 
 async def run_daemon(config) -> None:

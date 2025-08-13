@@ -4,9 +4,10 @@ import asyncio
 import contextlib
 import logging
 import shutil
+import inspect
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable, Awaitable
 
 import psutil
 import pygit2
@@ -14,7 +15,6 @@ import pygit2
 from ..shared.error_handling import ErrorContext, validate_worktree_name
 from ..shared.github_models import PRData, PRInfo
 from ..shared.models import CommitInfo, ProcessInfo
-from ..shared.protocol import HookOutputEvent, HookStream, StatusResult
 from .copy_strategies import get_copy_strategy
 from .git_manager import GitError, GitManager, WorktreeCreateError, WorktreeDeleteError
 
@@ -157,64 +157,17 @@ class WorktreeService:
             raise RuntimeError(f"Worktree '{name}' does not exist")
         return worktree_path
 
-    def get_current_worktree_info(self, config) -> tuple[Path | None, str | None]:
-        """Get current worktree information."""
-        # Get current directory
-        cwd = Path.cwd().resolve()
-
-        try:
-            # Try to find git repo root
-            repo_root = self.git_manager.repo_root(cwd=cwd)
-
-            # Check if we're in a worktree (not the main repo)
-            if repo_root != config.main_repo:
-                # Calculate relative path within the worktree
-                try:
-                    rel_path = cwd.relative_to(repo_root)
-                except ValueError:
-                    rel_path = Path()
-                return repo_root, str(rel_path) if rel_path != Path() else None
-
-            return None, None
-        except (GitError, OSError) as e:
-            # Expected errors: not in a git repo, file system issues
-            logging.debug(f"Could not determine current worktree info: {e}")
-            return None, None
-
-    def resolve_path(self, config, worktree_name: str | None, path_spec: str) -> Path:
-        """Resolve a path specification within a worktree."""
-        if worktree_name:
-            # Path in specified worktree
-            target_path = self.require_worktree_exists(config, worktree_name)
-        else:
-            # Path in current worktree
-            current_wt, _ = self.get_current_worktree_info(config)
-            if not current_wt:
-                raise RuntimeError("Not in a worktree")
-            target_path = current_wt
-
-        if path_spec.startswith("/"):
-            # Absolute path from worktree root
-            return target_path / path_spec[1:]
-        if path_spec.startswith("./"):
-            # Relative to current position in worktree
-            current_wt, rel_path = self.get_current_worktree_info(config)
-            if not current_wt:
-                raise RuntimeError("Not in a worktree")
-            base_path = current_wt / (rel_path or "")
-            return base_path / path_spec[2:]
-        raise RuntimeError("Path must start with / (absolute) or ./ (relative)")
 
     def _hydrate_worktree(self, config, src: Path, dst: Path) -> None:
-        """Hydrate worktree with files from source."""
         dst.mkdir(parents=True, exist_ok=True)
         get_copy_strategy(config.cow_method).copy(src, dst)
+
 
     @staticmethod
     async def run_post_creation_script(
         script_path: str,
         worktree_path: Path,
-        writer=None,
+        sink: Callable[[str, str], Awaitable[None]] | Callable[[str, str], None] | None = None,
         timeout: float = 60.0,
     ) -> dict:
         logging.getLogger(__name__)
@@ -237,7 +190,7 @@ class WorktreeService:
             stderr=asyncio.subprocess.PIPE,
         )
 
-        if writer is None:
+        if sink is None:
             try:
                 stdout, stderr = await asyncio.wait_for(
                     proc.communicate(), timeout=timeout
@@ -274,14 +227,12 @@ class WorktreeService:
                     stdout_buf.append(text)
                 else:
                     stderr_buf.append(text)
-                evt = HookOutputEvent(
-                    stream=(
-                        HookStream.STDOUT if name == "stdout" else HookStream.STDERR
-                    ),
-                    data=text,
-                )
-                writer.write((evt.model_dump_json() + "\n").encode())
-                await writer.drain()
+                try:
+                    result = sink(name, text)
+                    if inspect.isawaitable(result):
+                        await result
+                except Exception:
+                    logging.getLogger(__name__).debug("hook sink failed", exc_info=True)
 
         t1 = (
             asyncio.create_task(_forward(proc.stdout, "stdout"))
@@ -337,35 +288,6 @@ class WorktreeService:
                 continue
         return procs
 
-    async def get_single_worktree_status_daemon(
-        self,
-        config,
-        worktree_name: str,
-        daemon_client=None,
-    ) -> tuple[StatusResult, dict[str, PRInfo]]:
-        """Get status for a specific worktree using daemon."""
-        # Verify the worktree exists
-        self.require_worktree_exists(config, worktree_name)
-
-        # Get status for all worktrees and find the one we want
-        all_status = await daemon_client.get_status([])
-
-        # Find the worktree by name
-        status = None
-        for result in all_status.results.values():
-            if result.name == worktree_name:
-                status = result
-                break
-
-        if not status:
-            raise RuntimeError(f"Could not get status for worktree '{worktree_name}'")
-
-        # Extract PR info from daemon-provided data
-        pr_results = {}
-        if status.pr_info:
-            pr_results[status.branch_name] = status.pr_info
-
-        return status, pr_results
 
     def get_github_pr_status_single(self, branch_name: str) -> PRInfo:
         """Get PR status for a single branch."""

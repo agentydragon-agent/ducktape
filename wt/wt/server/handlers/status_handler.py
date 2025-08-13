@@ -20,6 +20,7 @@ from ...shared.protocol import (
     WorktreeID,
 )
 from ..rpc import rpc, Context
+from ..worktree_index import WorktreeIndex
 
 from ..types import DiscoveredWorktree
 from ..worktree_ids import make_worktree_id, parse_worktree_id
@@ -37,28 +38,10 @@ async def get_status(ctx: Context, params: StatusParams) -> StatusResponse:
             worktree_paths.append(worktree_path)
     else:
         if not ctx.daemon.known_worktrees:
-            current = await ctx.daemon.discovery_scanner.scan(ctx.daemon.config.worktrees_dir)
-            changes = ctx.daemon.registry.apply(current)
-            ctx.daemon.known_worktrees = dict(ctx.daemon.registry.known)
-            for wt in changes.added:
-                await ctx.daemon._start_gitstatusd_for_worktree(wt)
-            for wt in changes.removed:
-                await ctx.daemon._stop_gitstatusd_for_worktree(wt)
-        worktree_paths = [p for p in ctx.daemon.known_worktrees.keys() if (p / ".git").exists() or (p / ".git").is_file()]
-        git_paths = [
-            wt.path for wt in ctx.daemon.git_manager.list_worktrees() if not wt.is_main
-        ]
-        if git_paths and len(worktree_paths) < len(git_paths):
-            for p in git_paths:
-                if p not in ctx.daemon.known_worktrees and p.exists():
-                    wt_info = DiscoveredWorktree(p, p.name)
-                    ctx.daemon.known_worktrees[p] = wt_info
-                    ctx.daemon._startup_tasks.append(
-                        asyncio.create_task(
-                            ctx.daemon._start_gitstatusd_for_worktree(wt_info)
-                        )
-                    )
-            worktree_paths = [p for p in ctx.daemon.known_worktrees.keys() if (p / ".git").exists() or (p / ".git").is_file()]
+            await ctx.daemon._run_discovery_once()
+        if not ctx.daemon.worktree_index:
+            await ctx.daemon.rebuild_index()
+        worktree_paths = list(ctx.daemon.worktree_index.by_path.keys())
 
     items: dict[WorktreeID, StatusItem] = {}
 

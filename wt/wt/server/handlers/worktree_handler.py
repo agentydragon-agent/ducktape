@@ -25,6 +25,7 @@ from ...shared.protocol import (
 )
 from ..rpc import rpc, Context, Stream
 from ..worktree_ids import make_worktree_id, parse_worktree_id, wtid_to_path
+from ..types import DiscoveredWorktree
 from ..worktree_service import WorktreeService
 
 logger = logging.getLogger(__name__)
@@ -95,6 +96,11 @@ async def worktree_create(ctx: Context, params: WorktreeCreateParams, stream: St
         source_worktree=source_path,
         source_branch=src_branch,
     )
+    # Update daemon registry and index immediately (index-only lookup pathway)
+    wt_info = DiscoveredWorktree(worktree_path, worktree_path.name)
+    await ctx.daemon.add_known_worktree(wt_info)
+    await ctx.daemon._start_gitstatusd_for_worktree(wt_info)
+    await ctx.daemon.rebuild_index()
 
     if source_path:
         _emit_progress(WorktreeCreateStep.HYDRATE_DONE, "hydrate done", 1.0)
@@ -109,8 +115,12 @@ async def worktree_create(ctx: Context, params: WorktreeCreateParams, stream: St
                 f"Post-creation script not found at execution time: {script}",
             )
         # run_post_creation_script is async; we stream via the same writer
+        async def _sink(name: str, data: str) -> None:
+            from ...shared.protocol import HookOutputEvent, HookStream
+            ev = HookOutputEvent(stream=(HookStream.STDOUT if name == "stdout" else HookStream.STDERR), data=data)
+            stream.emit(ev)
         post = await WorktreeService.run_post_creation_script(
-            str(script), worktree_path, stream._writer
+            str(script), worktree_path, _sink
         )
 
     result = WorktreeCreateResult(
@@ -136,6 +146,11 @@ async def worktree_delete(ctx: Context, params: WorktreeDeleteParams) -> Worktre
             shutil.rmtree(worktree_path)
     except (OSError, PermissionError) as e:
         logger.warning("Filesystem cleanup failed for %s: %s", worktree_path, e)
+    # Update daemon registry and index immediately
+    wt_info = DiscoveredWorktree(worktree_path, worktree_name)
+    await ctx.daemon._stop_gitstatusd_for_worktree(wt_info)
+    await ctx.daemon.remove_known_worktree(worktree_path)
+    await ctx.daemon.rebuild_index()
     return WorktreeDeleteResult(
         wtid=params.wtid,
         success=True,
@@ -143,19 +158,12 @@ async def worktree_delete(ctx: Context, params: WorktreeDeleteParams) -> Worktre
     )
 
 
-def _resolve_worktree_name_to_info(daemon, name: str, worktree_infos: list) -> object | None:
-    if daemon.worktree_index:
-        if name == MAIN_WORKTREE_DISPLAY_NAME and daemon.worktree_index.main:
-            return daemon.worktree_index.main
-        found = daemon.worktree_index.get_by_name(name)
-        if found:
-            return found
-    for info in worktree_infos:
-        if (info.is_main and name == MAIN_WORKTREE_DISPLAY_NAME) or (
-            not info.is_main and info.path.name == name
-        ):
-            return info
-    return None
+def _resolve_worktree_name_to_info(daemon, name: str) -> object | None:
+    if not daemon.worktree_index:
+        return None
+    if name == MAIN_WORKTREE_DISPLAY_NAME and daemon.worktree_index.main:
+        return daemon.worktree_index.main
+    return daemon.worktree_index.get_by_name(name)
 
 
 @rpc.method("worktree_identify", params=WorktreeIdentifyParams)
@@ -179,14 +187,14 @@ async def worktree_identify(ctx: Context, params: WorktreeIdentifyParams) -> Wor
             relative_path = None
     if not worktree_name or not absolute_path.exists():
         raise ValueError(f"{absolute_path} is not a managed worktree")
-    worktree_infos = ctx.daemon.git_manager.list_worktrees()
-    found_worktree = _resolve_worktree_name_to_info(ctx.daemon, worktree_name, worktree_infos)
+    found_worktree = _resolve_worktree_name_to_info(ctx.daemon, worktree_name)
     if not found_worktree:
         raise ValueError(f"{absolute_path} is not a managed worktree")
-    if found_worktree.is_main:
-        resolved_name = MAIN_WORKTREE_DISPLAY_NAME
-    else:
-        resolved_name = found_worktree.path.name
+    resolved_name = (
+        MAIN_WORKTREE_DISPLAY_NAME
+        if found_worktree.path.resolve() == ctx.daemon.config.main_repo.resolve()
+        else found_worktree.path.name
+    )
     return WorktreeIdentifyResult(
         wtid=make_worktree_id(resolved_name),
         name=resolved_name,
@@ -197,8 +205,7 @@ async def worktree_identify(ctx: Context, params: WorktreeIdentifyParams) -> Wor
 
 @rpc.method("worktree_get_by_name", params=WorktreeGetByNameParams)
 async def worktree_get_by_name(ctx: Context, params: WorktreeGetByNameParams) -> WorktreeGetByNameResult:
-    worktree_infos = ctx.daemon.git_manager.list_worktrees()
-    found_worktree = _resolve_worktree_name_to_info(ctx.daemon, params.name, worktree_infos)
+    found_worktree = _resolve_worktree_name_to_info(ctx.daemon, params.name)
     if found_worktree:
         worktree_name = (
             MAIN_WORKTREE_DISPLAY_NAME

@@ -180,15 +180,15 @@ class GitManager:
         if any(info.path == path_obj for info in self.list_worktrees()):
             raise WorktreeCreateError(f"Worktree already exists at {path}")
 
-        # The branch already exists (created by caller), so we reference it
+        # Ensure branch exists; if not, create it off upstream
         if self._main_repo.lookup_branch(branch) is None:
-            # Allow creating worktree for a new branch off upstream; create it now
             target = self._main_repo.revparse_single(self.config.upstream_branch)
             self._main_repo.branches.local.create(branch, target)
 
+        # Use git CLI to create worktree without checkout (critical for large repos)
         try:
             git_run(
-                ["worktree", "add", "--no-checkout", str(path), branch],
+                ["worktree", "add", "--no-checkout", str(path_obj), branch],
                 cwd=self.config.main_repo,
             )
         except subprocess.CalledProcessError as e:
