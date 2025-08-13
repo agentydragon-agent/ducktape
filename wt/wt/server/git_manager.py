@@ -78,15 +78,11 @@ class GitManager:
         """Get working directory status using fastest available method."""
         try:
             # Get status - dirty (staged/modified) and untracked files
-            status = self._main_repo.status()
-
             dirty_files = []
             untracked_files = []
 
-            for file_path, flags in status.items():
-                if (flags & pygit2.GIT_STATUS_WT_MODIFIED) or (
-                    flags & pygit2.GIT_STATUS_INDEX_MODIFIED
-                ):
+            for file_path, flags in self._main_repo.status().items():
+                if flags & (pygit2.GIT_STATUS_WT_MODIFIED | pygit2.GIT_STATUS_INDEX_MODIFIED):
                     dirty_files.append(file_path)
                 elif flags & pygit2.GIT_STATUS_WT_NEW:
                     untracked_files.append(file_path)
@@ -94,35 +90,18 @@ class GitManager:
             return dirty_files, untracked_files
 
         except (pygit2.GitError, OSError) as e:
-            # Let callers handle git errors appropriately instead of masking them
-            raise GitError(
-                f"Failed to get working directory status: {e}",
-            ) from e
+            raise GitError(f"Failed to get working directory status") from e
 
     def get_repo(self, path: Path | None = None) -> pygit2.Repository:
         if path is None or path == self.config.main_repo:
             return self._main_repo
         return pygit2.Repository(str(path))
 
-    def get_commit_count_between(
-        self,
-        rev_a: str,
-        rev_b: str,
-    ) -> int:
-        try:
-            ahead, behind = self._main_repo.ahead_behind(rev_b, rev_a)
-            return ahead if rev_a == rev_b else (ahead + behind)
-        except pygit2.GitError as e:
-            raise NoSuchRefError(
-                f"Cannot count commits between {rev_a} and {rev_b}: {e}",
-            ) from e
-
     def get_commit_info(self, ref: str, worktree: Path) -> dict[str, str]:
         repo = self.get_repo(worktree)
         try:
             # Resolve reference to commit object in the given repo
-            resolved = repo.resolve_refish(ref)  # type: ignore[attr-defined]
-            commit = resolved[0]
+            commit = repo.resolve_refish(ref)[0]
         except KeyError as e:
             raise NoSuchRefError(f"Cannot get commit object for {ref}: {e}") from e
 
@@ -130,28 +109,21 @@ class GitManager:
         if isinstance(message, bytes):
             message = message.decode("utf-8", errors="replace")
 
-        author_name = commit.author.name
-        date_obj = datetime.fromtimestamp(commit.commit_time, timezone.utc)
-        date_str = date_obj.isoformat()
-
         return {
             "hash": str(commit.id),
             "short_hash": str(commit.id)[:8],
             "message": message.strip(),
-            "author": author_name,
-            "date": date_str,
+            "author": commit.author.name,
+            "date": datetime.fromtimestamp(commit.commit_time, timezone.utc).isoformat(),
         }
 
     def verify_ref_exists(self, ref: str) -> str:
         try:
-            # Use pygit2 API to resolve the reference
             resolved = self._main_repo.resolve_refish(ref)  # type: ignore[attr-defined]
             return str(resolved[0].id)
         except KeyError as e:
-            # Reference does not exist
             raise NoSuchRefError(f"Reference does not exist: {ref}") from e
         except Exception as e:
-            # Don't assume unknown errors mean "reference doesn't exist"
             raise GitError(f"Failed to verify reference {ref}: {e}") from e
 
     # Worktree operations
@@ -204,14 +176,14 @@ class GitManager:
             )
 
         # Check if worktree already exists for this path
-        existing_worktrees = self.list_worktrees()
-        if any(info.path == path_obj for info in existing_worktrees):
+        if any(info.path == path_obj for info in self.list_worktrees()):
             raise WorktreeCreateError(f"Worktree already exists at {path}")
 
         # The branch already exists (created by caller), so we reference it
-        branch_ref = self._main_repo.lookup_branch(branch)
-        if branch_ref is None:
-            raise WorktreeCreateError(f"Branch {branch} does not exist")
+        if self._main_repo.lookup_branch(branch) is None:
+            # Allow creating worktree for a new branch off upstream; create it now
+            target = self._main_repo.revparse_single(self.config.upstream_branch)
+            self._main_repo.branches.local.create(branch, target)
 
         try:
             git_run(
@@ -229,8 +201,9 @@ class GitManager:
         except Exception as e:
             raise WorktreeDeleteError(f"Failed to remove worktree at {path}: {e}") from e
 
-    def verify_branch_exists(self, branch_name: str) -> str:
+    def verify_branch_exists(self, branch: str) -> str:
         try:
-            return self.verify_ref_exists(f"refs/heads/{branch_name}")
-        except NoSuchRefError as e:
-            raise NoSuchBranchError(str(e)) from e
+            resolved = self._main_repo.resolve_refish(f"refs/heads/{branch}")  # type: ignore[attr-defined]
+            return str(resolved[0].id)
+        except KeyError as e:
+            raise NoSuchBranchError(f"Branch {branch} does not exist") from e

@@ -5,21 +5,30 @@ from typing import Any
 
 import pygit2
 
+from ..shared.protocol import CommitInfo
 from .git_manager import GitManager
 
 
-class RepoMetaService:
+class RepoStatusService:
     def __init__(self, git_manager: GitManager, config):
         self.git_manager = git_manager
         self.config = config
 
-    def compute_meta(
-        self,
-        worktree_path: Path,
-    ) -> tuple[dict[str, Any], tuple[int, int], str]:
+    def get_status(
+        self, worktree_path: Path
+    ) -> tuple[CommitInfo | None, tuple[int, int], str]:
         repo = self.git_manager.get_repo(worktree_path)
         branch_name = repo.head.shorthand
-        commit_info_data = self.git_manager.get_commit_info("HEAD", worktree_path)
+        commit_info: CommitInfo | None
+        try:
+            data = self.git_manager.get_commit_info("HEAD", worktree_path)
+            commit_info = CommitInfo.model_validate(data)
+        except Exception:
+            try:
+                data = self.git_manager.get_commit_info("HEAD", self.config.main_repo)
+                commit_info = CommitInfo.model_validate(data)
+            except Exception:
+                commit_info = None
         ahead_behind = (0, 0)
         if worktree_path != self.config.main_repo:
             try:
@@ -31,4 +40,4 @@ class RepoMetaService:
                 ahead_behind = (ahead, behind)
             except pygit2.GitError:
                 ahead_behind = (0, 0)
-        return commit_info_data, ahead_behind, branch_name
+        return commit_info, ahead_behind, branch_name

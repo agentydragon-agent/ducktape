@@ -59,7 +59,19 @@ class DebouncedGitstatusRefresh:
     def trigger(self, reason: str):
         if self._pending:
             self._pending.cancel()
-        self._pending = asyncio.create_task(self._debounced(reason))
+        try:
+            loop = asyncio.get_running_loop()
+            self._pending = loop.create_task(self._debounced(reason))
+        except RuntimeError:
+            # No running loop (watchdog thread); schedule soon on default loop
+            def _enqueue():
+                try:
+                    loop = asyncio.get_event_loop()
+                    loop.call_soon_threadsafe(lambda: asyncio.create_task(self._debounced(reason)))
+                except Exception:
+                    pass
+            import threading
+            threading.Thread(target=_enqueue, daemon=True).start()
 
     async def _debounced(self, reason: str):
         try:
