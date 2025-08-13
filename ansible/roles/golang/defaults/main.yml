@@ -1,0 +1,6 @@
+---
+go_version: "1.25.0"  # Latest stable as of Aug 2025
+go_install_dir: "{{ ansible_user_dir }}/.local"
+go_download_url: "https://go.dev/dl/go{{ go_version }}.linux-{{ go_arch }}.tar.gz"
+go_arch: "{{ 'amd64' if ansible_architecture == 'x86_64' else ansible_architecture }}"
+go_bin_path: "{{ go_install_dir }}/go/bin"
