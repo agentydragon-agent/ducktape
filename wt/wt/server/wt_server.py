@@ -44,10 +44,15 @@ from .gitstatusd_client import (
     gitstatusd_response_to_legacy_format,
 )
 from .pr_service import PRService
-from .registry import registry
-from .repo_meta import RepoStatusService
+from .rpc import rpc
+from .repo_status import RepoStatus
 from .types import DiscoveredWorktree
 from .worktree_service import WorktreeService
+from .worktree_index import WorktreeIndex
+# Force import of handlers to register RPC methods
+from .handlers import path_handler as _path_handler  # noqa: F401
+from .handlers import status_handler as _status_handler  # noqa: F401
+from .handlers import worktree_handler as _worktree_handler  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
@@ -267,11 +272,12 @@ class WtDaemon:
 
         # Managed state
         self.known_worktrees: dict[Path, DiscoveredWorktree] = {}
+        self.worktree_index: WorktreeIndex | None = None
         self.gitstatusd_clients: dict[Path, GitstatusdClient] = {}
         self.pr_services: dict[Path, PRService] = {}
         self.git_watchers: dict[Path, DebouncedGitstatusRefresh] = {}
         self.git_manager = GitManager(config=self.config)
-        self.repo_meta = RepoStatusService(self.git_manager, self.config)
+        self.repo_status = RepoStatus(self.git_manager, self.config)
         self.worktree_service = WorktreeService(self.git_manager, self.github_interface)
 
         # Server state
@@ -300,10 +306,15 @@ class WtDaemon:
             # Start processes for discovered worktrees (synchronously)
             for wt in changes.added:
                 self.shared_async_run(self._start_gitstatusd_for_worktree(wt))
+            self.worktree_index = WorktreeIndex.build(self.known_worktrees.values(), self.config.main_repo)
         except Exception:
             logger.debug("Initial discovery failed", exc_info=True)
 
-        self._method_handlers = registry
+        self._method_handlers = rpc
+        try:
+            logger.info("Registered RPC methods: %s", sorted(self._method_handlers.keys()))
+        except Exception:
+            pass
 
     def _record_error(self, error_type: str, error_message: str):
         """Record an error and update daemon health status."""
@@ -521,6 +532,7 @@ class WtDaemon:
                     await self._start_gitstatusd_for_worktree(wt)
                 for wt in changes.removed:
                     await self._stop_gitstatusd_for_worktree(wt)
+                self.worktree_index = WorktreeIndex.build(self.known_worktrees.values(), self.config.main_repo)
                 await asyncio.sleep(30)
             except asyncio.CancelledError:
                 break
@@ -570,12 +582,22 @@ class WtDaemon:
                         await self._start_gitstatusd_for_worktree(wt)
                     for wt in changes.removed:
                         await self._stop_gitstatusd_for_worktree(wt)
+                    self.worktree_index = WorktreeIndex.build(self.known_worktrees.values(), self.config.main_repo)
 
                 self._discovery_kick = asyncio.create_task(_kick())
 
             # Handle different method types
             try:
-                handler_entry = self._method_handlers.get(method)
+                # First try new RPC registry
+                try:
+                    response = await self._method_handlers.dispatch(request, self, writer, start_time)  # type: ignore[attr-defined]
+                    await self._send_response(writer, response)
+                    return
+                except AttributeError:
+                    pass
+
+                # Legacy registry path
+                handler_entry = registry.get(method)
                 if not handler_entry and method in ("ping", "shutdown"):
                     handler_entry = (
                         (
@@ -689,13 +711,7 @@ class WtDaemon:
         if config_error:
             startup_errors.append(config_error)
 
-        # Validate post-creation script existence if configured (hard fail at startup)
-        if self.config.post_creation_script:
-            script = self.config.post_creation_script
-            if not script.exists() or not script.is_file():
-                startup_errors.append(
-                    f"Post-creation script configured but not found or not a file: {script}",
-                )
+        # Post-creation script is validated at use-time in WorktreeService
 
         # Validate gitstatusd availability
         gitstatusd_path, gitstatusd_error = self._validate_gitstatusd()

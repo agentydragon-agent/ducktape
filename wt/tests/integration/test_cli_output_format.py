@@ -7,7 +7,7 @@ import pytest
 from click.testing import CliRunner
 
 from wt.cli import main
-from wt.shared.protocol import CommitInfo, StatusResponse, StatusResult, WorktreeID
+from wt.shared.protocol import CommitInfo, StatusItem, StatusResponse, StatusResult, WorktreeID
 
 
 def create_test_status_response(results_dict=None):
@@ -15,12 +15,16 @@ def create_test_status_response(results_dict=None):
     if results_dict is None:
         results_dict = {}
 
+    items = {
+        k: StatusItem(status=v, processing_time_ms=v.processing_time_ms)
+        for k, v in results_dict.items()
+    }
     return StatusResponse(
-        results=results_dict,
+        items=items,
         total_processing_time_ms=sum(
-            r.processing_time_ms for r in results_dict.values()
+            it.processing_time_ms for it in items.values()
         )
-        if results_dict
+        if items
         else 0.0,
         daemon_health={
             "status": "ok",

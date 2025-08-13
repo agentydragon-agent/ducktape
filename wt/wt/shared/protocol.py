@@ -259,20 +259,21 @@ class StatusResult(BaseModel):
     )
 
 
+class StatusItem(BaseModel):
+    status: StatusResult
+    processing_time_ms: float
+
+
 class StatusResponse(BaseModel):
     """Unified response for get_status method (always returns results for multiple worktrees)."""
 
-    results: dict[WorktreeID, StatusResult] = Field(
+    items: dict[WorktreeID, StatusItem] = Field(
         ...,
-        description="Map of worktree ID to status results",
+        description="Map of worktree ID to item {status, processing_time_ms}",
     )
     total_processing_time_ms: float = Field(
         ...,
         description="Total processing time in milliseconds",
-    )
-    individual_processing_times_ms: dict[WorktreeID, float] = Field(
-        default_factory=dict,
-        description="Detailed processing time per worktree",
     )
     discovery_time_ms: float = Field(
         default=0.0,
@@ -409,12 +410,12 @@ class WorktreeResolvePathResult(BaseModel):
 
 
 class TeleportCdThere(BaseModel):
-    type: Literal["cd_there"]
+    type: Literal["cd_there"] = "cd_there"
     cd_path: str
 
 
 class TeleportDoesNotExist(BaseModel):
-    type: Literal["does_not_exist"]
+    type: Literal["does_not_exist"] = "does_not_exist"
     name: str = Field(..., description="Requested worktree name that was not found on server")
 
 

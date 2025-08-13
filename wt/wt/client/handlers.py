@@ -41,10 +41,10 @@ async def handle_status(daemon_client, formatter) -> None:
         return (1, name)  # others alphabetically
 
     sorted_items = sorted(
-        all_status.results.items(),
-        key=lambda x: sort_key((x[1].name, x[1])),
+        all_status.items.items(),
+        key=lambda x: sort_key((x[1].status.name, x[1].status)),
     )
-    display_items = [(result.name, result) for wtid, result in sorted_items]
+    display_items = [(item.status.name, item.status) for wtid, item in sorted_items]
 
     formatter.render_top_status_bar(all_status)
     formatter.render_worktree_status_all(display_items, all_status)
@@ -82,9 +82,9 @@ async def handle_status_single(daemon_client, formatter, worktree_name: str) -> 
 
     # Find the worktree by name in the results
     status = None
-    for result in all_status.results.values():
-        if result.name == worktree_name:
-            status = result
+    for item in all_status.items.values():
+        if item.status.name == worktree_name:
+            status = item.status
             break
 
     if not status:

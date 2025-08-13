@@ -71,6 +71,16 @@ class WorktreeService:
                 f"Failed to get working directory status for {worktree_path}: {e}",
             ) from e
 
+    def _require_post_creation_script_valid(self, config) -> None:
+        if config.post_creation_script:
+            script = config.post_creation_script
+            if not script.exists() or not script.is_file():
+                raise FileNotFoundError(f"Post-creation script {script} is not a file")
+
+    def _wtid_to_path(self, config, wtid: "WorktreeID") -> Path:
+        from .worktree_ids import wtid_to_path
+        return wtid_to_path(config, wtid)
+
     def create_worktree(
         self,
         config,
@@ -80,6 +90,7 @@ class WorktreeService:
     ) -> Path:
         """Create a new worktree."""
         validate_worktree_name(name)
+        self._require_post_creation_script_valid(config)
         worktree_path = config.worktrees_dir / name
 
         if worktree_path.exists():

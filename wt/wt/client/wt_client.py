@@ -356,11 +356,12 @@ class WtClient:
             # Let other RuntimeErrors (daemon communication failures, etc.) bubble up
             raise
 
-        if not status_response.results:
+        if not status_response.items:
             return [], []
 
         # Extract the single result
-        result = next(iter(status_response.results.values()))
+        item = next(iter(status_response.items.values()))
+        result = item.status
 
         # Convert boolean flags back to file lists for backward compatibility
         dirty_files = ["<files present>"] if result.has_dirty_files else []

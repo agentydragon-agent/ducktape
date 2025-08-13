@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
-
 import pygit2
 
 from ..shared.protocol import CommitInfo
@@ -14,9 +12,7 @@ class RepoStatus:
         self.git_manager = git_manager
         self.config = config
 
-    def summarize_status(
-        self, worktree_path: Path
-    ) -> tuple[CommitInfo | None, tuple[int, int], str]:
+    def summarize_status(self, worktree_path: Path) -> tuple[CommitInfo | None, tuple[int, int], str]:
         repo = self.git_manager.get_repo(worktree_path)
         branch_name = repo.head.shorthand
         commit_info: CommitInfo | None
