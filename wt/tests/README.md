@@ -1,6 +1,6 @@
-# adgn-worktree Test Suite
+# wt Test Suite
 
-This directory contains comprehensive tests for the adgn-worktree tool, including the shell integration tests requested in the GitHub review comments.
+Includes shell integration tests.
 
 ## Test Structure
 
@@ -69,28 +69,3 @@ The test suite uses comprehensive fixtures defined in `conftest.py`:
 - `config_builder` - Helper to build custom configurations for tests
 - `real_temp_repo` - Real git repository for integration tests
 - `real_env` - Sets up WT_DIR environment with daemon cleanup
-
-## Recent Test Improvements
-
-### ✅ Modern Mock Patterns
-All tests now use **decorator-style patches** instead of context managers:
-```python
-@patch("wt.client.wt_client.WtClient.get_status")
-def test_something(self, mock_get_status, ...):
-    mock_get_status.return_value = create_test_status_response()
-```
-
-### ✅ Centralized Configuration Building  
-Tests use the `build_test_configuration()` helper for consistent config creation:
-```python
-config = build_test_configuration(
-    repo_path,
-    branch_prefix="test/",
-    upstream_branch="main"
-)
-```
-
-### ✅ Better Fixture Organization
-- Removed deprecated `Services` container patterns
-- Direct dependency injection in tests
-- Cleaner test setup with explicit dependencies

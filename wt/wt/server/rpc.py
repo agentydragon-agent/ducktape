@@ -5,6 +5,7 @@ from inspect import signature
 from typing import Any, Awaitable, Callable, Generic, Protocol, TypeVar, cast, get_type_hints, get_origin
 import inspect
 import logging
+from datetime import datetime
 
 from pydantic import BaseModel, ValidationError
 
@@ -47,10 +48,10 @@ Handler = Callable[..., Awaitable[Any]]
 
 class RpcRegistry:
     def __init__(self) -> None:
-        self._handlers: dict[str, Callable[[Request, "WtDaemon", Any, float], Awaitable[Response | ErrorResponse]]] = {}
+        self._handlers: dict[str, Callable[[Request, "WtDaemon", Any, datetime], Awaitable[Response | ErrorResponse]]] = {}
         self._stream_methods: set[str] = set()
 
-    def _build_args(self, fn, *, daemon: "WtDaemon", params_obj: BaseModel | None, writer, start_time: float, stream_obj=None):
+    def _build_args(self, fn, *, daemon: "WtDaemon", params_obj: BaseModel | None, writer, start_time: datetime, stream_obj=None):
         sig = signature(fn)
         c = Container()
         from .services import (
@@ -65,7 +66,7 @@ class RpcRegistry:
         )
         # Core config and per-request context
         c.register(Configuration, instance=daemon.config)
-        c.register(float, instance=start_time)
+        c.register(datetime, instance=start_time)
         # Service singletons wired from daemon
         c.register(GitService, instance=daemon.git_service)
         c.register(WorktreeIndexService, instance=daemon.index_service)

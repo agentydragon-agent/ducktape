@@ -1,4 +1,4 @@
-"""Standardized error handling for adgn-worktree."""
+"""Standardized error handling for wt."""
 
 import logging
 from collections.abc import Callable

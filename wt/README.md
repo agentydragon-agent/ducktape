@@ -1,6 +1,6 @@
-# `adgn-worktree` - Git Worktree Management with COW
+# `wt` - Git Worktree Management with COW
 
-A worktree management tool that makes switching between git worktrees feel like `git switch` while adding copy-on-write functionality for rapid prototyping.
+Makes switching between git worktrees feel like `git switch` while adding copy-on-write functionality for rapid prototyping.
 
 ## Features
 
@@ -8,14 +8,14 @@ A worktree management tool that makes switching between git worktrees feel like 
 - **Copy-on-write operations** for duplicating worktrees with uncommitted changes  
 - **Path resolution** with absolute (`/foo`) and relative (`./foo`) path support
 - **Process detection** for safe worktree cleanup
-- **Operation logging** with XDG-compliant data storage
+- **Operation logging**
 - **Zsh integration** for seamless shell navigation
 
 ## Requirements
 
 - **gitstatusd**: Must be installed and available on PATH. This binary provides fast git status queries.
 - **wt package**: Must be properly installed and importable (via `pip install -e .`)
-- **adgn-worktree CLI**: Must be available on PATH after package installation
+- **wt CLI**: Must be available on PATH after package installation
 
 **Note**: Tests explicitly check for these dependencies and will fail immediately with clear error messages if any are missing, rather than producing cryptic import or subprocess errors.
 
@@ -116,13 +116,7 @@ wt path ./relative/file.py
 
 ### Data Flow
 
-```
-CLI → Handler → Daemon Client → Unix Socket → Daemon → GitHub API
-                     ↓              ↑
-              ViewFormatter    JSON-RPC Response
-                     ↓              ↓
-               Console Output   WorktreeStatus + PRInfo
-```
+CLI → JSON-RPC over Unix Socket → Daemon
 
 ### Shell Integration
 
@@ -141,19 +135,6 @@ This design allows:
 - **Clean error handling** with proper exit codes
 - **Safe navigation** away from problematic locations
 - **Normal stdout/stderr** for user messages
-
-### Future Architecture Plans
-
-**Goal**: Move all git operations to the daemon for consistency and performance.
-
-Currently:
-- ✅ **Status operations** → daemon (GitHub API + git status)
-- ❌ **Worktree create/remove** → direct CLI git commands
-
-**Planned**:
-- 🔄 **Worktree create/remove** → daemon operations
-- **Benefits**: Better error handling, consistent git operations, easier testing
-- **Implementation**: Extend daemon protocol with create/remove RPCs
 
 ### Copy-on-Write
 
@@ -288,13 +269,13 @@ vim $(wt path feature /src/main.py)
 
 ### Path Resolution Examples
 
-From `/Users/you/code/worktrees/feature/src/components`:
+From `~/code/worktrees/feature/src/components`:
 
 ```bash
-wt path                           # /Users/you/code/worktrees/feature
-wt path /tests                    # /Users/you/code/worktrees/feature/tests  
-wt path ./test.py                 # /Users/you/code/worktrees/feature/src/components/test.py
-wt path main ./test.py            # /Users/you/code/repo/src/components/test.py
+wt path                           # ~/code/worktrees/feature
+wt path /tests                    # ~/code/worktrees/feature/tests  
+wt path ./test.py                 # ~/code/worktrees/feature/src/components/test.py
+wt path main ./test.py            # ~/code/repo/src/components/test.py
 ```
 
 ## Troubleshooting
@@ -315,19 +296,6 @@ echo 'eval "$(python -m wt.shell.install)"' >> ~/.zshrc
 source ~/.zshrc
 ```
 
-### Permission Errors
-
-If you get permission errors during COW operations, the tool will fall back to rsync automatically.
-
-### Worktree Not Found
-
-If a worktree directory exists but git doesn't recognize it:
-
-```bash
-cd ~/code/repo
-git worktree prune
-```
-
 ### Process Detection Issues
 
 If `wt rm` incorrectly detects processes, you can force removal:
@@ -335,15 +303,3 @@ If `wt rm` incorrectly detects processes, you can force removal:
 ```bash
 wt rm worktree-name --force
 ```
-
-## Advanced Usage
-
-The tool also works as a regular CLI without the zsh integration:
-
-```bash
-# Direct CLI usage
-adgn-worktree zsh ls
-adgn-worktree zsh -c new-feature  
-```
-
-This is useful for scripting or debugging the tool's behavior.

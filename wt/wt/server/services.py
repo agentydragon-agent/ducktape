@@ -75,8 +75,19 @@ class WorktreeIndexService:
 
 
 class GitstatusdService:
-    def __init__(self, get_client: Callable[[Path], object | None]) -> None:
+    def __init__(
+        self,
+        get_client: Callable[[Path], object | None],
+        iter_client_paths: Callable[[], Iterable[Path]] | None = None,
+        ensure_watcher_for_path: Callable[[Path], asyncio.Future | asyncio.Task | object] | None = None,
+        list_watchers: Callable[[], list[object]] | None = None,
+        clear_watchers: Callable[[], None] | None = None,
+    ) -> None:
         self._get_client = get_client
+        self._iter_client_paths = iter_client_paths
+        self._ensure_watcher_for_path = ensure_watcher_for_path
+        self._list_watchers = list_watchers
+        self._clear_watchers = clear_watchers
 
     def get_client(self, path: Path):
         return self._get_client(path)
@@ -91,6 +102,24 @@ class GitstatusdService:
         client = self._get_client(path)
         return bool(client and client.is_running)
 
+    async def start(self) -> None:
+        if not (self._iter_client_paths and self._ensure_watcher_for_path):
+            return
+        for p in list(self._iter_client_paths()):
+            if not self._get_client(p):
+                continue
+            await asyncio.ensure_future(self._ensure_watcher_for_path(p))  # type: ignore[arg-type]
+
+    async def stop(self) -> None:
+        if not (self._list_watchers and self._clear_watchers):
+            return
+        for w in list(self._list_watchers()):
+            try:
+                await w.stop()
+            except Exception:
+                pass
+        self._clear_watchers()
+
 
 class PRServiceProvider:
     def __init__(
@@ -100,6 +129,20 @@ class PRServiceProvider:
     ) -> None:
         self._get = get_service
         self._list = list_services
+
+    async def start(self) -> None:
+        for svc in self._list():
+            try:
+                await svc.start()
+            except Exception:
+                pass
+
+    async def stop(self) -> None:
+        for svc in self._list():
+            try:
+                await svc.stop()
+            except Exception:
+                pass
 
     async def get_pr_info(self, path: Path, branch: str, timeout: float = 0.75) -> PRInfo | None:
         prsvc = self._get(path)
@@ -128,11 +171,26 @@ class StatusService:
 
 
 class DiscoveryService:
-    def __init__(self, is_scanning: Callable[[], bool]) -> None:
+    def __init__(
+        self,
+        is_scanning: Callable[[], bool],
+        periodic: Callable[[], asyncio.Future | asyncio.Task | object] | None = None,
+        cancel_periodic: Callable[[], None] | None = None,
+    ) -> None:
         self._is_scanning = is_scanning
+        self._periodic = periodic
+        self._cancel = cancel_periodic
 
     def is_scanning(self) -> bool:
         return self._is_scanning()
+
+    async def start(self) -> None:
+        if self._periodic:
+            await asyncio.ensure_future(self._periodic())  # type: ignore[arg-type]
+
+    async def stop(self) -> None:
+        if self._cancel:
+            self._cancel()
 
 
 class HealthService:

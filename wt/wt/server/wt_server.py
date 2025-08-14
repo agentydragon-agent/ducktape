@@ -297,13 +297,23 @@ class WtDaemon:
             rebuild_index=lambda: self.rebuild_index(),
             run_discovery_once=lambda: self._run_discovery_once(),
         )
-        self.gitstatusd_service = GitstatusdService(lambda p: self.gitstatusd_clients.get(p))
+        self.gitstatusd_service = GitstatusdService(
+            lambda p: self.gitstatusd_clients.get(p),
+            iter_client_paths=lambda: list(self.gitstatusd_clients.keys()),
+            ensure_watcher_for_path=lambda p: (self._ensure_git_watcher(self.known_worktrees[p]) if p in self.known_worktrees else None),
+            list_watchers=lambda: list(self.git_watchers.values()),
+            clear_watchers=lambda: self.git_watchers.clear(),
+        )
         self.pr_provider = PRServiceProvider(
             get_service=lambda p: self.pr_services.get(p),
             list_services=lambda: list(self.pr_services.values()),
         )
         self.status_service = StatusService(self.repo_status)
-        self.discovery_service = DiscoveryService(lambda: self.discovery_scanning)
+        self.discovery_service = DiscoveryService(
+            lambda: self.discovery_scanning,
+            periodic=lambda: self._periodic_discovery_wrapper(),
+            cancel_periodic=lambda: self._cancel_periodic_discovery(),
+        )
         self.health_service = HealthService(lambda: self.daemon_health)
         self.coordinator = WorktreeCoordinator(
             register_fn=self._register_worktree,
@@ -578,13 +588,22 @@ class WtDaemon:
                 logger.exception("Error in periodic discovery")
                 await asyncio.sleep(30)
 
+    async def _periodic_discovery_wrapper(self) -> None:
+        if self.discovery_task and not self.discovery_task.done():
+            return
+        self.discovery_task = asyncio.create_task(self._periodic_discovery())
+
+    def _cancel_periodic_discovery(self) -> None:
+        if self.discovery_task:
+            self.discovery_task.cancel()
+
     async def handle_client_request(
         self,
         reader: asyncio.StreamReader,
         writer: asyncio.StreamWriter,
     ) -> None:
         """Handle a client request using JSON-RPC 2.0 protocol."""
-        start_time = time.time()
+        start_time = datetime.now()
 
         try:
             # Read request line
@@ -631,18 +650,18 @@ class WtDaemon:
     async def _handle_ping_request(
         self,
         request: Request,
-        start_time: float,
+        start_time: datetime,
     ) -> Response:
         """Handle ping JSON-RPC method."""
         result = PingResult(
             daemon_pid=os.getpid(),
-            started_at=datetime.fromtimestamp(start_time),
+            started_at=start_time,
             discovered_worktrees=list(self.known_worktrees.keys()),
         )
         return self._create_success_response(result, request.id)
 
     async def _handle_shutdown_request(
-        self, request: Request, start_time: float | None = None
+        self, request: Request, start_time: datetime | None = None
     ) -> Response:
         """Handle shutdown JSON-RPC method."""
         logger.info("Received shutdown request")
@@ -724,8 +743,10 @@ class WtDaemon:
 
         logger.info("wt daemon started, listening on %s", self.socket_path)
 
-        # Start periodic discovery in the background (single task)
-        self.discovery_task = asyncio.create_task(self._periodic_discovery())
+        # Start long-running service loops
+        await self.discovery_service.start()
+        await self.pr_provider.start()
+        await self.gitstatusd_service.start()
 
     async def stop(self) -> None:
         """Stop the daemon."""
@@ -733,21 +754,14 @@ class WtDaemon:
 
         self.running = False
 
-        # Cancel discovery task
-        if self.discovery_task:
-            self.discovery_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await self.discovery_task
-
-        # Stop watchers
-        for watcher in list(self.git_watchers.values()):
-            await watcher.stop()
-        self.git_watchers.clear()
+        # Stop long-running service loops
+        await self.gitstatusd_service.stop()
+        await self.pr_provider.stop()
+        await self.discovery_service.stop()
 
         # Stop all gitstatusd processes
         for process in list(self.gitstatusd_clients.values()):
             await process.stop()
-
         self.gitstatusd_clients.clear()
 
         # Stop server

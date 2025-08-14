@@ -21,19 +21,48 @@ class RepoStatus:
             commit_info = CommitInfo.model_validate(data)
         except (NoSuchRefError, pygit2.GitError, KeyError, ValueError):
             commit_info = None
+
+        # Ahead/behind computation
+        #
+        # Why compute from the worktree repo first?
+        # - The branch checked out in a worktree can diverge from the branch record in the main repo
+        #   (e.g. refs not yet updated in main, or local-only branches). Using the worktree repo's HEAD
+        #   as the source of truth ensures we compare the exact commit currently checked out in that worktree.
+        # - We still need an upstream reference (e.g. "main"). Prefer the worktree repo's ref if present,
+        #   and fall back to the main repo's ref when the worktree doesn't carry that reference.
+        # - We call ahead_behind on the main repo because worktrees share the object database; this guarantees
+        #   both OIDs are resolvable even if the worktree's ref namespace is sparse.
+        #
+        # TODO(mpokorny): Add focused tests for detached HEAD handling (worktree repo): ensure zero ahead/behind and no crashes
+        # TODO(mpokorny): Add tests for missing upstream refs (in worktree and/or main) verifying fallback to main and zero result
         ahead_behind = (0, 0)
-        if worktree_path != self.config.main_repo:
-            if branch_name and branch_name != "HEAD" and not repo.head_is_detached:
+        if worktree_path != self.config.main_repo and not repo.head_is_detached:
+            if branch_name and branch_name != "HEAD":
                 try:
                     main_repo = self.git_manager.get_repo(self.config.main_repo)
-                    local_ref = main_repo.lookup_reference(f"refs/heads/{branch_name}")
-                    upstream_ref = main_repo.lookup_reference(
-                        f"refs/heads/{self.config.upstream_branch}"
-                    )
-                    local_id = local_ref.target
-                    upstream_id = upstream_ref.target
+
+                    # Resolve local tip OID from the worktree repo first; fall back to HEAD
+                    try:
+                        local_ref = repo.lookup_reference(f"refs/heads/{branch_name}")
+                        local_id = local_ref.target
+                    except KeyError:
+                        local_id = repo.head.target
+
+                    # Resolve upstream tip OID: prefer worktree repo; fall back to main repo
+                    try:
+                        upstream_ref = repo.lookup_reference(
+                            f"refs/heads/{self.config.upstream_branch}"
+                        )
+                        upstream_id = upstream_ref.target
+                    except KeyError:
+                        upstream_ref = main_repo.lookup_reference(
+                            f"refs/heads/{self.config.upstream_branch}"
+                        )
+                        upstream_id = upstream_ref.target
+
                     ahead, behind = main_repo.ahead_behind(local_id, upstream_id)
                     ahead_behind = (ahead, behind)
                 except (KeyError, pygit2.GitError, ValueError):
                     ahead_behind = (0, 0)
+
         return commit_info, ahead_behind, branch_name
