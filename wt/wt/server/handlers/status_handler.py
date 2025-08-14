@@ -19,37 +19,38 @@ from ...shared.protocol import (
     StatusResult,
     WorktreeID,
 )
-from ..rpc import rpc, Context, RpcError
+from ..rpc import rpc
+from wt.shared.configuration import Configuration
 from ..worktree_index import WorktreeIndex
+from ..services import StatusService, GitstatusdService, PRServiceProvider, WorktreeIndexService, DiscoveryService, HealthService, GitService
 
 from ..types import DiscoveredWorktree
 from ..worktree_ids import make_worktree_id, parse_worktree_id
 
 
 @rpc.method("get_status", params=StatusParams)
-async def get_status(ctx: Context, params: StatusParams) -> StatusResponse:
+async def get_status(status: StatusService, gitstat: GitstatusdService, prs: PRServiceProvider, index: WorktreeIndexService, discovery: DiscoveryService, health: HealthService, git: GitService, config: Configuration, params: StatusParams) -> StatusResponse:
     worktree_ids = params.worktree_ids
 
     if worktree_ids:
         worktree_paths: list[Path] = []
         for wtid in worktree_ids:
             worktree_name = parse_worktree_id(wtid)
-            worktree_path = ctx.config.worktrees_dir / worktree_name
+            worktree_path = config.worktrees_dir / worktree_name
             worktree_paths.append(worktree_path)
     else:
-        if not ctx.api.d.known_worktrees:
-            await ctx.api.d._run_discovery_once()
-        if not ctx.api.d.worktree_index:
-            await ctx.api.rebuild_index()
-        worktree_paths = list(ctx.api.d.worktree_index.by_path.keys())
+        if not index.list_paths():
+            await index.ensure_discovery()
+        await index.ensure_index()
+        worktree_paths = index.list_paths()
 
     items: dict[WorktreeID, StatusItem] = {}
 
     async def process_single_worktree(worktree_path: Path):
         single_start = time.time()
-        gs_client = ctx.api.d.gitstatusd_clients.get(worktree_path)
+        gs_client = gitstat.get_client(worktree_path)
         worktree_last_error: str | None = None
-        meta = ctx.api.d.repo_status
+        meta = status
 
         def _compute_status(path: Path):
             return (*meta.summarize_status(path), None)
@@ -74,20 +75,11 @@ async def get_status(ctx: Context, params: StatusParams) -> StatusResponse:
                 commit_info_data, ahead_behind, branch_name, worktree_last_error = (
                     _compute_status(worktree_path)
                 )
-                prsvc = ctx.api.d.pr_services.get(worktree_path)
-                pr_info_data = None
-                if prsvc:
-                    try:
-                        pr_info_data = await asyncio.wait_for(
-                            prsvc.get_pr_info(branch_name), timeout=0.75
-                        )
-                    except asyncio.TimeoutError:
-                        pr_info_data = None
+                pr_info = await prs.get_pr_info(worktree_path, branch_name, timeout=0.75)
                 is_cached = have_cache
                 is_stale = bool(
                     cache_age_ms
-                    and cache_age_ms
-                    > ctx.config.cache_refresh_age.total_seconds() * 1000,
+                    and cache_age_ms > config.cache_refresh_age.total_seconds() * 1000,
                 )
                 state = (
                     GitstatusdState.RUNNING if gs_client.is_running else GitstatusdState.STOPPED
@@ -100,7 +92,7 @@ async def get_status(ctx: Context, params: StatusParams) -> StatusResponse:
                     _compute_status(worktree_path)
                 )
                 last_updated_at = datetime.now()
-                pr_info_data = None
+                pr_info = None
                 is_cached = False
                 cache_age_ms = None
                 is_stale = False
@@ -112,7 +104,7 @@ async def get_status(ctx: Context, params: StatusParams) -> StatusResponse:
                 _compute_status(worktree_path)
             )
             last_updated_at = datetime.now()
-            pr_info_data = None
+            pr_info = None
             is_cached = False
             cache_age_ms = None
             is_stale = False
@@ -121,9 +113,6 @@ async def get_status(ctx: Context, params: StatusParams) -> StatusResponse:
             CommitInfo.model_validate(commit_info_data) if commit_info_data else None
         )
         wtid = make_worktree_id(worktree_path.name)
-        pr_info = None
-        if pr_info_data:
-            pr_info = PRInfo(branch=branch_name, pr_data=coerce_prdata(pr_info_data))
         single_time = (time.time() - single_start) * 1000
         return (
             wtid,
@@ -142,8 +131,8 @@ async def get_status(ctx: Context, params: StatusParams) -> StatusResponse:
                 commit_info=commit_info,
                 ahead_count=ahead_behind[0],
                 behind_count=ahead_behind[1],
-                is_main=worktree_path.resolve() == ctx.config.main_repo.resolve(),
-                upstream_branch=ctx.config.upstream_branch,
+                is_main=worktree_path.resolve() == config.main_repo.resolve(),
+                upstream_branch=config.upstream_branch,
                 pr_info=pr_info,
                 gitstatusd_state=state,
                 restarts=0,
@@ -158,21 +147,21 @@ async def get_status(ctx: Context, params: StatusParams) -> StatusResponse:
     for wtid, status_result, proc_ms in worktree_results:
         items[wtid] = StatusItem(status=status_result, processing_time_ms=proc_ms)
 
-    total_time = (time.time() - ctx.start_time) * 1000
-    total_wt = len(ctx.api.d.known_worktrees)
-    with_git = sum(1 for p in ctx.api.d.gitstatusd_clients.values() if p.is_running)
+    total_time = 0.0
+    total_wt = len(worktree_paths)
+    with_git = sum(1 for p in (gitstat.get_client(pth) for pth in worktree_paths) if p and p.is_running)
     any_wt_error = any(item.status.last_error for item in items.values())
     github_state = ComponentState.DISABLED
-    if ctx.api.d.github_interface:
+    if prs.list_services():
         github_state = ComponentState.OK
-        for prsvc in ctx.api.d.pr_services.values():
+        for prsvc in prs.list_services():
             if prsvc.cached is None:
                 github_state = ComponentState.STARTING
                 break
     readiness = ReadinessSummary(
         total_worktrees=total_wt,
         with_gitstatusd=with_git,
-        discovery_scanning=ctx.daemon.discovery_scanning,
+        discovery_scanning=discovery.is_scanning(),
         github=github_state,
     )
 
@@ -180,7 +169,7 @@ async def get_status(ctx: Context, params: StatusParams) -> StatusResponse:
         discovery=ComponentStatus(
             state=(
                 ComponentState.SCANNING
-                if ctx.api.d.discovery_scanning
+                if discovery.is_scanning()
                 else ComponentState.OK
             ),
         ),
@@ -199,7 +188,7 @@ async def get_status(ctx: Context, params: StatusParams) -> StatusResponse:
         items=dict(items.items()),
         total_processing_time_ms=total_time,
         concurrent_requests=len(worktree_paths),
-        daemon_health=ctx.api.d.daemon_health,
+        daemon_health=health.health(),
         readiness_summary=readiness,
         components=components,
     )

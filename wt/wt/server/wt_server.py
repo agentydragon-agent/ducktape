@@ -280,8 +280,35 @@ class WtDaemon:
         self.git_manager = GitManager(config=self.config)
         self.repo_status = RepoStatus(self.git_manager, self.config)
         self.worktree_service = WorktreeService(self.git_manager, self.github_interface)
-        from .daemon_api import DaemonAPI
-        self.api = DaemonAPI(self)
+        # Build DI services
+        from .services import (
+            GitService,
+            WorktreeIndexService,
+            GitstatusdService,
+            PRServiceProvider,
+            StatusService,
+            DiscoveryService,
+            HealthService,
+            WorktreeCoordinator,
+        )
+        self.git_service = GitService(self.git_manager)
+        self.index_service = WorktreeIndexService(
+            get_index=lambda: self.worktree_index,
+            rebuild_index=lambda: self.rebuild_index(),
+            run_discovery_once=lambda: self._run_discovery_once(),
+        )
+        self.gitstatusd_service = GitstatusdService(lambda p: self.gitstatusd_clients.get(p))
+        self.pr_provider = PRServiceProvider(
+            get_service=lambda p: self.pr_services.get(p),
+            list_services=lambda: list(self.pr_services.values()),
+        )
+        self.status_service = StatusService(self.repo_status)
+        self.discovery_service = DiscoveryService(lambda: self.discovery_scanning)
+        self.health_service = HealthService(lambda: self.daemon_health)
+        self.coordinator = WorktreeCoordinator(
+            register_fn=self._register_worktree,
+            unregister_fn=self._unregister_worktree,
+        )
 
         # Server state
         self.server: asyncio.Server | None = None
@@ -740,14 +767,17 @@ class WtDaemon:
         async with self._state_lock:
             self.worktree_index = WorktreeIndex.build(self.known_worktrees.values(), self.config.main_repo)
 
-    async def add_known_worktree(self, info: DiscoveredWorktree) -> None:
+    async def _register_worktree(self, info: DiscoveredWorktree) -> None:
         async with self._state_lock:
             self.known_worktrees[info.path] = info
+        await self._start_gitstatusd_for_worktree(info)
+        await self.rebuild_index()
 
-    async def remove_known_worktree(self, path: Path) -> None:
+    async def _unregister_worktree(self, info: DiscoveredWorktree) -> None:
+        await self._stop_gitstatusd_for_worktree(info)
         async with self._state_lock:
-            if path in self.known_worktrees:
-                del self.known_worktrees[path]
+            self.known_worktrees.pop(info.path, None)
+        await self.rebuild_index()
 
 
 async def run_daemon(config) -> None:

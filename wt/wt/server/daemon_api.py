@@ -26,6 +26,18 @@ class DaemonAPI:
     def list_worktrees(self) -> list[GMWorktreeInfo]:
         return self.d.git_manager.list_worktrees()
 
+    def get_gitstatus_client(self, path: Path):
+        return self.d.gitstatusd_clients.get(path)
+
+    def list_pr_services(self):
+        return list(self.d.pr_services.values())
+
+    def discovery_scanning(self) -> bool:
+        return self.d.discovery_scanning
+
+    def daemon_health(self) -> DaemonHealth:
+        return self.d.daemon_health
+
     def get_repo_head_shorthand(self, path: Path) -> str | None:
         repo = self.d.git_manager.get_repo(path)
         return None if repo.head_is_detached else repo.head.shorthand or ""
@@ -66,12 +78,15 @@ class DaemonAPI:
         gs = self.d.gitstatusd_clients.get(path)
         return bool(gs and gs.is_running)
 
-    async def get_pr_info(self, worktree_path: Path, branch_name: str) -> PRInfo | None:
+    async def get_pr_info(self, worktree_path: Path, branch_name: str, timeout: float = 0.75) -> PRInfo | None:
         prsvc = self.d.pr_services.get(worktree_path)
         if not prsvc:
             return None
         try:
-            data = await prsvc.get_pr_info(branch_name)
+            import asyncio
+            data = await asyncio.wait_for(prsvc.get_pr_info(branch_name), timeout=timeout)
+        except asyncio.TimeoutError:
+            return None
         except Exception:
             return None
         if not data:

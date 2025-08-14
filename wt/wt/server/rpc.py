@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, Generic, Protocol, TypeVar, cast
+from inspect import signature
+from typing import Any, Awaitable, Callable, Generic, Protocol, TypeVar, cast, get_type_hints, get_origin
 import inspect
 import logging
 
@@ -9,17 +10,13 @@ from pydantic import BaseModel, ValidationError
 
 from ..shared.protocol import ErrorCodes, ErrorResponse, Request, Response, create_error_response
 from ..shared.configuration import Configuration
+from typing import get_origin
+from punq import Container
 
 ParamsT = TypeVar("ParamsT", bound=BaseModel)
 ResultT = TypeVar("ResultT")
 EventT = TypeVar("EventT", bound=BaseModel)
 
-
-@dataclass
-class Context:
-    api: "DaemonAPI"
-    config: Configuration
-    start_time: float
 
 
 class Emitter(Protocol[EventT]):
@@ -45,7 +42,7 @@ class RpcError(Exception):
         self.data = data
 
 
-Handler = Callable[[Context, Any], Awaitable[Any]]
+Handler = Callable[..., Awaitable[Any]]
 
 
 class RpcRegistry:
@@ -53,7 +50,48 @@ class RpcRegistry:
         self._handlers: dict[str, Callable[[Request, "WtDaemon", Any, float], Awaitable[Response | ErrorResponse]]] = {}
         self._stream_methods: set[str] = set()
 
-    def _wrap_method(self, method: str, params_model: type[ParamsT] | None, handler: Handler) -> None:
+    def _build_args(self, fn, *, daemon: "WtDaemon", params_obj: BaseModel | None, writer, start_time: float, stream_obj=None):
+        sig = signature(fn)
+        c = Container()
+        from .services import (
+            GitService,
+            WorktreeIndexService,
+            GitstatusdService,
+            PRServiceProvider,
+            StatusService,
+            DiscoveryService,
+            HealthService,
+            WorktreeCoordinator,
+        )
+        # Core config and per-request context
+        c.register(Configuration, instance=daemon.config)
+        c.register(float, instance=start_time)
+        # Service singletons wired from daemon
+        c.register(GitService, instance=daemon.git_service)
+        c.register(WorktreeIndexService, instance=daemon.index_service)
+        c.register(GitstatusdService, instance=daemon.gitstatusd_service)
+        c.register(PRServiceProvider, instance=daemon.pr_provider)
+        c.register(StatusService, instance=daemon.status_service)
+        c.register(DiscoveryService, instance=daemon.discovery_service)
+        c.register(HealthService, instance=daemon.health_service)
+        c.register(WorktreeCoordinator, instance=daemon.coordinator)
+        # Also expose WorktreeService for orchestration flows
+        from .worktree_service import WorktreeService
+        c.register(WorktreeService, instance=daemon.worktree_service)
+        args = []
+        type_hints = get_type_hints(fn)
+        for p in sig.parameters.values():
+            anno = type_hints.get(p.name, p.annotation)
+            if stream_obj is not None and (anno is Stream or get_origin(anno) is Stream):
+                args.append(stream_obj)
+            elif params_obj is not None and anno is type(params_obj):
+                args.append(params_obj)
+
+            else:
+                args.append(c.resolve(anno))
+        return args
+
+    def _wrap_method(self, method: str, params_model: type[ParamsT] | None, handler) -> None:
         async def _wrapped(req: Request, daemon: "WtDaemon", writer, start_time: float) -> Response | ErrorResponse:
             try:
                 params = (
@@ -62,13 +100,9 @@ class RpcRegistry:
             except ValidationError as e:
                 return create_error_response(ErrorCodes.INVALID_PARAMS, str(e), req.id)
 
-            from .daemon_api import DaemonAPI
-            ctx = Context(api=DaemonAPI(daemon), config=daemon.config, start_time=start_time)
             try:
-                if params is None:
-                    result = await cast(Callable[[Context], Awaitable[Any]], handler)(ctx)  # type: ignore[misc]
-                else:
-                    result = await cast(Callable[[Context, Any], Awaitable[Any]], handler)(ctx, params)  # type: ignore[misc]
+                args = self._build_args(handler, daemon=daemon, params_obj=params, writer=writer, start_time=start_time)
+                result = await handler(*args)
                 return Response(result=result, id=req.id)
             except RpcError as e:
                 return create_error_response(e.code, str(e), req.id, e.data)
@@ -78,17 +112,16 @@ class RpcRegistry:
 
         self._handlers[method] = _wrapped
 
-    def _wrap_stream(self, method: str, params_model: type[ParamsT], handler: Handler) -> None:
+    def _wrap_stream(self, method: str, params_model: type[ParamsT], handler) -> None:
         async def _wrapped(req: Request, daemon: "WtDaemon", writer, start_time: float) -> Response | ErrorResponse:
             try:
                 params = params_model.model_validate(req.params)
             except ValidationError as e:
                 return create_error_response(ErrorCodes.INVALID_PARAMS, str(e), req.id)
-            from .daemon_api import DaemonAPI
-            ctx = Context(api=DaemonAPI(daemon), config=daemon.config, start_time=start_time)
             try:
                 stream = Stream(writer)
-                result = await cast(Callable[[Context, Any, Stream[Any]], Awaitable[Any]], handler)(ctx, params, stream)  # type: ignore[misc]
+                args = self._build_args(handler, daemon=daemon, params_obj=params, writer=writer, start_time=start_time, stream_obj=stream)
+                result = await handler(*args)
                 return Response(result=result, id=req.id)
             except RpcError as e:
                 return create_error_response(e.code, str(e), req.id, e.data)
@@ -101,23 +134,14 @@ class RpcRegistry:
 
     def method(self, name: str, *, params: type[ParamsT] | None = None):
         def deco(fn: Callable[..., Awaitable[Any]]):
-            sig = inspect.signature(fn)
-            if params is None:
-                if len(sig.parameters) != 1:
-                    raise TypeError(f"Method '{name}' must accept (ctx)")
-                self._wrap_method(name, None, fn)
-            else:
-                if len(sig.parameters) != 2:
-                    raise TypeError(f"Method '{name}' must accept (ctx, params)")
-                self._wrap_method(name, params, fn)
+            # Allow DI-driven signatures; if params_model is provided, function must accept a matching params type somewhere
+            self._wrap_method(name, params, fn)
             return fn
         return deco
 
     def stream(self, name: str, *, params: type[ParamsT]):
         def deco(fn: Callable[..., Awaitable[Any]]):
-            sig = inspect.signature(fn)
-            if len(sig.parameters) != 3:
-                raise TypeError(f"Stream method '{name}' must accept (ctx, params, stream)")
+            # Allow DI-driven signatures; DI resolver will inject api/config/params/stream
             self._wrap_stream(name, params, fn)
             return fn
         return deco
