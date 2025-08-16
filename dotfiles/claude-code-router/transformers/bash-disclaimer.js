@@ -1,3 +1,5 @@
+// 2025-08-14: Claude CLI changelog claims to have fixed the heredoc escaping issue, so this is not needed anymore.
+//
 /**
  * BashDisclaimerTransformer
  * Order: place LAST in the transformer chain (after any Anthropic→OpenAI mapping) so it patches the final tool/function schema.
@@ -14,7 +16,7 @@ class BashDisclaimerTransformer {
       "- '!' triggers history expansion; the tool auto-escapes to \\! in double-quoted payloads, which breaks any code with ! (e.g., node -e 'if(!x){...}').",
       'Use these patterns instead:',
       '- Short snippets: python -c "print(\'ok\')".',
-      "- Multi-line: write a file and run it (avoid heredocs reading stdin).",
+      // "- Multi-line: write a file and run it (avoid heredocs reading stdin).",
       "- If you must use a heredoc, wrap inside: bash -lc \"python - <<'PY'\\nprint('ok')\\nPY\".",
       "- For jq at pipeline end, pass an explicit file (e.g., jq '.prog' input.json).",
       "- Avoid '!' in inline -e one-liners; prefer temp files or heredoc via bash -lc, or use jq for JSON edits.",
