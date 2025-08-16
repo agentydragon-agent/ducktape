@@ -56,3 +56,6 @@ class ConfigFile(BaseModel):
 
     # Daemon settings
     startup_timeout: float = 15.0  # seconds to wait for daemon startup
+
+    # Hook/script settings
+    post_creation_timeout: float = 60.0  # seconds to wait for post-creation script

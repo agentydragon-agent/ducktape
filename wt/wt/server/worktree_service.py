@@ -216,11 +216,12 @@ class WorktreeService:
         stderr_buf: list[str] = []
 
         async def _forward(stream, name):
+            chunk_size = 4096
             while True:
-                line = await stream.readline()
-                if not line:
+                data = await stream.read(chunk_size)
+                if not data:
                     break
-                text = line.decode(errors="replace")
+                text = data.decode(errors="replace")
                 if name == "stdout":
                     stdout_buf.append(text)
                 else:
@@ -262,8 +263,8 @@ class WorktreeService:
         return {
             "ran": True,
             "exit_code": proc.returncode,
-            "stdout": "".join(stdout_buf) if stdout_buf else None,
-            "stderr": "".join(stderr_buf) if stderr_buf else None,
+            "stdout": None,
+            "stderr": None,
             "error": None,
         }
 

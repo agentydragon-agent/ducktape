@@ -188,6 +188,7 @@ Optional settings:
 - `github_enabled`: Enable GitHub integration (default: true)
 - `gitstatusd_path`: Path to gitstatusd binary (optional)
 - `post_creation_script`: Script to run after creating a worktree (optional)
+- `post_creation_timeout`: Seconds to wait for post-creation script before killing it (default: 60)
 
 Sample config.yaml:
 

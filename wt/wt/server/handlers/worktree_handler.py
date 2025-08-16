@@ -124,7 +124,7 @@ async def worktree_create(
             ev = HookOutputEvent(stream=(HookStream.STDOUT if name == "stdout" else HookStream.STDERR), data=data)
             stream.emit(ev)
         post = await WorktreeService.run_post_creation_script(
-            str(script), worktree_path, _sink
+            str(script), worktree_path, _sink, timeout=config.post_creation_timeout.total_seconds()
         )
 
     result = WorktreeCreateResult(

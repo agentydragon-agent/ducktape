@@ -128,7 +128,6 @@ class GitManager:
     # Worktree operations
     def list_worktrees(self) -> list[WorktreeInfo]:
         """List all worktrees using pygit2 API."""
-        # Main repository is always included
         current_branch = (
             self._main_repo.head.shorthand
             if not self._main_repo.head_is_detached
@@ -144,18 +143,24 @@ class GitManager:
             )
         ]
 
-        # Add all other worktrees with actual branch name read from their repo
+        # Add all other worktrees; compute branch name only when repo is valid
         for wt_name in self._main_repo.list_worktrees():
             wt_path = Path(self._main_repo.lookup_worktree(wt_name).path)
+            exists = wt_path.exists()
             branch_name = ""
-            wt_repo = pygit2.Repository(str(wt_path))
-            if not wt_repo.head_is_detached:
-                branch_name = wt_repo.head.shorthand or ""
+            if exists:
+                try:
+                    wt_repo = pygit2.Repository(str(wt_path))
+                    if not wt_repo.head_is_detached:
+                        branch_name = wt_repo.head.shorthand or ""
+                except (pygit2.GitError, OSError, ValueError, TypeError):
+                    # Treat as non-existent/invalid repo; leave branch_name empty
+                    exists = False
             worktree_infos.append(
                 WorktreeInfo(
                     path=wt_path,
                     branch=branch_name,
-                    exists=wt_path.exists(),
+                    exists=exists,
                     is_main=False,
                 )
             )

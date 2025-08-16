@@ -13,7 +13,10 @@ class RepoStatus:
         self.config = config
 
     def summarize_status(self, worktree_path: Path) -> tuple[CommitInfo | None, tuple[int, int], str]:
-        repo = self.git_manager.get_repo(worktree_path)
+        try:
+            repo = self.git_manager.get_repo(worktree_path)
+        except (pygit2.GitError, OSError, ValueError):
+            return None, (0, 0), ""
         branch_name = repo.head.shorthand
         commit_info: CommitInfo | None
         try:

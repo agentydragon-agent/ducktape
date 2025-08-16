@@ -16,22 +16,36 @@ from pathlib import Path
 from typing import Callable
 
 import psutil
-from pydantic import TypeAdapter, ValidationError, BaseModel
+from pydantic import BaseModel, TypeAdapter, ValidationError
 
 from ..shared.configuration import Configuration
 from ..shared.error_handling import validate_worktree_name
-from ..shared.protocol import (ErrorResponse, HookOutputEvent, ProgressEvent,
-                               Request, Response, StartupMessage, StatusParams,
-                               StatusResponse, TeleportCdThere,
-                               TeleportDoesNotExist, TeleportResult,
-                               WorktreeCreateParams, WorktreeCreateResult,
-                               WorktreeDeleteParams, WorktreeDeleteResult,
-                               WorktreeGetByNameParams,
-                               WorktreeGetByNameResult, WorktreeID,
-                               WorktreeIdentifyParams, WorktreeIdentifyResult,
-                               WorktreeListResult, WorktreeResolvePathParams,
-                               WorktreeResolvePathResult,
-                               WorktreeTeleportTargetParams)
+from ..shared.protocol import (
+    ErrorResponse,
+    HookOutputEvent,
+    ProgressEvent,
+    Request,
+    Response,
+    StartupMessage,
+    StatusParams,
+    StatusResponse,
+    TeleportCdThere,
+    TeleportDoesNotExist,
+    TeleportResult,
+    WorktreeCreateParams,
+    WorktreeCreateResult,
+    WorktreeDeleteParams,
+    WorktreeDeleteResult,
+    WorktreeGetByNameParams,
+    WorktreeGetByNameResult,
+    WorktreeID,
+    WorktreeIdentifyParams,
+    WorktreeIdentifyResult,
+    WorktreeListResult,
+    WorktreeResolvePathParams,
+    WorktreeResolvePathResult,
+    WorktreeTeleportTargetParams,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -43,10 +57,12 @@ class WtClient:
     config: Configuration
     verbose: bool = False
     _handshake_pipe: int | None = field(default=None, init=False)
-    _progress_callback: Callable[[ProgressEvent], None] | None = field(default=None, init=False)
-    _hook_output_callback: Callable[[HookOutputEvent], None] | None = field(default=None, init=False)
-
-
+    _progress_callback: Callable[[ProgressEvent], None] | None = field(
+        default=None, init=False
+    )
+    _hook_output_callback: Callable[[HookOutputEvent], None] | None = field(
+        default=None, init=False
+    )
 
     # Class-level lock to prevent multiple daemon startups
     _daemon_start_lock = asyncio.Lock()
@@ -58,7 +74,9 @@ class WtClient:
     def set_progress_callback(self, cb: Callable[[ProgressEvent], None] | None) -> None:
         self._progress_callback = cb
 
-    def set_hook_output_callback(self, cb: Callable[[HookOutputEvent], None] | None) -> None:
+    def set_hook_output_callback(
+        self, cb: Callable[[HookOutputEvent], None] | None
+    ) -> None:
         self._hook_output_callback = cb
 
     async def current_worktree_info(self) -> tuple[Path | None, str | None]:
@@ -108,32 +126,52 @@ class WtClient:
 
             try:
                 loop = asyncio.get_event_loop()
-                reader_future = loop.run_in_executor(None, self._read_handshake_from_pipe)
+                reader_future = loop.run_in_executor(
+                    None, self._read_handshake_from_pipe
+                )
                 first_wait = min(1.0, self.config.startup_timeout.total_seconds())
                 try:
-                    handshake_data = await asyncio.wait_for(asyncio.shield(reader_future), timeout=first_wait)
+                    handshake_data = await asyncio.wait_for(
+                        asyncio.shield(reader_future), timeout=first_wait
+                    )
                 except asyncio.TimeoutError:
-                    remaining = max(0.0, self.config.startup_timeout.total_seconds() - first_wait)
-                    handshake_data = await asyncio.wait_for(asyncio.shield(reader_future), timeout=remaining if remaining > 0 else 0.1)
+                    remaining = max(
+                        0.0, self.config.startup_timeout.total_seconds() - first_wait
+                    )
+                    handshake_data = await asyncio.wait_for(
+                        asyncio.shield(reader_future),
+                        timeout=remaining if remaining > 0 else 0.1,
+                    )
 
                 protocol_version = handshake_data.get("protocol_version", 0)
                 if protocol_version != 1:
-                    raise RuntimeError(f"Incompatible daemon protocol version {protocol_version}, expected 1")
+                    raise RuntimeError(
+                        f"Incompatible daemon protocol version {protocol_version}, expected 1"
+                    )
 
                 if handshake_data.get("success"):
                     pid = handshake_data.get("pid")
                     logger.info("wt daemon: startup handshake ok (pid %s)", pid)
                     if self._is_daemon_running():
-                        logger.info("Daemon started successfully with handshake confirmation")
+                        logger.info(
+                            "Daemon started successfully with handshake confirmation"
+                        )
                         return
-                    raise RuntimeError("Daemon handshake successful but daemon not accessible")
+                    raise RuntimeError(
+                        "Daemon handshake successful but daemon not accessible"
+                    )
                 error_message = handshake_data.get("error", "Unknown startup error")
                 raise RuntimeError(f"Daemon startup failed:\n{error_message}")
 
             except asyncio.TimeoutError:
                 timeout_secs = self.config.startup_timeout.total_seconds()
-                logger.warning("Daemon startup timed out - no handshake received within %.1f seconds", timeout_secs)
-                raise RuntimeError(f"Daemon startup timed out after {timeout_secs:.1f} seconds")
+                logger.warning(
+                    "Daemon startup timed out - no handshake received within %.1f seconds",
+                    timeout_secs,
+                )
+                raise RuntimeError(
+                    f"Daemon startup timed out after {timeout_secs:.1f} seconds"
+                )
             except (OSError, RuntimeError, ValueError) as e:
                 diag = []
                 try:
@@ -145,10 +183,16 @@ class WtClient:
                 except OSError:
                     pass
                 try:
-                    diag.append(f"pid file exists: {self.config.daemon_pid_path.exists()}")
+                    diag.append(
+                        f"pid file exists: {self.config.daemon_pid_path.exists()}"
+                    )
                     if self.config.daemon_pid_path.exists():
-                        diag.append(f"pid file contents: {self.config.daemon_pid_path.read_text().strip()}")
-                    diag.append(f"socket exists: {self.config.daemon_socket_path.exists()}")
+                        diag.append(
+                            f"pid file contents: {self.config.daemon_pid_path.read_text().strip()}"
+                        )
+                    diag.append(
+                        f"socket exists: {self.config.daemon_socket_path.exists()}"
+                    )
                 except OSError:
                     pass
                 raise RuntimeError("Daemon startup failed.\n" + "\n".join(diag)) from e
@@ -204,7 +248,11 @@ class WtClient:
                         try:
                             project_root = str(Path(__file__).resolve().parents[2])
                             existing = env.get("PYTHONPATH", "")
-                            env["PYTHONPATH"] = f"{project_root}:{existing}" if existing else project_root
+                            env["PYTHONPATH"] = (
+                                f"{project_root}:{existing}"
+                                if existing
+                                else project_root
+                            )
                         except Exception:
                             pass
                         os.execve(
@@ -247,7 +295,7 @@ class WtClient:
         or a single failure {success=False, error=...}
         """
 
-        if self._handshake_pipe is None:
+        if not self._handshake_pipe:
             raise RuntimeError("No handshake pipe available")
 
         with os.fdopen(self._handshake_pipe, "r") as pipe_file:
@@ -278,9 +326,10 @@ class WtClient:
         worktree_ids: list[WorktreeID] | None = None,
     ) -> StatusResponse:
         await self._start_daemon_if_needed()
-        adapter = TypeAdapter(StatusResponse)
-        params = StatusParams(worktree_ids=[wtid for wtid in (worktree_ids or []) if wtid is not None])
-        return await self._rpc("get_status", params, adapter)
+        params = StatusParams(
+            worktree_ids=[wtid for wtid in (worktree_ids or []) if wtid is not None]
+        )
+        return await self._rpc("get_status", params, TypeAdapter(StatusResponse))
 
     async def get_working_directory_status(
         self,
@@ -373,7 +422,7 @@ class WtClient:
                 # Otherwise treat as final response
                 response_json = obj
                 break
-            if response_json is None:
+            if not response_json:
                 raise RuntimeError("No response from daemon for worktree_create")
 
             writer.close()
@@ -388,7 +437,11 @@ class WtClient:
                 if result.post_hook:
                     # Non-zero exit code => fail
                     if result.post_hook.exit_code and result.post_hook.exit_code != 0:
-                        out = (result.post_hook.stdout or "") + ("\n" if result.post_hook.stdout else "") + (result.post_hook.stderr or "")
+                        out = (
+                            (result.post_hook.stdout or "")
+                            + ("\n" if result.post_hook.stdout else "")
+                            + (result.post_hook.stderr or "")
+                        )
                         if out.strip():
                             print(out)
                         raise RuntimeError(
@@ -396,7 +449,11 @@ class WtClient:
                         )
                     # Execution error surfaced by server (e.g. script disappeared)
                     if result.post_hook.error:
-                        out = (result.post_hook.stdout or "") + ("\n" if result.post_hook.stdout else "") + (result.post_hook.stderr or "")
+                        out = (
+                            (result.post_hook.stdout or "")
+                            + ("\n" if result.post_hook.stdout else "")
+                            + (result.post_hook.stderr or "")
+                        )
                         if out.strip():
                             print(out)
                         raise RuntimeError(
@@ -404,14 +461,20 @@ class WtClient:
                         )
                     # Ran flag false (e.g. not_found/not_file in legacy path) => fail
                     if not result.post_hook.ran:
-                        out = (result.post_hook.stdout or "") + ("\n" if result.post_hook.stdout else "") + (result.post_hook.stderr or "")
+                        out = (
+                            (result.post_hook.stdout or "")
+                            + ("\n" if result.post_hook.stdout else "")
+                            + (result.post_hook.stderr or "")
+                        )
                         if out.strip():
                             print(out)
                         raise RuntimeError("Post-creation script did not run")
                 return result
             except (json.JSONDecodeError, ValidationError, TypeError, ValueError) as e:
                 logger.exception("Failed to parse daemon worktree_create response")
-                raise RuntimeError(f"Failed to parse daemon worktree_create response: {e}")
+                raise RuntimeError(
+                    f"Failed to parse daemon worktree_create response: {e}"
+                )
 
         except (ConnectionError, FileNotFoundError, OSError, asyncio.TimeoutError) as e:
             logger.exception("Failed to communicate with daemon for worktree_create")
@@ -419,7 +482,11 @@ class WtClient:
 
     async def delete_worktree(self, wtid: WorktreeID) -> WorktreeDeleteResult:
         await self._start_daemon_if_needed()
-        return await self._rpc("worktree_delete", WorktreeDeleteParams(wtid=wtid), TypeAdapter(WorktreeDeleteResult))
+        return await self._rpc(
+            "worktree_delete",
+            WorktreeDeleteParams(wtid=wtid),
+            TypeAdapter(WorktreeDeleteResult),
+        )
 
     async def list_worktrees(self) -> WorktreeListResult:
         await self._start_daemon_if_needed()
@@ -427,10 +494,18 @@ class WtClient:
 
     async def identify_worktree(self, absolute_path: str) -> WorktreeIdentifyResult:
         await self._start_daemon_if_needed()
-        return await self._rpc("worktree_identify", WorktreeIdentifyParams(absolute_path=absolute_path), TypeAdapter(WorktreeIdentifyResult))
+        return await self._rpc(
+            "worktree_identify",
+            WorktreeIdentifyParams(absolute_path=absolute_path),
+            TypeAdapter(WorktreeIdentifyResult),
+        )
 
     async def get_worktree_by_name(self, name: str) -> WorktreeGetByNameResult:
-        return await self._rpc("worktree_get_by_name", WorktreeGetByNameParams(name=name), TypeAdapter(WorktreeGetByNameResult))
+        return await self._rpc(
+            "worktree_get_by_name",
+            WorktreeGetByNameParams(name=name),
+            TypeAdapter(WorktreeGetByNameResult),
+        )
 
     async def _rpc(self, method: str, params_model, result_adapter: TypeAdapter):
         await self._start_daemon_if_needed()
@@ -440,13 +515,13 @@ class WtClient:
             params = params_model.model_dump()
         elif isinstance(params_model, dict):
             params = params_model
-        elif params_model is None:
-            params = {}
         else:
             params = {}
         req = Request(method=method, params=params, id=uuid.uuid4())
         try:
-            reader, writer = await asyncio.open_unix_connection(self.config.daemon_socket_path)
+            reader, writer = await asyncio.open_unix_connection(
+                self.config.daemon_socket_path
+            )
             writer.write(req.model_dump_json().encode())
             writer.write(b"\n")
             await writer.drain()
@@ -460,15 +535,26 @@ class WtClient:
                 raise RuntimeError(err.error.message)
             resp = Response.model_validate(obj)
             return result_adapter.validate_python(resp.result)
-        except (ConnectionError, FileNotFoundError, OSError, asyncio.TimeoutError, json.JSONDecodeError, ValidationError) as e:
+        except (
+            ConnectionError,
+            FileNotFoundError,
+            OSError,
+            asyncio.TimeoutError,
+            json.JSONDecodeError,
+            ValidationError,
+        ) as e:
             logger.error("RPC %s failed: %s", method, e)
             raise RuntimeError(f"RPC {method} failed: {e}")
 
     async def resolve_path(self, params: WorktreeResolvePathParams) -> str:
-        result = await self._rpc("worktree_resolve_path", params, TypeAdapter(WorktreeResolvePathResult))
+        result = await self._rpc(
+            "worktree_resolve_path", params, TypeAdapter(WorktreeResolvePathResult)
+        )
         return result.absolute_path
 
-    async def resolve_path_simple(self, worktree_name: str | None, path_spec: str) -> Path:
+    async def resolve_path_simple(
+        self, worktree_name: str | None, path_spec: str
+    ) -> Path:
         params = WorktreeResolvePathParams(
             worktree_name=worktree_name,
             path_spec=path_spec,
@@ -476,10 +562,14 @@ class WtClient:
         )
         return Path(await self.resolve_path(params))
 
-    async def teleport_target(self, target_name: str, current_path: str) -> TeleportCdThere | TeleportDoesNotExist:
+    async def teleport_target(
+        self, target_name: str, current_path: str
+    ) -> TeleportCdThere | TeleportDoesNotExist:
         return await self._rpc(
             "worktree_teleport_target",
-            WorktreeTeleportTargetParams(target_name=target_name, current_path=current_path),
+            WorktreeTeleportTargetParams(
+                target_name=target_name, current_path=current_path
+            ),
             TypeAdapter(TeleportResult),
         )
 
@@ -497,7 +587,7 @@ class WtClient:
         from_default: bool = True,
     ) -> Path:
         validate_worktree_name(name)
-        if source_name is not None:
+        if source_name:
             src = await self.get_worktree_by_name(source_name)
             if not src.exists or not src.wtid:
                 raise RuntimeError(f"Worktree '{source_name}' not found")
@@ -506,7 +596,9 @@ class WtClient:
         if from_default:
             result = await self.create_worktree(name)
             return Path(result.absolute_path)
-        raise RuntimeError("Invalid create_worktree request: no source and from_default=False")
+        raise RuntimeError(
+            "Invalid create_worktree request: no source and from_default=False"
+        )
 
     async def remove_worktree_by_name(self, name: str, *, force: bool = False) -> None:
         listing = await self.list_worktrees()
@@ -517,5 +609,5 @@ class WtClient:
                 break
         if target is None:
             raise RuntimeError(f"Worktree '{name}' not found")
+        # Server currently always forces removal; 'force' retained for CLI parity
         await self.delete_worktree(target)
-
