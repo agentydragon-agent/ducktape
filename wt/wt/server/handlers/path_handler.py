@@ -2,31 +2,34 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from wt.shared.configuration import Configuration
+
 from ...shared.constants import MAIN_WORKTREE_DISPLAY_NAME
 from ...shared.protocol import (
-    Request,
-    Response,
+    ErrorCodes,
     TeleportCdThere,
     TeleportDoesNotExist,
     WorktreeResolvePathParams,
     WorktreeResolvePathResult,
     WorktreeTeleportTargetParams,
-    ErrorCodes,
 )
-from ..rpc import rpc, RpcError
-from wt.shared.configuration import Configuration
-from ..worktree_index import WorktreeIndex
+from ..rpc import RpcError, rpc
 from ..services import WorktreeIndexService
 
 
 def _find_target_worktree(
-    index: WorktreeIndexService, worktree_name: str | None, current_path: Path
+    index: WorktreeIndexService,
+    worktree_name: str | None,
+    current_path: Path,
 ):
     if worktree_name == MAIN_WORKTREE_DISPLAY_NAME and index.main():
         return index.main(), None
     resolved = index.resolve_target(worktree_name, current_path)
     if not resolved:
-        raise RpcError(code=ErrorCodes.WORKTREE_NOT_FOUND, message=f"Worktree '{worktree_name or current_path}' not found")
+        raise RpcError(
+            code=ErrorCodes.WORKTREE_NOT_FOUND,
+            message=f"Worktree '{worktree_name or current_path}' not found",
+        )
     return resolved
 
 
@@ -40,7 +43,10 @@ def _resolve_path_spec(
         return target_path / path_spec.lstrip("/")
     if path_spec.startswith("./"):
         if not is_current_worktree:
-            raise RpcError(code=ErrorCodes.INVALID_PARAMS, message="Cannot use relative path for different worktree")
+            raise RpcError(
+                code=ErrorCodes.INVALID_PARAMS,
+                message="Cannot use relative path for different worktree",
+            )
         current_dir = (
             target_path / current_relative_path
             if current_relative_path
@@ -51,10 +57,16 @@ def _resolve_path_spec(
 
 
 @rpc.method("worktree_resolve_path", params=WorktreeResolvePathParams)
-async def handle_resolve_path(index: WorktreeIndexService, config: Configuration, params: WorktreeResolvePathParams) -> WorktreeResolvePathResult:
+async def handle_resolve_path(
+    index: WorktreeIndexService,
+    config: Configuration,
+    params: WorktreeResolvePathParams,
+) -> WorktreeResolvePathResult:
     current_path = Path(params.current_path)
     target_worktree, current_relative_path = _find_target_worktree(
-        index, params.worktree_name, current_path
+        index,
+        params.worktree_name,
+        current_path,
     )
     resolved_path = _resolve_path_spec(
         params.path_spec,
@@ -66,9 +78,17 @@ async def handle_resolve_path(index: WorktreeIndexService, config: Configuration
 
 
 @rpc.method("worktree_teleport_target", params=WorktreeTeleportTargetParams)
-async def handle_teleport_target(index: WorktreeIndexService, config: Configuration, params: WorktreeTeleportTargetParams) -> TeleportCdThere | TeleportDoesNotExist:
+async def handle_teleport_target(
+    index: WorktreeIndexService,
+    config: Configuration,
+    params: WorktreeTeleportTargetParams,
+) -> TeleportCdThere | TeleportDoesNotExist:
     current_path = Path(params.current_path)
-    target_wt = index.main() if params.target_name == MAIN_WORKTREE_DISPLAY_NAME else index.get_by_name(params.target_name)
+    target_wt = (
+        index.main()
+        if params.target_name == MAIN_WORKTREE_DISPLAY_NAME
+        else index.get_by_name(params.target_name)
+    )
     if not target_wt:
         return TeleportDoesNotExist(type="does_not_exist", name=params.target_name)
     resolved = index.resolve_target(None, current_path)

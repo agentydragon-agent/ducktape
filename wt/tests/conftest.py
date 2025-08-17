@@ -25,8 +25,11 @@ def _project_root_on_pythonpath():
 
     project_root = str(Path(__file__).resolve().parents[1])
     existing = os.environ.get("PYTHONPATH", "")
-    os.environ["PYTHONPATH"] = f"{project_root}:{existing}" if existing else project_root
+    os.environ["PYTHONPATH"] = (
+        f"{project_root}:{existing}" if existing else project_root
+    )
     os.environ["WT_TEST_MODE"] = "1"
+
 
 # =============================================================================
 # Factory Fixtures - Modern pytest pattern for test setup
@@ -158,8 +161,6 @@ def mock_process_check():
     ) as mock:
         mock.return_value = []  # No processes by default
         yield mock
-
-
 
 
 def assert_worktree_exists(worktree_path: Path, expected_branch: str | None = None):

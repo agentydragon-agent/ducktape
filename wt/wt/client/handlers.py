@@ -72,7 +72,9 @@ async def handle_list_worktrees(daemon_client, formatter) -> None:
     """Handle the ls command to list all worktrees (excluding main)."""
     # Use dedicated RPC for listing
     listing = await daemon_client.list_worktrees()
-    formatter.render_worktree_list([(wt.name, Path(wt.absolute_path), wt.exists) for wt in listing.worktrees])
+    formatter.render_worktree_list(
+        [(wt.name, Path(wt.absolute_path), wt.exists) for wt in listing.worktrees],
+    )
 
 
 async def handle_status_single(daemon_client, formatter, worktree_name: str) -> None:
@@ -121,7 +123,8 @@ async def handle_create_worktree(config, name: str, from_default: bool = True) -
     daemon_client.set_hook_output_callback(on_hook)
 
     new_path = await daemon_client.create_worktree_convenience(
-        name, from_default=from_default
+        name,
+        from_default=from_default,
     )
     emit_cd_command(new_path, main_repo=config.main_repo)
 
@@ -219,7 +222,8 @@ async def handle_navigate_to_worktree(config, worktree_name: str) -> None:
         return
 
     if click.confirm(
-        f"Worktree '{worktree_name}' does not exist. Create it?", default=False
+        f"Worktree '{worktree_name}' does not exist. Create it?",
+        default=False,
     ):
         # Delegate to shared create handler to reuse progress/hook streaming
         await handle_create_worktree(config, worktree_name, from_default=True)

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from datetime import datetime
 from pathlib import Path
 
-from ...shared.github_models import PRInfo, coerce_prdata
+from wt.shared.configuration import Configuration
+
 from ...shared.protocol import (
     CommitInfo,
     ComponentsStatus,
@@ -20,16 +22,33 @@ from ...shared.protocol import (
     WorktreeID,
 )
 from ..rpc import rpc
-from wt.shared.configuration import Configuration
-from ..worktree_index import WorktreeIndex
-from ..services import StatusService, GitstatusdService, PRServiceProvider, WorktreeIndexService, DiscoveryService, HealthService, GitService
-
-from ..types import DiscoveredWorktree
+from ..services import (
+    DiscoveryService,
+    GitService,
+    GitstatusdService,
+    HealthService,
+    PRServiceProvider,
+    StatusService,
+    WorktreeIndexService,
+)
 from ..worktree_ids import make_worktree_id, parse_worktree_id
+
+logger = logging.getLogger(__name__)
+_bg_tasks: list[asyncio.Task] = []
 
 
 @rpc.method("get_status", params=StatusParams)
-async def get_status(status: StatusService, gitstat: GitstatusdService, prs: PRServiceProvider, index: WorktreeIndexService, discovery: DiscoveryService, health: HealthService, git: GitService, config: Configuration, params: StatusParams) -> StatusResponse:
+async def get_status(
+    status: StatusService,
+    gitstat: GitstatusdService,
+    prs: PRServiceProvider,
+    index: WorktreeIndexService,
+    discovery: DiscoveryService,
+    health: HealthService,
+    git: GitService,
+    config: Configuration,
+    params: StatusParams,
+) -> StatusResponse:
     worktree_ids = params.worktree_ids
 
     if worktree_ids:
@@ -40,8 +59,12 @@ async def get_status(status: StatusService, gitstat: GitstatusdService, prs: PRS
             worktree_paths.append(worktree_path)
     else:
         if not index.list_paths():
-            asyncio.create_task(index.ensure_discovery())
+            logger.debug("Index empty; scheduling discovery run")
+            _bg_tasks.append(asyncio.create_task(index.ensure_discovery()))
         worktree_paths = index.list_paths()
+        if not worktree_paths:
+            # Minimal safe fallback: include main repo to avoid empty UI when daemon just started
+            worktree_paths = [config.main_repo]
 
     items: dict[WorktreeID, StatusItem] = {}
 
@@ -65,8 +88,10 @@ async def get_status(status: StatusService, gitstat: GitstatusdService, prs: PRS
                     else None
                 )
                 if not have_cache:
-                    _update_task = asyncio.create_task(
-                        gs_client.update_working_status()
+                    _bg_tasks.append(
+                        asyncio.create_task(
+                            gs_client.update_working_status(),
+                        ),
                     )
                 if last_updated_at is None:
                     last_updated_at = datetime.now()
@@ -74,15 +99,21 @@ async def get_status(status: StatusService, gitstat: GitstatusdService, prs: PRS
                 commit_info_data, ahead_behind, branch_name, worktree_last_error = (
                     _compute_status(worktree_path)
                 )
-                asyncio.create_task(prs.get_pr_info(worktree_path, branch_name, timeout=0.2))
-                pr_info = None
+                wt_info = index.get_by_path(worktree_path)
+                wtid_cached = (
+                    wt_info.wtid if wt_info else make_worktree_id(worktree_path.name)
+                )
+                pr_info = prs.get_pr_info_cached(wtid_cached, branch_name)
+                prs.schedule_pr_refresh(wtid_cached, branch_name)
                 is_cached = have_cache
                 is_stale = bool(
                     cache_age_ms
                     and cache_age_ms > config.cache_refresh_age.total_seconds() * 1000,
                 )
                 state = (
-                    GitstatusdState.RUNNING if gs_client.is_running else GitstatusdState.STOPPED
+                    GitstatusdState.RUNNING
+                    if gs_client.is_running
+                    else GitstatusdState.STOPPED
                 )
             except asyncio.TimeoutError:
                 single_time = (time.time() - single_start) * 1000
@@ -142,22 +173,30 @@ async def get_status(status: StatusService, gitstat: GitstatusdService, prs: PRS
         )
 
     worktree_results = await asyncio.gather(
-        *[process_single_worktree(p) for p in worktree_paths]
+        *[process_single_worktree(p) for p in worktree_paths],
     )
     for wtid, status_result, proc_ms in worktree_results:
         items[wtid] = StatusItem(status=status_result, processing_time_ms=proc_ms)
 
     total_time = 0.0
     total_wt = len(worktree_paths)
-    with_git = sum(1 for p in (gitstat.get_client(pth) for pth in worktree_paths) if p and p.is_running)
+    with_git = sum(
+        1
+        for p in (gitstat.get_client(pth) for pth in worktree_paths)
+        if p and p.is_running
+    )
     any_wt_error = any(item.status.last_error for item in items.values())
     github_state = ComponentState.DISABLED
-    if prs.list_services():
-        github_state = ComponentState.OK
-        for prsvc in prs.list_services():
-            if prsvc.cached is None:
-                github_state = ComponentState.STARTING
-                break
+    if config.github_enabled:
+        services = prs.values()
+        if services:
+            github_state = ComponentState.OK
+            for prsvc in services:
+                if prsvc.cached is None:
+                    github_state = ComponentState.STARTING
+                    break
+        else:
+            github_state = ComponentState.ERROR
     readiness = ReadinessSummary(
         total_worktrees=total_wt,
         with_gitstatusd=with_git,
@@ -184,7 +223,7 @@ async def get_status(status: StatusService, gitstat: GitstatusdService, prs: PRS
         ),
     )
 
-    status_response = StatusResponse(
+    return StatusResponse(
         items=dict(items.items()),
         total_processing_time_ms=total_time,
         concurrent_requests=len(worktree_paths),
@@ -192,5 +231,3 @@ async def get_status(status: StatusService, gitstat: GitstatusdService, prs: PRS
         readiness_summary=readiness,
         components=components,
     )
-
-    return status_response

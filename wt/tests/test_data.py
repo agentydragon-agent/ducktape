@@ -74,8 +74,6 @@ class TestData:
         CONFIG_FILE = "config.yaml"
 
 
-
-
 class ConfigPresets:
     """Configuration presets for different test scenarios."""
 

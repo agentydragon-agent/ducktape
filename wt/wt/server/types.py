@@ -1,20 +1,25 @@
 from __future__ import annotations
 
-import time
+from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 
+from ..shared.protocol import WorktreeID
 
+
+def _now() -> datetime:
+    return datetime.now()
+
+
+@dataclass(frozen=True, slots=True)
 class DiscoveredWorktree:
-    """Filesystem-discovered worktree instance (daemon-internal)."""
+    """Filesystem-discovered worktree instance (daemon-internal).
 
-    def __init__(self, path: Path, name: str):
-        self.path = path
-        self.name = name
-        self.discovered_at = time.time()
-        self.last_seen = time.time()
+    wtid must be provided by the minting point; do not derive here.
+    """
 
-    def __hash__(self):
-        return hash(self.path)
-
-    def __eq__(self, other):
-        return isinstance(other, DiscoveredWorktree) and self.path == other.path
+    path: Path
+    name: str
+    wtid: WorktreeID
+    discovered_at: datetime = field(default_factory=_now, compare=False)
+    last_seen: datetime = field(default_factory=_now, compare=False)

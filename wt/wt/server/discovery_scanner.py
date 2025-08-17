@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from .types import DiscoveredWorktree
+from .worktree_ids import make_worktree_id
 
 
 class DiscoveryScanner:
@@ -14,5 +15,7 @@ class DiscoveryScanner:
             if not path.is_dir():
                 continue
             if (path / ".git").exists() or (path / ".git").is_file():
-                current.add(DiscoveredWorktree(path, path.name))
+                current.add(
+                    DiscoveredWorktree(path, path.name, make_worktree_id(path.name)),
+                )
         return current

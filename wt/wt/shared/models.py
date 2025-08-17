@@ -21,7 +21,6 @@ class Worktree:
     branch: str
     is_main: bool = False
 
-
     @classmethod
     def main_repo(cls, repo_path: Path, branch: str) -> Worktree:
         return cls(

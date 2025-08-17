@@ -179,9 +179,9 @@ def test_real_workflow_git_repo_to_worktrees_to_status(real_temp_repo, real_env)
     # Verify git branch was created correctly using pygit2
     repo1 = pygit2.Repository(str(worktree1_path))
     current_branch = repo1.head.shorthand
-    assert (
-        current_branch == "test/feature1"
-    ), f"Expected test/feature1 branch, got: {current_branch}"
+    assert current_branch == "test/feature1", (
+        f"Expected test/feature1 branch, got: {current_branch}"
+    )
 
     # Step 3: Create second worktree
     result = run_cli_command(["sh", "-c", "feature2"], env=real_env, timeout=10.0)

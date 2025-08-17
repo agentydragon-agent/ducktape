@@ -11,7 +11,10 @@ logger = logging.getLogger(__name__)
 
 class DebouncedGitstatusRefresh:
     def __init__(
-        self, worktree_path: Path, refresh_callback, debounce_delay: float = 0.5
+        self,
+        worktree_path: Path,
+        refresh_callback,
+        debounce_delay: float = 0.5,
     ):
         self.worktree_path = worktree_path
         self.refresh_callback = refresh_callback
@@ -53,9 +56,12 @@ class DebouncedGitstatusRefresh:
     async def stop(self):
         self.is_running = False
         if self.observer:
-            self.observer.stop()
-            self.observer.join()
-            self.observer = None
+            try:
+                self.observer.stop()
+                # Join the watchdog thread without blocking the event loop (Python 3.12)
+                await asyncio.to_thread(self.observer.join)
+            finally:
+                self.observer = None
         if self._pending:
             self._pending.cancel()
             self._pending = None
@@ -72,7 +78,7 @@ class DebouncedGitstatusRefresh:
                 try:
                     loop = asyncio.get_event_loop()
                     loop.call_soon_threadsafe(
-                        lambda: asyncio.create_task(self._debounced(reason))
+                        lambda: asyncio.create_task(self._debounced(reason)),
                     )
                 except Exception:
                     pass

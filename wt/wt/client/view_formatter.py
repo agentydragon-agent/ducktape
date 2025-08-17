@@ -80,9 +80,7 @@ class ViewFormatter:
     ) -> str:
         """Format a status row with nice alignment."""
         # Commit hash - vertically aligned column
-        commit_short = (
-            status.commit_info.short_hash if status.commit_info else "ERROR"
-        )
+        commit_short = status.commit_info.short_hash if status.commit_info else "ERROR"
 
         # Ahead/behind status with light colors, aligned around center point
         sync_status = format_sync_status(status.ahead_count, status.behind_count)
@@ -145,6 +143,7 @@ class ViewFormatter:
     def _get_commit_column(self, status: StatusResult) -> str:
         """Get commit hash column."""
         return status.commit_info.short_hash if status.commit_info else "ERROR"
+
     def _get_sync_column(self, status: StatusResult) -> str:
         """Get ahead/behind sync status column."""
         parts = []
@@ -196,7 +195,12 @@ class ViewFormatter:
             )
         if status.pr_info.pr_data:
             d = status.pr_info.pr_data
-            return self.get_pr_status_text(d.pr_state, d.mergeable, d.draft, d.merged_at)
+            return self.get_pr_status_text(
+                d.pr_state,
+                d.mergeable,
+                d.draft,
+                d.merged_at,
+            )
         return ""
 
     def _get_pr_changes_column(self, status: StatusResult) -> str:
@@ -213,6 +217,7 @@ class ViewFormatter:
             if d.additions is not None and d.deletions is not None:
                 return f"+{d.additions}/-{d.deletions}"
         return ""
+
     def render_top_status_bar(self, status_response) -> None:
         summary = status_response.readiness_summary
         components = status_response.components
@@ -299,7 +304,7 @@ class ViewFormatter:
             if dh.last_error:
                 click.echo(f"  - last_error: {dh.last_error}")
             click.echo(
-                f"  - counters: github_errors={dh.github_errors}, gitstatusd_errors={dh.gitstatusd_errors}"
+                f"  - counters: github_errors={dh.github_errors}, gitstatusd_errors={dh.gitstatusd_errors}",
             )
 
     def render_worktree_status_single(

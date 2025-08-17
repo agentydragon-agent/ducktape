@@ -5,17 +5,21 @@ so the daemon imports our stub instead of the real PyGithub. This avoids network
 exercising the full daemon/CLI pipeline.
 """
 
-import re
 import os
-from pathlib import Path
+import re
 
 import pytest
 
-from ..test_utils import run_cli_command, add_project_root_to_env
+from ..test_utils import add_project_root_to_env, run_cli_command
 
 
 @pytest.mark.integration
-def test_github_pr_display_with_mocked_pygithub(real_temp_repo, config_factory, tmp_path):
+@pytest.mark.real_github
+def test_github_pr_display_with_mocked_pygithub(
+    real_temp_repo,
+    config_factory,
+    tmp_path,
+):
     # Prepare config with GitHub enabled
     factory = config_factory(real_temp_repo)
     config = factory.integration(github_enabled=True, github_repo="test/test")
@@ -49,7 +53,7 @@ class Github:
         class _Issue: pass
         i = _Issue(); i.number = 123
         return [i]
-"""
+""",
     )
 
     # Build environment inheriting system env to ensure click, etc. are available
@@ -58,7 +62,11 @@ class Github:
     # Prepend our mock to PYTHONPATH so daemon imports it; also include project root
     existing = env.get("PYTHONPATH", "")
     add_project_root_to_env(env)
-    env["PYTHONPATH"] = f"{mock_root}:{env['PYTHONPATH']}" if existing or env.get("PYTHONPATH") else str(mock_root)
+    env["PYTHONPATH"] = (
+        f"{mock_root}:{env['PYTHONPATH']}"
+        if existing or env.get("PYTHONPATH")
+        else str(mock_root)
+    )
 
     # Start daemon implicitly by running status once
     out = run_cli_command(["sh"], env=env, timeout=30.0)
@@ -70,6 +78,7 @@ class Github:
 
     # Poll until output shows #123 and open and +10/-2
     import time
+
     deadline = time.time() + 12.0
     last = ""
     while time.time() < deadline:

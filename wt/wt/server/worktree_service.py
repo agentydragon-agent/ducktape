@@ -2,23 +2,23 @@
 
 import asyncio
 import contextlib
+import inspect
 import logging
 import shutil
-import inspect
-from datetime import datetime
+from collections.abc import Awaitable
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable, Awaitable
-
-from .worktree_ids import wtid_to_path
+from typing import TYPE_CHECKING, Callable
 
 import psutil
 import pygit2
 
 from ..shared.error_handling import ErrorContext, validate_worktree_name
 from ..shared.github_models import PRData, PRInfo
-from ..shared.models import CommitInfo, ProcessInfo
+from ..shared.models import ProcessInfo
+from ..shared.protocol import WorktreeID  # type: ignore[F401]
 from .copy_strategies import get_copy_strategy
-from .git_manager import GitError, GitManager, WorktreeCreateError, WorktreeDeleteError
+from .git_manager import GitManager
+from .worktree_ids import wtid_to_path
 
 if TYPE_CHECKING:
     from .github_client import GitHubInterface
@@ -69,7 +69,6 @@ class WorktreeService:
         return not any(
             path.name.startswith(pattern) for pattern in config.hidden_worktree_patterns
         )
-
 
     def _require_post_creation_script_valid(self, config) -> None:
         if config.post_creation_script:
@@ -143,10 +142,8 @@ class WorktreeService:
         if not worktree_path.exists():
             return
         self.git_manager.worktree_remove(str(worktree_path), force=force)
-        try:
+        with contextlib.suppress(Exception):
             shutil.rmtree(worktree_path, ignore_errors=True)
-        except Exception:
-            pass
 
     def require_worktree_exists(self, config, name: str) -> Path:
         """Require that a worktree exists and return its path."""
@@ -155,17 +152,17 @@ class WorktreeService:
             raise RuntimeError(f"Worktree '{name}' does not exist")
         return worktree_path
 
-
     def _hydrate_worktree(self, config, src: Path, dst: Path) -> None:
         dst.mkdir(parents=True, exist_ok=True)
         get_copy_strategy(config.cow_method).copy(src, dst)
-
 
     @staticmethod
     async def run_post_creation_script(
         script_path: str,
         worktree_path: Path,
-        sink: Callable[[str, str], Awaitable[None]] | Callable[[str, str], None] | None = None,
+        sink: Callable[[str, str], Awaitable[None]]
+        | Callable[[str, str], None]
+        | None = None,
         timeout: float = 60.0,
     ) -> dict:
         logging.getLogger(__name__)
@@ -191,7 +188,8 @@ class WorktreeService:
         if sink is None:
             try:
                 stdout, stderr = await asyncio.wait_for(
-                    proc.communicate(), timeout=timeout
+                    proc.communicate(),
+                    timeout=timeout,
                 )
                 return {
                     "ran": True,
@@ -288,7 +286,6 @@ class WorktreeService:
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 continue
         return procs
-
 
     def get_github_pr_status_single(self, branch_name: str) -> PRInfo:
         """Get PR status for a single branch."""

@@ -1,17 +1,17 @@
-import os
 import shutil
-import time
-from pathlib import Path
 
 import pytest
 
-from ..test_utils import run_cli_command
 from ..conftest import kill_daemon_and_verify
+from ..test_utils import run_cli_command
 
 pytestmark = pytest.mark.integration
 
 
-def test_manual_delete_of_old_worktree_does_not_break_new_create(real_temp_repo, real_env):
+def test_manual_delete_of_old_worktree_does_not_break_new_create(
+    real_temp_repo,
+    real_env,
+):
     """
     Repro for server crash when a previously-registered worktree directory was
     deleted out-of-band. Creating a new worktree should not fail with

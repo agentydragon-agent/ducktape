@@ -6,11 +6,11 @@ resolved configuration with all paths validated and computed upfront.
 
 import os
 import sys
+import tempfile
 from dataclasses import dataclass
 from datetime import timedelta
 from enum import Enum
 from pathlib import Path
-import tempfile
 
 import click
 import yaml
@@ -91,7 +91,6 @@ class Configuration:
         """Path to PR cache file."""
         return self.wt_dir / "pr_cache.json"
 
-
     @classmethod
     def resolve(cls, wt_dir: Path) -> "Configuration":
         """Resolve configuration from WT_DIR - does all filesystem validation upfront."""
@@ -154,16 +153,22 @@ class Configuration:
 
         if os.environ.get("WT_TEST_MODE"):
             temp_root = Path(tempfile.gettempdir()).resolve()
+
             def _under_tmp(p: Path) -> bool:
                 try:
                     return p.resolve().is_relative_to(temp_root)
                 except Exception:
                     return False
-            if not (_under_tmp(cfg.wt_dir) and _under_tmp(cfg.main_repo) and _under_tmp(cfg.worktrees_dir)):
+
+            if not (
+                _under_tmp(cfg.wt_dir)
+                and _under_tmp(cfg.main_repo)
+                and _under_tmp(cfg.worktrees_dir)
+            ):
                 raise ConfigError(
                     "WT_TEST_MODE is set, but WT_DIR/main_repo/worktrees_dir are not under the system temp directory.\n"
                     f"  WT_DIR={cfg.wt_dir}\n  main_repo={cfg.main_repo}\n  worktrees_dir={cfg.worktrees_dir}\n"
-                    "Refusing to run tests against a non-isolated real environment."
+                    "Refusing to run tests against a non-isolated real environment.",
                 )
         return cfg
 

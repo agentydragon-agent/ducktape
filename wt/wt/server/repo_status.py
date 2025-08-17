@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+
 import pygit2
 
 from ..shared.protocol import CommitInfo
@@ -12,7 +13,10 @@ class RepoStatus:
         self.git_manager = git_manager
         self.config = config
 
-    def summarize_status(self, worktree_path: Path) -> tuple[CommitInfo | None, tuple[int, int], str]:
+    def summarize_status(
+        self,
+        worktree_path: Path,
+    ) -> tuple[CommitInfo | None, tuple[int, int], str]:
         try:
             repo = self.git_manager.get_repo(worktree_path)
         except (pygit2.GitError, OSError, ValueError):
@@ -39,33 +43,37 @@ class RepoStatus:
         # TODO(mpokorny): Add focused tests for detached HEAD handling (worktree repo): ensure zero ahead/behind and no crashes
         # TODO(mpokorny): Add tests for missing upstream refs (in worktree and/or main) verifying fallback to main and zero result
         ahead_behind = (0, 0)
-        if worktree_path != self.config.main_repo and not repo.head_is_detached:
-            if branch_name and branch_name != "HEAD":
+        if (
+            worktree_path != self.config.main_repo
+            and not repo.head_is_detached
+            and branch_name
+            and branch_name != "HEAD"
+        ):
+            try:
+                main_repo = self.git_manager.get_repo(self.config.main_repo)
+
+                # Resolve local tip OID from the worktree repo first; fall back to HEAD
                 try:
-                    main_repo = self.git_manager.get_repo(self.config.main_repo)
+                    local_ref = repo.lookup_reference(f"refs/heads/{branch_name}")
+                    local_id = local_ref.target
+                except KeyError:
+                    local_id = repo.head.target
 
-                    # Resolve local tip OID from the worktree repo first; fall back to HEAD
-                    try:
-                        local_ref = repo.lookup_reference(f"refs/heads/{branch_name}")
-                        local_id = local_ref.target
-                    except KeyError:
-                        local_id = repo.head.target
+                # Resolve upstream tip OID: prefer worktree repo; fall back to main repo
+                try:
+                    upstream_ref = repo.lookup_reference(
+                        f"refs/heads/{self.config.upstream_branch}",
+                    )
+                    upstream_id = upstream_ref.target
+                except KeyError:
+                    upstream_ref = main_repo.lookup_reference(
+                        f"refs/heads/{self.config.upstream_branch}",
+                    )
+                    upstream_id = upstream_ref.target
 
-                    # Resolve upstream tip OID: prefer worktree repo; fall back to main repo
-                    try:
-                        upstream_ref = repo.lookup_reference(
-                            f"refs/heads/{self.config.upstream_branch}"
-                        )
-                        upstream_id = upstream_ref.target
-                    except KeyError:
-                        upstream_ref = main_repo.lookup_reference(
-                            f"refs/heads/{self.config.upstream_branch}"
-                        )
-                        upstream_id = upstream_ref.target
-
-                    ahead, behind = main_repo.ahead_behind(local_id, upstream_id)
-                    ahead_behind = (ahead, behind)
-                except (KeyError, pygit2.GitError, ValueError):
-                    ahead_behind = (0, 0)
+                ahead, behind = main_repo.ahead_behind(local_id, upstream_id)
+                ahead_behind = (ahead, behind)
+            except (KeyError, pygit2.GitError, ValueError):
+                ahead_behind = (0, 0)
 
         return commit_info, ahead_behind, branch_name

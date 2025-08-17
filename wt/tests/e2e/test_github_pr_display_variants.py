@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from ..test_utils import run_cli_command, add_project_root_to_env
+from ..test_utils import add_project_root_to_env, run_cli_command
 
 
 def _write_shadow_github(mock_root: Path, variant: str):
@@ -84,7 +84,7 @@ def _run_and_wait(env, expect: list[str], timeout=12.0):
 
 @pytest.mark.integration
 @pytest.mark.parametrize(
-    "variant,expects",
+    ("variant", "expects"),
     [
         ("open_mergeable", ["#123", "can merge", "+10/-2"]),
         ("merged", ["#456", "merged", "+3/-1"]),
@@ -113,7 +113,11 @@ def test_github_pr_variants(real_temp_repo, config_factory, tmp_path, variant, e
     r2 = run_cli_command(["sh", "-c", "feature-x"], env=env, timeout=30.0)
     assert r2.returncode == 0
 
-    out = _run_and_wait(env, expects) if expects else run_cli_command(["sh"], env=env, timeout=30.0).stdout
+    out = (
+        _run_and_wait(env, expects)
+        if expects
+        else run_cli_command(["sh"], env=env, timeout=30.0).stdout
+    )
     if expects:
         for x in expects:
             assert x in out

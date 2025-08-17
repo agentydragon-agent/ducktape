@@ -33,7 +33,7 @@ def test_banned_patterns_absent():
                 line = text.count("\n", 0, m.start()) + 1
                 # Very rough filter: ignore occurrences in strings/comments
                 before = text.rfind("\n", 0, m.start()) + 1
-                snippet = text[before:m.start()].strip()
+                snippet = text[before : m.start()].strip()
                 if snippet.startswith("#"):
                     continue
                 failures.append(f"{path}:{line}: {message}")

@@ -1,16 +1,16 @@
 from __future__ import annotations
 
 import logging
-import shutil
 from pathlib import Path
+
+from wt.shared.configuration import Configuration
 
 from ...shared.constants import MAIN_WORKTREE_DISPLAY_NAME
 from ...shared.protocol import (
+    ErrorCodes,
     HookRunResult,
     ProgressEvent,
     ProgressOperation,
-    Request,
-    Response,
     WorktreeCreateParams,
     WorktreeCreateResult,
     WorktreeCreateStep,
@@ -23,12 +23,11 @@ from ...shared.protocol import (
     WorktreeInfo,
     WorktreeListResult,
 )
-from ..rpc import rpc, Stream, RpcError
-from wt.shared.configuration import Configuration
-from ..worktree_ids import make_worktree_id, parse_worktree_id, wtid_to_path
+from ..rpc import RpcError, Stream, rpc
+from ..services import GitService, WorktreeCoordinator, WorktreeIndexService
 from ..types import DiscoveredWorktree
+from ..worktree_ids import make_worktree_id, parse_worktree_id, wtid_to_path
 from ..worktree_service import WorktreeService
-from ..services import GitService, WorktreeIndexService, WorktreeCoordinator
 
 logger = logging.getLogger(__name__)
 
@@ -63,35 +62,48 @@ async def worktree_create(
     params: WorktreeCreateParams,
     stream: Stream[ProgressEvent],
 ) -> WorktreeCreateResult:
-
     if "/" in params.name:
-        raise RpcError(code=ErrorCodes.INVALID_PARAMS, message=f"Worktree name '{params.name}' cannot contain slashes")
+        raise RpcError(
+            code=ErrorCodes.INVALID_PARAMS,
+            message=f"Worktree name '{params.name}' cannot contain slashes",
+        )
     worktree_path = config.worktrees_dir / params.name
     branch_name = f"{config.branch_prefix}{params.name}"
     worktree_id = make_worktree_id(params.name)
     if worktree_path.exists():
-        raise RpcError(code=ErrorCodes.INVALID_PARAMS, message=f"Worktree path {worktree_path} already exists")
+        raise RpcError(
+            code=ErrorCodes.INVALID_PARAMS,
+            message=f"Worktree path {worktree_path} already exists",
+        )
     if config.post_creation_script:
         script = config.post_creation_script
         if not script.exists() or not script.is_file():
-            raise RpcError(code=ErrorCodes.INVALID_PARAMS, message=f"Post-creation script {script} is not a file")
+            raise RpcError(
+                code=ErrorCodes.INVALID_PARAMS,
+                message=f"Post-creation script {script} is not a file",
+            )
     source_path = None
     if params.source_wtid:
         source_path = wtid_to_path(config, params.source_wtid)
         if not source_path.exists():
-            raise RpcError(code=ErrorCodes.WORKTREE_NOT_FOUND, message=f"Source worktree {source_path} not found")
+            raise RpcError(
+                code=ErrorCodes.WORKTREE_NOT_FOUND,
+                message=f"Source worktree {source_path} not found",
+            )
         src_branch = git.get_repo_head_shorthand(source_path)
     else:
         src_branch = config.upstream_branch
 
     # Emit progress events around the slow hydration/checkout step
     def _emit_progress(step: WorktreeCreateStep, message: str, progress: float):
-        stream.emit(ProgressEvent(
-            operation=ProgressOperation.WORKTREE_CREATE,
-            step=step,
-            progress=progress,
-            message=message,
-        ))
+        stream.emit(
+            ProgressEvent(
+                operation=ProgressOperation.WORKTREE_CREATE,
+                step=step,
+                progress=progress,
+                message=message,
+            ),
+        )
 
     if source_path:
         _emit_progress(WorktreeCreateStep.HYDRATE_STARTED, "hydrate started", 0.0)
@@ -105,7 +117,9 @@ async def worktree_create(
         source_branch=src_branch,
     )
     # Update daemon registry and index immediately (index-only lookup pathway)
-    wt_info = DiscoveredWorktree(worktree_path, worktree_path.name)
+    from ..worktree_ids import make_worktree_id as _mk
+
+    wt_info = DiscoveredWorktree(worktree_path, worktree_path.name, _mk(params.name))
     await coordinator.register_worktree(wt_info)
 
     if source_path:
@@ -117,17 +131,29 @@ async def worktree_create(
     if config.post_creation_script:
         script = config.post_creation_script
         if not script.exists() or not script.is_file():
-            raise RpcError(code=ErrorCodes.INVALID_PARAMS, message=f"Post-creation script not found at execution time: {script}")
+            raise RpcError(
+                code=ErrorCodes.INVALID_PARAMS,
+                message=f"Post-creation script not found at execution time: {script}",
+            )
+
         # run_post_creation_script is async; we stream via the same writer
         async def _sink(name: str, data: str) -> None:
             from ...shared.protocol import HookOutputEvent, HookStream
-            ev = HookOutputEvent(stream=(HookStream.STDOUT if name == "stdout" else HookStream.STDERR), data=data)
+
+            ev = HookOutputEvent(
+                stream=(HookStream.STDOUT if name == "stdout" else HookStream.STDERR),
+                data=data,
+            )
             stream.emit(ev)
+
         post = await WorktreeService.run_post_creation_script(
-            str(script), worktree_path, _sink, timeout=config.post_creation_timeout.total_seconds()
+            str(script),
+            worktree_path,
+            _sink,
+            timeout=config.post_creation_timeout.total_seconds(),
         )
 
-    result = WorktreeCreateResult(
+    return WorktreeCreateResult(
         wtid=worktree_id,
         name=params.name,
         absolute_path=str(worktree_path),
@@ -135,17 +161,26 @@ async def worktree_create(
         success=True,
         post_hook=(HookRunResult(**post) if post else None),
     )
-    return result
 
 
 @rpc.method("worktree_delete", params=WorktreeDeleteParams)
-async def worktree_delete(coordinator: WorktreeCoordinator, svc: WorktreeService, config: Configuration, params: WorktreeDeleteParams) -> WorktreeDeleteResult:
+async def worktree_delete(
+    coordinator: WorktreeCoordinator,
+    svc: WorktreeService,
+    config: Configuration,
+    params: WorktreeDeleteParams,
+) -> WorktreeDeleteResult:
     worktree_name = parse_worktree_id(params.wtid)
     worktree_path = config.worktrees_dir / worktree_name
     if not worktree_path.exists():
-        raise RpcError(code=ErrorCodes.WORKTREE_NOT_FOUND, message=f"Worktree {worktree_name} does not exist at {worktree_path}")
+        raise RpcError(
+            code=ErrorCodes.WORKTREE_NOT_FOUND,
+            message=f"Worktree {worktree_name} does not exist at {worktree_path}",
+        )
     await svc.remove_worktree(config, worktree_name, force=True)
-    wt_info = DiscoveredWorktree(worktree_path, worktree_name)
+    from ..worktree_ids import make_worktree_id as _mk
+
+    wt_info = DiscoveredWorktree(worktree_path, worktree_name, _mk(worktree_name))
     await coordinator.unregister_worktree(wt_info)
     return WorktreeDeleteResult(
         wtid=params.wtid,
@@ -154,14 +189,21 @@ async def worktree_delete(coordinator: WorktreeCoordinator, svc: WorktreeService
     )
 
 
-def _resolve_worktree_name_to_info(index: WorktreeIndexService, name: str) -> object | None:
+def _resolve_worktree_name_to_info(
+    index: WorktreeIndexService,
+    name: str,
+) -> object | None:
     if name == MAIN_WORKTREE_DISPLAY_NAME and index.main():
         return index.main()
     return index.get_by_name(name)
 
 
 @rpc.method("worktree_identify", params=WorktreeIdentifyParams)
-async def worktree_identify(index: WorktreeIndexService, config: Configuration, params: WorktreeIdentifyParams) -> WorktreeIdentifyResult:
+async def worktree_identify(
+    index: WorktreeIndexService,
+    config: Configuration,
+    params: WorktreeIdentifyParams,
+) -> WorktreeIdentifyResult:
     # params already validated by rpc layer
     absolute_path = Path(params.absolute_path)
     try:
@@ -180,10 +222,16 @@ async def worktree_identify(index: WorktreeIndexService, config: Configuration, 
             worktree_name = None
             relative_path = None
     if not worktree_name or not absolute_path.exists():
-        raise RpcError(code=ErrorCodes.WORKTREE_NOT_FOUND, message=f"{absolute_path} is not a managed worktree")
+        raise RpcError(
+            code=ErrorCodes.WORKTREE_NOT_FOUND,
+            message=f"{absolute_path} is not a managed worktree",
+        )
     found_worktree = _resolve_worktree_name_to_info(index, worktree_name)
     if not found_worktree:
-        raise RpcError(code=ErrorCodes.WORKTREE_NOT_FOUND, message=f"{absolute_path} is not a managed worktree")
+        raise RpcError(
+            code=ErrorCodes.WORKTREE_NOT_FOUND,
+            message=f"{absolute_path} is not a managed worktree",
+        )
     resolved_name = (
         MAIN_WORKTREE_DISPLAY_NAME
         if found_worktree.path.resolve() == config.main_repo.resolve()
@@ -198,7 +246,11 @@ async def worktree_identify(index: WorktreeIndexService, config: Configuration, 
 
 
 @rpc.method("worktree_get_by_name", params=WorktreeGetByNameParams)
-async def worktree_get_by_name(index: WorktreeIndexService, config: Configuration, params: WorktreeGetByNameParams) -> WorktreeGetByNameResult:
+async def worktree_get_by_name(
+    index: WorktreeIndexService,
+    config: Configuration,
+    params: WorktreeGetByNameParams,
+) -> WorktreeGetByNameResult:
     found_worktree = _resolve_worktree_name_to_info(index, params.name)
     if found_worktree:
         worktree_name = (

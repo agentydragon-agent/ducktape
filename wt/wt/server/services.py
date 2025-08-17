@@ -1,18 +1,22 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
+import contextlib
+from collections.abc import Iterable
 from datetime import datetime
 from pathlib import Path
-from typing import Callable, Iterable
+from typing import TYPE_CHECKING, Callable
 
-from ..shared.configuration import Configuration
+if TYPE_CHECKING:
+    from ..shared.protocol import WorktreeID
+
 from ..shared.github_models import PRInfo
 from ..shared.protocol import DaemonHealth
-from .git_manager import GitManager, WorktreeInfo as GMWorktreeInfo
+from .git_manager import GitManager
+from .git_manager import WorktreeInfo as GMWorktreeInfo
+from .pr_service import PRService
 from .repo_status import RepoStatus
 from .types import DiscoveredWorktree
-from .pr_service import PRService
 
 
 class GitService:
@@ -55,6 +59,12 @@ class WorktreeIndexService:
             return []
         return list(idx.by_path.keys())  # type: ignore[attr-defined]
 
+    def get_by_path(self, p: Path) -> DiscoveredWorktree | None:
+        idx = self._get_index()
+        if not idx:
+            return None
+        return idx.get_by_path(p)  # type: ignore[attr-defined]
+
     def get_by_name(self, name: str) -> DiscoveredWorktree | None:
         idx = self._get_index()
         if not idx:
@@ -79,7 +89,11 @@ class GitstatusdService:
         self,
         get_client: Callable[[Path], object | None],
         iter_client_paths: Callable[[], Iterable[Path]] | None = None,
-        ensure_watcher_for_path: Callable[[Path], asyncio.Future | asyncio.Task | object] | None = None,
+        ensure_watcher_for_path: Callable[
+            [Path],
+            asyncio.Future | asyncio.Task | object,
+        ]
+        | None = None,
         list_watchers: Callable[[], list[object]] | None = None,
         clear_watchers: Callable[[], None] | None = None,
     ) -> None:
@@ -92,7 +106,10 @@ class GitstatusdService:
     def get_client(self, path: Path):
         return self._get_client(path)
 
-    def get_cached_status(self, path: Path) -> tuple[list[str], list[str], datetime | None, bool]:
+    def get_cached_status(
+        self,
+        path: Path,
+    ) -> tuple[list[str], list[str], datetime | None, bool]:
         client = self._get_client(path)
         if not client:
             return [], [], None, False
@@ -114,52 +131,45 @@ class GitstatusdService:
         if not (self._list_watchers and self._clear_watchers):
             return
         for w in list(self._list_watchers()):
-            try:
+            with contextlib.suppress(Exception):
                 await w.stop()
-            except Exception:
-                pass
         self._clear_watchers()
 
 
 class PRServiceProvider:
-    def __init__(
-        self,
-        get_service: Callable[[Path], PRService | None],
-        list_services: Callable[[], list[PRService]],
-    ) -> None:
-        self._get = get_service
-        self._list = list_services
+    def __init__(self, services: dict[WorktreeID, PRService]) -> None:
+        self._services = services
+        self._tasks: list[asyncio.Task] = []
 
     async def start(self) -> None:
-        for svc in self._list():
-            try:
+        for svc in self._services.values():
+            with contextlib.suppress(Exception):
                 await svc.start()
-            except Exception:
-                pass
 
     async def stop(self) -> None:
-        for svc in self._list():
-            try:
+        for svc in self._services.values():
+            with contextlib.suppress(Exception):
                 await svc.stop()
-            except Exception:
-                pass
 
-    async def get_pr_info(self, path: Path, branch: str, timeout: float = 0.75) -> PRInfo | None:
-        prsvc = self._get(path)
+    def get_pr_info_cached(self, wtid: WorktreeID, branch: str) -> PRInfo | None:
+        prsvc = self._services.get(wtid)
+        if not prsvc or not prsvc.cached or not prsvc.cached.data:
+            return None
+        return PRInfo(branch=branch, pr_data=prsvc.cached.data)
+
+    def schedule_pr_refresh(self, wtid: WorktreeID, branch: str) -> None:
+        prsvc = self._services.get(wtid)
         if not prsvc:
-            return None
-        try:
-            data = await asyncio.wait_for(prsvc.get_pr_info(branch), timeout=timeout)
-        except asyncio.TimeoutError:
-            return None
-        except Exception:
-            return None
-        if not data:
-            return None
-        return PRInfo(branch=branch, pr_data=data)
+            return
+        task = asyncio.create_task(prsvc.get_pr_info(branch, force_refresh=True))
+        self._tasks.append(task)
+        task.add_done_callback(lambda t: self._tasks.remove(t))
 
-    def list_services(self) -> list[PRService]:
-        return list(self._list())
+    def has(self, wtid: WorktreeID) -> bool:
+        return wtid in self._services
+
+    def values(self) -> list[PRService]:
+        return list(self._services.values())
 
 
 class StatusService:
@@ -204,8 +214,14 @@ class HealthService:
 class WorktreeCoordinator:
     def __init__(
         self,
-        register_fn: Callable[[DiscoveredWorktree], asyncio.Future | asyncio.Task | object],
-        unregister_fn: Callable[[DiscoveredWorktree], asyncio.Future | asyncio.Task | object],
+        register_fn: Callable[
+            [DiscoveredWorktree],
+            asyncio.Future | asyncio.Task | object,
+        ],
+        unregister_fn: Callable[
+            [DiscoveredWorktree],
+            asyncio.Future | asyncio.Task | object,
+        ],
     ) -> None:
         self._register = register_fn
         self._unregister = unregister_fn

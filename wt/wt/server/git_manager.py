@@ -82,7 +82,9 @@ class GitManager:
             untracked_files = []
 
             for file_path, flags in self._main_repo.status().items():
-                if flags & (pygit2.GIT_STATUS_WT_MODIFIED | pygit2.GIT_STATUS_INDEX_MODIFIED):
+                if flags & (
+                    pygit2.GIT_STATUS_WT_MODIFIED | pygit2.GIT_STATUS_INDEX_MODIFIED
+                ):
                     dirty_files.append(file_path)
                 elif flags & pygit2.GIT_STATUS_WT_NEW:
                     untracked_files.append(file_path)
@@ -115,7 +117,10 @@ class GitManager:
             "short_hash": str(commit.id)[:8],
             "message": message.strip(),
             "author": commit.author.name,
-            "date": datetime.fromtimestamp(commit.commit_time, timezone.utc).isoformat(),
+            "date": datetime.fromtimestamp(
+                commit.commit_time,
+                timezone.utc,
+            ).isoformat(),
         }
 
     def verify_ref_exists(self, ref: str) -> str:
@@ -140,7 +145,7 @@ class GitManager:
                 branch=current_branch or "",
                 exists=True,
                 is_main=True,
-            )
+            ),
         ]
 
         # Add all other worktrees; compute branch name only when repo is valid
@@ -162,7 +167,7 @@ class GitManager:
                     branch=branch_name,
                     exists=exists,
                     is_main=False,
-                )
+                ),
             )
 
         return worktree_infos
@@ -208,7 +213,9 @@ class GitManager:
         try:
             self._main_repo.lookup_worktree(Path(path).name).prune(force)
         except Exception as e:
-            raise WorktreeDeleteError(f"Failed to remove worktree at {path}: {e}") from e
+            raise WorktreeDeleteError(
+                f"Failed to remove worktree at {path}: {e}",
+            ) from e
 
     def verify_branch_exists(self, branch: str) -> str:
         try:

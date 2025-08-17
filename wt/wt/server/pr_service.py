@@ -44,6 +44,10 @@ class PRService:
                 periodic_interval=self.config.github_periodic_interval.total_seconds(),
             )
             await self.github_refresh.start()
+            # Immediate kick to populate cache on startup (non-blocking)
+            self._startup_task = asyncio.create_task(
+                self._refresh_github_cache("startup", []),
+            )
 
     async def stop(self) -> None:
         if self.github_refresh:

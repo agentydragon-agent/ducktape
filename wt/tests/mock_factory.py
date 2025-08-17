@@ -6,7 +6,11 @@ from unittest.mock import Mock
 from wt.client.wt_client import WtClient
 from wt.server.git_manager import GitManager
 from wt.server.github_client import GitHubInterface
-from wt.shared.protocol import DaemonHealth, DaemonHealthStatus, StatusItem, StatusResponse
+from wt.shared.protocol import (
+    DaemonHealth,
+    DaemonHealthStatus,
+    StatusResponse,
+)
 
 from .test_data import MockBehaviors
 

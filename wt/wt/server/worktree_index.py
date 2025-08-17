@@ -1,11 +1,11 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
 
-from .types import DiscoveredWorktree
 from ..shared.constants import MAIN_WORKTREE_DISPLAY_NAME
+from .types import DiscoveredWorktree
 
 
 @dataclass
@@ -15,7 +15,11 @@ class WorktreeIndex:
     main: DiscoveredWorktree | None
 
     @classmethod
-    def build(cls, worktrees: Iterable[DiscoveredWorktree], main_repo: Path) -> "WorktreeIndex":
+    def build(
+        cls,
+        worktrees: Iterable[DiscoveredWorktree],
+        main_repo: Path,
+    ) -> WorktreeIndex:
         by_path: dict[Path, DiscoveredWorktree] = {}
         by_name: dict[str, DiscoveredWorktree] = {}
         main: DiscoveredWorktree | None = None
@@ -25,7 +29,13 @@ class WorktreeIndex:
             if wt.path.resolve() == main_repo.resolve():
                 main = wt
         if main is None:
-            main = DiscoveredWorktree(main_repo, MAIN_WORKTREE_DISPLAY_NAME)
+            from .worktree_ids import make_worktree_id as _mk
+
+            main = DiscoveredWorktree(
+                main_repo,
+                MAIN_WORKTREE_DISPLAY_NAME,
+                _mk(MAIN_WORKTREE_DISPLAY_NAME),
+            )
             by_path.setdefault(main_repo, main)
             by_name.setdefault(MAIN_WORKTREE_DISPLAY_NAME, main)
         return cls(by_path=by_path, by_name=by_name, main=main)
@@ -36,7 +46,11 @@ class WorktreeIndex:
     def get_by_name(self, name: str) -> DiscoveredWorktree | None:
         return self.by_name.get(name)
 
-    def resolve_target(self, name: str | None, current_path: Path) -> tuple[DiscoveredWorktree, str | None] | None:
+    def resolve_target(
+        self,
+        name: str | None,
+        current_path: Path,
+    ) -> tuple[DiscoveredWorktree, str | None] | None:
         if name:
             if name == ".":
                 # Current worktree by path

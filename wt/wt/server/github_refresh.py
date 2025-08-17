@@ -27,6 +27,7 @@ class DebouncedGitHubRefresh:
         self.last_refresh_time = 0.0
         self.pending_files: set[str] = set()
         from watchdog.observers import Observer as _Observer
+
         self.observer: _Observer | None = None
         self.event_handler = GitFileHandler(self)
         self.periodic_task: asyncio.Task | None = None
@@ -100,12 +101,11 @@ class DebouncedGitHubRefresh:
         files_changed = list(self.pending_files)
         self.pending_files.clear()
         logger.info("Refreshing GitHub data: %s (files: %s)", reason, files_changed)
-        fetch_success = await self._fetch_origin_master()
+        # Do NOT fetch from network here; rely on API cache/background
         await self.refresh_callback(reason, files_changed)
         self.last_refresh_time = time.time()
         refresh_time = (self.last_refresh_time - start_time) * 1000
-        fetch_status = "with fetch" if fetch_success else "without fetch"
-        logger.info("GitHub refresh completed in %.1fms (%s)", refresh_time, fetch_status)
+        logger.info("GitHub refresh completed in %.1fms", refresh_time)
 
     async def _fetch_origin_master(self) -> bool:
         try:
@@ -171,6 +171,10 @@ class GitFileHandler(FileSystemEventHandler):
         path_str = str(file_path)
         for pattern in self.watched_patterns:
             if pattern in path_str:
-                logger.debug("Git file change detected: %s (pattern: %s)", path_str, pattern)
+                logger.debug(
+                    "Git file change detected: %s (pattern: %s)",
+                    path_str,
+                    pattern,
+                )
                 return True
         return False

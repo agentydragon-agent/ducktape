@@ -420,10 +420,16 @@ class TeleportCdThere(BaseModel):
 
 class TeleportDoesNotExist(BaseModel):
     type: Literal["does_not_exist"] = "does_not_exist"
-    name: str = Field(..., description="Requested worktree name that was not found on server")
+    name: str = Field(
+        ...,
+        description="Requested worktree name that was not found on server",
+    )
 
 
-TeleportResult = Annotated[TeleportCdThere | TeleportDoesNotExist, Field(discriminator="type")]
+TeleportResult = Annotated[
+    TeleportCdThere | TeleportDoesNotExist,
+    Field(discriminator="type"),
+]
 
 
 class StreamEventType(str, Enum):

@@ -45,12 +45,12 @@ def run_shell_script(
 ) -> subprocess.CompletedProcess:
     """Execute a shell script with wt function setup and return the result."""
     # Explicit requirement checks
-    assert importlib.util.find_spec(
-        "wt"
-    ), "wt package not installed - required for shell integration tests"
-    assert shutil.which(
-        "wt"
-    ), "wt CLI not found on PATH - required for shell integration tests"
+    assert importlib.util.find_spec("wt"), (
+        "wt package not installed - required for shell integration tests"
+    )
+    assert shutil.which("wt"), (
+        "wt CLI not found on PATH - required for shell integration tests"
+    )
 
     # Use provided environment or create a new one
     env = os.environ.copy() if env is None else env.copy()
@@ -184,15 +184,15 @@ echo "$create_exit:$nav_exit:$pwd_before:$pwd_after"
 
             data = parse_teleport_output(result)
 
-            assert (
-                data["create_exit"] == 0
-            ), f"Create failed: stdout={result.stdout}, stderr={result.stderr}"
+            assert data["create_exit"] == 0, (
+                f"Create failed: stdout={result.stdout}, stderr={result.stderr}"
+            )
             assert data["nav_exit"] == 0, f"Navigate failed: {result.stderr}"
 
             expected_dir = str(real_temp_repo / "worktrees" / "teleport-test")
-            assert (
-                data["pwd_after"] == expected_dir
-            ), f"Directory change failed. Expected: {expected_dir}, Got: {data['pwd_after']}"
+            assert data["pwd_after"] == expected_dir, (
+                f"Directory change failed. Expected: {expected_dir}, Got: {data['pwd_after']}"
+            )
 
             worktree_path = real_temp_repo / "worktrees" / "teleport-test"
             assert worktree_path.exists()
@@ -238,9 +238,9 @@ echo "$create_exit:$to_wt_exit:$to_main_exit:$pwd_before:$pwd_after"
         with daemon_cleanup():
             result = run_shell_script(shell_script, str(real_temp_repo), env=real_env)
             c, e1, e2, before, after = parse_output(result)
-            assert (
-                c == 0
-            ), f"Create failed: stdout={result.stdout}, stderr={result.stderr}"
+            assert c == 0, (
+                f"Create failed: stdout={result.stdout}, stderr={result.stderr}"
+            )
             assert e1 == 0, f"Navigate to worktree failed: {result.stderr}"
             assert e2 == 0, f"Navigate to main failed: {result.stderr}"
             expected_before = str(real_temp_repo / "worktrees" / "to-main")

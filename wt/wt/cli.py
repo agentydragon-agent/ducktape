@@ -8,6 +8,7 @@ import sys
 import click
 from colorama import init
 
+from .client.cd_utils import emit_cd_command
 from .client.handlers import (
     handle_copy_worktree,
     handle_create_worktree,
@@ -20,7 +21,6 @@ from .client.handlers import (
     handle_status_single,
 )
 from .client.view_formatter import ViewFormatter
-from .client.cd_utils import emit_cd_command
 from .client.wt_client import WtClient
 from .plugins import PluginIO, get_manager, resolve_command
 from .shared.configuration import load_config
@@ -86,7 +86,11 @@ def show_help() -> None:
     context_settings={"ignore_unknown_options": True, "help_option_names": []},
 )
 @click.option("-h", "--help", is_flag=True, help="Show this help and exit")
-@click.option("--verbose", is_flag=True, help="Show client progress and daemon startup info")
+@click.option(
+    "--verbose",
+    is_flag=True,
+    help="Show client progress and daemon startup info",
+)
 @click.pass_context
 def main(ctx, help, verbose):
     """Main CLI entry point."""
@@ -127,7 +131,9 @@ def _create_cli_dependencies(verbose: bool = False):
 
 async def _async_main(verbose: bool = False):
     """Async main function."""
-    config, formatter, daemon_client, plugin_manager = _create_cli_dependencies(verbose=verbose)
+    config, formatter, daemon_client, plugin_manager = _create_cli_dependencies(
+        verbose=verbose,
+    )
     await handle_status(daemon_client, formatter)
 
 
@@ -161,7 +167,9 @@ def sh(ctx, args):
             filtered_args.append(arg)
 
     verbose = bool((ctx.obj or {}).get("verbose", False))
-    config, formatter, daemon_client, plugin_manager = _create_cli_dependencies(verbose=verbose)
+    config, formatter, daemon_client, plugin_manager = _create_cli_dependencies(
+        verbose=verbose,
+    )
 
     # Run async command handler
     try:
@@ -181,7 +189,7 @@ def sh(ctx, args):
         raise click.ClickException(str(e))
 
 
-async def _async_sh_main(
+async def _async_sh_main(  # noqa: PLR0913
     daemon_client,
     formatter,
     config,

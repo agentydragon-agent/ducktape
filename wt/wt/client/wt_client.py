@@ -58,10 +58,12 @@ class WtClient:
     verbose: bool = False
     _handshake_pipe: int | None = field(default=None, init=False)
     _progress_callback: Callable[[ProgressEvent], None] | None = field(
-        default=None, init=False
+        default=None,
+        init=False,
     )
     _hook_output_callback: Callable[[HookOutputEvent], None] | None = field(
-        default=None, init=False
+        default=None,
+        init=False,
     )
 
     # Class-level lock to prevent multiple daemon startups
@@ -75,7 +77,8 @@ class WtClient:
         self._progress_callback = cb
 
     def set_hook_output_callback(
-        self, cb: Callable[[HookOutputEvent], None] | None
+        self,
+        cb: Callable[[HookOutputEvent], None] | None,
     ) -> None:
         self._hook_output_callback = cb
 
@@ -121,56 +124,36 @@ class WtClient:
             logger.debug("Daemon logs: %s", self.config.wt_dir / "daemon.log")
             logger.info("wt: starting daemon … (%s)", self.config.daemon_socket_path)
 
-            # Use original double-fork + handshake pipe approach to start the daemon
+            # Use handshake pipe to get immediate readiness without busy-wait
             await self._start_daemon_background()
 
             try:
                 loop = asyncio.get_event_loop()
                 reader_future = loop.run_in_executor(
-                    None, self._read_handshake_from_pipe
+                    None,
+                    self._read_handshake_from_pipe,
                 )
-                first_wait = min(1.0, self.config.startup_timeout.total_seconds())
-                try:
-                    handshake_data = await asyncio.wait_for(
-                        asyncio.shield(reader_future), timeout=first_wait
-                    )
-                except asyncio.TimeoutError:
-                    remaining = max(
-                        0.0, self.config.startup_timeout.total_seconds() - first_wait
-                    )
-                    handshake_data = await asyncio.wait_for(
-                        asyncio.shield(reader_future),
-                        timeout=remaining if remaining > 0 else 0.1,
-                    )
+                handshake_data = await asyncio.wait_for(
+                    asyncio.shield(reader_future),
+                    timeout=self.config.startup_timeout.total_seconds(),
+                )
 
                 protocol_version = handshake_data.get("protocol_version", 0)
                 if protocol_version != 1:
                     raise RuntimeError(
-                        f"Incompatible daemon protocol version {protocol_version}, expected 1"
+                        f"Incompatible daemon protocol version {protocol_version}, expected 1",
                     )
 
                 if handshake_data.get("success"):
-                    pid = handshake_data.get("pid")
-                    logger.info("wt daemon: startup handshake ok (pid %s)", pid)
-                    if self._is_daemon_running():
-                        logger.info(
-                            "Daemon started successfully with handshake confirmation"
-                        )
-                        return
-                    raise RuntimeError(
-                        "Daemon handshake successful but daemon not accessible"
-                    )
+                    logger.info("Daemon startup handshake ok")
+                    return
                 error_message = handshake_data.get("error", "Unknown startup error")
                 raise RuntimeError(f"Daemon startup failed:\n{error_message}")
 
             except asyncio.TimeoutError:
                 timeout_secs = self.config.startup_timeout.total_seconds()
-                logger.warning(
-                    "Daemon startup timed out - no handshake received within %.1f seconds",
-                    timeout_secs,
-                )
                 raise RuntimeError(
-                    f"Daemon startup timed out after {timeout_secs:.1f} seconds"
+                    f"Daemon startup timed out after {timeout_secs:.1f} seconds",
                 )
             except (OSError, RuntimeError, ValueError) as e:
                 diag = []
@@ -184,14 +167,14 @@ class WtClient:
                     pass
                 try:
                     diag.append(
-                        f"pid file exists: {self.config.daemon_pid_path.exists()}"
+                        f"pid file exists: {self.config.daemon_pid_path.exists()}",
                     )
                     if self.config.daemon_pid_path.exists():
                         diag.append(
-                            f"pid file contents: {self.config.daemon_pid_path.read_text().strip()}"
+                            f"pid file contents: {self.config.daemon_pid_path.read_text().strip()}",
                         )
                     diag.append(
-                        f"socket exists: {self.config.daemon_socket_path.exists()}"
+                        f"socket exists: {self.config.daemon_socket_path.exists()}",
                     )
                 except OSError:
                     pass
@@ -200,90 +183,49 @@ class WtClient:
                 self._handshake_pipe = None
 
     async def _start_daemon_background(self) -> None:
-        """Start daemon in background using proper double-fork daemonization."""
+        """Start daemon in background with a dedicated handshake pipe (no double-fork).
 
-        # Create pipe for handshake communication (dedicated FD, not stdout)
-        handshake_read, handshake_write = os.pipe()
+        Implementation: create a pipe, launch wt.server.wt_server via subprocess.Popen,
+        pass the write-end FD using pass_fds and WT_HANDSHAKE_FD so the daemon can emit
+        JSON StartupMessage lines. Keep the read-end in this process for synchronous readiness.
+        """
+        import subprocess
+
+        # Create pipe for handshake communication (dedicated FD)
+        read_fd, write_fd = os.pipe()
         with contextlib.suppress(Exception):
-            os.set_inheritable(handshake_write, True)
+            os.set_inheritable(write_fd, True)
 
-        # First fork - create intermediate process
-        pid = os.fork()
-        if pid == 0:
-            # First child - create session leader and fork again
-            try:
-                # Become session leader
-                os.setsid()
+        env = os.environ.copy()
+        env["WT_HANDSHAKE_FD"] = str(write_fd)
+        # Ensure PYTHONPATH contains project root so -m import works when running from tests
+        try:
+            project_root = str(Path(__file__).resolve().parents[2])
+            existing = env.get("PYTHONPATH", "")
+            env["PYTHONPATH"] = (
+                f"{project_root}:{existing}" if existing else project_root
+            )
+        except Exception:
+            pass
 
-                # Second fork - ensure we can't regain controlling terminal
-                pid = os.fork()
-                if pid == 0:
-                    # Second child - the actual daemon
-                    try:
-                        # Change to root directory to avoid keeping directories busy
-                        os.chdir("/")
+        # Launch daemon as a new session; do not inherit stdio; only the handshake FD is kept
+        try:
+            subprocess.Popen(
+                [sys.executable, "-m", "wt.server.wt_server"],
+                env=env,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+                pass_fds=(write_fd,),
+                close_fds=True,
+            )
+        finally:
+            # Parent keeps only the read end; close write end in parent
+            with contextlib.suppress(Exception):
+                os.close(write_fd)
 
-                        # Redirect stdin to /dev/null
-                        null_fd = os.open("/dev/null", os.O_RDONLY)
-                        os.dup2(null_fd, 0)  # stdin
-                        os.close(null_fd)
-
-                        # Close read end of pipe in daemon process
-                        os.close(handshake_read)
-
-                        # Redirect stdout and stderr to daemon log; keep handshake_write inherited
-                        log_file = self.config.wt_dir / "daemon.log"
-                        log_fd = os.open(
-                            log_file,
-                            os.O_WRONLY | os.O_CREAT | os.O_APPEND,
-                            0o644,
-                        )
-                        os.dup2(log_fd, 1)
-                        os.dup2(log_fd, 2)
-                        os.close(log_fd)
-
-                        # Exec daemon module; pass handshake FD via env
-                        env = os.environ.copy()
-                        env["WT_HANDSHAKE_FD"] = str(handshake_write)
-                        try:
-                            project_root = str(Path(__file__).resolve().parents[2])
-                            existing = env.get("PYTHONPATH", "")
-                            env["PYTHONPATH"] = (
-                                f"{project_root}:{existing}"
-                                if existing
-                                else project_root
-                            )
-                        except Exception:
-                            pass
-                        os.execve(
-                            sys.executable,
-                            [
-                                sys.executable,
-                                "-m",
-                                "wt.server.wt_server",
-                            ],
-                            env,
-                        )
-                    except Exception as e:
-                        # This will go to daemon.log now
-                        print(f"Daemon exec failed: {e}", file=sys.stderr)
-                        os._exit(1)
-                else:
-                    # First child exits immediately
-                    os._exit(0)
-            except Exception as e:
-                print(f"Daemon first fork failed: {e}", file=sys.stderr)
-                os._exit(1)
-        else:
-            # Parent process - wait for first child to exit
-            os.waitpid(pid, 0)
-            logger.debug("Daemon daemonization completed (double-fork)")
-
-            # Close write end of pipe in parent
-            os.close(handshake_write)
-
-            # Store read pipe for handshake reading
-            self._handshake_pipe = handshake_read
+        # Store read pipe so _read_handshake_from_pipe can consume it
+        self._handshake_pipe = read_fd
 
     def _read_handshake_from_pipe(self) -> dict:
         """Read streaming JSON handshake/progress until ready or failure.
@@ -327,7 +269,7 @@ class WtClient:
     ) -> StatusResponse:
         await self._start_daemon_if_needed()
         params = StatusParams(
-            worktree_ids=[wtid for wtid in (worktree_ids or []) if wtid is not None]
+            worktree_ids=[wtid for wtid in (worktree_ids or []) if wtid is not None],
         )
         return await self._rpc("get_status", params, TypeAdapter(StatusResponse))
 
@@ -480,12 +422,14 @@ class WtClient:
             except (json.JSONDecodeError, ValidationError, TypeError, ValueError) as e:
                 logger.exception("Failed to parse daemon worktree_create response")
                 raise RuntimeError(
-                    f"Failed to parse daemon worktree_create response: {e}"
+                    f"Failed to parse daemon worktree_create response: {e}",
                 )
 
         except (ConnectionError, FileNotFoundError, OSError, asyncio.TimeoutError) as e:
             if self.verbose:
-                logger.exception("Failed to communicate with daemon for worktree_create")
+                logger.exception(
+                    "Failed to communicate with daemon for worktree_create",
+                )
             raise RuntimeError(f"Daemon worktree_create communication failed: {e}")
 
     async def delete_worktree(self, wtid: WorktreeID) -> WorktreeDeleteResult:
@@ -528,7 +472,7 @@ class WtClient:
         req = Request(method=method, params=params, id=uuid.uuid4())
         try:
             reader, writer = await asyncio.open_unix_connection(
-                self.config.daemon_socket_path
+                self.config.daemon_socket_path,
             )
             writer.write(req.model_dump_json().encode())
             writer.write(b"\n")
@@ -556,12 +500,16 @@ class WtClient:
 
     async def resolve_path(self, params: WorktreeResolvePathParams) -> str:
         result = await self._rpc(
-            "worktree_resolve_path", params, TypeAdapter(WorktreeResolvePathResult)
+            "worktree_resolve_path",
+            params,
+            TypeAdapter(WorktreeResolvePathResult),
         )
         return result.absolute_path
 
     async def resolve_path_simple(
-        self, worktree_name: str | None, path_spec: str
+        self,
+        worktree_name: str | None,
+        path_spec: str,
     ) -> Path:
         params = WorktreeResolvePathParams(
             worktree_name=worktree_name,
@@ -571,12 +519,15 @@ class WtClient:
         return Path(await self.resolve_path(params))
 
     async def teleport_target(
-        self, target_name: str, current_path: str
+        self,
+        target_name: str,
+        current_path: str,
     ) -> TeleportCdThere | TeleportDoesNotExist:
         return await self._rpc(
             "worktree_teleport_target",
             WorktreeTeleportTargetParams(
-                target_name=target_name, current_path=current_path
+                target_name=target_name,
+                current_path=current_path,
             ),
             TypeAdapter(TeleportResult),
         )
@@ -605,7 +556,7 @@ class WtClient:
             result = await self.create_worktree(name)
             return Path(result.absolute_path)
         raise RuntimeError(
-            "Invalid create_worktree request: no source and from_default=False"
+            "Invalid create_worktree request: no source and from_default=False",
         )
 
     async def remove_worktree_by_name(self, name: str, *, force: bool = False) -> None:
