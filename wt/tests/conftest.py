@@ -1,8 +1,8 @@
-import os
-import time
 import contextlib
 import errno
+import os
 import signal
+import time
 from collections.abc import Generator
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -185,6 +185,7 @@ def assert_worktree_not_exists(worktree_path: Path):
 # Integration test fixtures for daemon-based tests
 # ================================================
 
+
 def kill_daemon_at_wt_dir(wt_dir: Path, timeout: float = 3.0) -> None:
     """Kill daemon in the given WT_DIR and verify it's gone.
 
@@ -234,7 +235,6 @@ def kill_daemon_at_wt_dir(wt_dir: Path, timeout: float = 3.0) -> None:
         pid_file.unlink()
     with contextlib.suppress(Exception):
         sock_file.unlink()
-
 
 
 def create_integration_test_config_file(repo_path: Path) -> Path:

@@ -18,7 +18,7 @@ def failing_env(real_temp_repo, config_factory, tmp_path):
     config = factory.integration(github_enabled=False, post_creation_script=str(script))
     env = os.environ.copy()
     env["WT_DIR"] = str(config.wt_dir)
-    yield env, real_temp_repo
+    return env, real_temp_repo
     # Cleanup handled by fixture
 
 

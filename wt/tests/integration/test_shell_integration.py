@@ -134,7 +134,6 @@ echo "Shell function loaded successfully"
 
         @contextmanager
         def daemon_cleanup():
-            pass
             try:
                 yield
             finally:
@@ -205,7 +204,6 @@ echo "$create_exit:$nav_exit:$pwd_before:$pwd_after"
 
         @contextmanager
         def daemon_cleanup():
-            pass
             try:
                 yield
             finally:

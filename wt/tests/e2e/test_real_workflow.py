@@ -125,7 +125,7 @@ def real_env_with_existing_worktrees(real_temp_repo):
         [repo2.head.target],
     )
 
-    yield env, real_temp_repo
+    return env, real_temp_repo
 
     # Cleanup handled by fixture
 
