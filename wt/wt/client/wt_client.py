@@ -456,6 +456,13 @@ class WtClient:
                         )
                         if out.strip():
                             print(out)
+                        if result.post_hook.error == "timeout":
+                            ts = result.post_hook.timeout_secs
+                            if ts is not None:
+                                raise RuntimeError(
+                                    f"Post-creation script timed out after {ts:.1f}s",
+                                )
+                            raise RuntimeError("Post-creation script timed out")
                         raise RuntimeError(
                             f"Post-creation script error: {result.post_hook.error}",
                         )
@@ -477,7 +484,8 @@ class WtClient:
                 )
 
         except (ConnectionError, FileNotFoundError, OSError, asyncio.TimeoutError) as e:
-            logger.exception("Failed to communicate with daemon for worktree_create")
+            if self.verbose:
+                logger.exception("Failed to communicate with daemon for worktree_create")
             raise RuntimeError(f"Daemon worktree_create communication failed: {e}")
 
     async def delete_worktree(self, wtid: WorktreeID) -> WorktreeDeleteResult:

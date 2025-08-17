@@ -210,6 +210,7 @@ class WorktreeService:
                     "stdout": None,
                     "stderr": None,
                     "error": "timeout",
+                    "timeout_secs": float(timeout),
                 }
 
         stdout_buf: list[str] = []
@@ -255,6 +256,7 @@ class WorktreeService:
                 "stdout": None,
                 "stderr": None,
                 "error": "timeout",
+                "timeout_secs": float(timeout),
             }
         if t1:
             await t1

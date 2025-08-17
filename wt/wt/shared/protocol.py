@@ -352,6 +352,10 @@ class HookRunResult(BaseModel):
         default=None,
         description="High-level error: not_found/not_file/timeout/exception or exception message",
     )
+    timeout_secs: float | None = Field(
+        default=None,
+        description="Timeout value used when error=='timeout'",
+    )
 
 
 class WorktreeCreateResult(BaseModel):

@@ -104,7 +104,12 @@ def main(ctx, help, verbose):
     ctx.obj["verbose"] = effective_verbose
 
     if ctx.invoked_subcommand is None:
-        asyncio.run(_async_main(verbose=effective_verbose))
+        try:
+            asyncio.run(_async_main(verbose=effective_verbose))
+        except Exception as e:
+            if effective_verbose:
+                raise
+            raise click.ClickException(str(e))
         return
 
 
@@ -159,16 +164,21 @@ def sh(ctx, args):
     config, formatter, daemon_client, plugin_manager = _create_cli_dependencies(verbose=verbose)
 
     # Run async command handler
-    asyncio.run(
-        _async_sh_main(
-            daemon_client,
-            formatter,
-            config,
-            plugin_manager,
-            filtered_args,
-            ctx,
-        ),
-    )
+    try:
+        asyncio.run(
+            _async_sh_main(
+                daemon_client,
+                formatter,
+                config,
+                plugin_manager,
+                filtered_args,
+                ctx,
+            ),
+        )
+    except Exception as e:
+        if verbose:
+            raise
+        raise click.ClickException(str(e))
 
 
 async def _async_sh_main(
