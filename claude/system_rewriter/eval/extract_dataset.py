@@ -26,12 +26,11 @@ def find_last_user_text(msg: Any) -> Optional[str]:
     if isinstance(content, str):
         return content
     if isinstance(content, list):
-        texts = []
-        for part in content:
-            if isinstance(part, dict) and part.get("type") == "text":
-                t = part.get("text")
-                if isinstance(t, str):
-                    texts.append(t)
+        texts = [
+            part.get("text")
+            for part in content
+            if isinstance(part, dict) and part.get("type") == "text" and isinstance(part.get("text"), str)
+        ]
         return "\n".join(texts) if texts else None
     return None
 
@@ -51,13 +50,11 @@ def sys_has_tools_header(system: Any) -> bool:
 async def process_file(p: Path) -> list[dict]:
     out: list[dict] = []
     try:
-        # Use asyncio to read file without blocking CPU (still I/O bound)
-        # Fall back to normal open for simplicity; large lines still ok
         with p.open("r", encoding="utf-8", errors="ignore") as f:
             for line in f:
                 try:
                     rec = json.loads(line)
-                except Exception:
+                except json.JSONDecodeError:
                     continue
                 if rec.get("event") != "inbound_request":
                     continue
@@ -80,7 +77,7 @@ async def process_file(p: Path) -> list[dict]:
                     "anthropic_request": body,
                     "log_file": str(p),
                 })
-    except Exception:
+    except OSError:
         return out
     return out
 

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import json
+import difflib
 from pathlib import Path
 from typing import Any, Optional
 
@@ -14,7 +15,7 @@ def load_samples(run_dir: Path) -> list[dict[str, Any]]:
         for line in f:
             try:
                 out.append(json.loads(line))
-            except Exception:
+            except json.JSONDecodeError:
                 continue
     return out
 
@@ -28,7 +29,7 @@ def find_ccr_openai_request(correlation_id: str) -> Optional[dict[str, Any]]:
                 for line in f:
                     try:
                         rec = json.loads(line)
-                    except Exception:
+                    except json.JSONDecodeError:
                         continue
                     if rec.get("event") != "outbound_request":
                         continue
@@ -40,7 +41,7 @@ def find_ccr_openai_request(correlation_id: str) -> Optional[dict[str, Any]]:
                     body = rec.get("body")
                     if isinstance(body, dict):
                         return body
-        except Exception:
+        except OSError:
             continue
     return None
 
@@ -54,7 +55,6 @@ def pretty(obj: Any) -> str:
 
 
 def unified_diff_str(a: str, b: str, fromfile: str, tofile: str) -> str:
-    import difflib
     a_lines = a.splitlines(keepends=True)
     b_lines = b.splitlines(keepends=True)
     diff = difflib.unified_diff(a_lines, b_lines, fromfile=fromfile, tofile=tofile)
