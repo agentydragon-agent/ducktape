@@ -7,6 +7,7 @@ No subprocess JSON parsing is used for API calls.
 import logging
 import os
 import subprocess
+from typing import Optional
 
 from github import Github
 
@@ -40,26 +41,38 @@ class DisabledGitHubInterface:
         return None
 
 
+def get_github_token(token_arg: Optional[str] = None, *, timeout_secs: float = 5.0) -> Optional[str]:
+    """Obtain a GitHub token from explicit arg, env, or gh CLI.
+
+    Separated for easy mocking in tests: patch wt.server.github_client.get_github_token.
+    Skips gh in WT_TEST_MODE to avoid network/process flakiness under test.
+    """
+    if token_arg:
+        return token_arg
+    if env_tok := os.environ.get("GITHUB_TOKEN"):
+        return env_tok
+    if os.environ.get("WT_TEST_MODE") == "1":
+        return None
+    try:
+        cp = subprocess.run(
+            ["gh", "auth", "token"],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=timeout_secs,
+        )
+        tok = (cp.stdout or "").strip()
+        return tok or None
+    except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        return None
+    except (OSError, PermissionError) as e:
+        # Unexpected system errors should be visible to operator
+        raise RuntimeError(f"Failed to execute GitHub CLI: {e}")
+
+
 class GitHubInterface:
     def __init__(self, github_repo: str, token: str | None = None):
-        token = token or os.environ.get("GITHUB_TOKEN")
-        if not token:
-            try:
-                token = subprocess.run(
-                    ["gh", "auth", "token"],
-                    capture_output=True,
-                    text=True,
-                    check=True,
-                ).stdout.strip()
-            except (FileNotFoundError, subprocess.CalledProcessError):
-                # Expected cases: gh not installed or not authenticated
-                token = None
-            except subprocess.TimeoutExpired:
-                # Command hung - this is unexpected, let caller handle it
-                raise RuntimeError("GitHub CLI command timed out")
-            except (OSError, PermissionError) as e:
-                # Unexpected system errors that should be visible
-                raise RuntimeError(f"Failed to execute GitHub CLI: {e}")
+        token = get_github_token(token)
         self.github_repo = github_repo
         self._gh = Github(token) if token else Github()
         self._repo = None  # Lazy initialization

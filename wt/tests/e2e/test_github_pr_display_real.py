@@ -13,6 +13,12 @@ import pytest
 from ..test_utils import add_project_root_to_env, run_cli_command
 
 
+@pytest.fixture(autouse=True)
+def _no_gh_token(monkeypatch):
+    from wt.server import github_client
+    monkeypatch.setattr(github_client, "get_github_token", lambda *a, **kw: None)
+
+
 @pytest.mark.integration
 @pytest.mark.real_github
 def test_github_pr_display_with_mocked_pygithub(

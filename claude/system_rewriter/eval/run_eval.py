@@ -136,26 +136,116 @@ def rewrite_system_with_template(system_text: str, template_path: Path) -> str:
 def anthro_to_openai_messages(
     body: Dict[str, Any], new_system_text: Optional[str]
 ) -> List[Dict[str, Any]]:
-    # Convert Anthropic-style to OpenAI chat format using provided system text
+    """Translate Anthropic messages into OpenAI Chat format, preserving:
+    - assistant tool_calls (from Anthropic tool_use parts)
+    - tool results as role="tool" messages (from Anthropic tool_result parts)
+    - user/assistant plain text
+    Avoid emitting empty messages.
+    """
+    def _join_text_parts(parts: List[Dict[str, Any]]) -> str:
+        texts: List[str] = []
+        for p in parts:
+            if isinstance(p, dict) and p.get("type") == "text" and isinstance(p.get("text"), str):
+                texts.append(p["text"])
+        return "\n".join(texts)
+
     out: List[Dict[str, Any]] = []
     if new_system_text:
         out.append({"role": "system", "content": new_system_text})
-    # messages
+
     for m in body.get("messages", []):
         role = m.get("role")
         content = m.get("content")
+
+        # Simple string content
         if isinstance(content, str):
-            out.append({"role": role, "content": content})
-        elif isinstance(content, list):
-            texts: List[str] = []
-            for part in content:
-                if (
-                    isinstance(part, dict)
-                    and part.get("type") == "text"
-                    and isinstance(part.get("text"), str)
-                ):
-                    texts.append(part["text"])
-            out.append({"role": role, "content": "\n".join(texts)})
+            if role in ("user", "assistant") and content.strip():
+                out.append({"role": role, "content": content})
+            # ignore system here (we already injected rewritten system)
+            continue
+
+        # Structured content list
+        if isinstance(content, list):
+            if role == "assistant":
+                text_buf: List[str] = []
+                tool_calls: List[Dict[str, Any]] = []
+                for part in content:
+                    if not isinstance(part, dict):
+                        continue
+                    ptype = part.get("type")
+                    if ptype == "text" and isinstance(part.get("text"), str):
+                        text_buf.append(part["text"]) 
+                    elif ptype == "tool_use":
+                        # Map to OpenAI function call with required id
+                        name = part.get("name")
+                        args = part.get("input")
+                        tcid = part.get("id") or part.get("tool_use_id")
+                        # Preserve original JSON argument string if already a string; else serialize deterministically
+                        if isinstance(args, str):
+                            args_str = args  # preserve exactly
+                        else:
+                            try:
+                                # Minified JSON, preserve key order (no sort_keys), no spaces
+                                args_str = json.dumps(args if args is not None else {}, ensure_ascii=False, separators=(",", ":"))
+                            except Exception as e:
+                                raise RuntimeError(f"FATAL: Unserializable tool_use.input for function '{name}': {e}")
+                        tool_call: Dict[str, Any] = {
+                            "type": "function",
+                            "function": {"name": name or "unknown", "arguments": args_str},
+                        }
+                        if tcid:
+                            tool_call["id"] = str(tcid)
+                        tool_calls.append(tool_call)
+                if text_buf or tool_calls:
+                    msg: Dict[str, Any] = {"role": "assistant"}
+                    if text_buf:
+                        msg["content"] = "\n".join(text_buf)
+                    else:
+                        msg["content"] = None  # no empty-string content when only tool_calls
+                    if tool_calls:
+                        msg["tool_calls"] = tool_calls
+                    out.append(msg)
+                continue
+
+            if role == "user":
+                text_parts: List[Dict[str, Any]] = []
+                tool_msgs: List[Dict[str, Any]] = []
+                for part in content:
+                    if not isinstance(part, dict):
+                        continue
+                    ptype = part.get("type")
+                    if ptype == "text":
+                        text_parts.append(part)
+                    elif ptype == "tool_result":
+                        # Emit as a tool role message
+                        tcid = part.get("tool_use_id") or part.get("id")
+                        # tool_result content may itself be list-of-text or string
+                        tcontent = part.get("content")
+                        if isinstance(tcontent, str):
+                            tool_text = tcontent
+                        elif isinstance(tcontent, list):
+                            tool_text = _join_text_parts(tcontent)
+                        else:
+                            try:
+                                tool_text = json.dumps(tcontent, ensure_ascii=False, sort_keys=True)
+                            except Exception as e:
+                                raise RuntimeError(f"FATAL: Unserializable tool_result.content: {e}")
+                        # Emit tool result; if missing id, keep but mark unknown to avoid silent drop
+                        tool_msgs.append({
+                            "role": "tool",
+                            "tool_call_id": str(tcid) if tcid else "unknown",
+                            "content": tool_text or "",
+                        })
+                # Order: tool messages first (to mirror CCR), then user text (if any)
+                out.extend([tm for tm in tool_msgs if (tm.get("content") or tm.get("tool_call_id"))])
+                txt = _join_text_parts(text_parts)
+                if txt.strip():
+                    out.append({"role": "user", "content": txt})
+                continue
+
+            # Ignore any other roles or system lists here
+            continue
+
     return out
 
 
@@ -490,6 +580,13 @@ async def run_eval(
     print(json.dumps({"event": "tasks_built", "count": len(tasks)}))
 
     scores: List[float] = []
+    # Secondary metrics: tooling usage
+    tool_stats = {
+        "total_samples": 0,
+        "text_only": 0,
+        "with_tools": 0,
+        "function_counts": {},  # name -> count of tool calls
+    }
     with (
         SAMPLES_OUT.open("w", encoding="utf-8") as s_out,
         GRADES_OUT.open("w", encoding="utf-8") as g_out,
@@ -498,9 +595,20 @@ async def run_eval(
         for fut in asyncio.as_completed(tasks):
             samp_rec, grade_rec = await fut
             if samp_rec:
-                s_out.write(json.dumps(samp_rec, ensure_ascii=False) + "\n")
+                s_out.write(json.dumps(samp_rec, ensure_ascii=False, sort_keys=True) + "\n")
+                # Update tool usage stats
+                tool_stats["total_samples"] += 1
+                nmsg = samp_rec.get("new_assistant_message") or {}
+                tcs = nmsg.get("tool_calls") or []
+                if not tcs:
+                    tool_stats["text_only"] += 1
+                else:
+                    tool_stats["with_tools"] += 1
+                    for tc in tcs:
+                        fn = ((tc.get("function") or {}).get("name")) or "UNKNOWN"
+                        tool_stats["function_counts"][fn] = tool_stats["function_counts"].get(fn, 0) + 1
             if grade_rec:
-                g_out.write(json.dumps(grade_rec, ensure_ascii=False) + "\n")
+                g_out.write(json.dumps(grade_rec, ensure_ascii=False, sort_keys=True) + "\n")
                 try:
                     parsed = parse_grade_from_responses(grade_rec["response"])  # type: ignore[index]
                     score = float(parsed.get("score", 0))
@@ -531,6 +639,13 @@ async def run_eval(
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     lcb = mean - ci95
     ucb = mean + ci95
+    # Compute secondary metrics
+    total_samples = tool_stats["total_samples"] or 0
+    total_tool_calls = sum(tool_stats["function_counts"].values()) if tool_stats["function_counts"] else 0
+    function_pct = {
+        k: (v / total_tool_calls) if total_tool_calls > 0 else 0.0
+        for k, v in tool_stats["function_counts"].items()
+    }
     summary = {
         "n": len(scores),
         "mean": mean,
@@ -538,10 +653,17 @@ async def run_eval(
         "lcb": lcb,
         "ucb": ucb,
         "counters": counters,
+        "tooling": {
+            "total_samples": total_samples,
+            "text_only_pct": (tool_stats["text_only"] / total_samples) if total_samples > 0 else 0.0,
+            "with_tools_pct": (tool_stats["with_tools"] / total_samples) if total_samples > 0 else 0.0,
+            "function_counts": tool_stats["function_counts"],
+            "function_pct": function_pct,
+        },
     }
     with SUMMARY_OUT.open("w", encoding="utf-8") as f:
-        json.dump(summary, f)
-    print(json.dumps(summary))
+        json.dump(summary, f, sort_keys=True)
+    print(json.dumps(summary, sort_keys=True))
 
 
 if __name__ == "__main__":
