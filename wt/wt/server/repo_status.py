@@ -24,8 +24,7 @@ class RepoStatus:
         branch_name = repo.head.shorthand
         commit_info: CommitInfo | None
         try:
-            data = self.git_manager.get_commit_info("HEAD", worktree_path)
-            commit_info = CommitInfo.model_validate(data)
+            commit_info = self.git_manager.get_commit_info("HEAD", worktree_path)
         except (NoSuchRefError, pygit2.GitError, KeyError, ValueError):
             commit_info = None
 

@@ -21,6 +21,7 @@ from pydantic import BaseModel, TypeAdapter, ValidationError
 from ..shared.configuration import Configuration
 from ..shared.error_handling import validate_worktree_name
 from ..shared.protocol import (
+    ErrorCodes,
     ErrorResponse,
     HookOutputEvent,
     ProgressEvent,
@@ -217,7 +218,7 @@ class WtClient:
 
         # Launch daemon as a new session; do not inherit stdio; only the handshake FD is kept
         try:
-            subprocess.Popen(
+            subprocess.Popen(  # noqa: ASYNC220
                 [sys.executable, "-m", "wt.server.wt_server"],
                 env=env,
                 stdout=subprocess.DEVNULL,
@@ -291,8 +292,6 @@ class WtClient:
             status_response = await self.get_status([identify_result.wtid])
         except RpcError as e:
             # Only special-case unmanaged worktrees by code; otherwise bubble up
-            from ..shared.protocol import ErrorCodes
-
             if e.code == ErrorCodes.WORKTREE_NOT_FOUND:
                 return [], []
             raise

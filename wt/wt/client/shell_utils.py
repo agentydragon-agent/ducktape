@@ -1,5 +1,6 @@
 """Shell utilities for command emission and error handling."""
 
+import contextlib
 import os
 import sys
 
@@ -8,8 +9,6 @@ import click
 
 def emit_command(cmd: str) -> None:
     """Emit a command for shell execution via fd3."""
-    import contextlib
-
     # fd3 not available (e.g., in tests or non-shell environments)
     # Silently ignore - this is expected in many contexts
     with contextlib.suppress(OSError):

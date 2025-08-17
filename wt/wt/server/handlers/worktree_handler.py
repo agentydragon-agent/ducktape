@@ -138,7 +138,7 @@ async def worktree_create(
 
         # run_post_creation_script is async; we stream via the same writer
         async def _sink(name: str, data: str) -> None:
-            from ...shared.protocol import HookOutputEvent, HookStream
+            from ...shared.protocol import HookOutputEvent, HookStream  # noqa: PLC0415 (local import avoids circular import in runtime)
 
             ev = HookOutputEvent(
                 stream=(HookStream.STDOUT if name == "stdout" else HookStream.STDERR),

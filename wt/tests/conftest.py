@@ -186,51 +186,28 @@ def assert_worktree_not_exists(worktree_path: Path):
 # ================================================
 
 
-def kill_daemon_at_wt_dir(wt_dir: Path, timeout: float = 3.0) -> None:
-    """Kill daemon in the given WT_DIR and verify it's gone.
+def kill_daemon_at_wt_dir(wt_dir: Path) -> None:
+    """Brutally stop daemon for the given WT_DIR and clean files.
 
-    Strategy:
-    - Run 'wt sh kill-daemon' with WT_DIR env
-    - If PID persists, send SIGKILL
-    - Unlink PID and socket files as last resort
+    Test-only cleanup: send SIGKILL if PID file exists, then unlink pid/socket.
+    No CLI calls, no waits.
     """
-    from .test_utils import run_cli_command
-
-    env = os.environ.copy()
-    env["WT_DIR"] = str(wt_dir.resolve())
-
-    # Graceful shutdown
-    run_cli_command(["sh", "kill-daemon"], env=env)
-
     pid_file = wt_dir / "daemon.pid"
     sock_file = wt_dir / "daemon.sock"
 
-    start = time.time()
-    while time.time() - start < timeout:
-        if not pid_file.exists():
-            return
-        try:
+    try:
+        if pid_file.exists():
             pid_txt = pid_file.read_text().strip()
-        except (OSError, UnicodeDecodeError):
-            return
-        if not pid_txt:
-            return
-        try:
-            pid = int(pid_txt)
-        except ValueError:
-            return
-        # If still alive, send SIGKILL once
-        try:
-            os.kill(pid, 0)
-            with contextlib.suppress(Exception):
-                os.kill(pid, signal.SIGKILL)
-            time.sleep(0.2)
-        except OSError as e:
-            if e.errno == errno.ESRCH:
-                return  # process gone
-            time.sleep(0.1)
+            if pid_txt:
+                try:
+                    pid = int(pid_txt)
+                    with contextlib.suppress(Exception):
+                        os.kill(pid, signal.SIGKILL)
+                except ValueError:
+                    pass
+    except Exception:
+        pass
 
-    # Last resort: unlink files to avoid cross-test interference
     with contextlib.suppress(Exception):
         pid_file.unlink()
     with contextlib.suppress(Exception):

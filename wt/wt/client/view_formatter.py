@@ -8,13 +8,13 @@ from tabulate import tabulate
 from ..shared.github_models import PRData, PRInfo, PRState, PRStatus
 from ..shared.protocol import StatusResult
 
-# PR status display mapping - moved from formatters.py
+# PR status display mapping centralized via PRStatus.display_text
 PR_STATUS_DISPLAY_MAP = {
-    "merged": ("✅", "already merged"),
-    "closed": ("❌", "closed"),
-    "can merge": ("🟢", "can merge"),
-    "conflict": ("🔴", "has conflict"),
-    "open": ("🟡", "open"),
+    PRStatus.MERGED.display_text: ("✅", "already merged"),
+    PRStatus.CLOSED.display_text: ("❌", "closed"),
+    PRStatus.OPEN_MERGEABLE.display_text: ("🟢", "can merge"),
+    PRStatus.OPEN_CONFLICTING.display_text: ("🔴", "has conflict"),
+    PRStatus.OPEN_UNKNOWN.display_text: ("🟡", "open"),
 }
 
 

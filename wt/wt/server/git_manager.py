@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 import pygit2
 
 from ..shared.git_utils import git_run
+from ..shared.protocol import CommitInfo
 
 if TYPE_CHECKING:
     from ..shared.configuration import Configuration
@@ -99,7 +100,7 @@ class GitManager:
             return self._main_repo
         return pygit2.Repository(str(path))
 
-    def get_commit_info(self, ref: str, worktree: Path) -> dict[str, str]:
+    def get_commit_info(self, ref: str, worktree: Path) -> CommitInfo:
         repo = self.get_repo(worktree)
         try:
             # Resolve reference to commit object in the given repo
@@ -112,16 +113,16 @@ class GitManager:
         if isinstance(message, bytes):
             message = message.decode("utf-8", errors="replace")
 
-        return {
-            "hash": str(commit.id),
-            "short_hash": str(commit.id)[:8],
-            "message": message.strip(),
-            "author": commit.author.name,
-            "date": datetime.fromtimestamp(
+        return CommitInfo(
+            hash=str(commit.id),
+            short_hash=str(commit.id)[:8],
+            message=message.strip(),
+            author=commit.author.name,
+            date=datetime.fromtimestamp(
                 commit.commit_time,
                 timezone.utc,
             ).isoformat(),
-        }
+        )
 
     def verify_ref_exists(self, ref: str) -> str:
         try:

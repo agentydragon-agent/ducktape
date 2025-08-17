@@ -633,8 +633,20 @@ class WtDaemon:
             await self._send_response(writer, response)
             return
 
-        except Exception:
+        except Exception as e:
             logger.exception("Error handling client request")
+            rid = request.id if ("request" in locals() and request) else uuid.UUID(int=0)
+            try:
+                await self._send_response(
+                    writer,
+                    create_error_response(
+                        ErrorCodes.INTERNAL_ERROR,
+                        "Internal server error",
+                        rid,
+                    ),
+                )
+            except Exception:
+                pass
         finally:
             writer.close()
             await writer.wait_closed()
