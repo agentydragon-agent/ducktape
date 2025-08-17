@@ -34,6 +34,19 @@ def _project_root_on_pythonpath():
     os.environ["WT_TEST_MODE"] = "1"
 
 
+@pytest.fixture(autouse=True)
+def _disable_gh_cli_token(monkeypatch):
+    """Disable gh CLI token retrieval in all tests by default.
+
+    Tests that truly need real GitHub should explicitly bypass or override this.
+    """
+    try:
+        from wt.server import github_client
+    except Exception:
+        return
+    monkeypatch.setattr(github_client, "get_github_token", lambda *a, **kw: None)
+
+
 # =============================================================================
 # Factory Fixtures - Modern pytest pattern for test setup
 #

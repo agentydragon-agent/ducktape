@@ -41,7 +41,7 @@ class DisabledGitHubInterface:
         return None
 
 
-def get_github_token(token_arg: Optional[str] = None, *, timeout_secs: float = 5.0) -> Optional[str]:
+def get_github_token(token_arg: Optional[str] = None, *, timeout_secs: float = 10.0) -> Optional[str]:
     """Obtain a GitHub token from explicit arg, env, or gh CLI.
 
     Separated for easy mocking in tests: patch wt.server.github_client.get_github_token.
