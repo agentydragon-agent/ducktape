@@ -38,7 +38,7 @@ _bg_tasks: list[asyncio.Task] = []
 
 
 @rpc.method("get_status", params=StatusParams)
-async def get_status(
+async def get_status(  # noqa: PLR0913
     status: StatusService,
     gitstat: GitstatusdService,
     prs: PRServiceProvider,
@@ -175,10 +175,10 @@ async def get_status(
     worktree_results = await asyncio.gather(
         *[process_single_worktree(p) for p in worktree_paths],
     )
+    total_time = 0.0
     for wtid, status_result, proc_ms in worktree_results:
         items[wtid] = StatusItem(status=status_result, processing_time_ms=proc_ms)
-
-    total_time = 0.0
+        total_time += proc_ms
     total_wt = len(worktree_paths)
     with_git = sum(
         1

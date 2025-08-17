@@ -72,7 +72,7 @@ class RpcRegistry:
         ] = {}
         self._stream_methods: set[str] = set()
 
-    def _build_args(
+    def _build_args(  # noqa: PLR0913
         self,
         fn,
         *,

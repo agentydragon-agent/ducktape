@@ -12,7 +12,6 @@ import pytest
 
 from ..test_utils import add_project_root_to_env, run_cli_command
 
-
 # Global conftest disables gh token via get_github_token
 
 

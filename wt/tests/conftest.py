@@ -1,18 +1,16 @@
 import contextlib
-import errno
 import os
 import signal
-import time
 from collections.abc import Generator
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-# Removed GitPython dependency; use pygit2 for repo fixtures if needed
 import pygit2
 import pytest
 import yaml
 from click.testing import CliRunner
 
+from wt.server import github_client
 from wt.server.worktree_service import WorktreeService
 from wt.shared.config_file import ConfigFile
 from wt.shared.configuration import Configuration
@@ -40,10 +38,6 @@ def _disable_gh_cli_token(monkeypatch):
 
     Tests that truly need real GitHub should explicitly bypass or override this.
     """
-    try:
-        from wt.server import github_client
-    except Exception:
-        return
     monkeypatch.setattr(github_client, "get_github_token", lambda *a, **kw: None)
 
 
@@ -148,35 +142,8 @@ def sample_commit_info():
 
 
 @pytest.fixture
-def empty_worktree_status():
-    """Empty worktree status dict for testing empty state."""
-    return {}
-
-
-@pytest.fixture
 def cli_runner() -> CliRunner:
     return CliRunner()
-
-
-@pytest.fixture
-def capture_commands() -> Generator[list[str], None, None]:
-    commands = []
-
-    def mock_emit_command(cmd: str):
-        commands.append(cmd)
-
-    with patch("wt.client.shell_utils.emit_command", side_effect=mock_emit_command):
-        yield commands
-
-
-@pytest.fixture
-def mock_process_check():
-    """Mock process checking to avoid system dependencies."""
-    with patch(
-        "wt.server.worktree_service.WorktreeService._get_processes_in_directory",
-    ) as mock:
-        mock.return_value = []  # No processes by default
-        yield mock
 
 
 def assert_worktree_exists(worktree_path: Path, expected_branch: str | None = None):
@@ -186,9 +153,9 @@ def assert_worktree_exists(worktree_path: Path, expected_branch: str | None = No
     if expected_branch:
         repo = pygit2.Repository(str(worktree_path))
         head_ref = repo.head.shorthand
-        assert head_ref == expected_branch, (
-            f"Expected branch {expected_branch}, got {head_ref}"
-        )
+        assert (
+            head_ref == expected_branch
+        ), f"Expected branch {expected_branch}, got {head_ref}"
 
 
 def assert_worktree_not_exists(worktree_path: Path):
@@ -255,9 +222,9 @@ def create_integration_test_config_file(repo_path: Path) -> Path:
 def _require_gitstatusd_on_path():
     import shutil
 
-    assert shutil.which("gitstatusd"), (
-        "gitstatusd not found on PATH - required for integration tests"
-    )
+    assert shutil.which(
+        "gitstatusd"
+    ), "gitstatusd not found on PATH - required for integration tests"
 
 
 @pytest.fixture
@@ -375,6 +342,3 @@ def build_test_configuration(
         yaml.dump(config_file.model_dump(), f)
 
     return Configuration.resolve(wt_dir)
-
-
-# Config builder fixture removed - use config_factory directly

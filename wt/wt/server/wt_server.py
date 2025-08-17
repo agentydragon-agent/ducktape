@@ -25,11 +25,13 @@ from ..shared.configuration import Configuration, load_config
 from ..shared.protocol import (
     DaemonHealth,
     DaemonHealthStatus,
+    ErrorCodes,
     ErrorResponse,
     PingResult,
     Request,
     Response,
     WorktreeID,
+    create_error_response,
     parse_request,
 )
 from .discovery_scanner import DiscoveryScanner
@@ -202,8 +204,11 @@ class GitstatusdClient:
             self.cached_working_status = (dirty_files, untracked_files)
             self.last_updated_at = datetime.now()
         except Exception:
+            logger.exception("gitstatusd update failed for %s", self.worktree_info.name)
             if not self.last_updated_at:
                 self.last_updated_at = datetime.now()
+            # Mark failure by clearing cache and letting state be STOPPED/FAILED next check
+            self.cached_working_status = ([], [])
         finally:
             self._status_updating = False
 
@@ -633,10 +638,10 @@ class WtDaemon:
             await self._send_response(writer, response)
             return
 
-        except Exception as e:
+        except Exception:
             logger.exception("Error handling client request")
             rid = request.id if ("request" in locals() and request) else uuid.UUID(int=0)
-            try:
+            with contextlib.suppress(Exception):
                 await self._send_response(
                     writer,
                     create_error_response(
@@ -645,8 +650,6 @@ class WtDaemon:
                         rid,
                     ),
                 )
-            except Exception:
-                pass
         finally:
             writer.close()
             await writer.wait_closed()

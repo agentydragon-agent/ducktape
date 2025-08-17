@@ -15,7 +15,7 @@ def build_sanitized_git_env(env: Mapping[str, str] | None = None) -> dict[str, s
     return e
 
 
-def git_run(
+def git_run(  # noqa: PLR0913
     args: list[str],
     cwd: Path | str,
     check: bool = True,

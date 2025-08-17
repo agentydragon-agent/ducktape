@@ -54,7 +54,7 @@ async def worktree_list(git: GitService, config: Configuration) -> WorktreeListR
 
 
 @rpc.stream("worktree_create", params=WorktreeCreateParams)
-async def worktree_create(
+async def worktree_create(  # noqa: PLR0913
     git: GitService,
     coordinator: WorktreeCoordinator,
     svc: WorktreeService,
@@ -138,7 +138,10 @@ async def worktree_create(
 
         # run_post_creation_script is async; we stream via the same writer
         async def _sink(name: str, data: str) -> None:
-            from ...shared.protocol import HookOutputEvent, HookStream  # noqa: PLC0415 (local import avoids circular import in runtime)
+            from ...shared.protocol import (
+                HookOutputEvent,
+                HookStream,
+            )
 
             ev = HookOutputEvent(
                 stream=(HookStream.STDOUT if name == "stdout" else HookStream.STDERR),
