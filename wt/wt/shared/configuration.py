@@ -157,7 +157,7 @@ class Configuration:
             def _under_tmp(p: Path) -> bool:
                 try:
                     return p.resolve().is_relative_to(temp_root)
-                except Exception:
+                except AttributeError:
                     return False
 
             if not (

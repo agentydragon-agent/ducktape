@@ -37,6 +37,7 @@ class DebouncedGitstatusRefresh:
                     p = Path(raw)
                     return p if p.is_absolute() else (self.worktree_path / p).resolve()
             except OSError:
+                # Linked .git files use 'gitdir: <path>' format per git docs; it's safe to skip on read errors
                 return None
         return None
 
@@ -81,7 +82,7 @@ class DebouncedGitstatusRefresh:
                         lambda: asyncio.create_task(self._debounced(reason)),
                     )
                 except Exception:
-                    pass
+                    logger.exception("Failed to enqueue debounced gitstatus refresh")
 
             threading.Thread(target=_enqueue, daemon=True).start()
 

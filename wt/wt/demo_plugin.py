@@ -20,5 +20,5 @@ async def run(args: list[str], client, config, io: PluginIO) -> int:
     # Default: show status via server
     resp = await client.get_status()
     count = len(resp.items)
-    print(f"demo: {count} worktrees")
+    io.echo(f"demo: {count} worktrees")
     return 0

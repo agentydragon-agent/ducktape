@@ -3,8 +3,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from wt.shared.configuration import Configuration
-
+from ...shared.configuration import Configuration
 from ...shared.constants import MAIN_WORKTREE_DISPLAY_NAME
 from ...shared.protocol import (
     ErrorCodes,
@@ -119,9 +118,7 @@ async def worktree_create(  # noqa: PLR0913
         source_branch=src_branch,
     )
     # Update daemon registry and index immediately (index-only lookup pathway)
-    from ..worktree_ids import make_worktree_id as _mk
-
-    wt_info = DiscoveredWorktree(worktree_path, worktree_path.name, _mk(params.name))
+    wt_info = DiscoveredWorktree(worktree_path, worktree_path.name, make_worktree_id(params.name))
     await coordinator.register_worktree(wt_info)
 
     if source_path:
@@ -178,9 +175,8 @@ async def worktree_delete(
             message=f"Worktree {worktree_name} does not exist at {worktree_path}",
         )
     await svc.remove_worktree(config, worktree_name, force=params.force)
-    from ..worktree_ids import make_worktree_id as _mk
 
-    wt_info = DiscoveredWorktree(worktree_path, worktree_name, _mk(worktree_name))
+    wt_info = DiscoveredWorktree(worktree_path, worktree_name, make_worktree_id(worktree_name))
     await coordinator.unregister_worktree(wt_info)
     return WorktreeDeleteResult(
         wtid=params.wtid,

@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import tiktoken  # type: ignore
 from openai import AsyncOpenAI
+from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 # Config
 DATASET_PATH = Path(__file__).parent / "data" / "dataset.jsonl"
@@ -795,6 +796,88 @@ async def run_eval(
     with SUMMARY_OUT.open("w", encoding="utf-8") as f:
         json.dump(summary, f, sort_keys=True)
     print(json.dumps(summary, sort_keys=True))
+
+    # Generate HTML report summarizing sequences per sample
+    def _generate_html_report(out_dir: Path):
+        samples_path = out_dir / "samples.jsonl"
+        grades_path = out_dir / "grades.jsonl"
+        report_path = out_dir / "report.html"
+        # Build grades map
+        grades_map: Dict[str, Dict[str, Any]] = {}
+        try:
+            with grades_path.open("r", encoding="utf-8") as gf:
+                for line in gf:
+                    try:
+                        grec = json.loads(line)
+                    except Exception:
+                        continue
+                    cid = grec.get("correlation_id")
+                    if not cid:
+                        continue
+                    try:
+                        parsed = parse_grade_from_responses(grec.get("response"))
+                        grades_map[cid] = parsed
+                    except Exception:
+                        grades_map[cid] = {"score": None, "rationale": None}
+        except FileNotFoundError:
+            pass
+
+        # Collect rows
+        rows: List[Dict[str, Any]] = []
+        def _prev_asst_idx(msgs: List[Dict[str, Any]]) -> Optional[int]:
+            last_idx: Optional[int] = None
+            for i in range(0, max(0, len(msgs) - 1)):
+                if isinstance(msgs[i], dict) and msgs[i].get("role") == "assistant":
+                    last_idx = i
+            return last_idx
+        summary: Dict[str, Any] = {}
+        try:
+            with (out_dir / "summary.json").open("r", encoding="utf-8") as sf:
+                summary = json.load(sf)
+        except Exception:
+            summary = {}
+
+        try:
+            with samples_path.open("r", encoding="utf-8") as sf:
+                for line in sf:
+                    try:
+                        srec = json.loads(line)
+                    except Exception:
+                        continue
+                    cid = srec.get("correlation_id") or ""
+                    ar = srec.get("anthropic_request") or {}
+                    msgs = ar.get("messages") or []
+                    idx = _prev_asst_idx(msgs)
+                    if idx is None:
+                        last_three = msgs[-3:] if len(msgs) > 3 else msgs
+                        bad_branch = []
+                    else:
+                        start = max(0, idx - 3)
+                        last_three = msgs[start:idx]
+                        bad_branch = msgs[idx:]
+                    alt = srec.get("new_assistant_message") or {}
+                    grade = (grades_map.get(cid) or {})
+                    rows.append({
+                        "correlation_id": cid,
+                        "timestamp": srec.get("timestamp"),
+                        "last_three": last_three,
+                        "bad_branch": bad_branch,
+                        "alternative": alt,
+                        "grade": grade,
+                    })
+        except FileNotFoundError:
+            pass
+
+        # Jinja2 template
+        env = Environment(
+            loader=FileSystemLoader(str(Path(__file__).parent / "templates")),
+            autoescape=select_autoescape(["html", "xml"]) 
+        )
+        template = env.get_template("report.html.j2")
+        html_text = template.render(rows=rows, summary=summary)
+        report_path.write_text(html_text, encoding="utf-8")
+
+    _generate_html_report(OUT_DIR)
 
 
 if __name__ == "__main__":

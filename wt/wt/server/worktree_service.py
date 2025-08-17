@@ -13,7 +13,8 @@ import psutil
 import pygit2
 
 from ..shared.error_handling import ErrorContext, validate_worktree_name
-from ..shared.github_models import PRData, PRInfo
+
+# PR types are referenced by protocol layer; not needed here directly
 from ..shared.models import ProcessInfo
 from ..shared.protocol import WorktreeID  # type: ignore[F401]
 from .copy_strategies import get_copy_strategy
@@ -214,7 +215,7 @@ class WorktreeService:
         stdout_buf: list[str] = []
         stderr_buf: list[str] = []
 
-        async def _forward(stream, name):
+        async def _forward(stream, name):  # Streams stdout/stderr; expensive O(stream size)
             chunk_size = 4096
             while True:
                 data = await stream.read(chunk_size)
@@ -269,7 +270,10 @@ class WorktreeService:
         }
 
     def _get_processes_in_directory(self, directory: Path) -> list:
-        """Get processes running in a directory."""
+        """Get processes running in a directory.
+
+        Note: O(size of process table) due to psutil.process_iter and open_files scanning.
+        """
         procs = []
         for proc in psutil.process_iter(["pid", "name", "cwd"]):
             try:
@@ -287,14 +291,3 @@ class WorktreeService:
                 continue
         return procs
 
-    def get_github_pr_status_single(self, branch_name: str) -> PRInfo:
-        """Get PR status for a single branch."""
-        prs = self.github.pr_search(branch_name)
-        if not prs:
-            return PRInfo(branch=branch_name)
-        pr = prs[0]
-
-        return PRInfo(
-            branch=branch_name,
-            pr_data=PRData(pr_number=pr.number, pr_state=pr.state),
-        )

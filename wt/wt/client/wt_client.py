@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
+import click
 import psutil
 from pydantic import BaseModel, TypeAdapter, ValidationError
 
@@ -257,7 +258,7 @@ class WtClient:
                         return last_obj
                     raise RuntimeError("Daemon closed handshake pipe before ready")
                 if self.verbose:
-                    print(f"[daemon-handshake] {line.rstrip()}")
+                    click.echo(f"[daemon-handshake] {line.rstrip()}")
                 line = line.strip()
                 if not line:
                     continue
@@ -392,7 +393,7 @@ class WtClient:
                             + (result.post_hook.stderr or "")
                         )
                         if out.strip():
-                            print(out)
+                            click.echo(out)
                         raise RuntimeError(
                             f"Post-creation script failed with exit code {result.post_hook.exit_code}",
                         )
@@ -404,7 +405,7 @@ class WtClient:
                             + (result.post_hook.stderr or "")
                         )
                         if out.strip():
-                            print(out)
+                            click.echo(out)
                         if result.post_hook.error == "timeout":
                             ts = result.post_hook.timeout_secs
                             if ts is not None:
@@ -423,7 +424,7 @@ class WtClient:
                             + (result.post_hook.stderr or "")
                         )
                         if out.strip():
-                            print(out)
+                            click.echo(out)
                         raise RuntimeError("Post-creation script did not run")
                 return result
             except (json.JSONDecodeError, ValidationError, TypeError, ValueError) as e:
@@ -503,6 +504,8 @@ class WtClient:
             ValidationError,
         ) as e:
             logger.error("RPC %s failed: %s", method, e)
+            if isinstance(e, RpcError):
+                raise RuntimeError(f"RPC {method} failed ({e.code}): {e}")
             raise RuntimeError(f"RPC {method} failed: {e}")
 
     async def resolve_path(self, params: WorktreeResolvePathParams) -> str:

@@ -167,6 +167,7 @@ class GitStatusdProtocol:
     """GitStatusd protocol handler with proper type checking and validation."""
 
     # Expected minimum number of fields for a valid git repository response
+    # Matches gitstatusd v1.5+ protocol; bump if upstream adds fields
     MIN_GIT_REPO_FIELDS = 29
 
     @staticmethod

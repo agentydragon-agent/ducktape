@@ -2,8 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from wt.shared.configuration import Configuration
-
+from ...shared.configuration import Configuration
 from ...shared.constants import MAIN_WORKTREE_DISPLAY_NAME
 from ...shared.protocol import (
     ErrorCodes,

@@ -200,6 +200,8 @@ class GitManager:
             self._main_repo.branches.local.create(branch, target)
 
         # Use git CLI to create worktree without checkout (critical for large repos)
+        # Rationale: pygit2 lacks a no-checkout worktree-add equivalent with matching performance
+        # for very large repos; consolidating via CLI here avoids heavy libgit operations.
         try:
             git_run(
                 ["worktree", "add", "--no-checkout", str(path_obj), branch],

@@ -108,6 +108,7 @@ class ViewFormatter:
             pr_state = d.pr_state
 
             # Create clickable hyperlink - fall back to plain text if not supported
+            # Hardcoded helper: map PR number -> http://go/pull/{n}
             clickable_link = self.make_hyperlink(
                 f"http://go/pull/{pr_number}",
                 f"#{pr_number}",
@@ -182,6 +183,7 @@ class ViewFormatter:
         if not status.pr_info or not status.pr_info.pr_data:
             return ""
         pr_number = status.pr_info.pr_data.pr_number
+        # Hardcoded helper: map PR number -> http://go/pull/{n}
         return self.make_hyperlink(f"http://go/pull/{pr_number}", f"#{pr_number}")
 
     def _get_pr_status_column(self, status: StatusResult) -> str:

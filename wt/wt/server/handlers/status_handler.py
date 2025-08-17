@@ -6,8 +6,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from wt.shared.configuration import Configuration
-
+from ...shared.configuration import Configuration
 from ...shared.protocol import (
     CommitInfo,
     ComponentsStatus,
@@ -34,7 +33,7 @@ from ..services import (
 from ..worktree_ids import make_worktree_id, parse_worktree_id
 
 logger = logging.getLogger(__name__)
-_bg_tasks: list[asyncio.Task] = []
+_bg_tasks: set[asyncio.Task] = set()
 
 
 @rpc.method("get_status", params=StatusParams)
@@ -60,7 +59,9 @@ async def get_status(  # noqa: PLR0913
     else:
         if not index.list_paths():
             logger.debug("Index empty; scheduling discovery run")
-            _bg_tasks.append(asyncio.create_task(index.ensure_discovery()))
+            t = asyncio.create_task(index.ensure_discovery())
+            _bg_tasks.add(t)
+            t.add_done_callback(lambda tt: _bg_tasks.discard(tt))
         worktree_paths = index.list_paths()
         if not worktree_paths:
             # Minimal safe fallback: include main repo to avoid empty UI when daemon just started
@@ -88,11 +89,9 @@ async def get_status(  # noqa: PLR0913
                     else None
                 )
                 if not have_cache:
-                    _bg_tasks.append(
-                        asyncio.create_task(
-                            gs_client.update_working_status(),
-                        ),
-                    )
+                    task = asyncio.create_task(gs_client.update_working_status())
+                    _bg_tasks.add(task)
+                    task.add_done_callback(lambda t: _bg_tasks.discard(t))
                 if last_updated_at is None:
                     last_updated_at = datetime.now()
                     cache_age_ms = None

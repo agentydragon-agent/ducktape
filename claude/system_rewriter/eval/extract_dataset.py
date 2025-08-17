@@ -1,18 +1,17 @@
 #!/usr/bin/env python3
+import asyncio
 import json
 from pathlib import Path
-from typing import Iterator, Optional, Any, List
-import asyncio
+from typing import Any, Optional
 
 TRACE_DIR = Path.home() / ".claude-code-router" / "logs"
-OUTPUT_PATH = Path(__file__).rsplit("/", 1)[0]
-OUTPUT_PATH = Path(OUTPUT_PATH) / "data" / "dataset.jsonl"
+OUTPUT_PATH = Path(__file__).parent / "data" / "dataset.jsonl"
 
 BAD_MARKER = "<bad>"
 TOOLS_HEADER = "You can use the following tools without requiring user approval:"
 
 
-def list_trace_files() -> List[Path]:
+def list_trace_files() -> list[Path]:
     if not TRACE_DIR.exists():
         return []
     return [p for p in sorted(TRACE_DIR.glob("trace.*")) if p.is_file()]
@@ -49,8 +48,8 @@ def sys_has_tools_header(system: Any) -> bool:
     return False
 
 
-async def process_file(p: Path) -> List[dict]:
-    out: List[dict] = []
+async def process_file(p: Path) -> list[dict]:
+    out: list[dict] = []
     try:
         # Use asyncio to read file without blocking CPU (still I/O bound)
         # Fall back to normal open for simplicity; large lines still ok
@@ -95,7 +94,7 @@ async def main():
         async with sem:
             return await process_file(p)
 
-    results: List[List[dict]] = await asyncio.gather(*[wrapped(p) for p in files])
+    results: list[list[dict]] = await asyncio.gather(*[wrapped(p) for p in files])
     count = 0
     with OUTPUT_PATH.open("w", encoding="utf-8") as out:
         for batch in results:

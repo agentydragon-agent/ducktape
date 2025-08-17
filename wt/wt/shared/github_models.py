@@ -1,7 +1,7 @@
 import json
 import time
 from enum import Enum
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
 
 from pydantic import BaseModel, Field
 
@@ -208,10 +208,17 @@ def coerce_prdata(src: Any) -> PRData:
     raise TypeError("Unsupported PR data type")
 
 
+@runtime_checkable
+class HasBasicPR(Protocol):  # minimal protocol for PyGithub-like PR
+    number: int
+    state: str
+    title: str
+
+
 class PRInfo(BaseModel):
     branch: str
     pr_data: PRData | None = None
-    github_pr: Any | None = None  # Store the actual PyGithub PR object
+    github_pr: HasBasicPR | None = None  # Store minimal PR interface to avoid Any
     gh_error: str | None = None
 
     class Config:

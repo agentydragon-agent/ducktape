@@ -14,7 +14,7 @@ class DiscoveryScanner:
         for path in worktrees_dir.iterdir():
             if not path.is_dir():
                 continue
-            if (path / ".git").exists() or (path / ".git").is_file():
+            if (path / ".git").exists():
                 current.add(
                     DiscoveredWorktree(path, path.name, make_worktree_id(path.name)),
                 )

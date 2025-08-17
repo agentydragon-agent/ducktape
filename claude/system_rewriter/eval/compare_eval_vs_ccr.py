@@ -2,24 +2,24 @@
 import argparse
 import json
 from pathlib import Path
-from typing import Any, Dict, Optional, List
+from typing import Any, Optional
 
 TRACE_DIR = Path.home() / ".claude-code-router" / "logs"
 
 
-def load_samples(run_dir: Path) -> List[Dict[str, Any]]:
+def load_samples(run_dir: Path) -> list[dict[str, Any]]:
     samp_path = run_dir / "samples.jsonl"
-    out: List[Dict[str, Any]] = []
+    out: list[dict[str, Any]] = []
     with samp_path.open("r", encoding="utf-8") as f:
         for line in f:
             try:
                 out.append(json.loads(line))
             except Exception:
-                pass
+                continue
     return out
 
 
-def find_ccr_openai_request(correlation_id: str) -> Optional[Dict[str, Any]]:
+def find_ccr_openai_request(correlation_id: str) -> Optional[dict[str, Any]]:
     # Scan logs for outbound_request to OpenAI chat completions with this correlationId
     files = sorted(TRACE_DIR.glob("trace.*"))
     for p in files:
@@ -45,7 +45,7 @@ def find_ccr_openai_request(correlation_id: str) -> Optional[Dict[str, Any]]:
     return None
 
 
-def drop_none(d: Dict[str, Any]) -> Dict[str, Any]:
+def drop_none(d: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in d.items() if v is not None}
 
 
@@ -74,7 +74,7 @@ def main():
 
     samples = load_samples(run_dir)
     count = 0
-    wrote: List[str] = []
+    wrote: list[str] = []
     for rec in samples:
         if count >= args.limit:
             break
