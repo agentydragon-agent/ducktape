@@ -11,6 +11,7 @@ BAD_MARKER = "<bad>"
 TOOLS_HEADER = "You can use the following tools without requiring user approval:"
 
 
+
 def list_trace_files() -> list[Path]:
     if not TRACE_DIR.exists():
         return []
@@ -50,7 +51,7 @@ def sys_has_tools_header(system: Any) -> bool:
 async def process_file(p: Path) -> list[dict]:
     out: list[dict] = []
     try:
-        with p.open("r", encoding="utf-8", errors="ignore") as f:
+        with p.open("r", encoding="utf-8") as f:
             for line in f:
                 try:
                     rec = json.loads(line)
@@ -98,7 +99,7 @@ async def main():
             for dp in batch:
                 out.write(json.dumps(dp, ensure_ascii=False) + "\n")
                 count += 1
-    print(f"wrote {count} samples -> {OUTPUT_PATH}")
+    print(json.dumps({"event": "dataset_written", "count": count, "path": str(OUTPUT_PATH)}))
 
 if __name__ == "__main__":
     asyncio.run(main())

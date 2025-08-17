@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import argparse
-import json
 import difflib
+import json
 from pathlib import Path
 from typing import Any, Optional
 
