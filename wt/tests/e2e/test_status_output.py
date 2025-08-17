@@ -44,7 +44,7 @@ def test_status_lists_multiple_worktrees(real_temp_repo, real_env):
     deadline = time.time() + 5.0
     last_out = ""
     while time.time() < deadline:
-        result = run_cli_command(["sh"], env=real_env, timeout=10.0)
+        result = run_cli_command(["sh"], env=real_env, timeout=3.0)
         assert result.returncode == 0
         out = result.stdout
         last_out = out
