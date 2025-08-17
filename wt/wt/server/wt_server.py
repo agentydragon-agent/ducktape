@@ -193,7 +193,7 @@ class GitstatusdClient:
             await self.process.stdin.drain()
             response = await asyncio.wait_for(
                 self.process.stdout.readuntil(b"\x1e"),
-                timeout=2.0,
+                timeout=0.5,
             )
             response_str = response.decode("utf-8")
             parsed_response = GitStatusdProtocol.parse_response(response_str)

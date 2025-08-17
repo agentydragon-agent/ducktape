@@ -39,7 +39,8 @@ addopts = [
     "-v",
     "--tb=short",
     "--strict-markers",
-    "--disable-warnings"
+    "--disable-warnings",
+    "--durations=25"
 ]
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
@@ -48,6 +49,10 @@ markers = [
     "shell: marks tests that test shell integration",
     "asyncio: marks tests as async tests"
 ]
+
+# pytest-timeout defaults
+timeout = 5
+timeout_method = "thread"
 
 [tool.hatch.build.targets.wheel]
 packages = ["wt"]

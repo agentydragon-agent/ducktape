@@ -40,8 +40,7 @@ async def get_status(status: StatusService, gitstat: GitstatusdService, prs: PRS
             worktree_paths.append(worktree_path)
     else:
         if not index.list_paths():
-            await index.ensure_discovery()
-        await index.ensure_index()
+            asyncio.create_task(index.ensure_discovery())
         worktree_paths = index.list_paths()
 
     items: dict[WorktreeID, StatusItem] = {}
@@ -75,7 +74,8 @@ async def get_status(status: StatusService, gitstat: GitstatusdService, prs: PRS
                 commit_info_data, ahead_behind, branch_name, worktree_last_error = (
                     _compute_status(worktree_path)
                 )
-                pr_info = await prs.get_pr_info(worktree_path, branch_name, timeout=0.75)
+                asyncio.create_task(prs.get_pr_info(worktree_path, branch_name, timeout=0.2))
+                pr_info = None
                 is_cached = have_cache
                 is_stale = bool(
                     cache_age_ms

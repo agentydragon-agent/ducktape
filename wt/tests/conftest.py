@@ -182,7 +182,7 @@ def assert_worktree_not_exists(worktree_path: Path):
 # ================================================
 
 
-def kill_daemon_and_verify(repo_path: Path, timeout: float = 5.0):
+def kill_daemon_and_verify(repo_path: Path, timeout: float = 1.0):
     """Kill daemon using CLI command and verify it's gone.
 
     CRITICAL for test isolation. This function ensures that:
@@ -212,14 +212,21 @@ def kill_daemon_and_verify(repo_path: Path, timeout: float = 5.0):
     project_root = str(Path(__file__).resolve().parents[1])
     env["PYTHONPATH"] = f"{project_root}:{env.get('PYTHONPATH', '')}"
 
+    daemon_dir = repo_path / ".wt"
+    pid_file = daemon_dir / "daemon.pid"
+    if not pid_file.exists():
+        return
+    try:
+        pid_content = pid_file.read_text().strip()
+        if not pid_content:
+            return
+    except (OSError, UnicodeDecodeError):
+        return
+
     # Run kill-daemon command
     run_cli_command(["sh", "kill-daemon"], env=env)
 
-    # Don't assert success here - daemon might not be running, which is fine
-
     # Wait and verify daemon is gone
-    daemon_dir = repo_path / ".wt"
-    pid_file = daemon_dir / "daemon.pid"
 
     start_time = time.time()
     while time.time() - start_time < timeout:

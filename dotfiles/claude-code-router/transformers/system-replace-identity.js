@@ -17,82 +17,44 @@ const libA = path.join(__dirname, 'lib', 'system-utils');
 const libB = path.join(os.homedir(), '.claude-code-router', 'transformers', 'lib', 'system-utils');
 const { mapSystemContent } = require(fs.existsSync(libA + '.js') ? libA : libB);
 
-const ENV_INTRO = 'Here is useful information about the environment you are running in:';
-const TOOLS_HEADER = 'You can use the following tools without requiring user approval:';
-const MODEL_PREFIX = 'You are powered by the model';
-const MCP_HEADER = '# MCP Server Instructions';
+function identityRecomposer(s) {
+  if (typeof s !== 'string') return s;
+  const toolsHeader = 'You can use the following tools without requiring user approval:';
+  if (!s.includes(toolsHeader)) return s;
 
-function regexEscape(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+  const envIntro = 'Here is useful information about the environment you are running in:';
+  const modelPrefix = 'You are powered by the model';
+  const mcpHeader = '# MCP Server Instructions';
+  const esc = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-/**
- * Extract dynamic blobs from a system prompt string without trimming or reformatting
- *
- * Blobs captured:
- * - env_git_blobs: One or more environment blocks that may include git info
- * - tools_blob: The tools allowlist block (text following the header on same line)
- * - model_line: The single line starting with "You are powered by the model ..." (includes trailing newline if present)
- * - mcp_section: The full MCP section body (everything after the MCP header line)
- */
-function extractPromptBlobs(s) {
-  const out = { env_git_blobs: [] };
-  if (typeof s !== 'string') return out;
+  const envGitBlobs = [];
+  const envBlockRe = new RegExp(esc(envIntro) + '\\n<env>[\\s\\S]*?<\\/env>\\s*', 'g');
+  let m;
+  while ((m = envBlockRe.exec(s))) envGitBlobs.push(m[0]);
 
-  // 1) Environment/git blocks: rely on explicit <env> ... </env> wrapper
-  //    Include the intro line immediately preceding the <env> block
-  {
-    const envBlockRe = new RegExp(regexEscape(ENV_INTRO) + '\\n<env>[\\s\\S]*?<\\/env>\\s*', 'g');
-    let m;
-    while ((m = envBlockRe.exec(s))) out.env_git_blobs.push(m[0]);
+  const iTools = s.indexOf(toolsHeader);
+  const after = iTools + toolsHeader.length;
+  const nextEnv = s.indexOf(envIntro, after);
+  const nextModel = s.indexOf(modelPrefix, after);
+  const nextMcp = s.indexOf(mcpHeader, after);
+  let end = s.length;
+  if (nextEnv !== -1) end = Math.min(end, nextEnv);
+  if (nextModel !== -1) end = Math.min(end, nextModel);
+  if (nextMcp !== -1) end = Math.min(end, nextMcp);
+  const toolsBlob = s.slice(after, end);
+
+  const mm = s.match(new RegExp('^' + esc(modelPrefix) + '[^\\n]*\\n?', 'm'));
+  if (!mm) return s;
+  const modelLine = mm[0];
+
+  let mcpSection = '';
+  const iMcp = s.indexOf(mcpHeader);
+  if (iMcp !== -1) {
+    const nl = s.indexOf('\n', iMcp);
+    mcpSection = nl === -1 ? '' : s.slice(nl + 1);
   }
 
-  // 2) Tools block: capture everything after the header label up to either env intro or model line
-  {
-    const toolsHeader = TOOLS_HEADER;
-    const iTools = s.indexOf(toolsHeader);
-    if (iTools !== -1) {
-      const after = iTools + toolsHeader.length;
-      const nextEnv = s.indexOf(ENV_INTRO, after);
-      const nextModel = s.indexOf(MODEL_PREFIX, after);
-      let end = s.length;
-      if (nextEnv !== -1) end = Math.min(end, nextEnv);
-      if (nextModel !== -1) end = Math.min(end, nextModel);
-      out.tools_blob = s.slice(after, end);
-    }
-  }
-
-  // 3) Model line: take the whole line including trailing newline when present
-  {
-    const m = s.match(new RegExp('^' + regexEscape(MODEL_PREFIX) + '[^\\n]*\\n?', 'm'));
-    if (m) out.model_line = m[0];
-  }
-
-  // 4) MCP section: everything after the MCP header line
-  {
-    const hdr = MCP_HEADER;
-    const i = s.indexOf(hdr);
-    if (i !== -1) {
-      const nl = s.indexOf('\n', i);
-      out.mcp_section = nl === -1 ? '' : s.slice(nl + 1);
-    }
-  }
-
-  return out;
-}
-module.exports.extractPromptBlobs = extractPromptBlobs;
-
-/**
- * Static verbatim template with placeholders for dynamic blobs
- *
- * Placeholders:
- * - {{TOOLS_BLOB}}: tools allowlist block (starts immediately after the header label)
- * - {{ENV_BLOBS}}: zero or more env/git blocks concatenated as-is
- * - {{MODEL_LINE}}: the single "You are powered by the model ..." line
- * - {{MCP_SECTION}}: everything after the "# MCP Server Instructions" header line
- */
-const STATIC_TEMPLATE_INTERACTIVE = `You are Claude Code, Anthropic's official CLI for Claude.
-
-
-You are an interactive CLI tool that helps users with software engineering tasks. Use the instructions below and the tools available to you to assist the user.
+  return `You are an interactive CLI tool that helps users with software engineering tasks. Use the instructions below and the tools available to you to assist the user.
 
 IMPORTANT: Assist with defensive security tasks only. Refuse to create, modify, or improve code that may be used maliciously. Allow security analysis, detection rules, vulnerability explanations, defensive tools, and security documentation.
 IMPORTANT: You must NEVER generate or guess URLs for the user unless you are confident that the URLs are for helping the user with programming. You may use URLs provided by the user in their messages or local files.
@@ -235,15 +197,15 @@ NEVER commit changes unless the user explicitly asks you to. It is VERY IMPORTAN
 - Tool results and user messages may include <system-reminder> tags. <system-reminder> tags contain useful information and reminders. They are NOT part of the user's provided input or the tool result.
 
 
-
 # Tool usage policy
 - When doing file search, prefer to use the Task tool in order to reduce context usage.
 - You should proactively use the Task tool with specialized agents when the task at hand matches the agent's description.
-
 - You have the capability to call multiple tools in a single response. When multiple independent pieces of information are requested, batch your tool calls together for optimal performance. When making multiple bash tool calls, you MUST send a single message with multiple tools calls to run the calls in parallel. For example, if you need to run "git status" and "git diff", send a single message with two tool calls to run the calls in parallel.
 
 
-You can use the following tools without requiring user approval:{{TOOLS_BLOB}}{{ENV_BLOBS}}{{MODEL_LINE}}
+You can use the following tools without requiring user approval:${toolsBlob}
+${envGitBlobs.join('')}
+${modelLine}
 
 IMPORTANT: Assist with defensive security tasks only. Refuse to create, modify, or improve code that may be used maliciously. Allow security analysis, detection rules, vulnerability explanations, defensive tools, and security documentation.
 
@@ -261,21 +223,10 @@ assistant: Clients are marked as failed in the \`connectToServer\` function in s
 
 
 # MCP Server Instructions
-{{MCP_SECTION}}`;
-
-/**
- * Recompose the system message from the static template and extracted blobs
- */
-function renderFromStaticTemplate(s) {
-  if (typeof s !== 'string') return s;
-  const b = extractPromptBlobs(s);
-  return STATIC_TEMPLATE_INTERACTIVE
-    .replaceAll('{{TOOLS_BLOB}}', b.tools_blob || '')
-    .replaceAll('{{ENV_BLOBS}}', (b.env_git_blobs || []).join(''))
-    .replaceAll('{{MODEL_LINE}}', b.model_line || '')
-    .replaceAll('{{MCP_SECTION}}', b.mcp_section || '');
+${mcpSection}`;
 }
-module.exports.renderFromStaticTemplate = renderFromStaticTemplate;
+
+function renderFromStaticTemplate(s) { return identityRecomposer(s); }
 
 /**
  * Transformer class that plugs into the router
@@ -287,9 +238,8 @@ class SystemMessageTransformer {
     this.enableLogging = !!options.enableLogging;
     this.log = (msg) => {
       if (!this.enableLogging) return;
-      const fs = require('fs');
       fs.appendFileSync(
-        require('path').join(require('os').homedir(), '.claude-code-router', 'transformer-debug.log'),
+        path.join(os.homedir(), '.claude-code-router', 'transformer-debug.log'),
         `[${new Date().toISOString()}] ${msg}\n`
       );
     };
@@ -325,5 +275,5 @@ class SystemMessageTransformer {
   }
 }
 
-// Default export + helper export kept for router conventions
-module.exports = SystemMessageTransformer;
+// Export class with helpers attached for UI reload
+module.exports = Object.assign(SystemMessageTransformer, { identityRecomposer, renderFromStaticTemplate });
