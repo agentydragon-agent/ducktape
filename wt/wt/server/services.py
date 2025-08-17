@@ -2,13 +2,19 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-from collections.abc import Iterable
+from collections.abc import Awaitable, Iterable
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING, Callable, Protocol
 
 if TYPE_CHECKING:
     from ..shared.protocol import WorktreeID
+    from .gitstatus_refresh import DebouncedGitstatusRefresh
+    from .worktree_index import WorktreeIndex
+
+    class GitstatusdClientProto(Protocol):
+        is_running: bool
+        def get_cached_working_status(self) -> tuple[list[str], list[str], datetime | None, bool]: ...
 
 from ..shared.github_models import PRInfo
 from ..shared.protocol import DaemonHealth
@@ -38,63 +44,59 @@ class WorktreeIndexService:
     def __init__(
         self,
         *,
-        get_index: Callable[[], object | None],
-        rebuild_index: Callable[[], asyncio.Future | asyncio.Task | object],
-        run_discovery_once: Callable[[], asyncio.Future | asyncio.Task | object],
+        get_index: Callable[[], WorktreeIndex | None],
+        rebuild_index: Callable[[], Awaitable[object]],
+        run_discovery_once: Callable[[], Awaitable[object]],
     ) -> None:
         self._get_index = get_index
         self._rebuild_index = rebuild_index
         self._run_discovery_once = run_discovery_once
 
     async def ensure_discovery(self) -> None:
-        await asyncio.ensure_future(self._run_discovery_once())  # type: ignore[arg-type]
+        await self._run_discovery_once()
 
     async def ensure_index(self) -> None:
         if self._get_index() is None:
-            await asyncio.ensure_future(self._rebuild_index())  # type: ignore[arg-type]
+            await self._rebuild_index()
 
     def list_paths(self) -> list[Path]:
         idx = self._get_index()
         if not idx:
             return []
-        return list(idx.by_path.keys())  # type: ignore[attr-defined]
+        return list(idx.by_path.keys())
 
     def get_by_path(self, p: Path) -> DiscoveredWorktree | None:
         idx = self._get_index()
         if not idx:
             return None
-        return idx.get_by_path(p)  # type: ignore[attr-defined]
+        return idx.get_by_path(p)
 
     def get_by_name(self, name: str) -> DiscoveredWorktree | None:
         idx = self._get_index()
         if not idx:
             return None
-        return idx.get_by_name(name)  # type: ignore[attr-defined]
+        return idx.get_by_name(name)
 
     def resolve_target(self, name: str | None, current_path: Path):
         idx = self._get_index()
         if not idx:
             return None
-        return idx.resolve_target(name, current_path)  # type: ignore[attr-defined]
+        return idx.resolve_target(name, current_path)
 
     def main(self) -> DiscoveredWorktree | None:
         idx = self._get_index()
         if not idx:
             return None
-        return idx.main  # type: ignore[attr-defined]
+        return idx.main
 
 
 class GitstatusdService:
     def __init__(
         self,
-        get_client: Callable[[Path], object | None],
+        get_client: Callable[[Path], GitstatusdClientProto | None],
         iter_client_paths: Callable[[], Iterable[Path]] | None = None,
-        ensure_watcher_for_path: Callable[
-            [Path],
-            asyncio.Future | asyncio.Task | object,
-        ]
-        | None = None,
-        list_watchers: Callable[[], list[object]] | None = None,
+        ensure_watcher_for_path: Callable[[Path], Awaitable[object]] | None = None,
+        list_watchers: Callable[[], list[DebouncedGitstatusRefresh]] | None = None,
         clear_watchers: Callable[[], None] | None = None,
     ) -> None:
         self._get_client = get_client
@@ -125,7 +127,7 @@ class GitstatusdService:
         for p in list(self._iter_client_paths()):
             if not self._get_client(p):
                 continue
-            await asyncio.ensure_future(self._ensure_watcher_for_path(p))  # type: ignore[arg-type]
+            await self._ensure_watcher_for_path(p)
 
     async def stop(self) -> None:
         if not (self._list_watchers and self._clear_watchers):
@@ -184,7 +186,7 @@ class DiscoveryService:
     def __init__(
         self,
         is_scanning: Callable[[], bool],
-        periodic: Callable[[], asyncio.Future | asyncio.Task | object] | None = None,
+        periodic: Callable[[], Awaitable[object]] | None = None,
         cancel_periodic: Callable[[], None] | None = None,
     ) -> None:
         self._is_scanning = is_scanning
@@ -196,7 +198,7 @@ class DiscoveryService:
 
     async def start(self) -> None:
         if self._periodic:
-            await asyncio.ensure_future(self._periodic())  # type: ignore[arg-type]
+            await self._periodic()
 
     async def stop(self) -> None:
         if self._cancel:
@@ -214,20 +216,14 @@ class HealthService:
 class WorktreeCoordinator:
     def __init__(
         self,
-        register_fn: Callable[
-            [DiscoveredWorktree],
-            asyncio.Future | asyncio.Task | object,
-        ],
-        unregister_fn: Callable[
-            [DiscoveredWorktree],
-            asyncio.Future | asyncio.Task | object,
-        ],
+        register_fn: Callable[[DiscoveredWorktree], Awaitable[object]],
+        unregister_fn: Callable[[DiscoveredWorktree], Awaitable[object]],
     ) -> None:
         self._register = register_fn
         self._unregister = unregister_fn
 
     async def register_worktree(self, wt: DiscoveredWorktree) -> None:
-        await asyncio.ensure_future(self._register(wt))  # type: ignore[arg-type]
+        await self._register(wt)
 
     async def unregister_worktree(self, wt: DiscoveredWorktree) -> None:
-        await asyncio.ensure_future(self._unregister(wt))  # type: ignore[arg-type]
+        await self._unregister(wt)

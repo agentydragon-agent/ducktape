@@ -108,6 +108,7 @@ class RpcRegistry:
         c.register(HealthService, instance=daemon.health_service)
         c.register(WorktreeCoordinator, instance=daemon.coordinator)
         # Also expose WorktreeService for orchestration flows
+        # Import here to avoid module import cycles during daemon bootstrap
         from .worktree_service import WorktreeService
 
         c.register(WorktreeService, instance=daemon.worktree_service)
@@ -242,7 +243,6 @@ class RpcRegistry:
             return create_error_response(
                 ErrorCodes.METHOD_NOT_FOUND,
                 f"Method '{req.method}' not found",
-                req.id,
                 req.id,
             )
         return await wrapped(req, daemon, writer, start_time)

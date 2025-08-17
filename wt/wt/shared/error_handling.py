@@ -1,9 +1,10 @@
 """Standardized error handling for wt."""
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from functools import wraps
-from typing import Any, TypeVar, cast
+from typing import Any, TypeVar
+from typing import Callable as _Callable
 
 import click
 import psutil
@@ -72,14 +73,16 @@ def handle_github_errors(func: Callable[..., T]) -> Callable[..., T]:
     return wrapper
 
 
-def handle_process_errors(func: Callable[..., T]) -> Callable[..., T]:
+def handle_process_errors(func: _Callable[..., Iterable[Any]]) -> _Callable[..., list[Any]]:
     @wraps(func)
-    def wrapper(*args, **kwargs) -> T:
+    def wrapper(*args, **kwargs) -> list[Any]:
         try:
-            return func(*args, **kwargs)
+            result = func(*args, **kwargs)
+            # Normalize any iterable into a concrete list for callers
+            return list(result)
         except psutil.NoSuchProcess:
             logger.debug("Process disappeared during enumeration in %s", func.__name__)
-            return cast(T, [])
+            return []
         except (FileNotFoundError, ValueError) as e:
             logger.exception("Process tool error in %s", func.__name__)
             # Re-raise as domain-specific error to preserve failure context

@@ -8,7 +8,9 @@ from wt.shared.configuration import Configuration
 from ...shared.constants import MAIN_WORKTREE_DISPLAY_NAME
 from ...shared.protocol import (
     ErrorCodes,
+    HookOutputEvent,
     HookRunResult,
+    HookStream,
     ProgressEvent,
     ProgressOperation,
     WorktreeCreateParams,
@@ -138,11 +140,6 @@ async def worktree_create(  # noqa: PLR0913
 
         # run_post_creation_script is async; we stream via the same writer
         async def _sink(name: str, data: str) -> None:
-            from ...shared.protocol import (
-                HookOutputEvent,
-                HookStream,
-            )
-
             ev = HookOutputEvent(
                 stream=(HookStream.STDOUT if name == "stdout" else HookStream.STDERR),
                 data=data,
@@ -180,7 +177,7 @@ async def worktree_delete(
             code=ErrorCodes.WORKTREE_NOT_FOUND,
             message=f"Worktree {worktree_name} does not exist at {worktree_path}",
         )
-    await svc.remove_worktree(config, worktree_name, force=True)
+    await svc.remove_worktree(config, worktree_name, force=params.force)
     from ..worktree_ids import make_worktree_id as _mk
 
     wt_info = DiscoveredWorktree(worktree_path, worktree_name, _mk(worktree_name))

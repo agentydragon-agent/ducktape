@@ -104,7 +104,7 @@ class GitHubInterface:
         ]
 
     @handle_github_errors
-    def pr_search(self, branch_name: str) -> list:
+    def pr_search(self, branch_name: str) -> list[object]:
         """Search for PRs by branch name using GitHub search API instead of paginating all PRs."""
         # Use GitHub search API to find PRs by head branch - much more efficient
         search_query = f"repo:{self.github_repo} type:pr head:{branch_name}"

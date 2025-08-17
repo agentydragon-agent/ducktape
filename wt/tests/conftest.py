@@ -1,7 +1,6 @@
 import contextlib
 import os
 import signal
-from collections.abc import Generator
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -222,7 +221,7 @@ def _require_gitstatusd_on_path():
     import shutil
 
     assert shutil.which(
-        "gitstatusd"
+        "gitstatusd",
     ), "gitstatusd not found on PATH - required for integration tests"
 
 

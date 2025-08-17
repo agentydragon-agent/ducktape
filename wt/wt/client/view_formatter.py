@@ -98,19 +98,7 @@ class ViewFormatter:
         sync_status = format_sync_status(status.ahead_count, status.behind_count)
 
         # Working directory status
-        if not status.is_cached:
-            work_status = "unknown"
-        elif status.has_dirty_files or status.has_untracked_files:
-            changes = []
-            if status.has_dirty_files:
-                changes.append("modified")
-            if status.has_untracked_files:
-                changes.append("untracked")
-            work_status = "+".join(changes)
-        else:
-            work_status = "clean"
-        if status.is_cached and status.is_stale:
-            work_status += " (stale)"
+        work_status = self._work_status_text(status)
 
         # GitHub PR status with clickable hyperlinks and clear text
         pr_status = ""
@@ -161,17 +149,31 @@ class ViewFormatter:
         # Use compact variant for table context
         return format_sync_status(status.ahead_count, status.behind_count, compact=True)
 
-    def _get_work_status_column(self, status: StatusResult) -> str:
-        """Get working directory status column."""
+    def _work_status_text(self, status: StatusResult) -> str:
+        """Human-readable working directory status (shared)."""
         if not status.is_cached:
             return "unknown"
         if status.has_dirty_files or status.has_untracked_files:
-            changes = []
+            parts = []
             if status.has_dirty_files:
-                changes.append("M")
+                parts.append("modified")
             if status.has_untracked_files:
-                changes.append("?")
-            s = "+".join(changes)
+                parts.append("untracked")
+            s = "+".join(parts)
+            return f"{s} (stale)" if status.is_stale else s
+        return "clean (stale)" if status.is_stale else "clean"
+
+    def _get_work_status_column(self, status: StatusResult) -> str:
+        """Get working directory status column (compact variant for table)."""
+        if not status.is_cached:
+            return "unknown"
+        if status.has_dirty_files or status.has_untracked_files:
+            parts = []
+            if status.has_dirty_files:
+                parts.append("M")
+            if status.has_untracked_files:
+                parts.append("?")
+            s = "+".join(parts)
             return f"{s} (stale)" if status.is_stale else s
         return "clean (stale)" if status.is_stale else "clean"
 

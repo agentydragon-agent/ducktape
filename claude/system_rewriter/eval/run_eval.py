@@ -11,8 +11,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from openai import AsyncOpenAI
 import tiktoken  # type: ignore
+from openai import AsyncOpenAI
 
 # Config
 DATASET_PATH = Path(__file__).parent / "data" / "dataset.jsonl"
@@ -101,7 +101,6 @@ def tokens_for_chat_messages(msgs: List[Dict[str, Any]]) -> int:
     return estimate_tokens("\n".join(parts))
 
 
-
 def flatten_system_string(sys: Any) -> str:
     if isinstance(sys, str):
         return sys
@@ -142,10 +141,15 @@ def anthro_to_openai_messages(
     - user/assistant plain text
     Avoid emitting empty messages.
     """
+
     def _join_text_parts(parts: List[Dict[str, Any]]) -> str:
         texts: List[str] = []
         for p in parts:
-            if isinstance(p, dict) and p.get("type") == "text" and isinstance(p.get("text"), str):
+            if (
+                isinstance(p, dict)
+                and p.get("type") == "text"
+                and isinstance(p.get("text"), str)
+            ):
                 texts.append(p["text"])
         return "\n".join(texts)
 
@@ -174,7 +178,7 @@ def anthro_to_openai_messages(
                         continue
                     ptype = part.get("type")
                     if ptype == "text" and isinstance(part.get("text"), str):
-                        text_buf.append(part["text"]) 
+                        text_buf.append(part["text"])
                     elif ptype == "tool_use":
                         # Map to OpenAI function call with required id
                         name = part.get("name")
@@ -186,12 +190,21 @@ def anthro_to_openai_messages(
                         else:
                             try:
                                 # Minified JSON, preserve key order (no sort_keys), no spaces
-                                args_str = json.dumps(args if args is not None else {}, ensure_ascii=False, separators=(",", ":"))
+                                args_str = json.dumps(
+                                    args if args is not None else {},
+                                    ensure_ascii=False,
+                                    separators=(",", ":"),
+                                )
                             except Exception as e:
-                                raise RuntimeError(f"FATAL: Unserializable tool_use.input for function '{name}': {e}")
+                                raise RuntimeError(
+                                    f"FATAL: Unserializable tool_use.input for function '{name}': {e}"
+                                )
                         tool_call: Dict[str, Any] = {
                             "type": "function",
-                            "function": {"name": name or "unknown", "arguments": args_str},
+                            "function": {
+                                "name": name or "unknown",
+                                "arguments": args_str,
+                            },
                         }
                         if tcid:
                             tool_call["id"] = str(tcid)
@@ -201,7 +214,9 @@ def anthro_to_openai_messages(
                     if text_buf:
                         msg["content"] = "\n".join(text_buf)
                     else:
-                        msg["content"] = None  # no empty-string content when only tool_calls
+                        msg["content"] = (
+                            None  # no empty-string content when only tool_calls
+                        )
                     if tool_calls:
                         msg["tool_calls"] = tool_calls
                     out.append(msg)
@@ -227,17 +242,29 @@ def anthro_to_openai_messages(
                             tool_text = _join_text_parts(tcontent)
                         else:
                             try:
-                                tool_text = json.dumps(tcontent, ensure_ascii=False, sort_keys=True)
+                                tool_text = json.dumps(
+                                    tcontent, ensure_ascii=False, sort_keys=True
+                                )
                             except Exception as e:
-                                raise RuntimeError(f"FATAL: Unserializable tool_result.content: {e}")
+                                raise RuntimeError(
+                                    f"FATAL: Unserializable tool_result.content: {e}"
+                                )
                         # Emit tool result; if missing id, keep but mark unknown to avoid silent drop
-                        tool_msgs.append({
-                            "role": "tool",
-                            "tool_call_id": str(tcid) if tcid else "unknown",
-                            "content": tool_text or "",
-                        })
+                        tool_msgs.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": str(tcid) if tcid else "unknown",
+                                "content": tool_text or "",
+                            }
+                        )
                 # Order: tool messages first (to mirror CCR), then user text (if any)
-                out.extend([tm for tm in tool_msgs if (tm.get("content") or tm.get("tool_call_id"))])
+                out.extend(
+                    [
+                        tm
+                        for tm in tool_msgs
+                        if (tm.get("content") or tm.get("tool_call_id"))
+                    ]
+                )
                 txt = _join_text_parts(text_parts)
                 if txt.strip():
                     out.append({"role": "user", "content": txt})
@@ -263,7 +290,14 @@ def build_grader_prompt(
             " marked that by the marker token '<bad>' in their subsequent message along with some explanation of"
             " what assistant did wrong. You will be given a counterfactual NEW alternative response that assistant"
             " could have sent or immediate next action assistant could have taken instead of the bad actions."
-            " Your task is to evaluate whether the alternative action/response would address the failure described in the user complaint."
+            " Your task is to evaluate whether the alternative action/response would be better to take as an immediate action"
+            " than the action the user complained about.\n\n"
+            " Note that in the alternative action branch, you only see 1 next action - if it contains a tool use,"
+            " assistant would have been able to potentially follow it up with further actions.\n\n"
+            'A "tool_calls" key in the alternative action JSON indicates that assistant would have used a tool.'
+            " After that tool use, it would then have opportunity to potentially continue with further actions."
+            ' If the alternative action does not have any "tool_calls", then assistant would have stopped after this action/message.'
+            "\n\n"
             " Use the rubric: 1=worse/still bad; 2=minor/no improvement; 3=partially improved;"
             " 4=mostly fixed; 5=completely fixed.\n\n"
             "Read the conversation for context, read the original bad branch and the new assistant action/response,"
@@ -336,7 +370,16 @@ async def run_eval(
     if n_limit is not None:
         dataset = dataset[: max(0, int(n_limit))]
     selected = len(dataset)
-    print(json.dumps({"event":"startup","dataset_path": str(DATASET_PATH), "total": total, "selected": selected}))
+    print(
+        json.dumps(
+            {
+                "event": "startup",
+                "dataset_path": str(DATASET_PATH),
+                "total": total,
+                "selected": selected,
+            }
+        )
+    )
 
     progress_path = OUT_DIR / "progress.jsonl"
     counters = {
@@ -346,12 +389,16 @@ async def run_eval(
         "grader_errors": 0,
     }
 
-    client = AsyncOpenAI(api_key=OPENAI_KEY, base_url=OPENAI_BASE) if OPENAI_BASE else AsyncOpenAI(api_key=OPENAI_KEY)
+    client = (
+        AsyncOpenAI(api_key=OPENAI_KEY, base_url=OPENAI_BASE)
+        if OPENAI_BASE
+        else AsyncOpenAI(api_key=OPENAI_KEY)
+    )
     sem = asyncio.Semaphore(max(1, int(concurrency)))
 
     async def process(item: Sample) -> Tuple[Optional[dict], Optional[dict]]:
         async with sem:
-            print(json.dumps({"event":"process_start","cid": item.correlation_id}))
+            print(json.dumps({"event": "process_start", "cid": item.correlation_id}))
             # 1) Rewrite system via JS apply script
             sys_text = flatten_system_string(item.anthropic_request.get("system"))
             new_sys = rewrite_system_with_template(sys_text, template_path)
@@ -366,12 +413,28 @@ async def run_eval(
                     break
             if prev_asst_idx is None:
                 with progress_path.open("a", encoding="utf-8") as pg:
-                    pg.write(json.dumps({"correlation_id": item.correlation_id, "status": "no_prev_assistant"}) + "\n")
+                    pg.write(
+                        json.dumps(
+                            {
+                                "correlation_id": item.correlation_id,
+                                "status": "no_prev_assistant",
+                            }
+                        )
+                        + "\n"
+                    )
                 return None, None
             context_body = {"messages": msgs[:prev_asst_idx]}
             oai_messages = anthro_to_openai_messages(context_body, new_sys)
             in_tokens = tokens_for_chat_messages(oai_messages)
-            print(json.dumps({"event":"sampler_tokens","cid": item.correlation_id, "in_tokens": in_tokens}))
+            print(
+                json.dumps(
+                    {
+                        "event": "sampler_tokens",
+                        "cid": item.correlation_id,
+                        "in_tokens": in_tokens,
+                    }
+                )
+            )
             if in_tokens > MAX_INPUT_TOKENS:
                 counters["skipped_input_tokens"] += 1
                 with progress_path.open("a", encoding="utf-8") as pg:
@@ -390,12 +453,15 @@ async def run_eval(
                 1, min(PER_OUTPUT_CAP, MAX_TOTAL_TOKENS - in_tokens - SAFETY_TOKENS)
             )
             tools_param = item.anthropic_request.get("tools")
+
             def _map_tools_for_chat(tools_val):
                 def _to_chat_tool(t: Any):
                     if not isinstance(t, dict):
                         return None
                     # Normalize to a bare function dict first
-                    if t.get("type") == "function" and isinstance(t.get("function"), dict):
+                    if t.get("type") == "function" and isinstance(
+                        t.get("function"), dict
+                    ):
                         fn = dict(t["function"])  # shallow copy
                     else:
                         fn = dict(t)
@@ -405,12 +471,17 @@ async def run_eval(
                     # Remove unsupported keys
                     fn.pop("strict", None)
                     # Keep only standard Chat function keys
-                    out_fn = {k: v for k, v in fn.items() if k in ("name", "description", "parameters")}
+                    out_fn = {
+                        k: v
+                        for k, v in fn.items()
+                        if k in ("name", "description", "parameters")
+                    }
                     if not isinstance(out_fn.get("name"), str):
                         return None
                     if "parameters" not in out_fn:
                         return None
                     return {"type": "function", "function": out_fn}
+
                 out = []
                 if isinstance(tools_val, list):
                     for t in tools_val:
@@ -418,6 +489,7 @@ async def run_eval(
                         if ct:
                             out.append(ct)
                 return out or None
+
             chat_tools = _map_tools_for_chat(tools_param)
             samp_req = {
                 "model": SAMPLER_MODEL,
@@ -430,7 +502,9 @@ async def run_eval(
             # 3) Send to sampler model
             try:
                 # Use the same request dict we persist (no duplication)
-                samp = await client.chat.completions.create(**{k: v for k, v in samp_req.items() if v is not None})
+                samp = await client.chat.completions.create(
+                    **{k: v for k, v in samp_req.items() if v is not None}
+                )
             except Exception as e:
                 counters["sampler_errors"] += 1
                 msg = json.dumps(
@@ -459,13 +533,20 @@ async def run_eval(
             base_prefix = [m for m in base_prefix if m.get("role") != "system"]
             # Compute bad branch (inclusive of complaint)
             complaint_idx = len(msgs) - 1
-            raw_bad_branch = msgs[prev_asst_idx:complaint_idx + 1]
+            raw_bad_branch = msgs[prev_asst_idx : complaint_idx + 1]
             # Keep first 5 and last 5; truncate middle to fit token budget
             first = base_prefix[:5]
             last = base_prefix[-5:] if len(base_prefix) > 5 else []
-            middle = base_prefix[5: len(base_prefix) - len(last)] if len(base_prefix) > 10 else []
+            middle = (
+                base_prefix[5 : len(base_prefix) - len(last)]
+                if len(base_prefix) > 10
+                else []
+            )
+
             # Build a provisional grader input to compute tokens; start from minimal
-            def mk_grader_input(prefix_subset: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+            def mk_grader_input(
+                prefix_subset: List[Dict[str, Any]],
+            ) -> List[Dict[str, Any]]:
                 gm = build_grader_prompt(
                     prefix_subset,
                     raw_bad_branch,
@@ -475,6 +556,7 @@ async def run_eval(
                     {"role": "system", "content": gm[0]["content"]},
                     {"role": "user", "content": gm[1]["content"]},
                 ]
+
             prefix_msgs = first + []  # start with first only
             gi = mk_grader_input(prefix_msgs + last)
             tok = tokens_for_chat_messages(gi)
@@ -494,12 +576,22 @@ async def run_eval(
             prefix_msgs = prefix_msgs + last
             # Log truncation info
             with progress_path.open("a", encoding="utf-8") as pg:
-                pg.write(json.dumps({
-                    "correlation_id": item.correlation_id,
-                    "status": "grader_prefix_built",
-                    "prefix_counts": {"total": len(base_prefix), "kept_first": len(first), "kept_last": len(last), "added_middle": added},
-                    "token_estimate": tok
-                }) + "\n")
+                pg.write(
+                    json.dumps(
+                        {
+                            "correlation_id": item.correlation_id,
+                            "status": "grader_prefix_built",
+                            "prefix_counts": {
+                                "total": len(base_prefix),
+                                "kept_first": len(first),
+                                "kept_last": len(last),
+                                "added_middle": added,
+                            },
+                            "token_estimate": tok,
+                        }
+                    )
+                    + "\n"
+                )
             grader_messages = build_grader_prompt(
                 prefix_msgs,
                 raw_bad_branch,
@@ -612,7 +704,9 @@ async def run_eval(
         for fut in asyncio.as_completed(tasks):
             samp_rec, grade_rec = await fut
             if samp_rec:
-                s_out.write(json.dumps(samp_rec, ensure_ascii=False, sort_keys=True) + "\n")
+                s_out.write(
+                    json.dumps(samp_rec, ensure_ascii=False, sort_keys=True) + "\n"
+                )
                 # Update tool usage stats
                 tool_stats["total_samples"] += 1
                 nmsg = samp_rec.get("new_assistant_message") or {}
@@ -623,15 +717,27 @@ async def run_eval(
                     tool_stats["with_tools"] += 1
                     for tc in tcs:
                         fn = ((tc.get("function") or {}).get("name")) or "UNKNOWN"
-                        tool_stats["function_counts"][fn] = tool_stats["function_counts"].get(fn, 0) + 1
+                        tool_stats["function_counts"][fn] = (
+                            tool_stats["function_counts"].get(fn, 0) + 1
+                        )
             if grade_rec:
-                g_out.write(json.dumps(grade_rec, ensure_ascii=False, sort_keys=True) + "\n")
+                g_out.write(
+                    json.dumps(grade_rec, ensure_ascii=False, sort_keys=True) + "\n"
+                )
                 try:
                     parsed = parse_grade_from_responses(grade_rec["response"])  # type: ignore[index]
                     score = float(parsed.get("score", 0))
                     scores.append(score)
                     counters["processed"] += 1
-                    print(json.dumps({"event": "grade_parsed", "cid": grade_rec.get("correlation_id"), "score": score}))
+                    print(
+                        json.dumps(
+                            {
+                                "event": "grade_parsed",
+                                "cid": grade_rec.get("correlation_id"),
+                                "score": score,
+                            }
+                        )
+                    )
                 except Exception as e:
                     counters["grader_errors"] += 1
                     with progress_path.open("a", encoding="utf-8") as pg:
@@ -658,7 +764,11 @@ async def run_eval(
     ucb = mean + ci95
     # Compute secondary metrics
     total_samples = tool_stats["total_samples"] or 0
-    total_tool_calls = sum(tool_stats["function_counts"].values()) if tool_stats["function_counts"] else 0
+    total_tool_calls = (
+        sum(tool_stats["function_counts"].values())
+        if tool_stats["function_counts"]
+        else 0
+    )
     function_pct = {
         k: (v / total_tool_calls) if total_tool_calls > 0 else 0.0
         for k, v in tool_stats["function_counts"].items()
@@ -672,8 +782,12 @@ async def run_eval(
         "counters": counters,
         "tooling": {
             "total_samples": total_samples,
-            "text_only_pct": (tool_stats["text_only"] / total_samples) if total_samples > 0 else 0.0,
-            "with_tools_pct": (tool_stats["with_tools"] / total_samples) if total_samples > 0 else 0.0,
+            "text_only_pct": (
+                (tool_stats["text_only"] / total_samples) if total_samples > 0 else 0.0
+            ),
+            "with_tools_pct": (
+                (tool_stats["with_tools"] / total_samples) if total_samples > 0 else 0.0
+            ),
             "function_counts": tool_stats["function_counts"],
             "function_pct": function_pct,
         },

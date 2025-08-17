@@ -197,7 +197,7 @@ class WtClient:
         pass the write-end FD using pass_fds and WT_HANDSHAKE_FD so the daemon can emit
         JSON StartupMessage lines. Keep the read-end in this process for synchronous readiness.
         """
-        import subprocess
+        import subprocess  # local import to avoid early import cycles
 
         # Create pipe for handshake communication (dedicated FD)
         read_fd, write_fd = os.pipe()
@@ -439,11 +439,11 @@ class WtClient:
                 )
             raise RuntimeError(f"Daemon worktree_create communication failed: {e}")
 
-    async def delete_worktree(self, wtid: WorktreeID) -> WorktreeDeleteResult:
+    async def delete_worktree(self, wtid: WorktreeID, *, force: bool = False) -> WorktreeDeleteResult:
         await self._start_daemon_if_needed()
         return await self._rpc(
             "worktree_delete",
-            WorktreeDeleteParams(wtid=wtid),
+            WorktreeDeleteParams(wtid=wtid, force=force),
             TypeAdapter(WorktreeDeleteResult),
         )
 
@@ -575,5 +575,4 @@ class WtClient:
                 break
         if target is None:
             raise RuntimeError(f"Worktree '{name}' not found")
-        # Server currently always forces removal; 'force' retained for CLI parity
-        await self.delete_worktree(target)
+        await self.delete_worktree(target, force=force)

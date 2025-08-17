@@ -107,33 +107,9 @@ class DebouncedGitHubRefresh:
         refresh_time = (self.last_refresh_time - start_time) * 1000
         logger.info("GitHub refresh completed in %.1fms", refresh_time)
 
-    async def _fetch_origin_master(self) -> bool:
-        try:
-            logger.debug("Fetching origin/master for %s", self.worktree_path)
-            process = await asyncio.create_subprocess_exec(
-                "git",
-                "fetch",
-                "origin",
-                "master",
-                cwd=self.worktree_path,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            try:
-                _, stderr = await asyncio.wait_for(process.communicate(), timeout=10.0)
-                if process.returncode == 0:
-                    logger.debug("Successfully fetched origin/master")
-                    return True
-                logger.debug("Git fetch failed (offline?): %s", stderr.decode().strip())
-                return False
-            except asyncio.TimeoutError:
-                process.kill()
-                await process.wait()
-                logger.debug("Git fetch timed out (slow network?)")
-                return False
-        except Exception:
-            logger.debug("Git fetch error", exc_info=True)
-            return False
+    # Deprecated: direct network fetch is not used; kept for reference
+    async def _fetch_origin_master(self) -> bool:  # pragma: no cover
+        return False
 
 
 class GitFileHandler(FileSystemEventHandler):
