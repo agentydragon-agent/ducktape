@@ -9,7 +9,7 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Optional
 
 import tiktoken  # type: ignore
 from openai import AsyncOpenAI
@@ -36,7 +36,7 @@ REWRITE_APPLY = Path(__file__).parent / "system_rewrite_apply.js"
 class Sample:
     correlation_id: Optional[str]
     timestamp: Optional[int]
-    anthropic_request: Dict[str, Any]
+    anthropic_request: dict[str, Any]
 
 
 def parse_args():
@@ -88,8 +88,8 @@ def estimate_tokens(text: str) -> int:
     return len(tiktoken.get_encoding("cl100k_base").encode(text))
 
 
-def tokens_for_chat_messages(msgs: List[Dict[str, Any]]) -> int:
-    parts: List[str] = []
+def tokens_for_chat_messages(msgs: list[dict[str, Any]]) -> int:
+    parts: list[str] = []
     for m in msgs:
         parts.append(str(m.get("role", "")))
         c = m.get("content")
@@ -134,8 +134,8 @@ def rewrite_system_with_template(system_text: str, template_path: Path) -> str:
 
 
 def anthro_to_openai_messages(
-    body: Dict[str, Any], new_system_text: Optional[str]
-) -> List[Dict[str, Any]]:
+    body: dict[str, Any], new_system_text: Optional[str]
+) -> list[dict[str, Any]]:
     """Translate Anthropic messages into OpenAI Chat format, preserving:
     - assistant tool_calls (from Anthropic tool_use parts)
     - tool results as role="tool" messages (from Anthropic tool_result parts)
@@ -143,8 +143,8 @@ def anthro_to_openai_messages(
     Avoid emitting empty messages.
     """
 
-    def _join_text_parts(parts: List[Dict[str, Any]]) -> str:
-        texts: List[str] = []
+    def _join_text_parts(parts: list[dict[str, Any]]) -> str:
+        texts: list[str] = []
         for p in parts:
             if (
                 isinstance(p, dict)
@@ -154,7 +154,7 @@ def anthro_to_openai_messages(
                 texts.append(p["text"])
         return "\n".join(texts)
 
-    out: List[Dict[str, Any]] = []
+    out: list[dict[str, Any]] = []
     if new_system_text:
         out.append({"role": "system", "content": new_system_text})
 
@@ -172,8 +172,8 @@ def anthro_to_openai_messages(
         # Structured content list
         if isinstance(content, list):
             if role == "assistant":
-                text_buf: List[str] = []
-                tool_calls: List[Dict[str, Any]] = []
+                text_buf: list[str] = []
+                tool_calls: list[dict[str, Any]] = []
                 for part in content:
                     if not isinstance(part, dict):
                         continue
@@ -200,7 +200,7 @@ def anthro_to_openai_messages(
                                 raise RuntimeError(
                                     f"FATAL: Unserializable tool_use.input for function '{name}': {e}"
                                 )
-                        tool_call: Dict[str, Any] = {
+                        tool_call: dict[str, Any] = {
                             "type": "function",
                             "function": {
                                 "name": name or "unknown",
@@ -211,7 +211,7 @@ def anthro_to_openai_messages(
                             tool_call["id"] = str(tcid)
                         tool_calls.append(tool_call)
                 if text_buf or tool_calls:
-                    msg: Dict[str, Any] = {"role": "assistant"}
+                    msg: dict[str, Any] = {"role": "assistant"}
                     if text_buf:
                         msg["content"] = "\n".join(text_buf)
                     else:
@@ -224,8 +224,8 @@ def anthro_to_openai_messages(
                 continue
 
             if role == "user":
-                text_parts: List[Dict[str, Any]] = []
-                tool_msgs: List[Dict[str, Any]] = []
+                text_parts: list[dict[str, Any]] = []
+                tool_msgs: list[dict[str, Any]] = []
                 for part in content:
                     if not isinstance(part, dict):
                         continue
@@ -278,10 +278,10 @@ def anthro_to_openai_messages(
 
 
 def build_grader_prompt(
-    prefix_messages: List[Dict[str, Any]],
-    raw_bad_branch: List[Dict[str, Any]],
-    raw_new_asst_obj: Dict[str, Any],
-) -> List[Dict[str, Any]]:
+    prefix_messages: list[dict[str, Any]],
+    raw_bad_branch: list[dict[str, Any]],
+    raw_new_asst_obj: dict[str, Any],
+) -> list[dict[str, Any]]:
     sys = {
         "role": "system",
         "content": (
@@ -321,7 +321,7 @@ def build_grader_prompt(
     return [sys, user]
 
 
-def grade_tool_def() -> Dict[str, Any]:
+def grade_tool_def() -> dict[str, Any]:
     return {
         "type": "function",
         "name": "grade",
@@ -339,7 +339,7 @@ def grade_tool_def() -> Dict[str, Any]:
     }
 
 
-def parse_grade_from_responses(resp_obj) -> Dict[str, Any]:
+def parse_grade_from_responses(resp_obj) -> dict[str, Any]:
     data = resp_obj if isinstance(resp_obj, dict) else resp_obj.model_dump()
     out = data.get("output", []) or []
     for item in out:
@@ -397,7 +397,7 @@ async def run_eval(
     )
     sem = asyncio.Semaphore(max(1, int(concurrency)))
 
-    async def process(item: Sample) -> Tuple[Optional[dict], Optional[dict]]:
+    async def process(item: Sample) -> tuple[Optional[dict], Optional[dict]]:
         async with sem:
             print(json.dumps({"event": "process_start", "cid": item.correlation_id}))
             # 1) Rewrite system via JS apply script
@@ -546,8 +546,8 @@ async def run_eval(
 
             # Build a provisional grader input to compute tokens; start from minimal
             def mk_grader_input(
-                prefix_subset: List[Dict[str, Any]],
-            ) -> List[Dict[str, Any]]:
+                prefix_subset: list[dict[str, Any]],
+            ) -> list[dict[str, Any]]:
                 gm = build_grader_prompt(
                     prefix_subset,
                     raw_bad_branch,
@@ -803,7 +803,7 @@ async def run_eval(
         grades_path = out_dir / "grades.jsonl"
         report_path = out_dir / "report.html"
         # Build grades map
-        grades_map: Dict[str, Dict[str, Any]] = {}
+        grades_map: dict[str, dict[str, Any]] = {}
         try:
             with grades_path.open("r", encoding="utf-8") as gf:
                 for line in gf:
@@ -823,14 +823,14 @@ async def run_eval(
             pass
 
         # Collect rows
-        rows: List[Dict[str, Any]] = []
-        def _prev_asst_idx(msgs: List[Dict[str, Any]]) -> Optional[int]:
+        rows: list[dict[str, Any]] = []
+        def _prev_asst_idx(msgs: list[dict[str, Any]]) -> Optional[int]:
             last_idx: Optional[int] = None
             for i in range(0, max(0, len(msgs) - 1)):
                 if isinstance(msgs[i], dict) and msgs[i].get("role") == "assistant":
                     last_idx = i
             return last_idx
-        summary: Dict[str, Any] = {}
+        summary: dict[str, Any] = {}
         try:
             with (out_dir / "summary.json").open("r", encoding="utf-8") as sf:
                 summary = json.load(sf)
