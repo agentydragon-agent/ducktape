@@ -5,7 +5,7 @@ import click
 from colorama import Style
 from tabulate import tabulate
 
-from ..shared.github_models import PRInfo, PRState, PRStatus
+from ..shared.github_models import PRData, PRInfo, PRState, PRStatus
 from ..shared.protocol import StatusResult
 
 # PR status display mapping - moved from formatters.py
@@ -18,8 +18,20 @@ PR_STATUS_DISPLAY_MAP = {
 }
 
 
-def format_sync_status(ahead: int, behind: int) -> str:
-    """Format sync status with proper alignment - fixes double formatting issue."""
+def format_sync_status(ahead: int, behind: int, *, compact: bool = False) -> str:
+    """Format ahead/behind status.
+
+    - compact=False (default): fixed-width aligned display for rows
+    - compact=True: short form like "↓3 ↑2" or "" when zero
+    """
+    if compact:
+        parts: list[str] = []
+        if behind > 0:
+            parts.append(f"↓{behind}")
+        if ahead > 0:
+            parts.append(f"↑{ahead}")
+        return " ".join(parts)
+
     if ahead == 0 and behind == 0:
         return "          "  # Fixed width for alignment
 
@@ -102,10 +114,10 @@ class ViewFormatter:
 
         # GitHub PR status with clickable hyperlinks and clear text
         pr_status = ""
-        if pr_info and pr_info.github_pr:
-            pr = pr_info.github_pr
-            pr_number = pr["number"]
-            pr_state = PRState(pr["state"])
+        if pr_info and pr_info.pr_data:
+            d: PRData = pr_info.pr_data
+            pr_number = d.pr_number
+            pr_state = d.pr_state
 
             # Create clickable hyperlink - fall back to plain text if not supported
             clickable_link = self.make_hyperlink(
@@ -115,14 +127,14 @@ class ViewFormatter:
 
             # Add lines changed info if available
             lines_info = ""
-            if pr.get("additions") is not None and pr.get("deletions") is not None:
-                lines_info = f" +{pr['additions']}/-{pr['deletions']}"
+            if d.additions is not None and d.deletions is not None:
+                lines_info = f" +{d.additions}/-{d.deletions}"
 
             pr_status_text = self.get_pr_status_text(
                 pr_state,
-                pr.get("mergeable"),
-                pr.get("draft", False),
-                pr.get("merged_at"),
+                d.mergeable,
+                d.draft,
+                d.merged_at,
             )
 
             pr_status = f"{clickable_link} {pr_status_text}{lines_info}"
@@ -145,13 +157,9 @@ class ViewFormatter:
         return status.commit_info.short_hash if status.commit_info else "ERROR"
 
     def _get_sync_column(self, status: StatusResult) -> str:
-        """Get ahead/behind sync status column."""
-        parts = []
-        if status.behind_count > 0:
-            parts.append(f"↓{status.behind_count}")
-        if status.ahead_count > 0:
-            parts.append(f"↑{status.ahead_count}")
-        return "+".join(parts) if parts else ""
+        """Get ahead/behind sync status column (compact variant)."""
+        # Use compact variant for table context
+        return format_sync_status(status.ahead_count, status.behind_count, compact=True)
 
     def _get_work_status_column(self, status: StatusResult) -> str:
         """Get working directory status column."""
@@ -169,53 +177,30 @@ class ViewFormatter:
 
     def _get_pr_link_column(self, status: StatusResult) -> str:
         """Get PR link column."""
-        if not status.pr_info:
+        if not status.pr_info or not status.pr_info.pr_data:
             return ""
-        if status.pr_info.github_pr:
-            pr = status.pr_info.github_pr
-            pr_number = pr["number"]
-            return self.make_hyperlink(f"http://go/pull/{pr_number}", f"#{pr_number}")
-        if status.pr_info.pr_data:
-            pr_number = status.pr_info.pr_data.pr_number
-            return self.make_hyperlink(f"http://go/pull/{pr_number}", f"#{pr_number}")
-        return ""
+        pr_number = status.pr_info.pr_data.pr_number
+        return self.make_hyperlink(f"http://go/pull/{pr_number}", f"#{pr_number}")
 
     def _get_pr_status_column(self, status: StatusResult) -> str:
         """Get PR status text column."""
-        if not status.pr_info:
+        if not status.pr_info or not status.pr_info.pr_data:
             return ""
-        if status.pr_info.github_pr:
-            pr = status.pr_info.github_pr
-            pr_state = PRState(pr["state"])
-            return self.get_pr_status_text(
-                pr_state,
-                pr.get("mergeable"),
-                pr.get("draft", False),
-                pr.get("merged_at"),
-            )
-        if status.pr_info.pr_data:
-            d = status.pr_info.pr_data
-            return self.get_pr_status_text(
-                d.pr_state,
-                d.mergeable,
-                d.draft,
-                d.merged_at,
-            )
-        return ""
+        d = status.pr_info.pr_data
+        return self.get_pr_status_text(
+            d.pr_state,
+            d.mergeable,
+            d.draft,
+            d.merged_at,
+        )
 
     def _get_pr_changes_column(self, status: StatusResult) -> str:
         """Get PR changes (+lines/-lines) column."""
-        if not status.pr_info:
+        if not status.pr_info or not status.pr_info.pr_data:
             return ""
-        if status.pr_info.github_pr:
-            pr = status.pr_info.github_pr
-            if pr.get("additions") is not None and pr.get("deletions") is not None:
-                return f"+{pr['additions']}/-{pr['deletions']}"
-            return ""
-        if status.pr_info.pr_data:
-            d = status.pr_info.pr_data
-            if d.additions is not None and d.deletions is not None:
-                return f"+{d.additions}/-{d.deletions}"
+        d = status.pr_info.pr_data
+        if d.additions is not None and d.deletions is not None:
+            return f"+{d.additions}/-{d.deletions}"
         return ""
 
     def render_top_status_bar(self, status_response) -> None:
@@ -333,10 +318,10 @@ class ViewFormatter:
             click.echo("❓ Has untracked files")
 
         # Show PR details if available
-        if pr_info and pr_info.github_pr:
-            pr = pr_info.github_pr
-            pr_number = pr["number"]
-            pr_state = PRState(pr["state"])
+        if pr_info and pr_info.pr_data:
+            d: PRData = pr_info.pr_data
+            pr_number = d.pr_number
+            pr_state = d.pr_state
 
             # Create clickable link for detailed view
             click.echo(
@@ -346,9 +331,9 @@ class ViewFormatter:
             # Format detailed PR status
             status_text = self.get_pr_status_text(
                 pr_state,
-                pr.get("mergeable"),
-                pr.get("draft", False),
-                pr.get("merged_at"),
+                d.mergeable,
+                d.draft,
+                d.merged_at,
             )
             if status_text in PR_STATUS_DISPLAY_MAP:
                 icon, message = PR_STATUS_DISPLAY_MAP[status_text]

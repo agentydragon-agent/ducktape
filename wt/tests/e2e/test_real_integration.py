@@ -8,7 +8,7 @@ import pytest
 
 from wt.shared.git_utils import git_run
 
-from ..conftest import kill_daemon_and_verify
+# from ..conftest import kill_daemon_at_wt_dir
 from ..test_utils import run_cli_command
 
 pytestmark = pytest.mark.timeout(10)
@@ -31,7 +31,7 @@ def test_real_program_workflow(real_temp_repo, real_env):
 
     try:
         # Step 1: Initial status (should show empty)
-        result = run_cli_command(["sh"], env=real_env, timeout=10.0)
+        result = run_cli_command(["sh"], env=real_env, timeout=5.0)
         assert result.returncode == 0
         print(f"Initial status output: {result.stdout}")
 
@@ -55,14 +55,14 @@ def test_real_program_workflow(real_temp_repo, real_env):
         assert worktree2_path.exists(), f"Worktree 2 not created at {worktree2_path}"
 
         # Step 4: Check status shows both worktrees
-        result = run_cli_command(["sh"], env=real_env, timeout=10.0)
+        result = run_cli_command(["sh"], env=real_env, timeout=5.0)
         assert result.returncode == 0
         print(f"Status with both worktrees: {result.stdout}")
         assert "feature1" in result.stdout
         assert "feature2" in result.stdout
 
         # Step 5: Navigate to feature1 (test cd command emission)
-        result = run_cli_command(["sh", "feature1"], env=real_env, timeout=10.0)
+        result = run_cli_command(["sh", "feature1"], env=real_env, timeout=5.0)
         assert result.returncode == 0
         print(f"Navigate to feature1: {result.stdout}")
         # Note: cd command is emitted to fd3, we can't easily verify it here
@@ -80,15 +80,15 @@ def test_real_program_workflow(real_temp_repo, real_env):
             # The remove might need confirmation, let's skip this complex interaction for now
 
         # Step 7: Final status check
-        result = run_cli_command(["sh"], env=real_env, timeout=10.0)
+        result = run_cli_command(["sh"], env=real_env, timeout=5.0)
         assert result.returncode == 0
         print(f"Final status: {result.stdout}")
 
         print("✅ Real integration test passed!")
 
     finally:
-        # Always clean up daemon
-        kill_daemon_and_verify(real_temp_repo)
+        # Cleaned up by real_env fixture
+        pass
 
 
 def test_real_daemon_startup_and_communication(real_temp_repo, real_env):
@@ -96,7 +96,7 @@ def test_real_daemon_startup_and_communication(real_temp_repo, real_env):
 
     try:
         # This should start the daemon if not already running
-        result = run_cli_command(["sh"], env=real_env, timeout=10.0)
+        result = run_cli_command(["sh"], env=real_env, timeout=5.0)
         assert result.returncode == 0
 
         # Check that daemon files were created
@@ -122,7 +122,8 @@ def test_real_daemon_startup_and_communication(real_temp_repo, real_env):
         print("✅ Daemon startup test passed!")
 
     finally:
-        kill_daemon_and_verify(real_temp_repo)
+        # Cleaned up by real_env fixture
+        pass
 
 
 def test_real_git_operations(real_temp_repo, real_env):
@@ -130,7 +131,7 @@ def test_real_git_operations(real_temp_repo, real_env):
 
     try:
         # Create worktree
-        result = run_cli_command(["sh", "-c", "git-test"], env=real_env)
+        result = run_cli_command(["sh", "-c", "git-test"], env=real_env, timeout=10.0)
         assert result.returncode == 0
 
         worktree_path = real_temp_repo / "worktrees" / "git-test"
@@ -155,4 +156,5 @@ def test_real_git_operations(real_temp_repo, real_env):
         print("✅ Real git operations test passed!")
 
     finally:
-        kill_daemon_and_verify(real_temp_repo)
+        # Cleaned up by real_env fixture
+        pass

@@ -39,7 +39,7 @@ import time
 import pygit2
 import pytest
 
-from ..conftest import kill_daemon_and_verify
+# from ..conftest import kill_daemon_at_wt_dir
 from ..test_utils import run_cli_command
 
 # Very distinctive test branch name to avoid conflicts
@@ -69,9 +69,8 @@ class TestCLIIntegration:
 
     def test_list_worktrees_empty(self, real_temp_repo, real_env):
         """Test listing worktrees when none exist."""
-        # Kill any existing daemon first
-        kill_daemon_and_verify(real_temp_repo)
-
+        # Kill daemon for this test's WT_DIR
+        
         result = run_cli_command(["sh", "ls"], env=real_env)
         assert result.returncode == 0
         # When no worktrees exist, status shows main repo line; ensure no non-main entries
@@ -80,8 +79,7 @@ class TestCLIIntegration:
 
     def test_create_worktree_from_master(self, real_temp_repo, real_env):
         """Test creating a worktree from master branch."""
-        kill_daemon_and_verify(real_temp_repo)
-
+        
         # Create worktree
         result = run_cli_command(["sh", "-c", "new-feature"], env=real_env)
         assert result.returncode == 0, f"Create failed: {result.stderr}"
@@ -100,8 +98,7 @@ class TestCLIIntegration:
 
     def test_list_worktrees_with_existing(self, real_temp_repo, real_env):
         """Test listing worktrees when some exist."""
-        kill_daemon_and_verify(real_temp_repo)
-
+        
         # Create a worktree first
         result = run_cli_command(["sh", "-c", "feature1"], env=real_env)
         assert result.returncode == 0, f"Create failed: {result.stderr}"
@@ -113,8 +110,7 @@ class TestCLIIntegration:
 
     def test_status_command_shows_worktrees(self, real_temp_repo, real_env):
         """Test that status command shows created worktrees."""
-        kill_daemon_and_verify(real_temp_repo)
-
+        
         # Create worktrees
         run_cli_command(["sh", "-c", "feature1"], env=real_env)
         run_cli_command(["sh", "-c", "feature2"], env=real_env)
@@ -127,16 +123,14 @@ class TestCLIIntegration:
 
     def test_create_worktree_reserved_name(self, real_temp_repo, real_env):
         """Test that creating worktrees with reserved names fails."""
-        kill_daemon_and_verify(real_temp_repo)
-
+        
         result = run_cli_command(["sh", "-c", "main"], env=real_env)
         assert result.returncode != 0
         assert "reserved" in result.stderr.lower() or "error" in result.stdout.lower()
 
     def test_worktree_navigation(self, real_temp_repo, real_env):
         """Test navigation to existing worktree."""
-        kill_daemon_and_verify(real_temp_repo)
-
+        
         # Create a worktree
         run_cli_command(["sh", "-c", "nav-test"], env=real_env)
 
@@ -147,16 +141,14 @@ class TestCLIIntegration:
 
     def test_help_commands(self, real_temp_repo, real_env):
         """Test help command works."""
-        kill_daemon_and_verify(real_temp_repo)
-
+        
         result = run_cli_command(["sh", "help"], env=real_env)
         assert result.returncode == 0
         assert "wt - Enhanced worktree management" in result.stdout
 
     def test_path_commands(self, real_temp_repo, real_env):
         """Test path resolution commands."""
-        kill_daemon_and_verify(real_temp_repo)
-
+        
         # Create a worktree
         run_cli_command(["sh", "-c", "path-test"], env=real_env)
 
@@ -178,8 +170,7 @@ class TestRealGitOperations:
 
     def test_worktree_branch_creation(self, real_temp_repo, real_env):
         """Test that worktree creation actually creates git branches."""
-        kill_daemon_and_verify(real_temp_repo)
-
+        
         # Create worktree
         result = run_cli_command(["sh", "-c", "test-branch"], env=real_env)
         assert result.returncode == 0, f"Failed: {result.stderr}"
@@ -198,8 +189,7 @@ class TestRealGitOperations:
 
     def test_worktree_git_operations(self, real_temp_repo, real_env):
         """Test git operations within created worktrees."""
-        kill_daemon_and_verify(real_temp_repo)
-
+        
         # Create worktree
         run_cli_command(["sh", "-c", "git-ops"], env=real_env)
         worktree_path = real_temp_repo / "worktrees" / "git-ops"
@@ -231,8 +221,7 @@ class TestRealGitOperations:
 
     def test_worktree_status_with_changes(self, real_temp_repo, real_env):
         """Test that status command shows git changes in worktrees."""
-        kill_daemon_and_verify(real_temp_repo)
-
+        
         # Create worktree
         run_cli_command(["sh", "-c", "status-test"], env=real_env)
         worktree_path = real_temp_repo / "worktrees" / "status-test"
@@ -253,8 +242,7 @@ class TestRealGitOperations:
         assert "status-test" in result.stdout
 
     def test_sparse_empty_cone_then_extend(self, real_temp_repo, config_factory):
-        kill_daemon_and_verify(real_temp_repo)
-
+        
         # Create a repo with nested content
         (real_temp_repo / "foo").mkdir()
         (real_temp_repo / "foo" / "bar").mkdir(parents=True, exist_ok=True)

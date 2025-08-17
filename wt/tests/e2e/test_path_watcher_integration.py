@@ -9,6 +9,8 @@ import tempfile
 import time
 from pathlib import Path
 
+import pytest
+
 from wt.shared.git_utils import git_run
 
 from ..test_utils import run_cli_sh_command as run_cli_command
@@ -62,6 +64,7 @@ github_repo: "test/test"
     return repo_path, env, temp_dir
 
 
+@pytest.mark.timeout(30)
 def test_path_watcher_full_lifecycle():
     """
     Test the path watcher through complete worktree lifecycle:
@@ -81,7 +84,7 @@ def test_path_watcher_full_lifecycle():
 
         # Step 1: Initial status - should start daemon and show empty state
         print("=== Step 1: Initial status (starts daemon) ===")
-        result = run_cli_command([], env)
+        result = run_cli_command([], env, timeout=5.0)
         print(f"Status result (exit={result.returncode}):\n{result.stdout}")
         if result.stderr:
             print(f"STDERR: {result.stderr}")
@@ -112,7 +115,7 @@ def test_path_watcher_full_lifecycle():
 
         # Step 2: Create a worktree
         print("=== Step 2: Create worktree 'feature-test' ===")
-        result = run_cli_command(["-c", "feature-test"], env)
+        result = run_cli_command(["-c", "feature-test"], env, timeout=5.0)
         print(f"Create result (exit={result.returncode}):\n{result.stdout}")
         if result.stderr:
             print(f"STDERR: {result.stderr}")
@@ -131,7 +134,7 @@ def test_path_watcher_full_lifecycle():
 
         # Step 3: Status should now show the new worktree (detected via path watcher)
         print("=== Step 3: Status after create (should detect via path watcher) ===")
-        result = run_cli_command([], env)
+        result = run_cli_command([], env, timeout=5.0)
         print(f"Status after create (exit={result.returncode}):\n{result.stdout}")
         if result.stderr:
             print(f"STDERR: {result.stderr}")
@@ -143,7 +146,7 @@ def test_path_watcher_full_lifecycle():
 
         # Step 4: Remove the worktree
         print("=== Step 4: Remove worktree 'feature-test' ===")
-        result = run_cli_command(["rm", "feature-test", "--force"], env)
+        result = run_cli_command(["rm", "feature-test", "--force"], env, timeout=5.0)
         print(f"Remove result (exit={result.returncode}):\n{result.stdout}")
         if result.stderr:
             print(f"STDERR: {result.stderr}")
@@ -162,7 +165,7 @@ def test_path_watcher_full_lifecycle():
         print(
             "=== Step 5: Status after remove (should detect removal via path watcher) ===",
         )
-        result = run_cli_command([], env)
+        result = run_cli_command([], env, timeout=5.0)
         print(f"Status after remove (exit={result.returncode}):\n{result.stdout}")
         if result.stderr:
             print(f"STDERR: {result.stderr}")
@@ -178,13 +181,14 @@ def test_path_watcher_full_lifecycle():
     finally:
         # Clean up: Kill daemon
         print("=== Cleanup: Stopping daemon ===")
-        kill_result = run_cli_command(["kill-daemon"], env)
+        kill_result = run_cli_command(["kill-daemon"], env, timeout=5.0)
         print(f"Daemon stop result: {kill_result.returncode}")
 
         # Clean up temp directory
         shutil.rmtree(temp_dir)
 
 
+@pytest.mark.timeout(30)
 def test_path_watcher_multiple_worktrees():
     """
     Test path watcher with multiple worktrees created and removed.
@@ -195,7 +199,7 @@ def test_path_watcher_multiple_worktrees():
 
     try:
         # Initial status to start daemon
-        result = run_cli_command([], env)
+        result = run_cli_command([], env, timeout=5.0)
         assert result.returncode == 0
         time.sleep(0.5)  # Let daemon start
 
@@ -204,14 +208,14 @@ def test_path_watcher_multiple_worktrees():
         # Create multiple worktrees
         print("=== Creating multiple worktrees ===")
         for name in worktree_names:
-            result = run_cli_command(["-c", name], env)
+            result = run_cli_command(["-c", name], env, timeout=5.0)
             assert result.returncode == 0, f"Failed to create {name}: {result.stderr}"
             time.sleep(0.1)  # Brief pause between creates
 
         time.sleep(0.3)  # Let path watcher catch up
 
         # Status should show all worktrees
-        result = run_cli_command([], env)
+        result = run_cli_command([], env, timeout=5.0)
         assert result.returncode == 0
         for name in worktree_names:
             assert name in result.stdout, f"Worktree {name} not detected after creation"
@@ -219,19 +223,26 @@ def test_path_watcher_multiple_worktrees():
         # Remove worktrees one by one
         print("=== Removing worktrees one by one ===")
         remaining = worktree_names.copy()
+
+        def _wait_until_removed(env, missing_name: str, timeout: float = 6.0):
+            deadline = time.time() + timeout
+            last = ""
+            while time.time() < deadline:
+                r = run_cli_command([], env, timeout=3.0)
+                if r.returncode == 0:
+                    last = r.stdout
+                    if missing_name not in last:
+                        return True
+                time.sleep(0.2)
+            print(f"DEBUG last status while waiting removal of {missing_name}:\n{last}")
+            return False
+
         for name in worktree_names:
-            result = run_cli_command(["rm", name, "--force"], env)
+            result = run_cli_command(["rm", name, "--force"], env, timeout=5.0)
             assert result.returncode == 0, f"Failed to remove {name}: {result.stderr}"
             remaining.remove(name)
 
-            time.sleep(0.2)  # Let path watcher detect removal
-
-            # Verify status reflects the removal
-            result = run_cli_command([], env)
-            assert result.returncode == 0
-
-            # Should not see the removed worktree
-            # Note: This might show as "missing" rather than absent, which is also valid
+            assert _wait_until_removed(env, name), f"Worktree {name} still present in status after removal"
             print(f"After removing {name}, remaining should be: {remaining}")
 
         print("✅ Multiple worktrees test completed successfully!")

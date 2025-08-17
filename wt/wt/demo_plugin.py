@@ -19,6 +19,6 @@ async def run(args: list[str], client, config, io: PluginIO) -> int:
         io.controlled_error("demo controlled error", ["echo recovered"])  # exits 2
     # Default: show status via server
     resp = await client.get_status()
-    count = len(resp.results)
+    count = len(resp.items)
     print(f"demo: {count} worktrees")
     return 0

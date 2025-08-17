@@ -50,7 +50,7 @@ import pytest
 
 from wt.shared.git_utils import git_run
 
-from ..conftest import create_integration_test_config_file, kill_daemon_and_verify
+from ..conftest import create_integration_test_config_file
 from ..test_utils import run_cli_command
 
 pytestmark = pytest.mark.timeout(10)
@@ -59,8 +59,7 @@ pytestmark = pytest.mark.timeout(10)
 @pytest.fixture
 def real_env_with_existing_worktrees(real_temp_repo):
     """Set up environment with config file and create a couple existing worktrees."""
-    # Kill any existing daemon first
-    kill_daemon_and_verify(real_temp_repo)
+    # Clean state ensured by per-test WT_DIR
 
     config_file = create_integration_test_config_file(real_temp_repo)
     (real_temp_repo / ".wt").mkdir(parents=True, exist_ok=True)
@@ -128,8 +127,7 @@ def real_env_with_existing_worktrees(real_temp_repo):
 
     yield env, real_temp_repo
 
-    # Cleanup: Kill daemon after test
-    kill_daemon_and_verify(real_temp_repo)
+    # Cleanup handled by fixture
 
 
 def test_real_workflow_with_existing_worktrees(real_env_with_existing_worktrees):

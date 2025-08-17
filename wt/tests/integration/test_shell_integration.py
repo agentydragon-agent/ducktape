@@ -130,15 +130,15 @@ echo "Shell function loaded successfully"
         """Test that wt teleport actually changes directory using pwd verification."""
         from contextlib import contextmanager
 
-        from ..conftest import kill_daemon_and_verify
+        # Cleaned by real_env fixture
 
         @contextmanager
         def daemon_cleanup():
-            kill_daemon_and_verify(real_temp_repo)
+            pass
             try:
                 yield
             finally:
-                kill_daemon_and_verify(real_temp_repo)
+                pass
 
         def parse_teleport_output(result):
             output_lines = [line for line in result.stdout.strip().split("\n") if line]
@@ -201,15 +201,15 @@ echo "$create_exit:$nav_exit:$pwd_before:$pwd_after"
     def test_wt_main_changes_directory(self, real_temp_repo, real_env):
         from contextlib import contextmanager
 
-        from ..conftest import kill_daemon_and_verify
+        # Cleaned by real_env fixture
 
         @contextmanager
         def daemon_cleanup():
-            kill_daemon_and_verify(real_temp_repo)
+            pass
             try:
                 yield
             finally:
-                kill_daemon_and_verify(real_temp_repo)
+                pass
 
         def parse_output(result):
             lines = [line for line in result.stdout.strip().split("\n") if line]

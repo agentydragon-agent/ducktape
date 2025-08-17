@@ -73,7 +73,8 @@ def _run_and_wait(env, expect: list[str], timeout=12.0):
     deadline = time.time() + timeout
     last = ""
     while time.time() < deadline:
-        r = run_cli_command(["sh"], env=env, timeout=30.0)
+        # Keep per-call timeout below pytest-timeout default to avoid hanging the test
+        r = run_cli_command(["sh"], env=env, timeout=3.0)
         assert r.returncode == 0
         last = r.stdout
         if all(x in last for x in expect):

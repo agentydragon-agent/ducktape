@@ -3,13 +3,12 @@ from pathlib import Path
 
 import pytest
 
-from ..conftest import kill_daemon_and_verify
+from ..conftest import kill_daemon_at_wt_dir
 from ..test_utils import run_cli_command
 
 
 @pytest.fixture
 def real_env_with_post_script(real_temp_repo, config_factory, tmp_path):
-    kill_daemon_and_verify(real_temp_repo)
     script = tmp_path / "post_create.sh"
     script.write_text(
         '#!/usr/bin/env bash\nset -euo pipefail\nwt=""\nfor a in "$@"; do case "$a" in --worktree_root=*) wt="${a#*=}";; esac; done\nif [[ -z "$wt" ]]; then echo "missing --worktree_root" >&2; exit 2; fi\ntouch "$wt/.post_create_ran"\n',
@@ -19,8 +18,10 @@ def real_env_with_post_script(real_temp_repo, config_factory, tmp_path):
     config = factory.integration(github_enabled=False, post_creation_script=str(script))
     env = os.environ.copy()
     env["WT_DIR"] = str(config.wt_dir)
+    # Ensure clean daemon for this WT_DIR
+    kill_daemon_at_wt_dir(config.wt_dir)
     yield env, real_temp_repo
-    kill_daemon_and_verify(real_temp_repo)
+    kill_daemon_at_wt_dir(config.wt_dir)
 
 
 def test_post_creation_script_runs(real_env_with_post_script):

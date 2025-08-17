@@ -8,9 +8,7 @@ from ..test_utils import run_cli_command
 
 @pytest.fixture
 def failing_env(real_temp_repo, config_factory, tmp_path):
-    from ..conftest import kill_daemon_and_verify
-
-    kill_daemon_and_verify(real_temp_repo)
+    # Clean state ensured by per-test WT_DIR via fixtures
     script = tmp_path / "post_create_fail.sh"
     script.write_text(
         '#!/usr/bin/env bash\nset -euo pipefail\necho "hello from setup"\n>&2 echo "setup error"\nexit 42\n',
@@ -21,7 +19,7 @@ def failing_env(real_temp_repo, config_factory, tmp_path):
     env = os.environ.copy()
     env["WT_DIR"] = str(config.wt_dir)
     yield env, real_temp_repo
-    kill_daemon_and_verify(real_temp_repo)
+    # Cleanup handled by fixture
 
 
 def test_post_creation_script_failure_is_streamed_and_nonzero(failing_env):

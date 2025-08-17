@@ -11,8 +11,12 @@ import subprocess
 from github import Github
 
 from ..shared.error_handling import GitHubUnavailableError, handle_github_errors
-from ..shared.github_models import PRState, PullRequestList, PullRequestSearch
-from ..shared.models import PRStatus
+from ..shared.github_models import (
+    GitHubPRResponse,
+    PRState,
+    PullRequestList,
+    PullRequestSearch,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +35,7 @@ class DisabledGitHubInterface:
         """Return empty list when GitHub is disabled."""
         return []
 
-    def pr_view(self, pr_number: int) -> PRStatus | None:
+    def pr_view(self, pr_number: int) -> dict[str, str] | None:
         """Return None when GitHub is disabled."""
         return None
 
@@ -97,6 +101,6 @@ class GitHubInterface:
         return [self.repo.get_pull(issue.number) for issue in issues]
 
     @handle_github_errors
-    def pr_view(self, branch_name: str) -> dict[str, str]:
-        pr = self.repo.get_pull(int(branch_name))
-        return {"number": str(pr.number), "state": pr.state, "title": pr.title}
+    def pr_view(self, pr_number: int) -> GitHubPRResponse:
+        pr = self.repo.get_pull(pr_number)
+        return GitHubPRResponse.from_github_pr(pr)

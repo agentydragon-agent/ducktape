@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Literal
 
 import click
 
@@ -49,27 +48,6 @@ class Worktree:
         return self.path / subpath
 
 
-@dataclass
-class PRStatus:
-    """Unified PR status that eliminates None mergeability confusion."""
-
-    state: Literal["draft", "open", "merged", "closed"]
-    mergeable: bool | None = None  # None = unknown/not fetched
-    number: int | None = None
-
-    @property
-    def display_status(self) -> str:
-        if self.state == "merged":
-            return "merged"
-        if self.state == "closed":
-            return "closed"
-        if self.state == "draft":
-            return "draft"
-        if self.mergeable is True:
-            return "can merge"
-        if self.mergeable is False:
-            return "conflict"
-        return "open"  # mergeable status unknown
 
 
 @dataclass

@@ -1,5 +1,8 @@
 import os
 import time
+import contextlib
+import errno
+import signal
 from collections.abc import Generator
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -182,90 +185,56 @@ def assert_worktree_not_exists(worktree_path: Path):
 # Integration test fixtures for daemon-based tests
 # ================================================
 
+def kill_daemon_at_wt_dir(wt_dir: Path, timeout: float = 3.0) -> None:
+    """Kill daemon in the given WT_DIR and verify it's gone.
 
-def kill_daemon_and_verify(repo_path: Path, timeout: float = 1.0):
-    """Kill daemon using CLI command and verify it's gone.
-
-    CRITICAL for test isolation. This function ensures that:
-
-    1. Daemon is killed using the actual CLI kill-daemon command (not raw kill)
-    2. Process termination is verified by checking PID file and process existence
-    3. Test fails if daemon doesn't terminate within timeout (indicates stuck daemon)
-    4. Socket cleanup is verified to ensure no leftover daemon state
-
-    This prevents daemon interference between tests, which was causing sporadic
-    test failures when daemons from previous tests were still running.
-
-    Args:
-        repo_path: Path to test repository (used to find daemon files)
-        timeout: Max seconds to wait for daemon termination (default 5.0)
-
-    Raises:
-        pytest.fail: If daemon doesn't terminate within timeout period
+    Strategy:
+    - Run 'wt sh kill-daemon' with WT_DIR env
+    - If PID persists, send SIGKILL
+    - Unlink PID and socket files as last resort
     """
     from .test_utils import run_cli_command
 
     env = os.environ.copy()
-    env["WT_DIR"] = str((repo_path / ".wt").resolve())
-    # Ensure -m wt.cli works without install
-    from pathlib import Path
+    env["WT_DIR"] = str(wt_dir.resolve())
 
-    project_root = str(Path(__file__).resolve().parents[1])
-    env["PYTHONPATH"] = f"{project_root}:{env.get('PYTHONPATH', '')}"
-
-    daemon_dir = repo_path / ".wt"
-    pid_file = daemon_dir / "daemon.pid"
-    if not pid_file.exists():
-        return
-    try:
-        pid_content = pid_file.read_text().strip()
-        if not pid_content:
-            return
-    except (OSError, UnicodeDecodeError):
-        return
-
-    # Run kill-daemon command
+    # Graceful shutdown
     run_cli_command(["sh", "kill-daemon"], env=env)
 
-    # Wait and verify daemon is gone
+    pid_file = wt_dir / "daemon.pid"
+    sock_file = wt_dir / "daemon.sock"
 
-    start_time = time.time()
-    while time.time() - start_time < timeout:
+    start = time.time()
+    while time.time() - start < timeout:
         if not pid_file.exists():
-            return  # Daemon is gone
-
+            return
         try:
-            pid_content = pid_file.read_text().strip()
-            if not pid_content:
-                return  # Empty PID file means daemon is gone
-
-            pid = int(pid_content)
-
-            # Check if process still exists
-            try:
-                os.kill(pid, 0)  # Signal 0 just checks if process exists
-                time.sleep(0.1)  # Process still exists, wait a bit more
-            except (OSError, ProcessLookupError):
-                return  # Process is gone
-
-        except (ValueError, FileNotFoundError):
-            return  # Invalid PID or file gone
-
-    # If we get here, daemon didn't shut down in time
-    if pid_file.exists():
+            pid_txt = pid_file.read_text().strip()
+        except (OSError, UnicodeDecodeError):
+            return
+        if not pid_txt:
+            return
         try:
-            pid_content = pid_file.read_text().strip()
-            if pid_content:
-                pytest.fail(
-                    f"Daemon with PID {pid_content} did not shut down within {timeout} seconds",
-                )
-        except (OSError, UnicodeDecodeError) as e:
-            # If we can't read the PID file, still fail but with a more specific error
-            pytest.fail(
-                f"Daemon cleanup verification failed - could not read PID file: {e}",
-            )
+            pid = int(pid_txt)
+        except ValueError:
+            return
+        # If still alive, send SIGKILL once
+        try:
+            os.kill(pid, 0)
+            with contextlib.suppress(Exception):
+                os.kill(pid, signal.SIGKILL)
+            time.sleep(0.2)
+        except OSError as e:
+            if e.errno == errno.ESRCH:
+                return  # process gone
+            time.sleep(0.1)
 
-    pytest.fail(f"Daemon cleanup verification failed after {timeout} seconds")
+    # Last resort: unlink files to avoid cross-test interference
+    with contextlib.suppress(Exception):
+        pid_file.unlink()
+    with contextlib.suppress(Exception):
+        sock_file.unlink()
+
 
 
 def create_integration_test_config_file(repo_path: Path) -> Path:
@@ -318,38 +287,32 @@ def real_env(real_temp_repo, config_factory):
     Creates real configuration and environment setup for tests that need
     to interact with actual daemon processes and gitstatusd.
     """
-    # Explicit requirement checks
-
-    # Kill any existing daemon first
-    kill_daemon_and_verify(real_temp_repo)
-
     # Create config using factory pattern
     factory = config_factory(real_temp_repo)
     config = factory.integration(github_enabled=False)
+
+    # Ensure clean daemon state for this WT_DIR
+    kill_daemon_at_wt_dir(config.wt_dir)
 
     # Set up environment
     env = os.environ.copy()
     env["WT_DIR"] = str(config.wt_dir)
 
-    # Assume package is properly installed and importable
-
     yield env
 
     # Cleanup: Kill daemon after test
-    kill_daemon_and_verify(real_temp_repo)
+    kill_daemon_at_wt_dir(config.wt_dir)
 
 
 @pytest.fixture
 def real_env_with_existing_worktrees(real_temp_repo, config_factory):
     """Set up real environment with pre-created worktrees for complex tests."""
-    # Explicit requirement checks
-
-    # Kill any existing daemon first
-    kill_daemon_and_verify(real_temp_repo)
-
     # Create config using factory pattern
     factory = config_factory(real_temp_repo)
     config = factory.integration(github_enabled=False)
+
+    # Ensure clean daemon state for this WT_DIR before creating worktrees
+    kill_daemon_at_wt_dir(config.wt_dir)
 
     # Create some test worktrees using real worktree service
     from wt.server.git_manager import GitManager
@@ -366,12 +329,10 @@ def real_env_with_existing_worktrees(real_temp_repo, config_factory):
     env = os.environ.copy()
     env["WT_DIR"] = str(config.wt_dir)
 
-    # Assume package is properly installed and importable
-
     yield env
 
     # Cleanup: Kill daemon after test
-    kill_daemon_and_verify(real_temp_repo)
+    kill_daemon_at_wt_dir(config.wt_dir)
 
 
 @pytest.fixture

@@ -2,7 +2,6 @@ import shutil
 
 import pytest
 
-from ..conftest import kill_daemon_and_verify
 from ..test_utils import run_cli_command
 
 pytestmark = pytest.mark.integration
@@ -17,8 +16,7 @@ def test_manual_delete_of_old_worktree_does_not_break_new_create(
     deleted out-of-band. Creating a new worktree should not fail with
     "Repository not found at <stale path>".
     """
-    # Ensure clean daemon state
-    kill_daemon_and_verify(real_temp_repo)
+    # real_env fixture ensures clean daemon state per WT_DIR
 
     # 1) Create an initial worktree
     name_old = "stale-old"

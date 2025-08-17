@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.metadata as importlib_metadata
+import logging
 from collections.abc import Callable
 
 import pluggy
@@ -51,13 +52,15 @@ def get_manager(config) -> pluggy.PluginManager:
     pm.add_hookspecs(_Spec)
     pm.register(_Impl())
 
+    logger = logging.getLogger(__name__)
     eps = importlib_metadata.entry_points().select(group=ENTRYPOINT_GROUP)  # type: ignore[attr-defined]
     for ep in eps:
         # Only catch expected plugin loading errors; let programming errors crash
         try:
             pm.register(ep.load())
-        except (ImportError, AttributeError):
-            # Plugin is misconfigured or missing; skip
+        except (ImportError, AttributeError) as e:
+            # Plugin is misconfigured or missing; log and skip
+            logger.warning("Failed to load plugin entry point %s: %s", ep.name, e)
             continue
 
     pm.hook.wt_init(config=config)

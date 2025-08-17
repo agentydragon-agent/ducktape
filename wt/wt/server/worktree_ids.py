@@ -24,7 +24,7 @@ def parse_worktree_id(wtid: WorktreeID) -> str:
     s = str(wtid)
     if not s.startswith("wtid:"):
         raise ValueError(f"Invalid worktree ID format: {wtid}")
-    return s[5:]
+    return s.removeprefix("wtid:")
 
 
 def wtid_to_path(config: Configuration, wtid: WorktreeID) -> Path:

@@ -13,7 +13,7 @@ import sys
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 
 import psutil
 from pydantic import BaseModel, TypeAdapter, ValidationError
@@ -48,6 +48,13 @@ from ..shared.protocol import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+class RpcError(RuntimeError):
+    def __init__(self, code: int, message: str, data: Any | None = None) -> None:
+        super().__init__(message)
+        self.code = code
+        self.data = data
 
 
 @dataclass
@@ -282,11 +289,12 @@ class WtClient:
         try:
             identify_result = await self.identify_worktree(str(worktree_path))
             status_response = await self.get_status([identify_result.wtid])
-        except RuntimeError as e:
-            # Only catch the specific error for unmanaged worktrees
-            if "not a managed worktree" in str(e):
+        except RpcError as e:
+            # Only special-case unmanaged worktrees by code; otherwise bubble up
+            from ..shared.protocol import ErrorCodes
+
+            if e.code == ErrorCodes.WORKTREE_NOT_FOUND:
                 return [], []
-            # Let other RuntimeErrors (daemon communication failures, etc.) bubble up
             raise
 
         if not status_response.items:
@@ -484,7 +492,7 @@ class WtClient:
             obj = json.loads(text)
             if "error" in obj:
                 err = ErrorResponse.model_validate(obj)
-                raise RuntimeError(err.error.message)
+                raise RpcError(err.error.code, err.error.message, err.id)
             resp = Response.model_validate(obj)
             return result_adapter.validate_python(resp.result)
         except (
