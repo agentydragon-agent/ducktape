@@ -391,15 +391,32 @@ async def run_eval(
             )
             tools_param = item.anthropic_request.get("tools")
             def _map_tools_for_chat(tools_val):
+                def _to_chat_tool(t: Any):
+                    if not isinstance(t, dict):
+                        return None
+                    # Normalize to a bare function dict first
+                    if t.get("type") == "function" and isinstance(t.get("function"), dict):
+                        fn = dict(t["function"])  # shallow copy
+                    else:
+                        fn = dict(t)
+                    # Convert Responses API shape -> Chat Completions shape
+                    if "input_schema" in fn and "parameters" not in fn:
+                        fn["parameters"] = fn.pop("input_schema")
+                    # Remove unsupported keys
+                    fn.pop("strict", None)
+                    # Keep only standard Chat function keys
+                    out_fn = {k: v for k, v in fn.items() if k in ("name", "description", "parameters")}
+                    if not isinstance(out_fn.get("name"), str):
+                        return None
+                    if "parameters" not in out_fn:
+                        return None
+                    return {"type": "function", "function": out_fn}
                 out = []
                 if isinstance(tools_val, list):
                     for t in tools_val:
-                        if isinstance(t, dict):
-                            if t.get("type") == "function" and isinstance(t.get("function"), dict):
-                                out.append(t)
-                            else:
-                                # Assume this is a bare function schema; wrap it
-                                out.append({"type": "function", "function": t})
+                        ct = _to_chat_tool(t)
+                        if ct:
+                            out.append(ct)
                 return out or None
             chat_tools = _map_tools_for_chat(tools_param)
             samp_req = {

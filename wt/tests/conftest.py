@@ -22,7 +22,6 @@ from .repo_factory import GitRepoFactory
 
 @pytest.fixture(scope="session", autouse=True)
 def _project_root_on_pythonpath():
-    from pathlib import Path
 
     project_root = str(Path(__file__).resolve().parents[1])
     existing = os.environ.get("PYTHONPATH", "")
