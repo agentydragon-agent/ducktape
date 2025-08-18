@@ -262,7 +262,19 @@ def launch_jupyter_server(tmp_path: Path):
         js_err_path = ws / "jupyter_server.err"
         with js_out_path.open("wb") as js_out, js_err_path.open("wb") as js_err:
             proc = subprocess.Popen(js_cmd, stdout=js_out, stderr=js_err)
+            # Wait up to 20s for the port to open before yielding
+            deadline = time.time() + 20.0
+            ready = False
+            while time.time() < deadline:
+                try:
+                    with socket.create_connection(("127.0.0.1", port), 0.3):
+                        ready = True
+                        break
+                except OSError:
+                    time.sleep(0.1)
             try:
+                if not ready:
+                    raise RuntimeError("Jupyter server did not start listening in time")
                 yield ws, nb_rel
             finally:
                 try:
