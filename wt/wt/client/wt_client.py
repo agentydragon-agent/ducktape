@@ -447,7 +447,7 @@ class WtClient:
             raise RuntimeError(f"Daemon worktree_create communication failed: {e}")
 
     async def delete_worktree(
-        self, wtid: WorktreeID, *, force: bool = False
+        self, wtid: WorktreeID, *, force: bool = False,
     ) -> WorktreeDeleteResult:
         await self._start_daemon_if_needed()
         return await self._rpc(

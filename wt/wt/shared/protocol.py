@@ -156,6 +156,14 @@ class WorktreeGetByNameParams(BaseModel):
     name: str = Field(..., description="Worktree name to look up")
 
 
+class PRRefreshParams(BaseModel):
+    """Parameters to synchronously refresh PR cache for a worktree."""
+
+    model_config = {"extra": "forbid"}
+
+    wtid: WorktreeID = Field(..., description="Worktree identifier")
+
+
 class WorktreeResolvePathParams(BaseModel):
     """Parameters for path resolution within worktrees."""
 
@@ -561,4 +569,5 @@ SUPPORTED_METHODS = {
         WorktreeTeleportTargetParams,
         TeleportResult,
     ),
+    "pr_refresh_now": (PRRefreshParams, str),
 }

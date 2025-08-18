@@ -8,8 +8,10 @@ See: https://github.com/romkatv/gitstatus for full protocol specification.
 """
 
 import asyncio
+import contextlib
 import logging
 import shutil
+import subprocess
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
@@ -378,6 +380,53 @@ def gitstatusd_response_to_legacy_format(
     return dirty_files, untracked_files
 
 
+def find_gitstatusd(config) -> tuple[str | None, str | None]:
+    """Find and validate gitstatusd binary using config or PATH.
+
+    Returns (path, error_message). On success, error_message is None.
+    """
+    if config.gitstatusd_path:
+        gitstatusd_path = str(config.gitstatusd_path)
+        try:
+            result = subprocess.run(
+                [gitstatusd_path, "--version"],
+                check=False,
+                capture_output=True,
+                timeout=2,
+            )
+            if result.returncode == 0:
+                return gitstatusd_path, None
+            return None, (
+                f"Configured gitstatusd path not working: {gitstatusd_path} "
+                f"(exit code {result.returncode})"
+            )
+        except (subprocess.TimeoutExpired, FileNotFoundError, PermissionError) as e:
+            return None, f"Configured gitstatusd path failed: {gitstatusd_path} ({e})"
+
+    gitstatusd_cmd = "gitstatusd"
+    if shutil.which(gitstatusd_cmd):
+        try:
+            result = subprocess.run(
+                [gitstatusd_cmd, "--version"],
+                check=False,
+                capture_output=True,
+                timeout=2,
+            )
+            if result.returncode == 0:
+                return gitstatusd_cmd, None
+            return None, (
+                f"gitstatusd found on PATH but not working (exit code {result.returncode})"
+            )
+        except (subprocess.TimeoutExpired, FileNotFoundError, PermissionError) as e:
+            return None, f"gitstatusd found on PATH but failed to execute: {e}"
+
+    return None, (
+        "gitstatusd binary not found. Please install gitstatusd and ensure it's available on PATH, "
+        "or configure gitstatusd_path in your config file. "
+        "Common installation: brew install romkatv/gitstatus/gitstatus"
+    )
+
+
 class GitstatusdListener:
     def __init__(
         self,
@@ -399,12 +448,12 @@ class GitstatusdListener:
     async def start(self) -> None:
         if self.process and self.process.returncode is None:
             return
-        gitstatusd_path = (
-            str(self.config.gitstatusd_path)
-            if self.config.gitstatusd_path
-            else shutil.which("gitstatusd")
-        )
+        gitstatusd_path, err = find_gitstatusd(self.config)
         if not gitstatusd_path:
+            # best-effort notification
+            if self.error_callback:
+                with contextlib.suppress(Exception):
+                    self.error_callback(err or "gitstatusd_missing")
             return
         self.process = await asyncio.create_subprocess_exec(
             gitstatusd_path,
@@ -471,12 +520,9 @@ class GitstatusdListener:
                 self.worktree_info.name,
             )
             # Notify supervisor if provided
-            try:
-                if self.error_callback:
+            if self.error_callback:
+                with contextlib.suppress(Exception):
                     self.error_callback("update_failed")
-            except Exception:
-                # Best-effort notification; never let callback crash us here
-                pass
             # Mark failure by clearing cache so has_cache=False is reported
             self.cached_working_status = None
             if not self.last_updated_at:

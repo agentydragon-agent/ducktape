@@ -42,7 +42,7 @@ class DisabledGitHubInterface:
 
 
 def get_github_token(
-    token_arg: str | None = None, *, timeout_secs: float = 10.0
+    token_arg: str | None = None, *, timeout_secs: float = 10.0,
 ) -> str | None:
     """Obtain a GitHub token from explicit arg, env, or gh CLI.
 

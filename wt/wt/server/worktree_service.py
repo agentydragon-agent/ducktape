@@ -138,7 +138,7 @@ class WorktreeService:
         return config.worktrees_dir / name
 
     async def remove_worktree(
-        self, config: "Configuration", name: str, force: bool = False
+        self, config: "Configuration", name: str, force: bool = False,
     ) -> None:
         """Remove a worktree by name and clean up its directory."""
         validate_worktree_name(name)
@@ -219,7 +219,7 @@ class WorktreeService:
         stderr_buf: list[str] = []
 
         async def _forward(
-            stream, name
+            stream, name,
         ):  # Streams stdout/stderr; expensive O(stream size)
             chunk_size = 4096
             while True:

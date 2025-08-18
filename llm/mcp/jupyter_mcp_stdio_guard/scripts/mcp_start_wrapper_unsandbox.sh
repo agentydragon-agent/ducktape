@@ -4,7 +4,7 @@ set -euo pipefail
 TS="$(date +%s)"
 MCP_OUT="/tmp/sjmcp-${TS}-stdout.log"
 MCP_ERR="/tmp/sjmcp-${TS}-stderr.log"
-exec python -m jupyter_mcp_stdio_guard \
+exec sandbox-jupyter-mcp \
   --workspace "${WS}" \
   --mode seatbelt \
   --jupyter-port "${PORT}" \

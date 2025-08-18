@@ -1,4 +1,17 @@
-# TODO: Worktree-level service idea
+# TODOs / Notes
+
+- Policy tightening (when ready):
+  - Restrict network-outbound to loopback or specific ports (Jupyter server)
+  - Reduce `file-read*` to a curated set (system libs, site-packages) if feasible
+  - Drop `mach-lookup`/`system-socket` allowances not required by kernel
+  - Remove `/dev/tty` write if not needed
+- WORKSPACE and RUN_ROOT semantics:
+  - WORKSPACE: repo/workspace root passed via `--workspace`. Kernel may read/write anywhere under this path
+  - RUN_ROOT: ephemeral per-run directory under /tmp (runtime logs, notebook scratch, kernelspec, jupyter runtime)
+- Desired final mode:
+  - Wrapper runs with `--workspace <repo root>` so kernel has R/W under repo; no write outside WORKSPACE, RUN_ROOT, tmp
+
+## Worktree-level service idea
 
 Concept: run sandboxed Jupyter MCP servers as a per-worktree background service managed by `wt`.
 

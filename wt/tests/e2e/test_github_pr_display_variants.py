@@ -1,8 +1,10 @@
 """E2E: real daemon/client + shadowed PyGithub; PR variants: open(can merge), merged, closed, no PR."""
 
+import json
 import os
 import re
-import time
+import socket
+import uuid
 from pathlib import Path
 
 import pytest
@@ -71,18 +73,24 @@ class Github:
     (mock_pkg / "__init__.py").write_text(body)
 
 
-def _run_and_wait(env, expect: list[str], timeout=12.0):
-    deadline = time.time() + timeout
-    last = ""
-    while time.time() < deadline:
-        # Keep per-call timeout below pytest-timeout default to avoid hanging the test
-        r = run_cli_command(["sh"], env=env, timeout=5.0)
-        assert r.returncode == 0
-        last = r.stdout
-        if all(x in last for x in expect):
-            return last
-        time.sleep(0.25)
-    raise AssertionError(f"Did not see expected output: {expect}\nLast:\n{last}")
+def _rpc_json(sock_path: str | os.PathLike, method: str, params: dict) -> dict:
+    """Minimal JSON-RPC 2.0 call helper for tests over UNIX socket."""
+    req = {
+        "jsonrpc": "2.0",
+        "method": method,
+        "params": params,
+        "id": str(uuid.uuid4()),
+    }
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
+        s.connect(str(sock_path))
+        with s.makefile("rwb") as f:
+            payload = (json.dumps(req) + "\n").encode()
+            f.write(payload)
+            f.flush()
+            line = f.readline()
+            if not line:
+                raise AssertionError("No response from daemon")
+            return json.loads(line.decode())
 
 
 @pytest.mark.integration
@@ -116,11 +124,15 @@ def test_github_pr_variants(real_temp_repo, config_factory, tmp_path, variant, e
     r2 = run_cli_command(["sh", "-c", "feature-x"], env=env, timeout=30.0)
     assert r2.returncode == 0
 
-    out = (
-        _run_and_wait(env, expects)
-        if expects
-        else run_cli_command(["sh"], env=env, timeout=30.0).stdout
-    )
+    # Lookup wtid and force a PR refresh synchronously via RPC to avoid polling
+    wt_by_name = _rpc_json(config.daemon_socket_path, "worktree_get_by_name", {"name": "feature-x"})
+    wtid = wt_by_name["result"]["wtid"]
+    assert wtid, "Server did not return wtid for created worktree"
+    refresh_res = _rpc_json(config.daemon_socket_path, "pr_refresh_now", {"wtid": wtid})
+    assert refresh_res.get("result") == "ok"
+
+    # Render once and assert
+    out = run_cli_command(["sh"], env=env, timeout=30.0).stdout
     if expects:
         for x in expects:
             assert x in out

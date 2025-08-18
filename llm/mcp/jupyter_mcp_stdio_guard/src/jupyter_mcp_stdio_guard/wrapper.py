@@ -18,15 +18,18 @@ SANDBOX_POLICY_BASE = """
 (version 1)
 (deny default)
 
+;; Process primitives
 (allow process*)
 (allow signal (target self))
 
+;; File access: reads are broad for now; writes constrained via dynamic params
 (allow file-read*)
 (allow file* (literal "/dev/null"))
 (allow file-read* (literal "/dev/urandom"))
 (allow file-read* (literal "/dev/random"))
 (allow file* (subpath "/dev/tty"))
 
+;; IPC and system lookups used by Python/stdlib
 (allow ipc-posix-shm)
 (allow ipc-posix-sem)
 (allow ipc-sysv-shm)
@@ -34,6 +37,7 @@ SANDBOX_POLICY_BASE = """
 (allow system-socket)
 (allow sysctl-read)
 
+;; Networking: allow loopback and outbound generally (TODO tighten)
 (allow network-outbound)
 (allow network-inbound (local ip))
 """
@@ -411,7 +415,17 @@ def main() -> int:
     ap.add_argument("--start-new-runtime", action="store_true")
     ap.add_argument("--trace-sandbox", action="store_true")
     ap.add_argument("--no-kernel-sandbox", action="store_true")
+    ap.add_argument("--stdio-server", action="store_true", help="Run as MCP stdio server with workspace=cwd and document auto")
     args = ap.parse_args()
+
+    # stdio-server mode: minimal friction for embedding in MCP clients
+    if args.stdio_server:
+        args.workspace = str(Path.cwd())
+        args.document_id = None
+        args.mode = "seatbelt"
+        args.no_kernel_sandbox = False
+        args.start_new_runtime = True
+        # Fall through to normal path with resolved args
 
     workspace = Path(args.workspace).resolve()
     _ensure_dir(workspace)

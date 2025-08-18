@@ -40,14 +40,12 @@ from .github_client import GitHubInterface
 from .gitstatus_refresh import DebouncedGitstatusRefresh
 from .gitstatusd_listener import (
     GitstatusdListener,
-    GitStatusdProtocol,
-    GitStatusdRequest,
-    gitstatusd_response_to_legacy_format,
 )
 
 # Force import of handlers to register RPC methods
 from .handlers import (
     path_handler,  # noqa: F401
+    pr_handler,  # noqa: F401
     status_handler,  # noqa: F401
     worktree_handler,  # noqa: F401
 )

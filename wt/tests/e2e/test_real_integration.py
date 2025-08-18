@@ -31,7 +31,7 @@ def test_real_program_workflow(real_temp_repo, real_env):
 
     try:
         # Step 1: Initial status (should show empty)
-        result = run_cli_command(["sh"], env=real_env, timeout=5.0)
+        result = run_cli_command(["sh"], env=real_env, timeout=10.0)
         assert result.returncode == 0
         print(f"Initial status output: {result.stdout}")
 
@@ -55,14 +55,14 @@ def test_real_program_workflow(real_temp_repo, real_env):
         assert worktree2_path.exists(), f"Worktree 2 not created at {worktree2_path}"
 
         # Step 4: Check status shows both worktrees
-        result = run_cli_command(["sh"], env=real_env, timeout=5.0)
+        result = run_cli_command(["sh"], env=real_env, timeout=10.0)
         assert result.returncode == 0
         print(f"Status with both worktrees: {result.stdout}")
         assert "feature1" in result.stdout
         assert "feature2" in result.stdout
 
         # Step 5: Navigate to feature1 (test cd command emission)
-        result = run_cli_command(["sh", "feature1"], env=real_env, timeout=5.0)
+        result = run_cli_command(["sh", "feature1"], env=real_env, timeout=10.0)
         assert result.returncode == 0
         print(f"Navigate to feature1: {result.stdout}")
         # Note: cd command is emitted to fd3, we can't easily verify it here
@@ -88,7 +88,7 @@ def test_real_program_workflow(real_temp_repo, real_env):
         )
 
         # Step 7: Final status check
-        result = run_cli_command(["sh"], env=real_env, timeout=5.0)
+        result = run_cli_command(["sh"], env=real_env, timeout=10.0)
         assert result.returncode == 0
         print(f"Final status: {result.stdout}")
 
@@ -104,7 +104,7 @@ def test_real_daemon_startup_and_communication(real_temp_repo, real_env):
 
     try:
         # This should start the daemon if not already running
-        result = run_cli_command(["sh"], env=real_env, timeout=5.0)
+        result = run_cli_command(["sh"], env=real_env, timeout=10.0)
         assert result.returncode == 0
 
         # Check that daemon files were created

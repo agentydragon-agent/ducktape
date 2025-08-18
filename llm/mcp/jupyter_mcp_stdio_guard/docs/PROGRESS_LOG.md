@@ -1,5 +1,32 @@
 # Progress Log — Jupyter MCP STDIO Guard
 
+- Timestamp: 2025-08-18T08:52:00Z
+- Repo SHA: 3a4c8c2
+
+## Update
+
+- Standardized CLI name everywhere: `sandbox-jupyter-mcp`
+  - Updated README, docs, and helper scripts
+  - STDIO mode: `sandbox-jupyter-mcp --stdio-server`
+
+---
+
+- Timestamp: 2025-08-18T08:46:38Z
+- Repo SHA: 3a4c8c2
+
+## Update
+
+- Wrapper unsandbox smoke test: PASS
+- macOS user-level seatbelt test: PASS (with current permissive behavior)
+- Ladder status:
+  1) Manual unsandbox: PASS (earlier)
+  2) Wrapper --no-kernel-sandbox: PASS
+  3) Seatbelt path in test: PASS (baseline; ready to iterate policy tightening)
+
+Next: iterate seatbelt policy to tighten permissions while keeping tests green. Document denials and rule changes per run.
+
+---
+
 - Timestamp: 2025-08-18T08:40:36Z
 - Repo SHA: 72d3810
 
@@ -43,18 +70,9 @@
 
 ## Next Steps
 
-1. Harden mcp_stdio_protocol for slow-start scenarios
-   - Add small backoff loop around read_line_json_fn calls during initialize and tool result
-   - Consider bumping default timeout from 20s → 30s
-2. Expand test coverage
-   - Multi-call sequence (append, execute, verify state)
-   - Error-path tests (invalid tool name, bad args)
-3. macOS seatbelt policy iteration
-   - Use --trace-sandbox, collect denials, adjust policy rules incrementally
-   - When stable, keep the stricter policy as default
-4. CI polish
-   - Add ruff hooks config for tests dir if not already enforced
-   - Document required binaries and optional deps in README of this package
+1. Tighten seatbelt policy gradually while ensuring tests stay green
+2. Expand test coverage (multi-call, error paths)
+3. CI polish and ruff hooks for tests dir
 
 ## Notes
 

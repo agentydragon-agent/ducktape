@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 from datetime import datetime
@@ -34,9 +35,6 @@ ResultT = TypeVar("ResultT")
 
 class Emitter(Protocol):
     def emit(self, event: BaseModel) -> None: ...
-
-
-import asyncio
 
 
 class Stream:

@@ -167,6 +167,18 @@ class PRServiceProvider:
         self._tasks.append(task)
         task.add_done_callback(lambda t: self._tasks.remove(t))
 
+    async def refresh_now(self, wtid: WorktreeID) -> None:
+        """Synchronously refresh PR cache for a given worktree.
+
+        Uses the worktree's current branch as determined by its repository.
+        """
+        prsvc = self._services.get(wtid)
+        if not prsvc:
+            return
+        repo = prsvc.git_manager.get_repo(prsvc.worktree_info.path)
+        branch_name = repo.head.shorthand or ""
+        await prsvc.get_pr_info(branch_name, force_refresh=True)
+
     def has(self, wtid: WorktreeID) -> bool:
         return wtid in self._services
 

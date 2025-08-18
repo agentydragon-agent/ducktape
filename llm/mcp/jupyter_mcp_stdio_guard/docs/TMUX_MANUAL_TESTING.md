@@ -98,7 +98,7 @@ jupyter-mcp-server start \
 
 Option B: Wrapper (kernel unsandboxed)
 ```bash
-python -m jupyter_mcp_stdio_guard \
+sandbox-jupyter-mcp \
   --workspace "$WS" \
   --mode seatbelt \
   --jupyter-port "$PORT" \
@@ -108,7 +108,7 @@ python -m jupyter_mcp_stdio_guard \
 
 Option C: Wrapper (macOS seatbelt)
 ```bash
-python -m jupyter_mcp_stdio_guard \
+sandbox-jupyter-mcp \
   --workspace "$WS" \
   --mode seatbelt \
   --jupyter-port "$PORT" \
