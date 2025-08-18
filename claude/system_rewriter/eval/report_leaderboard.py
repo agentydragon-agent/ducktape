@@ -29,6 +29,7 @@ class Row:
     ucb: float | None
     template_label: str
     template_hash: str
+    with_tools_pct: float
 
 
 def sha1_text(text: str) -> str:
@@ -95,6 +96,12 @@ def load_row(run_dir: Path, known: dict[str, str]) -> Row | None:
             return float(summ.get(key, default))
         except Exception:
             return default
+    tooling = summ.get("tooling") or {}
+    with_tools = 0.0
+    try:
+        with_tools = float(tooling.get("with_tools_pct", 0.0))
+    except Exception:
+        with_tools = 0.0
     return Row(
         run=run_dir.name,
         mean=_f("mean"),
@@ -104,6 +111,7 @@ def load_row(run_dir: Path, known: dict[str, str]) -> Row | None:
         ucb=(summ.get("ucb") if isinstance(summ.get("ucb"), (int, float)) else None),
         template_label=label,
         template_hash=thash,
+        with_tools_pct=with_tools,
     )
 
 
@@ -159,18 +167,19 @@ def parse_args() -> argparse.Namespace:
 def format_text(rows: list[Row]) -> str:
     out_lines = []
     for r in rows:
+        tools_pct = f"{r.with_tools_pct*100:.1f}%"
         out_lines.append(
-            f"{r.mean:.2f} ± {r.ci95:.2f} (n={r.n:>3})  run={r.run}  prompt={r.template_label}"
+            f"{r.mean:.2f} ± {r.ci95:.2f} (n={r.n:>3}, tools={tools_pct:>6})  run={r.run}  prompt={r.template_label}"
         )
     return "\n".join(out_lines)
 
 
 def format_md(rows: list[Row]) -> str:
-    header = "| mean | ci95 | n | run | template |\n|---:|---:|---:|:---|:---|"
+    header = "| mean | ci95 | n | tools% | run | template |\n|---:|---:|---:|---:|:---|:---|"
     lines = [header]
     for r in rows:
         lines.append(
-            f"| {r.mean:.2f} | {r.ci95:.2f} | {r.n} | {r.run} | {r.template_label} |"
+            f"| {r.mean:.2f} | {r.ci95:.2f} | {r.n} | {r.with_tools_pct*100:.1f}% | {r.run} | {r.template_label} |"
         )
     return "\n".join(lines)
 
@@ -222,6 +231,7 @@ def main() -> int:
                         "ucb": r.ucb,
                         "template": r.template_label,
                         "template_hash": r.template_hash,
+                        "with_tools_pct": r.with_tools_pct,
                     }
                     for r in rows
                 ],

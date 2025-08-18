@@ -12,6 +12,7 @@ import threading
 import time
 from contextlib import suppress
 from datetime import datetime
+import socket
 from pathlib import Path
 
 SANDBOX_POLICY_BASE = """
@@ -99,14 +100,16 @@ def _build_bash_script(
     return f"""
 set -euo pipefail
 trap 'kill "$JPID" 2>/dev/null || true' EXIT
-# Launch Jupyter Lab in background with logs redirected to runtime dir
-jupyter lab \
+# Launch Jupyter Server in background with logs redirected to runtime dir
+jupyter server \
   --port "$JP_PORT" \
   --ip 127.0.0.1 \
   --ServerApp.root_dir {wq} \
   --ServerApp.open_browser=False \
-  --IdentityProvider.token {tq} \
-  1>"$JUPYTER_RUNTIME_DIR/jupyter_lab.out" 2>"$JUPYTER_RUNTIME_DIR/jupyter_lab.err" &
+  --ServerApp.token {tq} \
+  --ServerApp.password '' \
+  --ServerApp.disable_check_xsrf True \
+  1>"$JUPYTER_RUNTIME_DIR/jupyter_server.out" 2>"$JUPYTER_RUNTIME_DIR/jupyter_server.err" &
 JPID=$!
 # Wait for port to become ready (up to ~10s)
 python3 - "$JP_PORT" <<'PY'
@@ -209,7 +212,7 @@ def _write_sandboxed_kernelspec(
     (ks_dir / "kernel.json").write_text(json.dumps(kernel_json))
 
 
-def _start_jupyter_lab(
+def _start_jupyter_server(
     workspace: Path,
     token: str,
     jupyter_port: int,
@@ -239,7 +242,6 @@ def _start_jupyter_lab(
         "True",
     ]
     proc = subprocess.Popen(cmd, stdout=out_f, stderr=err_f, env=env)
-    import socket
 
     deadline = time.time() + 10
     while time.time() < deadline:
@@ -275,17 +277,15 @@ def _seatbelt(
         dyn_lines.insert(0, f'(trace "{run_root / "profile.sb"!s}")')
     policy_text = SANDBOX_POLICY_BASE + "\n" + "\n".join(dyn_lines) + "\n"
     policy_path.write_text(policy_text)
-    # Write kernelspec that sandboxes only the kernel
     if kernel_sandbox:
         _write_sandboxed_kernelspec(run_root, workspace, policy_path)
-    # Debug observability
     print(
         f"[wrapper] run_root={run_root} workspace={workspace}",
         file=sys.stderr,
         flush=True,
     )
     print(
-        f"[wrapper] jupyter: http://127.0.0.1:{jupyter_port} token={token}",
+        f"[wrapper] jupyter: http://127.0.0.1:{jupyter_port} token=REDACTED",
         file=sys.stderr,
         flush=True,
     )
@@ -308,7 +308,7 @@ def _seatbelt(
         },
     )
     # Start Jupyter Server unsandboxed (kernel is sandboxed via kernelspec)
-    jl = _start_jupyter_lab(workspace, token, jupyter_port, run_root, child_env)
+    jl = _start_jupyter_server(workspace, token, jupyter_port, run_root, child_env)
     # Start MCP server (stdio: newline-delimited JSON); tee child stdout/stderr to files and parent stdio
     mcp_cmd = [
         "jupyter-mcp-server",
@@ -351,12 +351,12 @@ def _seatbelt(
                 try:
                     dest_buffer.write(chunk)
                     dest_buffer.flush()
-                except Exception:
-                    pass
+                except (BrokenPipeError, ValueError) as e:
+                    print(f"[wrapper] tee write to parent failed: {e}", file=sys.stderr)
                 try:
                     f.write(chunk)
-                except Exception:
-                    pass
+                except OSError as e:
+                    print(f"[wrapper] tee write to log failed: {e}", file=sys.stderr)
 
     t_out = threading.Thread(
         target=_tee_stream,
@@ -373,17 +373,27 @@ def _seatbelt(
     try:
         return mcp.wait()
     finally:
-        with suppress(Exception):
+        try:
             mcp.terminate()
-        with suppress(Exception):
+        except Exception as e:
+            print(f"[wrapper] mcp terminate failed: {e}", file=sys.stderr)
+        try:
             jl.terminate()
-        with suppress(Exception):
+        except Exception as e:
+            print(f"[wrapper] jupyter terminate failed: {e}", file=sys.stderr)
+        try:
             mcp.wait(timeout=5)
-        with suppress(Exception):
+        except Exception as e:
+            print(f"[wrapper] mcp wait failed: {e}", file=sys.stderr)
+        try:
             jl.wait(timeout=5)
+        except Exception as e:
+            print(f"[wrapper] jupyter wait failed: {e}", file=sys.stderr)
         if not trace:
-            with suppress(Exception):
+            try:
                 shutil.rmtree(run_root, ignore_errors=True)
+            except Exception as e:
+                print(f"[wrapper] cleanup failed: {e}", file=sys.stderr)
 
 
 def main() -> int:
@@ -405,9 +415,6 @@ def main() -> int:
     )
     port = args.jupyter_port or 0
     if port == 0:
-        # simple auto-pick (caller can override)
-        import socket
-
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.bind(("127.0.0.1", 0))
             port = s.getsockname()[1]

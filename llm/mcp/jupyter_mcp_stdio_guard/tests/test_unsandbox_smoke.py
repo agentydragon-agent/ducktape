@@ -1,7 +1,7 @@
 import json
 import os
 import shutil
-import socket
+
 import subprocess
 import sys
 import time
@@ -11,10 +11,7 @@ from pathlib import Path
 import pytest
 
 
-def _pick_free_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
+from ._helpers import pick_free_port, read_line_json, send_line_json
 
 
 def _wait_port(port: int, timeout: float = 15.0) -> bool:
@@ -86,7 +83,7 @@ def test_unsandbox_initialize_and_hello(tmp_path: Path):
         )
     )
 
-    port = _pick_free_port()
+    port = pick_free_port()
     token = f"test-{next(__import__('tempfile')._get_candidate_names())}"
 
     js_cmd = [
@@ -150,11 +147,11 @@ def test_unsandbox_initialize_and_hello(tmp_path: Path):
                     "clientInfo": {"name": "unsandbox-smoke", "version": "0.0.1"},
                 },
             }
-            _send_line(mcp.stdin, init)
-            resp = _read_line(mcp.stdout, 10.0)
+            send_line_json(mcp.stdin, init)
+            resp = read_line_json(mcp.stdout, 10.0)
             assert resp and resp.get("id") == 1 and "result" in resp, f"initialize failed: {resp}\nstderr:\n{(mcp.stderr.read() or b'').decode('utf-8', 'ignore')[-2000:]}"
 
-            _send_line(mcp.stdin, {"jsonrpc": "2.0", "method": "notifications/initialized"})
+            send_line_json(mcp.stdin, {"jsonrpc": "2.0", "method": "notifications/initialized"})
             time.sleep(0.2)
 
             call = {
@@ -166,8 +163,8 @@ def test_unsandbox_initialize_and_hello(tmp_path: Path):
                     "arguments": {"cell_source": "print('hello world')"},
                 },
             }
-            _send_line(mcp.stdin, call)
-            resp2 = _read_line(mcp.stdout, 20.0)
+            send_line_json(mcp.stdin, call)
+            resp2 = read_line_json(mcp.stdout, 20.0)
             assert resp2 and resp2.get("id") == 2 and "result" in resp2, f"tool call failed: {resp2}\nstderr:\n{(mcp.stderr.read() or b'').decode('utf-8','ignore')[-2000:]}"
 
             result = resp2["result"]

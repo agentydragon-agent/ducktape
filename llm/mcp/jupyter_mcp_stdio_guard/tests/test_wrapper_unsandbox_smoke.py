@@ -1,7 +1,6 @@
 import json
 import os
 import shutil
-import socket
 import subprocess
 import sys
 import time
@@ -9,45 +8,7 @@ from pathlib import Path
 
 import pytest
 
-
-def _pick_free_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
-
-
-def _send_line(w, obj: dict) -> None:
-    w.write((json.dumps(obj) + "\n").encode("utf-8"))
-    w.flush()
-
-
-def _read_line(r, timeout: float) -> dict | None:
-    import select
-    fd = r.fileno()
-    os.set_blocking(fd, False)
-    buf = bytearray()
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        ready, _, _ = select.select([fd], [], [], 0.05)
-        if not ready:
-            continue
-        try:
-            b = os.read(fd, 1)
-        except BlockingIOError:
-            time.sleep(0.01)
-            continue
-        if not b:
-            time.sleep(0.01)
-            continue
-        if b == b"\n":
-            break
-        buf.extend(b)
-    if not buf:
-        return None
-    try:
-        return json.loads(bytes(buf).decode("utf-8", errors="ignore").rstrip("\r"))
-    except Exception:
-        return None
+from ._helpers import pick_free_port, read_line_json, send_line_json
 
 
 @pytest.mark.skipif(sys.platform != "darwin", reason="macOS only")
@@ -56,7 +17,7 @@ def _read_line(r, timeout: float) -> dict | None:
 def test_wrapper_unsandbox_initialize_and_hello(tmp_path: Path):
     ws = tmp_path / "ws"
     ws.mkdir(parents=True)
-    port = _pick_free_port()
+    port = pick_free_port()
 
     env = os.environ.copy()
     pkg_src = Path(__file__).resolve().parents[1] / "src"
@@ -87,11 +48,11 @@ def test_wrapper_unsandbox_initialize_and_hello(tmp_path: Path):
                 "clientInfo": {"name": "wrapper-unsandbox-smoke", "version": "0.0.1"},
             },
         }
-        _send_line(proc.stdin, init)
-        resp = _read_line(proc.stdout, 15.0)
+        send_line_json(proc.stdin, init)
+        resp = read_line_json(proc.stdout, 15.0)
         assert resp and resp.get("id") == 1 and "result" in resp, f"initialize failed: {resp}\nstderr:\n{(proc.stderr.read() or b'').decode('utf-8','ignore')[-2000:]}"
 
-        _send_line(proc.stdin, {"jsonrpc": "2.0", "method": "notifications/initialized"})
+        send_line_json(proc.stdin, {"jsonrpc": "2.0", "method": "notifications/initialized"})
         time.sleep(0.3)
 
         call = {
@@ -103,8 +64,8 @@ def test_wrapper_unsandbox_initialize_and_hello(tmp_path: Path):
                 "arguments": {"cell_source": "print('hello world')"},
             },
         }
-        _send_line(proc.stdin, call)
-        resp2 = _read_line(proc.stdout, 20.0)
+        send_line_json(proc.stdin, call)
+        resp2 = read_line_json(proc.stdout, 20.0)
         assert resp2 and resp2.get("id") == 2 and "result" in resp2, f"tool call failed: {resp2}\nstderr:\n{(proc.stderr.read() or b'').decode('utf-8','ignore')[-2000:]}"
 
         result = resp2["result"]
