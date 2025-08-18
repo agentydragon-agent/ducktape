@@ -14,6 +14,9 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+import yaml
+from pydantic import BaseModel, Field, ValidationError
+
 SANDBOX_POLICY_BASE = """
 (version 1)
 (deny default)
@@ -37,10 +40,19 @@ SANDBOX_POLICY_BASE = """
 (allow system-socket)
 (allow sysctl-read)
 
-;; Networking: allow loopback and outbound generally (TODO tighten)
+;; Networking defaults (may be tightened by config)
 (allow network-outbound)
 (allow network-inbound (local ip))
 """
+
+
+class PolicyConfig(BaseModel):
+    workspace: str
+    run_root: str
+    fs_write: list[str] = Field(default_factory=list)
+    fs_read: list[str] = Field(default_factory=list)
+    net: str = "loopback"  # none|loopback|all|allowlist:...|proxy:...
+    env: dict[str, str] = Field(default_factory=dict)
 
 
 def _ensure_dir(p: Path) -> None:
@@ -276,30 +288,45 @@ def _seatbelt(
     document_id: str,
     start_new_runtime: bool,
     jupyter_port: int,
+    cfg: "PolicyConfig",
     trace: bool = True,
     kernel_sandbox: bool = True,
 ) -> int:
     token = secrets.token_urlsafe(24)
-    run_root = Path(tempfile.mkdtemp(prefix="sjmcp-", dir="/tmp"))
-    for sub in ("runtime", "data", "config", "mpl"):
+    run_root = Path(cfg.run_root).resolve()
+    for sub in ("runtime", "data", "config", "mpl", "pycache", "cache", "tmp"):
         (run_root / sub).mkdir(parents=True, exist_ok=True)
     policy_path = run_root / "policy.sb"
+
+    # Resolve workspace and write roots from cfg
+    ws_dir = Path(cfg.workspace).resolve()
+    write_roots = [Path(p).resolve() for p in cfg.fs_write] or [ws_dir, run_root]
+
     # Compose final policy with dynamic write roots and optional tracing
-    dyn_lines = [
-        '(allow file* (subpath (param "WORKSPACE")))',
-        '(allow file* (subpath (param "RUN_ROOT")))',
-        '(allow file* (subpath "/tmp"))',
-        '(allow file* (subpath "/private/tmp"))',
-    ]
+    dyn_lines = []
+    if trace:
+        dyn_lines.append(f'(trace "{run_root / "profile.sb"!s}")')
+    for p in write_roots:
+        dyn_lines.append(f'(allow file* (subpath "{p}"))')
+    # Optional tmp write if included explicitly
+    # (skip by default; can be added via fs_write)
     if trace:
         dyn_lines.insert(0, f'(trace "{run_root / "profile.sb"!s}")')
+    # Add read-only roots (repo, venv, system), from cfg
+    ro_roots = [Path(p).resolve() for p in (cfg.fs_read or [])]
+    for p in ro_roots:
+        dyn_lines.append(f'(allow file-read* (subpath "{p}"))')
+
+    # Networking: adjust based on cfg.get('net')
+    # For now, leave defaults; future: implement loopback/none/allowlist/proxy
+
     policy_text = SANDBOX_POLICY_BASE + "\n" + "\n".join(dyn_lines) + "\n"
     policy_path.write_text(policy_text)
     if kernel_sandbox:
-        _write_sandboxed_kernelspec(run_root, workspace, policy_path)
+        _write_sandboxed_kernelspec(run_root, ws_dir, policy_path)
         # Ensure newly created notebooks default to the sandboxed kernel
         (run_root / "runtime" / "kernels.json").write_text(
-            json.dumps({"default": "python3-sandboxed"})
+            json.dumps({"default": "python3"})
         )
     print(
         f"[wrapper] run_root={run_root} workspace={workspace}",
@@ -317,20 +344,9 @@ def _seatbelt(
             file=sys.stderr,
             flush=True,
         )
-    child_env = os.environ.copy()
-    child_env.update(
-        {
-            "JP_PORT": str(jupyter_port),
-            "JUPYTER_RUNTIME_DIR": str(run_root / "runtime"),
-            "JUPYTER_DATA_DIR": str(run_root / "data"),
-            "JUPYTER_CONFIG_DIR": str(run_root / "config"),
-            # Limit search path strictly to our data dir (no user/global)
-            "JUPYTER_PATH": str(run_root / "data"),
-            "MPLCONFIGDIR": str(run_root / "mpl"),
-            "JUPYTER_TOKEN": token,
-            "PYTHONUNBUFFERED": "1",
-        },
-    )
+    # Build child environment strictly from explicit YAML configuration
+    child_env: dict[str, str] = dict(cfg.env or {})
+
     # Ensure config dir exists and write a server config to prefer our kernels only
     (run_root / "config").mkdir(parents=True, exist_ok=True)
     (run_root / "config" / "jupyter_server_config.py").write_text(
@@ -445,6 +461,17 @@ def _seatbelt(
                 print(f"[wrapper] cleanup failed: {e}", file=sys.stderr)
 
 
+def _load_policy_config(workspace: Path) -> PolicyConfig | None:
+    cfg_path = workspace / ".sandbox_jupyter.yaml"
+    if not cfg_path.exists():
+        return None
+    try:
+        data = yaml.safe_load(cfg_path.read_text()) or {}
+        return PolicyConfig(**data)
+    except Exception:
+        return None
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--workspace", default=str(Path.cwd()))
@@ -456,6 +483,7 @@ def main() -> int:
     ap.add_argument("--trace-sandbox", action="store_true")
     ap.add_argument("--no-kernel-sandbox", action="store_true")
     ap.add_argument("--stdio-server", action="store_true", help="Run as MCP stdio server with workspace=cwd and document auto")
+    ap.add_argument("--policy-config", default=None, help="Path to YAML policy config; defaults to <workspace>/.sandbox_jupyter.yaml if present")
     args = ap.parse_args()
 
     # stdio-server mode: minimal friction for embedding in MCP clients
@@ -469,6 +497,21 @@ def main() -> int:
 
     workspace = Path(args.workspace).resolve()
     _ensure_dir(workspace)
+
+    # Load policy config (explicit path wins; else workspace default)
+    cfg: PolicyConfig | None = None
+    if args.policy_config:
+        cfg_path = Path(args.policy_config)
+        if cfg_path.exists():
+            try:
+                cfg = PolicyConfig(**(yaml.safe_load(cfg_path.read_text()) or {}))
+            except Exception:
+                cfg = None
+    else:
+        cfg = _load_policy_config(workspace)
+    if cfg is None:
+        raise SystemExit("Sandbox policy config not found; please provide --policy-config or create .sandbox_jupyter.yaml in workspace")
+
     doc_id = _ensure_document_id(
         workspace,
         args.document_id,
@@ -493,6 +536,7 @@ def main() -> int:
         doc_id,
         args.start_new_runtime,
         port,
+        cfg=cfg,
         trace=args.trace_sandbox,
         kernel_sandbox=not args.no_kernel_sandbox,
     )

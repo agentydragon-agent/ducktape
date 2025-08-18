@@ -15,15 +15,22 @@ from typing import Any
 import tiktoken  # type: ignore
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from openai import AsyncOpenAI
+from openai.types.responses import ResponseCreateParams
+from pydantic import TypeAdapter
+from anthropic.types.message_create_params import (
+    MessageCreateParamsNonStreaming as AnthRequest,
+)
+from schemas import EvalSampleRecord, EvalGradeRecord, CCRRequest
 
 # Config
-DATASET_PATH = Path(__file__).parent / "data" / "dataset.jsonl"
+DEFAULT_DATASET_PATH = Path(__file__).parent / "data" / "dataset.jsonl"
 DEFAULT_BASE = Path(__file__).parent / "runs"
 MAX_INPUT_TOKENS = 272_000
 MAX_TOTAL_TOKENS = 400_000
 PER_OUTPUT_CAP = 128_000
 SAFETY_TOKENS = 1_024
 TARGET_PREFIX_TOKENS = 200_000  # budget for prefix JSON inside grader prompt
+
 
 # Models
 SAMPLER_MODEL = "gpt-5"
@@ -37,7 +44,7 @@ REWRITE_APPLY = Path(__file__).parent / "system_rewrite_apply.js"
 class Sample:
     correlation_id: str | None
     timestamp: int | None
-    anthropic_request: dict[str, Any]
+    anthropic_request: CCRRequest
 
 
 def parse_args():
@@ -46,6 +53,14 @@ def parse_args():
         "--template",
         required=True,
         help="Path to system prompt template file with ${toolsBlob}, ${envGitBlobs}, ${modelLine}, ${mcpSection}",
+    )
+    ap.add_argument(
+        "--dataset",
+        required=False,
+        help=(
+            "Path to dataset JSONL. Defaults to ./data/dataset.jsonl. "
+            "You can pass ./data/dataset_crush.jsonl to use Crush wire ingested data."
+        ),
     )
     ap.add_argument(
         "--out-dir",
@@ -70,18 +85,61 @@ def parse_args():
     return ap.parse_args()
 
 
-async def read_dataset() -> list[Sample]:
+async def read_dataset(dataset_path: Path) -> list[Sample]:
     items: list[Sample] = []
-    with DATASET_PATH.open("r", encoding="utf-8") as f:
+    with dataset_path.open("r", encoding="utf-8") as f:
         for line in f:
             rec = json.loads(line)
-            items.append(
-                Sample(
-                    correlation_id=rec.get("correlation_id"),
-                    timestamp=rec.get("timestamp"),
-                    anthropic_request=rec["anthropic_request"],
-                ),
-            )
+            # Support both CCR (anthropic_request) and Crush (oai_request) entries
+            if "anthropic_request" in rec:
+                # Validate into CCRRequest strong type
+                ar = CCRRequest.model_validate(rec["anthropic_request"])  # type: ignore[arg-type]
+                items.append(
+                    Sample(
+                        correlation_id=rec.get("correlation_id"),
+                        timestamp=rec.get("timestamp"),
+                        anthropic_request=ar,
+                    ),
+                )
+                continue
+            if "oai_request" in rec:
+                # Best-effort reconstruction of system and messages from Responses-like payload
+                payload = rec["oai_request"]
+                sys_text = ""
+                messages: list[dict[str, Any]] = []
+                inp = payload.get("input")
+                if isinstance(inp, list):
+                    for item in inp:
+                        if not isinstance(item, dict):
+                            continue
+                        role = (item.get("role") or "").lower()
+                        content = item.get("content")
+                        def parts_to_text(x):
+                            if isinstance(x, str):
+                                return x
+                            if isinstance(x, list):
+                                return "\n".join([
+                                    p.get("text") or p.get("input_text") or p.get("content") or ""
+                                    for p in x if isinstance(p, dict)
+                                ])
+                            return ""
+                        text = parts_to_text(content)
+                        if role == "system" and text:
+                            sys_text = text if not sys_text else f"{sys_text}\n\n{text}"
+                        if role in ("user", "assistant") and text:
+                            messages.append({"role": role, "content": text})
+                items.append(
+                    Sample(
+                        correlation_id=rec.get("correlation_id"),
+                        timestamp=rec.get("timestamp"),
+                        anthropic_request={
+                            "system": sys_text,
+                            "messages": messages,
+                            "tools": payload.get("tools"),
+                        },
+                    ),
+                )
+                continue
     return items
 
 
@@ -280,6 +338,25 @@ def anthro_to_openai_messages(
                     out.append({"role": "user", "content": txt})
                 continue
 
+            if role == "tool":
+                # Allow direct tool messages in source (e.g., when normalizing from other formats)
+                tcid = None
+                content_val = None
+                if isinstance(content, str):
+                    content_val = content
+                elif isinstance(content, list):
+                    content_val = _join_text_parts(content)
+                # Some sources may include explicit tool_call_id on the message
+                tcid = None
+                out.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": str(tcid) if tcid else "unknown",
+                        "content": content_val or "",
+                    },
+                )
+                continue
+
             # Ignore any other roles or system lists here
             continue
 
@@ -360,6 +437,7 @@ def parse_grade_from_responses(resp_obj) -> dict[str, Any]:
 
 async def run_eval(
     template_path: Path,
+    dataset_path: Path,
     base_out: Path | None,
     n_limit: int | None = None,
     concurrency: int = 32,
@@ -385,7 +463,7 @@ async def run_eval(
 
     with suppress(Exception):
         shutil.copyfile(template_path, out_dir / "template.txt")
-    dataset = await read_dataset()
+    dataset = await read_dataset(dataset_path)
     total = len(dataset)
     if n_limit is not None:
         dataset = dataset[: max(0, int(n_limit))]
@@ -394,7 +472,7 @@ async def run_eval(
         json.dumps(
             {
                 "event": "startup",
-                "dataset_path": str(DATASET_PATH),
+                "dataset_path": str(dataset_path),
                 "total": total,
                 "selected": selected,
             },
@@ -420,10 +498,13 @@ async def run_eval(
         async with sem:
             print(json.dumps({"event": "process_start", "cid": item.correlation_id}))
             # 1) Rewrite system via JS apply script
-            sys_text = flatten_system_string(item.anthropic_request.get("system"))
-            new_sys = rewrite_system_with_template(sys_text, template_path)
+            ar = item.anthropic_request
+            sys_val = ar.system if isinstance(ar.system, str) else "\n\n".join([
+                p.get("text", "") for p in (ar.system or []) if isinstance(p, dict)
+            ])
+            new_sys = rewrite_system_with_template(sys_val, template_path)
             # 2) Build OpenAI sampling request at the point BEFORE the bad assistant turn
-            msgs = item.anthropic_request.get("messages", [])
+            msgs = ar.messages
             complaint_idx = len(msgs) - 1
             # find preceding assistant turn (skip non-assistant items between)
             prev_asst_idx = None
@@ -725,9 +806,8 @@ async def run_eval(
         for fut in asyncio.as_completed(tasks):
             samp_rec, grade_rec = await fut
             if samp_rec:
-                s_out.write(
-                    json.dumps(samp_rec, ensure_ascii=False, sort_keys=True) + "\n",
-                )
+                rec_obj = EvalSampleRecord.model_validate(samp_rec)
+                s_out.write(rec_obj.model_dump_json(sort_keys=True) + "\n")
                 # Update tool usage stats
                 tool_stats["total_samples"] += 1
                 nmsg = samp_rec.get("new_assistant_message") or {}
@@ -742,9 +822,8 @@ async def run_eval(
                             tool_stats["function_counts"].get(fn, 0) + 1
                         )
             if grade_rec:
-                g_out.write(
-                    json.dumps(grade_rec, ensure_ascii=False, sort_keys=True) + "\n",
-                )
+                g_obj = EvalGradeRecord.model_validate(grade_rec)
+                g_out.write(g_obj.model_dump_json(sort_keys=True) + "\n")
                 try:
                     parsed = parse_grade_from_responses(grade_rec["response"])  # type: ignore[index]
                     score = float(parsed.get("score", 0))
@@ -886,7 +965,7 @@ async def run_eval(
                             "bad_branch": bad_branch,
                             "alternative": alt,
                             "grade": grade,
-                        }
+                        },
                     )
         except FileNotFoundError:
             pass
@@ -905,5 +984,6 @@ async def run_eval(
 
 if __name__ == "__main__":
     args = parse_args()
+    dataset_path = Path(args.dataset) if args.dataset else DEFAULT_DATASET_PATH
     base_out = Path(args.out_dir) if args.out_dir else None
-    asyncio.run(run_eval(Path(args.template), base_out, args.n, args.concurrency))
+    asyncio.run(run_eval(Path(args.template), dataset_path, base_out, args.n, args.concurrency))

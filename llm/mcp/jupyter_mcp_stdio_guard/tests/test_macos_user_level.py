@@ -1,8 +1,11 @@
 import sys
+import pytest
+import policy_fixture as policy
 
 
+@pytest.mark.macos
 def test_user_view_end_to_end(
-    tmp_path,
+    provision_ws_with_policy,
     pick_free_port,
     mcp_stdio_protocol,
     collect_mcp_logs_fn,
@@ -13,12 +16,13 @@ def test_user_view_end_to_end(
     if sys.platform != "darwin":
         return
     port = pick_free_port
+    (ws, run_root) = provision_ws_with_policy
     cmd = [
         sys.executable,
         "-m",
         "jupyter_mcp_stdio_guard",
         "--workspace",
-        str(tmp_path / "ws"),
+        str(ws),
         "--mode",
         "seatbelt",
         "--jupyter-port",

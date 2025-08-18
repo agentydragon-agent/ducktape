@@ -7,9 +7,12 @@ import subprocess
 import sys
 import shutil
 import secrets
+import threading
 from pathlib import Path
 from contextlib import contextmanager
 import pytest
+import datetime as _dt
+import re as _re
 
 # Session-wide required binaries/tools; fail-fast once
 @pytest.fixture(scope="session", autouse=True)
@@ -28,7 +31,7 @@ def _require_env_binaries_and_tools():
 @pytest.fixture
 def require_macos_rtc():
     if sys.platform != "darwin":
-        return
+        pytest.skip("macOS-only: RTC extensions")
     try:
         import jupyter_collaboration  # noqa: F401
         import pycrdt  # noqa: F401
@@ -37,10 +40,101 @@ def require_macos_rtc():
             "macOS RTC extensions required (jupyter-collaboration, pycrdt)"
         ) from e
 
+# Auto-skip @pytest.mark.macos on non-darwin
+def pytest_collection_modifyitems(config, items):
+    if sys.platform == "darwin":
+        return
+    skip = pytest.mark.skip(reason="macOS-only")
+    for item in items:
+        if "macos" in item.keywords:
+            item.add_marker(skip)
+
+# Postmortem artifact collection on failures
+@pytest.hookimpl(tryfirst=True, hookwrapper=True)
+def pytest_runtest_makereport(item, call):
+    outcome = yield
+    rep = outcome.get_result()
+    if rep.when != "call" or rep.passed:
+        return
+    # Create artifacts dir per test node
+    root = Path(__file__).resolve().parents[1] / "scratch" / "artifacts"
+    ts = _dt.datetime.now().strftime("%Y%m%dT%H%M%S")
+    safe_node = item.nodeid.replace(os.sep, "_").replace(":", "_")
+    dest = root / f"{ts}__{safe_node}"
+    dest.mkdir(parents=True, exist_ok=True)
+    # 1) Copy recent /tmp sjmcp logs
+    try:
+        import glob
+        for path in sorted(glob.glob("/tmp/sjmcp-*/mcp_*.log"))[-6:]:
+            p = Path(path)
+            try:
+                (dest / p.name).write_bytes(Path(path).read_bytes())
+            except OSError:
+                pass
+    except Exception:
+        pass
+    # 2) Copy wrapper run_root logs if available
+    rr = os.environ.get("SJ_TEST_RUN_ROOT")
+    if rr:
+        for rel in [
+            "runtime/jupyter_server.out",
+            "runtime/jupyter_server.err",
+            "mcp_stdout.log",
+            "mcp_stderr.log",
+            "policy.sb",
+            "config/jupyter_server_config.py",
+            "data/kernels/python3/kernel.json",
+        ]:
+            p = Path(rr) / rel
+            if p.exists():
+                try:
+                    (dest / p.name).write_bytes(p.read_bytes())
+                except OSError:
+                    pass
+    # 3) Copy unsandbox jupyter logs if available
+    ws = os.environ.get("SJ_TEST_WS")
+    if ws:
+        for rel in ["jupyter_server.out", "jupyter_server.err", "logs/jupyter.out", "logs/jupyter.err"]:
+            p = Path(ws) / rel
+            if p.exists():
+                try:
+                    (dest / p.name).write_bytes(p.read_bytes())
+                except OSError:
+                    pass
+
+# Policy writer fixture that delegates to the shared policy factory module
+from policy_fixture import write_policy as _write_policy
+
+@pytest.fixture
+def policy_factory():
+    return _write_policy
+
+def _artifacts_dir_for_request(request) -> Path:
+    base = Path(__file__).resolve().parents[1] / "scratch" / "artifacts"
+    node = request.node.nodeid
+    safe = _re.sub(r"[^A-Za-z0-9_.-]", "_", node)
+    ts = _dt.datetime.now().strftime("%Y%m%dT%H%M%S")
+    dest = base / f"{ts}__{safe}"
+    dest.mkdir(parents=True, exist_ok=True)
+    return dest
+
+@pytest.fixture
+def provision_ws_with_policy(request, policy_factory):
+    base = _artifacts_dir_for_request(request)
+    ws = base / "ws"
+    run_root = base / "run_root"
+    ws.mkdir(parents=True, exist_ok=True)
+    run_root.mkdir(parents=True, exist_ok=True)
+    policy_factory(ws, run_root)
+    # Expose for postmortem collector
+    os.environ["SJ_TEST_RUN_ROOT"] = str(run_root)
+    os.environ["SJ_TEST_WS"] = str(ws)
+    os.environ["SJ_ARTIFACTS_DIR"] = str(base)
+    return ws, run_root
+
 @pytest.fixture
 def gen_token() -> str:
     return secrets.token_urlsafe(16)
-
 
 @pytest.fixture
 def pick_free_port() -> int:
@@ -48,14 +142,12 @@ def pick_free_port() -> int:
         s.bind(("127.0.0.1", 0))
         return s.getsockname()[1]
 
-
 @pytest.fixture
 def send_line_json_fn():
     def _send_line_json(w, obj: dict) -> None:
         w.write((json.dumps(obj) + "\n").encode("utf-8"))
         w.flush()
     return _send_line_json
-
 
 @pytest.fixture
 def read_line_json_fn():
@@ -87,7 +179,6 @@ def read_line_json_fn():
             return None
     return _read_line_json
 
-
 @pytest.fixture
 def collect_mcp_logs_fn():
     def _collect() -> tuple[str, str]:
@@ -115,15 +206,20 @@ def collect_mcp_logs_fn():
         return out, err
     return _collect
 
-
 @pytest.fixture
 def mcp_stdio_protocol(send_line_json_fn, read_line_json_fn):
-    def _read_until(stdout, match_id: int, total_timeout: float) -> dict | None:
+    def _read_until(stdout, match_id: int, total_timeout: float, log_in=None) -> dict | None:
         deadline = time.time() + total_timeout
         while time.time() < deadline:
             m = read_line_json_fn(stdout, 2.0)
             if not m:
                 continue
+            if log_in is not None:
+                try:
+                    log_in.write((json.dumps(m) + "\n").encode("utf-8"))
+                    log_in.flush()
+                except Exception:
+                    pass
             if m.get("id") == match_id and ("result" in m or "error" in m):
                 return m
         return None
@@ -135,31 +231,51 @@ def mcp_stdio_protocol(send_line_json_fn, read_line_json_fn):
         protocol_version: str = "2025-06-18",
         timeout: float = 30.0,
     ):
-        init = {
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "initialize",
-            "params": {
-                "protocolVersion": protocol_version,
-                "capabilities": {"tools": {}},
-                "clientInfo": {"name": "pytest", "version": "0.0.1"},
-            },
-        }
-        send_line_json_fn(stdin, init)
-        resp = _read_until(stdout, 1, 20.0)
-        assert resp and resp.get("id") == 1 and "result" in resp, f"initialize failed: {resp}"
-        send_line_json_fn(stdin, {"jsonrpc": "2.0", "method": "notifications/initialized"})
-        time.sleep(0.3)
-        call = {
-            "jsonrpc": "2.0",
-            "id": 2,
-            "method": "tools/call",
-            "params": {"name": tool_name, "arguments": tool_args},
-        }
-        send_line_json_fn(stdin, call)
-        resp2 = _read_until(stdout, 2, timeout)
-        assert resp2 and resp2.get("id") == 2 and "result" in resp2, f"tool call failed: {resp2}"
-        return resp2["result"]
+        artifacts = os.environ.get("SJ_ARTIFACTS_DIR")
+        log_out = open(Path(artifacts) / "mcp_protocol_out.log", "ab") if artifacts else None
+        log_in = open(Path(artifacts) / "mcp_protocol_in.log", "ab") if artifacts else None
+        try:
+            init = {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": protocol_version,
+                    "capabilities": {"tools": {}},
+                    "clientInfo": {"name": "pytest", "version": "0.0.1"},
+                },
+            }
+            if log_out is not None:
+                log_out.write((json.dumps(init) + "\n").encode("utf-8")); log_out.flush()
+            send_line_json_fn(stdin, init)
+            resp = _read_until(stdout, 1, 20.0, log_in=log_in)
+            assert resp and resp.get("id") == 1 and "result" in resp, f"initialize failed: {resp}"
+            notif = {"jsonrpc": "2.0", "method": "notifications/initialized"}
+            if log_out is not None:
+                log_out.write((json.dumps(notif) + "\n").encode("utf-8")); log_out.flush()
+            send_line_json_fn(stdin, notif)
+            time.sleep(0.3)
+            call = {
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "tools/call",
+                "params": {"name": tool_name, "arguments": tool_args},
+            }
+            if log_out is not None:
+                log_out.write((json.dumps(call) + "\n").encode("utf-8")); log_out.flush()
+            send_line_json_fn(stdin, call)
+            resp2 = _read_until(stdout, 2, timeout, log_in=log_in)
+            assert resp2 and resp2.get("id") == 2 and "result" in resp2, f"tool call failed: {resp2}"
+            return resp2["result"]
+        finally:
+            try:
+                (log_out and log_out.close())
+            except Exception:
+                pass
+            try:
+                (log_in and log_in.close())
+            except Exception:
+                pass
 
     return _protocol
 
@@ -182,8 +298,7 @@ def mcp_call_tool(send_line_json_fn, read_line_json_fn, collect_mcp_logs_fn):
         resp = _read_until(proc.stdout, 1, init_timeout)
         if not (resp and resp.get("id") == 1 and "result" in resp):
             out, err = collect_mcp_logs_fn()
-            stderr_tail = b""
-            stdout_tail = b""
+            stderr_tail = b""; stdout_tail = b""
             try:
                 if proc.stderr: stderr_tail = proc.stderr.read(20000)
                 if proc.stdout: stdout_tail = proc.stdout.read(20000)
@@ -206,7 +321,6 @@ def mcp_call_tool(send_line_json_fn, read_line_json_fn, collect_mcp_logs_fn):
         return resp2["result"]
     return _call
 
-
 @pytest.fixture
 def wait_port():
     def _wait(port: int, timeout: float = 15.0) -> bool:
@@ -222,13 +336,11 @@ def wait_port():
 
     return _wait
 
-
 @pytest.fixture
 def pkg_src_env_update() -> dict:
     pkg_src = Path(__file__).resolve().parents[1] / "src"
     prev = os.environ.get("PYTHONPATH", "")
     return {"PYTHONPATH": f"{pkg_src}:{prev}" if prev else str(pkg_src)}
-
 
 @pytest.fixture
 def launch_proc():
@@ -249,6 +361,23 @@ def launch_proc():
             env=env,
             cwd=cwd,
         )
+        # If artifacts dir set, tee child stderr to file automatically
+        artifacts = os.environ.get("SJ_ARTIFACTS_DIR")
+        t = None
+        if artifacts:
+            dest = Path(artifacts) / "child_stderr.log"
+            def _drain_err():
+                try:
+                    with dest.open("ab", buffering=0) as f:
+                        while True:
+                            chunk = proc.stderr.readline()
+                            if not chunk:
+                                break
+                            f.write(chunk)
+                except Exception:
+                    pass
+            t = threading.Thread(target=_drain_err, daemon=True)
+            t.start()
         try:
             yield proc
         finally:
@@ -267,12 +396,12 @@ def launch_proc():
 
     return _run
 
-
 @pytest.fixture
-def launch_jupyter_server(tmp_path: Path):
+def launch_jupyter_server(request):
     @contextmanager
     def _start(port: int, token: str):
-        ws = tmp_path / "ws"
+        base = _artifacts_dir_for_request(request)
+        ws = base / "ws"
         ws.mkdir(parents=True, exist_ok=True)
         nb_rel = Path(".mcp/test.ipynb")
         (ws / nb_rel).parent.mkdir(parents=True, exist_ok=True)
@@ -314,8 +443,8 @@ def launch_jupyter_server(tmp_path: Path):
         js_err_path = ws / "jupyter_server.err"
         with js_out_path.open("wb") as js_out, js_err_path.open("wb") as js_err:
             proc = subprocess.Popen(js_cmd, stdout=js_out, stderr=js_err)
-            # Wait up to 20s for the port to open before yielding
-            deadline = time.time() + 20.0
+            # Wait up to 30s for the port to open before yielding (Jupyter can be slow to start)
+            deadline = time.time() + 30.0
             ready = False
             while time.time() < deadline:
                 try:
@@ -326,7 +455,20 @@ def launch_jupyter_server(tmp_path: Path):
                     time.sleep(0.1)
             try:
                 if not ready:
-                    raise RuntimeError("Jupyter server did not start listening in time")
+                    # Read last lines of Jupyter logs for diagnostics
+                    try:
+                        j_out = (ws / "jupyter_server.out").read_text(errors="ignore").splitlines()[-80:]
+                    except Exception:
+                        j_out = []
+                    try:
+                        j_err = (ws / "jupyter_server.err").read_text(errors="ignore").splitlines()[-80:]
+                    except Exception:
+                        j_err = []
+                    raise RuntimeError(
+                        "Jupyter server did not start listening in time\n"
+                        + "=== jupyter_server.out (tail) ===\n" + "\n".join(j_out)
+                        + "\n=== jupyter_server.err (tail) ===\n" + "\n".join(j_err)
+                    )
                 yield ws, nb_rel
             finally:
                 try:

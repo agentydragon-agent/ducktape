@@ -27,3 +27,6 @@ where = ["src"]
 addopts = "-q"
 timeout = 30
 timeout_method = "thread"
+markers = [
+  "macos: requires macOS (seatbelt sandbox)"
+]

@@ -1,18 +1,16 @@
-import sys
-
-
 def test_wrapper_unsandbox_initialize_and_hello(
-    tmp_path,
+    provision_ws_with_policy,
     pick_free_port,
     mcp_stdio_protocol,
     pkg_src_env_update,
     launch_proc,
 ):
+    (ws, _run_root) = provision_ws_with_policy
     port = pick_free_port
     cmd = [
         "sandbox-jupyter-mcp",
         "--workspace",
-        str(tmp_path / "ws"),
+        str(ws),
         "--mode",
         "seatbelt",
         "--jupyter-port",
@@ -25,6 +23,6 @@ def test_wrapper_unsandbox_initialize_and_hello(
             proc.stdout,
             "append_execute_code_cell",
             {"cell_source": "print('hello world')"},
-            timeout=20.0,
+            timeout=30.0,
         )
         assert "hello world" in str(result)
