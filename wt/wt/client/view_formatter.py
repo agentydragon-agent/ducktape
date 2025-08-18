@@ -81,7 +81,7 @@ class ViewFormatter:
             if pr_mergeable:
                 return PRStatus.OPEN_MERGEABLE.display_text
             return PRStatus.OPEN_CONFLICTING.display_text
-        return pr_state.value.lower()
+        return str(pr_state.value).lower()
 
     def format_status_row(
         self,

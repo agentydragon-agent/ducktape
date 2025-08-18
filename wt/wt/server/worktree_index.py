@@ -65,7 +65,7 @@ class WorktreeIndex:
                 return self.main, None
             return None
         # No name provided: infer from current path
-        if current_path.is_relative_to(self.main.path) if self.main else False:
+        if self.main and current_path.is_relative_to(self.main.path):
             rel = str(current_path.relative_to(self.main.path))
             return self.main, rel
         for wt in self.by_path.values():

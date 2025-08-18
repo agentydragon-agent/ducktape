@@ -157,6 +157,30 @@ class TestCLIIntegration:
         assert result.returncode == 0
         assert "path-test" in result.stdout
 
+    def test_path_command_worktree_name(self, real_temp_repo, real_env):
+        """"x" resolves to the worktree directory (treat as worktree name)."""
+        r = run_cli_command(["sh", "-c", "pth"], env=real_env)
+        assert r.returncode == 0, f"Create failed: {r.stderr}"
+        wt_path = real_temp_repo / "worktrees" / "pth"
+        assert wt_path.exists()
+
+        res = run_cli_command(["sh", "path", "pth"], env=real_env)
+        assert res.returncode == 0
+        assert str(wt_path) in res.stdout
+
+    def test_path_command_relative_path(self, real_temp_repo, real_env):
+        """"./x" resolves to a path inside the current worktree (treat as path)."""
+        r = run_cli_command(["sh", "-c", "pth"], env=real_env)
+        assert r.returncode == 0, f"Create failed: {r.stderr}"
+        wt_path = real_temp_repo / "worktrees" / "pth"
+        assert wt_path.exists()
+
+        (wt_path / "subdir").mkdir(parents=True, exist_ok=True)
+
+        res = run_cli_command(["sh", "path", "./subdir"], env=real_env, cwd=wt_path)
+        assert res.returncode == 0
+        assert str(wt_path / "subdir") in res.stdout
+
 
 @pytest.mark.integration
 class TestRealGitOperations:

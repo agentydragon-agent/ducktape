@@ -8,7 +8,6 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
-    Generic,
     Protocol,
     TypeVar,
     get_origin,
@@ -32,23 +31,22 @@ from ..shared.protocol import (
 
 ParamsT = TypeVar("ParamsT", bound=BaseModel)
 ResultT = TypeVar("ResultT")
-EventT = TypeVar("EventT", bound=BaseModel)
 
 
-class Emitter(Protocol[EventT]):
-    def emit(self, event: EventT) -> None: ...
+class Emitter(Protocol):
+    def emit(self, event: BaseModel) -> None: ...
 
 
 import asyncio
 
 
-class Stream(Generic[EventT]):
+class Stream:
     def __init__(self, writer: asyncio.StreamWriter | Any):
         self._writer = writer
         self._error_logged = False
         # TODO(mpokorny): consider async emit with backpressure for large/continuous streams
 
-    def emit(self, event: EventT) -> None:
+    def emit(self, event: BaseModel) -> None:
         if not self._writer:
             return
         self._writer.write((event.model_dump_json() + "\n").encode())
@@ -140,7 +138,7 @@ class RpcRegistry:
             req: Request,
             daemon: WtDaemon,
             writer,
-            start_time: float,
+            start_time: datetime,
         ) -> Response | ErrorResponse:
             try:
                 params = (
@@ -181,7 +179,7 @@ class RpcRegistry:
             req: Request,
             daemon: WtDaemon,
             writer,
-            start_time: float,
+            start_time: datetime,
         ) -> Response | ErrorResponse:
             try:
                 params = params_model.model_validate(req.params)
@@ -239,7 +237,7 @@ class RpcRegistry:
         req: Request,
         daemon: WtDaemon,
         writer,
-        start_time: float,
+        start_time: datetime,
     ) -> Response | ErrorResponse:
         wrapped = self._handlers.get(req.method)
         if not wrapped:

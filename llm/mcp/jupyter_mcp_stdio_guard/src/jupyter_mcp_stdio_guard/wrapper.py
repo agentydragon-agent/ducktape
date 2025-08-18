@@ -63,7 +63,8 @@ def _ensure_document_id(
         p = workspace / rel
         document_id = str(rel)
     p.parent.mkdir(parents=True, exist_ok=True)
-    assert not p.exists()
+    if p.exists():
+        raise FileExistsError(f"Notebook already exists: {p}")
     kernelspec = (
         {
             "name": "python3-sandboxed",

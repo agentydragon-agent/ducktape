@@ -75,9 +75,11 @@ class PRService:
             return None
         pr_info_data: PRData | None = None
         try:
+            gh = self.github_interface
+            assert gh is not None
 
             def _fetch_pr_info():
-                return self.github_interface.pr_search(branch_name)
+                return gh.pr_search(branch_name)
 
             loop = asyncio.get_event_loop()
             prs = await loop.run_in_executor(None, _fetch_pr_info)

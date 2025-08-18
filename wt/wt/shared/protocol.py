@@ -9,11 +9,11 @@ from __future__ import annotations
 import json
 import uuid
 from datetime import datetime
-from enum import Enum
+from enum import Enum, IntEnum
 from pathlib import Path
 from typing import Annotated, Any, Literal, NewType
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from .github_models import PRInfo
 
@@ -96,7 +96,7 @@ class ErrorResponse(BaseModel):
 
 
 # Standard JSON-RPC error codes
-class ErrorCodes:
+class ErrorCodes(IntEnum):
     PARSE_ERROR = -32700
     INVALID_REQUEST = -32600
     METHOD_NOT_FOUND = -32601
@@ -532,20 +532,26 @@ def parse_request(data: str) -> Request:
     try:
         raw_data = json.loads(data)
         return Request.model_validate(raw_data)
-    except (json.JSONDecodeError, Exception) as e:
-        raise ValueError(f"Invalid JSON-RPC request: {e}")
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Invalid JSON (parse error): {e}") from e
+    except ValidationError as e:
+        raise ValueError(f"Invalid JSON-RPC request schema: {e}") from e
 
+
+class NoParams(BaseModel):
+    """Explicit empty params schema for methods without parameters."""
+    model_config = {"extra": "forbid"}
 
 # Method registry for type safety
 SUPPORTED_METHODS = {
     # Existing methods
     "get_status": (StatusParams, StatusResponse),
-    "ping": (None, PingResult),  # No parameters
-    "shutdown": (None, str),  # No parameters, simple string response
+    "ping": (NoParams, PingResult),  # No parameters
+    "shutdown": (NoParams, str),  # No parameters, simple string response
     # New worktree operations
     "worktree_create": (WorktreeCreateParams, WorktreeCreateResult),
     "worktree_delete": (WorktreeDeleteParams, WorktreeDeleteResult),
-    "worktree_list": (None, WorktreeListResult),  # No parameters
+    "worktree_list": (NoParams, WorktreeListResult),  # No parameters
     "worktree_identify": (WorktreeIdentifyParams, WorktreeIdentifyResult),
     "worktree_get_by_name": (WorktreeGetByNameParams, WorktreeGetByNameResult),
     "worktree_resolve_path": (WorktreeResolvePathParams, WorktreeResolvePathResult),

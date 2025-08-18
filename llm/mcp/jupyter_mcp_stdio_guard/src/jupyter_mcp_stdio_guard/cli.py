@@ -1,6 +1,4 @@
-import os
 import sys
-from pathlib import Path
 from .wrapper import main as _main
 
 def main() -> int:

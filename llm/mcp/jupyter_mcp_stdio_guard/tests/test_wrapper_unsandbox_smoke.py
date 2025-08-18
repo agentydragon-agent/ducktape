@@ -8,16 +8,19 @@ from pathlib import Path
 
 import pytest
 
-from ._helpers import pick_free_port, read_line_json, send_line_json
+# Fixtures are provided by local conftest.py; use by parameter injection
 
 
-@pytest.mark.skipif(sys.platform != "darwin", reason="macOS only")
-@pytest.mark.skipif(shutil.which("sandbox-exec") is None, reason="requires sandbox-exec present even though disabled")
-@pytest.mark.skipif(shutil.which("jupyter") is None or shutil.which("jupyter-mcp-server") is None, reason="requires jupyter and jupyter-mcp-server on PATH")
-def test_wrapper_unsandbox_initialize_and_hello(tmp_path: Path):
+# Hard dependencies: on Darwin, require sandbox-exec; require jupyter and jupyter-mcp-server on PATH
+if sys.platform == "darwin" and shutil.which("sandbox-exec") is None:
+    raise RuntimeError("sandbox-exec is required on macOS")
+if shutil.which("jupyter") is None or shutil.which("jupyter-mcp-server") is None:
+    raise RuntimeError("jupyter and jupyter-mcp-server must be on PATH")
+
+def test_wrapper_unsandbox_initialize_and_hello(tmp_path: Path, pick_free_port, send_line_json_fn, read_line_json_fn):
     ws = tmp_path / "ws"
     ws.mkdir(parents=True)
-    port = pick_free_port()
+    port = pick_free_port() if callable(pick_free_port) else pick_free_port
 
     env = os.environ.copy()
     pkg_src = Path(__file__).resolve().parents[1] / "src"
@@ -48,6 +51,8 @@ def test_wrapper_unsandbox_initialize_and_hello(tmp_path: Path):
                 "clientInfo": {"name": "wrapper-unsandbox-smoke", "version": "0.0.1"},
             },
         }
+        send_line_json = send_line_json_fn
+        read_line_json = read_line_json_fn
         send_line_json(proc.stdin, init)
         resp = read_line_json(proc.stdout, 15.0)
         assert resp and resp.get("id") == 1 and "result" in resp, f"initialize failed: {resp}\nstderr:\n{(proc.stderr.read() or b'').decode('utf-8','ignore')[-2000:]}"

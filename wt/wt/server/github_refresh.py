@@ -26,7 +26,7 @@ class DebouncedGitHubRefresh:
         self.pending_refresh_task: asyncio.Task | None = None
         self.last_refresh_time = 0.0
         self.pending_files: set[str] = set()
-        self.observer: Observer | None = None
+        self.observer: object | None = None
         self.event_handler = GitFileHandler(self)
         self.periodic_task: asyncio.Task | None = None
         self.is_running = False
@@ -54,8 +54,8 @@ class DebouncedGitHubRefresh:
     async def stop(self):
         self.is_running = False
         if self.observer:
-            self.observer.stop()
-            self.observer.join()
+            self.observer.stop()  # type: ignore[attr-defined]
+            self.observer.join()  # type: ignore[attr-defined]
             self.observer = None
         if self.pending_refresh_task:
             self.pending_refresh_task.cancel()

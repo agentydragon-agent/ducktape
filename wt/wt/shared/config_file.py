@@ -6,10 +6,10 @@ This module contains only the serializable Pydantic model that represents
 the configuration data as stored in YAML files. No business logic, no
 resolvers, no computed properties - just the raw data structure.
 
-For runtime configuration with logic and resolvers, see config.py.
+For runtime configuration with logic and resolvers, see configuration.py.
 """
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class ConfigFile(BaseModel):
@@ -32,7 +32,7 @@ class ConfigFile(BaseModel):
 
     # Behavior settings
     log_operations: bool = False
-    cow_method: str = "auto"  # "auto", "reflink", "copy", or "rsync"
+    cow_method: str = "auto"  # "auto", "reflink", "copy", or "rsync"  # TODO(mpokorny): Consider Literal[...]/Enum for stricter typing
     hydrate_worktrees: bool = True
 
     # GitHub integration
@@ -48,7 +48,7 @@ class ConfigFile(BaseModel):
     cache_refresh_age: int = 300  # seconds
 
     # UI settings
-    hidden_worktree_patterns: list[str] = []
+    hidden_worktree_patterns: list[str] = Field(default_factory=list)
 
     # GitHub refresh system configuration
     github_debounce_delay: float = 5.0

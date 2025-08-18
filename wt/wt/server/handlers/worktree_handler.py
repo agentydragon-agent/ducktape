@@ -61,7 +61,7 @@ async def worktree_create(  # noqa: PLR0913
     svc: WorktreeService,
     config: Configuration,
     params: WorktreeCreateParams,
-    stream: Stream[ProgressEvent],
+    stream: Stream,
 ) -> WorktreeCreateResult:
     if "/" in params.name:
         raise RpcError(
@@ -188,7 +188,7 @@ async def worktree_delete(
 def _resolve_worktree_name_to_info(
     index: WorktreeIndexService,
     name: str,
-) -> object | None:
+) -> DiscoveredWorktree | None:
     if name == MAIN_WORKTREE_DISPLAY_NAME and index.main():
         return index.main()
     return index.get_by_name(name)

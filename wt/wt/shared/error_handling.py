@@ -4,7 +4,6 @@ import logging
 from collections.abc import Callable, Iterable
 from functools import wraps
 from typing import Any, TypeVar
-from typing import Callable as _Callable
 
 import click
 import psutil
@@ -52,11 +51,7 @@ def handle_git_errors(func: Callable[..., T]) -> Callable[..., T]:
         except (GitError, WorktreeError) as e:
             logger.exception("Git interface error in %s", func.__name__)
             raise RuntimeError(f"Git interface error: {e}") from e
-        except Exception as e:
-            if "git" in str(e).lower() or "repository" in str(e).lower():
-                logger.exception("Git operation failed in %s", func.__name__)
-                raise RuntimeError(f"Git operation failed: {e}") from e
-            raise
+        # Let other exceptions propagate; avoid brittle message substring checks
 
     return wrapper
 
@@ -73,7 +68,7 @@ def handle_github_errors(func: Callable[..., T]) -> Callable[..., T]:
     return wrapper
 
 
-def handle_process_errors(func: _Callable[..., Iterable[Any]]) -> _Callable[..., list[Any]]:
+def handle_process_errors(func: Callable[..., Iterable[Any]]) -> Callable[..., list[Any]]:
     @wraps(func)
     def wrapper(*args, **kwargs) -> list[Any]:
         try:
@@ -82,7 +77,8 @@ def handle_process_errors(func: _Callable[..., Iterable[Any]]) -> _Callable[...,
             return list(result)
         except psutil.NoSuchProcess:
             logger.debug("Process disappeared during enumeration in %s", func.__name__)
-            return []
+            # Surface an explicit domain signal; callers can choose to ignore
+            raise ProcessEnumerationError("Process disappeared during enumeration")
         except (FileNotFoundError, ValueError) as e:
             logger.exception("Process tool error in %s", func.__name__)
             # Re-raise as domain-specific error to preserve failure context

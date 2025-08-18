@@ -1,5 +1,7 @@
+import glob
 import json
 import os
+import select
 import socket
 import subprocess
 import sys
@@ -30,11 +32,16 @@ def run_log_show(pred: str, minutes: int = 2) -> str:
             timeout=20,
         )
         return out
-    except Exception as e:
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
         return f"<log show failed: {e}>"
 
 
-pytestmark = pytest.mark.skipif(sys.platform != "darwin", reason="macOS only")
+if sys.platform != "darwin":
+    raise RuntimeError("This test must run on macOS (darwin)")
+if shutil.which("sandbox-exec") is None:
+    raise RuntimeError("sandbox-exec is required on macOS")
+if shutil.which("jupyter") is None or shutil.which("jupyter-mcp-server") is None:
+    raise RuntimeError("jupyter and jupyter-mcp-server must be on PATH")
 
 
 def pick_free_port() -> int:
@@ -50,17 +57,16 @@ def send_line_json(w, obj: dict):
 
 
 def read_line_json(r, deadline: float) -> dict | None:
-    # Read one newline-delimited JSON object safely with non-blocking polling; accept LF or CRLF
-    import select, os as _os
     fd = r.fileno()
+    os.set_blocking(fd, False)
     buf = bytearray()
     while time.time() < deadline:
         ready, _, _ = select.select([fd], [], [], 0.05)
         if not ready:
             continue
         try:
-            ch = _os.read(fd, 1)
-        except Exception:
+            ch = os.read(fd, 1)
+        except BlockingIOError:
             time.sleep(0.01)
             continue
         if not ch:
@@ -78,14 +84,10 @@ def read_line_json(r, deadline: float) -> dict | None:
         return None
 
 
-def test_user_view_end_to_end(tmp_path: Path):
+def test_user_view_end_to_end(tmp_path: Path, pick_free_port, send_line_json_fn, read_line_json_fn, collect_mcp_logs_fn):
     # Prerequisites: Jupyter RTC extension dependencies required by jupyter-mcp-server
-    try:
-        import jupyter_collaboration  # noqa: F401
-        # datalayer-pycrdt installs importable module name 'pycrdt'
-        import pycrdt  # noqa: F401
-    except Exception:
-        raise AssertionError("Missing required packages: jupyter-collaboration==4.0.2 and datalayer-pycrdt==0.12.17; install per pyproject to run this test.")
+    import jupyter_collaboration  # noqa: F401
+    import pycrdt  # noqa: F401
 
     if shutil.which("sandbox-exec") is None:
         pytest.skip("sandbox-exec not found")
@@ -157,18 +159,19 @@ def test_user_view_end_to_end(tmp_path: Path):
                 # Pull tee logs
                 mcp_out = mcp_err = ""
                 try:
-                    import glob
                     for path in sorted(glob.glob('/tmp/sjmcp-*/mcp_stdout.log'))[-3:]:
                         try:
-                            mcp_out += f"\n== {path} ==\n" + open(path,'rb').read().decode('utf-8','ignore')[-4000:]
-                        except Exception:
+                            with open(path, 'rb') as fh:
+                                mcp_out += f"\n== {path} ==\n" + fh.read().decode('utf-8','ignore')[-4000:]
+                        except OSError:
                             pass
                     for path in sorted(glob.glob('/tmp/sjmcp-*/mcp_stderr.log'))[-3:]:
                         try:
-                            mcp_err += f"\n== {path} ==\n" + open(path,'rb').read().decode('utf-8','ignore')[-4000:]
-                        except Exception:
+                            with open(path, 'rb') as fh:
+                                mcp_err += f"\n== {path} ==\n" + fh.read().decode('utf-8','ignore')[-4000:]
+                        except OSError:
                             pass
-                except Exception:
+                except OSError:
                     pass
                 sb_log = run_log_show('subsystem == "com.apple.sandbox"')
                 sbox_log = run_log_show('process == "sandbox-exec"')
@@ -176,18 +179,19 @@ def test_user_view_end_to_end(tmp_path: Path):
                 # Pull tee logs
                 mcp_out = mcp_err = ""
                 try:
-                    import glob
                     for path in sorted(glob.glob('/tmp/sjmcp-*/mcp_stdout.log'))[-3:]:
                         try:
-                            mcp_out += f"\n== {path} ==\n" + open(path,'rb').read().decode('utf-8','ignore')[-4000:]
-                        except Exception:
+                            with open(path, 'rb') as fh:
+                                mcp_out += f"\n== {path} ==\n" + fh.read().decode('utf-8','ignore')[-4000:]
+                        except OSError:
                             pass
                     for path in sorted(glob.glob('/tmp/sjmcp-*/mcp_stderr.log'))[-3:]:
                         try:
-                            mcp_err += f"\n== {path} ==\n" + open(path,'rb').read().decode('utf-8','ignore')[-4000:]
-                        except Exception:
+                            with open(path, 'rb') as fh:
+                                mcp_err += f"\n== {path} ==\n" + fh.read().decode('utf-8','ignore')[-4000:]
+                        except OSError:
                             pass
-                except Exception:
+                except OSError:
                     pass
                 (tmp_path / "stdout.log").write_text(
                     stdout_tail.decode("utf-8", errors="ignore")
@@ -217,9 +221,6 @@ def test_user_view_end_to_end(tmp_path: Path):
                         ]
                     )
                 )
-
-            # Send MCP 'notifications/initialized' after successful initialize
-            send_line_json(proc.stdin, {"jsonrpc": "2.0", "method": "notifications/initialized"})
 
             # Send MCP 'notifications/initialized' after successful initialize
             send_line_json(proc.stdin, {"jsonrpc": "2.0", "method": "notifications/initialized"})

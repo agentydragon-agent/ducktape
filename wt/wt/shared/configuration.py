@@ -68,7 +68,9 @@ class Configuration:
         1) Prefer WT_DIR/daemon.sock when short enough
         2) Otherwise fall back to a stable short path under /tmp using a hash of WT_DIR
         """
-        from hashlib import md5
+        from hashlib import (
+            md5,
+        )
 
         p = self.wt_dir / "daemon.sock"
         if len(str(p)) <= 100:
@@ -99,7 +101,7 @@ class Configuration:
         if not config_path.exists():
             raise ConfigError(f"Config file not found: {config_path}")
 
-        with Path(config_path).open() as f:
+        with config_path.open() as f:
             data = yaml.safe_load(f)
 
         try:

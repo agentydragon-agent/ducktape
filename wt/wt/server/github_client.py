@@ -7,7 +7,7 @@ No subprocess JSON parsing is used for API calls.
 import logging
 import os
 import subprocess
-from typing import Optional
+from typing import Optional, Any
 
 from github import Github
 
@@ -75,7 +75,7 @@ class GitHubInterface:
         token = get_github_token(token)
         self.github_repo = github_repo
         self._gh = Github(token) if token else Github()
-        self._repo = None  # Lazy initialization
+        self._repo: Any | None = None  # Lazy initialization
 
     @property
     def repo(self):

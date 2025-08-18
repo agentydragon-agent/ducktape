@@ -6,7 +6,7 @@ import subprocess
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
 import pygit2
 
@@ -61,7 +61,7 @@ class GitManager:
     config: "Configuration"
 
     def __post_init__(self) -> None:
-        self._main_repo = pygit2.Repository(str(self.config.main_repo))
+        self._main_repo: Any = pygit2.Repository(str(self.config.main_repo))
 
     def branch_exists(self, branch_name: str) -> bool:
         return branch_name in self._main_repo.branches
@@ -84,10 +84,11 @@ class GitManager:
 
             for file_path, flags in self._main_repo.status().items():
                 if flags & (
-                    pygit2.GIT_STATUS_WT_MODIFIED | pygit2.GIT_STATUS_INDEX_MODIFIED
+                    cast(Any, pygit2).GIT_STATUS_WT_MODIFIED
+                    | cast(Any, pygit2).GIT_STATUS_INDEX_MODIFIED
                 ):
                     dirty_files.append(file_path)
-                elif flags & pygit2.GIT_STATUS_WT_NEW:
+                elif flags & cast(Any, pygit2).GIT_STATUS_WT_NEW:
                     untracked_files.append(file_path)
 
             return dirty_files, untracked_files
@@ -95,7 +96,7 @@ class GitManager:
         except (pygit2.GitError, OSError) as e:
             raise GitError("Failed to get working directory status") from e
 
-    def get_repo(self, path: Path | None = None) -> pygit2.Repository:
+    def get_repo(self, path: Path | None = None) -> Any:
         if path is None or path == self.config.main_repo:
             return self._main_repo
         return pygit2.Repository(str(path))

@@ -1,4 +1,5 @@
 from __future__ import annotations
+from typing import Any
 
 from .plugins import PluginIO
 
@@ -11,7 +12,7 @@ def wt_init(config) -> None:
     return None
 
 
-async def run(args: list[str], client, config, io: PluginIO) -> int:
+async def run(args: list[str], client, config, io: Any) -> int:
     if args and args[0] == "cd-main":
         io.emit(f"cd {config.main_repo}")
         return 0

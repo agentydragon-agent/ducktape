@@ -13,7 +13,7 @@ import sys
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, TypeVar, cast
 
 import click
 import psutil
@@ -50,6 +50,8 @@ from ..shared.protocol import (
 )
 
 logger = logging.getLogger(__name__)
+
+T = TypeVar("T")
 
 
 class RpcError(RuntimeError):
@@ -277,9 +279,8 @@ class WtClient:
         worktree_ids: list[WorktreeID] | None = None,
     ) -> StatusResponse:
         await self._start_daemon_if_needed()
-        params = StatusParams(
-            worktree_ids=[wtid for wtid in (worktree_ids or []) if wtid is not None],
-        )
+        ids: list[WorktreeID] = cast(list[WorktreeID], worktree_ids) if worktree_ids is not None else []
+        params = StatusParams(worktree_ids=ids)
         return await self._rpc("get_status", params, TypeAdapter(StatusResponse))
 
     async def get_working_directory_status(
@@ -290,6 +291,8 @@ class WtClient:
         # Use server-side identification to safely convert path to WorktreeID
         try:
             identify_result = await self.identify_worktree(str(worktree_path))
+            if identify_result.wtid is None:
+                return [], []
             status_response = await self.get_status([identify_result.wtid])
         except RpcError as e:
             # Only special-case unmanaged worktrees by code; otherwise bubble up
@@ -345,7 +348,7 @@ class WtClient:
             response_json = None
 
             progress_cb = self._progress_callback
-            hook_cb = self._hook_output_callback
+            hook_cb = self._hook_output_callback  # type: ignore[assignment]
             while True:
                 line = await reader.readline()
                 if not line:
@@ -356,18 +359,18 @@ class WtClient:
                 # Dispatch on event type if present
                 ev = obj.get("event") if isinstance(obj, dict) else None
                 if ev == "hook_output":
-                    msg = HookOutputEvent.model_validate(obj)
+                    hook_ev: HookOutputEvent = HookOutputEvent.model_validate(obj)
                     if callable(hook_cb):
-                        hook_cb(msg)
-                    if msg.stream.value == "stdout":
-                        hook_stdout.append(msg.data)
+                        hook_cb(hook_ev)
+                    if hook_ev.stream.value == "stdout":
+                        hook_stdout.append(hook_ev.data)
                     else:
-                        hook_stderr.append(msg.data)
+                        hook_stderr.append(hook_ev.data)
                     continue
                 if ev == "progress":
-                    msg = ProgressEvent.model_validate(obj)
+                    prog_ev: ProgressEvent = ProgressEvent.model_validate(obj)
                     if callable(progress_cb):
-                        progress_cb(msg)
+                        progress_cb(prog_ev)
                     continue
                 # Otherwise treat as final response
                 response_json = obj
@@ -467,7 +470,7 @@ class WtClient:
             TypeAdapter(WorktreeGetByNameResult),
         )
 
-    async def _rpc(self, method: str, params_model, result_adapter: TypeAdapter):
+    async def _rpc(self, method: str, params_model: BaseModel | dict[str, Any], result_adapter: TypeAdapter[T]) -> T:
         await self._start_daemon_if_needed()
         if not self.config.daemon_socket_path.exists():
             raise RuntimeError("Daemon socket not available")

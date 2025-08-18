@@ -7,7 +7,7 @@ import logging
 import shutil
 from collections.abc import Awaitable
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING, Callable, Any, cast
 
 import psutil
 import pygit2
@@ -41,7 +41,7 @@ class WorktreeService:
     Note: This layer performs filesystem and subprocess I/O.
     """
 
-    def __init__(self, git_manager: GitManager, github: "GitHubInterface"):
+    def __init__(self, git_manager: GitManager, github: "GitHubInterface | None"):
         self.git_manager = git_manager
         self.github = github
 
@@ -90,7 +90,7 @@ class WorktreeService:
         """Create a new worktree."""
         validate_worktree_name(name)
         self._require_post_creation_script_valid(config)
-        worktree_path = config.worktrees_dir / name
+        worktree_path: Path = config.worktrees_dir / name
 
         if worktree_path.exists():
             raise RuntimeError(f"Worktree '{name}' already exists at {worktree_path}")
@@ -125,9 +125,9 @@ class WorktreeService:
                     logger.info(
                         f"Hydrating new worktree in {worktree_path} by checking out {branch_name}.",
                     )
-                    repo = pygit2.Repository(str(worktree_path))
+                    repo: Any = pygit2.Repository(str(worktree_path))
                     repo.set_head(f"refs/heads/{branch_name}")
-                    repo.checkout_head(strategy=pygit2.GIT_CHECKOUT_FORCE)
+                    repo.checkout_head(strategy=cast(Any, pygit2).GIT_CHECKOUT_FORCE)
             else:
                 logger.info("Not hydrating worktree.")
             return worktree_path
