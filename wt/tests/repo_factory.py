@@ -10,10 +10,9 @@ from .test_data import TestData
 class GitRepoFactory:
     """Factory for creating git repositories with different configurations."""
 
-    def __init__(self, base_path: Path, isolated_git_env: dict):
-        """Initialize factory with base path and isolated environment."""
+    def __init__(self, base_path: Path):
+        """Initialize factory with base path."""
         self.base_path = base_path
-        self.isolated_git_env = isolated_git_env
 
     def create_repo(
         self,

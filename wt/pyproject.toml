@@ -50,6 +50,12 @@ markers = [
     "asyncio: marks tests as async tests",
     "real_github: tests that talk to real GitHub/network"
 ]
+# Ensure hermetic git by default via pytest-env plugin
+# These are static-safe; dynamic HOME/XDG are set by autouse fixture
+env = [
+    "GIT_CONFIG_NOSYSTEM=1",
+    "GIT_CONFIG_GLOBAL=/dev/null",
+]
 
 # pytest-timeout defaults
 timeout = 10

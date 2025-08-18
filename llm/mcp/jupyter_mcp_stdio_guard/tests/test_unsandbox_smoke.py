@@ -1,93 +1,25 @@
-import contextlib
-import json
-import os
-import shutil
 import subprocess
-import time
-from pathlib import Path
-
-# pytest auto-loads fixtures from conftest.py in this directory
-# Access fixtures by parameter injection
-
-
-def _wait_port(port: int, timeout: float = 15.0) -> bool:
-    import socket
-
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        try:
-            with socket.create_connection(("127.0.0.1", port), 0.5):
-                return True
-        except OSError:
-            time.sleep(0.1)
-    return False
-
-
-def _send_line(w, obj: dict) -> None:
-    w.write((json.dumps(obj) + "\n").encode("utf-8"))
-    w.flush()
-
-
-def _read_line(r, timeout: float) -> dict | None:
-    import select
-
-    fd = r.fileno()
-    os.set_blocking(fd, False)
-    buf = bytearray()
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        ready, _, _ = select.select([fd], [], [], 0.05)
-        if not ready:
-            continue
-        try:
-            b = os.read(fd, 1)
-        except BlockingIOError:
-            time.sleep(0.01)
-            continue
-        if not b:
-            time.sleep(0.01)
-            continue
-        if b == b"\n":
-            break
-        buf.extend(b)
-    if not buf:
-        return None
-    try:
-        return json.loads(bytes(buf).decode("utf-8", errors="ignore").rstrip("\r"))
-    except Exception:
-        return None
-
-
-if shutil.which("jupyter") is None or shutil.which("jupyter-mcp-server") is None:
-    raise RuntimeError("jupyter and jupyter-mcp-server must be on PATH")
+import pytest
 
 
 def test_unsandbox_initialize_and_hello(
-    tmp_path: Path, pick_free_port, send_line_json_fn, read_line_json_fn
+    tmp_path,
+    pick_free_port,
+    gen_token,
+    wait_port,
+    mcp_stdio_protocol,
+    launch_proc,
 ):
-    ws = tmp_path / "ws"
-    ws.mkdir(parents=True)
-    nb_rel = Path(".mcp/test.ipynb")
-    (ws / nb_rel).parent.mkdir(parents=True, exist_ok=True)
-    (ws / nb_rel).write_text(
-        json.dumps(
-            {
-                "cells": [],
-                "metadata": {
-                    "kernelspec": {
-                        "name": "python3",
-                        "display_name": "Python 3",
-                        "language": "python",
-                    },
-                },
-                "nbformat": 4,
-                "nbformat_minor": 5,
-            },
-        ),
-    )
+    port = pick_free_port
+    token = gen_token
 
-    port = pick_free_port() if callable(pick_free_port) else pick_free_port
-    token = f"test-{next(__import__('tempfile')._get_candidate_names())}"
+    ws = tmp_path / "ws"
+    ws.mkdir(exist_ok=True)
+    nb_rel = ws / ".mcp/test.ipynb"
+    nb_rel.parent.mkdir(parents=True, exist_ok=True)
+    nb_rel.write_text(
+        '{"cells": [], "metadata": {"kernelspec": {"name":"python3","display_name":"Python 3","language":"python"}}, "nbformat":4, "nbformat_minor":5}'
+    )
 
     js_cmd = [
         "jupyter",
@@ -109,100 +41,41 @@ def test_unsandbox_initialize_and_hello(
     ]
     js_out = (ws / "jupyter_server.out").open("wb")
     js_err = (ws / "jupyter_server.err").open("wb")
-    js = subprocess.Popen(js_cmd, stdout=js_out, stderr=js_err)
-    try:
-        assert _wait_port(port, 15.0), "Jupyter server did not start"
 
-        mcp_cmd = [
-            "jupyter-mcp-server",
-            "start",
-            "--transport",
-            "stdio",
-            "--provider",
-            "jupyter",
-            "--document-url",
-            f"http://127.0.0.1:{port}",
-            "--document-id",
-            str(nb_rel),
-            "--document-token",
-            token,
-            "--runtime-url",
-            f"http://127.0.0.1:{port}",
-            "--runtime-token",
-            token,
-            "--start-new-runtime",
-            "true",
-        ]
-        mcp = subprocess.Popen(
-            mcp_cmd,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
+    with subprocess.Popen(js_cmd, stdout=js_out, stderr=js_err) as js:
         try:
-            init = {
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "initialize",
-                "params": {
-                    "protocolVersion": "2025-06-18",
-                    "capabilities": {"tools": {}},
-                    "clientInfo": {"name": "unsandbox-smoke", "version": "0.0.1"},
-                },
-            }
-            send_line = send_line_json_fn
-            read_line = read_line_json_fn
-            send_line(mcp.stdin, init)
-            resp = read_line(mcp.stdout, 10.0)
-            assert resp and resp.get("id") == 1 and "result" in resp, (
-                f"initialize failed: {resp}\nstderr:\n{(mcp.stderr.read() or b'').decode('utf-8', 'ignore')[-2000:]}"
-            )
-
-            send_line(
-                mcp.stdin, {"jsonrpc": "2.0", "method": "notifications/initialized"}
-            )
-            time.sleep(0.2)
-
-            call = {
-                "jsonrpc": "2.0",
-                "id": 2,
-                "method": "tools/call",
-                "params": {
-                    "name": "append_execute_code_cell",
-                    "arguments": {"cell_source": "print('hello world')"},
-                },
-            }
-            send_line(mcp.stdin, call)
-            resp2 = read_line(mcp.stdout, 20.0)
-            assert resp2 and resp2.get("id") == 2 and "result" in resp2, (
-                f"tool call failed: {resp2}\nstderr:\n{(mcp.stderr.read() or b'').decode('utf-8', 'ignore')[-2000:]}"
-            )
-
-            result = resp2["result"]
-            text_chunks = []
-            try:
-                sc = result.get("structuredContent")
-                if sc and isinstance(sc.get("result"), list):
-                    text_chunks.extend(map(str, sc["result"]))
-            except Exception:
-                pass
-            try:
-                content = result.get("content") or []
-                for c in content:
-                    if isinstance(c, dict) and c.get("type") == "text":
-                        text_chunks.append(str(c.get("text", "")))
-            except Exception:
-                pass
-            joined = "\n".join(text_chunks)
-            assert "hello world" in joined
+            assert wait_port(port, 15.0), "Jupyter server did not start"
+            mcp_cmd = [
+                "jupyter-mcp-server",
+                "start",
+                "--transport",
+                "stdio",
+                "--provider",
+                "jupyter",
+                "--document-url",
+                f"http://127.0.0.1:{port}",
+                "--document-id",
+                str(nb_rel.relative_to(ws)),
+                "--document-token",
+                token,
+                "--runtime-url",
+                f"http://127.0.0.1:{port}",
+                "--runtime-token",
+                token,
+                "--start-new-runtime",
+                "true",
+            ]
+            with launch_proc(mcp_cmd) as proc:
+                result = mcp_stdio_protocol(
+                    proc.stdin,
+                    proc.stdout,
+                    "append_execute_code_cell",
+                    {"cell_source": "print('hello world')"},
+                    timeout=20.0,
+                )
+                assert "hello world" in str(result)
         finally:
-            with contextlib.suppress(Exception):
-                mcp.terminate()
-                mcp.kill()
-    finally:
-        with contextlib.suppress(Exception):
             js.terminate()
             js.kill()
-        with contextlib.suppress(Exception):
             js_out.close()
             js_err.close()

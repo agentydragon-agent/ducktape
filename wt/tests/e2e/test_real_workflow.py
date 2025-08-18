@@ -48,96 +48,21 @@ from pathlib import Path
 import pygit2
 import pytest
 
-from wt.shared.git_utils import git_run
-
-from ..conftest import create_integration_test_config_file
 from ..test_utils import run_cli_command
 
 pytestmark = pytest.mark.timeout(10)
 
 
-@pytest.fixture
-def real_env_with_existing_worktrees(real_temp_repo):
-    """Set up environment with config file and create a couple existing worktrees."""
-    # Clean state ensured by per-test WT_DIR
-
-    config_file = create_integration_test_config_file(real_temp_repo)
-    (real_temp_repo / ".wt").mkdir(parents=True, exist_ok=True)
-    (real_temp_repo / ".wt" / "config.yaml").write_text(Path(config_file).read_text())
-
-    env = os.environ.copy()
-    env["WT_DIR"] = str((real_temp_repo / ".wt").resolve())
-    # Ensure python -m wt.cli is importable
-    # Now handled by session autouse fixture in conftest.py
-
-    repo = pygit2.Repository(str(real_temp_repo))
-    signature = pygit2.Signature("Test User", "test@example.com")
-
-    # Ensure WT_DIR exists for the daemon
-    Path(env["WT_DIR"]).mkdir(parents=True, exist_ok=True)
-
-    # Create existing worktree 1
-    worktree1_path = real_temp_repo / "worktrees" / "existing1"
-    master_commit = repo.head.target
-    repo.create_branch("test/existing1", repo.get(master_commit))
-
-    # Use git CLI for worktree creation since pygit2 doesn't support worktrees directly
-    git_run(
-        ["worktree", "add", str(worktree1_path), "test/existing1"],
-        cwd=real_temp_repo,
-    )
-
-    # Add a file to existing worktree 1 using pygit2
-    repo1 = pygit2.Repository(str(worktree1_path))
-    (worktree1_path / "existing1.txt").write_text("Content from existing1")
-    repo1.index.add("existing1.txt")
-    repo1.index.write()
-    tree1 = repo1.index.write_tree()
-    repo1.create_commit(
-        "HEAD",
-        signature,
-        signature,
-        "Add existing1 content",
-        tree1,
-        [repo1.head.target],
-    )
-
-    # Create existing worktree 2
-    worktree2_path = real_temp_repo / "worktrees" / "existing2"
-    _branch2 = repo.create_branch("test/existing2", repo.get(master_commit))
-    git_run(
-        ["worktree", "add", str(worktree2_path), "test/existing2"],
-        cwd=real_temp_repo,
-    )
-
-    # Add a file to existing worktree 2 using pygit2
-    repo2 = pygit2.Repository(str(worktree2_path))
-    (worktree2_path / "existing2.txt").write_text("Content from existing2")
-    repo2.index.add("existing2.txt")
-    repo2.index.write()
-    tree2 = repo2.index.write_tree()
-    repo2.create_commit(
-        "HEAD",
-        signature,
-        signature,
-        "Add existing2 content",
-        tree2,
-        [repo2.head.target],
-    )
-
-    return env, real_temp_repo
-
-    # Cleanup handled by fixture
 
 
-def test_real_workflow_with_existing_worktrees(real_env_with_existing_worktrees):
+def test_real_workflow_with_existing_worktrees(real_env_with_existing_worktrees, real_temp_repo):
     """Test workflow starting with existing worktrees - tests real status display."""
-    env, real_temp_repo = real_env_with_existing_worktrees
+    env = real_env_with_existing_worktrees
     # Step 1: Status should show existing worktrees
     result = run_cli_command(["sh"], env=env)
     assert result.returncode == 0
-    assert "existing1" in result.stdout
-    assert "existing2" in result.stdout
+    assert "existing-1" in result.stdout
+    assert "existing-2" in result.stdout
 
     # Step 2: Create a new worktree alongside existing ones
     result = run_cli_command(["sh", "-c", "new-feature"], env=env)
@@ -150,8 +75,8 @@ def test_real_workflow_with_existing_worktrees(real_env_with_existing_worktrees)
     # Step 3: Status should now show all three worktrees
     result = run_cli_command(["sh"], env=env)
     assert result.returncode == 0
-    assert "existing1" in result.stdout
-    assert "existing2" in result.stdout
+    assert "existing-1" in result.stdout
+    assert "existing-2" in result.stdout
     assert "new-feature" in result.stdout
 
 

@@ -2,7 +2,7 @@ import contextlib
 import os
 import signal
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 import pygit2
 import pytest
@@ -68,9 +68,9 @@ def mock_factory():
 
 
 @pytest.fixture
-def repo_factory(temp_dir, isolated_git_env):
+def repo_factory(temp_dir):
     """Factory for creating git repositories with different configurations."""
-    return GitRepoFactory(temp_dir, isolated_git_env)
+    return GitRepoFactory(temp_dir)
 
 
 @pytest.fixture
@@ -107,20 +107,6 @@ def temp_dir(tmp_path: Path) -> Path:
     return tmp_path
 
 
-@pytest.fixture
-def isolated_git_env(temp_dir: Path):
-    """Create completely isolated git environment for testing."""
-    git_env = {
-        **os.environ,
-        "GIT_CONFIG_NOSYSTEM": "1",  # Ignore system git config
-        "HOME": str(temp_dir),  # Isolate home directory
-        "XDG_CONFIG_HOME": str(temp_dir / "config"),  # Isolate XDG config
-        "GIT_CONFIG_GLOBAL": "/dev/null",  # Ignore global git config
-    }
-
-    # Use patch to ensure GitPython uses our isolated environment
-    with patch.dict(os.environ, git_env):
-        yield git_env
 
 
 @pytest.fixture
@@ -240,6 +226,8 @@ def real_env(real_temp_repo, config_factory):
 
     Creates real configuration and environment setup for tests that need
     to interact with actual daemon processes and gitstatusd.
+
+    The hermetic git environment is applied globally by autouse fixture.
     """
     # Create config using factory pattern
     factory = config_factory(real_temp_repo)
@@ -339,3 +327,15 @@ def build_test_configuration(
         yaml.dump(config_file.model_dump(), f)
 
     return Configuration.resolve(wt_dir)
+
+
+# Apply hermetic git environment to every test to prevent leakage from user/system config
+# Ensures subprocesses inherit HOME/XDG/GIT_* isolation unless a test explicitly overrides
+@pytest.fixture(autouse=True)
+def _apply_isolated_git_env(tmp_path: Path, monkeypatch):
+    """Apply hermetic git environment per test to prevent leakage.
+
+    Sets HOME/XDG_CONFIG_HOME; GIT_* vars are set via pytest config.
+    """
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
