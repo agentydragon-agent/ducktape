@@ -1,5 +1,17 @@
 # Progress Log — Jupyter MCP STDIO Guard
 
+- Timestamp: 2025-08-18T08:40:36Z
+- Repo SHA: 72d3810
+
+## Update
+
+- Unsandbox smoke test passes after hardening protocol and server start:
+  - launch_jupyter_server now waits for port readiness before yielding
+  - mcp_stdio_protocol uses a read-until loop with short polls and larger total timeouts (init=20s, call=30s)
+- Manual unsandbox run validated via scratch script (hello world observed in result)
+
+---
+
 - Timestamp: 2025-08-18T08:28:48Z
 - Repo SHA: ada52cf
 

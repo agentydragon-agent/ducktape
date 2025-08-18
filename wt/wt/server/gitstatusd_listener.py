@@ -470,17 +470,24 @@ class GitstatusdListener:
                 "gitstatusd update failed for %s",
                 self.worktree_info.name,
             )
+            # Notify supervisor if provided
+            try:
+                if self.error_callback:
+                    self.error_callback("update_failed")
+            except Exception:
+                # Best-effort notification; never let callback crash us here
+                pass
+            # Mark failure by clearing cache so has_cache=False is reported
+            self.cached_working_status = None
             if not self.last_updated_at:
                 self.last_updated_at = datetime.now()
-            # Mark failure by clearing cache and letting state be STOPPED/FAILED next check
-            self.cached_working_status = ([], [])
         finally:
             self._status_updating = False
 
     def get_cached_working_status(
         self,
-    ) -> tuple[list[str], list[str], datetime | None, bool]:
+    ) -> tuple[int, int, datetime | None, bool]:
         if self.cached_working_status and self.last_updated_at:
             df, uf = self.cached_working_status
-            return df, uf, self.last_updated_at, True
-        return [], [], None, False
+            return len(df), len(uf), self.last_updated_at, True
+        return 0, 0, None, False

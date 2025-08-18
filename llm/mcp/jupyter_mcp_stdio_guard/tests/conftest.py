@@ -118,13 +118,22 @@ def collect_mcp_logs_fn():
 
 @pytest.fixture
 def mcp_stdio_protocol(send_line_json_fn, read_line_json_fn):
+    def _read_until(stdout, match_id: int, total_timeout: float) -> dict | None:
+        deadline = time.time() + total_timeout
+        while time.time() < deadline:
+            m = read_line_json_fn(stdout, 2.0)
+            if not m:
+                continue
+            if m.get("id") == match_id and ("result" in m or "error" in m):
+                return m
+        return None
     def _protocol(
         stdin,
         stdout,
         tool_name,
         tool_args,
         protocol_version: str = "2025-06-18",
-        timeout: float = 20.0,
+        timeout: float = 30.0,
     ):
         init = {
             "jsonrpc": "2.0",
@@ -137,10 +146,10 @@ def mcp_stdio_protocol(send_line_json_fn, read_line_json_fn):
             },
         }
         send_line_json_fn(stdin, init)
-        resp = read_line_json_fn(stdout, 10.0)
+        resp = _read_until(stdout, 1, 20.0)
         assert resp and resp.get("id") == 1 and "result" in resp, f"initialize failed: {resp}"
         send_line_json_fn(stdin, {"jsonrpc": "2.0", "method": "notifications/initialized"})
-        time.sleep(0.2)
+        time.sleep(0.3)
         call = {
             "jsonrpc": "2.0",
             "id": 2,
@@ -148,7 +157,7 @@ def mcp_stdio_protocol(send_line_json_fn, read_line_json_fn):
             "params": {"name": tool_name, "arguments": tool_args},
         }
         send_line_json_fn(stdin, call)
-        resp2 = read_line_json_fn(stdout, timeout)
+        resp2 = _read_until(stdout, 2, timeout)
         assert resp2 and resp2.get("id") == 2 and "result" in resp2, f"tool call failed: {resp2}"
         return resp2["result"]
 

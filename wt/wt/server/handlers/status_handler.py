@@ -80,7 +80,7 @@ async def get_status(  # noqa: PLR0913
 
         if gs_client:
             try:
-                dirty_files, untracked_files, last_updated_at, have_cache = (
+                dirty_count, untracked_count, last_updated_at, have_cache = (
                     gs_client.get_cached_working_status()
                 )
                 cache_age_ms = (
@@ -117,7 +117,7 @@ async def get_status(  # noqa: PLR0913
             except asyncio.TimeoutError:
                 single_time = (time.time() - single_start) * 1000
                 state = GitstatusdState.STARTING
-                dirty_files, untracked_files = [], []
+                dirty_count, untracked_count = 0, 0
                 commit_info_data, ahead_behind, branch_name, worktree_last_error = (
                     _compute_status(worktree_path)
                 )
@@ -129,7 +129,7 @@ async def get_status(  # noqa: PLR0913
         else:
             single_time = (time.time() - single_start) * 1000
             state = GitstatusdState.STOPPED
-            dirty_files, untracked_files = [], []
+            dirty_count, untracked_count = 0, 0
             commit_info_data, ahead_behind, branch_name, worktree_last_error = (
                 _compute_status(worktree_path)
             )
@@ -151,8 +151,8 @@ async def get_status(  # noqa: PLR0913
                 name=worktree_path.name,
                 absolute_path=str(worktree_path),
                 branch_name=branch_name,
-                has_dirty_files=len(dirty_files) > 0,
-                has_untracked_files=len(untracked_files) > 0,
+                has_dirty_files=dirty_count > 0,
+                has_untracked_files=untracked_count > 0,
                 processing_time_ms=single_time,
                 last_updated_at=last_updated_at,
                 is_cached=is_cached,

@@ -31,7 +31,10 @@ class GitService:
 
     def get_repo_head_shorthand(self, path: Path) -> str | None:
         repo = self._gm.get_repo(path)
-        return None if repo.head_is_detached else (repo.head.shorthand or "")
+        if repo.head_is_detached:
+            return None
+        shorthand = repo.head.shorthand
+        return shorthand if shorthand else None
 
     def worktree_remove(self, path: Path, *, force: bool = False) -> None:
         self._gm.worktree_remove(str(path), force=force)
@@ -108,10 +111,10 @@ class GitstatusdService:
     def get_cached_status(
         self,
         path: Path,
-    ) -> tuple[list[str], list[str], datetime | None, bool]:
+    ) -> tuple[int, int, datetime | None, bool]:
         client = self._get_client(path)
         if not client:
-            return [], [], None, False
+            return 0, 0, None, False
         return client.get_cached_working_status()
 
     def is_running(self, path: Path) -> bool:

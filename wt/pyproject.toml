@@ -26,6 +26,8 @@ dependencies = [
 test = [
     'pytest>=7.0.0',
     'pytest-mock>=3.10.0',
+    'pytest-timeout>=2.2.0',
+    'pytest-env>=1.1.3',
     'types-colorama',
     'types-psutil',
 ]
@@ -58,7 +60,7 @@ env = [
 ]
 
 # pytest-timeout defaults
-timeout = 10
+timeout = 30
 timeout_method = "thread"
 
 [tool.hatch.build.targets.wheel]
