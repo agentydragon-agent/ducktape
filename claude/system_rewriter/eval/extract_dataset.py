@@ -2,7 +2,7 @@
 import asyncio
 import json
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 TRACE_DIR = Path.home() / ".claude-code-router" / "logs"
 OUTPUT_PATH = Path(__file__).parent / "data" / "dataset.jsonl"
@@ -11,14 +11,13 @@ BAD_MARKER = "<bad>"
 TOOLS_HEADER = "You can use the following tools without requiring user approval:"
 
 
-
 def list_trace_files() -> list[Path]:
     if not TRACE_DIR.exists():
         return []
     return [p for p in sorted(TRACE_DIR.glob("trace.*")) if p.is_file()]
 
 
-def find_last_user_text(msg: Any) -> Optional[str]:
+def find_last_user_text(msg: Any) -> str | None:
     if not isinstance(msg, dict):
         return None
     if msg.get("role") != "user":
@@ -30,7 +29,9 @@ def find_last_user_text(msg: Any) -> Optional[str]:
         texts = [
             part.get("text")
             for part in content
-            if isinstance(part, dict) and part.get("type") == "text" and isinstance(part.get("text"), str)
+            if isinstance(part, dict)
+            and part.get("type") == "text"
+            and isinstance(part.get("text"), str)
         ]
         return "\n".join(texts) if texts else None
     return None
@@ -72,12 +73,14 @@ async def process_file(p: Path) -> list[dict]:
                 last_text = find_last_user_text(last_msg)
                 if not last_text or BAD_MARKER not in last_text:
                     continue
-                out.append({
-                    "correlation_id": rec.get("correlationId"),
-                    "timestamp": rec.get("timestamp"),
-                    "anthropic_request": body,
-                    "log_file": str(p),
-                })
+                out.append(
+                    {
+                        "correlation_id": rec.get("correlationId"),
+                        "timestamp": rec.get("timestamp"),
+                        "anthropic_request": body,
+                        "log_file": str(p),
+                    }
+                )
     except OSError:
         return out
     return out
@@ -99,7 +102,12 @@ async def main():
             for dp in batch:
                 out.write(json.dumps(dp, ensure_ascii=False) + "\n")
                 count += 1
-    print(json.dumps({"event": "dataset_written", "count": count, "path": str(OUTPUT_PATH)}))
+    print(
+        json.dumps(
+            {"event": "dataset_written", "count": count, "path": str(OUTPUT_PATH)}
+        )
+    )
+
 
 if __name__ == "__main__":
     asyncio.run(main())

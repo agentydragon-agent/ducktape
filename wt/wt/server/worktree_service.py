@@ -5,9 +5,9 @@ import contextlib
 import inspect
 import logging
 import shutil
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable, Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import psutil
 import pygit2
@@ -22,6 +22,7 @@ from .git_manager import GitManager
 from .worktree_ids import wtid_to_path
 
 if TYPE_CHECKING:
+    from ..shared.configuration import Configuration
     from .github_client import GitHubInterface
 
 
@@ -45,7 +46,7 @@ class WorktreeService:
         self.git_manager = git_manager
         self.github = github
 
-    def list_worktrees(self, config) -> list[tuple[str, Path, bool]]:
+    def list_worktrees(self, config: "Configuration") -> list[tuple[str, Path, bool]]:
         """List all managed worktrees with their existence status."""
         worktree_infos = self.git_manager.list_worktrees()
         worktrees = []
@@ -56,7 +57,7 @@ class WorktreeService:
 
         return worktrees
 
-    def _is_managed_worktree(self, path: Path, config) -> bool:
+    def _is_managed_worktree(self, path: Path, config: "Configuration") -> bool:
         """Check if this worktree should be managed by our tool."""
         # Skip the main repo
         if path.resolve() == config.main_repo.resolve():
@@ -71,18 +72,18 @@ class WorktreeService:
             path.name.startswith(pattern) for pattern in config.hidden_worktree_patterns
         )
 
-    def _require_post_creation_script_valid(self, config) -> None:
+    def _require_post_creation_script_valid(self, config: "Configuration") -> None:
         if config.post_creation_script:
             script = config.post_creation_script
             if not script.exists() or not script.is_file():
                 raise FileNotFoundError(f"Post-creation script {script} is not a file")
 
-    def _wtid_to_path(self, config, wtid: "WorktreeID") -> Path:
+    def _wtid_to_path(self, config: "Configuration", wtid: "WorktreeID") -> Path:
         return wtid_to_path(config, wtid)
 
     def create_worktree(
         self,
-        config,
+        config: "Configuration",
         name: str,
         source_worktree: Path | None = None,
         source_branch: str | None = None,
@@ -130,13 +131,15 @@ class WorktreeService:
                     repo.checkout_head(strategy=cast(Any, pygit2).GIT_CHECKOUT_FORCE)
             else:
                 logger.info("Not hydrating worktree.")
-            return worktree_path
+            return cast(Path, worktree_path)
 
-    def get_worktree_path(self, config, name: str) -> Path:
+    def get_worktree_path(self, config: "Configuration", name: str) -> Path:
         """Get path for a worktree by name."""
         return config.worktrees_dir / name
 
-    async def remove_worktree(self, config, name: str, force: bool = False) -> None:
+    async def remove_worktree(
+        self, config: "Configuration", name: str, force: bool = False
+    ) -> None:
         """Remove a worktree by name and clean up its directory."""
         validate_worktree_name(name)
         worktree_path = self.get_worktree_path(config, name)
@@ -146,14 +149,14 @@ class WorktreeService:
         with contextlib.suppress(Exception):
             shutil.rmtree(worktree_path, ignore_errors=True)
 
-    def require_worktree_exists(self, config, name: str) -> Path:
+    def require_worktree_exists(self, config: "Configuration", name: str) -> Path:
         """Require that a worktree exists and return its path."""
         worktree_path = self.get_worktree_path(config, name)
         if not worktree_path.exists():
             raise RuntimeError(f"Worktree '{name}' does not exist")
         return worktree_path
 
-    def _hydrate_worktree(self, config, src: Path, dst: Path) -> None:
+    def _hydrate_worktree(self, config: "Configuration", src: Path, dst: Path) -> None:
         dst.mkdir(parents=True, exist_ok=True)
         get_copy_strategy(config.cow_method).copy(src, dst)
 
@@ -215,7 +218,9 @@ class WorktreeService:
         stdout_buf: list[str] = []
         stderr_buf: list[str] = []
 
-        async def _forward(stream, name):  # Streams stdout/stderr; expensive O(stream size)
+        async def _forward(
+            stream, name
+        ):  # Streams stdout/stderr; expensive O(stream size)
             chunk_size = 4096
             while True:
                 data = await stream.read(chunk_size)
@@ -290,4 +295,3 @@ class WorktreeService:
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 continue
         return procs
-

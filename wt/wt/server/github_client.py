@@ -7,7 +7,7 @@ No subprocess JSON parsing is used for API calls.
 import logging
 import os
 import subprocess
-from typing import Optional, Any
+from typing import Any
 
 from github import Github
 
@@ -41,7 +41,9 @@ class DisabledGitHubInterface:
         return None
 
 
-def get_github_token(token_arg: Optional[str] = None, *, timeout_secs: float = 10.0) -> Optional[str]:
+def get_github_token(
+    token_arg: str | None = None, *, timeout_secs: float = 10.0
+) -> str | None:
     """Obtain a GitHub token from explicit arg, env, or gh CLI.
 
     Separated for easy mocking in tests: patch wt.server.github_client.get_github_token.
@@ -63,7 +65,11 @@ def get_github_token(token_arg: Optional[str] = None, *, timeout_secs: float = 1
         )
         tok = (cp.stdout or "").strip()
         return tok or None
-    except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+    except (
+        FileNotFoundError,
+        subprocess.CalledProcessError,
+        subprocess.TimeoutExpired,
+    ):
         return None
     except (OSError, PermissionError) as e:
         # Unexpected system errors should be visible to operator

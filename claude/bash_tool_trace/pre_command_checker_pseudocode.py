@@ -15,16 +15,15 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Optional
 
 
 @dataclass
 class Analysis:
     has_heredoc: bool
-    heredoc_delim: Optional[str]
-    heredoc_body_span: Optional[tuple[int, int]]  # (start_idx, end_idx)
+    heredoc_delim: str | None
+    heredoc_body_span: tuple[int, int] | None  # (start_idx, end_idx)
     has_pipe: bool
-    last_stage: Optional[str]
+    last_stage: str | None
     last_stage_reads_stdin: bool
     reasons: list[str]  # e.g. ["heredoc", "pipe_last_reads_stdin:jq-stdin"]
 
@@ -35,15 +34,15 @@ class Decision:
     # If not allowed:
     reason_codes: list[str]
     message_to_llm: str  # human-friendly explanation with examples/fixes
-    offer_explicit_wrap: Optional[str]
+    offer_explicit_wrap: str | None
     offer_alt_commands: list[str]
-    require_opt_in_keyword: Optional[str]
+    require_opt_in_keyword: str | None
 
 
 HEREDOC_RE = re.compile(r"<<\s*('?)([A-Za-z0-9_]+)\1")
 
 
-def detect_heredoc(cmd: str) -> tuple[bool, Optional[str], Optional[tuple[int, int]]]:
+def detect_heredoc(cmd: str) -> tuple[bool, str | None, tuple[int, int] | None]:
     """Find <<'DELIM' or <<DELIM and its closing \nDELIM\n. Return (has, delim, body_span)."""
     m = HEREDOC_RE.search(cmd)
     if not m:
@@ -68,7 +67,7 @@ def split_last_stage(cmd: str) -> str:
     return cmd.split("|")[-1].strip()
 
 
-def last_stage_reads_stdin(stage: str) -> Optional[str]:
+def last_stage_reads_stdin(stage: str) -> str | None:
     """Return a tag for common stdin consumers, else None."""
     s = f" {stage} "  # pad for regex convenience
     if re.search(r"\spython\s+-\b", s):
@@ -76,7 +75,8 @@ def last_stage_reads_stdin(stage: str) -> Optional[str]:
     if re.search(r"\snode\s+-\b", s):
         return "node-dash"
     if re.search(r"\sjq(\s|$)", s) and not re.search(
-        r"\s(-f|\S+\.json(\.gz)?|\S+\.jsonl(\.gz)?)\b", s
+        r"\s(-f|\S+\.json(\.gz)?|\S+\.jsonl(\.gz)?)\b",
+        s,
     ):
         return "jq-stdin"
     # crude awk check: has awk but no obvious file operand

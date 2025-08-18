@@ -21,17 +21,16 @@ import asyncio
 import os
 import shutil
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager, contextmanager, ExitStack
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import claude_code_sdk
+import docker
 import pathspec
 from claude_code_sdk import ClaudeCodeOptions, ClaudeSDKClient
 from claude_code_sdk._internal.transport.subprocess_cli import SubprocessCLITransport
-
-import docker
 
 if TYPE_CHECKING:
     from claude_optimizer.core.models import SeedTask
@@ -96,7 +95,12 @@ class TaskClaude:
     """
 
     def __init__(
-        self, task_id: str, config, output_dir: Path, seed_task: "SeedTask", logger
+        self,
+        task_id: str,
+        config,
+        output_dir: Path,
+        seed_task: "SeedTask",
+        logger,
     ):
         self.task_id = task_id
         self.config = config
@@ -247,9 +251,7 @@ class TaskClaude:
         if hasattr(self.config, "wrapper_env") and self.config.wrapper_env:
             wrapper_env.update(self.config.wrapper_env)
         pass_keys = [
-            k
-            for k in wrapper_env.keys()
-            if k not in ("CLAUDE_CONTAINER_ID", "DOCKER_BINARY")
+            k for k in wrapper_env if k not in ("CLAUDE_CONTAINER_ID", "DOCKER_BINARY")
         ]
         if pass_keys:
             wrapper_env["CLAUDE_WRAPPER_PASS_ENV"] = ",".join(pass_keys)
@@ -295,14 +297,14 @@ class TaskClaude:
 
             # Try to read as text, skip binary files
             try:
-                content = file_path.read_text(encoding='utf-8')
+                content = file_path.read_text(encoding="utf-8")
                 files.append({"path": relative_path, "content": content})
             except UnicodeDecodeError:
                 # Skip binary files
                 self._logger.debug(
                     "Skipping binary file",
                     path=relative_path,
-                    size=file_path.stat().st_size
+                    size=file_path.stat().st_size,
                 )
                 continue
 
@@ -675,7 +677,7 @@ class TaskClaude:
                 self._container.remove(force=True)
             except Exception as e:
                 raise RuntimeError(
-                    f"Failed to remove container {self._container.id}: {e}"
+                    f"Failed to remove container {self._container.id}: {e}",
                 )
             finally:
                 self._container = None
@@ -704,7 +706,5 @@ class TaskClaude:
             self._logger.error(
                 "Error during cleanup",
                 error=str(e),
-                container_id=self._container.id if self._container else None
+                container_id=self._container.id if self._container else None,
             )
-
-

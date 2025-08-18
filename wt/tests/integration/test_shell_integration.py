@@ -23,7 +23,6 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Optional
 
 import pytest
 
@@ -41,7 +40,7 @@ def create_shell_script(wt_args: list[str]) -> str:
 def run_shell_script(
     script_content: str,
     cwd: str,
-    env: Optional[dict] = None,
+    env: dict | None = None,
 ) -> subprocess.CompletedProcess:
     """Execute a shell script with wt function setup and return the result."""
     # Explicit requirement checks

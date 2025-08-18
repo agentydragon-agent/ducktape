@@ -110,7 +110,8 @@ from .test_helpers import assert_tool_input_parsing, load_test_json
             "LS",
             "with_ignore_array",
             LSInput(
-                path=Path("/Users/user/test"), ignore=["*.md", "node_modules", "target"],
+                path=Path("/Users/user/test"),
+                ignore=["*.md", "node_modules", "target"],
             ),
         ),
         (

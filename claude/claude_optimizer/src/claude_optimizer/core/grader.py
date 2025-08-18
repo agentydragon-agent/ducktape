@@ -11,7 +11,9 @@ from openai.types.responses.response_function_tool_call_item import (
 )
 
 from claude_optimizer.config import OptimizerConfig
+from claude_optimizer.core.exceptions import ContextWindowExceededException
 from claude_optimizer.core.logging_openai_client import LoggingOpenAIModel
+from claude_optimizer.core.logging_utils import DualOutputLogging
 from claude_optimizer.core.models import (
     CodeResult,
     Criterion,
@@ -19,8 +21,6 @@ from claude_optimizer.core.models import (
     ScoreWithRationale,
 )
 from claude_optimizer.core.truncation_utils import TruncationManager
-from claude_optimizer.core.logging_utils import DualOutputLogging
-from claude_optimizer.core.exceptions import ContextWindowExceededException
 
 logger = DualOutputLogging.get_logger()
 
@@ -86,13 +86,13 @@ async def grade_code(
             {
                 "path": fi.path,
                 "size": len(fi.content),
-                "truncated": len(fi.content) > cfg.truncation.max_file_size_grading
+                "truncated": len(fi.content) > cfg.truncation.max_file_size_grading,
             }
             for fi in result.files
         ],
-        total_content_size=sum(len(fi.content) for fi in result.files)
+        total_content_size=sum(len(fi.content) for fi in result.files),
     )
-    
+
     # Truncate files for grading to avoid context length issues
     t_mgr = TruncationManager(cfg)
     truncated_files = []
@@ -100,19 +100,21 @@ async def grade_code(
         truncated_content = t_mgr.truncate_text(
             file_info.content,
             cfg.truncation.max_file_size_grading,
-            "... [truncated for grading]"
+            "... [truncated for grading]",
         )
-        truncated_files.append({
-            "path": file_info.path,
-            "content": truncated_content
-        })
-    
+        truncated_files.append(
+            {
+                "path": file_info.path,
+                "content": truncated_content,
+            }
+        )
+
     # Further truncate total files by token count
     truncated_files = t_mgr.truncate_files_by_tokens(
         truncated_files,
-        cfg.tokens.max_files_tokens
+        cfg.tokens.max_files_tokens,
     )
-    
+
     # Log after truncation
     logger.info(
         "Files after truncation for grader",
@@ -122,13 +124,13 @@ async def grade_code(
         files=[
             {
                 "path": f["path"],
-                "size": len(f["content"])
+                "size": len(f["content"]),
             }
             for f in truncated_files
         ],
-        total_content_size=sum(len(f["content"]) for f in truncated_files)
+        total_content_size=sum(len(f["content"]) for f in truncated_files),
     )
-    
+
     input: list[dict[str, Any]] = [
         {
             "role": "system",
@@ -159,16 +161,15 @@ async def grade_code(
                 agent_id=result.agent_id,
                 total_content_size=sum(len(f["content"]) for f in truncated_files),
                 file_count=len(truncated_files),
-                error=str(e)
+                error=str(e),
             )
             raise ContextWindowExceededException(
-                f"Context window exceeded for task {result.task_id}, agent {result.agent_id}: {str(e)}",
+                f"Context window exceeded for task {result.task_id}, agent {result.agent_id}: {e!s}",
                 task_id=result.task_id,
-                agent_id=result.agent_id
+                agent_id=result.agent_id,
             )
-        else:
-            # Re-raise other BadRequestErrors
-            raise
+        # Re-raise other BadRequestErrors
+        raise
 
     call: ResponseFunctionToolCall | ResponseFunctionToolCallItem | None = None
     for item in response.output:
@@ -183,7 +184,8 @@ async def grade_code(
     assert isinstance(call.arguments, str)
     axes = {
         facet: ScoreWithRationale(
-            score=data.get("score", 0), rationale=data.get("rationale", "")
+            score=data.get("score", 0),
+            rationale=data.get("rationale", ""),
         )
         for facet, data in json.loads(call.arguments).items()
     }

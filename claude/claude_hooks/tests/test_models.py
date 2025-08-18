@@ -66,7 +66,8 @@ def test_bash_input_minimal():
 
     bash_input = BashInput.model_validate(data)
     assert_that(
-        bash_input, has_properties(command="pwd", description=None, timeout=None),
+        bash_input,
+        has_properties(command="pwd", description=None, timeout=None),
     )
 
 
@@ -104,7 +105,8 @@ def test_post_tool_use_input():
 
     input_obj = PostToolInput.model_validate(data)
     assert_that(
-        input_obj, has_properties(tool_name="Write", tool_response={"success": True}),
+        input_obj,
+        has_properties(tool_name="Write", tool_response={"success": True}),
     )
 
 

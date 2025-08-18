@@ -19,7 +19,7 @@ import time
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from ..shared.configuration import Configuration, load_config
 from ..shared.protocol import (
@@ -38,7 +38,8 @@ from .discovery_scanner import DiscoveryScanner
 from .git_manager import GitManager
 from .github_client import GitHubInterface
 from .gitstatus_refresh import DebouncedGitstatusRefresh
-from .gitstatusd_client import (
+from .gitstatusd_listener import (
+    GitstatusdListener,
     GitStatusdProtocol,
     GitStatusdRequest,
     gitstatusd_response_to_legacy_format,
@@ -63,7 +64,7 @@ logger = logging.getLogger(__name__)
 
 def write_startup_handshake(
     success: bool,
-    error_message: Optional[str] = None,
+    error_message: str | None = None,
     *,
     redirect_after: bool = True,
     **extra_data,
@@ -275,7 +276,7 @@ class WtDaemon:
         # Managed state
         self.known_worktrees: dict[Path, DiscoveredWorktree] = {}
         self.worktree_index: WorktreeIndex | None = None
-        self.gitstatusd_clients: dict[WorktreeID, GitstatusdClient] = {}
+        self.gitstatusd_clients: dict[WorktreeID, GitstatusdListener] = {}
         self.pr_services: dict[WorktreeID, PRService] = {}
         self.git_watchers: dict[WorktreeID, DebouncedGitstatusRefresh] = {}
         self._state_lock = asyncio.Lock()
@@ -301,8 +302,8 @@ class WtDaemon:
             run_discovery_once=lambda: self._run_discovery_once(),
         )
         self.gitstatusd_service = GitstatusdService(
-            lambda p: (
-                self.gitstatusd_clients.get(self.known_worktrees[p].wtid)
+            get_client=lambda p: (
+                self.gitstatusd_clients.get(self.known_worktrees[p].wtid)  # type: ignore[return-value]
                 if p in self.known_worktrees
                 else None
             ),
@@ -310,7 +311,7 @@ class WtDaemon:
             ensure_watcher_for_path=lambda p: (
                 self._ensure_git_watcher(self.known_worktrees[p])
                 if p in self.known_worktrees
-                else None
+                else asyncio.sleep(0)
             ),
             list_watchers=lambda: list(self.git_watchers.values()),
             clear_watchers=lambda: self.git_watchers.clear(),
@@ -517,7 +518,7 @@ class WtDaemon:
             if worktree_info.wtid not in self.git_watchers:
                 await self._ensure_git_watcher(worktree_info)
             return
-        gs_client = GitstatusdClient(
+        gs_client = GitstatusdListener(
             worktree_info,
             self.config,
             self.git_manager,
@@ -640,7 +641,9 @@ class WtDaemon:
 
         except Exception:
             logger.exception("Error handling client request")
-            rid = request.id if ("request" in locals() and request) else uuid.UUID(int=0)
+            rid = (
+                request.id if ("request" in locals() and request) else uuid.UUID(int=0)
+            )
             with contextlib.suppress(Exception):
                 await self._send_response(
                     writer,

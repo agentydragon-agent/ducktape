@@ -118,7 +118,9 @@ async def worktree_create(  # noqa: PLR0913
         source_branch=src_branch,
     )
     # Update daemon registry and index immediately (index-only lookup pathway)
-    wt_info = DiscoveredWorktree(worktree_path, worktree_path.name, make_worktree_id(params.name))
+    wt_info = DiscoveredWorktree(
+        worktree_path, worktree_path.name, make_worktree_id(params.name)
+    )
     await coordinator.register_worktree(wt_info)
 
     if source_path:
@@ -176,7 +178,9 @@ async def worktree_delete(
         )
     await svc.remove_worktree(config, worktree_name, force=params.force)
 
-    wt_info = DiscoveredWorktree(worktree_path, worktree_name, make_worktree_id(worktree_name))
+    wt_info = DiscoveredWorktree(
+        worktree_path, worktree_name, make_worktree_id(worktree_name)
+    )
     await coordinator.unregister_worktree(wt_info)
     return WorktreeDeleteResult(
         wtid=params.wtid,

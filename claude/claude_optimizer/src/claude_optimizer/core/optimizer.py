@@ -51,6 +51,7 @@ from openai import OpenAI
 
 from claude_optimizer.config import OptimizerConfig
 from claude_optimizer.core.containerized_claude import TaskClaude
+from claude_optimizer.core.exceptions import ContextWindowExceededException
 from claude_optimizer.core.file_ops import should_exclude_file
 from claude_optimizer.core.grader import grade_code
 from claude_optimizer.core.jsonl_logger import JSONLLogger, safe_serialize
@@ -59,8 +60,13 @@ from claude_optimizer.core.logging_openai_client import (
     LoggingOpenAIModel,
 )
 from claude_optimizer.core.logging_utils import DualOutputLogging
-from claude_optimizer.core.message_formatter import log_message_summary
-from claude_optimizer.core.models import CodeResult, Criterion, FileInfo, GradedCode, SeedTask
+from claude_optimizer.core.models import (
+    CodeResult,
+    Criterion,
+    FileInfo,
+    GradedCode,
+    SeedTask,
+)
 from claude_optimizer.core.prompt_engineer import (
     FeedbackMode,
     FullRolloutsFeedbackProvider,
@@ -70,7 +76,7 @@ from claude_optimizer.core.prompt_engineer import (
 from claude_optimizer.core.summarizer import PatternSummarizer
 from claude_optimizer.core.truncation_utils import TruncationManager
 from claude_optimizer.core.yaml_loader import load_yaml_files
-from claude_optimizer.core.exceptions import ContextWindowExceededException
+
 # Database removed - using JSON files instead
 from claude_optimizer.plots import ScoreEvolutionTracker
 
@@ -191,7 +197,6 @@ def should_exclude_file(
     )
 
 
-
 async def run_claude_code(
     seed_task: SeedTask,
     system_prompt: str,
@@ -237,7 +242,9 @@ async def run_claude_code(
     # Use containerized Claude with automatic file collection
     # task_claude already imported above
 
-    async with TaskClaude(seed_task.id, cfg, output_dir, seed_task, task_logger) as claude:
+    async with TaskClaude(
+        seed_task.id, cfg, output_dir, seed_task, task_logger
+    ) as claude:
         # Write system prompt inside container (before PATH isolation)
         claude.setup_system_prompt(system_prompt)
 
@@ -365,7 +372,7 @@ async def optimize_prompts(
 
     # Generate initial prompt without any rollout data
     prev_reasoning, prev_function_call, current_prompt = await engineer.propose_prompt()
-    
+
     # Track prompts
     prompts_by_iteration = {0: current_prompt}
 
@@ -382,13 +389,10 @@ async def optimize_prompts(
         async with rollout_semaphore:
             # Create rollout directory structure
             rollout_dir = (
-                base_dir
-                / f"iter_{iteration:03d}"
-                / task.id
-                / f"agent_{rollout_id}"
+                base_dir / f"iter_{iteration:03d}" / task.id / f"agent_{rollout_id}"
             )
             rollout_dir.mkdir(parents=True, exist_ok=True)
-            
+
             # Create work subdirectory for Claude
             work_dir = rollout_dir / "work"
             work_dir.mkdir(parents=True, exist_ok=True)
@@ -402,14 +406,16 @@ async def optimize_prompts(
                 anthropic_log=anthropic_log,
                 cfg=cfg,
             )
-            
+
             # Save rollout data as JSON in agent directory
             rollout_data = {
                 "task_id": task.id,
                 "agent_id": rollout_id,
                 "iteration": iteration,
                 "timestamp": datetime.utcnow().isoformat(),
-                "messages": [asdict(msg) for msg in code_result.messages],  # Convert Message objects to dicts
+                "messages": [
+                    asdict(msg) for msg in code_result.messages
+                ],  # Convert Message objects to dicts
                 "files": [f.model_dump() for f in code_result.files],
             }
             rollout_json_path = rollout_dir / "rollout.json"
@@ -434,7 +440,7 @@ async def optimize_prompts(
                     task_id=e.task_id,
                     agent_id=e.agent_id,
                     iteration=iteration,
-                    error=str(e)
+                    error=str(e),
                 )
                 # Save error info to grading.json
                 grading_data = {
@@ -445,7 +451,7 @@ async def optimize_prompts(
                 }
                 with open(rollout_dir / "grading_error.json", "w") as f:
                     json.dump(grading_data, f, indent=2)
-                
+
                 # Return None to indicate this rollout should be excluded
                 return None
 
@@ -456,7 +462,7 @@ async def optimize_prompts(
                 "axes": {
                     name: {
                         "score": score_rat.score,
-                        "rationale": score_rat.rationale
+                        "rationale": score_rat.rationale,
                     }
                     for name, score_rat in grade.axes.items()
                 },
@@ -477,7 +483,7 @@ async def optimize_prompts(
                     total_cost = last_msg.total_cost_usd
                     duration_ms = last_msg.duration_ms
                     is_error = last_msg.is_error
-            
+
             # Add metrics to rollout data
             rollout_data["total_cost_usd"] = total_cost
             rollout_data["duration_ms"] = duration_ms
@@ -510,7 +516,6 @@ async def optimize_prompts(
         grading_criteria_count=len(criteria),
         initial_prompt=current_prompt,
     )
-
 
     for iteration in range(1, iterations + 1):
         iter_logger = logger.bind(iteration=iteration, total_iterations=iterations)
@@ -576,23 +581,23 @@ async def optimize_prompts(
         # Filter out None values (failed grading due to context window)
         all_rollouts = [r for r in all_rollouts_raw if r is not None]
         skipped_count = len(all_rollouts_raw) - len(all_rollouts)
-        
+
         if skipped_count > 0:
             iter_logger.warning(
                 "Some rollouts skipped due to context window issues",
                 total_rollouts=len(all_rollouts_raw),
                 successful_rollouts=len(all_rollouts),
-                skipped_rollouts=skipped_count
+                skipped_rollouts=skipped_count,
             )
-        
+
         # Check if we have any successful rollouts
         if not all_rollouts:
             iter_logger.error(
                 "No successful rollouts in this iteration",
-                iteration=iteration
+                iteration=iteration,
             )
             continue
-        
+
         iter_logger.info(
             "All rollouts completed",
             completed_rollouts=len(all_rollouts),
@@ -646,7 +651,7 @@ async def optimize_prompts(
             # Store new system prompt
             prompts_by_iteration[iteration + 1] = new_prompt
             current_prompt = new_prompt
-    
+
     # Save all prompts to a file
     with open(base_dir / "prompts.json", "w") as f:
         json.dump(prompts_by_iteration, f, indent=2)
@@ -682,7 +687,6 @@ Examples:
         help="Number of agent rollouts per seed task (default: %(default)s)",
     )
 
-
     parser.add_argument(
         "--max-parallel",
         type=int,
@@ -708,17 +712,19 @@ Examples:
     # Load tasks and criteria from YAML
     logger.info("Loading YAML files")
     yaml_loader = load_yaml_files(cfg.seeds_file, cfg.graders_file)
-    
+
     # Load tasks - yaml_loader.seeds_data already returns the right type
     seed_tasks = list(yaml_loader.seeds_data)
-    
+
     # Load grading criteria
     criteria = []
     for grader_data in yaml_loader.graders_data:
-        criteria.append(Criterion(
-            name=grader_data.id,
-            description=grader_data.description,
-        ))
+        criteria.append(
+            Criterion(
+                name=grader_data.id,
+                description=grader_data.description,
+            )
+        )
 
     run_prefix = datetime.utcnow().strftime("%Y-%m-%d-%H%M%S")
     base_dir = (Path("./agent_output") / run_prefix).resolve()

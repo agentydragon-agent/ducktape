@@ -1,15 +1,10 @@
+import contextlib
 import json
 import os
 import shutil
-
 import subprocess
-import sys
 import time
-import contextlib
 from pathlib import Path
-
-import pytest
-
 
 # pytest auto-loads fixtures from conftest.py in this directory
 # Access fixtures by parameter injection
@@ -17,6 +12,7 @@ import pytest
 
 def _wait_port(port: int, timeout: float = 15.0) -> bool:
     import socket
+
     deadline = time.time() + timeout
     while time.time() < deadline:
         try:
@@ -64,7 +60,11 @@ def _read_line(r, timeout: float) -> dict | None:
 
 if shutil.which("jupyter") is None or shutil.which("jupyter-mcp-server") is None:
     raise RuntimeError("jupyter and jupyter-mcp-server must be on PATH")
-def test_unsandbox_initialize_and_hello(tmp_path: Path, pick_free_port, send_line_json_fn, read_line_json_fn):
+
+
+def test_unsandbox_initialize_and_hello(
+    tmp_path: Path, pick_free_port, send_line_json_fn, read_line_json_fn
+):
     ws = tmp_path / "ws"
     ws.mkdir(parents=True)
     nb_rel = Path(".mcp/test.ipynb")
@@ -78,12 +78,12 @@ def test_unsandbox_initialize_and_hello(tmp_path: Path, pick_free_port, send_lin
                         "name": "python3",
                         "display_name": "Python 3",
                         "language": "python",
-                    }
+                    },
                 },
                 "nbformat": 4,
                 "nbformat_minor": 5,
-            }
-        )
+            },
+        ),
     )
 
     port = pick_free_port() if callable(pick_free_port) else pick_free_port
@@ -154,9 +154,13 @@ def test_unsandbox_initialize_and_hello(tmp_path: Path, pick_free_port, send_lin
             read_line = read_line_json_fn
             send_line(mcp.stdin, init)
             resp = read_line(mcp.stdout, 10.0)
-            assert resp and resp.get("id") == 1 and "result" in resp, f"initialize failed: {resp}\nstderr:\n{(mcp.stderr.read() or b'').decode('utf-8', 'ignore')[-2000:]}"
+            assert resp and resp.get("id") == 1 and "result" in resp, (
+                f"initialize failed: {resp}\nstderr:\n{(mcp.stderr.read() or b'').decode('utf-8', 'ignore')[-2000:]}"
+            )
 
-            send_line(mcp.stdin, {"jsonrpc": "2.0", "method": "notifications/initialized"})
+            send_line(
+                mcp.stdin, {"jsonrpc": "2.0", "method": "notifications/initialized"}
+            )
             time.sleep(0.2)
 
             call = {
@@ -170,7 +174,9 @@ def test_unsandbox_initialize_and_hello(tmp_path: Path, pick_free_port, send_lin
             }
             send_line(mcp.stdin, call)
             resp2 = read_line(mcp.stdout, 20.0)
-            assert resp2 and resp2.get("id") == 2 and "result" in resp2, f"tool call failed: {resp2}\nstderr:\n{(mcp.stderr.read() or b'').decode('utf-8','ignore')[-2000:]}"
+            assert resp2 and resp2.get("id") == 2 and "result" in resp2, (
+                f"tool call failed: {resp2}\nstderr:\n{(mcp.stderr.read() or b'').decode('utf-8', 'ignore')[-2000:]}"
+            )
 
             result = resp2["result"]
             text_chunks = []
@@ -191,9 +197,12 @@ def test_unsandbox_initialize_and_hello(tmp_path: Path, pick_free_port, send_lin
             assert "hello world" in joined
         finally:
             with contextlib.suppress(Exception):
-                mcp.terminate(); mcp.kill()
+                mcp.terminate()
+                mcp.kill()
     finally:
         with contextlib.suppress(Exception):
-            js.terminate(); js.kill()
+            js.terminate()
+            js.kill()
         with contextlib.suppress(Exception):
-            js_out.close(); js_err.close()
+            js_out.close()
+            js_err.close()

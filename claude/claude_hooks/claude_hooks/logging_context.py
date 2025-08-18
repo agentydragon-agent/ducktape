@@ -6,7 +6,8 @@ from uuid import UUID
 
 # Context variables for storing hook execution context
 hook_invocation_id: ContextVar[str | None] = ContextVar(
-    "hook_invocation_id", default=None,
+    "hook_invocation_id",
+    default=None,
 )
 hook_name: ContextVar[str | None] = ContextVar("hook_name", default=None)
 hook_session_id: ContextVar[UUID | None] = ContextVar("hook_session_id", default=None)

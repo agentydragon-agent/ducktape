@@ -2,24 +2,21 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-from collections.abc import Awaitable, Iterable
+from collections.abc import Awaitable, Callable, Iterable
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable, Protocol
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from ..shared.protocol import WorktreeID
     from .gitstatus_refresh import DebouncedGitstatusRefresh
     from .worktree_index import WorktreeIndex
 
-    class GitstatusdClientProto(Protocol):
-        is_running: bool
-        def get_cached_working_status(self) -> tuple[list[str], list[str], datetime | None, bool]: ...
-
 from ..shared.github_models import PRInfo
 from ..shared.protocol import DaemonHealth
 from .git_manager import GitManager
 from .git_manager import WorktreeInfo as GMWorktreeInfo
+from .gitstatusd_listener import GitstatusdListener
 from .pr_service import PRService
 from .repo_status import RepoStatus
 from .types import DiscoveredWorktree
@@ -93,7 +90,7 @@ class WorktreeIndexService:
 class GitstatusdService:
     def __init__(
         self,
-        get_client: Callable[[Path], GitstatusdClientProto | None],
+        get_client: Callable[[Path], GitstatusdListener | None],
         iter_client_paths: Callable[[], Iterable[Path]] | None = None,
         ensure_watcher_for_path: Callable[[Path], Awaitable[object]] | None = None,
         list_watchers: Callable[[], list[DebouncedGitstatusRefresh]] | None = None,

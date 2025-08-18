@@ -25,7 +25,8 @@ def test_precommit_autofix_on_badly_formatted_python(integration_env):
     integration_env.write_file("test.py", bad_code)
 
     hook_input = integration_env.build_post_tool_write_input(
-        "test.py", content=bad_code,
+        "test.py",
+        content=bad_code,
     )
 
     # Execute hook
@@ -50,7 +51,8 @@ def use_foo():
     integration_env.write_file("imports.py", code_with_foo)
 
     hook_input = integration_env.build_post_tool_write_input(
-        "imports.py", content=code_with_foo,
+        "imports.py",
+        content=code_with_foo,
     )
 
     # Execute hook
@@ -69,7 +71,8 @@ def test_precommit_autofix_skips_excluded_files(integration_env):
     integration_env.write_file("x/experimental.py", bad_code)
 
     hook_input = integration_env.build_post_tool_write_input(
-        "x/experimental.py", content=bad_code,
+        "x/experimental.py",
+        content=bad_code,
     )
 
     # Execute hook
@@ -86,7 +89,8 @@ def test_precommit_autofix_handles_non_python_files(integration_env):
     integration_env.write_file("config.json", bad_json)
 
     hook_input = integration_env.build_post_tool_write_input(
-        "config.json", content=bad_json,
+        "config.json",
+        content=bad_json,
     )
 
     # Execute hook
@@ -142,7 +146,8 @@ def test_hook_error_handling(integration_env):
 
     # Create hook input with invalid working directory to trigger an error
     hook_input = integration_env.build_post_tool_write_input(
-        "/nonexistent/path/test.py", test_code,
+        "/nonexistent/path/test.py",
+        test_code,
     )
 
     # Execute hook - should handle error gracefully
@@ -168,7 +173,8 @@ def test_workflow_simulation(integration_env):
         integration_env.write_file(filename, content)
 
         hook_input = integration_env.build_post_tool_write_input(
-            filename, content=content,
+            filename,
+            content=content,
         )
 
         # Execute hook

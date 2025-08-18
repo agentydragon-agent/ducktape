@@ -1,7 +1,6 @@
 from __future__ import annotations
-from typing import Any
 
-from .plugins import PluginIO
+from typing import Any
 
 
 def wt_commands() -> dict[str, object]:

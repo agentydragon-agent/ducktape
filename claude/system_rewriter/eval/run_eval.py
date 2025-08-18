@@ -10,7 +10,7 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import tiktoken  # type: ignore
 from jinja2 import Environment, FileSystemLoader, select_autoescape
@@ -35,8 +35,8 @@ REWRITE_APPLY = Path(__file__).parent / "system_rewrite_apply.js"
 
 @dataclass
 class Sample:
-    correlation_id: Optional[str]
-    timestamp: Optional[int]
+    correlation_id: str | None
+    timestamp: int | None
     anthropic_request: dict[str, Any]
 
 
@@ -56,7 +56,10 @@ def parse_args():
         ),
     )
     ap.add_argument(
-        "--n", type=int, default=None, help="Limit number of samples to process",
+        "--n",
+        type=int,
+        default=None,
+        help="Limit number of samples to process",
     )
     ap.add_argument(
         "--concurrency",
@@ -137,7 +140,8 @@ def rewrite_system_with_template(system_text: str, template_path: Path) -> str:
 
 
 def anthro_to_openai_messages(
-    body: dict[str, Any], new_system_text: Optional[str],
+    body: dict[str, Any],
+    new_system_text: str | None,
 ) -> list[dict[str, Any]]:
     """Translate Anthropic messages into OpenAI Chat format, preserving:
     - assistant tool_calls (from Anthropic tool_use parts)
@@ -247,7 +251,9 @@ def anthro_to_openai_messages(
                         else:
                             try:
                                 tool_text = json.dumps(
-                                    tcontent, ensure_ascii=False, sort_keys=True,
+                                    tcontent,
+                                    ensure_ascii=False,
+                                    sort_keys=True,
                                 )
                             except Exception as e:
                                 raise RuntimeError(
@@ -354,8 +360,8 @@ def parse_grade_from_responses(resp_obj) -> dict[str, Any]:
 
 async def run_eval(
     template_path: Path,
-    base_out: Optional[Path],
-    n_limit: Optional[int] = None,
+    base_out: Path | None,
+    n_limit: int | None = None,
     concurrency: int = 32,
 ):
     # Determine output directory
@@ -376,6 +382,7 @@ async def run_eval(
     out_dir.mkdir(parents=True, exist_ok=True)
     # copy template in
     from contextlib import suppress
+
     with suppress(Exception):
         shutil.copyfile(template_path, out_dir / "template.txt")
     dataset = await read_dataset()
@@ -409,7 +416,7 @@ async def run_eval(
     )
     sem = asyncio.Semaphore(max(1, int(concurrency)))
 
-    async def process(item: Sample) -> tuple[Optional[dict], Optional[dict]]:
+    async def process(item: Sample) -> tuple[dict | None, dict | None]:
         async with sem:
             print(json.dumps({"event": "process_start", "cid": item.correlation_id}))
             # 1) Rewrite system via JS apply script
@@ -463,7 +470,8 @@ async def run_eval(
                     )
                 return None, None
             samp_max = max(
-                1, min(PER_OUTPUT_CAP, MAX_TOTAL_TOKENS - in_tokens - SAFETY_TOKENS),
+                1,
+                min(PER_OUTPUT_CAP, MAX_TOTAL_TOKENS - in_tokens - SAFETY_TOKENS),
             )
             tools_param = item.anthropic_request.get("tools")
 
@@ -473,7 +481,8 @@ async def run_eval(
                         return None
                     # Normalize to a bare function dict first
                     if t.get("type") == "function" and isinstance(
-                        t.get("function"), dict,
+                        t.get("function"),
+                        dict,
                     ):
                         fn = dict(t["function"])  # shallow copy
                     else:
@@ -834,12 +843,14 @@ async def run_eval(
 
         # Collect rows
         rows: list[dict[str, Any]] = []
-        def _prev_asst_idx(msgs: list[dict[str, Any]]) -> Optional[int]:
-            last_idx: Optional[int] = None
+
+        def _prev_asst_idx(msgs: list[dict[str, Any]]) -> int | None:
+            last_idx: int | None = None
             for i in range(max(0, len(msgs) - 1)):
                 if isinstance(msgs[i], dict) and msgs[i].get("role") == "assistant":
                     last_idx = i
             return last_idx
+
         summary: dict[str, Any] = {}
         try:
             with (report_base / "summary.json").open("r", encoding="utf-8") as sf:
@@ -866,22 +877,24 @@ async def run_eval(
                         last_three = msgs[start:idx]
                         bad_branch = msgs[idx:]
                     alt = srec.get("new_assistant_message") or {}
-                    grade = (grades_map.get(cid) or {})
-                    rows.append({
-                        "correlation_id": cid,
-                        "timestamp": srec.get("timestamp"),
-                        "last_three": last_three,
-                        "bad_branch": bad_branch,
-                        "alternative": alt,
-                        "grade": grade,
-                    })
+                    grade = grades_map.get(cid) or {}
+                    rows.append(
+                        {
+                            "correlation_id": cid,
+                            "timestamp": srec.get("timestamp"),
+                            "last_three": last_three,
+                            "bad_branch": bad_branch,
+                            "alternative": alt,
+                            "grade": grade,
+                        }
+                    )
         except FileNotFoundError:
             pass
 
         # Jinja2 template
         env = Environment(
             loader=FileSystemLoader(str(Path(__file__).parent / "templates")),
-            autoescape=select_autoescape(["html", "xml"]), 
+            autoescape=select_autoescape(["html", "xml"]),
         )
         template = env.get_template("report.html.j2")
         html_text = template.render(rows=rows, summary=summary)

@@ -6,8 +6,6 @@ import sys
 import time
 from pathlib import Path
 
-import pytest
-
 # Fixtures are provided by local conftest.py; use by parameter injection
 
 
@@ -17,7 +15,10 @@ if sys.platform == "darwin" and shutil.which("sandbox-exec") is None:
 if shutil.which("jupyter") is None or shutil.which("jupyter-mcp-server") is None:
     raise RuntimeError("jupyter and jupyter-mcp-server must be on PATH")
 
-def test_wrapper_unsandbox_initialize_and_hello(tmp_path: Path, pick_free_port, send_line_json_fn, read_line_json_fn):
+
+def test_wrapper_unsandbox_initialize_and_hello(
+    tmp_path: Path, pick_free_port, send_line_json_fn, read_line_json_fn
+):
     ws = tmp_path / "ws"
     ws.mkdir(parents=True)
     port = pick_free_port() if callable(pick_free_port) else pick_free_port
@@ -39,7 +40,13 @@ def test_wrapper_unsandbox_initialize_and_hello(tmp_path: Path, pick_free_port, 
         "--no-kernel-sandbox",
     ]
 
-    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
+    proc = subprocess.Popen(
+        cmd,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=env,
+    )
     try:
         init = {
             "jsonrpc": "2.0",
@@ -55,9 +62,13 @@ def test_wrapper_unsandbox_initialize_and_hello(tmp_path: Path, pick_free_port, 
         read_line_json = read_line_json_fn
         send_line_json(proc.stdin, init)
         resp = read_line_json(proc.stdout, 15.0)
-        assert resp and resp.get("id") == 1 and "result" in resp, f"initialize failed: {resp}\nstderr:\n{(proc.stderr.read() or b'').decode('utf-8','ignore')[-2000:]}"
+        assert resp and resp.get("id") == 1 and "result" in resp, (
+            f"initialize failed: {resp}\nstderr:\n{(proc.stderr.read() or b'').decode('utf-8', 'ignore')[-2000:]}"
+        )
 
-        send_line_json(proc.stdin, {"jsonrpc": "2.0", "method": "notifications/initialized"})
+        send_line_json(
+            proc.stdin, {"jsonrpc": "2.0", "method": "notifications/initialized"}
+        )
         time.sleep(0.3)
 
         call = {
@@ -71,13 +82,17 @@ def test_wrapper_unsandbox_initialize_and_hello(tmp_path: Path, pick_free_port, 
         }
         send_line_json(proc.stdin, call)
         resp2 = read_line_json(proc.stdout, 20.0)
-        assert resp2 and resp2.get("id") == 2 and "result" in resp2, f"tool call failed: {resp2}\nstderr:\n{(proc.stderr.read() or b'').decode('utf-8','ignore')[-2000:]}"
+        assert resp2 and resp2.get("id") == 2 and "result" in resp2, (
+            f"tool call failed: {resp2}\nstderr:\n{(proc.stderr.read() or b'').decode('utf-8', 'ignore')[-2000:]}"
+        )
 
         result = resp2["result"]
         text = json.dumps(result)
         assert "hello world" in text
     finally:
         try:
-            proc.terminate(); proc.kill(); proc.wait(timeout=5)
+            proc.terminate()
+            proc.kill()
+            proc.wait(timeout=5)
         except Exception:
             pass

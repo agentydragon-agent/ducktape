@@ -20,7 +20,7 @@ class PromptEngineerConfig(BaseModel):
     reasoning_effort: str = Field(description="Reasoning effort level")
     feedback_mode: str = Field(
         default="full_rollouts",
-        description="Feedback mode: full_rollouts, summary, or stats_only"
+        description="Feedback mode: full_rollouts, summary, or stats_only",
     )
 
 

@@ -3,6 +3,7 @@ import os
 import select
 import socket
 import time
+
 import pytest
 
 
@@ -18,6 +19,7 @@ def send_line_json_fn():
     def _send_line_json(w, obj: dict) -> None:
         w.write((json.dumps(obj) + "\n").encode("utf-8"))
         w.flush()
+
     return _send_line_json
 
 
@@ -49,6 +51,7 @@ def read_line_json_fn():
             return json.loads(bytes(buf).decode("utf-8", errors="ignore").rstrip("\r"))
         except Exception:
             return None
+
     return _read_line_json
 
 
@@ -56,21 +59,29 @@ def read_line_json_fn():
 def collect_mcp_logs_fn():
     def _collect() -> tuple[str, str]:
         import glob
+
         out = err = ""
         try:
-            for path in sorted(glob.glob('/tmp/sjmcp-*/mcp_stdout.log'))[-3:]:
+            for path in sorted(glob.glob("/tmp/sjmcp-*/mcp_stdout.log"))[-3:]:
                 try:
-                    with open(path, 'rb') as fh:
-                        out += f"\n== {path} ==\n" + fh.read().decode('utf-8','ignore')[-4000:]
+                    with open(path, "rb") as fh:
+                        out += (
+                            f"\n== {path} ==\n"
+                            + fh.read().decode("utf-8", "ignore")[-4000:]
+                        )
                 except OSError:
                     pass
-            for path in sorted(glob.glob('/tmp/sjmcp-*/mcp_stderr.log'))[-3:]:
+            for path in sorted(glob.glob("/tmp/sjmcp-*/mcp_stderr.log"))[-3:]:
                 try:
-                    with open(path, 'rb') as fh:
-                        err += f"\n== {path} ==\n" + fh.read().decode('utf-8','ignore')[-4000:]
+                    with open(path, "rb") as fh:
+                        err += (
+                            f"\n== {path} ==\n"
+                            + fh.read().decode("utf-8", "ignore")[-4000:]
+                        )
                 except OSError:
                     pass
         except OSError:
             pass
         return out, err
+
     return _collect

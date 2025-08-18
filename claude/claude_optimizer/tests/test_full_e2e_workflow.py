@@ -6,7 +6,6 @@ from unittest.mock import Mock
 
 import pytest
 import yaml
-
 from claude_optimizer.core.yaml_loader import YamlLoader
 from claude_optimizer.database.models import (
     GraderFacetResult,

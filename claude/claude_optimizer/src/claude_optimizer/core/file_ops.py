@@ -5,12 +5,14 @@ import fnmatch
 from pathlib import Path
 
 from claude_optimizer.config import OptimizerConfig
-from claude_optimizer.core.truncation_utils import TruncationManager
 from claude_optimizer.core.models import FileInfo
+from claude_optimizer.core.truncation_utils import TruncationManager
 
 
 def gather_agent_files(
-    work_dir: Path, cfg: OptimizerConfig, trunc_mgr: TruncationManager | None = None,
+    work_dir: Path,
+    cfg: OptimizerConfig,
+    trunc_mgr: TruncationManager | None = None,
 ) -> list[FileInfo]:
     files_info: list[FileInfo] = []
     t_mgr = trunc_mgr or TruncationManager(cfg)
@@ -39,7 +41,9 @@ def gather_agent_files(
 
 
 def should_exclude_file(
-    relative_path: str, filename: str, cfg: OptimizerConfig,
+    relative_path: str,
+    filename: str,
+    cfg: OptimizerConfig,
 ) -> bool:
     return any(
         fnmatch.fnmatch(relative_path, pattern) or fnmatch.fnmatch(filename, pattern)

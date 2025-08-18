@@ -81,6 +81,7 @@ def test_real_program_workflow(real_temp_repo, real_env):
 
         # Sanity: ensure git no longer lists feature2 worktree after removal
         from wt.shared.git_utils import git_run
+
         git_list = git_run(["worktree", "list"], cwd=real_temp_repo)
         assert str(worktree2_path) not in git_list.stdout.decode(), (
             "feature2 still listed in main repo after removal"

@@ -88,6 +88,7 @@ class TruncationManager:
 
         def count_files_tokens(files):
             from claude_optimizer.core.models import FileInfo
+
             if files and isinstance(files[0], FileInfo):
                 files_json = json.dumps([fi.model_dump() for fi in files], indent=2)
             else:

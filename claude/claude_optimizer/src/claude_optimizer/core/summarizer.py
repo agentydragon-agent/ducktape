@@ -55,7 +55,7 @@ class PatternSummarizer(FeedbackProvider):
         )
 
         for i, graded_code in enumerate(rollouts):
-            task_summary = f"Task {i+1}:\n"
+            task_summary = f"Task {i + 1}:\n"
             task_summary += f"  Overall Score: {graded_code.grade.overall_score}/10\n"
             task_summary += f"  Key Issues: {graded_code.grade.overall_rationale}\n"
 
@@ -74,7 +74,7 @@ class PatternSummarizer(FeedbackProvider):
             task_summary += f"  Files: {json.dumps(truncated_files, indent=2)}\n"
 
             potential_tokens = self._count_tokens(
-                "\n".join([*rollout_summaries, task_summary])
+                "\n".join([*rollout_summaries, task_summary]),
             )
             if potential_tokens > remaining_tokens:
                 removed_count = original_count - len(rollout_summaries)
@@ -97,7 +97,7 @@ class PatternSummarizer(FeedbackProvider):
             final_tokens=final_tokens,
             included_rollouts=len(rollout_summaries),
             excluded_rollouts=original_count - len(rollout_summaries),
-            context_utilization=f"{(final_tokens/self.model.max_context_tokens)*100:.1f}%",
+            context_utilization=f"{(final_tokens / self.model.max_context_tokens) * 100:.1f}%",
         )
         return extract_text_from_openai_response(
             self.model.responses_create(
@@ -107,7 +107,7 @@ class PatternSummarizer(FeedbackProvider):
                 ],
                 tools=[],
                 tool_choice="auto",
-            )
+            ),
         )
         # TODO: store, log
 

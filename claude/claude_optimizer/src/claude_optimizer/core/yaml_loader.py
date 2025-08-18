@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel
 
 from claude_optimizer.core.logging_utils import DualOutputLogging
 from claude_optimizer.core.models import SeedTask
@@ -81,4 +81,3 @@ def load_yaml_files(seeds_yaml_path: str, graders_yaml_path: str) -> YamlLoader:
         seeds_yaml_path=Path(seeds_yaml_path),
         graders_yaml_path=Path(graders_yaml_path),
     )
-

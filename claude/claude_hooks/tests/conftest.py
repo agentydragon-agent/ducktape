@@ -261,7 +261,9 @@ def integration_env(precommit_repo, claude_config_dir, xdg_env, monkeypatch):
             )
 
         def build_post_tool_write_input(
-            self, file_path: str, content: str,
+            self,
+            file_path: str,
+            content: str,
         ) -> PostToolInput:
             """Create a PostToolInput for Write operations."""
             full_path = (

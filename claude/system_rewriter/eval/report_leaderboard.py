@@ -8,15 +8,16 @@ leaderboard.
 
 Defaults to text output sorted by mean score desc.
 """
+
 from __future__ import annotations
 
 import argparse
 import hashlib
 import json
 import sys
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable
 
 
 @dataclass
@@ -43,7 +44,7 @@ def load_known_templates(templates_dir: Path) -> dict[str, str]:
     if base_tpl.exists():
         try:
             mapping[sha1_text(base_tpl.read_text(encoding="utf-8"))] = str(
-                base_tpl
+                base_tpl,
             )
         except Exception:
             pass
@@ -91,11 +92,13 @@ def load_row(run_dir: Path, known: dict[str, str]) -> Row | None:
     except Exception:
         thash = "?"
     label = known.get(thash, thash[:8])
+
     def _f(key: str, default: float = 0.0) -> float:
         try:
             return float(summ.get(key, default))
         except Exception:
             return default
+
     tooling = summ.get("tooling") or {}
     with_tools = 0.0
     try:
@@ -167,19 +170,21 @@ def parse_args() -> argparse.Namespace:
 def format_text(rows: list[Row]) -> str:
     out_lines = []
     for r in rows:
-        tools_pct = f"{r.with_tools_pct*100:.1f}%"
+        tools_pct = f"{r.with_tools_pct * 100:.1f}%"
         out_lines.append(
-            f"{r.mean:.2f} ± {r.ci95:.2f} (n={r.n:>3}, tools={tools_pct:>6})  run={r.run}  prompt={r.template_label}"
+            f"{r.mean:.2f} ± {r.ci95:.2f} (n={r.n:>3}, tools={tools_pct:>6})  run={r.run}  prompt={r.template_label}",
         )
     return "\n".join(out_lines)
 
 
 def format_md(rows: list[Row]) -> str:
-    header = "| mean | ci95 | n | tools% | run | template |\n|---:|---:|---:|---:|:---|:---|"
+    header = (
+        "| mean | ci95 | n | tools% | run | template |\n|---:|---:|---:|---:|:---|:---|"
+    )
     lines = [header]
     for r in rows:
         lines.append(
-            f"| {r.mean:.2f} | {r.ci95:.2f} | {r.n} | {r.with_tools_pct*100:.1f}% | {r.run} | {r.template_label} |"
+            f"| {r.mean:.2f} | {r.ci95:.2f} | {r.n} | {r.with_tools_pct * 100:.1f}% | {r.run} | {r.template_label} |",
         )
     return "\n".join(lines)
 
@@ -236,7 +241,7 @@ def main() -> int:
                     for r in rows
                 ],
                 ensure_ascii=False,
-            )
+            ),
         )
     elif args.format == "md":
         print(format_md(rows))

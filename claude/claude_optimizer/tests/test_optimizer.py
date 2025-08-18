@@ -9,6 +9,10 @@ from unittest.mock import Mock, patch
 import pytest
 from claude_optimizer.config import OptimizerConfig
 from claude_optimizer.core.jsonl_logger import JSONLLogger, safe_serialize
+from claude_optimizer.core.logging_openai_client import (
+    LoggingOpenAIClient,
+    LoggingOpenAIModel,
+)
 from claude_optimizer.core.message_formatter import (
     AssistantMessage,
     SystemMessage,
@@ -22,7 +26,6 @@ from claude_optimizer.core.models import (
     GradedCode,
     ScoreWithRationale,
 )
-from claude_optimizer.core.logging_openai_client import LoggingOpenAIClient, LoggingOpenAIModel
 from claude_optimizer.core.optimizer import (
     ProcessingMode,
 )
@@ -68,7 +71,8 @@ class TestPatternSummarizer:
                 axes={
                     "type_safety": ScoreWithRationale(score=8, rationale="Good typing"),
                     "robustness": ScoreWithRationale(
-                        score=6, rationale="Needs error handling",
+                        score=6,
+                        rationale="Needs error handling",
                     ),
                 },
             ),
@@ -139,7 +143,9 @@ class TestPromptEngineer:
         """Test PromptEngineer initialization with full rollouts mode."""
         cfg = TestPatternSummarizer().mock_test_config()
         engineer = PromptEngineer(
-            cfg, JSONLLogger(Path("/dev/null")), ProcessingMode.FULL_ROLLOUTS,
+            cfg,
+            JSONLLogger(Path("/dev/null")),
+            ProcessingMode.FULL_ROLLOUTS,
         )
 
         assert len(engineer._turns) == 0
@@ -153,7 +159,9 @@ class TestPromptEngineer:
         """Test PromptEngineer initialization with summary mode."""
         cfg = TestPatternSummarizer().mock_test_config()
         engineer = PromptEngineer(
-            cfg, JSONLLogger(Path("/dev/null")), ProcessingMode.SUMMARY,
+            cfg,
+            JSONLLogger(Path("/dev/null")),
+            ProcessingMode.SUMMARY,
         )
 
         assert engineer._processing_mode == ProcessingMode.SUMMARY
@@ -190,7 +198,8 @@ class TestPromptEngineer:
                 7.0,
                 {
                     "architecture": ScoreWithRationale(
-                        score=8, rationale="Clean separation",
+                        score=8,
+                        rationale="Clean separation",
                     ),
                 },
             ),
@@ -199,7 +208,8 @@ class TestPromptEngineer:
                 9.0,
                 {
                     "correctness": ScoreWithRationale(
-                        score=10, rationale="Perfect implementation",
+                        score=10,
+                        rationale="Perfect implementation",
                     ),
                 },
             ),
@@ -380,8 +390,15 @@ class TestHelperFunctions:
 
     def test_logging_openai_model(self):
         """Test LoggingOpenAIModel wraps OpenAI client and logs."""
-        client = LoggingOpenAIClient(openai_client=Mock(), jsonl_logger=JSONLLogger(Path("/dev/null")))
-        model = LoggingOpenAIModel(openai_client=client, model="o3", context_window_tokens=8192, reasoning_effort="high")
+        client = LoggingOpenAIClient(
+            openai_client=Mock(), jsonl_logger=JSONLLogger(Path("/dev/null"))
+        )
+        model = LoggingOpenAIModel(
+            openai_client=client,
+            model="o3",
+            context_window_tokens=8192,
+            reasoning_effort="high",
+        )
 
         # Ensure attributes are set correctly
         assert model.model == "o3"
@@ -435,7 +452,8 @@ class TestMessageLogging:
 
             # Verify logger was called correctly
             mock_logger.bind.assert_called_with(
-                agent_id=1, message_type="SystemMessage",
+                agent_id=1,
+                message_type="SystemMessage",
             )
 
     def test_log_assistant_message_with_tools(self, caplog):
@@ -460,7 +478,9 @@ class TestMessageLogging:
 
 # Helper functions for creating mock objects
 def create_mock_graded_code(
-    task: str, overall_score: float, axes: dict[str, ScoreWithRationale],
+    task: str,
+    overall_score: float,
+    axes: dict[str, ScoreWithRationale],
 ) -> GradedCode:
     """Create a mock GradedCode object for testing."""
     return GradedCode(
@@ -497,7 +517,9 @@ def create_mock_pattern_response(text: str):
         role="assistant",
         content=[
             ResponseOutputText.model_construct(
-                type="output_text", text=text, annotations=[],
+                type="output_text",
+                text=text,
+                annotations=[],
             ),
         ],
         id="msg_1",

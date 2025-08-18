@@ -7,7 +7,6 @@ from unittest.mock import Mock
 
 import pytest
 import yaml
-
 from claude_optimizer.core.yaml_loader import YamlLoader
 from claude_optimizer.database.models import (
     GradingCriteria,
@@ -127,7 +126,9 @@ class TestYamlDatabaseSync:
         assert "type_safety_test" in names
         assert "code_quality_test" in names
 
-        type_safety = session.query(GradingCriteria).filter_by(name="type_safety_test").first()
+        type_safety = (
+            session.query(GradingCriteria).filter_by(name="type_safety_test").first()
+        )
         assert "type annotations" in type_safety.evaluation_criteria
         assert type_safety.is_active is True
 

@@ -3,7 +3,7 @@ import argparse
 import difflib
 import json
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 TRACE_DIR = Path.home() / ".claude-code-router" / "logs"
 
@@ -20,7 +20,7 @@ def load_samples(run_dir: Path) -> list[dict[str, Any]]:
     return out
 
 
-def find_ccr_openai_request(correlation_id: str) -> Optional[dict[str, Any]]:
+def find_ccr_openai_request(correlation_id: str) -> dict[str, Any] | None:
     # Scan logs for outbound_request to OpenAI chat completions with this correlationId
     files = sorted(TRACE_DIR.glob("trace.*"))
     for p in files:
@@ -63,9 +63,19 @@ def unified_diff_str(a: str, b: str, fromfile: str, tofile: str) -> str:
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--run-dir", required=True, help="Path to eval run directory (contains samples.jsonl)")
-    ap.add_argument("--out-dir", required=False, help="Output directory for diffs; defaults to <run-dir>/compare_vs_ccr")
-    ap.add_argument("--limit", type=int, default=5, help="Max number of samples to compare")
+    ap.add_argument(
+        "--run-dir",
+        required=True,
+        help="Path to eval run directory (contains samples.jsonl)",
+    )
+    ap.add_argument(
+        "--out-dir",
+        required=False,
+        help="Output directory for diffs; defaults to <run-dir>/compare_vs_ccr",
+    )
+    ap.add_argument(
+        "--limit", type=int, default=5, help="Max number of samples to compare"
+    )
     args = ap.parse_args()
 
     run_dir = Path(args.run_dir)
@@ -95,7 +105,9 @@ def main():
         (case_dir / "eval_request.json").write_text(eval_json, encoding="utf-8")
         (case_dir / "ccr_request.json").write_text(ccr_json, encoding="utf-8")
         # Diff
-        diff_text = unified_diff_str(ccr_json, eval_json, fromfile="ccr_request.json", tofile="eval_request.json")
+        diff_text = unified_diff_str(
+            ccr_json, eval_json, fromfile="ccr_request.json", tofile="eval_request.json"
+        )
         (case_dir / "diff.unified.txt").write_text(diff_text, encoding="utf-8")
         wrote.append(str(case_dir))
         count += 1

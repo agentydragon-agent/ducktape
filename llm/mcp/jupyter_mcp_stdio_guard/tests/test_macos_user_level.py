@@ -2,15 +2,14 @@ import glob
 import json
 import os
 import select
+import shutil
 import socket
 import subprocess
 import sys
 import tempfile
-import threading
 import time
 from pathlib import Path
 
-import shutil
 import pytest
 
 
@@ -84,7 +83,13 @@ def read_line_json(r, deadline: float) -> dict | None:
         return None
 
 
-def test_user_view_end_to_end(tmp_path: Path, pick_free_port, send_line_json_fn, read_line_json_fn, collect_mcp_logs_fn):
+def test_user_view_end_to_end(
+    tmp_path: Path,
+    pick_free_port,
+    send_line_json_fn,
+    read_line_json_fn,
+    collect_mcp_logs_fn,
+):
     # Prerequisites: Jupyter RTC extension dependencies required by jupyter-mcp-server
     import jupyter_collaboration  # noqa: F401
     import pycrdt  # noqa: F401
@@ -151,7 +156,9 @@ def test_user_view_end_to_end(tmp_path: Path, pick_free_port, send_line_json_fn,
             if not (msg and msg.get("id") == 1 and "result" in msg):
                 # Kill the proc to avoid blocking and then collect logs
                 try:
-                    proc.terminate(); proc.kill(); proc.wait(timeout=5)
+                    proc.terminate()
+                    proc.kill()
+                    proc.wait(timeout=5)
                 except Exception:
                     pass
                 stderr_tail = proc.stderr.read(16000) if proc.stderr else b""
@@ -159,16 +166,22 @@ def test_user_view_end_to_end(tmp_path: Path, pick_free_port, send_line_json_fn,
                 # Pull tee logs
                 mcp_out = mcp_err = ""
                 try:
-                    for path in sorted(glob.glob('/tmp/sjmcp-*/mcp_stdout.log'))[-3:]:
+                    for path in sorted(glob.glob("/tmp/sjmcp-*/mcp_stdout.log"))[-3:]:
                         try:
-                            with open(path, 'rb') as fh:
-                                mcp_out += f"\n== {path} ==\n" + fh.read().decode('utf-8','ignore')[-4000:]
+                            with open(path, "rb") as fh:
+                                mcp_out += (
+                                    f"\n== {path} ==\n"
+                                    + fh.read().decode("utf-8", "ignore")[-4000:]
+                                )
                         except OSError:
                             pass
-                    for path in sorted(glob.glob('/tmp/sjmcp-*/mcp_stderr.log'))[-3:]:
+                    for path in sorted(glob.glob("/tmp/sjmcp-*/mcp_stderr.log"))[-3:]:
                         try:
-                            with open(path, 'rb') as fh:
-                                mcp_err += f"\n== {path} ==\n" + fh.read().decode('utf-8','ignore')[-4000:]
+                            with open(path, "rb") as fh:
+                                mcp_err += (
+                                    f"\n== {path} ==\n"
+                                    + fh.read().decode("utf-8", "ignore")[-4000:]
+                                )
                         except OSError:
                             pass
                 except OSError:
@@ -179,25 +192,31 @@ def test_user_view_end_to_end(tmp_path: Path, pick_free_port, send_line_json_fn,
                 # Pull tee logs
                 mcp_out = mcp_err = ""
                 try:
-                    for path in sorted(glob.glob('/tmp/sjmcp-*/mcp_stdout.log'))[-3:]:
+                    for path in sorted(glob.glob("/tmp/sjmcp-*/mcp_stdout.log"))[-3:]:
                         try:
-                            with open(path, 'rb') as fh:
-                                mcp_out += f"\n== {path} ==\n" + fh.read().decode('utf-8','ignore')[-4000:]
+                            with open(path, "rb") as fh:
+                                mcp_out += (
+                                    f"\n== {path} ==\n"
+                                    + fh.read().decode("utf-8", "ignore")[-4000:]
+                                )
                         except OSError:
                             pass
-                    for path in sorted(glob.glob('/tmp/sjmcp-*/mcp_stderr.log'))[-3:]:
+                    for path in sorted(glob.glob("/tmp/sjmcp-*/mcp_stderr.log"))[-3:]:
                         try:
-                            with open(path, 'rb') as fh:
-                                mcp_err += f"\n== {path} ==\n" + fh.read().decode('utf-8','ignore')[-4000:]
+                            with open(path, "rb") as fh:
+                                mcp_err += (
+                                    f"\n== {path} ==\n"
+                                    + fh.read().decode("utf-8", "ignore")[-4000:]
+                                )
                         except OSError:
                             pass
                 except OSError:
                     pass
                 (tmp_path / "stdout.log").write_text(
-                    stdout_tail.decode("utf-8", errors="ignore")
+                    stdout_tail.decode("utf-8", errors="ignore"),
                 )
                 (tmp_path / "stderr.log").write_text(
-                    stderr_tail.decode("utf-8", errors="ignore")
+                    stderr_tail.decode("utf-8", errors="ignore"),
                 )
                 (tmp_path / "sandbox_subsystem.log").write_text(sb_log)
                 (tmp_path / "sandbox_exec.log").write_text(sbox_log)
@@ -218,12 +237,14 @@ def test_user_view_end_to_end(tmp_path: Path, pick_free_port, send_line_json_fn,
                             f"sandbox_exec.log tail:\n{sbox_log[-2000:]}",
                             f"jupyter_server.log tail:\n{jlab_log[-2000:]}",
                             f"logs in {tmp_path}",
-                        ]
-                    )
+                        ],
+                    ),
                 )
 
             # Send MCP 'notifications/initialized' after successful initialize
-            send_line_json(proc.stdin, {"jsonrpc": "2.0", "method": "notifications/initialized"})
+            send_line_json(
+                proc.stdin, {"jsonrpc": "2.0", "method": "notifications/initialized"}
+            )
             time.sleep(0.3)
 
             # call tool
@@ -240,20 +261,27 @@ def test_user_view_end_to_end(tmp_path: Path, pick_free_port, send_line_json_fn,
             msg2 = read_line_json(proc.stdout, time.time() + 15)
             if not (msg2 and msg2.get("id") == 2 and "result" in msg2):
                 try:
-                    proc.terminate(); proc.kill(); proc.wait(timeout=5)
+                    proc.terminate()
+                    proc.kill()
+                    proc.wait(timeout=5)
                 except Exception:
                     pass
-                out_tail = b""; err_tail = b""
+                out_tail = b""
+                err_tail = b""
                 try:
-                    import os, select
+                    import os
+                    import select
+
                     if proc.stdout:
-                        fd = proc.stdout.fileno(); os.set_blocking(fd, False)
-                        r,_,_ = select.select([fd], [], [], 0.1)
+                        fd = proc.stdout.fileno()
+                        os.set_blocking(fd, False)
+                        r, _, _ = select.select([fd], [], [], 0.1)
                         if r:
                             out_tail = os.read(fd, 4096)
                     if proc.stderr:
-                        fd2 = proc.stderr.fileno(); os.set_blocking(fd2, False)
-                        r,_,_ = select.select([fd2], [], [], 0.1)
+                        fd2 = proc.stderr.fileno()
+                        os.set_blocking(fd2, False)
+                        r, _, _ = select.select([fd2], [], [], 0.1)
                         if r:
                             err_tail = os.read(fd2, 4096)
                 except Exception:
@@ -262,7 +290,7 @@ def test_user_view_end_to_end(tmp_path: Path, pick_free_port, send_line_json_fn,
                     f"No tool result. cmd={' '.join(cmd)}\n"
                     f"init={msg}\n"
                     f"resp={msg2}\n"
-                    f"stderr tail={err_tail!r}\nstdout tail={out_tail!r}"
+                    f"stderr tail={err_tail!r}\nstdout tail={out_tail!r}",
                 )
             # result may be a list of strings
             res = msg2["result"]

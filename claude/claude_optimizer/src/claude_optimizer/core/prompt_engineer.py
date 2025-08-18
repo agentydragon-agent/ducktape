@@ -285,7 +285,7 @@ class PromptEngineer:
                 function_call_message=function_call_message,
                 proposed_prompt=proposed_prompt,
                 feedback=feedback,
-            )
+            ),
         )
         logger.info(
             "Added turn to conversation",

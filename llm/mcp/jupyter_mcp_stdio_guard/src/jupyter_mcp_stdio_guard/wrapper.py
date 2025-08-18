@@ -5,14 +5,13 @@ import os
 import secrets
 import shlex
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
 import threading
 import time
-from contextlib import suppress
 from datetime import datetime
-import socket
 from pathlib import Path
 
 SANDBOX_POLICY_BASE = """
@@ -45,7 +44,9 @@ def _ensure_dir(p: Path) -> None:
 
 
 def _ensure_document_id(
-    workspace: Path, document_id: str | None, sandboxed_kernel: bool
+    workspace: Path,
+    document_id: str | None,
+    sandboxed_kernel: bool,
 ) -> str:
     if document_id:
         p = workspace / document_id
@@ -335,7 +336,10 @@ def _seatbelt(
     mcp_stderr_path = run_root / "mcp_stderr.log"
     print(f"[wrapper] mcp_cmd={' '.join(mcp_cmd)}", file=sys.stderr, flush=True)
     mcp = subprocess.Popen(
-        mcp_cmd, env=child_env, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        mcp_cmd,
+        env=child_env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
     )
     print(
         f"[wrapper] mcp_stdout={mcp_stdout_path} mcp_stderr={mcp_stderr_path}",
@@ -412,7 +416,9 @@ def main() -> int:
     workspace = Path(args.workspace).resolve()
     _ensure_dir(workspace)
     doc_id = _ensure_document_id(
-        workspace, args.document_id, sandboxed_kernel=not args.no_kernel_sandbox
+        workspace,
+        args.document_id,
+        sandboxed_kernel=not args.no_kernel_sandbox,
     )
     port = args.jupyter_port or 0
     if port == 0:

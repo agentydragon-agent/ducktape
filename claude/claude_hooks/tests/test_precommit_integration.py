@@ -124,7 +124,9 @@ def test_precommit_no_changes_continues(precommit_repo):
     reason="Requires pre-commit installation",
 )
 def test_precommit_crash_shows_formatted_output(
-    precommit_repo, hook_context, configured_hook,
+    precommit_repo,
+    hook_context,
+    configured_hook,
 ):
     """Test that unhandled exceptions show traceback."""
     test_file = precommit_repo / "test.py"

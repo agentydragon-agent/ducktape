@@ -68,7 +68,9 @@ def handle_github_errors(func: Callable[..., T]) -> Callable[..., T]:
     return wrapper
 
 
-def handle_process_errors(func: Callable[..., Iterable[Any]]) -> Callable[..., list[Any]]:
+def handle_process_errors(
+    func: Callable[..., Iterable[Any]],
+) -> Callable[..., list[Any]]:
     @wraps(func)
     def wrapper(*args, **kwargs) -> list[Any]:
         try:

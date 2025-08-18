@@ -48,8 +48,6 @@ class Worktree:
         return self.path / subpath
 
 
-
-
 @dataclass
 class ProcessInfo:
     """Process information for worktree usage checking."""

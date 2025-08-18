@@ -540,7 +540,9 @@ def parse_request(data: str) -> Request:
 
 class NoParams(BaseModel):
     """Explicit empty params schema for methods without parameters."""
+
     model_config = {"extra": "forbid"}
+
 
 # Method registry for type safety
 SUPPORTED_METHODS = {

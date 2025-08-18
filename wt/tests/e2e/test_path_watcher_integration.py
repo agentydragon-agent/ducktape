@@ -253,7 +253,9 @@ def test_path_watcher_multiple_worktrees():
             )
             remaining.remove(name)
 
-            assert _wait_until_removed(env, name), f"Worktree {name} still present in status after removal"
+            assert _wait_until_removed(env, name), (
+                f"Worktree {name} still present in status after removal"
+            )
             print(f"After removing {name}, remaining should be: {remaining}")
 
         print("✅ Multiple worktrees test completed successfully!")

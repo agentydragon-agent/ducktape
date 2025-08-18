@@ -7,8 +7,12 @@ GitStatusd communicates via stdin/stdout with ASCII separators:
 See: https://github.com/romkatv/gitstatus for full protocol specification.
 """
 
+import asyncio
 import logging
+import shutil
+import uuid
 from dataclasses import dataclass
+from datetime import datetime
 from enum import Enum
 
 logger = logging.getLogger(__name__)
@@ -372,3 +376,111 @@ def gitstatusd_response_to_legacy_format(
         untracked_files.append("<untracked files present>")
 
     return dirty_files, untracked_files
+
+
+class GitstatusdListener:
+    def __init__(
+        self,
+        worktree_info,
+        config,
+        git_manager,
+        error_callback=None,
+    ):
+        self.worktree_info = worktree_info
+        self.config = config
+        self.git_manager = git_manager
+        self.error_callback = error_callback
+        self.process: asyncio.subprocess.Process | None = None
+        # Cache for working status
+        self.cached_working_status: tuple[list[str], list[str]] | None = None
+        self.last_updated_at: datetime | None = None
+        self._status_updating: bool = False
+
+    async def start(self) -> None:
+        if self.process and self.process.returncode is None:
+            return
+        gitstatusd_path = (
+            str(self.config.gitstatusd_path)
+            if self.config.gitstatusd_path
+            else shutil.which("gitstatusd")
+        )
+        if not gitstatusd_path:
+            return
+        self.process = await asyncio.create_subprocess_exec(
+            gitstatusd_path,
+            "--num-threads=8",
+            "--max-num-staged=-1",
+            "--max-num-unstaged=-1",
+            "--max-num-untracked=-1",
+            "--max-commit-summary-length=0",
+            "--repo-ttl-seconds=3600",
+            "--log-level=FATAL",
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+
+    async def stop(self) -> None:
+        if not self.process:
+            return
+        try:
+            self.process.terminate()
+            await asyncio.wait_for(self.process.wait(), timeout=5.0)
+        except asyncio.TimeoutError:
+            self.process.kill()
+            await self.process.wait()
+        self.process = None
+
+    @property
+    def is_running(self) -> bool:
+        return bool(self.process and self.process.returncode is None)
+
+    async def update_working_status(self) -> None:
+        if not self.process or self.process.returncode is not None:
+            await self.start()
+        if not self.process or not self.process.stdin or not self.process.stdout:
+            self.cached_working_status = ([], [])
+            self.last_updated_at = datetime.now()
+            return
+        if self._status_updating:
+            return
+        self._status_updating = True
+        try:
+            request_id = str(uuid.uuid4())[:8]
+            gitstatusd_request = GitStatusdRequest(
+                request_id=request_id,
+                directory_path=str(self.worktree_info.path),
+                disable_index_computation=False,
+            )
+            request_data = gitstatusd_request.to_wire_format()
+            if not (self.process and self.process.stdin and self.process.stdout):
+                raise RuntimeError("gitstatusd process is not ready")
+            self.process.stdin.write(request_data.encode())
+            await self.process.stdin.drain()
+            response = await self.process.stdout.readuntil(b"\x1e")
+            response_str = response.decode("utf-8")
+            parsed_response = GitStatusdProtocol.parse_response(response_str)
+            dirty_files, untracked_files = gitstatusd_response_to_legacy_format(
+                parsed_response,
+            )
+            self.cached_working_status = (dirty_files, untracked_files)
+            self.last_updated_at = datetime.now()
+        except Exception:
+            logging.getLogger(__name__).exception(
+                "gitstatusd update failed for %s",
+                self.worktree_info.name,
+            )
+            if not self.last_updated_at:
+                self.last_updated_at = datetime.now()
+            # Mark failure by clearing cache and letting state be STOPPED/FAILED next check
+            self.cached_working_status = ([], [])
+        finally:
+            self._status_updating = False
+
+    def get_cached_working_status(
+        self,
+    ) -> tuple[list[str], list[str], datetime | None, bool]:
+        if self.cached_working_status and self.last_updated_at:
+            df, uf = self.cached_working_status
+            return df, uf, self.last_updated_at, True
+        return [], [], None, False

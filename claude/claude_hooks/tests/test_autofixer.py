@@ -19,7 +19,9 @@ from hamcrest import assert_that, contains_string
     [
         (
             EditInput(
-                file_path=Path("/tmp/test.py"), old_string="old", new_string="new",
+                file_path=Path("/tmp/test.py"),
+                old_string="old",
+                new_string="new",
             ),
             Path("/tmp/test.py"),
         ),
@@ -47,7 +49,8 @@ class TestPreCommitAutoFixerHook:
     def test_unsupported_tool(self, autofixer_hook, integration_env):
         unsupported_tool = "Grep"
         hook_input = integration_env.create_hook_input(
-            unsupported_tool, {"file_path": "test.py"},
+            unsupported_tool,
+            {"file_path": "test.py"},
         )
 
         result = autofixer_hook.execute(hook_input, integration_env.create_context())
@@ -92,7 +95,8 @@ class TestPreCommitAutoFixerHook:
         test_file = unit_env.write_file("good_file.py", good_content)
 
         changes_made = autofixer_hook._run_precommit_autofix(
-            test_file, unit_env.create_context(),
+            test_file,
+            unit_env.create_context(),
         )
 
         # Well-formatted file should not be changed
@@ -133,7 +137,8 @@ class TestPreCommitAutoFixerHook:
         protocol = result.to_protocol()
         assert protocol["decision"] == "block"
         assert_that(
-            protocol["reason"], contains_string("🧹 pre-commit autofixes applied"),
+            protocol["reason"],
+            contains_string("🧹 pre-commit autofixes applied"),
         )
 
     def test_execute_success_no_changes(self, autofixer_hook, integration_env):

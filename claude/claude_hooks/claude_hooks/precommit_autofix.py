@@ -137,7 +137,9 @@ class PreCommitAutoFixerHook(PostToolUseHook):
         self.autofixer_config = AutofixerConfig.model_validate(self.config)
 
     def execute(
-        self, hook_input: PostToolInput, context: HookContext,
+        self,
+        hook_input: PostToolInput,
+        context: HookContext,
     ) -> PostToolAction:
         self.logger.info(
             f"Config: enabled={self.autofixer_config.enabled}, dry_run={self.autofixer_config.dry_run}, tools={self.autofixer_config.tools}",
@@ -218,7 +220,9 @@ class PreCommitAutoFixerHook(PostToolUseHook):
         return PostToolContinue()
 
     def _run_precommit_autofix(
-        self, file_path: Path, context: HookContext,
+        self,
+        file_path: Path,
+        context: HookContext,
     ) -> PreCommitResult:
         """Run pre-commit on specific file.
 

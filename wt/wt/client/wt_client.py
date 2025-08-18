@@ -11,9 +11,10 @@ import logging
 import os
 import sys
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, TypeVar, cast
+from typing import Any, TypeVar, cast
 
 import click
 import psutil
@@ -279,7 +280,9 @@ class WtClient:
         worktree_ids: list[WorktreeID] | None = None,
     ) -> StatusResponse:
         await self._start_daemon_if_needed()
-        ids: list[WorktreeID] = cast(list[WorktreeID], worktree_ids) if worktree_ids is not None else []
+        ids: list[WorktreeID] = (
+            cast(list[WorktreeID], worktree_ids) if worktree_ids is not None else []
+        )
         params = StatusParams(worktree_ids=ids)
         return await self._rpc("get_status", params, TypeAdapter(StatusResponse))
 
@@ -443,7 +446,9 @@ class WtClient:
                 )
             raise RuntimeError(f"Daemon worktree_create communication failed: {e}")
 
-    async def delete_worktree(self, wtid: WorktreeID, *, force: bool = False) -> WorktreeDeleteResult:
+    async def delete_worktree(
+        self, wtid: WorktreeID, *, force: bool = False
+    ) -> WorktreeDeleteResult:
         await self._start_daemon_if_needed()
         return await self._rpc(
             "worktree_delete",
@@ -470,7 +475,12 @@ class WtClient:
             TypeAdapter(WorktreeGetByNameResult),
         )
 
-    async def _rpc(self, method: str, params_model: BaseModel | dict[str, Any], result_adapter: TypeAdapter[T]) -> T:
+    async def _rpc(
+        self,
+        method: str,
+        params_model: BaseModel | dict[str, Any],
+        result_adapter: TypeAdapter[T],
+    ) -> T:
         await self._start_daemon_if_needed()
         if not self.config.daemon_socket_path.exists():
             raise RuntimeError("Daemon socket not available")

@@ -21,7 +21,6 @@ from .repo_factory import GitRepoFactory
 
 @pytest.fixture(scope="session", autouse=True)
 def _project_root_on_pythonpath():
-
     project_root = str(Path(__file__).resolve().parents[1])
     existing = os.environ.get("PYTHONPATH", "")
     os.environ["PYTHONPATH"] = (
@@ -151,9 +150,9 @@ def assert_worktree_exists(worktree_path: Path, expected_branch: str | None = No
     if expected_branch:
         repo = pygit2.Repository(str(worktree_path))
         head_ref = repo.head.shorthand
-        assert (
-            head_ref == expected_branch
-        ), f"Expected branch {expected_branch}, got {head_ref}"
+        assert head_ref == expected_branch, (
+            f"Expected branch {expected_branch}, got {head_ref}"
+        )
 
 
 def assert_worktree_not_exists(worktree_path: Path):

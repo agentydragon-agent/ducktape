@@ -3,7 +3,7 @@ from dataclasses import dataclass
 import tiktoken
 from openai import OpenAI
 
-from claude_optimizer.core.jsonl_logger import JSONLLogger, safe_serialize
+from claude_optimizer.core.jsonl_logger import JSONLLogger
 
 
 @dataclass

@@ -23,7 +23,8 @@ class RequirementSpec:
     problematic_patterns: list[str]
     good_patterns: list[str]
     problem_fields: dict[
-        str, Any,
+        str,
+        Any,
     ]  # field_name -> schema definition (can be string or dict)
     extra_response_fields: dict[str, Any] | None = None  # Additional schema fields
 
