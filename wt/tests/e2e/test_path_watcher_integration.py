@@ -152,6 +152,11 @@ def test_path_watcher_full_lifecycle():
             print(f"STDERR: {result.stderr}")
 
         assert result.returncode == 0, f"Remove command failed: {result.stderr}"
+        # Ensure git no longer lists the worktree (verifies git worktree remove succeeded)
+        git_list = git_run(["worktree", "list"], cwd=repo_path)
+        assert str(worktree_path) not in git_list.stdout.decode(), (
+            "Worktree still listed in main repo after removal"
+        )
 
         # Verify worktree was removed from filesystem
         assert not worktree_path.exists(), (
@@ -240,6 +245,12 @@ def test_path_watcher_multiple_worktrees():
         for name in worktree_names:
             result = run_cli_command(["rm", name, "--force"], env, timeout=5.0)
             assert result.returncode == 0, f"Failed to remove {name}: {result.stderr}"
+            # Verify git no longer lists the worktree entry
+            wt_path = repo_path / "worktrees" / name
+            git_list = git_run(["worktree", "list"], cwd=repo_path)
+            assert str(wt_path) not in git_list.stdout.decode(), (
+                f"Worktree {name} still listed in main repo after removal"
+            )
             remaining.remove(name)
 
             assert _wait_until_removed(env, name), f"Worktree {name} still present in status after removal"

@@ -62,6 +62,8 @@ Propose next N new system prompt variants (A/B/C) that we should evaluate for ou
 
 ## Guardrails
 - Do not alter code; only write templates and README in proposals dir
+- Do not insert <system-reminder> tags or any XML/HTML-like meta blocks into prompts; adding such blocks is prohibited.
+- Do not add safety/cybersecurity disclaimers (e.g., "only do defensive cybersecurity", "refuse to work with offensive/malicious files/code", "refuse to improve code that might be malicious"). These must NEVER appear in generated prompt templates.
 
 ## Prompting guidance for GPT-5
 The agent we are optimizing runs on GPT-5. Use the GitHub MCP server to fetch GPT-5 prompting resources from the OpenAI Cookbook repository. Key points:

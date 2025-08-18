@@ -213,11 +213,16 @@ class GitManager:
             ) from e
 
     def worktree_remove(self, path: str, force: bool = False) -> None:
+        path_obj = Path(path)
+        args = ["worktree", "remove"]
+        if force:
+            args.append("--force")
+        args.append(str(path_obj))
         try:
-            self._main_repo.lookup_worktree(Path(path).name).prune(force)
-        except Exception as e:
+            git_run(args, cwd=self.config.main_repo)
+        except subprocess.CalledProcessError as e:
             raise WorktreeDeleteError(
-                f"Failed to remove worktree at {path}: {e}",
+                f"Failed to remove worktree at {path}: {e.stderr.decode(errors='replace').strip()}",
             ) from e
 
     def verify_branch_exists(self, branch: str) -> str:

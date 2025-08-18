@@ -79,6 +79,13 @@ def test_real_program_workflow(real_temp_repo, real_env):
             print(f"Remove failed, trying with input: {result.stdout} {result.stderr}")
             # The remove might need confirmation, let's skip this complex interaction for now
 
+        # Sanity: ensure git no longer lists feature2 worktree after removal
+        from wt.shared.git_utils import git_run
+        git_list = git_run(["worktree", "list"], cwd=real_temp_repo)
+        assert str(worktree2_path) not in git_list.stdout.decode(), (
+            "feature2 still listed in main repo after removal"
+        )
+
         # Step 7: Final status check
         result = run_cli_command(["sh"], env=real_env, timeout=5.0)
         assert result.returncode == 0

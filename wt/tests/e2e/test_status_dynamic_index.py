@@ -33,6 +33,14 @@ def test_worktree_add_then_remove_reflected_in_status(real_env, real_temp_repo):
     r2 = run_cli_command(["sh", "rm", name, "--force"], env=real_env, timeout=15.0)
     assert r2.returncode == 0
 
+    # Ensure git no longer lists the worktree (verifies git worktree remove)
+    from wt.shared.git_utils import git_run
+
+    git_list = git_run(["worktree", "list"], cwd=real_temp_repo)
+    assert str(real_temp_repo / "worktrees" / name) not in git_list.stdout.decode(), (
+        "Worktree still listed in main repo after removal"
+    )
+
     # Poll until it disappears
     deadline = time.time() + 10
     gone = False
