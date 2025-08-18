@@ -31,7 +31,7 @@ Propose next N new system prompt variants (A/B/C) that we should evaluate for ou
 - Current templates dir: ./templates/
   - Baseline prompt: `./templates/current_effective_template.txt`
   - Previous proposals: `./templates/proposals/`
-- Eval outputs (all runs): `./runs/**/run-*/{summary.json,grades.jsonl,samples.jsonl,report.html}`
+- Eval outputs (all runs): `./runs/*/{summary.json,grades.jsonl,samples.jsonl,report.html}`
   - `grades.jsonl` contains per-sample evaluation results, including sampled action and grader output (score + rationale)
   - `template.txt` is the evaluated prompt template
 
@@ -84,4 +84,4 @@ Fetch the Cookbook from GitHub and follow its advice when designing your propose
   - mcp__github__search_code (discover patterns/examples)
 
 ## Quick commands
-- List runs: `rg -n "\"mean\"" runs/**/run-*/summary.json`
+- List runs: `rg -n "\"mean\"" runs/*/summary.json`

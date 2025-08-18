@@ -50,7 +50,7 @@ def parse_args():
     ap.add_argument(
         "--out-dir",
         required=False,
-        help="Base output directory; a run-<ts> subfolder will be created inside it",
+        help="Base output directory; a <ts> (or baseline-<ts>) subfolder will be created inside it",
     )
     ap.add_argument(
         "--n", type=int, default=None, help="Limit number of samples to process",
@@ -356,7 +356,12 @@ async def run_eval(
     concurrency: int = 32,
 ):
     base = base_out if base_out else DEFAULT_BASE
-    out_dir = base / f"run-{int(time.time())}"
+    ts = int(time.time())
+    # New layout: runs/<ts> for variants; runs/baseline-<ts> for baseline
+    if template_path.name == "current_effective_template.txt":
+        out_dir = base / f"baseline-{ts}"
+    else:
+        out_dir = base / f"{ts}"
     samples_out = out_dir / "samples.jsonl"
     grades_out = out_dir / "grades.jsonl"
     summary_out = out_dir / "summary.json"
