@@ -72,8 +72,8 @@ def _ensure_document_id(
         raise FileExistsError(f"Notebook already exists: {p}")
     kernelspec = (
         {
-            "name": "python3-sandboxed",
-            "display_name": "Python (Sandboxed)",
+            "name": "python3",
+            "display_name": "Python 3",
             "language": "python",
         }
         if sandboxed_kernel
@@ -194,10 +194,14 @@ def _write_sandboxed_kernelspec(
     workspace: Path,
     policy_path: Path,
 ) -> None:
-    ks_dir = run_root / "data" / "kernels" / "python3-sandboxed"
+    # Override the default 'python3' kernel to ensure the sandbox is used
+    ks_dir = run_root / "data" / "kernels" / "python3"
     ks_dir.mkdir(parents=True, exist_ok=True)
     kernel_json = {
         "argv": [
+            "env",
+            "SJ_KERNEL_SANDBOXED=1",
+            f"SJ_POLICY_PATH={policy_path}",
             "sandbox-exec",
             "-f",
             str(policy_path),
@@ -211,7 +215,7 @@ def _write_sandboxed_kernelspec(
             "-f",
             "{connection_file}",
         ],
-        "display_name": "Python (Sandboxed)",
+        "display_name": "Python 3",
         "language": "python",
         "env": {},
     }
@@ -224,6 +228,7 @@ def _start_jupyter_server(
     jupyter_port: int,
     run_root: Path,
     env: dict[str, str],
+    kernel_default_name: str | None = None,
 ) -> subprocess.Popen:
     out_path = run_root / "runtime" / "jupyter_server.out"
     err_path = run_root / "runtime" / "jupyter_server.err"
@@ -247,6 +252,13 @@ def _start_jupyter_server(
         "--ServerApp.disable_check_xsrf",
         "True",
     ]
+    if kernel_default_name:
+        cmd += [
+            "--ServerApp.default_kernel_name",
+            kernel_default_name,
+            "--NotebookApp.default_kernel_name",
+            kernel_default_name,
+        ]
     proc = subprocess.Popen(cmd, stdout=out_f, stderr=err_f, env=env)
 
     deadline = time.time() + 10
@@ -285,6 +297,10 @@ def _seatbelt(
     policy_path.write_text(policy_text)
     if kernel_sandbox:
         _write_sandboxed_kernelspec(run_root, workspace, policy_path)
+        # Ensure newly created notebooks default to the sandboxed kernel
+        (run_root / "runtime" / "kernels.json").write_text(
+            json.dumps({"default": "python3-sandboxed"})
+        )
     print(
         f"[wrapper] run_root={run_root} workspace={workspace}",
         file=sys.stderr,
@@ -308,13 +324,37 @@ def _seatbelt(
             "JUPYTER_RUNTIME_DIR": str(run_root / "runtime"),
             "JUPYTER_DATA_DIR": str(run_root / "data"),
             "JUPYTER_CONFIG_DIR": str(run_root / "config"),
+            # Limit search path strictly to our data dir (no user/global)
+            "JUPYTER_PATH": str(run_root / "data"),
             "MPLCONFIGDIR": str(run_root / "mpl"),
             "JUPYTER_TOKEN": token,
             "PYTHONUNBUFFERED": "1",
         },
     )
-    # Start Jupyter Server unsandboxed (kernel is sandboxed via kernelspec)
-    jl = _start_jupyter_server(workspace, token, jupyter_port, run_root, child_env)
+    # Ensure config dir exists and write a server config to prefer our kernels only
+    (run_root / "config").mkdir(parents=True, exist_ok=True)
+    (run_root / "config" / "jupyter_server_config.py").write_text(
+        "\n".join(
+            [
+                "c = get_config() if 'get_config' in globals() else None",
+                f"c.KernelSpecManager.kernel_dirs = ['{(run_root / 'data' / 'kernels')!s}']",
+                "c.KernelSpecManager.ensure_native_kernel = False",
+                "c.ServerApp.default_kernel_name = 'python3'",
+                "c.ServerApp.open_browser = False",
+                "c.ServerApp.ip = '127.0.0.1'",
+                "c.ServerApp.disable_check_xsrf = True",
+            ]
+        )
+    )
+    # Start Jupyter Server unsandboxed (kernel is sandboxed via kernelspec override)
+    jl = _start_jupyter_server(
+        workspace,
+        token,
+        jupyter_port,
+        run_root,
+        child_env,
+        kernel_default_name="python3" if kernel_sandbox else None,
+    )
     # Start MCP server (stdio: newline-delimited JSON); tee child stdout/stderr to files and parent stdio
     mcp_cmd = [
         "jupyter-mcp-server",

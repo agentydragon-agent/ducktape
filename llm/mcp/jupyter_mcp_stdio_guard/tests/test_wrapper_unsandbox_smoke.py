@@ -10,9 +10,7 @@ def test_wrapper_unsandbox_initialize_and_hello(
 ):
     port = pick_free_port
     cmd = [
-        sys.executable,
-        "-m",
-        "jupyter_mcp_stdio_guard",
+        "sandbox-jupyter-mcp",
         "--workspace",
         str(tmp_path / "ws"),
         "--mode",

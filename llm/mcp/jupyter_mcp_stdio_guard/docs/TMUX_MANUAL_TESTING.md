@@ -1,30 +1,24 @@
-# Jupyter MCP STDIO Guard — Manual tmux Testing Recipe
+# Jupyter MCP STDIO Guard — Manual tmux Testing Recipe (Manual-first)
 
-This is a concise, repeatable workflow to drive the MCP server over stdio manually using tmux.
-Use this to debug and validate before encoding flows into pytest.
+Follow this step-by-step. Type each command, press Enter, read the output. Do not run large scripts.
 
-## 0) Layout & Environment
+## 0) Layout
 
-- Three tmux panes in one window:
-  - Pane 1: Jupyter Server
-  - Pane 2: MCP server (stdio)
-  - Pane 3: Logs and clipboard (paste JSON lines here or into Pane 2)
-
-Create layout
 ```bash
-# New tmux session with 3 panes (left, right, bottom-left)
-tmux new-session -s mcp-dev -n jupyter -d
-tmux split-window -t mcp-dev:0 -h
-tmux split-window -t mcp-dev:0.0 -v
-# Focus left-top (Pane 1)
-tmux select-pane -t mcp-dev:0.0
+# 0.1 Three panes
+tmux new-session -s sjmcp-manual -n jup -d
+# Right pane
+tmux split-window -t sjmcp-manual:0 -h
+# Bottom-left pane
+tmux split-window -t sjmcp-manual:0.0 -v
 # Attach
-tmux attach -t mcp-dev
+tmux attach -t sjmcp-manual
 ```
 
-Set up workspace variables (run in any pane, recommended Pane 3):
+## 1) Environment (Pane 3)
+
 ```bash
-WS="$PWD/_mcp_ws"; mkdir -p "$WS/.mcp" "$WS/logs"
+WS="$PWD/_mcp_ws"; OUTSIDE="$PWD/_mcp_outside"; mkdir -p "$WS/.mcp" "$WS/logs" "$OUTSIDE"
 PORT=$(python - <<'PY'
 import socket
 s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1]); s.close()
@@ -33,19 +27,14 @@ TOKEN=$(python - <<'PY'
 import secrets
 print(secrets.token_urlsafe(16))
 PY)
-```
-
-Create minimal notebook once (or reuse existing):
-```bash
 cat >"$WS/.mcp/test.ipynb" <<'JSON'
 {"cells":[],"metadata":{"kernelspec":{"name":"python3","display_name":"Python 3","language":"python"}},"nbformat":4,"nbformat_minor":5}
 JSON
 ```
 
-## 1) Pane 1 — Launch Jupyter Server
+## 2) Jupyter Server (Pane 1)
 
 ```bash
-set -euxo pipefail
 : "${WS:?}"; : "${PORT:?}"; : "${TOKEN:?}"
 cd "$WS"
 jupyter server \
@@ -59,11 +48,12 @@ jupyter server \
   >"$WS/logs/jupyter.out" 2>"$WS/logs/jupyter.err"
 ```
 
-Verify port readiness (optional):
+## 3) Logs/Readiness (Pane 3)
+
 ```bash
 python - <<'PY'
 import socket, os, time
-port = int(os.environ['PORT']); deadline=time.time()+20
+port=int(os.environ['PORT']); deadline=time.time()+20
 ok=False
 while time.time()<deadline:
   try:
@@ -71,18 +61,12 @@ while time.time()<deadline:
   except OSError: time.sleep(0.1)
 print("READY" if ok else "NOT READY")
 PY
+tail -F "$WS/logs/jupyter.out" "$WS/logs/jupyter.err"
 ```
 
-## 2) Pane 2 — Start MCP server (stdio)
+## 4) MCP — Direct (Pane 2)
 
-Option A: Direct jupyter-mcp-server (baseline unsandbox)
 ```bash
-set -euxo pipefail
-: "${WS:?}"; : "${PORT:?}"; : "${TOKEN:?}"
-TS=$(date +%s)
-MCP_OUT="/tmp/sjmcp-${TS}-stdout.log"
-MCP_ERR="/tmp/sjmcp-${TS}-stderr.log"
-
 jupyter-mcp-server start \
   --transport stdio \
   --provider jupyter \
@@ -91,83 +75,58 @@ jupyter-mcp-server start \
   --document-token "${TOKEN}" \
   --runtime-url "http://127.0.0.1:${PORT}" \
   --runtime-token "${TOKEN}" \
-  --start-new-runtime true \
-  | tee "$MCP_OUT" \
-  2> >(tee "$MCP_ERR" >&2)
+  --start-new-runtime true
 ```
 
-Option B: Wrapper (kernel unsandboxed)
-```bash
-sandbox-jupyter-mcp \
-  --workspace "$WS" \
-  --mode seatbelt \
-  --jupyter-port "$PORT" \
-  --no-kernel-sandbox \
-  | tee "$MCP_OUT" 2> >(tee "$MCP_ERR" >&2)
-```
+Paste MCP JSON lines (one per line):
 
-Option C: Wrapper (macOS seatbelt)
-```bash
-sandbox-jupyter-mcp \
-  --workspace "$WS" \
-  --mode seatbelt \
-  --jupyter-port "$PORT" \
-  --trace-sandbox \
-  | tee "$MCP_OUT" 2> >(tee "$MCP_ERR" >&2)
-```
-
-## 3) Pane 3 — Drive MCP JSON over stdio
-
-Paste the following (one JSON per line, press Enter after each):
-
-Initialize
-```json
-{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{"tools":{}},"clientInfo":{"name":"tmux-dev","version":"0.0.1"}}}
-```
-
-Notify initialized
-```json
+```text
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{"tools":{}},"clientInfo":{"name":"tmux","version":"0.0.1"}}}
 {"jsonrpc":"2.0","method":"notifications/initialized"}
-```
-
-Call tool
-```json
 {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"append_execute_code_cell","arguments":{"cell_source":"print('hello world')"}}}
 ```
 
-Expected: Response for `id=1` with `result`, then response for `id=2` with `result` containing text "hello world" (either in `content` or `structuredContent`).
+## 5) Kernel Sandbox (Pane 1 — locked config)
 
-## 4) Logs & Diagnostics
+Use when testing sandboxed kernel explicitly.
 
-Follow logs (Pane 3 or another pane):
 ```bash
-tail -F "$WS/logs/jupyter.out" "$WS/logs/jupyter.err" /tmp/sjmcp-*-stdout.log /tmp/sjmcp-*-stderr.log
+# Choose run root under /tmp
+RUN_ROOT="/tmp/sjmcp_$$"; mkdir -p "$RUN_ROOT/runtime" "$RUN_ROOT/data/kernels" "$RUN_ROOT/config"
+# Write sandboxed python3 kernelspec (wraps sandbox-exec)
+POLICY="$PWD/llm/mcp/jupyter_mcp_stdio_guard/policies/kernel_base.sb"
+KDIR="$RUN_ROOT/data/kernels/python3"; mkdir -p "$KDIR"
+cat >"$KDIR/kernel.json" <<JSON
+{
+  "argv": ["sandbox-exec","-f","$POLICY","-D","WORKSPACE=$WS","-D","RUN_ROOT=$RUN_ROOT","$(which python)","-m","ipykernel_launcher","-f","{connection_file}"],
+  "display_name": "Python 3",
+  "language": "python"
+}
+JSON
+# Write server config to use only our kernels
+cat >"$RUN_ROOT/config/jupyter_server_config.py" <<CFG
+c = get_config() if 'get_config' in globals() else None
+c.KernelSpecManager.kernel_dirs = ["$RUN_ROOT/data/kernels"]
+c.KernelSpecManager.ensure_native_kernel = False
+c.ServerApp.default_kernel_name = "python3"
+CFG
+# Export env for this pane
+export JUPYTER_RUNTIME_DIR="$RUN_ROOT/runtime" JUPYTER_DATA_DIR="$RUN_ROOT/data" JUPYTER_CONFIG_DIR="$RUN_ROOT/config" JUPYTER_PATH="$RUN_ROOT/data"
+# Restart Jupyter server to use the locked config
+pkill -f "jupyter server" || true
+jupyter server --port "$PORT" --ip 127.0.0.1 --ServerApp.root_dir "$WS" --ServerApp.open_browser False --ServerApp.token "$TOKEN" --ServerApp.password '' --ServerApp.disable_check_xsrf True >"$WS/logs/jupyter.out" 2>"$WS/logs/jupyter.err"
 ```
 
-Jupyter API probe (token-protected):
-```bash
-curl -s "http://127.0.0.1:${PORT}/api" -H "Authorization: token ${TOKEN}" | head -c 200
+Then, in Pane 2, use direct MCP (section 4) and paste a cell that attempts to write outside WORKSPACE:
+
+```text
+{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"append_execute_code_cell","arguments":{"cell_source":"import pathlib\np=pathlib.Path(r'${OUTSIDE}/denied.txt')\ntry:\n    p.write_text('x')\n    print('wrote OUTSIDE')\nexcept Exception as e:\n    print(type(e).__name__, str(e))\n"}}}
 ```
 
-macOS seatbelt denials (if using seatbelt mode):
-```bash
-log show --style syslog --last 2m --predicate 'subsystem == "com.apple.sandbox"' | tail -n +1 | tail -200
-```
+Expected: Permission error (Operation not permitted), not "wrote OUTSIDE".
 
-## 5) Helper Scripts
+## 6) When automation fails
 
-Use these tiny wrappers to reduce typing in Pane 2.
-
-- scripts/mcp_start_direct.sh
-- scripts/mcp_start_wrapper_unsandbox.sh
-- scripts/mcp_start_wrapper_seatbelt.sh
-
-Each expects WS, PORT, TOKEN set in the environment.
-
-## 6) Encode into Tests (after manual success)
-
-- Unsandbox baseline → direct jupyter-mcp-server pytest
-- Wrapper (no kernel sandbox) → pytest
-- macOS seatbelt → pytest
-
-Keep tests DRY using these fixtures: `launch_proc`, `launch_jupyter_server`, `mcp_stdio_protocol`, `pick_free_port`, `gen_token`, `pkg_src_env_update`, `collect_mcp_logs_fn`.
+- Reproduce with this manual recipe exactly
+- Fix config/policy/args in-place and re-run single steps
+- Only after it works here, update the tests/fixtures

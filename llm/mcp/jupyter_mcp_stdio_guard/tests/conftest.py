@@ -163,6 +163,49 @@ def mcp_stdio_protocol(send_line_json_fn, read_line_json_fn):
 
     return _protocol
 
+@pytest.fixture
+def mcp_call_tool(send_line_json_fn, read_line_json_fn, collect_mcp_logs_fn):
+    def _read_until(stdout, match_id: int, total_timeout: float) -> dict | None:
+        deadline = time.time() + total_timeout
+        while time.time() < deadline:
+            m = read_line_json_fn(stdout, 2.0)
+            if not m:
+                continue
+            if m.get("id") == match_id and ("result" in m or "error" in m):
+                return m
+        return None
+    def _call(proc, tool_name: str, tool_args: dict, protocol_version: str = "2025-06-18", init_timeout: float = 25.0, call_timeout: float = 60.0):
+        send_line_json_fn(proc.stdin, {
+            "jsonrpc": "2.0", "id": 1, "method": "initialize",
+            "params": {"protocolVersion": protocol_version, "capabilities": {"tools": {}}, "clientInfo": {"name": "pytest", "version": "0.0.1"}}
+        })
+        resp = _read_until(proc.stdout, 1, init_timeout)
+        if not (resp and resp.get("id") == 1 and "result" in resp):
+            out, err = collect_mcp_logs_fn()
+            stderr_tail = b""
+            stdout_tail = b""
+            try:
+                if proc.stderr: stderr_tail = proc.stderr.read(20000)
+                if proc.stdout: stdout_tail = proc.stdout.read(20000)
+            except Exception:
+                pass
+            pytest.fail(f"initialize failed: {resp}\nstdout tail:\n{stdout_tail[-2000:]}\nstderr tail:\n{stderr_tail[-2000:]}\ntee stdout:\n{out}\ntee stderr:\n{err}")
+        send_line_json_fn(proc.stdin, {"jsonrpc": "2.0", "method": "notifications/initialized"})
+        time.sleep(0.3)
+        send_line_json_fn(proc.stdin, {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": tool_name, "arguments": tool_args}})
+        resp2 = _read_until(proc.stdout, 2, call_timeout)
+        if not (resp2 and resp2.get("id") == 2 and "result" in resp2):
+            out, err = collect_mcp_logs_fn()
+            stderr_tail = b""; stdout_tail = b""
+            try:
+                if proc.stderr: stderr_tail = proc.stderr.read(20000)
+                if proc.stdout: stdout_tail = proc.stdout.read(20000)
+            except Exception:
+                pass
+            pytest.fail(f"tool call failed: {resp2}\nstdout tail:\n{stdout_tail[-2000:]}\nstderr tail:\n{stderr_tail[-2000:]}\ntee stdout:\n{out}\ntee stderr:\n{err}")
+        return resp2["result"]
+    return _call
+
 
 @pytest.fixture
 def wait_port():
