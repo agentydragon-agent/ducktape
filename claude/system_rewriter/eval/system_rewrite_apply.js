@@ -69,12 +69,12 @@ async function readAllStdin(){
     mcpSection,
   };
 
-  // Use mustache for optional sections/vars. Require at runtime.
+  // Use mustache for optional sections/vars. Require at runtime; no fallback.
   let Mustache;
   try {
     Mustache = require('mustache');
   } catch (e) {
-    console.error("Missing dependency 'mustache'. Install with: npm install mustache");
+    console.error("Missing dependency 'mustache'. Please run: npm install mustache");
     process.exit(5);
   }
 
@@ -90,6 +90,19 @@ async function readAllStdin(){
   }
 
   let out = Mustache.render(template, ctx);
+
+  // Replace legacy ${name} tokens exactly once for compatibility
+  for (const name of coreVars) {
+    const token = '${' + name + '}';
+    const countLegacy = (template.match(new RegExp('\\' + token, 'g')) || []).length;
+    if (countLegacy > 1) {
+      console.error(`template placeholder ${token} appears ${countLegacy} times (expected ≤1)`);
+      process.exit(6);
+    }
+    if (countLegacy === 1) {
+      out = out.replace(token, ctx[name] ?? '');
+    }
+  }
 
   // Validate no unreplaced tokens remain
   const leftover = out.match(/\{\{[#\/]?\w+}}|\$\{(toolsBlob|envGitBlobs|modelLine|mcpSection)\}/);

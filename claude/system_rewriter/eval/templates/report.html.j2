@@ -9,6 +9,8 @@
   h2{margin-top:28px;}
   pre{background:#f6f8fa;padding:12px;overflow:auto;border-radius:6px;}
   code{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,'Liberation Mono','Courier New',monospace;}
+  /* Wrap long JSON and rationale lines */
+  pre code.json, pre code { white-space: pre-wrap; word-wrap: break-word; overflow-wrap: anywhere; }
   .meta{color:#555}
   .score{font-weight:bold}
   </style>
@@ -25,16 +27,92 @@
 <section>
   <h2>Sample {{ r.correlation_id }}</h2>
   {% if r.timestamp %}<div class="meta">ts: {{ r.timestamp }}</div>{% endif %}
-  <h3>Last 3 turns (before bad branch)</h3>
-  <pre><code class="json">{{ r.last_three | tojson(indent=2) }}</code></pre>
-  <h3>Bad branch (bad assistant turn through complaint)</h3>
-  <pre><code class="json">{{ r.bad_branch | tojson(indent=2) }}</code></pre>
-  <h3>Alternative branch (new assistant message)</h3>
-  <pre><code class="json">{{ r.alternative | tojson(indent=2) }}</code></pre>
+  <h3>Systems</h3>
+  <table width="100%" cellspacing="0" cellpadding="6" style="border-collapse:collapse">
+    <tr>
+      <th style="text-align:left;width:50%">System A (original)</th>
+      <th style="text-align:left;width:50%">System B (rewritten)</th>
+    </tr>
+    <tr>
+      <td valign="top">
+        <details>
+          <summary><code>{{ (r.orig_system or '')[:120] ~ ('…' if (r.orig_system|length > 120) else '') }}</code></summary>
+          <pre><code>{{ r.orig_system }}</code></pre>
+        </details>
+      </td>
+      <td valign="top">
+        <details>
+          <summary><code>{{ (r.rewritten_system or '')[:120] ~ ('…' if (r.rewritten_system|length > 120) else '') }}</code></summary>
+          <pre><code>{{ r.rewritten_system }}</code></pre>
+        </details>
+      </td>
+    </tr>
+  </table>
+
+  <h3>Shared prefix</h3>
+  <div>
+    {% for m in r.shared_prefix %}
+      <div style="margin-bottom:8px">
+        <div class="meta"><strong>{{ m.role }}</strong></div>
+        {% if m.content is string %}
+          <pre><code>{{ m.content }}</code></pre>
+        {% else %}
+          <pre><code class="json">{{ m.content | tojson(indent=2) }}</code></pre>
+        {% endif %}
+      </div>
+    {% endfor %}
+  </div>
+
+  <h3>Rollouts</h3>
+  <table width="100%" cellspacing="0" cellpadding="6" style="border-collapse:collapse">
+    <tr>
+      <th style="text-align:left;width:50%">Original bad branch</th>
+      <th style="text-align:left;width:50%">Alternative (new assistant)</th>
+    </tr>
+    <tr>
+      <td valign="top">
+        {% for m in r.bad_branch %}
+          <div style="margin-bottom:8px">
+            <div class="meta"><strong>{{ m.role }}</strong></div>
+            {% if m.content is string %}
+              <pre><code>{{ m.content }}</code></pre>
+            {% else %}
+              <pre><code class="json">{{ m.content | tojson(indent=2) }}</code></pre>
+            {% endif %}
+          </div>
+        {% endfor %}
+      </td>
+      <td valign="top">
+        {% set alt = r.alternative %}
+        {% if alt is mapping and (alt.tool_calls or alt.get('tool_calls')) %}
+          {% set tcs = alt.tool_calls if alt.tool_calls is defined else alt.get('tool_calls') %}
+          {% if alt.content is string and alt.content %}
+            <div class="meta"><strong>assistant</strong></div>
+            <pre><code>{{ alt.content }}</code></pre>
+          {% endif %}
+          <div class="meta"><strong>tool_calls</strong></div>
+          {% for tc in tcs %}
+            <div style="margin-bottom:8px">
+              <div class="meta">function: {{ (tc.function.name if tc.function is defined else (tc.get('function') or {}).get('name')) }}</div>
+              <pre><code class="json">{{ (tc.function.arguments if tc.function is defined else (tc.get('function') or {}).get('arguments')) }}</code></pre>
+            </div>
+          {% endfor %}
+        {% elif alt is mapping and (alt.responses_input or alt.get('responses_input')) %}
+          <!-- Responses-format alternative: show compact JSON -->
+          <pre><code class="json">{{ alt | tojson(indent=2) }}</code></pre>
+        {% elif alt is mapping %}
+          <pre><code class="json">{{ alt | tojson(indent=2) }}</code></pre>
+        {% else %}
+          <pre><code class="json">{{ alt | tojson(indent=2) }}</code></pre>
+        {% endif %}
+      </td>
+    </tr>
+  </table>
+
   <h3>Grader</h3>
   <div class="score">Score: {{ (r.grade.score if r.grade else none) }}</div>
   {% if r.grade and r.grade.rationale is not none %}
-  <pre><code>{{ r.grade.rationale }}</code></pre>
+  <pre><code style="white-space:pre-wrap;word-wrap:break-word">{{ r.grade.rationale }}</code></pre>
   {% endif %}
 </section>
 {% endfor %}

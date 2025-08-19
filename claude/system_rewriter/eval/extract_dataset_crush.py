@@ -35,7 +35,7 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-from pydantic import ValidationError
+from pydantic import ValidationError, TypeAdapter
 from openai.types.responses import ResponseCreateParams
 ROOT = Path(__file__).parent
 DEFAULT_CRUSH_DIR = Path.home() / "code" / "crush"
@@ -156,8 +156,8 @@ def process_wire(path: Path, require_bad: bool = False) -> list[dict[str, Any]]:
         payload = maybe_extract_payload(e)
         if not payload:
             continue
-        # Validate into typed ResponsesRequest (let it crash on invalid)
-        rr = ResponseCreateParams.model_validate(payload)
+        # Validate against OpenAI Responses schema via Pydantic TypeAdapter (ResponseCreateParams is a TypedDict)
+        rr = TypeAdapter(ResponseCreateParams).validate_python(payload)
         # Reconstruct user messages to check for BAD marker
         messages, has_header = _extract_input_messages(payload)
         last_text = find_last_user_text_msg(messages)
@@ -168,7 +168,7 @@ def process_wire(path: Path, require_bad: bool = False) -> list[dict[str, Any]]:
         out.append(
             {
                 "timestamp": parse_rfc3339_millis(e.get("ts")),
-                "oai_request": rr.model_dump(mode="json"),
+                "oai_request": rr,
                 "wirelog": {
                     "event_type": e.get("event_type"),
                     "path": str(path),

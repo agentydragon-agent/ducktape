@@ -952,7 +952,7 @@ async def run_eval(
             samp_rec, grade_rec = await fut
             if samp_rec:
                 rec_obj = EvalSampleRecord.model_validate(samp_rec)
-                s_out.write(rec_obj.model_dump_json(sort_keys=True) + "\n")
+                s_out.write(json.dumps(rec_obj.model_dump(), sort_keys=True) + "\n")
                 # Update tool usage stats
                 tool_stats["total_samples"] += 1
                 nmsg = samp_rec.get("new_assistant_message") or {}
@@ -968,7 +968,7 @@ async def run_eval(
                         )
             if grade_rec:
                 g_obj = EvalGradeRecord.model_validate(grade_rec)
-                g_out.write(g_obj.model_dump_json(sort_keys=True) + "\n")
+                g_out.write(json.dumps(g_obj.model_dump(), sort_keys=True) + "\n")
                 try:
                     parsed = parse_grade_from_responses(grade_rec["response"])  # type: ignore[index]
                     score = float(parsed.get("score", 0))
@@ -1068,13 +1068,14 @@ async def run_eval(
         # Collect rows
         rows: list[dict[str, Any]] = []
 
-
         summary: dict[str, Any] = {}
         try:
             with (report_base / "summary.json").open("r", encoding="utf-8") as sf:
                 summary = json.load(sf)
         except Exception:
             summary = {}
+
+        template_file = report_base / "template.txt"
 
         try:
             with samples_path.open("r", encoding="utf-8") as sf:
@@ -1085,14 +1086,21 @@ async def run_eval(
                         continue
                     cid = srec.get("correlation_id") or ""
                     ar = srec.get("anthropic_request") or {}
+                    # Flatten original system
+                    orig_sys = flatten_system_string(ar.get("system"))
+                    # Compute rewritten system using the saved template
+                    try:
+                        rewritten_sys = rewrite_system_with_template_py(orig_sys, template_file)
+                    except Exception:
+                        rewritten_sys = ""
+                    # Build shared prefix and bad branch
                     msgs = ar.get("messages") or []
                     idx = prev_assistant_index(msgs)
                     if idx is None:
-                        last_three = msgs[-3:] if len(msgs) > 3 else msgs
+                        shared_prefix = msgs
                         bad_branch = []
                     else:
-                        start = max(0, idx - 3)
-                        last_three = msgs[start:idx]
+                        shared_prefix = [m for m in (msgs[: idx]) if m.get("role") != "system"]
                         bad_branch = msgs[idx:]
                     alt = srec.get("new_assistant_message") or {}
                     grade = grades_map.get(cid) or {}
@@ -1100,7 +1108,9 @@ async def run_eval(
                         {
                             "correlation_id": cid,
                             "timestamp": srec.get("timestamp"),
-                            "last_three": last_three,
+                            "orig_system": orig_sys,
+                            "rewritten_system": rewritten_sys,
+                            "shared_prefix": shared_prefix,
                             "bad_branch": bad_branch,
                             "alternative": alt,
                             "grade": grade,
