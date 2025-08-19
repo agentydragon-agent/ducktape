@@ -41,6 +41,7 @@ class Sample:
     correlation_id: str | None
     timestamp: int | None
     anthropic_request: CCRRequest
+    responses_request: dict[str, Any] | None = None  # Present when source was Crush/Responses
 
 
 def parse_args():
@@ -95,6 +96,7 @@ async def read_dataset(dataset_path: Path) -> list[Sample]:
                         correlation_id=rec.get("correlation_id"),
                         timestamp=rec.get("timestamp"),
                         anthropic_request=ar,
+                        responses_request=None,
                     ),
                 )
                 continue
@@ -136,6 +138,7 @@ async def read_dataset(dataset_path: Path) -> list[Sample]:
                         correlation_id=rec.get("correlation_id"),
                         timestamp=rec.get("timestamp"),
                         anthropic_request=ar_ccr,
+                        responses_request=payload,
                     ),
                 )
                 continue
@@ -418,6 +421,47 @@ def anthro_to_openai_messages(
     return out
 
 
+def anthro_to_responses_input(
+    body: dict[str, Any],
+    new_system_text: str | None,
+) -> list[dict[str, Any]]:
+    """Translate Anthropic-style messages into OpenAI Responses API input array."""
+    def _join_text_parts(parts: list[dict[str, Any]]) -> str:
+        texts: list[str] = []
+        for p in parts:
+            if (
+                isinstance(p, dict)
+                and p.get("type") == "text"
+                and isinstance(p.get("text"), str)
+            ):
+                texts.append(p["text"])
+        return "\n".join(texts)
+
+    out: list[dict[str, Any]] = []
+    if new_system_text:
+        out.append({
+            "role": "system",
+            "content": [{"type": "input_text", "text": new_system_text}],
+        })
+    for m in body.get("messages", []):
+        role = m.get("role")
+        content = m.get("content")
+        if role not in ("user", "assistant"):
+            continue
+        if isinstance(content, str):
+            text = content
+        elif isinstance(content, list):
+            text = _join_text_parts(content)
+        else:
+            text = ""
+        if text.strip():
+            out.append({
+                "role": role,
+                "content": [{"type": "input_text", "text": text}],
+            })
+    return out
+
+
 def build_grader_prompt(
     prefix_messages: list[dict[str, Any]],
     raw_bad_branch: list[dict[str, Any]],
@@ -607,40 +651,72 @@ async def run_eval(
             )
             tools_param = ar.tools
 
-            chat_tools = map_tools_for_chat(tools_param)
-            samp_req = {
-                "model": SAMPLER_MODEL,
-                "messages": oai_messages,
-                "tools": chat_tools,
-                "tool_choice": "auto",
-                "parallel_tool_calls": True,
-                "max_completion_tokens": samp_max,
-            }
-            # 3) Send to sampler model
-            try:
-                # Use the same request dict we persist (no duplication)
-                samp = await client.chat.completions.create(
-                    **{k: v for k, v in samp_req.items() if v is not None},
-                )
-            except Exception as e:
-                counters["sampler_errors"] += 1
-                msg = json.dumps(
-                    {
-                        "correlation_id": item.correlation_id,
-                        "status": "sampler_error",
-                        "error": str(e),
-                    },
-                )
-                with progress_path.open("a", encoding="utf-8") as pg:
-                    pg.write(msg + "\n")
-                sys.stderr.write(msg + "\n")
-                sys.stderr.flush()
-                return None, None
-            new_asst_obj = samp.choices[0].message
+            # 3) Send to sampler model (Responses for Crush; Chat for CCR)
+            if item.responses_request is not None:
+                resp_input = anthro_to_responses_input(context_body, new_sys)
+                resp_tools = tools_param if isinstance(tools_param, list) else None
+                samp_req = {
+                    "model": SAMPLER_MODEL,
+                    "input": resp_input,
+                    "tools": resp_tools,
+                    "tool_choice": {"type": "auto"},
+                    "parallel_tool_calls": True,
+                    "max_output_tokens": samp_max,
+                }
+                try:
+                    samp = await client.responses.create(**samp_req)
+                except Exception as e:
+                    counters["sampler_errors"] += 1
+                    msg = json.dumps(
+                        {
+                            "correlation_id": item.correlation_id,
+                            "status": "sampler_error",
+                            "error": str(e),
+                        },
+                    )
+                    with progress_path.open("a", encoding="utf-8") as pg:
+                        pg.write(msg + "\n")
+                    sys.stderr.write(msg + "\n")
+                    sys.stderr.flush()
+                    return None, None
+                # For grading/reporting, pass raw Responses request/response
+                new_asst_obj = {
+                    "responses_input": resp_input,
+                    "responses_output": samp.model_dump(),
+                }
+            else:
+                chat_tools = map_tools_for_chat(tools_param)
+                samp_req = {
+                    "model": SAMPLER_MODEL,
+                    "messages": oai_messages,
+                    "tools": chat_tools,
+                    "tool_choice": "auto",
+                    "parallel_tool_calls": True,
+                    "max_completion_tokens": samp_max,
+                }
+                try:
+                    samp = await client.chat.completions.create(
+                        **{k: v for k, v in samp_req.items() if v is not None},
+                    )
+                except Exception as e:
+                    counters["sampler_errors"] += 1
+                    msg = json.dumps(
+                        {
+                            "correlation_id": item.correlation_id,
+                            "status": "sampler_error",
+                            "error": str(e),
+                        },
+                    )
+                    with progress_path.open("a", encoding="utf-8") as pg:
+                        pg.write(msg + "\n")
+                    sys.stderr.write(msg + "\n")
+                    sys.stderr.flush()
+                    return None, None
+                new_asst_obj = samp.choices[0].message.model_dump()
 
             # 4) Build grading inputs
             msgs = ar.messages
-            raw_new_asst_obj = new_asst_obj.model_dump()
+            raw_new_asst_obj = new_asst_obj if isinstance(new_asst_obj, dict) else new_asst_obj.model_dump()
             base_prefix = msgs[:-2] if len(msgs) >= 2 else []
             base_prefix = [m for m in base_prefix if m.get("role") != "system"]
             # Compute bad branch (inclusive of complaint)
@@ -782,7 +858,7 @@ async def run_eval(
                 {
                     "request": samp_req,
                     "response": samp.model_dump(),
-                    "new_assistant_message": new_asst_obj.model_dump(),
+                    "new_assistant_message": raw_new_asst_obj,
                     "correlation_id": item.correlation_id,
                     "timestamp": item.timestamp,
                     "anthropic_request": item.anthropic_request,

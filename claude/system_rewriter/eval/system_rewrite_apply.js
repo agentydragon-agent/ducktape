@@ -62,10 +62,26 @@ async function readAllStdin(){
   const template = fs.readFileSync(templatePath, 'utf8');
   const sysIn = await readAllStdin();
   const { toolsBlob, envGitBlobs, modelLine, mcpSection } = extractBlobs(String(sysIn));
-  let out = template;
-  out = out.replaceAll('${toolsBlob}', toolsBlob);
-  out = out.replaceAll('${envGitBlobs}', envGitBlobs.join(''));
-  out = out.replaceAll('${modelLine}', modelLine);
-  out = out.replaceAll('${mcpSection}', mcpSection);
+  // Ensure each placeholder appears exactly once
+  const placeholders = ['${toolsBlob}','${envGitBlobs}','${modelLine}','${mcpSection}'];
+  for (const ph of placeholders) {
+    const count = (template.match(new RegExp(esc(ph), 'g')) || []).length;
+    if (count !== 1) {
+      console.error(`template placeholder ${ph} count=${count} (expected 1)`);
+      process.exit(3);
+    }
+  }
+  let out = template
+    .replace('${toolsBlob}', toolsBlob)
+    .replace('${envGitBlobs}', envGitBlobs.join(''))
+    .replace('${modelLine}', modelLine)
+    .replace('${mcpSection}', mcpSection);
+  // Double-check placeholders no longer present
+  for (const ph of placeholders) {
+    if (out.includes(ph)) {
+      console.error(`placeholder ${ph} still present after replacement`);
+      process.exit(4);
+    }
+  }
   process.stdout.write(out);
 })();
