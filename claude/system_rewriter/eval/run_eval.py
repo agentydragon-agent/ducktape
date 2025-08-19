@@ -15,12 +15,8 @@ from typing import Any
 import tiktoken  # type: ignore
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from openai import AsyncOpenAI
-from openai.types.responses import ResponseCreateParams
-from pydantic import TypeAdapter
-from anthropic.types.message_create_params import (
-    MessageCreateParamsNonStreaming as AnthRequest,
-)
 from schemas import EvalSampleRecord, EvalGradeRecord, CCRRequest
+from constants import TOOLS_HEADER
 
 # Config
 DEFAULT_DATASET_PATH = Path(__file__).parent / "data" / "dataset.jsonl"
@@ -128,15 +124,18 @@ async def read_dataset(dataset_path: Path) -> list[Sample]:
                             sys_text = text if not sys_text else f"{sys_text}\n\n{text}"
                         if role in ("user", "assistant") and text:
                             messages.append({"role": role, "content": text})
+                ar_ccr = CCRRequest.model_validate(
+                    {
+                        "system": sys_text or None,
+                        "messages": messages,
+                        "tools": payload.get("tools") if isinstance(payload.get("tools"), list) else None,
+                    }
+                )
                 items.append(
                     Sample(
                         correlation_id=rec.get("correlation_id"),
                         timestamp=rec.get("timestamp"),
-                        anthropic_request={
-                            "system": sys_text,
-                            "messages": messages,
-                            "tools": payload.get("tools"),
-                        },
+                        anthropic_request=ar_ccr,
                     ),
                 )
                 continue
@@ -184,17 +183,70 @@ def flatten_system_string(sys: Any) -> str:
 
 
 def rewrite_system_with_template(system_text: str, template_path: Path) -> str:
-    # Pipe system_text into the JS apply script with the given template
-    proc = subprocess.run(
-        ["node", str(REWRITE_APPLY), str(template_path)],
-        input=system_text.encode("utf-8"),
-        capture_output=True,
-        check=False,
-    )
+    """Rewrite the system prompt via Node apply script.
+    Fails clearly if Node.js is not available or the script errors out.
+    """
+    try:
+        # Pass shared TOOLS_HEADER into the JS env to avoid magic strings
+        env = {**os.environ, "TOOLS_HEADER": TOOLS_HEADER}
+        proc = subprocess.run(
+            ["node", str(REWRITE_APPLY), str(template_path)],
+            input=system_text.encode("utf-8"),
+            capture_output=True,
+            check=False,
+            timeout=60,
+            env=env,
+        )
+    except FileNotFoundError as e:
+        raise RuntimeError(
+            "Node.js ('node') not found in PATH; install Node or adjust PATH to use system rewrite",
+        ) from e
     if proc.returncode != 0:
         sys.stderr.write(proc.stderr.decode("utf-8", errors="ignore"))
         raise RuntimeError(f"system rewrite failed with code {proc.returncode}")
     return proc.stdout.decode("utf-8")
+
+
+def prev_assistant_index(msgs: list[dict[str, Any]]) -> int | None:
+    """Return the index of the last assistant message before the final item, or None."""
+    if not isinstance(msgs, list):
+        return None
+    for i in range(len(msgs) - 2, -1, -1):
+        if isinstance(msgs[i], dict) and msgs[i].get("role") == "assistant":
+            return i
+    return None
+
+
+def map_tools_for_chat(tools_val):
+    """Map Responses-style tools to Chat Completions function tool schema."""
+    def _to_chat_tool(t: Any):
+        if not isinstance(t, dict):
+            return None
+        # Normalize to a bare function dict first
+        if t.get("type") == "function" and isinstance(t.get("function"), dict):
+            fn = dict(t["function"])  # shallow copy
+        else:
+            fn = dict(t)
+        # Convert Responses API shape -> Chat Completions shape
+        if "input_schema" in fn and "parameters" not in fn:
+            fn["parameters"] = fn.pop("input_schema")
+        # Remove unsupported keys
+        fn.pop("strict", None)
+        # Keep only standard Chat function keys
+        out_fn = {k: v for k, v in fn.items() if k in ("name", "description", "parameters")}
+        if not isinstance(out_fn.get("name"), str):
+            return None
+        if "parameters" not in out_fn:
+            return None
+        return {"type": "function", "function": out_fn}
+
+    out = []
+    if isinstance(tools_val, list):
+        for t in tools_val:
+            ct = _to_chat_tool(t)
+            if ct:
+                out.append(ct)
+    return out or None
 
 
 def anthro_to_openai_messages(
@@ -318,13 +370,15 @@ def anthro_to_openai_messages(
                                     f"FATAL: Unserializable tool_result.content: {e}",
                                 )
                         # Emit tool result; if missing id, keep but mark unknown to avoid silent drop
-                        tool_msgs.append(
-                            {
-                                "role": "tool",
-                                "tool_call_id": str(tcid) if tcid else "unknown",
-                                "content": tool_text or "",
-                            },
-                        )
+                        if tcid:
+                            tool_msgs.append(
+                                {
+                                    "role": "tool",
+                                    "tool_call_id": str(tcid),
+                                    "content": tool_text or "",
+                                },
+                            )
+                        # If tcid missing, drop the tool message to avoid invalid Chat linkage
                 # Order: tool messages first (to mirror CCR), then user text (if any)
                 out.extend(
                     [
@@ -340,21 +394,22 @@ def anthro_to_openai_messages(
 
             if role == "tool":
                 # Allow direct tool messages in source (e.g., when normalizing from other formats)
-                tcid = None
                 content_val = None
                 if isinstance(content, str):
                     content_val = content
                 elif isinstance(content, list):
                     content_val = _join_text_parts(content)
-                # Some sources may include explicit tool_call_id on the message
-                tcid = None
-                out.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": str(tcid) if tcid else "unknown",
-                        "content": content_val or "",
-                    },
-                )
+                # Preserve explicit tool_call_id if present on the message
+                tcid = m.get("tool_call_id") or m.get("tool_use_id") or m.get("id")
+                if tcid:
+                    out.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": str(tcid),
+                            "content": content_val or "",
+                        },
+                    )
+                # If tcid missing, drop this tool message
                 continue
 
             # Ignore any other roles or system lists here
@@ -507,11 +562,7 @@ async def run_eval(
             msgs = ar.messages
             complaint_idx = len(msgs) - 1
             # find preceding assistant turn (skip non-assistant items between)
-            prev_asst_idx = None
-            for i in range(complaint_idx - 1, -1, -1):
-                if msgs[i].get("role") == "assistant":
-                    prev_asst_idx = i
-                    break
+            prev_asst_idx = prev_assistant_index(msgs)
             if prev_asst_idx is None:
                 with progress_path.open("a", encoding="utf-8") as pg:
                     pg.write(
@@ -554,46 +605,9 @@ async def run_eval(
                 1,
                 min(PER_OUTPUT_CAP, MAX_TOTAL_TOKENS - in_tokens - SAFETY_TOKENS),
             )
-            tools_param = item.anthropic_request.get("tools")
+            tools_param = ar.tools
 
-            def _map_tools_for_chat(tools_val):
-                def _to_chat_tool(t: Any):
-                    if not isinstance(t, dict):
-                        return None
-                    # Normalize to a bare function dict first
-                    if t.get("type") == "function" and isinstance(
-                        t.get("function"),
-                        dict,
-                    ):
-                        fn = dict(t["function"])  # shallow copy
-                    else:
-                        fn = dict(t)
-                    # Convert Responses API shape -> Chat Completions shape
-                    if "input_schema" in fn and "parameters" not in fn:
-                        fn["parameters"] = fn.pop("input_schema")
-                    # Remove unsupported keys
-                    fn.pop("strict", None)
-                    # Keep only standard Chat function keys
-                    out_fn = {
-                        k: v
-                        for k, v in fn.items()
-                        if k in ("name", "description", "parameters")
-                    }
-                    if not isinstance(out_fn.get("name"), str):
-                        return None
-                    if "parameters" not in out_fn:
-                        return None
-                    return {"type": "function", "function": out_fn}
-
-                out = []
-                if isinstance(tools_val, list):
-                    for t in tools_val:
-                        ct = _to_chat_tool(t)
-                        if ct:
-                            out.append(ct)
-                return out or None
-
-            chat_tools = _map_tools_for_chat(tools_param)
+            chat_tools = map_tools_for_chat(tools_param)
             samp_req = {
                 "model": SAMPLER_MODEL,
                 "messages": oai_messages,
@@ -625,12 +639,8 @@ async def run_eval(
             new_asst_obj = samp.choices[0].message
 
             # 4) Build grading inputs
-            msgs = item.anthropic_request.get("messages", [])
-            last = msgs[-1]
-            # Keep 'last' for future use if needed; avoid unused assignment
+            msgs = ar.messages
             raw_new_asst_obj = new_asst_obj.model_dump()
-            if len(msgs) >= 2 and msgs[-2].get("role") == "assistant":
-                _ = msgs[-2]  # previous assistant message (kept for context if needed)
             base_prefix = msgs[:-2] if len(msgs) >= 2 else []
             base_prefix = [m for m in base_prefix if m.get("role") != "system"]
             # Compute bad branch (inclusive of complaint)
@@ -638,9 +648,9 @@ async def run_eval(
             raw_bad_branch = msgs[prev_asst_idx : complaint_idx + 1]
             # Keep first 5 and last 5; truncate middle to fit token budget
             first = base_prefix[:5]
-            last = base_prefix[-5:] if len(base_prefix) > 5 else []
+            tail = base_prefix[-5:] if len(base_prefix) > 5 else []
             middle = (
-                base_prefix[5 : len(base_prefix) - len(last)]
+                base_prefix[5 : len(base_prefix) - len(tail)]
                 if len(base_prefix) > 10
                 else []
             )
@@ -660,12 +670,12 @@ async def run_eval(
                 ]
 
             prefix_msgs = [*first]  # start with first only
-            gi = mk_grader_input(prefix_msgs + last)
+            gi = mk_grader_input(prefix_msgs + tail)
             tok = tokens_for_chat_messages(gi)
             # Greedily add middle messages until we hit budget
             added = 0
             for m in middle:
-                trial = mk_grader_input([*prefix_msgs, m, *last])
+                trial = mk_grader_input([*prefix_msgs, m, *tail])
                 trial_tok = tokens_for_chat_messages(trial)
                 if trial_tok <= TARGET_PREFIX_TOKENS:
                     prefix_msgs.append(m)
@@ -675,7 +685,7 @@ async def run_eval(
                 else:
                     break
             # Attach tail (already accounted in gi)
-            prefix_msgs = prefix_msgs + last
+            prefix_msgs = prefix_msgs + tail
             # Log truncation info
             with progress_path.open("a", encoding="utf-8") as pg:
                 pg.write(
@@ -686,7 +696,7 @@ async def run_eval(
                             "prefix_counts": {
                                 "total": len(base_prefix),
                                 "kept_first": len(first),
-                                "kept_last": len(last),
+                                "kept_last": len(tail),
                                 "added_middle": added,
                             },
                             "token_estimate": tok,
@@ -923,12 +933,6 @@ async def run_eval(
         # Collect rows
         rows: list[dict[str, Any]] = []
 
-        def _prev_asst_idx(msgs: list[dict[str, Any]]) -> int | None:
-            last_idx: int | None = None
-            for i in range(max(0, len(msgs) - 1)):
-                if isinstance(msgs[i], dict) and msgs[i].get("role") == "assistant":
-                    last_idx = i
-            return last_idx
 
         summary: dict[str, Any] = {}
         try:
@@ -947,7 +951,7 @@ async def run_eval(
                     cid = srec.get("correlation_id") or ""
                     ar = srec.get("anthropic_request") or {}
                     msgs = ar.get("messages") or []
-                    idx = _prev_asst_idx(msgs)
+                    idx = prev_assistant_index(msgs)
                     if idx is None:
                         last_three = msgs[-3:] if len(msgs) > 3 else msgs
                         bad_branch = []

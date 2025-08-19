@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 const fs = require('fs');
 
-const TOOLS_HEADER = 'You can use the following tools without requiring user approval:';
+const TOOLS_HEADER = process.env.TOOLS_HEADER || 'You can use the following tools without requiring user approval:';
 const ENV_INTRO = 'Here is useful information about the environment you are running in:';
 const MODEL_PREFIX = 'You are powered by the model';
 const MCP_HEADER = '# MCP Server Instructions';

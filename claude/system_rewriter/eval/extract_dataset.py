@@ -7,8 +7,7 @@ from typing import Any
 TRACE_DIR = Path.home() / ".claude-code-router" / "logs"
 OUTPUT_PATH = Path(__file__).parent / "data" / "dataset.jsonl"
 
-BAD_MARKER = "<bad>"
-TOOLS_HEADER = "You can use the following tools without requiring user approval:"
+from constants import BAD_MARKER, TOOLS_HEADER
 
 
 def list_trace_files() -> list[Path]:

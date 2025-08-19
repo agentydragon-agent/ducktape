@@ -1,0 +1,60 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+import pytest
+
+# Ensure eval dir is on sys.path for local imports
+THIS_DIR = Path(__file__).resolve().parent
+EVAL_DIR = THIS_DIR.parent
+if str(EVAL_DIR) not in sys.path:
+    sys.path.insert(0, str(EVAL_DIR))
+
+from run_eval import read_dataset  # type: ignore
+
+ROOT = EVAL_DIR
+DATA = ROOT / "data" / "_test"
+
+
+from hamcrest import assert_that, equal_to, any_of, has_item, contains_string, has_entries, has_key
+
+
+@pytest.mark.asyncio
+async def test_read_ccr_min():
+    ds = await read_dataset(DATA / "ccr_min.jsonl")
+    assert len(ds) == 2
+    s = ds[0]
+    assert s.correlation_id == "ccr-1"
+    msgs = s.anthropic_request.messages
+    assert_that(msgs[0]["role"], equal_to("user"))
+    # last user message should contain the <bad> marker
+    last_user = next(m for m in reversed(msgs) if m.get("role") == "user")
+    # Matcher: has a content block that is text with substring
+    assert_that(
+        last_user,
+        has_entries(
+            content=any_of(
+                has_item(has_entries(type="text", text=contains_string("<bad>"))),
+                # Some datasets encode content as a plain string
+                contains_string("<bad>")
+            )
+        ),
+    )
+
+
+@pytest.mark.asyncio
+async def test_read_crush_min():
+    ds = await read_dataset(DATA / "crush_min.jsonl")
+    assert len(ds) == 2
+    s_bad = ds[0]
+    # crush has no correlation_id semantics
+    assert s_bad.correlation_id is None
+    # normalized anthropic_request built from Responses input
+    msgs = s_bad.anthropic_request.messages
+    assert msgs[0]["role"] in ("user", "assistant")  # at least present
+    sys = s_bad.anthropic_request.system
+    assert isinstance(sys, str) and "Tools:" in sys
+
