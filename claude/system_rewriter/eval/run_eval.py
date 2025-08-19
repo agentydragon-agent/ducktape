@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 import tiktoken  # type: ignore
+import copy
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from openai import AsyncOpenAI
 from schemas import EvalSampleRecord, EvalGradeRecord, CCRRequest
@@ -208,6 +209,62 @@ def rewrite_system_with_template(system_text: str, template_path: Path) -> str:
         sys.stderr.write(proc.stderr.decode("utf-8", errors="ignore"))
         raise RuntimeError(f"system rewrite failed with code {proc.returncode}")
     return proc.stdout.decode("utf-8")
+
+
+import re
+
+ENV_INTRO = 'Here is useful information about the environment you are running in:'
+MODEL_PREFIX = 'You are powered by the model'
+MCP_HEADER = '# MCP Server Instructions'
+
+def _extract_blobs_py(system_text: str) -> dict[str, Any]:
+    s = system_text or ''
+    # envGitBlobs: all <env>...</env> blocks following the intro line
+    envGitBlobs: list[str] = []
+    if ENV_INTRO in s:
+        env_re = re.compile(re.escape(ENV_INTRO) + r"\n<env>[\s\S]*?</env>\s*", re.MULTILINE)
+        envGitBlobs = [m.group(0) for m in env_re.finditer(s)]
+    # toolsBlob: text after TOOLS_HEADER until next known header
+    toolsBlob = ''
+    i_tools = s.find(TOOLS_HEADER)
+    if i_tools != -1:
+        after = i_tools + len(TOOLS_HEADER)
+        nxt = [x for x in [s.find(ENV_INTRO, after), s.find(MODEL_PREFIX, after), s.find(MCP_HEADER, after)] if x != -1]
+        end = min(nxt) if nxt else len(s)
+        toolsBlob = s[after:end]
+    # modelLine: first line starting with MODEL_PREFIX
+    mm = re.search(r'^' + re.escape(MODEL_PREFIX) + r'[^\n]*\n?', s, flags=re.MULTILINE)
+    modelLine = mm.group(0) if mm else ''
+    # mcpSection: all content after the MCP header's newline
+    mcpSection = ''
+    i_mcp = s.find(MCP_HEADER)
+    if i_mcp != -1:
+        nl = s.find('\n', i_mcp)
+        mcpSection = '' if nl == -1 else s[nl + 1 :]
+    return {"toolsBlob": toolsBlob, "envGitBlobs": envGitBlobs, "modelLine": modelLine, "mcpSection": mcpSection}
+
+
+def rewrite_system_with_template_py(system_text: str, template_path: Path) -> str:
+    template = Path(template_path).read_text(encoding='utf-8')
+    blobs = _extract_blobs_py(system_text)
+    placeholders = ['${toolsBlob}', '${envGitBlobs}', '${modelLine}', '${mcpSection}']
+    # Validate each placeholder occurs exactly once
+    for ph in placeholders:
+        cnt = len(re.findall(re.escape(ph), template))
+        if cnt != 1:
+            raise RuntimeError(f"template placeholder {ph} count={cnt} (expected 1)")
+    out = (
+        template
+        .replace('${toolsBlob}', blobs['toolsBlob'])
+        .replace('${envGitBlobs}', ''.join(blobs['envGitBlobs']))
+        .replace('${modelLine}', blobs['modelLine'])
+        .replace('${mcpSection}', blobs['mcpSection'])
+    )
+    # Ensure placeholders are gone
+    for ph in placeholders:
+        if ph in out:
+            raise RuntimeError(f"placeholder {ph} still present after replacement")
+    return out
 
 
 def prev_assistant_index(msgs: list[dict[str, Any]]) -> int | None:
@@ -601,7 +658,11 @@ async def run_eval(
             sys_val = ar.system if isinstance(ar.system, str) else "\n\n".join([
                 p.get("text", "") for p in (ar.system or []) if isinstance(p, dict)
             ])
-            new_sys = rewrite_system_with_template(sys_val, template_path)
+            new_sys = (
+                rewrite_system_with_template_py(sys_val, template_path)
+                if item.responses_request is not None
+                else rewrite_system_with_template(sys_val, template_path)
+            )
             # 2) Build OpenAI sampling request at the point BEFORE the bad assistant turn
             msgs = ar.messages
             complaint_idx = len(msgs) - 1
@@ -653,16 +714,14 @@ async def run_eval(
 
             # 3) Send to sampler model (Responses for Crush; Chat for CCR)
             if item.responses_request is not None:
+                # COPY the entire captured Responses request and only edit the system/input
                 resp_input = anthro_to_responses_input(context_body, new_sys)
-                resp_tools = tools_param if isinstance(tools_param, list) else None
-                samp_req = {
-                    "model": SAMPLER_MODEL,
-                    "input": resp_input,
-                    "tools": resp_tools,
-                    "tool_choice": {"type": "auto"},
-                    "parallel_tool_calls": True,
-                    "max_output_tokens": samp_max,
-                }
+                base_req = copy.deepcopy(item.responses_request) if isinstance(item.responses_request, dict) else {}
+                base_req["input"] = resp_input
+                # Ensure model present for API call; Crush capture may omit it
+                if not base_req.get("model"):
+                    base_req["model"] = SAMPLER_MODEL
+                samp_req = base_req
                 try:
                     samp = await client.responses.create(**samp_req)
                 except Exception as e:
