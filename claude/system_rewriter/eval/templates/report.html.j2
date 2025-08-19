@@ -16,6 +16,65 @@
   </style>
 </head>
 <body>
+{% macro render_messages(msgs) %}
+  {% for m in msgs %}
+    {% set role = m.role if m.role is defined else m.get('role') %}
+    {% set content = m.content if m.content is defined else m.get('content') %}
+    <div style="margin-bottom:8px">
+      <div class="meta"><strong>{{ role }}</strong></div>
+      {% if content is string %}
+        <details>
+          <summary><code>{{ (content or '')[:120] ~ ('…' if (content|length > 120) else '') }}</code></summary>
+          <pre><code>{{ content }}</code></pre>
+        </details>
+      {% else %}
+        {% set j = content | tojson(indent=2) %}
+        <details>
+          <summary><code class="json">{{ j[:120] ~ ('…' if (j|length > 120) else '') }}</code></summary>
+          <pre><code class="json">{{ j }}</code></pre>
+        </details>
+      {% endif %}
+    </div>
+  {% endfor %}
+{% endmacro %}
+
+{% macro render_alternative(alt) %}
+  {% if alt is mapping and (alt.tool_calls or alt.get('tool_calls')) %}
+    {% set tcs = alt.tool_calls if alt.tool_calls is defined else alt.get('tool_calls') %}
+    {% if alt.content is string and alt.content %}
+      <div class="meta"><strong>assistant</strong></div>
+      <details>
+        <summary><code>{{ (alt.content or '')[:120] ~ ('…' if (alt.content|length > 120) else '') }}</code></summary>
+        <pre><code>{{ alt.content }}</code></pre>
+      </details>
+    {% endif %}
+    <div class="meta"><strong>tool_calls</strong></div>
+    {% for tc in tcs %}
+      {% set fn = (tc.function.name if tc.function is defined else (tc.get('function') or {}).get('name')) %}
+      {% set args = (tc.function.arguments if tc.function is defined else (tc.get('function') or {}).get('arguments')) %}
+      <div style="margin-bottom:8px">
+        <div class="meta">function: {{ fn }}</div>
+        {% set args_text = args if args is string else (args | string) %}
+        <details>
+          <summary><code class="json">{{ (args_text or '')[:120] ~ ('…' if (args_text|length > 120) else '') }}</code></summary>
+          <pre><code class="json">{{ args_text }}</code></pre>
+        </details>
+      </div>
+    {% endfor %}
+  {% elif alt is mapping and (alt.responses_input or alt.get('responses_input')) %}
+    {% set j = alt | tojson(indent=2) %}
+    <details>
+      <summary><code class="json">{{ j[:120] ~ ('…' if (j|length > 120) else '') }}</code></summary>
+      <pre><code class="json">{{ j }}</code></pre>
+    </details>
+  {% else %}
+    {% set j = alt | tojson(indent=2) %}
+    <details>
+      <summary><code class="json">{{ j[:120] ~ ('…' if (j|length > 120) else '') }}</code></summary>
+      <pre><code class="json">{{ j }}</code></pre>
+    </details>
+  {% endif %}
+{% endmacro %}
 <section>
   <h1>Evaluation Summary</h1>
   <div class="meta">
@@ -50,18 +109,7 @@
   </table>
 
   <h3>Shared prefix</h3>
-  <div>
-    {% for m in r.shared_prefix %}
-      <div style="margin-bottom:8px">
-        <div class="meta"><strong>{{ m.role }}</strong></div>
-        {% if m.content is string %}
-          <pre><code>{{ m.content }}</code></pre>
-        {% else %}
-          <pre><code class="json">{{ m.content | tojson(indent=2) }}</code></pre>
-        {% endif %}
-      </div>
-    {% endfor %}
-  </div>
+  {{ render_messages(r.shared_prefix) }}
 
   <h3>Rollouts</h3>
   <table width="100%" cellspacing="0" cellpadding="6" style="border-collapse:collapse">
@@ -71,40 +119,10 @@
     </tr>
     <tr>
       <td valign="top">
-        {% for m in r.bad_branch %}
-          <div style="margin-bottom:8px">
-            <div class="meta"><strong>{{ m.role }}</strong></div>
-            {% if m.content is string %}
-              <pre><code>{{ m.content }}</code></pre>
-            {% else %}
-              <pre><code class="json">{{ m.content | tojson(indent=2) }}</code></pre>
-            {% endif %}
-          </div>
-        {% endfor %}
+        {{ render_messages(r.bad_branch) }}
       </td>
       <td valign="top">
-        {% set alt = r.alternative %}
-        {% if alt is mapping and (alt.tool_calls or alt.get('tool_calls')) %}
-          {% set tcs = alt.tool_calls if alt.tool_calls is defined else alt.get('tool_calls') %}
-          {% if alt.content is string and alt.content %}
-            <div class="meta"><strong>assistant</strong></div>
-            <pre><code>{{ alt.content }}</code></pre>
-          {% endif %}
-          <div class="meta"><strong>tool_calls</strong></div>
-          {% for tc in tcs %}
-            <div style="margin-bottom:8px">
-              <div class="meta">function: {{ (tc.function.name if tc.function is defined else (tc.get('function') or {}).get('name')) }}</div>
-              <pre><code class="json">{{ (tc.function.arguments if tc.function is defined else (tc.get('function') or {}).get('arguments')) }}</code></pre>
-            </div>
-          {% endfor %}
-        {% elif alt is mapping and (alt.responses_input or alt.get('responses_input')) %}
-          <!-- Responses-format alternative: show compact JSON -->
-          <pre><code class="json">{{ alt | tojson(indent=2) }}</code></pre>
-        {% elif alt is mapping %}
-          <pre><code class="json">{{ alt | tojson(indent=2) }}</code></pre>
-        {% else %}
-          <pre><code class="json">{{ alt | tojson(indent=2) }}</code></pre>
-        {% endif %}
+        {{ render_alternative(r.alternative) }}
       </td>
     </tr>
   </table>

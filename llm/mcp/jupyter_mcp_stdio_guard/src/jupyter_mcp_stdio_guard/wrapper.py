@@ -461,82 +461,85 @@ def _seatbelt(
                 print(f"[wrapper] cleanup failed: {e}", file=sys.stderr)
 
 
-def _load_policy_config(workspace: Path) -> PolicyConfig | None:
+def _read_yaml(path: Path) -> dict:
+    return yaml.safe_load(path.read_text()) or {}
+
+
+def _load_policy_config_from_path(cfg_path: Path) -> PolicyConfig:
+    data = _read_yaml(cfg_path)
+    return PolicyConfig(**data)
+
+
+def _load_policy_config_default(workspace: Path) -> PolicyConfig:
     cfg_path = workspace / ".sandbox_jupyter.yaml"
     if not cfg_path.exists():
-        return None
-    try:
-        data = yaml.safe_load(cfg_path.read_text()) or {}
-        return PolicyConfig(**data)
-    except Exception:
-        return None
+        raise FileNotFoundError(cfg_path)
+    return _load_policy_config_from_path(cfg_path)
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--workspace", default=str(Path.cwd()))
-    ap.add_argument("--document-id", default=None)
-    ap.add_argument("--mode", choices=["docker", "seatbelt"], default="seatbelt")
-    ap.add_argument("--docker-image", default="python:3.12-slim")
-    ap.add_argument("--jupyter-port", type=int, default=0, help="0=auto-pick free port")
-    ap.add_argument("--start-new-runtime", action="store_true")
-    ap.add_argument("--trace-sandbox", action="store_true")
-    ap.add_argument("--no-kernel-sandbox", action="store_true")
-    ap.add_argument("--stdio-server", action="store_true", help="Run as MCP stdio server with workspace=cwd and document auto")
-    ap.add_argument("--policy-config", default=None, help="Path to YAML policy config; defaults to <workspace>/.sandbox_jupyter.yaml if present")
+    ap = argparse.ArgumentParser(prog="sandbox-jupyter-mcp")
+    sub = ap.add_subparsers(dest="command", required=True)
+
+    ap_stdio = sub.add_parser("stdio", help="Start MCP server over stdio; requires --policy-config")
+    ap_stdio.add_argument("--document-id", default=None)
+    ap_stdio.add_argument("--mode", choices=["docker", "seatbelt"], default="seatbelt")
+    ap_stdio.add_argument("--docker-image", default="python:3.12-slim")
+    ap_stdio.add_argument("--jupyter-port", type=int, default=0, help="0=auto-pick free port")
+    ap_stdio.add_argument("--start-new-runtime", action="store_true")
+    ap_stdio.add_argument("--trace-sandbox", action="store_true")
+    ap_stdio.add_argument("--no-kernel-sandbox", action="store_true")
+    ap_stdio.add_argument(
+        "--policy-config",
+        required=True,
+        help="Path to YAML policy config with explicit workspace, run_root, fs_read, fs_write, env, net",
+    )
+
     args = ap.parse_args()
 
-    # stdio-server mode: minimal friction for embedding in MCP clients
-    if args.stdio_server:
-        args.workspace = str(Path.cwd())
-        args.document_id = None
-        args.mode = "seatbelt"
-        args.no_kernel_sandbox = False
-        args.start_new_runtime = True
-        # Fall through to normal path with resolved args
+    # Only command today is stdio
+    if args.command == "stdio":
+        try:
+            cfg = _load_policy_config_from_path(Path(args.policy_config))
+        except ValidationError as e:
+            print(
+                f"Invalid sandbox config: {e}\nErrors: {e.errors()}",
+                file=sys.stderr,
+            )
+            raise SystemExit(
+                "Invalid sandbox config; see errors above and docs/CONFIG_DETAILS.md"
+            )
 
-    workspace = Path(args.workspace).resolve()
-    _ensure_dir(workspace)
+        workspace = Path(cfg.workspace).resolve()
+        _ensure_dir(workspace)
 
-    # Load policy config (explicit path wins; else workspace default)
-    cfg: PolicyConfig | None = None
-    if args.policy_config:
-        cfg_path = Path(args.policy_config)
-        if cfg_path.exists():
-            try:
-                cfg = PolicyConfig(**(yaml.safe_load(cfg_path.read_text()) or {}))
-            except Exception:
-                cfg = None
-    else:
-        cfg = _load_policy_config(workspace)
-    if cfg is None:
-        raise SystemExit("Sandbox policy config not found; please provide --policy-config or create .sandbox_jupyter.yaml in workspace")
+        doc_id = _ensure_document_id(
+            workspace,
+            args.document_id,
+            sandboxed_kernel=not args.no_kernel_sandbox,
+        )
+        port = args.jupyter_port or 0
+        if port == 0:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.bind(("127.0.0.1", 0))
+                port = s.getsockname()[1]
 
-    doc_id = _ensure_document_id(
-        workspace,
-        args.document_id,
-        sandboxed_kernel=not args.no_kernel_sandbox,
-    )
-    port = args.jupyter_port or 0
-    if port == 0:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.bind(("127.0.0.1", 0))
-            port = s.getsockname()[1]
-
-    if args.mode == "docker":
-        return _docker(
+        if args.mode == "docker":
+            return _docker(
+                workspace,
+                doc_id,
+                args.docker_image,
+                args.start_new_runtime,
+                port,
+            )
+        return _seatbelt(
             workspace,
             doc_id,
-            args.docker_image,
             args.start_new_runtime,
             port,
+            cfg=cfg,
+            trace=args.trace_sandbox,
+            kernel_sandbox=not args.no_kernel_sandbox,
         )
-    return _seatbelt(
-        workspace,
-        doc_id,
-        args.start_new_runtime,
-        port,
-        cfg=cfg,
-        trace=args.trace_sandbox,
-        kernel_sandbox=not args.no_kernel_sandbox,
-    )
+
+    raise SystemExit("Unknown command")

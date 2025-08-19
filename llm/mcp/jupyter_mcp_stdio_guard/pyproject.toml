@@ -15,7 +15,7 @@ dependencies = [
 ]
 
 [project.scripts]
-sandbox-jupyter-mcp = "jupyter_mcp_stdio_guard.cli:main"
+sandbox-jupyter-mcp = "jupyter_mcp_stdio_guard.wrapper:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
