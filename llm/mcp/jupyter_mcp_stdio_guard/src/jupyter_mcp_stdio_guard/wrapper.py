@@ -227,7 +227,7 @@ def _write_sandboxed_kernelspec(
     (ks_dir / "kernel.json").write_text(json.dumps(kernel_json))
 
 
-def _start_jupyter_server(
+def _start_jupyter_server(  # noqa: PLR0913
     workspace: Path,
     token: str,
     jupyter_port: int,
@@ -278,7 +278,7 @@ def _start_jupyter_server(
     return proc
 
 
-def _seatbelt(
+def _seatbelt(  # noqa: PLR0913
     workspace: Path,
     document_id: str,
     start_new_runtime: bool,
@@ -338,6 +338,11 @@ def _seatbelt(
         )
     # Build child environment strictly from explicit YAML configuration
     child_env: dict[str, str] = dict(cfg.env or {})
+    # Ensure runtime/data/config dirs are used by Jupyter and libs unless explicitly overridden
+    child_env.setdefault("JUPYTER_RUNTIME_DIR", str(run_root / "runtime"))
+    child_env.setdefault("JUPYTER_DATA_DIR", str(run_root / "data"))
+    child_env.setdefault("JUPYTER_CONFIG_DIR", str(run_root / "config"))
+    child_env.setdefault("MPLCONFIGDIR", str(run_root / "mpl"))
 
     # Ensure config dir exists and write a server config to prefer our kernels only
     (run_root / "config").mkdir(parents=True, exist_ok=True)
