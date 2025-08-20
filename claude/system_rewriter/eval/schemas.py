@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Any, Literal, Annotated, Union
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from openai.types.responses import ResponseCreateParams
 
 # ------------------------
@@ -25,6 +25,8 @@ class CrushWirelogMeta(BaseModel):
 
 
 class CrushSample(BaseModel):
+    kind: Literal["crush"] = "crush"
+    correlation_id: str | None = None
     timestamp: int | None = None
     oai_request: ResponseCreateParams
     wirelog: CrushWirelogMeta | None = None
@@ -41,6 +43,7 @@ class CCRRequest(BaseModel):
 
 
 class CCRSample(BaseModel):
+    kind: Literal["ccr"] = "ccr"
     correlation_id: str | None = None
     timestamp: int | None = None
     anthropic_request: CCRRequest
@@ -56,7 +59,7 @@ class EvalSampleRecord(BaseModel):
     new_assistant_message: dict[str, Any]
     correlation_id: str | None = None
     timestamp: int | None = None
-    anthropic_request: CCRRequest
+    anthropic_request: CCRRequest | None = None
     grade: dict[str, Any] | None = None
 
 
@@ -65,3 +68,6 @@ class EvalGradeRecord(BaseModel):
     response: dict[str, Any]
     correlation_id: str | None = None
     timestamp: int | None = None
+
+# Discriminated union for dataset samples
+Sample = Annotated[Union[CCRSample, CrushSample], Field(discriminator="kind")]

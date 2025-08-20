@@ -16,7 +16,9 @@ import tiktoken  # type: ignore
 import copy
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from openai import AsyncOpenAI
-from schemas import EvalSampleRecord, EvalGradeRecord, CCRRequest
+from pydantic import TypeAdapter
+from openai.types.responses import ResponseCreateParams
+from schemas import EvalSampleRecord, EvalGradeRecord, CCRRequest, CCRSample, CrushSample, Sample
 from constants import TOOLS_HEADER
 
 # Config
@@ -37,13 +39,6 @@ GRADER_MODEL = "gpt-5"
 REWRITE_APPLY = Path(__file__).parent / "system_rewrite_apply.js"
 
 
-@dataclass
-class Sample:
-    source: Literal["ccr", "crush"]
-    correlation_id: str | None
-    timestamp: int | None
-    anthropic_request: CCRRequest | None = None
-    responses_request: dict[str, Any] | None = None  # Present when source was Crush/Responses
 
 
 def parse_args():
@@ -92,30 +87,24 @@ async def read_dataset(dataset_path: Path) -> list[Sample]:
             rec = json.loads(line)
             # Support both CCR (anthropic_request) and Crush (oai_request) entries
             if "anthropic_request" in rec:
-                # Validate into CCRRequest strong type
-                ar = CCRRequest.model_validate(rec["anthropic_request"])  # type: ignore[arg-type]
-                items.append(
-                    Sample(
-                        source="ccr",
-                        correlation_id=rec.get("correlation_id"),
-                        timestamp=rec.get("timestamp"),
-                        anthropic_request=ar,
-                        responses_request=None,
-                    ),
+                # Validate CCR sample via Pydantic model
+                ccr = CCRSample(
+                    correlation_id=rec.get("correlation_id"),
+                    timestamp=rec.get("timestamp"),
+                    anthropic_request=CCRRequest.model_validate(rec["anthropic_request"])  # type: ignore[arg-type]
                 )
+                items.append(ccr)
                 continue
             if "oai_request" in rec:
-                # Keep native Responses payload; avoid persisting CCR coercion
+                # For ingest, keep unvalidated payload; some test fixtures include relaxed shapes
                 payload = rec["oai_request"]
-                items.append(
-                    Sample(
-                        source="crush",
-                        correlation_id=rec.get("correlation_id"),
-                        timestamp=rec.get("timestamp"),
-                        anthropic_request=None,
-                        responses_request=payload,
-                    ),
+                crush = CrushSample(
+                    correlation_id=rec.get("correlation_id"),
+                    timestamp=rec.get("timestamp"),
+                    oai_request=payload,  # type: ignore[arg-type]
+                    wirelog=rec.get("wirelog"),
                 )
+                items.append(crush)
                 continue
     return items
 
@@ -695,7 +684,7 @@ async def run_eval(
         async with sem:
             log_event({"event": "process_start", "cid": item.correlation_id})
             # Branch by source without coercing persisted formats
-            if item.source == "ccr":
+            if isinstance(item, CCRSample):  # CCR
                 # 1) Rewrite system via Node apply script
                 ar = item.anthropic_request  # type: ignore[assignment]
                 sys_val = ar.system if isinstance(ar.system, str) else "\n\n".join([
@@ -761,7 +750,7 @@ async def run_eval(
                 prev_asst_idx_for_grader = prev_asst_idx
             else:
                 # Crush / Responses-native path
-                payload = item.responses_request or {}
+                payload = item.oai_request
                 inp = payload.get("input")
                 # Extract original system and rewrite via Python fallback
                 orig_sys = responses_extract_system_text(inp)

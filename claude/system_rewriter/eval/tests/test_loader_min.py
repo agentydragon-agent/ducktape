@@ -14,6 +14,7 @@ if str(EVAL_DIR) not in sys.path:
     sys.path.insert(0, str(EVAL_DIR))
 
 from run_eval import read_dataset  # type: ignore
+from schemas import CrushSample  # type: ignore
 
 ROOT = EVAL_DIR
 DATA = ROOT / "data" / "_test"
@@ -52,10 +53,11 @@ async def test_read_crush_min():
     s_bad = ds[0]
     # crush has no correlation_id semantics
     assert s_bad.correlation_id is None
-    # Responses-native payload preserved (no CCR coercion)
-    assert s_bad.anthropic_request is None
-    payload = s_bad.responses_request
-    assert isinstance(payload, dict)
+    # Should be a CrushSample discriminated instance
+    assert isinstance(s_bad, CrushSample)
+    # Responses-native payload preserved
+    raw = s_bad.oai_request
+    payload = raw if isinstance(raw, dict) else raw.model_dump()
     assert isinstance(payload.get("input"), list)
     roles = [
         (it.get("role") or "").lower() for it in payload.get("input") if isinstance(it, dict)
