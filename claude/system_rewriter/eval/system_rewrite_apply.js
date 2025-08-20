@@ -81,7 +81,7 @@ async function readAllStdin(){
   // Optional: enforce each core var appears at most once to avoid accidental duplication
   const coreVars = ['toolsBlob','envGitBlobs','modelLine','mcpSection'];
   for (const name of coreVars) {
-    const reVar = new RegExp(`\\{\\{${esc(name)}\\}\\}|\\$\\{${esc(name)}\\}`, 'g');
+    const reVar = new RegExp(`\\{\\{${esc(name)}\\}\\}`, 'g');
     const count = (template.match(reVar) || []).length;
     if (count > 1) {
       console.error(`template variable ${name} appears ${count} times (expected ≤1)`);
@@ -91,21 +91,10 @@ async function readAllStdin(){
 
   let out = Mustache.render(template, ctx);
 
-  // Replace legacy ${name} tokens exactly once for compatibility
-  for (const name of coreVars) {
-    const token = '${' + name + '}';
-    const countLegacy = (template.match(new RegExp('\\' + token, 'g')) || []).length;
-    if (countLegacy > 1) {
-      console.error(`template placeholder ${token} appears ${countLegacy} times (expected ≤1)`);
-      process.exit(6);
-    }
-    if (countLegacy === 1) {
-      out = out.replace(token, ctx[name] ?? '');
-    }
-  }
+  // Legacy ${name} placeholders are not supported; use mustache {{name}} only
 
   // Validate no unreplaced tokens remain
-  const leftover = out.match(/\{\{[#\/]?\w+}}|\$\{(toolsBlob|envGitBlobs|modelLine|mcpSection)\}/);
+  const leftover = out.match(/\{\{[#\/]?\w+}}/);
   if (leftover) {
     console.error(`template contains unreplaced tokens, e.g. '${leftover[0]}'`);
     process.exit(4);

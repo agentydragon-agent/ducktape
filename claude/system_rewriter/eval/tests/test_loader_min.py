@@ -52,9 +52,13 @@ async def test_read_crush_min():
     s_bad = ds[0]
     # crush has no correlation_id semantics
     assert s_bad.correlation_id is None
-    # normalized anthropic_request built from Responses input
-    msgs = s_bad.anthropic_request.messages
-    assert msgs[0]["role"] in ("user", "assistant")  # at least present
-    sys = s_bad.anthropic_request.system
-    assert isinstance(sys, str) and "Tools:" in sys
+    # Responses-native payload preserved (no CCR coercion)
+    assert s_bad.anthropic_request is None
+    payload = s_bad.responses_request
+    assert isinstance(payload, dict)
+    assert isinstance(payload.get("input"), list)
+    roles = [
+        (it.get("role") or "").lower() for it in payload.get("input") if isinstance(it, dict)
+    ]
+    assert any(r in ("user", "assistant") for r in roles)
 

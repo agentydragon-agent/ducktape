@@ -60,7 +60,6 @@ def _ensure_dir(p: Path) -> None:
 def _ensure_document_id(
     workspace: Path,
     document_id: str | None,
-    sandboxed_kernel: bool,
 ) -> str:
     if document_id:
         p = workspace / document_id
@@ -80,15 +79,7 @@ def _ensure_document_id(
     p.parent.mkdir(parents=True, exist_ok=True)
     if p.exists():
         raise FileExistsError(f"Notebook already exists: {p}")
-    kernelspec = (
-        {
-            "name": "python3",
-            "display_name": "Python 3",
-            "language": "python",
-        }
-        if sandboxed_kernel
-        else {"name": "python3", "display_name": "Python 3", "language": "python"}
-    )
+    kernelspec = {"name": "python3", "display_name": "Python 3", "language": "python"}
     p.write_text(
         json.dumps(
             {
@@ -199,13 +190,17 @@ def _docker(
     return subprocess.Popen(cmd).wait()
 
 
+def _kernels_dir(run_root: Path) -> Path:
+    return run_root / "data" / "kernels"
+
+
 def _write_sandboxed_kernelspec(
     run_root: Path,
     workspace: Path,
     policy_path: Path,
 ) -> None:
     # Override the default 'python3' kernel to ensure the sandbox is used
-    ks_dir = run_root / "data" / "kernels" / "python3"
+    ks_dir = _kernels_dir(run_root) / "python3"
     ks_dir.mkdir(parents=True, exist_ok=True)
     kernel_json = {
         "argv": [
@@ -261,6 +256,8 @@ def _start_jupyter_server(
         "",
         "--ServerApp.disable_check_xsrf",
         "True",
+        "--config",
+        str(run_root / "config" / "jupyter_server_config.py"),
     ]
     if kernel_default_name:
         cmd += [
@@ -296,20 +293,17 @@ def _seatbelt(
         (run_root / sub).mkdir(parents=True, exist_ok=True)
     policy_path = run_root / "policy.sb"
 
-    # Resolve workspace and write roots from cfg
-    ws_dir = Path(cfg.workspace).resolve()
-    write_roots = [Path(p).resolve() for p in cfg.fs_write] or [ws_dir, run_root]
+    # Resolve write roots from cfg
+    write_roots = [Path(p).resolve() for p in cfg.fs_write] or [workspace, run_root]
 
     # Compose final policy with dynamic write roots and optional tracing
     dyn_lines = []
     if trace:
-        dyn_lines.append(f'(trace "{run_root / "profile.sb"!s}")')
+        dyn_lines.append(f'(trace "{(run_root / "profile.sb")!s}")')
     for p in write_roots:
         dyn_lines.append(f'(allow file* (subpath "{p}"))')
     # Optional tmp write if included explicitly
     # (skip by default; can be added via fs_write)
-    if trace:
-        dyn_lines.insert(0, f'(trace "{run_root / "profile.sb"!s}")')
     # Add read-only roots (repo, venv, system), from cfg
     ro_roots = [Path(p).resolve() for p in (cfg.fs_read or [])]
     for p in ro_roots:
@@ -321,10 +315,10 @@ def _seatbelt(
     policy_text = SANDBOX_POLICY_BASE + "\n" + "\n".join(dyn_lines) + "\n"
     policy_path.write_text(policy_text)
     if kernel_sandbox:
-        _write_sandboxed_kernelspec(run_root, ws_dir, policy_path)
+        _write_sandboxed_kernelspec(run_root, workspace, policy_path)
         # Ensure newly created notebooks default to the sandboxed kernel
         (run_root / "runtime" / "kernels.json").write_text(
-            json.dumps({"default": "python3"})
+            json.dumps({"default": "python3"}),
         )
     print(
         f"[wrapper] {run_root=} {workspace=}",
@@ -350,15 +344,15 @@ def _seatbelt(
     (run_root / "config" / "jupyter_server_config.py").write_text(
         "\n".join(
             [
-                "c = get_config() if 'get_config' in globals() else None",
-                f"c.KernelSpecManager.kernel_dirs = ['{(run_root / 'data' / 'kernels')!s}']",
+                "c = get_config()",
+                f"c.KernelSpecManager.kernel_dirs = ['{_kernels_dir(run_root)!s}']",
                 "c.KernelSpecManager.ensure_native_kernel = False",
                 "c.ServerApp.default_kernel_name = 'python3'",
                 "c.ServerApp.open_browser = False",
                 "c.ServerApp.ip = '127.0.0.1'",
                 "c.ServerApp.disable_check_xsrf = True",
-            ]
-        )
+            ],
+        ),
     )
     # Start Jupyter Server unsandboxed (kernel is sandboxed via kernelspec override)
     jl = _start_jupyter_server(
@@ -392,7 +386,8 @@ def _seatbelt(
     ]
     mcp_stdout_path = run_root / "mcp_stdout.log"
     mcp_stderr_path = run_root / "mcp_stderr.log"
-    print(f"[wrapper] mcp_cmd={' '.join(mcp_cmd)}", file=sys.stderr, flush=True)
+    _cmd_log = ' '.join(mcp_cmd).replace(token, 'REDACTED')
+    print(f"[wrapper] mcp_cmd={_cmd_log}", file=sys.stderr, flush=True)
     mcp = subprocess.Popen(
         mcp_cmd,
         env=child_env,
@@ -464,13 +459,13 @@ def main() -> int:
     sub = ap.add_subparsers(dest="command", required=True)
 
     ap_stdio = sub.add_parser(
-        "stdio", help="Start MCP server over stdio; requires --policy-config"
+        "stdio", help="Start MCP server over stdio; requires --policy-config",
     )
     ap_stdio.add_argument("--document-id", default=None)
     ap_stdio.add_argument("--mode", choices=["docker", "seatbelt"], default="seatbelt")
     ap_stdio.add_argument("--docker-image", default="python:3.12-slim")
     ap_stdio.add_argument(
-        "--jupyter-port", type=int, default=0, help="0=auto-pick free port"
+        "--jupyter-port", type=int, default=0, help="0=auto-pick free port",
     )
     ap_stdio.add_argument("--start-new-runtime", action="store_true")
     ap_stdio.add_argument("--trace-sandbox", action="store_true")
@@ -485,7 +480,7 @@ def main() -> int:
 
     # Only command today is stdio
     if args.command == "stdio":
-        cfg = PolicyConfig(**yaml.safe_load(Path(args.policy_config)))
+        cfg = PolicyConfig(**yaml.safe_load(Path(args.policy_config).read_text()))
 
         workspace = Path(cfg.workspace).resolve()
         _ensure_dir(workspace)
@@ -493,7 +488,6 @@ def main() -> int:
         doc_id = _ensure_document_id(
             workspace,
             args.document_id,
-            sandboxed_kernel=not args.no_kernel_sandbox,
         )
         port = args.jupyter_port or 0
         if port == 0:
