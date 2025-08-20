@@ -1,21 +1,19 @@
 #!/usr/bin/env python3
 import argparse
 import json
-import os
 import secrets
 import shlex
 import shutil
 import socket
 import subprocess
 import sys
-import tempfile
 import threading
 import time
 from datetime import datetime
 from pathlib import Path
 
 import yaml
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field
 
 SANDBOX_POLICY_BASE = """
 (version 1)
@@ -288,7 +286,7 @@ def _seatbelt(
     document_id: str,
     start_new_runtime: bool,
     jupyter_port: int,
-    cfg: "PolicyConfig",
+    cfg: PolicyConfig,
     trace: bool = True,
     kernel_sandbox: bool = True,
 ) -> int:
@@ -329,7 +327,7 @@ def _seatbelt(
             json.dumps({"default": "python3"})
         )
     print(
-        f"[wrapper] run_root={run_root} workspace={workspace}",
+        f"[wrapper] {run_root=} {workspace=}",
         file=sys.stderr,
         flush=True,
     )
@@ -340,7 +338,7 @@ def _seatbelt(
     )
     if trace:
         print(
-            f"[seatbelt] Sandbox trace enabled. policy={policy_path} trace={run_root / 'profile.sb'}",
+            f"[seatbelt] Sandbox trace enabled. {policy_path=} trace={run_root / 'profile.sb'}",
             file=sys.stderr,
             flush=True,
         )
@@ -461,31 +459,19 @@ def _seatbelt(
                 print(f"[wrapper] cleanup failed: {e}", file=sys.stderr)
 
 
-def _read_yaml(path: Path) -> dict:
-    return yaml.safe_load(path.read_text()) or {}
-
-
-def _load_policy_config_from_path(cfg_path: Path) -> PolicyConfig:
-    data = _read_yaml(cfg_path)
-    return PolicyConfig(**data)
-
-
-def _load_policy_config_default(workspace: Path) -> PolicyConfig:
-    cfg_path = workspace / ".sandbox_jupyter.yaml"
-    if not cfg_path.exists():
-        raise FileNotFoundError(cfg_path)
-    return _load_policy_config_from_path(cfg_path)
-
-
 def main() -> int:
     ap = argparse.ArgumentParser(prog="sandbox-jupyter-mcp")
     sub = ap.add_subparsers(dest="command", required=True)
 
-    ap_stdio = sub.add_parser("stdio", help="Start MCP server over stdio; requires --policy-config")
+    ap_stdio = sub.add_parser(
+        "stdio", help="Start MCP server over stdio; requires --policy-config"
+    )
     ap_stdio.add_argument("--document-id", default=None)
     ap_stdio.add_argument("--mode", choices=["docker", "seatbelt"], default="seatbelt")
     ap_stdio.add_argument("--docker-image", default="python:3.12-slim")
-    ap_stdio.add_argument("--jupyter-port", type=int, default=0, help="0=auto-pick free port")
+    ap_stdio.add_argument(
+        "--jupyter-port", type=int, default=0, help="0=auto-pick free port"
+    )
     ap_stdio.add_argument("--start-new-runtime", action="store_true")
     ap_stdio.add_argument("--trace-sandbox", action="store_true")
     ap_stdio.add_argument("--no-kernel-sandbox", action="store_true")
@@ -499,16 +485,7 @@ def main() -> int:
 
     # Only command today is stdio
     if args.command == "stdio":
-        try:
-            cfg = _load_policy_config_from_path(Path(args.policy_config))
-        except ValidationError as e:
-            print(
-                f"Invalid sandbox config: {e}\nErrors: {e.errors()}",
-                file=sys.stderr,
-            )
-            raise SystemExit(
-                "Invalid sandbox config; see errors above and docs/CONFIG_DETAILS.md"
-            )
+        cfg = PolicyConfig(**yaml.safe_load(Path(args.policy_config)))
 
         workspace = Path(cfg.workspace).resolve()
         _ensure_dir(workspace)
