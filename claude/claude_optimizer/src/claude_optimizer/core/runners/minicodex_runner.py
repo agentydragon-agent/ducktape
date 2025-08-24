@@ -27,6 +27,7 @@ from claude_optimizer.core.models import (
     TaskSetup,
     DockerConfig,
     GitCloneConfig,
+    SandboxConfig,
     FinalOutput,
     Rollout,
     RunnerEnvironment,
@@ -107,14 +108,92 @@ class MiniCodexRunner(AgentRunner):
     async def _run_command(self, cmd: List[str], timeout_s: int, cwd: Optional[str] = None) -> Tuple[int, str, str]:
         """Run command with timeout, either in Docker container or locally.
         
+        Note: Docker and bubblewrap sandbox are mutually exclusive. If Docker is configured,
+        it provides its own isolation. Bubblewrap sandbox is only used for local execution.
+        
         Returns: (exit_code, stdout, stderr)
         """
         if self.docker_config and self.container:
-            # Run in Docker container
+            # Run in Docker container (Docker provides isolation)
             return await self._run_command_docker(cmd, timeout_s, cwd)
         else:
-            # Run locally (when docker=null or container not started)
+            # Run locally (may use bubblewrap sandbox if configured)
             return await self._run_command_local(cmd, timeout_s, cwd)
+    
+    def _wrap_with_sandbox(self, cmd: List[str], sandbox: SandboxConfig, cwd: str) -> List[str]:
+        """Wrap command with bubblewrap sandbox.
+        
+        Uses a "fail closed" approach - starts with no access and only adds what's explicitly needed.
+        """
+        if not sandbox.enabled:
+            return cmd
+        
+        bwrap_cmd = ["bwrap"]
+        
+        # Start with no filesystem access (fail closed)
+        
+        # Bind system directories if needed (for Python, git, etc.)
+        if sandbox.bind_system:
+            # Read-only bind essential system directories
+            for sys_dir in ["/usr", "/lib", "/lib64", "/bin", "/sbin", "/etc/alternatives"]:
+                if Path(sys_dir).exists():
+                    bwrap_cmd.extend(["--ro-bind", sys_dir, sys_dir])
+            
+            # Special handling for /etc - only bind specific files/dirs
+            for etc_item in ["/etc/ld.so.cache", "/etc/ld.so.conf", "/etc/ld.so.conf.d",
+                           "/etc/ssl", "/etc/ca-certificates", "/etc/localtime", "/etc/timezone"]:
+                if Path(etc_item).exists():
+                    bwrap_cmd.extend(["--ro-bind", etc_item, etc_item])
+        
+        # Bind /dev essentials
+        bwrap_cmd.extend(["--dev", "/dev"])
+        
+        # Bind /proc for process info
+        bwrap_cmd.extend(["--proc", "/proc"])
+        
+        # Create minimal /tmp
+        bwrap_cmd.extend(["--tmpfs", "/tmp"])
+        
+        # Track bound paths to avoid duplicates
+        bound_paths = set()
+        
+        # Always bind the current working directory as read-write first
+        bwrap_cmd.extend(["--bind", cwd, cwd])
+        bound_paths.add(Path(cwd).resolve())
+        
+        # Add explicitly configured read-only paths
+        for path in sandbox.read_only_paths:
+            resolved_path = Path(path).resolve()
+            if resolved_path.exists() and resolved_path not in bound_paths:
+                bwrap_cmd.extend(["--ro-bind", str(resolved_path), str(resolved_path)])
+                bound_paths.add(resolved_path)
+        
+        # Add explicitly configured read-write paths
+        for path in sandbox.read_write_paths:
+            resolved_path = Path(path).resolve()
+            if resolved_path.exists() and resolved_path not in bound_paths:
+                bwrap_cmd.extend(["--bind", str(resolved_path), str(resolved_path)])
+                bound_paths.add(resolved_path)
+        
+        # If git clone directory exists and isn't already bound, add it as read-only
+        if hasattr(self, 'git_clone_path') and self.git_clone_path:
+            git_path = Path(self.git_clone_path).resolve()
+            if git_path.exists() and git_path not in bound_paths:
+                bwrap_cmd.extend(["--ro-bind", str(git_path), str(git_path)])
+                bound_paths.add(git_path)
+        
+        # Network isolation unless explicitly allowed
+        if not sandbox.allow_network:
+            bwrap_cmd.append("--unshare-net")
+        
+        # Set working directory
+        bwrap_cmd.extend(["--chdir", cwd])
+        
+        # Add the actual command
+        bwrap_cmd.append("--")
+        bwrap_cmd.extend(cmd)
+        
+        return bwrap_cmd
     
     async def _run_command_local(self, cmd: List[str], timeout_s: int, cwd: Optional[str] = None) -> Tuple[int, str, str]:
         """Run command locally with timeout using async subprocess.
@@ -124,6 +203,10 @@ class MiniCodexRunner(AgentRunner):
         # Use provided cwd, or agent's working directory
         if cwd is None:
             cwd = self.agent_cwd or str(self.workspace_path)
+        
+        # Check if we should use sandbox
+        if hasattr(self, 'task_setup') and self.task_setup and self.task_setup.sandbox:
+            cmd = self._wrap_with_sandbox(cmd, self.task_setup.sandbox, cwd)
         
         try:
             # Use asyncio.create_subprocess_exec for non-blocking execution
@@ -324,6 +407,10 @@ class MiniCodexRunner(AgentRunner):
         # Add previous_response_id if continuing conversation
         if previous_response_id:
             params["previous_response_id"] = previous_response_id
+        else:
+            # Force tool use on first call to prevent immediate "I can't access files" responses
+            # This ensures agents actually try to examine the code
+            params["tool_choice"] = "required"
             
         resp: Response = await self._responses_create_with_retry(**params)
         
@@ -423,11 +510,14 @@ class MiniCodexRunner(AgentRunner):
         # First, resolve the task configuration to get setup
         setup, _ = task.resolve_config({task.type: task_type_config})
         
+        # Store the setup for later use (e.g., sandbox configuration)
+        self.task_setup = setup
+        
         # Always create workspace directory
         self.workspace_path = Path(tempfile.mkdtemp(prefix="minicodex_"))
         
-        # Handle the new composite TaskSetup
-        if isinstance(setup, TaskSetup):
+        # Handle setup if provided
+        if setup:
             # Extract Docker config if present
             if setup.docker:
                 self.docker_config = setup.docker
@@ -436,6 +526,8 @@ class MiniCodexRunner(AgentRunner):
             # This way we clone from host which has SSH keys, then mount into container
             if setup.git_clone:
                 await self._clone_repository(setup.git_clone, str(self.workspace_path), is_docker=False)
+                # Store the clone path for sandbox to use
+                self.git_clone_path = str(self.workspace_path)
             
             # Start Docker container if configured (AFTER cloning)
             if self.docker_config:
@@ -446,7 +538,7 @@ class MiniCodexRunner(AgentRunner):
                 # Default working directory locally
                 self.agent_cwd = str(self.workspace_path)
         else:
-            # No setup needed
+            # No setup - just use workspace
             self.agent_cwd = str(self.workspace_path)
     
     async def _run_docker_command(

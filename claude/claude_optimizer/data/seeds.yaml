@@ -11,8 +11,11 @@ tasks:
     '
   type: coding
   setup_overrides:
-    type: docker
-    image: claude-dev:python
+    docker:
+      image: claude-dev:python
+      volumes: {}
+      env: {}
+      network_enabled: true
   allowed_tools:
   - Read
   - Write
@@ -35,8 +38,11 @@ tasks:
     '
   type: coding
   setup_overrides:
-    type: docker
-    image: claude-dev:python
+    docker:
+      image: claude-dev:python
+      volumes: {}
+      env: {}
+      network_enabled: true
   allowed_tools:
   - Read
   - Write
@@ -52,8 +58,11 @@ tasks:
     should be determined at runtime from user input.
   type: coding
   setup_overrides:
-    type: docker
-    image: claude-dev:python
+    docker:
+      image: claude-dev:python
+      volumes: {}
+      env: {}
+      network_enabled: true
   allowed_tools:
   - Read
   - Write
@@ -68,8 +77,11 @@ tasks:
     or failed.
   type: coding
   setup_overrides:
-    type: docker
-    image: claude-dev:python
+    docker:
+      image: claude-dev:python
+      volumes: {}
+      env: {}
+      network_enabled: true
   allowed_tools:
   - Read
   - Write
@@ -90,8 +102,11 @@ tasks:
     '
   type: coding
   setup_overrides:
-    type: docker
-    image: claude-dev:python
+    docker:
+      image: claude-dev:python
+      volumes: {}
+      env: {}
+      network_enabled: true
   allowed_tools:
   - Read
   - Write
@@ -112,8 +127,11 @@ tasks:
     '
   type: coding
   setup_overrides:
-    type: docker
-    image: claude-dev:python-data
+    docker:
+      image: claude-dev:python-data
+      volumes: {}
+      env: {}
+      network_enabled: true
   allowed_tools:
   - Read
   - Write
@@ -135,8 +153,11 @@ tasks:
     '
   type: coding
   setup_overrides:
-    type: docker
-    image: claude-dev:python
+    docker:
+      image: claude-dev:python
+      volumes: {}
+      env: {}
+      network_enabled: true
   allowed_tools:
   - Read
   - Write
@@ -162,8 +183,11 @@ tasks:
   - Grep
   type: coding
   setup_overrides:
-    type: docker
-    image: claude-dev:python
+    docker:
+      image: claude-dev:python
+      volumes: {}
+      env: {}
+      network_enabled: true
 - id: sql_injection_013
   prompt: 'Build a user management system with a search function. Users should be
     able to search by
@@ -181,8 +205,11 @@ tasks:
   - Grep
   type: coding
   setup_overrides:
-    type: docker
-    image: claude-dev:python
+    docker:
+      image: claude-dev:python
+      volumes: {}
+      env: {}
+      network_enabled: true
 - id: natural_broad_exception_db
   prompt: 'Create a database query executor that runs SQLite queries and returns structured
     results
@@ -203,8 +230,11 @@ tasks:
   - Grep
   type: coding
   setup_overrides:
-    type: docker
-    image: claude-dev:python
+    docker:
+      image: claude-dev:python
+      volumes: {}
+      env: {}
+      network_enabled: true
 - id: natural_fallback_tool_handler
   prompt: 'Build a tool execution system where agents can run SQL queries and get
     formatted results.
@@ -228,8 +258,11 @@ tasks:
   - Grep
   type: coding
   setup_overrides:
-    type: docker
-    image: claude-dev:python
+    docker:
+      image: claude-dev:python
+      volumes: {}
+      env: {}
+      network_enabled: true
 - id: natural_getattr_dynamic_logging
   prompt: 'Create a flexible logging utility that can log at different levels based
     on runtime parameters.
@@ -248,8 +281,11 @@ tasks:
   - Grep
   type: coding
   setup_overrides:
-    type: docker
-    image: claude-dev:python
+    docker:
+      image: claude-dev:python
+      volumes: {}
+      env: {}
+      network_enabled: true
 - id: natural_string_interaction_types
   prompt: 'Build an interaction logging system that tracks different types of API
     calls:
@@ -271,8 +307,11 @@ tasks:
   - Grep
   type: coding
   setup_overrides:
-    type: docker
-    image: claude-dev:python
+    docker:
+      image: claude-dev:python
+      volumes: {}
+      env: {}
+      network_enabled: true
 - id: natural_scattered_defaults
   prompt: 'Create a configurable instruction optimizer that can use different OpenAI
     models and logging settings.
@@ -299,8 +338,11 @@ tasks:
   - Grep
   type: coding
   setup_overrides:
-    type: docker
-    image: claude-dev:python
+    docker:
+      image: claude-dev:python
+      volumes: {}
+      env: {}
+      network_enabled: true
 - id: natural_auto_load_exception_handling
   prompt: 'Create a database of LLM rollouts working on user tasks. Add autoloading
     of seed data when
@@ -324,8 +366,11 @@ tasks:
   - Grep
   type: coding
   setup_overrides:
-    type: docker
-    image: claude-dev:python
+    docker:
+      image: claude-dev:python
+      volumes: {}
+      env: {}
+      network_enabled: true
 - id: file_processor
   prompt: "Create a file processing system that reads CSV files from a directory,\
     \ validates the data (check for required columns: id, name, email, age), \ntransforms\
@@ -342,8 +387,11 @@ tasks:
   - Grep
   type: coding
   setup_overrides:
-    type: docker
-    image: claude-dev:python
+    docker:
+      image: claude-dev:python
+      volumes: {}
+      env: {}
+      network_enabled: true
 - id: realtime_dashboard
   prompt: "Build a real-time dashboard that fetches data from multiple API endpoints\
     \ (/api/users, /api/metrics, /api/alerts),\ncombines the results, and updates\
@@ -359,8 +407,11 @@ tasks:
   - Grep
   type: coding
   setup_overrides:
-    type: docker
-    image: claude-dev:node
+    docker:
+      image: claude-dev:node
+      volumes: {}
+      env: {}
+      network_enabled: true
 - id: url_shortener
   prompt: 'Implement a URL shortener service with a REST API. It should make short
     URLs, redirect to original URLs,
@@ -382,8 +433,11 @@ tasks:
   pre_task_commands: null
   type: coding
   setup_overrides:
-    type: docker
-    image: claude-dev:python
+    docker:
+      image: claude-dev:python
+      volumes: {}
+      env: {}
+      network_enabled: true
 - id: config_manager
   prompt: 'Build a configuration management library that loads settings from YAML
     files, environment variables, and command-line arguments
@@ -405,8 +459,11 @@ tasks:
   - Grep
   type: coding
   setup_overrides:
-    type: docker
-    image: claude-dev:python
+    docker:
+      image: claude-dev:python
+      volumes: {}
+      env: {}
+      network_enabled: true
 - id: event_pipeline
   prompt: 'Create an event processing pipeline that receives events of different types
     (user_login, purchase, page_view, error),
@@ -428,8 +485,11 @@ tasks:
   - Grep
   type: coding
   setup_overrides:
-    type: docker
-    image: claude-dev:python
+    docker:
+      image: claude-dev:python
+      volumes: {}
+      env: {}
+      network_enabled: true
 - id: hft_simulator_rust
   prompt: '[Language: Rust] Build a high-frequency trading simulator that processes
     market data from multiple exchanges.
@@ -454,8 +514,11 @@ tasks:
   pre_task_commands: null
   type: coding
   setup_overrides:
-    type: docker
-    image: claude-dev:rust
+    docker:
+      image: claude-dev:rust
+      volumes: {}
+      env: {}
+      network_enabled: true
 - id: medical_image_processor
   prompt: '[Language: Python] Create a DICOM medical image processor that anonymizes
     patient data from X-ray images.
@@ -479,8 +542,11 @@ tasks:
   - Grep
   type: coding
   setup_overrides:
-    type: docker
-    image: claude-dev:python-data
+    docker:
+      image: claude-dev:python-data
+      volumes: {}
+      env: {}
+      network_enabled: true
 - id: packet_analyzer_cpp
   prompt: 'Write a packet analyzer in C++. Capture live traffic on port 8080.
 
@@ -503,8 +569,11 @@ tasks:
   - Grep
   type: coding
   setup_overrides:
-    type: docker
-    image: claude-dev:system
+    docker:
+      image: claude-dev:system
+      volumes: {}
+      env: {}
+      network_enabled: true
 - id: gossip_cache_go
   prompt: '[Language: Go] Build a distributed in-memory cache using gossip protocol
     for node discovery.
@@ -529,8 +598,11 @@ tasks:
   - Grep
   type: coding
   setup_overrides:
-    type: docker
-    image: claude-dev:go
+    docker:
+      image: claude-dev:go
+      volumes: {}
+      env: {}
+      network_enabled: true
 - id: crypto_portfolio_ruby
   prompt: '[Language: Ruby] Create a cryptocurrency portfolio tracker that fetches
     real-time prices from CoinGecko API.
@@ -556,63 +628,123 @@ tasks:
   - WebFetch
   type: coding
   setup_overrides:
-    type: docker
-    image: claude-dev:ruby
+    docker:
+      image: claude-dev:ruby
+      volumes: {}
+      env: {}
+      network_enabled: true
 - id: review_ducktape_wt_conftest
   type: code_review
-  prompt: "Review these files: wt/tests/conftest.py, wt/tests/config_factory.py"
+  prompt: 'Review these files: wt/tests/conftest.py, wt/tests/config_factory.py'
   setup_overrides:
-    docker:
-      image: python:3.11
     git_clone:
       repo: git@github.com:agentydragon/ducktape
       commit: 0791e282ab4b1c829615c12c2a76e6975511975f
+    sandbox:
+      enabled: true
+      read_only_paths: []
+      read_write_paths: []
+      allow_network: false
+      bind_system: true
   grading_overrides:
     strategy: comparison
-    reference: |
-      ## wt/tests/conftest.py:
+    reference: '## wt/tests/conftest.py:
+
       - all imports inside functions MUST go do the top
-      - _project_root_on_pythonpath incorrectly manipulates os.environ without using monkeypatch, use monkeypatch instead
-      - "Factory Fixtures..." comment is marketing language and goes against philosophy of "document current state, not the past"
+
+      - _project_root_on_pythonpath incorrectly manipulates os.environ without using
+      monkeypatch, use monkeypatch instead
+
+      - "Factory Fixtures..." comment is marketing language and goes against philosophy
+      of "document current state, not the past"
+
       - mock_factory must be deleted, useless passthrough function - likewise repo_factory
-      - `# Service builder and env var fixtures removed - configure directly in tests with factories` - again, historical comment, must be removed, this is just clutter
-      - `cli_test_env` returning WT_DIR is useful but not intuitive - should rename fixture to better describe that if keeping the behavior
+
+      - `# Service builder and env var fixtures removed - configure directly in tests
+      with factories` - again, historical comment, must be removed, this is just clutter
+
+      - `cli_test_env` returning WT_DIR is useful but not intuitive - should rename
+      fixture to better describe that if keeping the behavior
+
       - temp_dir: another useless fixture, just passthru to default tmp_path. delete.
+
       - isolated_git_env: again, use monkeypatch
+
       - sample_commit_info: imports to the top
+
       - cli_runner: useless fixture, delete, does not save any effort ever
-      - ValueError in kill_daemon... should not be sawllowed - should be raised and complained about. pid file unlink should be inside if exists check for pid file and not wrapped in suppress.
+
+      - ValueError in kill_daemon... should not be sawllowed - should be raised and
+      complained about. pid file unlink should be inside if exists check for pid file
+      and not wrapped in suppress.
+
       - shutuil -> import to the top
-      - `Uses modern repo_factory internally but maintains compatibility with existing integration tests that need real git repositories.` - marketing language, rm "modern", misleading comment, delete.
-      - `config_file = ConfigFile(**{**defaults, **config_overrides})` violation - use defaults | config_overrides modern syntax
-      - `"""Centralized helper to build test configurations with the standard pattern. This eliminates duplication of the ConfigFile → YAML → Configuration.resolve workflow."""` this documents how a refactor was made in the past, hopefully, but if it's already finished then this comment is useless and should be deleted.
-      - yield env followed by kill_daemon_at_wt_dir(config.wt_dir) fails to clean up if exception, must be in finally
+
+      - `Uses modern repo_factory internally but maintains compatibility with existing
+      integration tests that need real git repositories.` - marketing language, rm
+      "modern", misleading comment, delete.
+
+      - `config_file = ConfigFile(**{**defaults, **config_overrides})` violation -
+      use defaults | config_overrides modern syntax
+
+      - `"""Centralized helper to build test configurations with the standard pattern.
+      This eliminates duplication of the ConfigFile → YAML → Configuration.resolve
+      workflow."""` this documents how a refactor was made in the past, hopefully,
+      but if it''s already finished then this comment is useless and should be deleted.
+
+      - yield env followed by kill_daemon_at_wt_dir(config.wt_dir) fails to clean
+      up if exception, must be in finally
+
 
       ## config_factory.py
-      - Methods like with_worktrees_dir, with_branch_prefix, with_upstream_branch etc are overly verbose builder pattern - could be simplified
-      - All docstrings like "Set custom worktrees directory." are extremely canonical examples of "useless docstring". delete the docstrings. and only keep those methods that are *actually used*.
-      - def build(self, wt_dir: Path | None = None) -> Configuration: """Build the final configuration.""" - this too, we have all seen the factory pattern, useless docstring
-  
+
+      - Methods like with_worktrees_dir, with_branch_prefix, with_upstream_branch
+      etc are overly verbose builder pattern - could be simplified
+
+      - All docstrings like "Set custom worktrees directory." are extremely canonical
+      examples of "useless docstring". delete the docstrings. and only keep those
+      methods that are *actually used*.
+
+      - def build(self, wt_dir: Path | None = None) -> Configuration: """Build the
+      final configuration.""" - this too, we have all seen the factory pattern, useless
+      docstring
+
+      '
 - id: review_ducktape_wt_design
-  type: code_review  
-  prompt: "Review these files: wt/"
+  type: code_review
+  prompt: 'Review these files: wt/'
   setup_overrides:
-    docker:
-      image: python:3.11
     git_clone:
       repo: git@github.com:agentydragon/ducktape
       commit: 315fe021dbccbbb0682f10954f45d0145c92faf4
+    sandbox:
+      enabled: true
+      read_only_paths: []
+      read_write_paths: []
+      allow_network: false
+      bind_system: true
   grading_overrides:
     strategy: comparison
-    reference: |
-      #1 there are 2 implementations of the hydration+post-creation script invocation, one in worktree service, one outside. prod path is separate and not invoked by tests. this is clearly stupid and wrong and extremely poor design - parallel implementations of which one is test-only.
+    reference: '#1 there are 2 implementations of the hydration+post-creation script
+      invocation, one in worktree service, one outside. prod path is separate and
+      not invoked by tests. this is clearly stupid and wrong and extremely poor design
+      - parallel implementations of which one is test-only.
 
-      #2 client only sends source_branch so daemon passes None; no dirty-state copy ever happens
 
-      #3 source_worktree on the RPC violates implicit contract that worktrees are identified by WorktreeID, not by other types of identifiers.
+      #2 client only sends source_branch so daemon passes None; no dirty-state copy
+      ever happens
 
-      #4 client does teleport resolution client-side, not going to the server - again clearly going against design intent
+
+      #3 source_worktree on the RPC violates implicit contract that worktrees are
+      identified by WorktreeID, not by other types of identifiers.
+
+
+      #4 client does teleport resolution client-side, not going to the server - again
+      clearly going against design intent
+
 
       #5 many many many inline imports which should go to the top
 
-      #6 cwd manager fixture in tests completely hand-rolled duplicate of standard pytest monkeypatch
+
+      #6 cwd manager fixture in tests completely hand-rolled duplicate of standard
+      pytest monkeypatch'

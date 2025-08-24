@@ -120,16 +120,37 @@ class GitCloneConfig(BaseModel):
         return v.lower()  # Normalize to lowercase
 
 
+class SandboxConfig(BaseModel):
+    """Sandbox configuration for secure task execution.
+    
+    Uses a "fail closed" approach - starts with no access and only adds what's explicitly needed.
+    """
+    enabled: bool = True
+    # Paths to mount read-only (empty by default - fail closed)
+    read_only_paths: list[str] = Field(default_factory=list)
+    # Paths to mount read-write (only task workspace by default)
+    read_write_paths: list[str] = Field(default_factory=list)
+    # Network access (disabled by default - fail closed)
+    allow_network: bool = False
+    # Whether to bind system directories like /usr, /lib for tools
+    bind_system: bool = True
+
+
 class TaskSetup(BaseModel):
-    """Task setup configuration - can have Docker, GitClone, or both."""
-    docker: DockerConfig | None = None
+    """Task setup configuration with orthogonal concerns.
+    
+    - git_clone: What code to work with (optional)
+    - docker/sandbox: How to isolate execution (mutually exclusive, both optional)
+    """
     git_clone: GitCloneConfig | None = None
+    docker: DockerConfig | None = None
+    sandbox: SandboxConfig | None = None
     
     @model_validator(mode="after")
-    def validate_not_empty(self):
-        """Ensure at least one setup type is configured."""
-        if not self.docker and not self.git_clone:
-            raise ValueError("Must specify at least one of: docker, git_clone")
+    def validate_isolation(self):
+        """Validate that Docker and sandbox are mutually exclusive."""
+        if self.docker and self.sandbox and self.sandbox.enabled:
+            raise ValueError("Docker and sandbox cannot both be configured - they are mutually exclusive isolation methods")
         return self
 
 
@@ -172,10 +193,9 @@ GradingConfig = FileBasedGrading | ComparisonGrading | MessageBasedGrading
 
 # Task type definition
 class TaskType(BaseModel):
-    """Definition of a task type with its setup and grading configuration."""
+    """Definition of a task type with its grading configuration."""
     name: str
-    setup: TaskSetup | None  # None for incomplete setups (filled by tasks)
-    grading: GradingConfig | None  # None for incomplete grading (filled by tasks)
+    grading: GradingConfig | None  # Default grading for this task type
 
 
 # Task definition (no runner!)
@@ -194,15 +214,21 @@ class TaskDefinition(BaseModel):
     allowed_tools: list[str] | None = None
     pre_task_commands: str | None = None
     
-    def resolve_config(self, task_types: dict[str, TaskType]) -> tuple[TaskSetup, GradingConfig]:
-        """Resolve final setup and grading config with overrides."""
+    def resolve_config(self, task_types: dict[str, TaskType]) -> tuple[TaskSetup | None, GradingConfig | None]:
+        """Resolve final setup and grading config.
+        
+        Setup comes from task's setup_overrides only (no default).
+        Grading uses task override if present, otherwise falls back to task type default.
+        """
         if self.type not in task_types:
             raise ValueError(f"Unknown task type: {self.type}")
         
         base_type = task_types[self.type]
         
-        # Use overrides if provided, otherwise use base
-        setup = self.setup_overrides or base_type.setup
+        # Setup is only from task (no default from type)
+        setup = self.setup_overrides
+        
+        # Grading: use override if provided, otherwise use base type's default
         grading = self.grading_overrides or base_type.grading
         
         return setup, grading

@@ -9,6 +9,7 @@ from claude_optimizer.core.models import (
     TaskSetup,
     DockerConfig,
     GitCloneConfig,
+    SandboxConfig,
     FileBasedGrading,
     ComparisonGrading,
     MessageBasedGrading,
@@ -21,67 +22,44 @@ from claude_optimizer.core.models import (
 def parse_setup_config(config: dict[str, Any]) -> TaskSetup | None:
     """Parse setup configuration from YAML data.
     
-    Returns a TaskSetup object or None if incomplete.
-    Supports both old single-type format and new composite format.
+    Returns a TaskSetup object or None if config is empty/None.
+    Git clone, Docker, and sandbox are orthogonal concerns that can be combined.
     """
-    # Handle new composite format
-    if "docker" in config or "git_clone" in config:
-        docker_cfg = None
-        git_cfg = None
-        
-        if docker_data := config.get("docker"):
-            docker_cfg = DockerConfig(
-                image=docker_data["image"],
-                volumes=docker_data.get("volumes", {}),
-                env=docker_data.get("env", {}),
-                network_enabled=docker_data.get("network_enabled", True)
-            )
-        
-        if git_data := config.get("git_clone"):
-            # Only create if we have complete data
-            if git_data.get("repo") and git_data.get("commit"):
-                git_cfg = GitCloneConfig(
-                    repo=git_data["repo"],
-                    commit=git_data["commit"],
-                    subdir=git_data.get("subdir")
-                )
-        
-        if docker_cfg or git_cfg:
-            return TaskSetup(docker=docker_cfg, git_clone=git_cfg)
-        else:
-            return None  # Incomplete setup
+    if not config:
+        return None
     
-    # Handle old single-type format for backwards compatibility
-    setup_type = config.get("type")
-    if not setup_type:
-        return None
-        
-    if setup_type == "docker":
+    docker_cfg = None
+    git_cfg = None
+    sandbox_cfg = None
+    
+    if docker_data := config.get("docker"):
         docker_cfg = DockerConfig(
-            image=config["image"],
-            volumes=config.get("volumes", {}),
-            env=config.get("env", {}),
-            network_enabled=config.get("network_enabled", True)
+            image=docker_data["image"],
+            volumes=docker_data.get("volumes", {}),
+            env=docker_data.get("env", {}),
+            network_enabled=docker_data.get("network_enabled", True)
         )
-        return TaskSetup(docker=docker_cfg, git_clone=None)
-        
-    elif setup_type == "git_clone":
+    
+    if git_data := config.get("git_clone"):
         # Only create if we have complete data
-        if config.get("repo") and config.get("commit"):
+        if git_data.get("repo") and git_data.get("commit"):
             git_cfg = GitCloneConfig(
-                repo=config["repo"],
-                commit=config["commit"],
-                subdir=config.get("subdir")
+                repo=git_data["repo"],
+                commit=git_data["commit"],
+                subdir=git_data.get("subdir")
             )
-            return TaskSetup(docker=None, git_clone=git_cfg)
-        else:
-            return None  # Incomplete setup
-            
-    elif setup_type == "none":
-        return None
-        
-    else:
-        raise ValueError(f"Unknown setup type: {setup_type}")
+    
+    if sandbox_data := config.get("sandbox"):
+        sandbox_cfg = SandboxConfig(
+            enabled=sandbox_data.get("enabled", True),
+            read_only_paths=sandbox_data.get("read_only_paths", []),
+            read_write_paths=sandbox_data.get("read_write_paths", []),
+            allow_network=sandbox_data.get("allow_network", False),
+            bind_system=sandbox_data.get("bind_system", True)
+        )
+    
+    # Return TaskSetup with whatever is configured (all are optional)
+    return TaskSetup(git_clone=git_cfg, docker=docker_cfg, sandbox=sandbox_cfg)
 
 
 def parse_grading_config(config: dict[str, Any]) -> GradingConfig | None:
@@ -135,16 +113,12 @@ def load_task_types(file_path: Path | str) -> dict[str, TaskType]:
     
     task_types = {}
     for name, config in data["task_types"].items():
-        # Handle None setup/grading configs
-        setup_config = config.get("setup")
+        # Only grading config for task types (setup is per-task)
         grading_config = config.get("grading")
-        
-        setup = parse_setup_config(setup_config) if setup_config else None
         grading = parse_grading_config(grading_config) if grading_config else None
         
         task_types[name] = TaskType(
             name=name,
-            setup=setup,
             grading=grading
         )
     
