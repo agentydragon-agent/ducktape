@@ -34,99 +34,99 @@ tasks:
             so, misleading comment, delete.
         - `config_file = ConfigFile(**{**defaults, **config_overrides})` violation - use defaults | config_overrides modern syntax
         - `"""Centralized helper to build test configurations with the standard pattern.
-        
+
             This eliminates duplication of the ConfigFile → YAML → Configuration.resolve workflow.
             """`
           this documents how a refactor was made in the past, hopefully, but if it's already finished then this comment is useless and should be deleted.
         - ```
           yield env
-        
+
           # Cleanup: Kill daemon after test
           kill_daemon_at_wt_dir(config.wt_dir)
           ```
           fails to clean up if exception, must be in finally
-        
-        
+
+
         ## config_factory.py
             def with_worktrees_dir(self, path: str | Path):
                 """Set custom worktrees directory."""
                 self._overrides["worktrees_dir"] = str(path)
                 return self
-        
+
             def with_branch_prefix(self, prefix: str):
                 """Set custom branch prefix."""
                 self._overrides["branch_prefix"] = prefix
                 return self
-        
+
             def with_upstream_branch(self, branch: str):
                 """Set custom upstream branch."""
                 self._overrides["upstream_branch"] = branch
                 return self
-        
+
             def with_cow_method(self, method: str):
                 """Set copy-on-write method."""
                 self._overrides["cow_method"] = method
                 return self
-        
+
             def with_gitstatusd_path(self, path: str | Path):
                 """Set gitstatusd binary path."""
                 self._overrides["gitstatusd_path"] = str(path)
                 return self
-        
+
             def with_post_creation_script(self, script_path: str | Path):
                 """Set post-creation script path."""
                 self._overrides["post_creation_script"] = str(script_path)
                 return self
         all of those are extrmeely canonical examples of "useless docstring". delete the docstrings. and only keep those methods that are *actually used*.and 
-        
+
             def build(self, wt_dir: Path | None = None) -> Configuration:
                 """Build the final configuration."""
                 return self.factory.create(self._preset, wt_dir=wt_dir, **self._overrides)
         this too, we have all seen the factory pattern
-        
+
         ## test_utils.py:
         - imports to the fucking top, EVERYWHERE, DAMMIT
         - that pythonpath addition is duplicated with conftest, make and use a common helper
         - plus this looks like it might very well go into conftest.py all of this file
-        
+
         ## test_constants.py:
         this file is entirely dead, delete
-        
+
         ## test_cli_integration.py & test_*new*_cli_integration.py:
-        
+
         this should be a fixture:
             def create_empty_status_response() -> StatusResponse:
                 """Create empty StatusResponse for testing."""
                 return StatusResponse(
         also:
             def create_test_status_response() -> StatusResponse:
-        
+
         and it should definitely NOT be tests named x, x_new. GOD DAMMIT. DOCUMENT CURRENT FUCKING STATE.
         THIS IS *ALL* CURRENT STATE. if there's still some meaningful separation, pick a reasonable name.
         if there isn't, then merge/refactor/dedupe.
-        
+
         > result = CliRunner().invoke(main, ["sh", "--pr"])
         don't we have a helper for all of those in test_helpers or conftest or something?
-        
+
         > monkeypatch.setenv("WT_DIR", str(cli_test_env))
         this is repeated and clealy should be a fixture, plus it already IS a fixture in other places so FUCKING DEDUPLICATE
-        
+
         ```
         # real_temp_repo fixture now provided by conftest.py
         # real_env fixture now provided by conftest.py
         # kill_daemon_and_verify function now provided by conftest.py
         ```
-        
+
         DOCUMENT. CURRENT. STATE. NOT. THE. PAST. delete this.
-        
-        
+
+
         ```
         # from ..conftest import kill_daemon_at_wt_dir
         from ..test_utils import run_cli_command
         ```
-        
+
         no reason for that comment to exist, delete.
-        
+
             def teardown_method(self):
                 """Clean up after each test."""
                 subprocess.run(["pkill", "-f", "wt"], check=False)
@@ -177,8 +177,7 @@ tasks:
             subprocess.run(["git", "commit", "-m", "add readme"], cwd=src_path, check=True)
         ```
         *sign* infinite inconsistency. literally EVERYWHERE we standardize on pygit2. so use pygit2. replace those direct git calls with pygit2. everywhere where you can.
-        
-        
+
   - id: review_ducktape_wt_design
     type: code_review
     prompt: |

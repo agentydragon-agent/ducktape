@@ -16,7 +16,7 @@ runners:
     type: minicodex_runner
     config:
       model: gpt-5
-      reasoning_effort: minimal  # Options: minimal, medium, high (default: medium)
+      reasoning_effort: medium  # Options: minimal, medium, high (default: medium)
       timeout_s: 30
       truncate_bytes: 50000
       max_cycles: 30
