@@ -85,14 +85,14 @@ class AgentRunner(ABC):
         Args:
             git_setup: Git clone configuration with repo, commit, and optional subdir
             target_dir: Directory to clone into (/workspace for Docker, workspace_path for local)
-            is_docker: Whether we're running in a Docker container
+            is_docker: Whether cloning is happening inside Docker container (True) or on host (False)
         """
         self.logger.info(
             "Cloning repository",
             repo=git_setup.repo,
             commit=git_setup.commit,
             target_dir=target_dir,
-            is_docker=is_docker,
+            clone_location="docker" if is_docker else "host",
         )
         
         # Commands for shallow clone to specific commit

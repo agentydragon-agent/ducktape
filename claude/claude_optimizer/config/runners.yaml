@@ -22,6 +22,6 @@ runners:
       reasoning_effort: medium  # Options: minimal, medium, high (default: medium)
       timeout_s: 30
       truncate_bytes: 50000
-      max_cycles: 30
+      max_cycles: 1000
       # TODO: Consider allowing (task, runner) specific Docker configs in the future
       # For now, Docker setup comes exclusively from task definitions

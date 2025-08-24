@@ -457,6 +457,15 @@ async def optimize_prompts(
                 iteration=iteration,
                 overall_score=grade.overall_score,
             )
+            
+            # Log grading details for visibility
+            logger.info(
+                "Grading result",
+                task_id=task.id,
+                rollout_id=rollout_id,
+                score=grade.overall_score,
+                rationale=grade.overall_rationale[:300] + "..." if len(grade.overall_rationale) > 300 else grade.overall_rationale,
+            )
 
             return GradedRollout(
                 rollout=rollout,

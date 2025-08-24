@@ -570,26 +570,28 @@ tasks:
   grading_overrides:
     strategy: comparison
     reference: |
-      wt/tests/conftest.py:
-          - all imports inside functions MUST go to the top
-          - _project_root_on_pythonpath incorrectly manipulates os.environ without using monkeypatch, use monkeypatch instead
-          - "Factory Fixtures..." comment is marketing language and goes against philosophy of "document current state, not the past"
-          - mock_factory must be deleted, useless passthrough function - likewise repo_factory
-          - `# Service builder and env var fixtures removed - configure directly in tests with factories` - again, historical comment, must be removed, this is just clutter
-          - `cli_test_env` returning WT_DIR is useful but not intuitive - should rename fixture to better describe that if keeping the behavior
-          - temp_dir: another useless fixture, just passthru to default tmp_path. delete.
-          - isolated_git_env: again, use monkeypatch
-          - sample_commit_info: imports to the top
-          - cli_runner: useless fixture, delete, does not save any effort ever
-          - ValueError in kill_daemon... should not be swallowed - should be raised and complained about. pid file unlink should be inside if exists check for pid file and not wrapped in suppress.
-          - shutil -> import to the top
-          - `Uses modern repo_factory internally but maintains compatibility with existing integration tests that need real git repositories.` - marketing language, rm "modern" - does this mean that repo_factory does NOT create real git repos?! i'd be surprised. and yep, upon checking, it DOES make real repos. so, misleading comment, delete.
-          - `config_file = ConfigFile(**{**defaults, **config_overrides})` violation - use defaults | config_overrides modern syntax
-          - """Centralized helper to build test configurations with the standard pattern. This eliminates duplication of the ConfigFile → YAML → Configuration.resolve workflow.""" this documents how a refactor was made in the past, hopefully, but if it's already finished then this comment is useless and should be deleted.
-          - yield env followed by kill_daemon_at_wt_dir fails to clean up if exception, must be in finally
-  
-          config_factory.py:
-          - Methods like with_worktrees_dir, with_branch_prefix, with_upstream_branch etc are overly verbose builder pattern - could be simplified
+      ## wt/tests/conftest.py:
+      - all imports inside functions MUST go do the top
+      - _project_root_on_pythonpath incorrectly manipulates os.environ without using monkeypatch, use monkeypatch instead
+      - "Factory Fixtures..." comment is marketing language and goes against philosophy of "document current state, not the past"
+      - mock_factory must be deleted, useless passthrough function - likewise repo_factory
+      - `# Service builder and env var fixtures removed - configure directly in tests with factories` - again, historical comment, must be removed, this is just clutter
+      - `cli_test_env` returning WT_DIR is useful but not intuitive - should rename fixture to better describe that if keeping the behavior
+      - temp_dir: another useless fixture, just passthru to default tmp_path. delete.
+      - isolated_git_env: again, use monkeypatch
+      - sample_commit_info: imports to the top
+      - cli_runner: useless fixture, delete, does not save any effort ever
+      - ValueError in kill_daemon... should not be sawllowed - should be raised and complained about. pid file unlink should be inside if exists check for pid file and not wrapped in suppress.
+      - shutuil -> import to the top
+      - `Uses modern repo_factory internally but maintains compatibility with existing integration tests that need real git repositories.` - marketing language, rm "modern", misleading comment, delete.
+      - `config_file = ConfigFile(**{**defaults, **config_overrides})` violation - use defaults | config_overrides modern syntax
+      - `"""Centralized helper to build test configurations with the standard pattern. This eliminates duplication of the ConfigFile → YAML → Configuration.resolve workflow."""` this documents how a refactor was made in the past, hopefully, but if it's already finished then this comment is useless and should be deleted.
+      - yield env followed by kill_daemon_at_wt_dir(config.wt_dir) fails to clean up if exception, must be in finally
+
+      ## config_factory.py
+      - Methods like with_worktrees_dir, with_branch_prefix, with_upstream_branch etc are overly verbose builder pattern - could be simplified
+      - All docstrings like "Set custom worktrees directory." are extremely canonical examples of "useless docstring". delete the docstrings. and only keep those methods that are *actually used*.
+      - def build(self, wt_dir: Path | None = None) -> Configuration: """Build the final configuration.""" - this too, we have all seen the factory pattern, useless docstring
   
 - id: review_ducktape_wt_design
   type: code_review  
@@ -603,14 +605,14 @@ tasks:
   grading_overrides:
     strategy: comparison
     reference: |
-          #1 there are 2 implementations of the hydration+post-creation script invocation, one in worktree service, one outside. prod path is separate and not invoked by tests. this is clearly stupid and wrong and extremely poor design - parallel implementations of which one is test-only.
-          
-          #2 client only sends source_branch so daemon passes None; no dirty-state copy ever happens
-          
-          #3 source_worktree on the RPC violates implicit contract that worktrees are identified by WorktreeID, not by other types of identifiers.
-          
-          #4 client does teleport resolution client-side, not going to the server - again clearly going against design intent
-          
-          #5 many many many inline imports which should go to the top
-          
-          #6 cwd manager fixture in tests completely hand-rolled duplicate of standard pytest monkeypatch
+      #1 there are 2 implementations of the hydration+post-creation script invocation, one in worktree service, one outside. prod path is separate and not invoked by tests. this is clearly stupid and wrong and extremely poor design - parallel implementations of which one is test-only.
+
+      #2 client only sends source_branch so daemon passes None; no dirty-state copy ever happens
+
+      #3 source_worktree on the RPC violates implicit contract that worktrees are identified by WorktreeID, not by other types of identifiers.
+
+      #4 client does teleport resolution client-side, not going to the server - again clearly going against design intent
+
+      #5 many many many inline imports which should go to the top
+
+      #6 cwd manager fixture in tests completely hand-rolled duplicate of standard pytest monkeypatch
