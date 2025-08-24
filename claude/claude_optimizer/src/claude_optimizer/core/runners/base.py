@@ -8,7 +8,7 @@ from typing import Any, Optional
 
 from claude_optimizer.core.logging_utils import DualOutputLogging
 from claude_optimizer.core.models import (
-    GitCloneSetup,
+    GitCloneConfig,
     TaskDefinition,
     Rollout,
     RunnerEnvironment,
@@ -73,7 +73,7 @@ class AgentRunner(ABC):
     
     async def _clone_repository(
         self,
-        git_setup: GitCloneSetup,
+        git_setup: GitCloneConfig,
         target_dir: str,
         is_docker: bool = False,
     ) -> None:
@@ -99,6 +99,7 @@ class AgentRunner(ABC):
         # We init, add remote, fetch specific commit, then checkout
         commands = [
             ["git", "init"],
+            ["git", "config", "--local", "--add", "safe.directory", target_dir],  # Fix ownership issues in Docker (local only!)
             ["git", "remote", "add", "origin", git_setup.repo],
             ["git", "fetch", "--depth", "1", "origin", git_setup.commit],
             ["git", "checkout", "FETCH_HEAD"],

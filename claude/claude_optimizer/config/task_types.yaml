@@ -5,17 +5,17 @@ task_types:
   coding:
     # Standard coding tasks - produce files
     setup:
-      type: docker
-      image: python:3.11
+      # Docker-only setup (no git clone needed for coding tasks)
+      docker:
+        image: python:3.11
     grading:
       strategy: file_based
       criteria_file: ../data/graders_consolidated.yaml
   
   code_review:
-    # Code review tasks - compare output to reference
-    setup:
-      type: git_clone
-      # repo and commit must be provided per task
+    # Code review tasks - need git clone, optionally Docker
+    # Setup is incomplete here - tasks must provide git_clone details
+    setup: null  # Will be filled by individual tasks
     grading:
       strategy: comparison
-      # reference and criteria must be provided per task
+      # reference must be provided per task

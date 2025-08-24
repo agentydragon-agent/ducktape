@@ -22,8 +22,9 @@ from claude_optimizer.core.containerized_claude import TaskClaude
 from claude_optimizer.core.file_utils import collect_docker_files
 from claude_optimizer.core.models import (
     AssistantMessage,
-    DockerSetup,
-    GitCloneSetup,
+    TaskSetup,
+    DockerConfig,
+    GitCloneConfig,
     FinalOutput,
     Rollout,
     RunnerEnvironment,
@@ -77,23 +78,24 @@ class ClaudeRunner(AgentRunner):
         import tempfile
         self.workspace_path = Path(tempfile.mkdtemp(prefix="claude_workspace_"))
         
-        # Determine Docker image
-        if isinstance(setup, DockerSetup):
-            self.docker_image = setup.image
-        elif isinstance(setup, GitCloneSetup):
-            # For git clone, we need a Docker image with git
-            # Use a default Ubuntu image or from config
-            self.docker_image = self.config.get("default_docker_image", "ubuntu:22.04")
+        # Handle the new composite TaskSetup
+        if isinstance(setup, TaskSetup):
+            # Clone repository FIRST if needed (before Docker)
+            if setup.git_clone:
+                # Clone into the workspace from host (which has SSH keys)
+                await self._clone_repository(setup.git_clone, str(self.workspace_path), is_docker=False)
+            
+            # Determine Docker image
+            if setup.docker:
+                self.docker_image = setup.docker.image
+            else:
+                # Default image if no Docker specified but we still need a container
+                self.docker_image = self.config.get("default_docker_image", "ubuntu:22.04")
         else:
-            raise ValueError(f"Claude runner requires Docker or GitClone setup, got {type(setup)}")
+            # No setup - shouldn't happen for Claude runner
+            self.docker_image = self.config.get("default_docker_image", "ubuntu:22.04")
         
         self.current_task = task
-        
-        # Clone repository if needed
-        if isinstance(setup, GitCloneSetup):
-            # We'll clone into the workspace before starting TaskClaude
-            # Since TaskClaude manages its own container, we need to clone locally first
-            await self._clone_repository(setup, str(self.workspace_path), is_docker=False)
         
     async def run_task(self, task: TaskDefinition, agent_instructions: str) -> Rollout:
         """Execute task using Claude Code in container.

@@ -6,7 +6,7 @@ from enum import Enum
 from typing import Any, Literal
 
 # Removed claude_code_sdk dependency - using provider-independent types
-from pydantic import BaseModel, Field, field_serializer, model_validator
+from pydantic import BaseModel, Field, field_serializer, field_validator, model_validator
 
 
 class AgentTaskType(str, Enum):
@@ -95,28 +95,42 @@ class GradedRollout(BaseModel):
 # ============================================================================
 
 # Setup configurations
-class DockerSetup(BaseModel):
-    """Docker container setup configuration."""
-    type: Literal["docker"] = "docker"
+class DockerConfig(BaseModel):
+    """Docker container configuration."""
     image: str
     volumes: dict[str, str] = Field(default_factory=dict)
     env: dict[str, str] = Field(default_factory=dict)
+    network_enabled: bool = True  # Allow network access for git clones, package installs, etc.
 
 
-class GitCloneSetup(BaseModel):
-    """Git repository clone setup configuration."""
-    type: Literal["git_clone"] = "git_clone"
+class GitCloneConfig(BaseModel):
+    """Git repository clone configuration."""
     repo: str
     commit: str
     subdir: str | None = None
+    
+    @field_validator("commit")
+    @classmethod
+    def validate_commit_hash(cls, v: str) -> str:
+        """Validate that commit is a full 40-character SHA hash."""
+        if len(v) != 40:
+            raise ValueError(f"Commit must be a full 40-character SHA hash, got {len(v)} characters: {v}")
+        if not all(c in "0123456789abcdefABCDEF" for c in v):
+            raise ValueError(f"Commit must be a valid hex SHA hash: {v}")
+        return v.lower()  # Normalize to lowercase
 
 
-class NoSetup(BaseModel):
-    """No setup required."""
-    type: Literal["none"] = "none"
-
-
-SetupConfig = DockerSetup | GitCloneSetup | NoSetup
+class TaskSetup(BaseModel):
+    """Task setup configuration - can have Docker, GitClone, or both."""
+    docker: DockerConfig | None = None
+    git_clone: GitCloneConfig | None = None
+    
+    @model_validator(mode="after")
+    def validate_not_empty(self):
+        """Ensure at least one setup type is configured."""
+        if not self.docker and not self.git_clone:
+            raise ValueError("Must specify at least one of: docker, git_clone")
+        return self
 
 
 # Grading configurations
@@ -160,8 +174,8 @@ GradingConfig = FileBasedGrading | ComparisonGrading | MessageBasedGrading
 class TaskType(BaseModel):
     """Definition of a task type with its setup and grading configuration."""
     name: str
-    setup: SetupConfig
-    grading: GradingConfig
+    setup: TaskSetup | None  # None for incomplete setups (filled by tasks)
+    grading: GradingConfig | None  # None for incomplete grading (filled by tasks)
 
 
 # Task definition (no runner!)
@@ -172,7 +186,7 @@ class TaskDefinition(BaseModel):
     type: str = "coding"  # Default to coding for backwards compatibility
     
     # Optional overrides - properly typed
-    setup_overrides: SetupConfig | None = None
+    setup_overrides: TaskSetup | None = None
     grading_overrides: GradingConfig | None = None
     
     # Optional metadata
@@ -180,7 +194,7 @@ class TaskDefinition(BaseModel):
     allowed_tools: list[str] | None = None
     pre_task_commands: str | None = None
     
-    def resolve_config(self, task_types: dict[str, TaskType]) -> tuple[SetupConfig, GradingConfig]:
+    def resolve_config(self, task_types: dict[str, TaskType]) -> tuple[TaskSetup, GradingConfig]:
         """Resolve final setup and grading config with overrides."""
         if self.type not in task_types:
             raise ValueError(f"Unknown task type: {self.type}")

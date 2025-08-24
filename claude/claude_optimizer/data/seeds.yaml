@@ -562,9 +562,11 @@ tasks:
   type: code_review
   prompt: "Review these files: wt/tests/conftest.py, wt/tests/config_factory.py"
   setup_overrides:
-    type: git_clone
-    repo: git@github.com:agentydragon/ducktape
-    commit: 0791e28
+    docker:
+      image: python:3.11
+    git_clone:
+      repo: git@github.com:agentydragon/ducktape
+      commit: 0791e282ab4b1c829615c12c2a76e6975511975f
   grading_overrides:
     strategy: comparison
     reference: |
@@ -593,10 +595,11 @@ tasks:
   type: code_review  
   prompt: "Review these files: wt/"
   setup_overrides:
-    type: git_clone
-    repo: git@github.com:agentydragon/ducktape
-    commit: 315fe021dbccbbb0682f10954f45d0145c92faf4
-    subdir: wt
+    docker:
+      image: python:3.11
+    git_clone:
+      repo: git@github.com:agentydragon/ducktape
+      commit: 315fe021dbccbbb0682f10954f45d0145c92faf4
   grading_overrides:
     strategy: comparison
     reference: |

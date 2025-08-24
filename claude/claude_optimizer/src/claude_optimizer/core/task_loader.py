@@ -6,44 +6,92 @@ from typing import Any
 import yaml
 
 from claude_optimizer.core.models import (
-    DockerSetup,
-    GitCloneSetup,
-    NoSetup,
+    TaskSetup,
+    DockerConfig,
+    GitCloneConfig,
     FileBasedGrading,
     ComparisonGrading,
     MessageBasedGrading,
     TaskType,
     TaskDefinition,
-    SetupConfig,
     GradingConfig,
 )
 
 
-def parse_setup_config(config: dict[str, Any]) -> SetupConfig:
-    """Parse setup configuration from YAML data."""
-    setup_type = config.get("type", "none")
+def parse_setup_config(config: dict[str, Any]) -> TaskSetup | None:
+    """Parse setup configuration from YAML data.
     
+    Returns a TaskSetup object or None if incomplete.
+    Supports both old single-type format and new composite format.
+    """
+    # Handle new composite format
+    if "docker" in config or "git_clone" in config:
+        docker_cfg = None
+        git_cfg = None
+        
+        if docker_data := config.get("docker"):
+            docker_cfg = DockerConfig(
+                image=docker_data["image"],
+                volumes=docker_data.get("volumes", {}),
+                env=docker_data.get("env", {}),
+                network_enabled=docker_data.get("network_enabled", True)
+            )
+        
+        if git_data := config.get("git_clone"):
+            # Only create if we have complete data
+            if git_data.get("repo") and git_data.get("commit"):
+                git_cfg = GitCloneConfig(
+                    repo=git_data["repo"],
+                    commit=git_data["commit"],
+                    subdir=git_data.get("subdir")
+                )
+        
+        if docker_cfg or git_cfg:
+            return TaskSetup(docker=docker_cfg, git_clone=git_cfg)
+        else:
+            return None  # Incomplete setup
+    
+    # Handle old single-type format for backwards compatibility
+    setup_type = config.get("type")
+    if not setup_type:
+        return None
+        
     if setup_type == "docker":
-        return DockerSetup(
+        docker_cfg = DockerConfig(
             image=config["image"],
             volumes=config.get("volumes", {}),
-            env=config.get("env", {})
+            env=config.get("env", {}),
+            network_enabled=config.get("network_enabled", True)
         )
+        return TaskSetup(docker=docker_cfg, git_clone=None)
+        
     elif setup_type == "git_clone":
-        return GitCloneSetup(
-            repo=config.get("repo", ""),  # May be specified per task
-            commit=config.get("commit", ""),
-            subdir=config.get("subdir")
-        )
+        # Only create if we have complete data
+        if config.get("repo") and config.get("commit"):
+            git_cfg = GitCloneConfig(
+                repo=config["repo"],
+                commit=config["commit"],
+                subdir=config.get("subdir")
+            )
+            return TaskSetup(docker=None, git_clone=git_cfg)
+        else:
+            return None  # Incomplete setup
+            
     elif setup_type == "none":
-        return NoSetup()
+        return None
+        
     else:
         raise ValueError(f"Unknown setup type: {setup_type}")
 
 
-def parse_grading_config(config: dict[str, Any]) -> GradingConfig:
+def parse_grading_config(config: dict[str, Any]) -> GradingConfig | None:
     """Parse grading configuration from YAML data."""
-    strategy = config["strategy"]
+    if not config:
+        return None
+        
+    strategy = config.get("strategy")
+    if not strategy:
+        return None
     
     if strategy == "file_based":
         return FileBasedGrading(
@@ -56,10 +104,15 @@ def parse_grading_config(config: dict[str, Any]) -> GradingConfig:
             criteria=config.get("criteria")
         )
     elif strategy == "comparison":
-        return ComparisonGrading(
-            reference=config.get("reference", ""),  # May be specified per task
-            criteria=config.get("criteria", [])
-        )
+        # For comparison, we may not have reference at task type level
+        reference = config.get("reference", "")
+        if reference:
+            return ComparisonGrading(
+                reference=reference,
+                criteria=config.get("criteria", [])
+            )
+        else:
+            return None  # Incomplete - will be filled by tasks
     else:
         raise ValueError(f"Unknown grading strategy: {strategy}")
 
@@ -82,8 +135,13 @@ def load_task_types(file_path: Path | str) -> dict[str, TaskType]:
     
     task_types = {}
     for name, config in data["task_types"].items():
-        setup = parse_setup_config(config["setup"])
-        grading = parse_grading_config(config["grading"])
+        # Handle None setup/grading configs
+        setup_config = config.get("setup")
+        grading_config = config.get("grading")
+        
+        setup = parse_setup_config(setup_config) if setup_config else None
+        grading = parse_grading_config(grading_config) if grading_config else None
+        
         task_types[name] = TaskType(
             name=name,
             setup=setup,

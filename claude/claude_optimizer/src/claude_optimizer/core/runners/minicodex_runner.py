@@ -24,10 +24,10 @@ from claude_optimizer.core.logging_openai_client import LoggingOpenAIClient
 from claude_optimizer.core.logging_utils import DualOutputLogging
 from claude_optimizer.core.models import (
     AssistantMessage,
-    DockerSetup,
+    TaskSetup,
+    DockerConfig,
+    GitCloneConfig,
     FinalOutput,
-    GitCloneSetup,
-    NoSetup,
     Rollout,
     RunnerEnvironment,
     TaskDefinition,
@@ -377,26 +377,28 @@ class MiniCodexRunner(AgentRunner):
         # Always create workspace directory
         self.workspace_path = Path(tempfile.mkdtemp(prefix="minicodex_"))
         
-        # Check if task specifies Docker setup
-        if isinstance(setup, DockerSetup):
-            self.docker_config = setup
-        
-        # Start Docker container if configured
-        if self.docker_config:
-            await self._start_docker_container()
-            # Default working directory in Docker
-            self.agent_cwd = "/workspace"
-        else:
-            # Default working directory locally
-            self.agent_cwd = str(self.workspace_path)
-        
-        # Clone git repository if configured
-        if isinstance(setup, GitCloneSetup):
-            # Clone directly into workspace (no subdir support - agent can navigate)
+        # Handle the new composite TaskSetup
+        if isinstance(setup, TaskSetup):
+            # Extract Docker config if present
+            if setup.docker:
+                self.docker_config = setup.docker
+            
+            # Clone git repository BEFORE starting Docker (if configured)
+            # This way we clone from host which has SSH keys, then mount into container
+            if setup.git_clone:
+                await self._clone_repository(setup.git_clone, str(self.workspace_path), is_docker=False)
+            
+            # Start Docker container if configured (AFTER cloning)
             if self.docker_config:
-                await self._clone_repository(setup, "/workspace", is_docker=True)
+                await self._start_docker_container()
+                # Default working directory in Docker
+                self.agent_cwd = "/workspace"
             else:
-                await self._clone_repository(setup, str(self.workspace_path), is_docker=False)
+                # Default working directory locally
+                self.agent_cwd = str(self.workspace_path)
+        else:
+            # No setup needed
+            self.agent_cwd = str(self.workspace_path)
     
     async def _run_docker_command(
         self, cmd: list[str], cwd: str, timeout_s: int
@@ -438,6 +440,12 @@ class MiniCodexRunner(AgentRunner):
                            image=self.docker_config.image,
                            workspace=str(self.workspace_path))
             
+            # Determine network mode based on config
+            # TODO: Defense-in-depth: ideally we would: 1) enable network for git clone/package installs,
+            # 2) disable network for agent execution. This provides security isolation and prevents
+            # agents from accidentally exfiltrating data or making unintended network calls. For now, we keep it simple.
+            network_mode = None if self.docker_config.network_enabled else "none"
+            
             # Start container
             self.container = self.docker_client.containers.run(
                 self.docker_config.image,
@@ -445,6 +453,7 @@ class MiniCodexRunner(AgentRunner):
                 volumes=volumes,
                 environment=self.docker_config.env or {},
                 working_dir="/workspace",
+                network_mode=network_mode,  # None means default (bridge), "none" disables network
                 detach=True,
                 remove=True,
                 stdout=True,
