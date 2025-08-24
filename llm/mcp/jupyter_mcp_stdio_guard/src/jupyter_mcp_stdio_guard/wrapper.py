@@ -51,6 +51,9 @@ class PolicyConfig(BaseModel):
     fs_read: list[str] = Field(default_factory=list)
     net: str = "loopback"  # none|loopback|all|allowlist:...|proxy:...
     env: dict[str, str] = Field(default_factory=dict)
+    # Optional: absolute path to the Python interpreter to use for the kernel.
+    # If not provided, defaults to sys.executable (the wrapper's interpreter).
+    kernel_python: str | None = None
 
 
 def _ensure_dir(p: Path) -> None:
@@ -198,10 +201,12 @@ def _write_sandboxed_kernelspec(
     run_root: Path,
     workspace: Path,
     policy_path: Path,
+    kernel_python: str | None = None,
 ) -> None:
     # Override the default 'python3' kernel to ensure the sandbox is used
     ks_dir = _kernels_dir(run_root) / "python3"
     ks_dir.mkdir(parents=True, exist_ok=True)
+    py_exec = kernel_python or sys.executable
     kernel_json = {
         "argv": [
             "env",
@@ -214,7 +219,7 @@ def _write_sandboxed_kernelspec(
             f"WORKSPACE={workspace}",
             "-D",
             f"RUN_ROOT={run_root}",
-            sys.executable,
+            str(py_exec),
             "-m",
             "ipykernel_launcher",
             "-f",
@@ -315,7 +320,7 @@ def _seatbelt(  # noqa: PLR0913
     policy_text = SANDBOX_POLICY_BASE + "\n" + "\n".join(dyn_lines) + "\n"
     policy_path.write_text(policy_text)
     if kernel_sandbox:
-        _write_sandboxed_kernelspec(run_root, workspace, policy_path)
+        _write_sandboxed_kernelspec(run_root, workspace, policy_path, kernel_python=cfg.kernel_python)
         # Ensure newly created notebooks default to the sandboxed kernel
         (run_root / "runtime" / "kernels.json").write_text(
             json.dumps({"default": "python3"}),
