@@ -1,10 +1,18 @@
 from __future__ import annotations
 
-from dataclasses import asdict
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
+from enum import Enum
+from typing import Any, Literal
 
-from claude_code_sdk import Message
-from pydantic import BaseModel, field_serializer, model_validator
+# Removed claude_code_sdk dependency - using provider-independent types
+from pydantic import BaseModel, Field, field_serializer, model_validator
+
+
+class AgentTaskType(str, Enum):
+    """Type of agent being optimized."""
+    CODING = "coding"
+    CODE_REVIEW = "code_review"
 
 
 class FileInfo(BaseModel):
@@ -31,30 +39,13 @@ class ScoreWithRationale(BaseModel):
     rationale: str
 
 
-class CodeResult(BaseModel):
-    task: str
-    task_id: str
-    agent_id: int
-    timestamp: datetime
-    messages: list[Message]
-    files: list[FileInfo]
-
-    class Config:
-        arbitrary_types_allowed = True
-
-    @field_serializer("timestamp")
-    def serialize_timestamp(self, timestamp: datetime) -> str:
-        return timestamp.isoformat()
-
-    @field_serializer("messages")
-    def serialize_messages(self, messages: list[Message]) -> list[dict]:
-        return [asdict(msg) for msg in messages]
+# CodeResult removed - use GradedRollout instead
 
 
 class Grade(BaseModel):
     task: str
     task_id: str
-    agent_id: int
+    agent_id: str  # Changed from int to match Rollout.agent_id
     axes: dict[str, ScoreWithRationale]
     timestamp: datetime
 
@@ -76,6 +67,231 @@ class Grade(BaseModel):
         return timestamp.isoformat()
 
 
-class GradedCode(BaseModel):
-    code_result: CodeResult
+class GradedRollout(BaseModel):
+    """A rollout that has been graded.
+    
+    This is the core unit of work in the optimizer - an agent's attempt
+    at a task along with its evaluation.
+    """
+    rollout: Rollout
     grade: Grade
+    task: TaskDefinition
+    
+    @property
+    def overall_score(self) -> float:
+        """Convenience accessor for overall score."""
+        return self.grade.overall_score
+    
+    @property
+    def task_id(self) -> str:
+        """Convenience accessor for task ID."""
+        return self.task.id
+
+
+
+
+# ============================================================================
+# New models for generalized system
+# ============================================================================
+
+# Setup configurations
+class DockerSetup(BaseModel):
+    """Docker container setup configuration."""
+    type: Literal["docker"] = "docker"
+    image: str
+    volumes: dict[str, str] = Field(default_factory=dict)
+    env: dict[str, str] = Field(default_factory=dict)
+
+
+class GitCloneSetup(BaseModel):
+    """Git repository clone setup configuration."""
+    type: Literal["git_clone"] = "git_clone"
+    repo: str
+    commit: str
+    subdir: str | None = None
+
+
+class NoSetup(BaseModel):
+    """No setup required."""
+    type: Literal["none"] = "none"
+
+
+SetupConfig = DockerSetup | GitCloneSetup | NoSetup
+
+
+# Grading configurations
+class FileBasedGrading(BaseModel):
+    """Grade based on files produced."""
+    strategy: Literal["file_based"] = "file_based"
+    criteria_file: str | None = None
+    criteria: list[Criterion] | None = None
+    
+    @model_validator(mode="after")
+    def validate_criteria_source(self):
+        if not self.criteria_file and not self.criteria:
+            raise ValueError("Must provide either criteria_file or criteria")
+        return self
+
+
+class ComparisonGrading(BaseModel):
+    """Grade by comparing output to reference."""
+    strategy: Literal["comparison"] = "comparison"
+    reference: str
+    criteria: list[dict[str, str]]
+
+
+class MessageBasedGrading(BaseModel):
+    """Grade based on final message output."""
+    strategy: Literal["message_based"] = "message_based"
+    criteria_file: str | None = None
+    criteria: list[Criterion] | None = None
+    
+    @model_validator(mode="after")
+    def validate_criteria_source(self):
+        if not self.criteria_file and not self.criteria:
+            raise ValueError("Must provide either criteria_file or criteria")
+        return self
+
+
+GradingConfig = FileBasedGrading | ComparisonGrading | MessageBasedGrading
+
+
+# Task type definition
+class TaskType(BaseModel):
+    """Definition of a task type with its setup and grading configuration."""
+    name: str
+    setup: SetupConfig
+    grading: GradingConfig
+
+
+# Task definition (no runner!)
+class TaskDefinition(BaseModel):
+    """Task definition without runner specification."""
+    id: str
+    prompt: str
+    type: str = "coding"  # Default to coding for backwards compatibility
+    
+    # Optional overrides - properly typed
+    setup_overrides: SetupConfig | None = None
+    grading_overrides: GradingConfig | None = None
+    
+    # Optional metadata
+    description: str | None = None
+    allowed_tools: list[str] | None = None
+    pre_task_commands: str | None = None
+    
+    def resolve_config(self, task_types: dict[str, TaskType]) -> tuple[SetupConfig, GradingConfig]:
+        """Resolve final setup and grading config with overrides."""
+        if self.type not in task_types:
+            raise ValueError(f"Unknown task type: {self.type}")
+        
+        base_type = task_types[self.type]
+        
+        # Use overrides if provided, otherwise use base
+        setup = self.setup_overrides or base_type.setup
+        grading = self.grading_overrides or base_type.grading
+        
+        return setup, grading
+
+
+# Common trajectory format with typed items
+class AssistantMessage(BaseModel):
+    """Assistant's text message."""
+    type: Literal["assistant_message"] = "assistant_message"
+    text: str
+    # Store original provider format if needed
+    original: Any | None = None
+    
+class ToolCall(BaseModel):
+    """Tool invocation by the agent."""
+    type: Literal["tool_call"] = "tool_call"
+    tool_name: str
+    arguments: dict[str, Any]
+    original: Any | None = None
+    
+class ToolResult(BaseModel):
+    """Result from a tool execution."""
+    type: Literal["tool_result"] = "tool_result"
+    tool_name: str
+    result: Any
+    error: str | None = None
+    original: Any | None = None
+
+class UserInput(BaseModel):
+    """User input to the agent."""
+    type: Literal["user_input"] = "user_input"
+    text: str
+    original: Any | None = None
+
+class ErrorMessage(BaseModel):
+    """Error during execution."""
+    type: Literal["error"] = "error"
+    message: str
+    details: dict[str, Any] | None = None
+    original: Any | None = None
+
+class FinalOutput(BaseModel):
+    """Final output from the agent."""
+    type: Literal["final_output"] = "final_output"
+    text: str
+    original: Any | None = None
+
+# Union type for all trajectory items
+TrajectoryItem = AssistantMessage | ToolCall | ToolResult | UserInput | ErrorMessage | FinalOutput
+
+
+@dataclass  
+class Rollout:
+    """Common format for all agent rollouts."""
+    task_id: str
+    runner_id: str  # Which runner was used
+    agent_id: str
+    
+    # Core content
+    trajectory: list[TrajectoryItem]
+    files: dict[str, str]  # filename -> content
+    
+    # Metadata
+    success: bool
+    error_message: str | None = None
+    cost_usd: float = 0.0
+    duration_seconds: float = 0.0
+    metadata: dict = field(default_factory=dict)
+    
+    @property
+    def final_output(self) -> str:
+        """Extract final output from trajectory."""
+        for item in reversed(self.trajectory):
+            if isinstance(item, FinalOutput):
+                return item.text
+            elif isinstance(item, AssistantMessage):
+                return item.text
+        return ""
+
+
+@dataclass
+class RunnerEnvironment:
+    """Environment information from a runner."""
+    type: str  # "docker_container", "workspace_dir", etc.
+    data: dict[str, Any]  # Type-specific data
+    
+    @property
+    def container_id(self) -> str | None:
+        """Get Docker container ID if this is a container environment."""
+        if self.type == "docker_container":
+            return self.data.get("container_id")
+        return None
+    
+    @property
+    def workspace_path(self) -> str | None:
+        """Get workspace path if this is a directory environment."""
+        if self.type == "workspace_dir":
+            return self.data.get("path")
+        return None
+
+@dataclass
+class GradingContext:
+    """Context provided to grading strategies."""
+    rollout: Rollout
+    task: TaskDefinition
+    environment: RunnerEnvironment | None = None

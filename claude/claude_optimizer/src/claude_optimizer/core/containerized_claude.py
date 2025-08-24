@@ -93,6 +93,24 @@ class TaskClaude:
     Provides the same API as ClaudeSDKClient but runs Claude inside Docker containers
     with proper PATH isolation and automatic file collection.
     """
+    
+    # TODO/TBD: Git volume was a historical optimization for pre-cloned large repositories.
+    # With shallow clones (git fetch --depth 1) to specific commits, this optimization
+    # may no longer be necessary. The git volume code is kept for potential future use
+    # but is DISABLED in the production path.
+    # 
+    # Historical context:
+    # - Git repos were pre-cloned into a Docker volume named "claude_shared_git"
+    # - Volume was mounted at /git (read-write initially, then remounted read-only)
+    # - This avoided repeated cloning of large repos across tasks
+    # 
+    # Current approach:
+    # - Clone directly into workspace for each task
+    # - No shared git volume needed
+    # - Simpler and more consistent with MiniCodexRunner
+    #
+    # To re-enable git volume: set use_git_volume = True
+    use_git_volume = False  # DISABLED in production path
 
     def __init__(
         self,
@@ -116,7 +134,7 @@ class TaskClaude:
         self._logger = logger
         self._exclusion_spec = pathspec.PathSpec.from_lines(
             "gitwildmatch",
-            config.exclude_patterns,
+            config.get('exclude_patterns', []),
         )
 
         # Find docker path for wrapper creation
@@ -141,43 +159,35 @@ class TaskClaude:
     def _get_container_volumes(self, git_readonly: bool) -> dict:
         """Get volume configuration for container with persistent logging.
 
-        Ensures git volume exists and returns complete volume configuration.
+        Ensures git volume exists (if enabled) and returns complete volume configuration.
         """
-        # COLIMA FILESYSTEM CONSTRAINT: Ensure all bind mount paths are under user home directory
-        # Colima VM only mounts Mac /Users/$USER into VM /Users/$USER - other Mac paths are not accessible
-        # This prevents bind mount failures where Docker can't access Mac filesystem outside home directory
-        home_dir = Path.home()
-
-        # Verify output directory is under user home (accessible to colima VM)
-        try:
-            self._output_dir.resolve().relative_to(home_dir.resolve())
-        except ValueError:
-            raise RuntimeError(
-                f"Output directory must be under user home directory for colima compatibility. "
-                f"Got: {self._output_dir} (not under {home_dir}). "
-                f"Colima only mounts Mac {home_dir} -> VM {home_dir}, other paths are inaccessible.",
-            )
-
-        # Ensure shared git volume exists
-        try:
-            self._docker_client.volumes.get(self._git_volume_name)
-        except docker.errors.NotFound:
-            self._docker_client.volumes.create(name=self._git_volume_name)
+        # Create output directory if it doesn't exist
+        self._output_dir.mkdir(parents=True, exist_ok=True)
 
         # Ensure logs directory exists on host
         logs_dir = self._output_dir / "logs"
         logs_dir.mkdir(parents=True, exist_ok=True)
 
-        git_mode = "ro" if git_readonly else "rw"
-
-        return {
+        volumes = {
             str(self._output_dir): {"bind": "/workspace", "mode": "rw"},
             str(logs_dir): {
                 "bind": "/logs",
                 "mode": "rw",
             },  # Persistent logs survive container death
-            self._git_volume_name: {"bind": "/git", "mode": git_mode},
         }
+        
+        # Only include git volume if enabled (currently disabled in production)
+        if self.use_git_volume:
+            # Ensure shared git volume exists
+            try:
+                self._docker_client.volumes.get(self._git_volume_name)
+            except docker.errors.NotFound:
+                self._docker_client.volumes.create(name=self._git_volume_name)
+            
+            git_mode = "ro" if git_readonly else "rw"
+            volumes[self._git_volume_name] = {"bind": "/git", "mode": git_mode}
+        
+        return volumes
 
     def _create_container(self, volumes: dict):
         """Create Docker container with standardized configuration.
@@ -228,7 +238,7 @@ class TaskClaude:
         options = ContainerizedClaudeCodeOptions(
             allowed_tools=None,
             cwd=str(self._output_dir),
-            max_turns=self.config.rollouts.max_turns,
+            max_turns=self.config.get('max_turns', 30),
             permission_mode="bypassPermissions",
             mcp_servers={},
             claude_binary=self._get_docker_exec_wrapper_path(),
@@ -246,10 +256,10 @@ class TaskClaude:
             "DOCKER_BINARY": self._docker_path,
         }
 
-        if getattr(self.config, "debug", None) and self.config.debug.enable_strace:
+        if self.config.get('enable_strace', False):
             wrapper_env["CLAUDE_STRACE"] = "1"
-        if hasattr(self.config, "wrapper_env") and self.config.wrapper_env:
-            wrapper_env.update(self.config.wrapper_env)
+        if self.config.get('wrapper_env'):
+            wrapper_env.update(self.config.get('wrapper_env'))
         pass_keys = [
             k for k in wrapper_env if k not in ("CLAUDE_CONTAINER_ID", "DOCKER_BINARY")
         ]
@@ -414,10 +424,10 @@ class TaskClaude:
             await self._remount_git_readonly()
 
             # Run pre-task setup after remount so installs persist
-            if self.config.pre_task_always_script:
+            if self.config.get('pre_task_always_script'):
                 await self._run_pre_task_always_setup()
 
-            if self.config.pre_task_setup_script:
+            if self.config.get('pre_task_setup_script'):
                 await self._run_pre_task_setup()
 
             if self._seed_task.pre_task_commands:
@@ -518,20 +528,20 @@ class TaskClaude:
 
     async def _run_pre_task_always_setup(self):
         """Run always pre-task setup script (runs before every task)."""
-        if not self.config.pre_task_always_script:
+        if not self.config.get('pre_task_always_script'):
             return
         await self._run_setup_script(
-            self.config.pre_task_always_script,
+            self.config.get('pre_task_always_script'),
             "Always pre-task setup",
             "setup-always",
         )
 
     async def _run_pre_task_setup(self):
         """Run pre-task setup script."""
-        if not self.config.pre_task_setup_script:
+        if not self.config.get('pre_task_setup_script'):
             return
         await self._run_setup_script(
-            self.config.pre_task_setup_script,
+            self.config.get('pre_task_setup_script'),
             "Pre-task setup",
             "pre-task-setup",
         )
@@ -599,7 +609,16 @@ class TaskClaude:
 
         Restarts container with RO git mount. Wrapper script recreated with new container ID.
         See DEBUGGING.md for security rationale and troubleshooting.
+        
+        NOTE: This is only needed when git volume is enabled. Currently skipped in production.
         """
+        if not self.use_git_volume:
+            # Git volume disabled - no remounting needed
+            self._logger.info("Git volume disabled - skipping remount")
+            # Still need to setup the wrapper after container start
+            await self._setup_wrapper()
+            return
+            
         # Stop current container
         old_container_id = self._container.id
         self._logger.info(

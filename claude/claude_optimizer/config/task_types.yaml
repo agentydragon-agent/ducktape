@@ -1,0 +1,21 @@
+# Task type definitions
+# Defines setup and grading configuration for each type of task
+
+task_types:
+  coding:
+    # Standard coding tasks - produce files
+    setup:
+      type: docker
+      image: python:3.11
+    grading:
+      strategy: file_based
+      criteria_file: ../data/graders_consolidated.yaml
+  
+  code_review:
+    # Code review tasks - compare output to reference
+    setup:
+      type: git_clone
+      # repo and commit must be provided per task
+    grading:
+      strategy: comparison
+      # reference and criteria must be provided per task

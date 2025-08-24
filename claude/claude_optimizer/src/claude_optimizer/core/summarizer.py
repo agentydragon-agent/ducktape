@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 from claude_optimizer.core.logging_openai_client import LoggingOpenAIModel
 from claude_optimizer.core.logging_utils import DualOutputLogging
-from claude_optimizer.core.models import GradedCode
+from claude_optimizer.core.models import GradedRollout
 from claude_optimizer.core.prompt_engineer import FeedbackProvider
 from claude_optimizer.core.truncation_utils import (
     TruncationManager,
@@ -35,14 +35,14 @@ class PatternSummarizer(FeedbackProvider):
     def _count_tokens(self, text: str) -> int:
         return self.truncation_manager.count_tokens(text)
 
-    async def provide_feedback(self, rollouts: list[GradedCode]) -> str:
+    async def provide_feedback(self, rollouts: list[GradedRollout]) -> str:
         rollout_summaries: list[str] = []
         original_count = len(rollouts)
 
         system_tokens = self._count_tokens(self._SYSTEM_MESSAGE)
         header_text = f"Analyze these {len(rollouts)} coding task rollouts and identify key patterns for prompt improvement:\n\n"
         remaining_tokens = (
-            self.model.max_context_tokens
+            self.model.context_window_tokens
             - system_tokens
             - self._count_tokens(header_text)
         )
@@ -54,24 +54,31 @@ class PatternSummarizer(FeedbackProvider):
             remaining_tokens=remaining_tokens,
         )
 
-        for i, graded_code in enumerate(rollouts):
-            task_summary = f"Task {i + 1}:\n"
-            task_summary += f"  Overall Score: {graded_code.grade.overall_score}/10\n"
-            task_summary += f"  Key Issues: {graded_code.grade.overall_rationale}\n"
+        for i, graded in enumerate(rollouts):
+            task_summary = f"Task {i + 1} ({graded.task.type}):\n"
+            task_summary += f"  Overall Score: {graded.grade.overall_score}/10\n"
+            task_summary += f"  Key Issues: {graded.grade.overall_rationale}\n"
 
             facet_details: list[str] = []
-            for facet_name, score_with_rationale in graded_code.grade.axes.items():
+            for facet_name, score_with_rationale in graded.grade.axes.items():
                 facet_details.append(
                     f"\n    {facet_name}: {score_with_rationale.score}/10 - {score_with_rationale.rationale}",
                 )
             task_summary += f"  Facets:{''.join(facet_details)}\n"
 
-            truncated_files = self.truncation_manager.truncate_file_content_by_size(
-                graded_code.code_result.files,
-                self.max_file_size_pattern_analysis,
-                "pattern analysis",
-            )
-            task_summary += f"  Files: {json.dumps(truncated_files, indent=2)}\n"
+            # Only include files for coding tasks
+            if graded.rollout.files:
+                # Convert files dict to list format expected by truncation manager
+                files_list = [
+                    {"path": path, "content": content}
+                    for path, content in graded.rollout.files.items()
+                ]
+                truncated_files = self.truncation_manager.truncate_file_content_by_size(
+                    files_list,
+                    self.max_file_size_pattern_analysis,
+                    "pattern analysis",
+                )
+                task_summary += f"  Files: {json.dumps(truncated_files, indent=2)}\n"
 
             potential_tokens = self._count_tokens(
                 "\n".join([*rollout_summaries, task_summary]),
@@ -97,11 +104,11 @@ class PatternSummarizer(FeedbackProvider):
             final_tokens=final_tokens,
             included_rollouts=len(rollout_summaries),
             excluded_rollouts=original_count - len(rollout_summaries),
-            context_utilization=f"{(final_tokens / self.model.max_context_tokens) * 100:.1f}%",
+            context_utilization=f"{(final_tokens / self.model.context_window_tokens) * 100:.1f}%",
         )
         return extract_text_from_openai_response(
             self.model.responses_create(
-                messages=[
+                input=[  # OpenAI Responses API uses 'input' not 'messages'
                     {"role": "system", "content": self._SYSTEM_MESSAGE},
                     {"role": "user", "content": analysis_prompt},
                 ],

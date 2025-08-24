@@ -15,13 +15,13 @@ RUN apt-get update && apt-get install -y \
     strace \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Node.js 18
-RUN curl -fsSL https://deb.nodesource.com/setup_18.x | bash - \
-    && apt-get install -y nodejs \
-    && rm -rf /var/lib/apt/lists/*
+# Install Claude Code CLI using native installer
+# Note: The native installer will handle all dependencies including Node.js if needed
+# Install as root first to get system-wide installation
+RUN curl -fsSL https://claude.ai/install.sh | bash
 
-# Install Claude Code CLI
-RUN npm install -g @anthropic-ai/claude-code
+# Ensure claude is accessible in PATH for all users
+ENV PATH="/root/.local/bin:/home/node/.local/bin:${PATH}"
 
 ## Create generic Claude wrapper for SDK integration
 ## NOTE: This wrapper may be redundant since we override the SDK's binary path entirely,

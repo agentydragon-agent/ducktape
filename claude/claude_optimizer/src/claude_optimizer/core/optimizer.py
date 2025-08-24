@@ -50,10 +50,11 @@ from claude_code_sdk import ResultMessage
 from openai import OpenAI
 
 from claude_optimizer.config import OptimizerConfig
-from claude_optimizer.core.containerized_claude import TaskClaude
 from claude_optimizer.core.exceptions import ContextWindowExceededException
 from claude_optimizer.core.file_ops import should_exclude_file
-from claude_optimizer.core.grader import grade_code
+from claude_optimizer.core.grading.grader import grade_rollout
+from claude_optimizer.core.runner_factory import create_runner
+from claude_optimizer.core.task_loader import load_task_types, load_runner_configs, load_task_definitions
 from claude_optimizer.core.jsonl_logger import JSONLLogger, safe_serialize
 from claude_optimizer.core.logging_openai_client import (
     LoggingOpenAIClient,
@@ -61,11 +62,12 @@ from claude_optimizer.core.logging_openai_client import (
 )
 from claude_optimizer.core.logging_utils import DualOutputLogging
 from claude_optimizer.core.models import (
-    CodeResult,
     Criterion,
-    FileInfo,
-    GradedCode,
+    GradedRollout,
     SeedTask,
+    TaskDefinition,
+    AgentTaskType,
+    Rollout,
 )
 from claude_optimizer.core.prompt_engineer import (
     FeedbackMode,
@@ -80,9 +82,8 @@ from claude_optimizer.core.yaml_loader import load_yaml_files
 # Database removed - using JSON files instead
 from claude_optimizer.plots import ScoreEvolutionTracker
 
-# Setup logging using utility class
-DualOutputLogging.setup_logging()
-logger = DualOutputLogging.get_logger()
+# Logging will be configured after argument parsing
+logger = None
 
 # Global trackers
 score_tracker = ScoreEvolutionTracker()
@@ -197,115 +198,19 @@ def should_exclude_file(
     )
 
 
-async def run_claude_code(
-    seed_task: SeedTask,
-    system_prompt: str,
-    agent_id: int,
-    output_dir: Path,
-    anthropic_log: JSONLLogger,
-    cfg: OptimizerConfig,
-) -> CodeResult:
-    """Run a single coding agent on the given task using containerized Claude.
-
-    This function uses the TaskClaude proxy to run Claude inside a Docker container
-    with proper PATH isolation. The system prompt is written inside the container,
-    and files are automatically copied to the host for grader access.
-
-    Parameters
-    ----------
-    seed_task : SeedTask
-        The task object containing prompt and configuration.
-    system_prompt : str
-        The system prompt guiding the agent's behaviour.
-    agent_id : int
-        An identifier distinguishing this agent instance within a batch.
-    output_dir : Path
-        Directory where agent output files will be saved.
-    anthropic_log : JSONLLogger
-        Logger for Anthropic API calls.
-    rollout_id : int
-        Rollout ID for database logging.
-
-    Returns
-    -------
-    CodeResult
-        A dataclass containing the task, agent identifier, generated code, and timestamp.
-    """
-    # Set up task logger
-    task_logger = logger.bind(task_id=seed_task.id, agent_id=agent_id)
-    task_logger.info(
-        "Starting containerized agent",
-        output_dir=str(output_dir),
-        task_preview=seed_task.prompt[:100],
-    )
-
-    # Use containerized Claude with automatic file collection
-    # task_claude already imported above
-
-    async with TaskClaude(
-        seed_task.id, cfg, output_dir, seed_task, task_logger
-    ) as claude:
-        # Write system prompt inside container (before PATH isolation)
-        claude.setup_system_prompt(system_prompt)
-
-        # Execute Claude session using the containerized client
-        message_sequence = []
-        anthropic_request = {
-            "prompt": seed_task.prompt,
-            "options": f"containerized_claude_task_{seed_task.id}",
-        }
-
-        anthropic_log.log(request=anthropic_request, event="request_sent")
-
-        await claude.query()
-        seq_order = 0
-
-        async for message in claude.receive_messages():
-            anthropic_log.log(request=anthropic_request, event=safe_serialize(message))
-            message_sequence.append(message)  # Store the actual message object
-            # Only log to console, not to the JSON file
-            # TODO: Consider a console-only logger for real-time updates
-
-            seq_order += 1
-
-            if isinstance(message, ResultMessage):
-                task_logger.info(
-                    "Containerized session completed",
-                    duration_ms=message.duration_ms,
-                    cost_usd=message.total_cost_usd,
-                    is_error=message.is_error,
-                )
-                # Track rollout cost
-                cost_tracker.add_rollout_cost(message.total_cost_usd)
-                break
-
-        # Copy files from container to host
-        file_collection = await claude.collect_outputs()
-
-    # Convert to grader format
-    files_info = [
-        FileInfo(path=fi["path"], content=fi["content"]) if isinstance(fi, dict) else fi
-        for fi in file_collection
-    ]
-
-    timestamp = datetime.utcnow()
-    return CodeResult(
-        task=seed_task.prompt,
-        task_id=seed_task.id,
-        agent_id=agent_id,
-        timestamp=timestamp,
-        messages=message_sequence,
-        files=files_info,
-    )
 
 
 async def optimize_prompts(
     *,
     anthropic_log,
     openai_client: LoggingOpenAIClient,
-    seed_tasks: list[SeedTask],
+    seed_tasks: list[TaskDefinition],
     criteria: list[Criterion],
     cfg: OptimizerConfig,
+    runner_name: str,
+    task_types: dict,
+    runner_configs: dict,
+    task_type: AgentTaskType,  # Type of agent being optimized
     iterations: int = 3,
     rollouts_per_task: int = 2,
     max_parallel_rollouts: int | None = None,
@@ -315,27 +220,42 @@ async def optimize_prompts(
     """Run the prompt optimisation loop.
 
     This is the main entry point for running multiple iterations of the algorithm. It
-    repeatedly executes batches of coding agents on the seed tasks in parallel,
+    repeatedly executes batches of agents on the seed tasks in parallel,
     grades the generated solutions using OpenAI's Responses API, updates the system
     prompt using a prompt engineer (OpenAI o3), and logs results to JSONL files.
 
     Parameters
     ----------
-    seed_tasks : List[SeedTask]
-        The programming tasks to use as the benchmark for optimisation.
+    seed_tasks : List[TaskDefinition]
+        The tasks to use as the benchmark for optimisation.
+    criteria : List[Criterion]
+        Grading criteria to evaluate task performance.
+    cfg : OptimizerConfig
+        Configuration for the optimizer.
+    runner_name : str
+        Name of the runner to use (e.g., "claude", "mini_codex").
+    task_types : dict
+        Task type configurations.
+    runner_configs : dict
+        Runner configurations.
     iterations : int, optional
         The number of optimisation iterations to perform (default 3).
     rollouts_per_task : int, optional
-        The number of coding agents to sample per task in each iteration (default 2).
+        The number of agents to sample per task in each iteration (default 2).
     max_parallel_rollouts : int, optional
-        Maximum number of concurrent coding agent rollouts (default from config).
+        Maximum number of concurrent agent rollouts (default from config).
     tasks_per_iteration : int, optional
         Number of tasks to randomly sample (with replacement) per iteration.
         If None, uses all seed tasks (default None).
+    base_dir : Path
+        Base directory for output.
     """
     if max_parallel_rollouts is None:
         max_parallel_rollouts = cfg.rollouts.max_parallel
 
+    # Note: We'll create a runner instance per rollout to avoid shared state conflicts
+    # Each parallel task needs its own runner to prevent race conditions
+    
     # Prepare API loggers for both OpenAI and Anthropic (keeping these for debugging)
 
     # Criteria already passed as parameter
@@ -351,7 +271,7 @@ async def optimize_prompts(
             ),
             # UGH
             truncation_manager=TruncationManager(cfg),
-            max_file_pattern_analysis=cfg.truncation.max_file_pattern_analysis,
+            max_file_size_pattern_analysis=cfg.truncation.max_file_pattern_analysis,
         )
     elif feedback_mode == FeedbackMode.STATS_ONLY:
         feedback_provider = StatsOnlyFeedbackProvider()
@@ -368,10 +288,12 @@ async def optimize_prompts(
             reasoning_effort=cfg.grader.reasoning_effort,
         ),
         feedback_provider=feedback_provider,
+        task_type=task_type,
     )
 
     # Generate initial prompt without any rollout data
     prev_reasoning, prev_function_call, current_prompt = await engineer.propose_prompt()
+    logger.info("Generated initial prompt", iteration=0, prompt_preview=current_prompt[:200] + "..." if len(current_prompt) > 200 else current_prompt)
 
     # Track prompts
     prompts_by_iteration = {0: current_prompt}
@@ -381,10 +303,10 @@ async def optimize_prompts(
 
     # Define the inner rollout function
     async def run_single_rollout(
-        task: SeedTask,
+        task: TaskDefinition,
         rollout_id: int,
         iteration: int,
-    ) -> GradedCode:
+    ) -> GradedRollout | None:
         """Run a single rollout with semaphore control."""
         async with rollout_semaphore:
             # Create rollout directory structure
@@ -393,19 +315,39 @@ async def optimize_prompts(
             )
             rollout_dir.mkdir(parents=True, exist_ok=True)
 
-            # Create work subdirectory for Claude
+            # Create work subdirectory for agent
             work_dir = rollout_dir / "work"
             work_dir.mkdir(parents=True, exist_ok=True)
 
-            # Run containerized Claude in work subdirectory
-            code_result = await run_claude_code(
-                task,
-                current_prompt,
-                agent_id=rollout_id,
-                output_dir=work_dir,
-                anthropic_log=anthropic_log,
-                cfg=cfg,
-            )
+            # Get task type configuration - must exist
+            if task.type not in task_types:
+                raise ValueError(f"Unknown task type: {task.type}")
+            task_type_config = task_types[task.type]
+            
+            # Create a runner instance for this specific rollout
+            # This ensures parallel tasks don't share state
+            runner = create_runner(runner_name, runner_configs, openai_client)
+            
+            # Setup runner for this specific task
+            await runner.setup(task, task_type_config)
+            
+            try:
+                # Run agent task with current instructions being optimized
+                rollout = await runner.run_task(task, agent_instructions=current_prompt)
+                
+                # Track cost if available
+                if rollout.cost_usd:
+                    cost_tracker.add_rollout_cost(rollout.cost_usd)
+                
+                # Save files to output directory
+                if rollout.files:
+                    for file_path, content in rollout.files.items():
+                        file_full_path = work_dir / file_path
+                        file_full_path.parent.mkdir(parents=True, exist_ok=True)
+                        file_full_path.write_text(content)
+            finally:
+                # Always cleanup after task
+                await runner.cleanup()
 
             # Save rollout data as JSON in agent directory
             rollout_data = {
@@ -413,19 +355,32 @@ async def optimize_prompts(
                 "agent_id": rollout_id,
                 "iteration": iteration,
                 "timestamp": datetime.utcnow().isoformat(),
-                "messages": [
-                    asdict(msg) for msg in code_result.messages
-                ],  # Convert Message objects to dicts
-                "files": [f.model_dump() for f in code_result.files],
+                "runner_id": rollout.runner_id,
+                "success": rollout.success,
+                "cost_usd": rollout.cost_usd,
+                "duration_seconds": rollout.duration_seconds,
+                "trajectory": [item.model_dump() for item in rollout.trajectory],
+                "files": rollout.files,
+                "metadata": rollout.metadata,
             }
+            if rollout.error_message:
+                rollout_data["error_message"] = rollout.error_message
+            
             rollout_json_path = rollout_dir / "rollout.json"
             with open(rollout_json_path, "w") as f:
                 json.dump(rollout_data, f, indent=2)
 
+            # Get grading configuration from task
+            _, grading_config = task.resolve_config(task_types)
+            
+            # Get runner environment if available
+            runner_env = runner.get_environment() if hasattr(runner, 'get_environment') else None
+            
             try:
-                grade = await grade_code(
-                    code_result,
-                    criteria,
+                grade = await grade_rollout(
+                    rollout=rollout,
+                    task=task,
+                    grading_config=grading_config,
                     model=LoggingOpenAIModel(
                         openai_client=openai_client,
                         model=cfg.grader.model,
@@ -433,6 +388,7 @@ async def optimize_prompts(
                         reasoning_effort=cfg.grader.reasoning_effort,
                     ),
                     cfg=cfg,
+                    environment=runner_env,
                 )
             except ContextWindowExceededException as e:
                 logger.warning(
@@ -454,6 +410,27 @@ async def optimize_prompts(
 
                 # Return None to indicate this rollout should be excluded
                 return None
+            except Exception as e:
+                logger.error(
+                    "Grading failed with unexpected error",
+                    task_id=task.id,
+                    rollout_id=rollout_id,
+                    iteration=iteration,
+                    error_type=type(e).__name__,
+                    error=str(e),
+                )
+                # Save error info to grading_error.json
+                grading_data = {
+                    "error": "grading_failed",
+                    "error_type": type(e).__name__,
+                    "error_message": str(e),
+                    "grader_model": cfg.grader.model,
+                    "timestamp": datetime.utcnow().isoformat(),
+                }
+                with open(rollout_dir / "grading_error.json", "w") as f:
+                    json.dump(grading_data, f, indent=2)
+                # Return None to indicate this rollout should be excluded
+                return None
 
             # Save grading results as JSON
             grading_data = {
@@ -472,24 +449,6 @@ async def optimize_prompts(
             with open(rollout_dir / "grading.json", "w") as f:
                 json.dump(grading_data, f, indent=2)
 
-            # Extract cost from the last message if it's a ResultMessage
-            total_cost = 0.0
-            duration_ms = None
-            is_error = False
-
-            if code_result.messages:
-                last_msg = code_result.messages[-1]
-                if isinstance(last_msg, ResultMessage):
-                    total_cost = last_msg.total_cost_usd
-                    duration_ms = last_msg.duration_ms
-                    is_error = last_msg.is_error
-
-            # Add metrics to rollout data
-            rollout_data["total_cost_usd"] = total_cost
-            rollout_data["duration_ms"] = duration_ms
-            rollout_data["is_error"] = is_error
-            with open(rollout_json_path, "w") as f:
-                json.dump(rollout_data, f, indent=2)
 
             logger.info(
                 "Rollout completed",
@@ -499,7 +458,11 @@ async def optimize_prompts(
                 overall_score=grade.overall_score,
             )
 
-            return GradedCode(code_result=code_result, grade=grade)
+            return GradedRollout(
+                rollout=rollout,
+                grade=grade,
+                task=task
+            )
 
     # Log experiment configuration
     tasks_per_iter = (
@@ -647,6 +610,10 @@ async def optimize_prompts(
                 prev_function_call,
                 new_prompt,
             ) = await engineer.propose_prompt()
+            
+            logger.info("Generated new optimized prompt", 
+                       iteration=iteration + 1, 
+                       prompt_preview=new_prompt[:200] + "..." if len(new_prompt) > 200 else new_prompt)
 
             # Store new system prompt
             prompts_by_iteration[iteration + 1] = new_prompt
@@ -701,7 +668,33 @@ Examples:
         help="Number of tasks to randomly sample (with replacement) per iteration. If not specified, uses all seed tasks",
     )
 
+    parser.add_argument(
+        "--runner",
+        type=str,
+        default="claude",
+        help="Runner to use for task execution (default: %(default)s)",
+    )
+    
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Enable verbose logging for agent actions (mini_codex only)",
+    )
+    
+    parser.add_argument(
+        "--task-type",
+        type=str,
+        required=True,
+        choices=[t.value for t in AgentTaskType],
+        help="Type of tasks to optimize for (required)",
+    )
+
     args = parser.parse_args()
+    
+    # Setup logging with verbosity setting
+    DualOutputLogging.setup_logging(verbose=args.verbose)
+    global logger
+    logger = DualOutputLogging.get_logger()
 
     # Setup signal handlers for graceful cost reporting on interruption
     setup_signal_handlers()
@@ -709,13 +702,30 @@ Examples:
     # Load configuration
     cfg = OptimizerConfig.from_file()
 
-    # Load tasks and criteria from YAML
-    logger.info("Loading YAML files")
+    # Load task types and runner configurations
+    config_dir = Path(__file__).parent.parent.parent.parent / "config"
+    task_types = load_task_types(config_dir / "task_types.yaml")
+    runner_configs = load_runner_configs(config_dir / "runners.yaml")
+    
+    # Load tasks from seeds file - now using TaskDefinition format
+    all_tasks = load_task_definitions(cfg.seeds_file, task_types)
+    
+    # Convert string to AgentTaskType enum
+    task_type_enum = AgentTaskType(args.task_type)
+    
+    # Filter tasks by type
+    seed_tasks = [t for t in all_tasks if t.type == task_type_enum.value]
+    
+    if not seed_tasks:
+        logger.error(f"No tasks found with type '{task_type_enum.value}' in {cfg.seeds_file}")
+        sys.exit(1)
+    
+    logger.info(f"Loaded {len(seed_tasks)} {task_type_enum.value} tasks from {len(all_tasks)} total tasks")
+    
+    # Load grading criteria from YAML
+    logger.info("Loading grading criteria")
     yaml_loader = load_yaml_files(cfg.seeds_file, cfg.graders_file)
-
-    # Load tasks - yaml_loader.seeds_data already returns the right type
-    seed_tasks = list(yaml_loader.seeds_data)
-
+    
     # Load grading criteria
     criteria = []
     for grader_data in yaml_loader.graders_data:
@@ -729,6 +739,8 @@ Examples:
     run_prefix = datetime.utcnow().strftime("%Y-%m-%d-%H%M%S")
     base_dir = (Path("./agent_output") / run_prefix).resolve()
     base_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Create OpenAI client for both grading and mini_codex runner
     openai_client = LoggingOpenAIClient(
         openai_client=OpenAI(),
         jsonl_logger=JSONLLogger(base_dir / "openai_api_log.jsonl"),
@@ -742,6 +754,10 @@ Examples:
             seed_tasks=seed_tasks,
             criteria=criteria,
             cfg=cfg,
+            runner_name=args.runner,
+            task_types=task_types,
+            runner_configs=runner_configs,
+            task_type=task_type_enum,
             iterations=args.iterations,
             rollouts_per_task=args.rollouts_per_task,
             max_parallel_rollouts=args.max_parallel,

@@ -16,7 +16,7 @@ from openai.types.responses.response_output_message import ResponseOutputMessage
 from openai.types.responses.response_reasoning_item import ResponseReasoningItem
 
 from claude_optimizer.core.logging_utils import DualOutputLogging
-from claude_optimizer.core.models import GradedCode
+from claude_optimizer.core.models import GradedRollout, AgentTaskType
 
 logger = DualOutputLogging.get_logger()
 
@@ -61,7 +61,7 @@ class FeedbackMode(Enum):
 
 
 class FeedbackProvider(Protocol):
-    async def provide_feedback(self, rollouts: list[GradedCode]) -> str:
+    async def provide_feedback(self, rollouts: list[GradedRollout]) -> str:
         """Provide feedback string based on a batch of rollouts."""
         ...
 
@@ -71,7 +71,7 @@ class FeedbackProvider(Protocol):
 
 
 class FullRolloutsFeedbackProvider(FeedbackProvider):
-    async def provide_feedback(self, rollouts: list[GradedCode]) -> str:
+    async def provide_feedback(self, rollouts: list[GradedRollout]) -> str:
         summaries: list[str] = []
         for graded_code in rollouts:
             # Use Pydantic's model_dump_json which will use our custom serializers
@@ -84,9 +84,9 @@ class FullRolloutsFeedbackProvider(FeedbackProvider):
 
 
 class StatsOnlyFeedbackProvider(FeedbackProvider):
-    async def provide_feedback(self, rollouts: list[GradedCode]) -> str:
+    async def provide_feedback(self, rollouts: list[GradedRollout]) -> str:
         """Provide feedback string based on a batch of rollouts."""
-        assert len(rollouts) > 1
+        assert len(rollouts) >= 2
         overall_scores = [graded_code.grade.overall_score for graded_code in rollouts]
         n = len(overall_scores)
         mean_score = sum(overall_scores) / n
@@ -102,10 +102,12 @@ class PromptEngineer:
         self,
         model: LoggingOpenAIModel,
         feedback_provider: FeedbackProvider,
+        task_type: AgentTaskType = AgentTaskType.CODING,
     ) -> None:
         self.model = model
         self._turns: list[Turn] = []
         self.feedback_provider = feedback_provider
+        self.task_type = task_type
 
     @property
     def prompt_messages(
@@ -117,9 +119,22 @@ class PromptEngineer:
         | ResponseFunctionToolCall
         | ResponseFunctionToolCallItem
     ]:
+        # Determine agent type description based on task type
+        if self.task_type == AgentTaskType.CODE_REVIEW:
+            agent_description = "a code review agent"
+            task_description = (
+                "- Agent reviews code files and identifies issues, bugs, and improvements.\n"
+                "- Agent has access to a filesystem and shell to examine the codebase.\n"
+            )
+        else:  # AgentTaskType.CODING
+            agent_description = "a coding agent"
+            task_description = (
+                "- Agent has access to a filesystem and a shell through tools. Tasks should be solved by writing code files on disk using these tools, not just shown to user in conversation.\n"
+            )
+        
         system_message = (
-            f"You are an expert LLM prompt engineer. Your task is to design the best prompt for a LLM used as a coding agent.\n"
-            "- Agent has access to a filesystem and a shell through tools. Tasks should be solved by writing code files on disk using these tools, not just shown to user in conversation.\n"
+            f"You are an expert LLM prompt engineer. Your task is to design the best prompt for a LLM used as {agent_description}.\n"
+            f"{task_description}"
             "- Agent has a fixed system prompt teaches it how to use its tools (and other basics).\n"
             "- Avoid giving your own instructions on how to use the tools - agent's baked-in tool use instructions are already correct and additional conflicting instructions could easily make it worse.\n"
             "- Each turn, you will propose a prompt. The agent will be run with that prompt on several tasks, and you will receive information from these rollouts to help you design a better prompt.\n"
@@ -215,9 +230,9 @@ class PromptEngineer:
         ]
 
         response: Response = self.model.responses_create(
-            messages=self.prompt_messages,
+            input=self.prompt_messages,  # OpenAI Responses API uses 'input'
             tools=tools,
-            tool_use={"type": "function", "name": SUBMIT_PROMPT_FUNCTION_NAME},
+            tool_choice={"type": "function", "name": SUBMIT_PROMPT_FUNCTION_NAME},  # 'tool_choice' not 'tool_use'
         )
         reasoning_messages: list[ResponseOutputMessage | ResponseReasoningItem] = []
         function_call_item: (
@@ -276,7 +291,7 @@ class PromptEngineer:
         reasoning: list[ResponseOutputMessage | ResponseReasoningItem],
         function_call_message: ResponseFunctionToolCall | ResponseFunctionToolCallItem,
         proposed_prompt: str,
-        rollouts: list[GradedCode],
+        rollouts: list[GradedRollout],
     ) -> None:
         feedback = await self.feedback_provider.provide_feedback(rollouts)
         self._turns.append(

@@ -148,10 +148,10 @@ async def grade_code(
 
     try:
         response = model.responses_create(
-            messages=input,
+            input=input,  # OpenAI Responses API uses 'input' not 'messages'
             tools=[grading_tool],
-            tool_use={"type": "function", "name": SUBMIT_GRADES_FUNCTION_NAME},
-            reasoning_effort=cfg.grader.reasoning_effort,
+            tool_choice={"type": "function", "name": SUBMIT_GRADES_FUNCTION_NAME},  # 'tool_choice' not 'tool_use'
+            reasoning={"effort": cfg.grader.reasoning_effort} if cfg.grader.reasoning_effort else None,
         )
     except openai.BadRequestError as e:
         if "context_length_exceeded" in str(e):
@@ -180,15 +180,82 @@ async def grade_code(
             call = item
             break
 
-    assert call and call.name == SUBMIT_GRADES_FUNCTION_NAME
-    assert isinstance(call.arguments, str)
-    axes = {
-        facet: ScoreWithRationale(
-            score=data.get("score", 0),
-            rationale=data.get("rationale", ""),
+    if not call:
+        logger.error(
+            "Grader model did not return expected function call",
+            task_id=result.task_id,
+            agent_id=result.agent_id,
+            response_output=[type(item).__name__ for item in response.output]
         )
-        for facet, data in json.loads(call.arguments).items()
-    }
+        raise RuntimeError(f"Grader model did not return expected function call for task {result.task_id}")
+        
+    if call.name != SUBMIT_GRADES_FUNCTION_NAME:
+        logger.error(
+            "Grader model returned wrong function name",
+            task_id=result.task_id,
+            agent_id=result.agent_id,
+            expected=SUBMIT_GRADES_FUNCTION_NAME,
+            actual=call.name
+        )
+        raise RuntimeError(f"Grader model returned wrong function name: {call.name}")
+        
+    if not isinstance(call.arguments, str):
+        logger.error(
+            "Grader model returned non-string arguments",
+            task_id=result.task_id,
+            agent_id=result.agent_id,
+            arguments_type=type(call.arguments).__name__
+        )
+        raise RuntimeError(f"Grader model returned invalid arguments type: {type(call.arguments)}")
+    
+    try:
+        parsed_args = json.loads(call.arguments)
+    except json.JSONDecodeError as e:
+        logger.error(
+            "Failed to parse grader arguments as JSON",
+            task_id=result.task_id,
+            agent_id=result.agent_id,
+            raw_arguments=call.arguments,
+            error=str(e)
+        )
+        raise RuntimeError(f"Failed to parse grader arguments: {e}")
+    
+    axes = {}
+    for facet, data in parsed_args.items():
+        if not isinstance(data, dict):
+            logger.error(
+                "Grader returned invalid data for facet",
+                task_id=result.task_id,
+                agent_id=result.agent_id,
+                facet=facet,
+                data_type=type(data).__name__
+            )
+            raise RuntimeError(f"Invalid data type for facet {facet}: expected dict, got {type(data)}")
+            
+        if "score" not in data:
+            logger.error(
+                "Grader missing score for facet",
+                task_id=result.task_id,
+                agent_id=result.agent_id,
+                facet=facet,
+                available_keys=list(data.keys())
+            )
+            raise RuntimeError(f"Missing score for facet {facet}")
+            
+        if "rationale" not in data:
+            logger.error(
+                "Grader missing rationale for facet",
+                task_id=result.task_id,
+                agent_id=result.agent_id,
+                facet=facet,
+                available_keys=list(data.keys())
+            )
+            raise RuntimeError(f"Missing rationale for facet {facet}")
+            
+        axes[facet] = ScoreWithRationale(
+            score=data["score"],
+            rationale=data["rationale"],
+        )
     # TODO: log nicely
     # t_mgr = TruncationManager(cfg)
     # logger.info(

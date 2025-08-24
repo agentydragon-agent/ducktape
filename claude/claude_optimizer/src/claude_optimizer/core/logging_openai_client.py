@@ -26,21 +26,19 @@ class LoggingOpenAIModel:
         """Count the number of tokens in a given text using the model's encoding."""
         return len(self.encoding().encode(text))
 
-    def responses_create(
-        self,
-        *,
-        messages,
-        tool_use,
-        tools,
-        reasoning_effort=None,
-    ):
-        reasoning = {}
-        if reasoning_effort is not None:
-            reasoning["effort"] = reasoning_effort
-        return self.openai_client.openai_client.responses.create(
-            model=self.model,
-            input=messages,
-            reasoning=reasoning,
-            tool_choice=tool_use,
-            tools=tools,
-        )
+    def responses_create(self, **kwargs):
+        """Create a response using OpenAI Responses API with native parameters.
+        
+        Accepts all parameters that OpenAI's responses.create() accepts.
+        Automatically adds the model from this instance.
+        """
+        # Add model if not provided
+        if 'model' not in kwargs:
+            kwargs['model'] = self.model
+            
+        # Add reasoning effort if configured and not provided
+        if self.reasoning_effort and 'reasoning' not in kwargs:
+            kwargs['reasoning'] = {"effort": self.reasoning_effort}
+            
+        # Pass through to OpenAI API with exact parameters
+        return self.openai_client.openai_client.responses.create(**kwargs)

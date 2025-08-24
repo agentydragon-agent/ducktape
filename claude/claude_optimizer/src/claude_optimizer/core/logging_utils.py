@@ -48,12 +48,14 @@ class DualOutputLogging:
     def setup_logging(
         logs_dir: str = "logs",
         log_filename: str = "optimizer.jsonl",
+        verbose: bool = False,
     ) -> None:
         """Configure structlog with dual output: pretty console + structured file logs.
 
         Args:
             logs_dir: Directory to store log files
             log_filename: Name of the JSON log file
+            verbose: Enable DEBUG level logging to console
         """
         # Create logs directory if it doesn't exist
         logs_path = Path(logs_dir)
@@ -100,7 +102,7 @@ class DualOutputLogging:
         # Setup handlers
         console_handler = logging.StreamHandler(sys.stdout)
         console_handler.setFormatter(console_formatter)
-        console_handler.setLevel(logging.INFO)
+        console_handler.setLevel(logging.DEBUG if verbose else logging.INFO)
 
         file_handler = logging.FileHandler(logs_path / log_filename)
         file_handler.setFormatter(file_formatter)
@@ -108,10 +110,15 @@ class DualOutputLogging:
 
         # Configure root logger
         root_logger = logging.getLogger()
-        root_logger.setLevel(logging.INFO)
+        root_logger.setLevel(logging.DEBUG if verbose else logging.INFO)
         root_logger.handlers.clear()
         root_logger.addHandler(console_handler)
         root_logger.addHandler(file_handler)
+        
+        # If verbose, also configure minicodx logger specifically
+        if verbose:
+            minicodx_logger = logging.getLogger("minicodex")
+            minicodx_logger.setLevel(logging.DEBUG)
 
     @staticmethod
     def get_logger(name: str | None = None) -> Any:

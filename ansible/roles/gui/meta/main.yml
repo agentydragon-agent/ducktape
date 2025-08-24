@@ -28,4 +28,4 @@ dependencies:
   - role: gnome-terminal-solarized
     tags: [solarized]
   - role: timekpr
-  # - role: google-drive-client  # Temporarily disabled for new-vm
+  # - role: google-drive-client  # Temporarily disabled for wyrm
