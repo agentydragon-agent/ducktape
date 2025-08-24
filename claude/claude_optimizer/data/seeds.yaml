@@ -637,15 +637,17 @@ tasks:
   type: code_review
   prompt: 'Review these files: wt/tests/conftest.py, wt/tests/config_factory.py'
   setup_overrides:
+    # docker:
+    #   image: python:3.11
     git_clone:
       repo: git@github.com:agentydragon/ducktape
       commit: 0791e282ab4b1c829615c12c2a76e6975511975f
     sandbox:
       enabled: true
-      read_only_paths: []
-      read_write_paths: []
-      allow_network: false
-      bind_system: true
+      read_only_paths: []  # Git clone directory will be automatically added
+      read_write_paths: []  # No write access needed for code review
+      allow_network: false  # No network needed for code review
+      bind_system: true  # Need Python, git, and other tools
   grading_overrides:
     strategy: comparison
     reference: '## wt/tests/conftest.py:
@@ -714,15 +716,17 @@ tasks:
   type: code_review
   prompt: 'Review these files: wt/'
   setup_overrides:
+    # docker:
+    #   image: python:3.11
     git_clone:
       repo: git@github.com:agentydragon/ducktape
       commit: 315fe021dbccbbb0682f10954f45d0145c92faf4
     sandbox:
       enabled: true
-      read_only_paths: []
-      read_write_paths: []
-      allow_network: false
-      bind_system: true
+      read_only_paths: []  # Git clone directory will be automatically added
+      read_write_paths: []  # No write access needed for code review
+      allow_network: false  # No network needed for code review
+      bind_system: true  # Need Python, git, and other tools
   grading_overrides:
     strategy: comparison
     reference: '#1 there are 2 implementations of the hydration+post-creation script
