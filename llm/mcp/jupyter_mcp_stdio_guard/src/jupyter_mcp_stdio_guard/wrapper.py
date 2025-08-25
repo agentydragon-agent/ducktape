@@ -374,6 +374,8 @@ def _seatbelt(  # noqa: PLR0913
         kernel_default_name="python3" if kernel_sandbox else None,
     )
     # Start MCP server (stdio: newline-delimited JSON); tee child stdout/stderr to files and parent stdio
+    if not shutil.which("jupyter-mcp-server"):
+        raise FileNotFoundError("jupyter-mcp-server not found on PATH")
     mcp_cmd = [
         "jupyter-mcp-server",
         "start",
