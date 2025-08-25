@@ -9,6 +9,7 @@ import subprocess
 import sys
 import threading
 import time
+import asyncio
 from datetime import datetime
 from pathlib import Path
 
@@ -400,61 +401,67 @@ def _seatbelt(  # noqa: PLR0913
     mcp_stderr_path = run_root / "mcp_stderr.log"
     _cmd_log = ' '.join(mcp_cmd).replace(token, 'REDACTED')
     print(f"[wrapper] mcp_cmd={_cmd_log}", file=sys.stderr, flush=True)
-    mcp = subprocess.Popen(
-        mcp_cmd,
-        env=child_env,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
     print(
         f"[wrapper] mcp_stdout={mcp_stdout_path} mcp_stderr={mcp_stderr_path}",
         file=sys.stderr,
         flush=True,
     )
 
-    def _tee_stream(src, dest_file_path: Path, dest_buffer):
-        with dest_file_path.open("ab", buffering=0) as f:
+    async def _run_mcp_async() -> int:
+        proc = await asyncio.create_subprocess_exec(
+            *mcp_cmd,
+            env=child_env,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        # Open files in binary append mode
+        f_out = mcp_stdout_path.open("ab", buffering=0)
+        f_err = mcp_stderr_path.open("ab", buffering=0)
+
+        async def _pump(reader: asyncio.StreamReader, file_obj, buffer):
             while True:
-                chunk = src.readline()
+                chunk = await reader.read(4096)
                 if not chunk:
                     break
                 try:
-                    dest_buffer.write(chunk)
-                    dest_buffer.flush()
+                    buffer.write(chunk)
+                    buffer.flush()
                 except (BrokenPipeError, ValueError) as e:
                     print(f"[wrapper] tee write to parent failed: {e}", file=sys.stderr)
                 try:
-                    f.write(chunk)
+                    file_obj.write(chunk)
+                    file_obj.flush()
                 except OSError as e:
                     print(f"[wrapper] tee write to log failed: {e}", file=sys.stderr)
 
-    t_out = threading.Thread(
-        target=_tee_stream,
-        args=(mcp.stdout, mcp_stdout_path, sys.stdout.buffer),
-        daemon=True,
-    )
-    t_err = threading.Thread(
-        target=_tee_stream,
-        args=(mcp.stderr, mcp_stderr_path, sys.stderr.buffer),
-        daemon=True,
-    )
-    t_out.start()
-    t_err.start()
-    try:
-        return mcp.wait()
-    finally:
         try:
-            mcp.terminate()
-        except Exception as e:
-            print(f"[wrapper] mcp terminate failed: {e}", file=sys.stderr)
+            t1 = asyncio.create_task(_pump(proc.stdout, f_out, sys.stdout.buffer))  # type: ignore[arg-type]
+            t2 = asyncio.create_task(_pump(proc.stderr, f_err, sys.stderr.buffer))  # type: ignore[arg-type]
+            rc = await proc.wait()
+            await asyncio.gather(t1, t2)
+            return rc
+        finally:
+            try:
+                f_out.close()
+            except Exception:
+                pass
+            try:
+                f_err.close()
+            except Exception:
+                pass
+            if proc.returncode is None:
+                try:
+                    proc.terminate()
+                except ProcessLookupError:
+                    pass
+
+    try:
+        return asyncio.run(_run_mcp_async())
+    finally:
         try:
             jl.terminate()
         except Exception as e:
             print(f"[wrapper] jupyter terminate failed: {e}", file=sys.stderr)
-        try:
-            mcp.wait(timeout=5)
-        except Exception as e:
-            print(f"[wrapper] mcp wait failed: {e}", file=sys.stderr)
         try:
             jl.wait(timeout=5)
         except Exception as e:
