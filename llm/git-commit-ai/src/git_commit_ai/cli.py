@@ -2,18 +2,17 @@
 """
 git-commit-ai
 
-* Streams Claude (Anthropic) to draft the initial commit message shown in your editor.
-* Runs the repo's pre-commit hook **in parallel** so you don't wait twice.
+* Runs an AI agent (Claude or Codex) to draft the initial commit message shown in your editor.
+* Runs repo's pre-commit hook **in parallel** so you don't wait twice.
 * Caches per-repo for one week keyed by staged diff hash.
-* Limits diff context per file and prepends diffstat.
 
 Call exactly like `git commit`; every flag is forwarded. Extra wrapper flags:
 
-    --model MODEL          (default: sonnet)
-    --debug                Enable debug logging (shows exact Claude command)
+    --model PROVIDER:MODEL (default: claude:sonnet)
+    --debug                Enable debug logging (shows exact AI command)
 
-Note: --no-verify is always added internally to avoid running hooks twice. To skip
-      AI message generation entirely, use regular `git commit` instead.
+Note: Pass --no-verify to skip running pre-commit inside this wrapper. The final `git commit`
+      is invoked with --no-verify to avoid running hooks twice.
 
 Important: Do NOT install this as a prepare-commit-msg hook. Since this command
          calls `git commit` internally, it would create an infinite loop. Use
@@ -51,8 +50,7 @@ from rich.text import Text
 # ---------- constants -------------------------------------------------
 MAX_FILE_LINES = 400  # truncate each file's hunk lines
 PAST_COMMITS_MAX_CHARS = 6000  # history context ceiling
-SPINNER_INTERVAL = 0.1
-DEFAULT_MODEL = "sonnet"
+DEFAULT_MODEL = "claude:sonnet"
 SPINNER_CHARS = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 
 
@@ -162,6 +160,67 @@ def repo_cache_dir(repo: Repo) -> Path:
     return p
 
 
+def build_commit_template(repo: Repo, passthru: list[str]) -> str:
+    """Assemble the standard git commit template text (status, staged/unstaged/untracked, optional verbose diff)."""
+    branch = repo.active_branch.name if not repo.head.is_detached else "HEAD detached"
+    status_output = repo.git.status("--porcelain")
+    template_text = f"""# Please enter the commit message for your changes. Lines starting
+# with '#' will be ignored, and an empty message aborts the commit.
+#
+# On branch {branch}
+#
+"""
+    staged_files = repo.git.diff("--cached", "--name-status").splitlines()
+    if staged_files:
+        template_text += "# Changes to be committed:\n"
+        for line in staged_files:
+            status, filename = line.split("\t", 1)
+            status_map = {
+                "A": "new file:",
+                "M": "modified:",
+                "D": "deleted:",
+                "R": "renamed:",
+            }
+            status_text = status_map.get(status[0], status + ":")
+            template_text += f"#\t{status_text.ljust(12)} {filename}\n"
+
+    # Add unstaged changes if any
+    unstaged = repo.git.diff("--name-status").splitlines()
+    if unstaged:
+        template_text += """#
+# Changes not staged for commit:
+#   (use "git add <file>..." to update what will be committed
+#   (use "git restore <file>..." to discard changes in working directory
+"""
+        for line in unstaged:
+            status, filename = line.split("\t", 1)
+            status_map = {"M": "modified:", "D": "deleted:"}
+            status_text = status_map.get(status[0], status + ":")
+            template_text += f"#\t{status_text.ljust(12)} {filename}\n"
+
+    # Add untracked files if any
+    untracked = [line[3:] for line in status_output.splitlines() if line.startswith("?? ")]
+    if untracked:
+        template_text += """# Untracked files:
+#   (use "git add <file>..." to include in what will be committed)
+"""
+        for filename in untracked:
+            template_text += f"#\t{filename}\n"
+
+    template_text += "#\n"
+
+    # Add verbose diff if requested
+    if "-v" in passthru or "--verbose" in passthru:
+        template_text += """# ------------------------ >8 ------------------------
+# Do not modify or remove the line above.
+# Everything below it will be ignored.
+"""
+        # Get the full diff
+        template_text += repo.git.diff("--cached")
+
+    return template_text
+
+
 class Cache:
     def __init__(self, dir: Path):
         self.dir = dir
@@ -180,7 +239,7 @@ class Cache:
         """Remove cache entries older than TTL based on file modification time."""
         cache_ttl = timedelta(days=7)
         now = time.time()
-        for path in self.dir.glob("*.yaml"):
+        for path in self.dir.glob("*.txt"):
             if now - path.stat().st_mtime > cache_ttl.total_seconds():
                 path.unlink()
 
@@ -411,72 +470,6 @@ class ParallelTaskRunner:
         print()  # Move to next line after final status
 
 
-async def ask_claude(prompt: str, model: str) -> str:
-    # Truncate prompt if too long and warn user
-    if len(prompt) >= 20_000:
-        truncated_prompt = prompt[:19_900] + "\n\n[TRUNCATED - prompt was too long]"
-        print(
-            f"# Warning: Prompt truncated from {len(prompt)} to 19,900 chars",
-            file=sys.stderr,
-        )
-        prompt = truncated_prompt
-
-    # Build command as list for proper handling
-    cmd = [
-        "claude",
-        "--model",
-        model,
-        "-p",
-        prompt,
-        "--disallowedTools",
-        "*",
-    ]
-
-    # Use subprocess.list2cmdline for proper shell-safe formatting
-    shell_cmd = subprocess.list2cmdline(cmd)
-    logger = logging.getLogger(__name__)
-    logger.debug("Claude command:\n%s", shell_cmd)
-    logger.debug("Prompt content:\n%s", prompt)
-
-    proc = await asyncio.create_subprocess_exec(
-        *cmd,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    try:
-        # Add 30 second timeout for Claude API calls
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30.0)
-    except TimeoutError:
-        print("\n# Error: Claude API timed out after 30 seconds", file=sys.stderr)
-        print(
-            "# This might be due to network issues or API unavailability",
-            file=sys.stderr,
-        )
-        proc.terminate()
-        await proc.wait()
-        raise subprocess.CalledProcessError(
-            -1,
-            cmd,
-            "Claude command timed out after 30 seconds",
-        )
-
-    if proc.returncode != 0:
-        stderr_text = stderr.decode()
-        logger.debug("Claude stderr:\n%s", stderr_text)
-        raise subprocess.CalledProcessError(
-            proc.returncode or 1,  # Use 1 as default if returncode is None
-            ["claude"],
-            stderr_text,
-        )
-
-    response = stdout.decode().strip()
-    logger.debug("Claude response:\n%s", response)
-
-    # Extract message from between tags
-    if match := re.search(r"<message>\s*(.*?)\s*</message>", response, re.DOTALL):
-        return match.group(1).strip()
-    # Fallback if tags are missing
-    return response
 
 
 def create_pty_with_terminal_size():
@@ -495,15 +488,9 @@ def create_pty_with_terminal_size():
     return master_fd, slave_fd
 
 
-def token_estimate(text: str) -> int:
-    return int(len(text) / 4)  # crude ≈4 chars / token
 
 
 # ---------- main ------------------------------------------------------
-def cleanup_staged_files(repo: Repo, staged_for_precommit: bool) -> None:
-    """Reset staged files if they were staged temporarily for pre-commit."""
-    if staged_for_precommit:
-        repo.index.reset()
 
 
 async def _get_editor():
@@ -528,7 +515,7 @@ async def async_main():
     start = time.time()
     repo = Repo(Path.cwd(), search_parent_directories=True)
 
-    parser = argparse.ArgumentParser(add_help=False)
+    parser = argparse.ArgumentParser(add_help=True)
     parser.add_argument("--model", default=DEFAULT_MODEL)
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
     known, passthru = parser.parse_known_args()
@@ -555,31 +542,10 @@ async def async_main():
         console_handler.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
         logger.addHandler(console_handler)
 
-    # If --all or -a is passed, we need to stage files before running pre-commit
-    # Pre-commit only runs on staged files
-    staged_for_precommit = False
+    # If -a/--all is passed, mirror `git commit -a`: stage tracked modifications/deletions now.
+    # We intentionally do not unstage on failure/abort to match native git behavior.
     if "-a" in passthru or "--all" in passthru:
-        # Get list of modified/deleted tracked files with their status
-        # Format: "M\tfilename" or "D\tfilename"
-        changed_files = repo.git.diff("--name-status").splitlines()
-        if changed_files:
-            files_to_add = []
-            files_to_remove = []
-            for line in changed_files:
-                if "\t" in line:
-                    status, filename = line.split("\t", 1)
-                    if status == "M":  # Modified
-                        files_to_add.append(filename)
-                    elif status == "D":  # Deleted
-                        files_to_remove.append(filename)
-
-            # Stage the changes
-            if files_to_add:
-                repo.index.add(files_to_add)
-            if files_to_remove:
-                repo.index.remove(files_to_remove)
-
-            staged_for_precommit = bool(files_to_add or files_to_remove)
+        repo.git.add("-u")
 
     if not (diff := get_commit_diff(repo, passthru)).strip():
         # Check if there's truly nothing to commit
@@ -594,17 +560,39 @@ async def async_main():
             )
         sys.exit(1)
 
-    prompt = build_prompt(repo, diff, passthru)
+    # Determine provider and model from --model format PROVIDER:MODEL
+    def _parse_provider_model(s: str) -> tuple[str, str]:
+        if ":" not in s:
+            return "claude", s  # Default provider when omitted
+        provider, model_name = s.split(":", 1)
+        return provider.strip(), model_name.strip()
+
+    provider, model_name = _parse_provider_model(known.model)
+    include_all = ("-a" in passthru) or ("--all" in passthru)
 
     # Clean old cache entries
     cache = Cache(repo_cache_dir(repo))
     cache.prune()
+
+    # Cache key by provider, model, scope, HEAD, and diff
     commitish = get_short_commitish(repo)
-    key = f"{commitish}_{hashlib.sha256(prompt.encode()).hexdigest()}"
+    diff_hash = hashlib.sha256(diff.encode()).hexdigest()
+    scope = "all" if include_all else "staged"
+    key = f"{provider}:{model_name}:{scope}:{commitish}:{diff_hash}"
+
     if msg := cache.get(key):
         cached = True
     else:
-        ai_task = asyncio.create_task(ask_claude(prompt, known.model))
+        # Select provider client
+        if provider == "claude":
+            ai_client = ClaudeAI(repo, diff=diff, passthru=passthru, debug=known.debug)
+        elif provider == "codex":
+            ai_client = CodexAI(repo, debug=known.debug)
+        else:
+            raise ValueError(f"Unknown AI provider: {provider}")
+
+        # Factor out task creation to a single place
+        ai_task = asyncio.create_task(ai_client.generate(include_all, model_name))
         msg = await ParallelTaskRunner.create_and_run(repo, ai_task)
         cache[key] = msg
         cached = False
@@ -612,74 +600,12 @@ async def async_main():
     elapsed = time.time() - start
     stats_comment = f"\n# ai-draft{'(cached)' if cached else ''}: prompt: {len(diff)} chars, response: {len(msg)} chars, elapsed: {elapsed:.2f}s\n"
 
-    # Get git status information for the commit template
-    branch = repo.active_branch.name if not repo.head.is_detached else "HEAD detached"
-    status_output = repo.git.status("--porcelain")
-
-    # Build the standard git commit template
-    template_text = f"""# Please enter the commit message for your changes. Lines starting
-# with '#' will be ignored, and an empty message aborts the commit.
-#
-# On branch {branch}
-#
-"""
-
-    # Add list of changes to be committed
-    staged_files = repo.git.diff("--cached", "--name-status").splitlines()
-    if staged_files:
-        template_text += "# Changes to be committed:\n"
-        for line in staged_files:
-            status, filename = line.split("\t", 1)
-            status_map = {
-                "A": "new file:",
-                "M": "modified:",
-                "D": "deleted:",
-                "R": "renamed:",
-            }
-            status_text = status_map.get(status[0], status + ":")
-            template_text += f"#\t{status_text.ljust(12)} {filename}\n"
-
-    # Add unstaged changes if any
-    unstaged = repo.git.diff("--name-status").splitlines()
-    if unstaged:
-        template_text += """#
-# Changes not staged for commit:
-#   (use "git add <file>..." to update what will be committed
-#   (use "git restore <file>..." to discard changes in working directory
-"""
-        for line in unstaged:
-            status, filename = line.split("\t", 1)
-            status_map = {"M": "modified:", "D": "deleted:"}
-            status_text = status_map.get(status[0], status + ":")
-            template_text += f"#\t{status_text.ljust(12)} {filename}\n"
-
-    # Add untracked files if any
-    untracked = [
-        line[3:] for line in status_output.splitlines() if line.startswith("?? ")
-    ]
-    if untracked:
-        template_text += """# Untracked files:
-#   (use "git add <file>..." to include in what will be committed)
-"""
-        for filename in untracked:
-            template_text += f"#\t{filename}\n"
-
-    template_text += "#\n"
-
-    # Add verbose diff if requested
-    if "-v" in passthru or "--verbose" in passthru:
-        template_text += """# ------------------------ >8 ------------------------
-# Do not modify or remove the line above.
-# Everything below it will be ignored.
-"""
-        # Get the full diff
-        template_text += repo.git.diff("--cached")
+    commit_msg_path = Path(repo.git_dir) / "COMMIT_EDITMSG"
 
     # Combine everything
-    final_text = msg + stats_comment + template_text
+    final_text = msg + stats_comment + build_commit_template(repo, passthru)
 
     # Use git's COMMIT_EDITMSG for a more authentic experience
-    commit_msg_path = Path(repo.git_dir) / "COMMIT_EDITMSG"
     commit_msg_path.write_text(final_text + "\n")
 
     # Store the file's modification time and content before editing
@@ -691,7 +617,6 @@ async def async_main():
     editor_proc = await asyncio.create_subprocess_shell(f"{editor} {commit_msg_path}")
     if await editor_proc.wait() != 0:
         print("error: editor exited with error code", file=sys.stderr)
-        cleanup_staged_files(repo, staged_for_precommit)
         sys.exit(1)
 
     # Check what happened
@@ -706,15 +631,9 @@ async def async_main():
         if mtime_after == mtime_before and content_after == content_before:
             # File wasn't saved - user did :q! or equivalent
             print("Aborting commit due to unchanged commit message.", file=sys.stderr)
-            cleanup_staged_files(repo, staged_for_precommit)
             sys.exit(1)
-        elif mtime_after == mtime_before and content_after != content_before:
-            # Content changed but mtime didn't - user did :wq on AI message
-            # This is the desired vim workflow - proceed with commit
-            pass
     except FileNotFoundError:
         print("Aborting commit.", file=sys.stderr)
-        cleanup_staged_files(repo, staged_for_precommit)
         sys.exit(1)
 
     # Check for empty message (after stripping comments)
@@ -725,25 +644,175 @@ async def async_main():
     ]
     if not lines:
         print("Aborting commit due to empty commit message.", file=sys.stderr)
-        cleanup_staged_files(repo, staged_for_precommit)
         sys.exit(1)
 
     # Now do the actual commit with the message
+    # Do not forward -a/--all to final commit; we've already staged via `git add -u`.
+    commit_passthru = [arg for arg in passthru if arg not in ("-a", "--all")]
     commit_proc = await asyncio.create_subprocess_exec(
         "git",
         "commit",
         "-F",
         str(commit_msg_path),
         "--no-verify",
-        *passthru,
+        *commit_passthru,
     )
     exit_code = await commit_proc.wait()
 
-    # If we staged files temporarily and commit was cancelled/failed, unstage them
-    if exit_code != 0:
-        cleanup_staged_files(repo, staged_for_precommit)
-
+    # Commit finished; staged state remains (matches native `git commit -a` behavior)
     sys.exit(exit_code)
+
+
+def _extract_message_from_text(text: str) -> str:
+    if match := re.search(r"<message>\s*(.*?)\s*</message>", text, re.DOTALL):
+        return match.group(1).strip()
+    return text.strip()
+
+
+class ClaudeAI:
+    """AI provider using `claude` CLI to draft commit messages.
+
+    Caching is handled by the caller before invoking this provider.
+    """
+
+    def __init__(self, repo: Repo, diff: str, passthru: list[str], debug: bool = False):
+        self.repo = repo
+        self.diff = diff
+        self.passthru = passthru
+        self.debug = debug
+        self.logger = logging.getLogger(__name__)
+
+    async def generate(self, include_all: bool, model: str | None = None) -> str:
+        # Build prompt from the provided diff and repo context
+        prompt = build_prompt(self.repo, self.diff, self.passthru)
+
+        # Truncate prompt if too long and warn (stderr) in debug mode only
+        max_chars = int(os.environ.get("GIT_AI_MAX_PROMPT", "20000"))
+        if len(prompt) >= max_chars:
+            prompt = prompt[: max(0, max_chars - 100)] + "\n\n[TRUNCATED - prompt was too long]"
+            if self.debug:
+                print(
+                    f"# Warning: Prompt truncated to {max_chars} chars",
+                    file=sys.stderr,
+                )
+
+        cmd = [
+            "claude",
+            "--model",
+            (model or "sonnet"),
+            "-p",
+            prompt,
+            "--disallowedTools",
+            "*",
+        ]
+        if self.debug:
+            shell_cmd = subprocess.list2cmdline(cmd)
+            self.logger.debug("Claude command:\n%s", shell_cmd)
+            self.logger.debug("Claude prompt:\n%s", prompt)
+
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        try:
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30.0)
+        except TimeoutError:
+            proc.terminate()
+            await proc.wait()
+            raise subprocess.CalledProcessError(-1, cmd, "Claude command timed out after 30 seconds")
+
+        if self.debug and stderr:
+            self.logger.debug("Claude stderr:\n%s", stderr.decode(errors="replace"))
+
+        if proc.returncode != 0:
+            raise subprocess.CalledProcessError(
+                proc.returncode or 1,
+                ["claude"],
+                (stderr or b"").decode(),
+            )
+
+        response = (stdout or b"").decode().strip()
+        return _extract_message_from_text(response)
+
+
+class CodexAI:
+    """AI provider using `codex exec` to draft commit messages.
+
+    Caching is handled by the caller before invoking this provider.
+    """
+
+    def __init__(self, repo: Repo, debug: bool = False, codex_bin: str | None = None):
+        self.repo = repo
+        self.debug = debug
+        self.codex_bin = codex_bin or os.environ.get("CODEX_BIN", "codex")
+        self.logger = logging.getLogger(__name__)
+
+
+    async def generate(self, include_all: bool, model: str | None = None) -> str:
+        """Run codex in read-only sandbox at repo root and return the commit message."""
+        # Where codex should write the final assistant message
+        last_msg_path = Path(self.repo.git_dir) / "codex_last_message.txt"
+
+        # Build prompt – let the agent inspect the repo itself
+        prompt = (
+            "You are an expert engineer writing a Git commit message for the current changes.\n"
+            "Requirements:\n"
+            "- Determine the exact set of changes that are staged for commit right now by inspecting the repository.\n"
+            "- Review recent commit subjects (e.g., `git log -n 50 --pretty=%s`) and match tone.\n"
+            "- Write a concise, imperative-mood subject; if helpful, add a short bullet list body.\n"
+            "- Output ONLY the message between <message> and </message> tags. No extra text.\n"
+        )
+
+        cmd = [
+            self.codex_bin,
+            "exec",
+            "--sandbox",
+            "read-only",
+            "-C",
+            str(self.repo.working_tree_dir),
+            "--output-last-message",
+            str(last_msg_path),
+        ]
+        if model:
+            cmd += ["-m", model]
+        cmd.append(prompt)
+
+        if self.debug:
+            shell_cmd = subprocess.list2cmdline(cmd)
+            self.logger.debug("Codex command:\n%s", shell_cmd)
+            self.logger.debug("Codex prompt:\n%s", prompt)
+
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        try:
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30.0)
+        except TimeoutError:
+            proc.terminate()
+            await proc.wait()
+            raise subprocess.CalledProcessError(-1, cmd, "codex exec timed out after 120 seconds")
+
+        if self.debug:
+            if stdout:
+                self.logger.debug("Codex stdout:\n%s", stdout.decode(errors="replace"))
+            if stderr:
+                self.logger.debug("Codex stderr:\n%s", stderr.decode(errors="replace"))
+
+        if proc.returncode != 0:
+            raise subprocess.CalledProcessError(proc.returncode or 1, cmd, (stderr or b"").decode())
+
+        # Read last message file and extract commit message
+        try:
+            raw_last = last_msg_path.read_text()
+        except Exception as e:
+            raw_last = (stdout or b"").decode()
+            if not raw_last:
+                raise RuntimeError(f"codex exec did not produce a last message file: {e}")
+
+        return _extract_message_from_text(raw_last)
 
 
 def main():
