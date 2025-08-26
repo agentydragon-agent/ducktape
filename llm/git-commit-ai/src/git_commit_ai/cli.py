@@ -48,15 +48,100 @@ from rich.console import Console
 from rich.text import Text
 
 # ---------- constants -------------------------------------------------
-MAX_FILE_LINES = 400  # truncate each file's hunk lines
-PAST_COMMITS_MAX_CHARS = 6000  # history context ceiling
+MAX_FILE_LINES = 400  # truncate each file's hunk lines (per-file preview)
+PAST_COMMITS_MAX_CHARS = 6000  # legacy safety cap for past commit subjects
 DEFAULT_MODEL = "claude:sonnet"
 SPINNER_CHARS = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+MAX_VERBOSE_DIFF_LINES = 3000  # cap verbose diff lines under scissors
+DEFAULT_AI_TIMEOUT_SECS = 30   # shared subprocess timeout for providers
+MAX_PROMPT_CONTEXT_BYTES = 100 * 1024  # 100 KiB cap for AI context block
+RECENT_COMMITS_FOR_CONTEXT = 30
+
+
+def _len_bytes(s: str) -> int:
+    return len(s.encode("utf-8"))
+
+
+def _cap_append(parts: list[str], chunk: str, cap: int, truncation_note: str) -> bool:
+    """Append chunk to parts unless this would exceed cap.
+
+    Returns True if truncation occurred (chunk was cut and note appended).
+    """
+    current = _len_bytes("".join(parts))
+    needed = _len_bytes(chunk)
+    if current + needed >= cap:
+        remaining = cap - current
+        if remaining > 0:
+            parts.append(chunk.encode("utf-8")[:remaining].decode("utf-8", errors="ignore"))
+        parts.append(truncation_note + "\n")
+        return True
+    parts.append(chunk)
+    return False
+
+
+def _format_name_status(d) -> str:
+    """Best-effort 'name-status' style line from a GitPython Diff object."""
+    ct = getattr(d, "change_type", "M").upper()
+    if ct == "R":
+        return f"R\t{getattr(d, 'rename_from', d.a_path)}\t{getattr(d, 'rename_to', d.b_path)}"
+    path = d.b_path or d.a_path
+    return f"{ct}\t{path}"
+
+
+def _build_ai_context(repo: Repo, include_all: bool) -> str:
+    """Assemble a compact context block for the AI (status, recent commits with diffstats, staged per-file diffs up to cap)."""
+    parts: list[str] = []
+
+    # 1) Raw git outputs so the agent can parse natively
+    try:
+        parts.append("$ git status --porcelain\n")
+        status_out = repo.git.status("--porcelain") + "\n"
+        _cap_append(parts, status_out, MAX_PROMPT_CONTEXT_BYTES, "[Context truncated to 100 KiB]")
+    except Exception:
+        parts.append("[Could not retrieve git status]\n")
+
+    # 1b) Name-status for what will be committed
+    try:
+        ns_cmd = "git diff HEAD --name-status" if include_all else "git diff --cached --name-status"
+        parts.append(f"$ {ns_cmd}\n")
+        ns_out = (repo.git.diff("HEAD", "--name-status") if include_all else repo.git.diff("--cached", "--name-status")) + "\n"
+        _cap_append(parts, ns_out, MAX_PROMPT_CONTEXT_BYTES, "[Context truncated to 100 KiB]")
+    except Exception:
+        parts.append("[Could not compute name-status]\n")
+
+    # 2) Recent commits with diffstat via git log
+    parts.append(f"$ git log --no-color -n {RECENT_COMMITS_FOR_CONTEXT} --stat --pretty=format:%h %s\n")
+    try:
+        log_out = repo.git.log("--no-color", f"-n{RECENT_COMMITS_FOR_CONTEXT}", "--stat", "--pretty=format:%h %s") + "\n"
+        _cap_append(parts, log_out, MAX_PROMPT_CONTEXT_BYTES, "[Context truncated to 100 KiB]")
+    except Exception:
+        parts.append("[Could not retrieve recent commits]\n")
+
+    # 3) The diff that will be committed (unified=0) so the agent can parse hunks directly
+    try:
+        diff_cmd = "git diff HEAD --unified=0" if include_all else "git diff --cached --unified=0"
+        parts.append(f"$ {diff_cmd}\n")
+        diff_out = (repo.git.diff("HEAD", "--unified=0") if include_all else repo.git.diff("--cached", "--unified=0")) + "\n"
+        _cap_append(parts, diff_out, MAX_PROMPT_CONTEXT_BYTES, "[Context truncated to 100 KiB]")
+    except Exception:
+        parts.append("[Could not compute diff]\n")
+
+    out = "".join(parts)
+    # Final cap enforcement
+    if _len_bytes(out) > MAX_PROMPT_CONTEXT_BYTES:
+        out = out.encode("utf-8")[:MAX_PROMPT_CONTEXT_BYTES].decode("utf-8", errors="ignore")
+        out += "\n[Context truncated to 100 KiB]\n"
+    return out
 
 
 def build_prompt(repo: Repo, diff: str, passthru):
+    include_all = ("-a" in passthru) or ("--all" in passthru)
+    context = _build_ai_context(repo, include_all)
     prompt = f"""Write a concise, imperative-mood Git commit message. Output ONLY the commit message between <message> and </message> tags.
 No explanations, no markdown, no signatures. Do NOT include 'Generated with' or 'Co-Authored-By' lines.
+
+Context:
+{context}
 
 Example outputs:
 <message>
@@ -71,6 +156,7 @@ Refactor database connection handling
 </message>
 
 Diffstat:
+$ {'git diff HEAD --stat' if include_all else 'git diff --cached --stat'}
 
 {diffstat(repo, passthru)}
 """
@@ -91,10 +177,11 @@ Diffstat:
 {diff[:5000]}"""
         )
 
-    for i, commit in enumerate(repo.iter_commits("HEAD", max_count=50)):
+    # Keep legacy short 'Past commits' section small (subjects only, as a fallback)
+    for i, commit in enumerate(repo.iter_commits("HEAD", max_count=10)):
         new_prompt = prompt
         if i == 0:
-            new_prompt += """\n\nPast commits:\n\n"""
+            new_prompt += """\n\nPast commits (subjects):\n\n"""
         msg = commit.message.split("\n\n")[0]  # subject line only
         new_prompt += f"- {msg}\n"
         if len(new_prompt) > PAST_COMMITS_MAX_CHARS:
@@ -201,22 +288,37 @@ def build_commit_template(repo: Repo, passthru: list[str]) -> str:
     # Add untracked files if any
     untracked = [line[3:] for line in status_output.splitlines() if line.startswith("?? ")]
     if untracked:
+        # Blank commented spacer before untracked section (readability)
+        template_text += "#\n"
         template_text += """# Untracked files:
 #   (use "git add <file>..." to include in what will be committed)
 """
         for filename in untracked:
             template_text += f"#\t{filename}\n"
 
+    # Always add scissors marker; verbose diff may be auto-enabled by git config
     template_text += "#\n"
-
-    # Add verbose diff if requested
-    if "-v" in passthru or "--verbose" in passthru:
-        template_text += """# ------------------------ >8 ------------------------
+    template_text += """# ------------------------ >8 ------------------------
 # Do not modify or remove the line above.
 # Everything below it will be ignored.
 """
-        # Get the full diff
-        template_text += repo.git.diff("--cached")
+
+    # Determine verbose per git semantics: '-v' flag OR commit.verbose=true
+    include_verbose = ("-v" in passthru) or ("--verbose" in passthru)
+    if not include_verbose:
+        with contextlib.suppress(Exception):
+            val = repo.git.config("--get", "commit.verbose")
+            if str(val).strip().lower() in {"true", "1", "yes", "on"}:
+                include_verbose = True
+
+    if include_verbose:
+        diff_text = repo.git.diff("--cached")
+        diff_lines = diff_text.splitlines()
+        if len(diff_lines) > MAX_VERBOSE_DIFF_LINES:
+            total = len(diff_lines)
+            diff_lines = diff_lines[:MAX_VERBOSE_DIFF_LINES] + [f"# [TRUNCATED: showing first {MAX_VERBOSE_DIFF_LINES} of {total} lines]"]
+        # Comment diff lines for readability and to ensure they are ignored even without scissors
+        template_text += "\n".join(f"# {ln}" for ln in diff_lines)
 
     return template_text
 
@@ -394,6 +496,9 @@ class ParallelTaskRunner:
             # Pre-commit hook failed
             # UI will have already shown the output and status
             sys.exit(e.returncode)
+        except TimeoutError:
+            # Provider timed out; exit with a standard timeout code
+            sys.exit(124)
         except Exception:
             # One of the tasks failed - wait for both to complete before re-raising
             await asyncio.gather(ai_task, precommit_task, return_exceptions=True)
@@ -429,7 +534,11 @@ class ParallelTaskRunner:
         return SPINNER_CHARS[int(self.elapsed * 10) % len(SPINNER_CHARS)]
 
     def _print_status_line(self):
-        """Print a simple status line using carriage return."""
+        """Print a simple status line using carriage return.
+
+        TODO(mpokorny): Handle SIGWINCH (terminal resize) to ensure the status line
+        doesn't jump to the bottom; re-evaluate cursor positioning strategy.
+        """
 
         # Build status with fixed widths
         parts = [
@@ -605,8 +714,8 @@ async def async_main():
     # Combine everything
     final_text = msg + stats_comment + build_commit_template(repo, passthru)
 
-    # Use git's COMMIT_EDITMSG for a more authentic experience
-    commit_msg_path.write_text(final_text + "\n")
+    # Use git's COMMIT_EDITMSG for a more authentic experience (no trailing blank line)
+    commit_msg_path.write_text(final_text)
 
     # Store the file's modification time and content before editing
     mtime_before = commit_msg_path.stat().st_mtime
@@ -615,34 +724,36 @@ async def async_main():
     # Run the editor
     editor = await _get_editor()
     editor_proc = await asyncio.create_subprocess_shell(f"{editor} {commit_msg_path}")
-    if await editor_proc.wait() != 0:
-        print("error: editor exited with error code", file=sys.stderr)
+    returncode = await editor_proc.wait()
+    if returncode != 0:
+        print(f"Aborting commit: editor exited with code {returncode} (e.g., :cq)", file=sys.stderr)
         sys.exit(1)
 
     # Check what happened
     try:
         final_content = commit_msg_path.read_text()
-
-        # Check if file was modified - hybrid approach
         mtime_after = commit_msg_path.stat().st_mtime
-        # Compare content (strip trailing newline that gets added)
-        content_after = final_content.rstrip("\n")
 
-        if mtime_after == mtime_before and content_after == content_before:
-            # File wasn't saved - user did :q! or equivalent
-            print("Aborting commit due to unchanged commit message.", file=sys.stderr)
+        # Decide based on save vs change:
+        saved = mtime_after != mtime_before
+        changed = final_content.rstrip("\n") != content_before
+
+        # If user exited without saving and nothing changed, abort (e.g., :q)
+        if not saved and not changed:
+            print("Aborting commit: editor closed without saving (unchanged commit message).", file=sys.stderr)
             sys.exit(1)
     except FileNotFoundError:
         print("Aborting commit.", file=sys.stderr)
         sys.exit(1)
 
-    # Check for empty message (after stripping comments)
-    lines = [
-        line
-        for line in final_content.splitlines()
-        if line.strip() and not line.strip().startswith("#")
-    ]
-    if not lines:
+    # Check for empty message (ignore comments and anything below scissors)
+    content_lines: list[str] = []
+    for line in final_content.splitlines():
+        if line.startswith("# ------------------------ >8 ------------------------"):
+            break
+        if line.strip() and not line.strip().startswith("#"):
+            content_lines.append(line)
+    if not content_lines:
         print("Aborting commit due to empty commit message.", file=sys.stderr)
         sys.exit(1)
 
@@ -716,11 +827,12 @@ class ClaudeAI:
             stderr=asyncio.subprocess.PIPE,
         )
         try:
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30.0)
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=DEFAULT_AI_TIMEOUT_SECS)
         except TimeoutError:
             proc.terminate()
             await proc.wait()
-            raise subprocess.CalledProcessError(-1, cmd, "Claude command timed out after 30 seconds")
+            print(f"# Error: Claude command timed out after {DEFAULT_AI_TIMEOUT_SECS} seconds", file=sys.stderr)
+            raise
 
         if self.debug and stderr:
             self.logger.debug("Claude stderr:\n%s", stderr.decode(errors="replace"))
@@ -755,13 +867,14 @@ class CodexAI:
         last_msg_path = Path(self.repo.git_dir) / "codex_last_message.txt"
 
         # Build prompt – let the agent inspect the repo itself
+        context = _build_ai_context(self.repo, include_all)
         prompt = (
             "You are an expert engineer writing a Git commit message for the current changes.\n"
             "Requirements:\n"
-            "- Determine the exact set of changes that are staged for commit right now by inspecting the repository.\n"
-            "- Review recent commit subjects (e.g., `git log -n 50 --pretty=%s`) and match tone.\n"
+            "- Review the provided repository context. If more context is needed, you may query the repository as needed.\n"
             "- Write a concise, imperative-mood subject; if helpful, add a short bullet list body.\n"
-            "- Output ONLY the message between <message> and </message> tags. No extra text.\n"
+            "- Output ONLY the message between <message> and </message> tags. No extra text.\n\n"
+            f"Context:\n{context}\n"
         )
 
         cmd = [
@@ -789,11 +902,12 @@ class CodexAI:
             stderr=asyncio.subprocess.PIPE,
         )
         try:
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30.0)
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=DEFAULT_AI_TIMEOUT_SECS)
         except TimeoutError:
             proc.terminate()
             await proc.wait()
-            raise subprocess.CalledProcessError(-1, cmd, "codex exec timed out after 120 seconds")
+            print(f"# Error: codex exec timed out after {DEFAULT_AI_TIMEOUT_SECS} seconds", file=sys.stderr)
+            raise
 
         if self.debug:
             if stdout:
