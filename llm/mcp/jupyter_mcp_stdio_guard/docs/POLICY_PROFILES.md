@@ -1,10 +1,11 @@
 # Sandbox Policy Profiles (Draft)
 
-A menu of profiles to assemble into seatbelt policies. Use as checklists when composing/iterating policies. All assume:
-- JUPYTER_CONFIG_DIR/DATA_DIR/PATH are locked to RUN_ROOT so only our kernelspecs load
-- Default kernel = python3 overridden to sandbox-exec (WORKSPACE, RUN_ROOT bound)
-- CWD = WORKSPACE; HOME = RUN_ROOT (optional)
-- Python bytecode: set PYTHONPYCACHEPREFIX=<RUN_ROOT>/pycache or PYTHONDONTWRITEBYTECODE=1
+A menu of profiles to assemble into seatbelt policies. Use as checklists when composing/iterating policies. Assumptions with the explicit policy model:
+- JUPYTER_CONFIG_DIR/DATA_DIR are set via policy env to run_root paths; PATH points to control venv bin first
+- Kernels are sandboxed via a generated kernelspec that runs under seatbelt; no default_kernel_name traits are set
+- CWD = workspace; HOME = run_root (recommended); Jupyter server runs unsandboxed on 127.0.0.1
+- Python bytecode: set PYTHONPYCACHEPREFIX=<run_root>/pycache or PYTHONDONTWRITEBYTECODE=1
+- No seatbelt macros (no WORKSPACE/RUN_ROOT params); wrapper generates allow rules from policy read_paths/write_paths
 
 Legend
 - R/W = read/write allowed; R/O = read-only
@@ -13,10 +14,10 @@ Legend
 ---
 
 ## 1) safest
-- FS write: ONLY WORKSPACE, RUN_ROOT (and optional /tmp if needed)
-- FS read: venv site-packages, git repo (read-only), .git (read-only), system libs (/System, /usr, /lib), WORKSPACE (read)
+- FS write: ONLY workspace, run_root (and optional /tmp if needed)
+- FS read: venv site-packages, git repo (read-only), .git (read-only), system libs (/System, /usr, /lib), workspace (read)
 - NET: allow loopback; egress allowed (TBD). Consider loopback-only by default
-- ENV: minimal allowlist (e.g., PATH, LANG, PYTHONPATH, PYTHONPYCACHEPREFIX). NO HOME secrets; NO generic tokens
+- ENV: minimal allowlist (e.g., PATH, LANG, PYTHONPATH, PYTHONPYCACHEPREFIX). Avoid secrets; prefer explicit env_passthrough entries only when needed
 - Process/IPC: minimal (process*, signal self, basic ipc, sysctl-read)
 - Devices: /dev/null, /dev/urandom, /dev/random; no TTY writes
 - Tracing: On by default in dev; off in prod
@@ -138,13 +139,13 @@ Checklist
 ## Common policy blocks (seatbelt)
 
 - File
-  - (allow file-read*) → tighten to curated roots
-  - (allow file* (subpath (param "WORKSPACE")))
-  - (allow file* (subpath (param "RUN_ROOT")))
+  - (allow file-read* (subpath ...)) only for curated roots (no global file-read*)
+  - (allow file* (subpath "<workspace>")) generated from write_paths
+  - (allow file* (subpath "<run_root>")) generated from write_paths
   - (allow file* (subpath "/tmp")) (optional)
 - Net
   - (allow network-inbound (local ip))
-  - (allow network-outbound) → restrict/deny per profile
+  - (allow network-outbound) → restrict/deny per profile (TODO: configurable in wrapper via `net`)
 - System
   - (allow process*) (allow signal (target self))
   - (allow ipc-posix-*) (allow ipc-sysv-shm) (allow mach-lookup) (allow system-socket) (allow sysctl-read)

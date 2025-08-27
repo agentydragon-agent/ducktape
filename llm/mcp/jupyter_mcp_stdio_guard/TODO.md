@@ -2,8 +2,8 @@
 
 - Policy tightening (when ready):
   - Restrict network-outbound to loopback or specific ports (Jupyter server)
-  - Reduce `file-read*` to a curated set (system libs, site-packages) if feasible
-  - Drop `mach-lookup`/`system-socket` allowances not required by kernel
+  - Make reads explicit-only (done: removed global file-read*) and tighten test fixtures to allow_read_all: false with minimal read_paths
+  - Reduce remaining allowances (mach-lookup/system-socket) if not required by kernel
   - Remove `/dev/tty` write if not needed
 - WORKSPACE and RUN_ROOT semantics:
   - WORKSPACE: repo/workspace root passed via `--workspace`. Kernel may read/write anywhere under this path

@@ -15,6 +15,14 @@ sandbox-jupyter-mcp stdio --policy-config /abs/worktree/.sandbox_jupyter.yaml
 
 Use --trace-sandbox, --no-kernel-sandbox, --jupyter-port as needed.
 
+## Example setup (see sandboxed_jupyter_example/)
+
+For a complete per-repo setup, including directory layout, explicit policy.yaml examples, and .mcp.json wiring, see:
+
+- sandboxed_jupyter_example/README.md
+
+Below are minimal inline templates if you prefer to copy/paste here.
+
 ## Example .mcp.json (genericized)
 
 ```json
@@ -32,35 +40,15 @@ Use --trace-sandbox, --no-kernel-sandbox, --jupyter-port as needed.
 }
 ```
 
-## Example .sandbox_jupyter.yaml (template)
+## Example policy schema (explicit)
 
-```yaml
-workspace: /abs/worktree/.sandbox_workspace
-run_root: /abs/worktree/.sandbox_run
-net: loopback
-env:
-  PATH: /abs/venv/bin:$PATH
-  LANG: en_US.UTF-8
-  PYTHONPATH: ""
-  VIRTUAL_ENV: /abs/venv
-  JUPYTER_RUNTIME_DIR: /abs/worktree/.sandbox_run/runtime
-  JUPYTER_DATA_DIR: /abs/worktree/.sandbox_run/data
-  JUPYTER_CONFIG_DIR: /abs/worktree/.sandbox_run/config
-  JUPYTER_PATH: /abs/worktree/.sandbox_run/data
-  MPLCONFIGDIR: /abs/worktree/.sandbox_run/mpl
-  PYTHONPYCACHEPREFIX: /abs/worktree/.sandbox_run/pycache
-  TMPDIR: /abs/worktree/.sandbox_run/tmp
-  TMP: /abs/worktree/.sandbox_run/tmp
-  TEMP: /abs/worktree/.sandbox_run/tmp
-  HOME: /abs/worktree/.sandbox_run/
-  PYTHONUNBUFFERED: "1"
-fs_read:
-- /abs/worktree
-- /abs/venv
-fs_write:
-- /abs/worktree/.sandbox_workspace
-- /abs/worktree/.sandbox_run
-```
+See sandboxed_jupyter_example/README.md for full examples.
+- allow_read_all: bool
+- allow_write_all: bool
+- read_paths: list[str]
+- write_paths: list[str]
+- env: dict[str,str]
+- env_passthrough: list[str]
 
 ## Semantics
 

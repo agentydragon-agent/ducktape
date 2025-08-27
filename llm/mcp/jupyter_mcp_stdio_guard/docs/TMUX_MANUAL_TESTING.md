@@ -88,7 +88,7 @@ Paste MCP JSON lines (one per line):
 
 ## 5) Kernel Sandbox (Pane 1 — locked config)
 
-Use when testing sandboxed kernel explicitly.
+Use when testing sandboxed kernel explicitly. This manual recipe uses sandbox-exec -D WORKSPACE/RUN_ROOT macro defs for convenience; the wrapper generates explicit seatbelt policies without macros.
 
 ```bash
 # Choose run root under /tmp
@@ -108,7 +108,6 @@ cat >"$RUN_ROOT/config/jupyter_server_config.py" <<CFG
 c = get_config() if 'get_config' in globals() else None
 c.KernelSpecManager.kernel_dirs = ["$RUN_ROOT/data/kernels"]
 c.KernelSpecManager.ensure_native_kernel = False
-c.ServerApp.default_kernel_name = "python3"
 CFG
 # Export env for this pane
 export JUPYTER_RUNTIME_DIR="$RUN_ROOT/runtime" JUPYTER_DATA_DIR="$RUN_ROOT/data" JUPYTER_CONFIG_DIR="$RUN_ROOT/config" JUPYTER_PATH="$RUN_ROOT/data"
