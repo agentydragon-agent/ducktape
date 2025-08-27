@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 """
-Run Codex to enforce properties on changed files between merge-base and HEAD.
+Run Codex (TypeScript codex-tui CLI) to enforce properties on changed files between merge-base and HEAD.
 
 Usage:
-  python run_codex_property_enforcer.py WORKDIR [options]
+  run_codex_property_enforcer.py WORKDIR [options]
+
+Assumptions:
+  - Requires the TypeScript codex-tui CLI (`codex`) in PATH (not codex-rs).
 
 Positional arguments:
   WORKDIR               Directory Codex should use as its working root (-C)
@@ -15,57 +18,39 @@ Options:
   --dry-run             Print the command and prompt but do NOT execute Codex
   --skip-git-repo-check Pass Codex's --skip-git-repo-check flag
   --upstream-ref REF    Upstream ref to compute merge-base (required)
+  --copy-prompt         Copy composed prompt to clipboard (requires pyperclip)
 
 Examples:
-  ./run_codex_property_enforcer.py ~/code/worktrees/wip --full-auto --dry-run
+  ./run_codex_property_enforcer.py ~/code/worktrees/wip --upstream-ref origin/main --full-auto --dry-run
 """
 from __future__ import annotations
 
 import argparse
 import os
-import shutil
 import subprocess
 import sys
 from pathlib import Path
 from textwrap import dedent
+import codex_utils as cx  # Shared helpers (assumes TypeScript codex-tui 'codex')
 
 
-def resolve_properties_dir(default_base: Path, override: str | None) -> Path:
-    if override:
-        p = Path(override).expanduser().resolve()
-    else:
-        p = (default_base / "properties").resolve()
-    if not p.is_dir():
-        raise SystemExit(f"Error: properties directory not found: {p}")
-    return p
 
 
-def ensure_dir(path: Path) -> None:
-    if not path.is_dir():
-        raise SystemExit(f"Error: WORKDIR does not exist or is not a directory: {path}")
 
 
-def git(*args: str, cwd: Path) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(["git", *args], cwd=str(cwd), text=True, capture_output=True)
 
 
-def determine_merge_base(workdir: Path, upstream_ref: str | None) -> str:
-    if not upstream_ref:
-        raise SystemExit("Error: --upstream-ref is required (e.g., origin/main)")
-    cp = git("merge-base", upstream_ref, "HEAD", cwd=workdir)
-    if cp.returncode == 0 and cp.stdout.strip():
-        return cp.stdout.strip()
-    raise SystemExit(f"Error: could not determine merge base against {upstream_ref}. Ensure the ref exists and is fetched.")
 
 
 def build_prompt(properties_dir: Path, base_sha: str) -> str:
-    # Instructions sent to Codex via stdin
+    # Inline all property files via shared helper
+    properties_text = cx.read_all_properties_text(properties_dir)
+
     return dedent(f"""
-    Ensure all code changed in the Git diff {base_sha}..HEAD conforms to the properties in {properties_dir}/*.md and refactor as needed to satisfy them without altering behavior.
+    Ensure all code changed in the Git diff {base_sha}..HEAD conforms to the properties defined below and refactor as needed to satisfy them without altering behavior.
 
     Context and constraints:
     - Scope changes to files in: git diff --name-only "{base_sha}"...HEAD
-    - Read all property files under {properties_dir}/*.md and treat them as enforcement rules.
     - Apply minimal, behavior-preserving edits to satisfy all properties.
     - Prefer small, isolated edits per file.
     - Do not commit changes.
@@ -74,6 +59,11 @@ def build_prompt(properties_dir: Path, base_sha: str) -> str:
     Requirements:
     - You MUST check EVERY PART of the FULL Git diff
     - You MUST edit ALL files in the Git diff to comply with ALL property definition files
+
+    Property definitions (verbatim):
+    ```markdown
+    {properties_text}
+    ```
 
     Operational guidance:
     - Ask for confirmation before any destructive action (deletes/mass renames). Keep changes within the workspace.
@@ -85,24 +75,6 @@ def build_prompt(properties_dir: Path, base_sha: str) -> str:
     """)
 
 
-def build_codex_cmd(model: str, workdir: Path, full_auto: bool, skip_git_repo_check: bool) -> list[str]:
-    cmd = [
-        "codex",
-        "exec",
-        "-m",
-        model,
-        "-s",
-        "workspace-write",
-        "-C",
-        str(workdir),
-        "-c",
-        'sandbox_permissions=["disk-full-read-access"]',
-    ]
-    if full_auto:
-        cmd.append("--full-auto")
-    if skip_git_repo_check:
-        cmd.append("--skip-git-repo-check")
-    return cmd
 
 
 def main(argv: list[str]) -> int:
@@ -115,24 +87,32 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--properties-dir", help="Directory containing property .md files; default is <script_dir>/properties")
     parser.add_argument("--full-auto", action="store_true", help="Add Codex's --full-auto flag")
     parser.add_argument("--dry-run", action="store_true", help="Print the command and prompt but do NOT execute Codex")
+    parser.add_argument("--copy-prompt", action="store_true", help="Copy composed prompt to clipboard")
     parser.add_argument("--skip-git-repo-check", action="store_true", help="Pass Codex's --skip-git-repo-check flag")
     parser.add_argument("--upstream-ref", required=True, help="Upstream ref to compute merge-base (e.g., origin/main)")
 
     args = parser.parse_args(argv)
 
     workdir = Path(args.workdir).expanduser().resolve()
-    ensure_dir(workdir)
+    cx.ensure_dir(workdir)
 
     script_dir = Path(__file__).resolve().parent
-    properties_dir = resolve_properties_dir(script_dir, args.properties_dir)
+    properties_dir = cx.resolve_properties_dir(script_dir, args.properties_dir)
 
-    if shutil.which("codex") is None:
-        raise SystemExit("Error: 'codex' CLI not found in PATH")
-
-    base_sha = determine_merge_base(workdir, args.upstream_ref)
+    base_sha = cx.determine_merge_base(workdir, args.upstream_ref)
 
     prompt = build_prompt(properties_dir, base_sha)
-    cmd = build_codex_cmd(args.model, workdir, args.full_auto, args.skip_git_repo_check)
+    cmd = cx.build_codex_cmd(
+        model=args.model,
+        workdir=workdir,
+        sandbox="workspace-write",
+        skip_git_repo_check=args.skip_git_repo_check,
+        full_auto=args.full_auto,
+        extra_configs=['sandbox_permissions=["disk-full-read-access"]'],
+    )
+
+    def _copy_prompt(p: str) -> None:
+        cx.copy_to_clipboard(p)
 
     print(f"Codex working dir : {workdir}")
     print(f"Properties dir    : {properties_dir}")
@@ -141,10 +121,11 @@ def main(argv: list[str]) -> int:
     print(f"Full auto         : {args.full_auto}")
     print(f"Skip repo check   : {args.skip_git_repo_check}")
 
+    if args.copy_prompt:
+        _copy_prompt(prompt)
+
     if args.dry_run:
-        print("\n# Dry run: would execute command:\n" + " ".join(map(str, cmd)))
-        print("\n# Prompt (full):\n")
-        print(prompt)
+        cx.print_dry_run(cmd, prompt)
         return 0
 
     # Execute Codex and stream output

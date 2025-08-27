@@ -169,7 +169,6 @@ class WorktreeService:
         | None = None,
         timeout: float = 60.0,
     ) -> dict:
-        logging.getLogger(__name__)
         script = Path(script_path).expanduser().resolve()
         if not script.exists() or not script.is_file():
             return {
@@ -236,7 +235,7 @@ class WorktreeService:
                     if inspect.isawaitable(result):
                         await result
                 except Exception:
-                    logging.getLogger(__name__).debug("hook sink failed", exc_info=True)
+                    logger.debug("hook sink failed", exc_info=True)
 
         t1 = (
             asyncio.create_task(_forward(proc.stdout, "stdout"))

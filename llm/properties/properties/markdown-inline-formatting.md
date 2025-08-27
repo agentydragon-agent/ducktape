@@ -17,6 +17,7 @@ Applies only to agent‑added or agent‑edited hunks. Pre‑existing prose outs
 - Non-HTTP URIs/URNs use inline code unless a renderer will linkify them: `gs://bucket/key`, `s3://bucket/object`, `az://container/blob`
 - Do not leave these tokens as plain text in prose; do not use quotes as a substitute for code spans
 - Multiline code snippets use fenced code blocks (``` … ```) with an appropriate language tag when applicable (e.g., `python`, `bash`, `markdown`). Use inline code only for single-line fragments
+- Unordered lists use -, *, or + markers (GFM/CommonMark); do not use Unicode bullets like •; indent nested items consistently
 
 ## Positive examples (proper inline code and links)
 ```markdown
@@ -34,6 +35,14 @@ def add(a: int, b: int) -> int:
 
 ```bash
 grep -R "pattern" src/ | wc -l
+```
+
+### Positive examples (lists)
+```markdown
+- Parent item
+  - Nested item
+* Alternate marker
++ Another valid marker
 ```
 
 ## Negative examples (plaintext tokens, missing links)

@@ -515,7 +515,7 @@ class GitstatusdListener:
             self.cached_working_status = (dirty_files, untracked_files)
             self.last_updated_at = datetime.now()
         except Exception:
-            logging.getLogger(__name__).exception(
+            logger.exception(
                 "gitstatusd update failed for %s",
                 self.worktree_info.name,
             )

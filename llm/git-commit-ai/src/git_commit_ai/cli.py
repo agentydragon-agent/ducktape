@@ -39,6 +39,7 @@ import subprocess
 import sys
 import termios
 import time
+from dataclasses import dataclass
 from datetime import timedelta
 from enum import Enum
 from pathlib import Path
@@ -53,9 +54,50 @@ PAST_COMMITS_MAX_CHARS = 6000  # legacy safety cap for past commit subjects
 DEFAULT_MODEL = "claude:sonnet"
 SPINNER_CHARS = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 MAX_VERBOSE_DIFF_LINES = 3000  # cap verbose diff lines under scissors
-DEFAULT_AI_TIMEOUT_SECS = 30   # shared subprocess timeout for providers
+DEFAULT_AI_TIMEOUT_SECS = 30  # shared subprocess timeout for providers
 MAX_PROMPT_CONTEXT_BYTES = 100 * 1024  # 100 KiB cap for AI context block
 RECENT_COMMITS_FOR_CONTEXT = 30
+
+
+@dataclass
+class AppConfig:
+    provider: str
+    model_name: str
+    model_str: str
+    timeout_secs: int | None
+
+    @staticmethod
+    def resolve(known) -> "AppConfig":
+        # Precedence: CLI args > env vars > defaults. No git config.
+        model_str = (
+            known.model or os.environ.get("GIT_COMMIT_AI_MODEL") or DEFAULT_MODEL
+        )
+
+        if known.timeout_secs is not None:
+            raw_timeout = known.timeout_secs
+        else:
+            raw_timeout = DEFAULT_AI_TIMEOUT_SECS
+            if (
+                env_timeout := os.environ.get("GIT_COMMIT_AI_TIMEOUT_SECS")
+            ) is not None:
+                with contextlib.suppress(ValueError):
+                    raw_timeout = int(env_timeout)
+
+        timeout_secs = None if raw_timeout <= 0 else raw_timeout
+
+        if ":" in model_str:
+            provider, model_name = model_str.split(":", 1)
+            provider = provider.strip() or "claude"
+            model_name = model_name.strip()
+        else:
+            provider, model_name = "claude", model_str.strip()
+
+        return AppConfig(
+            provider=provider,
+            model_name=model_name,
+            model_str=model_str,
+            timeout_secs=timeout_secs,
+        )
 
 
 def _len_bytes(s: str) -> int:
@@ -72,7 +114,9 @@ def _cap_append(parts: list[str], chunk: str, cap: int, truncation_note: str) ->
     if current + needed >= cap:
         remaining = cap - current
         if remaining > 0:
-            parts.append(chunk.encode("utf-8")[:remaining].decode("utf-8", errors="ignore"))
+            parts.append(
+                chunk.encode("utf-8")[:remaining].decode("utf-8", errors="ignore"),
+            )
         parts.append(truncation_note + "\n")
         return True
     parts.append(chunk)
@@ -96,40 +140,79 @@ def _build_ai_context(repo: Repo, include_all: bool) -> str:
     try:
         parts.append("$ git status --porcelain\n")
         status_out = repo.git.status("--porcelain") + "\n"
-        _cap_append(parts, status_out, MAX_PROMPT_CONTEXT_BYTES, "[Context truncated to 100 KiB]")
+        _cap_append(
+            parts,
+            status_out,
+            MAX_PROMPT_CONTEXT_BYTES,
+            "[Context truncated to 100 KiB]",
+        )
     except Exception:
         parts.append("[Could not retrieve git status]\n")
 
     # 1b) Name-status for what will be committed
     try:
-        ns_cmd = "git diff HEAD --name-status" if include_all else "git diff --cached --name-status"
+        ns_cmd = (
+            "git diff HEAD --name-status"
+            if include_all
+            else "git diff --cached --name-status"
+        )
         parts.append(f"$ {ns_cmd}\n")
-        ns_out = (repo.git.diff("HEAD", "--name-status") if include_all else repo.git.diff("--cached", "--name-status")) + "\n"
-        _cap_append(parts, ns_out, MAX_PROMPT_CONTEXT_BYTES, "[Context truncated to 100 KiB]")
+        ns_out = (
+            repo.git.diff("HEAD", "--name-status")
+            if include_all
+            else repo.git.diff("--cached", "--name-status")
+        ) + "\n"
+        _cap_append(
+            parts, ns_out, MAX_PROMPT_CONTEXT_BYTES, "[Context truncated to 100 KiB]",
+        )
     except Exception:
         parts.append("[Could not compute name-status]\n")
 
     # 2) Recent commits with diffstat via git log
-    parts.append(f"$ git log --no-color -n {RECENT_COMMITS_FOR_CONTEXT} --stat --pretty=format:%h %s\n")
+    parts.append(
+        f"$ git log --no-color -n {RECENT_COMMITS_FOR_CONTEXT} --stat --pretty=format:%h %s\n",
+    )
     try:
-        log_out = repo.git.log("--no-color", f"-n{RECENT_COMMITS_FOR_CONTEXT}", "--stat", "--pretty=format:%h %s") + "\n"
-        _cap_append(parts, log_out, MAX_PROMPT_CONTEXT_BYTES, "[Context truncated to 100 KiB]")
+        log_out = (
+            repo.git.log(
+                "--no-color",
+                f"-n{RECENT_COMMITS_FOR_CONTEXT}",
+                "--stat",
+                "--pretty=format:%h %s",
+            )
+            + "\n"
+        )
+        _cap_append(
+            parts, log_out, MAX_PROMPT_CONTEXT_BYTES, "[Context truncated to 100 KiB]",
+        )
     except Exception:
         parts.append("[Could not retrieve recent commits]\n")
 
     # 3) The diff that will be committed (unified=0) so the agent can parse hunks directly
     try:
-        diff_cmd = "git diff HEAD --unified=0" if include_all else "git diff --cached --unified=0"
+        diff_cmd = (
+            "git diff HEAD --unified=0"
+            if include_all
+            else "git diff --cached --unified=0"
+        )
         parts.append(f"$ {diff_cmd}\n")
-        diff_out = (repo.git.diff("HEAD", "--unified=0") if include_all else repo.git.diff("--cached", "--unified=0")) + "\n"
-        _cap_append(parts, diff_out, MAX_PROMPT_CONTEXT_BYTES, "[Context truncated to 100 KiB]")
+        diff_out = (
+            repo.git.diff("HEAD", "--unified=0")
+            if include_all
+            else repo.git.diff("--cached", "--unified=0")
+        ) + "\n"
+        _cap_append(
+            parts, diff_out, MAX_PROMPT_CONTEXT_BYTES, "[Context truncated to 100 KiB]",
+        )
     except Exception:
         parts.append("[Could not compute diff]\n")
 
     out = "".join(parts)
     # Final cap enforcement
     if _len_bytes(out) > MAX_PROMPT_CONTEXT_BYTES:
-        out = out.encode("utf-8")[:MAX_PROMPT_CONTEXT_BYTES].decode("utf-8", errors="ignore")
+        out = out.encode("utf-8")[:MAX_PROMPT_CONTEXT_BYTES].decode(
+            "utf-8", errors="ignore",
+        )
         out += "\n[Context truncated to 100 KiB]\n"
     return out
 
@@ -156,7 +239,7 @@ Refactor database connection handling
 </message>
 
 Diffstat:
-$ {'git diff HEAD --stat' if include_all else 'git diff --cached --stat'}
+$ {"git diff HEAD --stat" if include_all else "git diff --cached --stat"}
 
 {diffstat(repo, passthru)}
 """
@@ -286,7 +369,9 @@ def build_commit_template(repo: Repo, passthru: list[str]) -> str:
             template_text += f"#\t{status_text.ljust(12)} {filename}\n"
 
     # Add untracked files if any
-    untracked = [line[3:] for line in status_output.splitlines() if line.startswith("?? ")]
+    untracked = [
+        line[3:] for line in status_output.splitlines() if line.startswith("?? ")
+    ]
     if untracked:
         # Blank commented spacer before untracked section (readability)
         template_text += "#\n"
@@ -316,7 +401,10 @@ def build_commit_template(repo: Repo, passthru: list[str]) -> str:
         diff_lines = diff_text.splitlines()
         if len(diff_lines) > MAX_VERBOSE_DIFF_LINES:
             total = len(diff_lines)
-            diff_lines = diff_lines[:MAX_VERBOSE_DIFF_LINES] + [f"# [TRUNCATED: showing first {MAX_VERBOSE_DIFF_LINES} of {total} lines]"]
+            diff_lines = [
+                *diff_lines[:MAX_VERBOSE_DIFF_LINES],
+                f"# [TRUNCATED: showing first {MAX_VERBOSE_DIFF_LINES} of {total} lines]",
+            ]
         # Comment diff lines for readability and to ensure they are ignored even without scissors
         template_text += "\n".join(f"# {ln}" for ln in diff_lines)
 
@@ -579,8 +667,6 @@ class ParallelTaskRunner:
         print()  # Move to next line after final status
 
 
-
-
 def create_pty_with_terminal_size():
     """Create a PTY and set its size to match the current terminal."""
     master_fd, slave_fd = pty.openpty()
@@ -595,8 +681,6 @@ def create_pty_with_terminal_size():
             pass  # Ignore errors in terminal size setting
 
     return master_fd, slave_fd
-
-
 
 
 # ---------- main ------------------------------------------------------
@@ -625,7 +709,10 @@ async def async_main():
     repo = Repo(Path.cwd(), search_parent_directories=True)
 
     parser = argparse.ArgumentParser(add_help=True)
-    parser.add_argument("--model", default=DEFAULT_MODEL)
+    parser.add_argument("--model")  # Resolved via layered config (env/git/default)
+    parser.add_argument(
+        "--timeout-secs", type=int, help="AI timeout seconds (<=0 disables)",
+    )
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
     known, passthru = parser.parse_known_args()
 
@@ -643,6 +730,14 @@ async def async_main():
     logger = logging.getLogger()
     logger.setLevel(logging.DEBUG)
     logger.addHandler(file_handler)
+
+    # Resolve configuration
+    config = AppConfig.resolve(known)
+    if known.debug:
+        print(
+            f"# Resolved model={config.model_str}, timeout={'infinite' if config.timeout_secs is None else str(config.timeout_secs) + 's'}",
+            file=sys.stderr,
+        )
 
     if known.debug:
         # Also log to stderr when debug is enabled
@@ -669,14 +764,8 @@ async def async_main():
             )
         sys.exit(1)
 
-    # Determine provider and model from --model format PROVIDER:MODEL
-    def _parse_provider_model(s: str) -> tuple[str, str]:
-        if ":" not in s:
-            return "claude", s  # Default provider when omitted
-        provider, model_name = s.split(":", 1)
-        return provider.strip(), model_name.strip()
-
-    provider, model_name = _parse_provider_model(known.model)
+    # provider:model parsing handled by AppConfig.resolve
+    provider, model_name = config.provider, config.model_name
     include_all = ("-a" in passthru) or ("--all" in passthru)
 
     # Clean old cache entries
@@ -694,9 +783,17 @@ async def async_main():
     else:
         # Select provider client
         if provider == "claude":
-            ai_client = ClaudeAI(repo, diff=diff, passthru=passthru, debug=known.debug)
+            ai_client = ClaudeAI(
+                repo,
+                diff=diff,
+                passthru=passthru,
+                debug=known.debug,
+                timeout_secs=config.timeout_secs,
+            )
         elif provider == "codex":
-            ai_client = CodexAI(repo, debug=known.debug)
+            ai_client = CodexAI(
+                repo, debug=known.debug, timeout_secs=config.timeout_secs,
+            )
         else:
             raise ValueError(f"Unknown AI provider: {provider}")
 
@@ -726,7 +823,10 @@ async def async_main():
     editor_proc = await asyncio.create_subprocess_shell(f"{editor} {commit_msg_path}")
     returncode = await editor_proc.wait()
     if returncode != 0:
-        print(f"Aborting commit: editor exited with code {returncode} (e.g., :cq)", file=sys.stderr)
+        print(
+            f"Aborting commit: editor exited with code {returncode} (e.g., :cq)",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     # Check what happened
@@ -740,7 +840,10 @@ async def async_main():
 
         # If user exited without saving and nothing changed, abort (e.g., :q)
         if not saved and not changed:
-            print("Aborting commit: editor closed without saving (unchanged commit message).", file=sys.stderr)
+            print(
+                "Aborting commit: editor closed without saving (unchanged commit message).",
+                file=sys.stderr,
+            )
             sys.exit(1)
     except FileNotFoundError:
         print("Aborting commit.", file=sys.stderr)
@@ -786,11 +889,19 @@ class ClaudeAI:
     Caching is handled by the caller before invoking this provider.
     """
 
-    def __init__(self, repo: Repo, diff: str, passthru: list[str], debug: bool = False):
+    def __init__(
+        self,
+        repo: Repo,
+        diff: str,
+        passthru: list[str],
+        debug: bool = False,
+        timeout_secs: int | None = None,
+    ):
         self.repo = repo
         self.diff = diff
         self.passthru = passthru
         self.debug = debug
+        self.timeout_secs = timeout_secs
         self.logger = logging.getLogger(__name__)
 
     async def generate(self, include_all: bool, model: str | None = None) -> str:
@@ -800,7 +911,10 @@ class ClaudeAI:
         # Truncate prompt if too long and warn (stderr) in debug mode only
         max_chars = int(os.environ.get("GIT_AI_MAX_PROMPT", "20000"))
         if len(prompt) >= max_chars:
-            prompt = prompt[: max(0, max_chars - 100)] + "\n\n[TRUNCATED - prompt was too long]"
+            prompt = (
+                prompt[: max(0, max_chars - 100)]
+                + "\n\n[TRUNCATED - prompt was too long]"
+            )
             if self.debug:
                 print(
                     f"# Warning: Prompt truncated to {max_chars} chars",
@@ -827,11 +941,20 @@ class ClaudeAI:
             stderr=asyncio.subprocess.PIPE,
         )
         try:
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=DEFAULT_AI_TIMEOUT_SECS)
+            if self.timeout_secs is None:
+                stdout, stderr = await proc.communicate()
+            else:
+                stdout, stderr = await asyncio.wait_for(
+                    proc.communicate(), timeout=self.timeout_secs,
+                )
         except TimeoutError:
             proc.terminate()
             await proc.wait()
-            print(f"# Error: Claude command timed out after {DEFAULT_AI_TIMEOUT_SECS} seconds", file=sys.stderr)
+            secs_str = "infinite" if self.timeout_secs is None else str(self.timeout_secs)
+            print(
+                f"# Error: Claude command timed out after {secs_str} seconds",
+                file=sys.stderr,
+            )
             raise
 
         if self.debug and stderr:
@@ -854,19 +977,25 @@ class CodexAI:
     Caching is handled by the caller before invoking this provider.
     """
 
-    def __init__(self, repo: Repo, debug: bool = False, codex_bin: str | None = None):
+    def __init__(
+        self,
+        repo: Repo,
+        debug: bool = False,
+        codex_bin: str | None = None,
+        timeout_secs: int | None = None,
+    ):
         self.repo = repo
         self.debug = debug
         self.codex_bin = codex_bin or os.environ.get("CODEX_BIN", "codex")
+        self.timeout_secs = timeout_secs
         self.logger = logging.getLogger(__name__)
-
 
     async def generate(self, include_all: bool, model: str | None = None) -> str:
         """Run codex in read-only sandbox at repo root and return the commit message."""
         # Where codex should write the final assistant message
         last_msg_path = Path(self.repo.git_dir) / "codex_last_message.txt"
 
-        # Build prompt – let the agent inspect the repo itself
+        # Build prompt - let the agent inspect the repo itself
         context = _build_ai_context(self.repo, include_all)
         prompt = (
             "You are an expert engineer writing a Git commit message for the current changes.\n"
@@ -902,11 +1031,19 @@ class CodexAI:
             stderr=asyncio.subprocess.PIPE,
         )
         try:
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=DEFAULT_AI_TIMEOUT_SECS)
+            if self.timeout_secs is None:
+                stdout, stderr = await proc.communicate()
+            else:
+                stdout, stderr = await asyncio.wait_for(
+                    proc.communicate(), timeout=self.timeout_secs,
+                )
         except TimeoutError:
             proc.terminate()
             await proc.wait()
-            print(f"# Error: codex exec timed out after {DEFAULT_AI_TIMEOUT_SECS} seconds", file=sys.stderr)
+            secs_str = "infinite" if self.timeout_secs is None else str(self.timeout_secs)
+            print(
+                f"# Error: codex exec timed out after {secs_str} seconds", file=sys.stderr,
+            )
             raise
 
         if self.debug:
@@ -916,7 +1053,9 @@ class CodexAI:
                 self.logger.debug("Codex stderr:\n%s", stderr.decode(errors="replace"))
 
         if proc.returncode != 0:
-            raise subprocess.CalledProcessError(proc.returncode or 1, cmd, (stderr or b"").decode())
+            raise subprocess.CalledProcessError(
+                proc.returncode or 1, cmd, (stderr or b"").decode(),
+            )
 
         # Read last message file and extract commit message
         try:
@@ -924,7 +1063,9 @@ class CodexAI:
         except Exception as e:
             raw_last = (stdout or b"").decode()
             if not raw_last:
-                raise RuntimeError(f"codex exec did not produce a last message file: {e}")
+                raise RuntimeError(
+                    f"codex exec did not produce a last message file: {e}",
+                )
 
         return _extract_message_from_text(raw_last)
 

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+
+logger = logging.getLogger(__name__)
 from collections.abc import Awaitable, Callable
 from datetime import datetime
 from inspect import signature
@@ -159,7 +161,7 @@ class RpcRegistry:
             except RpcError as e:
                 return create_error_response(e.code, str(e), req.id, e.data)
             except Exception as e:
-                logging.getLogger(__name__).exception(
+                logger.exception(
                     "Unhandled error in method %s",
                     method,
                 )
@@ -197,7 +199,7 @@ class RpcRegistry:
             except RpcError as e:
                 return create_error_response(e.code, str(e), req.id, e.data)
             except Exception as e:
-                logging.getLogger(__name__).exception(
+                logger.exception(
                     "Unhandled error in stream method %s",
                     method,
                 )
