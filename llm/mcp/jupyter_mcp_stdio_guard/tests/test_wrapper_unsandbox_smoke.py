@@ -5,12 +5,14 @@ def test_wrapper_unsandbox_initialize_and_hello(
     pkg_src_env_update,
     launch_proc,
 ):
-    (ws, _run_root) = provision_ws_with_policy
+    (ws, run_root) = provision_ws_with_policy
     port = pick_free_port
     cmd = [
         "sandbox-jupyter-mcp",
         "--workspace",
         str(ws),
+        "--run-root",
+        str(run_root),
         "--mode",
         "seatbelt",
         "--jupyter-port",

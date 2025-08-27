@@ -14,9 +14,24 @@ import pytest
 import datetime as _dt
 import re as _re
 
-# Session-wide required binaries/tools; fail-fast once
+# Bootstrap a dedicated control venv for Jupyter server + MCP bridge, then require tools
 @pytest.fixture(scope="session", autouse=True)
-def _require_env_binaries_and_tools():
+def _bootstrap_control_venv_and_require_tools():
+    # If jupyter and jupyter-mcp-server already on PATH, skip bootstrap
+    need_bootstrap = shutil.which("jupyter") is None or shutil.which("jupyter-mcp-server") is None
+    control_bin = None
+    if need_bootstrap:
+        root = Path(__file__).resolve().parents[1]
+        control = root / "scratch" / "control_venv"
+        py = shutil.which("python3") or sys.executable
+        if not (control / "bin" / "python").exists():
+            subprocess.run([py, "-m", "venv", str(control)], check=True)
+            subprocess.run([str(control / "bin" / "python"), "-m", "pip", "install", "-U", "pip", "wheel"], check=True)
+            subprocess.run([str(control / "bin" / "pip"), "install", "jupyter-server", "jupyter-core", "jupyter-mcp-server"], check=True)
+        control_bin = str(control / "bin")
+        os.environ["SJ_TEST_CONTROL_BIN"] = control_bin
+        os.environ["PATH"] = f"{control_bin}:{os.environ.get('PATH','')}"
+    # Now enforce required tools
     missing = []
     if shutil.which("jupyter") is None:
         missing.append("jupyter")

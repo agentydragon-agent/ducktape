@@ -30,11 +30,11 @@ def test_kernel_is_sandboxed_env_and_policy(
     port = pick_free_port
 
     cmd = [
-        sys.executable,
-        "-m",
-        "jupyter_mcp_stdio_guard",
+        "sandbox-jupyter-mcp",
         "--workspace",
         str(ws),
+        "--run-root",
+        str(run_root),
         "--mode",
         "seatbelt",
         "--jupyter-port",
@@ -86,6 +86,8 @@ def test_write_outside_workspace_denied(
         "sandbox-jupyter-mcp",
         "--workspace",
         str(ws),
+        "--run-root",
+        str(run_root),
         "--mode",
         "seatbelt",
         "--jupyter-port",

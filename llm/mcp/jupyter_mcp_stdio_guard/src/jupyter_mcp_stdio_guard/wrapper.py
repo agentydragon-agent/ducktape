@@ -1,21 +1,27 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
 import argparse
+import asyncio
 import json
+import os
 import secrets
 import shlex
 import shutil
 import socket
 import subprocess
 import sys
-import threading
 import time
-import asyncio
-from datetime import datetime
+from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
+# Seatbelt base policy for macOS sandbox-exec.
+# NOTE: Intentionally DOES NOT grant global read anymore.
 SANDBOX_POLICY_BASE = """
 (version 1)
 (deny default)
@@ -24,8 +30,7 @@ SANDBOX_POLICY_BASE = """
 (allow process*)
 (allow signal (target self))
 
-;; File access: reads are broad for now; writes constrained via dynamic params
-(allow file-read*)
+;; File/device basics
 (allow file* (literal "/dev/null"))
 (allow file-read* (literal "/dev/urandom"))
 (allow file-read* (literal "/dev/random"))
@@ -39,44 +44,55 @@ SANDBOX_POLICY_BASE = """
 (allow system-socket)
 (allow sysctl-read)
 
-;; Networking defaults (may be tightened by config)
+;; Networking defaults (subject to future tightening)
 (allow network-outbound)
 (allow network-inbound (local ip))
 """
 
 
 class PolicyConfig(BaseModel):
-    workspace: str
-    run_root: str
-    fs_write: list[str] = Field(default_factory=list)
-    fs_read: list[str] = Field(default_factory=list)
-    net: str = "loopback"  # none|loopback|all|allowlist:...|proxy:...
-    env: dict[str, str] = Field(default_factory=dict)
-    # Optional: absolute path to the Python interpreter to use for the kernel.
-    # If not provided, defaults to sys.executable (the wrapper's interpreter).
-    kernel_python: str | None = None
+    # Explicit, zero-magic authz spec
+    allow_read_all: bool = False
+    allow_write_all: bool = False
+    read_paths: list[str] = Field(default_factory=list)
+    write_paths: list[str] = Field(default_factory=list)
 
+    # Environment injection
+    env: dict[str, str] = Field(default_factory=dict)
+    env_passthrough: list[str] = Field(default_factory=list)
+
+    # Present for future use; currently not enforced
+    net: str | None = None  # TODO: implement (none|loopback|all|allowlist:...|proxy:...)
+
+    class Config:
+        extra = "forbid"  # hard break on unknown fields
+
+    @model_validator(mode="after")
+    def _validate_compat(self) -> "PolicyConfig":
+        if self.allow_read_all and self.read_paths:
+            raise ValueError("allow_read_all=true is incompatible with non-empty read_paths")
+        if self.allow_write_all and self.write_paths:
+            raise ValueError("allow_write_all=true is incompatible with non-empty write_paths")
+        # Write implies read: disallow combining allow_write_all with read_paths to avoid redundancy
+        if self.allow_write_all and self.read_paths:
+            raise ValueError("allow_write_all=true implies read; read_paths must be empty when allow_write_all is set")
+        return self
+
+
+# Utilities
 
 def _ensure_dir(p: Path) -> None:
     p.mkdir(parents=True, exist_ok=True)
 
 
-def _ensure_document_id(
-    workspace: Path,
-    document_id: str | None,
-) -> str:
+def _ensure_document_id(workspace: Path, document_id: str | None) -> str:
     if document_id:
         p = workspace / document_id
     else:
         rel = (
             Path(".mcp")
             / "scratch"
-            / (
-                datetime.utcnow().strftime("%Y%m%dT%H%M%S")
-                + "-"
-                + secrets.token_hex(4)
-                + ".ipynb"
-            )
+            / (datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S") + "-" + secrets.token_hex(4) + ".ipynb")
         )
         p = workspace / rel
         document_id = str(rel)
@@ -93,18 +109,15 @@ def _ensure_document_id(
                 },
                 "nbformat": 4,
                 "nbformat_minor": 5,
-            },
-        ),
+            }
+        )
     )
-    return document_id
+    return document_id  # type: ignore[return-value]
 
 
-def _build_bash_script(
-    workspace: Path,
-    document_id: str,
-    token: str,
-    start_new_runtime: bool,
-) -> str:
+# Docker mode helper (unchanged behavior aside from workspace/run_root coming from CLI)
+
+def _build_bash_script(workspace: Path, document_id: str, token: str, start_new_runtime: bool) -> str:
     wq = shlex.quote(str(workspace))
     dq = shlex.quote(document_id)
     tq = shlex.quote(token)
@@ -155,12 +168,7 @@ def _docker(
     jupyter_port: int,
 ) -> int:
     token = secrets.token_urlsafe(24)
-    bash_script = _build_bash_script(
-        Path("/workspace"),
-        document_id,
-        token,
-        start_new_runtime,
-    )
+    bash_script = _build_bash_script(Path("/workspace"), document_id, token, start_new_runtime)
     run_root = f"/tmp/sjmcp-{secrets.token_hex(6)}"
     env_flags = [
         "-e",
@@ -194,6 +202,8 @@ def _docker(
     return subprocess.Popen(cmd).wait()
 
 
+# Jupyter helpers
+
 def _kernels_dir(run_root: Path) -> Path:
     return run_root / "data" / "kernels"
 
@@ -202,12 +212,11 @@ def _write_sandboxed_kernelspec(
     run_root: Path,
     workspace: Path,
     policy_path: Path,
-    kernel_python: str | None = None,
+    kernel_python: str,
 ) -> None:
-    # Override the default 'python3' kernel to ensure the sandbox is used
+    # Override the default 'python3' kernel to ensure the sandbox is used.
     ks_dir = _kernels_dir(run_root) / "python3"
     ks_dir.mkdir(parents=True, exist_ok=True)
-    py_exec = kernel_python or sys.executable
     kernel_json = {
         "argv": [
             "env",
@@ -216,11 +225,7 @@ def _write_sandboxed_kernelspec(
             "sandbox-exec",
             "-f",
             str(policy_path),
-            "-D",
-            f"WORKSPACE={workspace}",
-            "-D",
-            f"RUN_ROOT={run_root}",
-            str(py_exec),
+            kernel_python,
             "-m",
             "ipykernel_launcher",
             "-f",
@@ -233,7 +238,7 @@ def _write_sandboxed_kernelspec(
     (ks_dir / "kernel.json").write_text(json.dumps(kernel_json))
 
 
-def _start_jupyter_server(  # noqa: PLR0913
+def _start_jupyter_server(
     workspace: Path,
     token: str,
     jupyter_port: int,
@@ -284,53 +289,57 @@ def _start_jupyter_server(  # noqa: PLR0913
     return proc
 
 
-def _seatbelt(  # noqa: PLR0913
+# Seatbelt mode
+
+def _seatbelt(
+    *,
     workspace: Path,
+    run_root: Path,
     document_id: str,
     start_new_runtime: bool,
     jupyter_port: int,
     cfg: PolicyConfig,
     trace: bool = True,
     kernel_sandbox: bool = True,
+    kernel_python: str,
+    debug_diag: bool = False,
 ) -> int:
     token = secrets.token_urlsafe(24)
-    run_root = Path(cfg.run_root).resolve()
     for sub in ("runtime", "data", "config", "mpl", "pycache", "cache", "tmp"):
         (run_root / sub).mkdir(parents=True, exist_ok=True)
     policy_path = run_root / "policy.sb"
 
-    # Resolve write roots from cfg
-    write_roots = [Path(p).resolve() for p in cfg.fs_write] or [workspace, run_root]
-
-    # Compose final policy with dynamic write roots and optional tracing
-    dyn_lines = []
+    # Compose final policy from explicit spec
+    dyn_lines: list[str] = []
     if trace:
         dyn_lines.append(f'(trace "{(run_root / "profile.sb")!s}")')
-    for p in write_roots:
-        dyn_lines.append(f'(allow file* (subpath "{p}"))')
-    # Optional tmp write if included explicitly
-    # (skip by default; can be added via fs_write)
-    # Add read-only roots (repo, venv, system), from cfg
-    ro_roots = [Path(p).resolve() for p in (cfg.fs_read or [])]
-    for p in ro_roots:
-        dyn_lines.append(f'(allow file-read* (subpath "{p}"))')
 
-    # Networking: adjust based on cfg.get('net')
-    # For now, leave defaults; future: implement loopback/none/allowlist/proxy
+    # Writes
+    if cfg.allow_write_all:
+        dyn_lines.append('(allow file* (subpath "/"))')
+    else:
+        for p in (cfg.write_paths or []):
+            dyn_lines.append(f'(allow file* (subpath "{Path(p).resolve()}") )')
+
+    # Reads
+    if cfg.allow_write_all:
+        # write implies read; no extra read rules needed
+        pass
+    elif cfg.allow_read_all:
+        dyn_lines.append('(allow file-read* (subpath "/"))')
+    else:
+        for p in (cfg.read_paths or []):
+            dyn_lines.append(f'(allow file-read* (subpath "{Path(p).resolve()}") )')
 
     policy_text = SANDBOX_POLICY_BASE + "\n" + "\n".join(dyn_lines) + "\n"
     policy_path.write_text(policy_text)
+
     if kernel_sandbox:
-        _write_sandboxed_kernelspec(run_root, workspace, policy_path, kernel_python=cfg.kernel_python)
+        _write_sandboxed_kernelspec(run_root, workspace, policy_path, kernel_python=kernel_python)
         # Ensure newly created notebooks default to the sandboxed kernel
-        (run_root / "runtime" / "kernels.json").write_text(
-            json.dumps({"default": "python3"}),
-        )
-    print(
-        f"[wrapper] {run_root=} {workspace=}",
-        file=sys.stderr,
-        flush=True,
-    )
+        (run_root / "runtime" / "kernels.json").write_text(json.dumps({"default": "python3"}))
+
+    print(f"[wrapper] run_root={run_root!s} workspace={workspace!s}", file=sys.stderr, flush=True)
     print(
         f"[wrapper] jupyter: http://127.0.0.1:{jupyter_port} token=REDACTED",
         file=sys.stderr,
@@ -338,19 +347,44 @@ def _seatbelt(  # noqa: PLR0913
     )
     if trace:
         print(
-            f"[seatbelt] Sandbox trace enabled. {policy_path=} trace={run_root / 'profile.sb'}",
+            f"[seatbelt] Sandbox trace enabled. policy_path={policy_path!s} trace={(run_root / 'profile.sb')!s}",
             file=sys.stderr,
             flush=True,
         )
-    # Build child environment strictly from explicit YAML configuration
-    child_env: dict[str, str] = dict(cfg.env or {})
-    # Ensure runtime/data/config dirs are used by Jupyter and libs unless explicitly overridden
-    child_env.setdefault("JUPYTER_RUNTIME_DIR", str(run_root / "runtime"))
-    child_env.setdefault("JUPYTER_DATA_DIR", str(run_root / "data"))
-    child_env.setdefault("JUPYTER_CONFIG_DIR", str(run_root / "config"))
-    child_env.setdefault("MPLCONFIGDIR", str(run_root / "mpl"))
 
-    # Ensure config dir exists and write a server config to prefer our kernels only
+    # Child environment: explicit env + passthrough + defaults for Jupyter dirs
+    child_env: dict[str, str] = dict(cfg.env or {})
+    for k in cfg.env_passthrough or []:
+        if k in os.environ:
+            child_env[k] = os.environ[k]
+    # Intentionally do not default Jupyter dirs here; provide via cfg.env if desired
+
+    # Diagnostics: print child toolchain versions and paths (behind flag/env)
+    if debug_diag or os.environ.get("SJ_DEBUG_DIAG"):
+        def _run_out(args: list[str]) -> str:
+            try:
+                cp = subprocess.run(args, env=child_env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                return cp.stdout.strip()
+            except Exception as e:  # noqa: BLE001
+                return f"<error: {e}>"
+        try:
+            child_path = child_env.get("PATH", os.environ.get("PATH", ""))
+            jup_path = shutil.which("jupyter", path=child_path) or "<not found>"
+            jms_path = shutil.which("jupyter-mcp-server", path=child_path) or "<not found>"
+            print(f"[diag] child PATH={child_path}", file=sys.stderr)
+            print(f"[diag] which jupyter -> {jup_path}", file=sys.stderr)
+            print(f"[diag] jupyter --version ->\n{_run_out(['jupyter', '--version'])}", file=sys.stderr)
+            print(f"[diag] jupyter server --version ->\n{_run_out(['jupyter', 'server', '--version'])}", file=sys.stderr)
+            print(f"[diag] which jupyter-mcp-server -> {jms_path}", file=sys.stderr)
+            _jms_help = _run_out(['jupyter-mcp-server', '--help'])
+            print(f"[diag] jupyter-mcp-server --help (head) ->\n{_jms_help.splitlines()[0] if _jms_help else ''}", file=sys.stderr)
+            print(f"[diag] parent python={sys.executable} {sys.version.split()[0]}", file=sys.stderr)
+            kp_out = _run_out([kernel_python, '--version'])
+            print(f"[diag] kernel python={kernel_python} -> {kp_out}", file=sys.stderr)
+        except Exception as e:  # noqa: BLE001
+            print(f"[diag] version diagnostics failed: {e}", file=sys.stderr)
+
+    # Write a server config to prefer our kernels only
     (run_root / "config").mkdir(parents=True, exist_ok=True)
     (run_root / "config" / "jupyter_server_config.py").write_text(
         "\n".join(
@@ -358,25 +392,29 @@ def _seatbelt(  # noqa: PLR0913
                 "c = get_config()",
                 f"c.KernelSpecManager.kernel_dirs = ['{_kernels_dir(run_root)!s}']",
                 "c.KernelSpecManager.ensure_native_kernel = False",
-                "c.ServerApp.default_kernel_name = 'python3'",
+                # Avoid default_kernel_name trait to prevent notebook_shim errors
                 "c.ServerApp.open_browser = False",
                 "c.ServerApp.ip = '127.0.0.1'",
                 "c.ServerApp.disable_check_xsrf = True",
-            ],
-        ),
+            ]
+        )
     )
-    # Start Jupyter Server unsandboxed (kernel is sandboxed via kernelspec override)
+
+    # Start Jupyter Server (unsandboxed; kernel is sandboxed)
     jl = _start_jupyter_server(
         workspace,
         token,
         jupyter_port,
         run_root,
         child_env,
-        kernel_default_name="python3" if kernel_sandbox else None,
+        kernel_default_name=None,
     )
-    # Start MCP server (stdio: newline-delimited JSON); tee child stdout/stderr to files and parent stdio
-    if not shutil.which("jupyter-mcp-server"):
-        raise FileNotFoundError("jupyter-mcp-server not found on PATH")
+
+    # Start MCP server (stdio)
+    # Resolve jupyter-mcp-server using the child environment PATH so policy-provided PATH is honored.
+    _which_path = child_env.get("PATH", os.environ.get("PATH", ""))
+    if not shutil.which("jupyter-mcp-server", path=_which_path):
+        raise FileNotFoundError("jupyter-mcp-server not found on PATH (checked child env)")
     mcp_cmd = [
         "jupyter-mcp-server",
         "start",
@@ -399,7 +437,7 @@ def _seatbelt(  # noqa: PLR0913
     ]
     mcp_stdout_path = run_root / "mcp_stdout.log"
     mcp_stderr_path = run_root / "mcp_stderr.log"
-    _cmd_log = ' '.join(mcp_cmd).replace(token, 'REDACTED')
+    _cmd_log = " ".join(mcp_cmd).replace(token, "REDACTED")
     print(f"[wrapper] mcp_cmd={_cmd_log}", file=sys.stderr, flush=True)
     print(
         f"[wrapper] mcp_stdout={mcp_stdout_path} mcp_stderr={mcp_stderr_path}",
@@ -414,7 +452,6 @@ def _seatbelt(  # noqa: PLR0913
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        # Open files in binary append mode
         f_out = mcp_stdout_path.open("ab", buffering=0)
         f_err = mcp_stderr_path.open("ab", buffering=0)
 
@@ -478,36 +515,41 @@ def main() -> int:
     sub = ap.add_subparsers(dest="command", required=True)
 
     ap_stdio = sub.add_parser(
-        "stdio", help="Start MCP server over stdio; requires --policy-config",
+        "stdio",
+        help="Start MCP server over stdio; requires --policy-config, --workspace, --run-root",
     )
     ap_stdio.add_argument("--document-id", default=None)
     ap_stdio.add_argument("--mode", choices=["docker", "seatbelt"], default="seatbelt")
     ap_stdio.add_argument("--docker-image", default="python:3.12-slim")
-    ap_stdio.add_argument(
-        "--jupyter-port", type=int, default=0, help="0=auto-pick free port",
-    )
+    ap_stdio.add_argument("--jupyter-port", type=int, default=0, help="0=auto-pick free port")
     ap_stdio.add_argument("--start-new-runtime", action="store_true")
     ap_stdio.add_argument("--trace-sandbox", action="store_true")
     ap_stdio.add_argument("--no-kernel-sandbox", action="store_true")
+    ap_stdio.add_argument("--debug-diag", action="store_true", help="Print child tool versions and paths for debugging")
     ap_stdio.add_argument(
         "--policy-config",
         required=True,
-        help="Path to YAML policy config with explicit workspace, run_root, fs_read, fs_write, env, net",
+        help="Path to YAML policy config (allow_read_all, allow_write_all, read_paths, write_paths, env, env_passthrough)",
+    )
+    ap_stdio.add_argument("--workspace", required=True, help="Absolute path to Jupyter workspace root")
+    ap_stdio.add_argument("--run-root", required=True, help="Absolute path for runtime/temp/logs")
+    ap_stdio.add_argument(
+        "--kernel-python",
+        default=os.environ.get("SJ_KERNEL_PYTHON", sys.executable),
+        help="Python interpreter for the kernel (overrides SJ_KERNEL_PYTHON)",
     )
 
     args = ap.parse_args()
 
-    # Only command today is stdio
     if args.command == "stdio":
         cfg = PolicyConfig(**yaml.safe_load(Path(args.policy_config).read_text()))
-
-        workspace = Path(cfg.workspace).resolve()
+        workspace = Path(args.workspace).resolve()
+        run_root = Path(args.run_root).resolve()
         _ensure_dir(workspace)
+        _ensure_dir(run_root)
 
-        doc_id = _ensure_document_id(
-            workspace,
-            args.document_id,
-        )
+        doc_id = _ensure_document_id(workspace, args.document_id)
+
         port = args.jupyter_port or 0
         if port == 0:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -515,21 +557,23 @@ def main() -> int:
                 port = s.getsockname()[1]
 
         if args.mode == "docker":
-            return _docker(
-                workspace,
-                doc_id,
-                args.docker_image,
-                args.start_new_runtime,
-                port,
-            )
+            return _docker(workspace, doc_id, args.docker_image, args.start_new_runtime, port)
+
         return _seatbelt(
-            workspace,
-            doc_id,
-            args.start_new_runtime,
-            port,
+            workspace=workspace,
+            run_root=run_root,
+            document_id=doc_id,
+            start_new_runtime=args.start_new_runtime,
+            jupyter_port=port,
             cfg=cfg,
             trace=args.trace_sandbox,
             kernel_sandbox=not args.no_kernel_sandbox,
+            kernel_python=args.kernel_python,
+            debug_diag=args.debug_diag,
         )
 
     raise SystemExit("Unknown command")
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

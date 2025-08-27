@@ -1,21 +1,21 @@
 from pathlib import Path
 import os
 import yaml
-from jupyter_mcp_stdio_guard.wrapper import PolicyConfig
 
 
 def write_policy(ws: Path, run_root: Path) -> None:
     for sub in ("runtime", "data", "config", "mpl", "pycache", "tmp"):
         (run_root / sub).mkdir(parents=True, exist_ok=True)
-    cfg = PolicyConfig(
-        workspace=str(ws),
-        run_root=str(run_root),
-        fs_write=[str(ws), str(run_root)],
-        fs_read=[],
-        net="loopback",
-        env={
-            # Explicit env: include PATH so child can resolve binaries like jupyter and jupyter-mcp-server
-            "PATH": os.environ.get("PATH", ""),
+    # New explicit-only policy; default to broad read to keep tests simple
+    cfg = {
+        "allow_read_all": True,
+        "allow_write_all": False,
+        "read_paths": [],
+        "write_paths": [str(ws), str(run_root)],
+        # TODO(net): implement later
+        "env": {
+            # Put session control venv first (set by bootstrap), then system PATH
+            "PATH": (os.environ.get("SJ_TEST_CONTROL_BIN", "") + (":" if os.environ.get("SJ_TEST_CONTROL_BIN") else "")) + os.environ.get("PATH", ""),
             "JUPYTER_RUNTIME_DIR": str(run_root / "runtime"),
             "JUPYTER_DATA_DIR": str(run_root / "data"),
             "JUPYTER_CONFIG_DIR": str(run_root / "config"),
@@ -25,10 +25,11 @@ def write_policy(ws: Path, run_root: Path) -> None:
             "TMPDIR": str(run_root / "tmp"),
             "TMP": str(run_root / "tmp"),
             "TEMP": str(run_root / "tmp"),
-            "HOME": str(run_root),
             "PYTHONUNBUFFERED": "1",
         },
-    )
+        # With a pinned control venv path on PATH, no HOME passthrough is needed
+        "env_passthrough": [],
+    }
     (ws / ".sandbox_jupyter.yaml").write_text(
-        yaml.safe_dump(cfg.model_dump(), sort_keys=False)
+        yaml.safe_dump(cfg, sort_keys=False)
     )

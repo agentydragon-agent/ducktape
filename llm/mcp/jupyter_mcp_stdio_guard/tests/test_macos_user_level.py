@@ -18,11 +18,11 @@ def test_user_view_end_to_end(
     port = pick_free_port
     (ws, run_root) = provision_ws_with_policy
     cmd = [
-        sys.executable,
-        "-m",
-        "jupyter_mcp_stdio_guard",
+        "sandbox-jupyter-mcp",
         "--workspace",
         str(ws),
+        "--run-root",
+        str(run_root),
         "--mode",
         "seatbelt",
         "--jupyter-port",
