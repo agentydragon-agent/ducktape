@@ -5,9 +5,6 @@ kind: outcome
 
 There are no comments/docstrings that merely restate what is obvious from the immediate context (nearby lines, function signature, class/module names).
 
-## Scope
-Applies only to code/docstrings/comments in agent‑added or agent‑edited hunks. Pre‑existing content outside those edits does not count toward violations. Excludes higher‑level documents (e.g., project READMEs) unless explicitly in scope.
-
 ## Acceptance criteria (checklist)
 - No docstrings/comments that merely restate what is obvious from the immediate context (± a few lines, function signature, class/module names)
 - Argument/return sections appear only when semantics/constraints are non‑obvious

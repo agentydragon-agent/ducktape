@@ -11,6 +11,7 @@ from typing import Optional
 
 import yaml
 from pydantic import BaseModel, Field, ValidationError
+from jupyter_mcp_stdio_guard.sandboxer import Policy as SandboxPolicy
 
 
 # -----------------------------------------------------------------------------
@@ -33,7 +34,7 @@ class ComposerConfig(BaseModel):
     runtime_dir: str
     kernel: KernelConfig
     jupyter: JupyterConfig | None = None
-    policy: dict = Field(default_factory=dict)
+    policy: SandboxPolicy = Field(default_factory=SandboxPolicy)
 
 
 # -----------------------------------------------------------------------------
@@ -73,17 +74,27 @@ def _ensure_policy_minimums(policy: dict, *, runtime_dir: Path, kernel_exec: str
     env_set.setdefault("TEMP", (runtime_dir / "tmp").as_posix())
 
     fs_map = policy.setdefault("fs", {})
-    fs_map.setdefault("allow_read_all", False)
-    fs_map.setdefault("allow_write_all", False)
     rp = fs_map.setdefault("read_paths", [])
     wp = fs_map.setdefault("write_paths", [])
+    # Ensure kernel executable and its venv root are readable
     if kernel_exec and kernel_exec not in rp:
         rp.append(kernel_exec)
+    try:
+        kexec_path = Path(kernel_exec).resolve()
+        venv_root = kexec_path.parents[1].as_posix()
+        if venv_root not in rp:
+            rp.append(venv_root)
+        real_exec = kexec_path.as_posix()
+        if real_exec not in rp:
+            rp.append(real_exec)
+    except Exception:
+        pass
 
     platform_map = policy.setdefault("platform", {})
     seatbelt_map = platform_map.setdefault("seatbelt", {})
     extra_allow = seatbelt_map.setdefault("extra_allow", {})
     frx = extra_allow.setdefault("file_read_extra", [])
+    # Fonts (matplotlib, etc.)
     for fdir in ["/System/Library/Fonts", "/Library/Fonts"]:
         if fdir not in frx:
             frx.append(fdir)
@@ -131,8 +142,8 @@ def compose_from_config_raw(raw_text: str) -> None:
     # Write Jupyter config (defaults + appended extras)
     _write_default_jupyter_config(config_dir, jupyter_cfg.config_py_extra)
 
-    # Build policy: start from provided mapping (verbatim) and apply minimal inserts
-    policy_node: dict = dict(cfg.policy or {})
+    # Build policy: start from provided model and apply minimal inserts
+    policy_node: dict = cfg.policy.model_dump()
     policy_node = _ensure_policy_minimums(policy_node, runtime_dir=runtime_dir, kernel_exec=kernel_exec)
 
     # Write policy

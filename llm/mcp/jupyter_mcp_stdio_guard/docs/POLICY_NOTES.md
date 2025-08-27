@@ -1,20 +1,25 @@
-# Seatbelt Policy Notes
+# Policy Notes
 
-This directory contains a base policy we can iterate on when launching sandboxed kernels.
+Policy is explicit-only and platform-agnostic at the schema level.
 
-- policies/kernel_base.sb — permissive read policy with dynamic write roots:
-  - WORKSPACE — repo/workspace root; kernel may R/W under this path
-  - RUN_ROOT — per-run root under /tmp; runtime logs/kernelspec/config
-  - /tmp and /private/tmp — currently allowed; TODO: evaluate necessity
-  - Process, signals, IPC, mach-lookup, system-socket, sysctl-read allowed (TODO tighten)
-  - Networking allowed outbound/inbound local (TODO: restrict to loopback only)
+- Filesystem (fs)
+  - read_paths: explicit allowlist (absolute paths); include '/' to allow global reads
+  - write_paths: explicit allowlist (absolute paths); include '/' to allow global writes
+  - Exec: allowed wherever paths are readable or writeable
+- Environment (env)
+  - set: key/value map passed to child
+  - passthrough: names imported from parent env
+- Network (net)
+  - mode: loopback (recommended); future: none | all | allowlist | proxy
 
-## Planned tightening steps
+macOS seatbelt specifics
+- We render a seatbelt profile using sandbox-exec named parameters (-D KEY=value) for all paths.
+- For each write_paths[i] = $WP_i: `(allow file* (subpath "$WP_i"))` and `(allow process-exec (subpath "$WP_i"))`
+- For each read_paths[i] = $RP_i: `(allow file-read* (subpath "$RP_i"))` and `(allow process-exec (subpath "$RP_i"|literal))`
+- Base policy allows core process/IPC primitives; networking is not broadly opened; loopback inbound only in our launcher.
 
-1. Limit outbound network to loopback (127.0.0.1)
-2. Remove writes to global /tmp; rely on RUN_ROOT only
-3. Reduce file-read* surface to essential system libs and site-packages
-4. Trim mach-lookup/system-socket allowances to required subset
-5. Drop /dev/tty writes if not needed
-
-Each step should be validated with the manual tmux recipe, then encoded into tests.
+Planned tightening (validate in tmux before encoding):
+1. Trim read_paths to exact venv/python + site-packages required by your kernel
+2. Remove global tmp writes (prefer per-run RUN_ROOT)
+3. Reduce mach-lookup/system-socket surface to the minimal needed
+4. Consider enabling seatbelt trace for targeted runs and diffing denials

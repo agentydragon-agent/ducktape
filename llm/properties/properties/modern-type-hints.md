@@ -5,9 +5,6 @@ kind: outcome
 
 Agent-edited Python uses modern typing: builtin generics (e.g., `list[int]`) and PEP 604 unions (`A | B`), not legacy `typing.List`, `typing.Dict`, `typing.Union`, or `typing.Optional`.
 
-## Scope
-Applies only to agent‑added or agent‑edited hunks. Pre‑existing legacy hints outside those edits do not count toward violations.
-
 ## Acceptance criteria (checklist)
 - Builtin generics are used: `list[T]`, `dict[K, V]`, `set[T]`, `tuple[T, ...]`
 - Unions use `A | B` and optional uses `T | None`

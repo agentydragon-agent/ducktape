@@ -5,9 +5,6 @@ kind: outcome
 
 Agent-edited code does not introduce single-use "one-off" variables that merely forward into the next call without adding non‑obvious value, and does not add pass‑through functions whose only behavior is to immediately call another function and return its result without a visible reason (e.g., boundary, adaptation, validation).
 
-## Scope
-Applies only to agent‑added or agent‑edited hunks. Pre‑existing patterns outside those edits do not count toward violations.
-
 ## Acceptance criteria (checklist)
 - Single-use variables that simply forward into the next call are inlined, unless they convey non‑obvious meaning, are reused, or materially improve readability
 - Functions that only call another function and return its result are absent, unless they add visible value (e.g., input normalization/validation, signature adaptation, dependency boundary, retries/backoff, structured logging/metrics, deprecation shim) and the reason is evident

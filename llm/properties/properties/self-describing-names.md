@@ -5,9 +5,6 @@ kind: outcome
 
 Primitive‑typed identifiers (int/float/str/bool/bytes/number) are named so their exact meaning and units are unambiguous from name + type + immediate context; when an appropriate domain type exists (e.g., duration/time), use it instead of an ambiguous primitive.
 
-## Scope
-Applies to agent‑added/edited hunks across all languages. Covers variable/parameter/field/constant names (including env vars and config keys). Excludes places where a richer domain type is already used (then the name may be simpler).
-
 ## Acceptance criteria (checklist)
 - Durations: use a duration type (e.g., Python datetime.timedelta, Go time.Duration, Java java.time.Duration) OR suffix the unit on primitives (e.g., timeout_ms, poll_interval_secs)
 - Timestamps: use time types (datetime/Instant) instead of numeric epochs; if a primitive is required, suffix unit explicitly (created_at_epoch_ms or created_at_epoch_s)

@@ -5,9 +5,6 @@ kind: outcome
 
 Python enums with string values are declared with `enum.StrEnum` (Python 3.11+) rather than `class X(str, Enum)` or plain `Enum` with string literals.
 
-## Scope
-Applies only to agent‑added or agent‑edited hunks in Python code.
-
 ## Acceptance criteria (checklist)
 - String‑valued enums subclass `enum.StrEnum`
 - Do not declare string enums as `class X(str, Enum)`

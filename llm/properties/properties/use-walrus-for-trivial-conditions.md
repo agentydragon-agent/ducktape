@@ -6,9 +6,6 @@ kind: outcome
 
 When a simple condition depends on a value computed immediately before, the value is bound inline with the walrus operator (:=) inside the condition.
 
-## Scope
-Applies only to agent‑added or agent‑edited hunks. Pre‑existing code outside those edits does not count toward violations.
-
 ## Acceptance criteria (checklist)
 - Patterns like `if x`, `if not x`, `if x is None`, `if x is not None`, or `if x == <literal>` that depend on a freshly computed value use `:=` to bind inline
 - The bound expression is the immediately evaluated value (e.g., a function call or awaitable)

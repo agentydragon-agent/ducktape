@@ -5,9 +5,6 @@ kind: outcome
 
 Agent-edited code does not cast `pathlib.Path` (or other PathLike) to `str` when calling APIs that accept path-like objects; it passes the `Path` directly.
 
-## Scope
-Applies only to agent‑added or agent‑edited hunks. Pre‑existing casts outside those edits do not count toward violations.
-
 ## Acceptance criteria (checklist)
 - No `str(path)` when the target API accepts `os.PathLike`
 - `Path` (or any `os.PathLike`) is passed directly to the API

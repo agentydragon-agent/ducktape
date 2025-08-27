@@ -3,16 +3,16 @@ title: Forbid dynamic attribute access and catching AttributeError
 kind: outcome
 ---
 
-Agent-edited code does not use `getattr`, `hasattr`, or `setattr`, and does not catch `AttributeError`. Attribute presence must be determined by types, not runtime probing.
-
-## Scope
-Applies only to agent‑added or agent‑edited hunks. Pre‑existing uses outside those edits do not count toward violations.
+Code does not use the `getattr`, `hasattr`, or `setattr` builtins, and does not catch `AttributeError`.
+Code assumes variables have specific known types/type-sets (constrained by type annotations, `isinstance` checks, guarantees on return values etc.) and having attributes those types imply.
+Code does not treat objects as effectively-`dict[str, Any]`.
 
 ## Acceptance criteria (checklist)
 - No usage of `getattr`, `hasattr`, or `setattr`
 - No `except AttributeError` (including in multi-except or bare except that later filters to AttributeError), and no code paths that swallow missing attributes and continue silently
 - Attribute access is type-safe by design (static types or explicit data structures)
 - Code does not "guess" attributes by trying multiple names via `getattr`/`hasattr`
+- Code that legitimately branches by multiple possible input types uses `isinstance`, `match..case` or other explicit constructs - not `getattr`/`hasattr`/`setattr`.
 - Trivial guards do not swallow missing attributes; they fail fast instead of continuing silently
 
 ## Positive examples

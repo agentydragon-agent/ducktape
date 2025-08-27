@@ -26,24 +26,11 @@ class EnvConfig(BaseModel):
 
 
 class FSConfig(BaseModel):
-    allow_read_all: bool = False
-    allow_write_all: bool = False
     read_paths: list[str] = Field(default_factory=list)
     write_paths: list[str] = Field(default_factory=list)
 
     class Config:
         extra = "forbid"
-
-    @model_validator(mode="after")
-    def _validate_fs(self) -> "FSConfig":
-        if self.allow_read_all and self.read_paths:
-            raise ValueError("allow_read_all=true is incompatible with non-empty read_paths")
-        if self.allow_write_all and self.write_paths:
-            raise ValueError("allow_write_all=true is incompatible with non-empty write_paths")
-        # Write implies read → don't also specify read_paths
-        if self.allow_write_all and self.read_paths:
-            raise ValueError("allow_write_all=true implies read; read_paths must be empty when allow_write_all is set")
-        return self
 
 
 class SeatbeltDevConfig(BaseModel):
@@ -87,7 +74,7 @@ class NetProxyConfig(BaseModel):
 
 
 class NetConfig(BaseModel):
-    mode: Literal["none", "loopback", "all", "allowlist", "proxy"] = "loopback"
+    mode: Literal["none", "loopback", "open"] = "loopback"
     allow_domains: list[str] = Field(default_factory=list)
     proxy: NetProxyConfig | None = None
 
@@ -137,8 +124,9 @@ def _abs(p: str) -> str:
     return str(Path(p).resolve())
 
 
-def _compose_seatbelt(policy: Policy, trace_path: str | None) -> str:
+def _compose_seatbelt(policy: Policy, trace_path: str | None) -> tuple[str, dict[str, str]]:
     lines: list[str] = [SEATBELT_BASE]
+    defs: dict[str, str] = {}
 
     # Optional trace
     if trace_path or policy.platform.seatbelt.trace:
@@ -149,19 +137,26 @@ def _compose_seatbelt(policy: Policy, trace_path: str | None) -> str:
     write_paths = [_abs(p) for p in (fs.write_paths or [])]
     read_paths = [_abs(p) for p in (fs.read_paths or [])]
 
-    if fs.allow_write_all:
-        lines.append('(allow file* (subpath "/"))')
-    else:
-        for p in write_paths:
-            lines.append(f'(allow file* (subpath "{p}") )')
+    # Allow writes under configured write_paths (via named params)
+    for i, p in enumerate(write_paths):
+        key = f"WP_{i}"
+        defs[key] = p
+        lines.append(f'(allow file* (subpath (param "{key}")) )')
+        # Exec allowed under writable paths
+        lines.append(f'(allow process-exec (subpath (param "{key}")) )')
 
-    if fs.allow_write_all:
-        pass  # write implies read
-    elif fs.allow_read_all:
-        lines.append('(allow file-read* (subpath "/"))')
-    else:
-        for p in read_paths:
-            lines.append(f'(allow file-read* (subpath "{p}") )')
+    # Allow reads under configured read_paths (via named params)
+    for i, p in enumerate(read_paths):
+        key = f"RP_{i}"
+        defs[key] = p
+        if Path(p).is_dir():
+            lines.append(f'(allow file-read* (subpath (param "{key}")) )')
+            # Exec allowed wherever readable
+            lines.append(f'(allow process-exec (subpath (param "{key}")) )')
+        else:
+            # For explicit file paths, allow literal match
+            lines.append(f'(allow file-read* (literal (param "{key}")) )')
+            lines.append(f'(allow process-exec (literal (param "{key}")) )')
 
     # Platform seatbelt extras
     extra = policy.platform.seatbelt.extra_allow
@@ -171,9 +166,9 @@ def _compose_seatbelt(policy: Policy, trace_path: str | None) -> str:
 
     # Net rules (mode: none | loopback | all) — allowlist/proxy reserved for future
     mode = policy.net.mode
-    if mode == "all":
+    if mode == "open":
         lines.append('(allow network-outbound)')
-        lines.append('(allow network-inbound (local ip))')
+        lines.append('(allow network-inbound)')
     elif mode == "loopback":
         # Allow kernels to receive local connections (Jupyter connects to kernel)
         lines.append('(allow network-inbound (local ip))')
@@ -185,7 +180,7 @@ def _compose_seatbelt(policy: Policy, trace_path: str | None) -> str:
         # allowlist/proxy reserved for future; default to loopback behavior minimally
         lines.append('(allow network-inbound (local ip))')
 
-    return "\n".join(lines) + "\n"
+    return "\n".join(lines) + "\n", defs
 
 
 # -----------------------------
@@ -234,7 +229,7 @@ def main() -> int:
     tmpdir = tempfile.mkdtemp(prefix="sandboxer-")
     trace_path = str(Path(tmpdir) / "trace.sb") if policy.platform.seatbelt.trace else None
     sb_path = Path(tmpdir) / "policy.sb"
-    sb_text = _compose_seatbelt(policy, trace_path)
+    sb_text, defs = _compose_seatbelt(policy, trace_path)
     sb_path.write_text(sb_text)
 
     # Resolve sandbox-exec
@@ -245,7 +240,11 @@ def main() -> int:
 
     # Execute under sandbox
     try:
-        proc = subprocess.Popen([sx, "-f", str(sb_path), *cmd], env=child_env)
+        sx_args = [sx]
+        for k, v in defs.items():
+            sx_args += ["-D", f"{k}={v}"]
+        sx_args += ["-f", str(sb_path), *cmd]
+        proc = subprocess.Popen(sx_args, env=child_env)
         return proc.wait()
     finally:
         # Keep tmpdir for trace inspection on failure; otherwise could be cleaned

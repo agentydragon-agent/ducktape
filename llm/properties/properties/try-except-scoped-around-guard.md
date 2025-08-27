@@ -5,9 +5,6 @@ kind: outcome
 
 Try/except blocks are short and localized: the try encloses only the minimal risky operation, with the except immediately following it. Treat exceptions as normal control flow guards (like `if`), not as wrappers for large bodies. Only top‑level error boundaries may use broad, larger try/except blocks with clear justification and logging.
 
-## Scope
-Applies only to agent‑added or agent‑edited hunks.
-
 ## Acceptance criteria (checklist)
 - The `try` block encloses the minimal risky expression(s) (typically 1–3 lines); avoid wrapping long blocks of unrelated work
 - Prefer `try/except/else` to keep the main logic outside the `try` when helpful

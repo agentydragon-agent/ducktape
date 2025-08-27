@@ -17,23 +17,22 @@ The wrapper does not make implicit environment or filesystem decisions. All beha
 Keys and constraints enforced by the wrapper (pydantic v2):
 
 ```yaml
-allow_read_all: false        # incompatible with non-empty read_paths
-allow_write_all: false       # incompatible with non-empty write_paths; implies read
-read_paths: []               # explicit read allowlist (absolute paths)
-write_paths: []              # explicit write allowlist (absolute paths)
+fs:
+  read_paths: []               # explicit read allowlist (absolute paths); include '/' for global
+  write_paths: []              # explicit write allowlist (absolute paths); include '/' for global
 
 # Environment for child processes (Jupyter server, jupyter-mcp-server, and anything they spawn)
-env: {}
-# Names to import from the parent environment verbatim (e.g., OPENAI_API_KEY)
-env_passthrough: []
+env:
+  set: {}
+  passthrough: []              # names to import from the parent environment verbatim (e.g., OPENAI_API_KEY)
 
-# Present for future use; not enforced yet
-net: null  # one of: none | loopback | all | allowlist:... | proxy:host:port
+# Present for future use
+net: { mode: loopback }
 ```
 
 Notes
-- `allow_write_all: true` implies read; do not also set `read_paths`.
 - Unknown fields in the YAML are rejected (`extra = forbid`).
+- Process exec is permitted wherever paths are readable or writeable; narrow by trimming paths.
 
 ## Recommended env keys (you provide values)
 

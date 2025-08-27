@@ -5,9 +5,6 @@ kind: outcome
 
 Agent-edited Python uses pathlib for filesystem paths and joins; it does not use os.path.* or manual string concatenation for paths.
 
-## Scope
-Applies only to agent‑added or agent‑edited hunks. Pre‑existing legacy paths outside those edits do not count toward violations.
-
 ## Acceptance criteria (checklist)
 - Paths are represented as `pathlib.Path` objects
 - Path joins use `/` operator or `Path(..., ...)`, not `os.path.join`

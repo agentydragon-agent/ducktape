@@ -167,16 +167,10 @@ def main() -> int:
         "true" if args.start_new_runtime else "false",
     ]
 
-    # Logs
-    mcp_out = (log_dir / "mcp_stdout.log").open("ab", buffering=0) if log_dir else None
-    mcp_err = (log_dir / "mcp_stderr.log").open("ab", buffering=0) if log_dir else None
-
+    # Always inherit stdio for MCP so it can speak JSON-RPC over this process's stdio
+    # If logs are desired, rely on outer capture or run without -q.
     try:
-        proc = subprocess.Popen(
-            mcp_cmd,
-            stdout=(mcp_out if mcp_out else None),
-            stderr=(mcp_err if mcp_err else None),
-        )
+        proc = subprocess.Popen(mcp_cmd)
         return proc.wait()
     finally:
         try:

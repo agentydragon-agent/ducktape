@@ -5,9 +5,6 @@ kind: outcome
 
 Code targets Pydantic v2 APIs only. Do not write dual‑support shims or fallbacks to Pydantic v1; do not import from `pydantic.v1`. Prefer v2 idioms for validation, configuration, and serialization.
 
-## Scope
-Applies only to agent‑added or agent‑edited hunks.
-
 ## Acceptance criteria (checklist)
 - Use Pydantic v2 decorators and APIs (`field_validator`, `model_validator`, `computed_field`, `model_dump`, `model_dump_json`, `model_validate`)
 - Configuration uses v2 config objects (`ConfigDict` / `SettingsConfigDict`) via `model_config = ...` (not `class Config:`)

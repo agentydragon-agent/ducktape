@@ -5,7 +5,7 @@ This wrapper exposes a stdio MCP server that drives a local Jupyter Server. Kern
 Key points (current implementation):
 - Subcommand: `stdio` (there is no `--stdio-server` flag)
 - Required flags: `--policy-config`, `--workspace`, `--run-root`, `--kernel-python`
-- Policy model is explicit-only: allow_read_all, allow_write_all, read_paths, write_paths, env, env_passthrough
+- Policy model is explicit-only: read_paths, write_paths, env.set/env.passthrough; process-exec is allowed wherever paths are readable or writeable; use '/' in paths for global access
 - No default_kernel_name traits are set; Jupyter is locked to use only our kernelspec directory and to disable native kernels
 - The synthetic notebook created by the wrapper declares kernelspec name "python3"; the wrapper provides a sandboxed "python3" kernelspec under RUN_ROOT
 
@@ -48,35 +48,35 @@ If you omit `--document-id`, a new notebook is created under `<workspace>/.mcp/s
 
 ```yaml
 # policy.yaml
-allow_read_all: false
-allow_write_all: false
-read_paths:
-  - /abs/repo/.venv/lib/python3.12/site-packages   # example: kernel venv site-packages
-  - /abs/repo                                       # example: repo (read-only)
-write_paths:
-  - /abs/repo                                       # workspace writes
-  - /tmp/sjmcp_run                                   # run-root writes
+fs:
+  read_paths:
+    - /abs/repo/.venv                               # e.g., kernel venv root (python and stdlib/site-packages)
+    - /abs/repo                                     # e.g., repo (read-only)
+  write_paths:
+    - /abs/repo                                     # workspace writes
+    - /tmp/sjmcp_run                                # run-root writes
 env:
-  # Jupyter dirs (recommended)
-  JUPYTER_RUNTIME_DIR: /tmp/sjmcp_run/runtime
-  JUPYTER_DATA_DIR: /tmp/sjmcp_run/data
-  JUPYTER_CONFIG_DIR: /tmp/sjmcp_run/config
-  JUPYTER_PATH: /tmp/sjmcp_run/data
-  # Python caches and matplotlib
-  PYTHONPYCACHEPREFIX: /tmp/sjmcp_run/pycache
-  MPLCONFIGDIR: /tmp/sjmcp_run/mpl
-  # Recommended HOME isolation
-  HOME: /tmp/sjmcp_run
-  # Ensure control venv precedes on PATH if applicable
-  PATH: /abs/control_venv/bin:${PATH}
-env_passthrough: []  # add explicit names to import from parent env (e.g., OPENAI_API_KEY)
+  set:
+    # Jupyter dirs (recommended)
+    JUPYTER_RUNTIME_DIR: /tmp/sjmcp_run/runtime
+    JUPYTER_DATA_DIR: /tmp/sjmcp_run/data
+    JUPYTER_CONFIG_DIR: /tmp/sjmcp_run/config
+    JUPYTER_PATH: /tmp/sjmcp_run/data
+    # Python caches and matplotlib
+    PYTHONPYCACHEPREFIX: /tmp/sjmcp_run/pycache
+    MPLCONFIGDIR: /tmp/sjmcp_run/mpl
+    # Recommended HOME isolation
+    HOME: /tmp/sjmcp_run
+    # Ensure control venv precedes on PATH if applicable
+    PATH: /abs/control_venv/bin:${PATH}
+  passthrough: []  # add explicit names from parent env (e.g., OPENAI_API_KEY)
 ```
 
 Notes:
-- The wrapper does not implicitly set these env vars; you must provide the ones you want via `env`.
-- `allow_write_all` implies read and is incompatible with non-empty `write_paths`/`read_paths`.
-- `allow_read_all` is incompatible with non-empty `read_paths`.
-- `net` is present in the schema for future enforcement (modes like `none`, `loopback`, `allowlist:...`, `proxy:...`) but is not enforced yet.
+- The wrapper does not implicitly set these env vars; provide the ones you want via `env.set` (and `env.passthrough` to pull from parent env).
+- To allow global read or write, explicitly include `/` in `fs.read_paths` or `fs.write_paths` (no special flags).
+- Process exec is permitted wherever paths are readable or writeable; add/remove paths to narrow or broaden execution.
+- `net` is present in the schema for future enforcement (modes like `none`, `loopback`, `allowlist:...`, `proxy:...`). Recommend `loopback` for now.
 
 ## FAQ
 

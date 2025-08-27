@@ -5,9 +5,6 @@ kind: outcome
 
 All imports appear at the top of the module (not inside functions/classes); the only exception is a localized import used to break an otherwise unavoidable import cycle and must be documented with an inline comment.
 
-## Scope
-Applies only to agent‑added or agent‑edited hunks. Pre‑existing imports inside functions outside those edits do not count toward violations.
-
 ## Acceptance criteria (checklist)
 - No `import` or `from ... import ...` statements inside functions, methods, or class bodies
 - Module-level imports are grouped at the top (after optional shebang/encoding line and module docstring)
@@ -43,59 +40,92 @@ import logging
 
 ## Exceptions (narrow, justified)
 
-Import cycle (documented):
+Verified presence of certain listed unusual cases may justify a local import, but only with a verifiable AND accurate inline comment explaining the reason:
+- Import cycle: comment must specifically describe the cycle a module-level import would create; prefer refactoring to remove the cycle when feasible.
+- Heavy import: the module must be measurably expensive at import time and the localized import must materially reduce startup cost.
+- Dynamic plugin/entrypoint or hot-reload: the behavior truly requires runtime import.
+Do not apply an exception if the module is already imported at the top elsewhere, the cost is negligible, or the cycle can be eliminated with a small refactor.
+
+### Import cycle
 ```python
+# file: foo/bar/service.py
 def handler():
-    # Allowed only to break an import cycle with foo.bar.handler
-    # (module-level import would create a circular dependency)
-    from foo.bar import handler as upstream_handler  # cycle-break exception
+    # Avoid cyclical import: foo.bar.handler imports foo.baz.model → foo.quux.util → foo.bar.service
+    from foo.bar import handler as upstream_handler
     return upstream_handler()
 ```
 
-Dynamic plugin or entrypoint import by string:
+### Dynamic plugin or entrypoint import by string
 ```python
 from importlib import import_module
 
 def load_plugin(entrypoint: str):
-    # Allowed: runtime plugin resolution "module.sub:factory"
     module_name, func_name = entrypoint.rsplit(":", 1)
     return getattr(import_module(module_name), func_name)
 ```
 
-Hot reload during development:
+### Hot reload during development
 ```python
-import importlib
-
-def reload_config():
-    # Allowed: hot reload for live config changes
-    import myapp.config as config  # hot-reload context
-    importlib.reload(config)
+import myapp.config as config
+importlib.reload(config)
 ```
 
-Deferring an excessively heavy import:
+### Deferring a heavy import
 ```python
 def run_gpu_job():
-    # Allowed: defer truly heavy import (e.g., 30s CUDA kernel compile at import time)
-    import gigantic_cuda_lib  # heavy import justified
+    # Avoid import-time slowdown from compiling kernels (~30 s)
+    import gigantic_cuda_lib
     return gigantic_cuda_lib.run()
 ```
 
 ## Additional negative examples
 ```python
 def run_task(name: str):
-    mod = __import__(name)  # ❌ dynamic import in function without justified exception
+    mod = __import__(name)  # ❌ dynamic import in function with no justification
     return mod.run()
 ```
 
 ```python
-from importlib import import_module
-
 def run_task(name: str):
     mod = import_module(name)  # ❌ no plugin architecture/justification
     return mod.run()
 ```
 
-Misleading justification (still a violation):
+### Misleading justification (still a violation)
+```python
+# mod_a.py
+import os
+import math
+
+def fn_a():
+    return os.listdir('.'), math.sqrt(2)
+
+# mod_b.py
+def compute_now():
+    # avoid heavy import at import time
+    import mod_a   # ❌ mod_a.py is NOT heavy - misleading - violation
+    return mod_a.fn_a()
+```
+
+```python
+# foo.py
+import math
+import datetime
+
+from quux import xyzzy
+
+def bar():
+    ...
+
+# baz.py
+import quux
+
+def fn():
+    # local import to avoid cycle
+    from foo import bar  # ❌ foo.py does not depend on baz.py - NOT a cycle. misleading - violation
+```
+
+### Nonspeciic justification (still a violation)
 ```python
 def compute_now():
     # avoid import loop

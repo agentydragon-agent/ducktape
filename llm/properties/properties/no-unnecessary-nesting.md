@@ -5,9 +5,6 @@ kind: outcome
 
 Trivial nested guards without else blocks are combined into a single condition; use logical conjunction (and/or) and the walrus operator to bind intermediate values when needed.
 
-## Scope
-Applies only to agent‑added or agent‑edited hunks.
-
 ## Acceptance criteria (checklist)
 - Patterns like `if a: if b:` (with no else between) are flattened to a single `if a and b:`
 - Three+ level trivial nests (e.g., `if a: if b: if c:`) are flattened to a single combined condition

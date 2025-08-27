@@ -6,9 +6,6 @@ kind: outcome
 The parse tree is laid out in the minimum number of lines allowed by the configured linter, except where newlines are deliberately added to improve readability.
 If code can fit on one line without harming readability and the linter would preserve it, it does.
 
-## Scope
-Applies only to agent‑added or agent‑edited hunks. Pre‑existing formatting outside those edits does not count toward violations.
-
 ## Acceptance criteria (checklist)
 - Calls/constructors with short argument lists are on one line when the linter would not split them
 - Expressions that can be a single line without reducing readability are written on one line

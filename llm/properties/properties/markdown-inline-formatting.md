@@ -5,9 +5,6 @@ kind: outcome
 
 Inline syntactic elements in Markdown are properly formatted: code spans for commands, flags, identifiers, and paths; links or autolinks for HTTP(S) URLs; code spans for non-linkable URIs/URNs.
 
-## Scope
-Applies only to agent‑added or agent‑edited hunks. Pre‑existing prose outside those edits does not count toward violations.
-
 ## Acceptance criteria (checklist)
 - Executables and script names use inline code: `some-script.sh`
 - Flags/options and invocations use inline code: `--flag=value`, `tool --flag=value`, `foo_method(...)`

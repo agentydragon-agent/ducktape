@@ -17,7 +17,6 @@
 - Frontmatter: `title`, `kind` (`behavior` | `outcome`) only
 - Body structure:
   - Predicate sentence (what holds true)
-  - Scope (when it applies; boundaries/exclusions)
   - Acceptance criteria (checklist)
   - Positive examples (minimal good cases)
   - Negative examples (minimal anti-patterns)
@@ -49,7 +48,10 @@ Conventions
 - Overlap is acceptable; a de-duplication layer can live above this knowledge base later.
 - No indexes or generated cross-references for now.
 
-## Getting started
-- Add your first property under `properties/`.
-- Add your first specimen under `specimens/` following the naming convention.
-- Iterate on coverage; keep examples minimal and surgical.
+## Behavioral layer and scoping
+
+- Evaluation/refactoring scope (e.g., “only evaluate/refactor starting from edited hunks”) is handled by agent behavioral instructions (critics/reviewers/fixers), orthogonal to property definitions.
+- Properties should be scope-agnostic; avoid embedding “agent-edited only” limits in property docs.
+- Tooling (e.g., codex_checker) supplies a freeform scope to agents:
+  - If scope resolves to a diff range: the diff hunks define where to start reviewing/editing. Allow minimal cascades and necessary out-of-hunk edits to bring all touched code into compliance, then stop.
+  - If scope resolves to static files: evaluate/edit the full files.
