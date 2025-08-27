@@ -19,7 +19,7 @@ Applies only to agent‑added or agent‑edited hunks. Pre‑existing formatting
 ## Positive examples
 ```python
 # One-line constructor call (readable; linter keeps it on one line)
-img = ImageContent(type="image", data=red_pixel_png, mimeType="image/png")
+img = MediaContent(type="image", data=sample_png, mimeType="image/png")
 
 # Intentional section spacing (at most one blank line)
 # Arrange
@@ -40,9 +40,9 @@ headers = (
 ## Negative examples
 ```python
 # Unnecessarily split call with identical parse tree; should be single line
-img = ImageContent(
+img = MediaContent(
     type="image",
-    data=red_pixel_png,
+    data=sample_png,
     mimeType="image/png",
 )
 
@@ -60,37 +60,26 @@ value = (
 )
 ```
 
-### SonicBrowser configuration examples
+### FastAPI configuration examples
 
 #### Negative examples (identical parse tree, unnecessary breaks)
 ```python
-def create_sonic_browser_config() -> ToolConfig:
-    """Create configuration for SonicBrowserTool."""
-    return ToolConfig(
-        name="sonic_browser",
-        tool_class=SonicBrowserDelegatingTool,
-        constructor_params={
-            "caller": "adgn_sonic_lean_mcp",
-            # Additional SonicBrowser configuration can be added here
-        },
-        methods={
-            "search": MethodConfig(
-                mcp_name="search_web",
-                description=_prompt_latest(),
-                parameters={
-                    "query": str,
-                    "session_id": str,
-                },
-                session_handling=SessionHandling.CREATE_IF_MISSING,
-                record_navigation=True,
-            ),
-        },
+from fastapi import APIRouter, Depends
+
+def create_router() -> APIRouter:
+    return APIRouter(
+        prefix="/v1",
+        tags=["tracks"],
+        dependencies=[
+            Depends(auth),
+        ],
     )
 ```
 
 #### Positive examples (same parse tree, compact layout)
 ```python
-# Additional SonicBrowser configuration can be added here
-constructor_params={"caller": "adgn_sonic_lean_mcp"}
-parameters={"query": str, "session_id": str}
+from fastapi import APIRouter, Depends
+
+# One-line call with the same arguments
+router = APIRouter(prefix="/v1", tags=["tracks"], dependencies=[Depends(auth)])
 ```

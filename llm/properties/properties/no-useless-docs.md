@@ -17,39 +17,41 @@ Applies only to code/docstrings/comments in agent‑added or agent‑edited hunk
 
 ## Positive examples (no boilerplate; not restating immediate context)
 ```python
-from fastmcp import FastMCP
-from typing import Any
+from fastapi import FastAPI
+from pydantic import BaseModel
 
-def create_mcp_server(debug_mcp: bool = False) -> FastMCP[Any]:
-    mcp: FastMCP[Any] = FastMCP("MCP Starter Template")
+app = FastAPI(title="Music Editor")
 
-    @mcp.tool
-    def greet(name: str) -> str:
-        return f"hello, {name}"
+class Track(BaseModel):
+    title: str
+    bpm: int
 
-    return mcp
+@app.post("/tracks")
+def create_track(t: Track) -> Track:
+    return t
 ```
 
 ## Negative examples (boilerplate restating immediate context)
 ```python
-from fastmcp import FastMCP
-from typing import Any
+from fastapi import FastAPI
+from pydantic import BaseModel
 
-def create_mcp_server(debug_mcp: bool = False) -> FastMCP[Any]:
-    """Create the MCP server with greeting functionality."""
-    mcp: FastMCP[Any] = FastMCP("MCP Starter Template")
+app = FastAPI(title="Music Editor")
 
-    @mcp.tool
-    def greet(name: str) -> str:
-        """Greet someone by name.
+class Track(BaseModel):
+    title: str
+    bpm: int
 
-        Args:
-            name: The name of the person to greet
+@app.post("/tracks")
+def create_track(t: Track) -> Track:
+    """Create a track and return it.
 
-        Returns:
-            A greeting message
-        """
-        return f"hello, {name}"
+    Args:
+        t: The Track to create
 
-    return mcp
+    Returns:
+        The created Track
+    """
+    # Build a Track instance
+    return Track(title=t.title.strip(), bpm=min(max(t.bpm, 40), 220))
 ```

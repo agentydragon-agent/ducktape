@@ -26,7 +26,7 @@ Use these to triage sandbox issues, MCP stdio protocol, kernel behavior, and Jup
 
 - Logs
   - Tail "$WS/logs/jupyter.out" and "$WS/logs/jupyter.err"
-  - In wrapper mode: /tmp/sjmcp-*/runtime/jupyter_server.* under RUN_ROOT
+  - In wrapper mode: <RUN_ROOT>/runtime/jupyter_server.* under RUN_ROOT
 - API reachability (token-protected)
   - curl -s "http://127.0.0.1:${PORT}/api" -H "Authorization: token ${TOKEN}" | head -c 200
 - Startup readiness
@@ -34,14 +34,14 @@ Use these to triage sandbox issues, MCP stdio protocol, kernel behavior, and Jup
 
 ## Kernelspec verification
 
-- List kernelspecs
-  - JUPYTER_DATA_DIR=<from wrapper stderr> jupyter kernelspec list | grep -i sandbox
-- Inspect sandboxed kernelspec file
-  - cat "$RUN_ROOT/data/kernels/python3-sandboxed/kernel.json" | jq .
-  - argv must include: sandbox-exec -f <policy> -D WORKSPACE=… -D RUN_ROOT=… python -m ipykernel_launcher
+- List kernelspecs visible to this Jupyter instance
+  - JUPYTER_DATA_DIR=<from wrapper stderr> jupyter kernelspec list
+- Inspect sandboxed kernelspec file written by the wrapper
+  - cat "$RUN_ROOT/data/kernels/python3/kernel.json" | jq .
+  - argv must include: sandbox-exec -f <policy> <kernel-python> -m ipykernel_launcher -f {connection_file}
 - Notebook’s kernelspec
   - jq .metadata.kernelspec < "$WS/.mcp/<path>.ipynb"
-  - name must match "python3-sandboxed" when sandbox is on
+  - name must be "python3" (the wrapper provides a sandboxed kernelspec for that name)
 
 ## Kernel argv / process verification
 
@@ -58,10 +58,10 @@ Use these to triage sandbox issues, MCP stdio protocol, kernel behavior, and Jup
 - Enable policy trace (wrapper --trace-sandbox)
   - A trace file path is printed in stderr; open it after run to see denials
 - Run an interactive shell under the same policy
-  - sandbox-exec -f "$RUN_ROOT/policy.sb" -D WORKSPACE="$WS" -D RUN_ROOT="$RUN_ROOT" bash -lc 'pwd; whoami; touch "$WS/.mcp/ok"; touch /etc/denied || echo $?' 
+  - sandbox-exec -f "$RUN_ROOT/policy.sb" bash -lc 'pwd; whoami; touch "$WS/.mcp/ok"; touch /etc/denied || echo $?'
   - Try file writes/reads to confirm policy effects
 - Direct kernel smoke under sandbox
-  - sandbox-exec -f "$RUN_ROOT/policy.sb" -D WORKSPACE="$WS" -D RUN_ROOT="$RUN_ROOT" python - <<'PY'
+  - sandbox-exec -f "$RUN_ROOT/policy.sb" "$KERNEL_PY" - <<'PY'
 import pathlib, sys
 print("pwd ok")
 try:
@@ -96,7 +96,7 @@ PY
 
 ## Network checks
 
-- Loopback only (intended)
+- Loopback only (intended once tightened)
   - python - <<'PY'
 import socket; s=socket.socket(); s.connect(("127.0.0.1", PORT)); print("ok")
 PY
@@ -112,7 +112,7 @@ PY
 ## Log aggregation
 
 - Wrapper tee logs
-  - /tmp/sjmcp-*/mcp_stdout.log and mcp_stderr.log (latest)
+  - <RUN_ROOT>/mcp_stdout.log and mcp_stderr.log (latest)
 - Jupyter logs
   - $WS/logs/* or RUN_ROOT/runtime/jupyter_server.*
 - Save useful tails on failure to tmp_path for inspection
@@ -126,9 +126,13 @@ PY
 ## One-liner helpers
 
 - Pick a free port
-  - python - <<'PY'\nimport socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1]); s.close()\nPY
+  - python - <<'PY'
+import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1]); s.close()
+PY
 - Generate token
-  - python - <<'PY'\nimport secrets; print(secrets.token_urlsafe(16))\nPY
+  - python - <<'PY'
+import secrets; print(secrets.token_urlsafe(16))
+PY
 
 ## When to tighten policy
 

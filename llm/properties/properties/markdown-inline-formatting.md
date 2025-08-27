@@ -16,6 +16,7 @@ Applies only to agent‑added or agent‑edited hunks. Pre‑existing prose outs
 - HTTP/HTTPS URLs are linkified: `<https://example.com/path>` or `[useful link](https://example.com/path)`
 - Non-HTTP URIs/URNs use inline code unless a renderer will linkify them: `gs://bucket/key`, `s3://bucket/object`, `az://container/blob`
 - Do not leave these tokens as plain text in prose; do not use quotes as a substitute for code spans
+- Multiline code snippets use fenced code blocks (``` … ```) with an appropriate language tag when applicable (e.g., `python`, `bash`, `markdown`). Use inline code only for single-line fragments
 
 ## Positive examples (proper inline code and links)
 ```markdown
@@ -23,6 +24,16 @@ Run `some-script.sh` with `--dry-run=true`.
 The `FooClass` exposes `foo_method(...)` in `src/svc/main.py`.
 Logs are archived to `gs://my-bucket/logs/2025-08-27/`.
 See <https://example.com/docs/tooling> for details.
+```
+
+### Positive examples (multiline code blocks)
+```python
+def add(a: int, b: int) -> int:
+    return a + b
+```
+
+```bash
+grep -R "pattern" src/ | wc -l
 ```
 
 ## Negative examples (plaintext tokens, missing links)

@@ -16,17 +16,16 @@ Applies only to agent‑added or agent‑edited hunks. Pre‑existing code outsi
 
 ## Positive examples
 ```python
-# Async: bind inline for a trivial guard
-if not (session := await session_manager.get_session(session_id)):
-    return ErrorResponse(error="Session not found").to_text_content()
+# DB lookup: bind inline for a trivial guard
+if not (user := db.get(User, user_id)):
+    return FailureResponse(error="User not found").to_text_content()
 
-response = PageStackResponse(
-    session_id=session_id,
-    current_cursor=session.current_cursor,
-    page_count=len(session.page_stack),
-    pages=[create_page_info(p, session.current_cursor) for p in session.page_stack],
+detail = DetailResponse(
+    user_id=user_id,
+    name=user.name,
+    groups=[g.name for g in user.groups],
 )
-return response.to_text_content()
+return detail.to_text_content()
 ```
 
 ```python
@@ -44,9 +43,9 @@ if (code := compute_status()) == 1:
 ## Negative examples
 ```python
 # One-off assignment only to feed the next if — should use walrus
-session = await session_manager.get_session(session_id)
-if not session:
-    return ErrorResponse(error="Session not found").to_text_content()
+user = db.get(User, user_id)
+if not user:
+    return FailureResponse(error="User not found").to_text_content()
 ```
 
 ```python
@@ -54,6 +53,23 @@ if not session:
 result = maybe_get()
 if result is not None:
     use(result)
+```
+
+## Dict error checks
+
+### Positive examples
+```python
+# Use walrus to bind dict error payload inline
+if error := resp.get("error"):
+    raise ApiError(f"Server error: {error.get('message', 'unknown')}")
+```
+
+### Negative examples
+```python
+# Two-step then check — should use walrus
+if "error" in resp:
+    error = resp["error"]
+    raise ApiError(f"Server error: {error.get('message', 'unknown')}")
 ```
 
 ## While reader loops

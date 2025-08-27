@@ -16,9 +16,9 @@ Applies only to agent‑added or agent‑edited hunks. Pre‑existing patterns o
 ## Positive examples (acceptable)
 ```python
 # Inline instead of one-off variable
-await client.post_json({
-    "type": "update_sensor_states",
-    "data": [u.model_dump(exclude_none=True) for u in updates],
+await http.post_json({
+    "type": "render_track",
+    "data": [t.model_dump(exclude_none=True) for t in tracks],
 })
 ```
 
@@ -28,33 +28,58 @@ def make_user(name: str = "Rai", email: str = "rai@example.com") -> User:
     return User(name=name, email=email)
 ```
 
+```python
+# Inline attribute name usage (positive counterpart)
+value = getattr(record, settings.schema.primary_field, None)
+```
+
+```python
+# Inline iterator usage (positive counterpart)
+frames = await collect_frames(video.iter_frames())
+```
+
+```python
+# Direct return of constructed value (positive counterpart)
+return FailureResponse(error="Not found", resource_id=rid).to_text_content()
+```
+
+```python
+# One-line chain (positive counterpart)
+return build_engine_spec(snapshot_path).as_runner().ready()
+```
+
 ## Negative examples (violations)
 ```python
 # One-off variable used only to feed next call (attribute name)
-state_key = self.config.state_management.state_key
-tool_state = getattr(session, state_key, None)
-# should be inlined
-# tool_state = getattr(session, self.config.state_management.state_key, None)
+field_name = settings.schema.primary_field
+value = getattr(record, field_name, None)
 ```
 
 ```python
 # One-off iterator used only to feed collection
-result_iterator = tool_instance.process(message)
-content_sections = await collect_content_sections(result_iterator)
-# should be inlined
-# content_sections = await collect_content_sections(tool_instance.process(message))
+frames_iter = video.iter_frames()
+frames = await collect_frames(frames_iter)
 ```
 
 ```python
 # One-off error object immediately returned
-error = ErrorResponse(error="Session not found", session_id=session_id)
+error = FailureResponse(error="Not found", resource_id=rid)
 return error.to_text_content()
-# should be inlined
-# return ErrorResponse(error="Session not found", session_id=session_id).to_text_content()
 ```
 
 ```python
 # Trivial pass-through wrapper with identical signature and call
 def foo(a, b, c, d):
     return bar(a, b, c, d)
+```
+
+```python
+# Trivial chain via one-off variables; should be one line
+
+def probe_cache(namespace=None) -> bool:
+    cfg = build_cache_config(namespace)
+    client = cfg.make_client()
+    return client.ready()
+# should be inlined
+# return build_cache_config(namespace).make_client().ready()
 ```

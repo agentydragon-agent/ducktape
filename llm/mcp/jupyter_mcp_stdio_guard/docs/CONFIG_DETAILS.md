@@ -1,21 +1,83 @@
-# Configuration Details (Explicit)
+# Configuration Details (explicit-only policy, current behavior)
 
-This wrapper performs zero implicit environment or path mutations. All behavior is driven by YAML.
+The wrapper does not make implicit environment or filesystem decisions. All behavior is driven by your policy YAML and required CLI flags.
 
 - No automatic stripping of env vars
-- No implicit HOME/MPLCONFIGDIR/TMPDIR/etc. settings
-- No auto-injected read roots or write roots
-- No network policy inference
+- No implicit HOME/MPLCONFIGDIR/TMPDIR/etc
+- No auto-injected read or write roots
+- No network enforcement yet (field present for future use)
 
-You MUST provide all necessary environment variables and paths explicitly in the YAML `env` map and `fs_read`/`fs_write`.
+## Required CLI
 
-Recommended keys (caller decides values):
+- stdio subcommand: `sandbox-jupyter-mcp stdio`
+- Required flags: `--policy-config`, `--workspace`, `--run-root`, `--kernel-python`
+
+## Policy YAML schema
+
+Keys and constraints enforced by the wrapper (pydantic v2):
+
+```yaml
+allow_read_all: false        # incompatible with non-empty read_paths
+allow_write_all: false       # incompatible with non-empty write_paths; implies read
+read_paths: []               # explicit read allowlist (absolute paths)
+write_paths: []              # explicit write allowlist (absolute paths)
+
+# Environment for child processes (Jupyter server, jupyter-mcp-server, and anything they spawn)
+env: {}
+# Names to import from the parent environment verbatim (e.g., OPENAI_API_KEY)
+env_passthrough: []
+
+# Present for future use; not enforced yet
+net: null  # one of: none | loopback | all | allowlist:... | proxy:host:port
+```
+
+Notes
+- `allow_write_all: true` implies read; do not also set `read_paths`.
+- Unknown fields in the YAML are rejected (`extra = forbid`).
+
+## Recommended env keys (you provide values)
+
 - JUPYTER_RUNTIME_DIR, JUPYTER_DATA_DIR, JUPYTER_CONFIG_DIR, JUPYTER_PATH
-- PYTHONPYCACHEPREFIX, MPLCONFIGDIR, TMPDIR/TMP/TEMP
-- HOME (if isolating kernel home)
-- JUPYTER_TOKEN (if not using auto token; normally wrapper provides token argument to the server and MCP, but env is your control)
+- PYTHONPYCACHEPREFIX (or PYTHONDONTWRITEBYTECODE=1), MPLCONFIGDIR
+- HOME (recommended to isolate kernel home to RUN_ROOT)
+- PATH (prepend your control venv where `jupyter` and `jupyter-mcp-server` live)
 
-Notes:
-- Kernel sandboxing is controlled purely by the kernelspec (seatbelt policy file path) and your env.
-- If Python or Jupyter require additional read access, add those paths explicitly to `fs_read`.
-- Network policy is controlled by `net` field — enforcement hooks TBD; today policy base allows networking and should be tightened as you specify.
+Example
+
+```yaml
+env:
+  JUPYTER_RUNTIME_DIR: /tmp/sjmcp_run/runtime
+  JUPYTER_DATA_DIR: /tmp/sjmcp_run/data
+  JUPYTER_CONFIG_DIR: /tmp/sjmcp_run/config
+  JUPYTER_PATH: /tmp/sjmcp_run/data
+  PYTHONPYCACHEPREFIX: /tmp/sjmcp_run/pycache
+  MPLCONFIGDIR: /tmp/sjmcp_run/mpl
+  HOME: /tmp/sjmcp_run
+  PATH: /abs/control_venv/bin:${PATH}
+```
+
+## Jupyter and kernelspec behavior
+
+- Jupyter Server runs unsandboxed on 127.0.0.1. The wrapper writes `<run_root>/config/jupyter_server_config.py` with:
+  - `KernelSpecManager.kernel_dirs = ['<run_root>/data/kernels']`
+  - `KernelSpecManager.ensure_native_kernel = False`
+  - No `default_kernel_name` trait is set (avoids notebook_shim issues)
+- The wrapper creates a synthetic notebook if `--document-id` is omitted, with metadata `kernelspec.name = "python3"`.
+- The wrapper also writes a sandboxed kernelspec at `<run_root>/data/kernels/python3/kernel.json` whose argv begins with:
+  - `sandbox-exec -f <policy.sb> <kernel-python> -m ipykernel_launcher -f {connection_file}`
+- Because Jupyter is locked to our kernels directory and native kernels are disabled, the notebook’s kernelspec name ("python3") is sufficient; the default kernel setting is irrelevant.
+
+## Path resolution for tools
+
+- `jupyter-mcp-server` and `jupyter` are resolved using the child environment’s PATH constructed from `env` plus any `env_passthrough`.
+- Use a dedicated control venv for these host tools; keep the kernel Python separate if desired.
+
+## Filesystem policy composition
+
+- Base policy denies by default, allows core process/IPC primitives, and currently allows networking (to be tightened later).
+- The wrapper appends allow rules from your YAML:
+  - Writes: either `(allow file* (subpath "/"))` for `allow_write_all: true`, or one `(allow file* (subpath "..."))` per `write_paths` entry
+  - Reads: if `allow_write_all: true` nothing more is needed; else either `(allow file-read* (subpath "/"))` for `allow_read_all: true`, or one `(allow file-read* (subpath "..."))` per `read_paths` entry
+
+Tuning tip
+- Start permissive (e.g., include kernel venv `site-packages` and your repo in `read_paths`, and `workspace` + `run_root` in `write_paths`). Then use seatbelt trace (`--trace-sandbox`) to derive the minimal additional reads needed for plotting/fonts, etc.
