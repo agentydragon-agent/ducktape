@@ -55,7 +55,7 @@ Split roles into migrated and unmigrated parts:
 - ✅ Created `cli_nix_migrated` (placeholder for migrated packages)
 - ✅ Renamed `dev-ml` → `dev-ml_nix_migrated` (fully migrated)
 - ✅ Updated wyrm.yaml to exclude `*_nix_migrated` roles
-- ✅ Updated agentydragon.yaml, gpd.yaml, and atlas.yaml to include both versions
+- ✅ Updated agentydragon.yaml, gpd.yaml, atlas.yaml, and vps.yaml to include both versions
 
 ### Phase 2: Wyrm Deployment (First Time)
 
