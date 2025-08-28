@@ -27,7 +27,7 @@
 
     - role: docker
     - role: gui
-    - role: dev-ml
+    # dev-ml migrated to Nix (renamed to dev-ml_nix_migrated)
     - role: tailscale-client
       tags: [tailscale]
     - role: k3s-client

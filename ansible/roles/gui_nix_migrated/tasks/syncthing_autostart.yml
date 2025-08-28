@@ -1,0 +1,7 @@
+---
+# Just the autostart configuration for Syncthing-GTK (package installation stays in gui role)
+- name: Autostart Syncthing-GTK
+  autostart_entry:
+    exec: "syncthing-gtk --minimized"
+    name: "Syncthing-GTK"
+    icon: "syncthing-gtk"

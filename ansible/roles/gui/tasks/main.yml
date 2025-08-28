@@ -1,6 +1,4 @@
 ---
-- include_tasks: night_theme_switcher_gnome_terminal.yml
-- include_tasks: gnome_panel_iso8601.yml
 - name: Ensure no retired packages
   become: true
   ansible.builtin.apt:
@@ -133,7 +131,12 @@
     # See: https://forum.snapcraft.io/t/apparmor-blocking-the-opening-of-slack/29212
     use: apt
 
-- include_tasks: discord_minimized.yml
+# Discord autostart migrated to gui_nix_migrated, but package install remains:
+- name: Ensure Discord is installed
+  become: true
+  apt:
+    name: discord
+    state: present
 - include_tasks: wezterm.yml
 
 - name: Hide gnome-terminal menu
@@ -156,7 +159,6 @@
       state: absent
 
 - include_tasks: wm_datetime_format.yml
-- include_tasks: gnome_preferences.yml
 - include_tasks: xorg_terminate.yml
 - include_tasks: element.yml
   tags: element

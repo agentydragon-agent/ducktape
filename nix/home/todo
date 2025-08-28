@@ -55,6 +55,7 @@
 ## Not handled, OK to handle later
 
 - OpenAI Codex - with pnpm, or nix once in nixpkgs
+- Discord autostarts: Nix creates only, does not check there's no conflicting ones present
 
 ## Currently system level but maybe make user-level later
 

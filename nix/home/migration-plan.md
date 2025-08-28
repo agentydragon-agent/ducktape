@@ -46,20 +46,16 @@ Your proposed strategy makes perfect sense! Here's the refined plan:
 - ❌ **NPM global packages** (jscpd, madge, @openai/codex): Not available in nixpkgs. Users must install manually with: `pnpm add -g jscpd madge @openai/codex`
 - ⚠️ **Package conflicts**: Some packages installed via both Nix and system (ruff, gh). This is harmless but creates duplication.
 
-#### To Mark in Ansible (wyrm.yaml)
-**STATUS: READY - Deployment confirmed successful**
+#### Ansible Role Split (2025-08-28)
+**STATUS: COMPLETED**
 
-Now ready to add tags to skip migrated components:
-```yaml
-- role: gui
-  tags: [gui, migrated_to_nix]
-  
-- role: gnome-terminal-solarized
-  tags: [gnome-terminal-solarized, migrated_to_nix]
-  
-- role: claude-mcp  
-  tags: [claude-mcp, migrated_to_nix]
-```
+Split roles into migrated and unmigrated parts:
+- ✅ Created `gui_nix_migrated` with dconf/autostart tasks
+- ✅ Created `gnome-terminal-solarized_nix_migrated` with profile creation
+- ✅ Created `cli_nix_migrated` (placeholder for migrated packages)
+- ✅ Renamed `dev-ml` → `dev-ml_nix_migrated` (fully migrated)
+- ✅ Updated wyrm.yaml to exclude `*_nix_migrated` roles
+- ✅ Updated agentydragon.yaml and gpd.yaml to include both versions
 
 ### Phase 2: Wyrm Deployment (First Time)
 
