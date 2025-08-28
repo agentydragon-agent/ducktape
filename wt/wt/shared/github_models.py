@@ -1,6 +1,6 @@
 import json
 import time
-from enum import Enum
+from enum import StrEnum
 from typing import Any, Protocol, runtime_checkable
 
 from pydantic import BaseModel, Field
@@ -10,7 +10,7 @@ class GitHubError(Exception):
     pass
 
 
-class PRStatus(Enum):
+class PRStatus(StrEnum):
     MERGED = "MERGED"
     CLOSED = "CLOSED"
     OPEN_MERGEABLE = "OPEN_MERGEABLE"
@@ -46,7 +46,7 @@ class PRStatus(Enum):
 
 
 # Legacy enums for backward compatibility
-class PRState(Enum):
+class PRState(StrEnum):
     OPEN = "open"
     CLOSED = "closed"
     MERGED = "merged"
@@ -57,7 +57,7 @@ class PRState(Enum):
         return self == PRState.MERGED
 
 
-class PRMergeability(Enum):
+class PRMergeability(StrEnum):
     CONFLICTING = "CONFLICTING"
     UNKNOWN = "UNKNOWN"
 

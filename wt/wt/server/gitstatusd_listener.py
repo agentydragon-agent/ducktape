@@ -15,7 +15,7 @@ import subprocess
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +32,7 @@ class GitStatusdValidationError(GitStatusdError):
     """Error validating gitstatusd response fields."""
 
 
-class RepositoryState(Enum):
+class RepositoryState(StrEnum):
     """Repository state/action as reported by gitstatusd."""
 
     NORMAL = ""

@@ -180,7 +180,7 @@ class WorktreeService:
             }
 
         proc = await asyncio.create_subprocess_exec(
-            str(script),
+            script,
             f"--worktree_root={worktree_path}",
             f"--worktree_name={worktree_path.name}",
             cwd=worktree_path,

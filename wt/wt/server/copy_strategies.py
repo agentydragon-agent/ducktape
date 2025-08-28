@@ -5,19 +5,17 @@ import subprocess
 import sys
 import tempfile
 from abc import ABC, abstractmethod
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 
 from ..shared.configuration import CowMethod
 
 
-def _get_copyable_entries(src: Path) -> list[str]:
-    return [
-        str(src / p.name) for p in src.iterdir() if p.name not in (".worktrees", ".git")
-    ]
+def _get_copyable_entries(src: Path) -> list[Path]:
+    return [src / p.name for p in src.iterdir() if p.name not in (".worktrees", ".git")]
 
 
-class StrategyType(Enum):
+class StrategyType(StrEnum):
     """Copy strategy types."""
 
     CLONEFILE = "clonefile"
@@ -45,7 +43,7 @@ class ClonefileCopyStrategy(CopyStrategy):
     def copy(self, src: Path, dst: Path) -> None:
         entries = _get_copyable_entries(src)
         if entries:
-            cmd = ["cp", "-c", "-R", *entries, str(dst)]
+            cmd = ["cp", "-c", "-R", *entries, dst]
             subprocess.run(cmd, check=True)
 
     @property
@@ -61,7 +59,7 @@ class ReflinkCopyStrategy(CopyStrategy):
     def copy(self, src: Path, dst: Path) -> None:
         entries = _get_copyable_entries(src)
         if entries:
-            cmd = ["cp", "--archive", "--reflink=auto", *entries, str(dst)]
+            cmd = ["cp", "--archive", "--reflink=auto", *entries, dst]
             subprocess.run(cmd, check=True)
 
     @property
@@ -110,7 +108,7 @@ def _test_reflink_support() -> bool:
         # Try to copy with reflink
         try:
             subprocess.run(
-                ["cp", "--reflink=auto", str(test_file), str(test_copy)],
+                ["cp", "--reflink=auto", test_file, test_copy],
                 check=True,
                 capture_output=True,
                 text=True,

@@ -9,8 +9,9 @@ import sys
 import tempfile
 from dataclasses import dataclass
 from datetime import timedelta
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
+from hashlib import md5
 
 import click
 import yaml
@@ -19,7 +20,7 @@ from pydantic import ValidationError
 from .config_file import ConfigFile
 
 
-class CowMethod(Enum):
+class CowMethod(StrEnum):
     """Copy-on-write methods for worktree hydration."""
 
     AUTO = "auto"
@@ -68,10 +69,6 @@ class Configuration:
         1) Prefer WT_DIR/daemon.sock when short enough
         2) Otherwise fall back to a stable short path under /tmp using a hash of WT_DIR
         """
-        from hashlib import (
-            md5,
-        )
-
         p = self.wt_dir / "daemon.sock"
         if len(str(p)) <= 100:
             return p
@@ -157,10 +154,7 @@ class Configuration:
             temp_root = Path(tempfile.gettempdir()).resolve()
 
             def _under_tmp(p: Path) -> bool:
-                try:
-                    return p.resolve().is_relative_to(temp_root)
-                except AttributeError:
-                    return False
+                return p.resolve().is_relative_to(temp_root)
 
             if not (
                 _under_tmp(cfg.wt_dir)

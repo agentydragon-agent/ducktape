@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ..shared.constants import MAIN_WORKTREE_DISPLAY_NAME
+from .worktree_ids import make_worktree_id as _mk
 from .types import DiscoveredWorktree
 
 
@@ -29,8 +30,6 @@ class WorktreeIndex:
             if wt.path.resolve() == main_repo.resolve():
                 main = wt
         if main is None:
-            from .worktree_ids import make_worktree_id as _mk
-
             main = DiscoveredWorktree(
                 main_repo,
                 MAIN_WORKTREE_DISPLAY_NAME,

@@ -10,6 +10,7 @@ import psutil
 
 from ..server.git_manager import GitError, GitTimeoutError, WorktreeError
 from .github_models import GitHubError
+from .constants import RESERVED_NAMES
 
 logger = logging.getLogger(__name__)
 
@@ -134,8 +135,6 @@ def safe_execute(
 
 
 def validate_worktree_name(name: str) -> None:
-    from .constants import RESERVED_NAMES
-
     if not name:
         raise WorktreeManagerError("Worktree name cannot be empty")
 

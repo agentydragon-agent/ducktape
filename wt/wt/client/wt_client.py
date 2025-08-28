@@ -15,6 +15,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, TypeVar, cast
+import subprocess
 
 import click
 import psutil
@@ -201,8 +202,6 @@ class WtClient:
         pass the write-end FD using pass_fds and WT_HANDSHAKE_FD so the daemon can emit
         JSON StartupMessage lines. Keep the read-end in this process for synchronous readiness.
         """
-        import subprocess  # local import to avoid early import cycles
-
         # Create pipe for handshake communication (dedicated FD)
         read_fd, write_fd = os.pipe()
         with contextlib.suppress(Exception):

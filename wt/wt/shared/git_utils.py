@@ -26,7 +26,7 @@ def git_run(  # noqa: PLR0913
     cmd = ["git", "-c", "core.hooksPath=", *args]
     return subprocess.run(
         cmd,
-        cwd=str(cwd),
+        cwd=cwd,
         check=check,
         capture_output=capture_output,
         env=build_sanitized_git_env(env),

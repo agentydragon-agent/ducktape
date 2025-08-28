@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import uuid
 from datetime import datetime
-from enum import Enum, IntEnum
+from enum import StrEnum, IntEnum
 from pathlib import Path
 from typing import Annotated, Any, Literal, NewType
 
@@ -24,7 +24,7 @@ WorktreeID = NewType("WorktreeID", str)  # Opaque to clients; server owns parsin
 # WorktreeID helpers (make/parse) are server-only (see wt.server.worktree_ids)
 
 
-class DaemonHealthStatus(str, Enum):
+class DaemonHealthStatus(StrEnum):
     """Daemon health status levels."""
 
     OK = "ok"
@@ -317,7 +317,7 @@ class PingResult(BaseModel):
     )
 
 
-class StartupPhase(str, Enum):
+class StartupPhase(StrEnum):
     STARTING = "starting"
     DISCOVERING = "discovering"
     WARMING_UP = "warming_up"
@@ -440,23 +440,23 @@ TeleportResult = Annotated[
 ]
 
 
-class StreamEventType(str, Enum):
+class StreamEventType(StrEnum):
     PROGRESS = "progress"
     HOOK_OUTPUT = "hook_output"
 
 
-class ProgressOperation(str, Enum):
+class ProgressOperation(StrEnum):
     WORKTREE_CREATE = "worktree_create"
 
 
-class WorktreeCreateStep(str, Enum):
+class WorktreeCreateStep(StrEnum):
     CHECKOUT_STARTED = "checkout_started"
     CHECKOUT_DONE = "checkout_done"
     HYDRATE_STARTED = "hydrate_started"
     HYDRATE_DONE = "hydrate_done"
 
 
-class HookStream(str, Enum):
+class HookStream(StrEnum):
     STDOUT = "stdout"
     STDERR = "stderr"
 
@@ -483,7 +483,7 @@ class HookOutputEvent(BaseModel):
 StreamMessage = Annotated[ProgressEvent | HookOutputEvent, Field(discriminator="event")]
 
 
-class ComponentState(str, Enum):
+class ComponentState(StrEnum):
     OK = "ok"
     SCANNING = "scanning"
     STARTING = "starting"
@@ -491,7 +491,7 @@ class ComponentState(str, Enum):
     DISABLED = "disabled"
 
 
-class GitstatusdState(str, Enum):
+class GitstatusdState(StrEnum):
     STARTING = "starting"
     RUNNING = "running"
     RESTARTING = "restarting"

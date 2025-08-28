@@ -40,12 +40,14 @@ def resolve_properties_dir(default_base: Path, override: str | None) -> Path:
 
 
 def read_all_properties_text(properties_dir: Path) -> str:
-    prop_files = sorted(properties_dir.glob("*.md"))
+    # Support nested categories (e.g., python/, markdown/) under properties_dir
+    prop_files = sorted(properties_dir.rglob("*.md"))
     if not prop_files:
         raise SystemExit(f"No properties found in {properties_dir}")
     parts: list[str] = []
     for pf in prop_files:
-        parts.append(f"# {pf.name}\n{pf.read_text(encoding='utf-8')}")
+        rel = pf.relative_to(properties_dir)
+        parts.append(f"# {rel.as_posix()}\n{pf.read_text(encoding='utf-8')}")
     return "\n\n".join(parts)
 
 
