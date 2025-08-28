@@ -51,7 +51,7 @@ spec:
         image: ubuntu:24.04
         command: ["/bin/bash", "-c", "--"]
         args: [
-          "apt-get update && apt-get install -y curl sudo xz-utils git && echo 'ubuntu ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/ubuntu && exec su - ubuntu -c 'while true; do sleep 30; done;'"
+          "apt-get update && apt-get install -y curl sudo xz-utils git dbus-x11 gnome-terminal dconf-cli && echo 'ubuntu ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/ubuntu && service dbus start || true && exec su - ubuntu -c 'while true; do sleep 30; done;'"
         ]
         env:
         - name: USER

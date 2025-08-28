@@ -4,6 +4,9 @@ let
   # Import an older nixpkgs where comby works
   oldPkgs = import (fetchTarball "https://github.com/NixOS/nixpkgs/archive/nixos-23.11.tar.gz") {};
   
+  # Import nixpkgs-unstable for newer packages
+  unstablePkgs = import (fetchTarball "https://github.com/NixOS/nixpkgs/archive/nixpkgs-unstable.tar.gz") {};
+  
   # Import nix-colors for color schemes
   nix-colors = import (fetchTarball "https://github.com/Misterio77/nix-colors/archive/main.tar.gz") {};
   
@@ -28,12 +31,12 @@ in
   # Packages to install (Phase 1: only actual user-level packages from Ansible)
   home.packages = with pkgs; [
     # Tools that Ansible installs via pipx (from cli/tasks/dev-env-user.yml)
-    python313Packages.autopep8
+    python312Packages.autopep8
     ruff
     pre-commit
     speedtest-cli
     ansible
-    python313Packages.pydeps
+    python312Packages.pydeps
 
     # Tools that Ansible installs via cargo
     atuin
@@ -52,9 +55,8 @@ in
     # NPM packages (from pnpm global installs in cli/tasks/dev-env-user.yml)
     bazelisk  # Bazel version manager (available as standalone package)
     ast-grep  # Semantic code queries (available as standalone package)
-    nodePackages.pyright  # Python static type checker/language server
-    jscpd  # Copy/paste detector for 150+ languages (in nixpkgs-unstable)
-    madge  # Dependency graph visualization tool (in nixpkgs-unstable)
+    unstablePkgs.pyright  # Python static type checker/language server
+    # jscpd and madge are not in nixpkgs - install manually with: pnpm add -g jscpd madge
     # Note: @openai/codex is not in nixpkgs - install manually with: pnpm add -g @openai/codex
 
     # Development languages/compilers
@@ -62,13 +64,13 @@ in
     rustc
     cargo
     nodejs_20  # LTS version
-    python313  # Latest stable Python
+    python312  # Python 3.12 for ML compatibility
     leiningen  # Clojure
 
     # Machine Learning packages (from wyrm.yaml dev-ml role)
-    python313Packages.pandas
-    python313Packages.pytorch  # PyTorch
-    python313Packages.numpy
+    python312Packages.pandas
+    python312Packages.pytorch  # PyTorch
+    python312Packages.numpy
 
     # Kubernetes tools (from wyrm.yaml k3s-client role)
     kubectl
@@ -186,7 +188,7 @@ in
       # Set default terminal
       "org/gnome/desktop/applications/terminal" = {
         exec = "gnome-terminal.wrapper";
-        exec-arg = null;  # Explicitly set to null/absent
+        exec-arg = lib.hm.gvariant.mkNothing lib.hm.gvariant.type.string;  # Unset the argument
       };
 
       # Pop!_OS workspace shortcuts workaround
@@ -220,10 +222,12 @@ in
         screenshot-window = [];   # Was Alt+PrnSc
       };
 
-      # Flameshot custom keybinding
-      "org/gnome/settings-daemon/plugins/media-keys/custom-keybindings" = [
-        "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/flameshot-gui/"
-      ];
+      # Flameshot custom keybinding  
+      "org/gnome/settings-daemon/plugins/media-keys" = {
+        custom-keybindings = [
+          "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/flameshot-gui/"
+        ];
+      };
 
       "org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/flameshot-gui" = {
         name = "Flameshot GUI";
@@ -285,7 +289,7 @@ in
     enable = true;
     showMenubar = false;
     
-    profiles = let
+    profile = let
       # Helper function to build a terminal palette from a color scheme
       mkTerminalPalette = scheme: [
         "#${scheme.palette.base01}"  # black
@@ -340,17 +344,9 @@ in
   };
   
   # Claude Code configuration (migrated from Ansible claude-mcp role)
-  # NOTE: This doesn't modify ~/.claude.json at all! Instead, home-manager creates
-  # a wrapper script that passes --mcp-config to the claude command. This means:
-  # - Your manual ~/.claude.json settings remain untouched
-  # - MCP servers defined here are passed at runtime via command-line
-  # - You can still manually edit ~/.claude.json for other settings
-  # - The Nix config only affects MCP servers, nothing else
-  programs.claude-code = {
-    enable = true;
-    # package = pkgs.claude-code;  # Already in home.packages
-    
-    # MCP (Model Context Protocol) servers configuration
+  # This creates ~/.claude.json with MCP server configuration (same as Ansible does)
+  home.file.".claude.json".text = builtins.toJSON {
+    # MCP servers configuration - matches what Ansible role creates
     mcpServers = {
       memory = {
         type = "stdio";
@@ -362,7 +358,9 @@ in
         type = "stdio";
         command = "npx";
         args = [ "-y" "firecrawl-mcp" ];
-        env = { FIRECRAWL_API_URL = "http://localhost:3002"; };
+        env = { 
+          FIRECRAWL_API_URL = "http://localhost:3002"; 
+        };
       };
       
       arxiv = {
@@ -376,11 +374,6 @@ in
         command = "npx";
         args = [ "-y" "@buger/probe-mcp" ];
       };
-    };
-    
-    # Additional Claude settings can be added here
-    settings = {
-      # Add any other Claude settings from ~/.claude/settings.json if needed
     };
   };
 }
