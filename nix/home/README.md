@@ -4,37 +4,27 @@ This is a Kubernetes-based sandbox environment for experimenting with migrating 
 
 ## Setup
 
-1. Create API keys secret (optional, for Claude/OpenAI tools):
 ```bash
+# 1. Create API keys secret (optional, for Claude/OpenAI tools):
 kubectl create secret generic api-keys -n nix-sandbox \
   --from-literal=ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" \
   --from-literal=OPENAI_API_KEY="$OPENAI_API_KEY"
-```
 
-2. Deploy the StatefulSet:
-```bash
+# 2. Deploy the StatefulSet:
 kubectl apply -f statefulset.yaml
-```
 
-2. Wait for pod to be ready:
-```bash
+# 3. Wait for pod to be ready:
 kubectl -n nix-sandbox wait --for=condition=ready pod/nix-sandbox-0
-```
 
-3. Shell into the container:
-```bash
+# 3. Shell into the container:
 kubectl -n nix-sandbox exec -it nix-sandbox-0 -- bash
-```
 
-4. Inside the container, install Nix:
-```bash
+# 4. Inside the container, install Nix:
 # As ubuntu user (should already be this user)
 sh <(curl -L https://nixos.org/nix/install) --no-daemon
 source ~/.nix-profile/etc/profile.d/nix.sh
-```
 
-5. Install home-manager:
-```bash
+# 5. Install home-manager:
 nix-channel --add https://github.com/nix-community/home-manager/archive/master.tar.gz home-manager
 nix-channel --update
 nix-shell '<home-manager>' -A install
@@ -42,39 +32,24 @@ nix-shell '<home-manager>' -A install
 
 ## Applying Home Manager Configuration
 
-1. Copy the home.nix config to the container (to the default location):
 ```bash
-# First create the directory in the container
+# 1. Copy the home.nix config to the container (to the default location):
 kubectl -n nix-sandbox exec nix-sandbox-0 -- mkdir -p /home/ubuntu/.config/home-manager
-
-# Copy the config
 kubectl -n nix-sandbox cp ~/code/ducktape/nix/home/home.nix nix-sandbox-0:/home/ubuntu/.config/home-manager/home.nix
-```
 
-2. Apply the configuration:
-```bash
-# Get into the container
+# 2. Apply the configuration:
 kubectl -n nix-sandbox exec -it nix-sandbox-0 -- bash
-
 # Switch to ubuntu user if needed
 su - ubuntu
-
-# Apply the home-manager configuration
+# Apply
 home-manager switch
-```
-
-Alternatively, specify the config path explicitly:
-```bash
+# Alternatively, explicit config path:
 home-manager -f ~/home.nix switch
 ```
 
 ## Home Manager Commands
 
-### Basic Operations
 ```bash
-# Apply configuration changes
-home-manager switch
-
 # Preview what would change (build without activating)
 home-manager build
 
@@ -90,13 +65,8 @@ home-manager packages
 # List all generations (versions)
 home-manager generations
 
-# Rollback to previous generation
 home-manager rollback
-
-# Switch to specific generation
 home-manager switch --rollback <generation-number>
-
-# Remove old generations
 home-manager expire-generations "-7 days"
 ```
 

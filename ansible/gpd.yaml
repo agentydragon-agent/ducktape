@@ -9,7 +9,9 @@
 
   roles:
     - role: cli
+    - role: cli_nix_migrated
     - role: gui
+    - role: gui_nix_migrated
     - role: laptop
     - role: wireguard
       tags: [wireguard]

@@ -107,8 +107,17 @@
     - import_role:
         name: cli
       tags: [cli]
+    
+    - import_role:
+        name: cli_nix_migrated
+      tags: [cli]
 
     - import_role:
         name: k3s
       tags: [k3s]
+
+    # TODO
+    # - import_role:
+    #     name: gpu-passthrough
+    #   tags: [gpu-passthrough]
 

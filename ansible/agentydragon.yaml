@@ -11,9 +11,11 @@
   roles:
     - role: docker
     - role: cli
+    - role: cli_nix_migrated
     - role: gui
+    - role: gui_nix_migrated
     - role: laptop
-    - role: dev-ml
+    - role: dev-ml_nix_migrated
     - role: scanbox
     - role: wireguard
       tags: [wireguard]

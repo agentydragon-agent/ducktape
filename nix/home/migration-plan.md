@@ -55,7 +55,7 @@ Split roles into migrated and unmigrated parts:
 - ✅ Created `cli_nix_migrated` (placeholder for migrated packages)
 - ✅ Renamed `dev-ml` → `dev-ml_nix_migrated` (fully migrated)
 - ✅ Updated wyrm.yaml to exclude `*_nix_migrated` roles
-- ✅ Updated agentydragon.yaml and gpd.yaml to include both versions
+- ✅ Updated agentydragon.yaml, gpd.yaml, and atlas.yaml to include both versions
 
 ### Phase 2: Wyrm Deployment (First Time)
 
@@ -142,15 +142,15 @@ Add consistent tags for easy skipping:
   # ... task content
 ```
 
-### Home-Manager Deployment
-```bash
-# First time setup
-nix-channel --add https://github.com/nix-community/home-manager/archive/release-24.05.tar.gz home-manager
-nix-channel --update
+### Key Learnings from K8s Testing
 
-# Deploy
-home-manager switch -f ~/code/ducktape/nix/home/home.nix
-```
+1. **Python Version**: Use Python 3.12, not 3.13 (numpy compatibility) 
+2. **Nix Channels**: Must use matching versions (e.g., nixpkgs 25.05 with home-manager 25.05)
+3. **Installation Order**: 
+   - Don't install home-manager via nix-env
+   - Let `programs.home-manager.enable = true` handle it
+4. **File Conflicts**: May need to remove existing files before first activation
+5. **dbus Issues**: Expected in containers, won't affect real systems
 
 ### Rollback Strategy
 If issues arise:
