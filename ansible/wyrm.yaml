@@ -33,6 +33,11 @@
     - role: k3s-client
       tags: [k3s-client]
 
+    # - role: nvidia-guest
+    #   tags: [nvidia, gpu]
+    #   vars:
+    #     include_ml_libraries: true
+
   tasks:
 
     # Disable screensaver and screen blanking for headless VM

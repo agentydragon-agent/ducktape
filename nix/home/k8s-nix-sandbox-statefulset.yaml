@@ -50,9 +50,7 @@ spec:
       - name: nix-sandbox
         image: ubuntu:24.04
         command: ["/bin/bash", "-c", "--"]
-        args: [
-          "apt-get update && apt-get install -y curl sudo xz-utils git dbus-x11 gnome-terminal dconf-cli && echo 'ubuntu ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/ubuntu && service dbus start || true && exec su - ubuntu -c 'while true; do sleep 30; done;'"
-        ]
+        args: ["exec su - ubuntu -c 'while true; do sleep 30; done;'"]
         env:
         - name: USER
           value: "ubuntu"
@@ -89,13 +87,25 @@ spec:
         - /bin/bash
         - -c
         - |
-          # Ensure home directory has correct permissions for ubuntu user (uid 1000)
-          chown -R 1000:1000 /home/ubuntu || true
-          # Install basic tools needed for Nix installation
+          # Install all required packages
           apt-get update
-          apt-get install -y curl sudo xz-utils git
+          apt-get install -y \
+            curl \
+            sudo \
+            xz-utils \
+            git \
+            dbus-x11 \
+            gnome-terminal \
+            dconf-cli
+          
           # Add ubuntu user to sudoers
           echo "ubuntu ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/ubuntu
+          
+          # Ensure home directory has correct permissions for ubuntu user (uid 1000)
+          chown -R 1000:1000 /home/ubuntu || true
+          
+          # Try to start dbus (may fail in container, that's ok)
+          service dbus start || true
         volumeMounts:
         - name: nix-home
           mountPath: /home/ubuntu

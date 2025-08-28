@@ -1,29 +1,21 @@
 { config, pkgs, lib, ... }:
 
 let
-  # Import an older nixpkgs where comby works
   oldPkgs = import (fetchTarball "https://github.com/NixOS/nixpkgs/archive/nixos-23.11.tar.gz") {};
-  
-  # Import nixpkgs-unstable for newer packages
   unstablePkgs = import (fetchTarball "https://github.com/NixOS/nixpkgs/archive/nixpkgs-unstable.tar.gz") {};
-  
-  # Import nix-colors for color schemes
   nix-colors = import (fetchTarball "https://github.com/Misterio77/nix-colors/archive/main.tar.gz") {};
-  
-  # Solarized Light scheme from nix-colors
+
   solarizedLight = nix-colors.colorSchemes.solarized-light;
-  
-  # Solarized Dark scheme from nix-colors  
   solarizedDark = nix-colors.colorSchemes.solarized-dark;
 in
 {
   nixpkgs.config.allowUnfree = true;
   # Home Manager needs a bit of information about you and the paths it should manage.
-  home.username = "ubuntu";
-  home.homeDirectory = "/home/ubuntu";
+  home.username = "agentydragon";
+  home.homeDirectory = "/home/agentydragon";
 
   # Home Manager release your configuration is compatible with.
-  home.stateVersion = "24.05";
+  home.stateVersion = "25.05";
 
   # Let Home Manager install and manage itself.
   programs.home-manager.enable = true;
@@ -53,8 +45,8 @@ in
     bun
 
     # NPM packages (from pnpm global installs in cli/tasks/dev-env-user.yml)
-    bazelisk  # Bazel version manager (available as standalone package)
-    ast-grep  # Semantic code queries (available as standalone package)
+    bazelisk  # Bazel version manager
+    ast-grep  # Semantic code queries
     unstablePkgs.pyright  # Python static type checker/language server
     # jscpd and madge are not in nixpkgs - install manually with: pnpm add -g jscpd madge
     # Note: @openai/codex is not in nixpkgs - install manually with: pnpm add -g @openai/codex
@@ -82,14 +74,14 @@ in
     zsh
     oh-my-zsh
     zsh-powerlevel10k
-    
+
     # GNOME Shell Extensions (migrated from Ansible gui role)
     # These extensions were installed via petermosmans.customize-gnome role:
     # gnomeExtensions.desaturated-tray-icons  # ID 1102: Not currently used
-    gnomeExtensions.panel-date-format  # ID 1462: Panel Date Format ✓
+    gnomeExtensions.panel-date-format     # ID 1462: Panel Date Format ✓
     gnomeExtensions.night-theme-switcher  # ID 2236: Night Theme Switcher ✓
-    gnomeExtensions.vertical-workspaces  # ID 5177: V-Shell (Vertical Workspaces) ✓
-    gnomeExtensions.cronomix  # ID 6003: Cronomix ✓
+    gnomeExtensions.vertical-workspaces   # ID 5177: V-Shell (Vertical Workspaces) ✓
+    gnomeExtensions.cronomix              # ID 6003: Cronomix ✓
     # Note: Pop!_OS includes ubuntu-appindicators, so gnomeExtensions.appindicator not needed
   ] ++ [
     # Get comby from older nixpkgs where it's not broken
@@ -103,21 +95,28 @@ in
     text = ''
       [global]
       cache-dir = /tank/share/pip-cache
-      
+
       [install]
       user = true
     '';
   };
 
-  # XDG MIME type associations (migrated from Ansible gui role)
-  xdg.mimeApps = {
-    enable = true;
-    defaultApplications = {
-      "text/html" = ["google-chrome.desktop"];
-      "application/x-virt-viewer" = ["virt-viewer.desktop"];
-      # Add more as needed
-    };
-  };
+  # XDG MIME type associations - SKIPPED
+  # We need to ensure these 2 specific associations because they tend to get 
+  # incorrectly assigned, BUT the existing mimeapps.list has 105 lines of 
+  # associations we want to preserve. Home-manager can't merge, only replace.
+  # TODO: Either:
+  #   - Keep this in Ansible (which can do in-place edits)
+  #   - Write an activation script to patch these 2 entries
+  #   - Import all 105 associations into Nix (tedious but complete)
+  # For now, keeping in Ansible.
+  # xdg.mimeApps = {
+  #   enable = true;
+  #   defaultApplications = {
+  #     "text/html" = ["google-chrome.desktop"];  # Often gets set to wrong browser
+  #     "application/x-virt-viewer" = ["virt-viewer.desktop"];  # Gets set incorrectly
+  #   };
+  # };
 
   # XDG autostart desktop entries (migrated from Ansible gui role)
   xdg.configFile = {
@@ -182,7 +181,6 @@ in
         show-week-numbers = true;
       };
 
-      # Hide gnome-terminal menu
       "org/gnome/terminal/legacy" = { default-show-menubar = false; };
 
       # Set default terminal
@@ -222,7 +220,7 @@ in
         screenshot-window = [];   # Was Alt+PrnSc
       };
 
-      # Flameshot custom keybinding  
+      # Flameshot custom keybinding
       "org/gnome/settings-daemon/plugins/media-keys" = {
         custom-keybindings = [
           "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/flameshot-gui/"
@@ -239,11 +237,10 @@ in
       "org/gnome/desktop/session" = { idle-delay = lib.hm.gvariant.mkUint32 0; };  # 0 = never
       "org/gnome/desktop/screensaver" = { lock-enabled = false; };
 
-      # GNOME Shell extensions management
       "org/gnome/shell" = {
         # Enable user extensions
         disable-user-extensions = false;
-        
+
         # IMPORTANT: This REPLACES the entire enabled-extensions list, not appends!
         # This list is a union of:
         # 1. Current system extensions (Pop!_OS defaults)
@@ -258,10 +255,10 @@ in
           "ubuntu-appindicators@ubuntu.com"  # Ubuntu AppIndicators (system tray)
           "cosmic-dock@system76.com"  # COSMIC Dock
           # Note: cosmic-workspaces and popx11gestures excluded (problematic)
-          
+
           # Extensions from Ansible (petermosmans.customize-gnome)
           "panel-date-format@keiii.github.com"  # Panel Date Format
-          "nightthemeswitcher@romainvigier.fr"  # Night Theme Switcher  
+          "nightthemeswitcher@romainvigier.fr"  # Night Theme Switcher
           "vertical-workspaces@G-dH.github.com"  # V-Shell (replaces cosmic-workspaces)
           "cronomix@zagortenay333"  # Cronomix (note: different UUID than expected)
           # Note: Desaturate All extension not currently installed
@@ -273,7 +270,7 @@ in
           "popx11gestures@system76.com"
         ];
       };
-      
+
       # Night Theme Switcher extension settings
       "org/gnome/shell/extensions/nightthemeswitcher/commands" = {
         enabled = true;
@@ -288,7 +285,7 @@ in
   programs.gnome-terminal = {
     enable = true;
     showMenubar = false;
-    
+
     profile = let
       # Helper function to build a terminal palette from a color scheme
       mkTerminalPalette = scheme: [
@@ -325,7 +322,7 @@ in
           };
         };
       };
-      
+
       # Solarized Dark profile
       "5083e06b-024e-46be-9cd2-892b814f1fc8" = {
         visibleName = "Solarized Dark";
@@ -342,38 +339,14 @@ in
       };
     };
   };
-  
-  # Claude Code configuration (migrated from Ansible claude-mcp role)
-  # This creates ~/.claude.json with MCP server configuration (same as Ansible does)
-  home.file.".claude.json".text = builtins.toJSON {
-    # MCP servers configuration - matches what Ansible role creates
-    mcpServers = {
-      memory = {
-        type = "stdio";
-        command = "npx";
-        args = [ "-y" "@modelcontextprotocol/server-memory" ];
-      };
-      
-      firecrawl = {
-        type = "stdio";
-        command = "npx";
-        args = [ "-y" "firecrawl-mcp" ];
-        env = { 
-          FIRECRAWL_API_URL = "http://localhost:3002"; 
-        };
-      };
-      
-      arxiv = {
-        type = "stdio";
-        command = "uvx";
-        args = [ "--from" "git+https://github.com/blazickjp/arxiv-mcp-server.git" "arxiv-mcp-server" ];
-      };
-      
-      probe = {
-        type = "stdio";
-        command = "npx";
-        args = [ "-y" "@buger/probe-mcp" ];
-      };
-    };
-  };
+
+  # Claude Code MCP configuration - SKIPPED
+  # TODO: .claude.json contains other Claude configuration beyond MCP servers
+  # We can't replace the entire file. Need to figure out how to merge MCP config
+  # into existing .claude.json without overwriting other settings.
+  # For now, manage MCP servers manually or via Ansible.
+
+  # home.file.".claude.json".text = builtins.toJSON {
+  #   mcpServers = { ... };
+  # };
 }
