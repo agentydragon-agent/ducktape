@@ -7,12 +7,15 @@
 
 ## Repository layout
 - `llm/properties/`
-  - `properties/` — one file per property: `properties/<property-id>.md` (ID = filename, kebab-case)
+  - `properties/` — property files; supports nested categories:
+    - `properties/python/` — Python-specific properties
+    - `properties/markdown/` — Markdown-specific properties
+    - `properties/` (root) — language-agnostic properties
   - `specimens/` — real cases, named `specimens/YYYY-MM-DD-<slug>.md`
   - `TODO.md` — open questions and planned extensions
 
 ## Property files
-- Location: `properties/<property-id>.md`
+- Location: under `properties/` (may be nested, e.g., `properties/python/<id>.md`, `properties/markdown/<id>.md`, or at the root for general)
 - Identifier: read from the filename (no frontmatter ID)
 - Frontmatter: `title`, `kind` (`behavior` | `outcome`) only
 - Body structure:

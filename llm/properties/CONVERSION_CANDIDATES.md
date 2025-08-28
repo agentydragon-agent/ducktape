@@ -39,7 +39,7 @@ Deprioritized for later (more nuanced)
 Converted (done)
 - [x] imports-at-top — `properties/imports-at-top.md`
 - [x] markdown-inline-formatting — `properties/markdown-inline-formatting.md`
-- [x] use-walrus-trivial-conditions — `properties/use-walrus-for-trivial-conditions.md`
+- [x] use-walrus-trivial-conditions — `properties/python/walrus.md`
 - [x] no-unnecessary-line-breaks — `properties/no-unnecessary-line-breaks.md`
 - [x] no-useless-docs — `properties/no-useless-docs.md`
 - [x] forbid-dynamic-attrs — `properties/forbid-dynamic-attrs.md`

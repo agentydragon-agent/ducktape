@@ -10,6 +10,8 @@ When a simple condition depends on a value computed immediately before, the valu
 - Patterns like `if x`, `if not x`, `if x is None`, `if x is not None`, or `if x == <literal>` that depend on a freshly computed value use `:=` to bind inline
 - The bound expression is the immediately evaluated value (e.g., a function call or awaitable)
 - Do not create a separate one‑off variable assignment solely to feed the next `if` when `:=` would be equivalent and readable
+- Do not force a walrus when the condition can be written directly without a temporary and the value is not reused (e.g., prefer `if server_process.poll() is not None:` over `if (_ := server_process.poll()) is not None:`)
+- Only enforce when the walrus form remains a single, readable line after formatting
 
 ## Positive examples
 ```python
@@ -51,6 +53,10 @@ result = maybe_get()
 if result is not None:
     use(result)
 ```
+
+## Clarifications
+- Apply this rule only to collapse a redundant two-step "assign, then immediately check" into a single `if` with `:=` when it improves clarity.
+- Do not introduce throwaway bindings (e.g., `_ := ...`) just to satisfy the rule; either bind to a meaningful name you reuse, or write the condition directly.
 
 ## Dict error checks
 
