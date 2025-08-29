@@ -9,6 +9,15 @@
 - Windows/locale encodings: keep encoding="utf-8" for read_text/write_text to avoid surprises. TODO: I hate this.
 - Target Python version detection/guidance: how agents/graders/reviewers determine target (crawl pyproject.toml/tooling, parse runtime markers, else infer from code/CI); decide where this lives in the framework.
 - Forbid useless list(...) around dict views in loops when not mutating the dict during iteration
+- Property naming mismatch: 'self-describing names' vs guidance 'use datetime for datetimes'. Decide: either scope the property strictly to naming/units and create a separate 'time APIs and units' property (datetime vs time.monotonic, absolute vs interval), or rename/split. Update specimens and docs accordingly.
+
+- New general property (planned): no-footguns (clear, unambiguous outputs)
+  - Kind: behavior
+  - Predicate: Outputs must be clear, correct, and unambiguous; when multiple accounting modes exist (e.g., first-match vs all-matches), the chosen mode must be explicitly surfaced in output/docs; avoid misleading displays (e.g., hard-coded extension lists diverging from constants).
+  - Acceptance ideas:
+    - Chosen accounting mode is stated near the results (or in help/docs)
+    - Derived output from single source of truth (e.g., CODE_EXTS) — no drift
+    - Avoid confusing throwaway state that obscures meaning; inline when clearer
 
 Example (scrubbed):
 ```python

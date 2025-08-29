@@ -58,3 +58,38 @@ Conventions
 - Tooling (e.g., codex_checker) supplies a freeform scope to agents:
   - If scope resolves to a diff range: the diff hunks define where to start reviewing/editing. Allow minimal cascades and necessary out-of-hunk edits to bring all touched code into compliance, then stop.
   - If scope resolves to static files: evaluate/edit the full files.
+
+## Specimen-driven property evolution (freeform → formal)
+
+- Goal: Use real “I don’t like this code” specimens to iteratively design properties and improve reviewer prompts.
+- Process overview:
+  1) Capture a specimen: code + a freeform list of review items (things that should be found, and optionally “negatives” that are OK and should not be flagged).
+  2) Draft or refine a property definition from the specimen items (manually or via LLM-assisted prompt/design iteration).
+  3) Generate/adjust reviewer prompts (critics/fixers/analyzers) from the property definition.
+  4) Backtest: run analyzers on the specimen and measure:
+     - Did it complain about what it should have complained about?
+     - Did it avoid flagging the items explicitly marked as acceptable?
+  5) Feedback loop:
+     - If the reviewer finds novel, useful issues not in the specimen, add them as new “should be found” items.
+     - If the reviewer falsely flags acceptable patterns, add them as “negatives” (do-not-flag) to the specimen and/or clarify the property.
+  6) Freeze specimens as ground truth snapshots; properties remain scope-agnostic and durable.
+- This keeps properties concise and objective, while allowing rich freeform context during discovery and tuning.
+
+```mermaid
+flowchart TD
+  A[Specimen: code + freeform review items] --> B[Draft/refine property definition]
+  B --> C[Generate/adjust reviewer prompts]
+  C --> D[Run analyzers/reviewers on specimen]
+  D --> E{Backtest results}
+  E -->|Found expected issues| F[Success metrics ↑]
+  E -->|Missed expected issues| B
+  E -->|Flagged acceptable items| C
+  D --> G{Novel findings?}
+  G -->|Yes| H[Augment specimen: add "should find" / "do-not-flag"]
+  H --> D
+  G -->|No| I[Freeze specimen snapshot]
+
+  %% Also allow direct property → reviewers check on arbitrary code
+  B -.-> J[LLM analyzers check arbitrary code]
+  J -.-> E
+```
