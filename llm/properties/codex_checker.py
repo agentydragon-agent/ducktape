@@ -24,6 +24,7 @@ import argparse
 import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from textwrap import dedent
 
@@ -226,6 +227,16 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         default=[],
         help="Paths to embed verbatim into the prompt as <file path=\":/...\"> blocks (repeatable)",
     )
+    common.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit Codex events as JSONL (trajectory) to stdout",
+    )
+    common.add_argument(
+        "--final-only",
+        action="store_true",
+        help="Print only the agent's final message to stdout (suppresses trajectory output)",
+    )
 
     # find
     subparsers.add_parser(
@@ -263,6 +274,16 @@ def main(argv: list[str]) -> int:
     embed_paths = [Path(p) for p in getattr(args, "embed_path", [])]
     supplemental_text = read_embedded_paths(embed_paths) if embed_paths else None
 
+    # Output mode handling
+    if getattr(args, "json", False) and getattr(args, "final_only", False):
+        print("--json and --final-only are mutually exclusive", file=sys.stderr)
+        return 2
+    out_last_file: Path | None = None
+    if getattr(args, "final_only", False):
+        tmp = tempfile.NamedTemporaryFile(delete=False)
+        out_last_file = Path(tmp.name)
+        tmp.close()
+
     if args.command == "find":
         prompt = build_find_prompt(properties_dir, args.scope, supplemental_text)
         cmd = cx.build_codex_cmd(
@@ -286,6 +307,12 @@ def main(argv: list[str]) -> int:
         print(f"Unknown command: {args.command}", file=sys.stderr)
         return 2
 
+    # Append output flags as requested
+    if getattr(args, "json", False):
+        cmd.append("--json")
+    if out_last_file is not None:
+        cmd.extend(["--output-last-message", str(out_last_file)])
+
     # Optional: copy prompt
     if args.copy_prompt:
         cx.copy_to_clipboard(prompt)
@@ -306,8 +333,16 @@ def main(argv: list[str]) -> int:
         return 0
 
     try:
-        proc = subprocess.run(cmd, check=False, input=prompt, text=True)
-        return proc.returncode
+        if out_last_file is not None:
+            proc = subprocess.run(cmd, check=False, input=prompt, text=True, capture_output=True)
+            try:
+                print(Path(out_last_file).read_text(encoding="utf-8"))
+            except Exception as e:
+                print(f"[error reading final message file {out_last_file}: {e}]", file=sys.stderr)
+            return proc.returncode
+        else:
+            proc = subprocess.run(cmd, check=False, input=prompt, text=True)
+            return proc.returncode
     except KeyboardInterrupt:
         return 130
 

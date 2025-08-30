@@ -59,6 +59,7 @@ def build_codex_cmd(
     skip_git_repo_check: bool = False,
     full_auto: bool = False,
     extra_configs: Iterable[str] | None = None,
+    output_mode: str | None = None,  # 'final' | 'jsonl' | None
 ) -> list[str]:
     cmd: list[str] = ["codex", "exec", "-m", model, "-s", sandbox, "-C", str(workdir)]
     if extra_configs:
@@ -68,6 +69,10 @@ def build_codex_cmd(
         cmd.append("--full-auto")
     if skip_git_repo_check:
         cmd.append("--skip-git-repo-check")
+    if output_mode == "jsonl":
+        cmd.append("--json")
+    elif output_mode == "final":
+        cmd.append("--final-only")
     return cmd
 
 
