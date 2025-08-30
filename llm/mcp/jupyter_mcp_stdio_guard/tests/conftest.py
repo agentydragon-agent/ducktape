@@ -17,20 +17,21 @@ import re as _re
 # Bootstrap a dedicated control venv for Jupyter server + MCP bridge, then require tools
 @pytest.fixture(scope="session", autouse=True)
 def _bootstrap_control_venv_and_require_tools():
-    # If jupyter and jupyter-mcp-server already on PATH, skip bootstrap
-    need_bootstrap = shutil.which("jupyter") is None or shutil.which("jupyter-mcp-server") is None
-    control_bin = None
-    if need_bootstrap:
-        root = Path(__file__).resolve().parents[1]
-        control = root / "scratch" / "control_venv"
-        py = shutil.which("python3") or sys.executable
-        if not (control / "bin" / "python").exists():
-            subprocess.run([py, "-m", "venv", str(control)], check=True)
-            subprocess.run([str(control / "bin" / "python"), "-m", "pip", "install", "-U", "pip", "wheel"], check=True)
-            subprocess.run([str(control / "bin" / "pip"), "install", "jupyter-server", "jupyter-core", "jupyter-mcp-server"], check=True)
-        control_bin = str(control / "bin")
-        os.environ["SJ_TEST_CONTROL_BIN"] = control_bin
-        os.environ["PATH"] = f"{control_bin}:{os.environ.get('PATH','')}"
+    # Always prefer our dedicated control venv; create it if missing, else just prefix PATH
+    root = Path(__file__).resolve().parents[1]
+    control = root / "scratch" / "control_venv"
+    py = shutil.which("python3") or sys.executable
+    if not (control / "bin" / "python").exists():
+        subprocess.run([py, "-m", "venv", str(control)], check=True)
+        subprocess.run([str(control / "bin" / "python"), "-m", "pip", "install", "-U", "pip", "wheel"], check=True)
+        subprocess.run([str(control / "bin" / "pip"), "install", "jupyter-server", "jupyter-core", "jupyter-mcp-server", "jupyter-server-ydoc", "jupyter-collaboration", "pycrdt-websocket"], check=True)
+    control_bin = str(control / "bin")
+    os.environ["SJ_TEST_CONTROL_BIN"] = control_bin
+    os.environ["PATH"] = f"{control_bin}:{os.environ.get('PATH','')}"
+    # Ensure package src is importable for subprocesses invoking -m jupyter_mcp_stdio_guard.*
+    pkg_src = str((Path(__file__).resolve().parents[1] / "src"))
+    prev_pp = os.environ.get("PYTHONPATH", "")
+    os.environ["PYTHONPATH"] = f"{pkg_src}:{prev_pp}" if prev_pp else pkg_src
     # Now enforce required tools
     missing = []
     if shutil.which("jupyter") is None:
@@ -99,6 +100,7 @@ def pytest_runtest_makereport(item, call):
             "policy.sb",
             "config/jupyter_server_config.py",
             "data/kernels/python3/kernel.json",
+            "tmp/seatbelt.trace.log",
         ]:
             p = Path(rr) / rel
             if p.exists():
@@ -106,6 +108,15 @@ def pytest_runtest_makereport(item, call):
                     (dest / p.name).write_bytes(p.read_bytes())
                 except OSError:
                     pass
+        # Also print tails of key logs to pytest output for convenience
+        try:
+            for rel in ["runtime/jupyter_server.err", "runtime/jupyter_server.out", "tmp/seatbelt.trace.log"]:
+                p = Path(rr) / rel
+                if p.exists():
+                    tail = p.read_text(errors="ignore").splitlines()[-120:]
+                    print(f"\n=== {rel} (tail) ===\n" + "\n".join(tail))
+        except Exception:
+            pass
     # 3) Copy unsandbox jupyter logs if available
     ws = os.environ.get("SJ_TEST_WS")
     if ws:
@@ -116,6 +127,37 @@ def pytest_runtest_makereport(item, call):
                     (dest / p.name).write_bytes(p.read_bytes())
                 except OSError:
                     pass
+        # Print tails to stdout as well
+        try:
+            for rel in ["jupyter_server.err", "jupyter_server.out"]:
+                p = Path(ws) / rel
+                if p.exists():
+                    tail = p.read_text(errors="ignore").splitlines()[-120:]
+                    print(f"\n=== ws/{rel} (tail) ===\n" + "\n".join(tail))
+        except Exception:
+            pass
+    # 4) On macOS, collect unified log sandbox denies automatically (last 7 minutes)
+    if sys.platform == "darwin":
+        try:
+            last = "7m"
+            cmd = [
+                "/usr/bin/log",
+                "show",
+                "--style",
+                "syslog",
+                "--last",
+                last,
+                "--predicate",
+                '(subsystem == "com.apple.sandbox") && (eventMessage CONTAINS[c] "deny")',
+            ]
+            res = subprocess.run(cmd, capture_output=True, text=True, check=False)
+            (dest / "unified_sandbox_deny.log").write_text(res.stdout)
+            # Print a small tail to test output for immediate visibility
+            lines = res.stdout.strip().splitlines()
+            if lines:
+                print("\n=== unified sandbox denies (tail, last 7m) ===\n" + "\n".join(lines[-200:]))
+        except Exception:
+            pass
 
 # Policy writer fixture that delegates to the shared policy factory module
 from policy_fixture import write_policy as _write_policy
@@ -123,6 +165,19 @@ from policy_fixture import write_policy as _write_policy
 @pytest.fixture
 def policy_factory():
     return _write_policy
+
+def provision_ws(request):
+    base = _artifacts_dir_for_request(request)
+    ws = base / "ws"
+    run_root = base / "run_root"
+    ws.mkdir(parents=True, exist_ok=True)
+    run_root.mkdir(parents=True, exist_ok=True)
+    # Expose for postmortem collector
+    os.environ["SJ_TEST_RUN_ROOT"] = str(run_root)
+    os.environ["SJ_TEST_WS"] = str(ws)
+    os.environ["SJ_ARTIFACTS_DIR"] = str(base)
+    return ws, run_root
+
 
 def _artifacts_dir_for_request(request) -> Path:
     base = Path(__file__).resolve().parents[1] / "scratch" / "artifacts"
@@ -134,17 +189,16 @@ def _artifacts_dir_for_request(request) -> Path:
     return dest
 
 @pytest.fixture
-def provision_ws_with_policy(request, policy_factory):
-    base = _artifacts_dir_for_request(request)
-    ws = base / "ws"
-    run_root = base / "run_root"
-    ws.mkdir(parents=True, exist_ok=True)
-    run_root.mkdir(parents=True, exist_ok=True)
-    policy_factory(ws, run_root)
-    # Expose for postmortem collector
-    os.environ["SJ_TEST_RUN_ROOT"] = str(run_root)
-    os.environ["SJ_TEST_WS"] = str(ws)
-    os.environ["SJ_ARTIFACTS_DIR"] = str(base)
+def provision_ws_with_policy(request):
+    from policy_fixture import write_policy as _write_policy
+    ws, run_root = provision_ws(request)
+    # Prefer param over marker to allow indirect parametrize
+    if hasattr(request, "param"):
+        kwargs = request.param or {}
+    else:
+        marker = request.node.get_closest_marker("policy_args")
+        kwargs = marker.kwargs if marker else {}
+    _write_policy(ws, run_root, **kwargs)
     return ws, run_root
 
 @pytest.fixture
@@ -243,7 +297,7 @@ def mcp_stdio_protocol(send_line_json_fn, read_line_json_fn):
         stdout,
         tool_name,
         tool_args,
-        protocol_version: str = "2025-06-18",
+        protocol_version: str = "2024-11-05",
         timeout: float = 30.0,
     ):
         artifacts = os.environ.get("SJ_ARTIFACTS_DIR")
@@ -305,7 +359,7 @@ def mcp_call_tool(send_line_json_fn, read_line_json_fn, collect_mcp_logs_fn):
             if m.get("id") == match_id and ("result" in m or "error" in m):
                 return m
         return None
-    def _call(proc, tool_name: str, tool_args: dict, protocol_version: str = "2025-06-18", init_timeout: float = 25.0, call_timeout: float = 60.0):
+    def _call(proc, tool_name: str, tool_args: dict, protocol_version: str = "2024-11-05", init_timeout: float = 25.0, call_timeout: float = 60.0):
         send_line_json_fn(proc.stdin, {
             "jsonrpc": "2.0", "id": 1, "method": "initialize",
             "params": {"protocolVersion": protocol_version, "capabilities": {"tools": {}}, "clientInfo": {"name": "pytest", "version": "0.0.1"}}

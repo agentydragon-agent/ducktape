@@ -19,64 +19,14 @@ from typing import Any
 
 import yaml
 from pydantic import BaseModel, Field, model_validator
-
-# Seatbelt base policy for macOS sandbox-exec.
-# NOTE: Intentionally DOES NOT grant global read anymore.
-SANDBOX_POLICY_BASE = """
-(version 1)
-(deny default)
-
-;; Process primitives
-(allow process*)
-(allow signal (target self))
-
-;; File/device basics
-(allow file* (literal "/dev/null"))
-(allow file-read* (literal "/dev/urandom"))
-(allow file-read* (literal "/dev/random"))
-(allow file* (subpath "/dev/tty"))
-
-;; IPC and system lookups used by Python/stdlib
-(allow ipc-posix-shm)
-(allow ipc-posix-sem)
-(allow ipc-sysv-shm)
-(allow mach-lookup)
-(allow system-socket)
-(allow sysctl-read)
-
-;; Networking defaults (subject to future tightening)
-(allow network-outbound)
-(allow network-inbound (local ip))
-"""
+from jupyter_mcp_stdio_guard.sandboxer import Policy
 
 
+
+# Legacy wrapper PolicyConfig retained only for import compatibility in older tests; wrapper no longer uses it.
 class PolicyConfig(BaseModel):
-    # Explicit, zero-magic authz spec
-    allow_read_all: bool = False
-    allow_write_all: bool = False
-    read_paths: list[str] = Field(default_factory=list)
-    write_paths: list[str] = Field(default_factory=list)
-
-    # Environment injection
-    env: dict[str, str] = Field(default_factory=dict)
-    env_passthrough: list[str] = Field(default_factory=list)
-
-    # Present for future use; currently not enforced
-    net: str | None = None  # TODO: implement (none|loopback|all|allowlist:...|proxy:...)
-
     class Config:
-        extra = "forbid"  # hard break on unknown fields
-
-    @model_validator(mode="after")
-    def _validate_compat(self) -> "PolicyConfig":
-        if self.allow_read_all and self.read_paths:
-            raise ValueError("allow_read_all=true is incompatible with non-empty read_paths")
-        if self.allow_write_all and self.write_paths:
-            raise ValueError("allow_write_all=true is incompatible with non-empty write_paths")
-        # Write implies read: disallow combining allow_write_all with read_paths to avoid redundancy
-        if self.allow_write_all and self.read_paths:
-            raise ValueError("allow_write_all=true implies read; read_paths must be empty when allow_write_all is set")
-        return self
+        extra = "forbid"
 
 
 # Utilities
@@ -211,29 +161,39 @@ def _kernels_dir(run_root: Path) -> Path:
 def _write_sandboxed_kernelspec(
     run_root: Path,
     workspace: Path,
-    policy_path: Path,
+    policy_yaml: Path,
     kernel_python: str,
+    *,
+    trace: bool,
 ) -> None:
     # Override the default 'python3' kernel to ensure the sandbox is used.
     ks_dir = _kernels_dir(run_root) / "python3"
     ks_dir.mkdir(parents=True, exist_ok=True)
+    argv: list[str] = [
+        sys.executable,
+        "-m",
+        "jupyter_mcp_stdio_guard.sandboxer",
+        "--policy",
+        str(policy_yaml),
+    ]
+    if trace:
+        argv.append("--trace")
+    # Enable sandboxer debug when SJ_DEBUG_DIAG is set to surface policy path and -D params
+    if os.environ.get("SJ_DEBUG_DIAG"):
+        argv.append("--debug")
+    argv += [
+        "--",
+        kernel_python,
+        "-m",
+        "ipykernel_launcher",
+        "-f",
+        "{connection_file}",
+    ]
     kernel_json = {
-        "argv": [
-            "env",
-            "SJ_KERNEL_SANDBOXED=1",
-            f"SJ_POLICY_PATH={policy_path}",
-            "sandbox-exec",
-            "-f",
-            str(policy_path),
-            kernel_python,
-            "-m",
-            "ipykernel_launcher",
-            "-f",
-            "{connection_file}",
-        ],
+        "argv": argv,
         "display_name": "Python 3",
         "language": "python",
-        "env": {},
+        "env": {"SJ_KERNEL_SANDBOXED": "1", "SJ_POLICY_PATH": str(policy_yaml)},
     }
     (ks_dir / "kernel.json").write_text(json.dumps(kernel_json))
 
@@ -267,6 +227,8 @@ def _start_jupyter_server(
         "",
         "--ServerApp.disable_check_xsrf",
         "True",
+        "--ServerApp.log_level",
+        "DEBUG",
         "--config",
         str(run_root / "config" / "jupyter_server_config.py"),
     ]
@@ -298,7 +260,9 @@ def _seatbelt(
     document_id: str,
     start_new_runtime: bool,
     jupyter_port: int,
-    cfg: PolicyConfig,
+    env_set: dict[str, str],
+    env_passthrough: list[str],
+    policy_yaml: Path,
     trace: bool = True,
     kernel_sandbox: bool = True,
     kernel_python: str,
@@ -307,35 +271,17 @@ def _seatbelt(
     token = secrets.token_urlsafe(24)
     for sub in ("runtime", "data", "config", "mpl", "pycache", "cache", "tmp"):
         (run_root / sub).mkdir(parents=True, exist_ok=True)
-    policy_path = run_root / "policy.sb"
-
-    # Compose final policy from explicit spec
-    dyn_lines: list[str] = []
-    if trace:
-        dyn_lines.append(f'(trace "{(run_root / "profile.sb")!s}")')
-
-    # Writes
-    if cfg.allow_write_all:
-        dyn_lines.append('(allow file* (subpath "/"))')
-    else:
-        for p in (cfg.write_paths or []):
-            dyn_lines.append(f'(allow file* (subpath "{Path(p).resolve()}") )')
-
-    # Reads
-    if cfg.allow_write_all:
-        # write implies read; no extra read rules needed
-        pass
-    elif cfg.allow_read_all:
-        dyn_lines.append('(allow file-read* (subpath "/"))')
-    else:
-        for p in (cfg.read_paths or []):
-            dyn_lines.append(f'(allow file-read* (subpath "{Path(p).resolve()}") )')
-
-    policy_text = SANDBOX_POLICY_BASE + "\n" + "\n".join(dyn_lines) + "\n"
-    policy_path.write_text(policy_text)
+    # Delegate sandboxing to sandboxer (called by kernelspec). Wrapper no longer writes seatbelt profiles.
+    pass
 
     if kernel_sandbox:
-        _write_sandboxed_kernelspec(run_root, workspace, policy_path, kernel_python=kernel_python)
+        _write_sandboxed_kernelspec(
+            run_root,
+            workspace,
+            policy_yaml,
+            kernel_python=kernel_python,
+            trace=trace,
+        )
         # Ensure newly created notebooks default to the sandboxed kernel
         (run_root / "runtime" / "kernels.json").write_text(json.dumps({"default": "python3"}))
 
@@ -347,17 +293,16 @@ def _seatbelt(
     )
     if trace:
         print(
-            f"[seatbelt] Sandbox trace enabled. policy_path={policy_path!s} trace={(run_root / 'profile.sb')!s}",
+            f"[seatbelt] Sandbox trace enabled. policy_yaml={policy_yaml!s}",
             file=sys.stderr,
             flush=True,
         )
 
-    # Child environment: explicit env + passthrough + defaults for Jupyter dirs
-    child_env: dict[str, str] = dict(cfg.env or {})
-    for k in cfg.env_passthrough or []:
+    # Child environment: explicit env + passthrough
+    child_env: dict[str, str] = dict(env_set or {})
+    for k in env_passthrough or []:
         if k in os.environ:
             child_env[k] = os.environ[k]
-    # Intentionally do not default Jupyter dirs here; provide via cfg.env if desired
 
     # Diagnostics: print child toolchain versions and paths (behind flag/env)
     if debug_diag or os.environ.get("SJ_DEBUG_DIAG"):
@@ -390,12 +335,17 @@ def _seatbelt(
         "\n".join(
             [
                 "c = get_config()",
-                f"c.KernelSpecManager.kernel_dirs = ['{_kernels_dir(run_root)!s}']",
+                "# kernel search path set via JUPYTER_PATH; kernel_dirs not supported on this ServerApp",
                 "c.KernelSpecManager.ensure_native_kernel = False",
                 # Avoid default_kernel_name trait to prevent notebook_shim errors
                 "c.ServerApp.open_browser = False",
                 "c.ServerApp.ip = '127.0.0.1'",
                 "c.ServerApp.disable_check_xsrf = True",
+                # Allow serving hidden .mcp/ paths for test notebooks
+                "c.ContentsManager.allow_hidden = True",
+                # Enable RTC/ydoc so collaboration/session API exists for nbmodel client
+                "c.ServerApp.collaborative = True",
+                "c.ServerApp.jpserver_extensions = {'jupyter_server_ydoc': True}",
             ]
         )
     )
@@ -445,56 +395,19 @@ def _seatbelt(
         flush=True,
     )
 
-    async def _run_mcp_async() -> int:
-        proc = await asyncio.create_subprocess_exec(
-            *mcp_cmd,
-            env=child_env,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        f_out = mcp_stdout_path.open("ab", buffering=0)
-        f_err = mcp_stderr_path.open("ab", buffering=0)
-
-        async def _pump(reader: asyncio.StreamReader, file_obj, buffer):
-            while True:
-                chunk = await reader.read(4096)
-                if not chunk:
-                    break
-                try:
-                    buffer.write(chunk)
-                    buffer.flush()
-                except (BrokenPipeError, ValueError) as e:
-                    print(f"[wrapper] tee write to parent failed: {e}", file=sys.stderr)
-                try:
-                    file_obj.write(chunk)
-                    file_obj.flush()
-                except OSError as e:
-                    print(f"[wrapper] tee write to log failed: {e}", file=sys.stderr)
-
-        try:
-            t1 = asyncio.create_task(_pump(proc.stdout, f_out, sys.stdout.buffer))  # type: ignore[arg-type]
-            t2 = asyncio.create_task(_pump(proc.stderr, f_err, sys.stderr.buffer))  # type: ignore[arg-type]
-            rc = await proc.wait()
-            await asyncio.gather(t1, t2)
-            return rc
-        finally:
-            try:
-                f_out.close()
-            except Exception:
-                pass
-            try:
-                f_err.close()
-            except Exception:
-                pass
-            if proc.returncode is None:
-                try:
-                    proc.terminate()
-                except ProcessLookupError:
-                    pass
-
+    # Run MCP server with inherited stdio so the parent test process can talk JSON-RPC directly.
+    proc = subprocess.Popen(mcp_cmd, env=child_env)
+    rc: int | None = None
     try:
-        return asyncio.run(_run_mcp_async())
+        rc = proc.wait()
+        print(f"[wrapper] mcp exited rc={rc}", file=sys.stderr, flush=True)
     finally:
+        try:
+            if proc.returncode is None:
+                proc.terminate()
+        except Exception:
+            pass
+        # Always shut down Jupyter server we spawned
         try:
             jl.terminate()
         except Exception as e:
@@ -508,6 +421,7 @@ def _seatbelt(
                 shutil.rmtree(run_root, ignore_errors=True)
             except Exception as e:
                 print(f"[wrapper] cleanup failed: {e}", file=sys.stderr)
+    return rc if rc is not None else 0
 
 
 def main() -> int:
@@ -529,7 +443,7 @@ def main() -> int:
     ap_stdio.add_argument(
         "--policy-config",
         required=True,
-        help="Path to YAML policy config (allow_read_all, allow_write_all, read_paths, write_paths, env, env_passthrough)",
+        help="Path to sandboxer policy YAML (env.set/passthrough, fs.read_paths/write_paths, net.mode)",
     )
     ap_stdio.add_argument("--workspace", required=True, help="Absolute path to Jupyter workspace root")
     ap_stdio.add_argument("--run-root", required=True, help="Absolute path for runtime/temp/logs")
@@ -542,7 +456,14 @@ def main() -> int:
     args = ap.parse_args()
 
     if args.command == "stdio":
-        cfg = PolicyConfig(**yaml.safe_load(Path(args.policy_config).read_text()))
+        raw = yaml.safe_load(Path(args.policy_config).read_text()) or {}
+        try:
+            policy = Policy(**raw)
+        except Exception as e:  # noqa: BLE001
+            print(f"Invalid policy YAML: {e}", file=sys.stderr)
+            return 2
+        env_set = dict(policy.env.set or {})
+        env_passthrough = list(policy.env.passthrough or [])
         workspace = Path(args.workspace).resolve()
         run_root = Path(args.run_root).resolve()
         _ensure_dir(workspace)
@@ -565,7 +486,9 @@ def main() -> int:
             document_id=doc_id,
             start_new_runtime=args.start_new_runtime,
             jupyter_port=port,
-            cfg=cfg,
+            env_set=env_set,
+            env_passthrough=env_passthrough,
+            policy_yaml=Path(args.policy_config),
             trace=args.trace_sandbox,
             kernel_sandbox=not args.no_kernel_sandbox,
             kernel_python=args.kernel_python,

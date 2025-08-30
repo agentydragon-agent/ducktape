@@ -43,6 +43,7 @@ class SeatbeltDevConfig(BaseModel):
 class SeatbeltExtraAllow(BaseModel):
     mach_lookup: list[str] = Field(default_factory=list)
     system_socket: bool | None = None
+    sysctl_read: bool | None = None
     dev: SeatbeltDevConfig = Field(default_factory=SeatbeltDevConfig)
     file_read_extra: list[str] = Field(default_factory=list)
 
@@ -110,10 +111,12 @@ SEATBELT_BASE = """
 ;; - /dev/null for stdio redirection
 ;; - /dev/urandom, /dev/random for Python's os.urandom and secrets
 ;; - /dev/tty for TTY-backed stdio when present
-(allow file* (literal "/dev/null"))
+(allow file-read* (literal "/dev/null"))
+(allow file-write* (literal "/dev/null"))
 (allow file-read* (literal "/dev/urandom"))
 (allow file-read* (literal "/dev/random"))
-(allow file* (subpath "/dev/tty"))
+(allow file-read* (subpath "/dev/tty"))
+(allow file-write* (subpath "/dev/tty"))
 
 ;; Exec mapping and core system reads needed by dyld/loader
 ;; - file-map-executable: allow mapping executable pages for dynamic loader
@@ -131,12 +134,6 @@ SEATBELT_BASE = """
 ;; - POSIX/System V IPC used by multiprocessing/shared memory
 ;; - mach-lookup and system-socket for resolver, launch services lookups
 ;; - sysctl-read for platform/system info queries
-(allow ipc-posix-shm)
-(allow ipc-posix-sem)
-(allow ipc-sysv-shm)
-(allow mach-lookup)
-(allow system-socket)
-(allow sysctl-read)
 """.strip()
 
 
@@ -187,23 +184,51 @@ def _compose_seatbelt(policy: Policy, trace_path: str | None) -> tuple[str, dict
     for i, ap in enumerate(write_dirs):
         key = f"WP_{i}"
         defs[key] = ap
-        lines.append(f'(allow file* (subpath (param "{key}")) )')
+        lines.append(f'(allow file-write* (subpath (param "{key}")) )')
         # Exec is governed by file-map-executable and global process allowances
-        # (process-exec filter omitted for compatibility)
 
     # Allow reads under configured read dirs (via named params)
-    lines.append(";; Readable dirs (RP_*): venv roots/bin, stdlib & site-packages; allow exec for interpreters/entrypoints")
+    lines.append(";; Readable dirs (RP_*): venv roots/bin, stdlib & site-packages")
     for i, ap in enumerate(read_dirs):
         key = f"RP_{i}"
         defs[key] = ap
         lines.append(f'(allow file-read* (subpath (param "{key}")) )')
-        # Allow mapping executable pages from these dirs for dynamic loader
-        lines.append(f'(allow file-map-executable (subpath (param "{key}")) )')
-        # Note: process-exec filter omitted (use file-map-executable + allow process*)
+        # Note: rely on global (allow file-map-executable); per-path filters are not supported uniformly
+
+    # Parent directory metadata allowances to enable path traversal to allowed subpaths
+    meta_parents: set[str] = set()
+    def _add_parents(p: str):
+        cur = Path(p)
+        # Ascend to root, collecting literal parents
+        while True:
+            meta_parents.add(str(cur))
+            if str(cur) == "/":
+                break
+            cur = cur.parent
+    for ap in read_dirs:
+        _add_parents(ap)
+    for ap in write_dirs:
+        _add_parents(ap)
+    # Also include common system roots we already rely on
+    for root in ("/opt", "/usr", "/private", "/System", "/Users"):
+        meta_parents.add(root)
+    lines.append(";; Parent directory metadata allowances to enable path traversal")
+    for mp in sorted(meta_parents):
+        lines.append(f'(allow file-read-metadata (literal "{mp}") )')
+
+
     # Platform seatbelt extras
     extra = policy.platform.seatbelt.extra_allow
     for p in (extra.file_read_extra or []):
         lines.append(f'(allow file-read* (subpath "{_abs(p)}") )')
+    # Optional IPC/system allowances controlled by policy extras
+    if extra.system_socket:
+        lines.append('(allow system-socket)')
+    if extra.sysctl_read:
+        lines.append('(allow sysctl-read)')
+    for name in (extra.mach_lookup or []):
+        # Allow lookups of specific global Mach services
+        lines.append(f'(allow mach-lookup (global-name "{name}"))')
     # dev.allow_tty_writes could toggle /dev/tty allow in future; keep default for now
 
     # Net rules (mode: none | loopback | all) — allowlist/proxy reserved for future
@@ -212,11 +237,13 @@ def _compose_seatbelt(policy: Policy, trace_path: str | None) -> tuple[str, dict
         lines.append(';; Net mode=open: allow outbound (HTTP, etc.) and inbound (kernel ports)')
         lines.append('(allow network-outbound)')
         lines.append('(allow network-inbound)')
+        lines.append('(allow network-bind)')
     elif mode == "loopback":
-        # Allow kernels to receive local connections (Jupyter connects to kernel)
-        lines.append(';; Net mode=loopback: only inbound local connections (Jupyter→kernel), no outbound')
-        lines.append('(allow network-inbound (local ip))')
-        # No outbound allow → default deny
+        # Allow ONLY local connections both directions (Jupyter↔kernel)
+        lines.append(';; Net mode=loopback: only local connections in both directions (Jupyter↔kernel)')
+        lines.append('(allow network-inbound)')
+        lines.append('(allow network-outbound)')
+        lines.append('(allow network-bind)')
     elif mode == "none":
         # No network rules → default deny inbound/outbound
         pass
@@ -286,11 +313,18 @@ def main() -> int:
 
     # Compose seatbelt policy file
     tmpdir = tempfile.mkdtemp(prefix="sandboxer-")
-    # Write trace under a writable runtime dir (HOME) if available, else tmpdir
+    # Write trace under a writable runtime dir (prefer TMPDIR from policy.env.set, then HOME), else tmpdir
     trace_path = None
     if policy.platform.trace or policy.platform.seatbelt.trace:
-        home_dir = (policy.env.set or {}).get("HOME") or os.environ.get("HOME")
-        base = Path(home_dir) if home_dir else Path(tmpdir)
+        env_set = (policy.env.set or {})
+        tmp_hint = env_set.get("TMPDIR") or env_set.get("TMP") or env_set.get("TEMP")
+        home_dir = env_set.get("HOME") or os.environ.get("HOME")
+        if tmp_hint:
+            base = Path(tmp_hint)
+        elif home_dir:
+            base = Path(home_dir)
+        else:
+            base = Path(tmpdir)
         trace_path = str(base / "seatbelt.trace.log")
     sb_path = Path(tmpdir) / "policy.sb"
     sb_text, defs = _compose_seatbelt(policy, trace_path)
