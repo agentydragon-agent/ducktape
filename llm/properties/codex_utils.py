@@ -47,7 +47,7 @@ def read_all_properties_text(properties_dir: Path) -> str:
     parts: list[str] = []
     for pf in prop_files:
         rel = pf.relative_to(properties_dir)
-        parts.append(f"# {rel.as_posix()}\n{pf.read_text(encoding='utf-8')}")
+        parts.append(f"<file path=\":/{rel.as_posix()}\">\n{pf.read_text(encoding='utf-8')}\n</file>")
     return "\n\n".join(parts)
 
 

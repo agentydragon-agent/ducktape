@@ -30,86 +30,147 @@ from textwrap import dedent
 import codex_utils as cx
 
 
-def build_find_prompt(properties_dir: Path, scope_text: str) -> str:
+def build_supplemental_section(supplemental_text: str | None) -> str:
+    if not supplemental_text:
+        return ""
+    lines = [
+        "",
+        "Supplemental files (golden reviews):",
+        "These cover both the formal properties defined above and additional not-yet-formalized feedback.",
+        "Your analysis must ensure code passes all formal property definitions and also the additional criteria captured here.",
+        "Generalize patterns from these supplements and flag similar issues in the input code.",
+        supplemental_text,
+    ]
+    return "\n".join(lines)
+
+
+
+def _display_path_for_embed(p: Path) -> str:
+    """Try to show an intuitive path for the embed wrapper.
+    Prefer path relative to the repo root if available; else use absolute.
+    """
+    try:
+        # git rev-parse --show-toplevel from the file's directory
+        cp = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"], cwd=str(p.parent), text=True, capture_output=True
+        )
+        if cp.returncode == 0 and cp.stdout.strip():
+            root = Path(cp.stdout.strip())
+            rel = p.resolve().relative_to(root)
+            return ":/" + rel.as_posix()
+    except Exception:
+        pass
+    return ":/" + p.resolve().as_posix()
+
+
+def read_embedded_paths(paths: list[Path]) -> str:
+    """Return a bundle of <file path=":/..."> blocks for each file path provided.
+    Skips directories; caller should pass only the files to embed (e.g., .py, .md).
+    Files are sorted by their display path (alphabetically).
+    """
+    files: list[tuple[str, Path]] = []
+    for q in paths:
+        p = Path(q)
+        if not p.is_file():
+            continue
+        disp = _display_path_for_embed(p)
+        files.append((disp, p))
+    blocks: list[str] = []
+    for disp, p in sorted(files, key=lambda t: t[0]):
+        try:
+            content = p.read_text(encoding="utf-8")
+        except Exception:
+            continue
+        blocks.append("\n".join([f"<file path=\"{disp}\">", content, "</file>"]))
+    return "\n\n".join(blocks)
+
+
+def _scope_block(scope_text: str, *, static_action: str, ambiguity_tail: str) -> list[str]:
+    return [
+        "Scope (freeform):",
+        f"- {scope_text}",
+        "",
+        "Scope interpretation rules:",
+        "- The scope may describe either:",
+        '  1) a Git diff range (e.g., "between merge-base with master and 2 commits before HEAD"), or',
+        "  2) a static set of files/paths",
+        "- If it's a diff description: resolve to a concrete diff range, enumerate files and hunks, and use `git diff --unified=0` for references.",
+        f"- If it's a static file set: {static_action} only those files.",
+        f"- On ambiguity, choose the most conservative interpretation, state the resolved scope, and {ambiguity_tail}",
+    ]
+
+
+def _properties_block(properties_text: str, supplemental_section: str | None) -> list[str]:
+    lines = ["Property definitions:", properties_text]
+    if supplemental_section:
+        lines.append(supplemental_section)
+    return lines
+
+
+def build_find_prompt(properties_dir: Path, scope_text: str, supplemental_text: str | None = None) -> str:
     properties_text = cx.read_all_properties_text(properties_dir)
+    supplemental_section = build_supplemental_section(supplemental_text)
 
-    return dedent(
-        f"""
-        Analyze the codebase for violations of the properties defined below. Do not modify any files. Produce a structured textual report.
-
-        Scope (freeform):
-        - {scope_text}
-
-        Scope interpretation rules:
-        - The scope may describe either:
-          1) a Git diff range (e.g., "between merge-base with master and 2 commits before HEAD"), or
-          2) a static set of files/paths
-        - If it's a diff description: resolve to a concrete diff range, enumerate files and hunks, and use `git diff --unified=0` for references.
-        - If it's a static file set: analyze only those files.
-        - On ambiguity, choose the most conservative interpretation, state the resolved scope, and do not include anything outside it.
-
-        Constraints:
-        - Read-only sandbox: do not execute commands that modify files or the repo
-        - You MAY run read-only commands to inspect context (e.g., `git status`, `git diff --unified=0`)
-        - You MUST check every changed hunk within scope
-
-        Reporting requirements:
-        - Group by file, then by property title
-        - For each violation: include short rationale and line references (from `git diff --unified=0` or file line numbers)
-        - If no violations for a file, explicitly state "No violations"
-
-        Property definitions (verbatim):
-        ```markdown
-        {properties_text}
-        ```
-        """,
-    )
+    lines: list[str] = [
+        "Analyze the codebase for violations of the properties defined below. Do not modify any files. Produce a structured textual report.",
+        "",
+        *_scope_block(
+            scope_text,
+            static_action="analyze",
+            ambiguity_tail="do not include anything outside it.",
+        ),
+        "",
+        "Constraints:",
+        "- Read-only sandbox: do not execute commands that modify files or the repo",
+        "- You MAY run read-only commands to inspect context (e.g., `git status`, `git diff --unified=0`)",
+        "- You MUST check every changed hunk within scope",
+        "",
+        "Reporting requirements:",
+        "- Group by file, then by property title",
+        "- For each violation: include short rationale and line references (from `git diff --unified=0` or file line numbers)",
+        '- If no violations for a file, explicitly state "No violations"',
+        "",
+        *_properties_block(properties_text, supplemental_section),
+    ]
+    return "\n".join(lines).strip()
 
 
-def build_enforce_prompt(properties_dir: Path, scope_text: str) -> str:
+def build_enforce_prompt(properties_dir: Path, scope_text: str, supplemental_text: str | None = None) -> str:
     properties_text = cx.read_all_properties_text(properties_dir)
+    supplemental_section = build_supplemental_section(supplemental_text)
 
-    return dedent(
-        f"""
-        Ensure code within the described scope conforms to the properties defined below and refactor as needed to satisfy them without altering behavior.
-
-        Scope (freeform):
-        - {scope_text}
-
-        Scope interpretation rules:
-        - The scope may describe either:
-          1) a Git diff range (e.g., "between merge-base with master and 2 commits before HEAD"), or
-          2) a static set of files/paths
-        - If it's a diff description: resolve to a concrete diff range, enumerate files and hunks, and use `git diff --unified=0` for references.
-        - If it's a static file set: edit only those files.
-        - On ambiguity, choose the most conservative interpretation, state the resolved scope, and avoid touching anything outside it unless required by the editing policy below.
-
-        Editing policy:
-        - Prefer minimal, localized edits within the scoped hunks/sections.
-        - You MAY edit outside the scoped hunks/sections ONLY when necessary to bring the scoped changes and any code you touched into full compliance with all properties (e.g., moving imports to the top of file).
-        - If such edits cascade (A requires B, which requires C, ...), keep fixing until everything you changed and everything originally in scope is compliant, then stop.
-        - Do NOT perform broad or unrelated refactors beyond what is required for compliance.
-        - Do not commit changes.
-        - After edits, run existing linters/formatters if present (e.g., ruff, pre-commit) and re-verify against properties.
-
-        Requirements:
-        - You MUST check every changed hunk within the resolved scope
-        - You MUST bring all scoped files/sections and any cascaded edits into compliance with ALL property definition files
-
-        Property definitions (verbatim):
-        ```markdown
-        {properties_text}
-        ```
-
-        Operational guidance:
-        - Ask for confirmation before any destructive action (deletes/mass renames). Keep changes within the workspace.
-        - If a property appears to conflict with code behavior, explain the conflict and propose the smallest safe change in your final report.
-
-        Deliverables:
-        - Apply changes directly in the workspace.
-        - Print a concise change report as your final message: files changed, properties addressed per file, and any remaining violations you could not safely fix.
-        """,
-    )
+    lines: list[str] = [
+        "Ensure code within the described scope conforms to the properties defined below and refactor as needed to satisfy them without altering behavior.",
+        "",
+        *_scope_block(
+            scope_text,
+            static_action="edit",
+            ambiguity_tail="avoid touching anything outside it unless required by the editing policy below.",
+        ),
+        "",
+        "Editing policy:",
+        "- Prefer minimal, localized edits within the scoped hunks/sections.",
+        "- You MAY edit outside the scoped hunks/sections ONLY when necessary to bring the scoped changes and any code you touched into full compliance with all properties (e.g., moving imports to the top of file).",
+        "- If such edits cascade (A requires B, which requires C, ...), keep fixing until everything you changed and everything originally in scope is compliant, then stop.",
+        "- Do NOT perform broad or unrelated refactors beyond what is required for compliance.",
+        "- Do not commit changes.",
+        "- After edits, run existing linters/formatters if present (e.g., ruff, pre-commit) and re-verify against properties.",
+        "",
+        "Requirements:",
+        "- You MUST check every changed hunk within the resolved scope",
+        "- You MUST bring all scoped files/sections and any cascaded edits into compliance with ALL property definition files",
+        "",
+        *_properties_block(properties_text, supplemental_section),
+        "",
+        "Operational guidance:",
+        "- Ask for confirmation before any destructive action (deletes/mass renames). Keep changes within the workspace.",
+        "- If a property appears to conflict with code behavior, explain the conflict and propose the smallest safe change in your final report.",
+        "",
+        "Deliverables:",
+        "- Apply changes directly in the workspace.",
+        "- Print a concise change report as your final message: files changed, properties addressed per file, and any remaining violations you could not safely fix.",
+    ]
+    return "\n".join(lines).strip()
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
@@ -159,6 +220,12 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         action="store_true",
         help="Copy composed prompt to clipboard",
     )
+    common.add_argument(
+        "--embed-path",
+        action="append",
+        default=[],
+        help="Paths to embed verbatim into the prompt as <file path=\":/...\"> blocks (repeatable)",
+    )
 
     # find
     subparsers.add_parser(
@@ -193,8 +260,11 @@ def main(argv: list[str]) -> int:
     script_dir = Path(__file__).resolve().parent
     properties_dir = cx.resolve_properties_dir(script_dir, args.properties_dir)
 
+    embed_paths = [Path(p) for p in getattr(args, "embed_path", [])]
+    supplemental_text = read_embedded_paths(embed_paths) if embed_paths else None
+
     if args.command == "find":
-        prompt = build_find_prompt(properties_dir, args.scope)
+        prompt = build_find_prompt(properties_dir, args.scope, supplemental_text)
         cmd = cx.build_codex_cmd(
             model=args.model,
             workdir=workdir,
@@ -203,7 +273,7 @@ def main(argv: list[str]) -> int:
             full_auto=args.full_auto,
         )
     elif args.command in ("enforce", "fix"):
-        prompt = build_enforce_prompt(properties_dir, args.scope)
+        prompt = build_enforce_prompt(properties_dir, args.scope, supplemental_text)
         cmd = cx.build_codex_cmd(
             model=args.model,
             workdir=workdir,
