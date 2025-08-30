@@ -181,19 +181,30 @@ def _write_sandboxed_kernelspec(
     # Enable sandboxer debug when SJ_DEBUG_DIAG is set to surface policy path and -D params
     if os.environ.get("SJ_DEBUG_DIAG"):
         argv.append("--debug")
+    # Always exec kernel via our tiny exec wrapper to capture stderr reliably; it will choose shim vs ipykernel based on SJ_DEBUG_DIAG
     argv += [
         "--",
         kernel_python,
         "-m",
-        "ipykernel_launcher",
+        "jupyter_mcp_stdio_guard.kernel_exec",
+        "--stderr-log",
+        str((run_root / 'runtime' / 'kernel_stderr.log').as_posix()),
+        "--",
         "-f",
         "{connection_file}",
     ]
+    kernel_env = {"SJ_KERNEL_SANDBOXED": "1", "SJ_POLICY_PATH": str(policy_yaml)}
+    # If diagnostics are enabled, increase kernel-side verbosity to aid debugging
+    if os.environ.get("SJ_DEBUG_DIAG"):
+        kernel_env.update({
+            "PYTHONFAULTHANDLER": "1",
+            "PYTHONVERBOSE": "1",
+        })
     kernel_json = {
         "argv": argv,
         "display_name": "Python 3",
         "language": "python",
-        "env": {"SJ_KERNEL_SANDBOXED": "1", "SJ_POLICY_PATH": str(policy_yaml)},
+        "env": kernel_env,
     }
     (ks_dir / "kernel.json").write_text(json.dumps(kernel_json))
 
@@ -239,6 +250,9 @@ def _start_jupyter_server(
             "--NotebookApp.default_kernel_name",
             kernel_default_name,
         ]
+    # Turn on RTC/ydoc deps visibility and quieter platformdirs warning
+    env = dict(env)
+    env.setdefault("JUPYTER_PLATFORM_DIRS", "1")
     proc = subprocess.Popen(cmd, stdout=out_f, stderr=err_f, env=env)
 
     deadline = time.time() + 10
@@ -346,6 +360,8 @@ def _seatbelt(
                 # Enable RTC/ydoc so collaboration/session API exists for nbmodel client
                 "c.ServerApp.collaborative = True",
                 "c.ServerApp.jpserver_extensions = {'jupyter_server_ydoc': True}",
+                # Capture kernel stderr to a file for diagnostics (set on base KernelManager so it applies to sub-managers)
+                f"c.KernelManager.kernel_log_file = '{(run_root / 'runtime' / 'kernel_stderr.log').as_posix()}'",
             ]
         )
     )
@@ -394,6 +410,8 @@ def _seatbelt(
         file=sys.stderr,
         flush=True,
     )
+    # Ensure sandboxer echoes policy if requested
+    # Tests can set SJ_POLICY_ECHO_DIR=run_root/tmp to capture policy.sb and defs
 
     # Run MCP server with inherited stdio so the parent test process can talk JSON-RPC directly.
     proc = subprocess.Popen(mcp_cmd, env=child_env)

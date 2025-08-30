@@ -15,6 +15,36 @@ sandbox-jupyter-mcp stdio --policy-config /abs/worktree/.sandbox_jupyter.yaml
 
 Use --trace-sandbox, --no-kernel-sandbox, --jupyter-port as needed.
 
+## Quick reproducer
+
+Use the standalone script to reproduce a seatbelt-wrapped Jupyter + MCP session without pytest:
+
+```bash
+/Users/mpokorny/code/ducktape/llm/mcp/jupyter_mcp_stdio_guard/run_one.sh \
+  /abs/path/to/.sandbox_jupyter.yaml \
+  /abs/workspace \
+  /abs/run_root \
+  --port 0
+```
+
+The script:
+- Creates expected runtime dirs under RUN_ROOT (runtime, data, config, mpl, pycache, tmp)
+- Sets SJ_DEBUG_DIAG=1 for verbose diagnostics
+- Points SJ_POLICY_ECHO_DIR at RUN_ROOT/tmp so the composed seatbelt policy and -D defs are captured
+- Enables JUPYTER_PLATFORM_DIRS=1
+- Launches the wrapper in seatbelt mode with sandbox tracing enabled
+
+Logs:
+- Jupyter: RUN_ROOT/runtime/jupyter_server.{out,err}
+- Sandbox policy echo: RUN_ROOT/tmp/policy.sb and policy_defs.json
+- Seatbelt trace: RUN_ROOT/tmp/seatbelt.trace.log (if tracing enabled)
+
+## Observability toggles
+
+- SJ_DEBUG_DIAG=1: enable verbose diagnostics and force sandboxer --debug
+- SJ_POLICY_ECHO_DIR=/path: write composed policy.sb and policy_defs.json to /path
+- JUPYTER_PLATFORM_DIRS=1: opt into platformdirs-based paths (reduces warnings)
+
 ## Example setup (see sandboxed_jupyter_example/)
 
 For a complete per-repo setup, including directory layout, explicit policy.yaml examples, and .mcp.json wiring, see:
@@ -55,16 +85,11 @@ See sandboxed_jupyter_example/README.md for full examples.
 - WORKSPACE: absolute path to repo/workspace root; kernel may read/write anywhere under this path
 - RUN_ROOT: sandbox runtime dir created under run_root (logs, kernelspec, Jupyter state)
 - Jupyter server runs unsandboxed; kernel process sandboxed via custom kernelspec when seatbelt is active
-- Network: loopback Jupyter; current policy is permissive; see TODOs to tighten
+- Network: loopback Jupyter; policy controls kernel networking
 
 ## Manual Testing (tmux)
 
 For an end-to-end manual workflow, see docs/TMUX_MANUAL_TESTING.md. It walks through launching the wrapper, inspecting logs, and sending MCP requests over stdio.
-
-## TODOs
-
-- Network sandbox enforcement: net policy is not enforced yet; current policy allows outbound by default. Tighten once kernel/runtime networking strategy is finalized.
-- Policy hardening iteratively (file system read/write allowlists) while keeping tests green.
 
 ## Tests
 

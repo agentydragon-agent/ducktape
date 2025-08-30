@@ -32,6 +32,11 @@ def _bootstrap_control_venv_and_require_tools():
     pkg_src = str((Path(__file__).resolve().parents[1] / "src"))
     prev_pp = os.environ.get("PYTHONPATH", "")
     os.environ["PYTHONPATH"] = f"{pkg_src}:{prev_pp}" if prev_pp else pkg_src
+    # Turn on diagnostics and policy echo for tests by default
+    os.environ.setdefault("SJ_DEBUG_DIAG", "1")
+    # Tighter venv alignment: ensure kernel and wrapper use same interpreter by default
+    os.environ.setdefault("SJ_KERNEL_PYTHON", sys.executable)
+    # Policy echo will be pointed at per-test run_root/tmp inside provision_ws
     # Now enforce required tools
     missing = []
     if shutil.which("jupyter") is None:
@@ -95,6 +100,7 @@ def pytest_runtest_makereport(item, call):
         for rel in [
             "runtime/jupyter_server.out",
             "runtime/jupyter_server.err",
+            "runtime/kernel_stderr.log",
             "mcp_stdout.log",
             "mcp_stderr.log",
             "policy.sb",
@@ -176,6 +182,9 @@ def provision_ws(request):
     os.environ["SJ_TEST_RUN_ROOT"] = str(run_root)
     os.environ["SJ_TEST_WS"] = str(ws)
     os.environ["SJ_ARTIFACTS_DIR"] = str(base)
+    # Point policy echo at this test's run_root/tmp
+    (run_root / "tmp").mkdir(parents=True, exist_ok=True)
+    os.environ["SJ_POLICY_ECHO_DIR"] = str(run_root / "tmp")
     return ws, run_root
 
 

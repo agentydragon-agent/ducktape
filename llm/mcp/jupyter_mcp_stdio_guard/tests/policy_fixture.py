@@ -106,7 +106,15 @@ def write_policy(
         },
         "platform": {
             "trace": False,
-            "seatbelt": {"extra_allow": {"file_read_extra": []}},
+            "seatbelt": {
+                "extra_allow": {
+                    # Allow sysctl queries needed by Python/platform libs
+                    "sysctl_read": True,
+                    # Start with minimal services (add more if denies show specifics)
+                    "mach_lookup": ["com.apple.cfprefsd.agent"],
+                    "file_read_extra": []
+                }
+            },
         },
     }
 

@@ -9,6 +9,7 @@ import sys
 import tempfile
 from pathlib import Path
 from typing import Any, Literal
+import json
 
 import yaml
 from pydantic import BaseModel, Field, model_validator
@@ -179,20 +180,24 @@ def _compose_seatbelt(policy: Policy, trace_path: str | None) -> tuple[str, dict
             if ap not in read_dirs:
                 read_dirs.append(ap)
 
-    # Allow writes under configured write dirs (via named params)
+    # TODO(mpokorny): Prefer named seatbelt params again once param-related crashes are resolved.
+    # Context: direct sandbox-exec with `(subpath (param "WP_*"))` produced errors like
+    #   "invalid data type of path filter; expected pattern, got boolean" or exit 134 on this host.
+    # For now, we inline literal paths to keep narrow policies working; restore `param` usage when fixed.
     lines.append(";; Writable dirs (WP_*): runtime/workspace; allow writes and exec of entrypoints within")
     for i, ap in enumerate(write_dirs):
         key = f"WP_{i}"
         defs[key] = ap
-        lines.append(f'(allow file-write* (subpath (param "{key}")) )')
+        lines.append(f'(allow file-write* (subpath "{ap}") )')
         # Exec is governed by file-map-executable and global process allowances
 
-    # Allow reads under configured read dirs (via named params)
+    # TODO(mpokorny): Restore named params `(param "RP_*")` for read paths once sandbox-exec param issues are clarified.
+    # Temporary workaround: inline literal subpaths to avoid observed param parsing/abort behavior on this macOS version.
     lines.append(";; Readable dirs (RP_*): venv roots/bin, stdlib & site-packages")
     for i, ap in enumerate(read_dirs):
         key = f"RP_{i}"
         defs[key] = ap
-        lines.append(f'(allow file-read* (subpath (param "{key}")) )')
+        lines.append(f'(allow file-read* (subpath "{ap}") )')
         # Note: rely on global (allow file-map-executable); per-path filters are not supported uniformly
 
     # Parent directory metadata allowances to enable path traversal to allowed subpaths
@@ -241,9 +246,9 @@ def _compose_seatbelt(policy: Policy, trace_path: str | None) -> tuple[str, dict
     elif mode == "loopback":
         # Allow ONLY local connections both directions (Jupyter↔kernel)
         lines.append(';; Net mode=loopback: only local connections in both directions (Jupyter↔kernel)')
-        lines.append('(allow network-inbound)')
-        lines.append('(allow network-outbound)')
-        lines.append('(allow network-bind)')
+        lines.append('(allow network-inbound (local ip))')
+        lines.append('(allow network-outbound (local ip))')
+        lines.append('(allow network-bind (local ip))')
     elif mode == "none":
         # No network rules → default deny inbound/outbound
         pass
@@ -284,7 +289,10 @@ def main() -> int:
         print(f"sandboxer: invalid policy YAML: {e}", file=sys.stderr)
         return 2
 
-    if args.trace:
+    # Allow debug via env flag as well (SJ_DEBUG_DIAG=1)
+    if not args.debug and os.environ.get("SJ_DEBUG_DIAG"):
+        args.debug = True
+    if args.trace or policy.platform.trace:
         # Platform-neutral trace flag; individual backends may not support it
         policy.platform.trace = True
 
@@ -325,7 +333,14 @@ def main() -> int:
             base = Path(home_dir)
         else:
             base = Path(tmpdir)
-        trace_path = str(base / "seatbelt.trace.log")
+        base.mkdir(parents=True, exist_ok=True)
+        tp = base / "seatbelt.trace.log"
+        try:
+            # Ensure file exists for diagnostics collection
+            tp.touch(exist_ok=True)
+        except Exception:
+            pass
+        trace_path = str(tp)
     sb_path = Path(tmpdir) / "policy.sb"
     sb_text, defs = _compose_seatbelt(policy, trace_path)
     sb_path.write_text(sb_text)
@@ -336,6 +351,18 @@ def main() -> int:
     if args.debug and defs:
         for k, v in defs.items():
             print(f"sandboxer: -D {k}={v}", file=sys.stderr)
+    # Optional policy echo for observability
+    echo_dir = os.environ.get("SJ_POLICY_ECHO_DIR")
+    if echo_dir:
+        try:
+            ed = Path(echo_dir)
+            ed.mkdir(parents=True, exist_ok=True)
+            (ed / "policy.sb").write_text(sb_text)
+            (ed / "policy_defs.json").write_text(json.dumps(defs, indent=2))
+            if args.debug:
+                print(f"sandboxer: echoed policy and defs to {ed}", file=sys.stderr)
+        except Exception as e:  # noqa: BLE001
+            print(f"sandboxer: policy echo failed: {e}", file=sys.stderr)
 
     # Resolve sandbox-exec
     sx = shutil.which("sandbox-exec")
