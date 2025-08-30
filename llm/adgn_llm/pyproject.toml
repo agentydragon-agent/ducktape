@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=65", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "adgn-llm"
+version = "0.1.0"
+description = "Agentydragon LLM shared library: mini_codex, codex property checker, claude optimizer, git-commit-ai"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Rai (agentydragon)" }]
+dependencies = [
+  "openai>=1.40.0",
+  "tenacity>=8.2.0",
+  "pydantic>=2.7.0",
+  "docker>=7.0.0",
+  "pandas>=2.2.0",
+  "tiktoken>=0.7.0",
+  "plotnine>=0.13.0",
+  "claude-code-sdk>=0.1.0",  # local/private SDK; pin appropriately or replace with VCS URL if needed
+]
+
+[project.scripts]
+adgn-mini-codex = "adgn_llm.mini_codex.cli:main"
+adgn-codex-properties = "adgn_llm.properties.cli:main"
+git-commit-ai = "adgn_llm.git_commit_ai.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["adgn_llm*", "claude_optimizer*", "adgn_llm.git_commit_ai*"]
+
+[tool.setuptools.package-data]
+adgn_llm = [
+  "properties/definitions/*.md",
+  "properties/definitions/**/*.md",
+]
