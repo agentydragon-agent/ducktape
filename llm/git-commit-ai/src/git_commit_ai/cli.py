@@ -10,9 +10,11 @@ Call exactly like `git commit`; every flag is forwarded. Extra wrapper flags:
 
     --model PROVIDER:MODEL (default: claude:sonnet)
     --debug                Enable debug logging (shows exact AI command)
+    --accept-ai            Commit immediately with the AI-drafted message (skip editor)
 
 Note: Pass --no-verify to skip running pre-commit inside this wrapper. The final `git commit`
       is invoked with --no-verify to avoid running hooks twice.
+      Passing -m/--message is not supported; this tool supplies the commit message.
 
 Important: Do NOT install this as a prepare-commit-msg hook. Since this command
          calls `git commit` internally, it would create an infinite loop. Use
@@ -45,8 +47,6 @@ from enum import Enum
 from pathlib import Path
 
 from git import Repo
-from rich.console import Console
-from rich.text import Text
 
 # ---------- constants -------------------------------------------------
 MAX_FILE_LINES = 400  # truncate each file's hunk lines (per-file preview)
@@ -318,6 +318,8 @@ def diffstat(repo: Repo, passthru: list[str]) -> str:
     return repo.git.diff("--cached", "--stat")
 
 
+
+
 def get_short_commitish(repo: Repo) -> str:
     """Get the short commit hash of HEAD."""
     return repo.git.rev_parse("HEAD", short=True)
@@ -494,21 +496,25 @@ class TaskState:
         return self.task.done()
 
 
-_STATUS_ICONS: dict[TaskStatus, Text] = {
-    TaskStatus.RUNNING: Text("⏳", style="yellow"),
-    TaskStatus.SUCCESS: Text("✓", style="green"),
-    TaskStatus.FAILED: Text("✗", style="red"),
-    TaskStatus.CANCELLED: Text("-", style="dim"),
+_ANSI_ON = sys.stdout.isatty()
+
+def _ansi(text: str, code: str) -> str:
+    return f"\033[{code}m{text}\033[0m" if _ANSI_ON else text
+
+_STATUS_ICONS: dict[TaskStatus, str] = {
+    TaskStatus.RUNNING: _ansi("⏳", "33"),   # yellow
+    TaskStatus.SUCCESS: _ansi("✓", "32"),   # green
+    TaskStatus.FAILED: _ansi("✗", "31"),    # red
+    TaskStatus.CANCELLED: _ansi("-", "2"),  # dim
 }
 
 
 class ParallelTaskRunner:
-    """Manages parallel execution of pre-commit and AI message generation with Rich UI."""
+    """Manages parallel execution of pre-commit and AI message generation with a single-line status display."""
 
     def __init__(self, ai_state, precommit_state, master_fd):
         self.ai_state = ai_state
         self.precommit_state = precommit_state
-        self.console = Console()
         self.start_time = time.time()
         self._status_visible = False  # Track if status line is currently visible
         self._last_status = ""  # Remember last status to clear it
@@ -548,35 +554,42 @@ class ParallelTaskRunner:
             os.close(master_fd)
 
     @classmethod
-    async def create_and_run(cls, repo, ai_task) -> str:
+    async def create_and_run(cls, repo, ai_task, run_precommit: bool = True) -> str:
         """Factory method that creates runner and manages task lifecycle."""
         precommit_path = Path(repo.git_dir) / "hooks" / "pre-commit"
-        master_fd, slave_fd = create_pty_with_terminal_size()
+        output_task = None
 
-        # Check if pre-commit hook exists.
-        async def run_precommit_wrapper():
-            try:
-                if not (precommit_path.exists() and precommit_path.is_file()):
-                    return  # No pre-commit hook, nothing to do
-                # Run pre-commit hook with given slave end of PTY.
-                proc = await asyncio.create_subprocess_exec(
-                    str(precommit_path),
-                    stdout=slave_fd,
-                    stderr=slave_fd,
-                    stdin=slave_fd,
-                    env=os.environ.copy(),
-                )
-                returncode = await proc.wait()
-                if returncode != 0:
-                    raise subprocess.CalledProcessError(returncode, str(precommit_path))
-            finally:
-                os.close(slave_fd)
+        if run_precommit:
+            master_fd, slave_fd = create_pty_with_terminal_size()
 
-        precommit_task = asyncio.create_task(run_precommit_wrapper())
+            # Check if pre-commit hook exists.
+            async def run_precommit_wrapper():
+                try:
+                    if not (precommit_path.exists() and precommit_path.is_file()):
+                        return  # No pre-commit hook, nothing to do
+                    # Run pre-commit hook with given slave end of PTY.
+                    proc = await asyncio.create_subprocess_exec(
+                        str(precommit_path),
+                        stdout=slave_fd,
+                        stderr=slave_fd,
+                        stdin=slave_fd,
+                        env=os.environ.copy(),
+                    )
+                    returncode = await proc.wait()
+                    if returncode != 0:
+                        raise subprocess.CalledProcessError(returncode, str(precommit_path))
+                finally:
+                    os.close(slave_fd)
 
-        runner = cls(TaskState(ai_task), TaskState(precommit_task), master_fd)
-        update_task = asyncio.create_task(runner._update_loop())
-        output_task = asyncio.create_task(runner._stream_output(master_fd))
+            precommit_task = asyncio.create_task(run_precommit_wrapper())
+            runner = cls(TaskState(ai_task), TaskState(precommit_task), master_fd)
+            update_task = asyncio.create_task(runner._update_loop())
+            output_task = asyncio.create_task(runner._stream_output(master_fd))
+        else:
+            # Skip running pre-commit (e.g., --no-verify was passed)
+            precommit_task = asyncio.create_task(asyncio.sleep(0))
+            runner = cls(TaskState(ai_task), TaskState(precommit_task), None)
+            update_task = asyncio.create_task(runner._update_loop())
         try:
             # Both tasks will raise exceptions on failure
             msg, _ = await asyncio.gather(ai_task, precommit_task)
@@ -597,7 +610,7 @@ class ParallelTaskRunner:
                 with contextlib.suppress(asyncio.CancelledError):
                     await update_task
             # Clean up output streaming task
-            if not output_task.done():
+            if output_task and not output_task.done():
                 output_task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await output_task
@@ -714,7 +727,20 @@ async def async_main():
         "--timeout-secs", type=int, help="AI timeout seconds (<=0 disables)",
     )
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
+    parser.add_argument(
+        "--accept-ai",
+        action="store_true",
+        help="Commit immediately with the AI-drafted message (skip editor)",
+    )
     known, passthru = parser.parse_known_args()
+
+    # Disallow -m/--message; the tool generates the commit message
+    if any(a in {"-m", "--message"} or a.startswith("--message=") for a in passthru):
+        print(
+            "Error: -m/--message is not supported; this tool supplies the commit message. Remove -m/--message and try again.",
+            file=sys.stderr,
+        )
+        sys.exit(2)
 
     # Configure logging - always log to file under .git/
     log_file = Path(repo.git_dir) / "git_commit_ai.log"
@@ -799,7 +825,9 @@ async def async_main():
 
         # Factor out task creation to a single place
         ai_task = asyncio.create_task(ai_client.generate(include_all, model_name))
-        msg = await ParallelTaskRunner.create_and_run(repo, ai_task)
+        # Respect --no-verify to skip running pre-commit inside this wrapper
+        run_precommit = "--no-verify" not in passthru
+        msg = await ParallelTaskRunner.create_and_run(repo, ai_task, run_precommit=run_precommit)
         cache[key] = msg
         cached = False
 
@@ -808,7 +836,26 @@ async def async_main():
 
     commit_msg_path = Path(repo.git_dir) / "COMMIT_EDITMSG"
 
-    # Combine everything
+    # Fast-path: commit immediately with AI message when requested
+    if known.accept_ai:
+        # Ensure non-empty message
+        if not msg.strip():
+            print("Aborting commit due to empty AI commit message.", file=sys.stderr)
+            sys.exit(1)
+        # Do not forward -a/--all; we've already staged via `git add -u`. Also drop any existing -m/--message to avoid conflicts.
+        commit_passthru = [arg for arg in passthru if arg not in ("-a", "--all")]
+        commit_proc = await asyncio.create_subprocess_exec(
+            "git",
+            "commit",
+            "-m",
+            msg,
+            "--no-verify",
+            *commit_passthru,
+        )
+        exit_code = await commit_proc.wait()
+        sys.exit(exit_code)
+
+    # Combine everything for editor flow
     final_text = msg + stats_comment + build_commit_template(repo, passthru)
 
     # Use git's COMMIT_EDITMSG for a more authentic experience (no trailing blank line)
