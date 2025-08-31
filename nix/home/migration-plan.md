@@ -57,11 +57,11 @@ Split roles into migrated and unmigrated parts:
 - ✅ Updated wyrm.yaml to exclude `*_nix_migrated` roles
 - ✅ Updated agentydragon.yaml, gpd.yaml, atlas.yaml, and vps.yaml to include both versions
 
-### Phase 2: Wyrm Deployment (First Time)
+### Phase 2: Wyrm Deployment 
 
-**Current Status: Ready for manual deployment**
+**Current Status: Completed - Roles split and playbooks updated**
 
-Since Ansible tags haven't been added yet, for the first deployment:
+Deployment approach with split roles:
 
 1. **Install Nix** (if not already installed):
 ```bash
@@ -82,16 +82,16 @@ cd ~/code/ducktape/nix/home
 home-manager switch -f home.nix
 ```
 
-4. **Run Ansible normally** (no skip-tags yet):
+4. **Run Ansible for wyrm** (automatically skips migrated roles):
 ```bash
 cd ~/code/ducktape/ansible
 ansible-playbook wyrm.yaml --ask-become-pass
 ```
 
-This will result in:
-- Some duplicate package installations (both Nix and Ansible)
-- Both systems managing some configs (will converge to same state)
-- No breaking changes - safe parallel operation
+This will:
+- Skip `dev-ml_nix_migrated` (not included in wyrm.yaml)
+- Run only unmigrated parts of `gui` and `cli` roles
+- Avoid duplicate configuration since migrated tasks were moved to separate roles
 
 ### Phase 3: Testing Checklist
 
@@ -126,21 +126,28 @@ After deployment, verify:
 
 ### Phase 5: Full Cutover
 
-Once tested and stable:
-1. Remove `when: false` conditions
-2. Delete migrated Ansible roles
+Once tested and stable on all machines:
+1. Delete `*_nix_migrated` roles from Ansible
+2. Remove imports of migrated roles from non-wyrm playbooks
 3. Update documentation
-4. Apply to other machines (agentydragon, new-vm, gpd)
+4. Consider migrating remaining parts of cli and gui roles
+
+## TODO Items
+
+### Kubernetes Sandbox Setup
+- [ ] Transfer ansible vault key/secrets to k8s sandbox for testing
+  - Save vault key: `secret-tool lookup service ansible-vault account ducktape`
+  - Transfer to sandbox securely
+  - Or temporarily disable vault-encrypted values for testing
 
 ## Implementation Notes
 
-### Ansible Task Tagging
-Add consistent tags for easy skipping:
-```yaml
-- name: Task migrated to Nix
-  tags: [migrated_to_nix]
-  # ... task content
-```
+### Role Split Strategy
+Instead of tagging individual tasks, roles were split:
+- Base role (e.g., `gui`) - contains unmigrated tasks only
+- Migrated role (e.g., `gui_nix_migrated`) - contains tasks migrated to Nix
+- Wyrm playbook excludes `*_nix_migrated` roles
+- Other playbooks include both versions for compatibility
 
 ### Key Learnings from K8s Testing
 

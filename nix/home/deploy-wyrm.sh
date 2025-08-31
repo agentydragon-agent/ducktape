@@ -5,8 +5,6 @@
 set -e
 
 DUCKTAPE_ROOT="$HOME/code/ducktape"
-ANSIBLE_DIR="$DUCKTAPE_ROOT/ansible"
-NIX_HOME_DIR="$DUCKTAPE_ROOT/nix/home"
 
 echo "=== Deploying Wyrm with Ansible + Nix (parallel mode) ==="
 echo "Ducktape root: $DUCKTAPE_ROOT"
@@ -17,19 +15,10 @@ if [ ! -d "$DUCKTAPE_ROOT" ]; then
     exit 1
 fi
 
-# 1. Run Ansible with migrated tasks skipped
-echo ""
 echo ">>> Step 1: Running Ansible (skipping migrated tasks)..."
-cd "$ANSIBLE_DIR"
+cd "$DUCKTAPE_ROOT/ansible"
+ansible-playbook wyrm.yaml --ask-become-pass --skip-tags "migrated_to_nix"
 
-# Tags to skip (already migrated to Nix)
-SKIP_TAGS="migrated_to_nix"
-
-echo "Skipping tags: $SKIP_TAGS"
-ansible-playbook wyrm.yaml --ask-become-pass --skip-tags "$SKIP_TAGS"
-
-# 2. Deploy Nix home-manager configuration
-echo ""
 echo ">>> Step 2: Deploying home-manager configuration..."
 
 # Check if home-manager is installed
@@ -40,11 +29,9 @@ if ! command -v home-manager &> /dev/null; then
     nix-shell '<home-manager>' -A install
 fi
 
-cd "$NIX_HOME_DIR"
+cd "$DUCKTAPE_ROOT/nix/home"
 home-manager switch -f home.nix
 
-# 3. Verify critical services
-echo ""
 echo ">>> Step 3: Verifying configuration..."
 
 echo "Checking GNOME extensions..."
@@ -71,15 +58,6 @@ else
     echo "⚠ Claude Code CLI not found in PATH"
 fi
 
-echo ""
-echo "=== Deployment complete ==="
-echo ""
-echo "Manual verification checklist:"
-echo "  - [ ] Test theme switching with switch_gnome_terminal_profile"
-echo "  - [ ] Verify Flameshot launches with Print key"
-echo "  - [ ] Check autostart apps after logout/login"
-echo "  - [ ] Test workspace switching (Ctrl+Alt+↑/↓)"
-echo ""
-echo "If issues arise, rollback with:"
+echo "Deployment complete. If issues arise, rollback with:"
 echo "  home-manager rollback"
 echo "  ansible-playbook wyrm.yaml --ask-become-pass  # without skip-tags"
