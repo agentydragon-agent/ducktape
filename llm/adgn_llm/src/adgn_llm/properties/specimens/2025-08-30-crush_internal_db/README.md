@@ -238,9 +238,12 @@ So fine to keep as is, too.
 
 #### Timestamps
 
+Prefer time.Time for timestamps and time.Duration for timeouts/durations (avoid bare ints; if you must use int, suffix units in names).
+
 * `internal/message/content.go`: StartedAt/FinishedAt/CreatedAt/UpdatedAt int64 → time types or unit‑suffixed, Finish.Time int64 lacks unit → time.Time or unit‑suffixed
 * `internal/llm/tools/download.go`: maxTimeout → maxTimeoutSecs; Timeout int → TimeoutSecs or time.Duration
 * `internal/llm/tools/tools.go`: StartedAt/UpdatedAt int64 are ms epoch; suffix units or use time types
+* `internal/llm/tools/fetch.go`: Timeout int is seconds; prefer time.Duration (or suffix with units like TimeoutSecs)
 * `internal/pubsub/broker.go`: now := time.Now().UnixMilli() → time type or nowUnixMs
 * `internal/message/message.go`:
   * Watermarks.*TS and Message timestamps → time types or unit‑suffixed
@@ -384,9 +387,9 @@ Two implementations to maintain risks drift; centralize a sanitizer.
 
 Roughly the same 30+ lines appear in three branches (createNewFile ~226–275, deleteContent ~349–406, replaceContent ~488–550) and include the full sequence:
 
-- diff.GenerateDiff(oldContent/newContent)
-- Building permission.CreatePermissionRequest (Action/Description/Params vary)
-- os.WriteFile(filePath, newContent)
+- `diff.GenerateDiff(oldContent/newContent)`
+- Building `permission.CreatePermissionRequest` (Action/Description/Params vary)
+- `os.WriteFile(filePath, newContent)`
 - history: files.GetByPathAndSession → Create (if missing) → CreateVersion (oldContent) → CreateVersion (newContent)
 - recordFileWrite/recordFileRead bookkeeping
 
@@ -419,3 +422,46 @@ Simplify by early-returning on nested spins, then returning m.spinning.
 ### In `internal/llm/tools/write.go` the file content is read twice
 
 Two reads of the same file occur in close succession (oldContent at ~148–151 and again at ~161–167); instead read once and reuse for equality check, diff, and history recording.
+
+### In `internal/llm/tools/edit.go` create-then-replace fall-through bug
+
+When `old_string` is empty, `Run` first creates the file, then still calls `replaceContent`, which treats `old_string` literally and errors as “appears multiple times,” masking the successful create.
+
+Skeleton (Run):
+
+```go
+// edit.go (Run)
+if params.OldString == "" {
+    response, err = e.createNewFile(ctx, params.FilePath, params.NewString, call)
+    if err != nil { return response, err }
+}
+if params.NewString == "" {
+    response, err = e.deleteContent(ctx, params.FilePath, params.OldString, params.ReplaceAll, call)
+    if err != nil { return response, err }
+}
+response, err = e.replaceContent(ctx, params.FilePath, params.OldString, params.NewString, params.ReplaceAll, call)
+```
+
+Skeleton (replaceContent):
+
+```go
+// edit.go (replaceContent)
+index := strings.Index(oldContent, oldString)         // 0 when old_string == ""
+lastIndex := strings.LastIndex(oldContent, oldString) // len(oldContent)
+if index != lastIndex {
+    return NewTextErrorResponse("old_string appears multiple times ..."), nil
+}
+```
+
+Behavior: a successful create is followed by an error from `replaceContent`, masking success. Fix: make branches mutually exclusive (else-if, early returns).
+
+### In `fetch.go` and `view.go` UTF-8 variable name typo
+
+Both files use `isValidUt8` (missing "F") for the UTF-8 validity check. Fix typo to `isValidUTF8`.
+
+### In `internal/llm/tools/ls.go` and `internal/llm/tools/edit.go` path schema/docs inconsistent with behavior
+
+- `internal/llm/tools/ls.go`: ToolInfo.Required lists "path" as required, but Run allows empty path and defaults to workingDir (e.g., lines 119–123, 536–543). Inconsistent; schema/docs and behavior should be aligned.
+- `internal/llm/tools/edit.go`: Description (lines 48–104) says absolute path only, but Run joins relative paths with workingDir (lines 155–157). Inconsistent; docs and behavior should be aligned.
+
+Same typo in `internal/llm/tools/fetch.go` and `.../view.go`. 
