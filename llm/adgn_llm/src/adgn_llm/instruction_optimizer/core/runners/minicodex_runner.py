@@ -293,21 +293,7 @@ class MiniCodexRunner(AgentRunner):
             try:
                 # Use semaphore to limit concurrent API calls
                 async with self._api_semaphore:
-                    if self.logging_model is not None:
-                        response = await self.logging_model.responses_create(**params)
-                    else:
-                        # Fallback: locally log request/response
-                        if self.jsonl_logger:
-                            self.jsonl_logger.log(
-                                request={"params": params, "attempt": i},
-                                event="openai_request",
-                            )
-                        response = await self._fallback_openai_client.responses.create(**params)
-                        if self.jsonl_logger:
-                            self.jsonl_logger.log(
-                                request={"params": params, "response_id": getattr(response, 'id', None)},
-                                event="openai_response_success",
-                            )
+                    response = await self.logging_model.responses_create(**params)
                 return response
             except (APITimeoutError, APIConnectionError, RateLimitError) as e:
                 last_err = e
@@ -315,12 +301,7 @@ class MiniCodexRunner(AgentRunner):
                     await asyncio.sleep(delay)
                     delay *= 2
                     continue
-                # Log the final failure only in fallback mode; logging_model already logged
-                if self.logging_model is None and self.jsonl_logger:
-                    self.jsonl_logger.log(
-                        request={"params": params, "error": str(e)},
-                        event="openai_response_error",
-                    )
+                # Logging handled by the injected model
                 raise
             except APIStatusError as e:
                 last_err = e
@@ -337,19 +318,11 @@ class MiniCodexRunner(AgentRunner):
                     await asyncio.sleep(delay)
                     delay *= 2
                     continue
-                if self.logging_model is None and self.jsonl_logger:
-                    self.jsonl_logger.log(
-                        request={"params": params, "error": str(e)},
-                        event="openai_response_error",
-                    )
+                # Logging handled by the injected model
                 raise
             except Exception as e:
                 # Non-retryable
-                if self.logging_model is None and self.jsonl_logger:
-                    self.jsonl_logger.log(
-                        request={"params": params, "error": str(e)},
-                        event="openai_response_error",
-                    )
+                # Logging handled by the injected model
                 raise
         
         if last_err:
@@ -429,16 +402,8 @@ class MiniCodexRunner(AgentRunner):
                 try:
                     args = json.loads(item.arguments) if item.arguments else {}
                 except json.JSONDecodeError as e:
-                    # Don't swallow JSON decode errors
-                    self.jsonl_logger.log(
-                        request={
-                            "error": "Failed to parse tool arguments",
-                            "tool_name": item.name,
-                            "raw_arguments": item.arguments,
-                            "exception": str(e),
-                        },
-                        event="tool_call_parse_error",
-                    )
+                    # Fail fast; don't swallow JSON decode errors
+                    self.logger.error("Failed to parse tool arguments", tool_name=item.name, raw_arguments=item.arguments)
                     raise RuntimeError(f"Failed to parse tool arguments: {e}")
                     
                 trajectory_items.append(ToolCall(
