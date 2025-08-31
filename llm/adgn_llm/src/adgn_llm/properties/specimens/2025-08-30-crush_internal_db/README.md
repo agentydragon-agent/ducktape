@@ -156,7 +156,7 @@ In the context of the facade, it would serve as a decoupling point.
 However, the facade is currently imperfect, which is the associated finding that should be reported here.
 See correct finding: “App façade vs reach-through”.
 
-### Line numbering implementation for LLM and for human display reported as duplication
+### Line numbering for LLM and for human display reported as duplication
 
 - `internal/tui/components/chat/messages/renderer.go`: on-screen TUI display with styled, width-aware numbering for humans.
 - `internal/llm/tools/view.go`: in-band plaintext line numbers inside the tool payload (<file>…</file>) for the LLM/log consumers. The TUI typically re-renders from metadata and ignores these in-band numbers.
@@ -359,6 +359,19 @@ args = newParamBuilder().
 
 ## Additional findings (this pass)
 
+### Line number digit counting should be a shared helper
+
+Duplication exists in digit-width calculation:
+- `internal/llm/tools/view.go:addLineNumbers` (~258–280) uses a fixed 6-character width via fmt formatting.
+- `internal/tui/components/chat/messages/renderer.go:renderCodeContent` (~817–883) computes dynamic width using a `getDigits` helper.
+
+One possible deduplication: extract shared helper (e.g., `internal/format/lineno`) for digit counting:
+- `Digits(n int) int`  // number of decimal digits (handles 0 and negatives)
+
+The print format (`fmt.Sprintf("%%%dd", width)`) is also duplicated, but may be kept duplicated - it's only a small piece of code.
+
+Despite the duplication, these implementations should be kept separate and not fully merged. See: "Line numbering for LLM and for human display reported as duplication".
+
 ### In `internal/tui/components/chat/messages/renderer.go` metadata parse fallback is duplicated
 
 In multiple branches (edit, multi-edit, view) the same pattern repeats:
@@ -383,7 +396,7 @@ if params.Timeout > 0 {
 }
 ```
 
-This invites inconsistencies between display and copy; use shared helpers/registry.
+Centralize in shared helpers for common parts/registry for tools.
 ### In `internal/llm/tools/view.go` and `internal/llm/tools/ls.go` the “outside working dir” gating is duplicated
 
 Both tools perform the same rel-path check and permission request:
@@ -395,7 +408,7 @@ if err != nil || strings.HasPrefix(relPath, "..") {
 }
 ```
 
-Two copies to maintain increases wording/param drift risk; factor into one helper.
+Factor into one helper.
 ### In `internal/llm/tools/view.go`, `internal/llm/tools/write.go`, and `internal/llm/tools/edit.go` relative path resolution (and empty path) is duplicated
 
 Each tool repeats the same join logic:
@@ -422,7 +435,7 @@ if file.Content != oldContent {
 _, _ = files.CreateVersion(ctx, sessionID, filePath, newContent)
 ```
 
-It shows up in deleteContent (~379–400), replaceContent (~518–538), and write.go (~204–224). Extract a helper.
+It shows up in deleteContent (379–400), replaceContent (518–538), and write.go (204–224). Extract a helper.
 ### In `internal/tui/components/chat/messages/tool.go` the extension→language mapping is duplicated
 
 Two near-identical switches (view vs write copy):
@@ -522,7 +535,7 @@ Behavior: a successful create is followed by an error from `replaceContent`, mas
 
 Both files use `isValidUt8` (missing "F") for the UTF-8 validity check. Fix typo to `isValidUTF8`.
 
-### In `internal/llm/tools/ls.go` and `internal/llm/tools/edit.go` path schema/docs inconsistent with behavior
+### Path schema/docs inconsistent with behavior
 
 - `internal/llm/tools/ls.go`: ToolInfo.Required lists "path" as required, but Run allows empty path and defaults to workingDir (e.g., lines 119–123, 536–543). Inconsistent; schema/docs and behavior should be aligned.
 - `internal/llm/tools/edit.go`: Description (lines 48–104) says absolute path only, but Run joins relative paths with workingDir (lines 155–157). Inconsistent; docs and behavior should be aligned.

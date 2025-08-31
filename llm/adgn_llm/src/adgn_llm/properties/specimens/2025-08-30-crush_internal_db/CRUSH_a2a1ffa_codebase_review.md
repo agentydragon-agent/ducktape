@@ -1,15 +1,12 @@
 # CRUSH (a2a1ffa) Codebase Review – Duplication, Consistency, and Maintainability
 
-- Misc cleanups: minor fold-into-if and guard-clause simplifications; a few magic constants could be centralized (timeouts, line limits, truncation).
-
 ### Duplication (top priority)
 
 A15. Repeated metadata wrapping
 - File: `internal/llm/tools/tools.go:100-108` (WithResponseMetadata)
 - Many tools manually construct metadata structs and wrap similarly; ensure all use WithResponseMetadata; if not, refactor to a single pattern.
 
-### Simplifications (fold-into-if, guard clauses; includes ≥4 concrete before/after)
-
+### Simplifications
 
 S7. Replace repeated string formatting padding logic
 - Example: view.addLineNumbers uses manual width; renderer.getDigits is a more general solution.
