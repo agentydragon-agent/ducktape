@@ -310,8 +310,54 @@ Prefer time.Time for timestamps and time.Duration for timeouts/durations (avoid 
 * `internal/diff/word_inline.go`: Use `filepath.Join` instead of string concatenation for paths (`dir + "/old"` and `"/new"`)
 * `internal/history/file.go`: No unnecessary nesting: in `createWithVersion`, flatten nested UNIQUE constraint retry guard
 
-## Additional findings (this pass)
+### Shorten JSON parsing code with fold-into-if (guard clause)
 
+Many sites use the pattern `if err := json.Unmarshal(...); err == nil { ... }` and then conditionally build args.
+Prefer a guard clause that fails fast on bad input, then proceed on the happy path.
+This applies to all of these in `internal/tui/components/chat/messages/renderer.go` except the Bash renderer (which already uses the guard-clause style):
+
+- editRenderer.Render (~290–297)
+- multiEditRenderer.Render (~335–344)
+- writeRenderer.Render (~384–390)
+- fetchRenderer.Render (~410–416)
+- downloadRenderer.Render (~457–463)
+- globRenderer.Render (~483–488)
+- grepRenderer.Render (~508–515)
+- lsRenderer.Render (~535–543)
+- sourcegraphRenderer.Render (~563–569)
+
+#### Example (`multiEditRenderer.Render`)
+
+**Before**
+```go
+var params tools.MultiEditParams
+var args []string
+if err := mer.unmarshalParams(v.call.Input, &params); err == nil {
+    file := fsext.PrettyPath(params.FilePath)
+    editsCount := len(params.Edits)
+    args = newParamBuilder().
+        addMain(file).
+        addKeyValue("edits", fmt.Sprintf("%d", editsCount)).
+        build()
+}
+```
+
+**After** (guard clause)
+```go
+var params tools.MultiEditParams
+var args []string
+if err := mer.unmarshalParams(v.call.Input, &params); err != nil {
+    return mer.renderError(v, "Invalid multi-edit parameters")
+}
+file := fsext.PrettyPath(params.FilePath)
+editsCount := len(params.Edits)
+args = newParamBuilder().
+    addMain(file).
+    addKeyValue("edits", fmt.Sprintf("%d", editsCount)).
+    build()
+```
+
+## Additional findings (this pass)
 
 ### In `internal/tui/components/chat/messages/renderer.go` metadata parse fallback is duplicated
 

@@ -10,10 +10,6 @@ A15. Repeated metadata wrapping
 
 ### Simplifications (fold-into-if, guard clauses; includes ≥4 concrete before/after)
 
-S6. Fold-into-if for JSON parsing
-- Many places use var X; if err := json.Unmarshal(..., &X); err == nil { ... }
-  Suggest: if err := json.Unmarshal(..., &X); err != nil { return error } // guard clause
-  Example: `internal/tui/components/chat/messages/renderer.go:211-217` (bash.Render) can be written in fold-into-if style, improving readability (many similar cases).
 
 S7. Replace repeated string formatting padding logic
 - Example: view.addLineNumbers uses manual width; renderer.getDigits is a more general solution.
@@ -32,10 +28,5 @@ D5. Unified “write with history + LSP” flow
 - Use in write tool and all edit branches (create/delete/replace). This collapses 3× near-identical sequences.
 
 D7. Centralize magic constants
-- responseContextHeight, MaxReadSize, DefaultReadLimit, MaxLineLength, fetch maxSize, timeout caps, etc. Group under an internal/constants or co-locate per subsystem but import from one place in each subsystem.
-
-## Representative code excerpts (anchors)
-
-- Dual line-numbering:
-  `internal/llm/tools/view.go:265-278`
-  `internal/tui/components/chat/messages/renderer.go:862-875`
+- responseContextHeight, MaxReadSize, DefaultReadLimit, MaxLineLength, fetch maxSize, timeout caps, etc.
+  Group under an internal/constants or co-locate per subsystem but import from one place in each subsystem.
