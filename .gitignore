@@ -19,3 +19,5 @@ dotfiles/config/OrcaSlicer/**
 .venv/
 
 node_modules
+
+.direnv/

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "adgn-llm"
 version = "0.1.0"
-description = "Agentydragon LLM shared library: mini_codex, codex property checker, claude optimizer, git-commit-ai"
+description = "Rai's LLM tools: mini_codex, properties, instruction optimizer, git-commit-ai"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
@@ -18,23 +18,44 @@ dependencies = [
   "pandas>=2.2.0",
   "tiktoken>=0.7.0",
   "plotnine>=0.13.0",
-  "claude-code-sdk>=0.1.0",  # local/private SDK; pin appropriately or replace with VCS URL if needed
+  "claude-code-sdk",
+  # jupyter stdio guard deps
+  "ipykernel>=6",
+  "jupyter-mcp-server>=0.11.0",
+  "jupyter-server",
+  "jupyter-core",
+  "PyYAML>=6",
 ]
 
 [project.scripts]
 adgn-mini-codex = "adgn_llm.mini_codex.cli:main"
 adgn-codex-properties = "adgn_llm.properties.cli:main"
 git-commit-ai = "adgn_llm.git_commit_ai.cli:main"
+sandbox-jupyter-mcp = "adgn_llm.mcp.sandboxed_jupyter_mcp.wrapper:main"
+adgn-sandboxer = "adgn_llm.sandboxer:main"
+adgn-instruction-optimizer = "adgn_llm.instruction_optimizer.core.optimizer:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["adgn_llm*", "claude_optimizer*", "adgn_llm.git_commit_ai*"]
+include = ["adgn_llm*"]
 
 [tool.setuptools.package-data]
 adgn_llm = [
   "properties/definitions/*.md",
   "properties/definitions/**/*.md",
+]
+
+[project.optional-dependencies]
+# Test/developer extras (not required at runtime)
+ test = [
+  "pytest>=8",
+  "pytest-asyncio>=0.23",
+]
+ dev = [
+  "pytest>=8",
+  "pytest-asyncio>=0.23",
+  "ruff>=0.5",
 ]
