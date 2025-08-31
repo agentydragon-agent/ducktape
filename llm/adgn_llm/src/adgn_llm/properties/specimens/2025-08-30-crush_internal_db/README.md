@@ -45,22 +45,25 @@ case textType:
 // ... N more types
 ```
 
-This should be deduplicated. I expect Go should have a way of just assigning the right type and doing the "unmarshal + append" all in a shared convergence point at the end.
-So something like:
+This should be deduplicated. One option:
 
 ```go
-switch wrapper.Type {
-case reasoningType:
-    part := ReasoningSummaryContent{}
-case reasoningEncryptedType:
-    part := ReasoningEncryptedContent{}
-case textType:
-    part := TextContent{}
-// ... N more types
-if err := json.Unmarshal(wrapper.Data, &part); err != nil {
-    return nil, err
+type ContentPart interface { Type() partType }
+
+var decoders = map[partType]func() ContentPart{
+    reasoningType: func() ContentPart { return &ReasoningSummaryContent{} },
+    // ... other types
 }
-parts = append(parts, part)
+
+// marshal
+typ := part.Type()
+
+// unmarshal
+if newPart, ok := decoders[wrapper.Type]; ok {
+    p := newPart()
+    if err := json.Unmarshal(wrapper.Data, p); err != nil { return nil, err }
+    parts = append(parts, p)
+}
 ```
 
 ### Not-useful "there was dead code here" comment in `e2e/mock_openai_responses.go`:
@@ -286,3 +289,133 @@ So fine to keep as is, too.
 * `internal/pubsub/broker.go`: No unnecessary nesting/one‑off vars: use short if with s := f.String(); s != "" { ... }
 * `internal/diff/word_inline.go`: Use `filepath.Join` instead of string concatenation for paths (`dir + "/old"` and `"/new"`)
 * `internal/history/file.go`: No unnecessary nesting: in `createWithVersion`, flatten nested UNIQUE constraint retry guard
+
+## Additional findings (this pass)
+
+
+### In `internal/tui/components/chat/messages/renderer.go` metadata parse fallback is duplicated
+
+In multiple branches (edit, multi-edit, view) the same pattern repeats:
+
+```go
+var meta tools.EditResponseMetadata
+if err := er.unmarshalParams(v.result.Metadata, &meta); err != nil {
+    return renderPlainContent(v, v.result.Content)
+}
+```
+
+This is duplicated logic across branches and risks drift; centralize in a small helper.
+### In `internal/tui/components/chat/messages/renderer.go` and `internal/tui/components/chat/messages/tool.go` parameter rendering is duplicated
+
+Across the renderer and copy-to-clipboard code, the same per-tool formatting is built repeatedly:
+
+```go
+parts = append(parts, fmt.Sprintf("**URL:** %s", params.URL))
+parts = append(parts, fmt.Sprintf("**File Path:** %s", fsext.PrettyPath(params.FilePath)))
+if params.Timeout > 0 {
+    parts = append(parts, fmt.Sprintf("**Timeout:** %s", (time.Duration(params.Timeout)*time.Second).String()))
+}
+```
+
+This invites inconsistencies between display and copy; use shared helpers/registry.
+### In `internal/llm/tools/view.go` and `internal/llm/tools/ls.go` the “outside working dir” gating is duplicated
+
+Both tools perform the same rel-path check and permission request:
+
+```go
+relPath, err := filepath.Rel(absWorkingDir, absFilePath)
+if err != nil || strings.HasPrefix(relPath, "..") {
+    // build permission.CreatePermissionRequest and prompt
+}
+```
+
+Two copies to maintain increases wording/param drift risk; factor into one helper.
+### In `internal/llm/tools/view.go`, `internal/llm/tools/write.go`, and `internal/llm/tools/edit.go` relative path resolution (and empty path) is duplicated
+
+Each tool repeats the same join logic:
+
+```go
+if !filepath.IsAbs(filePath) {
+    filePath = filepath.Join(workingDir, filePath)
+}
+```
+
+LS also separately defaults empty path to workingDir. Put both behaviors into a single resolver to avoid 3 copies.
+### In `internal/llm/tools/edit.go` and `internal/llm/tools/write.go` the history/LSP bookkeeping is duplicated
+
+The same sequence appears in multiple branches:
+
+```go
+file, err := files.GetByPathAndSession(ctx, filePath, sessionID)
+if err != nil {
+    _, _ = files.Create(ctx, sessionID, filePath, oldContent)
+}
+if file.Content != oldContent {
+    _, _ = files.CreateVersion(ctx, sessionID, filePath, oldContent)
+}
+_, _ = files.CreateVersion(ctx, sessionID, filePath, newContent)
+```
+
+It shows up in deleteContent (~379–400), replaceContent (~518–538), and write.go (~204–224). Extract a helper.
+### In `internal/tui/components/chat/messages/tool.go` the extension→language mapping is duplicated
+
+Two near-identical switches (view vs write copy):
+
+```go
+switch ext {
+case ".go": lang = "go"
+case ".py": lang = "python"
+// ...
+}
+```
+
+Keeping them in sync is error-prone; use one mapping.
+### In `internal/tui/components/chat/messages/renderer.go` and `internal/tui/components/chat/messages/tool.go` newline/tab sanitization is duplicated
+
+Both sites perform the same replacements:
+
+```go
+cmd := strings.ReplaceAll(params.Command, "\n", " ")
+cmd = strings.ReplaceAll(cmd, "\t", "    ")
+```
+
+Two implementations to maintain risks drift; centralize a sanitizer.
+### In `internal/llm/tools/edit.go` the permission/diff/history block is duplicated (3×)
+
+Roughly the same 30+ lines appear in three branches (createNewFile ~226–275, deleteContent ~349–406, replaceContent ~488–550) and include the full sequence:
+
+- diff.GenerateDiff(oldContent/newContent)
+- Building permission.CreatePermissionRequest (Action/Description/Params vary)
+- os.WriteFile(filePath, newContent)
+- history: files.GetByPathAndSession → Create (if missing) → CreateVersion (oldContent) → CreateVersion (newContent)
+- recordFileWrite/recordFileRead bookkeeping
+
+These should be centralized behind a helper parameterized by Action, Description, and Params to avoid drift.
+### In `internal/tui/components/chat/messages/tool.go` function `View()` has a redundant branch
+
+This function returns the same value in both branches:
+
+```go
+if m.isNested {
+    return box.Render(content)
+}
+return box.Render(content)
+```
+
+The conditional adds no value; return once.
+### In `internal/tui/components/chat/messages/tool.go` method `ToolCallCmp.Spinning()` can be simplified
+
+Current shape:
+
+```go
+if m.spinning { return true }
+for _, nested := range m.nestedToolCalls {
+    if nested.Spinning() { return true }
+}
+return m.spinning
+```
+
+Simplify by early-returning on nested spins, then returning m.spinning.
+### In `internal/llm/tools/write.go` the file content is read twice
+
+Two reads of the same file occur in close succession (oldContent at ~148–151 and again at ~161–167); instead read once and reuse for equality check, diff, and history recording.
