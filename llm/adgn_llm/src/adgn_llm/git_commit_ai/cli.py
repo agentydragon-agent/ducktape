@@ -217,10 +217,25 @@ def _build_ai_context(repo: Repo, include_all: bool) -> str:
     return out
 
 
-def build_prompt(repo: Repo, diff: str, passthru):
+def build_prompt(repo: Repo, diff: str, passthru, previous_message: str | None = None):
     include_all = ("-a" in passthru) or ("--all" in passthru)
     context = _build_ai_context(repo, include_all)
-    prompt = f"""Write a concise, imperative-mood Git commit message. Output ONLY the commit message between <message> and </message> tags.
+    
+    if previous_message:
+        prompt = f"""Update and refine this existing commit message based on the current changes.
+
+Previous commit message:
+{previous_message}
+
+The commit is being amended. Write an updated message that accurately reflects all changes.
+Output ONLY the commit message between <message> and </message> tags.
+No explanations, no markdown, no signatures. Do NOT include 'Generated with' or 'Co-Authored-By' lines.
+
+Context:
+{context}
+"""
+    else:
+        prompt = f"""Write a concise, imperative-mood Git commit message. Output ONLY the commit message between <message> and </message> tags.
 No explanations, no markdown, no signatures. Do NOT include 'Generated with' or 'Co-Authored-By' lines.
 
 Context:
@@ -273,7 +288,7 @@ $ {"git diff HEAD --stat" if include_all else "git diff --cached --stat"}
     return prompt
 
 
-def get_commit_diff(repo: Repo, passthru: list[str]) -> str:
+def get_commit_diff(repo: Repo, passthru: list[str], previous_message: str | None = None) -> str:
     """Get the diff that would be committed with the given flags."""
     # First, check what would be committed with these flags
     dry_run = subprocess.run(
@@ -288,7 +303,31 @@ def get_commit_diff(repo: Repo, passthru: list[str]) -> str:
         return ""
 
     # Now get the diff based on what would be committed
-    if "-a" in passthru or "--all" in passthru:
+    if previous_message:  # amending
+        # For amend, show BOTH original diff and new changes
+        parts = []
+        
+        # First show what was in the original commit
+        try:
+            # Try to get diff from parent (if exists)
+            parts.append("=== Original commit diff (HEAD^ to HEAD) ===")
+            parts.append(repo.git.diff("HEAD^", "HEAD", "--unified=0"))
+        except Exception:
+            # First commit (no parent), show HEAD content
+            parts.append("=== Original commit content ===")
+            parts.append(repo.git.show("HEAD", "--unified=0"))
+        
+        # Then show what's being added/changed
+        parts.append("\n=== New changes being added ===")
+        if "-a" in passthru or "--all" in passthru:
+            # Show all working tree changes
+            parts.append(repo.git.diff("HEAD", "--unified=0"))
+        else:
+            # Show only staged changes
+            parts.append(repo.git.diff("--cached", "--unified=0"))
+        
+        raw = "\n".join(parts)
+    elif "-a" in passthru or "--all" in passthru:
         # Show diff of all tracked files
         raw = repo.git.diff("HEAD", "--unified=0")
     else:
@@ -742,6 +781,9 @@ async def async_main():
         )
         sys.exit(2)
 
+    # Detect --amend flag
+    is_amend = "--amend" in passthru
+
     # Configure logging - always log to file under .git/
     log_file = Path(repo.git_dir) / "git_commit_ai.log"
 
@@ -777,7 +819,16 @@ async def async_main():
     if "-a" in passthru or "--all" in passthru:
         repo.git.add("-u")
 
-    if not (diff := get_commit_diff(repo, passthru)).strip():
+    # Get previous commit message if amending
+    previous_message = None
+    if is_amend:
+        try:
+            previous_message = repo.git.log("-1", "--pretty=format:%B").strip()
+        except Exception as e:
+            print(f"Error: Cannot amend - failed to retrieve previous commit message: {e}", file=sys.stderr)
+            sys.exit(1)
+
+    if not (diff := get_commit_diff(repo, passthru, previous_message)).strip():
         # Check if there's truly nothing to commit
         status = repo.git.status("--porcelain")
         if not status:
@@ -798,11 +849,12 @@ async def async_main():
     cache = Cache(repo_cache_dir(repo))
     cache.prune()
 
-    # Cache key by provider, model, scope, HEAD, and diff
+    # Cache key by provider, model, scope, HEAD, diff, and amend status
     commitish = get_short_commitish(repo)
     diff_hash = hashlib.sha256(diff.encode()).hexdigest()
     scope = "all" if include_all else "staged"
-    key = f"{provider}:{model_name}:{scope}:{commitish}:{diff_hash}"
+    amend_marker = "amend" if previous_message else "new"
+    key = f"{provider}:{model_name}:{scope}:{amend_marker}:{commitish}:{diff_hash}"
 
     if msg := cache.get(key):
         cached = True
@@ -815,10 +867,14 @@ async def async_main():
                 passthru=passthru,
                 debug=known.debug,
                 timeout_secs=config.timeout_secs,
+                previous_message=previous_message,
             )
         elif provider == "codex":
             ai_client = CodexAI(
-                repo, debug=known.debug, timeout_secs=config.timeout_secs,
+                repo, 
+                debug=known.debug, 
+                timeout_secs=config.timeout_secs,
+                previous_message=previous_message,
             )
         else:
             raise ValueError(f"Unknown AI provider: {provider}")
@@ -856,7 +912,16 @@ async def async_main():
         sys.exit(exit_code)
 
     # Combine everything for editor flow
-    final_text = msg + stats_comment + build_commit_template(repo, passthru)
+    final_text = msg
+    
+    # Add previous message in comments if amending
+    if previous_message:
+        final_text += "\n\n# Previous commit message (being amended):\n"
+        for line in previous_message.splitlines():
+            final_text += f"# {line}\n"
+    
+    # Add stats and template (same for both cases)
+    final_text += stats_comment + build_commit_template(repo, passthru)
 
     # Use git's COMMIT_EDITMSG for a more authentic experience (no trailing blank line)
     commit_msg_path.write_text(final_text)
@@ -943,17 +1008,19 @@ class ClaudeAI:
         passthru: list[str],
         debug: bool = False,
         timeout_secs: int | None = None,
+        previous_message: str | None = None,
     ):
         self.repo = repo
         self.diff = diff
         self.passthru = passthru
         self.debug = debug
         self.timeout_secs = timeout_secs
+        self.previous_message = previous_message
         self.logger = logging.getLogger(__name__)
 
     async def generate(self, include_all: bool, model: str | None = None) -> str:
         # Build prompt from the provided diff and repo context
-        prompt = build_prompt(self.repo, self.diff, self.passthru)
+        prompt = build_prompt(self.repo, self.diff, self.passthru, self.previous_message)
 
         # Truncate prompt if too long and warn (stderr) in debug mode only
         max_chars = int(os.environ.get("GIT_AI_MAX_PROMPT", "20000"))
@@ -1030,11 +1097,13 @@ class CodexAI:
         debug: bool = False,
         codex_bin: str | None = None,
         timeout_secs: int | None = None,
+        previous_message: str | None = None,
     ):
         self.repo = repo
         self.debug = debug
         self.codex_bin = codex_bin or os.environ.get("CODEX_BIN", "codex")
         self.timeout_secs = timeout_secs
+        self.previous_message = previous_message
         self.logger = logging.getLogger(__name__)
 
     async def generate(self, include_all: bool, model: str | None = None) -> str:
@@ -1044,14 +1113,25 @@ class CodexAI:
 
         # Build prompt - let the agent inspect the repo itself
         context = _build_ai_context(self.repo, include_all)
-        prompt = (
-            "You are an expert engineer writing a Git commit message for the current changes.\n"
-            "Requirements:\n"
-            "- Review the provided repository context. If more context is needed, you may query the repository as needed.\n"
-            "- Write a concise, imperative-mood subject; if helpful, add a short bullet list body.\n"
-            "- Output ONLY the message between <message> and </message> tags. No extra text.\n\n"
-            f"Context:\n{context}\n"
-        )
+        if self.previous_message:  # amending
+            prompt = (
+                "You are an expert engineer updating a Git commit message for an amended commit.\n"
+                f"Previous commit message:\n{self.previous_message}\n\n"
+                "Requirements:\n"
+                "- Review the provided repository context and update the message to reflect all changes.\n"
+                "- Write a concise, imperative-mood subject; if helpful, add a short bullet list body.\n"
+                "- Output ONLY the message between <message> and </message> tags. No extra text.\n\n"
+                f"Context:\n{context}\n"
+            )
+        else:
+            prompt = (
+                "You are an expert engineer writing a Git commit message for the current changes.\n"
+                "Requirements:\n"
+                "- Review the provided repository context. If more context is needed, you may query the repository as needed.\n"
+                "- Write a concise, imperative-mood subject; if helpful, add a short bullet list body.\n"
+                "- Output ONLY the message between <message> and </message> tags. No extra text.\n\n"
+                f"Context:\n{context}\n"
+            )
 
         cmd = [
             self.codex_bin,
