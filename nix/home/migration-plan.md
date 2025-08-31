@@ -1,4 +1,4 @@
-# Nix/Home-Manager Migration Plan for Wyrm
+# Nix/Home-Manager Migration Plan
 
 ## Strategy: Parallel Deployment with Progressive Cutover
 
@@ -39,6 +39,13 @@ Your proposed strategy makes perfect sense! Here's the refined plan:
 - ✅ GNOME dconf settings applied (focus-mode, panel date format)
 - ✅ Autostart desktop files created (syncthing-gtk, discord, flameshot)
 - ✅ Packages accessible (some from Nix, some from existing installations)
+
+#### Atlas Deployment (2025-08-30)
+- ✅ Nix multi-user daemon installed successfully (after cleanup of failed root install)
+- ✅ Fixed Debian `/etc/profile` PATH issue (removed sourcing from `.shellrc`)
+- ✅ home-manager installed and configuration applied
+- ✅ All packages available in user environment
+- ⚠️ Note: Debian requires different handling than Ubuntu for shell initialization
 
 #### What We Had to Skip/Disable
 - ❌ **XDG MIME associations** (mimeapps.list): Home-manager would replace all 105 associations with just 2. Kept in Ansible to preserve existing associations.
@@ -149,8 +156,9 @@ Instead of tagging individual tasks, roles were split:
 - Wyrm playbook excludes `*_nix_migrated` roles
 - Other playbooks include both versions for compatibility
 
-### Key Learnings from K8s Testing
+### Key Learnings
 
+#### From K8s Testing
 1. **Python Version**: Use Python 3.12, not 3.13 (numpy compatibility) 
 2. **Nix Channels**: Must use matching versions (e.g., nixpkgs 25.05 with home-manager 25.05)
 3. **Installation Order**: 
@@ -158,6 +166,13 @@ Instead of tagging individual tasks, roles were split:
    - Let `programs.home-manager.enable = true` handle it
 4. **File Conflicts**: May need to remove existing files before first activation
 5. **dbus Issues**: Expected in containers, won't affect real systems
+
+#### From Atlas Deployment (Debian/Proxmox)
+1. **Shell Initialization**: Debian's `/etc/profile` resets PATH unconditionally, breaking Nix paths
+   - Solution: Don't source `/etc/profile` in `.shellrc`
+2. **Installation Cleanup**: Failed root installations leave artifacts that block reinstalls
+   - Check for: backup files, nixbld users/groups, `/nix` directory
+3. **Multi-user Setup**: Requires `NIX_REMOTE=daemon` for proper operation
 
 ### Rollback Strategy
 If issues arise:

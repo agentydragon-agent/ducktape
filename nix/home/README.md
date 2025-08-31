@@ -1,6 +1,15 @@
-# Nix Sandbox for User Configuration Migration
+# Nix/Home-Manager User Configuration
 
-This is a Kubernetes-based sandbox environment for experimenting with migrating user configuration from Ansible to Nix/home-manager.
+This directory contains the Nix/home-manager configuration for user environments, migrating from Ansible-based setup.
+
+## Deployed Systems
+
+- **wyrm** - Primary development machine (Pop!_OS/Ubuntu) - deployed 2025-08-28
+- **atlas** - Proxmox host (Debian) - deployed 2025-08-30
+
+## Kubernetes Sandbox
+
+A Kubernetes-based sandbox environment is available for testing changes before deployment.
 
 ## Setup
 

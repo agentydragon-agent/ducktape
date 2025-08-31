@@ -59,6 +59,19 @@ in
     nodejs_20  # LTS version
     python312  # Python 3.12 for ML compatibility
     leiningen  # Clojure
+    
+    # Neovim and dependencies for configuration
+    unstablePkgs.neovim  # Latest neovim from unstable
+    tree-sitter  # For nvim-treesitter parser compilation
+    
+    # Language servers for neovim LSP
+    # pyright is already included above
+    
+    # Formatters for conform.nvim
+    stylua  # Lua formatter
+    python312Packages.black  # Python formatter
+    python312Packages.isort  # Python import sorter
+    # rustfmt is included with cargo above
 
     # Machine Learning packages (from wyrm.yaml dev-ml role)
     python312Packages.pandas
