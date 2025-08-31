@@ -1,9 +1,3 @@
-## Not to mark ground truth
-
-internal/app/app.go
-* No trivial pass-through wrappers: UpdateAgentModel forwards without value
-  * This was flagged, but unclear if it's any useful to delete this. TODO
-
 ### TBD
 
 internal/cmd/root.go

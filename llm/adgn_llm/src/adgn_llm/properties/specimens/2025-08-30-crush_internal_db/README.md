@@ -147,6 +147,15 @@ Those functions are highly duplicated and should be deduplicated - possibly into
 
 ## False positives
 
+### Trivial pass-through wrapper (UpdateAgentModel) is intentional
+
+Some critiques flagged `app.UpdateAgentModel` as a trivial pass-through that should be inlined (i.e., replace callers with calls to `agent.UpdateModel`).
+
+But actually, squashing this method should NOT be prescribed as required. This method is part of an imperfect facade boundary around App→CoderAgent.
+In the context of the facade, it would serve as a decoupling point.
+However, the facade is currently imperfect, which is the associated finding that should be reported here.
+See correct finding: “App façade vs reach-through”.
+
 ### Line numbering implementation for LLM and for human display reported as duplication
 
 - `internal/tui/components/chat/messages/renderer.go`: on-screen TUI display with styled, width-aware numbering for humans.
@@ -473,3 +482,27 @@ Both files use `isValidUt8` (missing "F") for the UTF-8 validity check. Fix typo
 - `internal/llm/tools/edit.go`: Description (lines 48–104) says absolute path only, but Run joins relative paths with workingDir (lines 155–157). Inconsistent; docs and behavior should be aligned.
 
 Same typo in `internal/llm/tools/fetch.go` and `.../view.go`. 
+
+### App façade vs reach-through
+
+App acts as a composition root/lifecycle manager (wires Sessions/Messages/History/Permissions, LSP/MCP, event bus) and also exposes a partial façade over the CoderAgent (e.g., `UpdateAgentModel` pass‑through).
+However, the TUI code frequently reaches through `app` to inner services directly (Law of Demeter violation), leading to an inconsistent boundary and a leaky façade.
+
+- Representative reach‑through call sites (non‑exhaustive):
+  - `internal/tui/page/chat/chat.go`: `p.app.CoderAgent.IsBusy()`, `p.app.CoderAgent.Run(...)`, `p.app.CoderAgent.Cancel(...)`, direct `p.app.Sessions.Create(...)`
+  - `internal/tui/tui.go`: busy checks and model updates via `a.app.CoderAgent`, permissions toggles via `a.app.Permissions`
+  - `internal/tui/components/chat/editor/editor.go`: session/agent checks via `m.app.CoderAgent.*`, config/permissions via `m.app.Config()/m.app.Permissions`
+- Risks: duplicated “busy” guards across UI, harder refactors of agent/model boundaries, muddled ownership of permission prompts, and drift between façade methods and direct service calls.
+
+Code should choose one strategy and apply it consistently:
+
+1) Strengthen App as a proper façade for the Agent boundary
+   - Provide: `IsAgentBusy()`, `RunAgent(ctx, sessionID, text, attachments...)`, `CancelAgent(sessionID)`, `UpdateAgentModel()`, `AgentModel()`
+   - Prefer routing all TUI agent interactions through App; optionally make inner agent field private to discourage reach‑through.
+   - Keep Sessions/Messages/Permissions either behind light façade utilities (when cross‑cutting behavior exists) or passed as DI consistently.
+
+2) Collapse trivial façade methods and treat App strictly as composition root
+   - Remove pass‑throughs like `UpdateAgentModel` if they add no value; access injected services directly everywhere.
+
+Low‑churn pragmatic path: façade only for CoderAgent (busy/run/cancel/model APIs) to unify agent lifecycle/guards, while keeping Sessions/Messages/Permissions as DI.
+This would avoid large churn while restoring a clear boundary.

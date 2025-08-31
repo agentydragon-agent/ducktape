@@ -1,8 +1,5 @@
 Runs: 1 = parallel_all, 2 = parallel_run2, 3 = parallel_run3
 
-# internal/app/app.go
-* [1 3] No one-off variables or trivial pass-through wrappers: Trivial pass-through wrapper. UpdateAgentModel simply forwards to app.CoderAgent.UpdateModel with no added value, context, or adaptation. Unless required for a public facade with a clear reason, this is a pass-through wrapper. Lines 253255: func (app *App) UpdateAgentModel() error { return app.CoderAgent.UpdateModel() }
-
 # internal/cmd/root.go
 * [1] No one-off variables or trivial pass-through wrappers: yolo is a singleuse variable that immediately forwards into cfg.Permissions.SkipRequests without adding clarity. Lines 133, 168. Rationale: Singleuse forwarding variables should be inlined unless they add nonobvious value.
 * [1 3] Selfdescribing names for primitives (units and meaning): The boolean flag and variable name yolo are not selfdescriptive. Lines 30 (CLI flag), 133, 168. Prefer names like --auto-accept / autoAccept or --skip-permission-requests / skipPermissionRequests; booleans should be clear predicates like dangerous_mode, auto_accept_permissions, or skip_requests.
