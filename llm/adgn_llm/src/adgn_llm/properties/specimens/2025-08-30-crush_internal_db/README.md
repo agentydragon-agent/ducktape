@@ -316,15 +316,15 @@ Many sites use the pattern `if err := json.Unmarshal(...); err == nil { ... }` a
 Prefer a guard clause that fails fast on bad input, then proceed on the happy path.
 This applies to all of these in `internal/tui/components/chat/messages/renderer.go` except the Bash renderer (which already uses the guard-clause style):
 
-- editRenderer.Render (~290–297)
-- multiEditRenderer.Render (~335–344)
-- writeRenderer.Render (~384–390)
-- fetchRenderer.Render (~410–416)
-- downloadRenderer.Render (~457–463)
-- globRenderer.Render (~483–488)
-- grepRenderer.Render (~508–515)
-- lsRenderer.Render (~535–543)
-- sourcegraphRenderer.Render (~563–569)
+- `editRenderer.Render` (~290–297)
+- `multiEditRenderer.Render` (~335–344)
+- `writeRenderer.Render` (~384–390)
+- `fetchRenderer.Render` (~410–416)
+- `downloadRenderer.Render` (~457–463)
+- `globRenderer.Render` (~483–488)
+- `grepRenderer.Render` (~508–515)
+- `lsRenderer.Render` (~535–543)
+- `sourcegraphRenderer.Render` (~563–569)
 
 #### Example (`multiEditRenderer.Render`)
 
@@ -359,7 +359,7 @@ args = newParamBuilder().
 
 ## Additional findings (this pass)
 
-### Line number digit counting should be a shared helper
+### Duplicated line number digit counting
 
 Duplication exists in digit-width calculation:
 - `internal/llm/tools/view.go:addLineNumbers` (~258–280) uses a fixed 6-character width via fmt formatting.
@@ -372,9 +372,53 @@ The print format (`fmt.Sprintf("%%%dd", width)`) is also duplicated, but may be 
 
 Despite the duplication, these implementations should be kept separate and not fully merged. See: "Line numbering for LLM and for human display reported as duplication".
 
-### In `internal/tui/components/chat/messages/renderer.go` metadata parse fallback is duplicated
+### Magic constants should be named
 
-In multiple branches (edit, multi-edit, view) the same pattern repeats:
+Hardcoded timeouts/intervals/limits appear without named constants, making tuning and consistency harder. Name them and centralize per subsystem.
+
+- internal/lsp/client.go:
+  - `ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)` (around line 243) → `const LSPStopTimeout = 5 * time.Second`
+  - `ctx, cancel := context.WithTimeout(ctx, 30*time.Second)` (around line 313) → `const LSPWaitReadyTimeout = 30 * time.Second`
+  - `time.NewTicker(500 * time.Millisecond)` (around line 317) → `const LSPReadyPollInterval = 500 * time.Millisecond`
+  - `maxFilesToOpen := 5` (around line 524) → `const MaxFilesToOpen = 5`
+- internal/diff/external.go:
+  - `context.WithTimeout(..., 2*time.Second)` (around lines 56–63) → `const ExternalDiffTimeout = 2 * time.Second`
+
+Define named constants for these values (or, alternatively, make them configuration options where useful and worth it).
+
+### Repeated "text + metadata" tool response wrapping
+
+Many tools repeat this wrapping pattern with different strings and metadata structs:
+
+```go
+return WithResponseMetadata(NewTextResponse(text), SomeResponseMetadata{ /* tool-specific */ }), nil
+```
+
+Examples:
+- `view.go` (ViewResponseMetadata)
+- `ls.go` (LSResponseMetadata)
+- `write.go` (WriteResponseMetadata)
+- `edit.go` (EditResponseMetadata)
+- `multiedit.go` (MultiEditResponseMetadata)
+- `grep.go` (GrepResponseMetadata).
+
+Note: `download`, `fetch`, `diagnostics`, `sourcegraph` tools still return bare NewTextResponse.
+
+One possible refactor:
+- `tools.go` helper `WrapTextWithMeta(text string, meta any) (ToolResponse, error)` to centralize the wrap and remove nested calls
+- Per-tool unexported helpers (in each tool file):
+```go
+// view.go
+func newViewResult(output, filePath, content string) (ToolResponse, error) {
+   return WrapTextWithMeta(output, ViewResponseMetadata{FilePath: filePath, Content: content})
+}
+```
+
+This keeps metadata local to each tool and eliminates duplicated call shape everywhere.
+
+### Duplicated metadata parse fallback
+
+In `internal/tui/components/chat/messages/renderer.go`, multiple branches (edit, multi-edit, view) repeat the same pattern:
 
 ```go
 var meta tools.EditResponseMetadata
