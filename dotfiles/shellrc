@@ -3,7 +3,13 @@
 # See: ~/code/ducktape/dotfiles/docs/shell-configuration.md
 
 # Source environment setup first
-. "/etc/profile"
+# NOTE: We do NOT source /etc/profile here because:
+#   1. For interactive shells, it's not normally sourced (only for login shells)
+#   2. Zsh never sources /etc/profile (has its own /etc/zsh/zprofile for login shells)
+#   3. On Debian/Proxmox, /etc/profile unconditionally resets PATH, destroying any
+#      paths set by /etc/zsh/zshrc or /etc/bash.bashrc (including Nix paths)
+#   4. The important stuff (like Nix) is already handled by shell-specific rc files
+# This was causing Nix to break on Debian-based systems like Proxmox.
 . "$HOME/.profile"
 
 # Interactive-only environment variables

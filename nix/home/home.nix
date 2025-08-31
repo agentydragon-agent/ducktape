@@ -29,6 +29,7 @@ in
     speedtest-cli
     ansible
     python312Packages.pydeps
+    uv  # Fast Python package and project manager
 
     # Tools that Ansible installs via cargo
     atuin

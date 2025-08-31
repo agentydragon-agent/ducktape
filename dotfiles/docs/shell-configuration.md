@@ -29,7 +29,6 @@ This document explains the shell startup file organization for this system.
 - → `/etc/bash.bashrc` (Debian/Ubuntu)
 - → **`~/.bashrc`**
   - ⇒ **`~/.shellrc`**
-    - ⇒ `/etc/profile`
     - ⇒ **`~/.profile`**
       - ⇒ **`~/.secret_env`** (if exists)
 
@@ -42,7 +41,6 @@ This document explains the shell startup file organization for this system.
   - → `/etc/zsh/zshrc`
   - → **`~/.zshrc`**
     - ⇒ **`~/.shellrc`**
-      - ⇒ `/etc/profile`
       - ⇒ **`~/.profile`**
         - ⇒ **`~/.secret_env`** (if exists)
     - ⇒ **`~/.p10k.zsh`** (if exists)
@@ -73,7 +71,7 @@ This document explains the shell startup file organization for this system.
 - History settings (including atuin)
 - Color support aliases (bash only - oh-my-zsh handles for zsh)
 - Colored man pages (bash only - oh-my-zsh plugin for zsh)
-- Source `/etc/profile`, `~/.profile`, `~/.aliases`, `~/.shell_interactive`
+- Source `~/.shellrc` (which contains aliases and sources `~/.profile`)
 
 ### `~/.zshenv` (Zsh-specific environment)
 - Minimal - only what MUST run for all zsh (including scripts)
@@ -89,13 +87,18 @@ This document explains the shell startup file organization for this system.
 - Available to all shells through profile
 
 ### `~/.shellrc` (Shell-agnostic interactive settings)
-- Sources `/etc/profile` and `~/.profile` first
+- Sources `~/.profile` first (NOT `/etc/profile` - see note below)
 - All aliases and simple functions
 - Interactive-only environment variables (`LESS`, `PYTHONSTARTUP`)
 - dircolors setup
 - nvm and bun completions loading
 - Interactive functions (like `reload-env`, `bmosh`)
 - Sourced by both `~/.bashrc` and `~/.zshrc`
+
+**Note on /etc/profile**: We don't source `/etc/profile` because:
+- It's meant for login shells only
+- On Debian it unconditionally resets PATH, breaking Nix and other paths
+- Shell-specific rc files already handle important setup (like Nix)
 
 ## Common Issues
 
