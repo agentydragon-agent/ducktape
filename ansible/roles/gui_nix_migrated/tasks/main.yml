@@ -3,6 +3,7 @@
 # These are kept here for non-Nix systems but skipped on wyrm
 
 - include_tasks: gnome_preferences.yml
+- include_tasks: gnome_terminal.yml
 - include_tasks: night_theme_switcher_gnome_terminal.yml
 - include_tasks: gnome_panel_iso8601.yml
 - include_tasks: pop_extension_bug_workaround.yml

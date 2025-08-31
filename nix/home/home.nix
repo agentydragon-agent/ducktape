@@ -1,5 +1,25 @@
 { config, pkgs, lib, ... }:
 
+# IMPORTANT: Nix/Ansible Split for agentydragon machine
+# =====================================================
+# Nix home-manager manages:
+#   - User-level packages (dev tools, language servers, formatters)
+#   - GNOME dconf settings and terminal profiles
+#   - XDG autostart entries
+#   - GNOME extensions packages
+#
+# Ansible continues to manage:
+#   - System packages (via apt)
+#   - Oh-my-zsh git clone (NOT the Nix package)
+#   - Dotfiles via rcm
+#   - Services and system configuration
+#   - Build dependencies (libssl-dev, etc.)
+#
+# Tools where Nix takes precedence (moved to cli_nix_migrated in Ansible):
+#   - neovim (Nix: unstable version)
+#   - Node.js (Nix: nodejs_20)
+#   - Rust (Nix: rustc/cargo packages)
+
 let
   oldPkgs = import (fetchTarball "https://github.com/NixOS/nixpkgs/archive/nixos-23.11.tar.gz") {};
   unstablePkgs = import (fetchTarball "https://github.com/NixOS/nixpkgs/archive/nixpkgs-unstable.tar.gz") {};
@@ -81,16 +101,24 @@ in
     python312Packages.pytorch  # PyTorch
     python312Packages.numpy
 
+    # Python dependencies for switch_gnome_terminal_profile script
+    python312Packages.absl-py
+    python312Packages.dbus-python
+    python312Packages.pygobject3
+
     # Kubernetes tools (from wyrm.yaml k3s-client role)
     kubectl
 
     # For dotfile management (keeping rcm approach)
     rcm
 
-    # Zsh and oh-my-zsh (packages only, no config generation)
+    # Zsh package only - oh-my-zsh managed via git clone in ~/.oh-my-zsh
     zsh
-    oh-my-zsh
-    zsh-powerlevel10k
+    # oh-my-zsh is intentionally NOT managed by Nix because:
+    # 1. .zshrc expects it at ~/.oh-my-zsh (not a Nix store path)
+    # 2. It needs to be a writable git repository for updates
+    # 3. Custom themes/plugins go in ~/.oh-my-zsh/custom/
+    # 4. Ansible's cli role handles the git clone for all systems
 
     # GNOME Shell Extensions (migrated from Ansible gui role)
     # These extensions were installed via petermosmans.customize-gnome role:

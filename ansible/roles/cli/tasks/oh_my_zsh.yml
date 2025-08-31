@@ -1,0 +1,28 @@
+---
+# IMPORTANT: oh-my-zsh is NOT managed by Nix, even on Nix systems!
+# Reason: oh-my-zsh must be a git clone at ~/.oh-my-zsh because:
+#   1. Our dotfile-managed .zshrc expects it at this exact path
+#   2. It needs to be writable for plugin/theme management
+#   3. Custom themes/plugins go in ~/.oh-my-zsh/custom/
+#   4. The oh-my-zsh update mechanism expects a git repository
+# The Nix oh-my-zsh package would install to /nix/store/..., which won't work.
+
+- name: Clone oh-my-zsh
+  tags: [oh-my-zsh, zsh]
+  git:
+    # TODO(agentydragon): shallow clone
+    repo: https://github.com/robbyrussell/oh-my-zsh
+    dest: "/home/{{ my_user | default(ansible_user_id) }}/.oh-my-zsh"
+  become: true
+  become_user: "{{ my_user | default(ansible_user_id) }}"
+
+# Install Powerlevel10k theme
+- name: Clone Powerlevel10k theme
+  tags: [oh-my-zsh, zsh, p10k]
+  git:
+    repo: https://github.com/romkatv/powerlevel10k.git
+    dest: "/home/{{ my_user | default(ansible_user_id) }}/.oh-my-zsh/custom/themes/powerlevel10k"
+    depth: 1  # Shallow clone for faster installation
+    version: master  # Use latest master as requested
+  become: true
+  become_user: "{{ my_user | default(ansible_user_id) }}"

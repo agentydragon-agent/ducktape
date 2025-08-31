@@ -139,26 +139,9 @@
     state: present
 - include_tasks: wezterm.yml
 
-- name: Hide gnome-terminal menu
-  tags:
-    - gnome-terminal
-  community.general.dconf:
-    key: "/org/gnome/terminal/legacy/default-show-menubar"
-    value: false
+# GNOME terminal configuration moved to gui_nix_migrated role
 
-- name: Set GNOME default terminal to gnome-terminal
-  tags: [gnome-terminal]
-  block:
-  - name: Set GNOME default terminal to gnome-terminal.wrapper
-    community.general.dconf:
-      key: "/org/gnome/desktop/applications/terminal/exec"
-      value: "'gnome-terminal.wrapper'"
-  - name: Expicitly set GNOME default terminal exec-arg empty
-    community.general.dconf:
-      key: "/org/gnome/desktop/applications/terminal/exec-arg"
-      state: absent
-
-- include_tasks: wm_datetime_format.yml
+# wm_datetime_format.yml removed - datetime configuration moved to gui_nix_migrated role
 - include_tasks: xorg_terminate.yml
 - include_tasks: element.yml
   tags: element
@@ -184,9 +167,6 @@
 
 - import_tasks: syncthing.yml
   tags: syncthing
-
-- import_tasks: pop_extension_bug_workaround.yml
-  tags: pop_extension_bug_workaround
 
 - import_tasks: login_event_webhook_reporter.yml
   tags: login_event_webhook_reporter

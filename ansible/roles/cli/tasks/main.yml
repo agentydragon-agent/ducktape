@@ -16,16 +16,7 @@
   vars:
     bazel_state: absent
 
-# Install Neovim from unstable PPA to get version 0.11+
-- name: Add Neovim unstable PPA
-  become: true
-  deb822_repository:
-    name: neovim-unstable
-    uris: https://ppa.launchpadcontent.net/neovim-ppa/unstable/ubuntu
-    suites: ["{{ ansible_distribution_release }}"]
-    components: [main]
-    signed_by: https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x9DBB0BE9366964F134855E2255F96FCF8231B6DD
-  when: not (skip_ubuntu_ppas | default(false))
+# Neovim PPA moved to cli_nix_migrated - Nix provides unstablePkgs.neovim
 
 - name: Install CLI packages
   become: true
@@ -73,12 +64,7 @@
       - yasm
       - zsh
 
-# Install Neovim separately to ensure it updates from PPA
-- name: Install/Update Neovim from unstable PPA
-  become: true
-  ansible.builtin.apt:
-    name: neovim
-    state: latest
+# Neovim installation moved to cli_nix_migrated
 
 # Modern systems require using pipx or apt for Python CLI tools
 - name: Install pipx for Python CLI tools
@@ -125,29 +111,10 @@
     name: tio
     classic: true
 
-# needed for OpenAI Codex CLI, vim-copilot
-- include_tasks: tasks/nodejs.yml
+# nodejs.yml moved to cli_nix_migrated - Nix provides nodejs_20
 
-# Set up oh-my-zsh
-- name: Clone oh-my-zsh
-  tags: [oh-my-zsh, zsh]
-  git:
-    # TODO(agentydragon): shallow clone
-    repo: https://github.com/robbyrussell/oh-my-zsh
-    dest: "/home/{{ my_user | default(ansible_user_id) }}/.oh-my-zsh"
-  become: true
-  become_user: "{{ my_user | default(ansible_user_id) }}"
-
-# Install Powerlevel10k theme
-- name: Clone Powerlevel10k theme
-  tags: [oh-my-zsh, zsh, p10k]
-  git:
-    repo: https://github.com/romkatv/powerlevel10k.git
-    dest: "/home/{{ my_user | default(ansible_user_id) }}/.oh-my-zsh/custom/themes/powerlevel10k"
-    depth: 1  # Shallow clone for faster installation
-    version: master  # Use latest master as requested
-  become: true
-  become_user: "{{ my_user | default(ansible_user_id) }}"
+- include_tasks: oh_my_zsh.yml
+  tags: [zsh]
 
 # Set zsh as default shell
 - name: Set zsh as login shell

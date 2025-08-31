@@ -5,8 +5,4 @@
       - syncthing
       - syncthing-gtk
 
-- name: Autostart Syncthing-GTK
-  autostart_entry:
-    exec: "syncthing-gtk --minimized"
-    name: "Syncthing-GTK"
-    icon: "syncthing-gtk"
+# Syncthing-GTK autostart configuration moved to gui_nix_migrated role

@@ -47,6 +47,15 @@ Your proposed strategy makes perfect sense! Here's the refined plan:
 - ✅ All packages available in user environment
 - ⚠️ Note: Debian requires different handling than Ubuntu for shell initialization
 
+#### Agentydragon Deployment (2025-08-31)
+- ✅ Nix daemon installed successfully
+- ✅ home-manager installed with nixpkgs 25.05 + home-manager 25.05
+- ✅ home.nix already configured with correct username and stateVersion
+- ✅ All user packages migrated from Ansible to Nix
+- ✅ Playbook updated to exclude `*_nix_migrated` roles
+- ✅ oh-my-zsh kept as git clone (not Nix package) for compatibility
+- ✅ Python dependencies added for switch_gnome_terminal_profile script
+
 #### What We Had to Skip/Disable
 - ❌ **XDG MIME associations** (mimeapps.list): Home-manager would replace all 105 associations with just 2. Kept in Ansible to preserve existing associations.
 - ❌ **Claude MCP configuration** (.claude.json): File contains many other Claude settings beyond MCP servers. Need in-place editing solution, not file replacement.
@@ -61,8 +70,8 @@ Split roles into migrated and unmigrated parts:
 - ✅ Created `gnome-terminal-solarized_nix_migrated` with profile creation
 - ✅ Created `cli_nix_migrated` (placeholder for migrated packages)
 - ✅ Renamed `dev-ml` → `dev-ml_nix_migrated` (fully migrated)
-- ✅ Updated wyrm.yaml to exclude `*_nix_migrated` roles
-- ✅ Updated agentydragon.yaml, gpd.yaml, atlas.yaml, and vps.yaml to include both versions
+- ✅ Updated wyrm.yaml, agentydragon.yaml, atlas.yaml to exclude `*_nix_migrated` roles (all Nix-managed)
+- ⏳ gpd.yaml and vps.yaml still include both versions (not yet migrated to Nix)
 
 ### Phase 2: Wyrm Deployment 
 

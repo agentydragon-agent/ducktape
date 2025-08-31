@@ -1,0 +1,22 @@
+---
+# Neovim installation for non-Nix systems
+# Nix systems use unstablePkgs.neovim instead
+
+# Install Neovim from unstable PPA to get version 0.11+
+- name: Add Neovim unstable PPA
+  become: true
+  deb822_repository:
+    name: neovim-unstable
+    uris: https://ppa.launchpadcontent.net/neovim-ppa/unstable/ubuntu
+    suites: ["{{ ansible_distribution_release }}"]
+    components: [main]
+    architectures: ["{{ dpkg_arch }}"]
+    signed_by: https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x9DBB0BE9366964F134855E2255F96FCF8231B6DD
+  when: not (skip_ubuntu_ppas | default(false))
+
+# Install Neovim separately to ensure it updates from PPA
+- name: Install/Update Neovim from unstable PPA
+  become: true
+  ansible.builtin.apt:
+    name: neovim
+    state: latest

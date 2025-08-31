@@ -6,6 +6,12 @@ This directory contains the Nix/home-manager configuration for user environments
 
 - **wyrm** - Primary development machine (Pop!_OS/Ubuntu) - deployed 2025-08-28
 - **atlas** - Proxmox host (Debian) - deployed 2025-08-30
+- **agentydragon** - ThinkPad X1 Extreme (Pop!_OS) - deployed 2025-08-31
+
+## Remaining Systems (not yet migrated to Nix)
+
+- **gpd** - GPD Win Max 2 laptop
+- **vps** - VPS server
 
 ## Kubernetes Sandbox
 

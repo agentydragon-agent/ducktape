@@ -13,25 +13,7 @@
   become: true
   become_user: "{{ my_user | default(ansible_user_id) }}"
   block:
-    # Special handling for ansible due to broken metadata
-    - name: Force reinstall ansible if it has broken metadata
-      community.general.pipx:
-        name: ansible
-        state: reinstall
-      ignore_errors: true
-
-    - name: Install dev env PyPI packages via pipx
-      community.general.pipx:
-        name: "{{ item }}"
-        state: present
-      loop:
-        - speedtest-cli
-        - autopep8
-        - ruff
-        - pre-commit
-        - ansible  # Get newer version than Ubuntu 22.04's ancient one
-        # - libcst  # Python concrete syntax tree library for refactoring ... doesn't seem to exist in pipx:w
-        - pydeps  # Python dependency graph visualization
+    # pipx tools installation moved to cli_nix_migrated role
 
     - name: Install pnpm package manager
       github_release_install:
@@ -45,19 +27,7 @@
       when: ansible_architecture == "x86_64" and ansible_system == "Linux"
       tags: [pnpm]
 
-    - name: Install Node.js CLI tools globally with pnpm
-      community.general.pnpm:
-        name: "{{ item }}"
-        global: true
-      loop:
-        - '@openai/codex'
-        # - '@anthropic-ai/claude-code'  # Now installed via official script below
-        - '@bazel/bazelisk'
-        - '@ast-grep/cli'  # For semantic code queries across multiple languages
-        - 'jscpd'  # Copy/paste detector for 150+ languages including Python, TypeScript
-        - 'madge'  # Dependency graph visualization tool
-        - 'pyright'  # Python language server for static type checking
-      tags: [pnpm]
+    # pnpm global tools installation moved to cli_nix_migrated role
 
     # Check for legacy npm-global directory that should be removed
     - name: Check if npm-global directory exists
@@ -100,62 +70,21 @@
       changed_when: false
       failed_when: claude_version_check.rc != 0
 
-    # Install Rust development tools
-    - name: Check if cargo is installed
-      command: which cargo
-      register: cargo_check
-      failed_when: false
-      changed_when: false
+    # Rust installation moved to cli_nix_migrated - Nix provides rustc and cargo
 
-    - name: Install Rust via rustup
-      shell: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-      args:
-        creates: "~/.cargo/bin/cargo"
-      when: cargo_check.rc != 0
-
-    - name: Ensure cargo bin directory exists
-      ansible.builtin.file:
-        path: "~/.cargo/bin"
-        state: directory
-        mode: '0755'
-
-    - name: Install sccache via cargo
-      ansible.builtin.shell: |
-        source ~/.profile
-        # Temporarily disable RUSTC_WRAPPER since ~/.cargo/config.toml configures
-        # cargo to use sccache, but sccache is not installed yet (chicken-and-egg)
-        RUSTC_WRAPPER="" cargo install sccache --locked
-      args:
-        creates: "~/.cargo/bin/sccache"
-        executable: /bin/bash
-      # Note: Cargo is configured to use sccache via ~/.cargo/config.toml dotfile
-
-    - name: Install atuin via cargo
-      ansible.builtin.command: cargo install atuin --locked
-      args:
-        creates: "~/.cargo/bin/atuin"
+    # sccache and atuin installation moved to cli_nix_migrated role
 
     # Import claude-mcp after Claude Code is installed
     - import_role:
         name: claude-mcp
       tags: [claude, mcp]
 
-# Install comby for structural code search and replace
-- import_tasks: comby.yml
-  tags: [comby, dev-tools]
+# comby installation moved to cli_nix_migrated role
 
-# Install GitHub CLI (gh) for GitHub operations
-- import_tasks: github_cli.yml
-  tags: [gh, github, dev-tools]
+# GitHub CLI (gh) installation moved to cli_nix_migrated role
 
-# Install GitLab CLI (glab) for GitLab operations
-- import_tasks: glab.yml
-  tags: [glab, gitlab, dev-tools]
+# GitLab CLI (glab) installation moved to cli_nix_migrated role
 
-# Install gitstatus for wt tool
-- import_tasks: gitstatus.yml
-  tags: [gitstatus, dev-tools]
+# gitstatus installation moved to cli_nix_migrated role
 
-# Install kubeseal for Sealed Secrets
-- import_tasks: kubeseal.yml
-  tags: [kubeseal, k8s, dev-tools]
+# kubeseal installation moved to cli_nix_migrated role
