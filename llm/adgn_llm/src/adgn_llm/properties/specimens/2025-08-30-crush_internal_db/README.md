@@ -147,6 +147,14 @@ Those functions are highly duplicated and should be deduplicated - possibly into
 
 ## False positives
 
+### Line numbering implementation for LLM and for human display reported as duplication
+
+- `internal/tui/components/chat/messages/renderer.go`: on-screen TUI display with styled, width-aware numbering for humans.
+- `internal/llm/tools/view.go`: in-band plaintext line numbers inside the tool payload (<file>…</file>) for the LLM/log consumers. The TUI typically re-renders from metadata and ignores these in-band numbers.
+
+A critique reported these two as duplication that should be merged. That is a false positive. 
+These serve different purposes (human UI vs LLM/plaintext). Different implementations and formatting are appropriate; not duplication.
+
 ### Over-strict "combine trivial guards / early bailout"
 
 #### `internal/fsext/ls.go`
