@@ -1,13 +1,10 @@
 Runs: 1 = parallel_all, 2 = parallel_run2, 3 = parallel_run3
 
 # internal/cmd/root.go
-* [1] No one-off variables or trivial pass-through wrappers: yolo is a singleuse variable that immediately forwards into cfg.Permissions.SkipRequests without adding clarity. Lines 133, 168. Rationale: Singleuse forwarding variables should be inlined unless they add nonobvious value.
-* [1 3] Selfdescribing names for primitives (units and meaning): The boolean flag and variable name yolo are not selfdescriptive. Lines 30 (CLI flag), 133, 168. Prefer names like --auto-accept / autoAccept or --skip-permission-requests / skipPermissionRequests; booleans should be clear predicates like dangerous_mode, auto_accept_permissions, or skip_requests.
 
 # internal/config/config.go
 * [3] No unnecessary line breaks: Two consecutive blank lines in a struct block reduce readability. Lines 166167. Allow at most one blank line to separate logical sections.
 
-# internal/config/provider.go
 * [3] No one-off variables or trivial passthrough wrappers: Singleuse variables immediately forwarded to the next call. Lines 8385. Example: client and path created only to be passed once into loadProvidersOnce(...). Inline without loss of clarity.
 
 # internal/fsext/fileutil.go

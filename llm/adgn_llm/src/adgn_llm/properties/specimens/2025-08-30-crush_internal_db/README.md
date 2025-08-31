@@ -164,6 +164,15 @@ See correct finding: “App façade vs reach-through”.
 A critique reported these two as duplication that should be merged. That is a false positive. 
 These serve different purposes (human UI vs LLM/plaintext). Different implementations and formatting are appropriate; not duplication.
 
+### CLI flag name 'yolo' is acceptable branding
+
+File: `internal/cmd/root.go` (flag defined at lines ~29–31; propagated at ~132–169)
+
+Some critiques suggest renaming `--yolo` and local var `yolo` to a more descriptive predicate (e.g., `--skip-permission-requests`).
+
+This is a false positive: “yolo mode” is a consistent label used across docs/UX, and the help text already clarifies it (“Automatically accept all permissions (dangerous mode)”).
+Naming "skip pemissions" as `--yolo` is a valid choice. This is fine as is.
+
 ### Over-strict "combine trivial guards / early bailout"
 
 #### `internal/fsext/ls.go`
@@ -302,8 +311,13 @@ Prefer time.Time for timestamps and time.Duration for timeouts/durations (avoid 
 * `internal/csync/maps.go`: JSONSchemaAlias returns throwaway temp; inline literal
 * `internal/format/spinner.go`: inline single-use locals: model, local prog into struct
 * `internal/session/session.go`: inline single‑use broker into struct literal
+* `internal/config/provider.go` (~82–86): inline one‑off locals:
+  - client := catwalk.NewWithURL(...)
+  - path := providerCacheFileData()
 
 ### Other
+
+* `internal/config/config.go` (~166–176): collapse double blank lines in Options; keep at most one between logical groups. If you want a Tool options section, format the comment as a header (e.g., `// ---- Tool options ----`) and keep exactly one blank line above it; otherwise omit the extra blank line.
 
 * `internal/shell/shell.go`: `ArgumentsBlocker`: use labeled continue instead of sentinel flag in inner loop
 * `internal/pubsub/broker.go`: No unnecessary nesting/one‑off vars: use short if with s := f.String(); s != "" { ... }
@@ -357,8 +371,6 @@ args = newParamBuilder().
     build()
 ```
 
-## Additional findings (this pass)
-
 ### Duplicated line number digit counting
 
 Duplication exists in digit-width calculation:
@@ -376,13 +388,23 @@ Despite the duplication, these implementations should be kept separate and not f
 
 Hardcoded timeouts/intervals/limits appear without named constants, making tuning and consistency harder. Name them and centralize per subsystem.
 
-- internal/lsp/client.go:
+- `internal/lsp/client.go`:
   - `ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)` (around line 243) → `const LSPStopTimeout = 5 * time.Second`
   - `ctx, cancel := context.WithTimeout(ctx, 30*time.Second)` (around line 313) → `const LSPWaitReadyTimeout = 30 * time.Second`
   - `time.NewTicker(500 * time.Millisecond)` (around line 317) → `const LSPReadyPollInterval = 500 * time.Millisecond`
   - `maxFilesToOpen := 5` (around line 524) → `const MaxFilesToOpen = 5`
-- internal/diff/external.go:
+- `internal/diff/external.go`:
   - `context.WithTimeout(..., 2*time.Second)` (around lines 56–63) → `const ExternalDiffTimeout = 2 * time.Second`
+- `internal/lsp/diagnostics_wait.go`: 5s diagnostics deadline; 100ms poll interval
+- `internal/app/lsp.go`: 30s init timeout; 5s shutdown timeout
+- `internal/app/app.go`: 30ms debounce; 2s select timeout; 100ms slow‑op threshold; 5s shutdown timeout
+- `internal/lsp/watcher/watcher.go`:
+  * 300ms debounceTime (file system events)
+  * default recursive max watched dirs = 5000
+  * watch mode default string "recursive"
+- `internal/llm/agent/sequence_transformer.go`: 1500ms overall deadline; 50ms sleep; 2500ms per‑call timeout
+- `internal/llm/agent/agent.go`: 50ms delayed flush; 5s overall timeout; 200ms retry sleep
+- `internal/llm/tools/sourcegraph.go`: HTTP client Timeout 30s; IdleConnTimeout 90s
 
 Define named constants for these values (or, alternatively, make them configuration options where useful and worth it).
 
@@ -578,6 +600,22 @@ Behavior: a successful create is followed by an error from `replaceContent`, mas
 ### In `fetch.go` and `view.go` UTF-8 variable name typo
 
 Both files use `isValidUt8` (missing "F") for the UTF-8 validity check. Fix typo to `isValidUTF8`.
+
+### Dead `basePath == ""` guard in LSP watcher
+
+In `internal/lsp/watcher/watcher.go` (lines ~699–709), `matchesPattern` checks `basePath == ""` twice in a row; the second branch is unreachable.
+
+```go
+if basePath == "" {
+    fullPathMatch := matchesGlob(patternText, path)
+    baseNameMatch := matchesGlob(patternText, filepath.Base(path))
+    return fullPathMatch || baseNameMatch
+}
+
+if basePath == "" {  // will never be entered - delete this if
+    return false
+}
+```
 
 ### Path schema/docs inconsistent with behavior
 
