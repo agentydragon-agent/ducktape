@@ -20,7 +20,7 @@ Uses Docker for isolated execution and stores results in a database for analysis
 
 **Production Run (Recommended):**
 ```bash
-python3 -m claude_optimizer.core.optimizer --iterations 10 --rollouts-per-task 3 --tasks-per-iteration 10 --max-parallel 8 --mode summary
+python3 -m adgn_llm.instruction_optimizer.core.optimizer --iterations 10 --rollouts-per-task 3 --tasks-per-iteration 10 --max-parallel 8 --mode summary
 ```
 - 10 iterations of prompt improvement
 - 3 rollouts per task for statistical reliability
@@ -30,7 +30,7 @@ python3 -m claude_optimizer.core.optimizer --iterations 10 --rollouts-per-task 3
 
 **Quick Development Testing:**
 ```bash
-python3 -m claude_optimizer.core.optimizer --iterations 3 --rollouts-per-task 1 --tasks-per-iteration 5 --max-parallel 4 --mode summary
+python3 -m adgn_llm.instruction_optimizer.core.optimizer --iterations 3 --rollouts-per-task 1 --tasks-per-iteration 5 --max-parallel 4 --mode summary
 ```
 
 ## Usage
@@ -121,7 +121,7 @@ pip install -e ".[dev]"
 
 **Type Checking with MyPy:**
 ```bash
-mypy src/claude_optimizer/core/optimizer.py
+mypy src/adgn_llm/instruction_optimizer/core/optimizer.py
 ```
 
 **Testing with Pytest:**
@@ -130,7 +130,7 @@ mypy src/claude_optimizer/core/optimizer.py
 pytest
 
 # Run with coverage 
-pytest --cov=src/claude_optimizer
+pytest --cov=src/adgn_llm
 
 # Run specific test files
 pytest tests/test_yaml_loader.py
@@ -180,13 +180,13 @@ docker buildx version
 
 ### Pattern Analysis Mode
 ```bash
-python3 -m claude_optimizer.core.optimizer --mode summary --iterations 5
+python3 -m adgn_llm.instruction_optimizer.core.optimizer --mode summary --iterations 5
 ```
 Uses condensed pattern analysis instead of full rollout data for prompt engineering.
 
 ### Custom Parallelism
 ```bash
-python3 -m claude_optimizer.core.optimizer --max-parallel 4
+python3 -m adgn_llm.instruction_optimizer.core.optimizer --max-parallel 4
 ```
 
 ### Monitoring Costs

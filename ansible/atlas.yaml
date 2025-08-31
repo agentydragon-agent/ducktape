@@ -108,9 +108,7 @@
         name: cli
       tags: [cli]
     
-    - import_role:
-        name: cli_nix_migrated
-      tags: [cli]
+    # cli_nix_migrated excluded - atlas now uses Nix/home-manager for migrated packages
 
     - import_role:
         name: k3s

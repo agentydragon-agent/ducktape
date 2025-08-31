@@ -60,6 +60,9 @@ in
     python312  # Python 3.12 for ML compatibility
     leiningen  # Clojure
     
+    # Development tools
+    direnv  # Per-directory environment variables
+    
     # Neovim and dependencies for configuration
     unstablePkgs.neovim  # Latest neovim from unstable
     tree-sitter  # For nvim-treesitter parser compilation

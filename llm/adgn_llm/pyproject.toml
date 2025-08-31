@@ -26,6 +26,11 @@ dependencies = [
   "jupyter-core",
   "PyYAML>=6",
   "GitPython>=3.1.43",
+  # instruction optimizer deps
+  "structlog",
+  "anthropic",
+  "numpy",
+  "pathspec",
 ]
 
 [project.scripts]

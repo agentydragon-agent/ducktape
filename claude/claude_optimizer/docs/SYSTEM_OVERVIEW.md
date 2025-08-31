@@ -23,7 +23,7 @@ YAML Config → Database → Docker Containers → Claude Execution → OpenAI G
 ## Package Structure
 
 ```
-src/claude_optimizer/
+src/adgn_llm/instruction_optimizer/
 ├── config/settings.py          # Configuration management
 ├── core/
 │   ├── containerized_claude.py # Container execution wrapper
@@ -200,12 +200,12 @@ agent_output/{timestamp}/
 
 ### Build Docker Images
 ```bash
-python -m claude_optimizer.docker.build
+python -m adgn_llm.instruction_optimizer.docker.build
 ```
 
 ### Run Optimization
 ```bash
-python -m claude_optimizer.core.optimizer \
+python -m adgn_llm.instruction_optimizer.core.optimizer \
   --iterations 10 \
   --rollouts-per-task 3 \
   --max-parallel 16

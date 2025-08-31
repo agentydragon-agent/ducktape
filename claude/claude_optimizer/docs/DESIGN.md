@@ -67,7 +67,7 @@ The Claude Instruction Optimizer uses a **per-task Docker image** approach with 
 
 ### 1. **Base Layer Build** (`build_dependency_layers.py`)
 ```bash
-python3 -m claude_optimizer.docker.build_dependency_layers
+python3 -m adgn_llm.instruction_optimizer.docker.build_dependency_layers
 ```
 - Builds independent layers in dependency order
 - Uses Docker buildx with persistent caching (`.docker-cache/`)
@@ -75,7 +75,7 @@ python3 -m claude_optimizer.docker.build_dependency_layers
 
 ### 2. **Task Execution** (`optimizer.py`)
 ```bash
-python3 -m claude_optimizer.core.optimizer --iterations 10 --rollouts-per-task 3
+python3 -m adgn_llm.instruction_optimizer.core.optimizer --iterations 10 --rollouts-per-task 3
 ```
 - Generates per-task Dockerfiles dynamically
 - Clones git repositories at runtime
