@@ -294,6 +294,11 @@ Prefer time.Time for timestamps and time.Duration for timeouts/durations (avoid 
 
 ### Avoid nesting / use early bailout
 
+#### Combine trivial guards (type assertions)
+
+* `internal/tui/components/chat/chat.go`: Combine nested `if` conditions into one `if` with `&&`
+  - ~508–516: combine `asMsg, ok := item.(messages.MessageCmp); ok` + `asMsg.GetMessage().ID == messageID`
+  - ~837–841: combine `tc, ok := items[i].(messages.ToolCallCmp); ok` + `tc.Spinning()`
 * `internal/logging/recover.go`: prefer early return over wrapping whole body after recover
 * `internal/message/content.go`: flatten nested type/id/finished guards across helpers
 * `internal/app/app.go`:
@@ -314,11 +319,22 @@ Prefer time.Time for timestamps and time.Duration for timeouts/durations (avoid 
 * `internal/config/provider.go` (~82–86): inline one‑off locals:
   - client := catwalk.NewWithURL(...)
   - path := providerCacheFileData()
+* `internal/lsp/watcher/watcher.go`:
+  * ~568–576: inline one‑off isMatch variable used only for return branch
+  * ~653–671, 662–664, 669–672: inline single‑use isMatch temporaries in matchesSimpleGlob
+
+### Deduplicate glob matching (use doublestar across codebase)
+
+Code uses two different implementations of glob matching:
+
+* Custom matching in `internal/lsp/watcher/watcher.go` (`matchesGlob`, `matchesSimpleGlob`)
+* `doublestar.Match` used in `internal/fsext/fileutil.go`
+
+Standardize on one implementation, prefer `doublestar` (seems to be a well-maintained implementation), assuming it covers required glob semantics; otherwise document the chosen behavior or isolate matching behind a small helper.
 
 ### Other
 
 * `internal/config/config.go` (~166–176): collapse double blank lines in Options; keep at most one between logical groups. If you want a Tool options section, format the comment as a header (e.g., `// ---- Tool options ----`) and keep exactly one blank line above it; otherwise omit the extra blank line.
-
 * `internal/shell/shell.go`: `ArgumentsBlocker`: use labeled continue instead of sentinel flag in inner loop
 * `internal/pubsub/broker.go`: No unnecessary nesting/one‑off vars: use short if with s := f.String(); s != "" { ... }
 * `internal/diff/word_inline.go`: Use `filepath.Join` instead of string concatenation for paths (`dir + "/old"` and `"/new"`)
