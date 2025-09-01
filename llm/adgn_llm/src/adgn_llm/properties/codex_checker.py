@@ -27,7 +27,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-import codex_utils as cx
+from adgn_llm.properties import utils as cx
 
 
 def build_supplemental_section(supplemental_text: str | None) -> str:
