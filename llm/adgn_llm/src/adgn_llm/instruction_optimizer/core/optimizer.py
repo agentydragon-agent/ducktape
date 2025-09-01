@@ -37,7 +37,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import fnmatch
 import json
 import random
 import signal
@@ -50,7 +49,6 @@ from adgn_llm.instruction_optimizer.config import OptimizerConfig
 from adgn_llm.instruction_optimizer.core.exceptions import (
     ContextWindowExceededException,
 )
-from adgn_llm.instruction_optimizer.core.file_ops import should_exclude_file
 from adgn_llm.instruction_optimizer.core.grading.grader import grade_rollout
 from adgn_llm.instruction_optimizer.core.jsonl_logger import JSONLLogger
 from adgn_llm.instruction_optimizer.core.logging_openai_client import (
@@ -79,6 +77,7 @@ from adgn_llm.instruction_optimizer.core.task_loader import (
 )
 from adgn_llm.instruction_optimizer.core.truncation_utils import TruncationManager
 from adgn_llm.instruction_optimizer.core.yaml_loader import load_yaml_files
+from openai import AsyncOpenAI
 
 # Database removed - using JSON files instead
 from adgn_llm.instruction_optimizer.plots import ScoreEvolutionTracker
@@ -137,68 +136,11 @@ def setup_signal_handlers():
 
 # -----------------------------------------------------------------------------
 # Helper functions for deduplication and common operations
+# (file collection lives in core/file_ops; keep local helpers here)
 # -----------------------------------------------------------------------------
 
-
-def gather_agent_files(
-    work_dir: Path,
-    cfg: OptimizerConfig,
-    trunc_mgr: TruncationManager | None = None,
-) -> list[dict[str, str]]:
-    """Gather all relevant files from agent working directory.
-
-    Args:
-        work_dir: The agent's working directory
-
-    Returns:
-        List of dicts with 'path' and 'content' keys for each file
-    """
-    files_info: list[dict[str, str]] = []
-    t_mgr = trunc_mgr or TruncationManager(cfg)
-
-    for file_path in work_dir.rglob("*"):
-        if not file_path.is_file():
-            continue
-
-        relative_path = file_path.relative_to(work_dir).as_posix()
-        if any(
-            fnmatch.fnmatch(relative_path, pattern)
-            or fnmatch.fnmatch(file_path.name, pattern)
-            for pattern in cfg.exclude_patterns
-        ):
-            continue
-
-        relative = file_path.relative_to(work_dir).as_posix()
-        content = t_mgr.truncate_file_by_bytes(
-            file_path,
-            cfg.truncation.max_file_size_grading,
-        )
-
-        files_info.append({"path": relative, "content": content})
-
-    return t_mgr.truncate_files_by_tokens(
-        files_info,
-        cfg.tokens.max_files_tokens,
-    )
-
-
-def should_exclude_file(
-    relative_path: str,
-    filename: str,
-    cfg: OptimizerConfig,
-) -> bool:
-    """Check if a file should be excluded based on configuration patterns.
-
-    Args:
-        relative_path: File path relative to working directory
-        filename: Just the filename part
-    """
-    return any(
-        fnmatch.fnmatch(relative_path, pattern) or fnmatch.fnmatch(filename, pattern)
-        for pattern in cfg.exclude_patterns
-    )
-
-
+def _write_json(path: Path, data: dict) -> None:
+    path.write_text(json.dumps(data, indent=2))
 
 
 async def optimize_prompts(
@@ -256,7 +198,7 @@ async def optimize_prompts(
 
     # Note: We'll create a runner instance per rollout to avoid shared state conflicts
     # Each parallel task needs its own runner to prevent race conditions
-    
+
     # Prepare API loggers for both OpenAI and Anthropic (keeping these for debugging)
 
     # Criteria already passed as parameter
@@ -294,7 +236,13 @@ async def optimize_prompts(
 
     # Generate initial prompt without any rollout data
     prev_reasoning, prev_function_call, current_prompt = await engineer.propose_prompt()
-    logger.info("Generated initial prompt", iteration=0, prompt_preview=current_prompt[:200] + "..." if len(current_prompt) > 200 else current_prompt)
+    logger.info(
+        "Generated initial prompt",
+        iteration=0,
+        prompt_preview=current_prompt[:200] + "..."
+        if len(current_prompt) > 200
+        else current_prompt,
+    )
 
     # Track prompts
     prompts_by_iteration = {0: current_prompt}
@@ -324,7 +272,7 @@ async def optimize_prompts(
             if task.type not in task_types:
                 raise ValueError(f"Unknown task type: {task.type}")
             task_type_config = task_types[task.type]
-            
+
             # Create a runner instance for this specific rollout
             # This ensures parallel tasks don't share state
             # Build a LoggingOpenAIModel once and pass it into the runner (no client leakage)
@@ -335,18 +283,18 @@ async def optimize_prompts(
                 reasoning_effort=cfg.grader.reasoning_effort,
             )
             runner = create_runner(runner_name, runner_configs, runner_model)
-            
+
             # Setup runner for this specific task
             await runner.setup(task, task_type_config)
-            
+
             try:
                 # Run agent task with current instructions being optimized
                 rollout = await runner.run_task(task, agent_instructions=current_prompt)
-                
+
                 # Track cost if available
                 if rollout.cost_usd:
                     cost_tracker.add_rollout_cost(rollout.cost_usd)
-                
+
                 # Save files to output directory
                 if rollout.files:
                     for file_path, content in rollout.files.items():
@@ -373,17 +321,18 @@ async def optimize_prompts(
             }
             if rollout.error_message:
                 rollout_data["error_message"] = rollout.error_message
-            
+
             rollout_json_path = rollout_dir / "rollout.json"
-            with open(rollout_json_path, "w") as f:
-                json.dump(rollout_data, f, indent=2)
+            await asyncio.to_thread(_write_json, rollout_json_path, rollout_data)
 
             # Get grading configuration from task
             _, grading_config = task.resolve_config(task_types)
-            
+
             # Get runner environment if available
-            runner_env = runner.get_environment() if hasattr(runner, 'get_environment') else None
-            
+            runner_env = (
+                runner.get_environment() if hasattr(runner, "get_environment") else None
+            )
+
             try:
                 grade = await grade_rollout(
                     rollout=rollout,
@@ -413,8 +362,7 @@ async def optimize_prompts(
                     "grader_model": cfg.grader.model,
                     "timestamp": datetime.now(UTC).isoformat(),
                 }
-                with open(rollout_dir / "grading_error.json", "w") as f:
-                    json.dump(grading_data, f, indent=2)
+                await asyncio.to_thread(_write_json, rollout_dir / "grading_error.json", grading_data)
 
                 # Return None to indicate this rollout should be excluded
                 return None
@@ -435,8 +383,7 @@ async def optimize_prompts(
                     "grader_model": cfg.grader.model,
                     "timestamp": datetime.now(UTC).isoformat(),
                 }
-                with open(rollout_dir / "grading_error.json", "w") as f:
-                    json.dump(grading_data, f, indent=2)
+                await asyncio.to_thread(_write_json, rollout_dir / "grading_error.json", grading_data)
                 # Return None to indicate this rollout should be excluded
                 return None
 
@@ -454,9 +401,7 @@ async def optimize_prompts(
                 "grader_model": cfg.grader.model,
                 "timestamp": datetime.now(UTC).isoformat(),
             }
-            with open(rollout_dir / "grading.json", "w") as f:
-                json.dump(grading_data, f, indent=2)
-
+            await asyncio.to_thread(_write_json, rollout_dir / "grading.json", grading_data)
 
             logger.info(
                 "Rollout completed",
@@ -465,14 +410,16 @@ async def optimize_prompts(
                 iteration=iteration,
                 overall_score=grade.overall_score,
             )
-            
+
             # Log grading details for visibility
             logger.info(
                 "Grading result",
                 task_id=task.id,
                 rollout_id=rollout_id,
                 score=grade.overall_score,
-                rationale=grade.overall_rationale[:300] + "..." if len(grade.overall_rationale) > 300 else grade.overall_rationale,
+                rationale=grade.overall_rationale[:300] + "..."
+                if len(grade.overall_rationale) > 300
+                else grade.overall_rationale,
             )
 
             return GradedRollout(
@@ -554,8 +501,6 @@ async def optimize_prompts(
                 "FATAL: Container setup failed - terminating optimization",
                 error=str(e),
             )
-            import sys
-
             sys.exit(1)
 
         # Filter out None values (failed grading due to context window)
@@ -627,18 +572,21 @@ async def optimize_prompts(
                 prev_function_call,
                 new_prompt,
             ) = await engineer.propose_prompt()
-            
-            logger.info("Generated new optimized prompt", 
-                       iteration=iteration + 1, 
-                       prompt_preview=new_prompt[:200] + "..." if len(new_prompt) > 200 else new_prompt)
+
+            logger.info(
+                "Generated new optimized prompt",
+                iteration=iteration + 1,
+                prompt_preview=new_prompt[:200] + "..."
+                if len(new_prompt) > 200
+                else new_prompt,
+            )
 
             # Store new system prompt
             prompts_by_iteration[iteration + 1] = new_prompt
             current_prompt = new_prompt
 
     # Save all prompts to a file
-    with open(base_dir / "prompts.json", "w") as f:
-        json.dump(prompts_by_iteration, f, indent=2)
+    await asyncio.to_thread(_write_json, base_dir / "prompts.json", prompts_by_iteration)
 
     logger.info("Optimization complete", logs_directory=str(base_dir))
     return base_dir
@@ -691,13 +639,13 @@ Examples:
         default="claude",
         help="Runner to use for task execution (default: %(default)s)",
     )
-    
+
     parser.add_argument(
         "--verbose",
         action="store_true",
         help="Enable verbose logging for agent actions (mini_codex only)",
     )
-    
+
     parser.add_argument(
         "--task-type",
         type=str,
@@ -707,7 +655,7 @@ Examples:
     )
 
     args = parser.parse_args()
-    
+
     # Setup logging with verbosity setting
     DualOutputLogging.setup_logging(verbose=args.verbose)
     global logger
@@ -723,26 +671,30 @@ Examples:
     config_dir = Path(__file__).parent.parent.parent.parent / "config"
     task_types = load_task_types(config_dir / "task_types.yaml")
     runner_configs = load_runner_configs(config_dir / "runners.yaml")
-    
+
     # Load tasks from seeds file - now using TaskDefinition format
     all_tasks = load_task_definitions(cfg.seeds_file, task_types)
-    
+
     # Convert string to AgentTaskType enum
     task_type_enum = AgentTaskType(args.task_type)
-    
+
     # Filter tasks by type
     seed_tasks = [t for t in all_tasks if t.type == task_type_enum.value]
-    
+
     if not seed_tasks:
-        logger.error(f"No tasks found with type '{task_type_enum.value}' in {cfg.seeds_file}")
+        logger.error(
+            f"No tasks found with type '{task_type_enum.value}' in {cfg.seeds_file}",
+        )
         sys.exit(1)
-    
-    logger.info(f"Loaded {len(seed_tasks)} {task_type_enum.value} tasks from {len(all_tasks)} total tasks")
-    
+
+    logger.info(
+        f"Loaded {len(seed_tasks)} {task_type_enum.value} tasks from {len(all_tasks)} total tasks",
+    )
+
     # Load grading criteria from YAML
     logger.info("Loading grading criteria")
     yaml_loader = load_yaml_files(cfg.seeds_file, cfg.graders_file)
-    
+
     # Load grading criteria
     criteria = []
     for grader_data in yaml_loader.graders_data:
@@ -756,9 +708,8 @@ Examples:
     run_prefix = datetime.now(UTC).strftime("%Y-%m-%d-%H%M%S")
     base_dir = (Path("./agent_output") / run_prefix).resolve()
     base_dir.mkdir(parents=True, exist_ok=True)
-    
+
     # Create OpenAI client for both grading and mini_codex runner
-    from openai import AsyncOpenAI
     openai_client = LoggingOpenAIClient(
         openai_client=AsyncOpenAI(),
         jsonl_logger=JSONLLogger(base_dir / "openai_api_log.jsonl"),

@@ -48,5 +48,3 @@ def should_exclude_file(
         fnmatch.fnmatch(relative_path, pattern) or fnmatch.fnmatch(filename, pattern)
         for pattern in cfg.exclude_patterns
     )
-
-

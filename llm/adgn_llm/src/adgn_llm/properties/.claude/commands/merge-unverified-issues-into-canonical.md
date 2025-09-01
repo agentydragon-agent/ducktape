@@ -1,6 +1,6 @@
 # Merge unverified issues into canonical issues file
 
-@../../README.md
+@README.md
 
 From context, you should see that we are working with some particular piece of code, and gathering issues that are present in it.
 
