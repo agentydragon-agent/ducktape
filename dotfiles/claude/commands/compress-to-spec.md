@@ -28,8 +28,11 @@ Aim to make the reimplemented artifact a drop-in replacement for the original ar
 ### Catalog
 
 1) What it enables (capabilities)
-   - Externally visible surfaces: APIs, operations, data exchanges, events, query/reporting.
+   - Externally visible surfaces:
+     - UI features, user stories enabled.
+     - APIs, operations, data exchanges, events, query/reporting.
    - Input/output semantics; specify exact schemas/methods only where they matter - otherwise spec high level semantics
+   - User stories and features critical to enabling them
 2) Client-visible semantics and contracts
    - Stable identifiers; state models; idempotency; freshness/caching; ordering; concurrency
    - Authorization/roles if applicable.
@@ -39,7 +42,7 @@ Aim to make the reimplemented artifact a drop-in replacement for the original ar
    - Client-facing error behavior (invalid input, not found, timeout, ...)
    - Resilience behaviors (timeouts; malformed data; protocol errors; recovery; clean shutdown; ...)
 5) Acceptance criteria (functional)
-   - Externally verifiable outcomes for each capability and failure mode; assertable by tests.
+   - Externally verifiable outcomes for each capability/user story and failure mode; assertable by tests.
 6) Acceptance criteria (non-functional)
    - As applicable: concurrency responsiveness; resource hygiene; robustness; observability sufficiency; security & accessibility; ...
 7) Validation strategy
@@ -91,20 +94,61 @@ Aim to make the reimplemented artifact a drop-in replacement for the original ar
 
 ## Procedure (execution plan)
 - Discover
-  - Read the scoped code.
-  - Identify public/CLI/API surfaces, workflows, protocols, and artifacts.
+  - Read the scoped code and documentation.
+  - Make sure you cover all user-visible and external-facing features so you don't miss anything important - particularly UIs, APIs, etc.
+  - Identify provided features, public/CLI/API surfaces, workflows, protocols, and artifacts.
 - Distill
   - Abstract from code identifiers to behaviors.
-  - Capture properties that are important for this type of artifact (user stories, crucial constraints/requirements, state machines, identifiers, timing/retry, access control, ...).
+  - Capture properties that are important for this type of artifact. As appropriate by artifact type (open-ended examples):
+    - user stories served
+    - provided features, UI affordances
+    - crucial constraints/requirements
+    - state machines
+    - access control
 - Interact
-  - Ask the user clarifying questions directly. Incorporate answers; if unanswered, proceed conservatively and note assumptions inline in output.
+  - Ask the user clarifying questions directly.
+  - Incorporate answers; if unanswered, proceed conservatively and note assumptions inline in output.
 - Specify
   - Produce output Markdown file incorporating required elements.
   - Integrate user-provided supplemental instructions; omit any items the user ruled out.
 - Validate
   - Ensure each acceptance criterion is testable without internal knowledge.
-- Report
-  - Write the file to a sensible location (e.g., the topmost scope directory) and report its path.
+- Write the file
+  - Write the file to a sensible location (e.g., the topmost scope directory).
+- Report to user
+  - Report the path of the file you wrote. State at high level what was included, what was omitted.
+  - Suggest to user a couple concrete areas they may want to make spec tighter / looser. Example:
+
+  **Assistant**:
+  > I wrote the spec to /abs/path/SPEC.md. I included:
+  > - databases (4 options to support),
+  > - rate limited external requests (GitHub, Coinbase) with retry+backoff,
+  > - multi-user (admin/regular, OAuth2),
+  > - CLI (Windows/Linux/macOS/FreeBSD/OpenBSD),
+  > - alerting (platform-specific, email).
+  >
+  > Aspects we could adjust:
+  > 1. We require all 4 DB backends supported (SQLite, Postgres, MySQL, Firebase). Loosen: jany database (not explicitly listing each), or only one (say, SQLite)?
+  > 2. Spec requires support for Windows, Linux, macOS, FreeBSD and OpenBSD. If OS compatibility is not important, loosen to drop list of required supported OSs?
+  > 3. I specified requirement for currency conversion but left out our specific freshness algorithm. If freshness if important, I can tighten to "freshness 5 min or better"?
+  > ... 
+
+- Iterate to tighten / loosen the spec until it matches user intent. Example:
+
+  **User**:
+  > loosen 1 specific db does not matter; yes re 3 we need say better than 10 min freshness and resilience to any 1 curr conv provider going down
+  **Assistant**: *Edits spec*
+  > I edited the spec to not list any specific database, just that data should be stored in a database.
+  > Conversion specs also now say that the app must be resilient to any one currency provider going down, and that currency rates must be fresh within a 10 min window.
+  > We now also require tests for this "provider goes down" resilience.
+  >
+  > More specs we could adjust to match the current implementation tighter/looser:
+  > 1. The requirement to support Windows, Linux, macOS, FreeBSD and OpenBSD.
+  > 2. The spec does not prescribe the exact protocol to use with the notification API, treating it as an internal implementation detail.
+  >    If you want to specify it exactly (e.g., so that reimplementation would be compatible with our notification handlers), I could bake it in.
+  > ... 
+  **User**:
+  > OK, this is about right, we're done.
 
 ## Style & guardrails
 - Behavior over implementation; avoid internal names, credentials, or secrets.
