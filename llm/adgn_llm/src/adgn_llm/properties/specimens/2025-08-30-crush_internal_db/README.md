@@ -20,6 +20,41 @@ Parallel runner with 1 critic per subdir: `./scratch/run_parallel_critics.sh`
 
 ## My findings
 
+### Overuse of nil-pointer config checks in call sites
+
+Many call sites defensively chain pointer checks like `cfg != nil && cfg.Options != nil && cfg.Options.Diff != nil ...`, which is noisy.
+
+Representative examples:
+- `internal/diff/external.go`:41–43, 92–93 (`Diff.ExternalCommand/ParseMode`)
+- `internal/lsp/watcher/watcher.go`: numerous `cfg.Options.DebugLSP` and LSPIgnore checks
+- `internal/llm/tools/*`: Grep timeout, Bash blocked commands, max tool output size
+
+Centralize nil handling with zero-safe helpers on Config and small package-level wrappers for the global config singleton.
+- Add methods (nil-receiver safe):
+  - `func (c *Config) DiffOptions() DiffOptions`
+  - `func (c *Config) Debug() bool`; `func (c *Config) DebugLSP() bool`
+  - `func (c *Config) GrepTimeoutSecs() int`
+  - `func (c *Config) MaxToolOutputBytes() int`
+  - `func (c *Config) BashBlockedCommands() []string`
+  - `func (c *Config) MCPInitTimeoutSecs() int` (and ToolTimeout as needed)
+- Add package-level wrappers that read `config.Get()` safely (e.g., `config.DebugLSP()`, `config.Diff()`).
+- Provide `config.CurrentLSPIgnore(name string) *IgnoreSet` that returns a working IgnoreSet even pre-Init (fallback to cwd).
+- Refactor call sites to use helpers; e.g.,
+
+Before:
+```go
+cfg := config.Get()
+if cfg != nil && cfg.Options != nil && cfg.Options.Diff != nil && cfg.Options.Diff.ParseMode != "" {
+    mode = cfg.Options.Diff.ParseMode
+}
+```
+After:
+```go
+mode := config.Diff().ParseMode
+```
+
+This reduces indentation in hot paths, removes scattered pointer chains and branches and consolidates defaults while being Go-idiomatic.
+
 ### Duplicated unmarshal+add in `internal/message/message.go`
 
 ```go
