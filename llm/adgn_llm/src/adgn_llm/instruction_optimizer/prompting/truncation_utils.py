@@ -4,10 +4,12 @@ import json
 from pathlib import Path
 
 import tiktoken
-from adgn_llm.instruction_optimizer.config import OptimizerConfig
 from openai.types.responses.response import Response
 from openai.types.responses.response_output_message import ResponseOutputMessage
 from openai.types.responses.response_output_text import ResponseOutputText
+
+from adgn_llm.instruction_optimizer.config import OptimizerConfig
+from adgn_llm.instruction_optimizer.engine.models import FileInfo
 
 
 class TruncationManager:
@@ -72,9 +74,9 @@ class TruncationManager:
 
     def truncate_files_by_tokens(
         self,
-        files_info: list[dict[str, str]] | list["FileInfo"],
+        files_info: list[dict[str, str]] | list[FileInfo],
         max_tokens: int,
-    ) -> list[dict[str, str]] | list["FileInfo"]:
+    ) -> list[dict[str, str]] | list[FileInfo]:
         """Truncate files to fit within token budget using binary search.
 
         Args:
@@ -86,8 +88,6 @@ class TruncationManager:
         """
 
         def count_files_tokens(files):
-            from adgn_llm.instruction_optimizer.core.models import FileInfo
-
             if files and isinstance(files[0], FileInfo):
                 files_json = json.dumps([fi.model_dump() for fi in files], indent=2)
             else:

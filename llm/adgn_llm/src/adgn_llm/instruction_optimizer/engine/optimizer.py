@@ -45,42 +45,43 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from adgn_llm.instruction_optimizer.config import OptimizerConfig
-from adgn_llm.instruction_optimizer.core.exceptions import (
-    ContextWindowExceededException,
-)
-from adgn_llm.instruction_optimizer.core.grading.grader import grade_rollout
-from adgn_llm.instruction_optimizer.core.jsonl_logger import JSONLLogger
-from adgn_llm.instruction_optimizer.core.logging_openai_client import (
+from openai import AsyncOpenAI
+
+from adgn_llm.instruction_optimizer.clients.logging_openai_client import (
     LoggingOpenAIClient,
     LoggingOpenAIModel,
 )
-from adgn_llm.instruction_optimizer.core.logging_utils import DualOutputLogging
-from adgn_llm.instruction_optimizer.core.models import (
+from adgn_llm.instruction_optimizer.config import OptimizerConfig
+from adgn_llm.instruction_optimizer.engine.exceptions import (
+    ContextWindowExceededException,
+)
+from adgn_llm.instruction_optimizer.engine.models import (
     AgentTaskType,
     Criterion,
     GradedRollout,
     TaskDefinition,
 )
-from adgn_llm.instruction_optimizer.core.prompt_engineer import (
+from adgn_llm.instruction_optimizer.engine.runner_factory import create_runner
+from adgn_llm.instruction_optimizer.grading.grader import grade_rollout
+from adgn_llm.instruction_optimizer.io.jsonl_logger import JSONLLogger
+from adgn_llm.instruction_optimizer.io.logging_utils import DualOutputLogging
+from adgn_llm.instruction_optimizer.io.task_loader import (
+    load_runner_configs,
+    load_task_definitions,
+    load_task_types,
+)
+from adgn_llm.instruction_optimizer.io.yaml_loader import load_yaml_files
+
+# Database removed - using JSON files instead
+from adgn_llm.instruction_optimizer.plots import ScoreEvolutionTracker
+from adgn_llm.instruction_optimizer.prompting.prompt_engineer import (
     FeedbackMode,
     FullRolloutsFeedbackProvider,
     PromptEngineer,
     StatsOnlyFeedbackProvider,
 )
-from adgn_llm.instruction_optimizer.core.runner_factory import create_runner
-from adgn_llm.instruction_optimizer.core.summarizer import PatternSummarizer
-from adgn_llm.instruction_optimizer.core.task_loader import (
-    load_runner_configs,
-    load_task_definitions,
-    load_task_types,
-)
-from adgn_llm.instruction_optimizer.core.truncation_utils import TruncationManager
-from adgn_llm.instruction_optimizer.core.yaml_loader import load_yaml_files
-from openai import AsyncOpenAI
-
-# Database removed - using JSON files instead
-from adgn_llm.instruction_optimizer.plots import ScoreEvolutionTracker
+from adgn_llm.instruction_optimizer.prompting.summarizer import PatternSummarizer
+from adgn_llm.instruction_optimizer.prompting.truncation_utils import TruncationManager
 
 # Logging will be configured after argument parsing
 logger = None
@@ -138,6 +139,7 @@ def setup_signal_handlers():
 # Helper functions for deduplication and common operations
 # (file collection lives in core/file_ops; keep local helpers here)
 # -----------------------------------------------------------------------------
+
 
 def _write_json(path: Path, data: dict) -> None:
     path.write_text(json.dumps(data, indent=2))
@@ -362,7 +364,11 @@ async def optimize_prompts(
                     "grader_model": cfg.grader.model,
                     "timestamp": datetime.now(UTC).isoformat(),
                 }
-                await asyncio.to_thread(_write_json, rollout_dir / "grading_error.json", grading_data)
+                await asyncio.to_thread(
+                    _write_json,
+                    rollout_dir / "grading_error.json",
+                    grading_data,
+                )
 
                 # Return None to indicate this rollout should be excluded
                 return None
@@ -383,7 +389,11 @@ async def optimize_prompts(
                     "grader_model": cfg.grader.model,
                     "timestamp": datetime.now(UTC).isoformat(),
                 }
-                await asyncio.to_thread(_write_json, rollout_dir / "grading_error.json", grading_data)
+                await asyncio.to_thread(
+                    _write_json,
+                    rollout_dir / "grading_error.json",
+                    grading_data,
+                )
                 # Return None to indicate this rollout should be excluded
                 return None
 
@@ -401,7 +411,11 @@ async def optimize_prompts(
                 "grader_model": cfg.grader.model,
                 "timestamp": datetime.now(UTC).isoformat(),
             }
-            await asyncio.to_thread(_write_json, rollout_dir / "grading.json", grading_data)
+            await asyncio.to_thread(
+                _write_json,
+                rollout_dir / "grading.json",
+                grading_data,
+            )
 
             logger.info(
                 "Rollout completed",
@@ -586,7 +600,11 @@ async def optimize_prompts(
             current_prompt = new_prompt
 
     # Save all prompts to a file
-    await asyncio.to_thread(_write_json, base_dir / "prompts.json", prompts_by_iteration)
+    await asyncio.to_thread(
+        _write_json,
+        base_dir / "prompts.json",
+        prompts_by_iteration,
+    )
 
     logger.info("Optimization complete", logs_directory=str(base_dir))
     return base_dir
@@ -654,6 +672,13 @@ Examples:
         help="Type of tasks to optimize for (required)",
     )
 
+    parser.add_argument(
+        "--config-dir",
+        type=str,
+        required=True,
+        help="Directory containing config.yaml, task_types.yaml, runners.yaml (all loaded from here)",
+    )
+
     args = parser.parse_args()
 
     # Setup logging with verbosity setting
@@ -664,11 +689,19 @@ Examples:
     # Setup signal handlers for graceful cost reporting on interruption
     setup_signal_handlers()
 
-    # Load configuration
-    cfg = OptimizerConfig.from_file()
+    # Load ALL configuration explicitly from --config-dir
+    config_dir = Path(args.config_dir)
+    cfg_path = config_dir / "config.yaml"
+    cfg = OptimizerConfig.from_file(cfg_path)
 
-    # Load task types and runner configurations
-    config_dir = Path(__file__).parent.parent.parent.parent / "config"
+    # Resolve seeds/graders relative to config_dir when relative paths are provided
+    if not Path(cfg.seeds_file).is_absolute():
+        cfg.seeds_file = str((config_dir / cfg.seeds_file).resolve())
+    if not Path(cfg.graders_file).is_absolute():
+        cfg.graders_file = str((config_dir / cfg.graders_file).resolve())
+
+    # Load task types and runner configurations from explicit directory
+    config_dir = Path(args.config_dir)
     task_types = load_task_types(config_dir / "task_types.yaml")
     runner_configs = load_runner_configs(config_dir / "runners.yaml")
 

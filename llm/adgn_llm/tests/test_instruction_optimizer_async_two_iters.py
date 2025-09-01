@@ -15,15 +15,15 @@ from adgn_llm.instruction_optimizer.config import (
     TokenConfig,
     TruncationConfig,
 )
-from adgn_llm.instruction_optimizer.core.jsonl_logger import JSONLLogger
-from adgn_llm.instruction_optimizer.core.models import (
+from adgn_llm.instruction_optimizer.io.jsonl_logger import JSONLLogger
+from adgn_llm.instruction_optimizer.engine.models import (
     AgentTaskType,
     Criterion,
     MessageBasedGrading,
     TaskDefinition,
     TaskType,
 )
-from adgn_llm.instruction_optimizer.core import optimizer as opt
+from adgn_llm.instruction_optimizer.engine import optimizer as opt
 from openai.types.responses import Response
 from openai.types.responses.response_function_tool_call_item import (
     ResponseFunctionToolCallItem,

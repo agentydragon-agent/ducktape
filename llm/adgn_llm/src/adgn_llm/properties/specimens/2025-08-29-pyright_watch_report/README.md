@@ -21,6 +21,13 @@
   Progress interval is encoded as a magic float literal `1.0` (seconds) in multiple places, which makes the unit implicit.
   The property requires that units be self‑describing; define an explicit constant with a duration type (e.g., `PROGRESS_INTERVAL = timedelta(seconds=1)`) and compare using datetime consistently (e.g., `last_print: datetime`, `now = datetime.now(timezone.utc)`, and `if now - last_print >= PROGRESS_INTERVAL:`).
 
+### Findings under known properties
+
+- Truthfulness (../definitions/truthfulness.md)
+  - Output labeling: attribution mode is first-match-wins but not stated; logs/docs should explicitly state the chosen mode to avoid ambiguity.
+  - Label drift: printed extension list is hard-coded as `.py/.pyi/.pyx` while `CODE_EXTS == {'.py', '.pyi'}`; derive labels from constants.
+  - Overstated optionality: `dump_path` is always a Path (never None) — annotation `Path | None` misleads; align name/docs/types with behavior.
+
 ### Feedback not mapped to pre-existing properties
 
 #### Higher-level

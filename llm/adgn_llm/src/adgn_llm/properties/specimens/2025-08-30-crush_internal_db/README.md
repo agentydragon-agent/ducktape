@@ -18,7 +18,7 @@ adgn-codex-properties find \
 
 Parallel runner with 1 critic per subdir: `./scratch/run_parallel_critics.sh`
 
-## My findings
+## Confirmed - outside defined properties
 
 ### Overuse of nil-pointer config checks in call sites
 
@@ -110,24 +110,6 @@ if newPart, ok := decoders[wrapper.Type]; ok {
 This seems like a leftover that comments on how the code was edited from a past form. At this point, it is not useful for anything and should be deleted.
 
 
-### Misleading function name & doc in `renderer.go`
-
-```go
-// getFileExtension returns appropriate file extension for syntax highlighting
-func (fr fetchRenderer) getFileExtension(format string) string {
-	switch format {
-	case "text":
-		return "fetch.txt"
-	case "html":
-		return "fetch.html"
-	default:
-		return "fetch.md"
-	}
-}
-```
-
-This are not a *file extension*. It's a *fake path*. Function should be renamed and doc updated.
-
 ### Duplicated styling code in `internal/tui/components/chat/messages/renderer.go`
 
 See `makeNestedHeader` / `makeHeader`:
@@ -179,184 +161,6 @@ func (br baseRenderer) makeHeader(v *toolCallCmp, tool string, width int, params
 
 Those functions are highly duplicated and should be deduplicated - possibly into a common helper or something else that's appropriate for Go.
 (Or could also be one function taking a flag to which they both delegate.)
-
-## False positives
-
-### Trivial pass-through wrapper (UpdateAgentModel) is intentional
-
-Some critiques flagged `app.UpdateAgentModel` as a trivial pass-through that should be inlined (i.e., replace callers with calls to `agent.UpdateModel`).
-
-But actually, squashing this method should NOT be prescribed as required. This method is part of an imperfect facade boundary around App→CoderAgent.
-In the context of the facade, it would serve as a decoupling point.
-However, the facade is currently imperfect, which is the associated finding that should be reported here.
-See correct finding: “App façade vs reach-through”.
-
-### Line numbering for LLM and for human display reported as duplication
-
-- `internal/tui/components/chat/messages/renderer.go`: on-screen TUI display with styled, width-aware numbering for humans.
-- `internal/llm/tools/view.go`: in-band plaintext line numbers inside the tool payload (<file>…</file>) for the LLM/log consumers. The TUI typically re-renders from metadata and ignores these in-band numbers.
-
-A critique reported these two as duplication that should be merged. That is a false positive. 
-These serve different purposes (human UI vs LLM/plaintext). Different implementations and formatting are appropriate; not duplication.
-
-### CLI flag name 'yolo' is acceptable branding
-
-File: `internal/cmd/root.go` (flag defined at lines ~29–31; propagated at ~132–169)
-
-Some critiques suggest renaming `--yolo` and local var `yolo` to a more descriptive predicate (e.g., `--skip-permission-requests`).
-
-This is a false positive: “yolo mode” is a consistent label used across docs/UX, and the help text already clarifies it (“Automatically accept all permissions (dangerous mode)”).
-Naming "skip pemissions" as `--yolo` is a valid choice. This is fine as is.
-
-### Over-strict "combine trivial guards / early bailout"
-
-#### `internal/fsext/ls.go`
-
-Reviewer flagged:
-
-> internal/fsext/ls.go: No unnecessary nesting: combine ignore && isDir guard
- 
-```go
-if d.IsDir() {
-    if walker.ShouldSkip(path) {
-        return filepath.SkipDir
-    }
-    return nil
-}
-```
-
-Reviewer flagged this as "combine trivial guards", wanting to write:
-
-```go
-if d.IsDir() && walker.ShouldSkip(path) {
-    return filepath.SkipDir
-}
-if d.IsDir() {
-    return nil
-}
-```
-
-This should not have been flagged - either form is fine. (Or arguably even a bit better.)
-
-#### `internal/app/app.go`
-
-In internal/app/app.go:
-
-```go
-// Call call cleanup functions.
-for _, cleanup := range app.cleanupFuncs {
-	if cleanup != nil {
-		cleanup()
-	}
-}
-```
-
-This was flagged as "should use early bailout". That's a false positive.
-It asked to rewrite:
-
-```go
-for _, cleanup := range app.cleanupFuncs {
-	if cleanup == nil {
-        continue
-	}
-    cleanup()
-}
-```
-
-But this rewrite doesn't actually make the code better. It's at best equivalent.
-With tiny bodies like this (say like 1-2 lines) directly putting happy path into `if` is fine.
-
-#### `internal/message/message.go`
-
-> internal/message/message.go: Early bailout: use continue instead of wrapping loop body (DeleteSessionMessages)
-
-Original code:
-
-```go
-for _, message := range messages {
-    if message.SessionID == sessionID {
-        err = s.Delete(ctx, message.ID)
-        if err != nil {
-            return err
-        }
-    }
-}
-```
-
-We could save 1 level of depth with a `if message.SessionID != sessionID { continue }`, but the loop is short and early bailout wouldn't remove a lot of pain.
-So fine to keep as is, too.
-
-## Confirmed-correct findings from critics
-
-### Names should be descriptive
-
-* `internal/profile/profile.go`: s/v too terse; use address/storedAddr, etc.
-* `internal/profile/server.go`: v for CRUSH_PROFILE; pstr for pprof port → clearer names
-* `internal/fsext/fileutil.go`: DirTrim params (pwd, lim) should encode meaning/units
-* `internal/fsext/ignore_test.go`: oldWd → clearer prev dir name
-* `e2e/setup_helpers.go`: `b` nondescriptive name, use e.g. "compressEnabled"
-* `internal/session/session.go`: Cost float64 ambiguous; encode currency/scale and prefer fixed‑point
-
-#### Timestamps
-
-Prefer time.Time for timestamps and time.Duration for timeouts/durations (avoid bare ints; if you must use int, suffix units in names).
-
-* `internal/message/content.go`: StartedAt/FinishedAt/CreatedAt/UpdatedAt int64 → time types or unit‑suffixed, Finish.Time int64 lacks unit → time.Time or unit‑suffixed
-* `internal/llm/tools/download.go`: maxTimeout → maxTimeoutSecs; Timeout int → TimeoutSecs or time.Duration
-* `internal/llm/tools/tools.go`: StartedAt/UpdatedAt int64 are ms epoch; suffix units or use time types
-* `internal/llm/tools/fetch.go`: Timeout int is seconds; prefer time.Duration (or suffix with units like TimeoutSecs)
-* `internal/pubsub/broker.go`: now := time.Now().UnixMilli() → time type or nowUnixMs
-* `internal/message/message.go`:
-  * Watermarks.*TS and Message timestamps → time types or unit‑suffixed
-  * Inconsistent units: UpdatedAt set in microseconds without unit suffix
-* `internal/history/file.go`: CreatedAt/UpdatedAt int64 → time.Time or unit‑suffixed
-* `internal/tui/components/chat/messages/renderer.go`: timeout int seconds → timeoutSeconds or time.Duration
-* `internal/session/session.go`: CreatedAt/UpdatedAt int64 → time types or unit‑suffixed
-* `internal/transform/transform.go`: CreatedAt int64 → time.Time or explicit unit suffix
-* `internal/tui/components/chat/chat.go`: lastUserMessageTime int64 epoch seconds → time.Time or unit‑suffixed
-
-#### IDs
-
-* `internal/message/middleware/debounce.go`: id params represent message IDs → messageID
-* `internal/message/middleware/serialized.go`: sessionWorker.id/newSessionWorker(id)/Delete(ctx, id)/op.createSess/op.deleteID → sessionID/messageID
-* `internal/message/message.go`: ambiguous id params (interface Delete, Delete(ctx, id string)) → messageID
-
-#### File sizes
-
-* `internal/lsp/watcher/watcher.go`: maxFileSize → maxFileSizeBytes
-* `internal/app/app.go`: readBts → readBytes (bytes); maxSize → maxSizeMB; maxAge → maxAgeDays
-* `internal/llm/tools/download.go`: maxSize → maxSizeBytes
-
-### Avoid nesting / use early bailout
-
-#### Combine trivial guards (type assertions)
-
-* `internal/tui/components/chat/chat.go`: Combine nested `if` conditions into one `if` with `&&`
-  - ~508–516: combine `asMsg, ok := item.(messages.MessageCmp); ok` + `asMsg.GetMessage().ID == messageID`
-  - ~837–841: combine `tc, ok := items[i].(messages.ToolCallCmp); ok` + `tc.Spinning()`
-* `internal/logging/recover.go`: prefer early return over wrapping whole body after recover
-* `internal/message/content.go`: flatten nested type/id/finished guards across helpers
-* `internal/app/app.go`:
-  * early bailout: loop guard should use continue (cleanup funcs)
-  * flatten trivial guards in MCP topic derivation
-* `internal/app/lsp_events.go`: early bailout: use early return instead of wrapping entire body
-* `internal/lsp/client.go`:
-  * Early bailout in `openKeyConfigFiles`: loop guard should use continue (file existence)
-  * `WaitForServerReady`: unnecessary else after early return
-* `e2e/scenario.go`: combine E2E_PER_STEP_SECS read & value check in NewScenario
-* `internal/shell/shell.go`: `ArgumentsBlocker`: loop guard in should use continue; avoid wrapping body
-
-### No one-off variables
-
-* `internal/csync/maps.go`: JSONSchemaAlias returns throwaway temp; inline literal
-* `internal/format/spinner.go`: inline single-use locals: model, local prog into struct
-* `internal/session/session.go`: inline single‑use broker into struct literal
-* `internal/config/provider.go` (~82–86): inline one‑off locals:
-  - client := catwalk.NewWithURL(...)
-  - path := providerCacheFileData()
-* `internal/lsp/watcher/watcher.go`:
-  * ~568–576: inline one‑off isMatch variable used only for return branch
-  * ~653–671, 662–664, 669–672: inline single‑use isMatch temporaries in matchesSimpleGlob
 
 ### Deduplicate glob matching (use doublestar across codebase)
 
@@ -648,10 +452,6 @@ if index != lastIndex {
 
 Behavior: a successful create is followed by an error from `replaceContent`, masking success. Fix: make branches mutually exclusive (else-if, early returns).
 
-### In `fetch.go` and `view.go` UTF-8 variable name typo
-
-Both files use `isValidUt8` (missing "F") for the UTF-8 validity check. Fix typo to `isValidUTF8`.
-
 ### Dead `basePath == ""` guard in LSP watcher
 
 In `internal/lsp/watcher/watcher.go` (lines ~699–709), `matchesPattern` checks `basePath == ""` twice in a row; the second branch is unreachable.
@@ -698,3 +498,192 @@ Code should choose one strategy and apply it consistently:
 
 Low‑churn pragmatic path: façade only for CoderAgent (busy/run/cancel/model APIs) to unify agent lifecycle/guards, while keeping Sessions/Messages/Permissions as DI.
 This would avoid large churn while restoring a clear boundary.
+
+## Confirmed - under defined properties
+
+### [Truthfulness](../../definitions/truthfulness.md)
+
+- Misleading name/doc: `getFileExtension` returns synthesized file names (fake paths), not an extension; rename and update doc to reflect actual return value.
+- Schema/help vs behavior mismatches. Align docs/schema with code.
+  - ls path marked required in schema/help, but Run allows empty and defaults to `workingDir`
+  - edit tool docs say path is absolute-only, but code accepts relative and joins with `workingDir`.
+- Identifier typo: isValidUt8 -> isValidUTF8 in fetch.go/view.go.
+
+### [Self-describing names](../../definitions/self-describing-names.md)
+
+* `internal/profile/profile.go`: s/v too terse; use address/storedAddr, etc.
+* `internal/profile/server.go`: v for CRUSH_PROFILE; pstr for pprof port → clearer names
+* `internal/fsext/fileutil.go`: DirTrim params (pwd, lim) should encode meaning/units
+* `internal/fsext/ignore_test.go`: oldWd → clearer prev dir name
+* `e2e/setup_helpers.go`: `b` nondescriptive name, use e.g. "compressEnabled"
+* `internal/session/session.go`: Cost float64 ambiguous; encode currency/scale and prefer fixed‑point
+
+#### Timestamps
+
+Prefer time.Time for timestamps and time.Duration for timeouts/durations (avoid bare ints; if you must use int, suffix units in names).
+
+* `internal/message/content.go`: StartedAt/FinishedAt/CreatedAt/UpdatedAt int64 → time types or unit‑suffixed, Finish.Time int64 lacks unit → time.Time or unit‑suffixed
+* `internal/llm/tools/download.go`: maxTimeout → maxTimeoutSecs; Timeout int → TimeoutSecs or time.Duration
+* `internal/llm/tools/tools.go`: StartedAt/UpdatedAt int64 are ms epoch; suffix units or use time types
+* `internal/llm/tools/fetch.go`: Timeout int is seconds; prefer time.Duration (or suffix with units like TimeoutSecs)
+* `internal/pubsub/broker.go`: now := time.Now().UnixMilli() → time type or nowUnixMs
+* `internal/message/message.go`:
+  * Watermarks.*TS and Message timestamps → time types or unit‑suffixed
+  * Inconsistent units: UpdatedAt set in microseconds without unit suffix
+* `internal/history/file.go`: CreatedAt/UpdatedAt int64 → time.Time or unit‑suffixed
+* `internal/tui/components/chat/messages/renderer.go`: timeout int seconds → timeoutSeconds or time.Duration
+* `internal/session/session.go`: CreatedAt/UpdatedAt int64 → time types or unit‑suffixed
+* `internal/transform/transform.go`: CreatedAt int64 → time.Time or explicit unit suffix
+* `internal/tui/components/chat/chat.go`: lastUserMessageTime int64 epoch seconds → time.Time or unit‑suffixed
+
+#### IDs
+
+* `internal/message/middleware/debounce.go`: id params represent message IDs → messageID
+* `internal/message/middleware/serialized.go`: sessionWorker.id/newSessionWorker(id)/Delete(ctx, id)/op.createSess/op.deleteID → sessionID/messageID
+* `internal/message/message.go`: ambiguous id params (interface Delete, Delete(ctx, id string)) → messageID
+
+#### File sizes
+
+* `internal/lsp/watcher/watcher.go`: maxFileSize → maxFileSizeBytes
+* `internal/app/app.go`: readBts → readBytes (bytes); maxSize → maxSizeMB; maxAge → maxAgeDays
+* `internal/llm/tools/download.go`: maxSize → maxSizeBytes
+
+### [Early bailout](../../definitions/early-bailout.md)
+
+* `internal/logging/recover.go`: prefer early return over wrapping whole body after recover
+* `internal/app/lsp_events.go`: use early return instead of wrapping entire body
+* `internal/lsp/client.go`: `openKeyConfigFiles` loop guard should use `continue` (file existence)
+* `internal/app/app.go`: loop guard should use `continue` (cleanup funcs)
+* `internal/shell/shell.go`: `ArgumentsBlocker`: loop guard should use `continue`; avoid wrapping body
+
+Note: Many of these also reduce nesting and overlap with [Minimize nesting](../../definitions/minimize-nesting.md).
+
+### [Minimize nesting](../../definitions/minimize-nesting.md)
+
+* `internal/tui/components/chat/chat.go`: combine nested `if` conditions into one `if` with `&&`
+  - ~508–516: combine `asMsg, ok := item.(messages.MessageCmp); ok` + `asMsg.GetMessage().ID == messageID`
+  - ~837–841: combine `tc, ok := items[i].(messages.ToolCallCmp); ok` + `tc.Spinning()`
+* `internal/message/content.go`: flatten nested type/id/finished guards across helpers
+* `internal/app/app.go`: flatten trivial guards in MCP topic derivation
+* `internal/lsp/client.go`: `WaitForServerReady`: unnecessary `else` after early return
+* `e2e/scenario.go`: combine `E2E_PER_STEP_SECS` read & value check in `NewScenario`
+
+Note: Several of these can also be addressed via guard-clauses; see [Early bailout](../../definitions/early-bailout.md).
+
+### [No one-off vars and trivial wrappers](../../definitions/no-oneoff-vars-and-trivial-wrappers.md)
+
+* `internal/csync/maps.go`: JSONSchemaAlias returns throwaway temp; inline literal
+* `internal/format/spinner.go`: inline single-use locals: model, local prog into struct
+* `internal/session/session.go`: inline single‑use broker into struct literal
+* `internal/config/provider.go` (~82–86): inline one‑off locals:
+  - client := catwalk.NewWithURL(...)
+  - path := providerCacheFileData()
+* `internal/lsp/watcher/watcher.go`:
+  * ~568–576: inline one‑off isMatch variable used only for return branch
+  * ~653–671, 662–664, 669–672: inline single‑use isMatch temporaries in matchesSimpleGlob
+
+## False positives
+
+### Trivial pass-through wrapper (UpdateAgentModel) is intentional
+
+Some critiques flagged `app.UpdateAgentModel` as a trivial pass-through that should be inlined (i.e., replace callers with calls to `agent.UpdateModel`).
+
+But actually, squashing this method should NOT be prescribed as required. This method is part of an imperfect facade boundary around App→CoderAgent.
+In the context of the facade, it would serve as a decoupling point.
+However, the facade is currently imperfect, which is the associated finding that should be reported here.
+See correct finding: “App façade vs reach-through”.
+
+### Line numbering for LLM and for human display reported as duplication
+
+- `internal/tui/components/chat/messages/renderer.go`: on-screen TUI display with styled, width-aware numbering for humans.
+- `internal/llm/tools/view.go`: in-band plaintext line numbers inside the tool payload (<file>…</file>) for the LLM/log consumers. The TUI typically re-renders from metadata and ignores these in-band numbers.
+
+A critique reported these two as duplication that should be merged. That is a false positive. 
+These serve different purposes (human UI vs LLM/plaintext). Different implementations and formatting are appropriate; not duplication.
+
+### CLI flag name 'yolo' is acceptable branding
+
+File: `internal/cmd/root.go` (flag defined at lines ~29–31; propagated at ~132–169)
+
+Some critiques suggest renaming `--yolo` and local var `yolo` to a more descriptive predicate (e.g., `--skip-permission-requests`).
+
+This is a false positive: “yolo mode” is a consistent label used across docs/UX, and the help text already clarifies it (“Automatically accept all permissions (dangerous mode)”).
+Naming "skip pemissions" as `--yolo` is a valid choice. This is fine as is.
+
+### Over-strict "combine trivial guards / early bailout"
+
+#### `internal/fsext/ls.go`
+
+Reviewer flagged:
+
+> internal/fsext/ls.go: No unnecessary nesting: combine ignore && isDir guard
+ 
+```go
+if d.IsDir() {
+    if walker.ShouldSkip(path) {
+        return filepath.SkipDir
+    }
+    return nil
+}
+```
+
+Reviewer flagged this as "combine trivial guards", wanting to write:
+
+```go
+if d.IsDir() && walker.ShouldSkip(path) {
+    return filepath.SkipDir
+}
+if d.IsDir() {
+    return nil
+}
+```
+
+This should not have been flagged - either form is fine. (Or arguably even a bit better.)
+
+#### `internal/app/app.go`
+
+In internal/app/app.go:
+
+```go
+// Call call cleanup functions.
+for _, cleanup := range app.cleanupFuncs {
+	if cleanup != nil {
+		cleanup()
+	}
+}
+```
+
+This was flagged as "should use early bailout". That's a false positive.
+It asked to rewrite:
+
+```go
+for _, cleanup := range app.cleanupFuncs {
+	if cleanup == nil {
+        continue
+	}
+    cleanup()
+}
+```
+
+But this rewrite doesn't actually make the code better. It's at best equivalent.
+With tiny bodies like this (say like 1-2 lines) directly putting happy path into `if` is fine.
+
+#### `internal/message/message.go`
+
+> internal/message/message.go: Early bailout: use continue instead of wrapping loop body (DeleteSessionMessages)
+
+Original code:
+
+```go
+for _, message := range messages {
+    if message.SessionID == sessionID {
+        err = s.Delete(ctx, message.ID)
+        if err != nil {
+            return err
+        }
+    }
+}
+```
+
+We could save 1 level of depth with a `if message.SessionID != sessionID { continue }`, but the loop is short and early bailout wouldn't remove a lot of pain.
+So fine to keep as is, too.

@@ -6,12 +6,14 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-import pandas as pd
 # Force non-interactive backend to avoid UI popups (prod/tests)
 import matplotlib
+import pandas as pd
+
 matplotlib.use("Agg", force=True)
 import tiktoken
-from adgn_llm.instruction_optimizer.core.logging_utils import DualOutputLogging
+
+from adgn_llm.instruction_optimizer.io.logging_utils import DualOutputLogging
 
 logger = DualOutputLogging.get_logger()
 
@@ -319,7 +321,7 @@ class ScoreEvolutionTracker:
                 name: self._stats.safe_stats(scores)
                 for name, scores in facet_scores.items()
             },
-            "timestamp": datetime.now(UTC).isoformat()
+            "timestamp": datetime.now(UTC).isoformat(),
         }
 
         self.iterations_data.append(iteration_summary)

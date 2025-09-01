@@ -114,7 +114,7 @@ class DualOutputLogging:
         root_logger.handlers.clear()
         root_logger.addHandler(console_handler)
         root_logger.addHandler(file_handler)
-        
+
         # If verbose, also configure minicodx logger specifically
         if verbose:
             minicodx_logger = logging.getLogger("minicodex")

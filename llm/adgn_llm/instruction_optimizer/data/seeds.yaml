@@ -546,7 +546,7 @@ tasks:
     # docker:
     #   image: python:3.11
     git_clone:
-      repo: git@github.com:agentydragon/ducktape
+      repo: https://github.com/agentydragon/ducktape.git
       commit: 0791e282ab4b1c829615c12c2a76e6975511975f
     sandbox:
       enabled: true
@@ -621,7 +621,7 @@ tasks:
     # docker:
     #   image: python:3.11
     git_clone:
-      repo: git@github.com:agentydragon/ducktape
+      repo: https://github.com/agentydragon/ducktape.git
       commit: 315fe021dbccbbb0682f10954f45d0145c92faf4
     sandbox:
       enabled: true

@@ -92,6 +92,9 @@ def run_task(name: str):
 ```
 
 ### Misleading justification (still a violation)
+
+These examples are additionally also [truthfulness](../truthfulness.md) violations.
+
 ```python
 # mod_a.py
 import os
@@ -125,10 +128,13 @@ def fn():
     from foo import bar  # ❌ foo.py does not depend on baz.py - NOT a cycle. misleading - violation
 ```
 
-### Nonspeciic justification (still a violation)
+### Nonspecific justification (still a violation)
 ```python
 def compute_now():
     # avoid import loop
     import datetime
     return datetime.datetime.now()
 ```
+
+## Cross-references
+- [Truthfulness](../truthfulness.md): misleading "avoid cycle"/"heavy import" comments are untruthful when no cycle/heaviness exists; moving imports into functions can also misrepresent real dependency structure. Keep comments and structure honest about why an exception is taken.

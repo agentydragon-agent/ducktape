@@ -30,10 +30,10 @@ Notes
 - Do not duplicate the title in the body; keep the title only in frontmatter.
 - Keep embedded code/diff snippets concise (≤ ~30 lines).
 
-## Specimens
+## Specimens format
 - Location: `specimens/YYYY-MM-DD-<slug>.md`
 - Slug: derived from the filename (no frontmatter slug)
-- Free-form but structured markdown:
+- Free-form but markdown with light structure:
   - `# <Title>`
   - Context: repo, commit (full SHA), relevant files/paths (if applicable)
   - Scope: free text (often paths; not strictly structured)
@@ -41,6 +41,15 @@ Notes
   - Lessons (optional): helpful takeaways (“how we discovered a gap”, “what to do next time”)
   - Links: issues/PRs, CI runs, external references
   - Reference properties with normal markdown links to files in `../properties/`
+- Findings grouped as:
+  - `## Confirmed - outside defined properties`
+    - This lists findings that are confirmed true but not sufficiently covered by already defined properties.
+  - `## False positives`
+  - `## Confirmed - under defined properties`
+    - Findings here must link their corresponding property
+- Each finding must sufficiently identify the subject code (file, function - whatever suffices)
+  - It's OK to not use full relative code paths - e.g., if there's only one `write.go`, it's fine to use
+    just that instead of full `internal/llm/tools/write.go`.
 
 Conventions
 - Name specimens as `YYYY-MM-DD-<slug>.md`.

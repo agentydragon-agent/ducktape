@@ -4,9 +4,10 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from adgn_llm.instruction_optimizer.core.logging_utils import DualOutputLogging
-from adgn_llm.instruction_optimizer.core.models import SeedTask
 from pydantic import BaseModel
+
+from adgn_llm.instruction_optimizer.engine.models import SeedTask
+from adgn_llm.instruction_optimizer.io.logging_utils import DualOutputLogging
 
 logger = DualOutputLogging.get_logger()
 
@@ -28,7 +29,7 @@ class YamlLoader:
         self._graders_models: list[GraderDataModel] | None = None
 
     def _load_yaml_file(self, path: Path) -> Any:
-        """Load and cache YAML file content."""
+        """Load YAML file content."""
         with path.open(encoding="utf-8") as f:
             return yaml.safe_load(f)
 

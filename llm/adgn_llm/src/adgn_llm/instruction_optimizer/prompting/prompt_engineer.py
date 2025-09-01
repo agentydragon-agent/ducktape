@@ -7,8 +7,6 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Protocol
 
-from adgn_llm.instruction_optimizer.core.logging_utils import DualOutputLogging
-from adgn_llm.instruction_optimizer.core.models import AgentTaskType, GradedRollout
 from openai.types.responses.response import Response
 from openai.types.responses.response_function_tool_call import ResponseFunctionToolCall
 from openai.types.responses.response_function_tool_call_item import (
@@ -16,6 +14,10 @@ from openai.types.responses.response_function_tool_call_item import (
 )
 from openai.types.responses.response_output_message import ResponseOutputMessage
 from openai.types.responses.response_reasoning_item import ResponseReasoningItem
+
+from adgn_llm.instruction_optimizer.clients.logging_openai_client import LoggingOpenAIModel
+from adgn_llm.instruction_optimizer.engine.models import AgentTaskType, GradedRollout
+from adgn_llm.instruction_optimizer.io.logging_utils import DualOutputLogging
 
 logger = DualOutputLogging.get_logger()
 
@@ -127,10 +129,8 @@ class PromptEngineer:
             )
         else:  # AgentTaskType.CODING
             agent_description = "a coding agent"
-            task_description = (
-                "- Agent has access to a filesystem and a shell through tools. Tasks should be solved by writing code files on disk using these tools, not just shown to user in conversation.\n"
-            )
-        
+            task_description = "- Agent has access to a filesystem and a shell through tools. Tasks should be solved by writing code files on disk using these tools, not just shown to user in conversation.\n"
+
         system_message = (
             f"You are an expert LLM prompt engineer. Your task is to design the best prompt for a LLM used as {agent_description}.\n"
             f"{task_description}"
@@ -231,7 +231,10 @@ class PromptEngineer:
         response: Response = await self.model.responses_create(
             input=self.prompt_messages,  # OpenAI Responses API uses 'input'
             tools=tools,
-            tool_choice={"type": "function", "name": SUBMIT_PROMPT_FUNCTION_NAME},  # 'tool_choice' not 'tool_use'
+            tool_choice={
+                "type": "function",
+                "name": SUBMIT_PROMPT_FUNCTION_NAME,
+            },  # 'tool_choice' not 'tool_use'
         )
         reasoning_messages: list[ResponseOutputMessage | ResponseReasoningItem] = []
         function_call_item: (

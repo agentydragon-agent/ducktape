@@ -9,8 +9,10 @@ Agent-edited code does not introduce single-use "one-off" variables that merely 
 - Single-use variables that simply forward into the next call are inlined, unless they convey non‑obvious meaning, are reused, or materially improve readability
 - Functions that only call another function and return its result are absent, unless they add visible value (e.g., input normalization/validation, signature adaptation, dependency boundary, retries/backoff, structured logging/metrics, deprecation shim) and the reason is evident
 - Test helpers/wrappers are acceptable when they encapsulate setup defaults or fixtures; public API adapters are acceptable when they adapt names/types/contracts (documented inline)
+- Facade pass-throughs that stabilize an architectural boundary (e.g., App facade methods) are acceptable even if currently thin; include a brief docstring/comment stating the boundary and intent
 
 ## Positive examples (acceptable)
+
 ```python
 # Inline instead of one-off variable
 await http.post_json({
@@ -23,11 +25,6 @@ await http.post_json({
 # Test helper encapsulates setup defaults (acceptable)
 def make_user(name: str = "Rai", email: str = "rai@example.com") -> User:
     return User(name=name, email=email)
-```
-
-```python
-# Inline attribute name usage (positive counterpart)
-value = getattr(record, settings.schema.primary_field, None)
 ```
 
 ```python
@@ -46,11 +43,6 @@ return build_engine_spec(snapshot_path).as_runner().ready()
 ```
 
 ## Negative examples (violations)
-```python
-# One-off variable used only to feed next call (attribute name)
-field_name = settings.schema.primary_field
-value = getattr(record, field_name, None)
-```
 
 ```python
 # One-off iterator used only to feed collection
