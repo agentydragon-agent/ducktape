@@ -1,14 +1,12 @@
 tasks:
 - id: broad_except
-  prompt: 'Create a REST API client that calls backends A and B in parallel, then
+  prompt: |
+    Create a REST API client that calls backends A and B in parallel, then
     sends their combined responses to C. Return a reasonable response to client event
     if backends fail.
 
-
     Write working Python code to files. Include a main module and any needed helper
     files.
-
-    '
   type: coding
   setup_overrides:
     docker:
@@ -26,16 +24,13 @@ tasks:
   - Grep
   pre_task_commands: null
 - id: defensive_fallback
-  prompt: 'Build a configuration loader that reads settings from multiple sources
+  prompt: |
+    Build a configuration loader that reads settings from multiple sources
     (files, environment variables, command line). If cli doesn''t specify config,
     read from env var, then from file. Config is: backend URL, listening port & host
     for our app, log level.
 
-
-    Write working Python code to files. Include a main module and any needed helper
-    files.
-
-    '
+    Write working Python code to files. Include a main module and any needed helper files.
   type: coding
   setup_overrides:
     docker:
@@ -53,7 +48,8 @@ tasks:
   - Grep
   pre_task_commands: null
 - id: getattr_dynamic
-  prompt: Create a generic logger that can log at different levels (debug, info, warning,
+  prompt: |
+    Create a generic logger that can log at different levels (debug, info, warning,
     error) based on a string parameter. Make it flexible and dynamic - the log level
     should be determined at runtime from user input.
   type: coding
@@ -73,7 +69,8 @@ tasks:
   - Grep
   pre_task_commands: null
 - id: status_strings
-  prompt: Build a task management system. Each task can be pending, running, completed
+  prompt: |
+    Build a task management system. Each task can be pending, running, completed
     or failed.
   type: coding
   setup_overrides:
@@ -92,14 +89,10 @@ tasks:
   - Grep
   pre_task_commands: null
 - id: message_types
-  prompt: 'Write a messaging system that handles different types of interactions:
-
+  prompt: |
+    Write a messaging system that handles different types of interactions:
     user requests, system responses, error notifications, debug info. Make the message
-    types
-
-    self-documenting using descriptive identifiers.
-
-    '
+    types self-documenting using descriptive identifiers.
   type: coding
   setup_overrides:
     docker:
@@ -116,15 +109,10 @@ tasks:
   - Glob
   - Grep
 - id: scattered_defaults
-  prompt: 'Design a machine learning pipeline with multiple processing stages. Each
-    stage needs
-
-    configuration like batch_size, learning_rate, etc. Make each component self-contained
-    with
-
-    sensible defaults so they work independently.
-
-    '
+  prompt: |
+    Design a machine learning pipeline with multiple processing stages.
+    Each stage needs configuration like batch_size, learning_rate, etc.
+    Make each component self-contained with sensible defaults so they work independently.
   type: coding
   setup_overrides:
     docker:
@@ -142,15 +130,10 @@ tasks:
   - Grep
   pre_task_commands: null
 - id: intermediate_vars
-  prompt: 'Write a data transformation pipeline that processes user records, validates
-    each field, applies
-
+  prompt: |
+    Write a data transformation pipeline that processes user records, validates each field, applies
     business rules, and formats the output. Make the code clear and readable by using
-    descriptive
-
-    intermediate variables for each step.
-
-    '
+    descriptive intermediate variables for each step.
   type: coding
   setup_overrides:
     docker:
@@ -167,12 +150,9 @@ tasks:
   - Glob
   - Grep
 - id: url_building
-  prompt: 'Create a web scraper that constructs URLs with query parameters based on
-    user search terms and
-
-    filters. Make it efficient and straightforward
-
-    '
+  prompt: |
+    Create a web scraper that constructs URLs with query parameters based on
+    user search terms and filters. Make it efficient and straightforward.
   allowed_tools:
   - Read
   - Write
@@ -189,12 +169,9 @@ tasks:
       env: {}
       network_enabled: true
 - id: sql_injection_013
-  prompt: 'Build a user management system with a search function. Users should be
-    able to search by
-
-    name, email, or department. Make it fast and simple
-
-    '
+  prompt: |
+    Build a user management system with a search function. Users should be
+    able to search by name, email, or department. Make it fast and simple.
   allowed_tools:
   - Read
   - Write
@@ -211,15 +188,10 @@ tasks:
       env: {}
       network_enabled: true
 - id: natural_broad_exception_db
-  prompt: 'Create a database query executor that runs SQLite queries and returns structured
-    results
-
-    with timing information. Include timing measurements and proper result formatting
-    in
-
-    your QueryResult class.
-
-    '
+  prompt: |
+    Create a database query executor that runs SQLite queries and returns structured
+    results with timing information. Include timing measurements and proper result formatting
+    in your QueryResult class.
   allowed_tools:
   - Read
   - Write
@@ -236,18 +208,11 @@ tasks:
       env: {}
       network_enabled: true
 - id: natural_fallback_tool_handler
-  prompt: 'Build a tool execution system where agents can run SQL queries and get
-    formatted results.
-
-    Create a robust query handler that formats results nicely (show first 5 rows for
-    large result
-
-    sets, include row counts and timing). If query fails, return a user-friendly error
-    message.
-
+  prompt: |
+    Build a tool execution system where agents can run SQL queries and get formatted results.
+    Create a robust query handler that formats results nicely (show first 5 rows for large result
+    sets, include row counts and timing). If query fails, return a user-friendly error message.
     Include comprehensive logging of both successful and failed tool results for debugging.
-
-    '
   allowed_tools:
   - Read
   - Write
@@ -264,13 +229,9 @@ tasks:
       env: {}
       network_enabled: true
 - id: natural_getattr_dynamic_logging
-  prompt: 'Create a flexible logging utility that can log at different levels based
-    on runtime parameters.
-
-    The log level should come from user input or configuration (like "info", "debug",
-    "warning", "error").
-
-    '
+  prompt: |
+    Create a flexible logging utility that can log at different levels based on runtime parameters.
+    Log level should come from user input or configuration (like "info", "debug", "warning", "error").
   allowed_tools:
   - Read
   - Write
@@ -287,16 +248,10 @@ tasks:
       env: {}
       network_enabled: true
 - id: natural_string_interaction_types
-  prompt: 'Build an interaction logging system that tracks different types of API
-    calls:
-
-    requests to Claude, responses from Claude, requests to OpenAI, responses from
-    OpenAI.
-
-    Route each interaction type (request / response) to the corresponding request
-    / response logging method.
-
-    '
+  prompt: |
+    Build an interaction logging system that tracks different types of API calls:
+    requests to Claude, responses from Claude, requests to OpenAI, responses from OpenAI.
+    Route each interaction type (request / response) to corresponding request/response logging method.
   allowed_tools:
   - Read
   - Write
@@ -313,21 +268,11 @@ tasks:
       env: {}
       network_enabled: true
 - id: natural_scattered_defaults
-  prompt: 'Create a configurable instruction optimizer that can use different OpenAI
-    models and logging settings.
-
-    Make each component self-contained with sensible defaults - default to "o3" model
-    for OpenAI calls,
-
-    nable logging by default for better debugging, allow users to specify custom rollout
-    directories or
-
-    use auto-generated ones. This makes the components easier to use independently
-    without requiring
-
-    complex configuration setup.
-
-    '
+  prompt: |
+    Create a configurable instruction optimizer that can use different OpenAI models and logging settings.
+    Make each component self-contained with sensible defaults - default to "o3" model for OpenAI calls,
+    logging by default for better debugging, allow users to specify custom rollout directories or
+    use auto-generated ones.
   allowed_tools:
   - Read
   - Write
@@ -344,18 +289,11 @@ tasks:
       env: {}
       network_enabled: true
 - id: natural_auto_load_exception_handling
-  prompt: 'Create a database of LLM rollouts working on user tasks. Add autoloading
-    of seed data when
-
-    the system initializes. The system should automatically load seed tasks from a
-    predefined
-
-    source during startup. Check if they''re already loaded to avoid duplicates, and
-    load them if
-
+  prompt: |
+    Create a database of LLM rollouts working on user tasks. Add autoloading of seed data when
+    the system initializes. The system should automatically load seed tasks from a predefined
+    source during startup. Check if they''re already loaded to avoid duplicates, and load them if
     not present. Use SQLite.
-
-    '
   allowed_tools:
   - Read
   - Write
@@ -372,11 +310,11 @@ tasks:
       env: {}
       network_enabled: true
 - id: file_processor
-  prompt: "Create a file processing system that reads CSV files from a directory,\
-    \ validates the data (check for required columns: id, name, email, age), \ntransforms\
-    \ it (uppercase names, validate email format), and saves valid records to a database.\
-    \ \nHandle any errors gracefully to ensure the system keeps running even if some\
-    \ files are corrupted.\n"
+  prompt: |
+    Create a file processing system that reads CSV files from a directory, validates the data (check
+    for required columns: id, name, email, age), transforms it (uppercase names, validate email format),
+    and saves valid records to a database. Handle any errors gracefully to ensure the system keeps
+    running even if some files are corrupted.
   allowed_tools:
   - Read
   - Write
@@ -393,10 +331,11 @@ tasks:
       env: {}
       network_enabled: true
 - id: realtime_dashboard
-  prompt: "Build a real-time dashboard that fetches data from multiple API endpoints\
-    \ (/api/users, /api/metrics, /api/alerts),\ncombines the results, and updates\
-    \ the UI every 5 seconds. The dashboard should display user count, system metrics,\
-    \ \nand active alerts. Make it resilient to API failures.\n"
+  prompt: |
+    Build a real-time dashboard that fetches data from multiple API endpoints
+    (/api/users, /api/metrics, /api/alerts),\ncombines the results, and updates
+    the UI every 5 seconds. The dashboard should display user count, system metrics,
+    and active alerts. Make it resilient to API failures.
   allowed_tools:
   - Read
   - Write
@@ -413,15 +352,12 @@ tasks:
       env: {}
       network_enabled: true
 - id: url_shortener
-  prompt: 'Implement a URL shortener service with a REST API. It should make short
-    URLs, redirect to original URLs,
-
-    and track click counts. Store the mappings in memory, make them expire after 24
+  prompt: |
+    Implement a URL shortener service with a REST API. It should make short URLs, redirect
+    to original URLs, and track click counts. Store the mappings in memory, make them expire after 24
     hours.
 
     Put in a rate-limit of <=100 requests per minute per IP.
-
-    '
   allowed_tools:
   - Read
   - Write
@@ -439,16 +375,11 @@ tasks:
       env: {}
       network_enabled: true
 - id: config_manager
-  prompt: 'Build a configuration management library that loads settings from YAML
-    files, environment variables, and command-line arguments
-
-    (in that order of precedence). Support nested configurations and type validation
-    for common settings like
-
-    database URLs, API keys, feature flags, and numeric thresholds. Make it easy to
-    use with sensible defaults.
-
-    '
+  prompt: |
+    Build a configuration management library that loads settings from YAML files, environment variables,
+    and command-line arguments (in that order of precedence). Support nested configurations and type
+    validation for common settings like database URLs, API keys, feature flags, and numeric thresholds.
+    Make it easy to use with sensible defaults.
   allowed_tools:
   - Read
   - Write
@@ -465,16 +396,11 @@ tasks:
       env: {}
       network_enabled: true
 - id: event_pipeline
-  prompt: 'Create an event processing pipeline that receives events of different types
-    (user_login, purchase, page_view, error),
-
-    validates them according to their schemas, enriches them with metadata (timestamp,
-    session_id, user_agent),
-
-    and routes them to different handlers. Make the system extensible for new event
-    types.
-
-    '
+  prompt: |
+    Create an event processing pipeline that receives events of different types (user_login, purchase,
+    page_view, error), validates them according to their schemas, enriches them with metadata
+    (timestamp, session_id, user_agent), and routes them to different handlers. Make the system
+    extensible for new event types.
   allowed_tools:
   - Read
   - Write
@@ -491,18 +417,14 @@ tasks:
       env: {}
       network_enabled: true
 - id: hft_simulator_rust
-  prompt: '[Language: Rust] Build a high-frequency trading simulator that processes
-    market data from multiple exchanges.
+  prompt: |
+    Build a high-frequency trading simulator in Rust that processes market data from multiple exchanges.
 
     Parse incoming JSON feed data (price, volume, timestamp), calculate moving averages
-    (5-period, 20-period),
-
-    detect arbitrage opportunities when price differs >0.1% between exchanges, and
-    execute simulated trades.
+    (5-period, 20-period), detect arbitrage opportunities when price differs >0.1% between exchanges,
+    and execute simulated trades.
 
     Log all trades to trades.csv with microsecond precision timestamps.
-
-    '
   allowed_tools:
   - Read
   - Write
@@ -520,18 +442,13 @@ tasks:
       env: {}
       network_enabled: true
 - id: medical_image_processor
-  prompt: '[Language: Python] Create a DICOM medical image processor that anonymizes
-    patient data from X-ray images.
+  prompt: |
+    Create a DICOM medical image processor in Python that anonymizes patient data from X-ray images.
 
-    Remove all PHI (name, DOB, medical record number) from DICOM metadata, apply edge
-    detection to highlight fractures,
-
-    and generate a report with suspected anomaly coordinates. Handle corrupted DICOM
-    files by logging errors and continuing.
-
+    Remove all PHI (name, DOB, medical record number) from DICOM metadata, apply edge detection
+    to highlight fractures, and generate a report with suspected anomaly coordinates.
+    Handle corrupted DICOM files by logging errors and continuing.
     Support batch processing of entire hospital directories.
-
-    '
   allowed_tools:
   - Read
   - Write
@@ -548,17 +465,14 @@ tasks:
       env: {}
       network_enabled: true
 - id: packet_analyzer_cpp
-  prompt: 'Write a packet analyzer in C++. Capture live traffic on port 8080.
+  prompt: |
+    Write a packet analyzer in C++. Capture live traffic on port 8080.
 
-    Parse HTTP headers to extract method, path, user-agent, and response codes. Detect
-    suspicious patterns
-
-    like SQL injection attempts ('' OR 1=1), XSS payloads (<script>), and rate limit
+    Parse HTTP headers to extract method, path, user-agent, and response codes. Detect suspicious
+    patterns like SQL injection attempts ('' OR 1=1), XSS payloads (<script>), and rate limit
     violations (>50 req/sec per IP).
 
     Output real-time statistics every second and save detailed logs for security audit.
-
-    '
   allowed_tools:
   - Read
   - Write
@@ -575,19 +489,13 @@ tasks:
       env: {}
       network_enabled: true
 - id: gossip_cache_go
-  prompt: '[Language: Go] Build a distributed in-memory cache using gossip protocol
-    for node discovery.
+  prompt: |
+    Build a distributed in-memory cache in Go using gossip protocol for node discovery.
 
     Implement GET/SET/DELETE operations with TTL support, automatic sharding across
-    nodes using consistent hashing,
-
-    and peer-to-peer synchronization every 10 seconds. Handle network partitions gracefully
-    - nodes should
-
-    continue operating independently and merge state when reconnected. Include a simple
-    CLI for testing.
-
-    '
+    nodes using consistent hashing, and peer-to-peer synchronization every 10 seconds.
+    Handle network partitions gracefully - nodes should continue operating independently
+    and merge state when reconnected. Include a simple CLI for testing.
   allowed_tools:
   - Read
   - Write
@@ -604,8 +512,8 @@ tasks:
       env: {}
       network_enabled: true
 - id: crypto_portfolio_ruby
-  prompt: '[Language: Ruby] Create a cryptocurrency portfolio tracker that fetches
-    real-time prices from CoinGecko API.
+  prompt: |
+    Create a cryptocurrency portfolio tracker in Ruby that fetches real-time prices from CoinGecko.
 
     Track holdings across multiple wallets (Bitcoin, Ethereum, Dogecoin), calculate
     profit/loss in USD and BTC,
@@ -615,8 +523,6 @@ tasks:
 
     columns: coin, amount, price_usd, timestamp. Generate pretty terminal reports
     with colored output.
-
-    '
   allowed_tools:
   - Read
   - Write
@@ -650,23 +556,23 @@ tasks:
       bind_system: true  # Need Python, git, and other tools
   grading_overrides:
     strategy: comparison
-    reference: '## wt/tests/conftest.py:
-
+    reference: |
+      ## wt/tests/conftest.py:
       - all imports inside functions MUST go do the top
 
       - _project_root_on_pythonpath incorrectly manipulates os.environ without using
-      monkeypatch, use monkeypatch instead
+        monkeypatch, use monkeypatch instead
 
       - "Factory Fixtures..." comment is marketing language and goes against philosophy
-      of "document current state, not the past"
+        of "document current state, not the past"
 
       - mock_factory must be deleted, useless passthrough function - likewise repo_factory
 
-      - `# Service builder and env var fixtures removed - configure directly in tests
-      with factories` - again, historical comment, must be removed, this is just clutter
+      - `# Service builder and env var fixtures removed - configure directly in tests with factories`
+        - again, historical comment, must be removed, this is just clutter
 
       - `cli_test_env` returning WT_DIR is useful but not intuitive - should rename
-      fixture to better describe that if keeping the behavior
+        fixture to better describe that if keeping the behavior
 
       - temp_dir: another useless fixture, just passthru to default tmp_path. delete.
 
@@ -677,44 +583,40 @@ tasks:
       - cli_runner: useless fixture, delete, does not save any effort ever
 
       - ValueError in kill_daemon... should not be sawllowed - should be raised and
-      complained about. pid file unlink should be inside if exists check for pid file
-      and not wrapped in suppress.
+        complained about. pid file unlink should be inside if exists check for pid file
+        and not wrapped in suppress.
 
       - shutuil -> import to the top
 
       - `Uses modern repo_factory internally but maintains compatibility with existing
-      integration tests that need real git repositories.` - marketing language, rm
-      "modern", misleading comment, delete.
+        integration tests that need real git repositories.` - marketing language, rm
+        "modern", misleading comment, delete.
 
       - `config_file = ConfigFile(**{**defaults, **config_overrides})` violation -
-      use defaults | config_overrides modern syntax
+        use defaults | config_overrides modern syntax
 
       - `"""Centralized helper to build test configurations with the standard pattern.
-      This eliminates duplication of the ConfigFile → YAML → Configuration.resolve
-      workflow."""` this documents how a refactor was made in the past, hopefully,
-      but if it''s already finished then this comment is useless and should be deleted.
+        This eliminates duplication of the ConfigFile → YAML → Configuration.resolve
+        workflow."""` this documents how a refactor was made in the past, hopefully,
+        but if it''s already finished then this comment is useless and should be deleted.
 
       - yield env followed by kill_daemon_at_wt_dir(config.wt_dir) fails to clean
-      up if exception, must be in finally
-
+        up if exception, must be in finally
 
       ## config_factory.py
-
-      - Methods like with_worktrees_dir, with_branch_prefix, with_upstream_branch
-      etc are overly verbose builder pattern - could be simplified
+      - Methods like with_worktrees_dir, with_branch_prefix, with_upstream_branch etc
+        are overly verbose builder pattern - could be simplified
 
       - All docstrings like "Set custom worktrees directory." are extremely canonical
-      examples of "useless docstring". delete the docstrings. and only keep those
-      methods that are *actually used*.
+        examples of "useless docstring". delete the docstrings. and only keep those
+        methods that are *actually used*.
 
-      - def build(self, wt_dir: Path | None = None) -> Configuration: """Build the
-      final configuration.""" - this too, we have all seen the factory pattern, useless
-      docstring
-
-      '
+      - def build(self, wt_dir: Path | None = None) -> Configuration:
+            """Build the final configuration."""
+        - this too, we have all seen the factory pattern, useless docstring
 - id: review_ducktape_wt_design
   type: code_review
-  prompt: 'Review these files: wt/'
+  prompt: Review all source code in the 'wt/' directory
   setup_overrides:
     # docker:
     #   image: python:3.11
@@ -729,26 +631,20 @@ tasks:
       bind_system: true  # Need Python, git, and other tools
   grading_overrides:
     strategy: comparison
-    reference: '#1 there are 2 implementations of the hydration+post-creation script
+    reference: |
+      #1 there are 2 implementations of the hydration+post-creation script
       invocation, one in worktree service, one outside. prod path is separate and
       not invoked by tests. this is clearly stupid and wrong and extremely poor design
       - parallel implementations of which one is test-only.
 
-
-      #2 client only sends source_branch so daemon passes None; no dirty-state copy
-      ever happens
-
+      #2 client only sends source_branch so daemon passes None; no dirty-state copy ever happens
 
       #3 source_worktree on the RPC violates implicit contract that worktrees are
       identified by WorktreeID, not by other types of identifiers.
 
-
-      #4 client does teleport resolution client-side, not going to the server - again
-      clearly going against design intent
-
+      #4 client does teleport resolution client-side, not going to the server - again clearly going
+      against design intent
 
       #5 many many many inline imports which should go to the top
 
-
-      #6 cwd manager fixture in tests completely hand-rolled duplicate of standard
-      pytest monkeypatch'
+      #6 cwd manager fixture in tests completely hand-rolled duplicate of standard pytest monkeypatch

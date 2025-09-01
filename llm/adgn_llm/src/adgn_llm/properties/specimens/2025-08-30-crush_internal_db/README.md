@@ -29,7 +29,7 @@ Representative examples:
 - `internal/lsp/watcher/watcher.go`: numerous `cfg.Options.DebugLSP` and LSPIgnore checks
 - `internal/llm/tools/*`: Grep timeout, Bash blocked commands, max tool output size
 
-Centralize nil handling with zero-safe helpers on Config and small package-level wrappers for the global config singleton.
+Centralize nil handling with zero-safe helpers on Config and small package-level wrappers for the global config singleton. Alternatively, use explicit dependency injection: pass *config.Config where needed and call the nil-safe receiver helpers directly; skip package-level wrappers if you want to avoid global reads.
 - Add methods (nil-receiver safe):
   - `func (c *Config) DiffOptions() DiffOptions`
   - `func (c *Config) Debug() bool`; `func (c *Config) DebugLSP() bool`
