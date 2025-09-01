@@ -33,12 +33,12 @@ Centralize nil handling with zero-safe helpers on Config and small package-level
 - Add methods (nil-receiver safe):
   - `func (c *Config) DiffOptions() DiffOptions`
   - `func (c *Config) Debug() bool`; `func (c *Config) DebugLSP() bool`
-  - `func (c *Config) GrepTimeoutSecs() int`
-  - `func (c *Config) MaxToolOutputBytes() int`
-  - `func (c *Config) BashBlockedCommands() []string`
-  - `func (c *Config) MCPInitTimeoutSecs() int` (and ToolTimeout as needed)
-- Add package-level wrappers that read `config.Get()` safely (e.g., `config.DebugLSP()`, `config.Diff()`).
-- Provide `config.CurrentLSPIgnore(name string) *IgnoreSet` that returns a working IgnoreSet even pre-Init (fallback to cwd).
+  - Similarly: `{Grep,MCP}Timeout(Secs)`, `MaxToolOutputBytes`, `BashBlockedCommands`, ...
+- Either:
+  - Add package-level wrappers that read `config.Get()` safely (e.g., `config.DebugLSP()`, `config.Diff()`).
+  - Provide `config.CurrentLSPIgnore(name string) *IgnoreSet` that returns a working IgnoreSet even pre-Init (fallback to cwd).
+- Or:
+  - Refactor to DI the `Config` instead of having package-global singleton
 - Refactor call sites to use helpers; e.g.,
 
 Before:
@@ -55,7 +55,9 @@ mode := config.Diff().ParseMode
 
 This reduces indentation in hot paths, removes scattered pointer chains and branches and consolidates defaults while being Go-idiomatic.
 
-### Duplicated unmarshal+add in `internal/message/message.go`
+### Duplication
+
+#### Unmarshal+add in `internal/message/message.go`
 
 ```go
 switch wrapper.Type {
@@ -101,18 +103,7 @@ if newPart, ok := decoders[wrapper.Type]; ok {
 }
 ```
 
-### Not-useful "there was dead code here" comment in `e2e/mock_openai_responses.go`:
-
-```go
-// deadcode pruned: emitStage1 was unused
-```
-
-This seems like a leftover that comments on how the code was edited from a past form. At this point, it is not useful for anything and should be deleted.
-
-
-### Duplicated styling code in `internal/tui/components/chat/messages/renderer.go`
-
-See `makeNestedHeader` / `makeHeader`:
+#### Styling code in `internal/tui/components/chat/messages/renderer.go`
 
 ```go
 // makeHeader builds the tool call header with status icon and parameters for a nested tool call.
@@ -162,7 +153,7 @@ func (br baseRenderer) makeHeader(v *toolCallCmp, tool string, width int, params
 Those functions are highly duplicated and should be deduplicated - possibly into a common helper or something else that's appropriate for Go.
 (Or could also be one function taking a flag to which they both delegate.)
 
-### Deduplicate glob matching (use doublestar across codebase)
+#### Deduplicate glob matching (use doublestar across codebase)
 
 Code uses two different implementations of glob matching:
 
@@ -171,15 +162,166 @@ Code uses two different implementations of glob matching:
 
 Standardize on one implementation, prefer `doublestar` (seems to be a well-maintained implementation), assuming it covers required glob semantics; otherwise document the chosen behavior or isolate matching behind a small helper.
 
-### Other
+#### Line number digit counting
 
-* `internal/config/config.go` (~166–176): collapse double blank lines in Options; keep at most one between logical groups. If you want a Tool options section, format the comment as a header (e.g., `// ---- Tool options ----`) and keep exactly one blank line above it; otherwise omit the extra blank line.
-* `internal/shell/shell.go`: `ArgumentsBlocker`: use labeled continue instead of sentinel flag in inner loop
-* `internal/pubsub/broker.go`: No unnecessary nesting/one‑off vars: use short if with s := f.String(); s != "" { ... }
-* `internal/diff/word_inline.go`: Use `filepath.Join` instead of string concatenation for paths (`dir + "/old"` and `"/new"`)
-* `internal/history/file.go`: No unnecessary nesting: in `createWithVersion`, flatten nested UNIQUE constraint retry guard
+Duplication exists in digit-width calculation:
+- `internal/llm/tools/view.go:addLineNumbers` (~258–280) uses a fixed 6-character width via fmt formatting.
+- `internal/tui/components/chat/messages/renderer.go:renderCodeContent` (~817–883) computes dynamic width using a `getDigits` helper.
 
-### Shorten JSON parsing code with fold-into-if (guard clause)
+One possible deduplication: extract shared helper (e.g., `internal/format/lineno`) for digit counting:
+- `Digits(n int) int`  // number of decimal digits (handles 0 and negatives)
+
+The print format (`fmt.Sprintf("%%%dd", width)`) is also duplicated, but may be kept duplicated - it's only a small piece of code.
+
+Despite the duplication, these implementations should be kept separate and not fully merged. See: "Line numbering for LLM and for human display reported as duplication".
+
+#### "Text + metadata" tool response wrapping
+
+Many tools repeat this wrapping pattern with different strings and metadata structs:
+
+```go
+return WithResponseMetadata(NewTextResponse(text), SomeResponseMetadata{ /* tool-specific */ }), nil
+```
+
+Examples:
+- `view.go` (ViewResponseMetadata)
+- `ls.go` (LSResponseMetadata)
+- `write.go` (WriteResponseMetadata)
+- `edit.go` (EditResponseMetadata)
+- `multiedit.go` (MultiEditResponseMetadata)
+- `grep.go` (GrepResponseMetadata).
+
+Note: `download`, `fetch`, `diagnostics`, `sourcegraph` tools still return bare NewTextResponse.
+
+One possible refactor:
+- `tools.go` helper `WrapTextWithMeta(text string, meta any) (ToolResponse, error)` to centralize the wrap and remove nested calls
+- Per-tool unexported helpers (in each tool file):
+```go
+// view.go
+func newViewResult(output, filePath, content string) (ToolResponse, error) {
+   return WrapTextWithMeta(output, ViewResponseMetadata{FilePath: filePath, Content: content})
+}
+```
+
+This keeps metadata local to each tool and eliminates duplicated call shape everywhere.
+
+#### Metadata parse fallback
+
+In `internal/tui/components/chat/messages/renderer.go`, multiple branches (edit, multi-edit, view) repeat the same pattern:
+
+```go
+var meta tools.EditResponseMetadata
+if err := er.unmarshalParams(v.result.Metadata, &meta); err != nil {
+    return renderPlainContent(v, v.result.Content)
+}
+```
+
+This is duplicated logic across branches and risks drift; centralize in a small helper.
+
+#### Parameter rendering (`internal/tui/components/chat/messages/{renderer,tool}.go`)
+
+Across the renderer and copy-to-clipboard code, the same per-tool formatting is built repeatedly:
+
+```go
+parts = append(parts, fmt.Sprintf("**URL:** %s", params.URL))
+parts = append(parts, fmt.Sprintf("**File Path:** %s", fsext.PrettyPath(params.FilePath)))
+if params.Timeout > 0 {
+    parts = append(parts, fmt.Sprintf("**Timeout:** %s", (time.Duration(params.Timeout)*time.Second).String()))
+}
+```
+
+Centralize in shared helpers for common parts/registry for tools.
+
+#### “Outside working dir” gating (`internal/llm/tools/{view,ls}.go`)
+
+Both tools perform the same rel-path check and permission request:
+
+```go
+relPath, err := filepath.Rel(absWorkingDir, absFilePath)
+if err != nil || strings.HasPrefix(relPath, "..") {
+    // build permission.CreatePermissionRequest and prompt
+}
+```
+
+Factor into one helper.
+
+#### Resolution of relative/empty path (`internal/llm/tools/{view,write,edit}.go`)
+
+Each tool repeats the same join logic:
+
+```go
+if !filepath.IsAbs(filePath) {
+    filePath = filepath.Join(workingDir, filePath)
+}
+```
+
+LS also separately defaults empty path to workingDir. Put both behaviors into a single resolver to avoid 3 copies.
+
+#### History/LSP bookkeeping (`internal/llm/tools/{edit,write}.go`)
+
+The same sequence appears in multiple branches:
+
+```go
+file, err := files.GetByPathAndSession(ctx, filePath, sessionID)
+if err != nil {
+    _, _ = files.Create(ctx, sessionID, filePath, oldContent)
+}
+if file.Content != oldContent {
+    _, _ = files.CreateVersion(ctx, sessionID, filePath, oldContent)
+}
+_, _ = files.CreateVersion(ctx, sessionID, filePath, newContent)
+```
+
+It shows up in deleteContent (379–400), replaceContent (518–538), and write.go (204–224). Extract a helper.
+
+#### Extension→language mapping (`internal/tui/components/chat/messages/tool.go`)
+
+Two near-identical switches (view vs write copy):
+
+```go
+switch ext {
+case ".go": lang = "go"
+case ".py": lang = "python"
+// ...
+}
+```
+
+Keeping them in sync is error-prone; use one mapping.
+
+#### Newline/tab sanitization (`internal/tui/components/chat/messages/{renderer,tool}.go`)
+
+Both sites perform the same replacements:
+
+```go
+cmd := strings.ReplaceAll(params.Command, "\n", " ")
+cmd = strings.ReplaceAll(cmd, "\t", "    ")
+```
+
+Two implementations to maintain risks drift; centralize a sanitizer.
+
+#### Permission/diff/history block (3×, `internal/llm/tools/edit.go`)
+
+Roughly the same 30+ lines appear in three branches (`createNewFile` 226–275, `deleteContent` 349–406, `replaceContent` 488–550) and include the full sequence:
+
+- `diff.GenerateDiff(oldContent/newContent)`
+- Building `permission.CreatePermissionRequest` (Action/Description/Params vary)
+- `os.WriteFile(filePath, newContent)`
+- history: files.GetByPathAndSession → Create (if missing) → CreateVersion (oldContent) → CreateVersion (newContent)
+- recordFileWrite/recordFileRead bookkeeping
+
+These should be centralized behind a helper parameterized by Action, Description, and Params to avoid drift.
+
+### Not-useful "there was dead code here" comment in `e2e/mock_openai_responses.go`:
+
+```go
+// deadcode pruned: emitStage1 was unused
+```
+
+This seems like a leftover that comments on how the code was edited from a past form. At this point, it is not useful for anything and should be deleted.
+
+### Code can be shorter at no readability cost
+
+#### JSON parsing with fold-into-if (guard clause)
 
 Many sites use the pattern `if err := json.Unmarshal(...); err == nil { ... }` and then conditionally build args.
 Prefer a guard clause that fails fast on bad input, then proceed on the happy path.
@@ -195,7 +337,7 @@ This applies to all of these in `internal/tui/components/chat/messages/renderer.
 - `lsRenderer.Render` (~535–543)
 - `sourcegraphRenderer.Render` (~563–569)
 
-#### Example (`multiEditRenderer.Render`)
+##### Example (`multiEditRenderer.Render`)
 
 **Before**
 ```go
@@ -226,24 +368,30 @@ args = newParamBuilder().
     build()
 ```
 
-### Duplicated line number digit counting
+#### `ToolCallCmp.Spinning()` in `internal/tui/components/chat/messages/tool.go`
 
-Duplication exists in digit-width calculation:
-- `internal/llm/tools/view.go:addLineNumbers` (~258–280) uses a fixed 6-character width via fmt formatting.
-- `internal/tui/components/chat/messages/renderer.go:renderCodeContent` (~817–883) computes dynamic width using a `getDigits` helper.
+Current shape:
 
-One possible deduplication: extract shared helper (e.g., `internal/format/lineno`) for digit counting:
-- `Digits(n int) int`  // number of decimal digits (handles 0 and negatives)
+```go
+if m.spinning { return true }
+for _, nested := range m.nestedToolCalls {
+    if nested.Spinning() { return true }
+}
+return m.spinning
+```
 
-The print format (`fmt.Sprintf("%%%dd", width)`) is also duplicated, but may be kept duplicated - it's only a small piece of code.
+Simplify by early-returning on nested spins, then returning m.spinning.
 
-Despite the duplication, these implementations should be kept separate and not fully merged. See: "Line numbering for LLM and for human display reported as duplication".
+#### Other minor shortenings/simplifications
+
+* `internal/config/config.go` (~166–176): collapse double blank lines in Options; keep at most one between logical groups. If you want a Tool options section, format the comment as a header (e.g., `// ---- Tool options ----`) and keep exactly one blank line above it; otherwise omit the extra blank line.
+* `internal/shell/shell.go`: `ArgumentsBlocker`: use labeled continue instead of sentinel flag in inner loop
 
 ### Magic constants should be named
 
 Hardcoded timeouts/intervals/limits appear without named constants, making tuning and consistency harder. Name them and centralize per subsystem.
 
-- `internal/lsp/client.go`:
+- `internal/lsp/client.go`
   - `ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)` (around line 243) → `const LSPStopTimeout = 5 * time.Second`
   - `ctx, cancel := context.WithTimeout(ctx, 30*time.Second)` (around line 313) → `const LSPWaitReadyTimeout = 30 * time.Second`
   - `time.NewTicker(500 * time.Millisecond)` (around line 317) → `const LSPReadyPollInterval = 500 * time.Millisecond`
@@ -263,160 +411,7 @@ Hardcoded timeouts/intervals/limits appear without named constants, making tunin
 
 Define named constants for these values (or, alternatively, make them configuration options where useful and worth it).
 
-### Repeated "text + metadata" tool response wrapping
-
-Many tools repeat this wrapping pattern with different strings and metadata structs:
-
-```go
-return WithResponseMetadata(NewTextResponse(text), SomeResponseMetadata{ /* tool-specific */ }), nil
-```
-
-Examples:
-- `view.go` (ViewResponseMetadata)
-- `ls.go` (LSResponseMetadata)
-- `write.go` (WriteResponseMetadata)
-- `edit.go` (EditResponseMetadata)
-- `multiedit.go` (MultiEditResponseMetadata)
-- `grep.go` (GrepResponseMetadata).
-
-Note: `download`, `fetch`, `diagnostics`, `sourcegraph` tools still return bare NewTextResponse.
-
-One possible refactor:
-- `tools.go` helper `WrapTextWithMeta(text string, meta any) (ToolResponse, error)` to centralize the wrap and remove nested calls
-- Per-tool unexported helpers (in each tool file):
-```go
-// view.go
-func newViewResult(output, filePath, content string) (ToolResponse, error) {
-   return WrapTextWithMeta(output, ViewResponseMetadata{FilePath: filePath, Content: content})
-}
-```
-
-This keeps metadata local to each tool and eliminates duplicated call shape everywhere.
-
-### Duplicated metadata parse fallback
-
-In `internal/tui/components/chat/messages/renderer.go`, multiple branches (edit, multi-edit, view) repeat the same pattern:
-
-```go
-var meta tools.EditResponseMetadata
-if err := er.unmarshalParams(v.result.Metadata, &meta); err != nil {
-    return renderPlainContent(v, v.result.Content)
-}
-```
-
-This is duplicated logic across branches and risks drift; centralize in a small helper.
-### In `internal/tui/components/chat/messages/renderer.go` and `internal/tui/components/chat/messages/tool.go` parameter rendering is duplicated
-
-Across the renderer and copy-to-clipboard code, the same per-tool formatting is built repeatedly:
-
-```go
-parts = append(parts, fmt.Sprintf("**URL:** %s", params.URL))
-parts = append(parts, fmt.Sprintf("**File Path:** %s", fsext.PrettyPath(params.FilePath)))
-if params.Timeout > 0 {
-    parts = append(parts, fmt.Sprintf("**Timeout:** %s", (time.Duration(params.Timeout)*time.Second).String()))
-}
-```
-
-Centralize in shared helpers for common parts/registry for tools.
-### In `internal/llm/tools/view.go` and `internal/llm/tools/ls.go` the “outside working dir” gating is duplicated
-
-Both tools perform the same rel-path check and permission request:
-
-```go
-relPath, err := filepath.Rel(absWorkingDir, absFilePath)
-if err != nil || strings.HasPrefix(relPath, "..") {
-    // build permission.CreatePermissionRequest and prompt
-}
-```
-
-Factor into one helper.
-### In `internal/llm/tools/view.go`, `internal/llm/tools/write.go`, and `internal/llm/tools/edit.go` relative path resolution (and empty path) is duplicated
-
-Each tool repeats the same join logic:
-
-```go
-if !filepath.IsAbs(filePath) {
-    filePath = filepath.Join(workingDir, filePath)
-}
-```
-
-LS also separately defaults empty path to workingDir. Put both behaviors into a single resolver to avoid 3 copies.
-### In `internal/llm/tools/edit.go` and `internal/llm/tools/write.go` the history/LSP bookkeeping is duplicated
-
-The same sequence appears in multiple branches:
-
-```go
-file, err := files.GetByPathAndSession(ctx, filePath, sessionID)
-if err != nil {
-    _, _ = files.Create(ctx, sessionID, filePath, oldContent)
-}
-if file.Content != oldContent {
-    _, _ = files.CreateVersion(ctx, sessionID, filePath, oldContent)
-}
-_, _ = files.CreateVersion(ctx, sessionID, filePath, newContent)
-```
-
-It shows up in deleteContent (379–400), replaceContent (518–538), and write.go (204–224). Extract a helper.
-### In `internal/tui/components/chat/messages/tool.go` the extension→language mapping is duplicated
-
-Two near-identical switches (view vs write copy):
-
-```go
-switch ext {
-case ".go": lang = "go"
-case ".py": lang = "python"
-// ...
-}
-```
-
-Keeping them in sync is error-prone; use one mapping.
-### In `internal/tui/components/chat/messages/renderer.go` and `internal/tui/components/chat/messages/tool.go` newline/tab sanitization is duplicated
-
-Both sites perform the same replacements:
-
-```go
-cmd := strings.ReplaceAll(params.Command, "\n", " ")
-cmd = strings.ReplaceAll(cmd, "\t", "    ")
-```
-
-Two implementations to maintain risks drift; centralize a sanitizer.
-### In `internal/llm/tools/edit.go` the permission/diff/history block is duplicated (3×)
-
-Roughly the same 30+ lines appear in three branches (createNewFile ~226–275, deleteContent ~349–406, replaceContent ~488–550) and include the full sequence:
-
-- `diff.GenerateDiff(oldContent/newContent)`
-- Building `permission.CreatePermissionRequest` (Action/Description/Params vary)
-- `os.WriteFile(filePath, newContent)`
-- history: files.GetByPathAndSession → Create (if missing) → CreateVersion (oldContent) → CreateVersion (newContent)
-- recordFileWrite/recordFileRead bookkeeping
-
-These should be centralized behind a helper parameterized by Action, Description, and Params to avoid drift.
-### In `internal/tui/components/chat/messages/tool.go` function `View()` has a redundant branch
-
-This function returns the same value in both branches:
-
-```go
-if m.isNested {
-    return box.Render(content)
-}
-return box.Render(content)
-```
-
-The conditional adds no value; return once.
-### In `internal/tui/components/chat/messages/tool.go` method `ToolCallCmp.Spinning()` can be simplified
-
-Current shape:
-
-```go
-if m.spinning { return true }
-for _, nested := range m.nestedToolCalls {
-    if nested.Spinning() { return true }
-}
-return m.spinning
-```
-
-Simplify by early-returning on nested spins, then returning m.spinning.
-### In `internal/llm/tools/write.go` the file content is read twice
+### `internal/llm/tools/write.go` reads same file content twice
 
 Two reads of the same file occur in close succession (oldContent at ~148–151 and again at ~161–167); instead read once and reuse for equality check, diff, and history recording.
 
@@ -452,7 +447,9 @@ if index != lastIndex {
 
 Behavior: a successful create is followed by an error from `replaceContent`, masking success. Fix: make branches mutually exclusive (else-if, early returns).
 
-### Dead `basePath == ""` guard in LSP watcher
+### Dead code
+
+#### Dead `basePath == ""` guard in LSP watcher
 
 In `internal/lsp/watcher/watcher.go` (lines ~699–709), `matchesPattern` checks `basePath == ""` twice in a row; the second branch is unreachable.
 
@@ -468,12 +465,18 @@ if basePath == "" {  // will never be entered - delete this if
 }
 ```
 
-### Path schema/docs inconsistent with behavior
+#### Redundant branch in `View()` in `tool.go`
 
-- `internal/llm/tools/ls.go`: ToolInfo.Required lists "path" as required, but Run allows empty path and defaults to workingDir (e.g., lines 119–123, 536–543). Inconsistent; schema/docs and behavior should be aligned.
-- `internal/llm/tools/edit.go`: Description (lines 48–104) says absolute path only, but Run joins relative paths with workingDir (lines 155–157). Inconsistent; docs and behavior should be aligned.
+In `internal/tui/components/chat/messages/tool.go`, `View` function returns the same value in both branches:
 
-Same typo in `internal/llm/tools/fetch.go` and `.../view.go`. 
+```go
+if m.isNested {
+    return box.Render(content)
+}
+return box.Render(content)
+```
+
+The conditional adds no value; return once.
 
 ### App façade vs reach-through
 
@@ -499,9 +502,13 @@ Code should choose one strategy and apply it consistently:
 Low‑churn pragmatic path: façade only for CoderAgent (busy/run/cancel/model APIs) to unify agent lifecycle/guards, while keeping Sessions/Messages/Permissions as DI.
 This would avoid large churn while restoring a clear boundary.
 
+### Other
+
+* `internal/diff/word_inline.go`: Use `filepath.Join` instead of string concatenation for paths (`dir + "/old"` and `"/new"`)
+
 ## False positives
 
-### Trivial pass-through wrapper (UpdateAgentModel) is intentional
+### Trivial pass-through wrapper `UpdateAgentModel` is acceptable
 
 Some critiques flagged `app.UpdateAgentModel` as a trivial pass-through that should be inlined (i.e., replace callers with calls to `agent.UpdateModel`).
 
@@ -518,7 +525,7 @@ See correct finding: “App façade vs reach-through”.
 A critique reported these two as duplication that should be merged. That is a false positive. 
 These serve different purposes (human UI vs LLM/plaintext). Different implementations and formatting are appropriate; not duplication.
 
-### CLI flag name 'yolo' is acceptable branding
+### CLI flag 'yolo' is acceptable branding
 
 File: `internal/cmd/root.go` (flag defined at lines ~29–31; propagated at ~132–169)
 
@@ -610,10 +617,15 @@ So fine to keep as is, too.
 ### [Truthfulness](../../definitions/truthfulness.md)
 
 - Misleading name/doc: `getFileExtension` returns synthesized file names (fake paths), not an extension; rename and update doc to reflect actual return value.
-- Schema/help vs behavior mismatches. Align docs/schema with code.
-  - ls path marked required in schema/help, but Run allows empty and defaults to `workingDir`
-  - edit tool docs say path is absolute-only, but code accepts relative and joins with `workingDir`.
-- Identifier typo: isValidUt8 -> isValidUTF8 in fetch.go/view.go.
+- Identifier typo: `isValidUt8` -> `isValidUTF8` in `fetch.go`/`view.go`.
+
+#### Path schema/docs inconsistent with behavior
+
+- `internal/llm/tools/`: inconsistent - schema/docs and behavior should be aligned:
+  - `ls.go`: ToolInfo.Required lists "path" as required, but Run allows empty path and defaults to workingDir (e.g., lines 119–123, 536–543). 
+  - `edit.go`: Description (lines 48–104) says absolute path only, but Run joins relative paths with workingDir (lines 155–157).
+
+Align docs/schema and code (either make code behave as docs/schema prescribe, or update docs/schema to match behavior).
 
 ### [Self-describing names](../../definitions/self-describing-names.md)
 
@@ -626,26 +638,30 @@ So fine to keep as is, too.
 
 #### Timestamps
 
-Prefer time.Time for timestamps and time.Duration for timeouts/durations (avoid bare ints; if you must use int, suffix units in names).
+Use `time.Time` for timestamps, `time.Duration` for timeouts/durations (avoid bare ints; if you must use int, suffix units in names).
 
-* `internal/message/content.go`: StartedAt/FinishedAt/CreatedAt/UpdatedAt int64 → time types or unit‑suffixed, Finish.Time int64 lacks unit → time.Time or unit‑suffixed
-* `internal/llm/tools/download.go`: maxTimeout → maxTimeoutSecs; Timeout int → TimeoutSecs or time.Duration
-* `internal/llm/tools/tools.go`: StartedAt/UpdatedAt int64 are ms epoch; suffix units or use time types
-* `internal/llm/tools/fetch.go`: Timeout int is seconds; prefer time.Duration (or suffix with units like TimeoutSecs)
-* `internal/pubsub/broker.go`: now := time.Now().UnixMilli() → time type or nowUnixMs
-* `internal/message/message.go`:
-  * Watermarks.*TS and Message timestamps → time types or unit‑suffixed
-  * Inconsistent units: UpdatedAt set in microseconds without unit suffix
+* `internal/llm/tools/`:
+  * `download.go`: `maxTimeout` and `Timeout` → `...Secs` or `time.Duration`
+  * `fetch.go`: `Timeout int`
+  * `tools.go`: `StartedAt`/`UpdatedAt int64` are ms epoch
+* `internal/message/`:
+  * `content.go`: `{Started,Finished,Created,Updated}At`, `Finish.Time` → time types or unit‑suffixed
+  * `message.go`:
+    * Watermarks.*TS and Message timestamps → time types or unit‑suffixed
+    * Inconsistent units: UpdatedAt set in microseconds without unit suffix
 * `internal/history/file.go`: CreatedAt/UpdatedAt int64 → time.Time or unit‑suffixed
-* `internal/tui/components/chat/messages/renderer.go`: timeout int seconds → timeoutSeconds or time.Duration
+* `internal/tui/components/chat/`:
+  * `chat.go`: lastUserMessageTime int64 epoch seconds → time.Time or unit‑suffixed
+  * `messages/renderer.go`: timeout int seconds → timeoutSeconds or time.Duration
+* `internal/pubsub/broker.go`: now := time.Now().UnixMilli() → time type or nowUnixMs
 * `internal/session/session.go`: CreatedAt/UpdatedAt int64 → time types or unit‑suffixed
 * `internal/transform/transform.go`: CreatedAt int64 → time.Time or explicit unit suffix
-* `internal/tui/components/chat/chat.go`: lastUserMessageTime int64 epoch seconds → time.Time or unit‑suffixed
 
 #### IDs
 
-* `internal/message/middleware/debounce.go`: id params represent message IDs → messageID
-* `internal/message/middleware/serialized.go`: sessionWorker.id/newSessionWorker(id)/Delete(ctx, id)/op.createSess/op.deleteID → sessionID/messageID
+* `internal/message/middleware`:
+  * `debounce.go`: id params represent message IDs → messageID
+  * `serialized.go`: sessionWorker.id/newSessionWorker(id)/Delete(ctx, id)/op.createSess/op.deleteID → sessionID/messageID
 * `internal/message/message.go`: ambiguous id params (interface Delete, Delete(ctx, id string)) → messageID
 
 #### File sizes
@@ -673,6 +689,8 @@ Note: Many of these also reduce nesting and overlap with [Minimize nesting](../.
 * `internal/app/app.go`: flatten trivial guards in MCP topic derivation
 * `internal/lsp/client.go`: `WaitForServerReady`: unnecessary `else` after early return
 * `e2e/scenario.go`: combine `E2E_PER_STEP_SECS` read & value check in `NewScenario`
+* `internal/pubsub/broker.go`: use short `if` with `s := f.String(); s != "" { ... }`
+* `internal/history/file.go`: in `createWithVersion`, flatten nested UNIQUE constraint retry guard
 
 Note: Several of these can also be addressed via guard-clauses; see [Early bailout](../../definitions/early-bailout.md).
 
