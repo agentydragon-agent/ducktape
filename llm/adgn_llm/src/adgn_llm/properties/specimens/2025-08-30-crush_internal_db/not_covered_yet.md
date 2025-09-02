@@ -425,36 +425,7 @@ if index != lastIndex {
 
 Behavior: a successful create is followed by an error from `replaceContent`, masking success. Fix: make branches mutually exclusive (else-if, early returns).
 
-## Dead code
 
-### Dead `basePath == ""` guard in LSP watcher
-
-In `internal/lsp/watcher/watcher.go` (lines ~699–709), `matchesPattern` checks `basePath == ""` twice in a row; the second branch is unreachable.
-
-```go
-if basePath == "" {
-    fullPathMatch := matchesGlob(patternText, path)
-    baseNameMatch := matchesGlob(patternText, filepath.Base(path))
-    return fullPathMatch || baseNameMatch
-}
-
-if basePath == "" {  // will never be entered - delete this if
-    return false
-}
-```
-
-### Redundant branch in `View()` in `tool.go`
-
-In `internal/tui/components/chat/messages/tool.go`, `View` function returns the same value in both branches:
-
-```go
-if m.isNested {
-    return box.Render(content)
-}
-return box.Render(content)
-```
-
-The conditional adds no value; return once.
 
 ## App façade vs reach-through
 

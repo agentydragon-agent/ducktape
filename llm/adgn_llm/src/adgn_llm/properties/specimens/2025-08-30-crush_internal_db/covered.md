@@ -89,3 +89,8 @@ Note: Several of these can also be addressed via guard-clauses; see [Early bailo
 * `internal/lsp/watcher/watcher.go`:
   * ~568–576: inline one‑off isMatch variable used only for return branch
   * ~653–671, 662–664, 669–672: inline single‑use isMatch temporaries in matchesSimpleGlob
+
+## [No dead code](../../definitions/no-dead-code.md)
+
+- Dead `basePath == ""` guard in `internal/lsp/watcher/watcher.go` (~699–709): the second `if basePath == ""` branch is unreachable; delete it.
+- Redundant branch in `View()` in `internal/tui/components/chat/messages/tool.go`: both branches return the same value; remove the conditional and return once.

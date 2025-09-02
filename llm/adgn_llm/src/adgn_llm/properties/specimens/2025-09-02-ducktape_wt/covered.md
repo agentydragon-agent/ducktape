@@ -37,3 +37,12 @@ Many inline imports appear inside functions across modules in `wt/`; imports sho
   - **wt/wt/server/git_manager.py**: 116–123.
   - **wt/wt/server/worktree_service.py**: 143
 
+## [No dead code](../../definitions/no-dead-code.md)
+
+- logging_config.py: OperationLogger is dead code; JSONFormatter becomes unused once it’s removed.
+- Duplicate hydration/post-creation script invocation paths: a duplicate implementation exists that’s only used by tests; production path is separate and not covered. Consolidate on the prod path.
+
+## [Use pytest's standard fixtures for temp dirs and monkeypatching](../../definitions/python/pytest-standard-fixtures.md)
+
+- Test suite contains a hand-rolled cwd manager fixture duplicating standard pytest monkeypatch capabilities; use `monkeypatch.chdir(tmp_path)` and friends instead.
+

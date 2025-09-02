@@ -1,10 +1,20 @@
 from __future__ import annotations
 
 import argparse
+import os
+import shutil
+import subprocess
+import tarfile
+import tempfile
 from importlib.resources import files
 from pathlib import Path
+from typing import Iterable
+from urllib.request import urlopen
+from urllib.error import URLError, HTTPError
 
-from . import specimen_runner as sr
+import yaml
+
+from .specimen_frontmatter import SpecimenManifest, GitSource, GitHubSource, LocalSource
 
 
 def build_supplemental_section(supplemental_text: str | None) -> str:
@@ -140,9 +150,154 @@ def build_cmd(model: str, workdir: Path, *, sandbox: str, skip_git_repo_check: b
         cmd.append("--skip-git-repo-check")
     return cmd
 
+# ---- Specimen helpers (inlined) ----
+
+def _find_specimens_base() -> Path:
+    # 1) importlib.resources
+    try:
+        res = files("adgn_llm").joinpath("properties", "specimens")
+        p = Path(str(res))
+        if p.exists() and p.is_dir():
+            return p
+    except Exception:
+        pass
+    # 2) walk parents from this file for src tree
+    here = Path(__file__).resolve()
+    for parent in here.parents:
+        for rel in (Path("src/adgn_llm/properties/specimens"), Path("adgn_llm/properties/specimens")):
+            cand = (parent / rel).resolve()
+            if cand.exists():
+                return cand
+    # Fallback
+    return Path(str(files("adgn_llm").joinpath("properties", "specimens")))
+
+
+def _list_specimen_names(base: Path) -> list[str]:
+    return sorted([p.name for p in base.iterdir() if p.is_dir() and (p / "manifest.yaml").exists()])
+
+
+def _resolve_manifest_arg(arg: str | None, base: Path) -> Path | None:
+    if arg is None:
+        return None
+    path = Path(arg)
+    if path.exists():
+        return path / "manifest.yaml" if path.is_dir() else path
+    cand = base / arg / "manifest.yaml"
+    if cand.exists():
+        return cand
+    # unique prefix
+    matches = [n for n in _list_specimen_names(base) if n.startswith(arg)]
+    if len(matches) == 1:
+        return base / matches[0] / "manifest.yaml"
+    return None
+
+
+def _load_manifest(path: Path) -> SpecimenManifest:
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    return SpecimenManifest.model_validate(data)
+
+
+def _try_download_github_archive(owner: str, repo: str, ref: str) -> Path | None:
+    url = f"https://codeload.github.com/{owner}/{repo}/tar.gz/{ref}"
+    tmpdir = Path(tempfile.mkdtemp(prefix="adgn-specimen-archive-"))
+    tar_path = tmpdir / f"{repo}-{ref}.tar.gz"
+    try:
+        with urlopen(url) as resp, open(tar_path, "wb") as out:
+            out.write(resp.read())
+    except (URLError, HTTPError):
+        return None
+    with tarfile.open(tar_path, "r:gz") as tf:
+        tf.extractall(tmpdir)
+    for p in tmpdir.iterdir():
+        if p.is_dir():
+            return p.resolve()
+    return None
+
+
+def _fresh_git_checkout_url(url: str, ref: str, gitconfig: str | None) -> Path:
+    tmpdir = Path(tempfile.mkdtemp(prefix="adgn-specimen-git-"))
+    env = dict(**os.environ)
+    if gitconfig:
+        env["GIT_CONFIG_GLOBAL"] = str(Path(gitconfig).expanduser().resolve())
+    subprocess.run(["git", "init", str(tmpdir)], check=True, stdout=subprocess.DEVNULL, env=env)
+    subprocess.run(["git", "-C", str(tmpdir), "remote", "add", "origin", url], check=True, env=env)
+    subprocess.run(["git", "-C", str(tmpdir), "fetch", "--depth", "1", "origin", ref], check=True, env=env)
+    subprocess.run(["git", "-C", str(tmpdir), "checkout", "--detach", ref], check=True, env=env)
+    return tmpdir
+
+
+def _fresh_local_copy(root: Path) -> Path:
+    src = root.resolve()
+    if not src.exists():
+        raise SystemExit(f"Local source root not found: {src}")
+    tmpdir = Path(tempfile.mkdtemp(prefix="adgn-specimen-local-"))
+    dest = tmpdir / src.name
+    shutil.copytree(src, dest)
+    return dest
+
+
+def _build_scope_text(include: Iterable[str], exclude: Iterable[str] | None = None) -> str:
+    inc = ", ".join(include)
+    if exclude:
+        return f"all files under {inc} (excluding: {', '.join(exclude)})"
+    return f"all files under {inc}"
+
+
+def _run_specimen(manifest_path: Path, *, dry_run: bool, json_out: bool, embed_paths: list[str] | None, gitconfig: str | None, mode: str = "find") -> int:
+    man = _load_manifest(manifest_path)
+    # Resolve root
+    if isinstance(man.source, GitHubSource):
+        root = _try_download_github_archive(man.source.org, man.source.repo, man.source.ref)
+        if root is None:
+            root = _fresh_git_checkout_url(f"https://github.com/{man.source.org}/{man.source.repo}.git", man.source.ref, gitconfig)
+    elif isinstance(man.source, GitSource):
+        # Best-effort tarball when URL is GitHub https
+        url = man.source.url
+        root = None
+        if url.startswith("https://github.com/"):
+            parts = url.removeprefix("https://github.com/").rstrip("/")
+            if parts.endswith(".git"):
+                parts = parts[:-4]
+            bits = parts.split("/")
+            if len(bits) >= 2:
+                root = _try_download_github_archive(bits[0], bits[1], man.source.ref)
+        if root is None:
+            root = _fresh_git_checkout_url(man.source.url, man.source.ref, gitconfig)
+    elif isinstance(man.source, LocalSource):
+        root = _fresh_local_copy((manifest_path.parent / man.source.root))
+    else:
+        raise SystemExit(f"Unsupported source type: {type(man.source)}")
+
+    scope_text = _build_scope_text(man.scope.include, man.scope.exclude)
+    subcmd = "discover" if mode == "discover" else "find"
+    cmd = ["adgn-codex-properties", subcmd, str(root), scope_text, "--full-auto", "--skip-git-repo-check"]
+    for p in (embed_paths or []):
+        cmd += ["--embed-path", p]
+    if dry_run:
+        cmd.append("--dry-run")
+    if json_out:
+        cmd.append("--json")
+    print("Running:")
+    print(" ", " ".join(f'"{c}"' if " " in c else c for c in cmd))
+    return subprocess.run(cmd).returncode
+
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="adgn-llm codex properties CLI")
+    parser = argparse.ArgumentParser(
+        description="adgn-llm codex properties CLI",
+        formatter_class=argparse.RawTextHelpFormatter,
+        epilog=(
+            "Examples:\n"
+            "  # Check current repo for violations under a static path set\n"
+            "  adgn-codex-properties check $(pwd) 'all files under src/**' --dry-run\n\n"
+            "  # Enforce properties on a static path set (workspace-write sandbox)\n"
+            "  adgn-codex-properties enforce $(pwd) 'all files under src/**'\n\n"
+            "  # Check a saved specimen by name (uses manifest.yaml)\n"
+            "  adgn-codex-properties specimen-check 2025-09-02-ducktape_wt --dry-run\n\n"
+            "  # Discover only-new findings vs specimen notes\n"
+            "  adgn-codex-properties specimen-discover 2025-09-02-ducktape_wt --dry-run\n"
+        ),
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     common = argparse.ArgumentParser(add_help=False)
@@ -153,24 +308,66 @@ def main(argv: list[str] | None = None) -> int:
     common.add_argument("--skip-git-repo-check", action="store_true")
     common.add_argument("--full-auto", action="store_true")
 
-    sub.add_parser("find", parents=[common])
-    sub.add_parser("enforce", parents=[common])
+    sub.add_parser(
+        "check",
+        parents=[common],
+        help="Check for violations using committed property definitions",
+        description=(
+            "Analyze code within the provided scope against all committed property definitions.\n"
+            "- workdir: repo or directory to analyze\n"
+            "- scope: freeform description (diff or static files), e.g. 'all files under src/**'\n"
+            "Outputs a structured report; does not modify files."
+        ),
+    )
+    sub.add_parser(
+        "enforce",
+        parents=[common],
+        help="Refactor code within scope to satisfy property definitions",
+        description=(
+            "Edit code to bring it into compliance with committed property definitions.\n"
+            "- Uses a workspace-write sandbox\n"
+            "- Keeps edits minimal and scoped; runs linters/formatters if present"
+        ),
+    )
 
     # Specimen runner subcommand (integrated)
-    p_spec = sub.add_parser("specimen", help="Run critic against a specimen by name/path")
+    p_spec = sub.add_parser(
+        "specimen",
+        help="Run property scan on a saved specimen (manifest.yaml)",
+        description=(
+            "Resolve the specimen source+scope from manifest.yaml and run a find scan.\n"
+            "- Accepts specimen name (under properties/specimens), a specimen dir, or a manifest.yaml path\n"
+            "- Uses a fresh, private temp checkout/copy\n"
+            "- Defaults: --full-auto and --skip-git-repo-check"
+        ),
+    )
     p_spec.add_argument("specimen", nargs="?", help="Specimen name (under properties/specimens), path to specimen dir, or path to manifest.yaml")
     p_spec.add_argument("--dry-run", action="store_true")
     p_spec.add_argument("--json", action="store_true", help="Request JSON output from critic")
-    p_spec.add_argument("--embed-path", action="append", dest="embed_paths", help="Extra paths to embed into the prompt")
-    p_spec.add_argument("--gitconfig", help="Path to a gitconfig to use (private repos fallback)")
+    p_spec.add_argument("--embed-path", action="append", dest="embed_paths", help="Extra files to embed into the prompt (Markdown); repeatable")
+    p_spec.add_argument("--gitconfig", help="Path to a gitconfig to use for private repo fallback (shallow git)")
+
+    # New command: specimen-discover — report only new findings vs current specimen notes
+    p_spec_new = sub.add_parser(
+        "specimen-discover",
+        help="Discover only-new issues vs specimen notes",
+        description=(
+            "Run a scan on a specimen but suppress anything already listed in covered.md/not_covered_yet.md.\n"
+            "Reports only additional instances, new categories under existing properties, or entirely new issues."
+        ),
+    )
+    p_spec_new.add_argument("specimen", nargs="?", help="Specimen name (under properties/specimens), path to specimen dir, or path to manifest.yaml")
+    p_spec_new.add_argument("--dry-run", action="store_true")
+    p_spec_new.add_argument("--json", action="store_true", help="Request JSON output from critic")
+    p_spec_new.add_argument("--gitconfig", help="Path to a gitconfig to use for private repo fallback (shallow git)")
 
     args = parser.parse_args(argv)
 
     if args.command == "specimen":
-        base = sr.find_specimens_base()
-        manifest_path = sr.resolve_manifest_arg(args.specimen, base)
+        base = _find_specimens_base()
+        manifest_path = _resolve_manifest_arg(args.specimen, base)
         if manifest_path is None:
-            names = sr.list_specimen_names(base)
+            names = _list_specimen_names(base)
             if not names:
                 print(f"No specimens found under: {base}")
                 return 2
@@ -180,16 +377,42 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         # Validate gitconfig if provided
         gitconfig_path = None
-        if args.gitconfig:
+        if getattr(args, "gitconfig", None):
             p = Path(args.gitconfig).expanduser().resolve()
             if not p.exists():
                 print(f"ERROR: --gitconfig file not found: {p}")
                 return 2
             gitconfig_path = str(p)
-        cfg = sr.RunnerConfig(dry_run=args.dry_run, output_json=args.json, embed_paths=args.embed_paths, gitconfig=gitconfig_path)
-        return sr.run_critic(manifest_path, cfg)
+        return _run_specimen(manifest_path, dry_run=args.dry_run, json_out=args.json, embed_paths=args.embed_paths, gitconfig=gitconfig_path, mode="find")
 
-    elif args.command in ("find", "enforce"):
+    elif args.command == "specimen-discover":
+        base = _find_specimens_base()
+        manifest_path = _resolve_manifest_arg(args.specimen, base)
+        if manifest_path is None:
+            names = _list_specimen_names(base)
+            if not names:
+                print(f"No specimens found under: {base}")
+                return 2
+            print("Available specimens:")
+            for n in names:
+                print(" -", n)
+            return 0
+        gitconfig_path = None
+        if getattr(args, "gitconfig", None):
+            p = Path(args.gitconfig).expanduser().resolve()
+            if not p.exists():
+                print(f"ERROR: --gitconfig file not found: {p}")
+                return 2
+            gitconfig_path = str(p)
+        # Embed existing findings to suppress repeats
+        embed_paths = []
+        for name in ("covered.md", "not_covered_yet.md"):
+            pth = manifest_path.parent / name
+            if pth.exists():
+                embed_paths.append(str(pth))
+        return _run_specimen(manifest_path, dry_run=args.dry_run, json_out=args.json, embed_paths=embed_paths, gitconfig=gitconfig_path, mode="discover")
+
+    elif args.command in ("find", "check", "enforce"):
         workdir = Path(args.workdir).resolve()
         if args.command == "find":
             prompt = build_find_prompt(args.scope)
@@ -206,9 +429,21 @@ def main(argv: list[str] | None = None) -> int:
             )
 
         if args.dry_run:
+            # Save prompt to ./scratch and print approx token count
+            outdir = Path.cwd() / "scratch"
+            outdir.mkdir(parents=True, exist_ok=True)
+            ts = int(time.time())
+            outfile = outdir / f"codex_prompt_{args.command}_{ts}.md"
+            outfile.write_text(prompt, encoding="utf-8")
+            tokens = None
+            try:
+                if 'tiktoken' in globals() and tiktoken is not None:
+                    enc = tiktoken.get_encoding("cl100k_base")
+                    tokens = len(enc.encode(prompt))
+            except Exception:
+                tokens = None
             print(" ".join(cmd))
-            print()
-            print(prompt)
+            print(f"Saved prompt: {outfile} (approx tokens: {tokens if tokens is not None else 'n/a'})")
             return 0
 
         # Stream to subprocess stdin

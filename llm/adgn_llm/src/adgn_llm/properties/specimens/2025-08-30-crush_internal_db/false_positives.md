@@ -7,6 +7,8 @@ In the context of the facade, it would serve as a decoupling point.
 However, the facade is currently imperfect, which is the associated finding that should be reported here.
 See correct finding: “App façade vs reach-through”.
 
+To account for this false positive, the definition has been updated with a note permitting facades.
+
 ## Line numbering for LLM and for human display reported as duplication
 
 - `internal/tui/components/chat/messages/renderer.go`: on-screen TUI display with styled, width-aware numbering for humans.

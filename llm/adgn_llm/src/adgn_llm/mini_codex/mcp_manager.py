@@ -20,6 +20,8 @@ from typing import Any, Callable, Mapping, Iterable
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from .local_server import LocalServer
+import shlex
+from pathlib import Path
 
 
 def _load_mcp_config(path: str | None) -> dict[str, Any]:
@@ -43,11 +45,29 @@ class _LiveServer:
     def __init__(self, name: str, cfg: Mapping[str, Any]):
         self.name = name
         self.cfg = cfg
+        # Build per-server stderr log path and wrap command to redirect stderr (always on)
+        log_dir = Path(os.environ.get("MINICODEX_MCP_LOG_DIR") or (Path(os.getcwd()) / "logs" / "mcp"))
+        try:
+            log_dir.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            # Fallback: use current working directory if we cannot create the preferred log directory
+            log_dir = Path(os.getcwd())
+        log_file = log_dir / f"{_sanitize_name(self.name)}.stderr.log"
+
+        cmd = str(cfg["command"])
+        args_list = [str(a) for a in (cfg.get("args") or [])]
+        env = {str(k): str(v) for k, v in (cfg.get("env") or {}).items()}
+
+        shell = os.environ.get("SHELL") or "/bin/sh"
+        joined = " ".join([shlex.quote(cmd), *[shlex.quote(a) for a in args_list]])
+        command = shell
+        args_for_shell = ["-lc", f"exec {joined} 2>> {shlex.quote(str(log_file))}"]
+
         self._stdio_cm = stdio_client(
             StdioServerParameters(
-                command=str(cfg["command"]),
-                args=[str(a) for a in (cfg.get("args") or [])],
-                env={str(k): str(v) for k, v in (cfg.get("env") or {}).items()},
+                command=command,
+                args=args_for_shell,
+                env=env,
             )
         )
         self._read = None
