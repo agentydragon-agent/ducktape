@@ -16,6 +16,8 @@ Many inline imports appear inside functions across modules in `wt/`; imports sho
 - **wt/wt/shared/error_handling.py**: 141
 - **wt/tests/e2e/test_path_watcher_integration.py**: 23, 60
 - **wt/tests/integration/test_shell_integration.py**: 41, 42, 57, 63, 64, 66
+- **wt/tests/test_utils.py**: 10, 15
+- **wt/tests/repo_factory.py**: 165
 
 ## [Use StrEnum for string‑valued enums](../../definitions/python/strenum.md)
 
@@ -30,6 +32,7 @@ Many inline imports appear inside functions across modules in `wt/`; imports sho
 - **wt/ARCHITECTURE.md**: 256, 259 have plain "WT_DIR" references
 - **wt/WORKTREE_IDEAS.md**: 7, 16 have plain "WT_DIR" references
 - **wt/README.md**: 16, 18, 190 have plain "PATH" / env var references
+- **wt/tests/README.md**: 68, 71 — bare WT_DIR; wrap in code spans
 
 ## [Pass Path objects to PathLike APIs (no str())](../../definitions/python/pathlike.md)
 
@@ -39,6 +42,7 @@ Many inline imports appear inside functions across modules in `wt/`; imports sho
 - **wt/wt/server/worktree_service.py**: 337
 - **wt/wt/shared/git_utils.py**: 29
 - **wt/wt/server/wt_server.py**: 2052
+- **wt/tests/repo_factory.py**: 172, 188
 
 ## [Try/except is scoped around the operation it guards](../../definitions/python/scoped-try-except.md)
 
@@ -57,15 +61,36 @@ Many inline imports appear inside functions across modules in `wt/`; imports sho
 - Functions should accept `Path`/`PathLike` rather than `str` for filesystem paths.
   - **wt/wt/server/git_manager.py**: 259 (worktree_add `path: str`), 297 (worktree_remove `path: str`)
   - **wt/tests/integration/test_shell_integration.py**: 34, 37 — `run_shell_script` should take `cwd: Path` (not `str`)
+  - **wt/wt/client/wt_client.py**: 586 — `absolute_path: str` should be `Path`
+  - **wt/wt/server/worktree_service.py**: 299 — `script_path: str` should be `Path`
+  - **wt/wt/server/wt_server.py**: 227 — `file_path: str | None` should be `Path | None`
+  - **wt/wt/server/wt_server.py**: 381 — `file_path: str` should be `Path`
 
 ## [No dead code](../../definitions/no-dead-code.md)
 
 - logging_config.py: OperationLogger is dead code; JSONFormatter becomes unused once it’s removed.
 - Duplicate hydration/post-creation script invocation paths: a duplicate implementation exists that’s only used by tests; production path is separate and not covered. Consolidate on the prod path.
-- **wt/wt/server/git_manager.py**: `get_status_porcelain`, `status_porcelain`, and `rev_count()` have no references; remove as dead code.
-- **wt/wt/shared/models.py**: 145 — `WorktreeParseState.finalize(...)` has no callers; remove as dead code.
-- **wt/wt/client/view_formatter.py**: 149 — `ViewFormatter._get_sync_column` has no callers; remove as dead code.
-- **wt/wt/client/view_formatter.py**: `render_worktree_processes`, `render_worktree_removal_progress`, `render_worktree_removal_git_status` are never called; remove as dead code.
+- **wt/wt/server/git_manager.py**: dead code: `get_status_porcelain`, `status_porcelain`, `rev_count()`; `CannotDeleteWorktree` (L40)
+- **wt/wt/server/gitstatusd_client.py**: dead code: `parse_gitstatusd_response` (L358), `create_gitstatusd_request` (L363)
+- **wt/wt/server/wt_server.py**: dead code: `StatusSnapshot` (L413), `WorktreeRuntime` (L425), `GitStatusdProcess` (L640)
+- **wt/wt/server/github_client.py**: dead code: `DisabledGitHubInterface` (L18)
+- **wt/wt/shared/models.py**: dead code: `WorktreeParseState.finalize(...)` (L145)
+- **wt/wt/shared/constants.py**: 12 — `FILE_DISPLAY_LIMIT` is unreferenced.
+  - Integrate: use as the default display cap in `wt/wt/client/view_formatter.py` (e.g., `format_list_with_more(..., max_items: int = FILE_DISPLAY_LIMIT)`).
+  - Note: ViewFormatter currently defaults `max_items` to 3, while `FILE_DISPLAY_LIMIT` is 10 — decide desired UX and align (either set the constant to 3, or pass an explicit max where you want 3).
+- **wt/wt/shared/error_handling.py**: dead code: `WorktreeNotFoundError` (L23), `WorktreeAlreadyExistsError` (L27), `ProcessCheckError` (L31), `handle_git_errors` (L43), `handle_process_errors` (L76), `convert_to_click_exception` (L102), `safe_execute` (L120)
+- **wt/wt/shared/github_models.py**: dead code: `PullRequest` (L65), `PullRequestView` (L92), `PullRequestCache`
+- **wt/wt/shared/protocol.py**: dead code: `ProgressUpdate` (L426), `SUPPORTED_METHODS` (L497)
+- **wt/wt/client/view_formatter.py**: dead code: `_get_sync_column` (L149), `render_worktree_processes`, `render_worktree_removal_progress`, `render_worktree_removal_git_status`
+
+## [Pydantic 2 only](../../definitions/python/pydantic-2.md)
+
+- **wt/wt/shared/github_models.py**: 73, 101, 217 — Uses v1-style class Config; switch to `model_config = ConfigDict(...)` (Pydantic v2).
+
+## [Time and duration use rich time types](../../definitions/domain-types-and-units/time.md)
+
+- **wt/wt/server/wt_server.py**: 147–153 — `debounce_delay`, `periodic_interval` should be `datetime.timedelta` (not float seconds)
+- **wt/tests/test_utils.py**: 6, 33 — `run_cli_command`, `run_cli_sh_command` use float durations; prefer `timedelta`
 
 ## [Modern type hints](../../definitions/python/type-hints.md)
 
@@ -85,3 +110,40 @@ Many inline imports appear inside functions across modules in `wt/`; imports sho
 - **wt/tests/integration/test_shell_integration.py**: 29 — `create_shell_script()` is used exactly once; inline at call site (in `run_wt_command`) instead of keeping a one-off helper
 - **wt/tests/integration/test_shell_integration.py**: duplicate `daemon_cleanup` helper defined twice (one copy at 216–222); extract a single helper and reuse
 
+
+
+## [Use pathlib for path manipulation](../../definitions/python/pathlib.md)
+- **wt/tests/conftest.py**: 420–421 — Use Path one-liner: `config_path.write_text(yaml.dumps(config_file.model_dump()))` (small file).
+- **wt/wt/server/wt_server.py**: 2501–2502 — In async context, if kept as a synchronous write, prefer the one-liner Path I/O form: `self.pid_file.write_text(str(os.getpid()))`.
+
+## [No one-off vars and trivial wrappers] — additional findings
+
+- **wt/tests/conftest.py**: 398–415 — Avoid `**{**defaults, **config_overrides}`; instantiate `ConfigFile` with explicit kwargs and `**config_overrides` at the end for clarity.
+
+## [No useless documentation or comments](../../definitions/no-useless-docs.md)
+
+- **wt/tests/conftest.py**: 391–394 — Helper docstring includes historical workflow; trim to describe only current behavior.
+- **wt/tests/conftest.py**: 426 — Remove historical comment: "Config builder fixture removed - use config_factory directly".
+- **wt/tests/conftest.py**: 302–308 — Shorten `real_temp_repo` docstring to a single descriptive line; drop compatibility notes.
+- **wt/tests/conftest.py**: 312–337 — Trim `real_env` docstring and meta-comments; keep only non-obvious behavior.
+
+## [Try/except is scoped around the operation it guards] — additional findings
+
+- **wt/tests/conftest.py**: 236–251 — The catch for `ValueError`/`FileNotFoundError` swallows genuine errors (invalid PID) and mixes concerns; don’t suppress invalid PID — fail fast, and narrow exception scope to just the read.
+- **wt/wt/server/wt_server.py**: 613–635 — In `PRService.get_pr_info`, a blanket `except Exception` in non-boundary code silently swallows errors and the try wraps a long block. Scope the try to just the GitHub call and catch specific expected exceptions (or let them propagate) with proper logging.
+
+## [Time and duration use rich time types] — additional findings
+
+- **wt/tests/conftest.py**: 192 — Use `datetime.timedelta` for timeouts and a deadline loop with `datetime` rather than `float` seconds with `time.time()`.
+
+## [Imports at the top] — additional findings
+
+- **wt/tests/conftest.py**: 217 — Move `from pathlib import Path as _P` to module top; avoid function-scope imports.
+
+
+## [No dead code] — additional findings
+
+- **wt/tests/conftest.py**: 122–124 — `empty_worktree_status()` is unused; delete the fixture.
+
+## [No unnecessary line breaks](../../definitions/no-extra-linebreaks.md)
+- **wt/tests/conftest.py**: 298–300 — Collapse multi-line assert into one line: `assert shutil.which("gitstatusd"), "integration tests require gitstatusd on PATH"`.

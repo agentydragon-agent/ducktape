@@ -72,6 +72,40 @@ Workflow
 
 Seed examples: from confirmed dead code findings in specimen
 
+## Equip critics/fixers with Python quality tooling (linters/dup detectors/etc.)
+
+Goal: give agents an opinionated toolbox they can run automatically in “check” mode and selectively in “fix” mode.
+
+Checklist (install/enable in agent image + repo):
+- [ ] Ruff (check+format). Enable rule families: ANN, A, B, C4, I, NPY, PERF, PTH, PT, RET, RSE, SIM, TRY, ERA, W505, RUF. Add pyproject.toml with per-rule ignores as needed.
+- [ ] mypy (or pyright). Start permissive, move toward --strict; type: python version pin and plugin config.
+- [ ] vulture (dead code) with allowlist file for intentional symbols.
+- [ ] deptry (deps hygiene: unused/undeclared/missing).
+- [ ] Bandit (security) and pip-audit (or safety) for dependency vulns.
+- [ ] codespell (typos) for code/docs.
+- [ ] pyupgrade (syntax modernization; pin e.g. --py312-plus).
+- [ ] refurb (refactor suggestions) and flynt (f-strings).
+- [ ] pydocstyle (or Ruff D rules) and interrogate (docstring coverage) where useful.
+- [ ] import-linter (layer boundaries/contracts) for architecture rules.
+- [ ] Semgrep (property-specific checks + autofix where safe).
+- [ ] radon + xenon (complexity + CI gates).
+- [ ] Pylint duplicate-code (R0801) configured (e.g., --min-similarity-lines=20).
+- [ ] jscpd (language-agnostic clone detector) with HTML report artifact.
+- [ ] Lizard (complexity + duplicate detection) as a second opinion.
+- [ ] Clone Digger (optional, Python-focused clone finding) for stubborn cases.
+- [ ] coverage.py + diff-cover (changed-line coverage gates for PRs).
+
+Critic run profiles (how agents use them):
+- [ ] “Analyze” profile: ruff check, mypy/pyright, vulture, deptry, bandit, jscpd, pylint R0801, radon (report-only), semgrep; summarize top findings + file:line anchors.
+- [ ] “Fix-suggest” profile: ruff --fix, pyupgrade --py312-plus -r ., refurb ., flynt ., codespell (interactive), plus autofixes from selected Semgrep rules; stage diffs for review rather than committing.
+- [ ] Duplicate detection config: pylint --enable=duplicate-code --min-similarity-lines=20; jscpd --languages python --reporters console,html --gitignore; lizard -l python -C 15 -d.
+- [ ] Output normalization: emit short bullets + anchors; attach HTML artifacts (jscpd, radon) when under CI.
+
+Acceptance criteria:
+- [ ] Tools are installed in agent runtime and callable via simple wrappers (e.g., adgn-tools run <profile>).
+- [ ] Verify each detected tool runs inside the read-only critic sandbox; track pass/fail per tool and version.
+- [ ] Critics include tool-backed evidence in findings; fixers propose safe autofixes first, with diffs.
+
 ## Codex property enforcer and analyzer
 
 Observation (to investigate)

@@ -16,3 +16,14 @@ Traceback (most recent call last):
 TypeError: expected string or bytes-like object, got 'PosixPath'
 ```
 
+### Declared dependencies are present (false positive)
+
+A critique claimed undeclared dependencies on:
+- colorama, tabulate, pydantic, yaml (PyYAML), platformdirs, psutil, pygit2, github (PyGithub), pluggy, watchdog
+
+Rationale:
+- wt/pyproject.toml declares these runtime dependencies. The claim is incorrect.
+
+Subject code pointers:
+- wt/pyproject.toml (project dependency declarations)
+
