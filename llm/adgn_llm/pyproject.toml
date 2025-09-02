@@ -31,6 +31,8 @@ dependencies = [
   "anthropic",
   "numpy",
   "pathspec",
+  "anyio>=4.4",
+  "mcp[cli]>=1.13.1",
 ]
 
 [project.scripts]

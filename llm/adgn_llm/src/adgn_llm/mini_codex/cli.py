@@ -16,6 +16,7 @@ from openai.types.responses import (
 )
 from pydantic import BaseModel
 from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
+from adgn_llm.mini_codex.mcp_manager import McpManager
 
 DEFAULT_MODEL = os.getenv("OPENAI_MODEL", "o4-mini")
 DEFAULT_TIMEOUT_S = int(os.getenv("DUCK_TIMEOUT_S", "30"))
@@ -182,18 +183,28 @@ def _responses_create_with_retry(client: openai.OpenAI, **params: Any):
 
 
 def responses_turn(
-    client: openai.OpenAI, messages: list[Message],
+    client: openai.OpenAI, messages: list[Message], mcp_manager: McpManager | None = None,
 ) -> tuple[list[Message], str | None]:
     """Send a single non-streaming turn via Responses API.
 
     Returns (new_messages, terminal_text). If terminal_text is not None,
     print it to stdout for the user.
     """
+    # Include MCP server descriptions in the instructions, if available
+    instructions = SYSTEM_INSTRUCTIONS
+    if mcp_manager is not None:
+        try:
+            extra = mcp_manager.instruction_block()
+            if extra:
+                instructions = f"{SYSTEM_INSTRUCTIONS}\n\n{extra}"
+        except Exception:
+            pass
+
     resp = _responses_create_with_retry(
         client,
         model=DEFAULT_MODEL,
         input=dump_messages_for_api(messages),
-        instructions=SYSTEM_INSTRUCTIONS,
+        instructions=instructions,
         stream=False,
         tool_choice="auto",
         store=False,
@@ -215,6 +226,7 @@ def responses_turn(
                     },
                 },
             },
+            * (mcp_manager.list_tools() if mcp_manager else []),
         ],
     )
 
@@ -256,6 +268,7 @@ def responses_turn(
                 ),
             )
             continue
+        result: dict[str, Any] | None = None
         if fn == "shell.run":
             cmd = args.get("cmd")
             if not isinstance(cmd, list) or not all(isinstance(x, str) for x in cmd):
@@ -273,13 +286,20 @@ def responses_turn(
                     result = {"exit": code, "stdout": out, "stderr": err}
                 except ExecError as e:
                     result = {"exit": 127, "stdout": "", "stderr": str(e)}
-            new_messages.append(
-                FunctionCallOutput(
-                    type="function_call_output",
-                    call_id=call_id,
-                    output=json.dumps(result),
-                ),
-            )
+        elif fn.startswith("mcp:") and mcp_manager is not None:
+            try:
+                result = mcp_manager.call_tool(fn, args if isinstance(args, dict) else {})
+            except Exception as e:
+                result = {"exit": 127, "stdout": "", "stderr": f"mcp error: {e}"}
+        else:
+            result = {"exit": 127, "stdout": "", "stderr": f"unknown function: {fn}"}
+        new_messages.append(
+            FunctionCallOutput(
+                type="function_call_output",
+                call_id=call_id,
+                output=json.dumps(result),
+            ),
+        )
 
     return new_messages, terminal_text
 
@@ -288,6 +308,14 @@ def responses_turn(
 def main() -> None:
     print("mini-codex ready. Ctrl-D to exit. Type your task and press Enter.")
     client = openai_client()
+
+    # MCP manager (Null Object if no servers configured or config missing)
+    try:
+        cfg_path = os.environ.get("MCP_CONFIG") or os.path.join(os.getcwd(), ".mcp.json")
+        mcp_manager = McpManager.from_config(cfg_path)
+    except Exception as e:
+        print(f"[MCP disabled] {e}", file=sys.stderr)
+        mcp_manager = McpManager.from_config(None)
 
     transcript: list[Message] = []
 
@@ -304,7 +332,7 @@ def main() -> None:
         run_results: list[dict[str, Any]] = []
         while cycles < MAX_CYCLES:
             cycles += 1
-            new_msgs, terminal_text = responses_turn(client, transcript)
+            new_msgs, terminal_text = responses_turn(client, transcript, mcp_manager)
             if terminal_text:
                 terminal_batch.append(terminal_text)
             transcript.extend(new_msgs)
@@ -335,6 +363,9 @@ def main() -> None:
         # Then flush assistant text to terminal (human-friendly)
         if terminal_batch:
             print("\n".join(terminal_batch))
+
+    if mcp_manager is not None:
+        mcp_manager.close()
 
 
 if __name__ == "__main__":
