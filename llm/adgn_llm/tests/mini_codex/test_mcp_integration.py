@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import shutil
+import subprocess
 from typing import Any, Mapping
 
 import pytest
@@ -8,19 +10,32 @@ import pytest
 from adgn_llm.mini_codex.mcp_manager import McpManager
 
 
-@pytest.mark.asyncio(scope="session")
-async def test_stdio_server_list_tools() -> None:
+def test_stdio_server_list_tools() -> None:
     """Smoke test: connect to a known stdio MCP server via npx and list tools.
 
     Requires Node/npm available. Skip if not installed.
     """
-    if not os.environ.get("RUN_MCP_STDIO_TESTS"):
-        pytest.skip("set RUN_MCP_STDIO_TESTS=1 to enable stdio MCP test")
+    if shutil.which("npx") is None:
+        pytest.skip("npx not found in PATH; required for server-everything")
+
+    # Preflight: verify server-everything can start (help) quickly; skip if not
+    try:
+        cp = subprocess.run(
+            ["npx", "--yes", "@modelcontextprotocol/server-everything", "stdio", "--help"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=20,
+        )
+    except Exception as e:
+        pytest.skip(f"preflight failed: {e}")
+    if cp.returncode != 0:
+        pytest.skip(f"server-everything stdio help failed (rc={cp.returncode})")
 
     servers: dict[str, Mapping[str, Any]] = {
         "everything": {
             "command": "npx",
-            "args": ["@modelcontextprotocol/server-everything"],
+            "args": ["@modelcontextprotocol/server-everything", "stdio"],
         }
     }
     mgr = McpManager.from_servers(servers)
