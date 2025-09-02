@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Codex properties checker: unified CLI with subcommands `find` and `enforce`.
+Codex properties checker: unified CLI with subcommands `check` and `fix`.
 
-- find: Analyze for property violations without modifying files (read-only sandbox)
-- enforce: Apply minimal changes to satisfy properties (workspace-write sandbox)
+- check: Analyze for property violations without modifying files (read-only sandbox)
+- fix: Apply minimal changes to satisfy properties (workspace-write sandbox)
 
 Scope is provided as a single freeform description (diff range and/or file list).
 
@@ -11,11 +11,11 @@ Assumptions:
 - Requires the TypeScript codex-tui CLI (`codex`) in PATH (not codex-rs).
 
 Usage examples:
-  # Find violations in a diff range description
-  codex_checker.py find ~/repo "src/foo/bar.py and src/baz.py between merge-base with master and 2 commits before HEAD"
+  # Check for violations in a diff range description
+  codex_checker.py check ~/repo "src/foo/bar.py and src/baz.py between merge-base with master and 2 commits before HEAD"
 
-  # Enforce properties on files changed since a tag
-  codex_checker.py enforce ~/repo "all files changed since tag v1.2.0"
+  # Fix code on files changed since a tag
+  codex_checker.py fix ~/repo "all files changed since tag v1.2.0"
 """
 
 from __future__ import annotations
@@ -186,7 +186,7 @@ def build_enforce_prompt(
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Codex properties checker (find/enforce) using a freeform scope description",
+        description="Codex properties checker (check/fix) using a freeform scope description",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -248,25 +248,19 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         help="Print only the agent's final message to stdout (suppresses trajectory output)",
     )
 
-    # find
+    # check
     subparsers.add_parser(
-        "find",
+        "check",
         parents=[common],
         help="Analyze property violations (read-only)",
     )
 
-    # enforce
-    subparsers.add_parser(
-        "enforce",
-        parents=[common],
-        help="Enforce properties with minimal edits (workspace-write)",
-    )
 
-    # fix (alias for enforce)
+    # fix
     subparsers.add_parser(
         "fix",
         parents=[common],
-        help="Alias for 'enforce' (workspace-write)",
+        help="Enforce properties with minimal edits (workspace-write)",
     )
 
     return parser.parse_args(argv)
@@ -294,7 +288,7 @@ def main(argv: list[str]) -> int:
         out_last_file = Path(tmp.name)
         tmp.close()
 
-    if args.command == "find":
+    if args.command == "check":
         prompt = build_find_prompt(properties_dir, args.scope, supplemental_text)
         cmd = cx.build_codex_cmd(
             model=args.model,
@@ -303,7 +297,7 @@ def main(argv: list[str]) -> int:
             skip_git_repo_check=args.skip_git_repo_check,
             full_auto=args.full_auto,
         )
-    elif args.command in ("enforce", "fix"):
+    elif args.command == "fix":
         prompt = build_enforce_prompt(properties_dir, args.scope, supplemental_text)
         cmd = cx.build_codex_cmd(
             model=args.model,

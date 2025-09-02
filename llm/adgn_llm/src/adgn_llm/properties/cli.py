@@ -271,17 +271,43 @@ def _run_specimen(manifest_path: Path, *, dry_run: bool, json_out: bool, embed_p
         raise SystemExit(f"Unsupported source type: {type(man.source)}")
 
     scope_text = _build_scope_text(man.scope.include, man.scope.exclude)
-    subcmd = "discover" if mode == "discover" else "find"
-    cmd = ["adgn-codex-properties", subcmd, str(root), scope_text, "--full-auto", "--skip-git-repo-check"]
-    for p in (embed_paths or []):
-        cmd += ["--embed-path", p]
+    # Build supplemental text from embedded files (covered/not_covered_yet or user-specified)
+    supplemental_text = read_embedded_paths([Path(p) for p in (embed_paths or [])]) if embed_paths else None
+    # Build appropriate prompt
+    if mode == "discover":
+        # Hint: suppress already known findings; focus on new items
+        discover_preamble = (
+            "Only report findings that are NOT already listed in the embedded supplements above. "
+            "This includes additional instances under existing properties, new categories under existing properties, "
+            "or entirely new issues not covered by current properties."
+        )
+        prompt = discover_preamble + "\n\n" + build_find_prompt(scope_text, supplemental_text=supplemental_text)
+    else:
+        prompt = build_find_prompt(scope_text, supplemental_text=supplemental_text)
+
+    # Build codex command (read-only sandbox; full-auto; skip git repo check)
+    cmd = build_cmd("gpt-5", root, sandbox="read-only", skip_git_repo_check=True, full_auto=True)
+
     if dry_run:
-        cmd.append("--dry-run")
-    if json_out:
-        cmd.append("--json")
-    print("Running:")
-    print(" ", " ".join(f'"{c}"' if " " in c else c for c in cmd))
-    return subprocess.run(cmd).returncode
+        # Save prompt to system temp dir and print approx token count
+        tmpdir = Path(tempfile.gettempdir()) / "adgn_codex_prompts"
+        tmpdir.mkdir(parents=True, exist_ok=True)
+        ts = int(time.time())
+        outfile = tmpdir / f"codex_prompt_specimen_{mode}_{ts}.md"
+        outfile.write_text(prompt, encoding="utf-8")
+        tokens = None
+        try:
+            if 'tiktoken' in globals() and tiktoken is not None:
+                enc = tiktoken.get_encoding("cl100k_base")
+                tokens = len(enc.encode(prompt))
+        except Exception:
+            tokens = None
+        print(" ".join(cmd))
+        print(f"Saved prompt: {outfile} (approx tokens: {tokens if tokens is not None else 'n/a'})")
+        return 0
+
+    # Execute codex with prompt on stdin
+    return subprocess.run(cmd, check=False, input=prompt, text=True).returncode
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -292,8 +318,8 @@ def main(argv: list[str] | None = None) -> int:
             "Examples:\n"
             "  # Check current repo for violations under a static path set\n"
             "  adgn-codex-properties check $(pwd) 'all files under src/**' --dry-run\n\n"
-            "  # Enforce properties on a static path set (workspace-write sandbox)\n"
-            "  adgn-codex-properties enforce $(pwd) 'all files under src/**'\n\n"
+            "  # Fix code on a static path set (workspace-write sandbox)\n"
+            "  adgn-codex-properties fix $(pwd) 'all files under src/**'\n\n"
             "  # Check a saved specimen by name (uses manifest.yaml)\n"
             "  adgn-codex-properties specimen-check 2025-09-02-ducktape_wt --dry-run\n\n"
             "  # Discover only-new findings vs specimen notes\n"
@@ -365,7 +391,7 @@ def main(argv: list[str] | None = None) -> int:
 
     args = parser.parse_args(argv)
 
-    if args.command == "specimen":
+    if args.command == "specimen-check":
         base = _find_specimens_base()
         manifest_path = _resolve_manifest_arg(args.specimen, base)
         if manifest_path is None:

@@ -79,7 +79,7 @@
 
 - Evaluation/refactoring scope (e.g., “only evaluate/refactor starting from edited hunks”) is handled by agent behavioral instructions (critics/reviewers/fixers), orthogonal to property definitions.
 - Properties should be scope-agnostic; avoid embedding “agent-edited only” limits in property docs.
-- Tooling (e.g., codex_checker) supplies a freeform scope to agents:
+- Tooling (e.g., codex_checker — check/fix modes) supplies a freeform scope to agents:
   - If scope resolves to a diff range: the diff hunks define where to start reviewing/editing. Allow minimal cascades and necessary out-of-hunk edits to bring all touched code into compliance, then stop.
   - If scope resolves to static files: evaluate/edit the full files.
 
