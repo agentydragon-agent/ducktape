@@ -2,7 +2,6 @@ import os
 import time
 import uuid
 import json
-from pathlib import Path
 
 import anyio
 import docker
@@ -12,7 +11,6 @@ import pytest
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
-SERVER_PATH = Path(__file__).parent / "server.py"
 
 
 def _docker_client():
@@ -60,22 +58,6 @@ def _container_has_timeout(container) -> bool:
     return False
 
 
-def _compose_server_env(extra: dict) -> dict:
-    env = {**os.environ, **extra}
-    # Ensure DOCKER_HOST if not set; try common socket locations
-    if not env.get("DOCKER_HOST"):
-        candidates = [
-            "/var/run/docker.sock",
-            str(Path.home() / ".colima/default/docker.sock"),
-            str(Path.home() / ".docker/run/docker.sock"),
-        ]
-        for p in candidates:
-            if os.path.exists(p):
-                env["DOCKER_HOST"] = f"unix://{p}"
-                break
-    return env
-
-
 def _extract_payload(resp):
     # Prefer JSON from text content we return; fallback to structured result if present
     if getattr(resp, "content", None):
@@ -94,18 +76,18 @@ def _extract_payload(resp):
 def test_hello_world():
     container = _start_container()
     try:
-        # Prepare server env
-        base = {
+        # Prepare server env (assumes DOCKER_HOST is set appropriately in the environment)
+        env = {
             "DOCKER_CONTAINER": container.id,
             # Use wrapper only if available in container
             "USE_CONTAINER_TIMEOUT_WRAPPER": "1" if _container_has_timeout(container) else "0",
         }
-        server_env = _compose_server_env(base)
+        server_env = {**os.environ, **env}
 
         async def run():
             params = StdioServerParameters(
                 command="python3",
-                args=[str(SERVER_PATH)],
+                args=["-m","adgn_llm.mcp.docker_exec.server"],
                 env=server_env,
             )
             async with stdio_client(params) as (read, write):
@@ -140,16 +122,16 @@ def test_hello_world():
 def test_stderr_and_exit_code():
     container = _start_container()
     try:
-        base = {
+        env = {
             "DOCKER_CONTAINER": container.id,
             "USE_CONTAINER_TIMEOUT_WRAPPER": "0",  # not needed here
         }
-        server_env = _compose_server_env(base)
+        server_env = {**os.environ, **env}
 
         async def run():
             params = StdioServerParameters(
                 command="python3",
-                args=[str(SERVER_PATH)],
+                args=["-m","adgn_llm.mcp.docker_exec.server"],
                 env=server_env,
             )
             async with stdio_client(params) as (read, write):
@@ -179,16 +161,16 @@ def test_timeout_flag():
     container = _start_container()
     try:
         has_timeout = _container_has_timeout(container)
-        base = {
+        env = {
             "DOCKER_CONTAINER": container.id,
             "USE_CONTAINER_TIMEOUT_WRAPPER": "1" if has_timeout else "0",
         }
-        server_env = _compose_server_env(base)
+        server_env = {**os.environ, **env}
 
         async def run():
             params = StdioServerParameters(
                 command="python3",
-                args=[str(SERVER_PATH)],
+                args=["-m","adgn_llm.mcp.docker_exec.server"],
                 env=server_env,
             )
             async with stdio_client(params) as (read, write):

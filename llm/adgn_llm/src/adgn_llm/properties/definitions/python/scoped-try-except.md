@@ -13,8 +13,10 @@ Try/except blocks are short and localized: the try encloses only the minimal ris
 - Exception (allowed): At true outer boundaries (HTTP handler, main loop, task runner), a broader `try/except` may be used with a comment explaining the boundary and with full logging
 
 ## Positive examples
+
+`try` encloses only the risky JSON parse:
+
 ```python
-# Parse JSON line: try encloses only the risky parse
 async def _process_buffer_lines(self, buffer: str) -> None:
     lines = buffer.split("\n")
     for line in lines[:-1]:
@@ -43,8 +45,9 @@ async def _process_buffer_lines(self, buffer: str) -> None:
             )
 ```
 
+Distinct `try`/`except` blocks for separate risky operations:
+
 ```python
-# Separate risky operations into distinct try/except blocks
 from pathlib import Path
 
 def read_config(path: Path) -> dict:
@@ -61,8 +64,9 @@ def read_config(path: Path) -> dict:
 ```
 
 ### Error-boundary example (allowed)
+
+#### HTTP request handler
 ```python
-# Broad try/except at an HTTP boundary: log and return 500
 def handle_request(req) -> Response:
     try:
         data = get_bytes()
@@ -73,9 +77,25 @@ def handle_request(req) -> Response:
         return Response(status=500)
 ```
 
-## Negative examples
+#### Top-level CLI command handler
 ```python
-# Too-wide try/except wraps long body — should scope around json.loads and early-bailout
+def cmd_sync(args: argparse.Namespace) -> int:
+    try:
+        repo = Repo.open(args.path)
+        run_sync(repo, force=args.force)
+        return 0
+    except Exception:
+        logger.exception("sync failed")
+        return 2
+```
+
+These broad catches are acceptable only at the handler/command boundary, not in helpers.
+
+## Negative examples
+
+Too-wide try/except wraps long body — should scope around `json.loads` and early-bailout:
+
+```python
 async def _process_records(self, text: str) -> None:
     lines = text.split("\n")
     for record in lines[:-1]:
@@ -97,18 +117,21 @@ async def _process_records(self, text: str) -> None:
             await self._attempt_recovery(record)
 ```
 
-```python
-# One big try for unrelated risks in non-boundary code — should split into separate localized try/except blocks
-try:
-    blob = get_bytes()            # may raise TimeoutError
-    obj = json.loads(blob)        # may raise JSONDecodeError
-    write(obj)                    # may raise OSError
-except Exception:                 # wrong here: not at a boundary and hides errors
-    on_error()
-```
+One big `try` for unrelated risks in non-boundary code — should split into separate localized `try`/`except` blocks:
 
 ```python
-# Top-level else wrapping long body — exceptions used as a giant wrapper
+def internal_business_logic():
+    try:
+        blob = get_bytes()      # may raise TimeoutError
+        obj = json.loads(blob)  # may raise JSONDecodeError
+        write(obj)              # may raise OSError
+    except Exception:           # wrong here: not at a boundary and hides errors
+        on_error()
+```
+
+Top-level else wrapping long body — exceptions used as a giant wrapper:
+
+```python
 try:
     verify()
 except InvalidState:

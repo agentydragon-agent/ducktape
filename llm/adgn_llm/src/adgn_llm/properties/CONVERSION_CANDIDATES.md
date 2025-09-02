@@ -3,7 +3,6 @@
 Criteria
 - Prefer rules that are precise, objective, and easy to check; avoid wiggly/nuanced ones for now.
 
-
 2) logging-no-exception-duplication
 - Rule: Don’t embed exception text into logger.error/exception messages; rely on exc_info.
 - Source: general/code/python.md
@@ -26,13 +25,16 @@ Criteria
 
 Deprioritized for later (more nuanced)
 - aggressive-dry (principle-level)
-- early-bailout (style heuristic)
 - document-current-state (judgment-heavy)
-- refactor-tools-libcst-semgrep (process/behavioral)
 - proper-serde-libs (better as decomposed sub-rules per format)
 - self-describing-units (naming/typing judgment)
-- ascii-art-prefer-generated (harder to detect reliably)
+
+Process, not outcome:
+- refactor-tools-libcst-semgrep (process/behavioral)
 - rg-over-grep (tooling/process, not code outcome)
+
+Probably skip:
+- ascii-art-prefer-generated (harder to detect reliably)
 
 ---
 
@@ -49,3 +51,4 @@ Converted (done)
 - [x] pathlike-pass-path-not-str — `properties/pathlike-pass-path-not-str.md`
 - [x] self-describing-names — `properties/self-describing-names.md`
 - [x] str-removeprefix-removesuffix — `properties/str-removeprefix-removesuffix.md`
+- [x] early-bailout (style heuristic)

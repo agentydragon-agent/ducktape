@@ -31,12 +31,19 @@ class GitSource(BaseModel):
     ref: str  # commit SHA, tag, or branch
 
 
+class GitHubSource(BaseModel):
+    vcs: Literal["github"]
+    org: str
+    repo: str
+    ref: str  # commit SHA, tag, or branch
+
+
 class LocalSource(BaseModel):
     vcs: Literal["local"]
     root: str = "."  # local root directory
 
 
-Source = Annotated[Union[GitSource, LocalSource], Field(discriminator="vcs")]
+Source = Annotated[Union[GitSource, GitHubSource, LocalSource], Field(discriminator="vcs")]
 
 
 class Scope(BaseModel):

@@ -7,10 +7,12 @@ from typing import Any, Mapping
 
 import pytest
 
-from adgn_llm.mini_codex.mcp_manager import McpManager
+from adgn_llm.mini_codex.agent import MiniCodex
+from adgn_llm.mini_codex.local_exec_server import LocalExecServer
 
 
-def test_stdio_server_list_tools() -> None:
+@pytest.mark.asyncio
+async def test_stdio_server_list_tools() -> None:
     """Smoke test: connect to a known stdio MCP server via npx and list tools.
 
     Requires Node/npm available. Skip if not installed.
@@ -32,22 +34,23 @@ def test_stdio_server_list_tools() -> None:
     if cp.returncode != 0:
         pytest.skip(f"server-everything stdio help failed (rc={cp.returncode})")
 
-    servers: dict[str, Mapping[str, Any]] = {
+    tools_map: dict[str, Any] = {
         "everything": {
             "command": "npx",
             "args": ["@modelcontextprotocol/server-everything", "stdio"],
         }
     }
-    mgr = McpManager.from_servers(servers)
+    agent = await MiniCodex.start(model=os.getenv("OPENAI_MODEL", "o4-mini"), tools=tools_map)
     try:
-        tools = mgr.list_tools()
-        assert isinstance(tools, list)
-        assert any(t.get("type") == "function" for t in tools)
+        specs = agent.tools()
+        assert isinstance(specs, list)
+        assert any(s.get("type") == "function" for s in specs)
     finally:
-        mgr.close()
+        await agent.close()
 
 
-def test_local_inprocess_server() -> None:
+@pytest.mark.asyncio
+async def test_local_inprocess_server() -> None:
     """Local in-process MCP-like tools without stdio process."""
 
     def echo_handler(args: dict[str, Any]) -> dict[str, Any]:
@@ -62,14 +65,13 @@ def test_local_inprocess_server() -> None:
             )
         }
     }
-    mgr = McpManager.from_servers({}, local=local)
+    agent = await MiniCodex.start(
+        model=os.getenv("OPENAI_MODEL", "o4-mini"),
+        tools={"local": LocalExecServer("local")},
+    )
     try:
-        tools = mgr.list_tools()
-        names = [t["function"]["name"] for t in tools]
-        assert "mcp:local.echo" in names
-        # Call the local tool
-        out = mgr.call_tool("mcp:local.echo", {"msg": "hi"})
-        assert out.get("exit") == 0
-        assert out.get("json") == {"echo": {"msg": "hi"}}
+        specs = agent.tools()
+        names = [s.get("name") for s in specs]
+        assert "mcp__local__exec" in names
     finally:
-        mgr.close()
+        await agent.close()

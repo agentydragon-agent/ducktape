@@ -1,6 +1,7 @@
 source:
-  vcs: git
-  url: https://github.com/agentydragon/ducktape.git
+  vcs: github
+  org: agentydragon
+  repo: ducktape
   ref: 315fe021dbccbbb0682f10954f45d0145c92faf4
 scope:
   include:

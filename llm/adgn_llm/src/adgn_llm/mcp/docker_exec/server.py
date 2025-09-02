@@ -257,5 +257,9 @@ async def _run_stdio() -> None:
         await app.run(read, write, app.create_initialization_options())
 
 
-if __name__ == "__main__":
+def main() -> None:
     asyncio.run(_run_stdio())
+
+
+if __name__ == "__main__":
+    main()

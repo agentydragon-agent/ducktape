@@ -42,6 +42,7 @@ git-commit-ai = "adgn_llm.git_commit_ai.cli:main"
 sandbox-jupyter-mcp = "adgn_llm.mcp.sandboxed_jupyter_mcp.wrapper:main"
 adgn-sandboxer = "adgn_llm.sandboxer:main"
 adgn-instruction-optimizer = "adgn_llm.instruction_optimizer.core.optimizer:main"
+adgn-mcp-docker-exec = "adgn_llm.mcp.docker_exec.server:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
@@ -54,6 +55,7 @@ include = ["adgn_llm*"]
 adgn_llm = [
   "properties/definitions/*.md",
   "properties/definitions/**/*.md",
+  "properties/specimens/**",
 ]
 
 [project.optional-dependencies]

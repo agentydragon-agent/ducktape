@@ -6,6 +6,7 @@ import sys
 import time
 from shutil import which
 from typing import Any, Literal
+import asyncio
 
 import openai
 from openai import APIConnectionError, APIStatusError, APITimeoutError, RateLimitError
@@ -16,7 +17,9 @@ from openai.types.responses import (
 )
 from pydantic import BaseModel
 from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
-from adgn_llm.mini_codex.mcp_manager import McpManager
+from adgn_llm.mini_codex.local_exec_server import LocalExecServer
+from adgn_llm.mini_codex.agent import MiniCodex, load_mcp_file
+LOCAL_EXEC_SERVER_NAME = "local"
 
 DEFAULT_MODEL = os.getenv("OPENAI_MODEL", "o4-mini")
 DEFAULT_TIMEOUT_S = int(os.getenv("DUCK_TIMEOUT_S", "30"))
@@ -182,7 +185,7 @@ def _responses_create_with_retry(client: openai.OpenAI, **params: Any):
     return client.responses.create(**params)
 
 
-def responses_turn(
+async def responses_turn(
     client: openai.OpenAI, messages: list[Message], mcp_manager: McpManager | None = None,
 ) -> tuple[list[Message], str | None]:
     """Send a single non-streaming turn via Responses API.
@@ -209,23 +212,6 @@ def responses_turn(
         tool_choice="auto",
         store=False,
         tools=[
-            {
-                "type": "function",
-                "function": {
-                    "name": "shell.run",
-                    "description": "Run a shell command in a sandbox and return exit code, stdout, stderr.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "cmd": {"type": "array", "items": {"type": "string"}},
-                            "cwd": {"type": "string"},
-                            "timeout_ms": {"type": "integer"},
-                        },
-                        "required": ["cmd"],
-                        "additionalProperties": False,
-                    },
-                },
-            },
             * (mcp_manager.list_tools() if mcp_manager else []),
         ],
     )
@@ -269,26 +255,9 @@ def responses_turn(
             )
             continue
         result: dict[str, Any] | None = None
-        if fn == "shell.run":
-            cmd = args.get("cmd")
-            if not isinstance(cmd, list) or not all(isinstance(x, str) for x in cmd):
-                result = {"exit": 2, "stdout": "", "stderr": "invalid cmd"}
-            else:
-                timeout_ms = args.get("timeout_ms")
-                to = (
-                    DEFAULT_TIMEOUT_S
-                    if not isinstance(timeout_ms, int)
-                    else max(1, int(timeout_ms / 1000))
-                )
-                cwd_val = args.get("cwd") if isinstance(args.get("cwd"), str) else None
-                try:
-                    code, out, err = run_in_sandbox(cmd, timeout_s=to, cwd=cwd_val)
-                    result = {"exit": code, "stdout": out, "stderr": err}
-                except ExecError as e:
-                    result = {"exit": 127, "stdout": "", "stderr": str(e)}
-        elif fn.startswith("mcp:") and mcp_manager is not None:
+        if mcp_manager is not None and mcp_manager.is_mcp_tool(fn):
             try:
-                result = mcp_manager.call_tool(fn, args if isinstance(args, dict) else {})
+                result = await mcp_manager.call_tool(fn, args if isinstance(args, dict) else {})
             except Exception as e:
                 result = {"exit": 127, "stdout": "", "stderr": f"mcp error: {e}"}
         else:
@@ -305,67 +274,105 @@ def responses_turn(
 
 
 
-def main() -> None:
-    print("mini-codex ready. Ctrl-D to exit. Type your task and press Enter.")
-    client = openai_client()
-
-    # MCP manager (Null Object if no servers configured or config missing)
-    try:
-        cfg_path = os.environ.get("MCP_CONFIG") or os.path.join(os.getcwd(), ".mcp.json")
-        mcp_manager = McpManager.from_config(cfg_path)
-    except Exception as e:
-        print(f"[MCP disabled] {e}", file=sys.stderr)
-        mcp_manager = McpManager.from_config(None)
-
-    transcript: list[Message] = []
-
-    for line in sys.stdin:
-        user = line.rstrip("\n")
-        if not user:
-            continue
-        transcript.append(UserMessage(role="user", content=user))
-
-        # Iterate until the model no longer requires action in this turn.
-        # We make at most N cycles per user input to avoid infinite loops.
-        cycles = 0
-        terminal_batch: list[str] = []
-        run_results: list[dict[str, Any]] = []
-        while cycles < MAX_CYCLES:
-            cycles += 1
-            new_msgs, terminal_text = responses_turn(client, transcript, mcp_manager)
-            if terminal_text:
-                terminal_batch.append(terminal_text)
-            transcript.extend(new_msgs)
-
-            # Collect run results only from this cycle
-            for m in new_msgs:
-                if isinstance(m, FunctionCallOutput):
-                    try:
-                        payload = json.loads(m.output or "{}")
-                    except json.JSONDecodeError:
-                        payload = {"malformed": True}
-                    run_results.append(
-                        {
-                            "ts": time.time(),
-                            "action": "shell.run",
-                            "result": payload,
-                        },
-                    )
-
-            # If no tool outputs were enqueued, assume turn done
-            if not any(isinstance(m, FunctionCallOutput) for m in new_msgs):
-                break
-
-        # First emit JSONL for run results on stdout (machine-consumable)
-        for rec in run_results:
-            print(json.dumps(rec, ensure_ascii=False))
-
-        # Then flush assistant text to terminal (human-friendly)
-        if terminal_batch:
-            print("\n".join(terminal_batch))
-
+async def responses_followup_with_tool_outputs(
+    client: openai.OpenAI,
+    messages: list[Message],
+    tool_outputs: list[FunctionCallOutput],
+    mcp_manager: McpManager | None = None,
+) -> tuple[list[Message], str | None]:
+    instructions = SYSTEM_INSTRUCTIONS
     if mcp_manager is not None:
-        mcp_manager.close()
+        try:
+            extra = mcp_manager.instruction_block()
+            if extra:
+                instructions = f"{SYSTEM_INSTRUCTIONS}\n\n{extra}"
+        except Exception:
+            pass
+    input_payload = dump_messages_for_api(messages) + [t.model_dump(exclude_none=True) for t in tool_outputs]
+    resp = _responses_create_with_retry(
+        client,
+        model=DEFAULT_MODEL,
+        input=input_payload,
+        instructions=instructions,
+        stream=False,
+        tool_choice="auto",
+        store=False,
+        tools=[*(mcp_manager.list_tools() if mcp_manager else [])],
+    )
+    new_messages: list[Message] = []
+    terminal_text: str | None = None
+    requires: list[ResponseFunctionToolCall] = []
+    for item in resp.output:
+        if isinstance(item, ResponseOutputMessage):
+            text_parts = []
+            for part in item.content:
+                if isinstance(part, ResponseOutputText):
+                    text_parts.append(part.text)
+            combined = "\n".join([p for p in text_parts if p])
+            if combined:
+                terminal_text = (terminal_text + "\n" if terminal_text else "") + combined
+                new_messages.append(AssistantMessage(role="assistant", content=combined))
+        elif isinstance(item, ResponseFunctionToolCall):
+            requires.append(item)
+    for fc in requires:
+        call_id = fc.call_id
+        try:
+            args = json.loads(fc.arguments)
+        except json.JSONDecodeError as e:
+            new_messages.append(FunctionCallOutput(type="function_call_output", call_id=call_id, output=json.dumps({"exit": 2, "stdout": "", "stderr": f"invalid arguments: {e}"})))
+            continue
+        fn = fc.name
+        if mcp_manager is not None and mcp_manager.is_mcp_tool(fn):
+            try:
+                result = await mcp_manager.call_tool(fn, args if isinstance(args, dict) else {})
+            except Exception as e:
+                result = {"exit": 127, "stdout": "", "stderr": f"mcp error: {e}"}
+        else:
+            result = {"exit": 127, "stdout": "", "stderr": f"unknown function: {fn}"}
+        new_messages.append(FunctionCallOutput(type="function_call_output", call_id=call_id, output=json.dumps(result)))
+    return new_messages, terminal_text
+
+
+async def main_async() -> None:
+    print("mini-codex ready. Ctrl-D to exit. Type your task and press Enter.")
+
+    # Build unified ToolMap: load MCP servers (if present) and add a local exec server
+    cfg_path = os.environ.get("MCP_CONFIG") or os.path.join(os.getcwd(), ".mcp.json")
+    tools: dict[str, Any] = {}
+    if os.path.exists(cfg_path):
+        try:
+            tools.update(load_mcp_file(cfg_path))
+        except Exception as e:
+            print(f"[MCP config ignored] {e}", file=sys.stderr)
+    tools[LOCAL_EXEC_SERVER_NAME] = LocalExecServer(name=LOCAL_EXEC_SERVER_NAME)
+
+    agent = await MiniCodex.start(model=DEFAULT_MODEL, tools=tools, system=SYSTEM_INSTRUCTIONS, tool_policy="auto")
+
+    try:
+        for line in sys.stdin:
+            user = line.rstrip("\n")
+            if not user:
+                continue
+            result = await agent.run(user)
+            # Emit structured tool events as JSONL
+            for evt in result.sequence:
+                if evt.get("kind") == "tool_output":
+                    print(json.dumps({
+                        "ts": time.time(),
+                        "tool": evt.get("name"),
+                        "result": evt.get("result"),
+                        "latency_ms": int(evt.get("latency").total_seconds() * 1000) if evt.get("latency") else None,
+                        "error": evt.get("error"),
+                    }, ensure_ascii=False))
+            # Then assistant text
+            if result.text:
+                print(result.text)
+    finally:
+        await agent.close()
+
+
+def main() -> None:
+    asyncio.run(main_async())
 
 
 if __name__ == "__main__":
