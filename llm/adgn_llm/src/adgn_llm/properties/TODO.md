@@ -37,6 +37,41 @@ while True:
 # for worker in self.workers.values():
 ```
 
+## Systematic dead code / reachability analysis (Python-first)
+
+Have critic/fix agents run a repeatable, systematic dead-code and reachability sweep on specimens and repos (Python-first), combining automated/static tools with manual verification.
+
+**Why:** We repeatedly discover unreachable/unused code and test-only prod paths.
+This should make sure critics will surface all such findings systematically.
+
+We should probably install vulture, ruff, rg, fd etc. in container for fixer agent.
+
+Workflow
+1) Automated discovery (run all):
+- Pyright (LSP) JSON diagnostics for unused/unreachable
+- Vulture for dead symbols; allow whitelist for FPs
+- Ruff selectors (unused imports/assignments); optionally flake8-eradicate for commented-out code
+- Semgrep rules: broad except+pass, duplicate guards, unreachable defaults
+- ripgrep heuristics: symbol reference counts (exclude definitions/tests as needed)
+
+2) Call graph and refs:
+- Build import graph via AST; enumerate exports
+- For each symbol, compute references (AST + rg backup)
+- Cross-check tool outputs to lower FP rate
+
+3) Manual confirmation:
+- Inspect invariants/types/contracts; mark obviously unreachable
+- If only test-only usage remains, move under tests/ or consolidate on prod path
+
+4) Fix (optional):
+- Delete confirmed dead code (or move to tests) in small PRs
+- Replace speculative fallbacks with hard guards (assert/TypeError)
+
+5) Reporting:
+- Summarize dead code with proof (tools + rg hits)
+
+Seed examples: from confirmed dead code findings in specimen
+
 ## Codex property enforcer and analyzer
 
 Observation (to investigate)
