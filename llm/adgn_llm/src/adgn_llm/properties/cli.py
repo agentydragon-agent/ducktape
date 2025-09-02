@@ -6,6 +6,8 @@ import shutil
 import subprocess
 import tarfile
 import tempfile
+import time
+import tiktoken
 from importlib.resources import files
 from pathlib import Path
 from typing import Iterable
@@ -320,7 +322,7 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     sub.add_parser(
-        "enforce",
+        "fix",
         parents=[common],
         help="Refactor code within scope to satisfy property definitions",
         description=(
@@ -332,10 +334,10 @@ def main(argv: list[str] | None = None) -> int:
 
     # Specimen runner subcommand (integrated)
     p_spec = sub.add_parser(
-        "specimen",
+        "specimen-check",
         help="Run property scan on a saved specimen (manifest.yaml)",
         description=(
-            "Resolve the specimen source+scope from manifest.yaml and run a find scan.\n"
+            "Resolve the specimen source+scope from manifest.yaml and run a check scan.\n"
             "- Accepts specimen name (under properties/specimens), a specimen dir, or a manifest.yaml path\n"
             "- Uses a fresh, private temp checkout/copy\n"
             "- Defaults: --full-auto and --skip-git-repo-check"
@@ -412,9 +414,9 @@ def main(argv: list[str] | None = None) -> int:
                 embed_paths.append(str(pth))
         return _run_specimen(manifest_path, dry_run=args.dry_run, json_out=args.json, embed_paths=embed_paths, gitconfig=gitconfig_path, mode="discover")
 
-    elif args.command in ("find", "check", "enforce"):
+    elif args.command in ("check", "fix"):
         workdir = Path(args.workdir).resolve()
-        if args.command == "find":
+        if args.command == "check":
             prompt = build_find_prompt(args.scope)
             cmd = build_cmd(args.model, workdir, sandbox="read-only", skip_git_repo_check=args.skip_git_repo_check, full_auto=args.full_auto)
         else:
@@ -429,11 +431,11 @@ def main(argv: list[str] | None = None) -> int:
             )
 
         if args.dry_run:
-            # Save prompt to ./scratch and print approx token count
-            outdir = Path.cwd() / "scratch"
-            outdir.mkdir(parents=True, exist_ok=True)
+            # Save prompt to system temp dir and print approx token count
+            tmpdir = Path(tempfile.gettempdir()) / "adgn_codex_prompts"
+            tmpdir.mkdir(parents=True, exist_ok=True)
             ts = int(time.time())
-            outfile = outdir / f"codex_prompt_{args.command}_{ts}.md"
+            outfile = tmpdir / f"codex_prompt_{args.command}_{ts}.md"
             outfile.write_text(prompt, encoding="utf-8")
             tokens = None
             try:

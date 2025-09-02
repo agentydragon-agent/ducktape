@@ -44,7 +44,6 @@ def build_supplemental_section(supplemental_text: str | None) -> str:
     return "\n".join(lines)
 
 
-
 def _display_path_for_embed(p: Path) -> str:
     """Try to show an intuitive path for the embed wrapper.
     Prefer path relative to the repo root if available; else use absolute.
@@ -52,7 +51,11 @@ def _display_path_for_embed(p: Path) -> str:
     try:
         # git rev-parse --show-toplevel from the file's directory
         cp = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"], check=False, cwd=str(p.parent), text=True, capture_output=True,
+            ["git", "rev-parse", "--show-toplevel"],
+            check=False,
+            cwd=str(p.parent),
+            text=True,
+            capture_output=True,
         )
         if cp.returncode == 0 and cp.stdout.strip():
             root = Path(cp.stdout.strip())
@@ -81,11 +84,13 @@ def read_embedded_paths(paths: list[Path]) -> str:
             content = p.read_text(encoding="utf-8")
         except Exception:
             continue
-        blocks.append("\n".join([f"<file path=\"{disp}\">", content, "</file>"]))
+        blocks.append("\n".join([f'<file path="{disp}">', content, "</file>"]))
     return "\n\n".join(blocks)
 
 
-def _scope_block(scope_text: str, *, static_action: str, ambiguity_tail: str) -> list[str]:
+def _scope_block(
+    scope_text: str, *, static_action: str, ambiguity_tail: str
+) -> list[str]:
     return [
         "Scope (freeform):",
         f"- {scope_text}",
@@ -100,14 +105,18 @@ def _scope_block(scope_text: str, *, static_action: str, ambiguity_tail: str) ->
     ]
 
 
-def _properties_block(properties_text: str, supplemental_section: str | None) -> list[str]:
+def _properties_block(
+    properties_text: str, supplemental_section: str | None
+) -> list[str]:
     lines = ["Property definitions:", properties_text]
     if supplemental_section:
         lines.append(supplemental_section)
     return lines
 
 
-def build_find_prompt(properties_dir: Path, scope_text: str, supplemental_text: str | None = None) -> str:
+def build_find_prompt(
+    properties_dir: Path, scope_text: str, supplemental_text: str | None = None
+) -> str:
     properties_text = cx.read_all_properties_text(properties_dir)
     supplemental_section = build_supplemental_section(supplemental_text)
 
@@ -135,7 +144,9 @@ def build_find_prompt(properties_dir: Path, scope_text: str, supplemental_text: 
     return "\n".join(lines).strip()
 
 
-def build_enforce_prompt(properties_dir: Path, scope_text: str, supplemental_text: str | None = None) -> str:
+def build_enforce_prompt(
+    properties_dir: Path, scope_text: str, supplemental_text: str | None = None
+) -> str:
     properties_text = cx.read_all_properties_text(properties_dir)
     supplemental_section = build_supplemental_section(supplemental_text)
 
@@ -163,7 +174,7 @@ def build_enforce_prompt(properties_dir: Path, scope_text: str, supplemental_tex
         *_properties_block(properties_text, supplemental_section),
         "",
         "Operational guidance:",
-        "- Ask for confirmation before any destructive action (deletes/mass renames). Keep changes within the workspace.",
+        "- Keep changes within the workspace.",
         "- If a property appears to conflict with code behavior, explain the conflict and propose the smallest safe change in your final report.",
         "",
         "Deliverables:",
@@ -224,7 +235,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--embed-path",
         action="append",
         default=[],
-        help="Paths to embed verbatim into the prompt as <file path=\":/...\"> blocks (repeatable)",
+        help='Paths to embed verbatim into the prompt as <file path=":/..."> blocks (repeatable)',
     )
     common.add_argument(
         "--json",
@@ -333,11 +344,16 @@ def main(argv: list[str]) -> int:
 
     try:
         if out_last_file is not None:
-            proc = subprocess.run(cmd, check=False, input=prompt, text=True, capture_output=True)
+            proc = subprocess.run(
+                cmd, check=False, input=prompt, text=True, capture_output=True
+            )
             try:
                 print(Path(out_last_file).read_text(encoding="utf-8"))
             except Exception as e:
-                print(f"[error reading final message file {out_last_file}: {e}]", file=sys.stderr)
+                print(
+                    f"[error reading final message file {out_last_file}: {e}]",
+                    file=sys.stderr,
+                )
             return proc.returncode
         proc = subprocess.run(cmd, check=False, input=prompt, text=True)
         return proc.returncode

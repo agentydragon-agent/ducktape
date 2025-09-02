@@ -25,6 +25,8 @@ Example
 """
 
 # ---------------------------------------------------------------------
+from __future__ import annotations
+
 import argparse
 import asyncio
 import contextlib
@@ -43,7 +45,7 @@ import termios
 import time
 from dataclasses import dataclass
 from datetime import timedelta
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 
 from git import Repo
@@ -54,7 +56,7 @@ PAST_COMMITS_MAX_CHARS = 6000  # legacy safety cap for past commit subjects
 DEFAULT_MODEL = "claude:sonnet"
 SPINNER_CHARS = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 MAX_VERBOSE_DIFF_LINES = 3000  # cap verbose diff lines under scissors
-DEFAULT_AI_TIMEOUT_SECS = 30  # shared subprocess timeout for providers
+DEFAULT_AI_TIMEOUT = timedelta(seconds=30)  # shared subprocess timeout for providers
 MAX_PROMPT_CONTEXT_BYTES = 100 * 1024  # 100 KiB cap for AI context block
 RECENT_COMMITS_FOR_CONTEXT = 30
 
@@ -64,26 +66,24 @@ class AppConfig:
     provider: str
     model_name: str
     model_str: str
-    timeout_secs: int | None
+    timeout: timedelta | None
 
     @staticmethod
-    def resolve(known) -> "AppConfig":
+    def resolve(known) -> AppConfig:
         # Precedence: CLI args > env vars > defaults. No git config.
         model_str = (
             known.model or os.environ.get("GIT_COMMIT_AI_MODEL") or DEFAULT_MODEL
         )
 
-        if known.timeout_secs is not None:
-            raw_timeout = known.timeout_secs
+        if getattr(known, "timeout_secs", None) is not None:
+            raw_timeout_secs = known.timeout_secs
         else:
-            raw_timeout = DEFAULT_AI_TIMEOUT_SECS
-            if (
-                env_timeout := os.environ.get("GIT_COMMIT_AI_TIMEOUT_SECS")
-            ) is not None:
+            raw_timeout_secs = int(DEFAULT_AI_TIMEOUT.total_seconds())
+            if (env_timeout := os.environ.get("GIT_COMMIT_AI_TIMEOUT_SECS")) is not None:
                 with contextlib.suppress(ValueError):
-                    raw_timeout = int(env_timeout)
+                    raw_timeout_secs = int(env_timeout)
 
-        timeout_secs = None if raw_timeout <= 0 else raw_timeout
+        timeout = None if raw_timeout_secs <= 0 else timedelta(seconds=raw_timeout_secs)
 
         if ":" in model_str:
             provider, model_name = model_str.split(":", 1)
@@ -92,44 +92,33 @@ class AppConfig:
         else:
             provider, model_name = "claude", model_str.strip()
 
-        return AppConfig(
-            provider=provider,
-            model_name=model_name,
-            model_str=model_str,
-            timeout_secs=timeout_secs,
-        )
+        return AppConfig(provider=provider, model_name=model_name, model_str=model_str, timeout=timeout)
 
 
 def _len_bytes(s: str) -> int:
     return len(s.encode("utf-8"))
 
 
-def _cap_append(parts: list[str], chunk: str, cap: int, truncation_note: str) -> bool:
+def _cap_append(
+    parts: list[str], chunk: str, cap_bytes: int, truncation_note: str,
+) -> bool:
     """Append chunk to parts unless this would exceed cap.
 
     Returns True if truncation occurred (chunk was cut and note appended).
     """
-    current = _len_bytes("".join(parts))
-    needed = _len_bytes(chunk)
-    if current + needed >= cap:
-        remaining = cap - current
-        if remaining > 0:
+    current_bytes = _len_bytes("".join(parts))
+    needed_bytes = _len_bytes(chunk)
+    if current_bytes + needed_bytes >= cap_bytes:
+        remaining_bytes = cap_bytes - current_bytes
+        if remaining_bytes > 0:
             parts.append(
-                chunk.encode("utf-8")[:remaining].decode("utf-8", errors="ignore"),
+                chunk.encode("utf-8")[:remaining_bytes].decode("utf-8", errors="ignore"),
             )
         parts.append(truncation_note + "\n")
         return True
     parts.append(chunk)
     return False
 
-
-def _format_name_status(d) -> str:
-    """Best-effort 'name-status' style line from a GitPython Diff object."""
-    ct = getattr(d, "change_type", "M").upper()
-    if ct == "R":
-        return f"R\t{getattr(d, 'rename_from', d.a_path)}\t{getattr(d, 'rename_to', d.b_path)}"
-    path = d.b_path or d.a_path
-    return f"{ct}\t{path}"
 
 
 def _build_ai_context(repo: Repo, include_all: bool) -> str:
@@ -469,13 +458,14 @@ class Cache:
     def prune(self):
         """Remove cache entries older than TTL based on file modification time."""
         cache_ttl = timedelta(days=7)
-        now = time.time()
+        now_epoch_s = time.time()
         for path in self.dir.glob("*.txt"):
-            if now - path.stat().st_mtime > cache_ttl.total_seconds():
+            mtime_s = path.stat().st_mtime
+            if now_epoch_s - mtime_s > cache_ttl.total_seconds():
                 path.unlink()
 
 
-class TaskStatus(Enum):
+class TaskStatus(StrEnum):
     """Status of a task."""
 
     RUNNING = "running"
@@ -489,8 +479,8 @@ class TaskState:
 
     def __init__(self, task):
         self.task = task
-        self.start_time = time.time()
-        self._end_time = None
+        self.start_time_s = time.monotonic()
+        self._end_time_s = None
 
     @property
     def status(self):
@@ -513,16 +503,16 @@ class TaskState:
         return self.status != TaskStatus.RUNNING
 
     @property
-    def final_duration(self):
+    def final_duration_s(self):
         """Get final duration of the task if completed, None otherwise."""
         if not self.completed:
             return None
 
         # Cache the duration the first time the task completes
-        if self._end_time is None:
-            self._end_time = time.time()
+        if self._end_time_s is None:
+            self._end_time_s = time.monotonic()
 
-        return self._end_time - self.start_time
+        return self._end_time_s - self.start_time_s
 
     def cancel(self):
         """Cancel the task."""
@@ -554,9 +544,8 @@ class ParallelTaskRunner:
     def __init__(self, ai_state, precommit_state, master_fd):
         self.ai_state = ai_state
         self.precommit_state = precommit_state
-        self.start_time = time.time()
+        self.start_time_s = time.monotonic()
         self._status_visible = False  # Track if status line is currently visible
-        self._last_status = ""  # Remember last status to clear it
 
     async def _stream_output(self, master_fd):
         """Stream output from the file descriptor."""
@@ -608,7 +597,7 @@ class ParallelTaskRunner:
                         return  # No pre-commit hook, nothing to do
                     # Run pre-commit hook with given slave end of PTY.
                     proc = await asyncio.create_subprocess_exec(
-                        str(precommit_path),
+                        precommit_path,
                         stdout=slave_fd,
                         stderr=slave_fd,
                         stdin=slave_fd,
@@ -664,14 +653,14 @@ class ParallelTaskRunner:
             self._status_visible = False
 
     @property
-    def elapsed(self):
-        return time.time() - self.start_time
+    def elapsed_s(self):
+        return time.monotonic() - self.start_time_s
 
     def _status_char(self):
         if self.ai_state.done and self.precommit_state.done:
             return "✓"  # Checkmark when all done
         # Spinner
-        return SPINNER_CHARS[int(self.elapsed * 10) % len(SPINNER_CHARS)]
+        return SPINNER_CHARS[int(self.elapsed_s * 10) % len(SPINNER_CHARS)]
 
     def _print_status_line(self):
         """Print a simple status line using carriage return.
@@ -683,14 +672,14 @@ class ParallelTaskRunner:
         # Build status with fixed widths
         parts = [
             # Status character and elapsed time (fixed width)
-            f"{self._status_char()} {self.elapsed:5.1f}s",
+            f"{self._status_char()} {self.elapsed_s:5.1f}s",
         ]
         # Task statuses with fixed alignment
         for state, label in [
             (self.precommit_state, "pre-commit"),
             (self.ai_state, "message"),
         ]:
-            duration_str = f"{state.final_duration:.1f}s" if state.completed else ""
+            duration_str = f"{state.final_duration_s:.1f}s" if state.completed else ""
             # Fixed width for duration
             parts.append(f"{duration_str:<5} {_STATUS_ICONS[state.status]} {label}")
 
@@ -705,7 +694,6 @@ class ParallelTaskRunner:
         # Print the status
         print(f"\r{status}", end="", flush=True)
         self._status_visible = True
-        self._last_status = status
 
     async def _update_loop(self):
         """Update the display periodically."""
@@ -757,7 +745,7 @@ async def _get_editor():
 
 
 async def async_main():
-    start = time.time()
+    start_monotonic_s = time.monotonic()
     repo = Repo(Path.cwd(), search_parent_directories=True)
 
     parser = argparse.ArgumentParser(add_help=True)
@@ -802,8 +790,11 @@ async def async_main():
     # Resolve configuration
     config = AppConfig.resolve(known)
     if known.debug:
+        timeout_label = (
+            "infinite" if config.timeout is None else f"{int(config.timeout.total_seconds())}s"
+        )
         print(
-            f"# Resolved model={config.model_str}, timeout={'infinite' if config.timeout_secs is None else str(config.timeout_secs) + 's'}",
+            f"# Resolved model={config.model_str}, timeout={timeout_label}",
             file=sys.stderr,
         )
 
@@ -866,14 +857,14 @@ async def async_main():
                 diff=diff,
                 passthru=passthru,
                 debug=known.debug,
-                timeout_secs=config.timeout_secs,
+                timeout=config.timeout,
                 previous_message=previous_message,
             )
         elif provider == "codex":
             ai_client = CodexAI(
                 repo, 
                 debug=known.debug, 
-                timeout_secs=config.timeout_secs,
+                timeout=config.timeout,
                 previous_message=previous_message,
             )
         else:
@@ -887,8 +878,8 @@ async def async_main():
         cache[key] = msg
         cached = False
 
-    elapsed = time.time() - start
-    stats_comment = f"\n# ai-draft{'(cached)' if cached else ''}: prompt: {len(diff)} chars, response: {len(msg)} chars, elapsed: {elapsed:.2f}s\n"
+    elapsed_s = time.monotonic() - start_monotonic_s
+    stats_comment = f"\n# ai-draft{'(cached)' if cached else ''}: prompt: {len(diff)} chars, response: {len(msg)} chars, elapsed: {elapsed_s:.2f}s\n"
 
     commit_msg_path = Path(repo.git_dir) / "COMMIT_EDITMSG"
 
@@ -979,7 +970,7 @@ async def async_main():
         "git",
         "commit",
         "-F",
-        str(commit_msg_path),
+        commit_msg_path,
         "--cleanup=strip",
         "--no-verify",
         *commit_passthru,
@@ -1008,14 +999,14 @@ class ClaudeAI:
         diff: str,
         passthru: list[str],
         debug: bool = False,
-        timeout_secs: int | None = None,
+        timeout: timedelta | None = None,
         previous_message: str | None = None,
     ):
         self.repo = repo
         self.diff = diff
         self.passthru = passthru
         self.debug = debug
-        self.timeout_secs = timeout_secs
+        self.timeout = timeout
         self.previous_message = previous_message
         self.logger = logging.getLogger(__name__)
 
@@ -1056,16 +1047,18 @@ class ClaudeAI:
             stderr=asyncio.subprocess.PIPE,
         )
         try:
-            if self.timeout_secs is None:
+            if self.timeout is None:
                 stdout, stderr = await proc.communicate()
             else:
                 stdout, stderr = await asyncio.wait_for(
-                    proc.communicate(), timeout=self.timeout_secs,
+                    proc.communicate(), timeout=self.timeout.total_seconds(),
                 )
         except TimeoutError:
             proc.terminate()
             await proc.wait()
-            secs_str = "infinite" if self.timeout_secs is None else str(self.timeout_secs)
+            secs_str = (
+                "infinite" if self.timeout is None else str(int(self.timeout.total_seconds()))
+            )
             print(
                 f"# Error: Claude command timed out after {secs_str} seconds",
                 file=sys.stderr,
@@ -1097,13 +1090,13 @@ class CodexAI:
         repo: Repo,
         debug: bool = False,
         codex_bin: str | None = None,
-        timeout_secs: int | None = None,
+        timeout: timedelta | None = None,
         previous_message: str | None = None,
     ):
         self.repo = repo
         self.debug = debug
         self.codex_bin = codex_bin or os.environ.get("CODEX_BIN", "codex")
-        self.timeout_secs = timeout_secs
+        self.timeout = timeout
         self.previous_message = previous_message
         self.logger = logging.getLogger(__name__)
 
@@ -1140,16 +1133,16 @@ class CodexAI:
             "--sandbox",
             "read-only",
             "-C",
-            str(self.repo.working_tree_dir),
+            Path(self.repo.working_tree_dir),
             "--output-last-message",
-            str(last_msg_path),
+            last_msg_path,
         ]
         if model:
             cmd += ["-m", model]
         cmd.append(prompt)
 
         if self.debug:
-            shell_cmd = subprocess.list2cmdline(cmd)
+            shell_cmd = subprocess.list2cmdline([str(x) for x in cmd])
             self.logger.debug("Codex command:\n%s", shell_cmd)
             self.logger.debug("Codex prompt:\n%s", prompt)
 
@@ -1159,16 +1152,18 @@ class CodexAI:
             stderr=asyncio.subprocess.PIPE,
         )
         try:
-            if self.timeout_secs is None:
+            if self.timeout is None:
                 stdout, stderr = await proc.communicate()
             else:
                 stdout, stderr = await asyncio.wait_for(
-                    proc.communicate(), timeout=self.timeout_secs,
+                    proc.communicate(), timeout=self.timeout.total_seconds(),
                 )
         except TimeoutError:
             proc.terminate()
             await proc.wait()
-            secs_str = "infinite" if self.timeout_secs is None else str(self.timeout_secs)
+            secs_str = (
+                "infinite" if self.timeout is None else str(int(self.timeout.total_seconds()))
+            )
             print(
                 f"# Error: codex exec timed out after {secs_str} seconds", file=sys.stderr,
             )
