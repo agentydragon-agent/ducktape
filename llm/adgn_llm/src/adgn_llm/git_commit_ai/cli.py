@@ -980,6 +980,7 @@ async def async_main():
         "commit",
         "-F",
         str(commit_msg_path),
+        "--cleanup=strip",
         "--no-verify",
         *commit_passthru,
     )

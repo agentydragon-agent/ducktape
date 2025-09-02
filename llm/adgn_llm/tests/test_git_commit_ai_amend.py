@@ -290,6 +290,76 @@ def test_cache_key_includes_amend_status():
     assert ":amend:" in key_amend
 
 
+@pytest.mark.asyncio
+async def test_editor_comments_and_scissors_are_ignored_in_commit_message(monkeypatch):
+    """Full flow: ensure '#' comments and content below scissors don't end up committed.
+
+    We simulate the editor writing additional commented lines and a scissors block.
+    The final commit message should contain only the AI-produced message, without
+    any '#' comment lines or the scissors marker content.
+    """
+    with tempfile.TemporaryDirectory() as tmpdir:
+        repo = Repo.init(tmpdir)
+        repo.config_writer().set_value("user", "name", "Test").release()
+        repo.config_writer().set_value("user", "email", "test@test.com").release()
+        # Ensure the CLI runs inside this temporary repository
+        monkeypatch.chdir(tmpdir)
+
+        # Create an initial commit so HEAD exists
+        seed = Path(tmpdir) / "seed.txt"
+        seed.write_text("seed\n")
+        repo.index.add(["seed.txt"])
+        repo.index.commit("seed")
+
+        # Prepare a staged change for the new commit
+        p = Path(tmpdir) / "file.txt"
+        p.write_text("v1\n")
+        repo.index.add(["file.txt"])
+
+        # Patch AI/cache so no real AI is invoked; force cached message
+        ai_message = "Subject line\n\nBody line one\n- bullet"
+        async def _fake_generate(self, include_all: bool, model: str | None = None) -> str:
+            return ai_message
+        monkeypatch.setattr("adgn_llm.git_commit_ai.cli.ClaudeAI.generate", _fake_generate)
+        monkeypatch.setattr("adgn_llm.git_commit_ai.cli.Cache.get", lambda self, key: ai_message)
+
+        # Patch _get_editor to return a placeholder editor command
+        async def _fake_get_editor():
+            return "fake-editor"
+        monkeypatch.setattr("adgn_llm.git_commit_ai.cli._get_editor", _fake_get_editor)
+
+        # Intercept the editor subprocess shell call and append comments + scissors
+        class _Proc:
+            def __init__(self, code=0):
+                self._code = code
+            async def wait(self):
+                return self._code
+        async def _fake_shell(cmd, *args, **kwargs):
+            # Extract COMMIT_EDITMSG path (last token)
+            commit_path = cmd.rsplit(" ", 1)[-1]
+            msg = (
+                "\n# editor-added comment (should be stripped)\n"
+                "# ------------------------ >8 ------------------------\n"
+                "# diff line (commented)\n"
+            )
+            Path(commit_path).write_text(Path(commit_path).read_text() + msg)
+            return _Proc(0)
+        monkeypatch.setattr("asyncio.create_subprocess_shell", _fake_shell)
+
+        # Run the tool; patch argv to avoid pytest args leaking
+        from adgn_llm.git_commit_ai import cli
+        with patch("sys.argv", ["git-commit-ai"]), patch("sys.exit") as mock_exit:
+            await cli.async_main()
+            mock_exit.assert_called_with(0)
+
+        # Verify the committed message contains only the AI message
+        committed = repo.git.log("-1", "--pretty=%B").strip()
+        assert committed.startswith("Subject line")
+        assert "editor-added comment" not in committed
+        assert ">8" not in committed
+        assert "diff line (commented)" not in committed
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
 

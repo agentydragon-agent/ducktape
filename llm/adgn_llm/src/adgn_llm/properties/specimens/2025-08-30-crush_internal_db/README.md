@@ -1,8 +1,18 @@
+---
+source:
+  vcs: git
+  url: https://github.com/agentydragon/crush.git
+  ref: a2a1ffa00943aa373f688ac05b667083ac3230b1
+scope:
+  include:
+    - internal/**
+    - e2e/**
+  exclude:
+    - internal/llm/prompt/**
+---
+
 # Specimen: crush/internal/db (behavior snapshot)
 
-- Source repo: agentydragon/crush
-- Commit: a2a1ffa00943aa373f688ac05b667083ac3230b1
-- Scope: `internal/**`, `e2e/**`, but *NOT* `internal/llm/prompt/**`.
 - Date: 2025-08-30
 
 ## How to run critic (dry-run)

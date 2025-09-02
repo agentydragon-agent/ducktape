@@ -14,51 +14,66 @@
   - `specimens/` — real cases, named `specimens/YYYY-MM-DD-<slug>.md`
   - `TODO.md` — open questions and planned extensions
 
+## Conventions
+- Property IDs are kebab-case and derived from filenames; evolve content rather than renaming IDs when possible.
+- Overlap between properties is acceptable; a de-duplication layer can live above this knowledge base later.
+- No indexes or generated cross-references for now.
+
 ## Property files
 - Location: under `properties/` (may be nested, e.g., `properties/python/<id>.md`, `properties/markdown/<id>.md`, or at the root for general)
 - Identifier: read from the filename (no frontmatter ID)
-- Frontmatter: `title`, `kind` (`behavior` | `outcome`) only
+- Required frontmatter:
+  - `title` (required); do not duplicate the title in the body; keep it only in frontmatter.
+  - `kind` (`behavior` | `outcome`); required
+  - Do not include severity, status, owner, created date, tags, or related-properties lists.
 - Body structure:
   - Predicate sentence (what holds true)
   - Acceptance criteria (checklist)
   - Positive examples (minimal good cases)
   - Negative examples (minimal anti-patterns)
-  - Cross-references to other properties via markdown links, e.g. `[safe edits](../properties/safe-edits-only.md)`
-
-Notes
-- Frontmatter is required and limited to: `title`, `kind`. Do not include severity, status, owner, created date, tags, or related-properties lists.
-- Do not duplicate the title in the body; keep the title only in frontmatter.
+  - Where other properties are mentioned/referenced inline, use standard links
+    - e.g. `This example also violates [safe edits only](../properties/safe-edits-only.md).`
 - Keep embedded code/diff snippets concise (≤ ~30 lines).
 
 ## Specimens format
+
 - Location: `specimens/YYYY-MM-DD-<slug>.md`
-- Slug: derived from the filename (no frontmatter slug)
-- Free-form but markdown with light structure:
-  - `# <Title>`
-  - Context: repo, commit (full SHA), relevant files/paths (if applicable)
-  - Scope: free text (often paths; not strictly structured)
-  - Narrative: what happened and why it’s notable
-  - Lessons (optional): helpful takeaways (“how we discovered a gap”, “what to do next time”)
-  - Links: issues/PRs, CI runs, external references
-  - Reference properties with normal markdown links to files in `../properties/`
-- Findings grouped as:
-  - `## Confirmed - outside defined properties`
-    - This lists findings that are confirmed true but not sufficiently covered by already defined properties.
-  - `## False positives`
-  - `## Confirmed - under defined properties`
-    - Findings here must link their corresponding property
+- Slug: derived from the source code / filename (no frontmatter slug)
+
+### General
+- Use hierarchical headings without skipping levels; no boilerplate H1 required.
+- Do not duplicate source/scope (that lives in manifest.yaml).
+- Keep embedded diffs small (≤ 30 lines per embed).
 - Each finding must sufficiently identify the subject code (file, function - whatever suffices)
   - It's OK to not use full relative code paths - e.g., if there's only one `write.go`, it's fine to use
     just that instead of full `internal/llm/tools/write.go`.
-
-Conventions
 - Name specimens as `YYYY-MM-DD-<slug>.md`.
 - Embedded diffs should be small (≤ 30 lines per embed).
 
-## Conventions
-- Property IDs are kebab-case and derived from filenames; evolve content rather than renaming IDs when possible.
-- Overlap is acceptable; a de-duplication layer can live above this knowledge base later.
-- No indexes or generated cross-references for now.
+### Files
+- `README.md` (optional): free-form narrative / context
+- `covered.md`: findings under defined properties
+- `not_covered_yet.md`: findings outside currently defined properties
+- `false_positives.md`: findings that should not be flagged
+
+#### `manifest.yaml`: machine-readable manifest (required)
+- Schema: `SpecimenManifest` (defined in: `src/adgn_llm/properties/specimen_frontmatter.py`)
+- Defines:
+  - Source: How to obtain code in specimen (discriminated union `GitSource | LocalSource`)
+  - Scope: If specimen is part of a bigger repo, list which files are in/out of scope
+
+#### `README.md` (optional)
+- Optional, free‑form notes for humans; whatever context is useful (e.g., short narrative, relevant links).
+- Do not duplicate `covered.md` / `not_covered_yet.md` / `false_positives.md`.
+
+#### `covered.md`: findings already covered by defined properties.
+- Link the relevant property near the start of each item.
+
+#### `not_covered_yet.md`: confirmed findings not yet covered by defined properties.
+- Optionally propose property name or brief sketch of rationale + what's wrong / why.
+
+#### `false_positives.md`: issues previously flagged that should not be flagged.
+- Provide a short rationale (why acceptable) and subject code pointers.
 
 ## Behavioral layer and scoping
 

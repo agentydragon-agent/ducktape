@@ -1,8 +1,16 @@
+---
+source:
+  vcs: local
+  root: .
+scope:
+  include:
+    - pyright_watch_report.py
+---
+
 # pyright_watch_report.py specimen
 
 ## Context
 - Snapshot date: 2025-08-29
-- Scope: full file (static-file scope)
 
 ## TODO (future properties to document and enforce)
 - python/scoped-try-except.md: Broad try/except blocks; should scope to specific exceptions and smallest necessary block.
