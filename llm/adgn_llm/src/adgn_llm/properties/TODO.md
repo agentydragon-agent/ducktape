@@ -16,9 +16,17 @@
   - Predicate: Prefer the simplest construct that meets the requirement; avoid heavier mechanisms when a direct, simpler reference works (e.g., pass callables/constants instead of string→getattr→dict lookups; use library calls over subprocess when available; choose sync vs async and blocking vs non-blocking appropriately; pass Path directly instead of str conversions).
   - Acceptance ideas:
     - No string→symbol indirection when a direct symbol can be passed
-    - No classes-as-namespaces for constants; use modules/enums/simple names
+    - No classes-as-namespaces for constants; in Python 'class' implies instances; prefer modules/enums/simple names (use a class only when you intend to instantiate)
     - Prefer direct library APIs over shelling out (unless required by constraints)
-    - Keep conversion boundaries in one place (single source of truth)
+
+- New general property (planned): prefer comprehensions for simple filter/map
+  - Kind: outcome
+  - Predicate: For simple, readable cases, prefer list/set/dict comprehensions (and generator expressions) over loops that only append/continue or build trivial maps.
+  - Acceptance ideas:
+    - Single-predicate filters and simple key/value mapping use comprehensions
+    - No multi-branch loop when a single comprehension with a concise predicate fits on one readable line
+    - Fall back to loops when readability would suffer (long, nested conditions)
+    - Keep pre-checks (e.g., early returns) outside the comprehension for clarity
 
 - New general property (planned): no-footguns (clear, unambiguous outputs)
   - Kind: behavior

@@ -225,6 +225,7 @@ there is a general heuristic kinda like "do not return tuples/lists/... unless i
 - wt/wt/server/wt_server.py: 2501–2502 — Avoid synchronous file I/O inside async functions; if a blocking write is kept, at least use the concise Path form (`self.pid_file.write_text(...)`). Prefer non-blocking designs (e.g., to_thread) when feasible. Applies to any simple `with open(..., "w") as f; f.write(...)` two-liner inside async code.
 
 ## Status snapshot shape and naming
+- wt/wt/server/wt_server.py: 1695–1697 — Cache flags `is_cached` vs `is_stale` are confusing; clarify semantics and naming. If you keep booleans, make them self‑documenting (e.g., `has_worktree_cache`, `is_cache_older_than_refresh_age`) and document the distinction where they’re set and consumed.
 - wt/wt/server/wt_server.py: 898–909 (_update_comprehensive_cache) returns a tuple that mirrors StatusSnapshot; unify by returning StatusSnapshot from this path.
 - wt/wt/server/wt_server.py: 750–796 (build_status_snapshot) should return a StatusSnapshot (compose internally) rather than a tuple; update consumers accordingly.
 - wt/wt/server/wt_server.py: 798–802 (get_status) slices the tuple; prefer accessing fields on StatusSnapshot.

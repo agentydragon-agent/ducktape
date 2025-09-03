@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import sys
 import shutil
 import subprocess
 import tarfile
@@ -467,7 +468,7 @@ def _build_scope_text(include: Iterable[str], exclude: Iterable[str] | None = No
     return f"all files under {inc}"
 
 
-def _run_specimen(manifest_path: Path, *, dry_run: bool, json_out: bool, embed_paths: list[str] | None, gitconfig: str | None, mode: str = "find") -> int:
+def _run_specimen(manifest_path: Path, *, dry_run: bool, json_out: bool, embed_paths: list[str] | None, gitconfig: str | None, mode: str = "find", final_only: bool = False) -> int:
     man = _load_manifest(manifest_path)
     # Resolve root
     if isinstance(man.source, GitHubSource):
@@ -513,6 +514,12 @@ def _run_specimen(manifest_path: Path, *, dry_run: bool, json_out: bool, embed_p
 
     # Build codex command (read-only sandbox; full-auto; skip git repo check)
     cmd = build_cmd("gpt-5", root, sandbox="read-only", skip_git_repo_check=True, full_auto=True)
+    out_last_file: Path | None = None
+    if final_only:
+        tmp = tempfile.NamedTemporaryFile(delete=False)
+        out_last_file = Path(tmp.name)
+        tmp.close()
+        cmd.extend(["--output-last-message", str(out_last_file)])
 
     if dry_run:
         # Save prompt to system temp dir and print approx token count
@@ -535,7 +542,13 @@ def _run_specimen(manifest_path: Path, *, dry_run: bool, json_out: bool, embed_p
         return 0
 
     # Execute codex with prompt on stdin
-    return subprocess.run(cmd, check=False, input=prompt, text=True).returncode
+    rc = subprocess.run(cmd, check=False, input=prompt, text=True).returncode
+    if out_last_file is not None:
+        try:
+            print(Path(out_last_file).read_text(encoding="utf-8"))
+        except Exception as e:
+            print(f"[error reading final message file {out_last_file}: {e}]", file=sys.stderr)
+    return rc
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -564,6 +577,7 @@ def main(argv: list[str] | None = None) -> int:
     common.add_argument("--skip-git-repo-check", action="store_true")
     common.add_argument("--full-auto", action="store_true")
     common.add_argument("--allow-general-findings", action="store_true", help="Also allow general code-quality findings beyond formal properties")
+    common.add_argument("--final-only", action="store_true", help="Print only the agent's final message to stdout (suppresses trajectory output)")
 
     sub.add_parser(
         "check",
@@ -603,6 +617,7 @@ def main(argv: list[str] | None = None) -> int:
     p_spec.add_argument("--json", action="store_true", help="Request JSON output from critic")
     p_spec.add_argument("--embed-path", action="append", dest="embed_paths", help="Extra files to embed into the prompt (Markdown); repeatable")
     p_spec.add_argument("--gitconfig", help="Path to a gitconfig to use for private repo fallback (shallow git)")
+    p_spec.add_argument("--final-only", action="store_true", help="Print only the agent's final message to stdout (suppresses trajectory output)")
     p_spec.add_argument("--allow-general-findings", action="store_true", help="Also allow general code-quality findings beyond formal properties")
 
     # New command: specimen-discover — report only new findings vs current specimen notes
@@ -618,6 +633,7 @@ def main(argv: list[str] | None = None) -> int:
     p_spec_new.add_argument("--dry-run", action="store_true")
     p_spec_new.add_argument("--json", action="store_true", help="Request JSON output from critic")
     p_spec_new.add_argument("--gitconfig", help="Path to a gitconfig to use for private repo fallback (shallow git)")
+    p_spec_new.add_argument("--final-only", action="store_true", help="Print only the agent's final message to stdout (suppresses trajectory output)")
     p_spec_new.add_argument("--allow-general-findings", action="store_true", help="Also allow general code-quality findings beyond formal properties")
 
     args = parser.parse_args(argv)
@@ -643,7 +659,7 @@ def main(argv: list[str] | None = None) -> int:
                 return 2
             gitconfig_path = str(p)
         mode = "open" if getattr(args, "allow_general_findings", False) else "find"
-        return _run_specimen(manifest_path, dry_run=args.dry_run, json_out=args.json, embed_paths=args.embed_paths, gitconfig=gitconfig_path, mode=mode)
+        return _run_specimen(manifest_path, dry_run=args.dry_run, json_out=args.json, embed_paths=args.embed_paths, gitconfig=gitconfig_path, mode=mode, final_only=getattr(args, "final_only", False))
 
     elif args.command == "specimen-discover":
         base = _find_specimens_base()
@@ -670,13 +686,14 @@ def main(argv: list[str] | None = None) -> int:
             pth = manifest_path.parent / name
             if pth.exists():
                 embed_paths.append(str(pth))
-        return _run_specimen(manifest_path, dry_run=args.dry_run, json_out=args.json, embed_paths=embed_paths, gitconfig=gitconfig_path, mode="discover")
+        return _run_specimen(manifest_path, dry_run=args.dry_run, json_out=args.json, embed_paths=embed_paths, gitconfig=gitconfig_path, mode="discover", final_only=getattr(args, "final_only", False))
 
     elif args.command in ("check", "fix"):
         workdir = Path(args.workdir).resolve()
         detected_tools = _detect_tools()
         print(f"Detected tools    : {', '.join(detected_tools) if detected_tools else '(none)'}")
         print(_format_tools_table(detected_tools))
+        out_last_file: Path | None = None
         if args.command == "check":
             prompt = (build_open_review_prompt(args.scope, available_tools=detected_tools) if args.allow_general_findings else build_find_prompt(args.scope))
             if args.allow_general_findings:
@@ -696,6 +713,11 @@ def main(argv: list[str] | None = None) -> int:
                 full_auto=args.full_auto,
                 extra_configs=['sandbox_permissions=["disk-full-read-access"]'],
             )
+        if args.final_only:
+            tmp = tempfile.NamedTemporaryFile(delete=False)
+            out_last_file = Path(tmp.name)
+            tmp.close()
+            cmd.extend(["--output-last-message", str(out_last_file)])
 
         if args.dry_run:
             # Save prompt to system temp dir and print approx token count
@@ -720,7 +742,13 @@ def main(argv: list[str] | None = None) -> int:
         # Stream to subprocess stdin
         import subprocess
         try:
-            return subprocess.run(cmd, check=False, input=prompt, text=True).returncode
+            rc = subprocess.run(cmd, check=False, input=prompt, text=True).returncode
+            if out_last_file is not None:
+                try:
+                    print(Path(out_last_file).read_text(encoding="utf-8"))
+                except Exception as e:
+                    print(f"[error reading final message file {out_last_file}: {e}]", file=sys.stderr)
+            return rc
         except KeyboardInterrupt:
             return 130
     else:

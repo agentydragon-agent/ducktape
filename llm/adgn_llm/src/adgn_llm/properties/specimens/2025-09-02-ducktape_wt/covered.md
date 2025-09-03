@@ -186,6 +186,23 @@ Many inline imports appear inside functions across modules in `wt/`; imports sho
 ## [Use walrus operator](../../definitions/python/walrus.md)
 > "When a simple condition depends on a value computed immediately before, the value is bound inline with the walrus operator (:=) inside the condition." (definitions/python/walrus.md)
 - **wt/wt/server/wt_server.py**: 1482–1484 — Use walrus to combine read-and-check: `if not (data := await reader.readline()): return`.
+- **wt/wt/server/wt_server.py**: ~1971–1977 — Post‑creation script check: shorten and use walrus; also drop redundant existence check and fold the error message into a concise one‑liner (no loss of expressiveness).
+  Before:
+  ```python
+  # If a post-creation script is configured, validate it exists before any side effects
+  if self.config.post_creation_script:
+      script = self.config.post_creation_script
+      if not script.exists() or not script.is_file():
+          raise ValueError(
+              f"Post-creation script configured but not found or not a file: {script}",
+          )
+  ```
+  After:
+  ```python
+  if (script := self.config.post_creation_script) and not script.is_file():
+      raise ValueError(f"Post-creation script is not a file: {script}")
+  ```
+  Also see: [No useless documentation or comments](../../definitions/no-useless-docs.md).
 
 ## [No unnecessary line breaks](../../definitions/no-extra-linebreaks.md)
 - **wt/tests/conftest.py**: 298–300 — Collapse multi-line assert into one line: `assert shutil.which("gitstatusd"), "integration tests require gitstatusd on PATH"`.
@@ -203,7 +220,83 @@ Many inline imports appear inside functions across modules in `wt/`; imports sho
 - **wt/wt/server/wt_server.py**: 2149–2156 — In `worktree_list`, replace nested block with a guard `continue` to reduce nesting.
   > "Loop guard: When the first statement of a loop guards the entire body, use `continue` (or `break`) instead of wrapping the body in an if‑block"
 
+- **wt/wt/server/wt_server.py**: ~1648 — In `process_single_worktree`, invert the guard to early‑bail when `gs_client` is missing and keep the happy path flat. Consider extracting the if/else into a helper to enable clean return‑then‑massage flow.
+  Before (shape):
+  ```python
+  if gs_client:
+      ...  # big branch
+  else:
+      ...  # small branch
+  ```
+  After (refactor sketch):
+  ```python
+  from pathlib import Path
+  from datetime import datetime
+
+  def _compute_single_status(worktree_path: Path, gs_client) -> WorktreeGitStatus:
+      if not gs_client:
+          return WorktreeGitStatus(
+              state="stopped",
+              dirty_files=[],
+              untracked_files=[],
+              ...,
+          )
+      # happy path (cache, bounded refresh, meta + PR fetch)
+      ...
+
+  # in process_single_worktree
+  single_start = time.time()
+  gs_client = self.gitstatusd_clients.get(worktree_path)
+  status = _compute_single_status(worktree_path, gs_client)
+  individual_times[worktree_path] = (time.time() - single_start) * 1000
+  return status
+  ```
+
 ## [No unnecessary nesting (combine trivial guards)](../../definitions/minimize-nesting.md)
+
+- **wt/wt/server/wt_server.py**: 1610–1614 — Replace for+append with a list comprehension:
+  Before:
+  ```python
+  for wtid in worktree_ids:
+      worktree_name = parse_worktree_id(wtid)
+      worktree_path = self.config.worktrees_dir / worktree_name
+      worktree_paths.append(worktree_path)
+  ```
+  After:
+  ```python
+  worktree_paths = [
+      self.config.worktrees_dir / parse_worktree_id(wtid)
+      for wtid in worktree_ids
+  ]
+  ```
+  GAP: Prefer comprehensions for simple constructions over loops with append when readable.
+
 
 - **wt/wt/server/wt_server.py**: 257–275 — Inner `if self.is_running:` under a `while self.is_running` is redundant; combine trivial guards/early‑bail to flatten.
   > "Patterns like `if a: if b:` (with no else between) are flattened to a single `if a and b:`"
+
+- **wt/wt/cli.py**: 143 — Simplify branching with a single pre-check and a comprehension.
+  Before:
+  ```python
+  for arg in all_args:
+      if arg in {"--help", "-h"}:
+          show_help()
+          return
+      if arg in ["-c", "--force"]:
+          filtered_args.append(arg)
+      elif arg.startswith("-"):
+          continue
+      else:
+          filtered_args.append(arg)
+  ```
+  After:
+  ```python
+  if {"--help", "-h"} & set(all_args):  # or: '--help' in ... or '-h' in ...
+      show_help(); return
+  filtered_args = [
+      arg for arg in all_args
+      if not arg.startswith("-") or arg in ("-c", "--force")
+  ]
+  ```
+  GAP: Prefer comprehensions for simple filter/map over loops with append/continue when it fits on one readable line.
+  Note: This matches “No unnecessary nesting” by collapsing trivial guard conditions into a single predicate before collection.
