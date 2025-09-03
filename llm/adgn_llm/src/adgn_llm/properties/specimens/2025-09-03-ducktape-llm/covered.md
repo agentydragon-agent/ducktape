@@ -149,3 +149,48 @@
   - Finding: `_DEFAULT_TIMEOUT` is a float without unit suffix; prefer `timedelta` for internals or add unit suffix `_SECS` and convert at boundaries.
   - Anchor:
     - llm/adgn_llm/src/adgn_llm/mcp/docker_exec/server.py:55
+
+- [pathlib](../../definitions/python/pathlib.md)
+  - Finding: Pass Path objects directly to PathLike-accepting APIs; avoid redundant str(path) casts.
+  - Anchors:
+    - llm/adgn_llm/src/adgn_llm/mcp/sandboxed_jupyter_mcp/kernel_exec.py:44 (os.open(log_path, ...))
+    - llm/adgn_llm/src/adgn_llm/mcp/sandboxed_jupyter_mcp/jupyter_mcp_launch.py:47, 57 (subprocess args)
+    - llm/adgn_llm/src/adgn_llm/mcp/sandboxed_jupyter_mcp/wrapper.py:231, 243 (subprocess args)
+
+
+- [scoped try/except](../../definitions/python/scoped-try-except.md)
+  - Finding: Broad catch prints and continues during diagnostics; should fail fast instead of hiding errors.
+  - Anchor:
+    - llm/adgn_llm/src/adgn_llm/mcp/sandboxed_jupyter_mcp/wrapper.py:343 (print diag then continue)
+
+- [early-bailout](../../definitions/early-bailout.md)
+  - Finding: Invert stdio command handling to an early bailout; avoid nesting the main path under if-branch.
+  - Anchor:
+    - llm/adgn_llm/src/adgn_llm/mcp/sandboxed_jupyter_mcp/wrapper.py:475 (if args.command == "stdio")
+
+- [Use pathlib for path manipulation](../../definitions/python/pathlib.md)
+  - Finding: Argparse should parse filesystem paths as Path objects directly (type=Path); avoid wrapping with Path(...) later.
+  - Anchors:
+    - llm/adgn_llm/src/adgn_llm/mcp/sandboxed_jupyter_mcp/wrapper.py: policy_yaml=Path(args.policy_config)
+    - llm/adgn_llm/src/adgn_llm/mcp/sandboxed_jupyter_mcp/wrapper.py: workspace/run_root constructed via Path(args.workspace)/Path(args.run_root)
+
+- [No unnecessary line breaks](../../definitions/no-extra-linebreaks.md)
+  - Finding: Inline `{ "metadata": { "kernelspec": kernelspec } }` construction on one line at the call site.
+  - Anchor:
+    - llm/adgn_llm/src/adgn_llm/mcp/sandboxed_jupyter_mcp/wrapper.py: in _write_sandboxed_kernelspec
+
+- [no-dead-code](../../definitions/no-dead-code.md)
+  - Finding: Unused parameter workspace in _write_sandboxed_kernelspec; remove parameter.
+  - Anchor:
+    - llm/adgn_llm/src/adgn_llm/mcp/sandboxed_jupyter_mcp/wrapper.py: def _write_sandboxed_kernelspec(run_root: Path, workspace: Path)
+
+- [no-oneoff-vars-and-trivial-wrappers](../../definitions/no-oneoff-vars-and-trivial-wrappers.md)
+  - Finding: _ensure_dir is a trivial pass-through wrapper around Path.mkdir(parents=True, exist_ok=True); inline at call sites and delete helper.
+  - Anchors:
+    - llm/adgn_llm/src/adgn_llm/mcp/sandboxed_jupyter_mcp/wrapper.py:33
+    - llm/adgn_llm/src/adgn_llm/mcp/sandboxed_jupyter_mcp/jupyter_sandbox_compose.py:44
+
+- [no-dead-code](../../definitions/no-dead-code.md)
+  - Finding: No-op timeout branch; `if timed_out: ... pass` is worthless — dead code; delete the branch.
+  - Anchor:
+    - llm/adgn_llm/src/adgn_llm/mcp/docker_exec/server.py:181
