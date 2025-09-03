@@ -2,22 +2,22 @@ from __future__ import annotations
 
 import argparse
 import os
-import sys
 import shutil
 import subprocess
+import sys
 import tarfile
 import tempfile
 import time
-import tiktoken
+from collections.abc import Iterable
 from importlib.resources import files
 from pathlib import Path
-from typing import Iterable
+from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
-from urllib.error import URLError, HTTPError
 
+import tiktoken
 import yaml
 
-from .specimen_frontmatter import SpecimenManifest, GitSource, GitHubSource, LocalSource
+from .specimen_frontmatter import GitHubSource, GitSource, LocalSource, SpecimenManifest
 
 
 def build_supplemental_section(supplemental_text: str | None) -> str:
@@ -46,11 +46,13 @@ def read_embedded_paths(paths: list[Path]) -> str:
             content = p.read_text(encoding="utf-8")
         except Exception:
             continue
-        blocks.append("\n".join([f"<file path=\":/{p}\">", content, "</file>"]))
+        blocks.append("\n".join([f'<file path=":/{p}">', content, "</file>"]))
     return "\n\n".join(blocks)
 
 
-def _scope_block(scope_text: str, *, static_action: str, ambiguity_tail: str) -> list[str]:
+def _scope_block(
+    scope_text: str, *, static_action: str, ambiguity_tail: str
+) -> list[str]:
     return [
         "Scope (freeform):",
         f"- {scope_text}",
@@ -73,21 +75,47 @@ def _properties_text() -> str:
     parts: list[str] = []
     for md in sorted(defs_dir.rglob("*.md")):
         rel = md.relative_to(props_root)  # e.g., definitions/python/type-hints.md
-        parts.append(f"<file path=\":/{rel.as_posix()}\">\n{md.read_text(encoding='utf-8')}\n</file>")
+        parts.append(
+            f'<file path=":/{rel.as_posix()}">\n{md.read_text(encoding="utf-8")}\n</file>'
+        )
     return "\n\n".join(parts)
 
 
-def _properties_block(properties_text: str, supplemental_section: str | None) -> list[str]:
+def _properties_block(
+    properties_text: str, supplemental_section: str | None
+) -> list[str]:
     lines = ["Property definitions:", properties_text]
     if supplemental_section:
         lines.append(supplemental_section)
     return lines
 
+
 # Recognized QA tools (names shown to users/agents)
 RECOGNIZED_TOOLS: list[str] = [
-    "ruff","mypy","pyright","vulture","deptry","bandit","pip-audit","safety",
-    "codespell","pyupgrade","refurb","flynt","pydocstyle","interrogate","import-linter",
-    "semgrep","radon","xenon","pylint","lizard","clonedigger","coverage","diff-cover","jscpd","jscpd(npx)",
+    "ruff",
+    "mypy",
+    "pyright",
+    "vulture",
+    "bandit",
+    "pip-audit",
+    "safety",
+    "codespell",
+    "pyupgrade",
+    "refurb",
+    "flynt",
+    "pydocstyle",
+    "interrogate",
+    "import-linter",
+    "semgrep",
+    "radon",
+    "xenon",
+    "pylint",
+    "lizard",
+    "clonedigger",
+    "coverage",
+    "diff-cover",
+    "jscpd",
+    "jscpd(npx)",
 ]
 
 # Human-facing catalog for CLI table (name, category, description)
@@ -96,7 +124,6 @@ TOOL_CATALOG: list[tuple[str, str, str]] = [
     ("mypy", "typing", "Static type checker"),
     ("pyright", "typing", "Fast static type checker"),
     ("vulture", "dead code", "Find unused code"),
-    ("deptry", "deps", "Detect unused/undeclared/missing dependencies"),
     ("bandit", "security", "Find common security issues"),
     ("pip-audit", "security", "Audit Python dependencies for CVEs"),
     ("safety", "security", "Scan dependencies for known vulnerabilities"),
@@ -118,63 +145,41 @@ TOOL_CATALOG: list[tuple[str, str, str]] = [
     ("jscpd", "duplicates(node)", "Language-agnostic copy/paste detector (via npx)"),
 ]
 
-def _format_tools_table(available: list[str]) -> str:
-    avail_set = set(available)
-    header = ("Avail", "Tool", "Category", "Description")
-    lines = [f"{header[0]:<5}  {header[1]:<12}  {header[2]:<14}  {header[3]}",
-             f"{'-'*5}  {'-'*12}  {'-'*14}  {'-'*40}"]
-    for name, cat, desc in TOOL_CATALOG:
-        status = "yes" if name in avail_set or (name == "jscpd" and "jscpd(npx)" in avail_set) else "no"
-        lines.append(f"{status:<5}  {name:<12}  {cat:<14}  {desc}")
-    return "\n".join(lines)
-# Human-facing catalog for CLI table (name, category, description)
-TOOL_CATALOG: list[tuple[str, str, str]] = [
-    ("ruff", "lint/format", "Fast linter/formatter replacing flake8/isort/pyupgrade"),
-    ("mypy", "typing", "Static type checker"),
-    ("pyright", "typing", "Fast static type checker"),
-    ("vulture", "dead code", "Find unused code"),
-    ("deptry", "deps", "Detect unused/undeclared/missing dependencies"),
-    ("bandit", "security", "Find common security issues"),
-    ("pip-audit", "security", "Audit Python dependencies for CVEs"),
-    ("safety", "security", "Scan dependencies for known vulnerabilities"),
-    ("codespell", "style", "Spell checker for code/docs"),
-    ("pyupgrade", "modernize", "Rewrite code to modern Python syntax"),
-    ("refurb", "modernize", "Refactor suggestions"),
-    ("flynt", "modernize", "Convert to f-strings"),
-    ("pydocstyle", "docs", "Docstring style checker"),
-    ("interrogate", "docs", "Docstring coverage"),
-    ("import-linter", "architecture", "Enforce import layer contracts"),
-    ("semgrep", "patterns", "Multi-language pattern rules with autofix"),
-    ("radon", "complexity", "Cyclomatic complexity/maintainability"),
-    ("xenon", "complexity", "CI gate using radon thresholds"),
-    ("pylint", "duplicates", "Includes duplicate-code (R0801) detector"),
-    ("lizard", "duplicates", "Complexity and clone detection"),
-    ("clonedigger", "duplicates", "Clone detector for Python"),
-    ("coverage", "coverage", "Code coverage measurement"),
-    ("diff-cover", "coverage", "Changed-line coverage gating"),
-    ("jscpd", "duplicates(node)", "Language-agnostic copy/paste detector (via npx)"),
-]
 
 def _format_tools_table(available: list[str]) -> str:
     avail_set = set(available)
     header = ("Avail", "Tool", "Category", "Description")
-    lines = [f"{header[0]:<5}  {header[1]:<12}  {header[2]:<14}  {header[3]}",
-             f"{'-'*5}  {'-'*12}  {'-'*14}  {'-'*40}"]
+    lines = [
+        f"{header[0]:<5}  {header[1]:<12}  {header[2]:<14}  {header[3]}",
+        f"{'-' * 5}  {'-' * 12}  {'-' * 14}  {'-' * 40}",
+    ]
     for name, cat, desc in TOOL_CATALOG:
-        status = "yes" if name in avail_set or (name == "jscpd" and "jscpd(npx)" in avail_set) else "no"
+        status = (
+            "yes"
+            if name in avail_set or (name == "jscpd" and "jscpd(npx)" in avail_set)
+            else "no"
+        )
         lines.append(f"{status:<5}  {name:<12}  {cat:<14}  {desc}")
     return "\n".join(lines)
+
 
 def _tools_and_flow_block(available_tools: list[str]) -> list[str]:
     detected = ", ".join(available_tools) if available_tools else "(none)"
     return [
         "",
         f"Detected analysis tools on PATH: {detected}",
-        "Suggested order (analyze): ruff check → mypy/pyright → vulture → deptry → bandit → dupes (pylint R0801/lizard) → radon (report).",
+        "Suggested order (analyze): ruff check → mypy/pyright → vulture → bandit → dupes (pylint R0801/lizard) → radon (report).",
         "Suggested order (fix): ruff --fix → pyupgrade --py312-plus → refurb → flynt; re-run ruff check.",
         "After applying fixes, run the analysis tools again and include any remaining issues.",
         "Include a short 'Missing tools' note in your final report if any commonly useful tools were unavailable and how that limited you (if at all).",
-    ]
+    ] + (
+        [
+            "Tools with special invocation:",
+            "- jscpd(npx): npx --yes --no-install jscpd --path . --reporters json --ignore 'node_modules/**'",
+        ]
+        if "jscpd(npx)" in available_tools
+        else []
+    )
 
 
 def _detect_tools() -> list[str]:
@@ -186,7 +191,6 @@ def _detect_tools() -> list[str]:
         ("mypy", "mypy"),
         ("pyright", "pyright"),
         ("vulture", "vulture"),
-        ("deptry", "deptry"),
         ("bandit", "bandit"),
         ("pip-audit", "pip-audit"),
         ("safety", "safety"),
@@ -214,66 +218,12 @@ def _detect_tools() -> list[str]:
     # Special case: try Node-based jscpd via npx without installing
     if "jscpd" not in available and shutil.which("npx"):
         try:
-            cp = subprocess.run(["npx", "--yes", "--no-install", "jscpd", "--version"], check=False, text=True, capture_output=True)
-            if cp.returncode == 0:
-                available.append("jscpd(npx)")
-            else:
-                available.append("jscpd(npx:ERROR)")
-        except Exception:
-            pass
-    return available
-
-
-def _tools_and_flow_block(available_tools: list[str]) -> list[str]:
-    detected = ", ".join(available_tools) if available_tools else "(none)"
-    return [
-        "",
-        f"Detected analysis tools on PATH: {detected}",
-        "Suggested order (analyze): ruff check → mypy/pyright → vulture → deptry → bandit → dupes (pylint R0801/lizard) → radon (report).",
-        "Suggested order (fix): ruff --fix → pyupgrade --py312-plus → refurb → flynt; re-run ruff check.",
-        "After applying fixes, run the analysis tools again and include any remaining issues.",
-        "Include a short 'Missing tools' note in your final report if any commonly useful tools were unavailable and how that limited you (if at all).",
-    ]
-
-
-def _detect_tools() -> list[str]:
-    """Detect optional QA tools on PATH and return friendly names in stable order.
-    Also detects jscpd via `npx --no-install` if not directly installed.
-    """
-    tools = [
-        ("ruff", "ruff"),
-        ("mypy", "mypy"),
-        ("pyright", "pyright"),
-        ("vulture", "vulture"),
-        ("deptry", "deptry"),
-        ("bandit", "bandit"),
-        ("pip-audit", "pip-audit"),
-        ("safety", "safety"),
-        ("codespell", "codespell"),
-        ("pyupgrade", "pyupgrade"),
-        ("refurb", "refurb"),
-        ("flynt", "flynt"),
-        ("pydocstyle", "pydocstyle"),
-        ("interrogate", "interrogate"),
-        ("import-linter", "lint-imports"),
-        ("semgrep", "semgrep"),
-        ("radon", "radon"),
-        ("xenon", "xenon"),
-        ("pylint", "pylint"),
-        ("lizard", "lizard"),
-        ("clonedigger", "clonedigger"),
-        ("coverage", "coverage"),
-        ("diff-cover", "diff-cover"),
-        ("jscpd", "jscpd"),
-    ]
-    available: list[str] = []
-    for name, exe in tools:
-        if shutil.which(exe):
-            available.append(name)
-    # Special case: try Node-based jscpd via npx without installing
-    if "jscpd" not in available and shutil.which("npx"):
-        try:
-            cp = subprocess.run(["npx", "--yes", "--no-install", "jscpd", "--version"], check=False, text=True, capture_output=True)
+            cp = subprocess.run(
+                ["npx", "--yes", "--no-install", "jscpd", "--version"],
+                check=False,
+                text=True,
+                capture_output=True,
+            )
             if cp.returncode == 0:
                 available.append("jscpd(npx)")
         except Exception:
@@ -287,7 +237,11 @@ def build_find_prompt(scope_text: str, supplemental_text: str | None = None) -> 
     lines: list[str] = [
         "Analyze the codebase for violations of the properties defined below. Do not modify any files. Output only violations; do not list properties/files with 'No violations'. Produce a concise structured report.",
         "",
-        *_scope_block(scope_text, static_action="analyze", ambiguity_tail="do not include anything outside it."),
+        *_scope_block(
+            scope_text,
+            static_action="analyze",
+            ambiguity_tail="do not include anything outside it.",
+        ),
         "",
         "Constraints:",
         "- Read-only sandbox: do not execute commands that modify files or the repo",
@@ -295,7 +249,7 @@ def build_find_prompt(scope_text: str, supplemental_text: str | None = None) -> 
         "- You MUST check every changed hunk within scope",
         "",
         "Reporting requirements:",
-        "- For each violation: 1-line rationale and precise anchors (e.g., file:41–45, function names, or concise symbol paths)",
+        "- For each violation: 1-line rationale and precise anchors (e.g., file:41-45, function names, or concise symbol paths)"
         "- For many similar cases, write one short description then follow with a compact list of cases (file:lines or symbol names).",
         "- Do not list properties/files without violations; omit any 'No violations' lines.",
         "- Do not include preparatory narration; print only the report.",
@@ -305,13 +259,21 @@ def build_find_prompt(scope_text: str, supplemental_text: str | None = None) -> 
     return "\n".join(lines).strip()
 
 
-def build_open_review_prompt(scope_text: str, supplemental_text: str | None = None, available_tools: list[str] | None = None) -> str:
+def build_open_review_prompt(
+    scope_text: str,
+    supplemental_text: str | None = None,
+    available_tools: list[str] | None = None,
+) -> str:
     properties_text = _properties_text()
     supplemental_section = build_supplemental_section(supplemental_text)
     lines: list[str] = [
         "Perform an open-ended code quality review within the scope. Find both violations of the properties below and any other significant issues not already covered by properties or supplements. Run the detected analysis tools first in the suggested order, then do targeted manual review. Output only findings.",
         "",
-        *_scope_block(scope_text, static_action="analyze", ambiguity_tail="do not include anything outside it."),
+        *_scope_block(
+            scope_text,
+            static_action="analyze",
+            ambiguity_tail="do not include anything outside it.",
+        ),
         "",
         "Constraints:",
         "- Read-only sandbox: do not execute commands that modify files or the repo",
@@ -319,7 +281,7 @@ def build_open_review_prompt(scope_text: str, supplemental_text: str | None = No
         "- You MUST check every changed hunk within scope",
         "",
         "Reporting requirements:",
-        "- For each finding: 1-line rationale and precise anchors (e.g., file:41–45, function names, or concise symbol paths)",
+        "- For each finding: 1-line rationale and precise anchors (e.g., file:41-45, function names, or concise symbol paths)"
         "- For many similar cases, write one short description then follow with a compact list of cases (file:lines or symbol names).",
         "- Do not include preparatory narration; print only the report.",
         "",
@@ -336,7 +298,11 @@ def build_enforce_prompt(scope_text: str, supplemental_text: str | None = None) 
     lines: list[str] = [
         "Ensure code within the described scope conforms to the properties defined below and refactor as needed to satisfy them without altering behavior.",
         "",
-        *_scope_block(scope_text, static_action="edit", ambiguity_tail="avoid touching anything outside it unless required by the editing policy below."),
+        *_scope_block(
+            scope_text,
+            static_action="edit",
+            ambiguity_tail="avoid touching anything outside it unless required by the editing policy below.",
+        ),
         "",
         "Editing policy:",
         "- Prefer minimal, localized edits within the scoped hunks/sections.",
@@ -363,9 +329,26 @@ def build_enforce_prompt(scope_text: str, supplemental_text: str | None = None) 
     return "\n".join(lines).strip()
 
 
-def build_cmd(model: str, workdir: Path, *, sandbox: str, skip_git_repo_check: bool, full_auto: bool, extra_configs: list[str] | None = None) -> list[str]:
+def build_cmd(
+    model: str,
+    workdir: Path,
+    *,
+    sandbox: str,
+    skip_git_repo_check: bool,
+    full_auto: bool,
+    extra_configs: list[str] | None = None,
+) -> list[str]:
     # Use codex exec with long flags for model/sandbox; pass configs via -c
-    cmd: list[str] = ["codex", "exec", "--model", model, "--sandbox", sandbox, "-C", str(workdir)]
+    cmd: list[str] = [
+        "codex",
+        "exec",
+        "--model",
+        model,
+        "--sandbox",
+        sandbox,
+        "-C",
+        str(workdir),
+    ]
     if extra_configs:
         for c in extra_configs:
             cmd.extend(["-c", c])
@@ -375,7 +358,9 @@ def build_cmd(model: str, workdir: Path, *, sandbox: str, skip_git_repo_check: b
         cmd.append("--skip-git-repo-check")
     return cmd
 
+
 # ---- Specimen helpers (inlined) ----
+
 
 def _find_specimens_base() -> Path:
     # 1) importlib.resources
@@ -389,7 +374,10 @@ def _find_specimens_base() -> Path:
     # 2) walk parents from this file for src tree
     here = Path(__file__).resolve()
     for parent in here.parents:
-        for rel in (Path("src/adgn_llm/properties/specimens"), Path("adgn_llm/properties/specimens")):
+        for rel in (
+            Path("src/adgn_llm/properties/specimens"),
+            Path("adgn_llm/properties/specimens"),
+        ):
             cand = (parent / rel).resolve()
             if cand.exists():
                 return cand
@@ -398,7 +386,13 @@ def _find_specimens_base() -> Path:
 
 
 def _list_specimen_names(base: Path) -> list[str]:
-    return sorted([p.name for p in base.iterdir() if p.is_dir() and (p / "manifest.yaml").exists()])
+    return sorted(
+        [
+            p.name
+            for p in base.iterdir()
+            if p.is_dir() and (p / "manifest.yaml").exists()
+        ]
+    )
 
 
 def _resolve_manifest_arg(arg: str | None, base: Path) -> Path | None:
@@ -427,7 +421,7 @@ def _try_download_github_archive(owner: str, repo: str, ref: str) -> Path | None
     tmpdir = Path(tempfile.mkdtemp(prefix="adgn-specimen-archive-"))
     tar_path = tmpdir / f"{repo}-{ref}.tar.gz"
     try:
-        with urlopen(url) as resp, open(tar_path, "wb") as out:
+        with urlopen(url) as resp, tar_path.open("wb") as out:
             out.write(resp.read())
     except (URLError, HTTPError):
         return None
@@ -444,10 +438,20 @@ def _fresh_git_checkout_url(url: str, ref: str, gitconfig: str | None) -> Path:
     env = dict(**os.environ)
     if gitconfig:
         env["GIT_CONFIG_GLOBAL"] = str(Path(gitconfig).expanduser().resolve())
-    subprocess.run(["git", "init", str(tmpdir)], check=True, stdout=subprocess.DEVNULL, env=env)
-    subprocess.run(["git", "-C", str(tmpdir), "remote", "add", "origin", url], check=True, env=env)
-    subprocess.run(["git", "-C", str(tmpdir), "fetch", "--depth", "1", "origin", ref], check=True, env=env)
-    subprocess.run(["git", "-C", str(tmpdir), "checkout", "--detach", ref], check=True, env=env)
+    subprocess.run(
+        ["git", "init", str(tmpdir)], check=True, stdout=subprocess.DEVNULL, env=env
+    )
+    subprocess.run(
+        ["git", "-C", str(tmpdir), "remote", "add", "origin", url], check=True, env=env
+    )
+    subprocess.run(
+        ["git", "-C", str(tmpdir), "fetch", "--depth", "1", "origin", ref],
+        check=True,
+        env=env,
+    )
+    subprocess.run(
+        ["git", "-C", str(tmpdir), "checkout", "--detach", ref], check=True, env=env
+    )
     return tmpdir
 
 
@@ -461,20 +465,38 @@ def _fresh_local_copy(root: Path) -> Path:
     return dest
 
 
-def _build_scope_text(include: Iterable[str], exclude: Iterable[str] | None = None) -> str:
+def _build_scope_text(
+    include: Iterable[str], exclude: Iterable[str] | None = None
+) -> str:
     inc = ", ".join(include)
     if exclude:
         return f"all files under {inc} (excluding: {', '.join(exclude)})"
     return f"all files under {inc}"
 
 
-def _run_specimen(manifest_path: Path, *, dry_run: bool, json_out: bool, embed_paths: list[str] | None, gitconfig: str | None, mode: str = "find", final_only: bool = False, output_final_message: str | None = None) -> int:
+def _run_specimen(
+    manifest_path: Path,
+    *,
+    dry_run: bool,
+    json_out: bool,
+    embed_paths: list[str] | None,
+    gitconfig: str | None,
+    mode: str = "find",
+    final_only: bool = False,
+    output_final_message: str | None = None,
+) -> int:
     man = _load_manifest(manifest_path)
     # Resolve root
     if isinstance(man.source, GitHubSource):
-        root = _try_download_github_archive(man.source.org, man.source.repo, man.source.ref)
+        root = _try_download_github_archive(
+            man.source.org, man.source.repo, man.source.ref
+        )
         if root is None:
-            root = _fresh_git_checkout_url(f"https://github.com/{man.source.org}/{man.source.repo}.git", man.source.ref, gitconfig)
+            root = _fresh_git_checkout_url(
+                f"https://github.com/{man.source.org}/{man.source.repo}.git",
+                man.source.ref,
+                gitconfig,
+            )
     elif isinstance(man.source, GitSource):
         # Best-effort tarball when URL is GitHub https
         url = man.source.url
@@ -489,13 +511,17 @@ def _run_specimen(manifest_path: Path, *, dry_run: bool, json_out: bool, embed_p
         if root is None:
             root = _fresh_git_checkout_url(man.source.url, man.source.ref, gitconfig)
     elif isinstance(man.source, LocalSource):
-        root = _fresh_local_copy((manifest_path.parent / man.source.root))
+        root = _fresh_local_copy(manifest_path.parent / man.source.root)
     else:
         raise SystemExit(f"Unsupported source type: {type(man.source)}")
 
     scope_text = _build_scope_text(man.scope.include, man.scope.exclude)
     # Build supplemental text from embedded files (covered/not_covered_yet or user-specified)
-    supplemental_text = read_embedded_paths([Path(p) for p in (embed_paths or [])]) if embed_paths else None
+    supplemental_text = (
+        read_embedded_paths([Path(p) for p in (embed_paths or [])])
+        if embed_paths
+        else None
+    )
     # Build appropriate prompt
     if mode == "discover":
         # Hint: suppress already known findings; focus on new items
@@ -504,23 +530,36 @@ def _run_specimen(manifest_path: Path, *, dry_run: bool, json_out: bool, embed_p
             "This includes additional instances under existing properties, new categories under existing properties, "
             "or entirely new issues not covered by current properties."
         )
-        prompt = discover_preamble + "\n\n" + build_open_review_prompt(scope_text, supplemental_text=supplemental_text, available_tools=_detect_tools())
+        prompt = (
+            discover_preamble
+            + "\n\n"
+            + build_open_review_prompt(
+                scope_text,
+                supplemental_text=supplemental_text,
+                available_tools=_detect_tools(),
+            )
+        )
     elif mode == "open":
         # Open-ended review without suppression
-        prompt = build_open_review_prompt(scope_text, supplemental_text=supplemental_text, available_tools=_detect_tools())
+        prompt = build_open_review_prompt(
+            scope_text,
+            supplemental_text=supplemental_text,
+            available_tools=_detect_tools(),
+        )
     else:
         prompt = build_find_prompt(scope_text, supplemental_text=supplemental_text)
         prompt = prompt + "\n\n" + "\n".join(_tools_and_flow_block(_detect_tools()))
 
     # Build codex command (read-only sandbox; full-auto; skip git repo check)
-    cmd = build_cmd("gpt-5", root, sandbox="read-only", skip_git_repo_check=True, full_auto=True)
+    cmd = build_cmd(
+        "gpt-5", root, sandbox="read-only", skip_git_repo_check=True, full_auto=True
+    )
     out_last_file: Path | None = None
     if output_final_message:
         cmd.extend(["--output-last-message", output_final_message])
     elif final_only:
-        tmp = tempfile.NamedTemporaryFile(delete=False)
-        out_last_file = Path(tmp.name)
-        tmp.close()
+        with tempfile.NamedTemporaryFile(delete=False) as tmp:
+            out_last_file = Path(tmp.name)
         cmd.extend(["--output-last-message", str(out_last_file)])
 
     if dry_run:
@@ -532,15 +571,19 @@ def _run_specimen(manifest_path: Path, *, dry_run: bool, json_out: bool, embed_p
         outfile.write_text(prompt, encoding="utf-8")
         tokens = None
         try:
-            if 'tiktoken' in globals() and tiktoken is not None:
+            if "tiktoken" in globals() and tiktoken is not None:
                 enc = tiktoken.get_encoding("cl100k_base")
                 tokens = len(enc.encode(prompt))
         except Exception:
             tokens = None
         print(" ".join(cmd))
-        print(f"Detected tools: {', '.join(_detect_tools()) if _detect_tools() else '(none)'}")
+        print(
+            f"Detected tools: {', '.join(_detect_tools()) if _detect_tools() else '(none)'}"
+        )
         print(_format_tools_table(_detect_tools()))
-        print(f"Saved prompt: {outfile} (approx tokens: {tokens if tokens is not None else 'n/a'})")
+        print(
+            f"Saved prompt: {outfile} (approx tokens: {tokens if tokens is not None else 'n/a'})"
+        )
         return 0
 
     # Execute codex with prompt on stdin
@@ -549,7 +592,10 @@ def _run_specimen(manifest_path: Path, *, dry_run: bool, json_out: bool, embed_p
         try:
             print(Path(out_last_file).read_text(encoding="utf-8"))
         except Exception as e:
-            print(f"[error reading final message file {out_last_file}: {e}]", file=sys.stderr)
+            print(
+                f"[error reading final message file {out_last_file}: {e}]",
+                file=sys.stderr,
+            )
     return rc
 
 
@@ -578,9 +624,20 @@ def main(argv: list[str] | None = None) -> int:
     common.add_argument("--dry-run", action="store_true")
     common.add_argument("--skip-git-repo-check", action="store_true")
     common.add_argument("--full-auto", action="store_true")
-    common.add_argument("--allow-general-findings", action="store_true", help="Also allow general code-quality findings beyond formal properties")
-    common.add_argument("--final-only", action="store_true", help="Print only the agent's final message to stdout (suppresses trajectory output)")
-    common.add_argument("--output-final-message", help="Write only the agent's final message to this path (passthrough to codex --output-last-message)")
+    common.add_argument(
+        "--allow-general-findings",
+        action="store_true",
+        help="Also allow general code-quality findings beyond formal properties",
+    )
+    common.add_argument(
+        "--final-only",
+        action="store_true",
+        help="Print only the agent's final message to stdout (suppresses trajectory output)",
+    )
+    common.add_argument(
+        "--output-final-message",
+        help="Write only the agent's final message to this path (passthrough to codex --output-last-message)",
+    )
 
     sub.add_parser(
         "check",
@@ -615,14 +672,39 @@ def main(argv: list[str] | None = None) -> int:
             "- Defaults: --full-auto and --skip-git-repo-check"
         ),
     )
-    p_spec.add_argument("specimen", nargs="?", help="Specimen name (under properties/specimens), path to specimen dir, or path to manifest.yaml")
+    p_spec.add_argument(
+        "specimen",
+        nargs="?",
+        help="Specimen name (under properties/specimens), path to specimen dir, or path to manifest.yaml",
+    )
     p_spec.add_argument("--dry-run", action="store_true")
-    p_spec.add_argument("--json", action="store_true", help="Request JSON output from critic")
-    p_spec.add_argument("--embed-path", action="append", dest="embed_paths", help="Extra files to embed into the prompt (Markdown); repeatable")
-    p_spec.add_argument("--gitconfig", help="Path to a gitconfig to use for private repo fallback (shallow git)")
-    p_spec.add_argument("--final-only", action="store_true", help="Print only the agent's final message to stdout (suppresses trajectory output)")
-    p_spec.add_argument("--output-final-message", help="Write only the agent's final message to this path (passthrough to codex --output-last-message)")
-    p_spec.add_argument("--allow-general-findings", action="store_true", help="Also allow general code-quality findings beyond formal properties")
+    p_spec.add_argument(
+        "--json", action="store_true", help="Request JSON output from critic"
+    )
+    p_spec.add_argument(
+        "--embed-path",
+        action="append",
+        dest="embed_paths",
+        help="Extra files to embed into the prompt (Markdown); repeatable",
+    )
+    p_spec.add_argument(
+        "--gitconfig",
+        help="Path to a gitconfig to use for private repo fallback (shallow git)",
+    )
+    p_spec.add_argument(
+        "--final-only",
+        action="store_true",
+        help="Print only the agent's final message to stdout (suppresses trajectory output)",
+    )
+    p_spec.add_argument(
+        "--output-final-message",
+        help="Write only the agent's final message to this path (passthrough to codex --output-last-message)",
+    )
+    p_spec.add_argument(
+        "--allow-general-findings",
+        action="store_true",
+        help="Also allow general code-quality findings beyond formal properties",
+    )
 
     # New command: specimen-discover — report only new findings vs current specimen notes
     p_spec_new = sub.add_parser(
@@ -633,13 +715,33 @@ def main(argv: list[str] | None = None) -> int:
             "Reports only additional instances, new categories under existing properties, or entirely new issues."
         ),
     )
-    p_spec_new.add_argument("specimen", nargs="?", help="Specimen name (under properties/specimens), path to specimen dir, or path to manifest.yaml")
+    p_spec_new.add_argument(
+        "specimen",
+        nargs="?",
+        help="Specimen name (under properties/specimens), path to specimen dir, or path to manifest.yaml",
+    )
     p_spec_new.add_argument("--dry-run", action="store_true")
-    p_spec_new.add_argument("--json", action="store_true", help="Request JSON output from critic")
-    p_spec_new.add_argument("--gitconfig", help="Path to a gitconfig to use for private repo fallback (shallow git)")
-    p_spec_new.add_argument("--final-only", action="store_true", help="Print only the agent's final message to stdout (suppresses trajectory output)")
-    p_spec_new.add_argument("--output-final-message", help="Write only the agent's final message to this path (passthrough to codex --output-last-message)")
-    p_spec_new.add_argument("--allow-general-findings", action="store_true", help="Also allow general code-quality findings beyond formal properties")
+    p_spec_new.add_argument(
+        "--json", action="store_true", help="Request JSON output from critic"
+    )
+    p_spec_new.add_argument(
+        "--gitconfig",
+        help="Path to a gitconfig to use for private repo fallback (shallow git)",
+    )
+    p_spec_new.add_argument(
+        "--final-only",
+        action="store_true",
+        help="Print only the agent's final message to stdout (suppresses trajectory output)",
+    )
+    p_spec_new.add_argument(
+        "--output-final-message",
+        help="Write only the agent's final message to this path (passthrough to codex --output-last-message)",
+    )
+    p_spec_new.add_argument(
+        "--allow-general-findings",
+        action="store_true",
+        help="Also allow general code-quality findings beyond formal properties",
+    )
 
     args = parser.parse_args(argv)
 
@@ -664,9 +766,18 @@ def main(argv: list[str] | None = None) -> int:
                 return 2
             gitconfig_path = str(p)
         mode = "open" if getattr(args, "allow_general_findings", False) else "find"
-        return _run_specimen(manifest_path, dry_run=args.dry_run, json_out=args.json, embed_paths=args.embed_paths, gitconfig=gitconfig_path, mode=mode, final_only=getattr(args, "final_only", False), output_final_message=getattr(args, "output_final_message", None))
+        return _run_specimen(
+            manifest_path,
+            dry_run=args.dry_run,
+            json_out=args.json,
+            embed_paths=args.embed_paths,
+            gitconfig=gitconfig_path,
+            mode=mode,
+            final_only=getattr(args, "final_only", False),
+            output_final_message=getattr(args, "output_final_message", None),
+        )
 
-    elif args.command == "specimen-discover":
+    if args.command == "specimen-discover":
         base = _find_specimens_base()
         manifest_path = _resolve_manifest_arg(args.specimen, base)
         if manifest_path is None:
@@ -691,24 +802,45 @@ def main(argv: list[str] | None = None) -> int:
             pth = manifest_path.parent / name
             if pth.exists():
                 embed_paths.append(str(pth))
-        return _run_specimen(manifest_path, dry_run=args.dry_run, json_out=args.json, embed_paths=embed_paths, gitconfig=gitconfig_path, mode="discover", final_only=getattr(args, "final_only", False), output_final_message=getattr(args, "output_final_message", None))
+        return _run_specimen(
+            manifest_path,
+            dry_run=args.dry_run,
+            json_out=args.json,
+            embed_paths=embed_paths,
+            gitconfig=gitconfig_path,
+            mode="discover",
+            final_only=getattr(args, "final_only", False),
+            output_final_message=getattr(args, "output_final_message", None),
+        )
 
-    elif args.command in ("check", "fix"):
+    if args.command in ("check", "fix"):
         workdir = Path(args.workdir).resolve()
         detected_tools = _detect_tools()
         if not getattr(args, "output_final_message", None):
-            print(f"Detected tools    : {', '.join(detected_tools) if detected_tools else '(none)'}")
+            print(
+                f"Detected tools    : {', '.join(detected_tools) if detected_tools else '(none)'}"
+            )
             print(_format_tools_table(detected_tools))
         out_last_file: Path | None = None
         if args.command == "check":
-            prompt = (build_open_review_prompt(args.scope, available_tools=detected_tools) if args.allow_general_findings else build_find_prompt(args.scope))
+            prompt = (
+                build_open_review_prompt(args.scope, available_tools=detected_tools)
+                if args.allow_general_findings
+                else build_find_prompt(args.scope)
+            )
             if args.allow_general_findings:
                 prompt = prompt.replace(
                     "Analyze the codebase for violations of the properties defined below. Do not modify any files. Output only violations; do not list properties/files with 'No violations'. Produce a concise structured report.",
                     "Perform an open-ended code quality review within the scope. Find both violations of the properties below and any other significant issues not already covered by properties or supplements. Run the detected analysis tools first in the suggested order, then do targeted manual review. Output only findings.",
                     1,
                 )
-            cmd = build_cmd(args.model, workdir, sandbox="read-only", skip_git_repo_check=args.skip_git_repo_check, full_auto=args.full_auto)
+            cmd = build_cmd(
+                args.model,
+                workdir,
+                sandbox="read-only",
+                skip_git_repo_check=args.skip_git_repo_check,
+                full_auto=args.full_auto,
+            )
         else:
             prompt = build_enforce_prompt(args.scope)
             cmd = build_cmd(
@@ -722,9 +854,8 @@ def main(argv: list[str] | None = None) -> int:
         if getattr(args, "output_final_message", None):
             cmd.extend(["--output-last-message", args.output_final_message])
         elif args.final_only:
-            tmp = tempfile.NamedTemporaryFile(delete=False)
-            out_last_file = Path(tmp.name)
-            tmp.close()
+            with tempfile.NamedTemporaryFile(delete=False) as tmp:
+                out_last_file = Path(tmp.name)
             cmd.extend(["--output-last-message", str(out_last_file)])
 
         if args.dry_run:
@@ -736,26 +867,32 @@ def main(argv: list[str] | None = None) -> int:
             outfile.write_text(prompt, encoding="utf-8")
             tokens = None
             try:
-                if 'tiktoken' in globals() and tiktoken is not None:
+                if "tiktoken" in globals() and tiktoken is not None:
                     enc = tiktoken.get_encoding("cl100k_base")
                     tokens = len(enc.encode(prompt))
             except Exception:
                 tokens = None
             print(" ".join(cmd))
-            print(f"Detected tools: {', '.join(_detect_tools()) if _detect_tools() else '(none)'}")
+            print(
+                f"Detected tools: {', '.join(_detect_tools()) if _detect_tools() else '(none)'}"
+            )
             print(_format_tools_table(_detect_tools()))
-            print(f"Saved prompt: {outfile} (approx tokens: {tokens if tokens is not None else 'n/a'})")
+            print(
+                f"Saved prompt: {outfile} (approx tokens: {tokens if tokens is not None else 'n/a'})"
+            )
             return 0
 
         # Stream to subprocess stdin
-        import subprocess
         try:
             rc = subprocess.run(cmd, check=False, input=prompt, text=True).returncode
             if out_last_file is not None:
                 try:
                     print(Path(out_last_file).read_text(encoding="utf-8"))
                 except Exception as e:
-                    print(f"[error reading final message file {out_last_file}: {e}]", file=sys.stderr)
+                    print(
+                        f"[error reading final message file {out_last_file}: {e}]",
+                        file=sys.stderr,
+                    )
             return rc
         except KeyboardInterrupt:
             return 130

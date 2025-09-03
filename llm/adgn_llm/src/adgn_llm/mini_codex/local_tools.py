@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
+from pathlib import Path
 from shutil import which
 from typing import Any
 
@@ -9,6 +11,7 @@ DEFAULT_TIMEOUT_S = int(os.getenv("DUCK_TIMEOUT_S", "30"))
 TRUNCATE_BYTES = 8 * 1024
 BWRAP = os.getenv("BWRAP", "bwrap")
 ALLOW_UNSHARE_NET = os.getenv("DUCK_UNSHARE_NET", "0") == "1"
+ALLOW_UNSANDBOXED = os.getenv("DUCK_ALLOW_UNSANDBOXED", "0") == "1"  # dev override on non-Linux
 
 
 def _truncate_bytes(s: str, limit: int) -> str:
@@ -23,8 +26,6 @@ def _truncate_bytes(s: str, limit: int) -> str:
 
 
 def _run_proc(argv: list[str], timeout_s: int, cwd: str | None = None) -> tuple[int, str, str]:
-    import subprocess
-
     p = subprocess.Popen(
         argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, cwd=cwd,
     )
@@ -47,15 +48,18 @@ def _run_proc(argv: list[str], timeout_s: int, cwd: str | None = None) -> tuple[
 
 
 def _run_in_sandbox(cmd: list[str], timeout_s: int, cwd: str | None) -> tuple[int, str, str]:
-    # On non-Linux, run unsandboxed by default (dev behavior)
+    # On non-Linux, require explicit override to run unsandboxed
     if sys.platform != "linux":
-        return _run_proc(cmd, timeout_s=timeout_s, cwd=cwd)
+        if ALLOW_UNSANDBOXED:
+            return _run_proc(cmd, timeout_s=timeout_s, cwd=cwd)
+        return (2, "", "sandbox unavailable on this platform; set DUCK_ALLOW_UNSANDBOXED=1 to override")
 
     # Linux: attempt bubblewrap if available
     if which(BWRAP) is None:
-        return _run_proc(cmd, timeout_s=timeout_s, cwd=cwd)
+        return (2, "", "bubblewrap (bwrap) not found in PATH")
 
-    cwd_val = cwd or os.getcwd()
+    from pathlib import Path
+    cwd_val = cwd or str(Path.cwd())
 
     argv: list[str] = [
         BWRAP,
@@ -132,6 +136,6 @@ def build_local_tools() -> dict[str, dict[str, tuple[str, dict[str, Any], Any]]]
                 "Execute a shell command and return exit, stdout, stderr.",
                 EXEC_PARAMETERS_SCHEMA,
                 exec_handler,
-            )
-        }
+            ),
+        },
     }

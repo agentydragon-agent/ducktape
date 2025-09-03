@@ -14,14 +14,17 @@ Namespacing: tools are exposed as "mcp:{server}.{tool}".
 
 import json
 import os
+import re
+import shlex
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
-from typing import Any, Callable, Mapping, Iterable
+from pathlib import Path
+from typing import Any
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
+
 from .local_server import LocalServer
-import shlex
-from pathlib import Path
 
 
 def _load_mcp_config(path: str | None) -> dict[str, Any]:
@@ -29,12 +32,14 @@ def _load_mcp_config(path: str | None) -> dict[str, Any]:
 
     Precedence: explicit path -> $MCP_CONFIG -> ./ .mcp.json
     """
-    if not path:
-        path = os.environ.get("MCP_CONFIG") or os.path.join(os.getcwd(), ".mcp.json")
-    if not os.path.exists(path):
+    if path:
+        cfg_path = Path(path)
+    else:
+        env_cfg = os.environ.get("MCP_CONFIG")
+        cfg_path = Path(env_cfg) if env_cfg else (Path.cwd() / ".mcp.json")
+    if not cfg_path.exists():
         return {}
-    with open(path, "r", encoding="utf-8") as f:
-        cfg = json.load(f)
+    cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
     servers = cfg.get("mcpServers") or {}
     if not isinstance(servers, dict):
         raise ValueError("Invalid .mcp.json: 'mcpServers' must be an object")
@@ -46,12 +51,12 @@ class _LiveServer:
         self.name = name
         self.cfg = cfg
         # Build per-server stderr log path and wrap command to redirect stderr (always on)
-        log_dir = Path(os.environ.get("MINICODEX_MCP_LOG_DIR") or (Path(os.getcwd()) / "logs" / "mcp"))
+        log_dir = Path(os.environ.get("MINICODEX_MCP_LOG_DIR") or (Path.cwd() / "logs" / "mcp"))
         try:
             log_dir.mkdir(parents=True, exist_ok=True)
         except Exception:
             # Fallback: use current working directory if we cannot create the preferred log directory
-            log_dir = Path(os.getcwd())
+            log_dir = Path.cwd()
         log_file = log_dir / f"{_sanitize_name(self.name)}.stderr.log"
 
         cmd = str(cfg["command"])
@@ -60,15 +65,14 @@ class _LiveServer:
 
         shell = os.environ.get("SHELL") or "/bin/sh"
         joined = " ".join([shlex.quote(cmd), *[shlex.quote(a) for a in args_list]])
-        command = shell
         args_for_shell = ["-lc", f"exec {joined} 2>> {shlex.quote(str(log_file))}"]
 
         self._stdio_cm = stdio_client(
             StdioServerParameters(
-                command=command,
+                command=shell,
                 args=args_for_shell,
                 env=env,
-            )
+            ),
         )
         self._read = None
         self._write = None
@@ -80,11 +84,11 @@ class _LiveServer:
         session = ClientSession(self._read, self._write)
         await session.__aenter__()
         init = await session.initialize()
-        info = getattr(init, "serverInfo", None)
+        info = init.serverInfo if hasattr(init, "serverInfo") else None  # type: ignore[attr-defined]
         self.info = {
-            "name": str(getattr(info, "name", self.name)) if info else self.name,
-            "version": str(getattr(info, "version", "")) if info else "",
-            "description": str(getattr(info, "description", "")) if info else "",
+            "name": (info.name if info and getattr(info, "name", None) else self.name),
+            "version": (info.version if info and getattr(info, "version", None) else ""),
+            "description": (info.description if info and getattr(info, "description", None) else ""),
         }
         self.session = session
 
@@ -98,7 +102,6 @@ class _LiveServer:
 
 
 def _sanitize_name(name: str) -> str:
-    import re
     # Allow only letters, digits, underscore, dash
     return re.sub(r"[^A-Za-z0-9_-]", "_", name)[:64]
 
@@ -122,7 +125,7 @@ async def _collect_tools_live(
                     "name": sanitized,
                     "description": tool.description or "",
                     "parameters": params_schema,
-                }
+                },
             )
             reverse[sanitized] = ("stdio", server, tool.name)
     if local_tools:
@@ -134,7 +137,7 @@ async def _collect_tools_live(
                     "name": sanitized,
                     "description": desc or "",
                     "parameters": params_schema or {"type": "object", "properties": {}},
-                }
+                },
             )
             reverse[sanitized] = ("local", server, tool_name)
     return server_infos, openai_tools, reverse
@@ -142,25 +145,28 @@ async def _collect_tools_live(
 
 async def _call_mcp_tool_live(session: ClientSession, tool_name: str, args: dict[str, Any] | None) -> dict[str, Any]:
     result = await session.call_tool(name=tool_name, arguments=args or {})
-    if getattr(result, "isError", False):
-        # Extract error message from content blocks when available
-        err_text = ""
-        if getattr(result, "content", None):
-            parts: list[str] = []
-            for item in result.content:
-                if hasattr(item, "text") and isinstance(item.text, str):
-                    parts.append(item.text)
+    # Prefer direct attribute access; let programming errors surface loudly
+    if result.isError:  # type: ignore[attr-defined]
+        # Best‑effort: join any textual content; otherwise, stringify the result
+        try:
+            content = result.content  # type: ignore[attr-defined]
+            parts = [item.text for item in content if getattr(item, "text", None)]
             err_text = "\n".join(parts)
+        except Exception:
+            err_text = str(result)
         return {"exit": 2, "stdout": "", "stderr": err_text or "Tool error"}
-    if getattr(result, "structuredContent", None) is not None:
-        return {"exit": 0, "stdout": "", "stderr": "", "json": result.structuredContent}
-    text = ""
-    if getattr(result, "content", None):
-        parts: list[str] = []
-        for item in result.content:
-            if hasattr(item, "text") and isinstance(item.text, str):
-                parts.append(item.text)
+    try:
+        structured = result.structuredContent  # type: ignore[attr-defined]
+    except Exception:
+        structured = None
+    if structured is not None:
+        return {"exit": 0, "stdout": "", "stderr": "", "json": structured}
+    try:
+        content = result.content  # type: ignore[attr-defined]
+        parts = [item.text for item in content if getattr(item, "text", None)]
         text = "\n".join(parts)
+    except Exception:
+        text = str(result)
     return {"exit": 0, "stdout": text, "stderr": ""}
 
 
@@ -188,7 +194,7 @@ class McpManager:
         *,
         local: dict[str, dict[str, tuple[str, Mapping[str, Any], Callable[[dict[str, Any]], Any]]]] | None = None,
         local_servers: Iterable[LocalServer] | None = None,
-    ) -> "McpManager":
+    ) -> McpManager:
         servers = _load_mcp_config(path)
         handles: dict[str, _LiveServer] = {}
         for name, cfg in servers.items():
@@ -223,7 +229,7 @@ class McpManager:
         *,
         local: dict[str, dict[str, tuple[str, Mapping[str, Any], Callable[[dict[str, Any]], Any]]]] | None = None,
         local_servers: Iterable[LocalServer] | None = None,
-    ) -> "McpManager":
+    ) -> McpManager:
         servers = servers or {}
         handles: dict[str, _LiveServer] = {}
         for name, cfg in servers.items():

@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any, Callable, Dict, Mapping, Tuple
+from collections.abc import Callable, Mapping
+from typing import Any
 
-ToolDef = Tuple[str, Mapping[str, Any], Callable[[dict[str, Any]], Any]]
+ToolDef = tuple[str, Mapping[str, Any], Callable[[dict[str, Any]], Any]]
 
 class LocalServer(ABC):
     """Abstract base for in-process MCP-like servers.
@@ -16,7 +17,7 @@ class LocalServer(ABC):
         self.name = name
 
     @abstractmethod
-    def get_tools(self) -> Dict[str, ToolDef]:
+    def get_tools(self) -> dict[str, ToolDef]:
         raise NotImplementedError
 
     async def close(self) -> None:

@@ -2,32 +2,34 @@ from __future__ import annotations
 
 import json
 import time
-from dataclasses import dataclass, field
+from collections.abc import AsyncIterator, Callable
+from dataclasses import dataclass
 from datetime import timedelta
-from typing import Any, AsyncIterator, Callable, Dict, Iterable, List, Literal, Tuple
+from enum import StrEnum
+from pathlib import Path
+from typing import Any, Literal
 
 import openai
+from openai import APIConnectionError, APIStatusError, APITimeoutError, RateLimitError
 from openai.types.responses import (
     ResponseFunctionToolCall,
     ResponseOutputMessage,
     ResponseOutputText,
 )
-from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 from pydantic import BaseModel
+from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 
 from .local_server import LocalServer
 from .mcp_manager import McpManager
 
-
 # Unified tool source mapping
 # Each value is either a LocalServer instance or a stdio dict with keys: command, args?, env?
-ToolMap = Dict[str, Any]
+ToolMap = dict[str, Any]
 DEFAULT_MODEL = "o4-mini"
 SYSTEM_INSTRUCTIONS = "You are a code agent. Be concise."
 
 def _is_retryable(err: BaseException) -> bool:
-    from openai import APITimeoutError, APIConnectionError, RateLimitError, APIStatusError
-    if isinstance(err, (APITimeoutError, APIConnectionError, RateLimitError)):
+    if isinstance(err, APITimeoutError | APIConnectionError | RateLimitError):
         return True
     if isinstance(err, APIStatusError):
         return isinstance(err.status_code, int) and err.status_code >= 500
@@ -43,22 +45,21 @@ def _responses_create_with_retry(client: openai.OpenAI, **params: Any):
     return client.responses.create(**params)
 
 def _openai_client() -> openai.OpenAI:
-    import os
-    api_key = os.getenv("OPENAI_API_KEY", "")
-    if not api_key:
-        raise RuntimeError("OPENAI_API_KEY not set")
-    base_url = os.getenv("OPENAI_BASE_URL")
-    kwargs: Dict[str, Any] = {"api_key": api_key}
-    if base_url:
-        kwargs["base_url"] = base_url
-    return openai.OpenAI(**kwargs)
+    # Let the SDK discover configuration from environment; no manual key handling here
+    return openai.OpenAI()
+
+
+class ToolPolicy(StrEnum):
+    AUTO = "auto"
+    REQUIRED = "required"
+    NONE = "none"
 
 
 @dataclass
 class ToolRun:
     name: str
-    args: Dict[str, Any]
-    result: Dict[str, Any]
+    args: dict[str, Any]
+    result: dict[str, Any]
     latency: timedelta
     error: str | None = None
 
@@ -73,18 +74,16 @@ class Metrics:
 @dataclass
 class AgentResult:
     text: str
-    sequence: List[AgentEvent]   # linearized: assistant_text, tool_call, tool_output
+    sequence: list[AgentEvent]   # linearized: assistant_text, tool_call, tool_output
     metrics: Metrics
 
 
-AgentEvent = Dict[str, Any]
+AgentEvent = dict[str, Any]
 AgentEventHandler = Callable[[AgentEvent], Any]
 
 
 def load_mcp_file(path: str) -> ToolMap:
-    import json as _json
-    with open(path, "r", encoding="utf-8") as f:
-        data = _json.load(f)
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
     servers = data.get("mcpServers") or {}
     if not isinstance(servers, dict):  # defensive
         raise ValueError(".mcp.json: mcpServers must be object")
@@ -98,17 +97,18 @@ class MiniCodex:
         *,
         model: str,
         system: str | None,
-        tool_policy: Literal["auto", "required", "none"],
+        tool_policy: ToolPolicy | str,
         on_event: AgentEventHandler | None,
         mcp: McpManager,
+        client: openai.OpenAI | None = None,
     ) -> None:
         self._model = model
         self._system = system or SYSTEM_INSTRUCTIONS
-        self._tool_policy = tool_policy
+        self._tool_policy = ToolPolicy(tool_policy) if not isinstance(tool_policy, ToolPolicy) else tool_policy
         self._on_event = on_event
         self._mcp = mcp
-        self._client = _openai_client()
-        self._messages: List[Message] = []  # user/assistant only
+        self._client = client or _openai_client()
+        self._messages: list[Message] = []  # user/assistant only
         self._metrics = Metrics()
 
     @classmethod
@@ -118,12 +118,13 @@ class MiniCodex:
         model: str,
         tools: ToolMap,
         system: str | None = None,
-        tool_policy: Literal["auto", "required", "none"] = "auto",
+        tool_policy: ToolPolicy | str = ToolPolicy.AUTO,
         on_event: AgentEventHandler | None = None,
-    ) -> "MiniCodex":
+        client: openai.OpenAI | None = None,
+    ) -> MiniCodex:
         # Split ToolMap → stdio servers + local servers
-        stdio_servers: Dict[str, Dict[str, Any]] = {}
-        local_servers: List[LocalServer] = []
+        stdio_servers: dict[str, dict[str, Any]] = {}
+        local_servers: list[LocalServer] = []
         for name, val in (tools or {}).items():
             if isinstance(val, LocalServer):
                 local_servers.append(val)
@@ -136,13 +137,13 @@ class MiniCodex:
             else:
                 raise ValueError(f"Unsupported tool source for {name!r}")
         mcp = await McpManager.from_servers(stdio_servers, local=None, local_servers=local_servers)
-        return cls(model=model, system=system, tool_policy=tool_policy, on_event=on_event, mcp=mcp)
+        return cls(model=model, system=system, tool_policy=tool_policy, on_event=on_event, mcp=mcp, client=client)
 
-    def tools(self) -> List[Dict[str, Any]]:
+    def tools(self) -> list[dict[str, Any]]:
         return self._mcp.list_tools()
 
     @property
-    def messages(self) -> List[Dict[str, Any]]:
+    def messages(self) -> list[dict[str, Any]]:
         return dump_messages_for_api(self._messages)
 
     async def run(self, user_text: str, stream: bool = False) -> AgentResult | AsyncIterator[AgentEvent]:
@@ -158,10 +159,10 @@ class MiniCodex:
         self._messages.append(UserMessage(role="user", content=user_text))
 
         # 2) Execute turns until model stops requesting tools
-        sequence: List[AgentEvent] = []
-        assistant_text_chunks: List[str] = []
-        prior_tool_calls: List[Dict[str, Any]] | None = None
-        pending_tool_outputs: List[FunctionCallOutput] | None = None
+        sequence: list[AgentEvent] = []
+        assistant_text_chunks: list[str] = []
+        prior_tool_calls: list[dict[str, Any]] | None = None
+        pending_tool_outputs: list[FunctionCallOutput] | None = None
 
         while True:
             # Build instructions with server descriptions
@@ -185,14 +186,14 @@ class MiniCodex:
                 input=input_payload,
                 instructions=instructions,
                 stream=False,
-                tool_choice=self._tool_policy,
+                tool_choice=self._tool_policy.value,
                 store=False,
                 tools=self._mcp.list_tools(),
             )
 
             # Parse output
             prior_tool_calls = []
-            requires: List[ResponseFunctionToolCall] = []
+            requires: list[ResponseFunctionToolCall] = []
             turn_assistant_text = []
             for item in resp.output:
                 if isinstance(item, ResponseOutputMessage):
@@ -201,10 +202,7 @@ class MiniCodex:
                             turn_assistant_text.append(part.text)
                 elif isinstance(item, ResponseFunctionToolCall):
                     requires.append(item)
-                    try:
-                        prior_tool_calls.append(item.model_dump(exclude_none=True))
-                    except Exception:
-                        pass
+                    prior_tool_calls.append(item.model_dump(exclude_none=True))
 
             # Add assistant text to transcript/messages
             if turn_assistant_text:
@@ -244,7 +242,7 @@ class MiniCodex:
                         type="function_call_output",
                         call_id=fc.call_id,
                         output=json.dumps(result),
-                    )
+                    ),
                 )
 
             # Loop continues; send tool outputs + prior tool calls back next turn
@@ -275,7 +273,7 @@ class FunctionCallOutput(BaseModel):
 
 Message = UserMessage | AssistantMessage | FunctionCallOutput
 
-def dump_messages_for_api(messages: List[Message]) -> List[Dict[str, Any]]:
+def dump_messages_for_api(messages: list[Message]) -> list[dict[str, Any]]:
     return [m.model_dump(exclude_none=True) for m in messages]
 
 

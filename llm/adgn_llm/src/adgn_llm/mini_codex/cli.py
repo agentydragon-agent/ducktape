@@ -1,14 +1,19 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import os
+import subprocess
 import sys
 import time
+from pathlib import Path
 from shutil import which
 from typing import Any, Literal
-import asyncio
 
 import openai
+from adgn_llm.mini_codex.agent import MiniCodex, load_mcp_file, _responses_create_with_retry
+from adgn_llm.mini_codex.local_exec_server import LocalExecServer
+from adgn_llm.mini_codex.mcp_manager import McpManager
 from openai import APIConnectionError, APIStatusError, APITimeoutError, RateLimitError
 from openai.types.responses import (
     ResponseFunctionToolCall,
@@ -17,8 +22,7 @@ from openai.types.responses import (
 )
 from pydantic import BaseModel
 from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
-from adgn_llm.mini_codex.local_exec_server import LocalExecServer
-from adgn_llm.mini_codex.agent import MiniCodex, load_mcp_file
+
 LOCAL_EXEC_SERVER_NAME = "local"
 
 DEFAULT_MODEL = os.getenv("OPENAI_MODEL", "o4-mini")
@@ -84,8 +88,6 @@ def _truncate_bytes(s: str, limit: int) -> str:
 
 
 def _run_proc(argv: list[str], timeout_s: int, cwd: str | None = None) -> tuple[int, str, str]:
-    import subprocess
-
     p = subprocess.Popen(
         argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, cwd=cwd,
     )
@@ -119,7 +121,7 @@ def run_in_sandbox(
     if which(BWRAP) is None:
         raise ExecError("bubblewrap (bwrap) not found in PATH")
 
-    cwd_val = cwd or os.getcwd()
+    cwd_val = cwd or str(Path.cwd())
 
     argv: list[str] = [
         BWRAP,
@@ -156,33 +158,10 @@ def run_in_sandbox(
 
 
 def openai_client() -> openai.OpenAI:
-    api_key = os.getenv("OPENAI_API_KEY", "")
-    if not api_key:
-        raise RuntimeError("OPENAI_API_KEY not set")
-    base_url = os.getenv("OPENAI_BASE_URL")
-    kwargs: dict[str, Any] = {"api_key": api_key}
-    if base_url:
-        kwargs["base_url"] = base_url
-    return openai.OpenAI(**kwargs)
+    # Let the SDK read configuration from environment; no manual key plumbing
+    return openai.OpenAI()
 
 
-def _is_retryable(err: BaseException) -> bool:
-    if isinstance(err, (APITimeoutError, APIConnectionError, RateLimitError)):
-        return True
-    if isinstance(err, APIStatusError):
-        # Only retry 5xx
-        return isinstance(err.status_code, int) and err.status_code >= 500
-    return False
-
-
-@retry(
-    retry=retry_if_exception(_is_retryable),
-    wait=wait_exponential(multiplier=0.5),
-    stop=stop_after_attempt(API_MAX_RETRIES + 1),
-    reraise=True,
-)
-def _responses_create_with_retry(client: openai.OpenAI, **params: Any):
-    return client.responses.create(**params)
 
 
 async def responses_turn(
@@ -196,12 +175,9 @@ async def responses_turn(
     # Include MCP server descriptions in the instructions, if available
     instructions = SYSTEM_INSTRUCTIONS
     if mcp_manager is not None:
-        try:
-            extra = mcp_manager.instruction_block()
-            if extra:
-                instructions = f"{SYSTEM_INSTRUCTIONS}\n\n{extra}"
-        except Exception:
-            pass
+        extra = mcp_manager.instruction_block()
+        if extra:
+            instructions = f"{SYSTEM_INSTRUCTIONS}\n\n{extra}"
 
     resp = _responses_create_with_retry(
         client,
@@ -282,12 +258,9 @@ async def responses_followup_with_tool_outputs(
 ) -> tuple[list[Message], str | None]:
     instructions = SYSTEM_INSTRUCTIONS
     if mcp_manager is not None:
-        try:
-            extra = mcp_manager.instruction_block()
-            if extra:
-                instructions = f"{SYSTEM_INSTRUCTIONS}\n\n{extra}"
-        except Exception:
-            pass
+        extra = mcp_manager.instruction_block()
+        if extra:
+            instructions = f"{SYSTEM_INSTRUCTIONS}\n\n{extra}"
     input_payload = dump_messages_for_api(messages) + [t.model_dump(exclude_none=True) for t in tool_outputs]
     resp = _responses_create_with_retry(
         client,
@@ -337,13 +310,11 @@ async def main_async() -> None:
     print("mini-codex ready. Ctrl-D to exit. Type your task and press Enter.")
 
     # Build unified ToolMap: load MCP servers (if present) and add a local exec server
-    cfg_path = os.environ.get("MCP_CONFIG") or os.path.join(os.getcwd(), ".mcp.json")
+    cfg_path_env = os.environ.get("MCP_CONFIG")
+    cfg_path = Path(cfg_path_env) if cfg_path_env else (Path.cwd() / ".mcp.json")
     tools: dict[str, Any] = {}
-    if os.path.exists(cfg_path):
-        try:
-            tools.update(load_mcp_file(cfg_path))
-        except Exception as e:
-            print(f"[MCP config ignored] {e}", file=sys.stderr)
+    if cfg_path.exists():
+        tools.update(load_mcp_file(str(cfg_path)))
     tools[LOCAL_EXEC_SERVER_NAME] = LocalExecServer(name=LOCAL_EXEC_SERVER_NAME)
 
     agent = await MiniCodex.start(model=DEFAULT_MODEL, tools=tools, system=SYSTEM_INSTRUCTIONS, tool_policy="auto")

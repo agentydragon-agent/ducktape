@@ -19,19 +19,16 @@ What it does:
 
 import asyncio
 import os
-import sys
 import time
-from typing import Any
 
 import docker
-
 from adgn_llm.mini_codex.cli import (
-    openai_client,
-    responses_turn,
-    responses_followup_with_tool_outputs,
-    UserMessage,
     AssistantMessage,
     FunctionCallOutput,
+    UserMessage,
+    openai_client,
+    responses_followup_with_tool_outputs,
+    responses_turn,
 )
 from adgn_llm.mini_codex.mcp_manager import McpManager
 
@@ -64,7 +61,7 @@ async def run_demo() -> None:
                 "command": CONSOLE_SCRIPT,
                 "args": [],
                 "env": {"DOCKER_CONTAINER": container.id, "USE_CONTAINER_TIMEOUT_WRAPPER": "0"},
-            }
+            },
         }
 
         # 3) Create MCP manager (no local execution servers)
@@ -87,7 +84,7 @@ async def run_demo() -> None:
 
         # Use mini_codex agent helpers to drive the loop with tool outputs
         transcript: list[UserMessage | AssistantMessage | FunctionCallOutput] = [
-            UserMessage(role="user", content=user_task)
+            UserMessage(role="user", content=user_task),
         ]
         terminal_batch: list[str] = []
         pending_tool_outputs: list[FunctionCallOutput] | None = None
