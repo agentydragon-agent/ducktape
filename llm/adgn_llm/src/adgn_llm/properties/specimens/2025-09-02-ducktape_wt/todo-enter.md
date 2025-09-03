@@ -1,12 +1,5 @@
 # TODO - verify
 
-## [Try/except is scoped around the operation it guards] — additional findings
-
-there should not be any "additional findings" headings in the file and link properties properly.
-check everywhere.
-
-------------
-
 - **Forbid Dynamic Attribute Access** .../shared/logging_config.py:98 — Uses getattr(logging, ...) to derive level; avoid dynamic attribute probing.
 **Time And Duration Use Rich Time Types**
 - Float epochs used in core logic; prefer timezone-aware datetimes/timedeltas or monotonic for durations.
@@ -232,7 +225,3 @@ def kill_daemon_and_verify(repo_path: Path):   # <- L192
 
     pytest.fail("Daemon didn't shut down in time")
 ```
-
----
-
-empty_worktree_status() is dead code.

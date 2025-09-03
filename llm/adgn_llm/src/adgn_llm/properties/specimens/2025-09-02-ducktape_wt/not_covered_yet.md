@@ -12,6 +12,25 @@
 
 ## other
 
+- shell_utils.controlled_error signature — commands param should not require a runtime None-check here.
+  Options:
+  - (a) Make commands non-None (e.g., default to empty list) and remove the `if commands:` branch.
+  - (b) Remove commands parameter entirely; only usage with commands is in demo plugin (wt/wt/demo_plugin.py), and core callers don’t rely on it.
+
+- PullRequestCache truthiness check in get_or_refresh — prefer concise Optional truthiness over `is None` when the type is `PullRequestCache | None` (no other falsy variants).
+  Before:
+  ```python
+  cache = cls.load(cache_file)
+  if cache is None or cache.should_invalidate(cache_expiration):
+      ...
+  ```
+  After:
+  ```python
+  cache = cls.load(cache_file)
+  if not cache or cache.should_invalidate(cache_expiration):
+      ...
+  ```
+
 - Plugin API return value semantics are undocumented
   - wt/wt/plugins.py:15–20 — Hookspec allows run(...)-> int | None but doesn’t define what the int means. Document the contract (e.g., process exit status 0=success, non‑zero=error), specify how None is treated, and ensure the CLI caller interprets return codes consistently.
 - Demo plugin quality (nit)
@@ -67,16 +86,55 @@
     - Server: wt/wt/server/wt_server.py: handle_client_request(...) → _handle_worktree_create_request(request, start_time, writer) → _run_post_creation_script_streaming(..., writer)
     - Conclusion: execution is server‑side; not the earlier “client does server work” finding. If we later move script execution elsewhere, the dead branch would be removed entirely.
 - Simplify readiness summing expression
-  - wt/wt/server/wt_server.py: 1867 — Can be shortened to `sum(int(p.is_running) for p in self.gitstatusd_clients.values())`.
+  - wt/wt/server/wt_server.py: 1867 — Replace generator + predicate with int-cast for brevity when readable.
+    Before:
+    ```python
+    with_git = sum(1 for p in self.gitstatusd_clients.values() if p.is_running)
+    ```
+    After:
+    ```python
+    with_git = sum(p.is_running for p in self.gitstatusd_clients.values())  # bools sum to ints
+    ```
 - Avoid needless dict copy
-  - wt/wt/server/wt_server.py: 1907–1915 — `StatusResponse(results={k: v for k, v in results.items()}, ...)` → `StatusResponse(results=results, ...)`.
+  - wt/wt/server/wt_server.py: 1907–1915 — Replace comprehension copy with direct pass-through when no transformation is applied.
+    Before:
+    ```python
+    status_response = StatusResponse(
+        results={k: v for k, v in results.items()},
+        ...
+    )
+    ```
+    After:
+    ```python
+    status_response = StatusResponse(
+        results=results,
+        ...
+    )
+    ```
 - DRY WorktreeID/name computation
   - wt/wt/server/wt_server.py: duplicate logic for (wtid, resolved_name) based on `is_main` appears in:
     - _handle_worktree_get_by_name_request: 296–302
     - _handle_worktree_identify_request: 256–262
   - Extract a helper (e.g., `def compute_id_and_name(info) -> tuple[str, str]: ...`) and reuse.
-- Duplicate post-creation script validation
-  - wt/wt/server/wt_server.py: 1971–1977 (per-request pre-execution) and ~2474–2511 (startup validation) both check that `post_creation_script` exists/is a file. Consolidate into a single authoritative validation (shared helper) or define clear layering (startup hard-fail; per-request assert-on-change) to avoid duplication and drift.
+- Duplicate post-creation script validation (per-exec double-check unnecessary)
+  - wt/wt/server/wt_server.py: 1971–1977 and ~2474–2511 — two validations exist. The per-execution “double-check” is paranoid without a plausible race; drop it and keep a single authoritative check (e.g., at startup).
+  Before:
+  ```python
+  # Double-check just before execution in case it disappeared since pre-check
+  script = self.config.post_creation_script
+  if not script.exists() or not script.is_file():
+      raise FileNotFoundError(
+          f"Post-creation script not found at execution time: {script}",
+      )
+  ```
+  If retained, shorten:
+  ```python
+  if (script := self.config.post_creation_script) and not script.is_file():
+      raise FileNotFoundError(f"Post-creation script is not a file: {script}")
+  ```
+
+- Centralize handler error logging (fold try/except log+re-raise)
+  - wt/wt/server/wt_server.py: multiple handlers wrap bodies in `try: ... except Exception: logger...; raise`. Prefer a shared boundary that logs with handler/method name; remove per-handler boilerplate strings (e.g., "Error listing worktrees").
 - Concurrent shutdown of gitstatusd processes
   - wt/wt/server/wt_server.py: 571–573 — Stop all processes concurrently with `asyncio.gather`.
     Before:
@@ -103,7 +161,15 @@
 - Mixing concerns in DebouncedGitHubRefresh._do_refresh
   - wt/wt/server/wt_server.py: 279–301 — `_do_refresh` performs both a `git fetch origin/master` and a GitHub PR refresh in one method. Split responsibilities (e.g., `_fetch_origin` and `_refresh_github_data`) or make the fetch explicit/opt‑in (config flag/parameter). As an API user, calling “GitHub refresh” should not implicitly trigger a git fetch unless documented and deliberately designed; at minimum, rename to reflect behavior if coupled by design.
 - Conciseness: prefer free helper functions over verbose staticmethod access
-  - wt/wt/server/gitstatusd_client.py — Repeated calls like `GitStatusdProtocol._safe_get_int(fields, idx)` are noisy in object construction blocks (e.g., index_file_count, staged_changes, unstaged_changes, conflicted_changes, untracked_files, commits_ahead_upstream, commits_behind_upstream). Consider module-level helpers (e.g., `_get_int`, `_get_str`) for succinct field extraction:
+  - wt/wt/server/gitstatusd_client.py — Repeated calls like `GitStatusdProtocol._safe_get_int(fields, idx)` are noisy in object construction blocks (e.g., index_file_count, staged_changes, unstaged_changes, conflicted_changes, untracked_files, commits_ahead_upstream, commits_behind_upstream). Consider module-level helpers (e.g., `_get_int`, `_get_str`) for succinct field extraction.
+    Before:
+    ```python
+    index_file_count=GitStatusdProtocol._safe_get_int(fields, 9)
+    staged_changes=GitStatusdProtocol._safe_get_int(fields, 10)
+    ...
+    commits_behind_upstream=GitStatusdProtocol._safe_get_int(fields, 15)
+    ```
+    After:
     ```python
     index_file_count=_get_int(fields, 9)
     staged_changes=_get_int(fields, 10)
@@ -119,6 +185,25 @@
   - wt/wt/server/gitstatusd_client.py: 215–240 — When `is_git_repository` is False, do not include git payload fields on the response. Prefer an explicit shape: either `gitstatusd=None` (not a git repo), or `gitstatusd=GitStatusPayload(...)` where fields are non-nullable except where truly optional per protocol. This avoids half-populated objects and makes callers’ handling explicit.
 - Protocol symmetry for wire format (consistency/low description complexity)
   - wt/wt/server/gitstatusd_client.py: Requests expose `to_wire_format` on GitStatusdRequest; responses are parsed via `GitStatusdProtocol.parse_response(...)`. Provide a symmetric `from_wire_format` (either as `GitStatusdResponse.from_wire_format(...)` or in the same Protocol facet) to keep the API consistent and easy to reason about (printable, mirrored surface).
+
+- Remove misleading legacy shim
+  - wt/wt/server/gitstatusd_client.py:373 `gitstatusd_response_to_legacy_format(...)` is a compatibility shim that fabricates placeholder strings (e.g., "<staged/unstaged files present>") instead of actual paths. This misleads callers (e.g., wt_server cached_working_status) and breaks users expecting real file lists. Remove the shim and update callers to use the real response fields.
+  Before:
+  ```python
+  if not response.is_git_repository:
+      return [], []
+  dirty_files = []
+  if response.has_dirty_files:
+      dirty_files.append("<staged/unstaged files present>")
+  untracked_files = []
+  if response.has_untracked_files:
+      untracked_files.append("<untracked files present>")
+  return dirty_files, untracked_files
+  ```
+  After (direction):
+  - Return the structured GitStatusdResponse throughout; render summaries at the view layer.
+  - Where lists are required, add real filenames (or explicitly signal "counts only"), never placeholders.
+  - Note: This shim is actively misleading — it puts non‑filenames into filename slots and pollutes all downstream consumers; remove ASAP.
 
 - wt/wt/shared/configuration.py:69–75 — Fallback daemon socket path uses md5 and hardcoded "/tmp". This hash is not used for security (only for shortening a path); prefer a modern, non‑FIPS‑blocked hash (e.g., hashlib.blake2b(digest_size=6).hexdigest()[:12] or sha256) or use md5(..., usedforsecurity=False) where available; and use tempfile.gettempdir() instead of "/tmp". Consider adding per‑user scoping (e.g., os.getuid()) to avoid cross‑user collisions. Context: this path is a short AF_UNIX socket fallback when WT_DIR is too long on macOS; keep total path ≤ ~100 bytes.
 - Design issue: WT_DIR can be silently ignored — the socket may be placed under /tmp with a hashed name when the path is long. This violates user expectations that WT_DIR is the anchor for all daemon files (configs/sockets/PIDs). Correct behavior: respect WT_DIR exactly; if the AF_UNIX path is too long, hard‑fail with a clear error. If a fallback must exist, make it explicit (opt‑in config/flag) and surface the final socket path prominently; do not rewrite silently.

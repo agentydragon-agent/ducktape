@@ -87,7 +87,7 @@ Example usage:
 #### `covered.md`: findings already covered by defined properties.
 - Link the relevant property near the start of each item.
 - Include an item here only if the finding clearly satisfies that property's exact definition text (predicate and/or acceptance criteria and/or examples) as committed.
-- Quote the specific acceptance criterion/predicate/example line(s) that justify the classification; if you cannot cite an exact matching line, it does not belong here — move it to `not_covered_yet.md` or choose a correct property.
+- Do not include full verbatim quotes by default. Reference the property and use a concise paraphrase; include a minimal quote only when needed to disambiguate. If you cannot map it clearly to a property, move it to `not_covered_yet.md` or choose a correct property.
 - Property links must resolve to existing files under `properties/**`.
 
 #### `not_covered_yet.md`: confirmed findings not yet covered by defined properties.

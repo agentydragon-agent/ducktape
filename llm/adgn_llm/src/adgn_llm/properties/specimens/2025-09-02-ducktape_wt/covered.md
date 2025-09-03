@@ -4,7 +4,7 @@ Many inline imports appear inside functions across modules in `wt/`; imports sho
 
 - **wt/wt/cli.py**: 101, 158, 193, 198, 206, 253
 - **wt/wt/client/handlers.py**: 10, 16, 50, 75, 86, 89, 94, 97, 104, 120, 127, 134, 136, 142, 152, 164–168, 194, 196, 201, 214, 220, 226, 238, 240, 242–243, 249, 254, 263, 277, 298, 301–302, 310, 342
-- **wt/wt/client/shell_utils.py**: 9, 16
+- **wt/wt/client/shell_utils.py**: 9, 20
 - **wt/wt/client/worktree_utils.py**: 83, 108–109, 148
 - **wt/wt/client/wt_client.py**: 42, 67, 99, 168
 - **wt/wt/server/github_client.py**: 109
@@ -21,6 +21,7 @@ Many inline imports appear inside functions across modules in `wt/`; imports sho
 - **wt/wt/client/handlers.py**: imports inside functions; move to top (lines: 10, 16, 75, 86, 94, 97, 104, 120, 127, 134, 136, 142, 152, 164–168, 194, 196, 201, 238–243, 249, 277, 342)
 - **wt/tests/conftest.py**: imports inside functions; move to top (lines: 109, 111, 212, 217, 296, 354)
 - **wt/tests/e2e/test_path_watcher_integration.py**: 60 — import inside function; move to module top.
+- **wt/tests/conftest.py**: 217 — Move `from pathlib import Path as _P` to module top; avoid function-scope imports.
   > "No import or from ... import ... statements inside functions, methods, or class bodies" (definitions/python/imports-top.md)
 
 ## [Use StrEnum for string‑valued enums](../../definitions/python/strenum.md)
@@ -53,6 +54,39 @@ Many inline imports appear inside functions across modules in `wt/`; imports sho
 
 - **wt/wt/server/wt_server.py**: ~2074 — `except Exception: pass` silently swallows errors while streaming hook output; log the error and catch specific expected exceptions (or handle at a proper boundary).
 - **wt/wt/plugins.py**: 59–63 — Swallows ImportError/AttributeError silently for plugin loading; at minimum log which entry point failed; ensure only expected errors are caught.
+- **wt/wt/server/wt_server.py**: 586–593 — `_refresh_github_cache` swallows exceptions and returns silently in non-boundary code; narrow the try to the minimal risky repo access, catch specific exceptions or let them propagate, and log appropriately.
+- **wt/wt/server/wt_server.py**: 613–635 — In `PRService.get_pr_info`, a blanket `except Exception` in non-boundary code silently swallows errors and the try wraps a long block. Scope the try to just the GitHub call and catch specific expected exceptions (or let them propagate) with proper logging.
+- **wt/wt/server/wt_server.py**: 1621–1624 — Blanket `except Exception:` sets `git_paths=[]`; do not silently swallow; catch specific expected errors (e.g., Git errors) or let propagate, and scope the try narrowly to the list_worktrees call.
+- **wt/wt/server/wt_server.py**: 2186–2240 — Path-within-worktrees check: scope try/except to only the relative_to(...) call and move follow-up logic outside; if not under main repo, early-bail with an error, otherwise return main immediately.
+  Before:
+  ```python
+  try:
+      rel_path = absolute_path.relative_to(self.config.worktrees_dir)
+      worktree_name = rel_path.parts[0] if rel_path.parts else None
+      if len(rel_path.parts) > 1:
+          relative_path = str(Path(*rel_path.parts[1:]))
+      else:
+          relative_path = ""
+  except ValueError:
+      # Path is not within worktrees directory - check if it's main repo
+      ...
+  ```
+  After:
+  ```python
+  try:
+      rel_path = absolute_path.relative_to(self.config.worktrees_dir)
+  except ValueError:
+      if not absolute_path.is_relative_to(self.config.main_repo):
+          raise ValueError(f"Path {absolute_path} is not a managed worktree")
+      worktree_name = MAIN_WORKTREE_DISPLAY_NAME
+      relative_path = str(absolute_path.relative_to(self.config.main_repo))
+      return self._create_success_response(...)
+  # happy path (in worktrees dir)
+  worktree_name = rel_path.parts[0] if rel_path.parts else None
+  relative_path = "" if len(rel_path.parts) <= 1 else str(Path(*rel_path.parts[1:]))
+  ```
+
+- **wt/wt/client/shell_utils.py**: 6–15 — Do not swallow arbitrary OSError. Probe fd3 explicitly with fcntl (F_GETFD/F_GETFL) to verify the descriptor exists and is opened for writing; only treat EBADF as “fd3 missing”. Unexpected errors (e.g., EPIPE) should be logged or propagated per boundary policy.
 
 ## [Forbid dynamic attribute access and catching AttributeError](../../definitions/python/forbid-dynamic-attrs.md) 
 
@@ -91,6 +125,8 @@ Many inline imports appear inside functions across modules in `wt/`; imports sho
 - **wt/wt/shared/configuration.py**: 92–116 — Dead legacy aliases: `main_repo_resolved`, `worktrees_dir_resolved`, `daemon_dir`, `daemon_socket_file`, `daemon_pid_file`; migrate callers and delete.
 - **wt/wt/shared/github_models.py**: dead code: `PullRequest` (L65), `PullRequestView` (L92), `PullRequestCache`
 - **wt/wt/shared/protocol.py**: dead code: `ProgressUpdate` (L426), `SUPPORTED_METHODS` (L497)
+- **wt/wt/server/gitstatusd_client.py**: dead code: `branch_status`; remove.
+  GAP: Presentation/view concerns (branch display state) should not live in the core client.
 - **wt/wt/server/gitstatusd_client.py**: 294–355 — After validating `len(fields) >= MIN_GIT_REPO_FIELDS` at the boundary, internal helper parsers should not catch `IndexError` or substitute defaults; these branches are unreachable and should be removed or replaced with hard guards.
   > "Unreachable branches (by invariants/types) are removed; if a 'can't happen' guard is desired, keep at most an `assert` or `TypeError`." (definitions/no-dead-code.md)
   GAP: Clarify boundary vs helper responsibility for short‑array handling so index checks live in one place.
@@ -116,6 +152,22 @@ Many inline imports appear inside functions across modules in `wt/`; imports sho
 
 - **wt/wt/server/wt_server.py**: 147–153 — `debounce_delay`, `periodic_interval` should be `datetime.timedelta` (not float seconds)
 - **wt/tests/test_utils.py**: 6, 33 — `run_cli_command`, `run_cli_sh_command` use float durations; prefer `timedelta`
+- **wt/wt/server/wt_server.py**: 1243–1251 — Avoid total_seconds() for threshold compare; prefer a timedelta literal.
+  Before:
+  ```python
+  if (
+      self.daemon_health.last_error_time
+      and (datetime.now() - self.daemon_health.last_error_time).total_seconds() > 60
+  ):
+      ...
+  ```
+  After:
+  ```python
+  if self.daemon_health.last_error_time and (
+      datetime.now() - self.daemon_health.last_error_time
+  ) > datetime.timedelta(minutes=1):
+      ...
+  ```
 
 ## [Modern type hints](../../definitions/python/type-hints.md)
 
@@ -142,11 +194,80 @@ Many inline imports appear inside functions across modules in `wt/`; imports sho
 - **wt/wt/server/wt_server.py**: 1580–1582 — `_create_success_response` is a trivial pass-through; inline `Response(result=..., id=...)` at call sites.
 - **wt/wt/cli.py**: 137–143 — `all_args` is a one‑off; inline the combined args directly in the loop (e.g., `for arg in [*args, *ctx.args]: ...`).
 - **wt/wt/plugins.py**: 76–78 — `resolve_command(pm, name)` is a trivial wrapper; inline `get_plugin_commands(pm).get(name)` at the call site.
+- **wt/wt/plugins.py**: 39–49 — `PluginIO` is a stateless thin wrapper over shell_utils; remove it, or refactor into a real interface (Protocol + concrete implementation) only if an IO boundary is needed.
+- **wt/wt/plugins.py**: 31, 35 — Align hook impl signatures with hookspecs; remove `# type: ignore[override]`, and prefer `pass` over `return None` when returning `None`.
+- **wt/wt/shared/constants.py**: 4–5 — Make COMMAND_NAMES the single source of truth and use it in the CLI routing; remove duplicated hardcoded lists in the CLI.
+- **wt/wt/plugins.py**: 56–58 — Inline one-off variable in entry point iteration:
+  Before:
+  ```python
+  eps = md.entry_points().select(group=ENTRYPOINT_GROUP)
+  for ep in eps:
+      ...
+  ```
+  After:
+  ```python
+  for ep in md.entry_points().select(group=ENTRYPOINT_GROUP):
+      ...
+  ```
+- **wt/wt/plugins.py**: 23–26 — Oneline the wt_init hookspec docstring: `"""Optional initialization hook; can modify config or set globals."""`
+  Before:
+  ```python
+  def wt_commands(self) -> dict[str, Callable]:  # type: ignore[override]
+      return {}
+  def wt_init(self, config) -> None:  # type: ignore[override]
+      return None
+  ```
+  After:
+  ```python
+  def wt_commands(self) -> dict[str, Callable] | None:
+      return {}
+  def wt_init(self, config) -> None:
+      pass
+  ```
+- **wt/wt/server/gitstatusd_client.py**: 204–205 — Inline one-off temp: `is_git_repository = int(fields[1]) == 1` (or `== "1"` if wire is str).
+  Before:
+  ```python
+  is_git_repo_flag = int(fields[1])
+  is_git_repository = is_git_repo_flag == 1
+  ```
+  After:
+  ```python
+  is_git_repository = int(fields[1]) == 1
+  ```
+- **wt/wt/server/wt_server.py**: ~2168–2169 — Inline one-off `result` variable.
+  Before:
+  ```python
+  result = WorktreeListResult(worktrees=worktrees)
+  return self._create_success_response(result, request.id)
+  ```
+  After:
+  ```python
+  return self._create_success_response(WorktreeListResult(worktrees=worktrees), request.id)
+  ```
 
 
 
 ## [Use pathlib for path manipulation](../../definitions/python/pathlib.md)
 - **wt/tests/conftest.py**: 420–421 — Use Path one-liner: `config_path.write_text(yaml.dumps(config_file.model_dump()))` (small file).
+- **wt/wt/shared/configuration.py**: fold file/read/parse/validate into concise, typed calls.
+  Before:
+  ```python
+  with open(config_path) as f:
+      data = yaml.safe_load(f)
+  try:
+      config_file = ConfigFile(**data)
+  except ValidationError as e:
+      raise ConfigError(f"Configuration validation errors: {e}")
+  ```
+  After:
+  ```python
+  try:
+      config_file = ConfigFile.model_validate(yaml.safe_load(config_path.read_text()))
+  except ValidationError as e:
+      raise ConfigError(f"Configuration validation errors: {e}")
+  ```
+  Note: use yaml.safe_load (not yaml.loads); keep exception wrapping if part of the public API.
+
 - **wt/wt/server/wt_server.py**: 2369–2382 — `_compute_teleport_target` returns `str`; return `Path` (preferred) and avoid downstream `str(...)` conversions.
   GAP: Commit to a single type/contract across layers; avoid mixed str/Path states; specify where conversion happens.
 - **wt/wt/server/wt_server.py**: 2501–2502 — In async context, if kept as a synchronous write, prefer the one-liner Path I/O form: `self.pid_file.write_text(str(os.getpid()))`. Applies to any simple two-line "with open(..., 'w') as f; f.write(...)" pattern where `Path.write_text(...)` suffices.
@@ -166,22 +287,45 @@ Many inline imports appear inside functions across modules in `wt/`; imports sho
   > "No docstrings/comments that merely restate what is obvious from the immediate context" (definitions/no-useless-docs.md)
 - **wt/wt/server/wt_server.py**: 147–167 — DebouncedGitHubRefresh.__init__: replace inline “Configurable timing”/“State tracking” comments and trailing parameter comment with a proper Args docstring; remove redundant inline comments.
 - **wt/wt/server/gitstatusd_client.py**: 133–141 — `is_ahead_of_upstream` / `is_behind_upstream` docstrings restate the obvious; remove.
+- **wt/wt/server/gitstatusd_client.py**: properties `has_untracked_files` / `has_dirty_files` — Docstrings restate the obvious; remove. Collapse to truthy one‑liners:
+  ```python
+  @property
+  def has_untracked_files(self) -> bool:
+      return bool(self.is_git_repository and self.untracked_files)
+
+  @property
+  def has_dirty_files(self) -> bool:
+      return bool(self.is_git_repository and self.staged_changes or self.unstaged_changes)
+  ```
+  GAP: Prefer leveraging truthiness for simple numeric>0 checks when readable; avoid `(x or 0) > 0` patterns.
 - **wt/wt/shared/github_models.py**: 21–23, 55–57 — `is_merged` docstrings restate the obvious; remove (or drop the redundant property entirely if unused).
+- **wt/wt/server/gitstatusd_client.py**: properties `has_untracked_files` / `has_dirty_files` — Docstrings restate the obvious; remove. Collapse to truthy one‑liners:
+  ```python
+  @property
+  def has_untracked_files(self) -> bool:
+      return bool(self.is_git_repository and self.untracked_files)
 
-## [Try/except is scoped around the operation it guards] — additional findings
+  @property
+  def has_dirty_files(self) -> bool:
+      return bool(self.is_git_repository and (self.staged_changes or self.unstaged_changes))
+  ```
+  GAP: Prefer leveraging truthiness for simple numeric>0 checks when readable; avoid `(x or 0) > 0` patterns.
+- **wt/wt/server/gitstatusd_client.py**: property `has_changes` — simplify using truthiness.
+  Before:
+  ```python
+  if not self.is_git_repository:
+      return False
+  return (
+      (self.staged_changes or 0) > 0
+      or (self.unstaged_changes or 0) > 0
+      or (self.untracked_files or 0) > 0
+  )
+  ```
+  After:
+  ```python
+  return self.has_dirty_files or self.has_untracked_files
+  ```
 
-- **wt/tests/conftest.py**: 236–251 — The catch for `ValueError`/`FileNotFoundError` swallows genuine errors (invalid PID) and mixes concerns; don’t suppress invalid PID — fail fast, and narrow exception scope to just the read.
-- **wt/wt/server/wt_server.py**: 586–593 — `_refresh_github_cache` swallows exceptions and returns silently in non-boundary code; narrow the try to the minimal risky repo access, catch specific exceptions or let them propagate, and log appropriately.
-- **wt/wt/server/wt_server.py**: 613–635 — In `PRService.get_pr_info`, a blanket `except Exception` in non-boundary code silently swallows errors and the try wraps a long block. Scope the try to just the GitHub call and catch specific expected exceptions (or let them propagate) with proper logging.
-- **wt/wt/server/wt_server.py**: 1621–1624 — Blanket `except Exception:` sets `git_paths=[]`; do not silently swallow; catch specific expected errors (e.g., Git errors) or let propagate, and scope the try narrowly to the list_worktrees call.
-
-## [Time and duration use rich time types] — additional findings
-
-- **wt/tests/conftest.py**: 192 — Use `datetime.timedelta` for timeouts and a deadline loop with `datetime` rather than `float` seconds with `time.time()`.
-
-## [Imports at the top] — additional findings
-
-- **wt/tests/conftest.py**: 217 — Move `from pathlib import Path as _P` to module top; avoid function-scope imports.
 
 ## [Use walrus operator](../../definitions/python/walrus.md)
 > "When a simple condition depends on a value computed immediately before, the value is bound inline with the walrus operator (:=) inside the condition." (definitions/python/walrus.md)
@@ -203,6 +347,19 @@ Many inline imports appear inside functions across modules in `wt/`; imports sho
       raise ValueError(f"Post-creation script is not a file: {script}")
   ```
   Also see: [No useless documentation or comments](../../definitions/no-useless-docs.md).
+
+- **wt/wt/server/gitstatusd_client.py**: response parsing — use walrus to bind and check in one line.
+  Before:
+  ```python
+  response_data = raw_response.rstrip("\x1e")
+  if not response_data:
+      raise GitStatusdParseError("Empty response from gitstatusd")
+  ```
+  After:
+  ```python
+  if not (response_data := raw_response.rstrip("\x1e")):
+      raise GitStatusdParseError("Empty response from gitstatusd")
+  ```
 
 ## [No unnecessary line breaks](../../definitions/no-extra-linebreaks.md)
 - **wt/tests/conftest.py**: 298–300 — Collapse multi-line assert into one line: `assert shutil.which("gitstatusd"), "integration tests require gitstatusd on PATH"`.
@@ -251,6 +408,10 @@ Many inline imports appear inside functions across modules in `wt/`; imports sho
   individual_times[worktree_path] = (time.time() - single_start) * 1000
   return status
   ```
+
+- **wt/wt/server/wt_server.py**: `_handle_worktree_identify_request` — invert `if worktree_name and absolute_path.exists()` to a negative guard and early return to keep the happy path flat.
+  Before: `if worktree_name and absolute_path.exists(): ...`
+  After: `if not worktree_name or not absolute_path.exists(): return ...  # early bailout`
 
 ## [No unnecessary nesting (combine trivial guards)](../../definitions/minimize-nesting.md)
 
