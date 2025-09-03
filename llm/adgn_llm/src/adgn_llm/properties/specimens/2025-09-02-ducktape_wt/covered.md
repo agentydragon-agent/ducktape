@@ -114,7 +114,8 @@ Many inline imports appear inside functions across modules in `wt/`; imports sho
 
 ## [Use pathlib for path manipulation](../../definitions/python/pathlib.md)
 - **wt/tests/conftest.py**: 420–421 — Use Path one-liner: `config_path.write_text(yaml.dumps(config_file.model_dump()))` (small file).
-- **wt/wt/server/wt_server.py**: 2501–2502 — In async context, if kept as a synchronous write, prefer the one-liner Path I/O form: `self.pid_file.write_text(str(os.getpid()))`.
+- **wt/wt/server/wt_server.py**: 2369–2382 — `_compute_teleport_target` returns `str`; return `Path` (preferred) and avoid downstream `str(...)` conversions.
+- **wt/wt/server/wt_server.py**: 2501–2502 — In async context, if kept as a synchronous write, prefer the one-liner Path I/O form: `self.pid_file.write_text(str(os.getpid()))`. Applies to any simple two-line "with open(..., 'w') as f; f.write(...)" pattern where `Path.write_text(...)` suffices.
 
 ## [No one-off vars and trivial wrappers] — additional findings
 

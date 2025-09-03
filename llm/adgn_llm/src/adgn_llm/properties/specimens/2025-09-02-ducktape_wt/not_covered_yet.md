@@ -12,6 +12,21 @@
 
 ## other
 
+- wt/wt/server/wt_server.py: 2359–2363 — Simplify if/else assignment to a guard-style assignment to remove the else branch:
+
+```python
+# before
+if current_relative_path:
+    current_dir = target_path / current_relative_path
+else:
+    current_dir = target_path
+
+# after
+current_dir = target_path
+if current_relative_path:
+    current_dir = current_dir / current_relative_path
+```
+
 - wt/wt/server/git_manager.py: `log_format` ignores its `format_str` parameter and the only caller (`wt/wt/server/worktree_service.py`:62) immediately parses the string back. Replace with a structured return (no format+parse roundtrip).
 - wt/wt/server/wt_server.py (_run_post_creation_script_streaming):
   - Return shape includes `ran` (always True) and `error` (always None) — remove redundant fields and signal errors via exceptions; return a structured result object.
