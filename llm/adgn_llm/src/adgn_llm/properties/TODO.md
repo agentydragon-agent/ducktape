@@ -11,6 +11,15 @@
 - Forbid useless list(...) around dict views in loops when not mutating the dict during iteration
 - Property naming mismatch: 'self-describing names' vs guidance 'use datetime for datetimes'. Decide: either scope the property strictly to naming/units and create a separate 'time APIs and units' property (datetime vs time.monotonic, absolute vs interval), or rename/split. Update specimens and docs accordingly.
 
+- New general property (planned): right-sized tools (don’t use bigger guns than you need)
+  - Kind: behavior
+  - Predicate: Prefer the simplest construct that meets the requirement; avoid heavier mechanisms when a direct, simpler reference works (e.g., pass callables/constants instead of string→getattr→dict lookups; use library calls over subprocess when available; choose sync vs async and blocking vs non-blocking appropriately; pass Path directly instead of str conversions).
+  - Acceptance ideas:
+    - No string→symbol indirection when a direct symbol can be passed
+    - No classes-as-namespaces for constants; use modules/enums/simple names
+    - Prefer direct library APIs over shelling out (unless required by constraints)
+    - Keep conversion boundaries in one place (single source of truth)
+
 - New general property (planned): no-footguns (clear, unambiguous outputs)
   - Kind: behavior
   - Predicate: Outputs must be clear, correct, and unambiguous; when multiple accounting modes exist (e.g., first-match vs all-matches), the chosen mode must be explicitly surfaced in output/docs; avoid misleading displays (e.g., hard-coded extension lists diverging from constants).

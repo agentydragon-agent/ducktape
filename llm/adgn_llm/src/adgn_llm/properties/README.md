@@ -36,6 +36,21 @@
     - e.g. `This example also violates [safe edits only](../properties/safe-edits-only.md).`
 - Keep embedded code/diff snippets concise (≤ ~30 lines).
 
+## GAP markers
+
+- Use the literal prefix `GAP:` to flag a missing or not‑yet‑defined rule/definition when documenting findings.
+- Purpose: capture clarity/consistency gaps that do not have a precise property yet (e.g., confusing responsibility boundaries), even if an item is already covered by another property (like no‑dead‑code).
+- Placement: put a standalone line starting with `GAP:` immediately after the finding bullet it annotates in covered.md or not_covered_yet.md. Keep to one or two sentences.
+- Style: uppercase `GAP:` exactly; no parentheses/brackets; freeform explanatory text follows. Grep‑friendly and easy to scan.
+- Lifecycle: when a property is added that covers the gap, remove the GAP note and link to the new property instead.
+- Covered + GAP: It’s acceptable to include a `GAP:` note under a covered finding when the item is covered at one level (e.g., “no-dead-code”) but still lacks a clarity/abstraction‑level rule; use GAP to communicate partial coverage and the missing angle.
+
+Example usage:
+```markdown
+- **wt/wt/server/gitstatusd_client.py**: 294–355 — [no-dead-code rationale]
+  GAP: Clarify boundary vs helper responsibility for short‑array handling so index checks live in one place.
+```
+
 ## Specimens format
 
 - Location: `specimens/YYYY-MM-DD-<slug>.md`
