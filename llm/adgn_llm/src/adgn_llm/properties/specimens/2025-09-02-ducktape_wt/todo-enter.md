@@ -45,24 +45,6 @@ Cyclomatic complexity (radon): consider refactoring to reduce complexity
 
 # VERIFIED - To commit
 
-wt_server.py: _compute_teleport_target should return Path not str (saves conversions)
-
----
-```
-            if current_relative_path:  # <- L2359
-                current_dir = target_path / current_relative_path
-            else:
-                current_dir = target_path
-```
-should simplify to:
-```
-current_dir = target_path
-if current_relative_path:
-    current_dir = current_dir / current_relative_path
-```
-
----
-
 wt_server.py: _record_github_error is dead code. so is WorktreeRuntime and StatusSnapshot.
 StatusSnapshot should probably be wired into `build_status_snapshot` on gitstatusd handled class.
 `_update_comprehensive_cache` also returns what might be the same object.
