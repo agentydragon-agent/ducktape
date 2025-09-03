@@ -18,6 +18,7 @@
 - Property IDs are kebab-case and derived from filenames; evolve content rather than renaming IDs when possible.
 - Overlap between properties is acceptable; a de-duplication layer can live above this knowledge base later.
 - No indexes or generated cross-references for now.
+- All Markdown in this repository (properties, specimens, docs) MUST adhere to the Markdown properties under `properties/markdown/**`. When writing/editing Markdown, follow those definitions as the normative style/structure.
 
 ## Property files
 - Location: under `properties/` (may be nested, e.g., `properties/python/<id>.md`, `properties/markdown/<id>.md`, or at the root for general)
@@ -49,6 +50,8 @@
     just that instead of full `internal/llm/tools/write.go`.
 - Name specimens as `YYYY-MM-DD-<slug>.md`.
 - Embedded diffs should be small (≤ 30 lines per embed).
+- Preserve the original reasoning/rationale/intuition as captured when entering the specimen; faithful capture > conciseness. This is the immutable input we may later transform into more standardized forms.
+- Routine duplicate cases can be recorded in shorthand (e.g., group similar trivial instances or “15 cases of ‘imports go to top’ in foo.py”); keep at least one fully reasoned exemplar.
 
 ### Files
 - `README.md` (optional): free-form narrative / context
@@ -68,12 +71,16 @@
 
 #### `covered.md`: findings already covered by defined properties.
 - Link the relevant property near the start of each item.
+- Include an item here only if the finding clearly satisfies that property's exact definition text (predicate and/or acceptance criteria and/or examples) as committed.
+- Quote the specific acceptance criterion/predicate/example line(s) that justify the classification; if you cannot cite an exact matching line, it does not belong here — move it to `not_covered_yet.md` or choose a correct property.
+- Property links must resolve to existing files under `properties/**`.
 
 #### `not_covered_yet.md`: confirmed findings not yet covered by defined properties.
+- Include items that do not exactly match any existing property's definition text; do not force tangential matches.
 - Optionally propose property name or brief sketch of rationale + what's wrong / why.
 
 #### `false_positives.md`: issues previously flagged that should not be flagged.
-- Provide a short rationale (why acceptable) and subject code pointers.
+- Provide a rationale (why acceptable) and subject code pointers.
 
 ## Behavioral layer and scoping
 

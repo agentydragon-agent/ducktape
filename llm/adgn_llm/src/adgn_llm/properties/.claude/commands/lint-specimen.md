@@ -1,40 +1,52 @@
-# Lint a specimen README for conformance
+# Lint a specimen for conformance
 
 @README.md
 
 ## What this command does
 
-Lint a specimen’s README.md against the rules defined in this package’s @README.md.
+Lint a specimen directory (and its files) against the rules defined in this package’s @README.md (see “Specimens format”).
 Report only lints/errors and offer concrete fix suggestions. Do not modify files without explicit user approval.
 
+## Single source of truth
+
+Do not duplicate requirement lists here. The linter MUST read @README.md at runtime and derive all rules from it.
+Primary sections to parse:
+- “Specimens format” (General, Files, manifest.yaml)
+- “Conventions” (apply where relevant)
+- Any other sections that normatively constrain specimen structure/content
+
+## Property definitions adherence
+
+The agent MUST read every property definition Markdown file under `properties/**.md` and apply them exactly:
+- Treat each property file as the authoritative definition (frontmatter + predicate + acceptance criteria + examples).
+- Items in `covered.md` MUST reference a property only when the finding clearly satisfies that property's definition; do not classify using tangentially related properties.
+- For each `covered.md` item, extract and quote the specific acceptance criterion (or predicate/example) that justifies the match. If you cannot cite a matching line, flag as “Property mismatch (tangential)” and suggest moving the item to `not_covered_yet.md` or choosing a correct property.
+- Validate property links: they MUST resolve to actual files under `properties/**`; IDs/paths must be correct.
+- Apply Markdown properties under `properties/markdown/**` to all specimen Markdown files (README.md, covered.md, not_covered_yet.md, false_positives.md).
+
 ## Input
-- Target specimen: path to either a specimen directory (containing README.md) or directly to a README.md file.
-  - If omitted, list selectable candidates under `specimens/**/README.md` and `todo-specimen/**/README.md`.
+- Target specimen: path to a specimen directory or any file inside it.
+  - A valid specimen contains `manifest.yaml`.
+  - If omitted, discover candidates via `specimens/*/manifest.yaml` and `todo-specimen/*/manifest.yaml`.
 
 ## Output
-A textual report with list of cases where a specimen's README.md violates specifications in main-level README.md on how specimen README.md's should be formatted.
+A textual report of all violations of @README.md.
 
-For each case:
+For each case, include:
 - Location: file path and line number(s) where applicable
-- Rule reference: quote the minimal relevant excerpt from @README.md with a line reference (e.g., “Specimens format → Free-form structure …”)
-- Suggested fix: a minimal edit description and summary of how you'd edit the specimen README to conform
+- Rule reference: a minimal quote + pointer to @README.md section (and line(s) if convenient)
+- Suggested fix: a minimal edit description to conform
 
-## Checks (derived from @README.md)
-Derive required and recommended checks by parsing @README.md, specifically the sections:
-- “Specimens format” (location, naming, free‑form structure)
-- “Conventions”
-- Any other sections that normatively specify specimen README structure or content
+## Scope of checks
+Derive all specifics directly from @README.md at runtime (do not restate here).
 
 ## Procedure
-1) Read @README.md and extract a checklist of required vs recommended items for specimen READMEs.
-2) Locate the target README.md, read and parse its headings and sections.
-3) Validate against the derived checklist:
-   - Presence/absence of required sections; ordering; title format
-   - Path/name conformance of the specimen directory/file (date+slug)
-   - Link/pointer style conformance when @README.md prescribes it
-   - Any additional normative constraints you found
-4) For each violation, produce:
-   - A one‑line diagnosis
-   - A short quoted rule reference from @README.md
-   - A suggested fix.
-5) Print the report and suggested changes. Do not write changes yet - ask user to confirm which (if any) to apply.
+1) Read @README.md and extract a checklist of required vs recommended items for specimens.
+2) Identify target specimen directory:
+   - If given a file path, resolve its containing specimen directory
+   - Otherwise, discover candidates via `specimens/*/manifest.yaml` and `todo-specimen/*/manifest.yaml`
+3) Validate directory and naming.
+4) Validate required files and schema (`manifest.yaml` parsed as `SpecimenManifest`).
+5) Validate per-file rules for README.md (if present), covered.md, not_covered_yet.md, false_positives.md, and general constraints; for covered.md, verify each item’s property link is justified by quoting the exact acceptance criterion (or predicate/example) from the property definition; if no exact supporting line can be cited, flag as property mismatch and recommend moving to not_covered_yet.md or correcting the link.
+6) For each violation, emit: one‑line diagnosis, short quoted rule reference from @README.md, and a suggested fix.
+7) Print the report and suggested changes. Do not write changes yet — ask user to confirm which (if any) to apply.

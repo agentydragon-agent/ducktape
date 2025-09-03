@@ -18,6 +18,10 @@ Many inline imports appear inside functions across modules in `wt/`; imports sho
 - **wt/tests/integration/test_shell_integration.py**: 41, 42, 57, 63, 64, 66
 - **wt/tests/test_utils.py**: 10, 15
 - **wt/tests/repo_factory.py**: 165
+- **wt/wt/client/handlers.py**: imports inside functions; move to top (lines: 10, 16, 75, 86, 94, 97, 104, 120, 127, 134, 136, 142, 152, 164–168, 194, 196, 201, 238–243, 249, 277, 342)
+- **wt/tests/conftest.py**: imports inside functions; move to top (lines: 109, 111, 212, 217, 296, 354)
+- **wt/tests/e2e/test_path_watcher_integration.py**: 60 — import inside function; move to module top.
+  > "No import or from ... import ... statements inside functions, methods, or class bodies" (definitions/python/imports-top.md)
 
 ## [Use StrEnum for string‑valued enums](../../definitions/python/strenum.md)
 
@@ -65,6 +69,8 @@ Many inline imports appear inside functions across modules in `wt/`; imports sho
   - **wt/wt/server/worktree_service.py**: 299 — `script_path: str` should be `Path`
   - **wt/wt/server/wt_server.py**: 227 — `file_path: str | None` should be `Path | None`
   - **wt/wt/server/wt_server.py**: 381 — `file_path: str` should be `Path`
+- **wt/wt/server/worktree_service.py**: 299 — `execute_post_creation_script(script_path: str, ...)` should accept `Path`
+- **wt/wt/server/wt_server.py**: 2046 — `_run_post_creation_script_streaming(script_path: str, ...)` should accept `Path`
 
 ## [No dead code](../../definitions/no-dead-code.md)
 
@@ -72,7 +78,7 @@ Many inline imports appear inside functions across modules in `wt/`; imports sho
 - Duplicate hydration/post-creation script invocation paths: a duplicate implementation exists that’s only used by tests; production path is separate and not covered. Consolidate on the prod path.
 - **wt/wt/server/git_manager.py**: dead code: `get_status_porcelain`, `status_porcelain`, `rev_count()`; `CannotDeleteWorktree` (L40)
 - **wt/wt/server/gitstatusd_client.py**: dead code: `parse_gitstatusd_response` (L358), `create_gitstatusd_request` (L363)
-- **wt/wt/server/wt_server.py**: dead code: `StatusSnapshot` (L413), `WorktreeRuntime` (L425), `GitStatusdProcess` (L640)
+- **wt/wt/server/wt_server.py**: dead code: `StatusSnapshot` (L413), `WorktreeRuntime` (L425), `GitStatusdProcess` (L640), `_record_github_error` (L1230)
 - **wt/wt/server/github_client.py**: dead code: `DisabledGitHubInterface` (L18)
 - **wt/wt/shared/models.py**: dead code: `WorktreeParseState.finalize(...)` (L145)
 - **wt/wt/shared/constants.py**: 12 — `FILE_DISPLAY_LIMIT` is unreferenced.
@@ -82,6 +88,8 @@ Many inline imports appear inside functions across modules in `wt/`; imports sho
 - **wt/wt/shared/github_models.py**: dead code: `PullRequest` (L65), `PullRequestView` (L92), `PullRequestCache`
 - **wt/wt/shared/protocol.py**: dead code: `ProgressUpdate` (L426), `SUPPORTED_METHODS` (L497)
 - **wt/wt/client/view_formatter.py**: dead code: `_get_sync_column` (L149), `render_worktree_processes`, `render_worktree_removal_progress`, `render_worktree_removal_git_status`
+- **wt/tests/conftest.py**: 122–124 — `empty_worktree_status()` is unused; delete the fixture.
+- **wt/wt/server/wt_server.py**: 1789–1844 — Unreachable code continues after a return; remove the dead block or restructure control flow.
 
 ## [Pydantic 2 only](../../definitions/python/pydantic-2.md)
 
@@ -95,6 +103,11 @@ Many inline imports appear inside functions across modules in `wt/`; imports sho
 ## [Modern type hints](../../definitions/python/type-hints.md)
 
 - **wt/tests/integration/test_shell_integration.py**: 37 — `env: dict = None` uses a non-None default with a non-optional type; annotate as `dict[str, str] | None` (or build a dict where needed) and handle `None` explicitly
+- **wt/wt/server/wt_server.py**: 72 — parameter `error_message: str = None` should be annotated as `str | None` to match the default.
+  > "Unions use `A | B` and optional uses `T | None`" (definitions/python/type-hints.md)
+- **wt/wt/server/wt_server.py**: 72 — parameter `error_message: str = None` should be annotated as `str | None` to match the default.
+  > Acceptance: "Unions use A | B and optional uses T | None" (properties/definitions/python/type-hints.md)
+
 
 ## [Use pytest's standard fixtures for temp dirs and monkeypatching](../../definitions/python/pytest-standard-fixtures.md)
 
@@ -109,6 +122,7 @@ Many inline imports appear inside functions across modules in `wt/`; imports sho
   - Only user: `wt/wt/server/worktree_service.py`:221
 - **wt/tests/integration/test_shell_integration.py**: 29 — `create_shell_script()` is used exactly once; inline at call site (in `run_wt_command`) instead of keeping a one-off helper
 - **wt/tests/integration/test_shell_integration.py**: duplicate `daemon_cleanup` helper defined twice (one copy at 216–222); extract a single helper and reuse
+- **wt/wt/server/wt_server.py**: 1580–1582 — `_create_success_response` is a trivial pass-through; inline `Response(result=..., id=...)` at call sites.
 
 
 
@@ -117,9 +131,6 @@ Many inline imports appear inside functions across modules in `wt/`; imports sho
 - **wt/wt/server/wt_server.py**: 2369–2382 — `_compute_teleport_target` returns `str`; return `Path` (preferred) and avoid downstream `str(...)` conversions.
 - **wt/wt/server/wt_server.py**: 2501–2502 — In async context, if kept as a synchronous write, prefer the one-liner Path I/O form: `self.pid_file.write_text(str(os.getpid()))`. Applies to any simple two-line "with open(..., 'w') as f; f.write(...)" pattern where `Path.write_text(...)` suffices.
 
-## [No one-off vars and trivial wrappers] — additional findings
-
-- **wt/tests/conftest.py**: 398–415 — Avoid `**{**defaults, **config_overrides}`; instantiate `ConfigFile` with explicit kwargs and `**config_overrides` at the end for clarity.
 
 ## [No useless documentation or comments](../../definitions/no-useless-docs.md)
 
@@ -127,10 +138,14 @@ Many inline imports appear inside functions across modules in `wt/`; imports sho
 - **wt/tests/conftest.py**: 426 — Remove historical comment: "Config builder fixture removed - use config_factory directly".
 - **wt/tests/conftest.py**: 302–308 — Shorten `real_temp_repo` docstring to a single descriptive line; drop compatibility notes.
 - **wt/tests/conftest.py**: 312–337 — Trim `real_env` docstring and meta-comments; keep only non-obvious behavior.
+- **wt/wt/server/wt_server.py**: 674–675 — Remove historical comment (filesystem watching moved); document current state only.
+- **wt/wt/client/handlers.py**: 5 — Docstring for `handle_status` restates the obvious; delete.
+  > "No docstrings/comments that merely restate what is obvious from the immediate context" (definitions/no-useless-docs.md)
 
 ## [Try/except is scoped around the operation it guards] — additional findings
 
 - **wt/tests/conftest.py**: 236–251 — The catch for `ValueError`/`FileNotFoundError` swallows genuine errors (invalid PID) and mixes concerns; don’t suppress invalid PID — fail fast, and narrow exception scope to just the read.
+- **wt/wt/server/wt_server.py**: 586–593 — `_refresh_github_cache` swallows exceptions and returns silently in non-boundary code; narrow the try to the minimal risky repo access, catch specific exceptions or let them propagate, and log appropriately.
 - **wt/wt/server/wt_server.py**: 613–635 — In `PRService.get_pr_info`, a blanket `except Exception` in non-boundary code silently swallows errors and the try wraps a long block. Scope the try to just the GitHub call and catch specific expected exceptions (or let them propagate) with proper logging.
 
 ## [Time and duration use rich time types] — additional findings
@@ -141,10 +156,8 @@ Many inline imports appear inside functions across modules in `wt/`; imports sho
 
 - **wt/tests/conftest.py**: 217 — Move `from pathlib import Path as _P` to module top; avoid function-scope imports.
 
-
-## [No dead code] — additional findings
-
-- **wt/tests/conftest.py**: 122–124 — `empty_worktree_status()` is unused; delete the fixture.
+## [Use walrus operator](../../definitions/python/walrus.md)
+- **wt/wt/server/wt_server.py**: 1482–1484 — Use walrus to combine read-and-check: `if not (data := await reader.readline()): return`.
 
 ## [No unnecessary line breaks](../../definitions/no-extra-linebreaks.md)
 - **wt/tests/conftest.py**: 298–300 — Collapse multi-line assert into one line: `assert shutil.which("gitstatusd"), "integration tests require gitstatusd on PATH"`.

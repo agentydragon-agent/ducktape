@@ -1,12 +1,18 @@
 # TODO - verify
 
+## [Try/except is scoped around the operation it guards] — additional findings
+
+there should not be any "additional findings" headings in the file and link properties properly.
+check everywhere.
+
+------------
+
 - **Forbid Dynamic Attribute Access** .../shared/logging_config.py:98 — Uses getattr(logging, ...) to derive level; avoid dynamic attribute probing.
 **Time And Duration Use Rich Time Types**
 - Float epochs used in core logic; prefer timezone-aware datetimes/timedeltas or monotonic for durations.
   - .../shared/github_models.py:105, 118, 121, 134 (time.time() timestamps, cache_expiration seconds)
   - .../server/wt_server.py:90 (handshake timestamp), 229, 310–311, 341, 365, 402–403 (time.time() in refresh/WorktreeInfo), 883, 955 (naive datetime.now())
 
-- .../client/view_formatter.py:114, 179, 300 **Manual URL construction** via f-strings; use urllib.parse helpers. 
 - .../tests/test_utils.py:14–21 **Broad except wraps multiple unrelated statements**; narrow scope and catch specific exceptions.
 - **Pathlib usage: replace open() with Path.open()** wt/wt/shared/configuration.py:126 wt/wt/client/handlers.py:287 wt/wt/client/wt_client.py:59 wt/wt/server/wt_server.py:2501
 
@@ -18,15 +24,6 @@ Async I/O: blocking file open in async context
 
 Async tasks: lost task handles
 - wt/wt/server/wt_server.py:2517, 2563 — store result of asyncio.create_task to avoid orphaned tasks
-
-Type consistency: mixed types assigned to same variable
-- wt/wt/server/wt_server.py:1024 — cache_age set to float or "never"; use consistent type
-
-URLs: built via string concatenation instead of stdlib helpers
-- wt/wt/client/view_formatter.py:114, 179, 300 — build links with urllib.parse (e.g., urlunparse)
-
-Security: weak hash and hardcoded tmp path
-- wt/wt/shared/configuration.py:74–75 — md5 used for path hashing and hardcoded “/tmp”; prefer hashlib.blake2/sha256 or md5(..., usedforsecurity=False) and tempfile.gettempdir()
 
 Subprocess safety audit (bandit B603): ensure inputs are trusted/sanitized
 - wt/wt/server/wt_server.py:1267, 1290
@@ -43,97 +40,10 @@ Cyclomatic complexity (radon): consider refactoring to reduce complexity
 - wt/wt/client/view_formatter.py: ViewFormatter.format_status_row (C, 13) at 74
 - wt/wt/server/gitstatusd_client.py: GitStatusdResponse.branch_status (C, 12) at 143
 
-# VERIFIED - To commit
+#############
 
-wt_server.py: _record_github_error is dead code. so is WorktreeRuntime and StatusSnapshot.
-StatusSnapshot should probably be wired into `build_status_snapshot` on gitstatusd handled class.
-`_update_comprehensive_cache` also returns what might be the same object.
+# ALREADY THROWN IN - verify & delete
 
----
-
-wt_server.py `_update_comprehensive_cache`: the word "comprehensive" here is just meaningless fluff that doesn't add any information.
-remove.
-
----
-
-wt_server.py write_startup_handshake: handshake protocol should be pydantic model not raw dict; should be shared with client via shared files.
-not handled as raw dict.
-
-`self.cached_working_status: tuple[list[str], list[str]] | None = None` - completely untyped typle of list[str] does not say what it contains.
-should have more descriptive name or type that's descriptive, e.g. dataclass possibly.
-
-_refresh_gituhb_cache silenlty swallows errors without raising some kind of error signal on the github info cache.
-
-`# Old filesystem watching variables removed - now handled by DebouncedGitHubRefresh` - not useful historical  comment, should be removed
-
-`GitStatusdProcess` class handles not just gitstatusd but also has *github* handling code which is a separate concern.
-that should not be bundled in the same class. or renamed to explain that it actually does not handle *just* gitstatusd.
-butr name of class implies intent to have it manage *just* the separate gitstatusd concern.
-
-redundant conditional, remove:
-```
-        if worktree_info.path in self.gitstatusd_clients:  # L1425
-            return  # Already managed
-
-        if worktree_info.path in self.gitstatusd_clients:
-            return
-```
-
-
-this should be walrus:
-```
-            # Read request line
-            data = await reader.readline()  # L1482
-            if not data:
-                return
-```
-
-this is a useless wrapper, should remove and just use `Response` inline:
-```
-    def _create_success_response(self, result: Any, request_id: uuid.UUID) -> Response:
-        """Create a successful JSON-RPC response."""
-        return Response(result=result, id=request_id)
-```
-
-`execute_post_creation_script` should take script path as `Path`, not `str`. same with `_run_post_creation_script`.
-
-`wt_server.py`'s `__main__` block should be deleted - server is started from central wt cli entry point in `wt/cli.py`.
-
-client `handlers.py`: import->top L16 L10 L97 L94 L86 L75 L104 L127 L120 L134 L136 L194 L196 L238-243 L249 L277 L342 L201 L164-168 L152 L142 L86 L94 L75
-
-```
-async def handle_status(daemon_client, formatter) -> None:  # L4
-    """Handle the default status display command."""
-```
-useless docstring, delete.
-
-Imports inside functions (should be at module top per imports-top)
-- wt/tests/conftest.py:109, 111, 212, 217, 296, 354
-
-Naming/style: avoid importing CamelCase as ALL_CAPS-like alias
-those should both just be standard imports to the top
-- wt/tests/conftest.py:217 — “from pathlib import Path as _P”
-- wt/tests/e2e/test_path_watcher_integration.py:60 — “from pathlib import Path as _P”
-
-Type hints: None default for non-Optional parameter
-- wt/wt/server/wt_server.py:72 — error_message default None but annotated as str; annotate as str | None
-
-wrong type annotation / boolean api returns non-boolean:
-- wt/wt/server/wt_server.py:1142 — is_running returns Process | bool | None via “and” expression; coerce to bool
-
-===================
-
-also split-off changes to personal/agentydragon/adgn_utils/adgn_utils/adgn_expose.py
-
-
-add the following real findings into the 2025-09-02 wt specimen following our conventions.
-in specimen's 'work/' dir is the cloned repo, use for reference & to find proper line numbers.
-
--------
--------
-# THROWN IN
--------
--------
 ```
 @pytest.fixture
 def real_env(real_temp_repo, config_factory):
