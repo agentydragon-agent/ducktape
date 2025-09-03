@@ -207,7 +207,7 @@ def _build_ai_context(repo: Repo, include_all: bool) -> str:
 
 
 def build_prompt(repo: Repo, diff: str, passthru, previous_message: str | None = None):
-    include_all = ("-a" in passthru) or ("--all" in passthru)
+    include_all = args.all or ("-a" in passthru) or ("--all" in passthru)
     context = _build_ai_context(repo, include_all)
     
     if previous_message:
@@ -834,7 +834,7 @@ async def async_main():
 
     # provider:model parsing handled by AppConfig.resolve
     provider, model_name = config.provider, config.model_name
-    include_all = ("-a" in passthru) or ("--all" in passthru)
+    include_all = args.all or ("-a" in passthru) or ("--all" in passthru)
 
     # Clean old cache entries
     cache = Cache(repo_cache_dir(repo))
