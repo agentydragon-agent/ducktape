@@ -329,6 +329,149 @@ def build_enforce_prompt(scope_text: str, supplemental_text: str | None = None) 
     return "\n".join(lines).strip()
 
 
+def build_grade_prompt(scope_text: str, canonical_text: str, critique_text: str) -> str:
+    """Build prompt to grade an input critique against canonical specimen findings.
+
+    Outputs required (freeform/plaintext is OK for now):
+    - Recall: proportion (0..1 float) of canonical positives (covered + not_covered_yet items)
+      that are also found by the input critique.
+    - False positive ratio: proportion (0..1 float) of input critique items that are listed in
+      canonical negatives (false_positives.md).
+    - Side output: list the input-critique items that match neither canonical positives nor negatives.
+
+    NOTE/TODO(mpokorny): Matching heuristic is underspecified. For now, treat an "item" as a
+    bullet/paragraph-level finding and match by clear semantic equivalence (filename/function anchors
+    and concise rationale). Use best judgment; include brief notes on any ambiguities.
+    """
+    # TODO(mpokorny): Expose weights via CLI flags and move matching rubric to a stable doc; add structured JSON output when needed.
+    lines: list[str] = [
+        "Grade the input critique against the canonical specimen findings.",
+        "Compute the following metrics and then print supporting details:",
+        "- Recall (0..1 float, 3 decimals): (# canonical positives found by input) / (# canonical positives total)",
+        "- Weighted recall (0..1 float, 3 decimals): treat matches with partial credit (see categories below); report sum(weights of matched canonical positives) / sum(weights of all canonical positives)",
+        "- False positive ratio (0..1 float, 3 decimals): (# input items that are canonical negatives) / (# input items total)",
+        "- 'Volume coverage' (0..1 float, 3 decimals): heuristic estimate of 'how much badness was caught' by weighting canonical items by impact (multi-anchor or cross-cutting issues weigh more).",
+        "  Use default weights unless specified otherwise: high-impact=3 (security, correctness, architectural, multi-file), medium=2 (multiple anchors/functions), low=1 (style/minor refactors).",
+        "- Then list 'Unknowns': input items that are neither canonical positives nor canonical negatives.",
+        "",
+        "Matching categories and default weights (for weighted recall):",
+        "- Exact match (1.0): clearly the same issue (same file/anchors/rationale)",
+        "- Partial match (0.5): substantially overlaps the same issue but misses scope/details (kinda-sorta-covered)",
+        "- Tangential (0.2): related but not the same (mentions a nearby concern without addressing the canonical item)",
+        "- No match (0.0): unrelated",
+        "",
+        "",
+        * _scope_block(
+            scope_text,
+            static_action="use for context only (do not re-scan code)",
+            ambiguity_tail="you are not re-running analysis; only use it for reference while matching.",
+        ),
+        "",
+        "Instructions:",
+        "- Treat each canonical finding as a distinct item (covered.md + not_covered_yet.md = positives).",
+        "- Treat false_positives.md entries as canonical negatives.",
+        "- Treat each bullet/paragraph in the input critique as an input item.",
+        "- Use fuzzy, semantic matching with filenames/line anchors and rationale to decide equivalence.",
+        "- Show counts used in denominators and numerators.",
+        "- Finally, print Unknowns as a bullet list with short rationale on why they didn't match.",
+        "- For Unknowns, paste the matched input-critique items verbatim (no summarization or truncation; no '...' elisions). Preserve original formatting and all details.",
+        "",
+        "Canonical findings (positives and negatives):",
+        canonical_text,
+        "",
+        "Input critique:",
+        critique_text,
+    ]
+    return "\n".join(lines).strip()
+
+
+def _run_specimen_grade(
+    manifest_path: Path,
+    critique_path: Path,
+    *,
+    dry_run: bool,
+    final_only: bool,
+    output_final_message: str | None,
+    gitconfig: str | None,
+) -> int:
+    man = _load_manifest(manifest_path)
+    # Resolve root (fresh checkout/copy) so the agent has code context
+    if isinstance(man.source, GitHubSource):
+        root = _try_download_github_archive(man.source.org, man.source.repo, man.source.ref)
+        if root is None:
+            root = _fresh_git_checkout_url(
+                f"https://github.com/{man.source.org}/{man.source.repo}.git",
+                man.source.ref,
+                gitconfig,
+            )
+    elif isinstance(man.source, GitSource):
+        url = man.source.url
+        root = None
+        if url.startswith("https://github.com/"):
+            parts = url.removeprefix("https://github.com/").rstrip("/")
+            if parts.endswith(".git"):
+                parts = parts[:-4]
+            bits = parts.split("/")
+            if len(bits) >= 2:
+                root = _try_download_github_archive(bits[0], bits[1], man.source.ref)
+        if root is None:
+            root = _fresh_git_checkout_url(man.source.url, man.source.ref, gitconfig)
+    elif isinstance(man.source, LocalSource):
+        root = _fresh_local_copy(manifest_path.parent / man.source.root)
+    else:
+        raise SystemExit(f"Unsupported source type: {type(man.source)}")
+
+    scope_text = _build_scope_text(man.scope.include, man.scope.exclude)
+
+    # Collect canonical files if present
+    spec_dir = manifest_path.parent
+    canonical_files: list[Path] = []
+    for name in ("covered.md", "not_covered_yet.md", "false_positives.md"):
+        p = spec_dir / name
+        if p.exists():
+            canonical_files.append(p)
+    canonical_text = read_embedded_paths(canonical_files) if canonical_files else "(no canonical files present)"
+    critique_text = read_embedded_paths([critique_path])
+
+    prompt = build_grade_prompt(scope_text, canonical_text, critique_text)
+
+    # Build codex command (read-only; full-auto; skip git repo check)
+    cmd = build_cmd("gpt-5", root, sandbox="read-only", skip_git_repo_check=True, full_auto=True)
+
+    out_last_file: Path | None = None
+    if output_final_message:
+        cmd.extend(["--output-last-message", output_final_message])
+    elif final_only:
+        with tempfile.NamedTemporaryFile(delete=False) as tmp:
+            out_last_file = Path(tmp.name)
+        cmd.extend(["--output-last-message", str(out_last_file)])
+
+    if dry_run:
+        tmpdir = Path(tempfile.gettempdir()) / "adgn_codex_prompts"
+        tmpdir.mkdir(parents=True, exist_ok=True)
+        ts = int(time.time())
+        outfile = tmpdir / f"codex_prompt_specimen_grade_{ts}.md"
+        outfile.write_text(prompt, encoding="utf-8")
+        tokens = None
+        try:
+            if "tiktoken" in globals() and tiktoken is not None:
+                enc = tiktoken.get_encoding("cl100k_base")
+                tokens = len(enc.encode(prompt))
+        except Exception:
+            tokens = None
+        print(" ".join(cmd))
+        print(f"Saved prompt: {outfile} (approx tokens: {tokens if tokens is not None else 'n/a'})")
+        return 0
+
+    rc = subprocess.run(cmd, check=False, input=prompt, text=True).returncode
+    if out_last_file is not None:
+        try:
+            print(Path(out_last_file).read_text(encoding="utf-8"))
+        except Exception as e:
+            print(f"[error reading final message file {out_last_file}: {e}]", file=sys.stderr)
+    return rc
+
+
 def build_cmd(
     model: str,
     workdir: Path,
@@ -743,6 +886,40 @@ def main(argv: list[str] | None = None) -> int:
         help="Also allow general code-quality findings beyond formal properties",
     )
 
+    # New command: specimen-grade — grade an input critique against canonical specimen notes
+    p_spec_grade = sub.add_parser(
+        "specimen-grade",
+        help="Grade an input critique vs canonical specimen findings (covered/not_covered_yet/false_positives)",
+        description=(
+            "Compute recall and false-positive ratio by matching an input critique against the specimen's\n"
+            "covered.md + not_covered_yet.md (positives) and false_positives.md (negatives). Output plaintext/MD."
+        ),
+    )
+    p_spec_grade.add_argument(
+        "specimen",
+        nargs="?",
+        help="Specimen name (under properties/specimens), path to specimen dir, or path to manifest.yaml",
+    )
+    p_spec_grade.add_argument(
+        "--critique",
+        required=True,
+        help="Path to the input critique text file to grade",
+    )
+    p_spec_grade.add_argument("--dry-run", action="store_true")
+    p_spec_grade.add_argument(
+        "--gitconfig",
+        help="Path to a gitconfig to use for private repo fallback (shallow git)",
+    )
+    p_spec_grade.add_argument(
+        "--final-only",
+        action="store_true",
+        help="Print only the agent's final message to stdout (suppresses trajectory output)",
+    )
+    p_spec_grade.add_argument(
+        "--output-final-message",
+        help="Write only the agent's final message to this path (passthrough to codex --output-last-message)",
+    )
+
     args = parser.parse_args(argv)
 
     if args.command == "specimen-check":
@@ -811,6 +988,38 @@ def main(argv: list[str] | None = None) -> int:
             mode="discover",
             final_only=getattr(args, "final_only", False),
             output_final_message=getattr(args, "output_final_message", None),
+        )
+
+    if args.command == "specimen-grade":
+        base = _find_specimens_base()
+        manifest_path = _resolve_manifest_arg(args.specimen, base)
+        if manifest_path is None:
+            names = _list_specimen_names(base)
+            if not names:
+                print(f"No specimens found under: {base}")
+                return 2
+            print("Available specimens:")
+            for n in names:
+                print(" -", n)
+            return 2
+        crit_path = Path(args.critique).expanduser().resolve()
+        if not crit_path.exists():
+            print(f"ERROR: critique file not found: {crit_path}")
+            return 2
+        gitconfig_path = None
+        if getattr(args, "gitconfig", None):
+            p = Path(args.gitconfig).expanduser().resolve()
+            if not p.exists():
+                print(f"ERROR: --gitconfig file not found: {p}")
+                return 2
+            gitconfig_path = str(p)
+        return _run_specimen_grade(
+            manifest_path,
+            crit_path,
+            dry_run=args.dry_run,
+            final_only=getattr(args, "final_only", False),
+            output_final_message=getattr(args, "output_final_message", None),
+            gitconfig=gitconfig_path,
         )
 
     if args.command in ("check", "fix"):

@@ -187,11 +187,11 @@
 - Factor shared commit trunk (fast vs editor paths)
   - Finding: The fast-path (accept AI) and editor-path duplicate the commit subprocess setup. Extract a common function (e.g., `_run_git_commit(repo, message, passthru, include_all, verbose)`), reducing duplication and keeping arg handling uniform.
   - Anchors: commit blocks at cli.py:892–904 and 967–981
-  - Rationale: DRY/maintainability; not covered by explicit property.
+  - Rationale: DRY/maintainability; not covered by an explicit property.
 - Prefer module-level logger over per-instance logger
   - Finding: `self.logger = logging.getLogger(__name__)` inside classes; prefer a top-level `logger = logging.getLogger(__name__)` and use it, unless instances need distinct names or context.
   - Anchors: llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py:1011, 1101
-  - Rationale: Consistency and simpler configuration; not covered by explicit property.
+  - Rationale: Consistency and simpler configuration; not covered by an explicit property.
 
 - Unify prompt-length cap configuration
   - Finding: Claude path uses env var and a 20k cap; Codex path uses a different mechanism. Define a single env var (e.g., GIT_AI_MAX_PROMPT) with a consistent fallback and apply uniformly across providers.
@@ -372,3 +372,11 @@
   - Anchors:
     - llm/adgn_llm/src/adgn_llm/mini_codex/cli.py:188–218 vs 276–306 (and surrounding setup)
   - Rationale: DRY/maintainability; not covered explicitly.
+
+## mcp/docker_exec/server.py
+
+- Avoid mutable global state for clients/refs
+  - Finding: Global Docker client and container reference create mutable global state, hindering tests and multi-instance usage. Inject clients via factory/parameters or manage per-request context; avoid module-level singletons.
+  - Anchor:
+    - llm/adgn_llm/src/adgn_llm/mcp/docker_exec/server.py: globals `_DOCKER_CLIENT` and `_CONTAINER_REF`
+  GAP: Add a property banning mutable global state in production code except for true constants and safe caches; prefer dependency injection.

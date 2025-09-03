@@ -120,3 +120,32 @@
   - Finding: Broad try/except around load_mcp_file ignores config errors and continues; fail loudly or handle specific, expected errors.
   - Anchor:
     - llm/adgn_llm/src/adgn_llm/mini_codex/mcp_manager.py (MCP config ignored)
+
+
+### [Modern type hints (PEP 604 unions, builtin generics)](../../definitions/python/type-hints.md)
+- Finding: Legacy typing.Optional/List/Dict/Tuple/Iterator used instead of modern PEP 604 unions and builtin generics.
+- Anchors:
+  - mcp/sandboxed_jupyter_mcp/jupyter_sandbox_compose.py:48 (_write_default_jupyter_config: extra_py: Optional[str])
+  - mcp/sandboxed_jupyter_mcp/jupyter_mcp_launch.py:23-31 (_start_jupyter_server: log_dir: Optional[Path])
+  - mcp/docker_exec/server.py:41 (typing imports Any, Dict, Iterator, List, Optional, Tuple), 77-83 (ExecResult: Optional[int]), 85-100 (_iter_stream_demux, _build_exec_cmd signatures)
+  - mini_codex/agent.py:7 (typing imports), 24 (ToolMap = Dict[str, Any]), 76 (AgentResult.sequence: List[AgentEvent]), 111 (self._messages: List[Message])
+  - mini_codex/local_server.py:4 (typing imports), 19 (get_tools() -> Dict[str, ToolDef])
+  - mini_codex/local_exec_server.py:3 (typing imports), 15 (get_tools() -> Dict[str, ToolDef])
+
+
+## mcp
+
+- [no-dead-code](../../definitions/no-dead-code.md)
+  - Finding: Legacy wrapper PolicyConfig retained only for import compatibility in older tests; wrapper no longer used by current code. Delete entirely as dead code.
+  - Anchor:
+    - llm/adgn_llm/src/adgn_llm/mcp/sandboxed_jupyter_mcp/wrapper.py (class PolicyConfig)
+
+- [No one-off variables or trivial pass-through wrappers](../../definitions/no-oneoff-vars-and-trivial-wrappers.md)
+  - Finding: mcp/sandboxed_jupyter_mcp/cli.py `main()` trivially delegates to `wrapper.main()` without adding value; remove or document an explicit boundary if intentional.
+  - Anchor:
+    - llm/adgn_llm/src/adgn_llm/mcp/sandboxed_jupyter_mcp/cli.py:6–7
+
+- [Time and duration use rich time types](../../definitions/domain-types-and-units/time.md)
+  - Finding: `_DEFAULT_TIMEOUT` is a float without unit suffix; prefer `timedelta` for internals or add unit suffix `_SECS` and convert at boundaries.
+  - Anchor:
+    - llm/adgn_llm/src/adgn_llm/mcp/docker_exec/server.py:55
