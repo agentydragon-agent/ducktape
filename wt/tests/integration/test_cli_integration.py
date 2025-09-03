@@ -58,14 +58,12 @@ TEST_BRANCH_NAME = "XXX-ADGN-WT-INTERACTION-TEST-BRANCH-NAME-XXX"
 @pytest.mark.integration
 class TestCLIIntegration:
     def setup_method(self):
-        """Clean up any running daemons before each test."""
-        # Kill any running daemons from previous tests
-        subprocess.run(["pkill", "-f", "wt"], check=False)
-        time.sleep(0.1)
+        """No global process killing; per-test fixtures handle isolation."""
+        pass
 
     def teardown_method(self):
-        """Clean up after each test."""
-        subprocess.run(["pkill", "-f", "wt"], check=False)
+        """No global process killing; per-test fixtures handle isolation."""
+        pass
 
     def test_list_worktrees_empty(self, real_temp_repo, real_env):
         """Test listing worktrees when none exist."""
@@ -187,10 +185,12 @@ class TestRealGitOperations:
     """Tests that verify actual git operations work correctly."""
 
     def setup_method(self):
-        subprocess.run(["pkill", "-f", "wt"], check=False)
+        """No global process killing; per-test fixtures handle isolation."""
+        pass
 
     def teardown_method(self):
-        subprocess.run(["pkill", "-f", "wt"], check=False)
+        """No global process killing; per-test fixtures handle isolation."""
+        pass
 
     def test_worktree_branch_creation(self, real_temp_repo, real_env):
         """Test that worktree creation actually creates git branches."""

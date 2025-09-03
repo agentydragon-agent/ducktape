@@ -15,6 +15,51 @@ from wt.shared.git_utils import git_run
 
 from ..test_utils import run_cli_sh_command as run_cli_command
 
+from ..test_data import WATCHER_DEBOUNCE_SECS as DEBOUNCE_SECS  # keep in sync with test config
+
+
+def _status(env) -> str:
+    r = run_cli_command([], env, timeout=5.0)
+    assert r.returncode == 0, r.stderr
+    return r.stdout
+
+
+def wait_for_status_contains(env, needle: str, timeout: float = DEBOUNCE_SECS * 8) -> None:
+    deadline = time.time() + timeout
+    last = ""
+    while time.time() < deadline:
+        last = _status(env)
+        if needle in last:
+            return
+        time.sleep(DEBOUNCE_SECS)
+    pytest.fail(f"Timed out waiting for status to contain '{needle}'. Last output:\n{last}")
+
+
+def wait_for_status_contains_all(env, needles: list[str], timeout: float = DEBOUNCE_SECS * 8) -> None:
+    deadline = time.time() + timeout
+    last = ""
+    needles = list(needles)
+    while time.time() < deadline:
+        last = _status(env)
+        if all(n in last for n in needles):
+            return
+        time.sleep(DEBOUNCE_SECS)
+    missing = [n for n in needles if n not in last]
+    pytest.fail(
+        f"Timed out waiting for status to contain all {needles}. Missing: {missing}. Last output:\n{last}"
+    )
+
+
+def wait_for_status_not_contains(env, needle: str, timeout: float = DEBOUNCE_SECS * 8) -> None:
+    deadline = time.time() + timeout
+    last = ""
+    while time.time() < deadline:
+        last = _status(env)
+        if needle not in last:
+            return
+        time.sleep(DEBOUNCE_SECS)
+    pytest.fail(f"Timed out waiting for status to drop '{needle}'. Last output:\n{last}")
+
 
 def create_test_repo_and_config():
     """Create test repo and config entirely via subprocess calls."""
@@ -50,6 +95,7 @@ log_operations: false
 cow_method: "copy"
 github_enabled: false
 github_repo: "test/test"
+git_watcher_debounce_delay: {DEBOUNCE_SECS}
 """
 
     config_file = config_dir / "config.yaml"
@@ -110,8 +156,7 @@ def test_path_watcher_full_lifecycle():
         # Verify daemon started
         assert daemon_dir.exists(), "Daemon directory not created"
 
-        # Give daemon time to fully initialize
-        time.sleep(0.5)
+        # No sleep needed: CLI returns after daemon handshake is complete
 
         # Step 2: Create a worktree
         print("=== Step 2: Create worktree 'feature-test' ===")
@@ -129,8 +174,8 @@ def test_path_watcher_full_lifecycle():
             f"Worktree path is not a directory: {worktree_path}"
         )
 
-        # Brief pause to let path watcher detect the change
-        time.sleep(0.2)
+        # Wait for watcher-driven status to reflect the new worktree
+        wait_for_status_contains(env, "feature-test")
 
         # Step 3: Status should now show the new worktree (detected via path watcher)
         print("=== Step 3: Status after create (should detect via path watcher) ===")
@@ -163,8 +208,8 @@ def test_path_watcher_full_lifecycle():
             f"Worktree still exists after removal: {worktree_path}"
         )
 
-        # Brief pause to let path watcher detect the removal
-        time.sleep(0.2)
+        # Wait for watcher to drop the worktree from status
+        wait_for_status_not_contains(env, "feature-test")
 
         # Step 5: Status should no longer show the worktree (detected removal via path watcher)
         print(
@@ -206,7 +251,7 @@ def test_path_watcher_multiple_worktrees():
         # Initial status to start daemon
         result = run_cli_command([], env, timeout=5.0)
         assert result.returncode == 0
-        time.sleep(0.5)  # Let daemon start
+        # No sleep needed: CLI returns after daemon handshake is complete
 
         worktree_names = ["wt1", "wt2", "wt3"]
 
@@ -217,7 +262,8 @@ def test_path_watcher_multiple_worktrees():
             assert result.returncode == 0, f"Failed to create {name}: {result.stderr}"
             time.sleep(0.1)  # Brief pause between creates
 
-        time.sleep(0.3)  # Let path watcher catch up
+        # Wait for all worktrees to appear in status in one poll loop
+        wait_for_status_contains_all(env, worktree_names)
 
         # Status should show all worktrees
         result = run_cli_command([], env, timeout=5.0)
@@ -238,7 +284,7 @@ def test_path_watcher_multiple_worktrees():
                     last = r.stdout
                     if missing_name not in last:
                         return True
-                time.sleep(0.2)
+                time.sleep(DEBOUNCE_SECS)
             print(f"DEBUG last status while waiting removal of {missing_name}:\n{last}")
             return False
 

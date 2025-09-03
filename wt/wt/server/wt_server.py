@@ -600,7 +600,11 @@ class WtDaemon:
         async def _cb(reason: str):
             await gs_client.update_working_status()
 
-        watcher = DebouncedGitstatusRefresh(worktree_info.path, _cb, debounce_delay=0.5)
+        watcher = DebouncedGitstatusRefresh(
+            worktree_path=worktree_info.path,
+            refresh_callback=_cb,
+            debounce_delay=self.config.git_watcher_debounce_delay.total_seconds(),
+        )
         await watcher.start()
         self.git_watchers[worktree_info.wtid] = watcher
 

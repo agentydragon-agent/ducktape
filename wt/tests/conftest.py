@@ -150,31 +150,53 @@ def assert_worktree_not_exists(worktree_path: Path):
 
 
 def kill_daemon_at_wt_dir(wt_dir: Path) -> None:
-    """Brutally stop daemon for the given WT_DIR and clean files.
+    """Cleanly stop daemon for WT_DIR and assert no leftovers.
 
-    Test-only cleanup: send SIGKILL if PID file exists, then unlink pid/socket.
-    No CLI calls, no waits.
+    Policy for parallel isolation:
+    - Only perform clean shutdown via CLI RPC (no PID signals here)
+    - Wait briefly for pid/socket removal
+    - If leftovers remain, raise AssertionError to surface leaks early
     """
+    import subprocess
+    import time
+
     pid_file = wt_dir / "daemon.pid"
     sock_file = wt_dir / "daemon.sock"
 
-    try:
-        if pid_file.exists():
-            pid_txt = pid_file.read_text().strip()
-            if pid_txt:
-                try:
-                    pid = int(pid_txt)
-                    with contextlib.suppress(Exception):
-                        os.kill(pid, signal.SIGKILL)
-                except ValueError:
-                    pass
-    except Exception:
-        pass
+    # If nothing suggests a running daemon, nothing to do
+    if not pid_file.exists() and not sock_file.exists():
+        return
 
-    with contextlib.suppress(Exception):
-        pid_file.unlink()
-    with contextlib.suppress(Exception):
-        sock_file.unlink()
+    env = os.environ.copy()
+    env["WT_DIR"] = str(wt_dir)
+
+    # Attempt graceful shutdown via CLI (succeeds even if daemon already gone)
+    try:
+        result = subprocess.run(
+            ["python3", "-m", "wt.cli", "sh", "kill-daemon"],
+            capture_output=True,
+            text=True,
+            timeout=5.0,
+            check=False,
+            env=env,
+        )
+    except Exception as e:
+        # Don't attempt any PID-based killing here; surface error
+        raise AssertionError(f"kill-daemon invocation failed for {wt_dir}: {e}")
+
+    # Wait up to ~1s for files to be removed by daemon shutdown
+    deadline = time.time() + 1.0
+    while time.time() < deadline:
+        if not pid_file.exists() and not sock_file.exists():
+            return
+        time.sleep(0.05)
+
+    # If still present, declare failure (leak); do not unlink to preserve evidence
+    details = (result.stdout or "") + ("\n" + (result.stderr or ""))
+    raise AssertionError(
+        f"Daemon did not shut down cleanly for {wt_dir}. Leftovers: "
+        f"pid_exists={pid_file.exists()} sock_exists={sock_file.exists()}\n{details}"
+    )
 
 
 def create_integration_test_config_file(repo_path: Path) -> Path:

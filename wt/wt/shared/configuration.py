@@ -55,6 +55,7 @@ class Configuration:
     github_periodic_interval: timedelta
     startup_timeout: timedelta
     post_creation_timeout: timedelta
+    git_watcher_debounce_delay: timedelta
     hydrate_worktrees: bool = True
 
     @property
@@ -147,6 +148,7 @@ class Configuration:
             ),
             startup_timeout=timedelta(seconds=config_file.startup_timeout),
             post_creation_timeout=timedelta(seconds=config_file.post_creation_timeout),
+            git_watcher_debounce_delay=timedelta(seconds=config_file.git_watcher_debounce_delay),
             hydrate_worktrees=config_file.hydrate_worktrees,
         )
 
