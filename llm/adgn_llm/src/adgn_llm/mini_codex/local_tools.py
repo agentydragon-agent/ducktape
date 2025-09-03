@@ -58,7 +58,6 @@ def _run_in_sandbox(cmd: list[str], timeout_s: int, cwd: str | None) -> tuple[in
     if which(BWRAP) is None:
         return (2, "", "bubblewrap (bwrap) not found in PATH")
 
-    from pathlib import Path
     cwd_val = cwd or str(Path.cwd())
 
     argv: list[str] = [
