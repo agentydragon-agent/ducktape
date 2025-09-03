@@ -190,6 +190,16 @@ Optional settings:
 - `post_creation_script`: Script to run after creating a worktree (optional)
 - `post_creation_timeout`: Seconds to wait for post-creation script before killing it (default: 60)
 
+FD behavior of post-creation hooks
+- stdin (fd 0): /dev/null. The daemon launches the hook with stdin=DEVNULL to guarantee a valid descriptor even when the parent process had no stdin; this avoids CPython init_sys_streams crashes. Do not rely on reading from stdin in post-create scripts.
+- stdout (fd 1): Captured pipe. Hook stdout is streamed to the client as hook_output events; on failures, the CLI echoes captured output to the user.
+- stderr (fd 2): Captured pipe. Same streaming/echo behavior as stdout.
+- fd 3: Not used for hooks. The fd3 channel is only for CLI→shell navigation commands; hooks are launched by the daemon and do not use or require fd3.
+- Other fds: closed on exec. Only 0/1/2 are set as above.
+
+Daemon stdio summary (for context)
+- Daemon stdout is redirected to $WT_DIR/daemon.log; stderr is /dev/null. This does not affect hook I/O, which is independently piped and streamed.
+
 Sample config.yaml:
 
 ```yaml

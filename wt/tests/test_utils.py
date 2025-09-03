@@ -12,7 +12,7 @@ def add_project_root_to_env(env: dict) -> None:
     env["PYTHONPATH"] = f"{project_root}:{existing}" if existing else project_root
 
 
-def run_cli_command(args, cwd=None, env=None, timeout: float = 60.0):
+def run_cli_command(args, cwd=None, env=None, timeout: float = 60.0, stdin=None):
     """Run the actual CLI command as subprocess."""
     cmd = ["python3", "-m", "wt.cli", *args]
     if env is None:
@@ -28,6 +28,7 @@ def run_cli_command(args, cwd=None, env=None, timeout: float = 60.0):
         env=env,
         timeout=timeout,
         check=False,
+        stdin=stdin,
     )
 
 

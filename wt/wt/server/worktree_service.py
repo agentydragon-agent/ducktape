@@ -184,6 +184,7 @@ class WorktreeService:
             f"--worktree_root={worktree_path}",
             f"--worktree_name={worktree_path.name}",
             cwd=worktree_path,
+            stdin=asyncio.subprocess.DEVNULL,  # guarantee valid fd 0 for hook; avoids CPython init_sys_streams crashes if parent stdin is closed
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
