@@ -40,7 +40,9 @@ SYSTEM_INSTRUCTIONS = os.getenv(
 
 BWRAP = os.getenv("BWRAP", "bwrap")
 ALLOW_UNSHARE_NET = os.getenv("DUCK_UNSHARE_NET", "0") == "1"
-ALLOW_UNSANDBOXED = os.getenv("DUCK_ALLOW_UNSANDBOXED", "0") == "1"  # dev-mode fallback on non-Linux
+ALLOW_UNSANDBOXED = (
+    os.getenv("DUCK_ALLOW_UNSANDBOXED", "0") == "1"
+)  # dev-mode fallback on non-Linux
 API_MAX_RETRIES = int(os.getenv("DUCK_API_MAX_RETRIES", "2"))
 MAX_CYCLES = int(os.getenv("DUCK_MAX_CYCLES", "8"))
 
@@ -89,9 +91,15 @@ def _truncate_bytes(s: str, limit: int) -> str:
     return head.decode("utf-8", errors="ignore") + "\n[TRUNCATED]"
 
 
-def _run_proc(argv: list[str], timeout_s: int, cwd: str | None = None) -> tuple[int, str, str]:
+def _run_proc(
+    argv: list[str], timeout_s: int, cwd: str | None = None
+) -> tuple[int, str, str]:
     p = subprocess.Popen(
-        argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, cwd=cwd,
+        argv,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        cwd=cwd,
     )
     try:
         out, err = p.communicate(timeout=timeout_s)
@@ -112,7 +120,9 @@ def _run_proc(argv: list[str], timeout_s: int, cwd: str | None = None) -> tuple[
 
 
 def run_in_sandbox(
-    cmd: list[str], timeout_s: int = DEFAULT_TIMEOUT_S, cwd: str | None = None,
+    cmd: list[str],
+    timeout_s: int = DEFAULT_TIMEOUT_S,
+    cwd: str | None = None,
 ) -> tuple[int, str, str]:
     # Optional dev-mode fallback to run without sandbox on non-Linux
     if sys.platform != "linux":
@@ -164,10 +174,10 @@ def openai_client() -> openai.OpenAI:
     return openai.OpenAI()
 
 
-
-
 async def responses_turn(
-    client: openai.OpenAI, messages: list[Message], mcp_manager: McpManager | None = None,
+    client: openai.OpenAI,
+    messages: list[Message],
+    mcp_manager: McpManager | None = None,
 ) -> tuple[list[Message], str | None]:
     """Send a single non-streaming turn via Responses API.
 
@@ -190,7 +200,7 @@ async def responses_turn(
         tool_choice="auto",
         store=False,
         tools=[
-            * (mcp_manager.list_tools() if mcp_manager else []),
+            *(mcp_manager.list_tools() if mcp_manager else []),
         ],
     )
 
@@ -210,8 +220,12 @@ async def responses_turn(
                     text_parts.append(part.text)
             combined = "\n".join([p for p in text_parts if p])
             if combined:
-                terminal_text = (terminal_text + "\n" if terminal_text else "") + combined
-                new_messages.append(AssistantMessage(role="assistant", content=combined))
+                terminal_text = (
+                    terminal_text + "\n" if terminal_text else ""
+                ) + combined
+                new_messages.append(
+                    AssistantMessage(role="assistant", content=combined)
+                )
         elif isinstance(item, ResponseFunctionToolCall):
             requires.append(item)
         # ignore other item types for MVP
@@ -228,14 +242,18 @@ async def responses_turn(
                 FunctionCallOutput(
                     type="function_call_output",
                     call_id=call_id,
-                    output=json.dumps({"exit": 2, "stdout": "", "stderr": f"invalid arguments: {e}"}),
+                    output=json.dumps(
+                        {"exit": 2, "stdout": "", "stderr": f"invalid arguments: {e}"}
+                    ),
                 ),
             )
             continue
         result: dict[str, Any] | None = None
         if mcp_manager is not None and mcp_manager.is_mcp_tool(fn):
             try:
-                result = await mcp_manager.call_tool(fn, args if isinstance(args, dict) else {})
+                result = await mcp_manager.call_tool(
+                    fn, args if isinstance(args, dict) else {}
+                )
             except Exception as e:
                 result = {"exit": 127, "stdout": "", "stderr": f"mcp error: {e}"}
         else:
@@ -251,7 +269,6 @@ async def responses_turn(
     return new_messages, terminal_text
 
 
-
 async def responses_followup_with_tool_outputs(
     client: openai.OpenAI,
     messages: list[Message],
@@ -263,7 +280,9 @@ async def responses_followup_with_tool_outputs(
         extra = mcp_manager.instruction_block()
         if extra:
             instructions = f"{SYSTEM_INSTRUCTIONS}\n\n{extra}"
-    input_payload = dump_messages_for_api(messages) + [t.model_dump(exclude_none=True) for t in tool_outputs]
+    input_payload = dump_messages_for_api(messages) + [
+        t.model_dump(exclude_none=True) for t in tool_outputs
+    ]
     resp = _responses_create_with_retry(
         client,
         model=DEFAULT_MODEL,
@@ -285,8 +304,12 @@ async def responses_followup_with_tool_outputs(
                     text_parts.append(part.text)
             combined = "\n".join([p for p in text_parts if p])
             if combined:
-                terminal_text = (terminal_text + "\n" if terminal_text else "") + combined
-                new_messages.append(AssistantMessage(role="assistant", content=combined))
+                terminal_text = (
+                    terminal_text + "\n" if terminal_text else ""
+                ) + combined
+                new_messages.append(
+                    AssistantMessage(role="assistant", content=combined)
+                )
         elif isinstance(item, ResponseFunctionToolCall):
             requires.append(item)
     for fc in requires:
@@ -294,17 +317,31 @@ async def responses_followup_with_tool_outputs(
         try:
             args = json.loads(fc.arguments)
         except json.JSONDecodeError as e:
-            new_messages.append(FunctionCallOutput(type="function_call_output", call_id=call_id, output=json.dumps({"exit": 2, "stdout": "", "stderr": f"invalid arguments: {e}"})))
+            new_messages.append(
+                FunctionCallOutput(
+                    type="function_call_output",
+                    call_id=call_id,
+                    output=json.dumps(
+                        {"exit": 2, "stdout": "", "stderr": f"invalid arguments: {e}"}
+                    ),
+                )
+            )
             continue
         fn = fc.name
         if mcp_manager is not None and mcp_manager.is_mcp_tool(fn):
             try:
-                result = await mcp_manager.call_tool(fn, args if isinstance(args, dict) else {})
+                result = await mcp_manager.call_tool(
+                    fn, args if isinstance(args, dict) else {}
+                )
             except Exception as e:
                 result = {"exit": 127, "stdout": "", "stderr": f"mcp error: {e}"}
         else:
             result = {"exit": 127, "stdout": "", "stderr": f"unknown function: {fn}"}
-        new_messages.append(FunctionCallOutput(type="function_call_output", call_id=call_id, output=json.dumps(result)))
+        new_messages.append(
+            FunctionCallOutput(
+                type="function_call_output", call_id=call_id, output=json.dumps(result)
+            )
+        )
     return new_messages, terminal_text
 
 
@@ -319,7 +356,9 @@ async def main_async() -> None:
         tools.update(load_mcp_file(str(cfg_path)))
     tools[LOCAL_EXEC_SERVER_NAME] = LocalExecServer(name=LOCAL_EXEC_SERVER_NAME)
 
-    agent = await MiniCodex.start(model=DEFAULT_MODEL, tools=tools, system=SYSTEM_INSTRUCTIONS, tool_policy="auto")
+    agent = await MiniCodex.start(
+        model=DEFAULT_MODEL, tools=tools, system=SYSTEM_INSTRUCTIONS, tool_policy="auto"
+    )
 
     try:
         for line in sys.stdin:
@@ -330,13 +369,22 @@ async def main_async() -> None:
             # Emit structured tool events as JSONL
             for evt in result.sequence:
                 if evt.get("kind") == "tool_output":
-                    print(json.dumps({
-                        "ts": time.time(),
-                        "tool": evt.get("name"),
-                        "result": evt.get("result"),
-                        "latency_ms": int(evt.get("latency").total_seconds() * 1000) if evt.get("latency") else None,
-                        "error": evt.get("error"),
-                    }, ensure_ascii=False))
+                    print(
+                        json.dumps(
+                            {
+                                "ts": time.time(),
+                                "tool": evt.get("name"),
+                                "result": evt.get("result"),
+                                "latency_ms": int(
+                                    evt.get("latency").total_seconds() * 1000
+                                )
+                                if evt.get("latency")
+                                else None,
+                                "error": evt.get("error"),
+                            },
+                            ensure_ascii=False,
+                        )
+                    )
             # Then assistant text
             if result.text:
                 print(result.text)

@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 git-commit-ai
 
@@ -49,6 +48,7 @@ from enum import StrEnum
 from pathlib import Path
 
 from git import Repo
+from git.exc import GitCommandError
 
 # ---------- constants -------------------------------------------------
 MAX_FILE_LINES = 400  # truncate each file's hunk lines (per-file preview)
@@ -79,7 +79,9 @@ class AppConfig:
             raw_timeout_secs = known.timeout_secs
         else:
             raw_timeout_secs = int(DEFAULT_AI_TIMEOUT.total_seconds())
-            if (env_timeout := os.environ.get("GIT_COMMIT_AI_TIMEOUT_SECS")) is not None:
+            if (
+                env_timeout := os.environ.get("GIT_COMMIT_AI_TIMEOUT_SECS")
+            ) is not None:
                 with contextlib.suppress(ValueError):
                     raw_timeout_secs = int(env_timeout)
 
@@ -92,7 +94,12 @@ class AppConfig:
         else:
             provider, model_name = "claude", model_str.strip()
 
-        return AppConfig(provider=provider, model_name=model_name, model_str=model_str, timeout=timeout)
+        return AppConfig(
+            provider=provider,
+            model_name=model_name,
+            model_str=model_str,
+            timeout=timeout,
+        )
 
 
 def _len_bytes(s: str) -> int:
@@ -100,7 +107,10 @@ def _len_bytes(s: str) -> int:
 
 
 def _cap_append(
-    parts: list[str], chunk: str, cap_bytes: int, truncation_note: str,
+    parts: list[str],
+    chunk: str,
+    cap_bytes: int,
+    truncation_note: str,
 ) -> bool:
     """Append chunk to parts unless this would exceed cap.
 
@@ -112,13 +122,14 @@ def _cap_append(
         remaining_bytes = cap_bytes - current_bytes
         if remaining_bytes > 0:
             parts.append(
-                chunk.encode("utf-8")[:remaining_bytes].decode("utf-8", errors="ignore"),
+                chunk.encode("utf-8")[:remaining_bytes].decode(
+                    "utf-8", errors="ignore",
+                ),
             )
         parts.append(truncation_note + "\n")
         return True
     parts.append(chunk)
     return False
-
 
 
 def _build_ai_context(repo: Repo, include_all: bool) -> str:
@@ -135,7 +146,7 @@ def _build_ai_context(repo: Repo, include_all: bool) -> str:
             MAX_PROMPT_CONTEXT_BYTES,
             "[Context truncated to 100 KiB]",
         )
-    except Exception:
+    except GitCommandError:
         parts.append("[Could not retrieve git status]\n")
 
     # 1b) Name-status for what will be committed
@@ -152,9 +163,12 @@ def _build_ai_context(repo: Repo, include_all: bool) -> str:
             else repo.git.diff("--cached", "--name-status")
         ) + "\n"
         _cap_append(
-            parts, ns_out, MAX_PROMPT_CONTEXT_BYTES, "[Context truncated to 100 KiB]",
+            parts,
+            ns_out,
+            MAX_PROMPT_CONTEXT_BYTES,
+            "[Context truncated to 100 KiB]",
         )
-    except Exception:
+    except GitCommandError:
         parts.append("[Could not compute name-status]\n")
 
     # 2) Recent commits with diffstat via git log
@@ -172,9 +186,12 @@ def _build_ai_context(repo: Repo, include_all: bool) -> str:
             + "\n"
         )
         _cap_append(
-            parts, log_out, MAX_PROMPT_CONTEXT_BYTES, "[Context truncated to 100 KiB]",
+            parts,
+            log_out,
+            MAX_PROMPT_CONTEXT_BYTES,
+            "[Context truncated to 100 KiB]",
         )
-    except Exception:
+    except GitCommandError:
         parts.append("[Could not retrieve recent commits]\n")
 
     # 3) The diff that will be committed (unified=0) so the agent can parse hunks directly
@@ -191,25 +208,29 @@ def _build_ai_context(repo: Repo, include_all: bool) -> str:
             else repo.git.diff("--cached", "--unified=0")
         ) + "\n"
         _cap_append(
-            parts, diff_out, MAX_PROMPT_CONTEXT_BYTES, "[Context truncated to 100 KiB]",
+            parts,
+            diff_out,
+            MAX_PROMPT_CONTEXT_BYTES,
+            "[Context truncated to 100 KiB]",
         )
-    except Exception:
+    except GitCommandError:
         parts.append("[Could not compute diff]\n")
 
     out = "".join(parts)
     # Final cap enforcement
     if _len_bytes(out) > MAX_PROMPT_CONTEXT_BYTES:
         out = out.encode("utf-8")[:MAX_PROMPT_CONTEXT_BYTES].decode(
-            "utf-8", errors="ignore",
+            "utf-8",
+            errors="ignore",
         )
         out += "\n[Context truncated to 100 KiB]\n"
     return out
 
 
 def build_prompt(repo: Repo, diff: str, passthru, previous_message: str | None = None):
-    include_all = args.all or ("-a" in passthru) or ("--all" in passthru)
+    include_all = ("-a" in passthru) or ("--all" in passthru)
     context = _build_ai_context(repo, include_all)
-    
+
     if previous_message:
         prompt = f"""Update and refine this existing commit message based on the current changes.
 
@@ -277,7 +298,9 @@ $ {"git diff HEAD --stat" if include_all else "git diff --cached --stat"}
     return prompt
 
 
-def get_commit_diff(repo: Repo, passthru: list[str], previous_message: str | None = None) -> str:
+def get_commit_diff(
+    repo: Repo, passthru: list[str], previous_message: str | None = None,
+) -> str:
     """Get the diff that would be committed with the given flags."""
     # First, check what would be committed with these flags
     dry_run = subprocess.run(
@@ -295,17 +318,17 @@ def get_commit_diff(repo: Repo, passthru: list[str], previous_message: str | Non
     if previous_message:  # amending
         # For amend, show BOTH original diff and new changes
         parts = []
-        
+
         # First show what was in the original commit
         try:
             # Try to get diff from parent (if exists)
             parts.append("=== Original commit diff (HEAD^ to HEAD) ===")
             parts.append(repo.git.diff("HEAD^", "HEAD", "--unified=0"))
-        except Exception:
+        except GitCommandError:
             # First commit (no parent), show HEAD content
             parts.append("=== Original commit content ===")
             parts.append(repo.git.show("HEAD", "--unified=0"))
-        
+
         # Then show what's being added/changed
         parts.append("\n=== New changes being added ===")
         if "-a" in passthru or "--all" in passthru:
@@ -314,7 +337,7 @@ def get_commit_diff(repo: Repo, passthru: list[str], previous_message: str | Non
         else:
             # Show only staged changes
             parts.append(repo.git.diff("--cached", "--unified=0"))
-        
+
         raw = "\n".join(parts)
     elif "-a" in passthru or "--all" in passthru:
         # Show diff of all tracked files
@@ -344,8 +367,6 @@ def diffstat(repo: Repo, passthru: list[str]) -> str:
     if "-a" in passthru or "--all" in passthru:
         return repo.git.diff("HEAD", "--stat")
     return repo.git.diff("--cached", "--stat")
-
-
 
 
 def get_short_commitish(repo: Repo) -> str:
@@ -422,8 +443,9 @@ def build_commit_template(repo: Repo, passthru: list[str]) -> str:
     include_verbose = ("-v" in passthru) or ("--verbose" in passthru)
     if not include_verbose:
         with contextlib.suppress(Exception):
-            val = repo.git.config("--get", "commit.verbose")
-            if str(val).strip().lower() in {"true", "1", "yes", "on"}:
+            if (val := repo.git.config("--get", "commit.verbose")) and str(
+                val,
+            ).strip().lower() in {"true", "1", "yes", "on"}:
                 include_verbose = True
 
     if include_verbose:
@@ -442,32 +464,26 @@ def build_commit_template(repo: Repo, passthru: list[str]) -> str:
 
 
 class Cache:
-    def __init__(self, dir: Path):
-        self.dir = dir
+    def __init__(self, cache_dir: Path):
+        self.dir = cache_dir
 
     def get(self, key: str) -> str | None:
-        """Load a single cache entry from its file."""
-        path = self.dir / f"{key}.txt"
-        return path.read_text() if path.exists() else None
+        if (p := self.dir / f"{key}.txt").exists():
+            return p.read_text()
+        return None
 
     def __setitem__(self, key: str, entry: str):
-        """Save a single cache entry to its file."""
-        path = self.dir / f"{key}.txt"
-        path.write_text(entry)
+        (self.dir / f"{key}.txt").write_text(entry)
 
     def prune(self):
-        """Remove cache entries older than TTL based on file modification time."""
         cache_ttl = timedelta(days=7)
         now_epoch_s = time.time()
         for path in self.dir.glob("*.txt"):
-            mtime_s = path.stat().st_mtime
-            if now_epoch_s - mtime_s > cache_ttl.total_seconds():
+            if now_epoch_s - path.stat().st_mtime > cache_ttl.total_seconds():
                 path.unlink()
 
 
 class TaskStatus(StrEnum):
-    """Status of a task."""
-
     RUNNING = "running"
     SUCCESS = "success"
     FAILED = "failed"
@@ -527,13 +543,15 @@ class TaskState:
 
 _ANSI_ON = sys.stdout.isatty()
 
+
 def _ansi(text: str, code: str) -> str:
     return f"\033[{code}m{text}\033[0m" if _ANSI_ON else text
 
+
 _STATUS_ICONS: dict[TaskStatus, str] = {
-    TaskStatus.RUNNING: _ansi("⏳", "33"),   # yellow
-    TaskStatus.SUCCESS: _ansi("✓", "32"),   # green
-    TaskStatus.FAILED: _ansi("✗", "31"),    # red
+    TaskStatus.RUNNING: _ansi("⏳", "33"),  # yellow
+    TaskStatus.SUCCESS: _ansi("✓", "32"),  # green
+    TaskStatus.FAILED: _ansi("✗", "31"),  # red
     TaskStatus.CANCELLED: _ansi("-", "2"),  # dim
 }
 
@@ -605,7 +623,9 @@ class ParallelTaskRunner:
                     )
                     returncode = await proc.wait()
                     if returncode != 0:
-                        raise subprocess.CalledProcessError(returncode, str(precommit_path))
+                        raise subprocess.CalledProcessError(
+                            returncode, str(precommit_path),
+                        )
                 finally:
                     os.close(slave_fd)
 
@@ -683,15 +703,10 @@ class ParallelTaskRunner:
             # Fixed width for duration
             parts.append(f"{duration_str:<5} {_STATUS_ICONS[state.status]} {label}")
 
-        # Build status string
         status = " ".join(parts)
-
-        # Truncate to fit terminal width
+        # Truncate to fit terminal width. If we can't get size, use full status.
         with contextlib.suppress(Exception):
             status = status[: shutil.get_terminal_size().columns - 1]
-        # Exception suppressed: If we can't get terminal size, just use full status
-
-        # Print the status
         print(f"\r{status}", end="", flush=True)
         self._status_visible = True
 
@@ -711,14 +726,16 @@ def create_pty_with_terminal_size():
     """Create a PTY and set its size to match the current terminal."""
     master_fd, slave_fd = pty.openpty()
 
-    # Set the terminal size to match the current terminal
-    if sys.stdout.isatty():
-        try:
-            winsize = fcntl.ioctl(sys.stdout.fileno(), termios.TIOCGWINSZ, "        ")
-            rows, cols = struct.unpack("hh", winsize[:4])
-            fcntl.ioctl(slave_fd, termios.TIOCSWINSZ, struct.pack("hh", rows, cols))
-        except (OSError, struct.error):
-            pass  # Ignore errors in terminal size setting
+    # Early bailout if not a TTY; keep default size
+    if not sys.stdout.isatty():
+        return master_fd, slave_fd
+
+    try:
+        winsize = fcntl.ioctl(sys.stdout.fileno(), termios.TIOCGWINSZ, "        ")
+        rows, cols = struct.unpack("hh", winsize[:4])
+        fcntl.ioctl(slave_fd, termios.TIOCSWINSZ, struct.pack("hh", rows, cols))
+    except (OSError, struct.error):
+        pass
 
     return master_fd, slave_fd
 
@@ -751,7 +768,9 @@ async def async_main():
     parser = argparse.ArgumentParser(add_help=True)
     parser.add_argument("--model")  # Resolved via layered config (env/git/default)
     parser.add_argument(
-        "--timeout-secs", type=int, help="AI timeout seconds (<=0 disables)",
+        "--timeout-secs",
+        type=int,
+        help="AI timeout seconds (<=0 disables)",
     )
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
     parser.add_argument(
@@ -759,7 +778,7 @@ async def async_main():
         action="store_true",
         help="Commit immediately with the AI-drafted message (skip editor)",
     )
-    known, passthru = parser.parse_known_args()
+    args, passthru = parser.parse_known_args()
 
     # Disallow -m/--message; the tool generates the commit message
     if any(a in {"-m", "--message"} or a.startswith("--message=") for a in passthru):
@@ -788,17 +807,14 @@ async def async_main():
     logger.addHandler(file_handler)
 
     # Resolve configuration
-    config = AppConfig.resolve(known)
-    if known.debug:
-        timeout_label = (
-            "infinite" if config.timeout is None else f"{int(config.timeout.total_seconds())}s"
-        )
+    config = AppConfig.resolve(args)
+    if args.debug:
         print(
-            f"# Resolved model={config.model_str}, timeout={timeout_label}",
+            f"# Resolved model={config.model_str}, timeout={config.timeout}",
             file=sys.stderr,
         )
 
-    if known.debug:
+    if args.debug:
         # Also log to stderr when debug is enabled
         console_handler = logging.StreamHandler(sys.stderr)
         console_handler.setLevel(logging.DEBUG)
@@ -816,7 +832,10 @@ async def async_main():
         try:
             previous_message = repo.git.log("-1", "--pretty=format:%B").strip()
         except Exception as e:
-            print(f"Error: Cannot amend - failed to retrieve previous commit message: {e}", file=sys.stderr)
+            print(
+                f"Error: Cannot amend - failed to retrieve previous commit message: {e}",
+                file=sys.stderr,
+            )
             sys.exit(1)
 
     if not (diff := get_commit_diff(repo, passthru, previous_message)).strip():
@@ -834,7 +853,7 @@ async def async_main():
 
     # provider:model parsing handled by AppConfig.resolve
     provider, model_name = config.provider, config.model_name
-    include_all = args.all or ("-a" in passthru) or ("--all" in passthru)
+    include_all = ("-a" in passthru) or ("--all" in passthru)
 
     # Clean old cache entries
     cache = Cache(repo_cache_dir(repo))
@@ -856,14 +875,14 @@ async def async_main():
                 repo,
                 diff=diff,
                 passthru=passthru,
-                debug=known.debug,
+                debug=args.debug,
                 timeout=config.timeout,
                 previous_message=previous_message,
             )
         elif provider == "codex":
             ai_client = CodexAI(
-                repo, 
-                debug=known.debug, 
+                repo,
+                debug=args.debug,
                 timeout=config.timeout,
                 previous_message=previous_message,
             )
@@ -874,17 +893,17 @@ async def async_main():
         ai_task = asyncio.create_task(ai_client.generate(include_all, model_name))
         # Respect --no-verify to skip running pre-commit inside this wrapper
         run_precommit = "--no-verify" not in passthru
-        msg = await ParallelTaskRunner.create_and_run(repo, ai_task, run_precommit=run_precommit)
+        msg = await ParallelTaskRunner.create_and_run(
+            repo, ai_task, run_precommit=run_precommit,
+        )
         cache[key] = msg
         cached = False
 
     elapsed_s = time.monotonic() - start_monotonic_s
     stats_comment = f"\n# ai-draft{'(cached)' if cached else ''}: prompt: {len(diff)} chars, response: {len(msg)} chars, elapsed: {elapsed_s:.2f}s\n"
 
-    commit_msg_path = Path(repo.git_dir) / "COMMIT_EDITMSG"
-
     # Fast-path: commit immediately with AI message when requested
-    if known.accept_ai:
+    if args.accept_ai:
         # Ensure non-empty message
         if not msg.strip():
             print("Aborting commit due to empty AI commit message.", file=sys.stderr)
@@ -904,17 +923,18 @@ async def async_main():
 
     # Combine everything for editor flow
     final_text = msg
-    
+
     # Add previous message in comments if amending
     if previous_message:
         final_text += "\n\n# Previous commit message (being amended):\n"
         for line in previous_message.splitlines():
             final_text += f"# {line}\n"
-    
+
     # Add stats and template (same for both cases)
     final_text += stats_comment + build_commit_template(repo, passthru)
 
     # Use git's COMMIT_EDITMSG for a more authentic experience (no trailing blank line)
+    commit_msg_path = Path(repo.git_dir) / "COMMIT_EDITMSG"
     commit_msg_path.write_text(final_text)
 
     # Store the file's modification time and content before editing
@@ -923,11 +943,11 @@ async def async_main():
 
     # Run the editor
     editor = await _get_editor()
+    commit_msg_path = Path(repo.git_dir) / "COMMIT_EDITMSG"
     editor_proc = await asyncio.create_subprocess_shell(f"{editor} {commit_msg_path}")
-    returncode = await editor_proc.wait()
-    if returncode != 0:
+    if (rc := await editor_proc.wait()) != 0:
         print(
-            f"Aborting commit: editor exited with code {returncode} (e.g., :cq)",
+            f"Aborting commit: editor exited with code {rc} (e.g., :cq)",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -975,10 +995,7 @@ async def async_main():
         "--no-verify",
         *commit_passthru,
     )
-    exit_code = await commit_proc.wait()
-
-    # Commit finished; staged state remains (matches native `git commit -a` behavior)
-    sys.exit(exit_code)
+    sys.exit(await commit_proc.wait())
 
 
 def _extract_message_from_text(text: str) -> str:
@@ -993,15 +1010,7 @@ class ClaudeAI:
     Caching is handled by the caller before invoking this provider.
     """
 
-    def __init__(
-        self,
-        repo: Repo,
-        diff: str,
-        passthru: list[str],
-        debug: bool = False,
-        timeout: timedelta | None = None,
-        previous_message: str | None = None,
-    ):
+    def __init__(self, repo: Repo, diff: str, passthru: list[str], debug: bool = False, timeout: timedelta | None = None, previous_message: str | None = None):
         self.repo = repo
         self.diff = diff
         self.passthru = passthru
@@ -1010,9 +1019,11 @@ class ClaudeAI:
         self.previous_message = previous_message
         self.logger = logging.getLogger(__name__)
 
-    async def generate(self, include_all: bool, model: str | None = None) -> str:
+    async def generate(self, include_all: bool, model: str) -> str:
         # Build prompt from the provided diff and repo context
-        prompt = build_prompt(self.repo, self.diff, self.passthru, self.previous_message)
+        prompt = build_prompt(
+            self.repo, self.diff, self.passthru, self.previous_message,
+        )
 
         # Truncate prompt if too long and warn (stderr) in debug mode only
         max_chars = int(os.environ.get("GIT_AI_MAX_PROMPT", "20000"))
@@ -1051,13 +1062,16 @@ class ClaudeAI:
                 stdout, stderr = await proc.communicate()
             else:
                 stdout, stderr = await asyncio.wait_for(
-                    proc.communicate(), timeout=self.timeout.total_seconds(),
+                    proc.communicate(),
+                    timeout=self.timeout.total_seconds(),
                 )
         except TimeoutError:
             proc.terminate()
             await proc.wait()
             secs_str = (
-                "infinite" if self.timeout is None else str(int(self.timeout.total_seconds()))
+                "infinite"
+                if self.timeout is None
+                else str(int(self.timeout.total_seconds()))
             )
             print(
                 f"# Error: Claude command timed out after {secs_str} seconds",
@@ -1100,7 +1114,7 @@ class CodexAI:
         self.previous_message = previous_message
         self.logger = logging.getLogger(__name__)
 
-    async def generate(self, include_all: bool, model: str | None = None) -> str:
+    async def generate(self, include_all: bool, model: str) -> str:
         """Run codex in read-only sandbox at repo root and return the commit message."""
         # Where codex should write the final assistant message
         last_msg_path = Path(self.repo.git_dir) / "codex_last_message.txt"
@@ -1156,16 +1170,20 @@ class CodexAI:
                 stdout, stderr = await proc.communicate()
             else:
                 stdout, stderr = await asyncio.wait_for(
-                    proc.communicate(), timeout=self.timeout.total_seconds(),
+                    proc.communicate(),
+                    timeout=self.timeout.total_seconds(),
                 )
         except TimeoutError:
             proc.terminate()
             await proc.wait()
             secs_str = (
-                "infinite" if self.timeout is None else str(int(self.timeout.total_seconds()))
+                "infinite"
+                if self.timeout is None
+                else str(int(self.timeout.total_seconds()))
             )
             print(
-                f"# Error: codex exec timed out after {secs_str} seconds", file=sys.stderr,
+                f"# Error: codex exec timed out after {secs_str} seconds",
+                file=sys.stderr,
             )
             raise
 
@@ -1177,18 +1195,18 @@ class CodexAI:
 
         if proc.returncode != 0:
             raise subprocess.CalledProcessError(
-                proc.returncode or 1, cmd, (stderr or b"").decode(),
+                proc.returncode or 1,
+                cmd,
+                (stderr or b"").decode(),
             )
 
         # Read last message file and extract commit message
         try:
             raw_last = last_msg_path.read_text()
         except Exception as e:
-            raw_last = (stdout or b"").decode()
-            if not raw_last:
-                raise RuntimeError(
-                    f"codex exec did not produce a last message file: {e}",
-                )
+            raise RuntimeError(
+                f"codex exec did not produce a last message file: {e}",
+            )
 
         return _extract_message_from_text(raw_last)
 

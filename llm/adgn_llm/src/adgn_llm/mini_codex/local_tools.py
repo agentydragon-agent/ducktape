@@ -11,7 +11,9 @@ DEFAULT_TIMEOUT_S = int(os.getenv("DUCK_TIMEOUT_S", "30"))
 TRUNCATE_BYTES = 8 * 1024
 BWRAP = os.getenv("BWRAP", "bwrap")
 ALLOW_UNSHARE_NET = os.getenv("DUCK_UNSHARE_NET", "0") == "1"
-ALLOW_UNSANDBOXED = os.getenv("DUCK_ALLOW_UNSANDBOXED", "0") == "1"  # dev override on non-Linux
+ALLOW_UNSANDBOXED = (
+    os.getenv("DUCK_ALLOW_UNSANDBOXED", "0") == "1"
+)  # dev override on non-Linux
 
 
 def _truncate_bytes(s: str, limit: int) -> str:
@@ -25,9 +27,15 @@ def _truncate_bytes(s: str, limit: int) -> str:
     return head.decode("utf-8", errors="ignore") + "\n[TRUNCATED]"
 
 
-def _run_proc(argv: list[str], timeout_s: int, cwd: str | None = None) -> tuple[int, str, str]:
+def _run_proc(
+    argv: list[str], timeout_s: int, cwd: str | None = None,
+) -> tuple[int, str, str]:
     p = subprocess.Popen(
-        argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, cwd=cwd,
+        argv,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        cwd=cwd,
     )
     try:
         out, err = p.communicate(timeout=timeout_s)
@@ -47,14 +55,20 @@ def _run_proc(argv: list[str], timeout_s: int, cwd: str | None = None) -> tuple[
     )
 
 
-def _run_in_sandbox(cmd: list[str], timeout_s: int, cwd: str | None) -> tuple[int, str, str]:
-    # On non-Linux, require explicit override to run unsandboxed
+def _run_in_sandbox(
+    cmd: list[str], timeout_s: int, cwd: str | None,
+) -> tuple[int, str, str]:
+    # Enforce sandboxing: on non-Linux, only allow with explicit override
     if sys.platform != "linux":
         if ALLOW_UNSANDBOXED:
             return _run_proc(cmd, timeout_s=timeout_s, cwd=cwd)
-        return (2, "", "sandbox unavailable on this platform; set DUCK_ALLOW_UNSANDBOXED=1 to override")
+        return (
+            2,
+            "",
+            "sandbox unavailable on this platform; set DUCK_ALLOW_UNSANDBOXED=1 to override",
+        )
 
-    # Linux: attempt bubblewrap if available
+    # Linux: require bubblewrap
     if which(BWRAP) is None:
         return (2, "", "bubblewrap (bwrap) not found in PATH")
 
@@ -105,6 +119,7 @@ EXEC_PARAMETERS_SCHEMA: dict[str, Any] = {
     "additionalProperties": False,
 }
 
+
 def exec_handler(args: dict[str, Any]) -> dict[str, Any]:
     """Execute a shell command with optional cwd/timeout.
 
@@ -119,7 +134,9 @@ def exec_handler(args: dict[str, Any]) -> dict[str, Any]:
 
     timeout_ms = args.get("timeout_ms")
     to = (
-        DEFAULT_TIMEOUT_S if not isinstance(timeout_ms, int) else max(1, int(timeout_ms / 1000))
+        DEFAULT_TIMEOUT_S
+        if not isinstance(timeout_ms, int)
+        else max(1, int(timeout_ms / 1000))
     )
     cwd_val = args.get("cwd") if isinstance(args.get("cwd"), str) else None
 
