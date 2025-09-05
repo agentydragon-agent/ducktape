@@ -83,8 +83,6 @@ def _openai_client() -> openai.OpenAI:
     return openai.OpenAI()
 
 
-def _responses_create_with_retry(client: openai.OpenAI, **kwargs: Any):
-    return client.responses.create(**kwargs)
 
 
 @retry(
@@ -97,8 +95,8 @@ def _responses_create_with_retry(client: openai.OpenAI, **kwargs: Any):
     stop=stop_after_attempt(4),
 )
 def _responses_create_with_retry(client: openai.OpenAI, **kwargs: Any):
+    """Wrapper around client.responses.create with retry for transient errors."""
     return client.responses.create(**kwargs)
-
 
 def load_mcp_file(path: str) -> ToolMap:
     data = json.loads(Path(path).read_text(encoding="utf-8"))
@@ -134,6 +132,9 @@ class MiniCodex:
         self._log = structlog.get_logger("mini_codex").bind(
             component="MiniCodex", model=self._model,
         )
+        # Logging artifacts
+        self._log_dir: Path | None = None
+        self._events_path: Path | None = None
 
     @classmethod
     async def start(  # noqa: PLR0913
@@ -148,8 +149,8 @@ class MiniCodex:
         enable_reasoning: bool = False,
         reasoning_options: dict[str, Any] | None = None,
     ) -> MiniCodex:
-        mcp = await McpManager.from_servers(servers=tools, inproc_sessions=None)
-        return cls(
+        mcp = await McpManager.from_servers(servers_cfg=tools, inproc_sessions=None)
+        inst = cls(
             model=model,
             system=system,
             require_at_least_one_tool=require_at_least_one_tool,
@@ -159,9 +160,33 @@ class MiniCodex:
             enable_reasoning=enable_reasoning,
             reasoning_options=reasoning_options,
         )
+        inst._init_logging()
+        return inst
+
+    def _init_logging(self) -> None:
+        base = Path(os.environ.get("MINICODEX_LOG_DIR") or (Path.cwd() / "logs" / "mini_codex"))
+        base.mkdir(parents=True, exist_ok=True)
+        run_dir = base / f"run_{int(time.time())}_{os.getpid()}"
+        run_dir.mkdir(parents=True, exist_ok=True)
+        self._log_dir = run_dir
+        # Announce log path for the run (stdout) and via structlog
+        print(f"MiniCodex log dir: {run_dir}")
+        self._log.info("mini_codex_log_dir", path=str(run_dir))
+        # Progressive events are emitted via structlog; keep a run.json for quick metadata
+        meta = {
+            "model": self._model,
+            "ts": int(time.time()),
+            "pid": os.getpid(),
+        }
+        (run_dir / "run.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+        self._events_path = None
 
     def tools(self) -> list[dict[str, Any]]:
         return self._mcp.list_tools()
+
+    def _log_event(self, evt: dict[str, Any]) -> None:
+        # Emit via structlog; consumer can tee to file if desired
+        self._log.info("mini_codex_event", **evt)
 
     @property
     def messages(self) -> list[dict[str, Any]]:
@@ -181,8 +206,6 @@ class MiniCodex:
         self._transcript.append(UserMessage(role="user", content=user_text))
         sequence: list[dict[str, Any]] = []
         assistant_text_chunks: list[str] = []
-        prior_tool_calls: list[dict[str, Any]] | None = None
-        pending_tool_outputs: list[FunctionCallOutput] | None = None
         have_used_tool = False
 
         while True:
@@ -191,20 +214,13 @@ class MiniCodex:
             if extra:
                 instructions = f"{instructions}\n\n{extra}"
 
-            if pending_tool_outputs:
-                input_payload = dump_messages_for_api(self._transcript)
-                if prior_tool_calls:
-                    input_payload += prior_tool_calls
-                input_payload += [
-                    t.model_dump(exclude_none=True) for t in pending_tool_outputs
-                ]
-            else:
-                input_payload = dump_messages_for_api(self._transcript)
+            # Always send the full transcript each turn (no deltas)
+            input_payload = dump_messages_for_api(self._transcript)
 
+            # Per Responses API: accepted values include "auto", "none", "required",
+            # or a specific function name via {"type":"function","function":{"name":"..."}}
             tool_choice_value: str | dict[str, Any] = (
-                "required"
-                if (self._require_one_tool and not have_used_tool)
-                else "auto"
+                "required" if (self._require_one_tool and not have_used_tool) else "auto"
             )
 
             resp = _responses_create_with_retry(
@@ -214,7 +230,7 @@ class MiniCodex:
                 instructions=instructions,
                 stream=False,
                 tool_choice=tool_choice_value,
-                store=False,
+                store=True,
                 tools=self._mcp.list_tools(),
                 **(
                     {"reasoning": self._reasoning_options or {"summary": "auto"}}
@@ -223,7 +239,6 @@ class MiniCodex:
                 ),
             )
 
-            prior_tool_calls = []
             requires: list[ResponseFunctionToolCall] = []
             reasoning_count = 0
             for item in resp.output:
@@ -245,9 +260,12 @@ class MiniCodex:
                         sequence.append(evt)
                         if self._on_event:
                             await maybe_await(self._on_event, evt)
+                        # Progressive logging: assistant chunk
+                        self._log_event(evt)
                 elif isinstance(item, ResponseFunctionToolCall):
                     requires.append(item)
-                    prior_tool_calls.append(item.model_dump(exclude_none=True))
+                    # Persist tool call into transcript so the next turn has full context
+                    self._transcript.append(item.model_dump(exclude_none=True))
 
             if os.environ.get("MINICODEX_DEBUG"):
                 dbg = [
@@ -261,7 +279,6 @@ class MiniCodex:
             if not requires:
                 break
 
-            pending_tool_outputs = []
             for fc in requires:
                 args = json.loads(fc.arguments) if fc.arguments else {}
                 if not isinstance(args, dict):
@@ -302,13 +319,24 @@ class MiniCodex:
                     },
                 )
                 self._transcript.append(fco)
-                pending_tool_outputs.append(fco)
 
             self._metrics.tool_calls += len(requires)
             have_used_tool = True
 
         self._metrics.turns += 1
         text = "\n".join(assistant_text_chunks)
+        # Persist transcript and sequence to logs if configured
+        try:
+            if self._log_dir is not None:
+                transcript_path = self._log_dir / "transcript.json"
+                payload = {
+                    "transcript": dump_messages_for_api(self._transcript),
+                    "sequence": sequence,
+                    "metrics": {"turns": self._metrics.turns, "tool_calls": self._metrics.tool_calls},
+                }
+                transcript_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        except Exception:
+            pass
         return AgentResult(text=text, sequence=sequence, metrics=self._metrics)
 
     async def close(self) -> None:
@@ -336,6 +364,14 @@ TranscriptItem = Message | dict[str, Any]
 
 
 def dump_messages_for_api(messages: list[TranscriptItem]) -> list[dict[str, Any]]:
+    """Format transcript for OpenAI Responses API.
+
+    Accepts a mixed list of:
+    - message dicts {"role": "user"|"assistant", "content": str}
+    - reasoning items (dict with type="reasoning") — forwarded verbatim
+    - function_call_output items: {"type": "function_call_output", "call_id": "...", "output": "..."}
+    Note: We always send the full transcript each turn; do not send deltas.
+    """
     out: list[dict[str, Any]] = []
     for item in messages:
         if isinstance(item, BaseModel):

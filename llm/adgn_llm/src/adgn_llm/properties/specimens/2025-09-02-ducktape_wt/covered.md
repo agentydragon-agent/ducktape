@@ -1,101 +1,41 @@
-## [Imports at the top](../../definitions/python/imports-top.md)
-
-Many inline imports appear inside functions across modules in `wt/`; imports should live at module top unless a narrowly justified exception applies (cycle break, heavy import deferral, plugin/hot-reload).
-
-- **wt/wt/cli.py**: 101, 158, 193, 198, 206, 253
-- **wt/wt/client/handlers.py**: 10, 16, 50, 75, 86, 89, 94, 97, 104, 120, 127, 134, 136, 142, 152, 164–168, 194, 196, 201, 214, 220, 226, 238, 240, 242–243, 249, 254, 263, 277, 298, 301–302, 310, 342
-- **wt/wt/client/shell_utils.py**: 9, 20
-- **wt/wt/client/worktree_utils.py**: 83, 108–109, 148
-- **wt/wt/client/wt_client.py**: 42, 67, 99, 168
-- **wt/wt/server/github_client.py**: 109
-- **wt/wt/server/copy_strategies.py**: 123, 139
-- **wt/wt/plugins.py**: 41, 46
-- **wt/wt/server/worktree_service.py**: 105, 197, 214, 264, 281, 293, 300–301, 388, 445, 490, 507, 513
-- **wt/wt/server/wt_server.py**: 85, 102, 1149, 1171, 1186, 1217, 1240, 1608, 1736, 1741, 1815, 1864, 1884–1888, 1996, 2021, 2103, 2117, 2155, 2583–2587
-- **wt/wt/shared/configuration.py**: 69
-- **wt/wt/shared/error_handling.py**: 141
-- **wt/tests/e2e/test_path_watcher_integration.py**: 23, 60
-- **wt/tests/integration/test_shell_integration.py**: 41, 42, 57, 63, 64, 66
-- **wt/tests/test_utils.py**: 10, 15
-- **wt/tests/repo_factory.py**: 165
-- **wt/wt/client/handlers.py**: imports inside functions; move to top (lines: 10, 16, 75, 86, 94, 97, 104, 120, 127, 134, 136, 142, 152, 164–168, 194, 196, 201, 238–243, 249, 277, 342)
-- **wt/tests/conftest.py**: imports inside functions; move to top (lines: 109, 111, 212, 217, 296, 354)
-- **wt/tests/e2e/test_path_watcher_integration.py**: 60 — import inside function; move to module top.
-- **wt/tests/conftest.py**: 217 — Move `from pathlib import Path as _P` to module top; avoid function-scope imports.
-  > "No import or from ... import ... statements inside functions, methods, or class bodies" (definitions/python/imports-top.md)
-
-## [Use StrEnum for string‑valued enums](../../definitions/python/strenum.md)
-
-- **wt/wt/shared/github_models.py**: 13–18, 49–52, 60–62
-- **wt/wt/shared/configuration.py**: 21–27
-- **wt/wt/shared/protocol.py**: DaemonHealthStatus (34–40), StartupPhase (317–322), ComponentState (435–441), GitstatusdState (443–449)
-- **wt/wt/server/gitstatusd_client.py**: RepositoryState (29–43)
-  - **wt/wt/server/gitstatusd_client.py**: 338–355 — `_safe_get_repository_state` treats missing/invalid state as NORMAL. Do not mask errors as a valid state; return None or raise a validation error and let the caller decide.
-- **wt/wt/server/copy_strategies.py**: StrategyType (18–23)
-
-## [Markdown inline formatting for code identifiers, flags, paths, and URIs](../../definitions/markdown/inline-formatting.md)
-
-- **wt/ARCHITECTURE.md**: 256, 259 have plain "WT_DIR" references
-- **wt/WORKTREE_IDEAS.md**: 7, 16 have plain "WT_DIR" references
-- **wt/README.md**: 16, 18, 190 have plain "PATH" / env var references
-- **wt/tests/README.md**: 68, 71 — bare WT_DIR; wrap in code spans
-
-## [Pass Path objects to PathLike APIs (no str())](../../definitions/python/pathlike.md)
-
-- **wt/wt/server/copy_strategies.py**:
-  - Basic: 46, 63, 111
-  - Also `_get_copyable_entries` casts `Path` to `str` while it's used for the purpose of passing into `subprocess.run`; should just return unconverted `Path`
-- **wt/wt/server/worktree_service.py**: 337
-- **wt/wt/shared/git_utils.py**: 29
-- **wt/wt/server/wt_server.py**: 2052
-- **wt/tests/repo_factory.py**: 172, 188
+- **wt/wt/server/gitstatusd_client.py**:
+  - 338–355 — `_safe_get_repository_state` treats missing/invalid state as NORMAL.
+    Do not mask errors as a valid state; raise or return an error.
+  - `parse_gitstatusd_response` (L358), `create_gitstatusd_request` (L363) — thin wrappers around GitStatusdProtocol migrate any callers to Protocol methods and delete.
 
 ## [Try/except is scoped around the operation it guards](../../definitions/python/scoped-try-except.md)
 
-- **wt/wt/server/wt_server.py**: ~2074 — `except Exception: pass` silently swallows errors while streaming hook output; log the error and catch specific expected exceptions (or handle at a proper boundary).
-- **wt/wt/plugins.py**: 59–63 — Swallows ImportError/AttributeError silently for plugin loading; at minimum log which entry point failed; ensure only expected errors are caught.
-- **wt/wt/server/wt_server.py**: 586–593 — `_refresh_github_cache` swallows exceptions and returns silently in non-boundary code; narrow the try to the minimal risky repo access, catch specific exceptions or let them propagate, and log appropriately.
-- **wt/wt/server/wt_server.py**: 613–635 — In `PRService.get_pr_info`, a blanket `except Exception` in non-boundary code silently swallows errors and the try wraps a long block. Scope the try to just the GitHub call and catch specific expected exceptions (or let them propagate) with proper logging.
-- **wt/wt/server/wt_server.py**: 1621–1624 — Blanket `except Exception:` sets `git_paths=[]`; do not silently swallow; catch specific expected errors (e.g., Git errors) or let propagate, and scope the try narrowly to the list_worktrees call.
-- **wt/wt/server/wt_server.py**: 2186–2240 — Path-within-worktrees check: scope try/except to only the relative_to(...) call and move follow-up logic outside; if not under main repo, early-bail with an error, otherwise return main immediately.
-  Before:
-  ```python
-  try:
-      rel_path = absolute_path.relative_to(self.config.worktrees_dir)
-      worktree_name = rel_path.parts[0] if rel_path.parts else None
-      if len(rel_path.parts) > 1:
-          relative_path = str(Path(*rel_path.parts[1:]))
-      else:
-          relative_path = ""
-  except ValueError:
-      # Path is not within worktrees directory - check if it's main repo
-      ...
-  ```
-  After:
-  ```python
-  try:
-      rel_path = absolute_path.relative_to(self.config.worktrees_dir)
-  except ValueError:
-      if not absolute_path.is_relative_to(self.config.main_repo):
-          raise ValueError(f"Path {absolute_path} is not a managed worktree")
-      worktree_name = MAIN_WORKTREE_DISPLAY_NAME
-      relative_path = str(absolute_path.relative_to(self.config.main_repo))
-      return self._create_success_response(...)
-  # happy path (in worktrees dir)
-  worktree_name = rel_path.parts[0] if rel_path.parts else None
-  relative_path = "" if len(rel_path.parts) <= 1 else str(Path(*rel_path.parts[1:]))
-  ```
-
-- **wt/wt/client/shell_utils.py**: 6–15 — Do not swallow arbitrary OSError. Probe fd3 explicitly with fcntl (F_GETFD/F_GETFL) to verify the descriptor exists and is opened for writing; only treat EBADF as “fd3 missing”. Unexpected errors (e.g., EPIPE) should be logged or propagated per boundary policy.
-
-## [Forbid dynamic attribute access and catching AttributeError](../../definitions/python/forbid-dynamic-attrs.md) 
-
-- `getattr(pygit2, "GIT_STATUS_...", 0)` should be plain `pygit2.GIT_STATUS_...` (see property link above)
-  - **wt/wt/server/git_manager.py**: 116–123.
-  - **wt/wt/server/worktree_service.py**: 143
-- **wt/tests/config_factory.py**: 45–46 — pass presets by value (`ConfigPresets.FOO`) instead of by name and `getattr`
-  GAP: Avoid string→getattr→constant-dict indirection; pass the constant directly (or have the constant hold the config object itself) instead of name-based lookup.
-  - 128: this also uses dynamic attribute access, but the deeper issue is the name-based pattern itself is brittle. With value-based presets, this code path is unnecessary—no name lookup or error-name formatting needed; prefer value-based API and delete this path.
+- **wt/wt/server/wt_server.py**:
+  - ~2074 — `except Exception: pass` silently swallows errors while streaming hook output; errors should not be silently discarded.
+  - 2186–2240 — Path-within-worktrees check: scope try/except to only the relative_to(...) call and move follow-up logic outside;
+    if not under main repo, early-bail with an error, otherwise return main immediately (overlaps with early-bailout)
+    Before:
+    ```python
+    try:
+        rel_path = absolute_path.relative_to(self.config.worktrees_dir)
+        worktree_name = rel_path.parts[0] if rel_path.parts else None
+        if len(rel_path.parts) > 1:
+            relative_path = str(Path(*rel_path.parts[1:]))
+        else:
+            relative_path = ""
+    except ValueError:
+        # Path is not within worktrees directory - check if it's main repo
+        ...
+    ```
+    After:
+    ```python
+    try:
+        rel_path = absolute_path.relative_to(self.config.worktrees_dir)
+    except ValueError:
+        if not absolute_path.is_relative_to(self.config.main_repo):
+            raise ValueError(f"Path {absolute_path} is not a managed worktree")
+        worktree_name = MAIN_WORKTREE_DISPLAY_NAME
+        relative_path = str(absolute_path.relative_to(self.config.main_repo))
+        return self._create_success_response(...)
+    # happy path (in worktrees dir)
+    worktree_name = rel_path.parts[0] if rel_path.parts else None
+    relative_path = "" if len(rel_path.parts) <= 1 else str(Path(*rel_path.parts[1:]))
+    ```
 
 ## [Use PathLike for path parameters](../../definitions/python/pathlike.md)
 

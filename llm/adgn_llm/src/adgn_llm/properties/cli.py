@@ -625,7 +625,8 @@ def main(argv: list[str] | None = None) -> int:
             structlog.processors.add_log_level,
             renderer,
         ],
-        logger_factory=structlog.make_filtering_bound_logger(min_level),
+        wrapper_class=structlog.make_filtering_bound_logger(min_level),
+        logger_factory=structlog.PrintLoggerFactory(),
     )
 
     parser = argparse.ArgumentParser(
@@ -809,10 +810,9 @@ def main(argv: list[str] | None = None) -> int:
         help="Write only the agent's final message to this path (passthrough to codex --output-last-message)",
     )
 
-    # New command: specimen-lint-issue — lint exactly one issue using mini_codex + docker_exec MCP
+    # New command: lint-issue — lint exactly one issue using mini_codex + docker_exec MCP
     p_spec_lint = sub.add_parser(
-        "specimen-lint-issue",
-        aliases=["lint"],
+        "lint-issue",
         help="Lint a single issue in a specimen (mini_codex + docker_exec)",
         description=(
             "Resolve specimen source+scope from manifest.yaml, fresh checkout/copy, and run a one-off \n"
@@ -829,17 +829,22 @@ def main(argv: list[str] | None = None) -> int:
     )
     p_spec_lint.add_argument("--model", default="gpt-5")
     p_spec_lint.add_argument("--dry-run", action="store_true")
+    p_spec_lint.add_argument(
+        "--gitconfig",
+        help="Path to a gitconfig to use for private repo fallback (shallow git)",
+    )
 
     args = parser.parse_args(argv)
 
-    if args.command in ("specimen-lint-issue", "lint"):
+    if args.command == "lint-issue":
         # Late import via importlib to avoid circular dependency while keeping lints happy
-        mod = importlib.import_module("adgn_llm.properties.specimen_lint_issue")
+        mod = importlib.import_module("adgn_llm.properties.lint_issue")
         return mod.run_specimen_lint_issue(
             args.specimen,
             args.issue_id,
             model=getattr(args, "model", "gpt-5"),
             dry_run=getattr(args, "dry_run", False),
+            gitconfig=getattr(args, "gitconfig", None),
         )
 
     if args.command == "specimen-check":

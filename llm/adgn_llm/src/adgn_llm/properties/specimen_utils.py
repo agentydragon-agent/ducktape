@@ -9,7 +9,6 @@ import subprocess
 import tarfile
 import tempfile
 from collections.abc import Callable, Iterable
-from enum import Enum
 from functools import lru_cache
 from importlib.resources import files
 from pathlib import Path
@@ -21,7 +20,7 @@ from urllib.request import urlopen
 
 import yaml
 from platformdirs import user_cache_dir
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, model_validator, ConfigDict
 
 from .specimen_frontmatter import GitHubSource, GitSource, LocalSource, SpecimenManifest
 
@@ -63,9 +62,6 @@ class Occurrence(BaseModel):
     files: dict[str, list[LineRange] | None]
 
 
-class Cardinality(str, Enum):
-    single = "single"
-    multi_instances = "multi_instances"
 
 
 class Issue(BaseModel):
@@ -75,27 +71,23 @@ class Issue(BaseModel):
     properties: list[PropertyID] = []
     gap_note: str | None = None
 
-    cardinality: Cardinality = Cardinality.single
+    model_config = ConfigDict(extra="ignore")
     files: dict[str, list[LineRange] | None] | None = None
     instances: list[Occurrence] | None = None
 
     @model_validator(mode="after")
     def _validate_self(self) -> Issue:
         _validate_property_ids(self.properties)
-        if self.cardinality is Cardinality.single:
-            if not self.files or self.instances is not None:
-                raise ValueError(
-                    "cardinality=single requires `files` and forbids `instances`",
-                )
-        elif not self.instances or self.files is not None:
-            raise ValueError(
-                "cardinality=multi_instances requires `instances` and forbids `files`",
-            )
+        # Exactly one of `files` or `instances` must be provided (mutually exclusive)
+        has_files = self.files is not None
+        has_instances = self.instances is not None
+        if has_files == has_instances:
+            raise ValueError("Exactly one of `files` or `instances` must be provided")
         return self
 
     @property
     def files_touched(self) -> set[str]:
-        if self.cardinality is Cardinality.single:
+        if self.files is not None:
             return set(self.files.keys()) if self.files else set()
         paths: set[str] = set()
         for occ in self.instances or []:
@@ -277,6 +269,56 @@ def _extract_tar_gz_to_temp(archive: Path) -> Path:
     return tmpdir
 
 
+def ensure_archive_for_specimen_slug(
+    man: SpecimenManifest, manifest_path: Path, gitconfig: Path | None,
+) -> Path:
+    """Ensure a cached tar.gz exists keyed by specimen slug (dir name of manifest).
+
+    This wraps both GitHubSource and generic Git, producing one canonical cache:
+      $XDG_CACHE_HOME/adgn-llm/specimens/by-slug/<slug>.tar.gz
+    """
+    slug = manifest_path.parent.name
+    out = _xdg_cache_base() / "by-slug" / f"{slug}.tar.gz"
+    if out.exists():
+        return out
+    out.parent.mkdir(parents=True, exist_ok=True)
+    # Try fast GitHub codeload direct-to-dest when available
+    from .specimen_frontmatter import GitHubSource, GitSource, LocalSource
+
+    if isinstance(man.source, GitHubSource):
+        if _download_github_to(man.source.org, man.source.repo, man.source.ref, out):
+            return out if out.exists() else out
+        # Fallback: shallow checkout → tar.gz
+        if _create_archive_from_git(
+            f"https://github.com/{man.source.org}/{man.source.repo}.git",
+            man.source.ref,
+            out,
+            gitconfig,
+        ) and out.exists():
+            return out
+    elif isinstance(man.source, GitSource):
+        if man.source.url.startswith("https://github.com/"):
+            parts = man.source.url.removeprefix("https://github.com/").rstrip("/")
+            parts = parts.removesuffix(".git")
+            bits = parts.split("/")
+            if len(bits) >= 2 and _download_github_to(bits[0], bits[1], man.source.ref, out):
+                return out if out.exists() else out
+        if _create_archive_from_git(man.source.url, man.source.ref, out, gitconfig) and out.exists():
+            return out
+    elif isinstance(man.source, LocalSource):
+        # Tar local directory under manifest
+        src = (manifest_path.parent / man.source.root).resolve()
+        tmp = out.with_suffix(".tmp")
+        with tarfile.open(tmp, "w:gz") as tf:
+            tf.add(src, arcname=src.name)
+        tmp.replace(out)
+        return out
+    # If we get here and out still missing, raise for caller to decide next step
+    raise SystemExit(
+        f"Specimen cache not available for slug '{slug}' (source={type(man.source).__name__}); unable to create archive",
+    )
+
+
 def _create_archive_from_git(
     url: str, ref: str, out_archive: Path, gitconfig: Path | None,
 ) -> bool:
@@ -344,49 +386,11 @@ def resolve_source_root(
 
     Prefers a cached compressed archive under XDG cache; falls back to fresh git checkout when needed.
     """
-    # GitHub: prefer cached tarball from codeload
-    if isinstance(man.source, GitHubSource):
-        cache_path = _cache_path_for_github(
-            man.source.org, man.source.repo, man.source.ref,
-        )
-        if p := _ensure_cached_archive(
-            cache_path,
-            lambda d: _download_github_to(
-                man.source.org, man.source.repo, man.source.ref, d,
-            ),
-        ):
-            return _extract_tar_gz_to_temp(p)
-        # Fallback: fresh git checkout
-        return fresh_git_checkout_url(
-            f"https://github.com/{man.source.org}/{man.source.repo}.git",
-            man.source.ref,
-            gitconfig,
-        )
-
-    # Generic Git source
-    if isinstance(man.source, GitSource):
-        url = man.source.url
-        # Try GitHub fast-path cache if applicable
-        if url.startswith("https://github.com/"):
-            parts = url.removeprefix("https://github.com/").rstrip("/")
-            parts = parts.removesuffix(".git")
-            bits = parts.split("/")
-            if len(bits) >= 2:
-                cache_path = _cache_path_for_github(bits[0], bits[1], man.source.ref)
-                if p := _ensure_cached_archive(
-                    cache_path,
-                    lambda d: _download_github_to(bits[0], bits[1], man.source.ref, d),
-                ):
-                    return _extract_tar_gz_to_temp(p)
-        # Else cache by URL+ref via shallow clone → tar.gz
-        cache_path = _cache_path_for_git(url, man.source.ref)
-        if p := _ensure_cached_archive(
-            cache_path,
-            lambda d: _create_archive_from_git(url, man.source.ref, d, gitconfig),
-        ):
-            return _extract_tar_gz_to_temp(p)
-        # Fallback: fresh checkout
-        return fresh_git_checkout_url(url, man.source.ref, gitconfig)
+    # Git sources (GitHub or generic): ensure a by-slug cached archive and extract
+    from .specimen_frontmatter import GitHubSource as _GH, GitSource as _GS
+    if isinstance(man.source, (_GH, _GS)):
+        archive = ensure_archive_for_specimen_slug(man, manifest_path, gitconfig)
+        return _extract_tar_gz_to_temp(archive)
 
     # Local source: plain copy (no cache)
     if isinstance(man.source, LocalSource):
