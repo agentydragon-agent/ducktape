@@ -60,7 +60,10 @@ async def run_demo() -> None:
             "docker": {
                 "command": CONSOLE_SCRIPT,
                 "args": [],
-                "env": {"DOCKER_CONTAINER": container.id, "USE_CONTAINER_TIMEOUT_WRAPPER": "0"},
+                "env": {
+                    "DOCKER_CONTAINER": container.id,
+                    "USE_CONTAINER_TIMEOUT_WRAPPER": "0",
+                },
             },
         }
 
@@ -69,8 +72,12 @@ async def run_demo() -> None:
         client = openai_client()
 
         # Find the tool name the model will call (e.g., mcp__docker__docker_exec)
-        tool_names = [t.get("name") for t in mcp.list_tools() if t.get("type") == "function"]
-        docker_tool = next((n for n in tool_names if n and n.startswith("mcp__docker__")), None)
+        tool_names = [
+            t.get("name") for t in mcp.list_tools() if t.get("type") == "function"
+        ]
+        docker_tool = next(
+            (n for n in tool_names if n and n.startswith("mcp__docker__")), None,
+        )
         if not docker_tool:
             raise RuntimeError("docker MCP tool not found in manager")
 
@@ -90,7 +97,9 @@ async def run_demo() -> None:
         pending_tool_outputs: list[FunctionCallOutput] | None = None
         for _ in range(8):
             if pending_tool_outputs:
-                new_msgs, terminal_text = await responses_followup_with_tool_outputs(client, transcript, pending_tool_outputs, mcp)
+                new_msgs, terminal_text = await responses_followup_with_tool_outputs(
+                    client, transcript, pending_tool_outputs, mcp,
+                )
                 pending_tool_outputs = None
             else:
                 new_msgs, terminal_text = await responses_turn(client, transcript, mcp)
@@ -107,8 +116,16 @@ async def run_demo() -> None:
             print("Agent said:\n" + "\n".join(terminal_batch))
 
         # 5) Verify via Docker API that the file was created with correct contents
-        exec_res = container.exec_run(["sh", "-lc", "cat /tmp/ok.txt 2>/dev/null || echo MISSING"], stdout=True, stderr=True)
-        out = exec_res.output.decode(errors="replace") if hasattr(exec_res, "output") else exec_res[1].decode(errors="replace")
+        exec_res = container.exec_run(
+            ["sh", "-lc", "cat /tmp/ok.txt 2>/dev/null || echo MISSING"],
+            stdout=True,
+            stderr=True,
+        )
+        out = (
+            exec_res.output.decode(errors="replace")
+            if hasattr(exec_res, "output")
+            else exec_res[1].decode(errors="replace")
+        )
         got = out.strip()
         assert got == "hello", f"Verification failed: expected 'hello', got {got!r}"
         print("Verification: OK (hello)")

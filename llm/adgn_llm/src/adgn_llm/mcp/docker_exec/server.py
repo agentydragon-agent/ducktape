@@ -29,6 +29,7 @@ Note on timeouts:
   be aware timeouts will be best-effort (we stop reading and report timed_out=True, but the
   process may continue running inside the container).
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -36,16 +37,15 @@ import json
 import os
 import shlex
 import threading
+from collections.abc import Iterator
 from dataclasses import dataclass
 from time import monotonic
-from typing import Any, Dict, Iterator, List, Optional, Tuple
+from typing import Any
 
 import docker
 from docker.errors import APIError, NotFound
-
-import mcp.types as types
+from mcp import types
 from mcp.server.lowlevel import Server
-
 
 app = Server("docker-exec-mcp")
 
@@ -70,26 +70,28 @@ def _init_docker() -> None:
         _DEFAULT_TIMEOUT = float(v) if v else None
 
 
-def _shell_wrap(cmd: List[str]) -> str:
+def _shell_wrap(cmd: list[str]) -> str:
     return shlex.join(cmd)
 
 
 @dataclass
 class ExecResult:
-    exit_code: Optional[int]
+    exit_code: int | None
     timed_out: bool
     stdout: str
     stderr: str
 
 
-def _iter_stream_demux(client: docker.DockerClient, exec_id: str) -> Iterator[Tuple[bytes | None, bytes | None]]:
+def _iter_stream_demux(
+    client: docker.DockerClient, exec_id: str,
+) -> Iterator[tuple[bytes | None, bytes | None]]:
     api = client.api
     return api.exec_start(exec_id, stream=True, demux=True)  # type: ignore[return-value]
 
 
 def _build_exec_cmd(
-    base_cmd: List[str], *, shell: bool, timeout_secs: Optional[float]
-) -> List[str] | str:
+    base_cmd: list[str], *, shell: bool, timeout_secs: float | None,
+) -> list[str] | str:
     if _USE_TIMEOUT_WRAPPER and timeout_secs and timeout_secs > 0:
         timeout_arg = f"timeout -s TERM {int(timeout_secs)}"
         if shell:
@@ -102,13 +104,13 @@ def _build_exec_cmd(
 
 async def _docker_exec(
     *,
-    cmd: List[str],
-    cwd: Optional[str],
-    env: Optional[Dict[str, str]],
-    user: Optional[str],
+    cmd: list[str],
+    cwd: str | None,
+    env: dict[str, str] | None,
+    user: str | None,
     tty: bool,
     shell: bool,
-    timeout_secs: Optional[float],
+    timeout_secs: float | None,
 ) -> ExecResult:
     _init_docker()
     assert _DOCKER_CLIENT is not None
@@ -126,10 +128,12 @@ async def _docker_exec(
 
     prepared_cmd = _build_exec_cmd(cmd, shell=shell, timeout_secs=effective_timeout)
 
-    if shell and not (
-        isinstance(prepared_cmd, list) and prepared_cmd[:2] == ["sh", "-lc"]
-    ) and not isinstance(prepared_cmd, list):
-        exec_create_cmd: List[str] | str = ["sh", "-lc", prepared_cmd]  # type: ignore[list-item]
+    if (
+        shell
+        and not (isinstance(prepared_cmd, list) and prepared_cmd[:2] == ["sh", "-lc"])
+        and not isinstance(prepared_cmd, list)
+    ):
+        exec_create_cmd: list[str] | str = ["sh", "-lc", prepared_cmd]  # type: ignore[list-item]
     else:
         exec_create_cmd = prepared_cmd
 
@@ -211,14 +215,17 @@ async def list_tools() -> list[types.Tool]:
                 "properties": {
                     "cmd": {"type": "array", "items": {"type": "string"}},
                     "cwd": {"type": "string"},
-                    "env": {"type": "object", "additionalProperties": {"type": "string"}},
+                    "env": {
+                        "type": "object",
+                        "additionalProperties": {"type": "string"},
+                    },
                     "user": {"type": "string"},
                     "tty": {"type": "boolean", "default": False},
                     "shell": {"type": "boolean", "default": False},
                     "timeout_secs": {"type": "number", "minimum": 0},
                 },
             },
-        )
+        ),
     ]
 
 
@@ -239,7 +246,13 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[types.ContentB
     timeout_secs = arguments.get("timeout_secs")
 
     result = await _docker_exec(
-        cmd=cmd, cwd=cwd, env=env, user=user, tty=tty, shell=shell, timeout_secs=timeout_secs
+        cmd=cmd,
+        cwd=cwd,
+        env=env,
+        user=user,
+        tty=tty,
+        shell=shell,
+        timeout_secs=timeout_secs,
     )
     payload = {
         "exit_code": result.exit_code,

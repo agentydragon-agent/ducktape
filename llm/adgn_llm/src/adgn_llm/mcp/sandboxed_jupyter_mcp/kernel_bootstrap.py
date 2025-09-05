@@ -19,7 +19,13 @@ def _runtime_dir() -> Path:
         except Exception:
             pass
     # Fallback to TMPDIR or home
-    rd = os.environ.get("TMPDIR") or os.environ.get("TMP") or os.environ.get("TEMP") or os.environ.get("HOME") or "."
+    rd = (
+        os.environ.get("TMPDIR")
+        or os.environ.get("TMP")
+        or os.environ.get("TEMP")
+        or os.environ.get("HOME")
+        or "."
+    )
     p = Path(rd)
     try:
         p.mkdir(parents=True, exist_ok=True)
@@ -47,6 +53,7 @@ try:
     _log("bootstrap: starting ipykernel import")
     # ipykernel_launcher is how Jupyter starts kernels; mirror it but with logging around it
     from ipykernel import kernelapp as app  # type: ignore
+
     _log("bootstrap: imported ipykernel.kernelapp successfully")
     # Replicate behavior of ipykernel_launcher: run app.launch_new_instance()
     sys.argv = [sys.executable, "-m", "ipykernel_launcher", *sys.argv[1:]]
@@ -56,6 +63,9 @@ except SystemExit as e:
     _log(f"bootstrap: SystemExit code={getattr(e, 'code', None)}")
     raise
 except Exception:
-    _log("bootstrap: unhandled exception during kernel startup:\n" + traceback.format_exc())
+    _log(
+        "bootstrap: unhandled exception during kernel startup:\n"
+        + traceback.format_exc(),
+    )
     # Re-raise to preserve behavior; Jupyter will observe kernel crash and restart/log
     raise

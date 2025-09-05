@@ -237,7 +237,8 @@ class TaskDefinition(BaseModel):
     pre_task_commands: str | None = None
 
     def resolve_config(
-        self, task_types: dict[str, TaskType],
+        self,
+        task_types: dict[str, TaskType],
     ) -> tuple[TaskSetup | None, GradingConfig | None]:
         """Resolve final setup and grading config.
 

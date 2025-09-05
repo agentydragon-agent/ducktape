@@ -22,8 +22,12 @@ of good code.
 
 @specimens/
 
-The `specimens/` folder contains examples of bad code with freeform critique, of which some is already
-formalized in definitions, and some is not.
+The `specimens/` folder contains examples of bad code with critique. Canonical ground‑truth is now recorded in
+`issues.libsonnet` using the Jsonnet helpers (see `src/adgn_llm/properties/specimen_issues.libsonnet`).
+Use these to identify:
+- Covered items (should_flag=true and properties!=[]) — already explained by existing definitions
+- Not‑covered‑yet items (should_flag=true and properties==[]) — prime candidates to generalize into new/edited properties
+- Canonical negatives (should_flag=false) — clarify exclusions or tighten definitions as needed.
 
 ## Process
 

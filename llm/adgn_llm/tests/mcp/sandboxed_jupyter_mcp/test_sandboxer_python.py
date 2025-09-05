@@ -1,5 +1,5 @@
-import sys
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -10,6 +10,7 @@ def test_sandboxer_venv_python_prints_hello(tmp_path: Path):
     run = tmp_path
     (run / "tmp").mkdir(parents=True, exist_ok=True)
     import yaml
+
     policy = run / "policy.yaml"
     # Start permissive for convergence; we'll narrow iteratively once green
     policy_dict = {
@@ -44,7 +45,7 @@ def test_sandboxer_venv_python_prints_hello(tmp_path: Path):
         "-c",
         "print('HELLO_VENV')",
     ]
-    cp = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    cp = subprocess.run(cmd, check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     # Surface logs when it fails
     print("STDOUT:\n" + cp.stdout)
     print("STDERR:\n" + cp.stderr)

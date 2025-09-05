@@ -1,16 +1,13 @@
 #!/usr/bin/env python3
 """Tests for git-commit-ai --amend functionality with mocked AI."""
 
-import asyncio
-import os
 import tempfile
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
-from git import Repo
-
 from adgn_llm.git_commit_ai.cli import ClaudeAI, build_prompt, get_commit_diff
+from git import Repo
 
 
 class MockClaudeAI:
@@ -35,9 +32,8 @@ class MockClaudeAI:
         if self.previous_message:
             # For amend, return an updated version
             return f"Updated: {self.previous_message}\n\n- Added more changes"
-        else:
-            # For new commits
-            return "Add new functionality\n\n- Initial implementation"
+        # For new commits
+        return "Add new functionality\n\n- Initial implementation"
 
 
 @pytest.fixture
@@ -195,7 +191,7 @@ async def test_claude_ai_with_amend():
             mock_proc = AsyncMock()
             mock_proc.returncode = 0
             mock_proc.communicate = AsyncMock(
-                return_value=(b"<message>Updated commit message</message>", b"")
+                return_value=(b"<message>Updated commit message</message>", b""),
             )
             mock_subprocess.return_value = mock_proc
 
@@ -258,7 +254,7 @@ async def test_full_amend_flow_integration():
 
         # Mock AI would generate updated message
         mock_ai = MockClaudeAI(
-            repo=repo, diff=diff, passthru=[], previous_message=previous_message
+            repo=repo, diff=diff, passthru=[], previous_message=previous_message,
         )
 
         new_message = await mock_ai.generate(include_all=False)
@@ -318,22 +314,33 @@ async def test_editor_comments_and_scissors_are_ignored_in_commit_message(monkey
 
         # Patch AI/cache so no real AI is invoked; force cached message
         ai_message = "Subject line\n\nBody line one\n- bullet"
-        async def _fake_generate(self, include_all: bool, model: str | None = None) -> str:
+
+        async def _fake_generate(
+            self, include_all: bool, model: str | None = None,
+        ) -> str:
             return ai_message
-        monkeypatch.setattr("adgn_llm.git_commit_ai.cli.ClaudeAI.generate", _fake_generate)
-        monkeypatch.setattr("adgn_llm.git_commit_ai.cli.Cache.get", lambda self, key: ai_message)
+
+        monkeypatch.setattr(
+            "adgn_llm.git_commit_ai.cli.ClaudeAI.generate", _fake_generate,
+        )
+        monkeypatch.setattr(
+            "adgn_llm.git_commit_ai.cli.Cache.get", lambda self, key: ai_message,
+        )
 
         # Patch _get_editor to return a placeholder editor command
         async def _fake_get_editor():
             return "fake-editor"
+
         monkeypatch.setattr("adgn_llm.git_commit_ai.cli._get_editor", _fake_get_editor)
 
         # Intercept the editor subprocess shell call and append comments + scissors
         class _Proc:
             def __init__(self, code=0):
                 self._code = code
+
             async def wait(self):
                 return self._code
+
         async def _fake_shell(cmd, *args, **kwargs):
             # Extract COMMIT_EDITMSG path (last token)
             commit_path = cmd.rsplit(" ", 1)[-1]
@@ -344,10 +351,12 @@ async def test_editor_comments_and_scissors_are_ignored_in_commit_message(monkey
             )
             Path(commit_path).write_text(Path(commit_path).read_text() + msg)
             return _Proc(0)
+
         monkeypatch.setattr("asyncio.create_subprocess_shell", _fake_shell)
 
         # Run the tool; patch argv to avoid pytest args leaking
         from adgn_llm.git_commit_ai import cli
+
         with patch("sys.argv", ["git-commit-ai"]), patch("sys.exit") as mock_exit:
             await cli.async_main()
             mock_exit.assert_called_with(0)
@@ -362,4 +371,3 @@ async def test_editor_comments_and_scissors_are_ignored_in_commit_message(monkey
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
-

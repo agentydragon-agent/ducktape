@@ -3,20 +3,18 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
-import subprocess
-from pathlib import Path
 import sys
-from typing import Optional
+from pathlib import Path
 
 import yaml
 from pydantic import BaseModel, Field, ValidationError
-from adgn_llm.sandboxer import Policy as SandboxPolicy
 
+from adgn_llm.sandboxer import Policy as SandboxPolicy
 
 # -----------------------------------------------------------------------------
 # Pydantic config schema (single path, no profiles)
 # -----------------------------------------------------------------------------
+
 
 class KernelConfig(BaseModel):
     name: str = "python3"
@@ -24,9 +22,11 @@ class KernelConfig(BaseModel):
     language: str = "python"
     argv_base: list[str]
 
+
 class JupyterConfig(BaseModel):
     # Extra python config appended verbatim after defaults
     config_py_extra: str | None = None
+
 
 class ComposerConfig(BaseModel):
     version: int = 1
@@ -41,11 +41,12 @@ class ComposerConfig(BaseModel):
 # Helpers
 # -----------------------------------------------------------------------------
 
+
 def _ensure_dir(p: Path) -> None:
     p.mkdir(parents=True, exist_ok=True)
 
 
-def _write_default_jupyter_config(config_dir: Path, extra_py: Optional[str]) -> None:
+def _write_default_jupyter_config(config_dir: Path, extra_py: str | None) -> None:
     _ensure_dir(config_dir)
     default_lines = [
         "c = get_config()",
@@ -58,11 +59,17 @@ def _write_default_jupyter_config(config_dir: Path, extra_py: Optional[str]) -> 
     ]
     content = "\n".join(default_lines) + "\n"
     if extra_py:
-        content += "\n# --- composer appended config (verbatim) ---\n" + extra_py.rstrip("\n") + "\n"
+        content += (
+            "\n# --- composer appended config (verbatim) ---\n"
+            + extra_py.rstrip("\n")
+            + "\n"
+        )
     (config_dir / "jupyter_server_config.py").write_text(content)
 
 
-def _ensure_policy_minimums(policy: dict, *, runtime_dir: Path, kernel_exec: str) -> dict:
+def _ensure_policy_minimums(
+    policy: dict, *, runtime_dir: Path, kernel_exec: str,
+) -> dict:
     env_map = policy.setdefault("env", {})
     env_set = env_map.setdefault("set", {})
     env_map.setdefault("passthrough", [])
@@ -82,7 +89,9 @@ def _ensure_policy_minimums(policy: dict, *, runtime_dir: Path, kernel_exec: str
     try:
         kexec_path = Path(kernel_exec)
         if not kexec_path.is_absolute():
-            kexec_path = kexec_path.absolute()  # preserve symlinks, avoid resolve() here
+            kexec_path = (
+                kexec_path.absolute()
+            )  # preserve symlinks, avoid resolve() here
         # Add both the symlink path and the resolved real path (if different)
         exec_symlink = kexec_path.as_posix()
         if exec_symlink not in rp:
@@ -140,6 +149,7 @@ def _ensure_policy_minimums(policy: dict, *, runtime_dir: Path, kernel_exec: str
 # Compose from config
 # -----------------------------------------------------------------------------
 
+
 def compose_from_config_raw(raw_text: str) -> None:
     raw = yaml.safe_load(raw_text)
     try:
@@ -173,7 +183,9 @@ def compose_from_config_raw(raw_text: str) -> None:
 
     # Build policy: start from provided model and apply minimal inserts
     policy_node: dict = cfg.policy.model_dump()
-    policy_node = _ensure_policy_minimums(policy_node, runtime_dir=runtime_dir, kernel_exec=kernel_exec)
+    policy_node = _ensure_policy_minimums(
+        policy_node, runtime_dir=runtime_dir, kernel_exec=kernel_exec,
+    )
 
     # Write policy
     policy_path = policy_dir / "policy.yaml"
@@ -210,12 +222,17 @@ def compose_from_config_raw(raw_text: str) -> None:
 # CLI
 # -----------------------------------------------------------------------------
 
+
 def main() -> int:
     ap = argparse.ArgumentParser(
         prog="jupyter-sandbox-compose",
         description="Composer to build a bundle (config/kernels/policies) from a single YAML config",
     )
-    ap.add_argument("--config", required=True, help="Path to composer YAML config path or '-' for stdin")
+    ap.add_argument(
+        "--config",
+        required=True,
+        help="Path to composer YAML config path or '-' for stdin",
+    )
     args = ap.parse_args()
 
     raw_text = sys.stdin.read() if args.config == "-" else Path(args.config).read_text()

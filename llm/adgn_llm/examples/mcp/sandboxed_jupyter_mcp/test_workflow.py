@@ -1,21 +1,24 @@
 import json
 import os
-import sys
 import shutil
 import subprocess
+import sys
 import time
 from pathlib import Path
+
 import pytest
-import ipykernel  # test-only hard dependency
 import yaml
+
 
 def _send_line_json(w, obj: dict) -> None:
     from mcp_helpers import send_line_json as _real_send
+
     _real_send(w, obj)
 
 
 def _read_line_json(r, timeout: float) -> dict | None:
     from mcp_helpers import read_line_json as _real_read
+
     return _real_read(r, timeout)
 
 
@@ -23,12 +26,16 @@ def _read_line_json(r, timeout: float) -> dict | None:
 def test_example_bundle_and_launch(tmp_path):
     # Preconditions: we need jupyter and jupyter-mcp-server resolvable on PATH (hard fail if missing)
     assert shutil.which("jupyter"), "'jupyter' must be on PATH for tests"
-    assert shutil.which("jupyter-mcp-server"), "'jupyter-mcp-server' must be on PATH for tests"
+    assert shutil.which("jupyter-mcp-server"), (
+        "'jupyter-mcp-server' must be on PATH for tests"
+    )
 
     # Ensure our package is importable to subprocesses via PYTHONPATH
     src_dir = Path(__file__).resolve().parents[1] / "src"
     env = os.environ.copy()
-    env["PYTHONPATH"] = (f"{src_dir}:{env['PYTHONPATH']}" if env.get("PYTHONPATH") else str(src_dir))
+    env["PYTHONPATH"] = (
+        f"{src_dir}:{env['PYTHONPATH']}" if env.get("PYTHONPATH") else str(src_dir)
+    )
     env["JUPYTER_LOG_LEVEL"] = "DEBUG"
 
     bundle_dir = tmp_path / "bundle"
@@ -62,8 +69,15 @@ def test_example_bundle_and_launch(tmp_path):
             },
             "fs": {
                 # Limit read to python binary dir and stdlib site-packages only
-                "read_paths": [venv_root.as_posix(), (venv_root / "lib").as_posix(), bundle_dir.as_posix()],
-                "write_paths": [runtime_dir.as_posix(), (runtime_dir / "workspace").as_posix()],
+                "read_paths": [
+                    venv_root.as_posix(),
+                    (venv_root / "lib").as_posix(),
+                    bundle_dir.as_posix(),
+                ],
+                "write_paths": [
+                    runtime_dir.as_posix(),
+                    (runtime_dir / "workspace").as_posix(),
+                ],
             },
             "net": {"mode": "loopback"},
             "platform": {"seatbelt": {"trace": False}},
@@ -73,7 +87,13 @@ def test_example_bundle_and_launch(tmp_path):
 
     # Run composer via stdin
     subprocess.run(
-        [sys.executable, "-m", "adgn_llm.mcp.sandboxed_jupyter_mcp.jupyter_sandbox_compose", "--config", "-"],
+        [
+            sys.executable,
+            "-m",
+            "adgn_llm.mcp.sandboxed_jupyter_mcp.jupyter_sandbox_compose",
+            "--config",
+            "-",
+        ],
         input=composer_yaml.encode(),
         check=True,
         env=env,
@@ -107,7 +127,13 @@ def test_example_bundle_and_launch(tmp_path):
         str(runtime_dir),
     ]
 
-    p = subprocess.Popen(launch_cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
+    p = subprocess.Popen(
+        launch_cmd,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=env,
+    )
 
     # Allow some startup logs to flow, helps MCP readiness
     start = time.time()
@@ -119,10 +145,19 @@ def test_example_bundle_and_launch(tmp_path):
 
     # MCP stdio protocol: initialize, then execute a code cell
     try:
-        _send_line_json(p.stdin, {
-            "jsonrpc": "2.0", "id": 1, "method": "initialize",
-            "params": {"protocolVersion": "2025-06-18", "capabilities": {"tools": {}}, "clientInfo": {"name": "pytest", "version": "0.0.1"}}
-        })
+        _send_line_json(
+            p.stdin,
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2025-06-18",
+                    "capabilities": {"tools": {}},
+                    "clientInfo": {"name": "pytest", "version": "0.0.1"},
+                },
+            },
+        )
         init_resp = None
         deadline = time.time() + 45.0
         while time.time() < deadline and not init_resp:
@@ -130,12 +165,12 @@ def test_example_bundle_and_launch(tmp_path):
             if m and m.get("id") == 1 and ("result" in m or "error" in m):
                 init_resp = m
         assert init_resp and "result" in init_resp, f"initialize failed: {init_resp}"
-        _send_line_json(p.stdin, {"jsonrpc": "2.0", "method": "notifications/initialized"})
+        _send_line_json(
+            p.stdin, {"jsonrpc": "2.0", "method": "notifications/initialized"},
+        )
         time.sleep(0.3)
         # List available tools (sanity)
-        _send_line_json(p.stdin, {
-            "jsonrpc": "2.0", "id": 99, "method": "tools/list"
-        })
+        _send_line_json(p.stdin, {"jsonrpc": "2.0", "id": 99, "method": "tools/list"})
         tools_resp = None
         deadline = time.time() + 45.0
         while time.time() < deadline and not tools_resp:
@@ -146,10 +181,18 @@ def test_example_bundle_and_launch(tmp_path):
 
         # Happy-path execution
         code_ok = "print('OK:', 2+2)"
-        _send_line_json(p.stdin, {
-            "jsonrpc": "2.0", "id": 2, "method": "tools/call",
-            "params": {"name": "append_execute_code_cell", "arguments": {"cell_source": code_ok}}
-        })
+        _send_line_json(
+            p.stdin,
+            {
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "tools/call",
+                "params": {
+                    "name": "append_execute_code_cell",
+                    "arguments": {"cell_source": code_ok},
+                },
+            },
+        )
         exec_ok = None
         deadline = time.time() + 45.0
         while time.time() < deadline and not exec_ok:
@@ -168,27 +211,53 @@ def test_example_bundle_and_launch(tmp_path):
             "except Exception as e:\n"
             "    print('NET_FAIL:', type(e).__name__, str(e)[:80])\n"
         )
-        _send_line_json(p.stdin, {
-            "jsonrpc": "2.0", "id": 4, "method": "tools/call",
-            "params": {"name": "append_execute_code_cell", "arguments": {"cell_source": code_net}}
-        })
+        _send_line_json(
+            p.stdin,
+            {
+                "jsonrpc": "2.0",
+                "id": 4,
+                "method": "tools/call",
+                "params": {
+                    "name": "append_execute_code_cell",
+                    "arguments": {"cell_source": code_net},
+                },
+            },
+        )
         exec_net = None
         deadline = time.time() + 45.0
         while time.time() < deadline and not exec_net:
             m = _read_line_json(p.stdout, 1.0)
             if m and m.get("id") == 4 and ("result" in m or "error" in m):
                 exec_net = m
-        assert exec_net and ("result" in exec_net or "error" in exec_net), f"no network response: {exec_net}"
+        assert exec_net and ("result" in exec_net or "error" in exec_net), (
+            f"no network response: {exec_net}"
+        )
         blob_net = json.dumps(exec_net)
-        assert ("NET_FAIL:" in blob_net) or ("Error" in blob_net) or ("timed out" in blob_net) or ("Name or service not known" in blob_net) or ("Network is unreachable" in blob_net), blob_net
+        assert (
+            ("NET_FAIL:" in blob_net)
+            or ("Error" in blob_net)
+            or ("timed out" in blob_net)
+            or ("Name or service not known" in blob_net)
+            or ("Network is unreachable" in blob_net)
+        ), blob_net
 
         # Sandbox boundary: attempt to write outside runtime_dir should fail
-        outside_file = (tmp_path.parent / (tmp_path.name + "_outside") / "denied.txt").as_posix()
+        outside_file = (
+            tmp_path.parent / (tmp_path.name + "_outside") / "denied.txt"
+        ).as_posix()
         code_denied = f"import pathlib\npathlib.Path('{outside_file}').write_text('x')"
-        _send_line_json(p.stdin, {
-            "jsonrpc": "2.0", "id": 3, "method": "tools/call",
-            "params": {"name": "append_execute_code_cell", "arguments": {"cell_source": code_denied}}
-        })
+        _send_line_json(
+            p.stdin,
+            {
+                "jsonrpc": "2.0",
+                "id": 3,
+                "method": "tools/call",
+                "params": {
+                    "name": "append_execute_code_cell",
+                    "arguments": {"cell_source": code_denied},
+                },
+            },
+        )
         exec_bad = None
         deadline = time.time() + 45.0
         while time.time() < deadline and not exec_bad:
@@ -196,9 +265,16 @@ def test_example_bundle_and_launch(tmp_path):
             if m and m.get("id") == 3 and ("result" in m or "error" in m):
                 exec_bad = m
         # Expect denial reflected as an error or failure text in results
-        assert exec_bad and ("error" in exec_bad or "result" in exec_bad), f"no response for denied write: {exec_bad}"
+        assert exec_bad and ("error" in exec_bad or "result" in exec_bad), (
+            f"no response for denied write: {exec_bad}"
+        )
         blob = json.dumps(exec_bad)
-        assert ("Permission" in blob) or ("Operation not permitted" in blob) or ("Errno" in blob) or ("Connection was lost" in blob), blob
+        assert (
+            ("Permission" in blob)
+            or ("Operation not permitted" in blob)
+            or ("Errno" in blob)
+            or ("Connection was lost" in blob)
+        ), blob
     finally:
         try:
             p.terminate()
@@ -211,7 +287,9 @@ def test_network_open_allows_http(tmp_path):
     assert shutil.which("jupyter") and shutil.which("jupyter-mcp-server")
     src_dir = Path(__file__).resolve().parents[1] / "src"
     env = os.environ.copy()
-    env["PYTHONPATH"] = (f"{src_dir}:{env['PYTHONPATH']}" if env.get("PYTHONPATH") else str(src_dir))
+    env["PYTHONPATH"] = (
+        f"{src_dir}:{env['PYTHONPATH']}" if env.get("PYTHONPATH") else str(src_dir)
+    )
 
     bundle_dir = tmp_path / "bundle"
     runtime_dir = tmp_path / "runtime"
@@ -229,7 +307,7 @@ def test_network_open_allows_http(tmp_path):
             "argv_base": [sys.executable, "-m", "ipykernel_launcher"],
         },
         "policy": {
-            "env": {"set": {"HOME": runtime_dir.as_posix()} , "passthrough": []},
+            "env": {"set": {"HOME": runtime_dir.as_posix()}, "passthrough": []},
             "fs": {
                 "read_paths": [
                     venv_root.as_posix(),
@@ -238,26 +316,57 @@ def test_network_open_allows_http(tmp_path):
                     "/System/Library",
                     "/usr/lib",
                 ],
-                "write_paths": [runtime_dir.as_posix(), (runtime_dir / "workspace").as_posix()],
+                "write_paths": [
+                    runtime_dir.as_posix(),
+                    (runtime_dir / "workspace").as_posix(),
+                ],
             },
             "net": {"mode": "open"},
             "platform": {"seatbelt": {"trace": False}},
         },
     }
     composer_yaml = yaml.safe_dump(composer_cfg, sort_keys=False)
-    subprocess.run([sys.executable, "-m", "adgn_llm.mcp.sandboxed_jupyter_mcp.jupyter_sandbox_compose", "--config", "-"], input=composer_yaml.encode(), check=True, env=env)
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "adgn_llm.mcp.sandboxed_jupyter_mcp.jupyter_sandbox_compose",
+            "--config",
+            "-",
+        ],
+        input=composer_yaml.encode(),
+        check=True,
+        env=env,
+    )
 
     config_dir = bundle_dir / "config"
     kernels_dir = bundle_dir / "kernels"
-    p = subprocess.Popen([
-        sys.executable, "-m", "adgn_llm.mcp.sandboxed_jupyter_mcp.jupyter_mcp_launch",
-        "--config", str(config_dir),
-        "--kernels", str(kernels_dir),
-        "--workspace", str(runtime_dir / "workspace"),
-        "--kernel-name", "python3",
-        "--port", "0", "--token", "auto", "--start-new-runtime",
-        "--log-dir", str(runtime_dir),
-    ], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
+    p = subprocess.Popen(
+        [
+            sys.executable,
+            "-m",
+            "adgn_llm.mcp.sandboxed_jupyter_mcp.jupyter_mcp_launch",
+            "--config",
+            str(config_dir),
+            "--kernels",
+            str(kernels_dir),
+            "--workspace",
+            str(runtime_dir / "workspace"),
+            "--kernel-name",
+            "python3",
+            "--port",
+            "0",
+            "--token",
+            "auto",
+            "--start-new-runtime",
+            "--log-dir",
+            str(runtime_dir),
+        ],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=env,
+    )
 
     # Drain a bit of stderr for readiness
     start = time.time()
@@ -268,7 +377,19 @@ def test_network_open_allows_http(tmp_path):
         sys.stderr.write("[stderr] " + line.decode(errors="ignore"))
 
     try:
-        _send_line_json(p.stdin, {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-06-18", "capabilities": {"tools": {}}, "clientInfo": {"name": "pytest", "version": "0.0.1"}}})
+        _send_line_json(
+            p.stdin,
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2025-06-18",
+                    "capabilities": {"tools": {}},
+                    "clientInfo": {"name": "pytest", "version": "0.0.1"},
+                },
+            },
+        )
         init = None
         deadline = time.time() + 45.0
         while time.time() < deadline and not init:
@@ -276,7 +397,9 @@ def test_network_open_allows_http(tmp_path):
             if m and m.get("id") == 1 and ("result" in m or "error" in m):
                 init = m
         assert init and "result" in init, init
-        _send_line_json(p.stdin, {"jsonrpc": "2.0", "method": "notifications/initialized"})
+        _send_line_json(
+            p.stdin, {"jsonrpc": "2.0", "method": "notifications/initialized"},
+        )
         time.sleep(0.3)
 
         # Plain HTTP to avoid TLS CA access inside sandbox
@@ -286,7 +409,18 @@ def test_network_open_allows_http(tmp_path):
             "    data = r.read(200).decode('utf-8', 'ignore')\n"
             "print('NET_OK:', 'Example Domain' in data, len(data))\n"
         )
-        _send_line_json(p.stdin, {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "append_execute_code_cell", "arguments": {"cell_source": code_net}}})
+        _send_line_json(
+            p.stdin,
+            {
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "tools/call",
+                "params": {
+                    "name": "append_execute_code_cell",
+                    "arguments": {"cell_source": code_net},
+                },
+            },
+        )
         resp = None
         deadline = time.time() + 45.0
         while time.time() < deadline and not resp:

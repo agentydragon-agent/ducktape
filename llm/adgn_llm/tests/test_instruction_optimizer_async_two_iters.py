@@ -1,10 +1,8 @@
-import asyncio
 import json
 import time
 from pathlib import Path
 
 import pytest
-
 from adgn_llm.instruction_optimizer.config import (
     DebugConfig,
     GraderConfig,
@@ -15,7 +13,7 @@ from adgn_llm.instruction_optimizer.config import (
     TokenConfig,
     TruncationConfig,
 )
-from adgn_llm.instruction_optimizer.io.jsonl_logger import JSONLLogger
+from adgn_llm.instruction_optimizer.engine import optimizer as opt
 from adgn_llm.instruction_optimizer.engine.models import (
     AgentTaskType,
     Criterion,
@@ -23,7 +21,7 @@ from adgn_llm.instruction_optimizer.engine.models import (
     TaskDefinition,
     TaskType,
 )
-from adgn_llm.instruction_optimizer.engine import optimizer as opt
+from adgn_llm.instruction_optimizer.io.jsonl_logger import JSONLLogger
 from openai.types.responses import Response
 from openai.types.responses.response_function_tool_call_item import (
     ResponseFunctionToolCallItem,
@@ -33,7 +31,7 @@ from openai.types.responses.response_output_text import ResponseOutputText
 
 
 def mk_func_call(
-    *, name: str, args: dict, call_id: str, id: str | None = None
+    *, name: str, args: dict, call_id: str, id: str | None = None,
 ) -> ResponseFunctionToolCallItem:
     return ResponseFunctionToolCallItem(
         id=id or call_id,
@@ -64,7 +62,7 @@ def mk_response(
     parallel_tool_calls: bool = False,
 ) -> Response:
     return Response(
-        id=id or f"resp-{int(time.time()*1000)}",
+        id=id or f"resp-{int(time.time() * 1000)}",
         object="response",
         model=model,
         created_at=int(time.time()),
@@ -97,7 +95,9 @@ class FakeResponsesAPI:
                     call_id=f"pe-{self._pe_counter}",
                     id=f"call-{self._pe_counter}",
                 )
-                return mk_response([call], model=model, tools=tools, tool_choice=tool_choice)
+                return mk_response(
+                    [call], model=model, tools=tools, tool_choice=tool_choice,
+                )
             # Grader submit_grades path
             if name == "submit_grades":
                 # Find required keys from tool schema
@@ -113,7 +113,9 @@ class FakeResponsesAPI:
                     call_id="grade-1",
                     id="call-grade",
                 )
-                return mk_response([call], model=model, tools=tools, tool_choice=tool_choice)
+                return mk_response(
+                    [call], model=model, tools=tools, tool_choice=tool_choice,
+                )
             # Comparison grading (not exercised here)
         # MiniCodexRunner flow
         # First turn forces tool_choice="required" with tools including shell_run
@@ -127,27 +129,34 @@ class FakeResponsesAPI:
                 call_id="shell-1",
                 id="call-shell-1",
             )
-            return mk_response([call], model=model, tools=tools, tool_choice=tool_choice)
+            return mk_response(
+                [call], model=model, tools=tools, tool_choice=tool_choice,
+            )
         # Subsequent turn after tool outputs: return assistant message
         if previous_response_id is not None:
-            return mk_response([mk_msg("done", id="msg-1")], model=model, tools=tools, tool_choice=tool_choice)
+            return mk_response(
+                [mk_msg("done", id="msg-1")],
+                model=model,
+                tools=tools,
+                tool_choice=tool_choice,
+            )
         # Default: assistant text (shouldn't be used in our paths)
         raise Exception("unhandled call of mock")
 
 
 class FakeAsyncOpenAI:
-    def __init__(self, *a, **k):  # noqa: D401
+    def __init__(self, *a, **k):
         self.responses = FakeResponsesAPI()
 
 
-@pytest.fixture()
+@pytest.fixture
 def cfg_two_iters() -> OptimizerConfig:
     return OptimizerConfig(
         seeds_file="seeds.yaml",
         graders_file="graders.yaml",
         rollouts=RolloutConfig(max_parallel=1, max_turns=2, bash_timeout_ms=10_000),
         prompt_engineer=PromptEngineerConfig(
-            model="gpt-4o-mini", reasoning_effort="low", feedback_mode="full_rollouts"
+            model="gpt-4o-mini", reasoning_effort="low", feedback_mode="full_rollouts",
         ),
         grader=GraderConfig(model="gpt-4o-mini", reasoning_effort="low"),
         summarizer=SummarizerConfig(model="gpt-4o-mini", max_tokens=512),
@@ -170,7 +179,7 @@ def cfg_two_iters() -> OptimizerConfig:
 
 @pytest.mark.asyncio
 async def test_optimize_prompts_two_iterations_async(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, cfg_two_iters: OptimizerConfig
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, cfg_two_iters: OptimizerConfig,
 ):
     # Patch AsyncOpenAI everywhere to use our fake
     import openai
@@ -187,14 +196,14 @@ async def test_optimize_prompts_two_iterations_async(
             prompt="print hello",
             type="coding",
             grading_overrides=MessageBasedGrading(
-                criteria=[Criterion(name="overall", description="overall quality")]
+                criteria=[Criterion(name="overall", description="overall quality")],
             ),
-        )
+        ),
     ]
     criteria = [Criterion(name="overall", description="overall quality")]
     task_types = {"coding": TaskType(name="coding", grading=None)}
     runner_configs = {
-        "claude": {"type": "minicodex_runner", "config": {"model": "o4-mini"}}
+        "claude": {"type": "minicodex_runner", "config": {"model": "o4-mini"}},
     }
 
     # Logging client using fake AsyncOpenAI
@@ -209,8 +218,10 @@ async def test_optimize_prompts_two_iterations_async(
 
     # Disable plotting by stubbing tracker.generate_report
     orig_generate_report = opt.ScoreEvolutionTracker.generate_report
+
     def _no_plot(self, run_dir, log_path):
         return "report"
+
     monkeypatch.setattr(opt.ScoreEvolutionTracker, "generate_report", _no_plot)
 
     out_dir = await opt.optimize_prompts(
@@ -251,4 +262,6 @@ async def test_optimize_prompts_two_iterations_async(
     assert prompts["2"].startswith("PROMPT_V2")
 
     # Restore original method
-    monkeypatch.setattr(opt.ScoreEvolutionTracker, "generate_report", orig_generate_report)
+    monkeypatch.setattr(
+        opt.ScoreEvolutionTracker, "generate_report", orig_generate_report,
+    )

@@ -1,23 +1,29 @@
 from __future__ import annotations
 
 import argparse
+import importlib
+import logging
 import os
 import shutil
 import subprocess
 import sys
-import tarfile
 import tempfile
 import time
-from collections.abc import Iterable
+from dataclasses import dataclass
 from importlib.resources import files
 from pathlib import Path
-from urllib.error import HTTPError, URLError
-from urllib.request import urlopen
 
+import structlog
 import tiktoken
-import yaml
 
-from .specimen_frontmatter import GitHubSource, GitSource, LocalSource, SpecimenManifest
+from .specimen_utils import (
+    build_scope_text,
+    find_specimens_base,
+    list_specimen_names,
+    load_manifest,
+    resolve_manifest_arg,
+    resolve_source_root,
+)
 
 
 def build_supplemental_section(supplemental_text: str | None) -> str:
@@ -51,7 +57,10 @@ def read_embedded_paths(paths: list[Path]) -> str:
 
 
 def _scope_block(
-    scope_text: str, *, static_action: str, ambiguity_tail: str
+    scope_text: str,
+    *,
+    static_action: str,
+    ambiguity_tail: str,
 ) -> list[str]:
     return [
         "Scope (freeform):",
@@ -76,18 +85,27 @@ def _properties_text() -> str:
     for md in sorted(defs_dir.rglob("*.md")):
         rel = md.relative_to(props_root)  # e.g., definitions/python/type-hints.md
         parts.append(
-            f'<file path=":/{rel.as_posix()}">\n{md.read_text(encoding="utf-8")}\n</file>'
+            f'<file path=":/{rel.as_posix()}">\n{md.read_text(encoding="utf-8")}\n</file>',
         )
     return "\n\n".join(parts)
 
 
 def _properties_block(
-    properties_text: str, supplemental_section: str | None
+    properties_text: str,
+    supplemental_section: str | None,
 ) -> list[str]:
     lines = ["Property definitions:", properties_text]
     if supplemental_section:
         lines.append(supplemental_section)
     return lines
+
+
+@dataclass(frozen=True)
+class BuildOptions:
+    sandbox: str
+    skip_git_repo_check: bool
+    full_auto: bool
+    extra_configs: list[str] | None = None
 
 
 # Recognized QA tools (names shown to users/agents)
@@ -361,7 +379,7 @@ def build_grade_prompt(scope_text: str, canonical_text: str, critique_text: str)
         "- No match (0.0): unrelated",
         "",
         "",
-        * _scope_block(
+        *_scope_block(
             scope_text,
             static_action="use for context only (do not re-scan code)",
             ambiguity_tail="you are not re-running analysis; only use it for reference while matching.",
@@ -385,7 +403,7 @@ def build_grade_prompt(scope_text: str, canonical_text: str, critique_text: str)
     return "\n".join(lines).strip()
 
 
-def _run_specimen_grade(
+def _run_specimen_grade(  # noqa: PLR0913
     manifest_path: Path,
     critique_path: Path,
     *,
@@ -394,49 +412,34 @@ def _run_specimen_grade(
     output_final_message: str | None,
     gitconfig: str | None,
 ) -> int:
-    man = _load_manifest(manifest_path)
+    man = load_manifest(manifest_path)
     # Resolve root (fresh checkout/copy) so the agent has code context
-    if isinstance(man.source, GitHubSource):
-        root = _try_download_github_archive(man.source.org, man.source.repo, man.source.ref)
-        if root is None:
-            root = _fresh_git_checkout_url(
-                f"https://github.com/{man.source.org}/{man.source.repo}.git",
-                man.source.ref,
-                gitconfig,
-            )
-    elif isinstance(man.source, GitSource):
-        url = man.source.url
-        root = None
-        if url.startswith("https://github.com/"):
-            parts = url.removeprefix("https://github.com/").rstrip("/")
-            if parts.endswith(".git"):
-                parts = parts[:-4]
-            bits = parts.split("/")
-            if len(bits) >= 2:
-                root = _try_download_github_archive(bits[0], bits[1], man.source.ref)
-        if root is None:
-            root = _fresh_git_checkout_url(man.source.url, man.source.ref, gitconfig)
-    elif isinstance(man.source, LocalSource):
-        root = _fresh_local_copy(manifest_path.parent / man.source.root)
-    else:
-        raise SystemExit(f"Unsupported source type: {type(man.source)}")
+    root = resolve_source_root(man, manifest_path, gitconfig)
 
-    scope_text = _build_scope_text(man.scope.include, man.scope.exclude)
+    scope_text = build_scope_text(man.scope.include, man.scope.exclude)
 
-    # Collect canonical files if present
+    # Collect canonical findings — Jsonnet-only (issues.libsonnet or issues.libsonnet)
     spec_dir = manifest_path.parent
-    canonical_files: list[Path] = []
-    for name in ("covered.md", "not_covered_yet.md", "false_positives.md"):
-        p = spec_dir / name
-        if p.exists():
-            canonical_files.append(p)
-    canonical_text = read_embedded_paths(canonical_files) if canonical_files else "(no canonical files present)"
+    issues_path = None
+    p = spec_dir / "issues.libsonnet"
+    if not p.exists():
+        print(
+            f"ERROR: No issues.libsonnet found under {spec_dir}. "
+            "Specimen-grade requires Jsonnet canonical issues; please create issues.libsonnet.",
+        )
+        return 2
+    issues_path = p
+    canonical_text = read_embedded_paths([issues_path])
     critique_text = read_embedded_paths([critique_path])
 
     prompt = build_grade_prompt(scope_text, canonical_text, critique_text)
 
     # Build codex command (read-only; full-auto; skip git repo check)
-    cmd = build_cmd("gpt-5", root, sandbox="read-only", skip_git_repo_check=True, full_auto=True)
+    cmd = build_cmd(
+        "gpt-5",
+        root,
+        BuildOptions(sandbox="read-only", skip_git_repo_check=True, full_auto=True),
+    )
 
     out_last_file: Path | None = None
     if output_final_message:
@@ -460,7 +463,9 @@ def _run_specimen_grade(
         except Exception:
             tokens = None
         print(" ".join(cmd))
-        print(f"Saved prompt: {outfile} (approx tokens: {tokens if tokens is not None else 'n/a'})")
+        print(
+            f"Saved prompt: {outfile} (approx tokens: {tokens if tokens is not None else 'n/a'})",
+        )
         return 0
 
     rc = subprocess.run(cmd, check=False, input=prompt, text=True).returncode
@@ -468,18 +473,17 @@ def _run_specimen_grade(
         try:
             print(Path(out_last_file).read_text(encoding="utf-8"))
         except Exception as e:
-            print(f"[error reading final message file {out_last_file}: {e}]", file=sys.stderr)
+            print(
+                f"[error reading final message file {out_last_file}: {e}]",
+                file=sys.stderr,
+            )
     return rc
 
 
 def build_cmd(
     model: str,
     workdir: Path,
-    *,
-    sandbox: str,
-    skip_git_repo_check: bool,
-    full_auto: bool,
-    extra_configs: list[str] | None = None,
+    opts: BuildOptions,
 ) -> list[str]:
     # Use codex exec with long flags for model/sandbox; pass configs via -c
     cmd: list[str] = [
@@ -488,177 +492,38 @@ def build_cmd(
         "--model",
         model,
         "--sandbox",
-        sandbox,
+        opts.sandbox,
         "-C",
         str(workdir),
     ]
-    if extra_configs:
-        for c in extra_configs:
+    if opts.extra_configs:
+        for c in opts.extra_configs:
             cmd.extend(["-c", c])
-    if full_auto:
+    if opts.full_auto:
         cmd.append("--full-auto")
-    if skip_git_repo_check:
+    if opts.skip_git_repo_check:
         cmd.append("--skip-git-repo-check")
     return cmd
 
 
-# ---- Specimen helpers (inlined) ----
+# ---- Specimen helpers moved to specimen_utils; duplicate definitions removed ----
 
 
-def _find_specimens_base() -> Path:
-    # 1) importlib.resources
-    try:
-        res = files("adgn_llm").joinpath("properties", "specimens")
-        p = Path(str(res))
-        if p.exists() and p.is_dir():
-            return p
-    except Exception:
-        pass
-    # 2) walk parents from this file for src tree
-    here = Path(__file__).resolve()
-    for parent in here.parents:
-        for rel in (
-            Path("src/adgn_llm/properties/specimens"),
-            Path("adgn_llm/properties/specimens"),
-        ):
-            cand = (parent / rel).resolve()
-            if cand.exists():
-                return cand
-    # Fallback
-    return Path(str(files("adgn_llm").joinpath("properties", "specimens")))
-
-
-def _list_specimen_names(base: Path) -> list[str]:
-    return sorted(
-        [
-            p.name
-            for p in base.iterdir()
-            if p.is_dir() and (p / "manifest.yaml").exists()
-        ]
-    )
-
-
-def _resolve_manifest_arg(arg: str | None, base: Path) -> Path | None:
-    if arg is None:
-        return None
-    path = Path(arg)
-    if path.exists():
-        return path / "manifest.yaml" if path.is_dir() else path
-    cand = base / arg / "manifest.yaml"
-    if cand.exists():
-        return cand
-    # unique prefix
-    matches = [n for n in _list_specimen_names(base) if n.startswith(arg)]
-    if len(matches) == 1:
-        return base / matches[0] / "manifest.yaml"
-    return None
-
-
-def _load_manifest(path: Path) -> SpecimenManifest:
-    data = yaml.safe_load(path.read_text(encoding="utf-8"))
-    return SpecimenManifest.model_validate(data)
-
-
-def _try_download_github_archive(owner: str, repo: str, ref: str) -> Path | None:
-    url = f"https://codeload.github.com/{owner}/{repo}/tar.gz/{ref}"
-    tmpdir = Path(tempfile.mkdtemp(prefix="adgn-specimen-archive-"))
-    tar_path = tmpdir / f"{repo}-{ref}.tar.gz"
-    try:
-        with urlopen(url) as resp, tar_path.open("wb") as out:
-            out.write(resp.read())
-    except (URLError, HTTPError):
-        return None
-    with tarfile.open(tar_path, "r:gz") as tf:
-        tf.extractall(tmpdir)
-    for p in tmpdir.iterdir():
-        if p.is_dir():
-            return p.resolve()
-    return None
-
-
-def _fresh_git_checkout_url(url: str, ref: str, gitconfig: str | None) -> Path:
-    tmpdir = Path(tempfile.mkdtemp(prefix="adgn-specimen-git-"))
-    env = dict(**os.environ)
-    if gitconfig:
-        env["GIT_CONFIG_GLOBAL"] = str(Path(gitconfig).expanduser().resolve())
-    subprocess.run(
-        ["git", "init", str(tmpdir)], check=True, stdout=subprocess.DEVNULL, env=env
-    )
-    subprocess.run(
-        ["git", "-C", str(tmpdir), "remote", "add", "origin", url], check=True, env=env
-    )
-    subprocess.run(
-        ["git", "-C", str(tmpdir), "fetch", "--depth", "1", "origin", ref],
-        check=True,
-        env=env,
-    )
-    subprocess.run(
-        ["git", "-C", str(tmpdir), "checkout", "--detach", ref], check=True, env=env
-    )
-    return tmpdir
-
-
-def _fresh_local_copy(root: Path) -> Path:
-    src = root.resolve()
-    if not src.exists():
-        raise SystemExit(f"Local source root not found: {src}")
-    tmpdir = Path(tempfile.mkdtemp(prefix="adgn-specimen-local-"))
-    dest = tmpdir / src.name
-    shutil.copytree(src, dest)
-    return dest
-
-
-def _build_scope_text(
-    include: Iterable[str], exclude: Iterable[str] | None = None
-) -> str:
-    inc = ", ".join(include)
-    if exclude:
-        return f"all files under {inc} (excluding: {', '.join(exclude)})"
-    return f"all files under {inc}"
-
-
-def _run_specimen(
+def _run_specimen(  # noqa: PLR0913
     manifest_path: Path,
     *,
     dry_run: bool,
-    json_out: bool,
     embed_paths: list[str] | None,
     gitconfig: str | None,
     mode: str = "find",
     final_only: bool = False,
     output_final_message: str | None = None,
 ) -> int:
-    man = _load_manifest(manifest_path)
+    man = load_manifest(manifest_path)
     # Resolve root
-    if isinstance(man.source, GitHubSource):
-        root = _try_download_github_archive(
-            man.source.org, man.source.repo, man.source.ref
-        )
-        if root is None:
-            root = _fresh_git_checkout_url(
-                f"https://github.com/{man.source.org}/{man.source.repo}.git",
-                man.source.ref,
-                gitconfig,
-            )
-    elif isinstance(man.source, GitSource):
-        # Best-effort tarball when URL is GitHub https
-        url = man.source.url
-        root = None
-        if url.startswith("https://github.com/"):
-            parts = url.removeprefix("https://github.com/").rstrip("/")
-            if parts.endswith(".git"):
-                parts = parts[:-4]
-            bits = parts.split("/")
-            if len(bits) >= 2:
-                root = _try_download_github_archive(bits[0], bits[1], man.source.ref)
-        if root is None:
-            root = _fresh_git_checkout_url(man.source.url, man.source.ref, gitconfig)
-    elif isinstance(man.source, LocalSource):
-        root = _fresh_local_copy(manifest_path.parent / man.source.root)
-    else:
-        raise SystemExit(f"Unsupported source type: {type(man.source)}")
+    root = resolve_source_root(man, manifest_path, gitconfig)
 
-    scope_text = _build_scope_text(man.scope.include, man.scope.exclude)
+    scope_text = build_scope_text(man.scope.include, man.scope.exclude)
     # Build supplemental text from embedded files (covered/not_covered_yet or user-specified)
     supplemental_text = (
         read_embedded_paths([Path(p) for p in (embed_paths or [])])
@@ -695,7 +560,9 @@ def _run_specimen(
 
     # Build codex command (read-only sandbox; full-auto; skip git repo check)
     cmd = build_cmd(
-        "gpt-5", root, sandbox="read-only", skip_git_repo_check=True, full_auto=True
+        "gpt-5",
+        root,
+        BuildOptions(sandbox="read-only", skip_git_repo_check=True, full_auto=True),
     )
     out_last_file: Path | None = None
     if output_final_message:
@@ -721,11 +588,11 @@ def _run_specimen(
             tokens = None
         print(" ".join(cmd))
         print(
-            f"Detected tools: {', '.join(_detect_tools()) if _detect_tools() else '(none)'}"
+            f"Detected tools: {', '.join(_detect_tools()) if _detect_tools() else '(none)'}",
         )
         print(_format_tools_table(_detect_tools()))
         print(
-            f"Saved prompt: {outfile} (approx tokens: {tokens if tokens is not None else 'n/a'})"
+            f"Saved prompt: {outfile} (approx tokens: {tokens if tokens is not None else 'n/a'})",
         )
         return 0
 
@@ -743,6 +610,24 @@ def _run_specimen(
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Configure structlog once per process; always configure, choose renderer by env
+    renderer = (
+        structlog.processors.JSONRenderer()
+        if os.environ.get("MINICODEX_DEBUG")
+        else structlog.processors.KeyValueRenderer(
+            key_order=["event"],
+        )  # stable, grep-friendly
+    )
+    min_level = logging.DEBUG if os.environ.get("MINICODEX_DEBUG") else logging.INFO
+    structlog.configure(
+        processors=[
+            structlog.processors.TimeStamper(fmt="iso"),
+            structlog.processors.add_log_level,
+            renderer,
+        ],
+        logger_factory=structlog.make_filtering_bound_logger(min_level),
+    )
+
     parser = argparse.ArgumentParser(
         description="adgn-llm codex properties CLI",
         formatter_class=argparse.RawTextHelpFormatter,
@@ -822,7 +707,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     p_spec.add_argument("--dry-run", action="store_true")
     p_spec.add_argument(
-        "--json", action="store_true", help="Request JSON output from critic"
+        "--json",
+        action="store_true",
+        help="Request JSON output from critic",
     )
     p_spec.add_argument(
         "--embed-path",
@@ -865,7 +752,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     p_spec_new.add_argument("--dry-run", action="store_true")
     p_spec_new.add_argument(
-        "--json", action="store_true", help="Request JSON output from critic"
+        "--json",
+        action="store_true",
+        help="Request JSON output from critic",
     )
     p_spec_new.add_argument(
         "--gitconfig",
@@ -920,13 +809,44 @@ def main(argv: list[str] | None = None) -> int:
         help="Write only the agent's final message to this path (passthrough to codex --output-last-message)",
     )
 
+    # New command: specimen-lint-issue — lint exactly one issue using mini_codex + docker_exec MCP
+    p_spec_lint = sub.add_parser(
+        "specimen-lint-issue",
+        aliases=["lint"],
+        help="Lint a single issue in a specimen (mini_codex + docker_exec)",
+        description=(
+            "Resolve specimen source+scope from manifest.yaml, fresh checkout/copy, and run a one-off \n"
+            "mini_codex agent inside a container to lint exactly one issue against the property definitions."
+        ),
+    )
+    p_spec_lint.add_argument(
+        "specimen",
+        help="Specimen name (under properties/specimens), path to specimen dir, or path to manifest.yaml",
+    )
+    p_spec_lint.add_argument(
+        "issue_id",
+        help="Issue id to lint (must have should_flag=true)",
+    )
+    p_spec_lint.add_argument("--model", default="gpt-5")
+    p_spec_lint.add_argument("--dry-run", action="store_true")
+
     args = parser.parse_args(argv)
 
+    if args.command in ("specimen-lint-issue", "lint"):
+        # Late import via importlib to avoid circular dependency while keeping lints happy
+        mod = importlib.import_module("adgn_llm.properties.specimen_lint_issue")
+        return mod.run_specimen_lint_issue(
+            args.specimen,
+            args.issue_id,
+            model=getattr(args, "model", "gpt-5"),
+            dry_run=getattr(args, "dry_run", False),
+        )
+
     if args.command == "specimen-check":
-        base = _find_specimens_base()
-        manifest_path = _resolve_manifest_arg(args.specimen, base)
+        base = find_specimens_base()
+        manifest_path = resolve_manifest_arg(args.specimen, base)
         if manifest_path is None:
-            names = _list_specimen_names(base)
+            names = list_specimen_names(base)
             if not names:
                 print(f"No specimens found under: {base}")
                 return 2
@@ -946,7 +866,6 @@ def main(argv: list[str] | None = None) -> int:
         return _run_specimen(
             manifest_path,
             dry_run=args.dry_run,
-            json_out=args.json,
             embed_paths=args.embed_paths,
             gitconfig=gitconfig_path,
             mode=mode,
@@ -955,10 +874,10 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     if args.command == "specimen-discover":
-        base = _find_specimens_base()
-        manifest_path = _resolve_manifest_arg(args.specimen, base)
+        base = find_specimens_base()
+        manifest_path = resolve_manifest_arg(args.specimen, base)
         if manifest_path is None:
-            names = _list_specimen_names(base)
+            names = list_specimen_names(base)
             if not names:
                 print(f"No specimens found under: {base}")
                 return 2
@@ -982,7 +901,6 @@ def main(argv: list[str] | None = None) -> int:
         return _run_specimen(
             manifest_path,
             dry_run=args.dry_run,
-            json_out=args.json,
             embed_paths=embed_paths,
             gitconfig=gitconfig_path,
             mode="discover",
@@ -991,10 +909,10 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     if args.command == "specimen-grade":
-        base = _find_specimens_base()
-        manifest_path = _resolve_manifest_arg(args.specimen, base)
+        base = find_specimens_base()
+        manifest_path = resolve_manifest_arg(args.specimen, base)
         if manifest_path is None:
-            names = _list_specimen_names(base)
+            names = list_specimen_names(base)
             if not names:
                 print(f"No specimens found under: {base}")
                 return 2
@@ -1027,7 +945,7 @@ def main(argv: list[str] | None = None) -> int:
         detected_tools = _detect_tools()
         if not getattr(args, "output_final_message", None):
             print(
-                f"Detected tools    : {', '.join(detected_tools) if detected_tools else '(none)'}"
+                f"Detected tools    : {', '.join(detected_tools) if detected_tools else '(none)'}",
             )
             print(_format_tools_table(detected_tools))
         out_last_file: Path | None = None
@@ -1046,19 +964,23 @@ def main(argv: list[str] | None = None) -> int:
             cmd = build_cmd(
                 args.model,
                 workdir,
-                sandbox="read-only",
-                skip_git_repo_check=args.skip_git_repo_check,
-                full_auto=args.full_auto,
+                BuildOptions(
+                    sandbox="read-only",
+                    skip_git_repo_check=args.skip_git_repo_check,
+                    full_auto=args.full_auto,
+                ),
             )
         else:
             prompt = build_enforce_prompt(args.scope)
             cmd = build_cmd(
                 args.model,
                 workdir,
-                sandbox="workspace-write",
-                skip_git_repo_check=args.skip_git_repo_check,
-                full_auto=args.full_auto,
-                extra_configs=['sandbox_permissions=["disk-full-read-access"]'],
+                BuildOptions(
+                    sandbox="workspace-write",
+                    skip_git_repo_check=args.skip_git_repo_check,
+                    full_auto=args.full_auto,
+                    extra_configs=['sandbox_permissions=["disk-full-read-access"]'],
+                ),
             )
         if getattr(args, "output_final_message", None):
             cmd.extend(["--output-last-message", args.output_final_message])
@@ -1083,11 +1005,11 @@ def main(argv: list[str] | None = None) -> int:
                 tokens = None
             print(" ".join(cmd))
             print(
-                f"Detected tools: {', '.join(_detect_tools()) if _detect_tools() else '(none)'}"
+                f"Detected tools: {', '.join(_detect_tools()) if _detect_tools() else '(none)'}",
             )
             print(_format_tools_table(_detect_tools()))
             print(
-                f"Saved prompt: {outfile} (approx tokens: {tokens if tokens is not None else 'n/a'})"
+                f"Saved prompt: {outfile} (approx tokens: {tokens if tokens is not None else 'n/a'})",
             )
             return 0
 
@@ -1107,6 +1029,7 @@ def main(argv: list[str] | None = None) -> int:
             return 130
     else:
         parser.error("command is required")
+        return 2
 
 
 if __name__ == "__main__":

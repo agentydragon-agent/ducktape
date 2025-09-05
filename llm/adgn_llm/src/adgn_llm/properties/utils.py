@@ -3,6 +3,7 @@
 
 Assumes the TypeScript codex-tui CLI is installed and available as `codex`.
 """
+
 from __future__ import annotations
 
 import subprocess
@@ -16,7 +17,9 @@ def ensure_dir(path: Path) -> None:
 
 
 def git(*args: str, cwd: Path) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(["git", *args], check=False, cwd=str(cwd), text=True, capture_output=True)
+    return subprocess.run(
+        ["git", *args], check=False, cwd=str(cwd), text=True, capture_output=True,
+    )
 
 
 def determine_merge_base(workdir: Path, upstream_ref: str) -> str:
@@ -31,7 +34,11 @@ def determine_merge_base(workdir: Path, upstream_ref: str) -> str:
 
 
 def resolve_properties_dir(default_base: Path, override: str | None) -> Path:
-    p = Path(override).expanduser().resolve() if override else (default_base / "properties").resolve()
+    p = (
+        Path(override).expanduser().resolve()
+        if override
+        else (default_base / "properties").resolve()
+    )
     if not p.is_dir():
         raise SystemExit(f"Error: properties directory not found: {p}")
     return p
@@ -45,7 +52,9 @@ def read_all_properties_text(properties_dir: Path) -> str:
     parts: list[str] = []
     for pf in prop_files:
         rel = pf.relative_to(properties_dir)
-        parts.append(f"<file path=\":/{rel.as_posix()}\">\n{pf.read_text(encoding='utf-8')}\n</file>")
+        parts.append(
+            f'<file path=":/{rel.as_posix()}">\n{pf.read_text(encoding="utf-8")}\n</file>',
+        )
     return "\n\n".join(parts)
 
 
@@ -76,6 +85,7 @@ def build_codex_cmd(
 
 def copy_to_clipboard(text: str) -> None:
     import pyperclip  # Hard dependency for --copy-prompt
+
     pyperclip.copy(text)
 
 

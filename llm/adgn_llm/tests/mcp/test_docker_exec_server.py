@@ -1,7 +1,7 @@
+import json
 import os
 import time
 import uuid
-import json
 
 import anyio
 import docker
@@ -10,7 +10,6 @@ import pytest
 # MCP client imports
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
-
 
 
 def _docker_client():
@@ -49,7 +48,9 @@ def _start_container(image: str = "alpine:3.20"):
 
 def _container_has_timeout(container) -> bool:
     try:
-        exit_code, out = container.exec_run(["sh", "-lc", "command -v timeout || which timeout"], demux=True)
+        exit_code, out = container.exec_run(
+            ["sh", "-lc", "command -v timeout || which timeout"], demux=True,
+        )
         if exit_code == 0:
             stdout = (out[0] or b"").decode()
             return bool(stdout.strip())
@@ -72,7 +73,9 @@ def _extract_payload(resp):
     raise AssertionError(f"Unexpected tool response shape: {resp!r}")
 
 
-@pytest.mark.skipif(os.environ.get("CI") == "true", reason="Requires local Docker engine")
+@pytest.mark.skipif(
+    os.environ.get("CI") == "true", reason="Requires local Docker engine",
+)
 def test_hello_world():
     container = _start_container()
     try:
@@ -80,14 +83,16 @@ def test_hello_world():
         env = {
             "DOCKER_CONTAINER": container.id,
             # Use wrapper only if available in container
-            "USE_CONTAINER_TIMEOUT_WRAPPER": "1" if _container_has_timeout(container) else "0",
+            "USE_CONTAINER_TIMEOUT_WRAPPER": "1"
+            if _container_has_timeout(container)
+            else "0",
         }
         server_env = {**os.environ, **env}
 
         async def run():
             params = StdioServerParameters(
                 command="python3",
-                args=["-m","adgn_llm.mcp.docker_exec.server"],
+                args=["-m", "adgn_llm.mcp.docker_exec.server"],
                 env=server_env,
             )
             async with stdio_client(params) as (read, write):
@@ -118,7 +123,9 @@ def test_hello_world():
             pass
 
 
-@pytest.mark.skipif(os.environ.get("CI") == "true", reason="Requires local Docker engine")
+@pytest.mark.skipif(
+    os.environ.get("CI") == "true", reason="Requires local Docker engine",
+)
 def test_stderr_and_exit_code():
     container = _start_container()
     try:
@@ -131,7 +138,7 @@ def test_stderr_and_exit_code():
         async def run():
             params = StdioServerParameters(
                 command="python3",
-                args=["-m","adgn_llm.mcp.docker_exec.server"],
+                args=["-m", "adgn_llm.mcp.docker_exec.server"],
                 env=server_env,
             )
             async with stdio_client(params) as (read, write):
@@ -156,7 +163,9 @@ def test_stderr_and_exit_code():
             pass
 
 
-@pytest.mark.skipif(os.environ.get("CI") == "true", reason="Requires local Docker engine")
+@pytest.mark.skipif(
+    os.environ.get("CI") == "true", reason="Requires local Docker engine",
+)
 def test_timeout_flag():
     container = _start_container()
     try:
@@ -170,7 +179,7 @@ def test_timeout_flag():
         async def run():
             params = StdioServerParameters(
                 command="python3",
-                args=["-m","adgn_llm.mcp.docker_exec.server"],
+                args=["-m", "adgn_llm.mcp.docker_exec.server"],
                 env=server_env,
             )
             async with stdio_client(params) as (read, write):

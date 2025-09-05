@@ -28,7 +28,9 @@ def _truncate_bytes(s: str, limit: int) -> str:
 
 
 def _run_proc(
-    argv: list[str], timeout_s: int, cwd: str | None = None,
+    argv: list[str],
+    timeout_s: int,
+    cwd: str | None = None,
 ) -> tuple[int, str, str]:
     p = subprocess.Popen(
         argv,
@@ -56,7 +58,9 @@ def _run_proc(
 
 
 def _run_in_sandbox(
-    cmd: list[str], timeout_s: int, cwd: str | None,
+    cmd: list[str],
+    timeout_s: int,
+    cwd: str | None,
 ) -> tuple[int, str, str]:
     # Enforce sandboxing: on non-Linux, only allow with explicit override
     if sys.platform != "linux":

@@ -12,7 +12,15 @@ Interactively scaffold a new specimen under `specimens/` per @README.md. Ask use
 - `specimens/YYYY-MM-DD-<slug>/`
   - `manifest.yaml` (valid SpecimenManifest)
   - `README.md` (with optional Seed issues section)
-  - `covered.md`, `not_covered_yet.md`, `false_positives.md` (empty)
+  - `issues.libsonnet` (canonical issues, starting with `I.root([])`)
+
+Jsonnet scaffold example:
+```jsonnet
+local I = import '../../specimen_issues.libsonnet';
+I.root([
+  // Add issues here using I.issueSingle / I.issueMultiFromLines
+])
+```
 
 ## Inputs (ask interactively)
 - Source (choose one; collect only what is required by `SpecimenManifest`):

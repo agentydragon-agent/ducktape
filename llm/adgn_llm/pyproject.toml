@@ -33,6 +33,8 @@ dependencies = [
   "pathspec",
   "anyio>=4.4",
   "mcp[cli]>=1.13.1",
+  "platformdirs>=4.0.0",
+  "jsonnet>=0.20.0",
 ]
 
 [project.scripts]
@@ -43,6 +45,7 @@ sandbox-jupyter-mcp = "adgn_llm.mcp.sandboxed_jupyter_mcp.wrapper:main"
 adgn-sandboxer = "adgn_llm.sandboxer:main"
 adgn-instruction-optimizer = "adgn_llm.instruction_optimizer.core.optimizer:main"
 adgn-mcp-docker-exec = "adgn_llm.mcp.docker_exec.server:main"
+adgn-llm-edit = "adgn_llm.llm_edit:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

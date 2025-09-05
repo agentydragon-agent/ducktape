@@ -1,11 +1,9 @@
+import shutil
 import sys
 from pathlib import Path
 
-import pytest
-import os
-import shutil
 import policy_fixture as policy
-
+import pytest
 
 # These tests use the same explicit YAML policy used by the wrapper.
 # The helper in policy_fixture.py can be a template for users who want to
@@ -36,7 +34,10 @@ def _build_wrapper_cmd(ws: Path, run_root: Path, port: int) -> list[str]:
 @pytest.mark.macos
 @pytest.mark.parametrize(
     "provision_ws_with_policy,net_mode,expect_http",
-    [pytest.param({"net": "loopback"}, "loopback", False, id="loopback"), pytest.param({"net": "open"}, "open", True, id="open")],
+    [
+        pytest.param({"net": "loopback"}, "loopback", False, id="loopback"),
+        pytest.param({"net": "open"}, "open", True, id="open"),
+    ],
     indirect=["provision_ws_with_policy"],
 )
 def test_network_modes_http_boundary(
@@ -70,7 +71,7 @@ def test_network_modes_http_boundary(
             "    print('NET_FAIL:', type(e).__name__)\n"
         )
         result = mcp_call_tool(
-            proc, "append_execute_code_cell", {"cell_source": code}, call_timeout=60.0
+            proc, "append_execute_code_cell", {"cell_source": code}, call_timeout=60.0,
         )
         blob = str(result)
         if expect_http:
@@ -82,7 +83,16 @@ def test_network_modes_http_boundary(
 @pytest.mark.macos
 @pytest.mark.parametrize(
     "provision_ws_with_policy",
-    [pytest.param({"env_set": {"FOO_SET": "SET_OK"}, "env_passthrough": ["BAR_PASS"], "net": "loopback"}, id="env")],
+    [
+        pytest.param(
+            {
+                "env_set": {"FOO_SET": "SET_OK"},
+                "env_passthrough": ["BAR_PASS"],
+                "net": "loopback",
+            },
+            id="env",
+        ),
+    ],
     indirect=["provision_ws_with_policy"],
 )
 def test_env_set_and_passthrough_visible_in_kernel(
@@ -112,7 +122,7 @@ def test_env_set_and_passthrough_visible_in_kernel(
             "print('ENV_BAR_PASS=', os.environ.get('BAR_PASS'))\n"
         )
         result = mcp_call_tool(
-            proc, "append_execute_code_cell", {"cell_source": code}, call_timeout=45.0
+            proc, "append_execute_code_cell", {"cell_source": code}, call_timeout=45.0,
         )
         blob = str(result)
         assert "ENV_FOO_SET= SET_OK" in blob and "ENV_BAR_PASS= PASS_OK" in blob, blob
@@ -138,8 +148,10 @@ def test_fs_read_allow_and_deny(
 
     (ws, run_root) = provision_ws_with_policy
 
-    allowed_dir = tmp_path / "allowed"; denied_dir = tmp_path / "denied"
-    allowed_dir.mkdir(); denied_dir.mkdir()
+    allowed_dir = tmp_path / "allowed"
+    denied_dir = tmp_path / "denied"
+    allowed_dir.mkdir()
+    denied_dir.mkdir()
     (allowed_dir / "ok.txt").write_text("OK_FILE")
     (denied_dir / "no.txt").write_text("NO_FILE")
 
@@ -183,7 +195,11 @@ def test_fs_read_allow_and_deny(
             f"    print('READ_DENY=', type(e).__name__)\n"
         )
         result = mcp_call_tool(
-            proc, "append_execute_code_cell", {"cell_source": code}, call_timeout=60.0
+            proc, "append_execute_code_cell", {"cell_source": code}, call_timeout=60.0,
         )
         blob = str(result)
-        assert "READ_OK= OK_FILE" in blob and "READ_DENY=" in blob and "READ_DENY_OOPS" not in blob, blob
+        assert (
+            "READ_OK= OK_FILE" in blob
+            and "READ_DENY=" in blob
+            and "READ_DENY_OOPS" not in blob
+        ), blob

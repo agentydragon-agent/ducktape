@@ -20,7 +20,8 @@ YAML frontmatter example:
 
 from __future__ import annotations
 
-from typing import List, Literal, Optional, Union, Annotated
+from typing import Annotated, Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -43,14 +44,16 @@ class LocalSource(BaseModel):
     root: str = "."  # local root directory
 
 
-Source = Annotated[Union[GitSource, GitHubSource, LocalSource], Field(discriminator="vcs")]
+Source = Annotated[
+    GitSource | GitHubSource | LocalSource, Field(discriminator="vcs"),
+]
 
 
 class Scope(BaseModel):
     """Scope globs relative to source root (repo root or local root)."""
 
-    include: List[str]
-    exclude: Optional[List[str]] = None
+    include: list[str]
+    exclude: list[str] | None = None
 
 
 class SpecimenManifest(BaseModel):

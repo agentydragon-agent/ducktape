@@ -1,5 +1,5 @@
-import sys
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -58,13 +58,21 @@ def test_sandboxer_yes_hello_world_narrow(tmp_path: Path):
         "net": {"mode": "none"},
         "platform": {
             "trace": True,
-            "seatbelt": {"extra_allow": {"sysctl_read": True, "file_read_extra": [], "mach_lookup": ["com.apple.cfprefsd.agent"]}},
+            "seatbelt": {
+                "extra_allow": {
+                    "sysctl_read": True,
+                    "file_read_extra": [],
+                    "mach_lookup": ["com.apple.cfprefsd.agent"],
+                },
+            },
         },
     }
     policy.write_text(yaml.safe_dump(policy_dict, sort_keys=False))
 
     def _run_and_print(argv: list[str]) -> subprocess.CompletedProcess:
-        cp = subprocess.run(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        cp = subprocess.run(
+            argv, check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
         print("CMD:", " ".join(argv))
         print("STDOUT:\n" + cp.stdout)
         print("STDERR:\n" + cp.stderr)
@@ -105,30 +113,34 @@ def test_sandboxer_yes_hello_world_narrow(tmp_path: Path):
         return cp
 
     # 1) Basic echo using /bin/echo (no shell)
-    cp_echo = _run_and_print([
-        sys.executable,
-        "-m",
-        "adgn_llm.sandboxer",
-        "--policy",
-        str(policy),
-        "--trace",
-        "--",
-        "/bin/echo",
-        "HELLO_ECHO",
-    ])
+    cp_echo = _run_and_print(
+        [
+            sys.executable,
+            "-m",
+            "adgn_llm.sandboxer",
+            "--policy",
+            str(policy),
+            "--trace",
+            "--",
+            "/bin/echo",
+            "HELLO_ECHO",
+        ],
+    )
     # 2) Shell pipeline yes|head
-    cp_pipe = _run_and_print([
-        sys.executable,
-        "-m",
-        "adgn_llm.sandboxer",
-        "--policy",
-        str(policy),
-        "--trace",
-        "--",
-        "/bin/sh",
-        "-lc",
-        "yes hello | head -n 5",
-    ])
+    cp_pipe = _run_and_print(
+        [
+            sys.executable,
+            "-m",
+            "adgn_llm.sandboxer",
+            "--policy",
+            str(policy),
+            "--trace",
+            "--",
+            "/bin/sh",
+            "-lc",
+            "yes hello | head -n 5",
+        ],
+    )
 
     assert cp_echo.returncode == 0 and "HELLO_ECHO" in cp_echo.stdout
     assert cp_pipe.returncode == 0 and "hello" in cp_pipe.stdout

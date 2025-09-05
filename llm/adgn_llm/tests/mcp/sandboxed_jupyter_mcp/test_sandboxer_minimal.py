@@ -1,9 +1,12 @@
 import subprocess
-from pathlib import Path
 import sys
+from pathlib import Path
+
 import pytest
 
-pytestmark = pytest.mark.skipif(sys.platform != "darwin", reason="seatbelt only on macOS")
+pytestmark = pytest.mark.skipif(
+    sys.platform != "darwin", reason="seatbelt only on macOS",
+)
 
 # IMPORTANT: Do NOT "fix" this test by editing sandboxer.py defaults.
 # Iterate by adjusting the YAML reference policy only.

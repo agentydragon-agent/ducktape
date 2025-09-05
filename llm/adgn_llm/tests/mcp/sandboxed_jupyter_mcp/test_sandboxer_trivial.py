@@ -1,6 +1,5 @@
-import os
-import sys
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -11,6 +10,7 @@ def test_trivial_yes_hello_world(tmp_path: Path):
     run = tmp_path
     (run / "tmp").mkdir(parents=True, exist_ok=True)
     import yaml
+
     policy = run / "policy.yaml"
     policy_dict = {
         "env": {
@@ -45,7 +45,7 @@ def test_trivial_yes_hello_world(tmp_path: Path):
         "yes hello | head -n 5",
     ]
     # Capture outputs for diagnostics
-    cp = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    cp = subprocess.run(cmd, check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     print("STDOUT:\n" + cp.stdout)
     print("STDERR:\n" + cp.stderr)
     assert cp.returncode == 0

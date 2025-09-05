@@ -1,184 +1,211 @@
+"""
+MiniCodex agent built on OpenAI Responses API with direct MCP tool wiring.
+"""
+
 from __future__ import annotations
 
 import json
+import os
 import time
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
-from datetime import timedelta
-from enum import StrEnum
 from pathlib import Path
 from typing import Any, Literal
 
 import openai
+import structlog
 from openai import APIConnectionError, APIStatusError, APITimeoutError, RateLimitError
 from openai.types.responses import (
     ResponseFunctionToolCall,
     ResponseOutputMessage,
     ResponseOutputText,
 )
+
+try:
+    from openai.types.responses import (
+        ResponseOutputReasoning,  # type: ignore[attr-defined]
+    )
+except Exception:  # pragma: no cover
+
+    class ResponseOutputReasoning:  # type: ignore[no-redef]
+        ...
+
+
 from pydantic import BaseModel
 from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 
-from .local_server import LocalServer
 from .mcp_manager import McpManager
-
-# Unified tool source mapping
-# Each value is either a LocalServer instance or a stdio dict with keys: command, args?, env?
-ToolMap = dict[str, Any]
-DEFAULT_MODEL = "o4-mini"
-SYSTEM_INSTRUCTIONS = "You are a code agent. Be concise."
-
-def _is_retryable(err: BaseException) -> bool:
-    if isinstance(err, APITimeoutError | APIConnectionError | RateLimitError):
-        return True
-    if isinstance(err, APIStatusError):
-        return isinstance(err.status_code, int) and err.status_code >= 500
-    return False
-
-@retry(
-    retry=retry_if_exception(_is_retryable),
-    wait=wait_exponential(multiplier=0.5),
-    stop=stop_after_attempt(3),
-    reraise=True,
-)
-def _responses_create_with_retry(client: openai.OpenAI, **params: Any):
-    return client.responses.create(**params)
-
-def _openai_client() -> openai.OpenAI:
-    # Let the SDK discover configuration from environment; no manual key handling here
-    return openai.OpenAI()
-
-
-class ToolPolicy(StrEnum):
-    AUTO = "auto"
-    REQUIRED = "required"
-    NONE = "none"
-
-
-@dataclass
-class ToolRun:
-    name: str
-    args: dict[str, Any]
-    result: dict[str, Any]
-    latency: timedelta
-    error: str | None = None
-
-
-@dataclass
-class Metrics:
-    turns: int = 0
-    tool_calls: int = 0
-    total_latency: timedelta = timedelta(0)
 
 
 @dataclass
 class AgentResult:
     text: str
-    sequence: list[AgentEvent]   # linearized: assistant_text, tool_call, tool_output
+    sequence: list[dict[str, Any]]
     metrics: Metrics
 
 
-AgentEvent = dict[str, Any]
-AgentEventHandler = Callable[[AgentEvent], Any]
+class Metrics:
+    def __init__(self) -> None:
+        self.turns = 0
+        self.tool_calls = 0
+
+
+def _responses_output_from_calltool(res: Any) -> str:
+    try:
+        structured = getattr(res, "structuredContent", None)
+        if structured is not None:
+            return json.dumps(structured)
+        blocks = [
+            b.model_dump(by_alias=True) for b in (getattr(res, "content", []) or [])
+        ]
+        return json.dumps({"content": blocks})
+    except Exception as e:  # pragma: no cover
+        return json.dumps({"error": f"conversion_error: {e}"})
+
+
+def _is_reasoning_item(item: Any) -> bool:
+    return (
+        isinstance(item, ResponseOutputReasoning)
+        or getattr(item, "type", None) == "reasoning"
+    )
+
+
+# Namespaced tool form: mcp__{server}__{tool}
+ToolMap = dict[str, Any]
+
+SYSTEM_INSTRUCTIONS = "You are a code agent. Be concise."
+
+
+_logger = structlog.get_logger("mini_codex.setup")
+
+
+def _openai_client() -> openai.OpenAI:
+    return openai.OpenAI()
+
+
+def _responses_create_with_retry(client: openai.OpenAI, **kwargs: Any):
+    return client.responses.create(**kwargs)
+
+
+@retry(
+    retry=retry_if_exception(
+        lambda e: isinstance(
+            e, APITimeoutError | APIConnectionError | RateLimitError | APIStatusError,
+        ),
+    ),
+    wait=wait_exponential(multiplier=1, min=1, max=8),
+    stop=stop_after_attempt(4),
+)
+def _responses_create_with_retry(client: openai.OpenAI, **kwargs: Any):
+    return client.responses.create(**kwargs)
 
 
 def load_mcp_file(path: str) -> ToolMap:
     data = json.loads(Path(path).read_text(encoding="utf-8"))
     servers = data.get("mcpServers") or {}
-    if not isinstance(servers, dict):  # defensive
+    if not isinstance(servers, dict):
         raise ValueError(".mcp.json: mcpServers must be object")
-    # Keep as stdio dicts; MiniCodex will split
-    return {name: cfg for name, cfg in servers.items()}
+    return dict(servers)
 
 
 class MiniCodex:
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         *,
         model: str,
         system: str | None,
-        tool_policy: ToolPolicy | str,
-        on_event: AgentEventHandler | None,
+        require_at_least_one_tool: bool,
+        on_event: Callable[[dict[str, Any]], Any] | None,
         mcp: McpManager,
-        client: openai.OpenAI | None = None,
+        client: openai.OpenAI,
+        enable_reasoning: bool = False,
+        reasoning_options: dict[str, Any] | None = None,
     ) -> None:
         self._model = model
         self._system = system or SYSTEM_INSTRUCTIONS
-        self._tool_policy = ToolPolicy(tool_policy) if not isinstance(tool_policy, ToolPolicy) else tool_policy
+        self._require_one_tool = require_at_least_one_tool
         self._on_event = on_event
         self._mcp = mcp
-        self._client = client or _openai_client()
-        self._messages: list[Message] = []  # user/assistant only
+        self._client = client
+        self._transcript: list[TranscriptItem] = []
+        self._enable_reasoning = enable_reasoning
+        self._reasoning_options = reasoning_options
         self._metrics = Metrics()
+        self._log = structlog.get_logger("mini_codex").bind(
+            component="MiniCodex", model=self._model,
+        )
 
     @classmethod
-    async def start(
+    async def start(  # noqa: PLR0913
         cls,
         *,
         model: str,
         tools: ToolMap,
         system: str | None = None,
-        tool_policy: ToolPolicy | str = ToolPolicy.AUTO,
-        on_event: AgentEventHandler | None = None,
-        client: openai.OpenAI | None = None,
+        require_at_least_one_tool: bool = True,
+        on_event: Callable[[dict[str, Any]], Any] | None = None,
+        client: openai.OpenAI,
+        enable_reasoning: bool = False,
+        reasoning_options: dict[str, Any] | None = None,
     ) -> MiniCodex:
-        # Split ToolMap → stdio servers + local servers
-        stdio_servers: dict[str, dict[str, Any]] = {}
-        local_servers: list[LocalServer] = []
-        for name, val in (tools or {}).items():
-            if isinstance(val, LocalServer):
-                local_servers.append(val)
-            elif isinstance(val, dict) and "command" in val:
-                stdio_servers[name] = {
-                    "command": val["command"],
-                    "args": val.get("args") or [],
-                    "env": val.get("env") or {},
-                }
-            else:
-                raise ValueError(f"Unsupported tool source for {name!r}")
-        mcp = await McpManager.from_servers(stdio_servers, local=None, local_servers=local_servers)
-        return cls(model=model, system=system, tool_policy=tool_policy, on_event=on_event, mcp=mcp, client=client)
+        mcp = await McpManager.from_servers(servers=tools, inproc_sessions=None)
+        return cls(
+            model=model,
+            system=system,
+            require_at_least_one_tool=require_at_least_one_tool,
+            on_event=on_event,
+            mcp=mcp,
+            client=client,
+            enable_reasoning=enable_reasoning,
+            reasoning_options=reasoning_options,
+        )
 
     def tools(self) -> list[dict[str, Any]]:
         return self._mcp.list_tools()
 
     @property
     def messages(self) -> list[dict[str, Any]]:
-        return dump_messages_for_api(self._messages)
+        return dump_messages_for_api(self._transcript)
 
-    async def run(self, user_text: str, stream: bool = False) -> AgentResult | AsyncIterator[AgentEvent]:
+    async def run(
+        self, user_text: str, stream: bool = False,
+    ) -> AgentResult | AsyncIterator[dict[str, Any]]:
         if stream:
-            # Streaming events optional: for now, just yield a single final event using non-stream path
-            async def _gen() -> AsyncIterator[AgentEvent]:
+
+            async def _gen() -> AsyncIterator[dict[str, Any]]:
                 res = await self.run(user_text, stream=False)  # type: ignore[assignment]
                 yield {"kind": "final", "result": res}
+
             return _gen()
 
-        # 1) append the user message
-    
-        self._messages.append(UserMessage(role="user", content=user_text))
-
-        # 2) Execute turns until model stops requesting tools
-        sequence: list[AgentEvent] = []
+        self._transcript.append(UserMessage(role="user", content=user_text))
+        sequence: list[dict[str, Any]] = []
         assistant_text_chunks: list[str] = []
         prior_tool_calls: list[dict[str, Any]] | None = None
         pending_tool_outputs: list[FunctionCallOutput] | None = None
+        have_used_tool = False
 
         while True:
-            # Build instructions with server descriptions
             instructions = self._system
             extra = self._mcp.instruction_block()
             if extra:
                 instructions = f"{instructions}\n\n{extra}"
 
-            # Prepare input per Responses API threading rules
             if pending_tool_outputs:
-                input_payload = dump_messages_for_api(self._messages)
+                input_payload = dump_messages_for_api(self._transcript)
                 if prior_tool_calls:
                     input_payload += prior_tool_calls
-                input_payload += [t.model_dump(exclude_none=True) for t in pending_tool_outputs]
+                input_payload += [
+                    t.model_dump(exclude_none=True) for t in pending_tool_outputs
+                ]
             else:
-                input_payload = dump_messages_for_api(self._messages)
+                input_payload = dump_messages_for_api(self._transcript)
+
+            tool_choice_value: str | dict[str, Any] = (
+                "required"
+                if (self._require_one_tool and not have_used_tool)
+                else "auto"
+            )
 
             resp = _responses_create_with_retry(
                 self._client,
@@ -186,69 +213,100 @@ class MiniCodex:
                 input=input_payload,
                 instructions=instructions,
                 stream=False,
-                tool_choice=self._tool_policy.value,
+                tool_choice=tool_choice_value,
                 store=False,
                 tools=self._mcp.list_tools(),
+                **(
+                    {"reasoning": self._reasoning_options or {"summary": "auto"}}
+                    if self._enable_reasoning
+                    else {}
+                ),
             )
 
-            # Parse output
             prior_tool_calls = []
             requires: list[ResponseFunctionToolCall] = []
-            turn_assistant_text = []
+            reasoning_count = 0
             for item in resp.output:
-                if isinstance(item, ResponseOutputMessage):
-                    for part in item.content:
-                        if isinstance(part, ResponseOutputText) and part.text:
-                            turn_assistant_text.append(part.text)
+                if _is_reasoning_item(item):
+                    self._transcript.append(item.model_dump(exclude_none=True))
+                    reasoning_count += 1
+                elif isinstance(item, ResponseOutputMessage):
+                    parts = [
+                        part.text
+                        for part in item.content
+                        if isinstance(part, ResponseOutputText) and part.text
+                    ]
+                    if parts:
+                        combined = "\n".join(parts)
+                        assistant_text_chunks.append(combined)
+                        msg = AssistantMessage(role="assistant", content=combined)
+                        self._transcript.append(msg)
+                        evt = {"kind": "assistant_text", "text": combined}
+                        sequence.append(evt)
+                        if self._on_event:
+                            await maybe_await(self._on_event, evt)
                 elif isinstance(item, ResponseFunctionToolCall):
                     requires.append(item)
                     prior_tool_calls.append(item.model_dump(exclude_none=True))
 
-            # Add assistant text to transcript/messages
-            if turn_assistant_text:
-                combined = "\n".join([t for t in turn_assistant_text if t])
-                assistant_text_chunks.append(combined)
-                msg = AssistantMessage(role="assistant", content=combined)
-                self._messages.append(msg)
-                evt = {"kind": "assistant_text", "text": combined}
-                sequence.append(evt)
-                if self._on_event:
-                    await maybe_await(self._on_event, evt)
+            if os.environ.get("MINICODEX_DEBUG"):
+                dbg = [
+                    {"name": tc.name, "call_id": tc.call_id, "arguments": tc.arguments}
+                    for tc in requires
+                ]
+                self._log.debug(
+                    "tool_calls", count=len(dbg), reasoning_items=reasoning_count,
+                )
 
-            # If model didn't call any tools, stop
             if not requires:
                 break
 
-            # Execute tools and prepare function_call_output list
             pending_tool_outputs = []
             for fc in requires:
-                name = fc.name
-                start = time.perf_counter()
-                try:
-                    args = json.loads(fc.arguments)
-                except json.JSONDecodeError:
+                args = json.loads(fc.arguments) if fc.arguments else {}
+                if not isinstance(args, dict):
                     args = {}
-                result = await self._mcp.call_tool(name, args if isinstance(args, dict) else {})
-                latency = timedelta(seconds=(time.perf_counter() - start))
-                call_evt = {"kind": "tool_call", "name": name, "args": args, "call_id": fc.call_id}
-                out_evt = {"kind": "tool_output", "name": name, "result": result, "latency": latency, "error": result.get("stderr")}
+                server, tool_name = self._mcp.resolve_function(fc.name)
+                session = self._mcp.get_session(server)
+                start = time.perf_counter()
+                res_ct = await session.call_tool(name=tool_name, arguments=args)
+                latency = time.perf_counter() - start
+                call_evt = {
+                    "kind": "tool_call",
+                    "name": fc.name,
+                    "args": args,
+                    "call_id": fc.call_id,
+                }
                 sequence.append(call_evt)
-                sequence.append(out_evt)
+                if os.environ.get("MINICODEX_DEBUG"):
+                    self._log.debug(
+                        "tool_result",
+                        name=fc.name,
+                        args=args,
+                        has_structured=getattr(res_ct, "structuredContent", None)
+                        is not None,
+                        blocks=len(getattr(res_ct, "content", []) or []),
+                        is_error=bool(getattr(res_ct, "isError", False)),
+                        latency_ms=int(latency * 1000),
+                    )
                 if self._on_event:
                     await maybe_await(self._on_event, call_evt)
-                    await maybe_await(self._on_event, out_evt)
-                pending_tool_outputs.append(
-                    FunctionCallOutput(
-                        type="function_call_output",
-                        call_id=fc.call_id,
-                        output=json.dumps(result),
-                    ),
+                out_str = _responses_output_from_calltool(res_ct)
+                fco = FunctionCallOutput(
+                    type="function_call_output", call_id=fc.call_id, output=out_str,
                 )
+                sequence.append(
+                    {
+                        "kind": "function_call_output",
+                        **fco.model_dump(exclude_none=True),
+                    },
+                )
+                self._transcript.append(fco)
+                pending_tool_outputs.append(fco)
 
-            # Loop continues; send tool outputs + prior tool calls back next turn
             self._metrics.tool_calls += len(requires)
+            have_used_tool = True
 
-        # Finalize result
         self._metrics.turns += 1
         text = "\n".join(assistant_text_chunks)
         return AgentResult(text=text, sequence=sequence, metrics=self._metrics)
@@ -257,27 +315,41 @@ class MiniCodex:
         await self._mcp.close()
 
 
-# ==== Pydantic message models (local, to avoid cross-module deps) ====
 class UserMessage(BaseModel):
     role: Literal["user"]
     content: str
 
+
 class AssistantMessage(BaseModel):
     role: Literal["assistant"]
     content: str
+
 
 class FunctionCallOutput(BaseModel):
     type: Literal["function_call_output"]
     call_id: str
     output: str
 
+
 Message = UserMessage | AssistantMessage | FunctionCallOutput
-
-def dump_messages_for_api(messages: list[Message]) -> list[dict[str, Any]]:
-    return [m.model_dump(exclude_none=True) for m in messages]
+TranscriptItem = Message | dict[str, Any]
 
 
-async def maybe_await(fn: AgentEventHandler, event: AgentEvent) -> None:
+def dump_messages_for_api(messages: list[TranscriptItem]) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for item in messages:
+        if isinstance(item, BaseModel):
+            out.append(item.model_dump(exclude_none=True))
+        elif isinstance(item, dict):
+            out.append(dict(item))
+        else:  # pragma: no cover
+            raise TypeError(f"Unsupported transcript item type: {type(item)!r}")
+    return out
+
+
+async def maybe_await(
+    fn: Callable[[dict[str, Any]], Any], event: dict[str, Any],
+) -> None:
     res = fn(event)
     if hasattr(res, "__await__"):
         await res  # type: ignore[misc]

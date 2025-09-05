@@ -15,6 +15,12 @@ Primary sections to parse:
 - “Conventions” (apply where relevant)
 - Any other sections that normatively constrain specimen structure/content
 
+Also treat `issues.libsonnet` (canonical issues) as the authoritative ground‑truth format:
+- Evaluate Jsonnet to JSON using python‑jsonnet; fail if evaluation errors occur
+- Validate each item against SpecimenIssues schema (id, should_flag, rationale text block, properties, files/linesByFile)
+- Enforce: rationale is a Jsonnet text block (||| … |||) wrapped ~100 cols; properties only when a definition is clearly violated as written; cardinality rules respected (single vs multi_instances)
+- Cross‑check property slugs against `definitions/**.md` filenames
+
 ## Property definitions adherence
 
 The agent MUST read every property definition Markdown file under `properties/**.md` and apply them exactly:

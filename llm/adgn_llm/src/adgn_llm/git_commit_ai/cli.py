@@ -123,7 +123,8 @@ def _cap_append(
         if remaining_bytes > 0:
             parts.append(
                 chunk.encode("utf-8")[:remaining_bytes].decode(
-                    "utf-8", errors="ignore",
+                    "utf-8",
+                    errors="ignore",
                 ),
             )
         parts.append(truncation_note + "\n")
@@ -299,7 +300,9 @@ $ {"git diff HEAD --stat" if include_all else "git diff --cached --stat"}
 
 
 def get_commit_diff(
-    repo: Repo, passthru: list[str], previous_message: str | None = None,
+    repo: Repo,
+    passthru: list[str],
+    previous_message: str | None = None,
 ) -> str:
     """Get the diff that would be committed with the given flags."""
     # First, check what would be committed with these flags
@@ -624,7 +627,8 @@ class ParallelTaskRunner:
                     returncode = await proc.wait()
                     if returncode != 0:
                         raise subprocess.CalledProcessError(
-                            returncode, str(precommit_path),
+                            returncode,
+                            str(precommit_path),
                         )
                 finally:
                     os.close(slave_fd)
@@ -894,7 +898,9 @@ async def async_main():
         # Respect --no-verify to skip running pre-commit inside this wrapper
         run_precommit = "--no-verify" not in passthru
         msg = await ParallelTaskRunner.create_and_run(
-            repo, ai_task, run_precommit=run_precommit,
+            repo,
+            ai_task,
+            run_precommit=run_precommit,
         )
         cache[key] = msg
         cached = False
@@ -1010,7 +1016,15 @@ class ClaudeAI:
     Caching is handled by the caller before invoking this provider.
     """
 
-    def __init__(self, repo: Repo, diff: str, passthru: list[str], debug: bool = False, timeout: timedelta | None = None, previous_message: str | None = None):
+    def __init__(
+        self,
+        repo: Repo,
+        diff: str,
+        passthru: list[str],
+        debug: bool = False,
+        timeout: timedelta | None = None,
+        previous_message: str | None = None,
+    ):
         self.repo = repo
         self.diff = diff
         self.passthru = passthru
@@ -1022,7 +1036,10 @@ class ClaudeAI:
     async def generate(self, include_all: bool, model: str) -> str:
         # Build prompt from the provided diff and repo context
         prompt = build_prompt(
-            self.repo, self.diff, self.passthru, self.previous_message,
+            self.repo,
+            self.diff,
+            self.passthru,
+            self.previous_message,
         )
 
         # Truncate prompt if too long and warn (stderr) in debug mode only

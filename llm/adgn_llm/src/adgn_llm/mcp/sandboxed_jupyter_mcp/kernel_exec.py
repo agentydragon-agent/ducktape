@@ -49,13 +49,21 @@ def main() -> int:
             print(f"kernel_exec: failed to redirect stderr: {e}", file=sys.stderr)
         # Decide target module based on diagnostics flag
         diag = os.environ.get("SJ_DEBUG_DIAG")
-        target_mod = "adgn_llm.mcp.sandboxed_jupyter_mcp.kernel_shim" if diag else "ipykernel_launcher"
+        target_mod = (
+            "adgn_llm.mcp.sandboxed_jupyter_mcp.kernel_shim"
+            if diag
+            else "ipykernel_launcher"
+        )
         argv = [sys.executable, "-m", target_mod, *post]
         os.execv(sys.executable, argv)
     except Exception:
         # In case redirect succeeded, this goes to the file
         import traceback
-        print("kernel_exec: unhandled exception:\n" + traceback.format_exc(), file=sys.stderr)
+
+        print(
+            "kernel_exec: unhandled exception:\n" + traceback.format_exc(),
+            file=sys.stderr,
+        )
         raise
 
 

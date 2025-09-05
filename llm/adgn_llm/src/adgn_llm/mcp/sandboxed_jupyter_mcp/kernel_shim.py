@@ -1,15 +1,20 @@
 from __future__ import annotations
 
+import json
 import os
 import sys
 import traceback
 from datetime import UTC, datetime
 from pathlib import Path
-import json
 
 
 def _runtime_dir() -> Path:
-    rd = os.environ.get("JUPYTER_RUNTIME_DIR") or os.environ.get("TMPDIR") or os.environ.get("HOME") or "."
+    rd = (
+        os.environ.get("JUPYTER_RUNTIME_DIR")
+        or os.environ.get("TMPDIR")
+        or os.environ.get("HOME")
+        or "."
+    )
     p = Path(rd)
     try:
         p.mkdir(parents=True, exist_ok=True)
@@ -40,9 +45,17 @@ def main() -> int:
             "sys.executable": sys.executable,
             "sys.version": sys.version,
             "argv": sys.argv,
-            "env_subset": {k: os.environ.get(k) for k in [
-                "PATH", "PYTHONPATH", "VIRTUAL_ENV", "JUPYTER_RUNTIME_DIR", "HOME", "TMPDIR"
-            ]},
+            "env_subset": {
+                k: os.environ.get(k)
+                for k in [
+                    "PATH",
+                    "PYTHONPATH",
+                    "VIRTUAL_ENV",
+                    "JUPYTER_RUNTIME_DIR",
+                    "HOME",
+                    "TMPDIR",
+                ]
+            },
         }
         _log("shim: info=" + json.dumps(info, indent=2, default=str))
         # Also log first few entries of sys.path
@@ -52,10 +65,11 @@ def main() -> int:
             try:
                 __import__(mod)
                 _log(f"shim: import {mod} OK")
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 _log(f"shim: import {mod} FAILED: {e}\n" + traceback.format_exc())
         # Run ipykernel_launcher as if invoked with -m
         import runpy
+
         _log("shim: launching ipykernel_launcher")
         # Rewrite argv to mimic -m ipykernel_launcher execution
         sys.argv = [sys.executable, "-m", "ipykernel_launcher", *sys.argv[1:]]

@@ -1,12 +1,12 @@
 from __future__ import annotations
 
+import asyncio
 import os
 import shutil
-import subprocess
-from typing import Any, Mapping
+from typing import Any
 
+import openai
 import pytest
-
 from adgn_llm.mini_codex.agent import MiniCodex
 from adgn_llm.mini_codex.local_exec_server import LocalExecServer
 
@@ -22,25 +22,32 @@ async def test_stdio_server_list_tools() -> None:
 
     # Preflight: verify server-everything can start (help) quickly; skip if not
     try:
-        cp = subprocess.run(
-            ["npx", "--yes", "@modelcontextprotocol/server-everything", "stdio", "--help"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            timeout=20,
+        proc = await asyncio.create_subprocess_exec(
+            "npx",
+            "--yes",
+            "@modelcontextprotocol/server-everything",
+            "stdio",
+            "--help",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
         )
+        await asyncio.wait_for(proc.wait(), timeout=20)
     except Exception as e:
         pytest.skip(f"preflight failed: {e}")
-    if cp.returncode != 0:
-        pytest.skip(f"server-everything stdio help failed (rc={cp.returncode})")
+    if proc.returncode != 0:
+        pytest.skip(f"server-everything stdio help failed (rc={proc.returncode})")
 
     tools_map: dict[str, Any] = {
         "everything": {
             "command": "npx",
             "args": ["@modelcontextprotocol/server-everything", "stdio"],
-        }
+        },
     }
-    agent = await MiniCodex.start(model=os.getenv("OPENAI_MODEL", "o4-mini"), tools=tools_map)
+    agent = await MiniCodex.start(
+        model=os.getenv("OPENAI_MODEL", "o4-mini"),
+        tools=tools_map,
+        client=openai.OpenAI(),
+    )
     try:
         specs = agent.tools()
         assert isinstance(specs, list)
@@ -56,18 +63,10 @@ async def test_local_inprocess_server() -> None:
     def echo_handler(args: dict[str, Any]) -> dict[str, Any]:
         return {"echo": args}
 
-    local = {
-        "local": {
-            "echo": (
-                "Echoes arguments",
-                {"type": "object", "properties": {"msg": {"type": "string"}}},
-                echo_handler,
-            )
-        }
-    }
     agent = await MiniCodex.start(
         model=os.getenv("OPENAI_MODEL", "o4-mini"),
         tools={"local": LocalExecServer("local")},
+        client=openai.OpenAI(),
     )
     try:
         specs = agent.tools()

@@ -1,5 +1,5 @@
-import sys
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -24,7 +24,13 @@ import yaml
         ),
     ],
 )
-def test_sandboxer_basic(tmp_path: Path, name: str, cmd: list[str], passthrough: list[str], expect_substring: str):
+def test_sandboxer_basic(
+    tmp_path: Path,
+    name: str,
+    cmd: list[str],
+    passthrough: list[str],
+    expect_substring: str,
+):
     run = tmp_path
     (run / "tmp").mkdir(parents=True, exist_ok=True)
     policy = run / f"policy_{name}.yaml"
@@ -60,7 +66,9 @@ def test_sandboxer_basic(tmp_path: Path, name: str, cmd: list[str], passthrough:
         "--",
         *cmd,
     ]
-    cp = subprocess.run(full_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    cp = subprocess.run(
+        full_cmd, check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+    )
     # Emit for diagnostics on failure
     print("STDOUT:\n" + cp.stdout)
     print("STDERR:\n" + cp.stderr)

@@ -1,6 +1,6 @@
 import sys
+
 import pytest
-import policy_fixture as policy
 
 
 @pytest.mark.macos
@@ -42,5 +42,5 @@ def test_user_view_end_to_end(
     except AssertionError as e:
         out, err = collect_mcp_logs_fn()
         raise AssertionError(
-            f"MCP protocol failed. Logs:\nstdout:\n{out}\nstderr:\n{err}\nError: {e}"
+            f"MCP protocol failed. Logs:\nstdout:\n{out}\nstderr:\n{err}\nError: {e}",
         )

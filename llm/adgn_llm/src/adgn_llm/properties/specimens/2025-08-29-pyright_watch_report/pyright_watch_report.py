@@ -87,7 +87,9 @@ def matches_any(path_rel: str, patterns: Iterable[str]) -> bool:
     )
 
 
-def gather_files_single_pass(root: Path, include: list[str], exclude: list[str], only_code: bool, progress: bool) -> tuple[set[Path], dict[str, int]]:
+def gather_files_single_pass(
+    root: Path, include: list[str], exclude: list[str], only_code: bool, progress: bool,
+) -> tuple[set[Path], dict[str, int]]:
     """
     Walk the tree once, honoring include/exclude patterns and optional code-only filter.
     Also compute per-exclude-pattern impact counts in a single pass.
@@ -119,7 +121,9 @@ def gather_files_single_pass(root: Path, include: list[str], exclude: list[str],
             if not inc:
                 # periodic progress
                 if progress and time.monotonic() - last_print >= 1.0:
-                    sys.stderr.write(f"scan dirs={scanned_dirs} files={scanned_files} kept={len(kept_union)} at {rp}\n")
+                    sys.stderr.write(
+                        f"scan dirs={scanned_dirs} files={scanned_files} kept={len(kept_union)} at {rp}\n",
+                    )
                     sys.stderr.flush()
                     last_print = time.monotonic()
                 continue
@@ -135,13 +139,17 @@ def gather_files_single_pass(root: Path, include: list[str], exclude: list[str],
             if only_code and p.suffix not in CODE_EXTS:
                 # periodic progress
                 if progress and time.monotonic() - last_print >= 1.0:
-                    sys.stderr.write(f"scan dirs={scanned_dirs} files={scanned_files} kept={len(kept_union)} at {rp}\n")
+                    sys.stderr.write(
+                        f"scan dirs={scanned_dirs} files={scanned_files} kept={len(kept_union)} at {rp}\n",
+                    )
                     sys.stderr.flush()
                     last_print = time.monotonic()
                 continue
             if matched_any_excl:
                 if progress and time.monotonic() - last_print >= 1.0:
-                    sys.stderr.write(f"scan dirs={scanned_dirs} files={scanned_files} kept={len(kept_union)} at {rp}\n")
+                    sys.stderr.write(
+                        f"scan dirs={scanned_dirs} files={scanned_files} kept={len(kept_union)} at {rp}\n",
+                    )
                     sys.stderr.flush()
                     last_print = time.monotonic()
                 continue
@@ -149,7 +157,9 @@ def gather_files_single_pass(root: Path, include: list[str], exclude: list[str],
             kept_union.add(p)
 
             if progress and time.monotonic() - last_print >= 1.0:
-                sys.stderr.write(f"scan dirs={scanned_dirs} files={scanned_files} kept={len(kept_union)} at {rp}\n")
+                sys.stderr.write(
+                    f"scan dirs={scanned_dirs} files={scanned_files} kept={len(kept_union)} at {rp}\n",
+                )
                 sys.stderr.flush()
                 last_print = time.monotonic()
 
@@ -159,10 +169,21 @@ def gather_files_single_pass(root: Path, include: list[str], exclude: list[str],
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--root", default=str(Path.cwd()), help="Workspace root directory")
-    ap.add_argument("--config", default=None, help="Path to pyrightconfig.json (optional)")
-    ap.add_argument("--dump", default=None, help="Path to dump watched file list (optional)")
-    ap.add_argument("--only-code", action="store_true", help="Count only code files (.py, .pyi)")
-    ap.add_argument("--no-progress", dest="progress", action="store_false", help="Disable periodic progress output")
+    ap.add_argument(
+        "--config", default=None, help="Path to pyrightconfig.json (optional)",
+    )
+    ap.add_argument(
+        "--dump", default=None, help="Path to dump watched file list (optional)",
+    )
+    ap.add_argument(
+        "--only-code", action="store_true", help="Count only code files (.py, .pyi)",
+    )
+    ap.add_argument(
+        "--no-progress",
+        dest="progress",
+        action="store_false",
+        help="Disable periodic progress output",
+    )
     ap.set_defaults(progress=True)
     args = ap.parse_args()
 
@@ -186,12 +207,16 @@ def main() -> int:
     exclude = [normalize_pattern(p) for p in exclude]
 
     # Single-pass gather with per-exclude impact
-    kept_union, exclude_hits = gather_files_single_pass(root, include, exclude, only_code=args.only_code, progress=args.progress)
+    kept_union, exclude_hits = gather_files_single_pass(
+        root, include, exclude, only_code=args.only_code, progress=args.progress,
+    )
 
     # Compute per-include kept counts by filtering kept_union once
     per_include_kept: dict[str, int] = {}
     for pat in include:
-        per_include_kept[pat] = sum(1 for p in kept_union if matches_any(rel(p, root), [pat]))
+        per_include_kept[pat] = sum(
+            1 for p in kept_union if matches_any(rel(p, root), [pat])
+        )
 
     # Unique contribution per include in listed order (order-sensitive)
     seen: set[Path] = set()
@@ -208,7 +233,9 @@ def main() -> int:
         per_include_unique.append((pat, uniq_count))
 
     # Top excludes by impact
-    exclude_impact: list[tuple[str, int]] = sorted(exclude_hits.items(), key=lambda x: x[1], reverse=True)
+    exclude_impact: list[tuple[str, int]] = sorted(
+        exclude_hits.items(), key=lambda x: x[1], reverse=True,
+    )
 
     # Totals
     total_files = len(kept_union)
@@ -229,7 +256,11 @@ def main() -> int:
     print()
 
     # Per-include stats (kept)
-    incl_stats: list[tuple[str, int]] = sorted(((pat, per_include_kept.get(pat, 0)) for pat in include), key=lambda x: x[1], reverse=True)
+    incl_stats: list[tuple[str, int]] = sorted(
+        ((pat, per_include_kept.get(pat, 0)) for pat in include),
+        key=lambda x: x[1],
+        reverse=True,
+    )
     print("Per-include kept file counts (descending):")
     for pat, cnt in incl_stats:
         print(f"  {pat:40s} {cnt:8d}")
@@ -246,7 +277,11 @@ def main() -> int:
     print()
 
     # Dump file list if requested
-    dump_path: Path | None = Path(args.dump).resolve() if args.dump else (root / "scratch/pyright_watched_files.txt")
+    dump_path: Path | None = (
+        Path(args.dump).resolve()
+        if args.dump
+        else (root / "scratch/pyright_watched_files.txt")
+    )
     try:
         dump_path.parent.mkdir(parents=True, exist_ok=True)
         with dump_path.open("w", encoding="utf-8") as f:

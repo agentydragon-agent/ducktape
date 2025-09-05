@@ -89,7 +89,7 @@ def read_embedded_paths(paths: list[Path]) -> str:
 
 
 def _scope_block(
-    scope_text: str, *, static_action: str, ambiguity_tail: str
+    scope_text: str, *, static_action: str, ambiguity_tail: str,
 ) -> list[str]:
     return [
         "Scope (freeform):",
@@ -106,7 +106,7 @@ def _scope_block(
 
 
 def _properties_block(
-    properties_text: str, supplemental_section: str | None
+    properties_text: str, supplemental_section: str | None,
 ) -> list[str]:
     lines = ["Property definitions:", properties_text]
     if supplemental_section:
@@ -115,7 +115,7 @@ def _properties_block(
 
 
 def build_find_prompt(
-    properties_dir: Path, scope_text: str, supplemental_text: str | None = None
+    properties_dir: Path, scope_text: str, supplemental_text: str | None = None,
 ) -> str:
     properties_text = cx.read_all_properties_text(properties_dir)
     supplemental_section = build_supplemental_section(supplemental_text)
@@ -145,7 +145,7 @@ def build_find_prompt(
 
 
 def build_enforce_prompt(
-    properties_dir: Path, scope_text: str, supplemental_text: str | None = None
+    properties_dir: Path, scope_text: str, supplemental_text: str | None = None,
 ) -> str:
     properties_text = cx.read_all_properties_text(properties_dir)
     supplemental_section = build_supplemental_section(supplemental_text)
@@ -255,7 +255,6 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         help="Analyze property violations (read-only)",
     )
 
-
     # fix
     subparsers.add_parser(
         "fix",
@@ -339,7 +338,7 @@ def main(argv: list[str]) -> int:
     try:
         if out_last_file is not None:
             proc = subprocess.run(
-                cmd, check=False, input=prompt, text=True, capture_output=True
+                cmd, check=False, input=prompt, text=True, capture_output=True,
             )
             try:
                 print(Path(out_last_file).read_text(encoding="utf-8"))

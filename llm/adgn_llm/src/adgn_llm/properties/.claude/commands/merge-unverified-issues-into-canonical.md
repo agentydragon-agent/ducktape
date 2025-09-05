@@ -4,49 +4,55 @@
 
 From context, you should see that we are working with some particular piece of code, and gathering issues that are present in it.
 
+## Canonical issues format (Jsonnet)
+
+- The canonical issues live in `issues.libsonnet` next to `manifest.yaml`.
+- Use the helpers in `src/adgn_llm/properties/specimen_issues.libsonnet`:
+  - `I.issueSingle(...)` for a single cross‑cutting issue with `files={path: [ranges]}`
+  - `I.issueMultiFromLines(...)` for many independent instances with `linesByFile={path: [line|[start,end], ...]}`
+- Coverage semantics:
+  - `should_flag=true` and `properties!=[]` → covered by an existing property
+  - `should_flag=true` and `properties==[]` → not covered yet (gap)
+  - `should_flag=false` → canonical negative (do‑not‑flag)
+- Rationale MUST be a text block (||| … |||) wrapped to ~100 columns.
+- Property slugs MUST be added only when the code violates the definition wording exactly as written under `definitions/**.md`.
+
 We have:
 
-* One central **canonical issues** file, likely named README.md, in which we are gathering:
-  * canonical description of issues that I've validated,
-  * possibly together with false positives.
-* A bunch of other **gathered issue files** files in the same directory describing issues.
-  They are not verified and they may include duplicates.
-
-In the description below, by "README.md" we mean "the **canonical issues file**".
-
-We will now go through issues described in these files - issue by issue - and
-work on merging them into the README.md file.
+* One central **canonical issues** file: `issues.libsonnet` where we gather:
+  * canonical descriptions of issues I've validated (should_flag=true),
+  * canonical negatives (should_flag=false).
+* A bunch of other **gathered issue files** in the same directory (freeform). They are unverified and may include duplicates.
 
 ## Main loop
 
 Start by explaining your understanding of the context:
 
-- Where is the **canonical issues** file
+- Where is the **canonical issues** file (issues.libsonnet)
 - Where are the **gathered issue files**
 - Where is the source code which is being criticized by these issues
 
 Ask me to confirm that your understanding is correct.
 
-Once we're in sync, you will read each **gathered issue file**, and present to me *each issue* they contain.
-For each issue in **gathered issue files**:
+Once we're in sync, read each **gathered issue file** and present to me each issue it contains.
+For each gathered issue:
 
-1. Describe it to me, and show it to me including the code that has it (including multiple examples if it's repeated).
-   Including code snippet(s) before (with the issue), and after (how it would look fixed).
-   DO NOT write the issue into a file yet.
+1. Describe it and show the subject code (include multiple examples if repeated). Include code before (with the issue) and a sketched “after” when helpful. Do not write to files yet.
 
-2. I will tell you what to do about the issue. I may first ask you some questions about the issue so I have more understanding.
+2. I will decide the disposition:
 
-   If I tell you it's a true positive, that means we are blessing it into README.md. In that case:
+   If it’s a true positive (should be in canon):
+   * Add a new entry to `issues.libsonnet` using `I.issueSingle` or `I.issueMultiFromLines` as appropriate.
+   * Choose `id` sequentially (iss-###) and preserve ordering.
+   * Set `should_flag=true`.
+   * Set `properties` to a non‑empty list only if the finding clearly violates a property definition as written; otherwise `[]`.
+   * Precisely localize with `files` or `linesByFile` (paths + line/line ranges).
+   * Write the rationale as a text block (||| … |||) preserving the important semantics of the user’s description.
 
-   * Make a new entry in README.md in an appropriate place, describing the issue.
-   * Make sure to unambiguously localize the issue in the original source code by including a file path (if it's not just a single file) and line number/range.
-   * If it is not trivially described (e.g., "this typo on line 37"
-     or "variable Foo should use time.Duration to represent duration not int"),
-     also include a code snippet showing it.
-   * Focus on describing it as *what's wrong* with the original code.
-     You can also include a "here's how to fix it", but keep it light (e.g., "Extract helper method.").
-   * If it's better described with a code example (e.g., specific refactor), include snippet of suggested fix.
+   If it’s a canonical negative (false positive):
+   * Add as `should_flag=false` with clear rationale, localized anchors, and `properties=[]`.
 
-   I may also tell you that it's a false positive or other resolutions which I'll tell you how to handle ad hoc.
+   If it’s a duplicate or invalid: mark it as such and do not add to canon.
 
-3. Once the issue is handled, go over all **gathered issue files** and remove any duplicates of this issue that we've just handled.
+3. After handling an issue, remove duplicates of the handled issue from the gathered files (or mark as merged) and proceed.
+

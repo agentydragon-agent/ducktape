@@ -1,4 +1,3 @@
-import pytest
 
 
 def test_unsandbox_initialize_and_hello(

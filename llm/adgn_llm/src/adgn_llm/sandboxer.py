@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 # Pydantic models for policy
 # -----------------------------
 
+
 class EnvConfig(BaseModel):
     set: dict[str, str] = Field(default_factory=dict)
     passthrough: list[str] = Field(default_factory=list)
@@ -142,7 +143,9 @@ def _abs(p: str) -> str:
     return str(Path(p).expanduser().absolute())
 
 
-def _compose_seatbelt(policy: Policy, trace_path: str | None) -> tuple[str, dict[str, str]]:
+def _compose_seatbelt(
+    policy: Policy, trace_path: str | None,
+) -> tuple[str, dict[str, str]]:
     lines: list[str] = [SEATBELT_BASE]
     defs: dict[str, str] = {}
 
@@ -183,7 +186,9 @@ def _compose_seatbelt(policy: Policy, trace_path: str | None) -> tuple[str, dict
     # Context: direct sandbox-exec with `(subpath (param "WP_*"))` produced errors like
     #   "invalid data type of path filter; expected pattern, got boolean" or exit 134 on this host.
     # For now, we inline literal paths to keep narrow policies working; restore `param` usage when fixed.
-    lines.append(";; Writable dirs (WP_*): runtime/workspace; allow writes and exec of entrypoints within")
+    lines.append(
+        ";; Writable dirs (WP_*): runtime/workspace; allow writes and exec of entrypoints within",
+    )
     for i, ap in enumerate(write_dirs):
         key = f"WP_{i}"
         defs[key] = ap
@@ -201,6 +206,7 @@ def _compose_seatbelt(policy: Policy, trace_path: str | None) -> tuple[str, dict
 
     # Parent directory metadata allowances to enable path traversal to allowed subpaths
     meta_parents: set[str] = set()
+
     def _add_parents(p: str):
         cur = Path(p)
         # Ascend to root, collecting literal parents
@@ -209,6 +215,7 @@ def _compose_seatbelt(policy: Policy, trace_path: str | None) -> tuple[str, dict
             if str(cur) == "/":
                 break
             cur = cur.parent
+
     for ap in read_dirs:
         _add_parents(ap)
     for ap in write_dirs:
@@ -220,17 +227,16 @@ def _compose_seatbelt(policy: Policy, trace_path: str | None) -> tuple[str, dict
     for mp in sorted(meta_parents):
         lines.append(f'(allow file-read-metadata (literal "{mp}") )')
 
-
     # Platform seatbelt extras
     extra = policy.platform.seatbelt.extra_allow
-    for p in (extra.file_read_extra or []):
+    for p in extra.file_read_extra or []:
         lines.append(f'(allow file-read* (subpath "{_abs(p)}") )')
     # Optional IPC/system allowances controlled by policy extras
     if extra.system_socket:
-        lines.append('(allow system-socket)')
+        lines.append("(allow system-socket)")
     if extra.sysctl_read:
-        lines.append('(allow sysctl-read)')
-    for name in (extra.mach_lookup or []):
+        lines.append("(allow sysctl-read)")
+    for name in extra.mach_lookup or []:
         # Allow lookups of specific global Mach services
         lines.append(f'(allow mach-lookup (global-name "{name}"))')
     # dev.allow_tty_writes could toggle /dev/tty allow in future; keep default for now
@@ -238,22 +244,26 @@ def _compose_seatbelt(policy: Policy, trace_path: str | None) -> tuple[str, dict
     # Net rules (mode: none | loopback | all) — allowlist/proxy reserved for future
     mode = policy.net.mode
     if mode == "open":
-        lines.append(';; Net mode=open: allow outbound (HTTP, etc.) and inbound (kernel ports)')
-        lines.append('(allow network-outbound)')
-        lines.append('(allow network-inbound)')
-        lines.append('(allow network-bind)')
+        lines.append(
+            ";; Net mode=open: allow outbound (HTTP, etc.) and inbound (kernel ports)",
+        )
+        lines.append("(allow network-outbound)")
+        lines.append("(allow network-inbound)")
+        lines.append("(allow network-bind)")
     elif mode == "loopback":
         # Allow ONLY local connections both directions (Jupyter↔kernel)
-        lines.append(';; Net mode=loopback: only local connections in both directions (Jupyter↔kernel)')
-        lines.append('(allow network-inbound (local ip))')
-        lines.append('(allow network-outbound (local ip))')
-        lines.append('(allow network-bind (local ip))')
+        lines.append(
+            ";; Net mode=loopback: only local connections in both directions (Jupyter↔kernel)",
+        )
+        lines.append("(allow network-inbound (local ip))")
+        lines.append("(allow network-outbound (local ip))")
+        lines.append("(allow network-bind (local ip))")
     elif mode == "none":
         # No network rules → default deny inbound/outbound
         pass
     else:
         # allowlist/proxy reserved for future; default to loopback behavior minimally
-        lines.append('(allow network-inbound (local ip))')
+        lines.append("(allow network-inbound (local ip))")
 
     return "\n".join(lines) + "\n", defs
 
@@ -262,12 +272,28 @@ def _compose_seatbelt(policy: Policy, trace_path: str | None) -> tuple[str, dict
 # CLI entry
 # -----------------------------
 
+
 def main() -> int:
-    ap = argparse.ArgumentParser(prog="sandboxer", description="Run a command under a YAML-defined sandbox (macOS seatbelt MVP)")
-    ap.add_argument("--policy", required=True, help="Path to policy.yaml (explicit-only schema)")
-    ap.add_argument("--trace", action="store_true", help="Enable seatbelt trace logging")
-    ap.add_argument("--debug", action="store_true", help="Verbose diagnostics (policy path, -D params)")
-    ap.add_argument("cmd", nargs=argparse.REMAINDER, help="Command to execute (prefix with -- to separate)")
+    ap = argparse.ArgumentParser(
+        prog="sandboxer",
+        description="Run a command under a YAML-defined sandbox (macOS seatbelt MVP)",
+    )
+    ap.add_argument(
+        "--policy", required=True, help="Path to policy.yaml (explicit-only schema)",
+    )
+    ap.add_argument(
+        "--trace", action="store_true", help="Enable seatbelt trace logging",
+    )
+    ap.add_argument(
+        "--debug",
+        action="store_true",
+        help="Verbose diagnostics (policy path, -D params)",
+    )
+    ap.add_argument(
+        "cmd",
+        nargs=argparse.REMAINDER,
+        help="Command to execute (prefix with -- to separate)",
+    )
     args = ap.parse_args()
 
     if not args.cmd:
@@ -297,7 +323,10 @@ def main() -> int:
 
     # Platform gate: only macOS seatbelt for MVP
     if sys.platform != "darwin":
-        print("sandboxer: unsupported platform for MVP (only macOS supported)", file=sys.stderr)
+        print(
+            "sandboxer: unsupported platform for MVP (only macOS supported)",
+            file=sys.stderr,
+        )
         return 3
 
     # Env construction for child
@@ -323,7 +352,7 @@ def main() -> int:
     # Write trace under a writable runtime dir (prefer TMPDIR from policy.env.set, then HOME), else tmpdir
     trace_path = None
     if policy.platform.trace or policy.platform.seatbelt.trace:
-        env_set = (policy.env.set or {})
+        env_set = policy.env.set or {}
         tmp_hint = env_set.get("TMPDIR") or env_set.get("TMP") or env_set.get("TEMP")
         home_dir = env_set.get("HOME") or os.environ.get("HOME")
         if tmp_hint:
@@ -377,7 +406,12 @@ def main() -> int:
         sx_args += ["-f", str(sb_path), *cmd]
         if args.debug:
             import shlex as _sh
-            print("sandboxer: exec:", " ".join(_sh.quote(x) for x in sx_args), file=sys.stderr)
+
+            print(
+                "sandboxer: exec:",
+                " ".join(_sh.quote(x) for x in sx_args),
+                file=sys.stderr,
+            )
         proc = subprocess.Popen(sx_args, env=child_env)
         return proc.wait()
     finally:

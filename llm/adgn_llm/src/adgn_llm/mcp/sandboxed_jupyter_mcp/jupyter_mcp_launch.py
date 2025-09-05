@@ -4,14 +4,12 @@ from __future__ import annotations
 import argparse
 import os
 import secrets
-import shlex
 import shutil
 import socket
 import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Optional
 
 
 def _pick_free_port() -> int:
@@ -26,7 +24,7 @@ def _start_jupyter_server(
     config_dir: Path,
     port: int,
     token: str,
-    log_dir: Optional[Path],
+    log_dir: Path | None,
     extra_env: dict[str, str] | None = None,
 ) -> subprocess.Popen:
     env = os.environ.copy()
@@ -83,14 +81,38 @@ def main() -> int:
         prog="jupyter-mcp-launch",
         description="Launch Jupyter Server (unsandboxed) and jupyter-mcp-server (stdio) using precomposed config and kernels",
     )
-    ap.add_argument("--config", required=True, help="Path to Jupyter config dir (contains jupyter_server_config.py)")
-    ap.add_argument("--kernels", required=True, help="Path to kernels dir (kernelspecs)")
-    ap.add_argument("--workspace", required=True, help="Absolute path to workspace (ServerApp.root_dir)")
-    ap.add_argument("--kernel-name", default="python3", help="Default kernel name for new notebooks (hint)")
+    ap.add_argument(
+        "--config",
+        required=True,
+        help="Path to Jupyter config dir (contains jupyter_server_config.py)",
+    )
+    ap.add_argument(
+        "--kernels", required=True, help="Path to kernels dir (kernelspecs)",
+    )
+    ap.add_argument(
+        "--workspace",
+        required=True,
+        help="Absolute path to workspace (ServerApp.root_dir)",
+    )
+    ap.add_argument(
+        "--kernel-name",
+        default="python3",
+        help="Default kernel name for new notebooks (hint)",
+    )
     ap.add_argument("--port", type=int, default=0, help="0 = auto-pick free port")
-    ap.add_argument("--token", default="auto", help="'auto' to generate a token; or provide explicit token string")
-    ap.add_argument("--start-new-runtime", action="store_true", help="Pass through to jupyter-mcp-server")
-    ap.add_argument("--log-dir", default=None, help="Optional directory for Jupyter/MCP logs")
+    ap.add_argument(
+        "--token",
+        default="auto",
+        help="'auto' to generate a token; or provide explicit token string",
+    )
+    ap.add_argument(
+        "--start-new-runtime",
+        action="store_true",
+        help="Pass through to jupyter-mcp-server",
+    )
+    ap.add_argument(
+        "--log-dir", default=None, help="Optional directory for Jupyter/MCP logs",
+    )
     args = ap.parse_args()
 
     config_dir = Path(args.config).resolve()
@@ -99,10 +121,15 @@ def main() -> int:
     log_dir = Path(args.log_dir).resolve() if args.log_dir else None
 
     if not (config_dir / "jupyter_server_config.py").exists():
-        print(f"jupyter-mcp-launch: config file not found: {config_dir / 'jupyter_server_config.py'}", file=sys.stderr)
+        print(
+            f"jupyter-mcp-launch: config file not found: {config_dir / 'jupyter_server_config.py'}",
+            file=sys.stderr,
+        )
         return 2
     if not kernels_dir.exists():
-        print(f"jupyter-mcp-launch: kernels dir not found: {kernels_dir}", file=sys.stderr)
+        print(
+            f"jupyter-mcp-launch: kernels dir not found: {kernels_dir}", file=sys.stderr,
+        )
         return 2
     if not workspace.exists():
         print(f"jupyter-mcp-launch: workspace not found: {workspace}", file=sys.stderr)
@@ -123,7 +150,9 @@ def main() -> int:
         (log_dir).mkdir(parents=True, exist_ok=True)
     runtime_dir = log_dir or (config_dir.parent / "runtime")
     runtime_dir.mkdir(parents=True, exist_ok=True)
-    (runtime_dir / "kernels.json").write_text(f"{{\n  \"default\": \"{args.kernel_name}\"\n}}\n")
+    (runtime_dir / "kernels.json").write_text(
+        f'{{\n  "default": "{args.kernel_name}"\n}}\n',
+    )
 
     port = args.port or _pick_free_port()
     token = secrets.token_urlsafe(24) if args.token == "auto" else args.token
@@ -132,7 +161,10 @@ def main() -> int:
     jup = shutil.which("jupyter") or ""
     jms = shutil.which("jupyter-mcp-server") or ""
     if not jup or not jms:
-        print("jupyter-mcp-launch: 'jupyter' and/or 'jupyter-mcp-server' not found on PATH", file=sys.stderr)
+        print(
+            "jupyter-mcp-launch: 'jupyter' and/or 'jupyter-mcp-server' not found on PATH",
+            file=sys.stderr,
+        )
         return 3
 
     print(f"[launch] jupyter @ http://127.0.0.1:{port} token=REDACTED", file=sys.stderr)

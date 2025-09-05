@@ -1,0 +1,439 @@
+from __future__ import annotations
+
+import fnmatch
+import hashlib
+import json
+import os
+import shutil
+import subprocess
+import tarfile
+import tempfile
+from collections.abc import Callable, Iterable
+from enum import Enum
+from functools import lru_cache
+from importlib.resources import files
+from pathlib import Path
+
+# ---- Canonical specimen issues schema (Jsonnet-only) ----
+from typing import NewType
+from urllib.error import HTTPError, URLError
+from urllib.request import urlopen
+
+import yaml
+from platformdirs import user_cache_dir
+from pydantic import BaseModel, model_validator
+
+from .specimen_frontmatter import GitHubSource, GitSource, LocalSource, SpecimenManifest
+
+PropertyID = NewType("PropertyID", str)
+FindingRef = NewType("FindingRef", str)
+
+
+@lru_cache(maxsize=1)
+def _list_known_property_ids() -> set[PropertyID]:
+    try:
+        defs_root = Path(str(files("adgn_llm").joinpath("properties", "definitions")))
+    except Exception:
+        return set()
+    ids: set[PropertyID] = set()
+    if defs_root.exists():
+        for md in defs_root.rglob("*.md"):
+            ids.add(PropertyID(md.stem))
+    return ids
+
+
+def _validate_property_ids(props: list[PropertyID]) -> None:
+    if not props:
+        return
+    known = _list_known_property_ids()
+    unknown = [p for p in props if p not in known]
+    if unknown:
+        sample = ", ".join(sorted(str(k) for k in list(known)[:20]))
+        raise ValueError(
+            f"Unknown property IDs: {', '.join(unknown)}. Known (sample): {sample} ...",
+        )
+
+
+class LineRange(BaseModel):
+    start_line: int
+    end_line: int | None = None
+
+
+class Occurrence(BaseModel):
+    files: dict[str, list[LineRange] | None]
+
+
+class Cardinality(str, Enum):
+    single = "single"
+    multi_instances = "multi_instances"
+
+
+class Issue(BaseModel):
+    id: str
+    should_flag: bool
+    rationale: str
+    properties: list[PropertyID] = []
+    gap_note: str | None = None
+
+    cardinality: Cardinality = Cardinality.single
+    files: dict[str, list[LineRange] | None] | None = None
+    instances: list[Occurrence] | None = None
+
+    @model_validator(mode="after")
+    def _validate_self(self) -> Issue:
+        _validate_property_ids(self.properties)
+        if self.cardinality is Cardinality.single:
+            if not self.files or self.instances is not None:
+                raise ValueError(
+                    "cardinality=single requires `files` and forbids `instances`",
+                )
+        elif not self.instances or self.files is not None:
+            raise ValueError(
+                "cardinality=multi_instances requires `instances` and forbids `files`",
+            )
+        return self
+
+    @property
+    def files_touched(self) -> set[str]:
+        if self.cardinality is Cardinality.single:
+            return set(self.files.keys()) if self.files else set()
+        paths: set[str] = set()
+        for occ in self.instances or []:
+            paths.update(occ.files.keys())
+        return paths
+
+
+class SpecimenIssues(BaseModel):
+    items: list[Issue]
+
+    def filter_by_paths(
+        self, include: list[str], exclude: list[str] | None = None,
+    ) -> SpecimenIssues:
+        if not include and not exclude:
+            return self
+
+        def matches_any(path: str, globs: list[str] | None) -> bool:
+            return bool(globs) and any(fnmatch.fnmatch(path, g) for g in globs)
+
+        filtered: list[Issue] = []
+        for issue in self.items:
+            file_paths = list(issue.files_touched)
+            keep = any(matches_any(p, include) for p in file_paths) if include else True
+            if keep and exclude and any(matches_any(p, exclude) for p in file_paths):
+                keep = False
+            if keep:
+                filtered.append(issue)
+        return SpecimenIssues(items=filtered)
+
+
+def load_specimen_issues(path: str | Path) -> SpecimenIssues:
+    """Load SpecimenIssues from Jsonnet (.libsonnet/.jsonnet) only."""
+    p = Path(path)
+    suf = p.suffix.lower()
+    if suf not in {".jsonnet", ".libsonnet"}:
+        raise SystemExit(f"Canonical issues must be Jsonnet: {p}")
+    try:
+        import _jsonnet
+    except Exception as e:
+        raise RuntimeError(
+            "python-jsonnet is required to load issues.libsonnet; install with `pip install jsonnet`",
+        ) from e
+    json_str = _jsonnet.evaluate_file(str(p))
+    data = json.loads(json_str)
+    return SpecimenIssues.model_validate(data)
+
+
+def find_specimens_base() -> Path:
+    # 1) importlib.resources
+    try:
+        res = files("adgn_llm").joinpath("properties", "specimens")
+        p = Path(str(res))
+        if p.exists() and p.is_dir():
+            return p
+    except Exception:
+        pass
+    # 2) walk parents from this file for src tree
+    here = Path(__file__).resolve()
+    for parent in here.parents:
+        for rel in (
+            Path("src/adgn_llm/properties/specimens"),
+            Path("adgn_llm/properties/specimens"),
+        ):
+            cand = (parent / rel).resolve()
+            if cand.exists():
+                return cand
+    # Fallback
+    return Path(str(files("adgn_llm").joinpath("properties", "specimens")))
+
+
+def list_specimen_names(base: Path) -> list[str]:
+    return sorted(
+        [
+            p.name
+            for p in base.iterdir()
+            if p.is_dir() and (p / "manifest.yaml").exists()
+        ],
+    )
+
+
+def resolve_manifest_arg(arg: str | None, base: Path | None = None) -> Path | None:
+    if arg is None:
+        return None
+    path = Path(arg)
+    if path.exists():
+        return path / "manifest.yaml" if path.is_dir() else path
+    base_dir = base or find_specimens_base()
+    cand = base_dir / arg / "manifest.yaml"
+    if cand.exists():
+        return cand
+    # unique prefix
+    matches = [n for n in list_specimen_names(base_dir) if n.startswith(arg)]
+    if len(matches) == 1:
+        return base_dir / matches[0] / "manifest.yaml"
+    return None
+
+
+def load_manifest(path: Path) -> SpecimenManifest:
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    return SpecimenManifest.model_validate(data)
+
+
+def try_download_github_archive(owner: str, repo: str, ref: str) -> Path | None:
+    url = f"https://codeload.github.com/{owner}/{repo}/tar.gz/{ref}"
+    tmpdir = Path(tempfile.mkdtemp(prefix="adgn-specimen-archive-"))
+    tar_path = tmpdir / f"{repo}-{ref}.tar.gz"
+    try:
+        with urlopen(url) as resp, tar_path.open("wb") as out:
+            out.write(resp.read())
+    except (URLError, HTTPError):
+        return None
+    with tarfile.open(tar_path, "r:gz") as tf:
+        tf.extractall(tmpdir)
+    for p in tmpdir.iterdir():
+        if p.is_dir():
+            return p.resolve()
+    return None
+
+
+def _xdg_cache_base() -> Path:
+    base = Path(user_cache_dir(appname="adgn-llm", appauthor=False))
+    root = base / "specimens"
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def _cache_path_for_github(owner: str, repo: str, ref: str) -> Path:
+    return _xdg_cache_base() / "github" / owner / repo / f"{ref}.tar.gz"
+
+
+def _cache_path_for_git(url: str, ref: str) -> Path:
+    h = hashlib.sha256(f"{url}@{ref}".encode()).hexdigest()[:16]
+    return _xdg_cache_base() / "git" / h / "src.tar.gz"
+
+
+def _download_github_to(owner: str, repo: str, ref: str, dest: Path) -> bool:
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    url = f"https://codeload.github.com/{owner}/{repo}/tar.gz/{ref}"
+    tmp = dest.with_suffix(".tmp")
+    try:
+        with urlopen(url) as resp:
+            from tempfile import NamedTemporaryFile
+
+            with NamedTemporaryFile(delete=False, dir=str(dest.parent)) as nf:
+                nf.write(resp.read())
+                tmp = Path(nf.name)
+        os.replace(tmp, dest)
+        return True
+    except (URLError, HTTPError):
+        # Network/HTTP error: no cache produced
+        if tmp.exists():
+            try:
+                tmp.unlink()
+            except Exception:
+                pass
+        return False
+
+
+def _ensure_cached_archive(
+    cache_path: Path, builder: Callable[[Path], bool],
+) -> Path | None:
+    """Ensure cache_path tar.gz exists using builder; return cache_path on success, else None.
+
+    Does not swallow exceptions raised by the builder; they will propagate.
+    """
+    if cache_path.exists():
+        return cache_path
+    ok = builder(cache_path)
+    return cache_path if ok and cache_path.exists() else None
+
+
+def _extract_tar_gz_to_temp(archive: Path) -> Path:
+    tmpdir = Path(tempfile.mkdtemp(prefix="adgn-specimen-extract-"))
+    with tarfile.open(archive, "r:gz") as tf:
+        tf.extractall(tmpdir)
+    for p in tmpdir.iterdir():
+        if p.is_dir():
+            return p.resolve()
+    return tmpdir
+
+
+def _create_archive_from_git(
+    url: str, ref: str, out_archive: Path, gitconfig: Path | None,
+) -> bool:
+    tmp_checkout = fresh_git_checkout_url(url, ref, gitconfig)
+    out_archive.parent.mkdir(parents=True, exist_ok=True)
+    tmp = out_archive.with_suffix(".tmp")
+    try:
+        with tarfile.open(tmp, "w:gz") as tf:
+            # Archive the directory tree at top-level folder
+            tf.add(tmp_checkout, arcname=Path(tmp_checkout).name)
+        tmp.replace(out_archive)
+        return True
+    finally:
+        try:
+            shutil.rmtree(tmp_checkout, ignore_errors=True)
+        except Exception:
+            pass
+
+
+def fresh_git_checkout_url(url: str, ref: str, gitconfig: Path | None) -> Path:
+    tmpdir = Path(tempfile.mkdtemp(prefix="adgn-specimen-git-"))
+    env = dict(**os.environ)
+    if gitconfig is not None:
+        env["GIT_CONFIG_GLOBAL"] = str(gitconfig.expanduser().resolve())
+    subprocess.run(
+        ["git", "init", str(tmpdir)], check=True, stdout=subprocess.DEVNULL, env=env,
+    )
+    subprocess.run(
+        ["git", "-C", str(tmpdir), "remote", "add", "origin", url], check=True, env=env,
+    )
+    subprocess.run(
+        ["git", "-C", str(tmpdir), "fetch", "--depth", "1", "origin", ref],
+        check=True,
+        env=env,
+    )
+    subprocess.run(
+        ["git", "-C", str(tmpdir), "checkout", "--detach", ref], check=True, env=env,
+    )
+    return tmpdir
+
+
+def fresh_local_copy(root: Path) -> Path:
+    src = root.resolve()
+    if not src.exists():
+        raise SystemExit(f"Local source root not found: {src}")
+    tmpdir = Path(tempfile.mkdtemp(prefix="adgn-specimen-local-"))
+    dest = tmpdir / src.name
+    shutil.copytree(src, dest)
+    return dest
+
+
+def build_scope_text(
+    include: Iterable[str], exclude: Iterable[str] | None = None,
+) -> str:
+    inc = ", ".join(include)
+    if exclude:
+        return f"all files under {inc} (excluding: {', '.join(exclude)})"
+    return f"all files under {inc}"
+
+
+def resolve_source_root(
+    man: SpecimenManifest, manifest_path: Path, gitconfig: Path | None,
+) -> Path:
+    """Resolve a fresh, private source root for a specimen manifest.
+
+    Prefers a cached compressed archive under XDG cache; falls back to fresh git checkout when needed.
+    """
+    # GitHub: prefer cached tarball from codeload
+    if isinstance(man.source, GitHubSource):
+        cache_path = _cache_path_for_github(
+            man.source.org, man.source.repo, man.source.ref,
+        )
+        if p := _ensure_cached_archive(
+            cache_path,
+            lambda d: _download_github_to(
+                man.source.org, man.source.repo, man.source.ref, d,
+            ),
+        ):
+            return _extract_tar_gz_to_temp(p)
+        # Fallback: fresh git checkout
+        return fresh_git_checkout_url(
+            f"https://github.com/{man.source.org}/{man.source.repo}.git",
+            man.source.ref,
+            gitconfig,
+        )
+
+    # Generic Git source
+    if isinstance(man.source, GitSource):
+        url = man.source.url
+        # Try GitHub fast-path cache if applicable
+        if url.startswith("https://github.com/"):
+            parts = url.removeprefix("https://github.com/").rstrip("/")
+            parts = parts.removesuffix(".git")
+            bits = parts.split("/")
+            if len(bits) >= 2:
+                cache_path = _cache_path_for_github(bits[0], bits[1], man.source.ref)
+                if p := _ensure_cached_archive(
+                    cache_path,
+                    lambda d: _download_github_to(bits[0], bits[1], man.source.ref, d),
+                ):
+                    return _extract_tar_gz_to_temp(p)
+        # Else cache by URL+ref via shallow clone → tar.gz
+        cache_path = _cache_path_for_git(url, man.source.ref)
+        if p := _ensure_cached_archive(
+            cache_path,
+            lambda d: _create_archive_from_git(url, man.source.ref, d, gitconfig),
+        ):
+            return _extract_tar_gz_to_temp(p)
+        # Fallback: fresh checkout
+        return fresh_git_checkout_url(url, man.source.ref, gitconfig)
+
+    # Local source: plain copy (no cache)
+    if isinstance(man.source, LocalSource):
+        return fresh_local_copy(manifest_path.parent / man.source.root)
+
+    raise SystemExit(f"Unsupported source type: {type(man.source)}")
+
+
+class Specimen:
+    """Convenience wrapper around a specimen manifest + optional materialized source.
+
+    - manifest_path: path to manifest.yaml
+    - manifest: parsed SpecimenManifest (pydantic)
+    - root: Path to working tree for analysis (defaults to manifest dir; set by materialize_source)
+    """
+
+    def __init__(
+        self, manifest_path: Path, manifest: SpecimenManifest, root: Path,
+    ) -> None:
+        self.manifest_path = manifest_path
+        self.manifest = manifest
+        self.root = root
+
+    @classmethod
+    def load(cls, specimen_arg: str) -> Specimen:
+        manifest_path = resolve_manifest_arg(specimen_arg)
+        if manifest_path is None:
+            raise SystemExit(f"Specimen not found: {specimen_arg}")
+        man = load_manifest(manifest_path)
+        # Default root is the manifest directory; call obtain_code() to obtain a fresh checkout/copy
+        return cls(manifest_path, man, manifest_path.parent)
+
+    def obtain_code(self, gitconfig: Path | None = None) -> Path:
+        """Obtain a fresh, private checkout/copy of the specimen source and set self.root to it."""
+        self.root = resolve_source_root(self.manifest, self.manifest_path, gitconfig)
+        return self.root
+
+    def load_issues(self) -> SpecimenIssues:
+        spec_dir = self.manifest_path.parent
+        path = spec_dir / "issues.libsonnet"
+        if path.exists():
+            return load_specimen_issues(path)
+        raise SystemExit(f"No issues.libsonnet found under: {spec_dir}")
+
+    def get_issue(self, issue_id: str):
+        issues = self.load_issues()
+        match = next((it for it in issues.items if it.id == issue_id), None)
+        if match is None:
+            raise SystemExit(f"Issue id not found in specimen issues: {issue_id}")
+        return match

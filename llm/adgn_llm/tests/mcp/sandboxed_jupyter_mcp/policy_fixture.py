@@ -1,7 +1,8 @@
-from pathlib import Path
 import os
-import yaml
 import sys
+from pathlib import Path
+
+import yaml
 
 
 def write_policy(
@@ -76,7 +77,7 @@ def write_policy(
     ]
 
     control_bin = os.environ.get("SJ_TEST_CONTROL_BIN", "")
-    path_prefix = (control_bin + (":" if control_bin else ""))
+    path_prefix = control_bin + (":" if control_bin else "")
 
     policy = {
         "env": {
@@ -112,12 +113,10 @@ def write_policy(
                     "sysctl_read": True,
                     # Start with minimal services (add more if denies show specifics)
                     "mach_lookup": ["com.apple.cfprefsd.agent"],
-                    "file_read_extra": []
-                }
+                    "file_read_extra": [],
+                },
             },
         },
     }
 
-    (ws / ".sandbox_jupyter.yaml").write_text(
-        yaml.safe_dump(policy, sort_keys=False)
-    )
+    (ws / ".sandbox_jupyter.yaml").write_text(yaml.safe_dump(policy, sort_keys=False))

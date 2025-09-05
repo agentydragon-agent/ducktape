@@ -1,7 +1,8 @@
 import json
 import os
 import time
-from typing import Any, Callable, Optional
+from collections.abc import Callable
+from typing import Any
 
 
 def send_line_json(w, obj: dict) -> None:
@@ -9,7 +10,7 @@ def send_line_json(w, obj: dict) -> None:
     w.flush()
 
 
-def read_line_json(r, timeout: float) -> Optional[dict]:
+def read_line_json(r, timeout: float) -> dict | None:
     fd = r.fileno()
     os.set_blocking(fd, False)
     buf = bytearray()
@@ -34,7 +35,9 @@ def read_line_json(r, timeout: float) -> Optional[dict]:
         return None
 
 
-def wait_for(stdout, predicate: Callable[[dict], bool], total_timeout: float) -> Optional[dict]:
+def wait_for(
+    stdout, predicate: Callable[[dict], bool], total_timeout: float,
+) -> dict | None:
     deadline = time.time() + total_timeout
     while time.time() < deadline:
         m = read_line_json(stdout, 1.0)
@@ -45,11 +48,23 @@ def wait_for(stdout, predicate: Callable[[dict], bool], total_timeout: float) ->
     return None
 
 
-def wait_for_id(stdout, msg_id: int, total_timeout: float) -> Optional[dict]:
-    return wait_for(stdout, lambda m: m.get("id") == msg_id and ("result" in m or "error" in m), total_timeout)
+def wait_for_id(stdout, msg_id: int, total_timeout: float) -> dict | None:
+    return wait_for(
+        stdout,
+        lambda m: m.get("id") == msg_id and ("result" in m or "error" in m),
+        total_timeout,
+    )
 
 
-def initialize(stdin, stdout, *, protocol_version: str = "2025-06-18", client_name: str = "pytest", client_version: str = "0.0.1", timeout: float = 25.0) -> dict:
+def initialize(
+    stdin,
+    stdout,
+    *,
+    protocol_version: str = "2025-06-18",
+    client_name: str = "pytest",
+    client_version: str = "0.0.1",
+    timeout: float = 25.0,
+) -> dict:
     init = {
         "jsonrpc": "2.0",
         "id": 1,
@@ -70,7 +85,15 @@ def initialize(stdin, stdout, *, protocol_version: str = "2025-06-18", client_na
     return resp["result"]
 
 
-def call_tool(stdin, stdout, name: str, arguments: dict[str, Any], *, timeout: float = 60.0, msg_id: int = 2) -> dict:
+def call_tool(
+    stdin,
+    stdout,
+    name: str,
+    arguments: dict[str, Any],
+    *,
+    timeout: float = 60.0,
+    msg_id: int = 2,
+) -> dict:
     call = {
         "jsonrpc": "2.0",
         "id": msg_id,
@@ -84,5 +107,14 @@ def call_tool(stdin, stdout, name: str, arguments: dict[str, Any], *, timeout: f
     return resp["result"]
 
 
-def exec_code(stdin, stdout, code: str, *, timeout: float = 60.0, msg_id: int = 2) -> dict:
-    return call_tool(stdin, stdout, "append_execute_code_cell", {"cell_source": code}, timeout=timeout, msg_id=msg_id)
+def exec_code(
+    stdin, stdout, code: str, *, timeout: float = 60.0, msg_id: int = 2,
+) -> dict:
+    return call_tool(
+        stdin,
+        stdout,
+        "append_execute_code_cell",
+        {"cell_source": code},
+        timeout=timeout,
+        msg_id=msg_id,
+    )
