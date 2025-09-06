@@ -1,8 +1,5 @@
 """
-Scaffold: adgn_llm_edit (MiniCodex-based)
-
-This is a scaffold reimplementation of the adgn-llm-edit style tool, built on top of
-src/adgn_llm/mini_codex/agent.py (MiniCodex agent, Responses API first).
+adgn_llm_edit
 
 Notes / Design:
 - Uses MiniCodex as the orchestration layer (system instructions, tool policy, MCP tool wiring)
@@ -10,8 +7,6 @@ Notes / Design:
 - Use structured results (Pydantic) for tool outputs; avoid string-parsing for success/failure
 - Centralize file-type detection + syntax checks (python-only for now; unknown => no check)
 - Future: allow the LLM to retry after syntax failure; provide an explicit syntax_check tool
-
-This file intentionally contains TODOs and the minimal runnable skeleton to be filled out.
 """
 
 from __future__ import annotations
@@ -45,25 +40,19 @@ async def async_main() -> int:
 
     # Validate input path
     target_path = Path(args.file_path)
-    if not target_path.exists() or not target_path.is_file():
-        print(f"Error: file not found or not a file: {target_path}")
+    if not target_path.is_file():
+        print(f"Error: {target_path} is not a file")
         return 2
-
-    client = openai.OpenAI()
-    editor_srv = EditorServer(target_path)
-
-    # Provide as a local server to MiniCodex via ToolMap (server name -> LocalServer)
-    tools: ToolMap = {"editor": editor_srv}
 
     agent = await MiniCodex.start(
         model=args.model,
-        tools=tools,
+        tools={"editor": EditorServer(target_path)},
         system=(
             "You are a code editor assistant. Use tools to read/modify/save files.\n"
             "Operate on the provided file only. Prefer precise replace_text edits.\n"
             "Finish with done(success, report)."
         ),
-        client=client,
+        client=openai.OpenAI(),
         reasoning_effort=args.reasoning_effort,
         reasoning_summary=args.reasoning_summary,
     )
