@@ -122,6 +122,12 @@ class ServerRecord:
 class McpManager:
     """Async facade to manage MCP ClientSessions and tool dispatch."""
 
+    async def __aenter__(self) -> "McpManager":
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        await self.close()
+
     def __init__(
         self,
         *,

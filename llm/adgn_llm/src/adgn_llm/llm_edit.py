@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import contextlib
 from pathlib import Path
 
 import openai
@@ -32,9 +31,26 @@ async def async_main() -> int:
     p.add_argument("file_path", help="Path to file to edit")
     p.add_argument("prompt", help="Editing prompt")
     p.add_argument("--model", default="o4-mini")
+    p.add_argument(
+        "--reasoning-effort",
+        choices=["minimal", "low", "medium", "high"],
+        help="Reasoning effort for reasoning-capable models",
+    )
+    p.add_argument(
+        "--reasoning-summary",
+        choices=["auto", "concise", "detailed"],
+        help="Emit reasoning summaries (omit to disable)",
+    )
     args = p.parse_args()
+
+    # Validate input path
+    target_path = Path(args.file_path)
+    if not target_path.exists() or not target_path.is_file():
+        print(f"Error: file not found or not a file: {target_path}")
+        return 2
+
     client = openai.OpenAI()
-    editor_srv = EditorServer(Path(args.file_path))
+    editor_srv = EditorServer(target_path)
 
     # Provide as a local server to MiniCodex via ToolMap (server name -> LocalServer)
     tools: ToolMap = {"editor": editor_srv}
@@ -48,17 +64,19 @@ async def async_main() -> int:
             "Finish with done(success, report)."
         ),
         client=client,
+        reasoning_effort=args.reasoning_effort,
+        reasoning_summary=args.reasoning_summary,
     )
-    res = await agent.run(
-        f"Edit file: {args.file_path}\nGoal: {args.prompt}\n",
-        stream=False,
-    )
-    # Print assistant text so caller sees the reasoning/summary; tool outcomes included in sequence
-    if isinstance(res, dict) or hasattr(res, "text"):
-        with contextlib.suppress(Exception):
-            print(res.text)
-    # Success if the last tool_output for editor/done indicates success, otherwise 0 anyway (the model may not call done)
-    return 0
+    try:
+        res = await agent.run(
+            f"Edit file: {target_path}\nGoal: {args.prompt}\n",
+            stream=False,
+        )
+        # Print assistant text so caller sees the reasoning/summary; tool outcomes included in sequence
+        print(res.text)
+        return 0
+    finally:
+        await agent.close()
 
 
 def main() -> None:

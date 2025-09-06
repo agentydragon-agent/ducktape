@@ -25,18 +25,19 @@ from openai.types.responses import (
 try:
     from openai.types.responses import ResponseReasoningItem
 except Exception:  # pragma: no cover
+
     class ResponseReasoningItem:  # type: ignore[no-redef]
         ...
 
+
 # Typed request params for reasoning
-from openai.types.shared_params import Reasoning as ReasoningParams, ReasoningEffort
-
-
+from openai.types.shared_params import Reasoning as ReasoningParams
+from openai.types.shared_params import ReasoningEffort
 from pydantic import BaseModel
 from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 
-from .mcp_manager import McpManager
 from .loggers import TranscriptLogger
+from .mcp_manager import McpManager
 
 
 @dataclass
@@ -85,12 +86,11 @@ def _openai_client() -> openai.OpenAI:
     return openai.OpenAI()
 
 
-
-
 @retry(
     retry=retry_if_exception(
         lambda e: isinstance(
-            e, APITimeoutError | APIConnectionError | RateLimitError | APIStatusError,
+            e,
+            APITimeoutError | APIConnectionError | RateLimitError | APIStatusError,
         ),
     ),
     wait=wait_exponential(multiplier=1, min=1, max=8),
@@ -99,6 +99,7 @@ def _openai_client() -> openai.OpenAI:
 def _responses_create_with_retry(client: openai.OpenAI, **kwargs: Any):
     """Wrapper around client.responses.create with retry for transient errors."""
     return client.responses.create(**kwargs)
+
 
 def load_mcp_file(path: str) -> ToolMap:
     data = json.loads(Path(path).read_text(encoding="utf-8"))
@@ -134,7 +135,8 @@ class MiniCodex:
         self._reasoning_summary = reasoning_summary
         self._metrics = Metrics()
         self._log = structlog.get_logger("mini_codex").bind(
-            component="MiniCodex", model=self._model,
+            component="MiniCodex",
+            model=self._model,
         )
         # Logging artifacts
         self._log_dir: Path | None = None
@@ -168,7 +170,9 @@ class MiniCodex:
         return inst
 
     def _init_logging(self) -> None:
-        base = Path(os.environ.get("MINICODEX_LOG_DIR") or (Path.cwd() / "logs" / "mini_codex"))
+        base = Path(
+            os.environ.get("MINICODEX_LOG_DIR") or (Path.cwd() / "logs" / "mini_codex")
+        )
         base.mkdir(parents=True, exist_ok=True)
         agent_dir = base / self._agent_name
         agent_dir.mkdir(parents=True, exist_ok=True)
@@ -185,7 +189,9 @@ class MiniCodex:
             "ts": int(time.time()),
             "pid": os.getpid(),
         }
-        (run_dir / "run.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+        (run_dir / "run.json").write_text(
+            json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
 
     def tools(self) -> list[dict[str, Any]]:
         return self._mcp.list_tools()
@@ -207,7 +213,9 @@ class MiniCodex:
         return dump_messages_for_api(self._transcript)
 
     async def run(
-        self, user_text: str, stream: bool = False,
+        self,
+        user_text: str,
+        stream: bool = False,
     ) -> AgentResult | AsyncIterator[dict[str, Any]]:
         if stream:
 
@@ -235,16 +243,24 @@ class MiniCodex:
             # Per Responses API: accepted values include "auto", "none", "required",
             # or a specific function name via {"type":"function","function":{"name":"..."}}
             tool_choice_value: str | dict[str, Any] = (
-                "required" if (self._require_one_tool and not have_used_tool) else "auto"
+                "required"
+                if (self._require_one_tool and not have_used_tool)
+                else "auto"
             )
 
             reasoning_kwargs: dict[str, Any] = {}
-            if self._reasoning_effort is not None or self._reasoning_summary is not None:
+            if (
+                self._reasoning_effort is not None
+                or self._reasoning_summary is not None
+            ):
                 reasoning_kwargs = {
-                    "reasoning": cast(ReasoningParams, {
-                        "effort": self._reasoning_effort,
-                        "summary": self._reasoning_summary,
-                    }),
+                    "reasoning": cast(
+                        ReasoningParams,
+                        {
+                            "effort": self._reasoning_effort,
+                            "summary": self._reasoning_summary,
+                        },
+                    ),
                 }
             resp = _responses_create_with_retry(
                 self._client,
@@ -289,7 +305,9 @@ class MiniCodex:
                     for tc in requires
                 ]
                 self._log.debug(
-                    "tool_calls", count=len(dbg), reasoning_items=reasoning_count,
+                    "tool_calls",
+                    count=len(dbg),
+                    reasoning_items=reasoning_count,
                 )
 
             if not requires:
@@ -325,7 +343,9 @@ class MiniCodex:
                 self._emit_event(call_evt)
                 out_str = _responses_output_from_calltool(res_ct)
                 fco = FunctionCallOutput(
-                    type="function_call_output", call_id=fc.call_id, output=out_str,
+                    type="function_call_output",
+                    call_id=fc.call_id,
+                    output=out_str,
                 )
                 sequence.append(
                     {
@@ -347,9 +367,14 @@ class MiniCodex:
                 payload = {
                     "transcript": dump_messages_for_api(self._transcript),
                     "sequence": sequence,
-                    "metrics": {"turns": self._metrics.turns, "tool_calls": self._metrics.tool_calls},
+                    "metrics": {
+                        "turns": self._metrics.turns,
+                        "tool_calls": self._metrics.tool_calls,
+                    },
                 }
-                transcript_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+                transcript_path.write_text(
+                    json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+                )
         except Exception:
             pass
         return AgentResult(text=text, sequence=sequence, metrics=self._metrics)
@@ -396,5 +421,3 @@ def dump_messages_for_api(messages: list[TranscriptItem]) -> list[dict[str, Any]
         else:  # pragma: no cover
             raise TypeError(f"Unsupported transcript item type: {type(item)!r}")
     return out
-
-
