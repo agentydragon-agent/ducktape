@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import fnmatch
-import hashlib
 import json
 import os
 import shutil
@@ -25,7 +24,6 @@ from pydantic import BaseModel, model_validator, ConfigDict
 from .specimen_frontmatter import GitHubSource, GitSource, LocalSource, SpecimenManifest
 
 PropertyID = NewType("PropertyID", str)
-FindingRef = NewType("FindingRef", str)
 
 
 @lru_cache(maxsize=1)
@@ -72,23 +70,17 @@ class Issue(BaseModel):
     gap_note: str | None = None
 
     model_config = ConfigDict(extra="ignore")
-    files: dict[str, list[LineRange] | None] | None = None
-    instances: list[Occurrence] | None = None
+    instances: list[Occurrence]
 
     @model_validator(mode="after")
     def _validate_self(self) -> Issue:
         _validate_property_ids(self.properties)
-        # Exactly one of `files` or `instances` must be provided (mutually exclusive)
-        has_files = self.files is not None
-        has_instances = self.instances is not None
-        if has_files == has_instances:
-            raise ValueError("Exactly one of `files` or `instances` must be provided")
+        if not self.instances:
+            raise ValueError("`instances` must contain at least one occurrence")
         return self
 
     @property
     def files_touched(self) -> set[str]:
-        if self.files is not None:
-            return set(self.files.keys()) if self.files else set()
         paths: set[str] = set()
         for occ in self.instances or []:
             paths.update(occ.files.keys())
@@ -190,21 +182,6 @@ def load_manifest(path: Path) -> SpecimenManifest:
     return SpecimenManifest.model_validate(data)
 
 
-def try_download_github_archive(owner: str, repo: str, ref: str) -> Path | None:
-    url = f"https://codeload.github.com/{owner}/{repo}/tar.gz/{ref}"
-    tmpdir = Path(tempfile.mkdtemp(prefix="adgn-specimen-archive-"))
-    tar_path = tmpdir / f"{repo}-{ref}.tar.gz"
-    try:
-        with urlopen(url) as resp, tar_path.open("wb") as out:
-            out.write(resp.read())
-    except (URLError, HTTPError):
-        return None
-    with tarfile.open(tar_path, "r:gz") as tf:
-        tf.extractall(tmpdir)
-    for p in tmpdir.iterdir():
-        if p.is_dir():
-            return p.resolve()
-    return None
 
 
 def _xdg_cache_base() -> Path:
@@ -214,13 +191,8 @@ def _xdg_cache_base() -> Path:
     return root
 
 
-def _cache_path_for_github(owner: str, repo: str, ref: str) -> Path:
-    return _xdg_cache_base() / "github" / owner / repo / f"{ref}.tar.gz"
 
 
-def _cache_path_for_git(url: str, ref: str) -> Path:
-    h = hashlib.sha256(f"{url}@{ref}".encode()).hexdigest()[:16]
-    return _xdg_cache_base() / "git" / h / "src.tar.gz"
 
 
 def _download_github_to(owner: str, repo: str, ref: str, dest: Path) -> bool:
@@ -246,17 +218,6 @@ def _download_github_to(owner: str, repo: str, ref: str, dest: Path) -> bool:
         return False
 
 
-def _ensure_cached_archive(
-    cache_path: Path, builder: Callable[[Path], bool],
-) -> Path | None:
-    """Ensure cache_path tar.gz exists using builder; return cache_path on success, else None.
-
-    Does not swallow exceptions raised by the builder; they will propagate.
-    """
-    if cache_path.exists():
-        return cache_path
-    ok = builder(cache_path)
-    return cache_path if ok and cache_path.exists() else None
 
 
 def _extract_tar_gz_to_temp(archive: Path) -> Path:
