@@ -72,3 +72,14 @@ adgn_llm = [
   "pytest-asyncio>=0.23",
   "ruff>=0.5",
 ]
+
+# Ruff configuration
+[tool.ruff]
+# Using Ruff's formatter; keep linter compatible with formatter behavior.
+
+[tool.ruff.lint]
+# Avoid formatter↔linter churn on long strings that the formatter wraps
+# into adjacent literals; we accept that style here.
+extend-ignore = [
+  "ISC001",  # Implicit string concatenation: ignore to prevent conflicts with the formatter's wrapping
+]

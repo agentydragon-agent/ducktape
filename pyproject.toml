@@ -15,3 +15,13 @@ mypy_path = "ansible"
 [[tool.mypy.overrides]]
 module = "ansible.plugins.action.*"
 ignore_errors = true
+
+# Ruff configuration at repo root
+[tool.ruff]
+
+[tool.ruff.lint]
+# TODO(mpokorny): Stop nesting multiple pyproject.toml files; deduplicate linter/formatter
+# configuration at the repo root so subprojects inherit consistently.
+# Ignore ISC001 to avoid formatter↔linter churn when the formatter wraps long strings
+# using adjacent string literals.
+extend-ignore = ["ISC001"]
