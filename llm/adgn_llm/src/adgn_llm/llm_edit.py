@@ -17,6 +17,7 @@ from typing import Literal
 
 import openai
 import typer
+from .openai_utils import ReasoningEffort, ReasoningSummary
 
 from .mcp.editor_server import make_editor_mcp
 from .mcp.inproc import fastmcp_inproc_client
@@ -28,13 +29,15 @@ from .mini_codex.mcp_manager import (
 )
 
 
+
+
 async def _execute(
     *,
     file_path: Path,
     prompt: str,
     model: str,
-    reasoning_effort: Literal["minimal", "low", "medium", "high"] | None,
-    reasoning_summary: Literal["auto", "concise", "detailed"] | None,
+    reasoning_effort: ReasoningEffort | None,
+    reasoning_summary: ReasoningSummary | None,
 ) -> int:
     # Validate input path
     target_path = file_path
@@ -78,11 +81,11 @@ def typer_edit(
     file_path: Path = typer.Argument(..., exists=True, dir_okay=False, readable=True, help="Path to file to edit"),
     prompt: str = typer.Argument(..., help="Editing prompt"),
     model: str = typer.Option("o4-mini", "--model", help="Model name"),
-    reasoning_effort: Literal["minimal", "low", "medium", "high"] | None = typer.Option(
+    reasoning_effort: ReasoningEffort | None = typer.Option(
         None,
         help="Reasoning effort for reasoning-capable models",
     ),
-    reasoning_summary: Literal["auto", "concise", "detailed"] | None = typer.Option(
+    reasoning_summary: Summary | None = typer.Option(
         None,
         help="Emit reasoning summaries (omit to disable)",
     ),

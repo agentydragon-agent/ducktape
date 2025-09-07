@@ -10,6 +10,14 @@ from adgn_llm.mcp.editor_server import make_editor_mcp, is_python_path
 from adgn_llm.mcp.inproc import open_fastmcp_client_session
 
 
+@pytest.fixture
+def editor_session():
+    """Factory fixture yielding an in-proc FastMCP client session context manager for a given path."""
+    def _open(p: Path):
+        return open_fastmcp_client_session(lambda: make_editor_mcp(p))
+    return _open
+
+
 def test_is_python_path() -> None:
     assert is_python_path(Path("foo.py"))
     assert is_python_path(Path("bar.pyi"))
@@ -18,11 +26,11 @@ def test_is_python_path() -> None:
 
 
 @pytest.mark.asyncio
-async def test_done_for_non_python_no_syntax_check(tmp_path: Path) -> None:
+async def test_done_for_non_python_no_syntax_check(tmp_path: Path, editor_session) -> None:
     p = tmp_path / "note.md"
     p.write_text("hello\n", encoding="utf-8")
 
-    async with open_fastmcp_client_session(lambda: make_editor_mcp(p)) as sess:
+    async with editor_session(p) as sess:
         # Append a line after the first line (1-based after = insert at index 1)
         await sess.call_tool(name="add_line_after", arguments={"line_number": 1, "content": "world"})
         # Finish successfully; should not run python syntax checks
@@ -36,11 +44,11 @@ async def test_done_for_non_python_no_syntax_check(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_done_python_syntax_failure_returns_structured_failure(tmp_path: Path) -> None:
+async def test_done_python_syntax_failure_returns_structured_failure(tmp_path: Path, editor_session) -> None:
     p = tmp_path / "bad.py"
     p.write_text("def f():\n    return 1\n", encoding="utf-8")  # start valid
 
-    async with open_fastmcp_client_session(lambda: make_editor_mcp(p)) as sess:
+    async with editor_session(p) as sess:
         # Introduce a syntax error by replacing the function header
         await sess.call_tool(name="replace_text", arguments={"old_text": "def f():", "new_text": "def f(:"})
         res = await sess.call_tool(name="done", arguments={"success": True, "report": "finish"})
@@ -53,11 +61,11 @@ async def test_done_python_syntax_failure_returns_structured_failure(tmp_path: P
 
 
 @pytest.mark.asyncio
-async def test_done_explicit_failure_reverts_in_memory(tmp_path: Path) -> None:
+async def test_done_explicit_failure_reverts_in_memory(tmp_path: Path, editor_session) -> None:
     p = tmp_path / "file.txt"
     p.write_text("A\n", encoding="utf-8")
 
-    async with open_fastmcp_client_session(lambda: make_editor_mcp(p)) as sess:
+    async with editor_session(p) as sess:
         # Stage change to "B" in-memory: delete line 1 and insert B at start
         await sess.call_tool(name="delete_line", arguments={"line_number": 1})
         await sess.call_tool(name="add_line_after", arguments={"line_number": 0, "content": "B"})
