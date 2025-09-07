@@ -7,7 +7,7 @@ import argparse
 import os
 from typing import Dict
 
-from mcp.server.stdio import stdio_transport
+import asyncio
 
 from .._shared.container_session import NetworkMode
 from .server import make_container_exec_mcp
@@ -98,9 +98,7 @@ def main(argv: list[str] | None = None) -> int:
         labels=labels,
     )
 
-    with stdio_transport() as (read_stream, write_stream):
-        server.serve(read_stream=read_stream, write_stream=write_stream)
-
+    asyncio.run(server.run_stdio_async())
     return 0
 
 

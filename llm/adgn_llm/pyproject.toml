@@ -83,6 +83,7 @@ line-length = 120
 # Using Ruff's formatter; keep linter compatible with formatter behavior.
 # Exclude generated/third‑party specimen snapshots from lint (vendored code not maintained here)
 extend-exclude = [
+  "**/scratch/**",
   "src/adgn_llm/properties/specimens/**",
 ]
 
@@ -100,6 +101,7 @@ markers = [
   "live_llm: Tests that exercise the real OpenAI API (requires env credentials)",
 ]
 norecursedirs = [
+  "**/scratch",
   "specimens",
   "src/adgn_llm/properties/specimens",
 ]

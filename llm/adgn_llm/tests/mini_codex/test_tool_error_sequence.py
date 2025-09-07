@@ -41,8 +41,6 @@ async def test_tool_error_is_surfaced_in_sequence(monkeypatch: pytest.MonkeyPatc
     # Stub OpenAI responses to return one tool call first, then no further calls (break loop)
     from openai.types.responses import ResponseFunctionToolCall
 
-    call_once_state = {"n": 0}
-
     class _RespOneCall:
         def __init__(self):
             self.output = [
@@ -57,8 +55,6 @@ async def test_tool_error_is_surfaced_in_sequence(monkeypatch: pytest.MonkeyPatc
     class _RespNoCall:
         def __init__(self):
             self.output = []
-
-    import adgn_llm.mini_codex.agent as agent_mod
 
     class FakeResponses:
         def __init__(self) -> None:

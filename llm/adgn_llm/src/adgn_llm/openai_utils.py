@@ -2,21 +2,26 @@ from __future__ import annotations
 
 from enum import StrEnum
 
-# Re-export the official OpenAI SDK alias (typing.Literal) for type annotations
-from openai.types.shared_params import ReasoningEffort
-
 
 class ReasoningEffort(StrEnum):
-    """String-valued enum for CLI/options while remaining str-compatible.
-
-    Values mirror OpenAI's ReasoningEffort (typing.Literal), so instances can be
-    passed directly to the OpenAI SDK (StrEnum is a str subclass).
-    """
+    """String-valued helper mirroring the SDK's accepted reasoning-effort strings."""
 
     minimal = "minimal"
     low = "low"
     medium = "medium"
     high = "high"
+
+
+def to_reasoning_effort(value: ReasoningEffort | str | None) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, ReasoningEffort):
+        return value.value
+    try:
+        return ReasoningEffort(value).value
+    except ValueError as exc:
+        allowed = ", ".join(item.value for item in ReasoningEffort)
+        raise ValueError(f"Invalid reasoning effort {value!r}; expected one of: {allowed}") from exc
 
 
 class ReasoningSummary(StrEnum):

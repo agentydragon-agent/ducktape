@@ -1,7 +1,7 @@
-import json
 import os
 import time
 import uuid
+from contextlib import asynccontextmanager
 from pathlib import Path
 import sys
 
@@ -74,32 +74,67 @@ def _container_has_timeout(container) -> bool:
 
 
 def _extract_payload(resp):
-    # Prefer JSON from text content we return; fallback to structured result if present
-    if getattr(resp, "content", None):
-        block = resp.content[0]
-        if getattr(block, "type", None) == "text" and getattr(block, "text", ""):
-            try:
-                return json.loads(block.text)
-            except json.JSONDecodeError:
-                pass
+    if getattr(resp, "structuredContent", None):
+        return resp.structuredContent
     if hasattr(resp, "result") and isinstance(resp.result, dict):
         return resp.result
     raise AssertionError(f"Unexpected tool response shape: {resp!r}")
+
+
+@pytest.fixture(scope="module")
+def docker_exec_env(tmp_path_factory: pytest.TempPathFactory) -> dict[str, str]:
+    base_env = _server_env()
+    # Ensure the subprocess sees the same Python environment as the test runner
+    base_env["VIRTUAL_ENV"] = os.environ.get("VIRTUAL_ENV", "")
+    return base_env
+
+
+@asynccontextmanager
+async def _session(env: dict[str, str]):
+    params = StdioServerParameters(
+        command=sys.executable,
+        args=[
+            "-m",
+            "adgn_llm.mcp.docker_exec.launcher",
+            "--image",
+            env.get("DOCKER_IMAGE", "alpine:3.20"),
+            "--describe",
+        ],
+        env=env,
+    )
+    async with stdio_client(params) as (read, write), ClientSession(read, write) as session:
+        await session.initialize()
+        yield session
+
+
+def _build_exec_args(cmd: list[str], timeout_secs: float | None = None) -> dict[str, object]:
+    payload: dict[str, object] = {"cmd": cmd}
+    if timeout_secs is not None:
+        payload["timeout_secs"] = timeout_secs
+    return payload
+
+
+async def _call_exec(session: ClientSession, cmd: list[str], timeout_secs: float | None = None):
+    response = await session.call_tool(
+        name="docker_exec",
+        arguments=_build_exec_args(cmd, timeout_secs),
+    )
+    return _extract_payload(response)
 
 
 @pytest.mark.skipif(
     os.environ.get("CI") == "true",
     reason="Requires local Docker engine",
 )
-def test_hello_world():
+def test_hello_world(docker_exec_env: dict[str, str]):
     container = _start_container()
     try:
-        server_env = _server_env(
-            {
-                "DOCKER_CONTAINER": container.id,
-                "USE_CONTAINER_TIMEOUT_WRAPPER": "1" if _container_has_timeout(container) else "0",
-            }
-        )
+        server_env = {
+            **docker_exec_env,
+            "DOCKER_CONTAINER": container.id,
+            "DOCKER_IMAGE": container.image.tags[0] if container.image.tags else container.image.id,
+            "USE_CONTAINER_TIMEOUT_WRAPPER": "1" if _container_has_timeout(container) else "0",
+        }
 
         async def run_session():
             async with _session(server_env) as session:
@@ -130,6 +165,7 @@ def test_stderr_and_exit_code():
         server_env = _server_env(
             {
                 "DOCKER_CONTAINER": container.id,
+                "DOCKER_IMAGE": container.image.tags[0] if container.image.tags else container.image.id,
                 "USE_CONTAINER_TIMEOUT_WRAPPER": "0",  # not needed here
             }
         )

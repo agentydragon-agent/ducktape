@@ -177,7 +177,6 @@ def run_specimen_lint_issue(
     dry_run: bool = False,
     gitconfig: str | None = None,
     occurrence_index: int,
-    *,
     client: AsyncOpenAI,
 ) -> int:
     sp, root, issue = _load_single_issue(specimen, issue_id, gitconfig)

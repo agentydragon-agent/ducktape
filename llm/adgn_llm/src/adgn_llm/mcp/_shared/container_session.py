@@ -132,9 +132,12 @@ def _container_exec(
     except APIError:
         exit_code = None
 
+    timed_out = bool(timeout_secs) and exit_code == 143
+    if timed_out:
+        exit_code = None
     return {
         "exit_code": exit_code,
-        "timed_out": False,
+        "timed_out": timed_out,
         "stdout": stdout_buf.decode(errors="replace"),
         "stderr": stderr_buf.decode(errors="replace"),
     }
@@ -156,37 +159,6 @@ def make_container_lifespan(
     @asynccontextmanager
     async def lifespan(server: FastMCP):  # yields ContainerSessionState
         client = _init_docker()
-        # Compose a host-side description (single source of truth) before starting tools
-        if describe:
-            img = _init_docker().images.get(image)
-            img_id, tags = img.id, img.tags
-            hist = _init_docker().api.history(img_id)  # type: ignore[attr-defined]
-            history_lines: list[str] = []
-            for entry in hist or []:
-                created_by = (entry.get("CreatedBy") or "").lstrip("/bin/sh -c ").removeprefix("#(nop) ").strip()
-                if created_by:
-                    history_lines.append(f"  - {created_by}")
-
-            vol_lines: list[str] = []
-            if isinstance(volumes, dict):
-                for host, spec in volumes.items():
-                    bind = spec.get("bind") if isinstance(spec, dict) else None
-                    mode = spec.get("mode") if isinstance(spec, dict) else None
-                    if bind:
-                        vol_lines.append(f"  - {host} → {bind}{' (' + mode + ')' if mode else ''}")
-
-            desc = [
-                "Container session",
-                f"- Working dir: {working_dir}",
-                f"- Network mode: {network_mode.value}",
-                f"- Image: {img_id} {' '.join(tags) if tags else ''}",
-                "- Volumes:",
-                *(vol_lines or ["  - (none)"]),
-                "Image history (CreatedBy):",
-                "\n".join(history_lines[:100]) if history_lines else "  - (none)",
-            ]
-            server.server_info.description = "\n".join(desc)  # type: ignore[attr-defined]
-
         # Start container
         container = _start_container(
             client=client,
@@ -221,7 +193,13 @@ def register_container(mcp: FastMCP, *, tool_name: str = "exec") -> None:
     This folds resource and tool registration into a single call to avoid double registration.
     """
     # Resource: single JSON describing container/session
-    @mcp.resource("resource://container.info", mime_type="application/json", name="container.info")
+    @mcp.resource(
+        "resource://container.info",
+        mime_type="application/json",
+        name="container.info",
+        title="Container session metadata",
+        description="Docker container details for this session",
+    )
     def container_info_json() -> Dict[str, Any]:
         ctx = mcp.get_context()
         s: ContainerSessionState = ctx.request_context.lifespan_context  # type: ignore[assignment]
@@ -235,7 +213,12 @@ def register_container(mcp: FastMCP, *, tool_name: str = "exec") -> None:
         }
 
     # Tool: container exec
-    @mcp.tool(name=tool_name)
+    @mcp.tool(
+        name=tool_name,
+        title="Execute a command inside the container",
+        description="Run a shell command inside the per-session Docker container.",
+        structured_output=True,
+    )
     def tool_exec(
         cmd: list[str],
         cwd: str | None = None,
