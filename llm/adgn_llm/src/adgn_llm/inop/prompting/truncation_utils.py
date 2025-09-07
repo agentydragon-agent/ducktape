@@ -8,8 +8,8 @@ from openai.types.responses.response import Response
 from openai.types.responses.response_output_message import ResponseOutputMessage
 from openai.types.responses.response_output_text import ResponseOutputText
 
-from adgn_llm.instruction_optimizer.config import OptimizerConfig
-from adgn_llm.instruction_optimizer.engine.models import FileInfo
+from adgn_llm.inop.config import OptimizerConfig
+from adgn_llm.inop.engine.models import FileInfo
 
 
 class TruncationManager:

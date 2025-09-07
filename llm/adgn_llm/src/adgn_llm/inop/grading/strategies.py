@@ -6,8 +6,8 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any
 
-from adgn_llm.instruction_optimizer.config import OptimizerConfig
-from adgn_llm.instruction_optimizer.engine.models import (
+from adgn_llm.inop.config import OptimizerConfig
+from adgn_llm.inop.engine.models import (
     AssistantMessage,
     ComparisonGrading,
     Criterion,
@@ -20,8 +20,8 @@ from adgn_llm.instruction_optimizer.engine.models import (
     ToolCall,
     TrajectoryItem,
 )
-from adgn_llm.instruction_optimizer.io.yaml_loader import load_yaml_files
-from adgn_llm.instruction_optimizer.prompting.truncation_utils import TruncationManager
+from adgn_llm.inop.io.yaml_loader import load_yaml_files
+from adgn_llm.inop.prompting.truncation_utils import TruncationManager
 
 
 class GradingStrategy(ABC):

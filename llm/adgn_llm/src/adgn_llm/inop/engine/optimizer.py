@@ -47,41 +47,41 @@ from pathlib import Path
 
 from openai import AsyncOpenAI
 
-from adgn_llm.instruction_optimizer.clients.logging_openai_client import (
+from adgn_llm.inop.clients.logging_openai_client import (
     LoggingOpenAIClient,
     LoggingOpenAIModel,
 )
-from adgn_llm.instruction_optimizer.config import OptimizerConfig
-from adgn_llm.instruction_optimizer.engine.exceptions import (
+from adgn_llm.inop.config import OptimizerConfig
+from adgn_llm.inop.engine.exceptions import (
     ContextWindowExceededException,
 )
-from adgn_llm.instruction_optimizer.engine.models import (
+from adgn_llm.inop.engine.models import (
     AgentTaskType,
     Criterion,
     GradedRollout,
     TaskDefinition,
 )
-from adgn_llm.instruction_optimizer.engine.runner_factory import create_runner
-from adgn_llm.instruction_optimizer.grading.grader import grade_rollout
-from adgn_llm.instruction_optimizer.io.jsonl_logger import JSONLLogger
-from adgn_llm.instruction_optimizer.io.logging_utils import DualOutputLogging
-from adgn_llm.instruction_optimizer.io.task_loader import (
+from adgn_llm.inop.engine.runner_factory import create_runner
+from adgn_llm.inop.grading.grader import grade_rollout
+from adgn_llm.inop.io.jsonl_logger import JSONLLogger
+from adgn_llm.inop.io.logging_utils import DualOutputLogging
+from adgn_llm.inop.io.task_loader import (
     load_runner_configs,
     load_task_definitions,
     load_task_types,
 )
-from adgn_llm.instruction_optimizer.io.yaml_loader import load_yaml_files
+from adgn_llm.inop.io.yaml_loader import load_yaml_files
 
 # Database removed - using JSON files instead
-from adgn_llm.instruction_optimizer.plots import ScoreEvolutionTracker
-from adgn_llm.instruction_optimizer.prompting.prompt_engineer import (
+from adgn_llm.inop.plots import ScoreEvolutionTracker
+from adgn_llm.inop.prompting.prompt_engineer import (
     FeedbackMode,
     FullRolloutsFeedbackProvider,
     PromptEngineer,
     StatsOnlyFeedbackProvider,
 )
-from adgn_llm.instruction_optimizer.prompting.summarizer import PatternSummarizer
-from adgn_llm.instruction_optimizer.prompting.truncation_utils import TruncationManager
+from adgn_llm.inop.prompting.summarizer import PatternSummarizer
+from adgn_llm.inop.prompting.truncation_utils import TruncationManager
 
 # Logging will be configured after argument parsing
 logger = None

@@ -4,13 +4,13 @@ import subprocess
 from abc import ABC, abstractmethod
 from pathlib import Path
 
-from adgn_llm.instruction_optimizer.engine.models import (
+from adgn_llm.inop.engine.models import (
     GitCloneConfig,
     Rollout,
     RunnerEnvironment,
     TaskDefinition,
 )
-from adgn_llm.instruction_optimizer.io.logging_utils import DualOutputLogging
+from adgn_llm.inop.io.logging_utils import DualOutputLogging
 
 
 class AgentRunner(ABC):

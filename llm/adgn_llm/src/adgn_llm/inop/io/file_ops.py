@@ -3,9 +3,9 @@ from __future__ import annotations
 import fnmatch
 from pathlib import Path
 
-from adgn_llm.instruction_optimizer.config import OptimizerConfig
-from adgn_llm.instruction_optimizer.engine.models import FileInfo
-from adgn_llm.instruction_optimizer.prompting.truncation_utils import TruncationManager
+from adgn_llm.inop.config import OptimizerConfig
+from adgn_llm.inop.engine.models import FileInfo
+from adgn_llm.inop.prompting.truncation_utils import TruncationManager
 
 
 def gather_agent_files(

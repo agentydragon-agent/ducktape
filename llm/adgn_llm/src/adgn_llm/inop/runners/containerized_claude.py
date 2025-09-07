@@ -34,7 +34,7 @@ from claude_code_sdk import ClaudeCodeOptions, ClaudeSDKClient
 from claude_code_sdk._internal.transport.subprocess_cli import SubprocessCLITransport
 
 if TYPE_CHECKING:
-    from adgn_llm.instruction_optimizer.engine.models import SeedTask
+    from adgn_llm.inop.engine.models import SeedTask
 
 
 @contextmanager

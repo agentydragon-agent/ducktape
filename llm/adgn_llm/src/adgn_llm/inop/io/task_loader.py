@@ -5,7 +5,7 @@ from typing import Any
 
 import yaml
 
-from adgn_llm.instruction_optimizer.engine.models import (
+from adgn_llm.inop.engine.models import (
     ComparisonGrading,
     DockerConfig,
     FileBasedGrading,

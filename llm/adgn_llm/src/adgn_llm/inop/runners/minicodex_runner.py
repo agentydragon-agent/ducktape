@@ -12,10 +12,10 @@ from contextlib import AsyncExitStack
 from pathlib import Path
 from typing import Any
 
-from adgn_llm.instruction_optimizer.clients.logging_openai_client import (
+from adgn_llm.inop.clients.logging_openai_client import (
     LoggingOpenAIModel,
 )
-from adgn_llm.instruction_optimizer.engine.models import (
+from adgn_llm.inop.engine.models import (
     AssistantMessage,
     FinalOutput,
     Rollout,
@@ -26,8 +26,8 @@ from adgn_llm.instruction_optimizer.engine.models import (
     TrajectoryItem,
     UserInput,
 )
-from adgn_llm.instruction_optimizer.io.file_utils import collect_workspace_files
-from adgn_llm.instruction_optimizer.runners.base import AgentRunner
+from adgn_llm.inop.io.file_utils import collect_workspace_files
+from adgn_llm.inop.runners.base import AgentRunner
 from adgn_llm.mcp._shared.container_session import NetworkMode
 from adgn_llm.mcp.docker_exec.server import make_container_exec_mcp
 from adgn_llm.mcp.inproc import fastmcp_inproc_client

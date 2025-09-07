@@ -1,6 +1,6 @@
 """Grading strategies for the optimizer."""
 
-from adgn_llm.instruction_optimizer.grading.strategies import (
+from adgn_llm.inop.grading.strategies import (
     ComparisonGradingStrategy,
     FileBasedGradingStrategy,
     GradingStrategy,

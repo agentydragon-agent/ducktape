@@ -15,11 +15,11 @@ from openai.types.responses.response_function_tool_call_item import (
 from openai.types.responses.response_output_message import ResponseOutputMessage
 from openai.types.responses.response_reasoning_item import ResponseReasoningItem
 
-from adgn_llm.instruction_optimizer.clients.logging_openai_client import (
+from adgn_llm.inop.clients.logging_openai_client import (
     LoggingOpenAIModel,
 )
-from adgn_llm.instruction_optimizer.engine.models import AgentTaskType, GradedRollout
-from adgn_llm.instruction_optimizer.io.logging_utils import DualOutputLogging
+from adgn_llm.inop.engine.models import AgentTaskType, GradedRollout
+from adgn_llm.inop.io.logging_utils import DualOutputLogging
 
 logger = DualOutputLogging.get_logger()
 

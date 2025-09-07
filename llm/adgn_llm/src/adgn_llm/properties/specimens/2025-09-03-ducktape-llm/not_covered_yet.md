@@ -353,7 +353,7 @@
   - Anchors:
     - llm/adgn_llm/src/adgn_llm/mini_codex/local_tools.py:39
     - llm/adgn_llm/src/adgn_llm/mini_codex/cli.py:100
-    - llm/adgn_llm/src/adgn_llm/instruction_optimizer/runners/minicodex_runner.py:270, 320
+    - llm/adgn_llm/src/adgn_llm/inop/runners/minicodex_runner.py:270, 320
   - Rationale: DRY and correct marker visibility; not covered explicitly.
 
 - Remove manual OPENAI_API_KEY plumbing in client factory

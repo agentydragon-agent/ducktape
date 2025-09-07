@@ -6,8 +6,8 @@ from typing import Any
 import yaml
 from pydantic import BaseModel
 
-from adgn_llm.instruction_optimizer.engine.models import SeedTask
-from adgn_llm.instruction_optimizer.io.logging_utils import DualOutputLogging
+from adgn_llm.inop.engine.models import SeedTask
+from adgn_llm.inop.io.logging_utils import DualOutputLogging
 
 logger = DualOutputLogging.get_logger()
 

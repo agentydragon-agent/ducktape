@@ -16,7 +16,7 @@ from claude_code_sdk import (
     ToolUseBlock,
 )
 
-from adgn_llm.instruction_optimizer.engine.models import (
+from adgn_llm.inop.engine.models import (
     AssistantMessage,
     Rollout,
     RunnerEnvironment,
@@ -28,9 +28,9 @@ from adgn_llm.instruction_optimizer.engine.models import (
     TrajectoryItem,
     UserInput,
 )
-from adgn_llm.instruction_optimizer.io.file_utils import collect_docker_files
-from adgn_llm.instruction_optimizer.runners.base import AgentRunner
-from adgn_llm.instruction_optimizer.runners.containerized_claude import TaskClaude
+from adgn_llm.inop.io.file_utils import collect_docker_files
+from adgn_llm.inop.runners.base import AgentRunner
+from adgn_llm.inop.runners.containerized_claude import TaskClaude
 
 
 class ClaudeRunner(AgentRunner):

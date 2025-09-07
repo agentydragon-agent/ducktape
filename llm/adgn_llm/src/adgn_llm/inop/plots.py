@@ -26,7 +26,7 @@ from plotnine import (
     theme_minimal,
 )
 
-from adgn_llm.instruction_optimizer.io.logging_utils import DualOutputLogging
+from adgn_llm.inop.io.logging_utils import DualOutputLogging
 
 logger = DualOutputLogging.get_logger()
 

@@ -2,12 +2,12 @@
 
 from typing import Any
 
-from adgn_llm.instruction_optimizer.clients.logging_openai_client import (
+from adgn_llm.inop.clients.logging_openai_client import (
     LoggingOpenAIModel,
 )
-from adgn_llm.instruction_optimizer.runners.base import AgentRunner
-from adgn_llm.instruction_optimizer.runners.claude_runner import ClaudeRunner
-from adgn_llm.instruction_optimizer.runners.minicodex_runner import MiniCodexRunner
+from adgn_llm.inop.runners.base import AgentRunner
+from adgn_llm.inop.runners.claude_runner import ClaudeRunner
+from adgn_llm.inop.runners.minicodex_runner import MiniCodexRunner
 
 
 def create_runner(
