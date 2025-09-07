@@ -11,6 +11,7 @@ from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, cast
+from mcp import types as mcp_types
 
 import openai
 import structlog
@@ -54,18 +55,20 @@ class Metrics:
 
 
 def _responses_output_from_calltool(res: Any) -> str:
-    try:
-        structured = getattr(res, "structuredContent", None)
-        if structured is not None:
-            return json.dumps(structured)
-        blocks = [b.model_dump(by_alias=True) for b in (getattr(res, "content", []) or [])]
+    if isinstance(res, mcp_types.CallToolResult):
+        if res.structuredContent is not None:
+            return json.dumps(res.structuredContent)
+        blocks = [b.model_dump(by_alias=True) for b in (res.content or [])]
         return json.dumps({"content": blocks})
-    except Exception as e:  # pragma: no cover
-        return json.dumps({"error": f"conversion_error: {e}"})
+    raise TypeError(f"Unsupported tool result type: {type(res)!r}")
 
 
 def _is_reasoning_item(item: Any) -> bool:
-    return isinstance(item, ResponseReasoningItem) or getattr(item, "type", None) == "reasoning"
+    if isinstance(item, ResponseReasoningItem):
+        return True
+    if isinstance(item, dict):
+        return item.get("type") == "reasoning"
+    return False
 
 
 # Namespaced tool form: mcp__{server}__{tool}
@@ -207,10 +210,7 @@ class MiniCodex:
                     ),
                 }
             # Per-server MCP resource FYI (max 5 URIs per server)
-            try:
-                resources = await self._mcp.list_resources()
-            except Exception:
-                resources = []
+            resources = await self._mcp.list_resources()
             by_server: dict[str, list[str]] = {}
             for it in resources:
                 s = it.get("server")
@@ -308,24 +308,24 @@ class MiniCodex:
                     if not isinstance(server, str) or not isinstance(uri, str):
                         raise ValueError("server and uri are required and must be strings")
                     res = await self._mcp.read_resource(server, uri)
-                    mime = getattr(res, "mimeType", None) or getattr(res, "mime", None)
-                    contents = getattr(res, "contents", None) or []
+                    if not isinstance(res, mcp_types.ReadResourceResult):
+                        raise TypeError(f"Unexpected read_resource result type: {type(res)!r}")
+                    contents = res.contents or []
+                    mime = contents[0].mimeType if contents else None
                     text_slice: str | None = None
                     base64_data: str | None = None
                     total_bytes: int | None = None
                     if contents:
                         part = contents[0]
-                        t = getattr(part, "text", None)
-                        if isinstance(t, str):
-                            full_bytes = t.encode("utf-8")
+                        if part.text is not None:
+                            full_bytes = part.text.encode("utf-8")
                             total_bytes = len(full_bytes)
                             chunk = full_bytes[start_offset : start_offset + max_bytes]
                             text_slice = chunk.decode("utf-8", errors="replace")
-                        else:
-                            data_b64 = getattr(part, "data", None) or getattr(part, "base64", None)
-                            if isinstance(data_b64, str):
-                                total_bytes = len(data_b64)
-                                base64_data = data_b64[start_offset : start_offset + max_bytes]
+                        elif part.data is not None:
+                            data_b64 = part.data
+                            total_bytes = len(data_b64)
+                            base64_data = data_b64[start_offset : start_offset + max_bytes]
                     payload = {
                         "mime": mime,
                         "start_offset": start_offset,
@@ -358,14 +358,14 @@ class MiniCodex:
                     "call_id": fc.call_id,
                 }
                 sequence.append(call_evt)
-                if os.environ.get("MINICODEX_DEBUG"):
+                if os.environ.get("MINICODEX_DEBUG") and isinstance(res_ct, mcp_types.CallToolResult):
                     self._log.debug(
                         "tool_result",
                         name=fc.name,
                         args=args,
-                        has_structured=getattr(res_ct, "structuredContent", None) is not None,
-                        blocks=len(getattr(res_ct, "content", []) or []),
-                        is_error=bool(getattr(res_ct, "isError", False)),
+                        has_structured=res_ct.structuredContent is not None,
+                        blocks=len(res_ct.content or []),
+                        is_error=bool(res_ct.isError),
                         latency_ms=int(latency * 1000),
                     )
                 self._emit_event(call_evt)
@@ -379,7 +379,9 @@ class MiniCodex:
                 sequence.append(fco_evt)
                 self._transcript.append(fco)
                 self._emit_event(fco_evt)
-                is_err = bool(getattr(res_ct, "isError", False))
+                if not isinstance(res_ct, mcp_types.CallToolResult):
+                    raise TypeError(f"Unexpected tool result type: {type(res_ct)!r}")
+                is_err = bool(res_ct.isError)
                 parsed_error: str | None = None
                 try:
                     data = json.loads(out_str)

@@ -90,7 +90,7 @@ class McpManager:
             sess = await self.get_session(name)
             res = await sess.list_tools()
             for t in res.tools or []:
-                schema = _strip_ctx(getattr(t, "inputSchema", None) or {"type": "object", "properties": {}})
+                schema = _strip_ctx(t.inputSchema or {"type": "object", "properties": {}})
                 out.append(
                     {
                         "type": "function",
@@ -110,15 +110,15 @@ class McpManager:
         for server_name in only or list(self._slots.keys()):
             sess = await self.get_session(server_name)
             res = await sess.list_resources()
-            for r in getattr(res, "resources", None) or []:
+            for r in res.resources or []:
                 items.append(
                     {
                         "server": server_name,
-                        "uri": getattr(r, "uri", None),
-                        "name": getattr(r, "name", None),
-                        "description": getattr(r, "description", None),
-                        "mime": getattr(r, "mimeType", None) or getattr(r, "mime", None),
-                        "annotations": getattr(r, "annotations", None),
+                        "uri": str(r.uri) if r.uri is not None else None,
+                        "name": r.name,
+                        "description": r.description,
+                        "mime": r.mimeType,
+                        "annotations": r.annotations,
                     }
                 )
         return items
