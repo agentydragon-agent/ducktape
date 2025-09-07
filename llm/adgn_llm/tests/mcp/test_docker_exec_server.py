@@ -49,7 +49,8 @@ def _start_container(image: str = "alpine:3.20"):
 def _container_has_timeout(container) -> bool:
     try:
         exit_code, out = container.exec_run(
-            ["sh", "-lc", "command -v timeout || which timeout"], demux=True,
+            ["sh", "-lc", "command -v timeout || which timeout"],
+            demux=True,
         )
         if exit_code == 0:
             stdout = (out[0] or b"").decode()
@@ -74,7 +75,8 @@ def _extract_payload(resp):
 
 
 @pytest.mark.skipif(
-    os.environ.get("CI") == "true", reason="Requires local Docker engine",
+    os.environ.get("CI") == "true",
+    reason="Requires local Docker engine",
 )
 def test_hello_world():
     container = _start_container()
@@ -83,9 +85,7 @@ def test_hello_world():
         env = {
             "DOCKER_CONTAINER": container.id,
             # Use wrapper only if available in container
-            "USE_CONTAINER_TIMEOUT_WRAPPER": "1"
-            if _container_has_timeout(container)
-            else "0",
+            "USE_CONTAINER_TIMEOUT_WRAPPER": "1" if _container_has_timeout(container) else "0",
         }
         server_env = {**os.environ, **env}
 
@@ -124,7 +124,8 @@ def test_hello_world():
 
 
 @pytest.mark.skipif(
-    os.environ.get("CI") == "true", reason="Requires local Docker engine",
+    os.environ.get("CI") == "true",
+    reason="Requires local Docker engine",
 )
 def test_stderr_and_exit_code():
     container = _start_container()
@@ -164,7 +165,8 @@ def test_stderr_and_exit_code():
 
 
 @pytest.mark.skipif(
-    os.environ.get("CI") == "true", reason="Requires local Docker engine",
+    os.environ.get("CI") == "true",
+    reason="Requires local Docker engine",
 )
 def test_timeout_flag():
     container = _start_container()

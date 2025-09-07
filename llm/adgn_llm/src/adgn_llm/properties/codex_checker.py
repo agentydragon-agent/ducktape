@@ -36,8 +36,11 @@ def build_supplemental_section(supplemental_text: str | None) -> str:
     lines = [
         "",
         "Supplemental files (golden reviews):",
-        "These cover both the formal properties defined above and additional not-yet-formalized feedback.",
-        "Your analysis must ensure code passes all formal property definitions and also the additional criteria captured here.",
+        ("These cover both the formal properties defined above and additional not-yet-formalized feedback."),
+        (
+            "Your analysis must ensure code passes all formal property definitions and also "
+            "the additional criteria captured here."
+        ),
         "Generalize patterns from these supplements and flag similar issues in the input code.",
         supplemental_text,
     ]
@@ -89,7 +92,10 @@ def read_embedded_paths(paths: list[Path]) -> str:
 
 
 def _scope_block(
-    scope_text: str, *, static_action: str, ambiguity_tail: str,
+    scope_text: str,
+    *,
+    static_action: str,
+    ambiguity_tail: str,
 ) -> list[str]:
     return [
         "Scope (freeform):",
@@ -99,14 +105,18 @@ def _scope_block(
         "- The scope may describe either:",
         '  1) a Git diff range (e.g., "between merge-base with master and 2 commits before HEAD"), or',
         "  2) a static set of files/paths",
-        "- If it's a diff description: resolve to a concrete diff range, enumerate files and hunks, and use `git diff --unified=0` for references.",
+        (
+            "- If it's a diff description: resolve to a concrete diff range, enumerate files and hunks, "
+            "and use `git diff --unified=0` for references."
+        ),
         f"- If it's a static file set: {static_action} only those files.",
         f"- On ambiguity, choose the most conservative interpretation, state the resolved scope, and {ambiguity_tail}",
     ]
 
 
 def _properties_block(
-    properties_text: str, supplemental_section: str | None,
+    properties_text: str,
+    supplemental_section: str | None,
 ) -> list[str]:
     lines = ["Property definitions:", properties_text]
     if supplemental_section:
@@ -115,13 +125,16 @@ def _properties_block(
 
 
 def build_find_prompt(
-    properties_dir: Path, scope_text: str, supplemental_text: str | None = None,
+    properties_dir: Path,
+    scope_text: str,
+    supplemental_text: str | None = None,
 ) -> str:
     properties_text = cx.read_all_properties_text(properties_dir)
     supplemental_section = build_supplemental_section(supplemental_text)
 
     lines: list[str] = [
-        "Analyze the codebase for violations of the properties defined below. Do not modify any files. Produce a structured textual report.",
+        "Analyze the codebase for violations of the properties defined below. Do not modify any files. "
+        "Produce a structured textual report.",
         "",
         *_scope_block(
             scope_text,
@@ -136,7 +149,10 @@ def build_find_prompt(
         "",
         "Reporting requirements:",
         "- Group by file, then by property title",
-        "- For each violation: include short rationale and line references (from `git diff --unified=0` or file line numbers)",
+        (
+            "- For each violation: include short rationale and line references (from `git diff --unified=0` "
+            "or file line numbers)"
+        ),
         '- If no violations for a file, explicitly state "No violations"',
         "",
         *_properties_block(properties_text, supplemental_section),
@@ -145,41 +161,63 @@ def build_find_prompt(
 
 
 def build_enforce_prompt(
-    properties_dir: Path, scope_text: str, supplemental_text: str | None = None,
+    properties_dir: Path,
+    scope_text: str,
+    supplemental_text: str | None = None,
 ) -> str:
     properties_text = cx.read_all_properties_text(properties_dir)
     supplemental_section = build_supplemental_section(supplemental_text)
 
     lines: list[str] = [
-        "Ensure code within the described scope conforms to the properties defined below and refactor as needed to satisfy them without altering behavior.",
+        "Ensure code within the described scope conforms to the properties defined below and refactor as needed "
+        "to satisfy them without altering behavior.",
         "",
         *_scope_block(
             scope_text,
             static_action="edit",
-            ambiguity_tail="avoid touching anything outside it unless required by the editing policy below.",
+            ambiguity_tail=("avoid touching anything outside it unless required by the editing policy below."),
         ),
         "",
         "Editing policy:",
         "- Prefer minimal, localized edits within the scoped hunks/sections.",
-        "- You MAY edit outside the scoped hunks/sections ONLY when necessary to bring the scoped changes and any code you touched into full compliance with all properties (e.g., moving imports to the top of file).",
-        "- If such edits cascade (A requires B, which requires C, ...), keep fixing until everything you changed and everything originally in scope is compliant, then stop.",
+        (
+            "- You MAY edit outside the scoped hunks/sections ONLY when necessary to bring the scoped changes "
+            "and any code you touched into full compliance with all properties (e.g., moving imports to the top of "
+            "file)."
+        ),
+        (
+            "- If such edits cascade (A requires B, which requires C, ...), keep fixing until everything you changed "
+            "and everything originally in scope is compliant, then stop."
+        ),
         "- Do NOT perform broad or unrelated refactors beyond what is required for compliance.",
         "- Do not commit changes.",
-        "- After edits, run existing linters/formatters if present (e.g., ruff, pre-commit) and re-verify against properties.",
+        (
+            "- After edits, run existing linters/formatters if present (e.g., ruff, pre-commit) and re-verify "
+            "against properties."
+        ),
         "",
         "Requirements:",
         "- You MUST check every changed hunk within the resolved scope",
-        "- You MUST bring all scoped files/sections and any cascaded edits into compliance with ALL property definition files",
+        (
+            "- You MUST bring all scoped files/sections and any cascaded edits into compliance with ALL property "
+            "definition files"
+        ),
         "",
         *_properties_block(properties_text, supplemental_section),
         "",
         "Operational guidance:",
         "- Keep changes within the workspace.",
-        "- If a property appears to conflict with code behavior, explain the conflict and propose the smallest safe change in your final report.",
+        (
+            "- If a property appears to conflict with code behavior, explain the conflict and propose the smallest "
+            "safe change in your final report."
+        ),
         "",
         "Deliverables:",
         "- Apply changes directly in the workspace.",
-        "- Print a concise change report as your final message: files changed, properties addressed per file, and any remaining violations you could not safely fix.",
+        (
+            "- Print a concise change report as your final message: files changed, properties addressed per file, "
+            "and any remaining violations you could not safely fix."
+        ),
     ]
     return "\n".join(lines).strip()
 
@@ -338,7 +376,11 @@ def main(argv: list[str]) -> int:
     try:
         if out_last_file is not None:
             proc = subprocess.run(
-                cmd, check=False, input=prompt, text=True, capture_output=True,
+                cmd,
+                check=False,
+                input=prompt,
+                text=True,
+                capture_output=True,
             )
             try:
                 print(Path(out_last_file).read_text(encoding="utf-8"))

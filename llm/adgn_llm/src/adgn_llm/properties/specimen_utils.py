@@ -7,7 +7,7 @@ import shutil
 import subprocess
 import tarfile
 import tempfile
-from collections.abc import Callable, Iterable
+from collections.abc import Iterable
 from functools import lru_cache
 from importlib.resources import files
 from pathlib import Path
@@ -19,7 +19,7 @@ from urllib.request import urlopen
 
 import yaml
 from platformdirs import user_cache_dir
-from pydantic import BaseModel, model_validator, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 
 from .specimen_frontmatter import GitHubSource, GitSource, LocalSource, SpecimenManifest
 
@@ -60,8 +60,6 @@ class Occurrence(BaseModel):
     files: dict[str, list[LineRange] | None]
 
 
-
-
 class Issue(BaseModel):
     id: str
     should_flag: bool
@@ -91,7 +89,9 @@ class SpecimenIssues(BaseModel):
     items: list[Issue]
 
     def filter_by_paths(
-        self, include: list[str], exclude: list[str] | None = None,
+        self,
+        include: list[str],
+        exclude: list[str] | None = None,
     ) -> SpecimenIssues:
         if not include and not exclude:
             return self
@@ -117,7 +117,7 @@ def load_specimen_issues(path: str | Path) -> SpecimenIssues:
     if suf not in {".jsonnet", ".libsonnet"}:
         raise SystemExit(f"Canonical issues must be Jsonnet: {p}")
     try:
-        import _jsonnet
+        import _jsonnet  # noqa: PLC0415
     except Exception as e:
         raise RuntimeError(
             "python-jsonnet is required to load issues.libsonnet; install with `pip install jsonnet`",
@@ -152,11 +152,7 @@ def find_specimens_base() -> Path:
 
 def list_specimen_names(base: Path) -> list[str]:
     return sorted(
-        [
-            p.name
-            for p in base.iterdir()
-            if p.is_dir() and (p / "manifest.yaml").exists()
-        ],
+        [p.name for p in base.iterdir() if p.is_dir() and (p / "manifest.yaml").exists()],
     )
 
 
@@ -182,17 +178,11 @@ def load_manifest(path: Path) -> SpecimenManifest:
     return SpecimenManifest.model_validate(data)
 
 
-
-
 def _xdg_cache_base() -> Path:
     base = Path(user_cache_dir(appname="adgn-llm", appauthor=False))
     root = base / "specimens"
     root.mkdir(parents=True, exist_ok=True)
     return root
-
-
-
-
 
 
 def _download_github_to(owner: str, repo: str, ref: str, dest: Path) -> bool:
@@ -201,7 +191,7 @@ def _download_github_to(owner: str, repo: str, ref: str, dest: Path) -> bool:
     tmp = dest.with_suffix(".tmp")
     try:
         with urlopen(url) as resp:
-            from tempfile import NamedTemporaryFile
+            from tempfile import NamedTemporaryFile  # noqa: PLC0415
 
             with NamedTemporaryFile(delete=False, dir=str(dest.parent)) as nf:
                 nf.write(resp.read())
@@ -218,8 +208,6 @@ def _download_github_to(owner: str, repo: str, ref: str, dest: Path) -> bool:
         return False
 
 
-
-
 def _extract_tar_gz_to_temp(archive: Path) -> Path:
     tmpdir = Path(tempfile.mkdtemp(prefix="adgn-specimen-extract-"))
     with tarfile.open(archive, "r:gz") as tf:
@@ -231,7 +219,9 @@ def _extract_tar_gz_to_temp(archive: Path) -> Path:
 
 
 def ensure_archive_for_specimen_slug(
-    man: SpecimenManifest, manifest_path: Path, gitconfig: Path | None,
+    man: SpecimenManifest,
+    manifest_path: Path,
+    gitconfig: Path | None,
 ) -> Path:
     """Ensure a cached tar.gz exists keyed by specimen slug (dir name of manifest).
 
@@ -244,18 +234,21 @@ def ensure_archive_for_specimen_slug(
         return out
     out.parent.mkdir(parents=True, exist_ok=True)
     # Try fast GitHub codeload direct-to-dest when available
-    from .specimen_frontmatter import GitHubSource, GitSource, LocalSource
+    from .specimen_frontmatter import LocalSource  # noqa: PLC0415
 
     if isinstance(man.source, GitHubSource):
         if _download_github_to(man.source.org, man.source.repo, man.source.ref, out):
             return out if out.exists() else out
         # Fallback: shallow checkout → tar.gz
-        if _create_archive_from_git(
-            f"https://github.com/{man.source.org}/{man.source.repo}.git",
-            man.source.ref,
-            out,
-            gitconfig,
-        ) and out.exists():
+        if (
+            _create_archive_from_git(
+                f"https://github.com/{man.source.org}/{man.source.repo}.git",
+                man.source.ref,
+                out,
+                gitconfig,
+            )
+            and out.exists()
+        ):
             return out
     elif isinstance(man.source, GitSource):
         if man.source.url.startswith("https://github.com/"):
@@ -276,12 +269,18 @@ def ensure_archive_for_specimen_slug(
         return out
     # If we get here and out still missing, raise for caller to decide next step
     raise SystemExit(
-        f"Specimen cache not available for slug '{slug}' (source={type(man.source).__name__}); unable to create archive",
+        (
+            f"Specimen cache not available for slug '{slug}' (source={type(man.source).__name__}); "
+            f"unable to create archive"
+        ),
     )
 
 
 def _create_archive_from_git(
-    url: str, ref: str, out_archive: Path, gitconfig: Path | None,
+    url: str,
+    ref: str,
+    out_archive: Path,
+    gitconfig: Path | None,
 ) -> bool:
     tmp_checkout = fresh_git_checkout_url(url, ref, gitconfig)
     out_archive.parent.mkdir(parents=True, exist_ok=True)
@@ -305,10 +304,15 @@ def fresh_git_checkout_url(url: str, ref: str, gitconfig: Path | None) -> Path:
     if gitconfig is not None:
         env["GIT_CONFIG_GLOBAL"] = str(gitconfig.expanduser().resolve())
     subprocess.run(
-        ["git", "init", str(tmpdir)], check=True, stdout=subprocess.DEVNULL, env=env,
+        ["git", "init", str(tmpdir)],
+        check=True,
+        stdout=subprocess.DEVNULL,
+        env=env,
     )
     subprocess.run(
-        ["git", "-C", str(tmpdir), "remote", "add", "origin", url], check=True, env=env,
+        ["git", "-C", str(tmpdir), "remote", "add", "origin", url],
+        check=True,
+        env=env,
     )
     subprocess.run(
         ["git", "-C", str(tmpdir), "fetch", "--depth", "1", "origin", ref],
@@ -316,7 +320,9 @@ def fresh_git_checkout_url(url: str, ref: str, gitconfig: Path | None) -> Path:
         env=env,
     )
     subprocess.run(
-        ["git", "-C", str(tmpdir), "checkout", "--detach", ref], check=True, env=env,
+        ["git", "-C", str(tmpdir), "checkout", "--detach", ref],
+        check=True,
+        env=env,
     )
     return tmpdir
 
@@ -332,7 +338,8 @@ def fresh_local_copy(root: Path) -> Path:
 
 
 def build_scope_text(
-    include: Iterable[str], exclude: Iterable[str] | None = None,
+    include: Iterable[str],
+    exclude: Iterable[str] | None = None,
 ) -> str:
     inc = ", ".join(include)
     if exclude:
@@ -341,15 +348,16 @@ def build_scope_text(
 
 
 def resolve_source_root(
-    man: SpecimenManifest, manifest_path: Path, gitconfig: Path | None,
+    man: SpecimenManifest,
+    manifest_path: Path,
+    gitconfig: Path | None,
 ) -> Path:
     """Resolve a fresh, private source root for a specimen manifest.
 
     Prefers a cached compressed archive under XDG cache; falls back to fresh git checkout when needed.
     """
     # Git sources (GitHub or generic): ensure a by-slug cached archive and extract
-    from .specimen_frontmatter import GitHubSource as _GH, GitSource as _GS
-    if isinstance(man.source, (_GH, _GS)):
+    if isinstance(man.source, (GitHubSource, GitSource)):
         archive = ensure_archive_for_specimen_slug(man, manifest_path, gitconfig)
         return _extract_tar_gz_to_temp(archive)
 
@@ -369,7 +377,10 @@ class Specimen:
     """
 
     def __init__(
-        self, manifest_path: Path, manifest: SpecimenManifest, root: Path,
+        self,
+        manifest_path: Path,
+        manifest: SpecimenManifest,
+        root: Path,
     ) -> None:
         self.manifest_path = manifest_path
         self.manifest = manifest

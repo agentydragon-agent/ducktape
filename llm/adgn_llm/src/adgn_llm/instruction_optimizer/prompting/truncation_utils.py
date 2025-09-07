@@ -33,10 +33,7 @@ class TruncationManager:
         """Helper to create truncated content with standard message."""
         if len(content) <= max_chars:
             return content
-        return (
-            content[:max_chars]
-            + f"\n... [TRUNCATED: {len(content)} chars total, showing first {max_chars}]"
-        )
+        return content[:max_chars] + f"\n... [TRUNCATED: {len(content)} chars total, showing first {max_chars}]"
 
     def _skipped_content(self, content: str, threshold: int) -> str:
         """Helper to create skipped content message."""
@@ -153,9 +150,7 @@ class TruncationManager:
                 break
 
         final_tokens = count_files_tokens(truncated_files)
-        assert final_tokens <= max_tokens, (
-            f"File truncation failed: {final_tokens} tokens > {max_tokens} limit"
-        )
+        assert final_tokens <= max_tokens, f"File truncation failed: {final_tokens} tokens > {max_tokens} limit"
 
         return truncated_files
 

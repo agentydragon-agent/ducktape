@@ -5,25 +5,29 @@ import json
 import os
 import subprocess
 import sys
-import time
 from pathlib import Path
 from shutil import which
 from typing import Any, Literal
 
 import openai
-from adgn_llm.mini_codex.agent import (
-    MiniCodex,
-    _responses_create_with_retry,
-    load_mcp_file,
-)
-from adgn_llm.mini_codex.local_exec_server import LocalExecServer
-from adgn_llm.mini_codex.mcp_manager import McpManager
 from openai.types.responses import (
     ResponseFunctionToolCall,
     ResponseOutputMessage,
     ResponseOutputText,
 )
 from pydantic import BaseModel
+
+from adgn_llm.mcp.inproc import fastmcp_inproc_client
+from adgn_llm.mini_codex.agent import (
+    _responses_create_with_retry,
+    load_mcp_file,
+)
+from adgn_llm.mini_codex.local_exec_server import make_local_exec_mcp
+from adgn_llm.mini_codex.mcp_manager import (
+    McpManager,
+    ServerSlot,
+    session_opener,
+)
 
 LOCAL_EXEC_SERVER_NAME = "local"
 
@@ -32,17 +36,12 @@ DEFAULT_TIMEOUT_S = int(os.getenv("DUCK_TIMEOUT_S", "30"))
 TRUNCATE_BYTES = 8 * 1024
 SYSTEM_INSTRUCTIONS = os.getenv(
     "SYSTEM_INSTRUCTIONS",
-    (
-        "You are a code agent. Use the tool shell.run to execute commands. "
-        "Respond with helpful, concise text."
-    ),
+    ("You are a code agent. Use the tool shell.run to execute commands. Respond with helpful, concise text."),
 )
 
 BWRAP = os.getenv("BWRAP", "bwrap")
 ALLOW_UNSHARE_NET = os.getenv("DUCK_UNSHARE_NET", "0") == "1"
-ALLOW_UNSANDBOXED = (
-    os.getenv("DUCK_ALLOW_UNSANDBOXED", "0") == "1"
-)  # dev-mode fallback on non-Linux
+ALLOW_UNSANDBOXED = os.getenv("DUCK_ALLOW_UNSANDBOXED", "0") == "1"  # dev-mode fallback on non-Linux
 API_MAX_RETRIES = int(os.getenv("DUCK_API_MAX_RETRIES", "2"))
 MAX_CYCLES = int(os.getenv("DUCK_MAX_CYCLES", "8"))
 
@@ -188,11 +187,8 @@ async def responses_turn(
     """
     # Include MCP server descriptions in the instructions, if available
     instructions = SYSTEM_INSTRUCTIONS
-    if mcp_manager is not None:
-        extra = mcp_manager.instruction_block()
-        if extra:
-            instructions = f"{SYSTEM_INSTRUCTIONS}\n\n{extra}"
 
+    tools_list = await mcp_manager.list_tools() if mcp_manager else []
     resp = _responses_create_with_retry(
         client,
         model=DEFAULT_MODEL,
@@ -201,9 +197,7 @@ async def responses_turn(
         stream=False,
         tool_choice="auto",
         store=False,
-        tools=[
-            *(mcp_manager.list_tools() if mcp_manager else []),
-        ],
+        tools=tools_list,
     )
 
     new_messages: list[Message] = []
@@ -222,9 +216,7 @@ async def responses_turn(
                     text_parts.append(part.text)
             combined = "\n".join([p for p in text_parts if p])
             if combined:
-                terminal_text = (
-                    terminal_text + "\n" if terminal_text else ""
-                ) + combined
+                terminal_text = (terminal_text + "\n" if terminal_text else "") + combined
                 new_messages.append(
                     AssistantMessage(role="assistant", content=combined),
                 )
@@ -251,11 +243,13 @@ async def responses_turn(
             )
             continue
         result: dict[str, Any] | None = None
-        if mcp_manager is not None and mcp_manager.is_mcp_tool(fn):
+        if mcp_manager is not None:
             try:
-                result = await mcp_manager.call_tool(
-                    fn,
-                    args if isinstance(args, dict) else {},
+                server, tool_name = mcp_manager.resolve_function(fn)
+                session = await mcp_manager.get_session(server)
+                result = await session.call_tool(
+                    name=tool_name,
+                    arguments=args if isinstance(args, dict) else {},
                 )
             except Exception as e:
                 result = {"exit": 127, "stdout": "", "stderr": f"mcp error: {e}"}
@@ -279,13 +273,8 @@ async def responses_followup_with_tool_outputs(
     mcp_manager: McpManager | None = None,
 ) -> tuple[list[Message], str | None]:
     instructions = SYSTEM_INSTRUCTIONS
-    if mcp_manager is not None:
-        extra = mcp_manager.instruction_block()
-        if extra:
-            instructions = f"{SYSTEM_INSTRUCTIONS}\n\n{extra}"
-    input_payload = dump_messages_for_api(messages) + [
-        t.model_dump(exclude_none=True) for t in tool_outputs
-    ]
+    input_payload = dump_messages_for_api(messages) + [t.model_dump(exclude_none=True) for t in tool_outputs]
+    tools_list = await mcp_manager.list_tools() if mcp_manager else []
     resp = _responses_create_with_retry(
         client,
         model=DEFAULT_MODEL,
@@ -294,7 +283,7 @@ async def responses_followup_with_tool_outputs(
         stream=False,
         tool_choice="auto",
         store=False,
-        tools=[*(mcp_manager.list_tools() if mcp_manager else [])],
+        tools=tools_list,
     )
     new_messages: list[Message] = []
     terminal_text: str | None = None
@@ -307,9 +296,7 @@ async def responses_followup_with_tool_outputs(
                     text_parts.append(part.text)
             combined = "\n".join([p for p in text_parts if p])
             if combined:
-                terminal_text = (
-                    terminal_text + "\n" if terminal_text else ""
-                ) + combined
+                terminal_text = (terminal_text + "\n" if terminal_text else "") + combined
                 new_messages.append(
                     AssistantMessage(role="assistant", content=combined),
                 )
@@ -331,11 +318,13 @@ async def responses_followup_with_tool_outputs(
             )
             continue
         fn = fc.name
-        if mcp_manager is not None and mcp_manager.is_mcp_tool(fn):
+        if mcp_manager is not None:
             try:
-                result = await mcp_manager.call_tool(
-                    fn,
-                    args if isinstance(args, dict) else {},
+                server, tool_name = mcp_manager.resolve_function(fn)
+                session = await mcp_manager.get_session(server)
+                result = await session.call_tool(
+                    name=tool_name,
+                    arguments=args if isinstance(args, dict) else {},
                 )
             except Exception as e:
                 result = {"exit": 127, "stdout": "", "stderr": f"mcp error: {e}"}
@@ -354,53 +343,62 @@ async def responses_followup_with_tool_outputs(
 async def main_async() -> None:
     print("mini-codex ready. Ctrl-D to exit. Type your task and press Enter.")
 
-    # Build unified ToolMap: load MCP servers (if present) and add a local exec server
+    # Build slots: load stdio MCP servers from config if available + local exec
     cfg_path_env = os.environ.get("MCP_CONFIG")
     cfg_path = Path(cfg_path_env) if cfg_path_env else (Path.cwd() / ".mcp.json")
-    tools: dict[str, Any] = {}
+
+    slots: dict[str, ServerSlot] = {}
+
+    # Add local in-process exec server via FastMCP memory streams
+    open_fn_local = session_opener(lambda: fastmcp_inproc_client(lambda: make_local_exec_mcp(LOCAL_EXEC_SERVER_NAME)))
+    slots[LOCAL_EXEC_SERVER_NAME] = ServerSlot(name=LOCAL_EXEC_SERVER_NAME, open_fn=open_fn_local)
+
+    # Add servers from config via unified slots_from_specs (requires explicit transport for remote servers)
     if cfg_path.exists():
-        tools.update(load_mcp_file(str(cfg_path)))
-    tools[LOCAL_EXEC_SERVER_NAME] = LocalExecServer(name=LOCAL_EXEC_SERVER_NAME)
+        servers = load_mcp_file(str(cfg_path))
+        if isinstance(servers, dict):
+            slots.update(McpManager.slots_from_specs(servers))
 
-    agent = await MiniCodex.start(
-        model=DEFAULT_MODEL,
-        tools=tools,
-        system=SYSTEM_INSTRUCTIONS,
-        require_at_least_one_tool=True,
-        tool_policy="auto",
-        client=openai.OpenAI(),
-    )
+    client = openai.OpenAI()
 
-    try:
+    async with McpManager(slots) as mcp:
         for line in sys.stdin:
             user = line.rstrip("\n")
             if not user:
                 continue
-            result = await agent.run(user)
-            # Emit structured tool events as JSONL
-            for evt in result.sequence:
-                if evt.get("kind") == "tool_output":
-                    print(
-                        json.dumps(
-                            {
-                                "ts": time.time(),
-                                "tool": evt.get("name"),
-                                "result": evt.get("result"),
-                                "latency_ms": int(
-                                    evt.get("latency").total_seconds() * 1000,
-                                )
-                                if evt.get("latency")
-                                else None,
-                                "error": evt.get("error"),
-                            },
-                            ensure_ascii=False,
-                        ),
+
+            transcript: list[Message] = [UserMessage(role="user", content=user)]
+            terminal_batch: list[str] = []
+            pending_tool_outputs: list[FunctionCallOutput] | None = None
+
+            for _ in range(MAX_CYCLES):
+                if pending_tool_outputs:
+                    (
+                        new_msgs,
+                        terminal_text,
+                    ) = await responses_followup_with_tool_outputs(
+                        client,
+                        transcript,
+                        pending_tool_outputs,
+                        mcp,
                     )
-            # Then assistant text
-            if result.text:
-                print(result.text)
-    finally:
-        await agent.close()
+                    pending_tool_outputs = None
+                else:
+                    new_msgs, terminal_text = await responses_turn(client, transcript, mcp)
+
+                if terminal_text:
+                    terminal_batch.append(terminal_text)
+
+                # Extend transcript with assistant messages only; tool outputs are sent explicitly next round
+                transcript.extend([m for m in new_msgs if isinstance(m, AssistantMessage)])
+                collected = [m for m in new_msgs if isinstance(m, FunctionCallOutput)]
+                if collected:
+                    pending_tool_outputs = collected
+                else:
+                    break
+
+            if terminal_batch:
+                print("\n".join(terminal_batch))
 
 
 def main() -> None:

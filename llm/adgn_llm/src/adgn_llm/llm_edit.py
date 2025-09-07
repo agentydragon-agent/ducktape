@@ -11,65 +11,100 @@ Notes / Design:
 
 from __future__ import annotations
 
-import argparse
 import asyncio
 from pathlib import Path
+from typing import Literal
 
 import openai
+import typer
 
-from .mcp.editor_server import EditorServer
-from .mini_codex.agent import MiniCodex, ToolMap
+from .mcp.editor_server import make_editor_mcp
+from .mcp.inproc import fastmcp_inproc_client
+from .mini_codex.agent import MiniCodex
+from .mini_codex.mcp_manager import (
+    McpManager,
+    ServerSlot,
+    session_opener,
+)
 
 
-async def async_main() -> int:
-    p = argparse.ArgumentParser("adgn_llm_edit")
-    p.add_argument("file_path", help="Path to file to edit")
-    p.add_argument("prompt", help="Editing prompt")
-    p.add_argument("--model", default="o4-mini")
-    p.add_argument(
-        "--reasoning-effort",
-        choices=["minimal", "low", "medium", "high"],
-        help="Reasoning effort for reasoning-capable models",
-    )
-    p.add_argument(
-        "--reasoning-summary",
-        choices=["auto", "concise", "detailed"],
-        help="Emit reasoning summaries (omit to disable)",
-    )
-    args = p.parse_args()
-
+async def _execute(
+    *,
+    file_path: Path,
+    prompt: str,
+    model: str,
+    reasoning_effort: Literal["minimal", "low", "medium", "high"] | None,
+    reasoning_summary: Literal["auto", "concise", "detailed"] | None,
+) -> int:
     # Validate input path
-    target_path = Path(args.file_path)
+    target_path = file_path
     if not target_path.is_file():
         print(f"Error: {target_path} is not a file")
         return 2
 
-    agent = await MiniCodex.start(
-        model=args.model,
-        tools={"editor": EditorServer(target_path)},
-        system=(
-            "You are a code editor assistant. Use tools to read/modify/save files.\n"
-            "Operate on the provided file only. Prefer precise replace_text edits.\n"
-            "Finish with done(success, report)."
-        ),
-        client=openai.OpenAI(),
-        reasoning_effort=args.reasoning_effort,
-        reasoning_summary=args.reasoning_summary,
-    )
-    try:
+    # Build in-proc MCP session for the editor FastMCP server over memory streams
+    open_fn = session_opener(lambda: fastmcp_inproc_client(lambda: make_editor_mcp(target_path)))
+    slots = {"editor": ServerSlot(name="editor", open_fn=open_fn)}
+
+    # Folded context: per-agent MCP lifetime + agent lifetime
+    async with (
+        McpManager(slots) as mcp,
+        await MiniCodex.create(
+            model=model,
+            mcp=mcp,
+            system=(
+                "You are a code editor assistant. Use tools to read/modify/save files.\n"
+                "Operate on the provided file only. Prefer precise replace_text edits.\n"
+                "Finish with done(success, report)."
+            ),
+            client=openai.OpenAI(),
+            reasoning_effort=reasoning_effort,
+            reasoning_summary=reasoning_summary,
+        ) as agent,
+    ):
         res = await agent.run(
-            f"Edit file: {target_path}\nGoal: {args.prompt}\n",
+            f"Edit file: {target_path}\nGoal: {prompt}\n",
             stream=False,
         )
-        # Print assistant text so caller sees the reasoning/summary; tool outcomes included in sequence
         print(res.text)
         return 0
-    finally:
-        await agent.close()
 
 
-def main() -> None:
-    raise SystemExit(asyncio.run(async_main()))
+app = typer.Typer(help="LLM-powered single-file editor")
+
+
+@app.command("edit")
+def typer_edit(
+    file_path: Path = typer.Argument(..., exists=True, dir_okay=False, readable=True, help="Path to file to edit"),
+    prompt: str = typer.Argument(..., help="Editing prompt"),
+    model: str = typer.Option("o4-mini", "--model", help="Model name"),
+    reasoning_effort: Literal["minimal", "low", "medium", "high"] | None = typer.Option(
+        None,
+        help="Reasoning effort for reasoning-capable models",
+    ),
+    reasoning_summary: Literal["auto", "concise", "detailed"] | None = typer.Option(
+        None,
+        help="Emit reasoning summaries (omit to disable)",
+    ),
+) -> None:
+    code = asyncio.run(
+        _execute(
+            file_path=file_path,
+            prompt=prompt,
+            model=model,
+            reasoning_effort=reasoning_effort,
+            reasoning_summary=reasoning_summary,
+        )
+    )
+    raise typer.Exit(code)
+
+
+def main(argv: list[str] | None = None) -> None:
+    # Typer entry; keep argv passthrough to avoid touching sys in tests
+    if argv is None:
+        app()
+    else:
+        app(argv=argv)
 
 
 if __name__ == "__main__":

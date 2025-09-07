@@ -24,14 +24,22 @@ class PatternSummarizer(FeedbackProvider):
     max_file_size_pattern_analysis: int
 
     _SYSTEM_MESSAGE = (
-        "You are a pattern analysis expert. Your job is to analyze multiple coding task rollouts with their grades and identify key patterns, trends, and insights.\n\n"
+        "You are a pattern analysis expert. Your job is to analyze multiple coding task rollouts with their grades "
+        "and identify key patterns, trends, and insights.\n\n"
         "Given rollout results, you should:\n"
-        '1. Identify common failure patterns across tasks (e.g., "broad exception handling appears in 8/10 rollouts")\n'
-        '2. Spot recurring code quality issues (e.g., "missing type hints in 70% of solutions")\n'
-        '3. Note architectural trends (e.g., "agents consistently choose async approaches for API tasks")\n'
-        '4. Highlight grading patterns (e.g., "defensive programming scores consistently low due to exception swallowing")\n'
-        '5. Extract actionable insights for prompt improvement (e.g., "current prompt doesn\'t emphasize specific exception handling")\n\n'
-        "Output a concise summary focusing on the most impactful patterns that would help a prompt engineer improve the system prompt. Prioritize patterns that appear across multiple tasks and have clear connections to prompt weaknesses."
+        "1. Identify common failure patterns across tasks "
+        '(e.g., "broad exception handling appears in 8/10 rollouts")\n'
+        "2. Spot recurring code quality issues "
+        '(e.g., "missing type hints in 70% of solutions")\n'
+        "3. Note architectural trends "
+        '(e.g., "agents consistently choose async approaches for API tasks")\n'
+        "4. Highlight grading patterns "
+        '(e.g., "defensive programming scores consistently low due to exception swallowing")\n'
+        "5. Extract actionable insights for prompt improvement "
+        '(e.g., "current prompt doesn\'t emphasize specific exception handling")\n\n'
+        "Output a concise summary focusing on the most impactful patterns that would help a prompt engineer "
+        "improve the system prompt. "
+        "Prioritize patterns that appear across multiple tasks and have clear connections to prompt weaknesses."
     )
 
     def _count_tokens(self, text: str) -> int:
@@ -42,12 +50,10 @@ class PatternSummarizer(FeedbackProvider):
         original_count = len(rollouts)
 
         system_tokens = self._count_tokens(self._SYSTEM_MESSAGE)
-        header_text = f"Analyze these {len(rollouts)} coding task rollouts and identify key patterns for prompt improvement:\n\n"
-        remaining_tokens = (
-            self.model.context_window_tokens
-            - system_tokens
-            - self._count_tokens(header_text)
+        header_text = (
+            f"Analyze these {len(rollouts)} coding task rollouts and identify key patterns for prompt improvement:\n\n"
         )
+        remaining_tokens = self.model.context_window_tokens - system_tokens - self._count_tokens(header_text)
 
         logger.info(
             "Pattern analysis context management",
@@ -71,10 +77,7 @@ class PatternSummarizer(FeedbackProvider):
             # Only include files for coding tasks
             if graded.rollout.files:
                 # Convert files dict to list format expected by truncation manager
-                files_list = [
-                    {"path": path, "content": content}
-                    for path, content in graded.rollout.files.items()
-                ]
+                files_list = [{"path": path, "content": content} for path, content in graded.rollout.files.items()]
                 truncated_files = self.truncation_manager.truncate_file_content_by_size(
                     files_list,
                     self.max_file_size_pattern_analysis,

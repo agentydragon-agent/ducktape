@@ -31,7 +31,11 @@ from openai.types.responses.response_output_text import ResponseOutputText
 
 
 def mk_func_call(
-    *, name: str, args: dict, call_id: str, id: str | None = None,
+    *,
+    name: str,
+    args: dict,
+    call_id: str,
+    id: str | None = None,
 ) -> ResponseFunctionToolCallItem:
     return ResponseFunctionToolCallItem(
         id=id or call_id,
@@ -96,7 +100,10 @@ class FakeResponsesAPI:
                     id=f"call-{self._pe_counter}",
                 )
                 return mk_response(
-                    [call], model=model, tools=tools, tool_choice=tool_choice,
+                    [call],
+                    model=model,
+                    tools=tools,
+                    tool_choice=tool_choice,
                 )
             # Grader submit_grades path
             if name == "submit_grades":
@@ -114,7 +121,10 @@ class FakeResponsesAPI:
                     id="call-grade",
                 )
                 return mk_response(
-                    [call], model=model, tools=tools, tool_choice=tool_choice,
+                    [call],
+                    model=model,
+                    tools=tools,
+                    tool_choice=tool_choice,
                 )
             # Comparison grading (not exercised here)
         # MiniCodexRunner flow
@@ -130,7 +140,10 @@ class FakeResponsesAPI:
                 id="call-shell-1",
             )
             return mk_response(
-                [call], model=model, tools=tools, tool_choice=tool_choice,
+                [call],
+                model=model,
+                tools=tools,
+                tool_choice=tool_choice,
             )
         # Subsequent turn after tool outputs: return assistant message
         if previous_response_id is not None:
@@ -156,7 +169,9 @@ def cfg_two_iters() -> OptimizerConfig:
         graders_file="graders.yaml",
         rollouts=RolloutConfig(max_parallel=1, max_turns=2, bash_timeout_ms=10_000),
         prompt_engineer=PromptEngineerConfig(
-            model="gpt-4o-mini", reasoning_effort="low", feedback_mode="full_rollouts",
+            model="gpt-4o-mini",
+            reasoning_effort="low",
+            feedback_mode="full_rollouts",
         ),
         grader=GraderConfig(model="gpt-4o-mini", reasoning_effort="low"),
         summarizer=SummarizerConfig(model="gpt-4o-mini", max_tokens=512),
@@ -179,7 +194,9 @@ def cfg_two_iters() -> OptimizerConfig:
 
 @pytest.mark.asyncio
 async def test_optimize_prompts_two_iterations_async(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, cfg_two_iters: OptimizerConfig,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    cfg_two_iters: OptimizerConfig,
 ):
     # Patch AsyncOpenAI everywhere to use our fake
     import openai
@@ -263,5 +280,7 @@ async def test_optimize_prompts_two_iterations_async(
 
     # Restore original method
     monkeypatch.setattr(
-        opt.ScoreEvolutionTracker, "generate_report", orig_generate_report,
+        opt.ScoreEvolutionTracker,
+        "generate_report",
+        orig_generate_report,
     )

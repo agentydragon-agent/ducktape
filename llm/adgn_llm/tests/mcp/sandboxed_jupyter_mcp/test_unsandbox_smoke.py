@@ -1,5 +1,3 @@
-
-
 def test_unsandbox_initialize_and_hello(
     tmp_path,
     pick_free_port,

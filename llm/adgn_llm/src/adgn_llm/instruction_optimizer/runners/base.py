@@ -125,7 +125,6 @@ class AgentRunner(ABC):
                     timeout=60,
                 )
                 exit_code = result.returncode
-                stdout = result.stdout
                 stderr = result.stderr
 
             if exit_code != 0:

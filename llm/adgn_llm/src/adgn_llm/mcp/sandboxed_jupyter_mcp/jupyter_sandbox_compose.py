@@ -59,16 +59,15 @@ def _write_default_jupyter_config(config_dir: Path, extra_py: str | None) -> Non
     ]
     content = "\n".join(default_lines) + "\n"
     if extra_py:
-        content += (
-            "\n# --- composer appended config (verbatim) ---\n"
-            + extra_py.rstrip("\n")
-            + "\n"
-        )
+        content += "\n# --- composer appended config (verbatim) ---\n" + extra_py.rstrip("\n") + "\n"
     (config_dir / "jupyter_server_config.py").write_text(content)
 
 
 def _ensure_policy_minimums(
-    policy: dict, *, runtime_dir: Path, kernel_exec: str,
+    policy: dict,
+    *,
+    runtime_dir: Path,
+    kernel_exec: str,
 ) -> dict:
     env_map = policy.setdefault("env", {})
     env_set = env_map.setdefault("set", {})
@@ -89,9 +88,7 @@ def _ensure_policy_minimums(
     try:
         kexec_path = Path(kernel_exec)
         if not kexec_path.is_absolute():
-            kexec_path = (
-                kexec_path.absolute()
-            )  # preserve symlinks, avoid resolve() here
+            kexec_path = kexec_path.absolute()  # preserve symlinks, avoid resolve() here
         # Add both the symlink path and the resolved real path (if different)
         exec_symlink = kexec_path.as_posix()
         if exec_symlink not in rp:
@@ -184,7 +181,9 @@ def compose_from_config_raw(raw_text: str) -> None:
     # Build policy: start from provided model and apply minimal inserts
     policy_node: dict = cfg.policy.model_dump()
     policy_node = _ensure_policy_minimums(
-        policy_node, runtime_dir=runtime_dir, kernel_exec=kernel_exec,
+        policy_node,
+        runtime_dir=runtime_dir,
+        kernel_exec=kernel_exec,
     )
 
     # Write policy

@@ -10,6 +10,8 @@ import subprocess
 from collections.abc import Iterable
 from pathlib import Path
 
+import pyperclip  # Hard dependency for --copy-prompt
+
 
 def ensure_dir(path: Path) -> None:
     if not path.is_dir():
@@ -18,7 +20,11 @@ def ensure_dir(path: Path) -> None:
 
 def git(*args: str, cwd: Path) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        ["git", *args], check=False, cwd=str(cwd), text=True, capture_output=True,
+        ["git", *args],
+        check=False,
+        cwd=str(cwd),
+        text=True,
+        capture_output=True,
     )
 
 
@@ -34,11 +40,7 @@ def determine_merge_base(workdir: Path, upstream_ref: str) -> str:
 
 
 def resolve_properties_dir(default_base: Path, override: str | None) -> Path:
-    p = (
-        Path(override).expanduser().resolve()
-        if override
-        else (default_base / "properties").resolve()
-    )
+    p = Path(override).expanduser().resolve() if override else (default_base / "properties").resolve()
     if not p.is_dir():
         raise SystemExit(f"Error: properties directory not found: {p}")
     return p
@@ -84,8 +86,6 @@ def build_codex_cmd(
 
 
 def copy_to_clipboard(text: str) -> None:
-    import pyperclip  # Hard dependency for --copy-prompt
-
     pyperclip.copy(text)
 
 

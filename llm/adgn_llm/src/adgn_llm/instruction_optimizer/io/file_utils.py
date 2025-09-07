@@ -78,10 +78,7 @@ class WorkspaceFileProvider:
 
             for filename in filenames:
                 # Skip certain file extensions
-                if any(
-                    filename.endswith(ext)
-                    for ext in FileCollectionConfig.SKIP_EXTENSIONS
-                ):
+                if any(filename.endswith(ext) for ext in FileCollectionConfig.SKIP_EXTENSIONS):
                     continue
 
                 filepath = Path(root) / filename

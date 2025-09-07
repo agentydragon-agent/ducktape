@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shlex as _sh  # Top-level for debug quoting
 import shutil
 import subprocess
 import sys
@@ -144,7 +145,8 @@ def _abs(p: str) -> str:
 
 
 def _compose_seatbelt(
-    policy: Policy, trace_path: str | None,
+    policy: Policy,
+    trace_path: str | None,
 ) -> tuple[str, dict[str, str]]:
     lines: list[str] = [SEATBELT_BASE]
     defs: dict[str, str] = {}
@@ -196,7 +198,8 @@ def _compose_seatbelt(
         # Exec is governed by file-map-executable and global process allowances
 
     # TODO(mpokorny): Restore named params `(param "RP_*")` for read paths once sandbox-exec param issues are clarified.
-    # Temporary workaround: inline literal subpaths to avoid observed param parsing/abort behavior on this macOS version.
+    # Temporary workaround: inline literal subpaths to avoid observed param parsing/abort behavior
+    # on this macOS version.
     lines.append(";; Readable dirs (RP_*): venv roots/bin, stdlib & site-packages")
     for i, ap in enumerate(read_dirs):
         key = f"RP_{i}"
@@ -279,10 +282,14 @@ def main() -> int:
         description="Run a command under a YAML-defined sandbox (macOS seatbelt MVP)",
     )
     ap.add_argument(
-        "--policy", required=True, help="Path to policy.yaml (explicit-only schema)",
+        "--policy",
+        required=True,
+        help="Path to policy.yaml (explicit-only schema)",
     )
     ap.add_argument(
-        "--trace", action="store_true", help="Enable seatbelt trace logging",
+        "--trace",
+        action="store_true",
+        help="Enable seatbelt trace logging",
     )
     ap.add_argument(
         "--debug",
@@ -405,8 +412,6 @@ def main() -> int:
             sx_args += ["-D", f"{k}={v}"]
         sx_args += ["-f", str(sb_path), *cmd]
         if args.debug:
-            import shlex as _sh
-
             print(
                 "sandboxer: exec:",
                 " ".join(_sh.quote(x) for x in sx_args),

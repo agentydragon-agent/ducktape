@@ -7,5 +7,6 @@
     venv.enable = true;    # keep venv under .devenv/state
     uv.enable = true;      # provide uv in the shell
     uv.sync.enable = true; # run `uv sync` during initialisation (cached by direnv)
+    uv.sync.extras = [ "dev" ]; # install [project.optional-dependencies].dev
   };
 }

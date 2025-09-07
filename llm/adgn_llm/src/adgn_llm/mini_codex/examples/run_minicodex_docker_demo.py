@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """
 Demo: Run mini-codex against a real MCP stdio server (docker_exec) to act inside a
 fresh tiny Docker container, using the real OpenAI API.
@@ -17,11 +15,15 @@ What it does:
 5) Verifies via Docker API that the file exists and contains 'hello' and cleans up
 """
 
+from __future__ import annotations
+
 import asyncio
 import os
 import time
 
 import docker
+from mcp.client.stdio import StdioServerParameters, stdio_client
+
 from adgn_llm.mini_codex.cli import (
     AssistantMessage,
     FunctionCallOutput,
@@ -30,7 +32,7 @@ from adgn_llm.mini_codex.cli import (
     responses_followup_with_tool_outputs,
     responses_turn,
 )
-from adgn_llm.mini_codex.mcp_manager import McpManager
+from adgn_llm.mini_codex.mcp_manager import McpManager, ServerSlot, session_opener
 
 CONSOLE_SCRIPT = "adgn-mcp-docker-exec"
 
@@ -67,53 +69,60 @@ async def run_demo() -> None:
             },
         }
 
-        # 3) Create MCP manager (no local execution servers)
-        mcp = await McpManager.from_servers(servers, local=None, local_servers=None)
+        # 3) Create MCP manager (no local execution servers) using slots/session_opener
+        params = StdioServerParameters.model_validate(servers["docker"])  # do not swallow
+        slots = {"docker": ServerSlot(name="docker", open_fn=session_opener(lambda: stdio_client(params)))}
         client = openai_client()
 
-        # Find the tool name the model will call (e.g., mcp__docker__docker_exec)
-        tool_names = [
-            t.get("name") for t in mcp.list_tools() if t.get("type") == "function"
-        ]
-        docker_tool = next(
-            (n for n in tool_names if n and n.startswith("mcp__docker__")), None,
-        )
-        if not docker_tool:
-            raise RuntimeError("docker MCP tool not found in manager")
+        async with McpManager(slots) as mcp:
+            # Find the tool name the model will call (e.g., mcp__docker__docker_exec)
+            tool_names = [t.get("name") for t in (await mcp.list_tools()) if t.get("type") == "function"]
+            docker_tool = next(
+                (n for n in tool_names if n and n.startswith("mcp__docker__")),
+                None,
+            )
+            if not docker_tool:
+                raise RuntimeError("docker MCP tool not found in manager")
 
-        # 4) Build a short prompt instructing how to use the tool
-        user_task = (
-            f"Use the tool {docker_tool} to:\n"
-            "1) create /tmp/ok.txt with the content 'hello' (exact lowercase)\n"
-            "2) print the content of /tmp/ok.txt\n"
-            "Reply briefly."
-        )
+            # 4) Build a short prompt instructing how to use the tool
+            user_task = (
+                f"Use the tool {docker_tool} to:\n"
+                "1) create /tmp/ok.txt with the content 'hello' (exact lowercase)\n"
+                "2) print the content of /tmp/ok.txt\n"
+                "Reply briefly."
+            )
 
-        # Use mini_codex agent helpers to drive the loop with tool outputs
-        transcript: list[UserMessage | AssistantMessage | FunctionCallOutput] = [
-            UserMessage(role="user", content=user_task),
-        ]
-        terminal_batch: list[str] = []
-        pending_tool_outputs: list[FunctionCallOutput] | None = None
-        for _ in range(8):
-            if pending_tool_outputs:
-                new_msgs, terminal_text = await responses_followup_with_tool_outputs(
-                    client, transcript, pending_tool_outputs, mcp,
-                )
-                pending_tool_outputs = None
-            else:
-                new_msgs, terminal_text = await responses_turn(client, transcript, mcp)
-            if terminal_text:
-                terminal_batch.append(terminal_text)
-            # Extend transcript with assistant messages only; tool outputs are sent explicitly next round
-            transcript.extend([m for m in new_msgs if isinstance(m, AssistantMessage)])
-            collected = [m for m in new_msgs if isinstance(m, FunctionCallOutput)]
-            if collected:
-                pending_tool_outputs = collected
-            else:
-                break
-        if terminal_batch:
-            print("Agent said:\n" + "\n".join(terminal_batch))
+            # Use mini_codex agent helpers to drive the loop with tool outputs
+            transcript: list[UserMessage | AssistantMessage | FunctionCallOutput] = [
+                UserMessage(role="user", content=user_task),
+            ]
+            terminal_batch: list[str] = []
+            pending_tool_outputs: list[FunctionCallOutput] | None = None
+            for _ in range(8):
+                if pending_tool_outputs:
+                    (
+                        new_msgs,
+                        terminal_text,
+                    ) = await responses_followup_with_tool_outputs(
+                        client,
+                        transcript,
+                        pending_tool_outputs,
+                        mcp,
+                    )
+                    pending_tool_outputs = None
+                else:
+                    new_msgs, terminal_text = await responses_turn(client, transcript, mcp)
+                if terminal_text:
+                    terminal_batch.append(terminal_text)
+                # Extend transcript with assistant messages only; tool outputs are sent explicitly next round
+                transcript.extend([m for m in new_msgs if isinstance(m, AssistantMessage)])
+                collected = [m for m in new_msgs if isinstance(m, FunctionCallOutput)]
+                if collected:
+                    pending_tool_outputs = collected
+                else:
+                    break
+            if terminal_batch:
+                print("Agent said:\n" + "\n".join(terminal_batch))
 
         # 5) Verify via Docker API that the file was created with correct contents
         exec_res = container.exec_run(
@@ -133,10 +142,6 @@ async def run_demo() -> None:
     finally:
         try:
             container.remove(force=True)
-        except Exception:
-            pass
-        try:
-            await mcp.close()  # type: ignore[name-defined]
         except Exception:
             pass
 

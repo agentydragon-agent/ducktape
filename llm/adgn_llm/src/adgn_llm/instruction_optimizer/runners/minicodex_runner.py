@@ -410,7 +410,10 @@ class MiniCodexRunner(AgentRunner):
                 {
                     "type": "function",
                     "name": "shell_run",
-                    "description": "Run a shell command and return exit code, stdout, stderr. The cmd parameter must be an array of strings.",
+                    "description": (
+                        "Run a shell command and return exit code, stdout, stderr. "
+                        "The cmd parameter must be an array of strings."
+                    ),
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -497,9 +500,7 @@ class MiniCodexRunner(AgentRunner):
                             "stdout": "",
                             "stderr": f"Missing cmd parameter. Got arguments: {args}",
                         }
-                    elif not isinstance(cmd, list) or not all(
-                        isinstance(x, str) for x in cmd
-                    ):
+                    elif not isinstance(cmd, list) or not all(isinstance(x, str) for x in cmd):
                         result = {
                             "exit": 2,
                             "stdout": "",
@@ -510,9 +511,7 @@ class MiniCodexRunner(AgentRunner):
 
                         timeout_ms = args.get("timeout_ms")
                         timeout_s = (
-                            self.timeout_s
-                            if not isinstance(timeout_ms, int)
-                            else max(1, int(timeout_ms / 1000))
+                            self.timeout_s if not isinstance(timeout_ms, int) else max(1, int(timeout_ms / 1000))
                         )
                         # No cwd parameter - always use agent's current working directory
                         cwd = None

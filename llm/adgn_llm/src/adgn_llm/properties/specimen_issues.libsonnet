@@ -30,6 +30,12 @@ local normRanges(arr) = [ toRange(x) for x in arr ];
 // Build a files mapping entry: file -> [LineRange...]
 local fileEntry(file, ranges) = { [file]: normRanges(ranges) };
 
+// Normalize a {file: [rangeSpec]|null} mapping into canonical {file: LineRange[]|null}
+local normFiles(files) = {
+  [f]: if files[f] == null then null else normRanges(files[f])
+  for f in std.objectFields(files)
+};
+
 // Expand shorthand mapping {file: [lineSpec,...]} into a list of Occurrence objects
 // Each occurrence has exactly one file with a single LineRange (single line per occ is common; ranges also supported)
 local instancesFromLinesByFile(linesByFile) = std.flattenArrays([
@@ -39,19 +45,14 @@ local instancesFromLinesByFile(linesByFile) = std.flattenArrays([
 
 // Issue constructors
 
-// Single cross-cutting issue (cardinality = 'single')
+// Single-issue convenience: accept a {file: [int|[start,end]|{start_line,...}]|null} map and wrap as one instance
 local issueSingle(id, rationale, files, properties=[], gap_note=null, should_flag=true) = {
   id: id,
   should_flag: should_flag,
   rationale: rationale,
   properties: properties,
   gap_note: gap_note,
-  cardinality: 'single',
-  // files value accepts: { file: [int|[start,end]|{start_line,...}], ... } or null for unspecified
-  files: {
-    [f]: if files[f] == null then null else normRanges(files[f])
-    for f in std.objectFields(files)
-  },
+  instances: [ { files: normFiles(files) } ],
 };
 
 // Multi-occurrence issue with explicit instances
@@ -61,13 +62,9 @@ local issueMulti(id, rationale, instances, properties=[], gap_note=null, should_
   rationale: rationale,
   properties: properties,
   gap_note: gap_note,
-  cardinality: 'multi_instances',
   instances: [
     // Each instance.files may be a {file: [ranges]|null} map; normalize arrays to LineRange
-    { files: {
-        [f]: if inst.files[f] == null then null else normRanges(inst.files[f])
-        for f in std.objectFields(inst.files)
-      } }
+    { files: normFiles(inst.files) }
     for inst in instances
   ],
 };
@@ -75,6 +72,11 @@ local issueMulti(id, rationale, instances, properties=[], gap_note=null, should_
 // Multi-occurrence issue built from shorthand mapping file -> [lineSpec,...]
 local issueMultiFromLines(id, rationale, linesByFile, properties=[], gap_note=null, should_flag=true) =
   issueMulti(id=id, rationale=rationale, instances=instancesFromLinesByFile(linesByFile), properties=properties, gap_note=gap_note, should_flag=should_flag);
+
+// Multi-occurrence issue built from a simple list of files → each file as an instance with unspecified range
+local instancesFromFiles(filesList) = [ { files: { [f]: null } } for f in filesList ];
+local issueMultiFromFiles(id, rationale, filesList, properties=[], gap_note=null, should_flag=true) =
+  issueMulti(id=id, rationale=rationale, instances=instancesFromFiles(filesList), properties=properties, gap_note=gap_note, should_flag=should_flag);
 
 // Root wrapper for SpecimenIssues
 local root(items) = { items: items };
@@ -84,5 +86,6 @@ local root(items) = { items: items };
   issueSingle: issueSingle,
   issueMulti: issueMulti,
   issueMultiFromLines: issueMultiFromLines,
+  issueMultiFromFiles: issueMultiFromFiles,
   root: root,
 }

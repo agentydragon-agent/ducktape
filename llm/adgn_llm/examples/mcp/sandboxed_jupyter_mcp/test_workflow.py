@@ -26,16 +26,12 @@ def _read_line_json(r, timeout: float) -> dict | None:
 def test_example_bundle_and_launch(tmp_path):
     # Preconditions: we need jupyter and jupyter-mcp-server resolvable on PATH (hard fail if missing)
     assert shutil.which("jupyter"), "'jupyter' must be on PATH for tests"
-    assert shutil.which("jupyter-mcp-server"), (
-        "'jupyter-mcp-server' must be on PATH for tests"
-    )
+    assert shutil.which("jupyter-mcp-server"), "'jupyter-mcp-server' must be on PATH for tests"
 
     # Ensure our package is importable to subprocesses via PYTHONPATH
     src_dir = Path(__file__).resolve().parents[1] / "src"
     env = os.environ.copy()
-    env["PYTHONPATH"] = (
-        f"{src_dir}:{env['PYTHONPATH']}" if env.get("PYTHONPATH") else str(src_dir)
-    )
+    env["PYTHONPATH"] = f"{src_dir}:{env['PYTHONPATH']}" if env.get("PYTHONPATH") else str(src_dir)
     env["JUPYTER_LOG_LEVEL"] = "DEBUG"
 
     bundle_dir = tmp_path / "bundle"
@@ -166,7 +162,8 @@ def test_example_bundle_and_launch(tmp_path):
                 init_resp = m
         assert init_resp and "result" in init_resp, f"initialize failed: {init_resp}"
         _send_line_json(
-            p.stdin, {"jsonrpc": "2.0", "method": "notifications/initialized"},
+            p.stdin,
+            {"jsonrpc": "2.0", "method": "notifications/initialized"},
         )
         time.sleep(0.3)
         # List available tools (sanity)
@@ -229,9 +226,7 @@ def test_example_bundle_and_launch(tmp_path):
             m = _read_line_json(p.stdout, 1.0)
             if m and m.get("id") == 4 and ("result" in m or "error" in m):
                 exec_net = m
-        assert exec_net and ("result" in exec_net or "error" in exec_net), (
-            f"no network response: {exec_net}"
-        )
+        assert exec_net and ("result" in exec_net or "error" in exec_net), f"no network response: {exec_net}"
         blob_net = json.dumps(exec_net)
         assert (
             ("NET_FAIL:" in blob_net)
@@ -242,9 +237,7 @@ def test_example_bundle_and_launch(tmp_path):
         ), blob_net
 
         # Sandbox boundary: attempt to write outside runtime_dir should fail
-        outside_file = (
-            tmp_path.parent / (tmp_path.name + "_outside") / "denied.txt"
-        ).as_posix()
+        outside_file = (tmp_path.parent / (tmp_path.name + "_outside") / "denied.txt").as_posix()
         code_denied = f"import pathlib\npathlib.Path('{outside_file}').write_text('x')"
         _send_line_json(
             p.stdin,
@@ -265,9 +258,7 @@ def test_example_bundle_and_launch(tmp_path):
             if m and m.get("id") == 3 and ("result" in m or "error" in m):
                 exec_bad = m
         # Expect denial reflected as an error or failure text in results
-        assert exec_bad and ("error" in exec_bad or "result" in exec_bad), (
-            f"no response for denied write: {exec_bad}"
-        )
+        assert exec_bad and ("error" in exec_bad or "result" in exec_bad), f"no response for denied write: {exec_bad}"
         blob = json.dumps(exec_bad)
         assert (
             ("Permission" in blob)
@@ -287,9 +278,7 @@ def test_network_open_allows_http(tmp_path):
     assert shutil.which("jupyter") and shutil.which("jupyter-mcp-server")
     src_dir = Path(__file__).resolve().parents[1] / "src"
     env = os.environ.copy()
-    env["PYTHONPATH"] = (
-        f"{src_dir}:{env['PYTHONPATH']}" if env.get("PYTHONPATH") else str(src_dir)
-    )
+    env["PYTHONPATH"] = f"{src_dir}:{env['PYTHONPATH']}" if env.get("PYTHONPATH") else str(src_dir)
 
     bundle_dir = tmp_path / "bundle"
     runtime_dir = tmp_path / "runtime"
@@ -398,7 +387,8 @@ def test_network_open_allows_http(tmp_path):
                 init = m
         assert init and "result" in init, init
         _send_line_json(
-            p.stdin, {"jsonrpc": "2.0", "method": "notifications/initialized"},
+            p.stdin,
+            {"jsonrpc": "2.0", "method": "notifications/initialized"},
         )
         time.sleep(0.3)
 

@@ -108,9 +108,7 @@ class DockerConfig(BaseModel):
     image: str
     volumes: dict[str, str] = Field(default_factory=dict)
     env: dict[str, str] = Field(default_factory=dict)
-    network_enabled: bool = (
-        True  # Allow network access for git clones, package installs, etc.
-    )
+    network_enabled: bool = True  # Allow network access for git clones, package installs, etc.
 
 
 class GitCloneConfig(BaseModel):
@@ -314,9 +312,7 @@ class FinalOutput(BaseModel):
 
 
 # Union type for all trajectory items
-TrajectoryItem = (
-    AssistantMessage | ToolCall | ToolResult | UserInput | ErrorMessage | FinalOutput
-)
+TrajectoryItem = AssistantMessage | ToolCall | ToolResult | UserInput | ErrorMessage | FinalOutput
 
 
 @dataclass

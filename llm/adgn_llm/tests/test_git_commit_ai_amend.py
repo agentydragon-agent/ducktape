@@ -254,7 +254,10 @@ async def test_full_amend_flow_integration():
 
         # Mock AI would generate updated message
         mock_ai = MockClaudeAI(
-            repo=repo, diff=diff, passthru=[], previous_message=previous_message,
+            repo=repo,
+            diff=diff,
+            passthru=[],
+            previous_message=previous_message,
         )
 
         new_message = await mock_ai.generate(include_all=False)
@@ -316,15 +319,19 @@ async def test_editor_comments_and_scissors_are_ignored_in_commit_message(monkey
         ai_message = "Subject line\n\nBody line one\n- bullet"
 
         async def _fake_generate(
-            self, include_all: bool, model: str | None = None,
+            self,
+            include_all: bool,
+            model: str | None = None,
         ) -> str:
             return ai_message
 
         monkeypatch.setattr(
-            "adgn_llm.git_commit_ai.cli.ClaudeAI.generate", _fake_generate,
+            "adgn_llm.git_commit_ai.cli.ClaudeAI.generate",
+            _fake_generate,
         )
         monkeypatch.setattr(
-            "adgn_llm.git_commit_ai.cli.Cache.get", lambda self, key: ai_message,
+            "adgn_llm.git_commit_ai.cli.Cache.get",
+            lambda self, key: ai_message,
         )
 
         # Patch _get_editor to return a placeholder editor command

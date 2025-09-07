@@ -12,6 +12,19 @@ import pandas as pd
 
 matplotlib.use("Agg", force=True)
 import tiktoken
+from plotnine import (
+    aes,
+    element_text,
+    facet_wrap,
+    geom_errorbar,
+    geom_line,
+    geom_point,
+    ggplot,
+    labs,
+    position_dodge,
+    theme,
+    theme_minimal,
+)
 
 from adgn_llm.instruction_optimizer.io.logging_utils import DualOutputLogging
 
@@ -75,9 +88,7 @@ class ScoreStatistics:
             # Get all facet names from first result
             facet_names = list(graded_codes[0].grade.axes.keys())
             for facet_name in facet_names:
-                facet_scores[facet_name] = [
-                    gc.grade.axes[facet_name].score for gc in graded_codes
-                ]
+                facet_scores[facet_name] = [gc.grade.axes[facet_name].score for gc in graded_codes]
 
         return overall_scores, facet_scores
 
@@ -123,18 +134,6 @@ class ScoreEvolutionPlotter:
 
     def _create_combined_plot(self, df):
         """Create combined plot with position dodging."""
-        from plotnine import (
-            aes,
-            element_text,
-            geom_errorbar,
-            geom_line,
-            geom_point,
-            ggplot,
-            labs,
-            position_dodge,
-            theme,
-            theme_minimal,
-        )
 
         dodge_width = 0.3
 
@@ -200,18 +199,6 @@ class ScoreEvolutionPlotter:
 
     def _create_faceted_plot(self, df):
         """Create faceted plot - separate subplot for each facet."""
-        from plotnine import (
-            aes,
-            element_text,
-            facet_wrap,
-            geom_errorbar,
-            geom_line,
-            geom_point,
-            ggplot,
-            labs,
-            theme,
-            theme_minimal,
-        )
 
         return (
             ggplot(df, aes(x="iteration", y="mean"))
@@ -317,10 +304,7 @@ class ScoreEvolutionTracker:
         iteration_summary = {
             "iteration": iteration,
             "overall": self._stats.safe_stats(overall_scores),
-            "facets": {
-                name: self._stats.safe_stats(scores)
-                for name, scores in facet_scores.items()
-            },
+            "facets": {name: self._stats.safe_stats(scores) for name, scores in facet_scores.items()},
             "timestamp": datetime.now(UTC).isoformat(),
         }
 

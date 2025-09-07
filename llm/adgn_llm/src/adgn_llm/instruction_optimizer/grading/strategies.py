@@ -154,9 +154,7 @@ class FileBasedGradingStrategy(GradingStrategy):
         t_mgr = TruncationManager(config)
 
         # Convert to list format for truncation
-        file_list = [
-            {"path": path, "content": content} for path, content in files.items()
-        ]
+        file_list = [{"path": path, "content": content} for path, content in files.items()]
 
         # Truncate individual files
         truncated_files = []
@@ -322,10 +320,7 @@ class ComparisonGradingStrategy(GradingStrategy):
         agent_output = prepared_artifacts["agent_output"]
         reference = prepared_artifacts["reference"]
         criteria_desc = "\n".join(
-            [
-                f"- {c['name']}: {c['description']}"
-                for c in prepared_artifacts["criteria"]
-            ],
+            [f"- {c['name']}: {c['description']}" for c in prepared_artifacts["criteria"]],
         )
 
         return (
@@ -362,10 +357,7 @@ def create_grading_strategy(
             if criteria_file.exists():
                 data = load_yaml_files([str(criteria_file)])
                 # Convert to Criterion objects
-                criteria = [
-                    Criterion(name=c["name"], description=c["description"])
-                    for c in data.get("criteria", [])
-                ]
+                criteria = [Criterion(name=c["name"], description=c["description"]) for c in data.get("criteria", [])]
         return FileBasedGradingStrategy(criteria)
 
     if isinstance(grading_config, MessageBasedGrading):
@@ -378,10 +370,7 @@ def create_grading_strategy(
 
             if criteria_file.exists():
                 data = load_yaml_files([str(criteria_file)])
-                criteria = [
-                    Criterion(name=c["name"], description=c["description"])
-                    for c in data.get("criteria", [])
-                ]
+                criteria = [Criterion(name=c["name"], description=c["description"]) for c in data.get("criteria", [])]
         return MessageBasedGradingStrategy(criteria)
 
     if isinstance(grading_config, ComparisonGrading):

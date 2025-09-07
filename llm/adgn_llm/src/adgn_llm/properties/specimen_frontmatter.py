@@ -45,7 +45,8 @@ class LocalSource(BaseModel):
 
 
 Source = Annotated[
-    GitSource | GitHubSource | LocalSource, Field(discriminator="vcs"),
+    GitSource | GitHubSource | LocalSource,
+    Field(discriminator="vcs"),
 ]
 
 

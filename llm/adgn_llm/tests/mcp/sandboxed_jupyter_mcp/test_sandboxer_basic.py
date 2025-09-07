@@ -67,7 +67,11 @@ def test_sandboxer_basic(
         *cmd,
     ]
     cp = subprocess.run(
-        full_cmd, check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        full_cmd,
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
     )
     # Emit for diagnostics on failure
     print("STDOUT:\n" + cp.stdout)

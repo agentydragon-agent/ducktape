@@ -71,7 +71,10 @@ def test_network_modes_http_boundary(
             "    print('NET_FAIL:', type(e).__name__)\n"
         )
         result = mcp_call_tool(
-            proc, "append_execute_code_cell", {"cell_source": code}, call_timeout=60.0,
+            proc,
+            "append_execute_code_cell",
+            {"cell_source": code},
+            call_timeout=60.0,
         )
         blob = str(result)
         if expect_http:
@@ -122,7 +125,10 @@ def test_env_set_and_passthrough_visible_in_kernel(
             "print('ENV_BAR_PASS=', os.environ.get('BAR_PASS'))\n"
         )
         result = mcp_call_tool(
-            proc, "append_execute_code_cell", {"cell_source": code}, call_timeout=45.0,
+            proc,
+            "append_execute_code_cell",
+            {"cell_source": code},
+            call_timeout=45.0,
         )
         blob = str(result)
         assert "ENV_FOO_SET= SET_OK" in blob and "ENV_BAR_PASS= PASS_OK" in blob, blob
@@ -195,11 +201,10 @@ def test_fs_read_allow_and_deny(
             f"    print('READ_DENY=', type(e).__name__)\n"
         )
         result = mcp_call_tool(
-            proc, "append_execute_code_cell", {"cell_source": code}, call_timeout=60.0,
+            proc,
+            "append_execute_code_cell",
+            {"cell_source": code},
+            call_timeout=60.0,
         )
         blob = str(result)
-        assert (
-            "READ_OK= OK_FILE" in blob
-            and "READ_DENY=" in blob
-            and "READ_DENY_OOPS" not in blob
-        ), blob
+        assert "READ_OK= OK_FILE" in blob and "READ_DENY=" in blob and "READ_DENY_OOPS" not in blob, blob

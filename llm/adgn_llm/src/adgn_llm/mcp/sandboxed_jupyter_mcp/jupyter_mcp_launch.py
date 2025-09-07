@@ -79,7 +79,9 @@ def _start_jupyter_server(
 def main() -> int:
     ap = argparse.ArgumentParser(
         prog="jupyter-mcp-launch",
-        description="Launch Jupyter Server (unsandboxed) and jupyter-mcp-server (stdio) using precomposed config and kernels",
+        description=(
+            "Launch Jupyter Server (unsandboxed) and jupyter-mcp-server (stdio) using precomposed config and kernels"
+        ),
     )
     ap.add_argument(
         "--config",
@@ -87,7 +89,9 @@ def main() -> int:
         help="Path to Jupyter config dir (contains jupyter_server_config.py)",
     )
     ap.add_argument(
-        "--kernels", required=True, help="Path to kernels dir (kernelspecs)",
+        "--kernels",
+        required=True,
+        help="Path to kernels dir (kernelspecs)",
     )
     ap.add_argument(
         "--workspace",
@@ -111,7 +115,9 @@ def main() -> int:
         help="Pass through to jupyter-mcp-server",
     )
     ap.add_argument(
-        "--log-dir", default=None, help="Optional directory for Jupyter/MCP logs",
+        "--log-dir",
+        default=None,
+        help="Optional directory for Jupyter/MCP logs",
     )
     args = ap.parse_args()
 
@@ -128,7 +134,8 @@ def main() -> int:
         return 2
     if not kernels_dir.exists():
         print(
-            f"jupyter-mcp-launch: kernels dir not found: {kernels_dir}", file=sys.stderr,
+            f"jupyter-mcp-launch: kernels dir not found: {kernels_dir}",
+            file=sys.stderr,
         )
         return 2
     if not workspace.exists():

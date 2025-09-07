@@ -13,7 +13,9 @@ def _ensure_parent(path: Path) -> None:
 
 
 def main() -> int:
-    # Usage: python -m adgn_llm.mcp.sandboxed_jupyter_mcp.kernel_exec --stderr-log /path/to/log -- [kernel args like -f {connection_file}]
+    # Usage:
+    #   python -m adgn_llm.mcp.sandboxed_jupyter_mcp.kernel_exec \
+    #     --stderr-log /path/to/log -- [kernel args like -f {connection_file}]
     try:
         args = sys.argv[1:]
         log_path: Path | None = None
@@ -49,19 +51,15 @@ def main() -> int:
             print(f"kernel_exec: failed to redirect stderr: {e}", file=sys.stderr)
         # Decide target module based on diagnostics flag
         diag = os.environ.get("SJ_DEBUG_DIAG")
-        target_mod = (
-            "adgn_llm.mcp.sandboxed_jupyter_mcp.kernel_shim"
-            if diag
-            else "ipykernel_launcher"
-        )
+        target_mod = "adgn_llm.mcp.sandboxed_jupyter_mcp.kernel_shim" if diag else "ipykernel_launcher"
         argv = [sys.executable, "-m", target_mod, *post]
         os.execv(sys.executable, argv)
     except Exception:
         # In case redirect succeeded, this goes to the file
-        import traceback
+        import traceback as _tb  # noqa: PLC0415
 
         print(
-            "kernel_exec: unhandled exception:\n" + traceback.format_exc(),
+            "kernel_exec: unhandled exception:\n" + _tb.format_exc(),
             file=sys.stderr,
         )
         raise

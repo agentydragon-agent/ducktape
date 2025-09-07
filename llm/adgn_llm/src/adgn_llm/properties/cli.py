@@ -33,7 +33,10 @@ def build_supplemental_section(supplemental_text: str | None) -> str:
         "",
         "Supplemental files (golden reviews):",
         "These cover both the formal properties defined below and additional not-yet-formalized feedback.",
-        "Your analysis must ensure code passes all formal property definitions and also the additional criteria captured here.",
+        (
+            "Your analysis must ensure code passes all formal property definitions and also "
+            "the additional criteria captured here."
+        ),
         "Generalize patterns from these supplements and flag similar issues in the input code.",
         supplemental_text,
     ]
@@ -70,7 +73,10 @@ def _scope_block(
         "- The scope may describe either:",
         '  1) a Git diff range (e.g., "between merge-base with master and 2 commits before HEAD"), or',
         "  2) a static set of files/paths",
-        "- If it's a diff description: resolve to a concrete diff range, enumerate files and hunks, and use `git diff --unified=0` for references.",
+        (
+            "- If it's a diff description: resolve to a concrete diff range, enumerate files and hunks, and use "
+            "`git diff --unified=0` for references."
+        ),
         f"- If it's a static file set: {static_action} only those files.",
         f"- On ambiguity, choose the most conservative interpretation, state the resolved scope, and {ambiguity_tail}",
     ]
@@ -172,11 +178,7 @@ def _format_tools_table(available: list[str]) -> str:
         f"{'-' * 5}  {'-' * 12}  {'-' * 14}  {'-' * 40}",
     ]
     for name, cat, desc in TOOL_CATALOG:
-        status = (
-            "yes"
-            if name in avail_set or (name == "jscpd" and "jscpd(npx)" in avail_set)
-            else "no"
-        )
+        status = "yes" if name in avail_set or (name == "jscpd" and "jscpd(npx)" in avail_set) else "no"
         lines.append(f"{status:<5}  {name:<12}  {cat:<14}  {desc}")
     return "\n".join(lines)
 
@@ -186,10 +188,16 @@ def _tools_and_flow_block(available_tools: list[str]) -> list[str]:
     return [
         "",
         f"Detected analysis tools on PATH: {detected}",
-        "Suggested order (analyze): ruff check → mypy/pyright → vulture → bandit → dupes (pylint R0801/lizard) → radon (report).",
+        (
+            "Suggested order (analyze): ruff check → mypy/pyright → vulture → bandit → dupes (pylint R0801/lizard) "
+            "→ radon (report)."
+        ),
         "Suggested order (fix): ruff --fix → pyupgrade --py312-plus → refurb → flynt; re-run ruff check.",
         "After applying fixes, run the analysis tools again and include any remaining issues.",
-        "Include a short 'Missing tools' note in your final report if any commonly useful tools were unavailable and how that limited you (if at all).",
+        (
+            "Include a short 'Missing tools' note in your final report if any commonly useful tools were unavailable "
+            "and how that limited you (if at all)."
+        ),
     ] + (
         [
             "Tools with special invocation:",
@@ -253,7 +261,11 @@ def build_find_prompt(scope_text: str, supplemental_text: str | None = None) -> 
     properties_text = _properties_text()
     supplemental_section = build_supplemental_section(supplemental_text)
     lines: list[str] = [
-        "Analyze the codebase for violations of the properties defined below. Do not modify any files. Output only violations; do not list properties/files with 'No violations'. Produce a concise structured report.",
+        (
+            "Analyze the codebase for violations of the properties defined below. Do not modify any files. "
+            "Output only violations; do not list properties/files with 'No violations'. "
+            "Produce a concise structured report."
+        ),
         "",
         *_scope_block(
             scope_text,
@@ -267,8 +279,14 @@ def build_find_prompt(scope_text: str, supplemental_text: str | None = None) -> 
         "- You MUST check every changed hunk within scope",
         "",
         "Reporting requirements:",
-        "- For each violation: 1-line rationale and precise anchors (e.g., file:41-45, function names, or concise symbol paths)"
-        "- For many similar cases, write one short description then follow with a compact list of cases (file:lines or symbol names).",
+        (
+            "- For each violation: 1-line rationale and precise anchors (e.g., file:41-45, "
+            "function names, or concise symbol paths)"
+        ),
+        (
+            "- For many similar cases, write one short description then follow with a compact list of cases "
+            "(file:lines or symbol names)."
+        ),
         "- Do not list properties/files without violations; omit any 'No violations' lines.",
         "- Do not include preparatory narration; print only the report.",
         "",
@@ -285,7 +303,12 @@ def build_open_review_prompt(
     properties_text = _properties_text()
     supplemental_section = build_supplemental_section(supplemental_text)
     lines: list[str] = [
-        "Perform an open-ended code quality review within the scope. Find both violations of the properties below and any other significant issues not already covered by properties or supplements. Run the detected analysis tools first in the suggested order, then do targeted manual review. Output only findings.",
+        (
+            "Perform an open-ended code quality review within the scope. Find both violations of the properties below "
+            "and any other significant issues not already covered by properties or supplements. "
+            "Run the detected analysis tools first in the suggested order, then do targeted manual review. "
+            "Output only findings."
+        ),
         "",
         *_scope_block(
             scope_text,
@@ -299,8 +322,14 @@ def build_open_review_prompt(
         "- You MUST check every changed hunk within scope",
         "",
         "Reporting requirements:",
-        "- For each finding: 1-line rationale and precise anchors (e.g., file:41-45, function names, or concise symbol paths)"
-        "- For many similar cases, write one short description then follow with a compact list of cases (file:lines or symbol names).",
+        (
+            "- For each finding: 1-line rationale and precise anchors (e.g., file:41-45, "
+            "function names, or concise symbol paths)"
+        ),
+        (
+            "- For many similar cases, write one short description then follow with a compact list of cases "
+            "(file:lines or symbol names)."
+        ),
         "- Do not include preparatory narration; print only the report.",
         "",
         *_properties_block(properties_text, supplemental_section),
@@ -314,7 +343,10 @@ def build_enforce_prompt(scope_text: str, supplemental_text: str | None = None) 
     properties_text = _properties_text()
     supplemental_section = build_supplemental_section(supplemental_text)
     lines: list[str] = [
-        "Ensure code within the described scope conforms to the properties defined below and refactor as needed to satisfy them without altering behavior.",
+        (
+            "Ensure code within the described scope conforms to the properties defined below and refactor as needed "
+            "to satisfy them without altering behavior."
+        ),
         "",
         *_scope_block(
             scope_text,
@@ -324,25 +356,47 @@ def build_enforce_prompt(scope_text: str, supplemental_text: str | None = None) 
         "",
         "Editing policy:",
         "- Prefer minimal, localized edits within the scoped hunks/sections.",
-        "- You MAY edit outside the scoped hunks/sections ONLY when necessary to bring the scoped changes and any code you touched into full compliance with all properties (e.g., moving imports to the top of file).",
-        "- If such edits cascade (A requires B, which requires C, ...), keep fixing until everything you changed and everything originally in scope is compliant, then stop.",
+        (
+            "- You MAY edit outside the scoped hunks/sections ONLY when necessary to bring the "
+            "scoped changes and any code you touched into full compliance with all properties "
+            "(e.g., moving imports to the top of file)."
+        ),
+        (
+            "- If such edits cascade (A requires B, which requires C, ...), keep fixing until everything you changed "
+            "and everything originally in scope is compliant, then stop."
+        ),
         "- Do NOT perform broad or unrelated refactors beyond what is required for compliance.",
         "- Do not commit changes.",
-        "- After edits, run existing linters/formatters if present (e.g., ruff, pre-commit) and re-verify against properties.",
+        (
+            "- After edits, run existing linters/formatters if present (e.g., ruff, pre-commit) and re-verify "
+            "against properties."
+        ),
         "",
         "Requirements:",
         "- You MUST check every changed hunk within the resolved scope",
-        "- You MUST bring all scoped files/sections and any cascaded edits into compliance with ALL property definition files",
+        (
+            "- You MUST bring all scoped files/sections and any cascaded edits into compliance with ALL property "
+            "definition files"
+        ),
         "",
         *_properties_block(properties_text, supplemental_section),
         "",
         "Operational guidance:",
-        "- Ask for confirmation before any destructive action (deletes/mass renames). Keep changes within the workspace.",
-        "- If a property appears to conflict with code behavior, explain the conflict and propose the smallest safe change in your final report.",
+        (
+            "- Ask for confirmation before any destructive action (deletes/mass renames). Keep changes within the "
+            "workspace."
+        ),
+        (
+            "- If a property appears to conflict with code behavior, explain the conflict and "
+            "propose the smallest safe change in your final report."
+        ),
         "",
         "Deliverables:",
         "- Apply changes directly in the workspace.",
-        "- Print a concise change report as your final message: files changed, properties addressed per file, and any remaining violations you could not safely fix.",
+        (
+            "- Print a concise change report as your final message: files changed, "
+            "properties addressed per file, and any remaining violations you could not safely fix."
+        ),
     ]
     return "\n".join(lines).strip()
 
@@ -361,21 +415,37 @@ def build_grade_prompt(scope_text: str, canonical_text: str, critique_text: str)
     bullet/paragraph-level finding and match by clear semantic equivalence (filename/function anchors
     and concise rationale). Use best judgment; include brief notes on any ambiguities.
     """
-    # TODO(mpokorny): Expose weights via CLI flags and move matching rubric to a stable doc; add structured JSON output when needed.
+    # TODO(mpokorny): Expose weights via CLI flags and move matching rubric to a stable doc;
+    # add structured JSON output when needed.
     lines: list[str] = [
         "Grade the input critique against the canonical specimen findings.",
         "Compute the following metrics and then print supporting details:",
         "- Recall (0..1 float, 3 decimals): (# canonical positives found by input) / (# canonical positives total)",
-        "- Weighted recall (0..1 float, 3 decimals): treat matches with partial credit (see categories below); report sum(weights of matched canonical positives) / sum(weights of all canonical positives)",
-        "- False positive ratio (0..1 float, 3 decimals): (# input items that are canonical negatives) / (# input items total)",
-        "- 'Volume coverage' (0..1 float, 3 decimals): heuristic estimate of 'how much badness was caught' by weighting canonical items by impact (multi-anchor or cross-cutting issues weigh more).",
-        "  Use default weights unless specified otherwise: high-impact=3 (security, correctness, architectural, multi-file), medium=2 (multiple anchors/functions), low=1 (style/minor refactors).",
+        (
+            "- Weighted recall (0..1 float, 3 decimals): treat matches with partial credit (see categories below); "
+            "report sum(weights of matched canonical positives) / sum(weights of all canonical positives)"
+        ),
+        (
+            "- False positive ratio (0..1 float, 3 decimals): (# input items that are canonical negatives) / "
+            "(# input items total)"
+        ),
+        (
+            "- 'Volume coverage' (0..1 float, 3 decimals): heuristic estimate of 'how much badness was caught' "
+            "by weighting canonical items by impact (multi-anchor or cross-cutting issues weigh more)."
+        ),
+        (
+            "  Use default weights unless specified otherwise: high-impact=3 (security, correctness, architectural, "
+            "multi-file), medium=2 (multiple anchors/functions), low=1 (style/minor refactors)."
+        ),
         "- Then list 'Unknowns': input items that are neither canonical positives nor canonical negatives.",
         "",
         "Matching categories and default weights (for weighted recall):",
         "- Exact match (1.0): clearly the same issue (same file/anchors/rationale)",
         "- Partial match (0.5): substantially overlaps the same issue but misses scope/details (kinda-sorta-covered)",
-        "- Tangential (0.2): related but not the same (mentions a nearby concern without addressing the canonical item)",
+        (
+            "- Tangential (0.2): related but not the same (mentions a nearby concern without addressing the canonical "
+            "item)"
+        ),
         "- No match (0.0): unrelated",
         "",
         "",
@@ -392,7 +462,10 @@ def build_grade_prompt(scope_text: str, canonical_text: str, critique_text: str)
         "- Use fuzzy, semantic matching with filenames/line anchors and rationale to decide equivalence.",
         "- Show counts used in denominators and numerators.",
         "- Finally, print Unknowns as a bullet list with short rationale on why they didn't match.",
-        "- For Unknowns, paste the matched input-critique items verbatim (no summarization or truncation; no '...' elisions). Preserve original formatting and all details.",
+        (
+            "- For Unknowns, paste the matched input-critique items verbatim (no summarization or truncation; no '...' "
+            "elisions). Preserve original formatting and all details."
+        ),
         "",
         "Canonical findings (positives and negatives):",
         canonical_text,
@@ -525,11 +598,7 @@ def _run_specimen(  # noqa: PLR0913
 
     scope_text = build_scope_text(man.scope.include, man.scope.exclude)
     # Build supplemental text from embedded files (covered/not_covered_yet or user-specified)
-    supplemental_text = (
-        read_embedded_paths([Path(p) for p in (embed_paths or [])])
-        if embed_paths
-        else None
-    )
+    supplemental_text = read_embedded_paths([Path(p) for p in (embed_paths or [])]) if embed_paths else None
     # Build appropriate prompt
     if mode == "discover":
         # Hint: suppress already known findings; focus on new items
@@ -830,6 +899,12 @@ def main(argv: list[str] | None = None) -> int:
     p_spec_lint.add_argument("--model", default="gpt-5")
     p_spec_lint.add_argument("--dry-run", action="store_true")
     p_spec_lint.add_argument(
+        "--occurrence",
+        type=int,
+        required=True,
+        help="0-based occurrence index within issue.instances (required)",
+    )
+    p_spec_lint.add_argument(
         "--gitconfig",
         help="Path to a gitconfig to use for private repo fallback (shallow git)",
     )
@@ -845,6 +920,7 @@ def main(argv: list[str] | None = None) -> int:
             model=getattr(args, "model", "gpt-5"),
             dry_run=getattr(args, "dry_run", False),
             gitconfig=getattr(args, "gitconfig", None),
+            occurrence_index=getattr(args, "occurrence"),
         )
 
     if args.command == "specimen-check":
@@ -962,8 +1038,18 @@ def main(argv: list[str] | None = None) -> int:
             )
             if args.allow_general_findings:
                 prompt = prompt.replace(
-                    "Analyze the codebase for violations of the properties defined below. Do not modify any files. Output only violations; do not list properties/files with 'No violations'. Produce a concise structured report.",
-                    "Perform an open-ended code quality review within the scope. Find both violations of the properties below and any other significant issues not already covered by properties or supplements. Run the detected analysis tools first in the suggested order, then do targeted manual review. Output only findings.",
+                    (
+                        "Analyze the codebase for violations of the properties defined below. Do not modify any files. "
+                        "Output only violations; do not list properties/files with 'No violations'. "
+                        "Produce a concise structured report."
+                    ),
+                    (
+                        "Perform an open-ended code quality review within the scope. "
+                        "Find both violations of the properties below and any other significant issues not already "
+                        "covered by properties or supplements. "
+                        "Run the detected analysis tools first in the suggested order, then do targeted manual review. "
+                        "Output only findings."
+                    ),
                     1,
                 )
             cmd = build_cmd(

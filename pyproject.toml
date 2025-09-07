@@ -18,6 +18,7 @@ ignore_errors = true
 
 # Ruff configuration at repo root
 [tool.ruff]
+line-length = 120
 
 [tool.ruff.lint]
 # TODO(mpokorny): Stop nesting multiple pyproject.toml files; deduplicate linter/formatter

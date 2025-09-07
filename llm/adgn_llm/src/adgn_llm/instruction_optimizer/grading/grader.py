@@ -166,9 +166,7 @@ Return a JSON object with:
             input=prompt,
             tools=[grading_tool],
             tool_choice={"type": "function", "name": "submit_comparison_grade"},
-            reasoning={"effort": cfg.grader.reasoning_effort}
-            if cfg.grader.reasoning_effort
-            else None,
+            reasoning={"effort": cfg.grader.reasoning_effort} if cfg.grader.reasoning_effort else None,
         )
     except openai.BadRequestError as e:
         if "context_length_exceeded" in str(e):
@@ -188,10 +186,9 @@ Return a JSON object with:
     # Extract the function call from response
     call = None
     for item in response.output:
-        if (
-            isinstance(item, ResponseFunctionToolCallItem)
-            and item.type == "function_call"
-        ) or isinstance(item, ResponseFunctionToolCall):
+        if (isinstance(item, ResponseFunctionToolCallItem) and item.type == "function_call") or isinstance(
+            item, ResponseFunctionToolCall
+        ):
             call = item
             break
 
@@ -302,9 +299,7 @@ async def _grade_with_criteria(
             input=full_prompt,
             tools=[grading_tool],
             tool_choice={"type": "function", "name": "submit_grades"},
-            reasoning={"effort": cfg.grader.reasoning_effort}
-            if cfg.grader.reasoning_effort
-            else None,
+            reasoning={"effort": cfg.grader.reasoning_effort} if cfg.grader.reasoning_effort else None,
         )
     except openai.BadRequestError as e:
         if "context_length_exceeded" in str(e):
@@ -324,10 +319,9 @@ async def _grade_with_criteria(
     # Extract the function call
     call = None
     for item in response.output:
-        if (
-            isinstance(item, ResponseFunctionToolCallItem)
-            and item.type == "function_call"
-        ) or isinstance(item, ResponseFunctionToolCall):
+        if (isinstance(item, ResponseFunctionToolCallItem) and item.type == "function_call") or isinstance(
+            item, ResponseFunctionToolCall
+        ):
             call = item
             break
 

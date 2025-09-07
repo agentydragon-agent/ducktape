@@ -81,14 +81,17 @@ def rel(path: Path, root: Path) -> str:
 
 def matches_any(path_rel: str, patterns: Iterable[str]) -> bool:
     return any(
-        fnmatch.fnmatch(path_rel, normalize_pattern(p))
-        or fnmatch.fnmatch("/" + path_rel, normalize_pattern(p))
+        fnmatch.fnmatch(path_rel, normalize_pattern(p)) or fnmatch.fnmatch("/" + path_rel, normalize_pattern(p))
         for p in patterns
     )
 
 
 def gather_files_single_pass(
-    root: Path, include: list[str], exclude: list[str], only_code: bool, progress: bool,
+    root: Path,
+    include: list[str],
+    exclude: list[str],
+    only_code: bool,
+    progress: bool,
 ) -> tuple[set[Path], dict[str, int]]:
     """
     Walk the tree once, honoring include/exclude patterns and optional code-only filter.
@@ -170,13 +173,19 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--root", default=str(Path.cwd()), help="Workspace root directory")
     ap.add_argument(
-        "--config", default=None, help="Path to pyrightconfig.json (optional)",
+        "--config",
+        default=None,
+        help="Path to pyrightconfig.json (optional)",
     )
     ap.add_argument(
-        "--dump", default=None, help="Path to dump watched file list (optional)",
+        "--dump",
+        default=None,
+        help="Path to dump watched file list (optional)",
     )
     ap.add_argument(
-        "--only-code", action="store_true", help="Count only code files (.py, .pyi)",
+        "--only-code",
+        action="store_true",
+        help="Count only code files (.py, .pyi)",
     )
     ap.add_argument(
         "--no-progress",
@@ -208,15 +217,17 @@ def main() -> int:
 
     # Single-pass gather with per-exclude impact
     kept_union, exclude_hits = gather_files_single_pass(
-        root, include, exclude, only_code=args.only_code, progress=args.progress,
+        root,
+        include,
+        exclude,
+        only_code=args.only_code,
+        progress=args.progress,
     )
 
     # Compute per-include kept counts by filtering kept_union once
     per_include_kept: dict[str, int] = {}
     for pat in include:
-        per_include_kept[pat] = sum(
-            1 for p in kept_union if matches_any(rel(p, root), [pat])
-        )
+        per_include_kept[pat] = sum(1 for p in kept_union if matches_any(rel(p, root), [pat]))
 
     # Unique contribution per include in listed order (order-sensitive)
     seen: set[Path] = set()
@@ -234,7 +245,9 @@ def main() -> int:
 
     # Top excludes by impact
     exclude_impact: list[tuple[str, int]] = sorted(
-        exclude_hits.items(), key=lambda x: x[1], reverse=True,
+        exclude_hits.items(),
+        key=lambda x: x[1],
+        reverse=True,
     )
 
     # Totals
@@ -277,11 +290,7 @@ def main() -> int:
     print()
 
     # Dump file list if requested
-    dump_path: Path | None = (
-        Path(args.dump).resolve()
-        if args.dump
-        else (root / "scratch/pyright_watched_files.txt")
-    )
+    dump_path: Path | None = Path(args.dump).resolve() if args.dump else (root / "scratch/pyright_watched_files.txt")
     try:
         dump_path.parent.mkdir(parents=True, exist_ok=True)
         with dump_path.open("w", encoding="utf-8") as f:

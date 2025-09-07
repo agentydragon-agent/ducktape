@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+import yaml
 from pydantic import BaseModel, Field
 
 
@@ -180,11 +181,8 @@ class OptimizerConfig(BaseModel):
 
         if not config_path.exists():
             raise FileNotFoundError(
-                f"Configuration file not found: {config_path}. "
-                f"Create this file or use OptimizerConfig() for defaults.",
+                f"Configuration file not found: {config_path}. Create this file or use OptimizerConfig() for defaults.",
             )
-
-        import yaml
 
         with config_path.open() as f:
             config_data = yaml.safe_load(f)

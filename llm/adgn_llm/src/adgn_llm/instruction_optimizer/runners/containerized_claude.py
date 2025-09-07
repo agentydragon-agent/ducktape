@@ -20,6 +20,7 @@ Preserve DEBUGGING.md - it will save hours when things break.
 import asyncio
 import os
 import shutil
+import traceback
 from collections.abc import AsyncIterator
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
@@ -260,9 +261,7 @@ class TaskClaude:
             wrapper_env["CLAUDE_STRACE"] = "1"
         if self.config.get("wrapper_env"):
             wrapper_env.update(self.config.get("wrapper_env"))
-        pass_keys = [
-            k for k in wrapper_env if k not in ("CLAUDE_CONTAINER_ID", "DOCKER_BINARY")
-        ]
+        pass_keys = [k for k in wrapper_env if k not in ("CLAUDE_CONTAINER_ID", "DOCKER_BINARY")]
         if pass_keys:
             wrapper_env["CLAUDE_WRAPPER_PASS_ENV"] = ",".join(pass_keys)
 
@@ -338,11 +337,7 @@ class TaskClaude:
             )
 
         # Use committed wrapper script from repo
-        wrapper_script = (
-            Path(__file__).parent.parent.parent.parent
-            / "scripts"
-            / "claude_docker_wrapper"
-        )
+        wrapper_script = Path(__file__).parent.parent.parent.parent / "scripts" / "claude_docker_wrapper"
         if not wrapper_script.exists():
             raise RuntimeError(
                 f"Claude docker wrapper script not found: {wrapper_script}",
@@ -496,8 +491,6 @@ class TaskClaude:
                         output=line_text,
                     )
             except UnicodeDecodeError as e:
-                import traceback
-
                 stack_trace = traceback.format_exc()
                 self._logger.error(
                     "Unicode decode error in setup script output",
@@ -679,7 +672,10 @@ class TaskClaude:
                 debug_hint=f"Run: docker logs {self._container.id}",
             )
             raise RuntimeError(
-                f"Remounted container {self._container.id} failed to start within {max_wait}s: {self._container.status}",
+                (
+                    f"Remounted container {self._container.id} failed to start within {max_wait}s: "
+                    f"{self._container.status}"
+                ),
             )
 
         self._logger.info(

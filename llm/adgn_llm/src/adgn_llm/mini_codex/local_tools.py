@@ -11,9 +11,7 @@ DEFAULT_TIMEOUT_S = int(os.getenv("DUCK_TIMEOUT_S", "30"))
 TRUNCATE_BYTES = 8 * 1024
 BWRAP = os.getenv("BWRAP", "bwrap")
 ALLOW_UNSHARE_NET = os.getenv("DUCK_UNSHARE_NET", "0") == "1"
-ALLOW_UNSANDBOXED = (
-    os.getenv("DUCK_ALLOW_UNSANDBOXED", "0") == "1"
-)  # dev override on non-Linux
+ALLOW_UNSANDBOXED = os.getenv("DUCK_ALLOW_UNSANDBOXED", "0") == "1"  # dev override on non-Linux
 
 
 def _truncate_bytes(s: str, limit: int) -> str:
@@ -137,11 +135,7 @@ def exec_handler(args: dict[str, Any]) -> dict[str, Any]:
         return {"exit": 2, "stdout": "", "stderr": "invalid cmd"}
 
     timeout_ms = args.get("timeout_ms")
-    to = (
-        DEFAULT_TIMEOUT_S
-        if not isinstance(timeout_ms, int)
-        else max(1, int(timeout_ms / 1000))
-    )
+    to = DEFAULT_TIMEOUT_S if not isinstance(timeout_ms, int) else max(1, int(timeout_ms / 1000))
     cwd_val = args.get("cwd") if isinstance(args.get("cwd"), str) else None
 
     code, out, err = _run_in_sandbox(cmd, timeout_s=to, cwd=cwd_val)

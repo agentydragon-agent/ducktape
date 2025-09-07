@@ -131,15 +131,23 @@ class PromptEngineer:
             )
         else:  # AgentTaskType.CODING
             agent_description = "a coding agent"
-            task_description = "- Agent has access to a filesystem and a shell through tools. Tasks should be solved by writing code files on disk using these tools, not just shown to user in conversation.\n"
+            task_description = (
+                "- Agent has access to a filesystem and a shell through tools. "
+                "Tasks should be solved by writing code files on disk using these tools, "
+                "not just shown to user in conversation.\n"
+            )
 
         system_message = (
-            f"You are an expert LLM prompt engineer. Your task is to design the best prompt for a LLM used as {agent_description}.\n"
+            f"You are an expert LLM prompt engineer. Your task is to design the best prompt for a LLM used as "
+            f"{agent_description}.\n"
             f"{task_description}"
             "- Agent has a fixed system prompt teaches it how to use its tools (and other basics).\n"
-            "- Avoid giving your own instructions on how to use the tools - agent's baked-in tool use instructions are already correct and additional conflicting instructions could easily make it worse.\n"
-            "- Each turn, you will propose a prompt. The agent will be run with that prompt on several tasks, and you will receive information from these rollouts to help you design a better prompt.\n"
-            "- Your goal is to *find the best performing prompt you can* over *10 turns* of (propose prompt1 -> receive feedback1 -> propose prompt2 -> ...). You will be scored by the max score, not the last score.\n"
+            "- Avoid giving your own instructions on how to use the tools - agent's baked-in tool use instructions "
+            "are already correct and additional conflicting instructions could easily make it worse.\n"
+            "- Each turn, you will propose a prompt. The agent will be run with that prompt on several tasks, "
+            "and you will receive information from these rollouts to help you design a better prompt.\n"
+            "- Your goal is to *find the best performing prompt you can* over *10 turns* of (propose prompt1 -> "
+            "receive feedback1 -> propose prompt2 -> ...). You will be scored by the max score, not the last score.\n"
             f"- The feedback will take the form of: {self.feedback_provider.verbal_description()}\n"
         )
 
@@ -239,9 +247,7 @@ class PromptEngineer:
             },  # 'tool_choice' not 'tool_use'
         )
         reasoning_messages: list[ResponseOutputMessage | ResponseReasoningItem] = []
-        function_call_item: (
-            ResponseFunctionToolCall | ResponseFunctionToolCallItem | None
-        ) = None
+        function_call_item: ResponseFunctionToolCall | ResponseFunctionToolCallItem | None = None
 
         for item in response.output:
             if isinstance(

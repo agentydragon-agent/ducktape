@@ -241,9 +241,7 @@ async def optimize_prompts(
     logger.info(
         "Generated initial prompt",
         iteration=0,
-        prompt_preview=current_prompt[:200] + "..."
-        if len(current_prompt) > 200
-        else current_prompt,
+        prompt_preview=current_prompt[:200] + "..." if len(current_prompt) > 200 else current_prompt,
     )
 
     # Track prompts
@@ -261,9 +259,7 @@ async def optimize_prompts(
         """Run a single rollout with semaphore control."""
         async with rollout_semaphore:
             # Create rollout directory structure
-            rollout_dir = (
-                base_dir / f"iter_{iteration:03d}" / task.id / f"agent_{rollout_id}"
-            )
+            rollout_dir = base_dir / f"iter_{iteration:03d}" / task.id / f"agent_{rollout_id}"
             rollout_dir.mkdir(parents=True, exist_ok=True)
 
             # Create work subdirectory for agent
@@ -331,9 +327,7 @@ async def optimize_prompts(
             _, grading_config = task.resolve_config(task_types)
 
             # Get runner environment if available
-            runner_env = (
-                runner.get_environment() if hasattr(runner, "get_environment") else None
-            )
+            runner_env = runner.get_environment() if hasattr(runner, "get_environment") else None
 
             try:
                 grade = await grade_rollout(
@@ -443,9 +437,7 @@ async def optimize_prompts(
             )
 
     # Log experiment configuration
-    tasks_per_iter = (
-        tasks_per_iteration if tasks_per_iteration is not None else len(seed_tasks)
-    )
+    tasks_per_iter = tasks_per_iteration if tasks_per_iteration is not None else len(seed_tasks)
     logger.info(
         "Prompt optimization experiment starting",
         task_count=len(seed_tasks),
@@ -544,12 +536,8 @@ async def optimize_prompts(
         )
 
         # Display simple metrics to CLI
-        overall_scores = [
-            graded_code.grade.overall_score for graded_code in all_rollouts
-        ]
-        avg_overall = (
-            sum(overall_scores) / len(overall_scores) if overall_scores else 0.0
-        )
+        overall_scores = [graded_code.grade.overall_score for graded_code in all_rollouts]
+        avg_overall = sum(overall_scores) / len(overall_scores) if overall_scores else 0.0
         iter_logger.info(
             "Iteration complete",
             average_overall_score=round(avg_overall, 2),
@@ -590,9 +578,7 @@ async def optimize_prompts(
             logger.info(
                 "Generated new optimized prompt",
                 iteration=iteration + 1,
-                prompt_preview=new_prompt[:200] + "..."
-                if len(new_prompt) > 200
-                else new_prompt,
+                prompt_preview=new_prompt[:200] + "..." if len(new_prompt) > 200 else new_prompt,
             )
 
             # Store new system prompt
@@ -648,7 +634,9 @@ Examples:
         "--tasks-per-iteration",
         type=int,
         default=None,
-        help="Number of tasks to randomly sample (with replacement) per iteration. If not specified, uses all seed tasks",
+        help=(
+            "Number of tasks to randomly sample (with replacement) per iteration. If not specified, uses all seed tasks"
+        ),
     )
 
     parser.add_argument(

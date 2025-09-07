@@ -39,12 +39,7 @@ def _ensure_document_id(workspace: Path, document_id: str | None) -> str:
         rel = (
             Path(".mcp")
             / "scratch"
-            / (
-                datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
-                + "-"
-                + secrets.token_hex(4)
-                + ".ipynb"
-            )
+            / (datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S") + "-" + secrets.token_hex(4) + ".ipynb")
         )
         p = workspace / rel
         document_id = str(rel)
@@ -71,7 +66,10 @@ def _ensure_document_id(workspace: Path, document_id: str | None) -> str:
 
 
 def _build_bash_script(
-    workspace: Path, document_id: str, token: str, start_new_runtime: bool,
+    workspace: Path,
+    document_id: str,
+    token: str,
+    start_new_runtime: bool,
 ) -> str:
     wq = shlex.quote(str(workspace))
     dq = shlex.quote(document_id)
@@ -124,7 +122,10 @@ def _docker(
 ) -> int:
     token = secrets.token_urlsafe(24)
     bash_script = _build_bash_script(
-        Path("/workspace"), document_id, token, start_new_runtime,
+        Path("/workspace"),
+        document_id,
+        token,
+        start_new_runtime,
     )
     run_root = f"/tmp/sjmcp-{secrets.token_hex(6)}"
     env_flags = [
@@ -189,7 +190,8 @@ def _write_sandboxed_kernelspec(
     # Enable sandboxer debug when SJ_DEBUG_DIAG is set to surface policy path and -D params
     if os.environ.get("SJ_DEBUG_DIAG"):
         argv.append("--debug")
-    # Always exec kernel via our tiny exec wrapper to capture stderr reliably; it will choose shim vs ipykernel based on SJ_DEBUG_DIAG
+    # Always exec kernel via our tiny exec wrapper to capture stderr reliably;
+    # it will choose shim vs ipykernel based on SJ_DEBUG_DIAG
     argv += [
         "--",
         kernel_python,
@@ -341,7 +343,8 @@ def _seatbelt(
             try:
                 cp = subprocess.run(
                     args,
-                    check=False, env=child_env,
+                    check=False,
+                    env=child_env,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
                     text=True,
@@ -353,9 +356,7 @@ def _seatbelt(
         try:
             child_path = child_env.get("PATH", os.environ.get("PATH", ""))
             jup_path = shutil.which("jupyter", path=child_path) or "<not found>"
-            jms_path = (
-                shutil.which("jupyter-mcp-server", path=child_path) or "<not found>"
-            )
+            jms_path = shutil.which("jupyter-mcp-server", path=child_path) or "<not found>"
             print(f"[diag] child PATH={child_path}", file=sys.stderr)
             print(f"[diag] which jupyter -> {jup_path}", file=sys.stderr)
             print(
@@ -398,7 +399,8 @@ def _seatbelt(
                 # Enable RTC/ydoc so collaboration/session API exists for nbmodel client
                 "c.ServerApp.collaborative = True",
                 "c.ServerApp.jpserver_extensions = {'jupyter_server_ydoc': True}",
-                # Capture kernel stderr to a file for diagnostics (set on base KernelManager so it applies to sub-managers)
+                # Capture kernel stderr to a file for diagnostics
+                # (set on base KernelManager so it applies to sub-managers)
                 f"c.KernelManager.kernel_log_file = '{(run_root / 'runtime' / 'kernel_stderr.log').as_posix()}'",
             ],
         ),
@@ -494,7 +496,10 @@ def main() -> int:
     ap_stdio.add_argument("--mode", choices=["docker", "seatbelt"], default="seatbelt")
     ap_stdio.add_argument("--docker-image", default="python:3.12-slim")
     ap_stdio.add_argument(
-        "--jupyter-port", type=int, default=0, help="0=auto-pick free port",
+        "--jupyter-port",
+        type=int,
+        default=0,
+        help="0=auto-pick free port",
     )
     ap_stdio.add_argument("--start-new-runtime", action="store_true")
     ap_stdio.add_argument("--trace-sandbox", action="store_true")
@@ -510,10 +515,14 @@ def main() -> int:
         help="Path to sandboxer policy YAML (env.set/passthrough, fs.read_paths/write_paths, net.mode)",
     )
     ap_stdio.add_argument(
-        "--workspace", required=True, help="Absolute path to Jupyter workspace root",
+        "--workspace",
+        required=True,
+        help="Absolute path to Jupyter workspace root",
     )
     ap_stdio.add_argument(
-        "--run-root", required=True, help="Absolute path for runtime/temp/logs",
+        "--run-root",
+        required=True,
+        help="Absolute path for runtime/temp/logs",
     )
     ap_stdio.add_argument(
         "--kernel-python",
@@ -547,7 +556,11 @@ def main() -> int:
 
         if args.mode == "docker":
             return _docker(
-                workspace, doc_id, args.docker_image, args.start_new_runtime, port,
+                workspace,
+                doc_id,
+                args.docker_image,
+                args.start_new_runtime,
+                port,
             )
 
         return _seatbelt(

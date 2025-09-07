@@ -35,6 +35,9 @@ dependencies = [
   "mcp[cli]>=1.13.1",
   "platformdirs>=4.0.0",
   "jsonnet>=0.20.0",
+  "pyperclip>=1.8.2",
+  "typer>=0.12.3",
+  "requests>=2.32.5",
 ]
 
 [project.scripts]
@@ -45,7 +48,7 @@ sandbox-jupyter-mcp = "adgn_llm.mcp.sandboxed_jupyter_mcp.wrapper:main"
 adgn-sandboxer = "adgn_llm.sandboxer:main"
 adgn-instruction-optimizer = "adgn_llm.instruction_optimizer.core.optimizer:main"
 adgn-mcp-docker-exec = "adgn_llm.mcp.docker_exec.server:main"
-adgn-llm-edit = "adgn_llm.llm_edit:main"
+adgn-llm-edit = "adgn_llm.llm_edit:app"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
@@ -75,11 +78,32 @@ adgn_llm = [
 
 # Ruff configuration
 [tool.ruff]
+line-length = 120
 # Using Ruff's formatter; keep linter compatible with formatter behavior.
+# Exclude generated/third‑party specimen snapshots from lint (vendored code not maintained here)
+extend-exclude = [
+  "src/adgn_llm/properties/specimens/**",
+]
 
 [tool.ruff.lint]
 # Avoid formatter↔linter churn on long strings that the formatter wraps
 # into adjacent literals; we accept that style here.
 extend-ignore = [
   "ISC001",  # Implicit string concatenation: ignore to prevent conflicts with the formatter's wrapping
+]
+
+# Pytest configuration
+[tool.pytest.ini_options]
+# Exclude embedded specimen repos from discovery
+markers = [
+  "live_llm: Tests that exercise the real OpenAI API (requires env credentials)",
+]
+norecursedirs = [
+  "specimens",
+  "src/adgn_llm/properties/specimens",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4.2",
 ]

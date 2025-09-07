@@ -1,19 +1,25 @@
 from __future__ import annotations
 
 import asyncio
-import os
+import json
 import shutil
 import subprocess
-import sys
+import tarfile
 import tempfile
 import time
-import tarfile
-import hashlib
 from dataclasses import dataclass
 from importlib.resources import files
 from pathlib import Path
 from typing import Any
 
+import openai
+
+from adgn_llm.mcp.docker_exec.server import make_container_exec_mcp
+
+# In-process FastMCP wiring (avoid stdio)
+from adgn_llm.mcp.inproc import fastmcp_inproc_client
+from adgn_llm.mini_codex.agent import MiniCodex
+from adgn_llm.mini_codex.mcp_manager import McpManager, ServerSlot, session_opener
 
 from .specimen_utils import Specimen, ensure_archive_for_specimen_slug
 
@@ -63,10 +69,17 @@ def _find_property_files(property_ids: list[str]) -> list[Path]:
     return sorted(found, key=lambda p: p.as_posix())
 
 
-def _build_prompt(issue: Any, property_md_files: list[Path]) -> str:
+def _build_prompt(issue: Any, property_md_files: list[Path], occurrence: Any | None = None) -> str:
     # Do not include specimen slug or issue id. Include only issue fields and property definitions.
     # The agent will read code from /workspace via MCP.
-    issue_json = issue.model_dump_json(exclude_none=True, exclude={"id": True})
+    issue_dict = issue.model_dump(exclude_none=True)
+    issue_dict.pop("id", None)
+    if occurrence is not None:
+        try:
+            issue_dict["instances"] = [occurrence.model_dump(exclude_none=True)]
+        except Exception:
+            issue_dict["instances"] = [occurrence]
+    issue_json = json.dumps(issue_dict, ensure_ascii=False)
 
     md_blocks: list[str] = []
     props_root = Path(files("adgn_llm").joinpath("properties"))
@@ -78,7 +91,7 @@ def _build_prompt(issue: Any, property_md_files: list[Path]) -> str:
 
     lines = [
         "Lint the following single issue strictly against the provided property definition files.",
-        "Use the function mcp__docker__docker_exec to read files under /workspace (read-only).",
+        "Use the function mcp__docker__exec to read files under /workspace (read-only).",
         "Do not modify code. Judge only by the definitions as written.",
         "",
         "Issue (JSON):",
@@ -88,7 +101,10 @@ def _build_prompt(issue: Any, property_md_files: list[Path]) -> str:
         *md_blocks,
         "",
         "Requirements:",
-        "- First, use mcp__docker__docker_exec to fetch and quote the exact anchored lines (and a few lines of context if helpful).",
+        (
+            "- First, call mcp__docker__session_info to discover working_dir and volumes; then use "
+            "mcp__docker__exec to fetch and quote the exact anchored lines (and a few lines of context if helpful)."
+        ),
         "- For each property listed, verify the anchored code truly violates the definition.",
         "- If an anchor range misses, suggest minimal corrected 1-based ranges (file and [start,end?]).",
         "- If any listed property does not apply, explain briefly why.",
@@ -97,23 +113,17 @@ def _build_prompt(issue: Any, property_md_files: list[Path]) -> str:
     return "\n".join(lines).strip()
 
 
-async def _run_agent(prompt: str, tools: dict[str, Any], model: str) -> str:
-    # Import after structlog is configured by CLI
-    import openai
-    from adgn_llm.mini_codex.agent import MiniCodex
-
+async def _run_agent(prompt: str, slots: dict[str, ServerSlot], model: str) -> str:
     client = openai.OpenAI()
-    agent = await MiniCodex.start(
-        model=model,
-        tools=tools,
-        system="You are a code agent. Be concise.",
-        client=client,
-    )
-    try:
+    async with McpManager(slots) as mcp:
+        agent = await MiniCodex.create(
+            model=model,
+            mcp=mcp,
+            system="You are a code agent. Be concise.",
+            client=client,
+        )
         result = await agent.run(prompt)
         return result.text.strip() if result.text else ""
-    finally:
-        await agent.close()
 
 
 def _docker_run_detached(root: Path, name: str) -> str:
@@ -147,25 +157,6 @@ def _docker_rm_force(name_or_id: str) -> None:
     )
 
 
-def _cached_archive_for_specimen(sp: Specimen) -> Path | None:
-    man = sp.manifest
-    src = getattr(man, "source", None)
-    try:
-        ref = getattr(src, "ref", None)
-        org = getattr(src, "org", None)
-        repo = getattr(src, "repo", None)
-        if org and repo and ref:
-            p = _cache_path_for_github(org, repo, ref)
-            return p if p.exists() else None
-        url = getattr(src, "url", None)
-        if url and ref:
-            p = _cache_path_for_git(url, ref)
-            return p if p.exists() else None
-    except Exception:
-        return None
-    return None
-
-
 def _extract_tar_gz_to(archive: Path, dst: Path) -> None:
     if dst.exists():
         shutil.rmtree(dst, ignore_errors=True)
@@ -181,8 +172,16 @@ def run_specimen_lint_issue(
     model: str = "gpt-5",
     dry_run: bool = False,
     gitconfig: str | None = None,
+    occurrence_index: int,
 ) -> int:
     sp, root, issue = _load_single_issue(specimen, issue_id, gitconfig)
+
+    # Require a single occurrence; do not run on the full issue or mutate the Issue
+    if occurrence_index < 0 or occurrence_index >= len(issue.instances):
+        raise SystemExit(
+            f"occurrence_index out of range: {occurrence_index} (instances={len(issue.instances)})",
+        )
+    occ = issue.instances[occurrence_index]
 
     # Always mount from under $HOME to avoid Docker volume restrictions on /var/folders
     ts = int(time.time())
@@ -193,56 +192,50 @@ def run_specimen_lint_issue(
 
     if dry_run:
         props = _find_property_files([str(p) for p in issue.properties])
-        prompt = _build_prompt(issue, props)
+        prompt = _build_prompt(issue, props, occurrence=occ)
         tmpdir = Path(tempfile.gettempdir()) / "adgn_codex_prompts"
         tmpdir.mkdir(parents=True, exist_ok=True)
         outfile = tmpdir / f"lint_issue_{issue_id}_{ts}.md"
         outfile.write_text(prompt, encoding="utf-8")
         print(
-            f"[dry-run] docker run -d --rm -v '{mount_root}:/workspace:ro' -w /workspace --name lint_{ts} {DOCKER_IMAGE} sleep infinity",
+            (
+                f"[dry-run] docker run -d --rm -v '{mount_root}:/workspace:ro' -w /workspace "
+                f"--name lint_{ts} {DOCKER_IMAGE} sleep infinity"
+            ),
         )
         print(f"[dry-run] Saved prompt: {outfile}")
         return 0
 
-    cid = None
     try:
         # Prepare mount directory under $HOME from cached archive; hard-fail if cache missing
         if mount_root.exists():
             shutil.rmtree(mount_root, ignore_errors=True)
-        archive = ensure_archive_for_specimen_slug(sp.manifest, sp.manifest_path, Path(gitconfig) if gitconfig else None)
+        archive = ensure_archive_for_specimen_slug(
+            sp.manifest, sp.manifest_path, Path(gitconfig) if gitconfig else None
+        )
         _extract_tar_gz_to(archive, mount_root)
 
-        cid = _docker_run_detached(mount_root, name)
-        # Build MCP tool map for docker_exec server
-        # Pass through Docker socket/credentials so MCP server can reach Docker (e.g., Colima)
-        tools = {
-            "docker": {
-                "command": sys.executable,
-                "args": [
-                    "-m",
-                    "adgn_llm.mcp.docker_exec.server",
-                ],
-                "env": {
-                    "DOCKER_CONTAINER": cid,
-                    "DOCKER_DEFAULT_CWD": "/workspace",
-                    **({"DOCKER_HOST": os.environ["DOCKER_HOST"]} if os.environ.get("DOCKER_HOST") else {}),
-                    **({"DOCKER_TLS_VERIFY": os.environ["DOCKER_TLS_VERIFY"]} if os.environ.get("DOCKER_TLS_VERIFY") else {}),
-                    **({"DOCKER_CERT_PATH": os.environ["DOCKER_CERT_PATH"]} if os.environ.get("DOCKER_CERT_PATH") else {}),
-                },
-            },
-        }
+        # Build in-process FastMCP server slot for docker exec (single-process for easier debug)
+        def _cm_builder():
+            return fastmcp_inproc_client(
+                lambda: make_container_exec_mcp(
+                    image=DOCKER_IMAGE,
+                    working_dir="/workspace",
+                    volumes={str(mount_root): {"bind": "/workspace", "mode": "ro"}},
+                    describe=True,
+                ),
+            )
+
+        open_fn = session_opener(_cm_builder)
+        slots = {"docker": ServerSlot(name="docker", open_fn=open_fn)}
         props = _find_property_files([str(p) for p in issue.properties])
-        prompt = _build_prompt(issue, props)
-        text = asyncio.run(_run_agent(prompt, tools, model))
+        prompt = _build_prompt(issue, props, occurrence=occ)
+        text = asyncio.run(_run_agent(prompt, slots, model))
         print(text)
         # Heuristic: final line contains PASS → success
         tail = (text.splitlines() or [""])[-1].strip().upper()
         return 0 if tail == "PASS" else 2
     finally:
-        if cid:
-            _docker_rm_force(cid)
-        else:
-            _docker_rm_force(name)
         # Cleanup copied workspace
         if mount_root.exists():
             shutil.rmtree(mount_root, ignore_errors=True)

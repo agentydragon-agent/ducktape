@@ -19,13 +19,7 @@ def _runtime_dir() -> Path:
         except Exception:
             pass
     # Fallback to TMPDIR or home
-    rd = (
-        os.environ.get("TMPDIR")
-        or os.environ.get("TMP")
-        or os.environ.get("TEMP")
-        or os.environ.get("HOME")
-        or "."
-    )
+    rd = os.environ.get("TMPDIR") or os.environ.get("TMP") or os.environ.get("TEMP") or os.environ.get("HOME") or "."
     p = Path(rd)
     try:
         p.mkdir(parents=True, exist_ok=True)
@@ -64,8 +58,7 @@ except SystemExit as e:
     raise
 except Exception:
     _log(
-        "bootstrap: unhandled exception during kernel startup:\n"
-        + traceback.format_exc(),
+        "bootstrap: unhandled exception during kernel startup:\n" + traceback.format_exc(),
     )
     # Re-raise to preserve behavior; Jupyter will observe kernel crash and restart/log
     raise

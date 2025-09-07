@@ -2,26 +2,22 @@ from __future__ import annotations
 
 from typing import Any
 
-from .local_server import LocalServer, ToolDef
-from .local_tools import EXEC_PARAMETERS_SCHEMA, exec_handler
+from mcp.server.fastmcp import FastMCP
+
+from .local_tools import exec_handler
 
 
-class LocalExecServer(LocalServer):
-    """Stateful local exec server (can add state later if needed)."""
+def make_local_exec_mcp(name: str = "local") -> FastMCP:
+    """FastMCP server exposing a local exec tool.
 
-    def __init__(self, name: str = "local"):
-        super().__init__(name)
-        self.invocations = 0  # example state
+    Tools:
+      - exec(cmd: list[str], cwd: str | None = None, timeout_ms: int | None = None)
+        → {exit:int, stdout:str, stderr:str}
+    """
+    mcp = FastMCP(name, instructions="Local command execution")
 
-    def get_tools(self) -> dict[str, ToolDef]:
-        def handler(args: dict[str, Any]) -> dict[str, Any]:
-            self.invocations += 1
-            return exec_handler(args)
+    @mcp.tool()
+    def exec(cmd: list[str], cwd: str | None = None, timeout_ms: int | None = None) -> dict[str, Any]:  # noqa: A003
+        return exec_handler({"cmd": cmd, "cwd": cwd, "timeout_ms": timeout_ms})
 
-        return {
-            "exec": (
-                "Execute a shell command and return exit, stdout, stderr.",
-                EXEC_PARAMETERS_SCHEMA,
-                handler,
-            ),
-        }
+    return mcp

@@ -36,7 +36,9 @@ def read_line_json(r, timeout: float) -> dict | None:
 
 
 def wait_for(
-    stdout, predicate: Callable[[dict], bool], total_timeout: float,
+    stdout,
+    predicate: Callable[[dict], bool],
+    total_timeout: float,
 ) -> dict | None:
     deadline = time.time() + total_timeout
     while time.time() < deadline:
@@ -108,7 +110,12 @@ def call_tool(
 
 
 def exec_code(
-    stdin, stdout, code: str, *, timeout: float = 60.0, msg_id: int = 2,
+    stdin,
+    stdout,
+    code: str,
+    *,
+    timeout: float = 60.0,
+    msg_id: int = 2,
 ) -> dict:
     return call_tool(
         stdin,

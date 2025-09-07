@@ -71,17 +71,13 @@ class AppConfig:
     @staticmethod
     def resolve(known) -> AppConfig:
         # Precedence: CLI args > env vars > defaults. No git config.
-        model_str = (
-            known.model or os.environ.get("GIT_COMMIT_AI_MODEL") or DEFAULT_MODEL
-        )
+        model_str = known.model or os.environ.get("GIT_COMMIT_AI_MODEL") or DEFAULT_MODEL
 
         if getattr(known, "timeout_secs", None) is not None:
             raw_timeout_secs = known.timeout_secs
         else:
             raw_timeout_secs = int(DEFAULT_AI_TIMEOUT.total_seconds())
-            if (
-                env_timeout := os.environ.get("GIT_COMMIT_AI_TIMEOUT_SECS")
-            ) is not None:
+            if (env_timeout := os.environ.get("GIT_COMMIT_AI_TIMEOUT_SECS")) is not None:
                 with contextlib.suppress(ValueError):
                     raw_timeout_secs = int(env_timeout)
 
@@ -134,7 +130,11 @@ def _cap_append(
 
 
 def _build_ai_context(repo: Repo, include_all: bool) -> str:
-    """Assemble a compact context block for the AI (status, recent commits with diffstats, staged per-file diffs up to cap)."""
+    """Assemble a compact context block for the AI.
+
+    Includes: status, recent commits with diffstats, and staged per-file
+    diffs up to the configured cap.
+    """
     parts: list[str] = []
 
     # 1) Raw git outputs so the agent can parse natively
@@ -152,16 +152,10 @@ def _build_ai_context(repo: Repo, include_all: bool) -> str:
 
     # 1b) Name-status for what will be committed
     try:
-        ns_cmd = (
-            "git diff HEAD --name-status"
-            if include_all
-            else "git diff --cached --name-status"
-        )
+        ns_cmd = "git diff HEAD --name-status" if include_all else "git diff --cached --name-status"
         parts.append(f"$ {ns_cmd}\n")
         ns_out = (
-            repo.git.diff("HEAD", "--name-status")
-            if include_all
-            else repo.git.diff("--cached", "--name-status")
+            repo.git.diff("HEAD", "--name-status") if include_all else repo.git.diff("--cached", "--name-status")
         ) + "\n"
         _cap_append(
             parts,
@@ -197,16 +191,10 @@ def _build_ai_context(repo: Repo, include_all: bool) -> str:
 
     # 3) The diff that will be committed (unified=0) so the agent can parse hunks directly
     try:
-        diff_cmd = (
-            "git diff HEAD --unified=0"
-            if include_all
-            else "git diff --cached --unified=0"
-        )
+        diff_cmd = "git diff HEAD --unified=0" if include_all else "git diff --cached --unified=0"
         parts.append(f"$ {diff_cmd}\n")
         diff_out = (
-            repo.git.diff("HEAD", "--unified=0")
-            if include_all
-            else repo.git.diff("--cached", "--unified=0")
+            repo.git.diff("HEAD", "--unified=0") if include_all else repo.git.diff("--cached", "--unified=0")
         ) + "\n"
         _cap_append(
             parts,
@@ -246,7 +234,8 @@ Context:
 {context}
 """
     else:
-        prompt = f"""Write a concise, imperative-mood Git commit message. Output ONLY the commit message between <message> and </message> tags.
+        prompt = f"""Write a concise, imperative-mood Git commit message.
+Output ONLY the commit message between <message> and </message> tags.
 No explanations, no markdown, no signatures. Do NOT include 'Generated with' or 'Co-Authored-By' lines.
 
 Context:
@@ -423,9 +412,7 @@ def build_commit_template(repo: Repo, passthru: list[str]) -> str:
             template_text += f"#\t{status_text.ljust(12)} {filename}\n"
 
     # Add untracked files if any
-    untracked = [
-        line[3:] for line in status_output.splitlines() if line.startswith("?? ")
-    ]
+    untracked = [line[3:] for line in status_output.splitlines() if line.startswith("?? ")]
     if untracked:
         # Blank commented spacer before untracked section (readability)
         template_text += "#\n"
@@ -758,11 +745,7 @@ async def _get_editor():
     )
     stdout, stderr = await proc.communicate()
     result_stdout = stdout.decode() if stdout else ""
-    return (
-        result_stdout.strip()
-        if proc.returncode == 0
-        else os.environ.get("EDITOR", "vi")
-    )
+    return result_stdout.strip() if proc.returncode == 0 else os.environ.get("EDITOR", "vi")
 
 
 async def async_main():
@@ -787,7 +770,8 @@ async def async_main():
     # Disallow -m/--message; the tool generates the commit message
     if any(a in {"-m", "--message"} or a.startswith("--message=") for a in passthru):
         print(
-            "Error: -m/--message is not supported; this tool supplies the commit message. Remove -m/--message and try again.",
+            "Error: -m/--message is not supported; this tool supplies the commit message. "
+            "Remove -m/--message and try again.",
             file=sys.stderr,
         )
         sys.exit(2)
@@ -906,7 +890,10 @@ async def async_main():
         cached = False
 
     elapsed_s = time.monotonic() - start_monotonic_s
-    stats_comment = f"\n# ai-draft{'(cached)' if cached else ''}: prompt: {len(diff)} chars, response: {len(msg)} chars, elapsed: {elapsed_s:.2f}s\n"
+    stats_comment = (
+        f"\n# ai-draft{'(cached)' if cached else ''}: prompt: {len(diff)} chars, "
+        f"response: {len(msg)} chars, elapsed: {elapsed_s:.2f}s\n"
+    )
 
     # Fast-path: commit immediately with AI message when requested
     if args.accept_ai:
@@ -914,7 +901,8 @@ async def async_main():
         if not msg.strip():
             print("Aborting commit due to empty AI commit message.", file=sys.stderr)
             sys.exit(1)
-        # Do not forward -a/--all; we've already staged via `git add -u`. Also drop any existing -m/--message to avoid conflicts.
+        # Do not forward -a/--all; we've already staged via `git add -u`.
+        # Also drop any existing -m/--message to avoid conflicts.
         commit_passthru = [arg for arg in passthru if arg not in ("-a", "--all")]
         commit_proc = await asyncio.create_subprocess_exec(
             "git",
@@ -1045,10 +1033,7 @@ class ClaudeAI:
         # Truncate prompt if too long and warn (stderr) in debug mode only
         max_chars = int(os.environ.get("GIT_AI_MAX_PROMPT", "20000"))
         if len(prompt) >= max_chars:
-            prompt = (
-                prompt[: max(0, max_chars - 100)]
-                + "\n\n[TRUNCATED - prompt was too long]"
-            )
+            prompt = prompt[: max(0, max_chars - 100)] + "\n\n[TRUNCATED - prompt was too long]"
             if self.debug:
                 print(
                     f"# Warning: Prompt truncated to {max_chars} chars",
@@ -1085,11 +1070,7 @@ class ClaudeAI:
         except TimeoutError:
             proc.terminate()
             await proc.wait()
-            secs_str = (
-                "infinite"
-                if self.timeout is None
-                else str(int(self.timeout.total_seconds()))
-            )
+            secs_str = "infinite" if self.timeout is None else str(int(self.timeout.total_seconds()))
             print(
                 f"# Error: Claude command timed out after {secs_str} seconds",
                 file=sys.stderr,
@@ -1152,7 +1133,8 @@ class CodexAI:
             prompt = (
                 "You are an expert engineer writing a Git commit message for the current changes.\n"
                 "Requirements:\n"
-                "- Review the provided repository context. If more context is needed, you may query the repository as needed.\n"
+                "- Review the provided repository context. If more context is needed, "
+                "you may query the repository as needed.\n"
                 "- Write a concise, imperative-mood subject; if helpful, add a short bullet list body.\n"
                 "- Output ONLY the message between <message> and </message> tags. No extra text.\n\n"
                 f"Context:\n{context}\n"
@@ -1193,11 +1175,7 @@ class CodexAI:
         except TimeoutError:
             proc.terminate()
             await proc.wait()
-            secs_str = (
-                "infinite"
-                if self.timeout is None
-                else str(int(self.timeout.total_seconds()))
-            )
+            secs_str = "infinite" if self.timeout is None else str(int(self.timeout.total_seconds()))
             print(
                 f"# Error: codex exec timed out after {secs_str} seconds",
                 file=sys.stderr,

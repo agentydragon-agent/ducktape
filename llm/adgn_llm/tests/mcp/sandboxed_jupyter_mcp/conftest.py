@@ -14,6 +14,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
+from policy_fixture import write_policy as _write_policy
 
 
 # Bootstrap a dedicated control venv for Jupyter server + MCP bridge, then require tools
@@ -200,16 +201,13 @@ def pytest_runtest_makereport(item, call):
             lines = res.stdout.strip().splitlines()
             if lines:
                 print(
-                    "\n=== unified sandbox denies (tail, last 7m) ===\n"
-                    + "\n".join(lines[-200:]),
+                    "\n=== unified sandbox denies (tail, last 7m) ===\n" + "\n".join(lines[-200:]),
                 )
         except Exception:
             pass
 
 
 # Policy writer fixture that delegates to the shared policy factory module
-from policy_fixture import write_policy as _write_policy
-
 
 @pytest.fixture
 def policy_factory():
@@ -244,8 +242,6 @@ def _artifacts_dir_for_request(request) -> Path:
 
 @pytest.fixture
 def provision_ws_with_policy(request):
-    from policy_fixture import write_policy as _write_policy
-
     ws, run_root = provision_ws(request)
     # Prefer param over marker to allow indirect parametrize
     if hasattr(request, "param"):
@@ -320,19 +316,13 @@ def collect_mcp_logs_fn():
             for path in sorted(glob.glob("/tmp/sjmcp-*/mcp_stdout.log"))[-3:]:
                 try:
                     with open(path, "rb") as fh:
-                        out += (
-                            f"\n== {path} ==\n"
-                            + fh.read().decode("utf-8", "ignore")[-4000:]
-                        )
+                        out += f"\n== {path} ==\n" + fh.read().decode("utf-8", "ignore")[-4000:]
                 except OSError:
                     pass
             for path in sorted(glob.glob("/tmp/sjmcp-*/mcp_stderr.log"))[-3:]:
                 try:
                     with open(path, "rb") as fh:
-                        err += (
-                            f"\n== {path} ==\n"
-                            + fh.read().decode("utf-8", "ignore")[-4000:]
-                        )
+                        err += f"\n== {path} ==\n" + fh.read().decode("utf-8", "ignore")[-4000:]
                 except OSError:
                     pass
         except OSError:
@@ -345,7 +335,10 @@ def collect_mcp_logs_fn():
 @pytest.fixture
 def mcp_stdio_protocol(send_line_json_fn, read_line_json_fn):
     def _read_until(
-        stdout, match_id: int, total_timeout: float, log_in=None,
+        stdout,
+        match_id: int,
+        total_timeout: float,
+        log_in=None,
     ) -> dict | None:
         deadline = time.time() + total_timeout
         while time.time() < deadline:
@@ -371,12 +364,8 @@ def mcp_stdio_protocol(send_line_json_fn, read_line_json_fn):
         timeout: float = 30.0,
     ):
         artifacts = os.environ.get("SJ_ARTIFACTS_DIR")
-        log_out = (
-            open(Path(artifacts) / "mcp_protocol_out.log", "ab") if artifacts else None
-        )
-        log_in = (
-            open(Path(artifacts) / "mcp_protocol_in.log", "ab") if artifacts else None
-        )
+        log_out = open(Path(artifacts) / "mcp_protocol_out.log", "ab") if artifacts else None
+        log_in = open(Path(artifacts) / "mcp_protocol_in.log", "ab") if artifacts else None
         try:
             init = {
                 "jsonrpc": "2.0",
@@ -393,9 +382,7 @@ def mcp_stdio_protocol(send_line_json_fn, read_line_json_fn):
                 log_out.flush()
             send_line_json_fn(stdin, init)
             resp = _read_until(stdout, 1, 20.0, log_in=log_in)
-            assert resp and resp.get("id") == 1 and "result" in resp, (
-                f"initialize failed: {resp}"
-            )
+            assert resp and resp.get("id") == 1 and "result" in resp, f"initialize failed: {resp}"
             notif = {"jsonrpc": "2.0", "method": "notifications/initialized"}
             if log_out is not None:
                 log_out.write((json.dumps(notif) + "\n").encode("utf-8"))
@@ -413,9 +400,7 @@ def mcp_stdio_protocol(send_line_json_fn, read_line_json_fn):
                 log_out.flush()
             send_line_json_fn(stdin, call)
             resp2 = _read_until(stdout, 2, timeout, log_in=log_in)
-            assert resp2 and resp2.get("id") == 2 and "result" in resp2, (
-                f"tool call failed: {resp2}"
-            )
+            assert resp2 and resp2.get("id") == 2 and "result" in resp2, f"tool call failed: {resp2}"
             return resp2["result"]
         finally:
             try:
@@ -479,7 +464,8 @@ def mcp_call_tool(send_line_json_fn, read_line_json_fn, collect_mcp_logs_fn):
                 f"initialize failed: {resp}\nstdout tail:\n{stdout_tail[-2000:]}\nstderr tail:\n{stderr_tail[-2000:]}\ntee stdout:\n{out}\ntee stderr:\n{err}",
             )
         send_line_json_fn(
-            proc.stdin, {"jsonrpc": "2.0", "method": "notifications/initialized"},
+            proc.stdin,
+            {"jsonrpc": "2.0", "method": "notifications/initialized"},
         )
         time.sleep(0.3)
         send_line_json_fn(
@@ -653,19 +639,11 @@ def launch_jupyter_server(request):
                 if not ready:
                     # Read last lines of Jupyter logs for diagnostics
                     try:
-                        j_out = (
-                            (ws / "jupyter_server.out")
-                            .read_text(errors="ignore")
-                            .splitlines()[-80:]
-                        )
+                        j_out = (ws / "jupyter_server.out").read_text(errors="ignore").splitlines()[-80:]
                     except Exception:
                         j_out = []
                     try:
-                        j_err = (
-                            (ws / "jupyter_server.err")
-                            .read_text(errors="ignore")
-                            .splitlines()[-80:]
-                        )
+                        j_err = (ws / "jupyter_server.err").read_text(errors="ignore").splitlines()[-80:]
                     except Exception:
                         j_err = []
                     raise RuntimeError(

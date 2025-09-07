@@ -9,12 +9,7 @@ from pathlib import Path
 
 
 def _runtime_dir() -> Path:
-    rd = (
-        os.environ.get("JUPYTER_RUNTIME_DIR")
-        or os.environ.get("TMPDIR")
-        or os.environ.get("HOME")
-        or "."
-    )
+    rd = os.environ.get("JUPYTER_RUNTIME_DIR") or os.environ.get("TMPDIR") or os.environ.get("HOME") or "."
     p = Path(rd)
     try:
         p.mkdir(parents=True, exist_ok=True)
@@ -68,12 +63,12 @@ def main() -> int:
             except Exception as e:
                 _log(f"shim: import {mod} FAILED: {e}\n" + traceback.format_exc())
         # Run ipykernel_launcher as if invoked with -m
-        import runpy
+        import runpy as _runpy  # noqa: PLC0415
 
         _log("shim: launching ipykernel_launcher")
         # Rewrite argv to mimic -m ipykernel_launcher execution
         sys.argv = [sys.executable, "-m", "ipykernel_launcher", *sys.argv[1:]]
-        runpy.run_module("ipykernel_launcher", run_name="__main__")
+        _runpy.run_module("ipykernel_launcher", run_name="__main__")
         return 0
     except SystemExit as e:
         _log(f"shim: SystemExit code={getattr(e, 'code', None)}")

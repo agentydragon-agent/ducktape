@@ -71,7 +71,11 @@ def test_sandboxer_yes_hello_world_narrow(tmp_path: Path):
 
     def _run_and_print(argv: list[str]) -> subprocess.CompletedProcess:
         cp = subprocess.run(
-            argv, check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            argv,
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
         )
         print("CMD:", " ".join(argv))
         print("STDOUT:\n" + cp.stdout)

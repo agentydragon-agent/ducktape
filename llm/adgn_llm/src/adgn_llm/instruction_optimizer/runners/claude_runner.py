@@ -179,9 +179,7 @@ class ClaudeRunner(AgentRunner):
                         trajectory.append(
                             ToolCall(
                                 tool_name=message.name,
-                                arguments=message.input
-                                if hasattr(message, "input")
-                                else {},
+                                arguments=message.input if hasattr(message, "input") else {},
                                 original=message,
                             ),
                         )
@@ -191,9 +189,7 @@ class ClaudeRunner(AgentRunner):
                         trajectory.append(
                             ToolResult(
                                 tool_name="",  # Claude doesn't provide tool name in result
-                                result=message.content
-                                if hasattr(message, "content")
-                                else {},
+                                result=message.content if hasattr(message, "content") else {},
                                 original=message,
                             ),
                         )
@@ -202,17 +198,9 @@ class ClaudeRunner(AgentRunner):
                         # Final result message with cost and status
                         if message.is_error:
                             success = False
-                            error_message = (
-                                str(message.error)
-                                if hasattr(message, "error")
-                                else "Task failed"
-                            )
+                            error_message = str(message.error) if hasattr(message, "error") else "Task failed"
 
-                        total_cost = (
-                            message.total_cost_usd
-                            if hasattr(message, "total_cost_usd")
-                            else 0.0
-                        )
+                        total_cost = message.total_cost_usd if hasattr(message, "total_cost_usd") else 0.0
 
                         # ResultMessage indicates completion
                         break
