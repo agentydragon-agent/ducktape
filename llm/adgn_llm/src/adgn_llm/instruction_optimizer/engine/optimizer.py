@@ -326,8 +326,8 @@ async def optimize_prompts(
             # Get grading configuration from task
             _, grading_config = task.resolve_config(task_types)
 
-            # Get runner environment if available
-            runner_env = runner.get_environment() if hasattr(runner, "get_environment") else None
+            # Get runner environment (all AgentRunner implementations must provide this)
+            runner_env = runner.get_environment()
 
             try:
                 grade = await grade_rollout(

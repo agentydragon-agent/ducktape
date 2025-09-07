@@ -155,16 +155,13 @@ class ClaudeRunner(AgentRunner):
                     if isinstance(message, ClaudeAssistantMessage):
                         # Extract text from assistant message
                         text = ""
-                        if hasattr(message, "content"):
-                            if isinstance(message.content, str):
-                                text = message.content
-                            elif isinstance(message.content, list):
-                                # Extract text from content blocks
-                                text_parts = []
-                                for block in message.content:
-                                    if hasattr(block, "text"):
-                                        text_parts.append(block.text)
-                                text = "\n".join(text_parts)
+                        content = message.content
+                        if isinstance(content, str):
+                            text = content
+                        elif isinstance(content, list):
+                            # Extract text from content blocks (expect correct types)
+                            text_parts = [block.text for block in content]
+                            text = "\n".join(text_parts)
 
                         if text:
                             trajectory.append(
@@ -179,7 +176,7 @@ class ClaudeRunner(AgentRunner):
                         trajectory.append(
                             ToolCall(
                                 tool_name=message.name,
-                                arguments=message.input if hasattr(message, "input") else {},
+                                arguments=message.input,
                                 original=message,
                             ),
                         )
@@ -189,7 +186,7 @@ class ClaudeRunner(AgentRunner):
                         trajectory.append(
                             ToolResult(
                                 tool_name="",  # Claude doesn't provide tool name in result
-                                result=message.content if hasattr(message, "content") else {},
+                                result=message.content,
                                 original=message,
                             ),
                         )
@@ -198,9 +195,9 @@ class ClaudeRunner(AgentRunner):
                         # Final result message with cost and status
                         if message.is_error:
                             success = False
-                            error_message = str(message.error) if hasattr(message, "error") else "Task failed"
+                            error_message = str(message.error)
 
-                        total_cost = message.total_cost_usd if hasattr(message, "total_cost_usd") else 0.0
+                        total_cost = message.total_cost_usd
 
                         # ResultMessage indicates completion
                         break

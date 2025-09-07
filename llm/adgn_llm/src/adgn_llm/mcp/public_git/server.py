@@ -34,8 +34,7 @@ from mcp.server.session import ServerSession
 from .._shared.container_session import (
     ContainerSessionState,
     make_container_lifespan,
-    register_exec_tool,
-    register_container_resources,
+    register_container,
     NetworkMode,
 )
 from .tools.gitea_api import trigger_sync
@@ -56,7 +55,6 @@ class PublicGitState:
     use_timeout_wrapper: bool
     gitea_base_url: str | None = None
     gitea_token: str | None = None
-    gitea_sync_before_clone: bool = False
 
 
 # ---- Defaults / config
@@ -73,7 +71,6 @@ def _public_git_lifespan_factory(
     workspace_root: str = DEFAULT_WORKSPACE,
     gitea_base_url: str | None = None,
     gitea_token: str | None = None,
-    gitea_sync_before_clone: bool = True,
 ):
     async def lifespan(_server: FastMCP):  # yields PublicGitState
         # Build per-session state
@@ -88,7 +85,6 @@ def _public_git_lifespan_factory(
             use_timeout_wrapper=True,
             gitea_base_url=gitea_base_url,
             gitea_token=gitea_token,
-            gitea_sync_before_clone=gitea_sync_before_clone,
         )
         _ensure_dir(st.store_host)
         # Compute and publish server description using host-side Docker image history (no container access)
@@ -97,7 +93,12 @@ def _public_git_lifespan_factory(
         history_lines: list[str] = []
         hist = _init_docker().api.history(img_id)  # type: ignore[attr-defined]
         for entry in hist or []:
-            created_by = (entry.get("CreatedBy") or "").lstrip("/bin/sh -c ").removeprefix("#(nop) ").strip()
+            created_by = (
+                (entry.get("CreatedBy") or "")
+                .lstrip("/bin/sh -c ")
+                .removeprefix("#(nop) ")
+                .strip()
+            )
             if created_by:
                 history_lines.append(f"  - {created_by}")
         body = [
@@ -173,7 +174,9 @@ def _register_obtain_code_tool(mcp: FastMCP) -> None:
             owner, repo = "", ""
         if s.gitea_base_url and s.gitea_token and owner and repo:
             sync_attempted = True
-            sync_ok, sync_error = trigger_sync(s.gitea_base_url, s.gitea_token, owner, repo)
+            sync_ok, sync_error = trigger_sync(
+                s.gitea_base_url, s.gitea_token, owner, repo
+            )
         _ensure_bare_and_fetch(s.store_host, key)
         dest = f"{s.working_dir}/{key.pretty}"
         clone_cmd = [
@@ -186,15 +189,25 @@ def _register_obtain_code_tool(mcp: FastMCP) -> None:
                 + (
                     f"git -C {shlex.quote(dest)} checkout --detach {shlex.quote(str(ref))} && "
                     if ref
-                    else (f"git -C {shlex.quote(dest)} checkout {shlex.quote(str(branch))} && " if branch else "")
+                    else (
+                        f"git -C {shlex.quote(dest)} checkout {shlex.quote(str(branch))} && "
+                        if branch
+                        else ""
+                    )
                 )
                 + f"git -C {shlex.quote(dest)} rev-parse HEAD"
             ),
         ]
         res = shared_container_exec(container=s.container, cmd=clone_cmd)
         if (res.get("exit_code")) != 0:
-            raise RuntimeError(f"clone failed: {res.get('stderr') or res.get('stdout')}")
-        head_sha = (res.get("stdout") or "").strip().splitlines()[-1] if res.get("stdout") else ""
+            raise RuntimeError(
+                f"clone failed: {res.get('stderr') or res.get('stdout')}"
+            )
+        head_sha = (
+            (res.get("stdout") or "").strip().splitlines()[-1]
+            if res.get("stdout")
+            else ""
+        )
         return {
             "path": dest,
             "head_sha": head_sha,
@@ -214,7 +227,6 @@ def make_public_git_mcp(
     working_dir: str = DEFAULT_WORKSPACE,
     gitea_base_url: str | None = None,
     gitea_token: str | None = None,
-    gitea_sync_before_clone: bool = True,
     network_mode: NetworkMode = NetworkMode.NONE,
     volumes: dict[str, dict[str, str]] | list[str] | None = None,
 ) -> FastMCP:
@@ -225,7 +237,7 @@ def make_public_git_mcp(
       - image: Docker image to use for the per-session container
     Optional:
       - mount_point (default "/mnt/git-bare"), working_dir (default "/workspace"),
-        gitea_base_url, gitea_token, gitea_sync_before_clone, network_mode (default NONE), volumes (Docker volumes spec)
+        gitea_base_url, gitea_token, network_mode (default NONE), volumes (Docker volumes spec)
     """
     # Use shared container lifespan (host-side docker history description, per-session container)
     store_host_path = Path(store_host).resolve()
@@ -260,15 +272,20 @@ def make_public_git_mcp(
         instructions="Public Git (Gitea) MCP. See resource container.info for per-session details.",
         lifespan=lifespan,
     )
-    # Register a standard container.info resource
-    register_container_resources(mcp)
+    # Register standard container.info resource and exec tool
+    register_container(mcp, tool_name="exec")
     # Compose a host-side description with image history and in-container tooling notes
     img = _init_docker().images.get(image)
     img_id, tags = img.id, img.tags
     hist = _init_docker().api.history(img_id)  # type: ignore[attr-defined]
     history_lines = []
     for entry in hist or []:
-        created_by = (entry.get("CreatedBy") or "").lstrip("/bin/sh -c ").removeprefix("#(nop) ").strip()
+        created_by = (
+            (entry.get("CreatedBy") or "")
+            .lstrip("/bin/sh -c ")
+            .removeprefix("#(nop) ")
+            .strip()
+        )
         if created_by:
             history_lines.append(f"  - {created_by}")
 
@@ -279,7 +296,9 @@ def make_public_git_mcp(
             bind = (spec or {}).get("bind") if isinstance(spec, dict) else None
             mode = (spec or {}).get("mode") if isinstance(spec, dict) else None
             if bind:
-                vol_lines.append(f"  - {host} → {bind}{' (' + mode + ')' if mode else ''}")
+                vol_lines.append(
+                    f"  - {host} → {bind}{' (' + mode + ')' if mode else ''}"
+                )
 
     body = [
         "Public Git (Gitea-backed) MCP server.",
@@ -299,9 +318,7 @@ def make_public_git_mcp(
         "    → Ensures/updates pull mirror in Gitea and clones under $WORKING_DIR/<host>/<path> using --reference from $MOUNT_POINT",
     ]
     mcp.server_info.description = "\n".join(body)  # type: ignore[attr-defined]
-    # Use shared exec; register session_info and obtain_code locally
-    register_exec_tool(mcp, tool_name="exec")
-    # session_info not registered: description above includes static container details and usage
+    # Use shared exec; register obtain_code locally
     _register_obtain_code_tool(mcp)
     return mcp
 
@@ -350,7 +367,9 @@ def _ensure_bare_and_fetch(store: Path, key: UrlKey) -> Path:
     # Gitea layout only: repo must exist under <store>/<owner>/<repo>.git
     bare_dir = store / key.storage_key_gitea
     if not bare_dir.exists():
-        raise FileNotFoundError(f"Mirror not found at {bare_dir}. Create a pull-mirror in Gitea and retry.")
+        raise FileNotFoundError(
+            f"Mirror not found at {bare_dir}. Create a pull-mirror in Gitea and retry."
+        )
     return bare_dir
 
 
@@ -362,7 +381,9 @@ def _init_docker() -> docker.DockerClient:
     return docker.from_env()
 
 
-def _start_container(image: str, volumes: dict[str, dict[str, str]], workspace: str, user: str | None) -> Container:
+def _start_container(
+    image: str, volumes: dict[str, dict[str, str]], workspace: str, user: str | None
+) -> Container:
     client = _init_docker()
     container = client.containers.run(
         image=image,
@@ -376,8 +397,6 @@ def _start_container(image: str, volumes: dict[str, dict[str, str]], workspace: 
         auto_remove=True,
     )
     return container
-
-
 
 
 def _container_exec(
