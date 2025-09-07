@@ -16,7 +16,7 @@ from pathlib import Path
 
 import openai
 import typer
-from .openai_utils import ReasoningEffort, ReasoningEffort as ReasoningEffortStr, ReasoningSummary
+from .openai_utils import ReasoningEffortEnum, ReasoningEffortEnum as ReasoningEffortStr, ReasoningSummary
 
 from .mcp.editor_server import make_editor_mcp
 from .mcp.inproc import fastmcp_inproc_client
