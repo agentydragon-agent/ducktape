@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from importlib.resources import files
 from pathlib import Path
 
+from openai import AsyncOpenAI
 import structlog
 import tiktoken
 
@@ -914,6 +915,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "lint-issue":
         # Late import via importlib to avoid circular dependency while keeping lints happy
         mod = importlib.import_module("adgn_llm.properties.lint_issue")
+        client = AsyncOpenAI()
         return mod.run_specimen_lint_issue(
             args.specimen,
             args.issue_id,
@@ -921,6 +923,7 @@ def main(argv: list[str] | None = None) -> int:
             dry_run=getattr(args, "dry_run", False),
             gitconfig=getattr(args, "gitconfig", None),
             occurrence_index=getattr(args, "occurrence"),
+            client=client,
         )
 
     if args.command == "specimen-check":

@@ -37,7 +37,7 @@ async def _execute(
     model: str,
     reasoning_effort: ReasoningEffort | None,
     reasoning_summary: ReasoningSummary | None,
-    client: openai.AsyncOpenAI | None = None,
+    client: openai.AsyncOpenAI,
 ) -> int:
     # Validate input path
     target_path = file_path
@@ -60,7 +60,7 @@ async def _execute(
                 "Operate on the provided file only. Prefer precise replace_text edits.\n"
                 "Finish with done(success, report)."
             ),
-            client=client or openai.AsyncOpenAI(),
+            client=client,
             reasoning_effort=reasoning_effort,
             reasoning_summary=reasoning_summary,
         ) as agent,
@@ -86,6 +86,7 @@ def _run_cli(
     reasoning_effort: ReasoningEffort | None,
     reasoning_summary: ReasoningSummary | None,
 ) -> None:
+    client = openai.AsyncOpenAI()
     code = asyncio.run(
         _execute(
             file_path=file_path,
@@ -93,7 +94,7 @@ def _run_cli(
             model=model,
             reasoning_effort=reasoning_effort,
             reasoning_summary=reasoning_summary,
-            client=None,
+            client=client,
         )
     )
     raise typer.Exit(code)

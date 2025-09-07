@@ -12,7 +12,7 @@ from importlib.resources import files
 from pathlib import Path
 from typing import Any
 
-import openai
+from openai import AsyncOpenAI
 
 from adgn_llm.mcp.docker_exec.server import make_container_exec_mcp
 
@@ -113,8 +113,12 @@ def _build_prompt(issue: Any, property_md_files: list[Path], occurrence: Any | N
     return "\n".join(lines).strip()
 
 
-async def _run_agent(prompt: str, slots: dict[str, ServerSlot], model: str) -> str:
-    client = openai.AsyncOpenAI()
+async def _run_agent(
+    prompt: str,
+    slots: dict[str, ServerSlot],
+    model: str,
+    client: AsyncOpenAI,
+) -> str:
     async with McpManager(slots) as mcp:
         agent = await MiniCodex.create(
             model=model,
@@ -173,6 +177,8 @@ def run_specimen_lint_issue(
     dry_run: bool = False,
     gitconfig: str | None = None,
     occurrence_index: int,
+    *,
+    client: AsyncOpenAI,
 ) -> int:
     sp, root, issue = _load_single_issue(specimen, issue_id, gitconfig)
 
@@ -230,7 +236,7 @@ def run_specimen_lint_issue(
         slots = {"docker": ServerSlot(name="docker", open_fn=open_fn)}
         props = _find_property_files([str(p) for p in issue.properties])
         prompt = _build_prompt(issue, props, occurrence=occ)
-        text = asyncio.run(_run_agent(prompt, slots, model))
+        text = asyncio.run(_run_agent(prompt, slots, model, client))
         print(text)
         # Heuristic: final line contains PASS → success
         tail = (text.splitlines() or [""])[-1].strip().upper()

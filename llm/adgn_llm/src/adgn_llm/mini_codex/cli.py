@@ -363,7 +363,7 @@ async def main_async() -> None:
         if isinstance(servers, dict):
             slots.update(McpManager.slots_from_specs(servers))
 
-    client = openai.OpenAI()
+    client = openai.AsyncOpenAI()
 
     async with McpManager(slots) as mcp, await MiniCodex.create(
         model=DEFAULT_MODEL,

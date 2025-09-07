@@ -2,6 +2,8 @@ import json
 import os
 import time
 import uuid
+from pathlib import Path
+import sys
 
 import anyio
 import docker
@@ -14,6 +16,17 @@ from mcp.client.stdio import stdio_client
 
 def _docker_client():
     return docker.from_env()
+
+
+def _server_env(extra: dict[str, str] | None = None) -> dict[str, str]:
+    pkg_root = Path(__file__).resolve().parents[2]
+    env = {**os.environ, **(extra or {})}
+    candidates = [
+        str(pkg_root / "src"),
+        env.get("PYTHONPATH", ""),
+    ]
+    env["PYTHONPATH"] = os.pathsep.join([c for c in candidates if c])
+    return env
 
 
 def _start_container(image: str = "alpine:3.20"):
@@ -81,41 +94,25 @@ def _extract_payload(resp):
 def test_hello_world():
     container = _start_container()
     try:
-        # Prepare server env (assumes DOCKER_HOST is set appropriately in the environment)
-        env = {
-            "DOCKER_CONTAINER": container.id,
-            # Use wrapper only if available in container
-            "USE_CONTAINER_TIMEOUT_WRAPPER": "1" if _container_has_timeout(container) else "0",
-        }
-        server_env = {**os.environ, **env}
+        server_env = _server_env(
+            {
+                "DOCKER_CONTAINER": container.id,
+                "USE_CONTAINER_TIMEOUT_WRAPPER": "1" if _container_has_timeout(container) else "0",
+            }
+        )
 
-        async def run():
-            params = StdioServerParameters(
-                command="python3",
-                args=["-m", "adgn_llm.mcp.docker_exec.server"],
-                env=server_env,
-            )
-            async with stdio_client(params) as (read, write):
-                async with ClientSession(read, write) as session:
-                    await session.initialize()
-                    tools = await session.list_tools()
-                    names = {t.name for t in tools.tools}
-                    assert "docker_exec" in names
+        async def run_session():
+            async with _session(server_env) as session:
+                tools = await session.list_tools()
+                names = {t.name for t in tools.tools}
+                assert "docker_exec" in names
 
-                    # Run echo hello
-                    resp = await session.call_tool(
-                        name="docker_exec",
-                        arguments={
-                            "cmd": ["/bin/echo", "hello"],
-                            "timeout_secs": 10,
-                        },
-                    )
-                    payload = _extract_payload(resp)
-                    assert payload["exit_code"] == 0
-                    assert payload["timed_out"] is False
-                    assert "hello" in (payload["stdout"] or "")
+                payload = await _call_exec(session, ["/bin/echo", "hello"], timeout_secs=10)
+                assert payload["exit_code"] == 0
+                assert payload["timed_out"] is False
+                assert "hello" in (payload["stdout"] or "")
 
-        anyio.run(run)
+        anyio.run(run_session)
     finally:
         try:
             container.kill()
@@ -130,33 +127,24 @@ def test_hello_world():
 def test_stderr_and_exit_code():
     container = _start_container()
     try:
-        env = {
-            "DOCKER_CONTAINER": container.id,
-            "USE_CONTAINER_TIMEOUT_WRAPPER": "0",  # not needed here
-        }
-        server_env = {**os.environ, **env}
+        server_env = _server_env(
+            {
+                "DOCKER_CONTAINER": container.id,
+                "USE_CONTAINER_TIMEOUT_WRAPPER": "0",  # not needed here
+            }
+        )
 
-        async def run():
-            params = StdioServerParameters(
-                command="python3",
-                args=["-m", "adgn_llm.mcp.docker_exec.server"],
-                env=server_env,
-            )
-            async with stdio_client(params) as (read, write):
-                async with ClientSession(read, write) as session:
-                    await session.initialize()
-                    resp = await session.call_tool(
-                        name="docker_exec",
-                        arguments={
-                            "cmd": ["sh", "-lc", "echo err 1>&2; exit 3"],
-                            "timeout_secs": 10,
-                        },
-                    )
-                    payload = _extract_payload(resp)
-                    assert payload["exit_code"] == 3
-                    assert "err" in (payload["stderr"] or "")
+        async def run_session():
+            async with _session(server_env) as session:
+                payload = await _call_exec(
+                    session,
+                    cmd=["sh", "-lc", "echo err 1>&2; exit 3"],
+                    timeout_secs=10,
+                )
+                assert payload["exit_code"] == 3
+                assert "err" in (payload["stderr"] or "")
 
-        anyio.run(run)
+        anyio.run(run_session)
     finally:
         try:
             container.kill()
@@ -172,34 +160,21 @@ def test_timeout_flag():
     container = _start_container()
     try:
         has_timeout = _container_has_timeout(container)
-        env = {
-            "DOCKER_CONTAINER": container.id,
-            "USE_CONTAINER_TIMEOUT_WRAPPER": "1" if has_timeout else "0",
-        }
-        server_env = {**os.environ, **env}
+        server_env = _server_env(
+            {
+                "DOCKER_CONTAINER": container.id,
+                "USE_CONTAINER_TIMEOUT_WRAPPER": "1" if has_timeout else "0",
+            }
+        )
 
-        async def run():
-            params = StdioServerParameters(
-                command="python3",
-                args=["-m", "adgn_llm.mcp.docker_exec.server"],
-                env=server_env,
-            )
-            async with stdio_client(params) as (read, write):
-                async with ClientSession(read, write) as session:
-                    await session.initialize()
-                    resp = await session.call_tool(
-                        name="docker_exec",
-                        arguments={
-                            "cmd": ["sh", "-lc", "sleep 5"],
-                            "timeout_secs": 0.5,
-                        },
-                    )
-                    payload = _extract_payload(resp)
-                    assert payload["timed_out"] is True
-                    # exit_code may be 124 with wrapper, or None without; allow common values
-                    assert payload.get("exit_code") in (None, 124, 143, 137, 1, 255)
+        async def run_session():
+            async with _session(server_env) as session:
+                payload = await _call_exec(session, ["sh", "-lc", "sleep 5"], timeout_secs=0.5)
+                assert payload["timed_out"] is True
+                # exit_code may be 124 with wrapper, or None without; allow common values
+                assert payload.get("exit_code") in (None, 124, 143, 137, 1, 255)
 
-        anyio.run(run)
+        anyio.run(run_session)
     finally:
         try:
             container.kill()

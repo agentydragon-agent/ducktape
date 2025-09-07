@@ -507,12 +507,15 @@ class MiniCodex:
         reasoning_effort: ReasoningEffort | None = None,
         reasoning_summary: ReasoningSummary | None = None,
     ) -> MiniCodex:
+        if client is None:
+            raise ValueError("MiniCodex.create requires an OpenAI client instance")
+
         inst = cls(
             model=model,
             system=system,
             on_event=on_event,
             mcp=mcp,
-            client=client or _openai_client(),
+            client=client,
             reasoning_effort=reasoning_effort,
             reasoning_summary=reasoning_summary,
         )
