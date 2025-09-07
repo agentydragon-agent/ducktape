@@ -326,13 +326,49 @@ class MiniCodex:
                             data_b64 = part.data
                             total_bytes = len(data_b64)
                             base64_data = data_b64[start_offset : start_offset + max_bytes]
+                    # Build faithful multipart-style representation with a global window
+                    remaining = max_bytes
+                    cursor = 0
+                    parts_out: list[dict[str, Any]] = []
+                    for p in contents:
+                        # Determine raw bytes length for each modality
+                        if p.text is not None:
+                            raw = p.text.encode("utf-8")
+                            total_len = len(raw)
+                            if remaining > 0:
+                                start_in_part = max(0, start_offset - cursor)
+                                take = max(0, min(remaining, total_len - start_in_part))
+                                if take > 0:
+                                    chunk = raw[start_in_part : start_in_part + take]
+                                    parts_out.append({
+                                        "mime": p.mimeType,
+                                        "text": chunk.decode("utf-8", errors="replace"),
+                                        "total_bytes": total_len,
+                                        "bytes_returned": take,
+                                    })
+                                    remaining -= take
+                        elif p.data is not None:
+                            base = p.data  # base64 string
+                            total_len = len(base)
+                            if remaining > 0:
+                                start_in_part = max(0, start_offset - cursor)
+                                take = max(0, min(remaining, total_len - start_in_part))
+                                if take > 0:
+                                    parts_out.append({
+                                        "mime": p.mimeType,
+                                        "base64": base[start_in_part : start_in_part + take],
+                                        "total_bytes": total_len,
+                                        "bytes_returned": take,
+                                    })
+                                    remaining -= take
+                        cursor += (len(p.text.encode("utf-8")) if p.text is not None else len(p.data or ""))
+                        if remaining <= 0:
+                            break
+
                     payload = {
-                        "mime": mime,
-                        "start_offset": start_offset,
-                        "max_bytes": max_bytes,
-                        "total_bytes": total_bytes,
-                        "text": text_slice,
-                        "base64": base64_data,
+                        "window": {"start_offset": start_offset, "max_bytes": max_bytes},
+                        "parts": parts_out,
+                        "total_parts": len(contents),
                     }
                     out_str = json.dumps(payload, ensure_ascii=False)
                     call_evt = {"kind": "tool_call", "name": fc.name, "args": args, "call_id": fc.call_id}
