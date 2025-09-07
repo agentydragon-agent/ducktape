@@ -60,20 +60,24 @@ async def test_tool_error_is_surfaced_in_sequence(monkeypatch: pytest.MonkeyPatc
 
     import adgn_llm.mini_codex.agent as agent_mod
 
-    def _fake_create(client, **kwargs):
-        if call_once_state["n"] == 0:
-            call_once_state["n"] = 1
-            return _RespOneCall()
-        return _RespNoCall()
+    class FakeResponses:
+        def __init__(self) -> None:
+            self.calls = 0
 
-    monkeypatch.setattr(agent_mod, "_responses_create_with_retry", _fake_create)
+        async def create(self, **kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                return _RespOneCall()
+            return _RespNoCall()
+
+    fake_client = type("_FakeClient", (), {"responses": FakeResponses()})()
 
     # Create agent and run one turn
     agent = await MiniCodex.create(
         model="dummy-model",
         mcp=mcp,
         system="You are a code agent.",
-        client=None,  # not used due to stubbed responses
+        client=fake_client,
     )
     try:
         result = await agent.run("call failing tool once")

@@ -114,7 +114,7 @@ def _build_prompt(issue: Any, property_md_files: list[Path], occurrence: Any | N
 
 
 async def _run_agent(prompt: str, slots: dict[str, ServerSlot], model: str) -> str:
-    client = openai.OpenAI()
+    client = openai.AsyncOpenAI()
     async with McpManager(slots) as mcp:
         agent = await MiniCodex.create(
             model=model,

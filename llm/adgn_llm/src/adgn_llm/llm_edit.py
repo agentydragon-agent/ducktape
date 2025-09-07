@@ -37,6 +37,7 @@ async def _execute(
     model: str,
     reasoning_effort: ReasoningEffort | None,
     reasoning_summary: ReasoningSummary | None,
+    client: openai.AsyncOpenAI | None = None,
 ) -> int:
     # Validate input path
     target_path = file_path
@@ -59,7 +60,7 @@ async def _execute(
                 "Operate on the provided file only. Prefer precise replace_text edits.\n"
                 "Finish with done(success, report)."
             ),
-            client=openai.OpenAI(),
+            client=client or openai.AsyncOpenAI(),
             reasoning_effort=reasoning_effort,
             reasoning_summary=reasoning_summary,
         ) as agent,
@@ -72,11 +73,36 @@ async def _execute(
         return 0
 
 
-app = typer.Typer(help="LLM-powered single-file editor")
+app = typer.Typer(help="LLM-powered single-file editor", add_completion=False)
 
 
-@app.command("edit")
-def typer_edit(
+
+
+def _run_cli(
+    *,
+    file_path: Path,
+    prompt: str,
+    model: str,
+    reasoning_effort: ReasoningEffort | None,
+    reasoning_summary: ReasoningSummary | None,
+) -> None:
+    code = asyncio.run(
+        _execute(
+            file_path=file_path,
+            prompt=prompt,
+            model=model,
+            reasoning_effort=reasoning_effort,
+            reasoning_summary=reasoning_summary,
+            client=None,
+        )
+    )
+    raise typer.Exit(code)
+
+
+
+
+@app.command()
+def edit(
     file_path: Path = typer.Argument(..., exists=True, dir_okay=False, readable=True, help="Path to file to edit"),
     prompt: str = typer.Argument(..., help="Editing prompt"),
     model: str = typer.Option("o4-mini", "--model", help="Model name"),
@@ -89,16 +115,13 @@ def typer_edit(
         help="Emit reasoning summaries (omit to disable)",
     ),
 ) -> None:
-    code = asyncio.run(
-        _execute(
-            file_path=file_path,
-            prompt=prompt,
-            model=model,
-            reasoning_effort=reasoning_effort,
-            reasoning_summary=reasoning_summary,
-        )
+    _run_cli(
+        file_path=file_path,
+        prompt=prompt,
+        model=model,
+        reasoning_effort=reasoning_effort,
+        reasoning_summary=reasoning_summary,
     )
-    raise typer.Exit(code)
 
 
 def main(argv: list[str] | None = None) -> None:

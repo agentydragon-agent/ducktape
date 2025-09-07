@@ -20,7 +20,7 @@ class FakeResponses:
     def __init__(self) -> None:
         self.calls = 0
 
-    def create(self, **kwargs: Any) -> Response:  # type: ignore[override]
+    async def create(self, **kwargs: Any) -> Response:  # type: ignore[override]
         self.calls += 1
         # First call: request to read the container.info resource via built-in tool
         if self.calls == 1:

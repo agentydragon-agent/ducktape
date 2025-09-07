@@ -122,7 +122,7 @@ EXEC_PARAMETERS_SCHEMA: dict[str, Any] = {
 }
 
 
-def exec_handler(args: dict[str, Any]) -> dict[str, Any]:
+def exec_handler(args: dict[str, Any], *, sandbox_enabled: bool = True) -> dict[str, Any]:
     """Execute a shell command with optional cwd/timeout.
 
     Args schema:
@@ -138,7 +138,8 @@ def exec_handler(args: dict[str, Any]) -> dict[str, Any]:
     to = DEFAULT_TIMEOUT_S if not isinstance(timeout_ms, int) else max(1, int(timeout_ms / 1000))
     cwd_val = args.get("cwd") if isinstance(args.get("cwd"), str) else None
 
-    code, out, err = _run_in_sandbox(cmd, timeout_s=to, cwd=cwd_val)
+    runner = _run_in_sandbox if sandbox_enabled else _run_proc
+    code, out, err = runner(cmd, timeout_s=to, cwd=cwd_val)
     return {"exit": code, "stdout": out, "stderr": err}
 
 
@@ -149,7 +150,7 @@ def build_local_tools() -> dict[str, dict[str, tuple[str, dict[str, Any], Any]]]
             "exec": (
                 "Execute a shell command and return exit, stdout, stderr.",
                 EXEC_PARAMETERS_SCHEMA,
-                exec_handler,
+                lambda payload: exec_handler(payload, sandbox_enabled=True),
             ),
         },
     }

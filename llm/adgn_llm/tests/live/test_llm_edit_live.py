@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+import openai
 import pytest
 
 
@@ -31,6 +32,7 @@ async def test_llm_edit_live_obvious_replace(tmp_path: Path) -> None:
         model=model,
         reasoning_effort=None,
         reasoning_summary=None,
+        client=openai.AsyncOpenAI(),
     )
     assert code == 0, "Execution should complete with code 0"
     # Verify the edit actually happened on disk

@@ -21,6 +21,8 @@ from adgn_llm.mcp.inproc import fastmcp_inproc_client
 from adgn_llm.mini_codex.agent import (
     _responses_create_with_retry,
     load_mcp_file,
+    _responses_output_from_calltool,
+    MiniCodex,
 )
 from adgn_llm.mini_codex.local_exec_server import make_local_exec_mcp
 from adgn_llm.mini_codex.mcp_manager import (
@@ -242,24 +244,25 @@ async def responses_turn(
                 ),
             )
             continue
-        result: dict[str, Any] | None = None
+        out_str: str
         if mcp_manager is not None:
             try:
                 server, tool_name = mcp_manager.resolve_function(fn)
                 session = await mcp_manager.get_session(server)
-                result = await session.call_tool(
+                res_ct = await session.call_tool(
                     name=tool_name,
                     arguments=args if isinstance(args, dict) else {},
                 )
+                out_str = _responses_output_from_calltool(res_ct)
             except Exception as e:
-                result = {"exit": 127, "stdout": "", "stderr": f"mcp error: {e}"}
+                out_str = json.dumps({"exit": 127, "stdout": "", "stderr": f"mcp error: {e}"})
         else:
-            result = {"exit": 127, "stdout": "", "stderr": f"unknown function: {fn}"}
+            out_str = json.dumps({"exit": 127, "stdout": "", "stderr": f"unknown function: {fn}"})
         new_messages.append(
             FunctionCallOutput(
                 type="function_call_output",
                 call_id=call_id,
-                output=json.dumps(result),
+                output=out_str,
             ),
         )
 
@@ -322,19 +325,20 @@ async def responses_followup_with_tool_outputs(
             try:
                 server, tool_name = mcp_manager.resolve_function(fn)
                 session = await mcp_manager.get_session(server)
-                result = await session.call_tool(
+                res_ct = await session.call_tool(
                     name=tool_name,
                     arguments=args if isinstance(args, dict) else {},
                 )
+                out_str = _responses_output_from_calltool(res_ct)
             except Exception as e:
-                result = {"exit": 127, "stdout": "", "stderr": f"mcp error: {e}"}
+                out_str = json.dumps({"exit": 127, "stdout": "", "stderr": f"mcp error: {e}"})
         else:
-            result = {"exit": 127, "stdout": "", "stderr": f"unknown function: {fn}"}
+            out_str = json.dumps({"exit": 127, "stdout": "", "stderr": f"unknown function: {fn}"})
         new_messages.append(
             FunctionCallOutput(
                 type="function_call_output",
                 call_id=call_id,
-                output=json.dumps(result),
+                output=out_str,
             ),
         )
     return new_messages, terminal_text
@@ -361,44 +365,19 @@ async def main_async() -> None:
 
     client = openai.OpenAI()
 
-    async with McpManager(slots) as mcp:
+    async with McpManager(slots) as mcp, await MiniCodex.create(
+        model=DEFAULT_MODEL,
+        mcp=mcp,
+        system=SYSTEM_INSTRUCTIONS,
+        client=client,
+    ) as agent:
         for line in sys.stdin:
             user = line.rstrip("\n")
             if not user:
                 continue
-
-            transcript: list[Message] = [UserMessage(role="user", content=user)]
-            terminal_batch: list[str] = []
-            pending_tool_outputs: list[FunctionCallOutput] | None = None
-
-            for _ in range(MAX_CYCLES):
-                if pending_tool_outputs:
-                    (
-                        new_msgs,
-                        terminal_text,
-                    ) = await responses_followup_with_tool_outputs(
-                        client,
-                        transcript,
-                        pending_tool_outputs,
-                        mcp,
-                    )
-                    pending_tool_outputs = None
-                else:
-                    new_msgs, terminal_text = await responses_turn(client, transcript, mcp)
-
-                if terminal_text:
-                    terminal_batch.append(terminal_text)
-
-                # Extend transcript with assistant messages only; tool outputs are sent explicitly next round
-                transcript.extend([m for m in new_msgs if isinstance(m, AssistantMessage)])
-                collected = [m for m in new_msgs if isinstance(m, FunctionCallOutput)]
-                if collected:
-                    pending_tool_outputs = collected
-                else:
-                    break
-
-            if terminal_batch:
-                print("\n".join(terminal_batch))
+            res = await agent.run(user_text=user, stream=False)
+            if res.text:
+                print(res.text)
 
 
 def main() -> None:

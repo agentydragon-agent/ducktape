@@ -2,7 +2,7 @@
 
 This FastMCP server exposes two tools over a single, per-session Docker container:
 
-- `obtain_code(url, ref?, branch?)` — ensures a Gitea pull-mirror exists and is synced, then clones into the session container under `/workspace/<host>/<path>` using `--reference` to a read-only mirror
+- `obtain_code(url, ref?, branch?)` — clones from an existing Gitea pull mirror into the session container under `/workspace/<host>/<path>` using `--reference` to a read-only mirror. The caller is responsible for invoking the separate `gitea_mirror` MCP to create/sync mirrors first.
 - `exec(cmd, cwd?, env?, user?, tty?, shell?, timeout_secs?)` — executes commands inside the same per-session container (the working copy persists across calls within the session)
 
 Highlights
@@ -67,11 +67,10 @@ If you already use a manager for in-proc MCP servers, wire `server` into it and 
 - `obtain_code`
   - Input: `{ url: string, ref?: string, branch?: string, submodules?: boolean=false }`
   - Behavior:
-    - Always attempts a best-effort Gitea mirror sync: `POST /api/v1/repos/{owner}/{repo}/mirror-sync` (if base URL and token are set)
-    - Verifies `<store>/<owner>/<repo>.git` exists; if missing, instructs to create a Gitea pull mirror
+    - Requires that `<store>/<owner>/<repo>.git` already exists (created by gitea_mirror MCP)
     - Clones inside the container using the mirror as both file:// source and `--reference`
     - Optionally checks out `ref` (detached) or `branch`
-  - Output: `{ path, head_sha, storage_key, pretty_path, sync_attempted, sync_ok, sync_error }`
+  - Output: `{ path, head_sha, storage_key, pretty_path }`
 
 - `exec`
   - Input: `{ cmd: string[], cwd?: string, env?: map<string,string>, user?: string, tty?: boolean, shell?: boolean, timeout_secs?: number }`
@@ -95,10 +94,9 @@ You can use any image, but for a smooth experience pick one with:
 
 - Colima binds: host paths must be under `$HOME` to mount into containers
 - Mirror missing: if `obtain_code` reports no mirror, create a Gitea pull mirror for that URL
-- Sync errors: `sync_attempted=false` when no Gitea base URL/token; `sync_ok=false` with `sync_error` details if RPC failed — clone proceeds with the last mirrored content
 - RO mount: writing under `/mnt/git-bare` will fail (expected)
 - No network: commands like `curl https://example.com` will fail inside the container (expected)
 
 ## 6) Related servers (optional composition)
 
-- Generic container exec (shared core): `src/adgn_llm/mcp/docker_exec/server.py` provides a reusable FastMCP with only the `exec` tool. It shares the same per-session container logic and description pattern and can be combined with a separate git-mirror server if you prefer composing behavior in the client.
+- Generic container exec (shared core): `src/adgn_llm/mcp/docker_exec/server.py` provides a reusable FastMCP with only the `exec` tool. It shares the same per-session container logic and description pattern and can be combined with the `gitea_mirror` server described above.

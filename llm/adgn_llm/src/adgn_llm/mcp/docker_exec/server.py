@@ -25,6 +25,7 @@ from .._shared.container_session import (
 )
 
 
+
 def make_container_exec_mcp(
     *,
     image: str,
@@ -32,6 +33,8 @@ def make_container_exec_mcp(
     volumes: Dict[str, Dict[str, str]] | list[str] | None = None,
     network_mode: NetworkMode = NetworkMode.NONE,
     describe: bool = True,
+    environment: Dict[str, str] | None = None,
+    labels: Dict[str, str] | None = None,
 ) -> FastMCP:
     """Create a generic per-session container exec FastMCP server.
 
@@ -47,6 +50,8 @@ def make_container_exec_mcp(
         volumes=volumes,
         network_mode=network_mode,
         describe=describe,
+        environment=environment,
+        labels=labels,
     )
     server = FastMCP("container_exec", instructions="Per-session container exec. See resource container.info for details.", lifespan=lifespan)
     register_container(server, tool_name="exec")

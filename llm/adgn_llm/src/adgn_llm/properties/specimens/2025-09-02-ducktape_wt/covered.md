@@ -43,18 +43,14 @@
   - **wt/wt/server/git_manager.py**: 259 (worktree_add `path: str`), 297 (worktree_remove `path: str`)
   - **wt/tests/integration/test_shell_integration.py**: 34, 37 — `run_shell_script` should take `cwd: Path` (not `str`)
   - **wt/wt/client/wt_client.py**: 586 — `absolute_path: str` should be `Path`
-  - **wt/wt/server/worktree_service.py**: 299 — `script_path: str` should be `Path`
-  - **wt/wt/server/wt_server.py**: 227 — `file_path: str | None` should be `Path | None`
-  - **wt/wt/server/wt_server.py**: 381 — `_should_trigger_refresh(file_path: str)` should accept `Path` (no raw str); avoid redundant `str(file_path)` when already a string.
-- **wt/wt/server/worktree_service.py**: 299 — `execute_post_creation_script(script_path: str, ...)` should accept `Path`
-- **wt/wt/server/wt_server.py**: 2046 — `_run_post_creation_script_streaming(script_path: str, ...)` should accept `Path`
+  - **wt/wt/server/wt_server.py**:
+    - 227 — `file_path: str | None` should be `Path | None`
+    - 381 — `_should_trigger_refresh(file_path: str)` should accept `Path` (no raw str); avoid redundant `str(file_path)` when already a string.
+    - 2046 — `_run_post_creation_script_streaming(script_path: str, ...)` should accept `Path`
+  - **wt/wt/server/worktree_service.py**: 299 — `execute_post_creation_script(script_path: str, ...)`; `script_path` should be passed as `Path`, not `str`
 
 ## [No dead code](../../definitions/no-dead-code.md)
 
-- logging_config.py: OperationLogger is dead code; JSONFormatter becomes unused once it’s removed.
-- Duplicate hydration/post-creation script invocation paths: a duplicate implementation exists that’s only used by tests; production path is separate and not covered. Consolidate on the prod path.
-- **wt/wt/server/git_manager.py**: dead code: `get_status_porcelain`, `status_porcelain`, `rev_count()`; `CannotDeleteWorktree` (L40)
-- **wt/wt/server/gitstatusd_client.py**: dead code: `parse_gitstatusd_response` (L358), `create_gitstatusd_request` (L363) — thin wrappers around GitStatusdProtocol; migrate any callers to Protocol methods and delete.
 - **wt/wt/server/wt_server.py**: dead code: `StatusSnapshot` (L413), `WorktreeRuntime` (L425), `GitStatusdProcess` (L640), `_record_github_error` (L1230)
 - **wt/wt/server/github_client.py**: dead code: `DisabledGitHubInterface` (L18)
 - **wt/wt/shared/models.py**: dead code: `require_exists` (L40), `require_not_exists` (L44), `WorktreeParseState.finalize(...)` (L145)

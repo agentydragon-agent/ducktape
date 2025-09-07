@@ -10,7 +10,7 @@ import time
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Any, Literal, Protocol, cast
 from mcp import types as mcp_types
 
 import openai
@@ -74,8 +74,13 @@ SYSTEM_INSTRUCTIONS = "You are a code agent. Be concise."
 _logger = structlog.get_logger("mini_codex.setup")
 
 
-def _openai_client() -> openai.OpenAI:
-    return openai.OpenAI()
+class ResponsesClient(Protocol):
+    async def responses_create(self, **kwargs: Any):  # pragma: no cover - structural protocol
+        ...
+
+
+def _openai_client() -> openai.AsyncOpenAI:
+    return openai.AsyncOpenAI()
 
 
 def _is_retryable(e: Exception) -> bool:
@@ -91,9 +96,9 @@ def _is_retryable(e: Exception) -> bool:
     wait=wait_exponential(multiplier=1, min=1, max=8),
     stop=stop_after_attempt(4),
 )
-def _responses_create_with_retry(client: openai.OpenAI, **kwargs: Any):
+async def _responses_create_with_retry(client: ResponsesClient, **kwargs: Any):
     """Wrapper around client.responses.create with retry for transient errors."""
-    return client.responses.create(**kwargs)
+    return await client.responses.create(**kwargs)
 
 
 def load_mcp_file(path: str) -> ToolMap:
@@ -112,13 +117,14 @@ class MiniCodex:
         system: str | None,
         on_event: Callable[[dict[str, Any]], None] | None = None,
         mcp: McpManager,
-        client: openai.OpenAI,
+        client: ResponsesClient | None = None,
         reasoning_effort: ReasoningEffort | None = None,
         reasoning_summary: ReasoningSummary | None = None,
         agent_name: str | None = None,
     ) -> None:
         self._model = model
-        self._system = system or SYSTEM_INSTRUCTIONS
+        self._default_system = system or SYSTEM_INSTRUCTIONS
+        self._system = self._default_system
         self._on_event = on_event or (lambda _evt: None)
         self._mcp = mcp
         self._client = client
@@ -172,6 +178,10 @@ class MiniCodex:
             self.inject_system_message(text)
         self._notification_handler(evt)
 
+    def set_system_instructions(self, instructions: str | None) -> None:
+        """Override base system instructions for future turns."""
+        self._system = (instructions or self._default_system).strip() or self._default_system
+
     async def sample(self, require_at_least_one_tool: bool | None = None) -> AgentResult:
         """Run a single model turn using the existing transcript (no new user message)."""
         self._run_require_one_tool = True if require_at_least_one_tool is None else require_at_least_one_tool
@@ -214,6 +224,7 @@ class MiniCodex:
                 u = it.get("uri")
                 if s and isinstance(u, str):
                     by_server.setdefault(s, []).append(u)
+            banner_chunks: list[str] = []
             if by_server:
                 lines: list[str] = []
                 for s, uris in by_server.items():
@@ -223,12 +234,26 @@ class MiniCodex:
                         lines.append(f"server={s} resources: {first} (+{more} more; list via mcp__resources__list)")
                     else:
                         lines.append(f"server={s} resources: {first}")
-                instructions = f"{instructions}\n\nFYI: MCP resources available:\n- " + "\n- ".join(lines)
+                banner_chunks.append("FYI: MCP resources available:\n- " + "\n- ".join(lines))
+            servers = list(self._mcp._slots.keys())
+            if servers:
+                banner_chunks.append(f"FYI: MCP servers available: {servers}")
+                # Surface server descriptions as provided during initialization (multi-line, XML-like blocks)
+                xml_blocks: list[str] = []
+                for sname in servers:
+                    init_res = await self._mcp.get_server_initialize(sname)
+                    desc = init_res.instructions
+                    if isinstance(desc, str) and desc:
+                        xml_blocks.append(f"<{sname} server desc>\n{desc}\n</{sname} server desc>")
+                if xml_blocks:
+                    banner_chunks.append("\n".join(xml_blocks))
+            if banner_chunks:
+                instructions = f"{instructions}\n\n" + "\n".join(banner_chunks) 
 
             tools_list = await self._mcp.list_tools()
             tools_list.extend(self._resource_tools_descriptors())
 
-            resp = _responses_create_with_retry(
+            resp = await _responses_create_with_retry(
                 self._client,
                 model=self._model,
                 input=input_payload,
@@ -289,7 +314,7 @@ class MiniCodex:
                     sequence.append(call_evt)
                     self._emit_event(call_evt)
                     fco = FunctionCallOutput(type="function_call_output", call_id=fc.call_id, output=out_str)
-                    fco_evt = {"kind": "function_call_output", **fco.model_dump(exclude_none=True)}
+                    fco_evt = {"kind": "function_call_output", "name": fc.name, **fco.model_dump(exclude_none=True)}
                     sequence.append(fco_evt)
                     self._transcript.append(fco)
                     self._emit_event(fco_evt)
@@ -308,21 +333,6 @@ class MiniCodex:
                     if not isinstance(res, mcp_types.ReadResourceResult):
                         raise TypeError(f"Unexpected read_resource result type: {type(res)!r}")
                     contents = res.contents or []
-                    mime = contents[0].mimeType if contents else None
-                    text_slice: str | None = None
-                    base64_data: str | None = None
-                    total_bytes: int | None = None
-                    if contents:
-                        part = contents[0]
-                        if part.text is not None:
-                            full_bytes = part.text.encode("utf-8")
-                            total_bytes = len(full_bytes)
-                            chunk = full_bytes[start_offset : start_offset + max_bytes]
-                            text_slice = chunk.decode("utf-8", errors="replace")
-                        elif part.data is not None:
-                            data_b64 = part.data
-                            total_bytes = len(data_b64)
-                            base64_data = data_b64[start_offset : start_offset + max_bytes]
                     # Build faithful multipart-style representation with a global window
                     remaining = max_bytes
                     cursor = 0
@@ -372,7 +382,7 @@ class MiniCodex:
                     sequence.append(call_evt)
                     self._emit_event(call_evt)
                     fco = FunctionCallOutput(type="function_call_output", call_id=fc.call_id, output=out_str)
-                    fco_evt = {"kind": "function_call_output", **fco.model_dump(exclude_none=True)}
+                    fco_evt = {"kind": "function_call_output", "name": fc.name, **fco.model_dump(exclude_none=True)}
                     sequence.append(fco_evt)
                     self._transcript.append(fco)
                     self._emit_event(fco_evt)
@@ -493,7 +503,7 @@ class MiniCodex:
         mcp: McpManager,
         system: str | None = None,
         on_event: Callable[[dict[str, Any]], None] | None = None,
-        client: openai.OpenAI,
+        client: ResponsesClient | None = None,
         reasoning_effort: ReasoningEffort | None = None,
         reasoning_summary: ReasoningSummary | None = None,
     ) -> MiniCodex:
@@ -502,7 +512,7 @@ class MiniCodex:
             system=system,
             on_event=on_event,
             mcp=mcp,
-            client=client,
+            client=client or _openai_client(),
             reasoning_effort=reasoning_effort,
             reasoning_summary=reasoning_summary,
         )

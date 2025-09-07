@@ -7,7 +7,12 @@ from mcp.server.fastmcp import FastMCP
 from .local_tools import exec_handler
 
 
-def make_local_exec_mcp(name: str = "local") -> FastMCP:
+def make_local_exec_mcp(
+    name: str = "local",
+    *,
+    default_cwd: str | None = None,
+    sandbox_enabled: bool = True,
+) -> FastMCP:
     """FastMCP server exposing a local exec tool.
 
     Tools:
@@ -18,6 +23,9 @@ def make_local_exec_mcp(name: str = "local") -> FastMCP:
 
     @mcp.tool()
     def exec(cmd: list[str], cwd: str | None = None, timeout_ms: int | None = None) -> dict[str, Any]:  # noqa: A003
-        return exec_handler({"cmd": cmd, "cwd": cwd, "timeout_ms": timeout_ms})
+        return exec_handler(
+            {"cmd": cmd, "cwd": cwd or default_cwd, "timeout_ms": timeout_ms},
+            sandbox_enabled=sandbox_enabled,
+        )
 
     return mcp

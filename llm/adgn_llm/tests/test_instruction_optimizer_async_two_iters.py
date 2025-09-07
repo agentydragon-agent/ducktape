@@ -128,16 +128,16 @@ class FakeResponsesAPI:
                 )
             # Comparison grading (not exercised here)
         # MiniCodexRunner flow
-        # First turn forces tool_choice="required" with tools including shell_run
+        # First turn forces tool_choice="required" with tools including exec
         if tool_choice == "required":
             call = mk_func_call(
-                name="shell_run",
+                name="mcp__local__exec",
                 args={
                     "cmd": ["bash", "-lc", "echo runner_ok > result.txt"],
                     "timeout_ms": 2000,
                 },
-                call_id="shell-1",
-                id="call-shell-1",
+                call_id="exec-1",
+                id="call-exec-1",
             )
             return mk_response(
                 [call],
@@ -154,7 +154,12 @@ class FakeResponsesAPI:
                 tool_choice=tool_choice,
             )
         # Default: assistant text (shouldn't be used in our paths)
-        raise Exception("unhandled call of mock")
+        return mk_response(
+            [mk_msg("default", id="msg-default")],
+            model=model,
+            tools=tools,
+            tool_choice=tool_choice,
+        )
 
 
 class FakeAsyncOpenAI:
@@ -240,6 +245,7 @@ async def test_optimize_prompts_two_iterations_async(
         return "report"
 
     monkeypatch.setattr(opt.ScoreEvolutionTracker, "generate_report", _no_plot)
+    monkeypatch.setenv("DUCK_ALLOW_UNSANDBOXED", "1")
 
     out_dir = await opt.optimize_prompts(
         anthropic_log=JSONLLogger(base_dir / "anthropic.jsonl"),

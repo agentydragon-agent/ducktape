@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Dict, Tuple
 
 from mcp.client.session import ClientSession
+from mcp.types import InitializeResult
 
 # ---- DRY: open a ready session under a single ExitStack ----
 OpenFn = Callable[[AsyncExitStack], Awaitable[ClientSession]]
@@ -40,6 +41,7 @@ class ServerSlot:
     name: str
     open_fn: OpenFn
     session: ClientSession | None = None
+    init_result: InitializeResult | None = None
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
     async def open(self, stack: AsyncExitStack) -> ClientSession:
@@ -47,6 +49,9 @@ class ServerSlot:
             if self.session is not None:
                 return self.session
             sess = await self.open_fn(stack)
+            # Initialize once and cache InitializeResult for later description access
+            init_res: InitializeResult = await sess.initialize()
+            self.init_result = init_res
             self.session = sess
             return sess
 
@@ -127,6 +132,15 @@ class McpManager:
         """Thin wrapper around ClientSession.read_resource(uri)."""
         sess = await self.get_session(server)
         return await sess.read_resource(uri)
+
+    async def get_server_initialize(self, server: str) -> InitializeResult:
+        """Return the cached InitializeResult for a server (no re-initialize)."""
+        # Ensure session is opened (and thus initialized once)
+        await self.get_session(server)
+        slot = self._slots[server]
+        if slot.init_result is None:
+            raise RuntimeError(f"InitializeResult missing for server {server!r}")
+        return slot.init_result
 
     @staticmethod
     def slot_from_spec(name: str, spec: Any) -> "ServerSlot":

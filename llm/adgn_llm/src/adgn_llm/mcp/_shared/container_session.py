@@ -52,6 +52,7 @@ def _start_container(
     volumes: dict[str, dict[str, str]] | list[str] | None = None,
     network_mode: NetworkMode = NetworkMode.NONE,
     environment: dict[str, str] | None = None,
+    labels: dict[str, str] | None = None,
 ) -> Container:
     container = client.containers.run(
         image=image,
@@ -62,6 +63,7 @@ def _start_container(
         network_mode=str(network_mode),
         volumes=volumes,
         environment=environment,
+        labels=labels,
         # Run as image default user (root by default). No override.
         auto_remove=True,
     )
@@ -149,6 +151,7 @@ def make_container_lifespan(
     volumes: dict[str, dict[str, str]] | list[str] | None = None,
     network_mode: NetworkMode = NetworkMode.NONE,
     environment: dict[str, str] | None = None,
+    labels: dict[str, str] | None = None,
 ):
     @asynccontextmanager
     async def lifespan(server: FastMCP):  # yields ContainerSessionState
@@ -192,6 +195,7 @@ def make_container_lifespan(
             volumes=volumes,
             network_mode=network_mode,
             environment=environment,
+            labels=labels,
         )
         try:
             yield ContainerSessionState(
