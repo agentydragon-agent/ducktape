@@ -13,11 +13,10 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
-from typing import Literal
 
 import openai
 import typer
-from .openai_utils import ReasoningEffort, ReasoningSummary
+from .openai_utils import ReasoningEffort, ReasoningEffort as ReasoningEffortStr, ReasoningSummary
 
 from .mcp.editor_server import make_editor_mcp
 from .mcp.inproc import fastmcp_inproc_client
@@ -81,11 +80,11 @@ def typer_edit(
     file_path: Path = typer.Argument(..., exists=True, dir_okay=False, readable=True, help="Path to file to edit"),
     prompt: str = typer.Argument(..., help="Editing prompt"),
     model: str = typer.Option("o4-mini", "--model", help="Model name"),
-    reasoning_effort: ReasoningEffort | None = typer.Option(
+    reasoning_effort: ReasoningEffortStr | None = typer.Option(
         None,
         help="Reasoning effort for reasoning-capable models",
     ),
-    reasoning_summary: Summary | None = typer.Option(
+    reasoning_summary: ReasoningSummary | None = typer.Option(
         None,
         help="Emit reasoning summaries (omit to disable)",
     ),

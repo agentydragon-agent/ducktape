@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 import pytest
-from typing import AsyncIterator
 
 from adgn_llm.mcp.inproc import fastmcp_inproc_client
 from adgn_llm.mcp.docker_exec.server import make_container_exec_mcp

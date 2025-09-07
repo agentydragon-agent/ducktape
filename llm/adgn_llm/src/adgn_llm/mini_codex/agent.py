@@ -23,13 +23,7 @@ from openai.types.responses import (
 )
 
 # Reasoning output blocks from Responses API
-try:
-    from openai.types.responses import ResponseReasoningItem
-except Exception:  # pragma: no cover
-
-    class ResponseReasoningItem:  # type: ignore[no-redef]
-        ...
-
+from openai.types.responses import ResponseReasoningItem
 
 # Typed request params for reasoning
 from openai.types.shared_params import Reasoning as ReasoningParams
@@ -38,6 +32,7 @@ from pydantic import BaseModel
 from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 
 from .loggers import TranscriptLogger
+from adgn_llm.openai_utils import ReasoningSummary
 from .mcp_manager import McpManager
 
 
@@ -84,13 +79,16 @@ def _openai_client() -> openai.OpenAI:
     return openai.OpenAI()
 
 
+def _is_retryable(e: Exception) -> bool:
+    if isinstance(e, (APITimeoutError, APIConnectionError, RateLimitError)):
+        return True
+    if isinstance(e, APIStatusError):
+        status = getattr(e, "status_code", None)
+        return status == 429 or (isinstance(status, int) and 500 <= status < 600)
+    return False
+
 @retry(
-    retry=retry_if_exception(
-        lambda e: isinstance(
-            e,
-            APITimeoutError | APIConnectionError | RateLimitError | APIStatusError,
-        ),
-    ),
+    retry=retry_if_exception(_is_retryable),
     wait=wait_exponential(multiplier=1, min=1, max=8),
     stop=stop_after_attempt(4),
 )
@@ -117,7 +115,7 @@ class MiniCodex:
         mcp: McpManager,
         client: openai.OpenAI,
         reasoning_effort: ReasoningEffort | None = None,
-        reasoning_summary: Literal["auto", "concise", "detailed"] | None = None,
+        reasoning_summary: ReasoningSummary | None = None,
         agent_name: str | None = None,
     ) -> None:
         self._model = model
@@ -498,7 +496,7 @@ class MiniCodex:
         on_event: Callable[[dict[str, Any]], None] | None = None,
         client: openai.OpenAI,
         reasoning_effort: ReasoningEffort | None = None,
-        reasoning_summary: Literal["auto", "concise", "detailed"] | None = None,
+        reasoning_summary: ReasoningSummary | None = None,
     ) -> MiniCodex:
         inst = cls(
             model=model,
