@@ -22,7 +22,6 @@ from openai.types.responses import (
     ResponseOutputText,
 )
 
-# Reasoning output blocks from Responses API
 from openai.types.responses import ResponseReasoningItem
 
 # Typed request params for reasoning

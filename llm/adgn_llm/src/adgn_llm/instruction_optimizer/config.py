@@ -4,6 +4,7 @@ from pathlib import Path
 
 import yaml
 from pydantic import BaseModel, Field
+from adgn_llm.openai_utils import ReasoningEffort
 
 
 class RolloutConfig(BaseModel):
@@ -18,7 +19,7 @@ class PromptEngineerConfig(BaseModel):
     """Configuration for prompt engineering."""
 
     model: str = Field(description="Model to use for prompt engineering")
-    reasoning_effort: str = Field(description="Reasoning effort level")
+    reasoning_effort: ReasoningEffort | None = Field(description="Reasoning effort level")
     feedback_mode: str = Field(
         default="full_rollouts",
         description="Feedback mode: full_rollouts, summary, or stats_only",
@@ -29,7 +30,7 @@ class GraderConfig(BaseModel):
     """Configuration for code grading."""
 
     model: str = Field(description="Model to use for grading")
-    reasoning_effort: str = Field(description="Reasoning effort level")
+    reasoning_effort: ReasoningEffort | None = Field(description="Reasoning effort level")
 
 
 class SummarizerConfig(BaseModel):

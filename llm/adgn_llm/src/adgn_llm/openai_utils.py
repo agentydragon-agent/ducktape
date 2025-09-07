@@ -6,7 +6,7 @@ from enum import StrEnum
 from openai.types.shared_params import ReasoningEffort
 
 
-class ReasoningEffortEnum(StrEnum):
+class ReasoningEffort(StrEnum):
     """String-valued enum for CLI/options while remaining str-compatible.
 
     Values mirror OpenAI's ReasoningEffort (typing.Literal), so instances can be
