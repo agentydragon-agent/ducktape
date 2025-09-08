@@ -122,20 +122,16 @@ async def test_inproc_container_exec_exposes_container_info_resource() -> None:
 async def test_inproc_container_exec_container_info_shape() -> None:
     """Read container.info resource and sanity-check shape."""
 
-    def _cm_builder():
-        return fastmcp_inproc_client(
-            lambda: make_container_exec_mcp(
-                image="python:3.12-slim",
-                working_dir="/workspace",
-                volumes=None,
-                describe=False,
-            ),
+    spec = make_inproc_slot_spec(
+        make_container_exec_mcp(
+            image="python:3.12-slim",
+            working_dir="/workspace",
+            volumes=None,
+            describe=False,
         )
+    )
 
-    open_fn = session_opener(_cm_builder)
-    slots = {"docker": ServerSlot(name="docker", open_fn=open_fn)}
-
-    async with McpManager(slots) as mcp:
+    async with McpManager({"docker": spec}) as mcp:
         sess = await mcp.get_session("docker")
         res = await sess.read_resource("resource://container.info")
         contents = res.contents or []

@@ -75,8 +75,13 @@ SYSTEM_INSTRUCTIONS = "You are a code agent. Be concise."
 _logger = structlog.get_logger("mini_codex.setup")
 
 
+class _ResponsesSubclient(Protocol):
+    async def create(self, **kwargs: Any):  # pragma: no cover - structural protocol
+        ...
+
 class ResponsesClient(Protocol):
-    async def responses_create(self, **kwargs: Any):  # pragma: no cover - structural protocol
+    @property
+    def responses(self) -> _ResponsesSubclient:  # pragma: no cover - structural protocol
         ...
 
 

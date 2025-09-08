@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
-"""Filter OpenAI models and test them via the Responses API.
+"""Probe OpenAI models via Responses and Chat APIs.
 
 Usage:
-    python model_filter_check.py [--sample N] [--concurrency C]
+    python /Users/mpokorny/code/ducktape/llm/adgn_llm/src/adgn_llm/openai_api_probe.py \
+        [--sample N] [--concurrency C] [--repeats R] [--max-qps Q]
 
 The script performs the following steps:
-    1. Lists all model IDs from OpenAI API.
-    2. Filters out models by hard-coded prefixes and substrings.
-    3. Optionally subsamples remaining list.
-    4. Probes each with a minimal `responses` request in parallel
-       (bounded by `--concurrency`).
-    5. Prints models that succeed first, then a short summary of failures.
+    1. Lists all model IDs from the OpenAI API asynchronously.
+    2. Filters out models by family rules (regex-based heuristics).
+    3. Optionally subsamples the remaining list.
+    4. For each repeat, iterates models in priority order and schedules two
+       probes per model (Responses and Chat), honoring global concurrency and
+       optional QPS limiting.
+    5. Streams a live table with successes first, and finally prints a summary
+       of failures and legend of error codes.
 """
 
 from __future__ import annotations
@@ -152,8 +155,8 @@ async def _probe_once(
     limiter: AsyncLimiter,
 ) -> ProbeResult:
     try:
-        t0 = time.perf_counter()
         async with limiter:
+            t0 = time.perf_counter()  # measure pure API latency, not queueing time
             resp = await asyncio.wait_for(
                 spec.create(client, model_id), timeout=REQUEST_TIMEOUT
             )
@@ -452,6 +455,15 @@ async def main() -> None:
 
     # Shared async client for everything
     async_client = AsyncOpenAI()
+    # Create a single limiter for the whole run. No disable path; coerce to >= 1e-6.
+    qps = float(args.max_qps)
+    if qps <= 0:
+        qps = 1.0
+    # Support fractional QPS by adjusting the time window
+    if qps >= 1.0:
+        limiter = AsyncLimiter(int(qps), 1.0)
+    else:
+        limiter = AsyncLimiter(1, 1.0 / qps)
 
     print("Fetching model list …", file=sys.stderr)
     resp = await async_client.models.list()  # async SDK supports this
@@ -481,7 +493,7 @@ async def main() -> None:
                 async_client,
                 model_id=mid,
                 spec=spec,
-                limiter=AsyncLimiter(args.max_qps, 1),
+                limiter=limiter,
             )
         return spec.name, mid, res
 

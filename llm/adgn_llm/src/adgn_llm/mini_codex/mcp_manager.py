@@ -3,15 +3,15 @@ MCP session manager — per-agent, FastMCP-first, DRY wiring.
 
 - Per-agent isolation: each agent builds its own McpManager (its own sessions)
 - One lifetime boundary: AsyncExitStack on the manager
-- DRY transport wiring: one session_opener to turn any client CM into a ready ClientSession
+- Transport-invariant wiring: ServerSlotSpec.open performs initialize exactly once; open_uninitialized returns an uninitialized ClientSession
 """
 
 from __future__ import annotations
 
 import asyncio
-from contextlib import AbstractAsyncContextManager, AsyncExitStack
+from contextlib import AsyncExitStack
 from dataclasses import dataclass, field
-from typing import Any, Awaitable, Callable, Dict, Tuple
+from typing import Any, Awaitable, Callable, Dict
 
 from mcp.client.session import ClientSession
 from mcp.types import InitializeResult
@@ -20,17 +20,6 @@ from mcp.types import InitializeResult
 OpenFn = Callable[[AsyncExitStack], Awaitable[ClientSession]]
 
 
-def session_opener(
-    cm_builder: Callable[[], AbstractAsyncContextManager[Tuple[Any, Any]]],
-) -> OpenFn:
-    async def open_with(stack: AsyncExitStack) -> ClientSession:
-        read, write = await stack.enter_async_context(cm_builder())
-        sess = ClientSession(read, write)
-        await stack.enter_async_context(sess)
-        await sess.initialize()
-        return sess
-
-    return open_with
 
 
 # ---- Legacy in-proc adapter removed (use FastMCP in-proc memory transport) ----
@@ -152,12 +141,7 @@ class McpManager:
         return await sess.read_resource(uri)
 
     async def get_server_initialize(self, server: str) -> InitializeResult:
-        """Return the InitializeResult for a server without forcing re-initialize.
-
-        Some transports (e.g., in-memory helpers) already perform initialization
-        inside the client/session context. If we don't have a cached result, we
-        synthesize a minimal placeholder after ensuring the session is open.
-        """
+        """Return the InitializeResult for a server from the cached slot after opening."""
         slot = await self.ensure_open(server)
         return slot.init_result
 
