@@ -291,6 +291,7 @@ async def optimize_prompts_mcp(
     specs = {"prompt_feedback": make_inproc_slot_spec(mcp_server)}
 
     async with McpManager(specs) as mcp:
+        assert "prompt_feedback" in mcp._specs, f"prompt_feedback slot missing; have {list(mcp._specs.keys())}"
         # Session will be initialized on first access via McpManager ensure_open
 
         # Create MiniCodex PE with system prompt at init

@@ -73,10 +73,11 @@ class McpManager:
             return slot
 
     async def __aenter__(self) -> McpManager:  # type: ignore[name-defined]
+        await self._stack.__aenter__()
         return self
 
     async def __aexit__(self, exc_type, exc, tb) -> None:
-        await self._stack.aclose()
+        await self._stack.__aexit__(exc_type, exc, tb)
 
     async def get_session(self, name: str) -> ClientSession:
         return (await self.ensure_open(name)).session

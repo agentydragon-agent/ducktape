@@ -373,6 +373,8 @@ class MiniCodex:
 
                 # Namespaced MCP tool
                 server, tool_name = self._mcp.resolve_function(fc.name)
+                # Sanity: server must exist in manager specs
+                assert server in self._mcp._specs, f"MiniCodex: unknown server {server!r}; have {list(self._mcp._specs.keys())}"
                 # Get the session and invoke the MCP tool
                 session = await self._mcp.get_session(server)
                 start = time.perf_counter()

@@ -130,7 +130,7 @@ class MiniCodexRunner(AgentRunner):
         start_time = time.time()
         result = await self._agent.run(
             user_text=task.prompt,
-            require_at_least_one_tool=True,
+            require_at_least_one_tool=False,
         )
 
         trajectory: list[TrajectoryItem] = [UserInput(text=task.prompt)]

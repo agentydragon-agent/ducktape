@@ -17,7 +17,7 @@ def _build_specs():
             image="python:3.12-slim",
             working_dir="/workspace",
             volumes=None,
-            describe=False,
+            describe=True,
         )
     )
     return {"docker": spec}
@@ -25,7 +25,7 @@ def _build_specs():
 
 async def _assert_exec_echo(mcp: McpManager) -> None:
     sess = await mcp.get_session("docker")
-    res = await sess.call_tool(name="exec", arguments={"cmd": ECHO_CMD})
+    res = await sess.call_tool(name="docker_exec", arguments={"cmd": ECHO_CMD})
     assert isinstance(res, mcp_types.CallToolResult)
     sc = res.structuredContent
     assert isinstance(sc, dict)
@@ -38,7 +38,7 @@ async def _assert_exec_echo(mcp: McpManager) -> None:
 @pytest.mark.asyncio
 async def test_exec_roundtrip_echo() -> None:
     """Spin up real Docker container and roundtrip an echo via exec."""
-    async with McpManager(_build_slots()) as mcp:
+    async with McpManager(_build_specs()) as mcp:
         await _assert_exec_echo(mcp)
 
 
@@ -49,7 +49,7 @@ async def test_live_llm_exec_echo() -> None:
     """End-to-end: real LLM is instructed to call docker exec to print hello and return exactly it."""
     from adgn_llm.mini_codex.agent import MiniCodex, _openai_client  # lazy import
 
-    async with McpManager(_build_slots()) as mcp:
+    async with McpManager(_build_specs()) as mcp:
         client = _openai_client()
         agent = await MiniCodex.create(
             model=os.environ.get("OPENAI_MODEL", "gpt-5"),

@@ -129,15 +129,25 @@ class FakeResponsesAPI:
             # Comparison grading (not exercised here)
         # MiniCodex PE flow: when a tool is required, always emit propose_prompt
         if tool_choice == "required":
-            self._pe_counter += 1
-            call = mk_func_call(
-                name="mcp__prompt_feedback__propose_prompt",
-                args={"prompt": f"PROMPT_V{self._pe_counter}"},
-                call_id=f"pe-{self._pe_counter}",
-                id=f"call-pe-{self._pe_counter}",
-            )
+            # Distinguish outer (PE) vs inner (runner) agents by model name
+            is_pe = isinstance(model, str) and ("gpt-4o" in model)
+            if is_pe:
+                self._pe_counter += 1
+                call = mk_func_call(
+                    name="mcp__prompt_feedback__propose_prompt",
+                    args={"prompt": f"PROMPT_V{self._pe_counter}"},
+                    call_id=f"pe-{self._pe_counter}",
+                    id=f"call-pe-{self._pe_counter}",
+                )
+                return mk_response(
+                    [call],
+                    model=model,
+                    tools=tools,
+                    tool_choice=tool_choice,
+                )
+            # Runner path: do not force any tool; just return assistant text
             return mk_response(
-                [call],
+                [mk_msg("ok")],
                 model=model,
                 tools=tools,
                 tool_choice=tool_choice,
