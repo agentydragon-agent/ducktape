@@ -69,6 +69,19 @@ class McpManager:
         self._specs = specs
         self._realized: Dict[str, ServerSlot] = {}
         self._stack = AsyncExitStack()
+        self._lock = asyncio.Lock()
+
+    async def ensure_open(self, name: str) -> ServerSlot:
+        async with self._lock:
+            slot = self._realized.get(name)
+            if slot is not None:
+                return slot
+            spec = self._specs.get(name)
+            if spec is None:
+                raise KeyError(f"Unknown MCP server slot: {name}")
+            slot = await spec.open(self._stack)
+            self._realized[name] = slot
+            return slot
 
     async def __aenter__(self) -> McpManager:  # type: ignore[name-defined]
         return self
@@ -77,9 +90,7 @@ class McpManager:
         await self._stack.aclose()
 
     async def get_session(self, name: str) -> ClientSession:
-        slot = self._slots[name]
-        await slot.open(self._stack)
-        return slot.session  # type: ignore[return-value]
+        return (await self.ensure_open(name)).session
 
     async def list_tools(self, only: list[str] | None = None) -> list[dict[str, Any]]:
         def _strip_ctx(schema: Any) -> Any:
@@ -98,7 +109,7 @@ class McpManager:
             return schema
 
         out: list[dict[str, Any]] = []
-        for name in only or list(self._slots.keys()):
+        for name in only or list(self._specs.keys()):
             sess = await self.get_session(name)
             res = await sess.list_tools()
             for t in res.tools or []:
@@ -119,7 +130,7 @@ class McpManager:
         Each item: {server, uri, name?, description?, mime?, annotations?}
         """
         items: list[dict[str, Any]] = []
-        for server_name in only or list(self._slots.keys()):
+        for server_name in only or list(self._specs.keys()):
             sess = await self.get_session(server_name)
             res = await sess.list_resources()
             for r in res.resources or []:
@@ -147,11 +158,7 @@ class McpManager:
         inside the client/session context. If we don't have a cached result, we
         synthesize a minimal placeholder after ensuring the session is open.
         """
-        await self.get_session(server)
-        slot = self._slots[server]
-        if slot.init_result is None:
-            # Synthesize a minimal result to satisfy callers that only need a banner
-            slot.init_result = InitializeResult(capabilities=None, protocolVersion="1.0.0")  # type: ignore[arg-type]
+        slot = await self.ensure_open(server)
         return slot.init_result
 
     @staticmethod

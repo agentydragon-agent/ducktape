@@ -39,4 +39,4 @@ def make_inproc_slot_spec(app: FastMCP) -> ServerSlotSpec:
         await stack.enter_async_context(sess)
         return sess
 
-    return ServerSlotSpec(name=name, open_uninitialized=open_uninitialized)
+    return ServerSlotSpec(open_uninitialized=open_uninitialized)

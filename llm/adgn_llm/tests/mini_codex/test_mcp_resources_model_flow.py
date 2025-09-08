@@ -11,9 +11,9 @@ from openai.types.responses import (
 )
 
 from adgn_llm.mcp.docker_exec.server import make_container_exec_mcp
-from adgn_llm.mcp.inproc import fastmcp_inproc_client
+from adgn_llm.mcp.inproc_utils import make_inproc_slot_spec
 from adgn_llm.mini_codex.agent import MiniCodex
-from adgn_llm.mini_codex.mcp_manager import McpManager, ServerSlot, session_opener
+from adgn_llm.mini_codex.mcp_manager import McpManager
 
 
 class FakeResponses:
@@ -68,13 +68,10 @@ class FakeOpenAIClient:
 
 @pytest.mark.asyncio
 async def test_model_reads_container_info_with_stubbed_openai() -> None:
-    # Build in-proc FastMCP server slot named 'docker'
-    def _cm_builder():
-        return fastmcp_inproc_client(lambda: make_container_exec_mcp(image="alpine:3.19", describe=False))
+    # Build in-proc FastMCP server spec named 'docker'
+    spec = make_inproc_slot_spec(make_container_exec_mcp(image="alpine:3.19", describe=False))
 
-    slots = {"docker": ServerSlot(name="docker", open_fn=session_opener(_cm_builder))}
-
-    async with McpManager(slots) as mcp:
+    async with McpManager({"docker": spec}) as mcp:
         client = FakeOpenAIClient()
         agent = await MiniCodex.create(
             model="gpt-5.1-mini",
