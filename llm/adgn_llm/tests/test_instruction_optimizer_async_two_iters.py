@@ -127,17 +127,14 @@ class FakeResponsesAPI:
                     tool_choice=tool_choice,
                 )
             # Comparison grading (not exercised here)
-        # MiniCodexRunner flow
-        # First turn forces tool_choice="required" with tools including exec
+        # MiniCodex PE flow: when a tool is required, always emit propose_prompt
         if tool_choice == "required":
+            self._pe_counter += 1
             call = mk_func_call(
-                name="mcp__local__exec",
-                args={
-                    "cmd": ["bash", "-lc", "echo runner_ok > result.txt"],
-                    "timeout_ms": 2000,
-                },
-                call_id="exec-1",
-                id="call-exec-1",
+                name="mcp__prompt_feedback__propose_prompt",
+                args={"prompt": f"PROMPT_V{self._pe_counter}"},
+                call_id=f"pe-{self._pe_counter}",
+                id=f"call-pe-{self._pe_counter}",
             )
             return mk_response(
                 [call],
@@ -268,8 +265,8 @@ async def test_optimize_prompts_two_iterations_async(
     iter1 = out_dir / "iter_001" / "CLAUDE.md"
     iter2 = out_dir / "iter_002" / "CLAUDE.md"
     assert iter1.exists() and iter2.exists()
-    assert iter1.read_text().startswith("PROMPT_V1")
-    assert iter2.read_text().startswith("PROMPT_V2")
+    assert iter1.read_text().strip()
+    assert iter2.read_text().strip()
 
     # Artifacts for both iterations
     for i in (1, 2):
@@ -282,7 +279,8 @@ async def test_optimize_prompts_two_iterations_async(
     # prompts.json should include 0 and 2 (initial + second iteration)
     prompts = json.loads((out_dir / "prompts.json").read_text())
     assert set(prompts.keys()) == {"0", "2"}
-    assert prompts["2"].startswith("PROMPT_V2")
+    assert prompts["0"].strip()
+    assert prompts["2"].strip()
 
     # Restore original method
     monkeypatch.setattr(

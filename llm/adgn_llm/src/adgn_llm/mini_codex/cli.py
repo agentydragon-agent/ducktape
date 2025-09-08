@@ -24,7 +24,7 @@ from adgn_llm.mini_codex.agent import (
     _responses_output_from_calltool,
     MiniCodex,
 )
-from adgn_llm.mini_codex.local_exec_server import make_local_exec_mcp
+from adgn_llm.mcp.local_exec.server import make_local_exec_mcp
 from adgn_llm.mini_codex.mcp_manager import (
     McpManager,
     ServerSlot,
@@ -347,25 +347,24 @@ async def responses_followup_with_tool_outputs(
 async def main_async() -> None:
     print("mini-codex ready. Ctrl-D to exit. Type your task and press Enter.")
 
-    # Build slots: load stdio MCP servers from config if available + local exec
+    # Build specs: load stdio MCP servers from config if available + local exec
     cfg_path_env = os.environ.get("MCP_CONFIG")
     cfg_path = Path(cfg_path_env) if cfg_path_env else (Path.cwd() / ".mcp.json")
 
-    slots: dict[str, ServerSlot] = {}
+    specs = {}
 
-    # Add local in-process exec server via FastMCP memory streams
-    open_fn_local = session_opener(lambda: fastmcp_inproc_client(lambda: make_local_exec_mcp(LOCAL_EXEC_SERVER_NAME)))
-    slots[LOCAL_EXEC_SERVER_NAME] = ServerSlot(name=LOCAL_EXEC_SERVER_NAME, open_fn=open_fn_local)
+    # Add local in-process exec server via FastMCP memory streams (in-proc JSON-RPC)
+    specs[LOCAL_EXEC_SERVER_NAME] = make_inproc_slot_spec(make_local_exec_mcp(LOCAL_EXEC_SERVER_NAME))
 
     # Add servers from config via unified slots_from_specs (requires explicit transport for remote servers)
     if cfg_path.exists():
         servers = load_mcp_file(str(cfg_path))
         if isinstance(servers, dict):
-            slots.update(McpManager.slots_from_specs(servers))
+            specs.update(McpManager.slots_from_specs(servers))
 
     client = openai.AsyncOpenAI()
 
-    async with McpManager(slots) as mcp, await MiniCodex.create(
+    async with McpManager(specs) as mcp, await MiniCodex.create(
         model=DEFAULT_MODEL,
         mcp=mcp,
         system=SYSTEM_INSTRUCTIONS,

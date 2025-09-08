@@ -143,14 +143,3 @@ def exec_handler(args: dict[str, Any], *, sandbox_enabled: bool = True) -> dict[
     return {"exit": code, "stdout": out, "stderr": err}
 
 
-def build_local_tools() -> dict[str, dict[str, tuple[str, dict[str, Any], Any]]]:
-    """Return mapping suitable for McpManager.from_config(..., local=...)."""
-    return {
-        "local": {
-            "exec": (
-                "Execute a shell command and return exit, stdout, stderr.",
-                EXEC_PARAMETERS_SCHEMA,
-                lambda payload: exec_handler(payload, sandbox_enabled=True),
-            ),
-        },
-    }

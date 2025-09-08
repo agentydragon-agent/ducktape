@@ -6,7 +6,7 @@ import shutil
 import pytest
 from mcp.client.stdio import StdioServerParameters, stdio_client
 
-from adgn_llm.mini_codex.mcp_manager import McpManager, ServerSlot, session_opener
+from adgn_llm.mini_codex.mcp_manager import McpManager
 
 
 @pytest.mark.asyncio
@@ -39,9 +39,9 @@ async def test_stdio_server_everything_lists_tools() -> None:
         command="npx",
         args=["--yes", "@modelcontextprotocol/server-everything", "stdio"],
     )
-    slot = ServerSlot(name="everything", open_fn=session_opener(lambda: stdio_client(params)))
+    spec = McpManager.slot_from_spec("everything", {"transport": "stdio", **params.model_dump()})
 
-    async with McpManager({"everything": slot}) as mcp:
+    async with McpManager({"everything": spec}) as mcp:
         tools = await mcp.list_tools()
         assert isinstance(tools, list) and tools, "No tools returned"
         assert any(t.get("type") == "function" for t in tools), "No function tools discovered"

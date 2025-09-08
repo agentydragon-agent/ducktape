@@ -15,11 +15,9 @@ from typing import Any
 from openai import AsyncOpenAI
 
 from adgn_llm.mcp.docker_exec.server import make_container_exec_mcp
-
-# In-process FastMCP wiring (avoid stdio)
-from adgn_llm.mcp.inproc import fastmcp_inproc_client
+from adgn_llm.mcp.inproc_utils import make_inproc_slot_spec
 from adgn_llm.mini_codex.agent import MiniCodex
-from adgn_llm.mini_codex.mcp_manager import McpManager, ServerSlot, session_opener
+from adgn_llm.mini_codex.mcp_manager import McpManager
 
 from .specimen_utils import Specimen, ensure_archive_for_specimen_slug
 
@@ -220,22 +218,19 @@ def run_specimen_lint_issue(
         )
         _extract_tar_gz_to(archive, mount_root)
 
-        # Build in-process FastMCP server slot for docker exec (single-process for easier debug)
-        def _cm_builder():
-            return fastmcp_inproc_client(
-                lambda: make_container_exec_mcp(
-                    image=DOCKER_IMAGE,
-                    working_dir="/workspace",
-                    volumes={str(mount_root): {"bind": "/workspace", "mode": "ro"}},
-                    describe=True,
-                ),
+        # Build in-process FastMCP server spec for docker exec (single-process for easier debug)
+        spec = make_inproc_slot_spec(
+            make_container_exec_mcp(
+                image=DOCKER_IMAGE,
+                working_dir="/workspace",
+                volumes={str(mount_root): {"bind": "/workspace", "mode": "ro"}},
+                describe=True,
             )
-
-        open_fn = session_opener(_cm_builder)
-        slots = {"docker": ServerSlot(name="docker", open_fn=open_fn)}
+        )
+        specs = {"docker": spec}
         props = _find_property_files([str(p) for p in issue.properties])
         prompt = _build_prompt(issue, props, occurrence=occ)
-        text = asyncio.run(_run_agent(prompt, slots, model, client))
+        text = asyncio.run(_run_agent(prompt, specs, model, client))
         print(text)
         # Heuristic: final line contains PASS → success
         tail = (text.splitlines() or [""])[-1].strip().upper()

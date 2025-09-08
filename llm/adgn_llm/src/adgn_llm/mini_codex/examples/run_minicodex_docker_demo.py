@@ -69,12 +69,10 @@ async def run_demo() -> None:
             },
         }
 
-        # 3) Create MCP manager (no local execution servers) using slots/session_opener
-        params = StdioServerParameters.model_validate(servers["docker"])  # do not swallow
-        slots = {"docker": ServerSlot(name="docker", open_fn=session_opener(lambda: stdio_client(params)))}
+        # 3) Create MCP manager (no local execution servers) using ServerSlotSpec
         client = openai_client()
 
-        async with McpManager(slots) as mcp:
+        async with McpManager(McpManager.slots_from_specs({"docker": servers["docker"]})) as mcp:
             # Find the tool name the model will call (e.g., mcp__docker__docker_exec)
             tool_names = [t.get("name") for t in (await mcp.list_tools()) if t.get("type") == "function"]
             docker_tool = next(

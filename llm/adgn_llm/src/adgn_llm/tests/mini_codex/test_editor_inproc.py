@@ -6,12 +6,8 @@ from pathlib import Path
 import pytest
 
 from adgn_llm.mcp.editor_server import make_editor_mcp
-from adgn_llm.mcp.inproc import fastmcp_inproc_client
-from adgn_llm.mini_codex.mcp_manager import (
-    McpManager,
-    ServerSlot,
-    session_opener,
-)
+from adgn_llm.mcp.inproc_utils import make_inproc_slot_spec
+from adgn_llm.mini_codex.mcp_manager import McpManager
 
 
 @pytest.mark.asyncio
@@ -20,11 +16,10 @@ async def test_editor_inproc_basic_ops(tmp_path: Path) -> None:
     target = tmp_path / "sample.py"
     target.write_text("x = 1\n", encoding="utf-8")
 
-    # Wire in-proc editor server via FastMCP memory streams → McpManager(slots)
-    open_fn = session_opener(lambda: fastmcp_inproc_client(lambda: make_editor_mcp(target)))
-    slots = {"editor": ServerSlot(name="editor", open_fn=open_fn)}
+    # Wire in-proc editor server via FastMCP memory streams → McpManager(specs)
+    spec = make_inproc_slot_spec(make_editor_mcp(target))
 
-    async with McpManager(slots) as mcp:
+    async with McpManager({"editor": spec}) as mcp:
         # Namespaced tools should be advertised
         specs = await mcp.list_tools()
         names = [s.get("name") for s in specs]

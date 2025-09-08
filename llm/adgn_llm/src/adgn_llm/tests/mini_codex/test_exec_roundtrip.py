@@ -5,25 +5,23 @@ import pytest
 
 from adgn_llm.mcp.inproc import fastmcp_inproc_client
 from adgn_llm.mcp.docker_exec.server import make_container_exec_mcp
-from adgn_llm.mini_codex.mcp_manager import McpManager, ServerSlot, session_opener
+from adgn_llm.mcp.inproc_utils import make_inproc_slot_spec
+from adgn_llm.mini_codex.mcp_manager import McpManager
 from mcp import types as mcp_types
 
 ECHO_CMD = ["sh", "-lc", "printf hello"]
 
 
-def _build_slots() -> dict[str, ServerSlot]:
-    def _cm_builder():
-        return fastmcp_inproc_client(
-            lambda: make_container_exec_mcp(
-                image="python:3.12-slim",
-                working_dir="/workspace",
-                volumes=None,
-                describe=False,
-            )
+def _build_specs():
+    spec = make_inproc_slot_spec(
+        make_container_exec_mcp(
+            image="python:3.12-slim",
+            working_dir="/workspace",
+            volumes=None,
+            describe=False,
         )
-
-    open_fn = session_opener(_cm_builder)
-    return {"docker": ServerSlot(name="docker", open_fn=open_fn)}
+    )
+    return {"docker": spec}
 
 
 async def _assert_exec_echo(mcp: McpManager) -> None:

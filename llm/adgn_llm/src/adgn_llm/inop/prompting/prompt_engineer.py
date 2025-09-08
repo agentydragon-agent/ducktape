@@ -1,58 +1,25 @@
 from __future__ import annotations
 
-import json
 import math
 import statistics
-from dataclasses import dataclass
+from contextlib import AsyncExitStack
 from enum import Enum
 from typing import Any, Protocol
 
-from openai.types.responses.response import Response
-from openai.types.responses.response_function_tool_call import ResponseFunctionToolCall
-from openai.types.responses.response_function_tool_call_item import (
-    ResponseFunctionToolCallItem,
-)
-from openai.types.responses.response_output_message import ResponseOutputMessage
-from openai.types.responses.response_reasoning_item import ResponseReasoningItem
 
 from adgn_llm.inop.clients.logging_openai_client import (
     LoggingOpenAIModel,
 )
 from adgn_llm.inop.engine.models import AgentTaskType, GradedRollout
 from adgn_llm.inop.io.logging_utils import DualOutputLogging
+from adgn_llm.mini_codex.agent import MiniCodex
+from adgn_llm.mini_codex.mcp_manager import McpManager
 
 logger = DualOutputLogging.get_logger()
 
 SUBMIT_PROMPT_FUNCTION_NAME = "submit_prompt"
 
 
-@dataclass
-class Turn:
-    reasoning: list[ResponseOutputMessage | ResponseReasoningItem]
-    function_call_message: ResponseFunctionToolCall | ResponseFunctionToolCallItem
-    proposed_prompt: str
-    feedback: str
-
-    @property
-    def messages(self) -> list[dict[str, Any]]:
-        msgs: list[dict[str, Any]] = []
-        for reasoning_item in self.reasoning:
-            msg_dict = reasoning_item.model_dump()
-            if "status" in msg_dict:
-                del msg_dict["status"]
-            msgs.append(msg_dict)
-        function_call_dict = self.function_call_message.model_dump()
-        if "status" in function_call_dict:
-            del function_call_dict["status"]
-        msgs.append(function_call_dict)
-        msgs.append(
-            {
-                "type": "function_call_output",
-                "call_id": self.function_call_message.call_id,
-                "output": self.feedback,
-            },
-        )
-        return msgs
 
 
 class FeedbackMode(Enum):
@@ -108,20 +75,16 @@ class PromptEngineer:
         task_type: AgentTaskType = AgentTaskType.CODING,
     ) -> None:
         self.model = model
-        self._turns: list[Turn] = []
         self.feedback_provider = feedback_provider
         self.task_type = task_type
+        self._exit_stack = AsyncExitStack()
+        self._prompt_agent: MiniCodex | None = None
+        self._last_prompt: str | None = None
 
     @property
     def prompt_messages(
         self,
-    ) -> list[
-        dict[str, Any]
-        | ResponseOutputMessage
-        | ResponseReasoningItem
-        | ResponseFunctionToolCall
-        | ResponseFunctionToolCallItem
-    ]:
+    ) -> list[dict[str, Any]]:
         # Determine agent type description based on task type
         if self.task_type == AgentTaskType.CODE_REVIEW:
             agent_description = "a code review agent"
@@ -151,169 +114,62 @@ class PromptEngineer:
             f"- The feedback will take the form of: {self.feedback_provider.verbal_description()}\n"
         )
 
-        messages: list[
-            dict[str, Any]
-            | ResponseOutputMessage
-            | ResponseReasoningItem
-            | ResponseFunctionToolCall
-            | ResponseFunctionToolCallItem
-        ] = [{"role": "system", "content": system_message}]
+        messages: list[dict[str, Any]] = [{"role": "system", "content": system_message}]
 
-        for turn in self._turns:
-            messages.extend(turn.messages)
+        if self._last_prompt is not None:
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": f"Previous prompt:\n{self._last_prompt}",
+                },
+            )
 
         return messages
 
-    def _count_message_tokens(self, m) -> int:
-        # xxx todo: very rough
-        if hasattr(m, "model_dump"):
-            return self.model.count_tokens(str(m.model_dump()))
-        return self.model.count_tokens(str(m))
 
-    @property
-    def prompt_token_count(self) -> int:
-        return sum(self._count_message_tokens(msg) for msg in self.prompt_messages)
-
-    def _trim_context_if_needed(self) -> None:
-        """Trim context by removing oldest complete turns if needed."""
-        # When we exceed 80% of context window, trim down to 50%
-        trim_threshold = int(self.model.context_window_tokens * 0.8)
-        target_tokens = int(self.model.context_window_tokens * 0.5)
-
-        if self.prompt_token_count < trim_threshold:
-            return
-
-        logger.warning(
-            "Context window approaching limit, trimming oldest turns",
-            current_tokens=self.prompt_token_count,
-            trim_threshold=trim_threshold,
-            target_tokens=target_tokens,
-            context_window=self.model.context_window_tokens,
-            total_turns=len(self._turns),
-        )
-
-        # Remove oldest turns until we're under the target
-        # Always keep at least the most recent turn
-        while len(self._turns) > 1 and self.prompt_token_count > target_tokens:
-            self._turns.pop(0)
-            logger.info(
-                "Removed turn from context",
-                remaining_turns=len(self._turns),
-                current_tokens=self.prompt_token_count,
+    async def _ensure_prompt_agent(self) -> MiniCodex:
+        if self._prompt_agent is None:
+            # Prompt engineer currently has no MCP tools; MiniCodex still expects a manager
+            # with zero slots, which behaves as a no-op for tool listing.
+            self._prompt_agent = await MiniCodex.create(
+                model=self.model.model,
+                mcp=McpManager({}),
+                client=self.model.openai_client.openai_client,
+                system=None,
             )
+            await self._exit_stack.enter_async_context(self._prompt_agent)
+        return self._prompt_agent
 
-        # If still over target with just one turn, we have a problem
-        if self.prompt_token_count > target_tokens and len(self._turns) == 1:
-            logger.error(
-                "Single turn exceeds target size",
-                tokens=self.prompt_token_count,
-                target_tokens=target_tokens,
-            )
-            raise Exception("No turns left after trimming")
 
     async def propose_prompt(
         self,
-    ) -> tuple[
-        list[ResponseOutputMessage | ResponseReasoningItem],
-        ResponseFunctionToolCall | ResponseFunctionToolCallItem,
-        str,
-    ]:
-        self._trim_context_if_needed()
+    ) -> str:
+        agent = await self._ensure_prompt_agent()
 
-        tools = [
-            {
-                "type": "function",
-                "name": SUBMIT_PROMPT_FUNCTION_NAME,
-                "description": "Submit an improved system prompt",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "prompt": {
-                            "type": "string",
-                            "description": "The improved system prompt",
-                        },
-                    },
-                    "required": ["prompt"],
-                },
-            },
-        ]
-
-        response: Response = await self.model.responses_create(
-            input=self.prompt_messages,  # OpenAI Responses API uses 'input'
-            tools=tools,
-            tool_choice={
-                "type": "function",
-                "name": SUBMIT_PROMPT_FUNCTION_NAME,
-            },  # 'tool_choice' not 'tool_use'
-        )
-        reasoning_messages: list[ResponseOutputMessage | ResponseReasoningItem] = []
-        function_call_item: ResponseFunctionToolCall | ResponseFunctionToolCallItem | None = None
-
-        for item in response.output:
-            if isinstance(
-                item,
-                (ResponseFunctionToolCall, ResponseFunctionToolCallItem),
-            ):
-                function_call_item = item
-            elif isinstance(item, (ResponseOutputMessage, ResponseReasoningItem)):
-                reasoning_messages.append(item)
-
-        if function_call_item is None:
-            raise RuntimeError("No function_call found in response")
-
-        call_name = function_call_item.name
-        arguments_str = function_call_item.arguments
-
-        if call_name != SUBMIT_PROMPT_FUNCTION_NAME:
-            raise RuntimeError(f"Unexpected function name: {call_name}")
-        if not isinstance(arguments_str, str):
-            raise ValueError(f"Invalid arguments format: {arguments_str}")
-
-        try:
-            args_dict = json.loads(arguments_str)
-        except json.JSONDecodeError as e:
-            logger.error(
-                "Failed to parse function arguments",
-                arguments=arguments_str,
-                error=str(e),
-            )
-            raise ValueError(f"Invalid JSON in function arguments: {e}")
-
-        claude_prompt = args_dict.get("prompt", "").strip()
-        if not claude_prompt:
-            logger.error(
-                "Empty prompt returned by model",
-                args_dict=args_dict,
-                conversation_turns=len(self._turns),
-            )
-            raise ValueError("Empty prompt returned by model")
-
-        logger.info(
-            "Generated new prompt",
-            prompt_length=len(claude_prompt),
-            conversation_turns=len(self._turns),
+        result = await agent.run(
+            user_text="Generate an improved system prompt.",
+            require_at_least_one_tool=False,
         )
 
-        return reasoning_messages, function_call_item, claude_prompt
+        new_prompt = result.text.strip()
+        if not new_prompt:
+            raise ValueError("MiniCodex did not return a prompt")
+
+        self._last_prompt = new_prompt
+        return new_prompt
 
     async def add_result(
         self,
-        reasoning: list[ResponseOutputMessage | ResponseReasoningItem],
-        function_call_message: ResponseFunctionToolCall | ResponseFunctionToolCallItem,
+        reasoning: list[Any],
+        function_call_message: Any,
         proposed_prompt: str,
         rollouts: list[GradedRollout],
     ) -> None:
         feedback = await self.feedback_provider.provide_feedback(rollouts)
-        self._turns.append(
-            Turn(
-                reasoning=reasoning,
-                function_call_message=function_call_message,
-                proposed_prompt=proposed_prompt,
-                feedback=feedback,
-            ),
-        )
         logger.info(
-            "Added turn to conversation",
-            conversation_turns=len(self._turns),
-            feedback_length=len(feedback),
+            "Prompt feedback",
+            prompt=proposed_prompt[:200],
+            feedback_preview=feedback[:200],
         )
+        self._last_prompt = proposed_prompt
+

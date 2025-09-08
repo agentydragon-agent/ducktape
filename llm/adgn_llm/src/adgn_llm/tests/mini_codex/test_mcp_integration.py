@@ -6,11 +6,12 @@ import shutil
 import pytest
 from adgn_llm.mcp.inproc import fastmcp_inproc_client
 from adgn_llm.mcp.docker_exec.server import make_container_exec_mcp
+from adgn_llm.mcp.local_exec.server import make_local_exec_mcp
+from adgn_llm.mcp.inproc_utils import make_inproc_slot_spec
 
 from adgn_llm.mini_codex.mcp_manager import (
     McpManager,
-    ServerSlot,
-    session_opener,
+    ServerSlotSpec,
 )
 
 # FastMCP stdio client
@@ -58,10 +59,16 @@ async def test_stdio_server_list_tools() -> None:
             )
         )
 
-    open_fn = session_opener(cm_builder)
-    slots = {"everything": ServerSlot(name="everything", open_fn=open_fn)}
+    spec = McpManager.slot_from_spec(
+        "everything",
+        {
+            "transport": "stdio",
+            "command": "npx",
+            "args": ["@modelcontextprotocol/server-everything", "stdio"],
+        },
+    )
 
-    async with McpManager(slots) as mcp:
+    async with McpManager({"everything": spec}) as mcp:
         specs = await mcp.list_tools()
         assert isinstance(specs, list)
         assert any(s.get("type") == "function" for s in specs)
@@ -74,12 +81,9 @@ async def test_local_inprocess_server() -> None:
     """Local in-process FastMCP exec tool via memory streams (no stdio)."""
 
     # Import FastMCP in-proc helpers locally to avoid global import churn
-    from adgn_llm.mini_codex.local_exec_server import make_local_exec_mcp  # noqa: PLC0415
 
-    open_fn = session_opener(lambda: fastmcp_inproc_client(lambda: make_local_exec_mcp("local")))
-    slots = {"local": ServerSlot(name="local", open_fn=open_fn)}
-
-    async with McpManager(slots) as mcp:
+    spec = make_inproc_slot_spec(make_local_exec_mcp("local"))
+    async with McpManager({"local": spec}) as mcp:
         specs = await mcp.list_tools()
         names = [s.get("name") for s in specs]
         assert "mcp__local__exec" in names
@@ -100,10 +104,16 @@ async def test_inproc_container_exec_exposes_container_info_resource() -> None:
             ),
         )
 
-    open_fn = session_opener(_cm_builder)
-    slots = {"docker": ServerSlot(name="docker", open_fn=open_fn)}
+    spec = make_inproc_slot_spec(
+        make_container_exec_mcp(
+            image="python:3.12-slim",
+            working_dir="/workspace",
+            volumes=None,
+            describe=False,
+        )
+    )
 
-    async with McpManager(slots) as mcp:
+    async with McpManager({"docker": spec}) as mcp:
         sess = await mcp.get_session("docker")
         # Existence: can read the resource
         res = await sess.read_resource("resource://container.info")

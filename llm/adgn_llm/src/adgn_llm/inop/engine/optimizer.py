@@ -83,6 +83,16 @@ from adgn_llm.inop.prompting.prompt_engineer import (
 from adgn_llm.inop.prompting.summarizer import PatternSummarizer
 from adgn_llm.inop.prompting.truncation_utils import TruncationManager
 
+# MCP-based PE wiring (new path)
+from adgn_llm.inop.mcp.prompt_feedback_server import (
+    make_prompt_feedback_server_with_handle,
+    PromptEvaluationDeps,
+)
+from adgn_llm.mcp.inproc_utils import make_inproc_slot_spec
+from adgn_llm.mini_codex.mcp_manager import McpManager
+from adgn_llm.mini_codex.agent import MiniCodex
+from adgn_llm.inop.prompting.pe_controller import ProposePromptNTimes
+
 # Logging will be configured after argument parsing
 logger = None
 
@@ -133,6 +143,189 @@ def setup_signal_handlers():
 
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
+
+
+# -----------------------------------------------------------------------------
+# MCP-driven Prompt Optimization (PE as MCP client)
+# -----------------------------------------------------------------------------
+
+async def optimize_prompts_mcp(
+    *,
+    anthropic_log,
+    openai_client: LoggingOpenAIClient,
+    seed_tasks: list[TaskDefinition],
+    criteria: list[Criterion],
+    cfg: OptimizerConfig,
+    runner_name: str,
+    task_types: dict,
+    runner_configs: dict,
+    task_type: AgentTaskType,
+    iterations: int,
+    base_dir: Path,
+) -> Path:
+    """Run prompt optimization via an MCP server that evaluates prompts.
+
+    The Prompt Engineer (MiniCodex) will call propose_prompt(prompt) N times in one
+    outer run; the MCP server will run rollouts+grading+persistence and maintain
+    per-session state (last_prompt, last_feedback). We return the output dir.
+    """
+
+    # Choose feedback provider per config
+    feedback_mode = FeedbackMode(cfg.prompt_engineer.feedback_mode)
+    if feedback_mode == FeedbackMode.SUMMARY:
+        feedback_provider = PatternSummarizer(
+            model=LoggingOpenAIModel(
+                openai_client=openai_client,
+                model=cfg.grader.model,
+                context_window_tokens=cfg.tokens.max_context_tokens,
+            ),
+            truncation_manager=TruncationManager(cfg),
+            max_file_size_pattern_analysis=cfg.truncation.max_file_pattern_analysis,
+        )
+    elif feedback_mode == FeedbackMode.STATS_ONLY:
+        feedback_provider = StatsOnlyFeedbackProvider()
+    elif feedback_mode == FeedbackMode.FULL_ROLLOUTS:
+        feedback_provider = FullRolloutsFeedbackProvider()
+    else:
+        raise ValueError(f"Invalid {feedback_mode = }.")
+
+    # Deps to run rollouts for a given prompt
+    class _Deps(PromptEvaluationDeps):  # type: ignore[misc]
+        async def select_seed_tasks(self) -> list[TaskDefinition]:
+            return seed_tasks
+
+        async def run_rollouts_with_prompt(self, prompt: str, tasks: list[TaskDefinition]) -> list[GradedRollout]:
+            # Minimal serial implementation (can parallelize later)
+            results: list[GradedRollout] = []
+            for t in tasks:
+                # Create runner with the configured OpenAI model
+                runner_model = LoggingOpenAIModel(
+                    openai_client=openai_client,
+                    model=cfg.prompt_engineer.model,
+                    context_window_tokens=cfg.tokens.max_context_tokens,
+                    reasoning_effort=cfg.grader.reasoning_effort,
+                )
+                runner = create_runner(
+                    runner_name,
+                    runner_configs,
+                    openai_model=runner_model,
+                )
+                # Prepare task-type specific setup
+                if t.type not in task_types:
+                    raise ValueError(f"Unknown task type: {t.type}")
+                task_type_config = task_types[t.type]
+                await runner.setup(t, task_type_config)
+
+                # Single rollout per task (id=0)
+                rollout = await runner.run_task(t, agent_instructions=prompt)
+
+                # Grade rollout
+                _, grading_config = t.resolve_config(task_types)
+                grade = await grade_rollout(
+                    rollout=rollout,
+                    task=t,
+                    grading_config=grading_config,
+                    model=LoggingOpenAIModel(
+                        openai_client=openai_client,
+                        model=cfg.grader.model,
+                        context_window_tokens=cfg.tokens.max_context_tokens,
+                        reasoning_effort=cfg.grader.reasoning_effort,
+                    ),
+                    cfg=cfg,
+                    environment=runner.get_environment(),
+                )
+                # Package graded rollout (include task per model schema)
+                results.append(GradedRollout(rollout=rollout, grade=grade, task=t))
+                await runner.cleanup()
+            return results
+
+        def persist_all(self, *, iteration: int, prompt: str, rollouts: list[GradedRollout], feedback: str) -> None:
+            it_dir = base_dir / f"iter_{iteration:03d}"
+            it_dir.mkdir(parents=True, exist_ok=True)
+            (it_dir / "CLAUDE.md").write_text(prompt)
+
+            # Append to prompts.jsonl and feedback.jsonl (append-only logs)
+            prompts_log = base_dir / "prompts.jsonl"
+            feedback_log = base_dir / "feedback.jsonl"
+            with prompts_log.open("a") as f:
+                f.write(json.dumps({"iteration": iteration, "prompt": prompt}) + "\n")
+            with feedback_log.open("a") as f:
+                f.write(json.dumps({"iteration": iteration, "feedback": feedback}) + "\n")
+
+            # Persist each rollout and its grading under task/agent_0
+            for gr in rollouts:
+                t_id = gr.rollout.task_id
+                rollout_dir = it_dir / t_id / "agent_0"
+                rollout_dir.mkdir(parents=True, exist_ok=True)
+                # rollout.json
+                rollout_data = {
+                    "task_id": t_id,
+                    "agent_id": "agent_0",
+                    "iteration": iteration,
+                    "timestamp": datetime.now(UTC).isoformat(),
+                    "runner_id": gr.rollout.runner_id,
+                    "success": gr.rollout.success,
+                    "cost_usd": gr.rollout.cost_usd,
+                    "duration_seconds": gr.rollout.duration_seconds,
+                    "trajectory": [item.model_dump() for item in gr.rollout.trajectory],
+                    "files": gr.rollout.files,
+                    "metadata": gr.rollout.metadata,
+                }
+                (rollout_dir / "rollout.json").write_text(json.dumps(rollout_data, indent=2))
+                # grading.json
+                grading_data = {
+                    "overall_score": gr.grade.overall_score,
+                }
+                (rollout_dir / "grading.json").write_text(json.dumps(grading_data, indent=2))
+
+    deps = _Deps()
+
+    # Build the MCP server and session handle
+    mcp_server, state_handle = make_prompt_feedback_server_with_handle(
+        deps=deps,
+        feedback_provider=feedback_provider,
+    )
+
+    # Build a ServerSlotSpec via the in-proc JSON-RPC utility
+    specs = {"prompt_feedback": make_inproc_slot_spec(mcp_server)}
+
+    async with McpManager(specs) as mcp:
+        # Session will be initialized on first access via McpManager ensure_open
+
+        # Create MiniCodex PE with system prompt at init
+        model = LoggingOpenAIModel(
+            openai_client=openai_client,
+            model=cfg.prompt_engineer.model,
+            context_window_tokens=cfg.tokens.max_context_tokens,
+            reasoning_effort=cfg.grader.reasoning_effort,
+        )
+        pe = await MiniCodex.create(
+            model=model.model,
+            mcp=mcp,
+            client=model.openai_client.openai_client,
+            system=(
+                "You optimize the coding agent’s system prompt. Always evaluate a candidate by calling the 'propose_prompt' tool. "
+                "Do not produce assistant text after tool output."
+            ),
+        )
+
+        # Force N propose_prompt tool calls then abort
+        controller = ProposePromptNTimes(iterations)
+        await pe.run(user_text="Start prompt optimization.", controller=controller)
+
+        # Read final state directly (in-proc)
+        first_prompt = state_handle.state.first_prompt if state_handle.state else ""
+        last_prompt = state_handle.state.last_prompt if state_handle.state else ""
+        last_feedback = state_handle.state.last_feedback if state_handle.state else ""
+
+        # Persist summary (include 0 and N keys)
+        (base_dir / "prompts.json").write_text(json.dumps({"0": first_prompt, str(iterations): last_prompt}, indent=2))
+        logger.info(
+            "Optimization complete (MCP)",
+            last_prompt_preview=(last_prompt or "")[:160],
+            last_feedback_preview=(last_feedback or "")[:160],
+        )
+        return base_dir
 
 
 # -----------------------------------------------------------------------------
@@ -195,8 +388,20 @@ async def optimize_prompts(
     base_dir : Path
         Base directory for output.
     """
-    if max_parallel_rollouts is None:
-        max_parallel_rollouts = cfg.rollouts.max_parallel
+    # Delegate to MCP-driven implementation (single source of truth)
+    return await optimize_prompts_mcp(
+        anthropic_log=anthropic_log,
+        openai_client=openai_client,
+        seed_tasks=seed_tasks,
+        criteria=criteria,
+        cfg=cfg,
+        runner_name=runner_name,
+        task_types=task_types,
+        runner_configs=runner_configs,
+        task_type=task_type,
+        iterations=iterations,
+        base_dir=base_dir,
+    )
 
     # Note: We'll create a runner instance per rollout to avoid shared state conflicts
     # Each parallel task needs its own runner to prevent race conditions
@@ -237,7 +442,9 @@ async def optimize_prompts(
     )
 
     # Generate initial prompt without any rollout data
-    prev_reasoning, prev_function_call, current_prompt = await engineer.propose_prompt()
+    current_prompt = await engineer.propose_prompt()
+    prev_reasoning: list[Any] = []
+    prev_function_call = None
     logger.info(
         "Generated initial prompt",
         iteration=0,
@@ -569,17 +776,15 @@ async def optimize_prompts(
 
         # Generate next prompt using PE (if not the last iteration)
         if iteration < iterations:
-            (
-                prev_reasoning,
-                prev_function_call,
-                new_prompt,
-            ) = await engineer.propose_prompt()
+            new_prompt = await engineer.propose_prompt()
 
             logger.info(
                 "Generated new optimized prompt",
                 iteration=iteration + 1,
                 prompt_preview=new_prompt[:200] + "..." if len(new_prompt) > 200 else new_prompt,
             )
+            prev_reasoning = []
+            prev_function_call = None
 
             # Store new system prompt
             prompts_by_iteration[iteration + 1] = new_prompt

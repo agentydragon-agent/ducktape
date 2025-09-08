@@ -33,6 +33,7 @@ from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponen
 from .loggers import TranscriptLogger
 from adgn_llm.openai_utils import ReasoningSummary
 from .mcp_manager import McpManager
+from adgn_llm.mini_codex.loop_control import DefaultController, LoopController, RequireAny, Abort
 
 
 @dataclass
@@ -187,7 +188,7 @@ class MiniCodex:
         self._run_require_one_tool = True if require_at_least_one_tool is None else require_at_least_one_tool
         return await self._single_turn()
 
-    async def _single_turn(self) -> AgentResult:
+    async def _single_turn(self, controller: "LoopController" = DefaultController()) -> AgentResult:
         sequence: list[dict[str, Any]] = []
         assistant_text_chunks: list[str] = []
         have_used_tool = False
@@ -201,9 +202,11 @@ class MiniCodex:
             instructions = self._system
             input_payload = dump_messages_for_api(self._transcript)
 
-            tool_choice_value: str | dict[str, Any] = (
-                "required" if (((self._run_require_one_tool if self._run_require_one_tool is not None else True)) and not have_used_tool) else "auto"
-            )
+            # Determine tool choice via controller
+            decision = controller.on_before_sample()
+            if isinstance(decision, Abort):
+                break
+            tool_choice_value: str | dict[str, Any] = "required" if isinstance(decision.tool_policy, RequireAny) else "auto"
 
             reasoning_kwargs: dict[str, Any] = {}
             if self._reasoning_effort is not None or self._reasoning_summary is not None:
@@ -390,6 +393,7 @@ class MiniCodex:
 
                 # Namespaced MCP tool
                 server, tool_name = self._mcp.resolve_function(fc.name)
+                # Get the session and invoke the MCP tool
                 session = await self._mcp.get_session(server)
                 start = time.perf_counter()
                 res_ct = await session.call_tool(name=tool_name, arguments=args)
@@ -570,11 +574,17 @@ class MiniCodex:
         user_text: str,
         stream: bool = False,
         require_at_least_one_tool: bool | None = None,
+        controller: "LoopController" = None,  # type: ignore[assignment]
     ) -> AgentResult | AsyncIterator[dict[str, Any]]:
         if stream:
 
             async def _gen() -> AsyncIterator[dict[str, Any]]:
-                res = await self.run(user_text, stream=False, require_at_least_one_tool=require_at_least_one_tool)  # type: ignore[assignment]
+                res = await self.run(
+                    user_text,
+                    stream=False,
+                    require_at_least_one_tool=require_at_least_one_tool,
+                    controller=controller,
+                )  # type: ignore[assignment]
                 yield {"kind": "final", "result": res}
 
             return _gen()
@@ -582,7 +592,10 @@ class MiniCodex:
         self._transcript.append(UserMessage(role="user", content=user_text))
         self._emit_event({"kind": "user_text", "text": user_text})
         self._run_require_one_tool = True if require_at_least_one_tool is None else require_at_least_one_tool
-        result = await self._single_turn()
+        # Ensure non-null controller (DefaultController mirrors legacy behavior)
+        if controller is None:
+            controller = DefaultController()
+        result = await self._single_turn(controller=controller)
         return result
 
     async def __aenter__(self) -> "MiniCodex":

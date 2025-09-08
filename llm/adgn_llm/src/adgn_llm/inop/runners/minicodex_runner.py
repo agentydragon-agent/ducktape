@@ -30,10 +30,10 @@ from adgn_llm.inop.io.file_utils import collect_workspace_files
 from adgn_llm.inop.runners.base import AgentRunner
 from adgn_llm.mcp._shared.container_session import NetworkMode
 from adgn_llm.mcp.docker_exec.server import make_container_exec_mcp
-from adgn_llm.mcp.inproc import fastmcp_inproc_client
+from adgn_llm.mcp.inproc_utils import make_inproc_slot_spec
 from adgn_llm.mini_codex.agent import MiniCodex
-from adgn_llm.mini_codex.local_exec_server import make_local_exec_mcp
-from adgn_llm.mini_codex.mcp_manager import McpManager, ServerSlot, session_opener
+from adgn_llm.mcp.local_exec.server import make_local_exec_mcp
+from adgn_llm.mini_codex.mcp_manager import McpManager, ServerSlotSpec
 
 
 class MiniCodexRunner(AgentRunner):
@@ -80,7 +80,7 @@ class MiniCodexRunner(AgentRunner):
         )
         self._agent = await self._exit_stack.enter_async_context(agent)
 
-    def _build_mcp_slots(self, setup) -> dict[str, ServerSlot]:
+    def _build_mcp_slots(self, setup) -> dict[str, ServerSlotSpec]:
         if not self.workspace_path:
             raise RuntimeError("Workspace not initialised")
 

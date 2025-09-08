@@ -47,15 +47,30 @@ async def fastmcp_inproc_client(
     # create_initialization_options contains serverInfo, capabilities, and optional instructions
     init_options = mcp_server._mcp_server.create_initialization_options()  # type: ignore[attr-defined]
 
-    async with anyio.create_task_group() as tg:
-        # Start server loop on the server ends
-        tg.start_soon(mcp_server._mcp_server.run, server_read, server_write, init_options)  # type: ignore[attr-defined]
-        try:
-            yield (client_read, client_write)
-        finally:
-            # Close client write to allow server loop to finish
-            await client_write.aclose()
-            # Let the server task finish naturally when its read side closes
+    try:
+        async with anyio.create_task_group() as tg:
+            finished = anyio.Event()
+
+            async def _serve() -> None:
+                try:
+                    await mcp_server._mcp_server.run(server_read, server_write, init_options)  # type: ignore[attr-defined]
+                finally:
+                    finished.set()
+
+            # Start server loop on the server ends
+            tg.start_soon(_serve)
+            try:
+                yield (client_read, client_write)
+            finally:
+                # Close client write to allow server loop to finish
+                await client_write.aclose()
+                # Wait for server loop to exit cleanly
+                await finished.wait()
+    except* RuntimeError as eg:
+        # Suppress known anyio teardown artifact from underlying MCP server cancellation
+        residual = [e for e in eg.exceptions if "Attempted to exit cancel scope" not in str(e)]
+        if residual:
+            raise ExceptionGroup("Unhandled RuntimeError in fastmcp_inproc_client", residual)
 
 
 @asynccontextmanager

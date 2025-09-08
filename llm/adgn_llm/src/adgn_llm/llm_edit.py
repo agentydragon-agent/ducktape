@@ -19,13 +19,9 @@ import typer
 from .openai_utils import ReasoningEffort, ReasoningSummary
 
 from .mcp.editor_server import make_editor_mcp
-from .mcp.inproc import fastmcp_inproc_client
+from .mcp.inproc_utils import make_inproc_slot_spec
 from .mini_codex.agent import MiniCodex
-from .mini_codex.mcp_manager import (
-    McpManager,
-    ServerSlot,
-    session_opener,
-)
+from .mini_codex.mcp_manager import McpManager
 
 
 
@@ -45,9 +41,9 @@ async def _execute(
         print(f"Error: {target_path} is not a file")
         return 2
 
-    # Build in-proc MCP session for the editor FastMCP server over memory streams
-    open_fn = session_opener(lambda: fastmcp_inproc_client(lambda: make_editor_mcp(target_path)))
-    slots = {"editor": ServerSlot(name="editor", open_fn=open_fn)}
+    # Build in-proc MCP spec for the editor FastMCP server over memory streams
+    spec = make_inproc_slot_spec(make_editor_mcp(target_path))
+    slots = {"editor": spec}
 
     # Folded context: per-agent MCP lifetime + agent lifetime
     async with (
