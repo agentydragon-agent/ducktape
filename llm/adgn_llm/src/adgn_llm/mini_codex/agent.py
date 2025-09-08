@@ -433,7 +433,7 @@ class MiniCodex:
             self._log.exception("transcript_write_failed")
             raise
         finally:
-            self._busy = False
+            pass
         return AgentResult(text=text, sequence=sequence, metrics=self._metrics)
 
     def _resource_tools_descriptors(self) -> list[dict[str, Any]]:

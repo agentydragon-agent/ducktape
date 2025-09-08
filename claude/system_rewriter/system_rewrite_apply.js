@@ -15,7 +15,7 @@ function esc(x){
   return x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-function extractBlobs(s){
+function extractBlobs(s){ // legacy; unused now that we import extractSystemBlobs
   const envGitBlobs = [];
   const envBlockRe = new RegExp(esc(ENV_INTRO) + '\\n<env>[\\s\\S]*?<\\/env>\\s*', 'g');
   let m;
@@ -66,7 +66,7 @@ async function readAllStdin(){
   }
   const template = fs.readFileSync(templatePath, 'utf8');
   const sysIn = await readAllStdin();
-  const { toolsBlob, envGitBlobs, modelLine, mcpSection } = extractBlobs(String(sysIn));
+  const { toolsBlob, envGitBlobs, modelLine, mcpSection } = extractSystemBlobs(String(sysIn), { toolsHeader: TOOLS_HEADER });
   const ctx = {
     toolsBlob,
     envGitBlobs: envGitBlobs.join(''),
