@@ -1,5 +1,10 @@
 #!/usr/bin/env node
 const fs = require('fs');
+const path = require('path');
+const os = require('os');
+const libA = path.join(__dirname, 'lib', 'system-utils');
+const libB = path.join(os.homedir(), '.claude-code-router', 'transformers', 'lib', 'system-utils');
+const { extractSystemBlobs } = require(fs.existsSync(libA + '.js') ? libA : libB);
 
 const TOOLS_HEADER = process.env.TOOLS_HEADER || 'You can use the following tools without requiring user approval:';
 const ENV_INTRO = 'Here is useful information about the environment you are running in:';

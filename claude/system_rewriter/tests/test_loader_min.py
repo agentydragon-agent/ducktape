@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-# Ensure eval dir is on sys.path for local imports
+# Ensure repo dir is on sys.path for local imports
 THIS_DIR = Path(__file__).resolve().parent
 EVAL_DIR = THIS_DIR.parent
 if str(EVAL_DIR) not in sys.path:

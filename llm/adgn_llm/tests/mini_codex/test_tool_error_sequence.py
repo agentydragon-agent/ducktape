@@ -28,12 +28,9 @@ class DummyClient(BaseModel):
 
 @pytest.mark.asyncio
 async def test_tool_error_is_surfaced_in_sequence(monkeypatch: pytest.MonkeyPatch) -> None:
-    # Build in-proc failing server slot using FastMCP in-memory client
-    async def open_fn(stack):
-        return await stack.enter_async_context(open_fastmcp_client_session(_make_failing_server))
-
-    slot = ServerSlot(name="editor", open_fn=open_fn)
-    mcp = McpManager({"editor": slot})
+    # Build in-proc failing server spec using FastMCP
+    spec = make_inproc_slot_spec(_make_failing_server())
+    mcp = McpManager({"editor": spec})
 
     # Stub OpenAI responses to return one tool call first, then no further calls (break loop)
     from openai.types.responses import ResponseFunctionToolCall

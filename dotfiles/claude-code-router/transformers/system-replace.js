@@ -15,7 +15,7 @@ const os = require('os');
 const fs = require('fs');
 const libA = path.join(__dirname, 'lib', 'system-utils');
 const libB = path.join(os.homedir(), '.claude-code-router', 'transformers', 'lib', 'system-utils');
-const { mapSystemContent } = require(fs.existsSync(libA + '.js') ? libA : libB);
+const { mapSystemContent, extractSystemBlobs } = require(fs.existsSync(libA + '.js') ? libA : libB);
 
 function identityRecomposer(s) {
   if (typeof s !== 'string') return s;
@@ -249,7 +249,7 @@ function renderFromStaticTemplate(s) {
     let end = s.length;
     if (nextEnv !== -1) end = Math.min(end, nextEnv);
     if (nextModel !== -1) end = Math.min(end, nextModel);
-    if (nextMcp == -1) end = Math.min(end, nextMcp);
+    if (nextMcp !== -1) end = Math.min(end, nextMcp);
     const toolsBlob = s.slice(after, end);
 
     const mm = s.match(new RegExp('^' + esc(modelPrefix) + '[^\\n]*\\n?', 'm'));

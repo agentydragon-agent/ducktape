@@ -141,19 +141,8 @@ class MiniCodex:
         # Logging artifacts
         self._log_dir: Path | None = None
         self._transcript_jsonl: Path | None = None
-        # Notification plumbing; client can set a handler and decide when to sample
-        self._notification_handler: Callable[[dict[str, Any]], None] = lambda _evt: None
-        self._pending_system_notes: list[str] = []
-        self._busy: bool = False
         self._run_require_one_tool: bool | None = None
 
-    def set_notification_handler(self, handler: Callable[[dict[str, Any]], None]) -> None:
-        """Install a notification handler the host can use to react (e.g., autosample).
-
-        Handler is invoked with a dict event. The host decides whether/when to call
-        `await agent.sample()`; MiniCodex itself does not auto-sample.
-        """
-        self._notification_handler = handler
 
     def inject_system_message(self, text: str) -> None:
         """Append a system message at the current end of transcript (temporal order)."""
@@ -161,23 +150,6 @@ class MiniCodex:
         self._transcript.append(msg)
         self._emit_event({"kind": "system_note", "text": text})
 
-    def notify(self, evt: dict[str, Any]) -> None:
-        """Receive external notifications (e.g., MCP resource updates).
-
-        - If busy (mid-turn), buffer as system notes to inject before next sampling.
-        - If idle, inject immediately to preserve temporal order.
-        - Always forward to the installed notification handler for host-driven autosampling.
-        """
-        text = (
-            (evt.get("text") if isinstance(evt, dict) else None)
-            or (evt.get("message") if isinstance(evt, dict) else None)
-            or json.dumps(evt, ensure_ascii=False)
-        )
-        if self._busy:
-            self._pending_system_notes.append(text)
-        else:
-            self.inject_system_message(text)
-        self._notification_handler(evt)
 
     def set_system_instructions(self, instructions: str | None) -> None:
         """Override base system instructions for future turns."""
@@ -193,12 +165,7 @@ class MiniCodex:
         assistant_text_chunks: list[str] = []
         have_used_tool = False
 
-        self._busy = True
         while True:
-            if self._pending_system_notes:
-                for _note in self._pending_system_notes:
-                    self.inject_system_message(_note)
-                self._pending_system_notes.clear()
             instructions = self._system
             input_payload = dump_messages_for_api(self._transcript)
 
@@ -238,7 +205,8 @@ class MiniCodex:
                     else:
                         lines.append(f"server={s} resources: {first}")
                 banner_chunks.append("FYI: MCP resources available:\n- " + "\n- ".join(lines))
-            servers = list(self._mcp._slots.keys())
+            # Discover available server names from the manager specs
+            servers = list(self._mcp._specs.keys())
             if servers:
                 banner_chunks.append(f"FYI: MCP servers available: {servers}")
                 # Surface server descriptions as provided during initialization (multi-line, XML-like blocks)

@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 # Reuse shared constants
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # add eval/ to path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # add project dir to path
 from constants import TOOLS_HEADER  # type: ignore
 
 PROVIDER_WIRE = Path(os.environ.get("CRUSH_WIRE_LOG", str(Path.home() / ".crush" / "logs" / "provider-wire.log")))

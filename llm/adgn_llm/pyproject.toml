@@ -38,6 +38,7 @@ dependencies = [
   "pyperclip>=1.8.2",
   "typer>=0.12.3",
   "requests>=2.32.5",
+  "aiolimiter>=1.1.0",
 ]
 
 [project.scripts]

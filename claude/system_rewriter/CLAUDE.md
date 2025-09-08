@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-Scope: This document focuses on the eval toolkit under claude/system_rewriter/eval — scripts for evaluating system prompts for AI coding agents and finding better rewrites, via:
+Scope: This document focuses on the eval toolkit under claude/system_rewriter — scripts for evaluating system prompts for AI coding agents and finding better rewrites, via:
 - extracting bad turns from Claude Code/Crush logs,
 - rewriting the system prompt via a template,
 - sampling alternative responses,

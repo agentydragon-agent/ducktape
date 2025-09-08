@@ -102,11 +102,8 @@ class MiniCodexRunner(AgentRunner):
                     environment=setup.docker.env or {},
                 )
 
-            slot = ServerSlot(
-                name="container",
-                open_fn=session_opener(lambda: fastmcp_inproc_client(_make_server)),
-            )
-            return {slot.name: slot}
+            spec = make_inproc_slot_spec(_make_server())
+            return {"container": spec}
 
         sandbox_enabled = True
         if setup and setup.sandbox:
@@ -121,11 +118,8 @@ class MiniCodexRunner(AgentRunner):
                 sandbox_enabled=sandbox_enabled,
             )
 
-        slot = ServerSlot(
-            name="local",
-            open_fn=session_opener(lambda: fastmcp_inproc_client(_make_server_local)),
-        )
-        return {slot.name: slot}
+        spec = make_inproc_slot_spec(_make_server_local())
+        return {"local": spec}
 
     async def run_task(self, task: TaskDefinition, agent_instructions: str) -> Rollout:
         if not self._agent:

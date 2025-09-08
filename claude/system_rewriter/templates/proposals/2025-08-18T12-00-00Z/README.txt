@@ -1,6 +1,6 @@
 Prompt proposals for GPT-5 agent (system_rewriter)
 Timestamp: 2025-08-18T12:00:00Z
-Dir: /Users/mpokorny/code/ducktape/claude/system_rewriter/eval/templates/proposals/2025-08-18T12-00-00Z/
+Dir: /Users/mpokorny/code/ducktape/claude/system_rewriter/templates/proposals/2025-08-18T12-00-00Z/
 
 Observations from runs
 - Baseline (baseline-1755469421): mean=2.27, with_tools=36%. Very terse rules + conflicting sections (one-word replies vs tool narration) likely harm.
