@@ -33,12 +33,6 @@ OUTPUT_PATH = Path(__file__).parent / "data" / "dataset_ccr.jsonl"
 from .constants import BAD_MARKER, TOOLS_HEADER
 
 
-def list_trace_files() -> list[Path]:
-    if not TRACE_DIR.exists():
-        return []
-    return [p for p in sorted(TRACE_DIR.glob("trace.*")) if p.is_file()]
-
-
 def find_last_user_text(msg: Any) -> str | None:
     if not isinstance(msg, dict):
         return None
@@ -73,44 +67,41 @@ def sys_has_tools_header(system: Any) -> bool:
 
 async def process_file(p: Path) -> list[dict]:
     out: list[dict] = []
-    try:
-        with p.open("r", encoding="utf-8") as f:
-            for line in f:
-                try:
-                    rec = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                if rec.get("event") != "inbound_request":
-                    continue
-                body = rec.get("body")
-                if not isinstance(body, dict):
-                    continue
-                if not sys_has_tools_header(body.get("system")):
-                    continue
-                messages = body.get("messages")
-                if not isinstance(messages, list) or not messages:
-                    continue
-                # Strict: marker must appear in the last message, and that last message must be a user text message
-                last_msg = messages[-1]
-                last_text = find_last_user_text(last_msg)
-                if not last_text or BAD_MARKER not in last_text:
-                    continue
-                out.append(
-                    {
-                        "correlation_id": rec.get("correlationId"),
-                        "timestamp": rec.get("timestamp"),
-                        "anthropic_request": body,
-                        "log_file": str(p),
-                    },
-                )
-    except OSError:
-        return out
+    with p.open("r", encoding="utf-8") as f:
+        for line in f:
+            try:
+                rec = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if rec.get("event") != "inbound_request":
+                continue
+            body = rec.get("body")
+            if not isinstance(body, dict):
+                continue
+            if not sys_has_tools_header(body.get("system")):
+                continue
+            messages = body.get("messages")
+            if not isinstance(messages, list) or not messages:
+                continue
+            # Strict: marker must appear in the last message, and that last message must be a user text message
+            last_msg = messages[-1]
+            last_text = find_last_user_text(last_msg)
+            if not last_text or BAD_MARKER not in last_text:
+                continue
+            out.append(
+                {
+                    "correlation_id": rec.get("correlationId"),
+                    "timestamp": rec.get("timestamp"),
+                    "anthropic_request": body,
+                    "log_file": str(p),
+                },
+            )
     return out
 
 
 async def main():
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    files = list_trace_files()
+    files = [p for p in sorted(TRACE_DIR.glob("trace.*")) if p.is_file()]
     sem = asyncio.Semaphore(16)
 
     async def wrapped(p: Path):
@@ -131,5 +122,6 @@ async def main():
     )
 
 
-if __name__ == "__main__":
+# Console entrypoint
+def cli():
     asyncio.run(main())
