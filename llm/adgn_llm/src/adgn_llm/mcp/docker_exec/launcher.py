@@ -25,9 +25,7 @@ def _parse_volumes(values: list[str] | None) -> Dict[str, Dict[str, str]] | None
             continue
         parts = entry.split(":")
         if len(parts) < 2:
-            raise argparse.ArgumentTypeError(
-                f"Invalid volume spec '{entry}'. Use host:container[:mode]."
-            )
+            raise argparse.ArgumentTypeError(f"Invalid volume spec '{entry}'. Use host:container[:mode].")
         host, container, *mode = parts
         spec: Dict[str, str] = {"bind": container}
         if mode:
@@ -55,8 +53,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="append",
         default=None,
         help=(
-            "Volume specification host:container[:mode]. "
-            "May be supplied multiple times or as comma-separated entries."
+            "Volume specification host:container[:mode]. May be supplied multiple times or as comma-separated entries."
         ),
     )
     parser.add_argument(

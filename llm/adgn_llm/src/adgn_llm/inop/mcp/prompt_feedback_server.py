@@ -12,6 +12,7 @@ from adgn_llm.inop.prompting.prompt_engineer import FeedbackProvider
 
 # ---- Dependencies and state -------------------------------------------------
 
+
 class PromptEvaluationDeps(Protocol):
     async def select_seed_tasks(self) -> list[Any]: ...
     async def run_rollouts_with_prompt(self, prompt: str, tasks: list[Any]) -> list[Any]: ...
@@ -36,6 +37,7 @@ _state_var: ContextVar[PromptFeedbackState] = ContextVar("_prompt_feedback_state
 
 
 # ---- Server factory ---------------------------------------------------------
+
 
 def make_prompt_feedback_server_with_handle(
     deps: PromptEvaluationDeps,

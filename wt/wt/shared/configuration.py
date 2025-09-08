@@ -10,8 +10,8 @@ import tempfile
 from dataclasses import dataclass
 from datetime import timedelta
 from enum import StrEnum
-from pathlib import Path
 from hashlib import md5
+from pathlib import Path
 
 import click
 import yaml
@@ -148,7 +148,9 @@ class Configuration:
             ),
             startup_timeout=timedelta(seconds=config_file.startup_timeout),
             post_creation_timeout=timedelta(seconds=config_file.post_creation_timeout),
-            git_watcher_debounce_delay=timedelta(seconds=config_file.git_watcher_debounce_delay),
+            git_watcher_debounce_delay=timedelta(
+                seconds=config_file.git_watcher_debounce_delay
+            ),
             hydrate_worktrees=config_file.hydrate_worktrees,
         )
 

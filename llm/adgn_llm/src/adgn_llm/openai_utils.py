@@ -30,4 +30,3 @@ class ReasoningSummary(StrEnum):
     auto = "auto"
     concise = "concise"
     detailed = "detailed"
-

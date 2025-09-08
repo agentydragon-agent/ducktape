@@ -12,11 +12,15 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # add project dir to path
 from constants import TOOLS_HEADER  # type: ignore
 
-PROVIDER_WIRE = Path(os.environ.get("CRUSH_WIRE_LOG", str(Path.home() / ".crush" / "logs" / "provider-wire.log")))
+PROVIDER_WIRE = Path(
+    os.environ.get(
+        "CRUSH_WIRE_LOG", str(Path.home() / ".crush" / "logs" / "provider-wire.log")
+    )
+)
 
-ENV_INTRO = 'Here is useful information about the environment you are running in:'
-MODEL_PREFIX = 'You are powered by the model'
-MCP_HEADER = '# MCP Server Instructions'
+ENV_INTRO = "Here is useful information about the environment you are running in:"
+MODEL_PREFIX = "You are powered by the model"
+MCP_HEADER = "# MCP Server Instructions"
 
 
 def iter_wire_lines(path: Path):
@@ -25,9 +29,10 @@ def iter_wire_lines(path: Path):
     opener = None
     if str(path).endswith(".gz"):
         import gzip  # lazy
+
         opener = lambda p: gzip.open(p, "rt", encoding="utf-8", errors="ignore")
     else:
-        opener = lambda p: open(p, "r", encoding="utf-8", errors="ignore")
+        opener = lambda p: open(p, encoding="utf-8", errors="ignore")
     with opener(path) as f:  # type: ignore[misc]
         for line in f:
             yield line
@@ -74,14 +79,24 @@ def extract_ccr_blobs(system_text: str) -> dict[str, Any]:
     # envGitBlobs: all <env>...</env> blocks following the intro line
     envGitBlobs: list[str] = []
     if ENV_INTRO in s:
-        env_re = re.compile(re.escape(ENV_INTRO) + r"\n<env>[\s\S]*?</env>\s*", re.MULTILINE)
+        env_re = re.compile(
+            re.escape(ENV_INTRO) + r"\n<env>[\s\S]*?</env>\s*", re.MULTILINE
+        )
         envGitBlobs = [m.group(0) for m in env_re.finditer(s)]
     # toolsBlob: text after TOOLS_HEADER until next known header
     toolsBlob = ""
     i_tools = s.find(TOOLS_HEADER)
     if i_tools != -1:
         after = i_tools + len(TOOLS_HEADER)
-        nxt = [x for x in [s.find(ENV_INTRO, after), s.find(MODEL_PREFIX, after), s.find(MCP_HEADER, after)] if x != -1]
+        nxt = [
+            x
+            for x in [
+                s.find(ENV_INTRO, after),
+                s.find(MODEL_PREFIX, after),
+                s.find(MCP_HEADER, after),
+            ]
+            if x != -1
+        ]
         end = min(nxt) if nxt else len(s)
         toolsBlob = s[after:end]
     # modelLine: first line starting with MODEL_PREFIX
@@ -93,23 +108,27 @@ def extract_ccr_blobs(system_text: str) -> dict[str, Any]:
     if i_mcp != -1:
         nl = s.find("\n", i_mcp)
         mcpSection = "" if nl == -1 else s[nl + 1 :]
-    return {"toolsBlob": toolsBlob, "envGitBlobs": envGitBlobs, "modelLine": modelLine, "mcpSection": mcpSection}
+    return {
+        "toolsBlob": toolsBlob,
+        "envGitBlobs": envGitBlobs,
+        "modelLine": modelLine,
+        "mcpSection": mcpSection,
+    }
 
 
 def rewrite_system_with_template_py(system_text: str, template_path: Path) -> str:
     template = Path(template_path).read_text(encoding="utf-8")
     blobs = extract_ccr_blobs(system_text)
-    placeholders = ['${toolsBlob}', '${envGitBlobs}', '${modelLine}', '${mcpSection}']
+    placeholders = ["${toolsBlob}", "${envGitBlobs}", "${modelLine}", "${mcpSection}"]
     for ph in placeholders:
         cnt = len(re.findall(re.escape(ph), template))
         if cnt != 1:
             raise RuntimeError(f"template placeholder {ph} count={cnt} (expected 1)")
     out = (
-        template
-        .replace('${toolsBlob}', blobs['toolsBlob'])
-        .replace('${envGitBlobs}', ''.join(blobs['envGitBlobs']))
-        .replace('${modelLine}', blobs['modelLine'])
-        .replace('${mcpSection}', blobs['mcpSection'])
+        template.replace("${toolsBlob}", blobs["toolsBlob"])
+        .replace("${envGitBlobs}", "".join(blobs["envGitBlobs"]))
+        .replace("${modelLine}", blobs["modelLine"])
+        .replace("${mcpSection}", blobs["mcpSection"])
     )
     for ph in placeholders:
         if ph in out:
@@ -131,18 +150,23 @@ def main():
             continue
         sys_text = extract_system_text_from_responses_input(payload)
         blobs = extract_ccr_blobs(sys_text)
-        print(json.dumps({
-            "path": str(PROVIDER_WIRE),
-            "timestamp": e.get("ts"),
-            "has_tools_header": (TOOLS_HEADER in sys_text),
-            "sys_preview": sys_text[:2000],
-            "blobs": {
-                "toolsBlob_len": len(blobs["toolsBlob"]),
-                "envGitBlobs_count": len(blobs["envGitBlobs"]),
-                "modelLine_present": bool(blobs["modelLine"]),
-                "mcpSection_len": len(blobs["mcpSection"]),
-            },
-        }, ensure_ascii=False))
+        print(
+            json.dumps(
+                {
+                    "path": str(PROVIDER_WIRE),
+                    "timestamp": e.get("ts"),
+                    "has_tools_header": (TOOLS_HEADER in sys_text),
+                    "sys_preview": sys_text[:2000],
+                    "blobs": {
+                        "toolsBlob_len": len(blobs["toolsBlob"]),
+                        "envGitBlobs_count": len(blobs["envGitBlobs"]),
+                        "modelLine_present": bool(blobs["modelLine"]),
+                        "mcpSection_len": len(blobs["mcpSection"]),
+                    },
+                },
+                ensure_ascii=False,
+            )
+        )
         return 0
     print(json.dumps({"event": "no_request_found", "path": str(PROVIDER_WIRE)}))
     return 1

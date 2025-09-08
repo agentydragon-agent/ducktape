@@ -141,5 +141,3 @@ def exec_handler(args: dict[str, Any], *, sandbox_enabled: bool = True) -> dict[
     runner = _run_in_sandbox if sandbox_enabled else _run_proc
     code, out, err = runner(cmd, timeout_s=to, cwd=cwd_val)
     return {"exit": code, "stdout": out, "stderr": err}
-
-

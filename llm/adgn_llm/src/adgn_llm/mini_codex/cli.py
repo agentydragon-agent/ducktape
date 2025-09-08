@@ -17,7 +17,6 @@ from openai.types.responses import (
 )
 from pydantic import BaseModel
 
-from adgn_llm.mcp.inproc import fastmcp_inproc_client
 from adgn_llm.mini_codex.agent import (
     _responses_create_with_retry,
     load_mcp_file,
@@ -27,8 +26,6 @@ from adgn_llm.mini_codex.agent import (
 from adgn_llm.mcp.local_exec.server import make_local_exec_mcp
 from adgn_llm.mini_codex.mcp_manager import (
     McpManager,
-    ServerSlot,
-    session_opener,
 )
 
 LOCAL_EXEC_SERVER_NAME = "local"
@@ -364,12 +361,15 @@ async def main_async() -> None:
 
     client = openai.AsyncOpenAI()
 
-    async with McpManager(specs) as mcp, await MiniCodex.create(
-        model=DEFAULT_MODEL,
-        mcp=mcp,
-        system=SYSTEM_INSTRUCTIONS,
-        client=client,
-    ) as agent:
+    async with (
+        McpManager(specs) as mcp,
+        await MiniCodex.create(
+            model=DEFAULT_MODEL,
+            mcp=mcp,
+            system=SYSTEM_INSTRUCTIONS,
+            client=client,
+        ) as agent,
+    ):
         for line in sys.stdin:
             user = line.rstrip("\n")
             if not user:

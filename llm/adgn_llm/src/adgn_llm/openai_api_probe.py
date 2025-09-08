@@ -25,12 +25,11 @@ from enum import Enum
 from aiolimiter import AsyncLimiter
 from typing import Iterable, Callable, Awaitable, Any
 
-from openai import OpenAI, AsyncOpenAI
+from openai import AsyncOpenAI
 from rich.console import Console, Group
 from rich.live import Live
 from rich.table import Table
 from rich import box
-from openai.types import Model
 from dataclasses import dataclass
 from openai._exceptions import APIStatusError
 import json
@@ -114,28 +113,17 @@ TOOL_FUNCTION = {
         "required": ["city"],
     },
 }
-# Tool configs per API (Responses vs Chat)
-TOOL_DEF_RESP = [
-    {
-        "type": "function",
-        "name": TOOL_FUNCTION["name"],
-        "description": TOOL_FUNCTION["description"],
-        "parameters": TOOL_FUNCTION["parameters"],
-    }
-]
-TOOL_CHOICE_RESP = {"type": "function", "name": TOOL_FUNCTION["name"]}
-TOOL_DEF_CHAT = [{"type": "function", "function": TOOL_FUNCTION}]
-TOOL_CHOICE_CHAT = {"type": "function", "function": {"name": TOOL_FUNCTION["name"]}}
 REQUEST_TIMEOUT = 10
 
 
 # ---------- Probe spec creators ----------
+# Tool configs per API (Responses vs Chat)
 async def _create_responses(c: AsyncOpenAI, m: str):
     return await c.responses.create(
         model=m,
         input=PROMPT,
-        tools=TOOL_DEF_RESP,
-        tool_choice=TOOL_CHOICE_RESP,
+        tools=[{"type": "function", **TOOL_FUNCTION}],
+        tool_choice={"type": "function", "name": TOOL_FUNCTION["name"]},
         max_output_tokens=20,
     )
 
@@ -150,8 +138,8 @@ async def _create_chat(c: AsyncOpenAI, m: str):
             },
             {"role": "user", "content": PROMPT},
         ],
-        tools=TOOL_DEF_CHAT,
-        tool_choice=TOOL_CHOICE_CHAT,
+        tools=[{"type": "function", "function": TOOL_FUNCTION}],
+        tool_choice={"type": "function", "function": {"name": TOOL_FUNCTION["name"]}},
         max_output_tokens=20,
     )
 
@@ -161,7 +149,7 @@ async def _probe_once(
     *,
     model_id: str,
     spec: ProbeSpec,
-    limiter: AsyncLimiter | None = None,
+    limiter: AsyncLimiter,
 ) -> ProbeResult:
     try:
         t0 = time.perf_counter()
@@ -466,9 +454,8 @@ async def main() -> None:
     async_client = AsyncOpenAI()
 
     print("Fetching model list …", file=sys.stderr)
-    resp = await async_client.models.list()  # type: ignore[func-returns-value]
+    resp = await async_client.models.list()  # async SDK supports this
     model_ids = [m.id for m in resp.data]
-        model_ids = await loop.run_in_executor(None, _fetch_sync_ids)
     print(f"Total models from API: {len(model_ids)}", file=sys.stderr)
 
     # Filtering --------------------------------------------------------------
@@ -485,12 +472,17 @@ async def main() -> None:
         name="responses", create=_create_responses, snippet=_snippet_from_responses
     )
     CHAT_SPEC = ProbeSpec(name="chat", create=_create_chat, snippet=_snippet_from_chat)
-    PROBES: dict[str, ProbeSpec] = {"responses": RESPONSES_SPEC, "chat": CHAT_SPEC}
 
     sem = asyncio.Semaphore(max(args.concurrency, 1))
+
     async def run_one(spec: ProbeSpec, mid: str):
         async with sem:
-            res = await _probe_once(async_client, model_id=mid, spec=spec, limiter=AsyncLimiter(args.max_qps, 1))
+            res = await _probe_once(
+                async_client,
+                model_id=mid,
+                spec=spec,
+                limiter=AsyncLimiter(args.max_qps, 1),
+            )
         return spec.name, mid, res
 
     # Repeats per probe per model (CLI override)
@@ -681,9 +673,6 @@ async def main() -> None:
         calls = _calls_for(mid, kind)
         return bool(calls) and _probe_run_for(mid, kind).ok
 
-    def both_cells(mid: str) -> tuple[str, str]:
-        return (cell_for_kind(mid, "responses"), cell_for_kind(mid, "chat"))
-
     # Error classifier: short code → long description
     def classify_error(msg: str) -> tuple[ErrorCode, str]:
         m = msg.lower()
@@ -848,7 +837,7 @@ async def main() -> None:
                 model_ratio=3,
             )
             for mid in others_all:
-                rc, cc = both_cells(mid)
+                rc, cc = (cell_for_kind(mid, "responses"), cell_for_kind(mid, "chat"))
                 others_table.add_row(mid, rc, cc)
 
             live.update(Group(new_table, resp_table, chat_table, others_table))

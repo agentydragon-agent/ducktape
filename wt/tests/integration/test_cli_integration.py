@@ -33,8 +33,6 @@ This ensures each test runs in complete isolation without daemon interference.
 """
 
 import os
-import subprocess
-import time
 
 import pygit2
 import pytest
@@ -59,11 +57,9 @@ TEST_BRANCH_NAME = "XXX-ADGN-WT-INTERACTION-TEST-BRANCH-NAME-XXX"
 class TestCLIIntegration:
     def setup_method(self):
         """No global process killing; per-test fixtures handle isolation."""
-        pass
 
     def teardown_method(self):
         """No global process killing; per-test fixtures handle isolation."""
-        pass
 
     def test_list_worktrees_empty(self, real_temp_repo, real_env):
         """Test listing worktrees when none exist."""
@@ -186,11 +182,9 @@ class TestRealGitOperations:
 
     def setup_method(self):
         """No global process killing; per-test fixtures handle isolation."""
-        pass
 
     def teardown_method(self):
         """No global process killing; per-test fixtures handle isolation."""
-        pass
 
     def test_worktree_branch_creation(self, real_temp_repo, real_env):
         """Test that worktree creation actually creates git branches."""

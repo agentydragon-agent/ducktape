@@ -3,7 +3,6 @@ from __future__ import annotations
 import os
 import pytest
 
-from adgn_llm.mcp.inproc import fastmcp_inproc_client
 from adgn_llm.mcp.docker_exec.server import make_container_exec_mcp
 from adgn_llm.mcp.inproc_utils import make_inproc_slot_spec
 from adgn_llm.mini_codex.mcp_manager import McpManager

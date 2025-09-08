@@ -9,13 +9,13 @@ import contextlib
 import json
 import logging
 import os
+import subprocess
 import sys
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, TypeVar, cast
-import subprocess
 
 import click
 import psutil
@@ -446,7 +446,10 @@ class WtClient:
             raise RuntimeError(f"Daemon worktree_create communication failed: {e}")
 
     async def delete_worktree(
-        self, wtid: WorktreeID, *, force: bool = False,
+        self,
+        wtid: WorktreeID,
+        *,
+        force: bool = False,
     ) -> WorktreeDeleteResult:
         await self._start_daemon_if_needed()
         return await self._rpc(

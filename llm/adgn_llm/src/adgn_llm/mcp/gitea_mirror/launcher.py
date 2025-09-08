@@ -17,7 +17,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run gitea_mirror MCP over stdio")
     parser.add_argument("--base-url", default=os.environ.get("GITEA_BASE_URL"), help="Gitea base URL")
     parser.add_argument("--token", default=os.environ.get("GITEA_TOKEN"), help="Gitea API token")
-    parser.add_argument("--token-file", default=os.environ.get("GITEA_TOKEN_FILE"), help="Path to file containing Gitea API token")
+    parser.add_argument(
+        "--token-file", default=os.environ.get("GITEA_TOKEN_FILE"), help="Path to file containing Gitea API token"
+    )
     parser.add_argument(
         "--poll-interval",
         type=float,

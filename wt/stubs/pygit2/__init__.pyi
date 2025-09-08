@@ -29,8 +29,28 @@ from .submodules import Submodule as Submodule
 features: Incomplete
 LIBGIT2_VER: Incomplete
 
-def init_repository(path: str | bytes | os.PathLike | None, bare: bool = False, flags: enums.RepositoryInitFlag = ..., mode: int | enums.RepositoryInitMode = ..., workdir_path: str | None = None, description: str | None = None, template_path: str | None = None, initial_head: str | None = None, origin_url: str | None = None) -> Repository: ...
-def clone_repository(url: str, path: str, bare: bool = False, repository: typing.Callable | None = None, remote: typing.Callable | None = None, checkout_branch: str | None = None, callbacks: RemoteCallbacks | None = None, depth: int = 0, proxy: None | bool | str = None): ...
+def init_repository(
+    path: str | bytes | os.PathLike | None,
+    bare: bool = False,
+    flags: enums.RepositoryInitFlag = ...,
+    mode: int | enums.RepositoryInitMode = ...,
+    workdir_path: str | None = None,
+    description: str | None = None,
+    template_path: str | None = None,
+    initial_head: str | None = None,
+    origin_url: str | None = None,
+) -> Repository: ...
+def clone_repository(
+    url: str,
+    path: str,
+    bare: bool = False,
+    repository: typing.Callable | None = None,
+    remote: typing.Callable | None = None,
+    checkout_branch: str | None = None,
+    callbacks: RemoteCallbacks | None = None,
+    depth: int = 0,
+    proxy: None | bool | str = None,
+): ...
 
 tree_entry_key: Incomplete
 settings: Incomplete

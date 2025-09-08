@@ -51,4 +51,4 @@ def test_typer_cli_invokes_execute_without_sys(tmp_path: Path, monkeypatch: pyte
     assert result.exit_code == 0, result.output
     # Ensure arguments were parsed correctly
     assert called.get("client_kwargs") == {}
-    assert (p.exists())
+    assert p.exists()

@@ -4,7 +4,7 @@ import asyncio
 import shutil
 
 import pytest
-from mcp.client.stdio import StdioServerParameters, stdio_client
+from mcp.client.stdio import StdioServerParameters
 
 from adgn_llm.mini_codex.mcp_manager import McpManager
 

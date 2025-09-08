@@ -20,8 +20,6 @@ logger = DualOutputLogging.get_logger()
 SUBMIT_PROMPT_FUNCTION_NAME = "submit_prompt"
 
 
-
-
 class FeedbackMode(Enum):
     """Processing mode for prompt optimization."""
 
@@ -126,7 +124,6 @@ class PromptEngineer:
 
         return messages
 
-
     async def _ensure_prompt_agent(self) -> MiniCodex:
         if self._prompt_agent is None:
             # Prompt engineer currently has no MCP tools; MiniCodex still expects a manager
@@ -139,7 +136,6 @@ class PromptEngineer:
             )
             await self._exit_stack.enter_async_context(self._prompt_agent)
         return self._prompt_agent
-
 
     async def propose_prompt(
         self,
@@ -172,4 +168,3 @@ class PromptEngineer:
             feedback_preview=feedback[:200],
         )
         self._last_prompt = proposed_prompt
-

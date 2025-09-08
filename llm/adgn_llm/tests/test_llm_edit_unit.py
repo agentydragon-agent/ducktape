@@ -12,8 +12,10 @@ from adgn_llm.mcp.inproc import open_fastmcp_client_session
 @pytest.fixture
 def editor_session():
     """Factory fixture yielding an in-proc FastMCP client session context manager for a given path."""
+
     def _open(p: Path):
         return open_fastmcp_client_session(lambda: make_editor_mcp(p))
+
     return _open
 
 

@@ -27,19 +27,26 @@ Each output record has shape:
   }
 }
 """
+
 from __future__ import annotations
 
 import argparse
 import json
 import os
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 from typing import Any
-from pydantic import ValidationError, TypeAdapter
+
 from openai.types.responses import ResponseCreateParams
+from pydantic import TypeAdapter
+
 ROOT = Path(__file__).parent
 DEFAULT_CRUSH_DIR = Path.home() / "code" / "crush"
-DEFAULT_WIRE_LOG = Path(os.environ.get("CRUSH_WIRE_LOG", "")) if os.environ.get("CRUSH_WIRE_LOG") else (Path.home() / ".crush" / "logs" / "provider-wire.log")
+DEFAULT_WIRE_LOG = (
+    Path(os.environ.get("CRUSH_WIRE_LOG", ""))
+    if os.environ.get("CRUSH_WIRE_LOG")
+    else (Path.home() / ".crush" / "logs" / "provider-wire.log")
+)
 OUTPUT_PATH = ROOT / "data" / "dataset_crush.jsonl"
 
 from constants import BAD_MARKER, TOOLS_HEADER
@@ -94,9 +101,10 @@ def iter_wire_lines(path: Path):
     opener = None
     if str(path).endswith(".gz"):
         import gzip  # lazy import
+
         opener = lambda p: gzip.open(p, "rt", encoding="utf-8", errors="ignore")
     else:
-        opener = lambda p: open(p, "r", encoding="utf-8", errors="ignore")
+        opener = lambda p: open(p, encoding="utf-8", errors="ignore")
     with opener(path) as f:
         for line in f:
             yield line
@@ -108,7 +116,9 @@ def maybe_extract_payload(obj: dict[str, Any]) -> dict[str, Any] | None:
     return p if isinstance(p, dict) else None
 
 
-def _extract_input_messages(payload: dict[str, Any]) -> tuple[list[dict[str, Any]] | None, bool]:
+def _extract_input_messages(
+    payload: dict[str, Any],
+) -> tuple[list[dict[str, Any]] | None, bool]:
     """Best-effort extraction of system/user messages from OpenAI Responses params.
     Returns (messages, has_tools_header)."""
     inp = payload.get("input")
@@ -119,7 +129,9 @@ def _extract_input_messages(payload: dict[str, Any]) -> tuple[list[dict[str, Any
     for item in inp:
         if not isinstance(item, dict):
             continue
-        role = (item.get("role") or item.get("message_role") or item.get("Role") or "").lower()
+        role = (
+            item.get("role") or item.get("message_role") or item.get("Role") or ""
+        ).lower()
         content = item.get("content")
         # Extract text from either string or list-of-parts
         if isinstance(content, str):
@@ -136,7 +148,11 @@ def _extract_input_messages(payload: dict[str, Any]) -> tuple[list[dict[str, Any
             text = "\n".join(texts) if texts else ""
         # Heuristic: if role missing, assume leading items are system until we see a 'user' later
         if not role:
-            role = "system" if not any(m.get("role") == "user" for m in msgs) else "assistant"
+            role = (
+                "system"
+                if not any(m.get("role") == "user" for m in msgs)
+                else "assistant"
+            )
         if role in ("system", "user", "assistant") and text:
             if role == "system" and TOOLS_HEADER in text:
                 has_header = True
@@ -173,13 +189,15 @@ def process_wire(path: Path, require_bad: bool = False) -> list[dict[str, Any]]:
                     "event_type": e.get("event_type"),
                     "path": str(path),
                 },
-            }
+            },
         )
     return out
 
 
 def parse_args() -> argparse.Namespace:
-    ap = argparse.ArgumentParser(description="Extract dataset from Crush provider wire logs")
+    ap = argparse.ArgumentParser(
+        description="Extract dataset from Crush provider wire logs"
+    )
     ap.add_argument(
         "--wire-log",
         type=Path,
@@ -208,7 +226,12 @@ def find_wire_logs(roots: list[Path]) -> list[Path]:
         if not root.exists():
             continue
         # Match current and rotated files, including .gz
-        for globpat in ("provider-wire.log", "provider-wire.log.*", "provider-wire.*.log", "provider-wire.*.log.gz"):
+        for globpat in (
+            "provider-wire.log",
+            "provider-wire.log.*",
+            "provider-wire.*.log",
+            "provider-wire.*.log.gz",
+        ):
             for p in root.rglob(globpat):
                 try:
                     if ".crush/logs" in str(p.parent):
@@ -244,9 +267,9 @@ def main() -> int:
                 "event": "dataset_crush_written",
                 "count": total,
                 "path": str(args.output),
-                "files_scanned": len(logs)
-            }
-        )
+                "files_scanned": len(logs),
+            },
+        ),
     )
     return 0
 

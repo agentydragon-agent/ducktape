@@ -24,6 +24,7 @@ from typing import Protocol
 # Tool policy algebraic types (what the model is allowed/required to do next)
 # ---------------------------------------------------------------------------
 
+
 class ToolPolicy:
     """Base class for tool-choice policy."""
 
@@ -50,9 +51,11 @@ class Forbid(ToolPolicy):
 class RequireSpecific(ToolPolicy):
     names: tuple[str, ...]
 
+
 # ---------------------------------------------------------------------------
 # Loop decision algebraic types (continue vs abort the turn)
 # ---------------------------------------------------------------------------
+
 
 class LoopDecision:
     """Base class for loop decisions returned by the controller."""
@@ -72,6 +75,7 @@ class Abort(LoopDecision):
 # Controller protocol and default implementation
 # ---------------------------------------------------------------------------
 
+
 class LoopController(Protocol):
     """Determines next-step loop behavior for MiniCodex agents.
 
@@ -89,6 +93,7 @@ class DefaultController:
     Mirrors legacy MiniCodex behavior (first step prefers a tool call, then
     auto). No RequireSpecific here to keep default generic.
     """
+
     def __init__(self) -> None:
         self._step = 0
 

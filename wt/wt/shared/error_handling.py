@@ -9,8 +9,8 @@ import click
 import psutil
 
 from ..server.git_manager import GitError, GitTimeoutError, WorktreeError
-from .github_models import GitHubError
 from .constants import RESERVED_NAMES
+from .github_models import GitHubError
 
 logger = logging.getLogger(__name__)
 

@@ -92,6 +92,7 @@ def _is_retryable(e: Exception) -> bool:
         return status == 429 or (isinstance(status, int) and 500 <= status < 600)
     return False
 
+
 @retry(
     retry=retry_if_exception(_is_retryable),
     wait=wait_exponential(multiplier=1, min=1, max=8),
@@ -143,13 +144,11 @@ class MiniCodex:
         self._transcript_jsonl: Path | None = None
         self._run_require_one_tool: bool | None = None
 
-
     def inject_system_message(self, text: str) -> None:
         """Append a system message at the current end of transcript (temporal order)."""
         msg = {"role": "system", "content": text}
         self._transcript.append(msg)
         self._emit_event({"kind": "system_note", "text": text})
-
 
     def set_system_instructions(self, instructions: str | None) -> None:
         """Override base system instructions for future turns."""
@@ -173,7 +172,9 @@ class MiniCodex:
             decision = controller.on_before_sample()
             if isinstance(decision, Abort):
                 break
-            tool_choice_value: str | dict[str, Any] = "required" if isinstance(decision.tool_policy, RequireAny) else "auto"
+            tool_choice_value: str | dict[str, Any] = (
+                "required" if isinstance(decision.tool_policy, RequireAny) else "auto"
+            )
 
             reasoning_kwargs: dict[str, Any] = {}
             if self._reasoning_effort is not None or self._reasoning_summary is not None:
@@ -219,7 +220,7 @@ class MiniCodex:
                 if xml_blocks:
                     banner_chunks.append("\n".join(xml_blocks))
             if banner_chunks:
-                instructions = f"{instructions}\n\n" + "\n".join(banner_chunks) 
+                instructions = f"{instructions}\n\n" + "\n".join(banner_chunks)
 
             tools_list = await self._mcp.list_tools()
             tools_list.extend(self._resource_tools_descriptors())
@@ -279,7 +280,9 @@ class MiniCodex:
                     uri_prefix = args.get("uri_prefix")
                     items = await self._mcp.list_resources(only=[server_filter] if server_filter else None)
                     if uri_prefix:
-                        items = [it for it in items if isinstance(it.get("uri"), str) and it["uri"].startswith(uri_prefix)]
+                        items = [
+                            it for it in items if isinstance(it.get("uri"), str) and it["uri"].startswith(uri_prefix)
+                        ]
                     out_str = json.dumps({"resources": items}, ensure_ascii=False)
                     call_evt = {"kind": "tool_call", "name": fc.name, "args": args, "call_id": fc.call_id}
                     sequence.append(call_evt)
@@ -318,12 +321,14 @@ class MiniCodex:
                                 take = max(0, min(remaining, total_len - start_in_part))
                                 if take > 0:
                                     chunk = raw[start_in_part : start_in_part + take]
-                                    parts_out.append({
-                                        "mime": p.mimeType,
-                                        "text": chunk.decode("utf-8", errors="replace"),
-                                        "total_bytes": total_len,
-                                        "bytes_returned": take,
-                                    })
+                                    parts_out.append(
+                                        {
+                                            "mime": p.mimeType,
+                                            "text": chunk.decode("utf-8", errors="replace"),
+                                            "total_bytes": total_len,
+                                            "bytes_returned": take,
+                                        }
+                                    )
                                     remaining -= take
                         elif p.data is not None:
                             base = p.data  # base64 string
@@ -332,14 +337,16 @@ class MiniCodex:
                                 start_in_part = max(0, start_offset - cursor)
                                 take = max(0, min(remaining, total_len - start_in_part))
                                 if take > 0:
-                                    parts_out.append({
-                                        "mime": p.mimeType,
-                                        "base64": base[start_in_part : start_in_part + take],
-                                        "total_bytes": total_len,
-                                        "bytes_returned": take,
-                                    })
+                                    parts_out.append(
+                                        {
+                                            "mime": p.mimeType,
+                                            "base64": base[start_in_part : start_in_part + take],
+                                            "total_bytes": total_len,
+                                            "bytes_returned": take,
+                                        }
+                                    )
                                     remaining -= take
-                        cursor += (len(p.text.encode("utf-8")) if p.text is not None else len(p.data or ""))
+                        cursor += len(p.text.encode("utf-8")) if p.text is not None else len(p.data or "")
                         if remaining <= 0:
                             break
 

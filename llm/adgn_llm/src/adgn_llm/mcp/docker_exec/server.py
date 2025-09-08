@@ -25,7 +25,6 @@ from .._shared.container_session import (
 )
 
 
-
 def make_container_exec_mcp(
     *,
     image: str,
@@ -53,6 +52,10 @@ def make_container_exec_mcp(
         environment=environment,
         labels=labels,
     )
-    server = FastMCP("container_exec", instructions="Per-session container exec. See resource container.info for details.", lifespan=lifespan)
+    server = FastMCP(
+        "container_exec",
+        instructions="Per-session container exec. See resource container.info for details.",
+        lifespan=lifespan,
+    )
     register_container(server, tool_name="docker_exec")
     return server

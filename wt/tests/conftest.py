@@ -1,6 +1,4 @@
-import contextlib
 import os
-import signal
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -107,8 +105,6 @@ def temp_dir(tmp_path: Path) -> Path:
     return tmp_path
 
 
-
-
 @pytest.fixture
 def sample_commit_info():
     """Sample CommitInfo for testing."""
@@ -195,7 +191,7 @@ def kill_daemon_at_wt_dir(wt_dir: Path) -> None:
     details = (result.stdout or "") + ("\n" + (result.stderr or ""))
     raise AssertionError(
         f"Daemon did not shut down cleanly for {wt_dir}. Leftovers: "
-        f"pid_exists={pid_file.exists()} sock_exists={sock_file.exists()}\n{details}"
+        f"pid_exists={pid_file.exists()} sock_exists={sock_file.exists()}\n{details}",
     )
 
 

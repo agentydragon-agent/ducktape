@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from wt.shared.git_utils import git_run
+
 from ..test_utils import run_cli_command
 
 pytestmark = pytest.mark.timeout(10)
@@ -42,7 +43,10 @@ def test_real_program_workflow(real_temp_repo, real_env):
 
     # Remove feature2
     result = run_cli_command(
-        ["sh", "rm", "feature2", "--force"], env=real_env, cwd=worktree1_path, timeout=10.0
+        ["sh", "rm", "feature2", "--force"],
+        env=real_env,
+        cwd=worktree1_path,
+        timeout=10.0,
     )
     assert result.returncode == 0
     git_list = git_run(["worktree", "list"], cwd=real_temp_repo)
@@ -51,7 +55,6 @@ def test_real_program_workflow(real_temp_repo, real_env):
     # Final status
     result = run_cli_command(["sh"], env=real_env, timeout=10.0)
     assert result.returncode == 0
-
 
 
 def test_real_daemon_startup_and_communication(real_temp_repo, real_env):
@@ -72,7 +75,6 @@ def test_real_daemon_startup_and_communication(real_temp_repo, real_env):
         pytest.fail(f"Daemon PID {pid} not found")
 
 
-
 def test_real_git_operations(real_temp_repo, real_env):
     # Create worktree
     result = run_cli_command(["sh", "-c", "git-test"], env=real_env, timeout=10.0)
@@ -87,5 +89,7 @@ def test_real_git_operations(real_temp_repo, real_env):
     git_run(["commit", "-m", "Test commit"], cwd=worktree_path)
 
     # Verify branch name
-    result = git_run(["branch", "--show-current"], cwd=worktree_path, capture_output=True)
+    result = git_run(
+        ["branch", "--show-current"], cwd=worktree_path, capture_output=True
+    )
     assert "test/git-test" in result.stdout.decode()

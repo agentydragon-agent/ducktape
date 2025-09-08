@@ -5,8 +5,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ..shared.constants import MAIN_WORKTREE_DISPLAY_NAME
-from .worktree_ids import make_worktree_id as _mk
 from .types import DiscoveredWorktree
+from .worktree_ids import make_worktree_id as _mk
 
 
 @dataclass

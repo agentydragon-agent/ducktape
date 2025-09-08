@@ -13,9 +13,10 @@ import pytest
 
 from wt.shared.git_utils import git_run
 
+from ..test_data import (
+    WATCHER_DEBOUNCE_SECS as DEBOUNCE_SECS,  # keep in sync with test config
+)
 from ..test_utils import run_cli_sh_command as run_cli_command
-
-from ..test_data import WATCHER_DEBOUNCE_SECS as DEBOUNCE_SECS  # keep in sync with test config
 
 
 def _status(env) -> str:
@@ -24,7 +25,9 @@ def _status(env) -> str:
     return r.stdout
 
 
-def wait_for_status_contains(env, needle: str, timeout: float = DEBOUNCE_SECS * 8) -> None:
+def wait_for_status_contains(
+    env, needle: str, timeout: float = DEBOUNCE_SECS * 8
+) -> None:
     deadline = time.time() + timeout
     last = ""
     while time.time() < deadline:
@@ -32,10 +35,14 @@ def wait_for_status_contains(env, needle: str, timeout: float = DEBOUNCE_SECS * 
         if needle in last:
             return
         time.sleep(DEBOUNCE_SECS)
-    pytest.fail(f"Timed out waiting for status to contain '{needle}'. Last output:\n{last}")
+    pytest.fail(
+        f"Timed out waiting for status to contain '{needle}'. Last output:\n{last}"
+    )
 
 
-def wait_for_status_contains_all(env, needles: list[str], timeout: float = DEBOUNCE_SECS * 8) -> None:
+def wait_for_status_contains_all(
+    env, needles: list[str], timeout: float = DEBOUNCE_SECS * 8
+) -> None:
     deadline = time.time() + timeout
     last = ""
     needles = list(needles)
@@ -46,11 +53,13 @@ def wait_for_status_contains_all(env, needles: list[str], timeout: float = DEBOU
         time.sleep(DEBOUNCE_SECS)
     missing = [n for n in needles if n not in last]
     pytest.fail(
-        f"Timed out waiting for status to contain all {needles}. Missing: {missing}. Last output:\n{last}"
+        f"Timed out waiting for status to contain all {needles}. Missing: {missing}. Last output:\n{last}",
     )
 
 
-def wait_for_status_not_contains(env, needle: str, timeout: float = DEBOUNCE_SECS * 8) -> None:
+def wait_for_status_not_contains(
+    env, needle: str, timeout: float = DEBOUNCE_SECS * 8
+) -> None:
     deadline = time.time() + timeout
     last = ""
     while time.time() < deadline:
@@ -58,7 +67,9 @@ def wait_for_status_not_contains(env, needle: str, timeout: float = DEBOUNCE_SEC
         if needle not in last:
             return
         time.sleep(DEBOUNCE_SECS)
-    pytest.fail(f"Timed out waiting for status to drop '{needle}'. Last output:\n{last}")
+    pytest.fail(
+        f"Timed out waiting for status to drop '{needle}'. Last output:\n{last}"
+    )
 
 
 def create_test_repo_and_config():

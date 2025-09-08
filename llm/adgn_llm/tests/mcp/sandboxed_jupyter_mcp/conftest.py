@@ -209,6 +209,7 @@ def pytest_runtest_makereport(item, call):
 
 # Policy writer fixture that delegates to the shared policy factory module
 
+
 @pytest.fixture
 def policy_factory():
     return _write_policy

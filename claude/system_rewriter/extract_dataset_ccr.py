@@ -19,6 +19,7 @@ Each output record has shape:
   "log_file": path
 }
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -100,7 +101,7 @@ async def process_file(p: Path) -> list[dict]:
                         "timestamp": rec.get("timestamp"),
                         "anthropic_request": body,
                         "log_file": str(p),
-                    }
+                    },
                 )
     except OSError:
         return out
@@ -125,8 +126,8 @@ async def main():
                 count += 1
     print(
         json.dumps(
-            {"event": "dataset_ccr_written", "count": count, "path": str(OUTPUT_PATH)}
-        )
+            {"event": "dataset_ccr_written", "count": count, "path": str(OUTPUT_PATH)},
+        ),
     )
 
 

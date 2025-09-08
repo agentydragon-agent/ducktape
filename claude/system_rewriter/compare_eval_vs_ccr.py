@@ -74,7 +74,10 @@ def main():
         help="Output directory for diffs; defaults to <run-dir>/compare_vs_ccr",
     )
     ap.add_argument(
-        "--limit", type=int, default=5, help="Max number of samples to compare"
+        "--limit",
+        type=int,
+        default=5,
+        help="Max number of samples to compare",
     )
     args = ap.parse_args()
 
@@ -106,7 +109,10 @@ def main():
         (case_dir / "ccr_request.json").write_text(ccr_json, encoding="utf-8")
         # Diff
         diff_text = unified_diff_str(
-            ccr_json, eval_json, fromfile="ccr_request.json", tofile="eval_request.json"
+            ccr_json,
+            eval_json,
+            fromfile="ccr_request.json",
+            tofile="eval_request.json",
         )
         (case_dir / "diff.unified.txt").write_text(diff_text, encoding="utf-8")
         wrote.append(str(case_dir))

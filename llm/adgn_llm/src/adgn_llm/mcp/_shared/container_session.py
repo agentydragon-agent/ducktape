@@ -192,6 +192,7 @@ def register_container(mcp: FastMCP, *, tool_name: str = "exec") -> None:
 
     This folds resource and tool registration into a single call to avoid double registration.
     """
+
     # Resource: single JSON describing container/session
     @mcp.resource(
         "resource://container.info",
@@ -240,6 +241,3 @@ def register_container(mcp: FastMCP, *, tool_name: str = "exec") -> None:
             shell=shell,
             timeout_secs=timeout_secs,
         )
-
-
-

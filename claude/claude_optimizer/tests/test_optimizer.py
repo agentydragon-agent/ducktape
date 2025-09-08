@@ -391,7 +391,8 @@ class TestHelperFunctions:
     def test_logging_openai_model(self):
         """Test LoggingOpenAIModel wraps OpenAI client and logs."""
         client = LoggingOpenAIClient(
-            openai_client=Mock(), jsonl_logger=JSONLLogger(Path("/dev/null"))
+            openai_client=Mock(),
+            jsonl_logger=JSONLLogger(Path("/dev/null")),
         )
         model = LoggingOpenAIModel(
             openai_client=client,

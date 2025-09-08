@@ -50,9 +50,13 @@ def _text_preview(oai_req: dict, maxlen: int = 200) -> str:
                             parts.append(t)
                 s = "\n".join(parts)
             else:
-                s = json.dumps(content, ensure_ascii=False) if content is not None else ""
+                s = (
+                    json.dumps(content, ensure_ascii=False)
+                    if content is not None
+                    else ""
+                )
             s = s.replace("\n", " ")
-            return (s[:maxlen] + ("…" if len(s) > maxlen else ""))
+            return s[:maxlen] + ("…" if len(s) > maxlen else "")
     msgs = oai_req.get("messages")
     if isinstance(msgs, list) and msgs:
         m0 = msgs[0]
@@ -66,7 +70,7 @@ def _text_preview(oai_req: dict, maxlen: int = 200) -> str:
             else:
                 s = json.dumps(c, ensure_ascii=False) if c is not None else ""
             s = s.replace("\n", " ")
-            return (s[:maxlen] + ("…" if len(s) > maxlen else ""))
+            return s[:maxlen] + ("…" if len(s) > maxlen else "")
     return ""
 
 
@@ -132,16 +136,28 @@ with DATA_PATH.open("r", encoding="utf-8") as f:
 print("# Crush dataset sanity check (raw + summaries)")
 print(json.dumps({"path": str(DATA_PATH)}, ensure_ascii=False))
 print("\n== RAW first/middle/last ==")
-print(json.dumps({
-    "first": first_raw,
-    "middle": mid_raw,
-    "last": list(last_raw),
-}, ensure_ascii=False, indent=2))
+print(
+    json.dumps(
+        {
+            "first": first_raw,
+            "middle": mid_raw,
+            "last": list(last_raw),
+        },
+        ensure_ascii=False,
+        indent=2,
+    )
+)
 print("\n== Samples (summaries) ==")
-print(json.dumps({
-    "first": [_summary_entry(x) for x in first_objs],
-    "middle": [_summary_entry(x) for x in mid_objs],
-    "last": [_summary_entry(x) for x in list(last_objs)],
-}, ensure_ascii=False, indent=2))
+print(
+    json.dumps(
+        {
+            "first": [_summary_entry(x) for x in first_objs],
+            "middle": [_summary_entry(x) for x in mid_objs],
+            "last": [_summary_entry(x) for x in list(last_objs)],
+        },
+        ensure_ascii=False,
+        indent=2,
+    )
+)
 print("\n== Summary counts ==")
 print(json.dumps(counts, ensure_ascii=False, indent=2))

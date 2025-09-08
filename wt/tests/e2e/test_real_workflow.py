@@ -53,9 +53,9 @@ from ..test_utils import run_cli_command
 pytestmark = pytest.mark.timeout(10)
 
 
-
-
-def test_real_workflow_with_existing_worktrees(real_env_with_existing_worktrees, real_temp_repo):
+def test_real_workflow_with_existing_worktrees(
+    real_env_with_existing_worktrees, real_temp_repo
+):
     """Test workflow starting with existing worktrees - tests real status display."""
     env = real_env_with_existing_worktrees
     # Step 1: Status should show existing worktrees

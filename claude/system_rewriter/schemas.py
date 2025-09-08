@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-from typing import Any, Literal, Annotated, Union
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field
 from openai.types.responses import ResponseCreateParams
+from pydantic import BaseModel, Field
 
 # ------------------------
 # Crush (OpenAI Responses)
 # ------------------------
+
 
 class ToolFunction(BaseModel):
     type: Literal["function"] = "function"
@@ -36,6 +37,7 @@ class CrushSample(BaseModel):
 # CCR (Anthropic-style via SDK)
 # ------------------------
 
+
 class CCRRequest(BaseModel):
     system: str | list[dict[str, Any]] | None = None
     messages: list[dict[str, Any]]
@@ -53,6 +55,7 @@ class CCRSample(BaseModel):
 # Eval pipeline IO records
 # ------------------------
 
+
 class EvalSampleRecord(BaseModel):
     request: dict[str, Any]
     response: dict[str, Any]
@@ -69,5 +72,6 @@ class EvalGradeRecord(BaseModel):
     correlation_id: str | None = None
     timestamp: int | None = None
 
+
 # Discriminated union for dataset samples
-Sample = Annotated[Union[CCRSample, CrushSample], Field(discriminator="kind")]
+Sample = Annotated[CCRSample | CrushSample, Field(discriminator="kind")]

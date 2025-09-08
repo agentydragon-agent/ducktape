@@ -181,11 +181,13 @@ class McpManager:
                 StdioServerParameters,
                 stdio_client,
             )
+
             params = StdioServerParameters.model_validate(spec)
 
             async def open_uninitialized(stack: AsyncExitStack) -> ClientSession:
                 read, write = await stack.enter_async_context(stdio_client(params))
                 from mcp.client.session import ClientSession as _CS  # local import
+
                 sess = _CS(read_stream=read, write_stream=write)
                 await stack.enter_async_context(sess)
                 return sess
@@ -194,11 +196,13 @@ class McpManager:
 
         if transport == "sse":
             from mcp.client.sse import SseClientParams, sse_client  # noqa: PLC0415
+
             params = SseClientParams.model_validate(spec)
 
             async def open_uninitialized(stack: AsyncExitStack) -> ClientSession:
                 read, write = await stack.enter_async_context(sse_client(params))
                 from mcp.client.session import ClientSession as _CS
+
                 sess = _CS(read_stream=read, write_stream=write)
                 await stack.enter_async_context(sess)
                 return sess
@@ -210,11 +214,13 @@ class McpManager:
                 HttpClientParams,
                 http_client,
             )
+
             params = HttpClientParams.model_validate(spec)
 
             async def open_uninitialized(stack: AsyncExitStack) -> ClientSession:
                 read, write = await stack.enter_async_context(http_client(params))
                 from mcp.client.session import ClientSession as _CS
+
                 sess = _CS(read_stream=read, write_stream=write)
                 await stack.enter_async_context(sess)
                 return sess
@@ -226,7 +232,12 @@ class McpManager:
     @staticmethod
     # TODO(mpokorny): If needed later, add an 'inproc' transport that loads a dotted factory path
     # to create a FastMCP server in-proc from JSON config. For now, prefer explicit wiring in code.
-    def slots_from_specs(specs: Dict[str, Any]) -> Dict[str, "ServerSlot"]:
+    def slots_from_specs(specs: Dict[str, Any]) -> Dict[str, "ServerSlotSpec"]:
+        """Parse a mapping of name→transport spec into ServerSlotSpec entries.
+
+        Each entry yields an UNINITIALIZED ClientSession when opened; initialization
+        is performed exactly once in ServerSlotSpec.open().
+        """
         return {name: McpManager.slot_from_spec(name, spec) for name, spec in (specs or {}).items()}
 
     def resolve_function(self, namespaced: str) -> tuple[str, str]:

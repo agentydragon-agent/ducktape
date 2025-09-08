@@ -117,8 +117,6 @@ def write_startup_handshake(
             logger.error("Startup failed: %s", error_message)
 
 
-
-
 class WtDaemon:
     """Main worktree management daemon that handles all worktree operations."""
 

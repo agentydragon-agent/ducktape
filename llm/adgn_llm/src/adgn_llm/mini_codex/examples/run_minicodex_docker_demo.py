@@ -22,7 +22,6 @@ import os
 import time
 
 import docker
-from mcp.client.stdio import StdioServerParameters, stdio_client
 
 from adgn_llm.mini_codex.cli import (
     AssistantMessage,
@@ -32,7 +31,7 @@ from adgn_llm.mini_codex.cli import (
     responses_followup_with_tool_outputs,
     responses_turn,
 )
-from adgn_llm.mini_codex.mcp_manager import McpManager, ServerSlot, session_opener
+from adgn_llm.mini_codex.mcp_manager import McpManager
 
 CONSOLE_SCRIPT = "adgn-mcp-docker-exec"
 

@@ -125,7 +125,9 @@ def test_github_pr_variants(real_temp_repo, config_factory, tmp_path, variant, e
     assert r2.returncode == 0
 
     # Lookup wtid and force a PR refresh synchronously via RPC to avoid polling
-    wt_by_name = _rpc_json(config.daemon_socket_path, "worktree_get_by_name", {"name": "feature-x"})
+    wt_by_name = _rpc_json(
+        config.daemon_socket_path, "worktree_get_by_name", {"name": "feature-x"}
+    )
     wtid = wt_by_name["result"]["wtid"]
     assert wtid, "Server did not return wtid for created worktree"
     refresh_res = _rpc_json(config.daemon_socket_path, "pr_refresh_now", {"wtid": wtid})

@@ -71,7 +71,10 @@ def test_post_creation_python_script_runs(real_env_with_python_post_script, stdi
         stdin = None  # inherit normal stdin
     else:
         import subprocess
-        stdin = subprocess.DEVNULL  # parent CLI stdin is /dev/null; daemon inherits this
+
+        stdin = (
+            subprocess.DEVNULL
+        )  # parent CLI stdin is /dev/null; daemon inherits this
 
     result = run_cli_command(["sh", "-c", name], env=env, timeout=30.0, stdin=stdin)
 

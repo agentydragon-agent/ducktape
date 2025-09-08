@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import json
 import sys
 from pathlib import Path
 
@@ -20,7 +19,14 @@ ROOT = EVAL_DIR
 DATA = ROOT / "data" / "_test"
 
 
-from hamcrest import assert_that, equal_to, any_of, has_item, contains_string, has_entries, has_key
+from hamcrest import (
+    any_of,
+    assert_that,
+    contains_string,
+    equal_to,
+    has_entries,
+    has_item,
+)
 
 
 @pytest.mark.asyncio
@@ -40,8 +46,8 @@ async def test_read_ccr_min():
             content=any_of(
                 has_item(has_entries(type="text", text=contains_string("<bad>"))),
                 # Some datasets encode content as a plain string
-                contains_string("<bad>")
-            )
+                contains_string("<bad>"),
+            ),
         ),
     )
 
@@ -60,7 +66,8 @@ async def test_read_crush_min():
     payload = raw if isinstance(raw, dict) else raw.model_dump()
     assert isinstance(payload.get("input"), list)
     roles = [
-        (it.get("role") or "").lower() for it in payload.get("input") if isinstance(it, dict)
+        (it.get("role") or "").lower()
+        for it in payload.get("input")
+        if isinstance(it, dict)
     ]
     assert any(r in ("user", "assistant") for r in roles)
-

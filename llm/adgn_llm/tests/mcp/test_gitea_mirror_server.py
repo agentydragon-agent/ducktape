@@ -35,8 +35,6 @@ def _iter(values: list[float]) -> Iterator[float]:
         yield values[-1]
 
 
-
-
 def _extract_payload(result):
     if isinstance(result, dict):
         return result

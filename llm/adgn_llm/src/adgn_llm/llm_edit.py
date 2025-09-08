@@ -24,8 +24,6 @@ from .mini_codex.agent import MiniCodex
 from .mini_codex.mcp_manager import McpManager
 
 
-
-
 async def _execute(
     *,
     file_path: Path,
@@ -72,8 +70,6 @@ async def _execute(
 app = typer.Typer(help="LLM-powered single-file editor", add_completion=False)
 
 
-
-
 def _run_cli(
     *,
     file_path: Path,
@@ -94,8 +90,6 @@ def _run_cli(
         )
     )
     raise typer.Exit(code)
-
-
 
 
 @app.command()
