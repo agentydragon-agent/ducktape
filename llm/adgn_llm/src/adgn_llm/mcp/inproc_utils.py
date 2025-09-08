@@ -24,7 +24,10 @@ def make_inproc_slot_spec(app: FastMCP) -> ServerSlotSpec:
         (client_read, client_write), (server_read, server_write) = await stack.enter_async_context(
             create_client_server_memory_streams()
         )
-        # Start FastMCP low-level server in a task group matching SDK teardown pattern
+        # Start FastMCP low-level server in a task group matching SDK teardown pattern.
+        # Note: "open_uninitialized" refers to the CLIENT session; the server must be
+        # started with its initialization options to accept the client's initialize() call.
+        # This mirrors mcp.shared.memory.create_connected_server_and_client_session.
         tg = await stack.enter_async_context(anyio.create_task_group())
         tg.start_soon(
             lambda: app._mcp_server.run(  # type: ignore[attr-defined]
