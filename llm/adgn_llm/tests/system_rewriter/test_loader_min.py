@@ -3,19 +3,17 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from importlib import resources
 
 import pytest
 
-# Ensure repo dir is on sys.path for local imports
-THIS_DIR = Path(__file__).resolve().parent
-EVAL_DIR = THIS_DIR.parent
-if str(EVAL_DIR) not in sys.path:
-    sys.path.insert(0, str(EVAL_DIR))
 
-from run_eval import read_dataset  # type: ignore
-from schemas import CrushSample  # type: ignore
+# from run_eval import read_dataset
+from adgn_llm.system_rewriter.run_eval import read_dataset  # type: ignore
+# from schemas import CrushSample
+from adgn_llm.system_rewriter.schemas import CrushSample
 
-ROOT = EVAL_DIR
+ROOT = Path(str(resources.files("adgn_llm.system_rewriter")))
 DATA = ROOT / "data" / "_test"
 
 

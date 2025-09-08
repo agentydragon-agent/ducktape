@@ -8,7 +8,6 @@ import asyncio
 import os
 from pathlib import Path
 
-from mcp.server.stdio import stdio_server
 
 from .server import make_gitea_mirror_mcp
 
@@ -56,11 +55,7 @@ def main(argv: list[str] | None = None) -> int:
         poll_timeout_secs=args.poll_timeout,
     )
 
-    async def _serve() -> None:
-        async with stdio_server() as (read_stream, write_stream):
-            await server.serve(read_stream=read_stream, write_stream=write_stream)
-
-    asyncio.run(_serve())
+    server.run("stdio")
     return 0
 
 

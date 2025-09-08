@@ -49,7 +49,7 @@ DEFAULT_WIRE_LOG = (
 )
 OUTPUT_PATH = ROOT / "data" / "dataset_crush.jsonl"
 
-from constants import BAD_MARKER, TOOLS_HEADER
+from .constants import BAD_MARKER, TOOLS_HEADER
 
 
 def parse_rfc3339_millis(ts: str | None) -> int | None:

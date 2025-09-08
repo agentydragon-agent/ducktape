@@ -21,11 +21,10 @@ def make_inproc_slot_spec(app: FastMCP) -> ServerSlotSpec:
     """
 
     async def open_uninitialized(stack: AsyncExitStack) -> ClientSession:
-        # Create in-memory message streams (client/server pairs)
         (client_read, client_write), (server_read, server_write) = await stack.enter_async_context(
             create_client_server_memory_streams()
         )
-        # Start the FastMCP low-level server in a task group
+        # Start FastMCP low-level server in a task group matching SDK teardown pattern
         tg = await stack.enter_async_context(anyio.create_task_group())
         tg.start_soon(
             lambda: app._mcp_server.run(  # type: ignore[attr-defined]
@@ -34,7 +33,7 @@ def make_inproc_slot_spec(app: FastMCP) -> ServerSlotSpec:
                 app._mcp_server.create_initialization_options(),  # type: ignore[attr-defined]
             )
         )
-        # Construct an UNINITIALIZED client session; caller will initialize()
+        # Client session remains UNINITIALIZED here
         sess = ClientSession(read_stream=client_read, write_stream=client_write)
         await stack.enter_async_context(sess)
         return sess

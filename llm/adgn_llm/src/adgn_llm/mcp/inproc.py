@@ -29,7 +29,7 @@ async def fastmcp_inproc_client(
     Lifecycle:
     - Starts the FastMCP server loop on the server ends of the streams inside an anyio TaskGroup
     - Yields the client ends to the caller
-    - On exit, closes the client write stream which allows the server loop to exit cleanly
+    - On exit, cancel the server TaskGroup after the client session closes its streams
     """
     # Create paired memory streams: client→server and server→client
     c2s_send, c2s_recv = anyio.create_memory_object_stream[SessionMessage](0)
@@ -47,30 +47,29 @@ async def fastmcp_inproc_client(
     # create_initialization_options contains serverInfo, capabilities, and optional instructions
     init_options = mcp_server._mcp_server.create_initialization_options()  # type: ignore[attr-defined]
 
-    try:
+    # Ensure all streams are properly closed and server task cancelled in-order
+    async with (
+        client_read,
+        client_write,
+        server_read,
+        server_write,
+    ):
         async with anyio.create_task_group() as tg:
-            finished = anyio.Event()
-
             async def _serve() -> None:
-                try:
-                    await mcp_server._mcp_server.run(server_read, server_write, init_options)  # type: ignore[attr-defined]
-                finally:
-                    finished.set()
+                await mcp_server._mcp_server.run(  # type: ignore[attr-defined]
+                    server_read,
+                    server_write,
+                    init_options,
+                )
 
             # Start server loop on the server ends
             tg.start_soon(_serve)
             try:
                 yield (client_read, client_write)
             finally:
-                # Close client write to allow server loop to finish
-                await client_write.aclose()
-                # Wait for server loop to exit cleanly
-                await finished.wait()
-    except* RuntimeError as eg:
-        # Suppress known anyio teardown artifact from underlying MCP server cancellation
-        residual = [e for e in eg.exceptions if "Attempted to exit cancel scope" not in str(e)]
-        if residual:
-            raise ExceptionGroup("Unhandled RuntimeError in fastmcp_inproc_client", residual)
+                # Let ClientSession manage stream closure; server.run exits on EOF of streams.
+                # No explicit cancellation here to avoid cross-task cancel-scope exit.
+                pass
 
 
 @asynccontextmanager

@@ -11,12 +11,13 @@ import sys
 import time
 from pathlib import Path
 from typing import Any
+from importlib import resources
 
 import tiktoken  # type: ignore
-from constants import TOOLS_HEADER
+from .constants import TOOLS_HEADER
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from openai import AsyncOpenAI
-from schemas import (
+from .schemas import (
     CCRRequest,
     CCRSample,
     CrushSample,
@@ -40,7 +41,7 @@ SAMPLER_MODEL = "gpt-5"
 GRADER_MODEL = "gpt-5"
 
 # Paths
-REWRITE_APPLY = Path(__file__).parent / "system_rewrite_apply.js"
+REWRITE_APPLY = resources.files("adgn_llm.system_rewriter").joinpath("js/system_rewrite_apply.js")
 
 
 def parse_args():

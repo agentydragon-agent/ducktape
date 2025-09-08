@@ -1,36 +1,13 @@
 #!/usr/bin/env python3
-"""
-Extract a CCR-like dataset from Claude Code router logs.
-
-- Input: ~/.claude-code-router/logs/trace.*
-- Output: ./data/dataset_ccr.jsonl (one JSON object per line)
-
-Selection logic:
-- Only consider inbound_request events that carry Anthropic-style body
-- Keep samples where:
-  * System includes the tools header string (constants.TOOLS_HEADER), and
-  * The last user message contains the BAD_MARKER token "<bad>"
-
-Each output record has shape:
-{
-  "correlation_id": str | null,
-  "timestamp": int | null,
-  "anthropic_request": CCRRequest,
-  "log_file": path
-}
-"""
-
-from __future__ import annotations
-
 import asyncio
 import json
 from pathlib import Path
 from typing import Any
 
 TRACE_DIR = Path.home() / ".claude-code-router" / "logs"
-OUTPUT_PATH = Path(__file__).parent / "data" / "dataset_ccr.jsonl"
+OUTPUT_PATH = Path(__file__).parent / "data" / "dataset.jsonl"
 
-from constants import BAD_MARKER, TOOLS_HEADER
+from .constants import BAD_MARKER, TOOLS_HEADER
 
 
 def list_trace_files() -> list[Path]:
@@ -126,7 +103,7 @@ async def main():
                 count += 1
     print(
         json.dumps(
-            {"event": "dataset_ccr_written", "count": count, "path": str(OUTPUT_PATH)},
+            {"event": "dataset_written", "count": count, "path": str(OUTPUT_PATH)},
         ),
     )
 

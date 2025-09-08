@@ -39,6 +39,7 @@ dependencies = [
   "typer>=0.12.3",
   "requests>=2.32.5",
   "aiolimiter>=1.1.0",
+  "pyhamcrest>=2.1",
 ]
 
 [project.scripts]
@@ -107,7 +108,6 @@ norecursedirs = [
   "src/adgn_llm/properties/specimens",
 ]
 
-[dependency-groups]
-dev = [
-    "pytest>=8.4.2",
-]
+
+[tool.uv]
+dependency-groups = { dev = ["pytest>=8", "pytest-asyncio>=0.23", "pyhamcrest>=2.1"] }
