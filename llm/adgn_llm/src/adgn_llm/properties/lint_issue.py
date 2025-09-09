@@ -21,7 +21,7 @@ from adgn_llm.mini_codex.agent import MiniCodex
 from adgn_llm.mini_codex.mcp_manager import McpManager, build_mcp_function
 from adgn_llm.mini_codex.loop_control import LoopController, BaseLoopController
 from adgn_llm.mcp.docker_exec.server import SERVER_NAME as DOCKER_SERVER_NAME, TOOL_EXEC_NAME as DOCKER_EXEC_TOOL_NAME
-# from adgn_llm.mini_codex.event_renderer import ConsoleEventRenderer, PrettyPrintController  # (optional; not required for bootstrap)
+from adgn_llm.mini_codex.event_renderer import ConsoleEventRenderer, PrettyPrintController
 from .specimen_utils import Specimen, ensure_archive_for_specimen_slug, LineRange, Occurrence
 
 DOCKER_IMAGE = "python:3.12-slim"
@@ -279,7 +279,7 @@ def _extract_tar_gz_to(archive: Path, dst: Path) -> None:
         tf.extractall(dst)
 
 
-def run_specimen_lint_issue(
+async def run_specimen_lint_issue_async(
     specimen: str,
     issue_id: str,
     *,
@@ -358,7 +358,8 @@ def run_specimen_lint_issue(
         props = _find_property_files([str(p) for p in issue.properties])
         prompt = _build_prompt(issue, props, occurrence=occ)
         base_ctrl = _make_bootstrap_controller(occ, content_root)
-        text = asyncio.run(_run_agent(prompt, specs, model, client, controller=base_ctrl))
+        ctrl = PrettyPrintController(base_ctrl, renderer=ConsoleEventRenderer(show_text=False))
+        text = await _run_agent(prompt, specs, model, client, controller=ctrl)
         # Print the exact occurrence representation as fed to the model
         issue_dict = issue.model_dump(exclude_none=True)
         issue_dict.pop("id", None)
@@ -379,3 +380,5 @@ def run_specimen_lint_issue(
         # Cleanup copied workspace
         if mount_root.exists():
             shutil.rmtree(mount_root, ignore_errors=True)
+
+

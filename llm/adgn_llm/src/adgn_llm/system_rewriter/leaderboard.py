@@ -287,7 +287,7 @@ def generate(
     sort_key: str = "mean",
     asc: bool = False,
     limit: int | None = None,
-) -> tuple[Table, list[str]]:
+) -> tuple[Table, list[str], list[str]]:
     # Build mapping from packaged templates/ only (stable names)
     known = load_known_templates()
     if not runs_dir.exists():
@@ -300,6 +300,10 @@ def generate(
         if not row:
             continue
         by_hash.setdefault(row.template_hash, []).append(row)
+
+    # Determine which packaged templates have no eval runs
+    known_hash_to_name: dict[str, str] = {sha1_text(text): name for text, name in known.items()}
+    missing_templates: list[str] = [name for h, name in known_hash_to_name.items() if h not in by_hash]
 
     # Row sort key
     row_key = {
@@ -328,7 +332,7 @@ def generate(
         if r.template_error:
             errors.append(f"{r.run}: {_relpath(r.template_label)} — {r.template_error_exc}")
 
-    return table, errors
+    return table, errors, missing_templates
 
 
 def parse_args() -> argparse.Namespace:
@@ -362,7 +366,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     try:
-        table, errors = generate(
+        table, errors, missing = generate(
             runs_dir=args.runs_dir,
             templates_dir=args.templates_dir,
             sort_key=args.sort,
@@ -374,6 +378,8 @@ def main() -> int:
         return 2
     console = Console()
     console.print(table)
+    if missing:
+        console.print("Templates not yet evaluated:\n" + "\n".join(f"- {name}" for name in sorted(missing)))
     for e in errors:
         console.print(f"[red]{e}[/]")
     return 0

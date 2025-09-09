@@ -43,7 +43,7 @@ GRADER_MODEL = "gpt-5"
 # Paths
 REWRITE_APPLY = resources.files("adgn_llm.system_rewriter").joinpath("js/system_rewrite_apply.js")
 
-from .validation import validate_template_file
+from .templates import validate_template_file
 
 
 def parse_args():

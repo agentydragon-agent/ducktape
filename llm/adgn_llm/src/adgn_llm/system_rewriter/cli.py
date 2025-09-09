@@ -10,6 +10,10 @@ import typer
 from rich.console import Console
 from rich.panel import Panel
 from rich.rule import Rule
+from .templates import validate_template_file
+from rich.console import Console
+from rich.panel import Panel
+from rich.rule import Rule
 
 from . import run_eval
 from . import compare_eval_vs_ccr
@@ -41,7 +45,6 @@ def cmd_run(
     dsets = dataset or [run_eval.DEFAULT_DATASET_PATH]
     base_out = out_dir if out_dir else None
     # Fail fast on invalid/unreadable template
-    from .validation import validate_template_file
     validate_template_file(template)
     asyncio.run(
         run_eval.run_eval(
@@ -175,7 +178,7 @@ def cmd_leaderboard(
     limit: int | None = typer.Option(None, "--limit", help="Limit rows"),
     # --since removed; grouping by template consolidates runs regardless of timestamp
 ):
-    table, errors = leaderboard.generate(
+    table, errors, missing = leaderboard.generate(
         runs_dir=runs_dir,
         templates_dir=templates_dir,
         sort_key=sort_key,
@@ -184,6 +187,10 @@ def cmd_leaderboard(
     )
     console = Console()
     console.print(table)
+    if missing:
+        console.print(Rule("Templates not yet evaluated", style="yellow"))
+        for name in sorted(missing):
+            console.print(f"- {name}")
     if errors:
         console.print(Rule("Template validation errors", style="red"))
         for e in errors:

@@ -915,14 +915,16 @@ def main(argv: list[str] | None = None) -> int:
         # Late import via importlib to avoid circular dependency while keeping lints happy
         mod = importlib.import_module("adgn_llm.properties.lint_issue")
         client = AsyncOpenAI()
-        return mod.run_specimen_lint_issue(
-            args.specimen,
-            args.issue_id,
-            model=getattr(args, "model", "gpt-5"),
-            dry_run=getattr(args, "dry_run", False),
-            gitconfig=getattr(args, "gitconfig", None),
-            occurrence_index=getattr(args, "occurrence"),
-            client=client,
+        return asyncio.run(
+            mod.run_specimen_lint_issue_async(
+                args.specimen,
+                args.issue_id,
+                model=getattr(args, "model", "gpt-5"),
+                dry_run=getattr(args, "dry_run", False),
+                gitconfig=getattr(args, "gitconfig", None),
+                occurrence_index=getattr(args, "occurrence"),
+                client=client,
+            )
         )
 
     if args.command == "specimen-check":

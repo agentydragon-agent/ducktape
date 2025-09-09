@@ -14,6 +14,9 @@ from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Dict
 
 from mcp.client.session import ClientSession
+from mcp.client.stdio import StdioServerParameters, stdio_client
+from mcp.client.sse import sse_client
+from mcp.client.streamable_http import HttpClientParams, http_client
 from mcp.types import InitializeResult
 
 # Shared MCP naming helpers/constants
@@ -180,51 +183,33 @@ class McpManager:
             transport = "stdio"
 
         if transport == "stdio":
-            from mcp.client.stdio import (  # noqa: PLC0415
-                StdioServerParameters,
-                stdio_client,
-            )
-
             params = StdioServerParameters.model_validate(spec)
 
             async def open_uninitialized(stack: AsyncExitStack) -> ClientSession:
                 read, write = await stack.enter_async_context(stdio_client(params))
-                from mcp.client.session import ClientSession as _CS  # local import
-
-                sess = _CS(read_stream=read, write_stream=write)
+                sess = ClientSession(read_stream=read, write_stream=write)
                 await stack.enter_async_context(sess)
                 return sess
 
             return ServerSlotSpec(open_uninitialized=open_uninitialized)
 
         if transport == "sse":
-            from mcp.client.sse import SseClientParams, sse_client  # noqa: PLC0415
-
             params = SseClientParams.model_validate(spec)
 
             async def open_uninitialized(stack: AsyncExitStack) -> ClientSession:
                 read, write = await stack.enter_async_context(sse_client(params))
-                from mcp.client.session import ClientSession as _CS
-
-                sess = _CS(read_stream=read, write_stream=write)
+                sess = ClientSession(read_stream=read, write_stream=write)
                 await stack.enter_async_context(sess)
                 return sess
 
             return ServerSlotSpec(open_uninitialized=open_uninitialized)
 
         if transport == "http":
-            from mcp.client.streamable_http import (  # noqa: PLC0415
-                HttpClientParams,
-                http_client,
-            )
-
             params = HttpClientParams.model_validate(spec)
 
             async def open_uninitialized(stack: AsyncExitStack) -> ClientSession:
                 read, write = await stack.enter_async_context(http_client(params))
-                from mcp.client.session import ClientSession as _CS
-
-                sess = _CS(read_stream=read, write_stream=write)
+                sess = ClientSession(read_stream=read, write_stream=write)
                 await stack.enter_async_context(sess)
                 return sess
 

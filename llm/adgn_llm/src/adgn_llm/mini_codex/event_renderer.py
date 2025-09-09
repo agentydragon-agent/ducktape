@@ -5,7 +5,6 @@ from typing import Callable, Sequence
 
 from openai.types.responses import (
     ResponseFunctionToolCall,
-    ResponseOutput,
     ResponseOutputMessage,
     ResponseOutputText,
     ResponseReasoningItem,
@@ -19,7 +18,7 @@ DOCKER_SERVER_NAME = "docker"
 DOCKER_EXEC_TOOL_NAME = "docker_exec"
 
 
-__all__ = ["ConsoleEventRenderer"]
+__all__ = ["ConsoleEventRenderer", "PrettyPrintController"]
 
 
 class ConsoleEventRenderer:
@@ -45,7 +44,7 @@ class ConsoleEventRenderer:
 
     # High-level API ---------------------------------------------------------
 
-    def render_outputs(self, items: Sequence[ResponseOutput | FunctionCallOutput]) -> str:
+    def render_outputs(self, items: Sequence["OutputItem"]) -> str:
         parts: list[str] = []
         for item in items:
             if isinstance(item, ResponseFunctionToolCall):
@@ -65,7 +64,7 @@ class ConsoleEventRenderer:
 
     def emit_outputs(
         self,
-        items: Sequence[ResponseOutput | FunctionCallOutput],
+        items: Sequence["OutputItem"],
         *,
         write: Callable[[str], None] = print,
     ) -> None:
@@ -182,6 +181,10 @@ def _coerce_str(x: object) -> str:
         return json.dumps(x, ensure_ascii=False)
     except Exception:
         return str(x)
+
+
+# Unified output item type used in this module for type hints
+OutputItem = ResponseFunctionToolCall | ResponseOutputMessage | ResponseReasoningItem | FunctionCallOutput
 
 
 class PrettyPrintController(BaseLoopController):

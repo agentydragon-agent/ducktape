@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 import pytest
+from openai.types.responses import Response as ResponsesResponse
 from openai.types.responses import ResponseFunctionToolCall, ResponseOutputMessage, ResponseOutputText
 
 from adgn_llm.mini_codex.agent import MiniCodex
@@ -23,42 +24,50 @@ class _MockResponsesClient:
         def __init__(self, parent: "_MockResponsesClient"):
             self._p = parent
 
-        async def create(self, **kwargs):  # noqa: D401
+        async def create(self, model, **kwargs):  # noqa: D401
             # 1st real LLM call: request a docker_exec tool
             self._p._calls += 1
             if self._p._calls == 1:
-                return type(
-                    "Resp",
-                    (),
-                    {
-                        "output": [
-                            ResponseFunctionToolCall(
-                                type="function_call",
-                                name="mcp__docker__docker_exec",
-                                call_id="llm:1",
-                                arguments=json.dumps({"cmd": ["bash", "-lc", "echo from_llm"]}),
-                            )
-                        ]
-                    },
-                )()
+                output = [
+                    ResponseFunctionToolCall(
+                        type="function_call",
+                        name="mcp__docker__docker_exec",
+                        call_id="llm:1",
+                        arguments=json.dumps({"cmd": ["bash", "-lc", "echo from_llm"]}),
+                    )
+                ]
+                return ResponsesResponse(
+                    id="resp-1",
+                    object="response",
+                    model=model,
+                    created_at=0,
+                    output=output,
+                    tools=kwargs.get("tools", []),
+                    tool_choice=kwargs.get("tool_choice", "auto"),
+                    parallel_tool_calls=False,
+                )
             # 2nd real LLM call: return final assistant text
-            return type(
-                "Resp",
-                (),
-                {
-                    "output": [
-                        ResponseOutputMessage(
-                            id="out-msg-1",
-                            type="message",
-                            role="assistant",
-                            status="completed",
-                            content=[
-                                ResponseOutputText(type="output_text", text="FINAL", annotations=[])
-                            ],
-                        )
-                    ]
-                },
-            )()
+            output = [
+                ResponseOutputMessage(
+                    id="out-msg-1",
+                    type="message",
+                    role="assistant",
+                    status="completed",
+                    content=[
+                        ResponseOutputText(type="output_text", text="FINAL", annotations=[])
+                    ],
+                )
+            ]
+            return ResponsesResponse(
+                id="resp-2",
+                object="response",
+                model=model,
+                created_at=1,
+                output=output,
+                tools=kwargs.get("tools", []),
+                tool_choice=kwargs.get("tool_choice", "auto"),
+                parallel_tool_calls=False,
+            )
 
     @property
     def responses(self) -> "_MockResponsesClient._Sub":  # noqa: D401
@@ -68,10 +77,9 @@ class _MockResponsesClient:
 @pytest.mark.asyncio
 async def test_lint_issue_bootstrap_small_files(tmp_path: Path):
     # Arrange: create a tiny workspace with two small files
-    # Use a repo under the project working directory to satisfy Docker Desktop file sharing
-    import os, time
-    content_root = Path.cwd() / "scratch" / f"bootstrap_repo_{os.getpid()}_{int(time.time())}"
-    content_root.mkdir(parents=True, exist_ok=False)
+    # Use pytest tmpdir (tmp_path) for repo
+    content_root = tmp_path / "repo"
+    content_root.mkdir(parents=True, exist_ok=True)
     (content_root / "pkg").mkdir(parents=True)
     f1 = content_root / "pkg" / "a.py"
     f2 = content_root / "pkg" / "b.py"
