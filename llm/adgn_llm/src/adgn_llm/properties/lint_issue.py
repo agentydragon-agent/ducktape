@@ -15,7 +15,7 @@ from adgn_llm.properties.specimen_utils import load_single_issue
 from openai.types.responses import ResponseFunctionToolCall
 
 from adgn_llm.mcp.docker_exec.server import make_container_exec_mcp
-from adgn_llm.mcp.inproc_utils import make_inproc_slot_spec
+from adgn_llm.mcp.inproc_transport import make_inproc_slot_spec
 from adgn_llm.mini_codex.agent import MiniCodex
 from adgn_llm.mini_codex.mcp_manager import McpManager, build_mcp_function
 from adgn_llm.mini_codex.loop_control import (
@@ -49,13 +49,9 @@ class LintConfig:
     dry_run: bool = False
 
 
-# Moved to specimen_utils.load_single_issue
-
-
-# Moved to specimen_utils.find_property_files
-
-
-def _build_prompt(issue: Any, property_md_files: list[Path], occurrence: Any | None = None) -> str:
+def _build_prompt(
+    issue: Any, property_md_files: list[Path], occurrence: Any | None = None
+) -> str:
     # Do not include specimen slug or issue id. Include only issue fields and property definitions.
     # The agent will read code from /workspace via MCP.
     issue_dict = issue.model_dump(exclude_none=True)
@@ -106,7 +102,7 @@ async def _run_agent(
     slots: dict[str, Any],
     model: str,
     client: AsyncOpenAI,
-    controller: "LoopController" | None = None,
+    controller: LoopController,
 ) -> str:
     async with McpManager(slots) as mcp:
         agent = await MiniCodex.create(
@@ -116,7 +112,9 @@ async def _run_agent(
             client=client,
         )
         result = await agent.run(prompt, controller=controller)
-        return result.text.strip() if result.text else ""
+        return result.text or ""
+
+BIG_THRESHOLD = 20480
 
 
 def _make_bootstrap_controller(occ: Occurrence, content_root: Path) -> LoopController:
@@ -130,15 +128,15 @@ def _make_bootstrap_controller(occ: Occurrence, content_root: Path) -> LoopContr
 
     # Determine sizes using local filesystem view of mounted content_root; fatal on missing/permission issues
     sizes: dict[str, int] = {}
-    big_detected = False
     for p in files:
         hp = (content_root / p).resolve()
-        st = hp.stat()  # Let FileNotFoundError/PermissionError crash: malformed specimen
+        st = (
+            hp.stat()
+        )  # Let FileNotFoundError/PermissionError crash: malformed specimen
         if not hp.is_file():
             raise SystemExit(f"Expected a regular file for occurrence path: {hp}")
         sizes[p] = int(st.st_size)
-        if st.st_size >= 20480:
-            big_detected = True
+    big_detected = any(size>= BIG_THRESHOLD for st size in sizes.values())
 
     # Pre-build calls per step
     step1 = [
@@ -159,17 +157,12 @@ def _make_bootstrap_controller(occ: Occurrence, content_root: Path) -> LoopContr
 
     if dirs:
         # Build argv without shell: ls -la dir1 dir2 ...
-        dir_args = ["/workspace/" + d for d in dirs]
         step2 = [
             ResponseFunctionToolCall(
                 type="function_call",
                 name=build_mcp_function(DOCKER_SERVER_NAME, DOCKER_EXEC_TOOL_NAME),
                 call_id="bootstrap:ls",
-                arguments=json.dumps(
-                    {
-                        "cmd": ["ls", "-la", *dir_args],
-                    }
-                ),
+                arguments=json.dumps({"cmd": ["ls", "-la"] + ["/workspace/" + d for d in dirs]}),
             )
         ]
     else:
@@ -179,11 +172,7 @@ def _make_bootstrap_controller(occ: Occurrence, content_root: Path) -> LoopContr
     def _content_calls() -> list[ResponseFunctionToolCall]:
         out: list[ResponseFunctionToolCall] = []
         for p in files:
-            q = p.replace('"', '\\"')
-            sz = sizes.get(p, -1)
-            if 0 <= sz < 20480:
-                cmd = ["nl", "-ba", "-w1", "-s", " ", f"/workspace/{q}"]
-            else:
+            if sizes[p] > BIG_THRESHOLD:
                 # unreachable when big_detected is False; defer to model (no synthetic call)
                 continue
             out.append(
@@ -191,7 +180,7 @@ def _make_bootstrap_controller(occ: Occurrence, content_root: Path) -> LoopContr
                     type="function_call",
                     name=build_mcp_function(DOCKER_SERVER_NAME, DOCKER_EXEC_TOOL_NAME),
                     call_id=f"bootstrap:show:{len(out) + 1}",
-                    arguments=json.dumps({"cmd": cmd}),
+                    arguments=json.dumps({"cmd": ["nl", "-ba", "-w1", "-s", " ", f"/workspace/{q}"]}),
                 )
             )
         return out
@@ -243,9 +232,8 @@ async def run_specimen_lint_issue_async(
     # Always mount from under $HOME to avoid Docker volume restrictions on /var/folders
     ts = int(time.time())
     name = f"lint_{ts}"
-    mount_base = Path.home() / ".cache" / "adgn-llm" / "workspaces"
-    mount_base.mkdir(parents=True, exist_ok=True)
-    mount_root = mount_base / f"{specimen}_{name}"
+    mount_root = Path.home() / ".cache" / "adgn-llm" / "workspaces" / f"{specimen}_{name}"
+    mount_root.mkdir(parents=True, exist_ok=True)
 
     if dry_run:
         props = find_property_files([str(p) for p in issue.properties])
@@ -300,7 +288,9 @@ async def run_specimen_lint_issue_async(
         props = find_property_files([str(p) for p in issue.properties])
         prompt = _build_prompt(issue, props, occurrence=occ)
         base_ctrl = _make_bootstrap_controller(occ, content_root)
-        ctrl = PrettyPrintController(base_ctrl, renderer=ConsoleEventRenderer(show_text=False))
+        ctrl = PrettyPrintController(
+            base_ctrl, renderer=ConsoleEventRenderer(show_text=False)
+        )
         text = await _run_agent(prompt, specs, model, client, controller=ctrl)
         # Print the exact occurrence representation as fed to the model
         issue_dict = issue.model_dump(exclude_none=True)

@@ -7,6 +7,8 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import tarfile
+import docker
 import time
 from dataclasses import dataclass
 from adgn_llm.properties.prop_utils import properties_root
@@ -23,6 +25,7 @@ from .specimen_utils import (
     load_manifest,
     resolve_manifest_arg,
     resolve_source_root,
+    ensure_archive_for_specimen_slug,
 )
 
 
@@ -895,6 +898,28 @@ def main(argv: list[str] | None = None) -> int:
         help="Path to a gitconfig to use for private repo fallback (shallow git)",
     )
 
+    # New command: specimen-shell — interactive bash/sh inside the hydrated specimen container (RW mount)
+    p_spec_shell = sub.add_parser(
+        "specimen-shell",
+        help="Open an interactive shell in a container with the hydrated specimen mounted",
+        description=(
+            "Hydrate specimen into a temporary workspace and open an interactive shell inside a container\n"
+            "with the workspace mounted at /workspace (read-write). Container uses no network and is removed on exit."
+        ),
+    )
+    p_spec_shell.add_argument(
+        "specimen",
+        help="Specimen name (under properties/specimens), path to specimen dir, or path to manifest.yaml",
+    )
+    p_spec_shell.add_argument(
+        "--gitconfig",
+        help="Path to a gitconfig to use for private repo fallback (shallow git)",
+    )
+    p_spec_shell.add_argument(
+        "--image",
+        help="Docker image to use (defaults to the linting image)",
+    )
+
     args = parser.parse_args(argv)
 
     if args.command == "lint-issue":
@@ -1108,6 +1133,102 @@ def main(argv: list[str] | None = None) -> int:
             return rc
         except KeyboardInterrupt:
             return 130
+    if args.command == "specimen-shell":
+        base = find_specimens_base()
+        manifest_path = resolve_manifest_arg(args.specimen, base)
+        if manifest_path is None:
+            names = list_specimen_names(base)
+            if not names:
+                print(f"No specimens found under: {base}")
+                return 2
+            print("Available specimens:")
+            for n in names:
+                print(" -", n)
+            return 2
+
+        gitconfig_path = None
+        if args.gitconfig:
+            p = Path(args.gitconfig).expanduser().resolve()
+            if not p.exists():
+                print(f"ERROR: --gitconfig file not found: {p}")
+                return 2
+            gitconfig_path = str(p)
+
+        man = load_manifest(manifest_path)
+
+        image = args.image
+        if not image:
+            try:
+                from adgn_llm.properties.lint_issue import DOCKER_IMAGE as _DEFAULT_IMAGE  # type: ignore
+                image = _DEFAULT_IMAGE
+            except Exception:
+                image = "python:3.12-slim"
+
+        try:
+            dclient = docker.from_env()
+            # Light sanity check; will raise if daemon unavailable
+            dclient.ping()
+        except Exception as e:
+            print(f"ERROR: Docker daemon not reachable: {e}")
+            return 2
+
+        ts = int(time.time())
+        slug = manifest_path.parent.name
+        mount_base = Path.home() / ".cache" / "adgn-llm" / "workspaces"
+        mount_base.mkdir(parents=True, exist_ok=True)
+        mount_root = mount_base / f"{slug}_{ts}"
+
+        try:
+            if mount_root.exists():
+                shutil.rmtree(mount_root, ignore_errors=True)
+
+            archive = ensure_archive_for_specimen_slug(
+                man, manifest_path, Path(gitconfig_path) if gitconfig_path else None
+            )
+
+            mount_root.mkdir(parents=True, exist_ok=True)
+            with tarfile.open(archive, "r:gz") as tf:
+                tf.extractall(mount_root)
+
+            entries = [p for p in mount_root.iterdir() if p.is_dir()]
+            if len(entries) != 1:
+                print(
+                    f"Unexpected archive layout under {mount_root}; expected a single top-level directory",
+                )
+                return 2
+            content_root = entries[0]
+
+            name = f"adgn_spec_shell_{ts}"
+            container = None
+            try:
+                container = dclient.containers.run(
+                    image=image,
+                    command=["sleep", "infinity"],
+                    name=name,
+                    remove=True,
+                    detach=True,
+                    network_mode="none",
+                    volumes={str(content_root): {"bind": "/workspace", "mode": "rw"}},
+                    working_dir="/workspace",
+                )
+            except Exception as e:
+                print(f"ERROR: failed to start container: {e}")
+                return 2
+
+            rc = subprocess.run(["docker", "exec", "-it", name, "bash"], check=False).returncode
+            if rc != 0:
+                rc = subprocess.run(["docker", "exec", "-it", name, "sh"], check=False).returncode
+
+            try:
+                if container:
+                    container.stop()
+            except Exception:
+                pass
+            return rc
+        finally:
+            if mount_root.exists():
+                shutil.rmtree(mount_root, ignore_errors=True)
+
     else:
         parser.error("command is required")
         return 2

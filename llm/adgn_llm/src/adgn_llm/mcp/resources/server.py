@@ -7,15 +7,11 @@ from mcp import types as mcp_types
 
 
 class ResourcesBackend(Protocol):
-    async def list_resources(
-        self, only: list[str] | None = None
-    ) -> list[dict[str, Any]]: ...
+    async def list_resources(self, only: list[str] | None = None) -> list[dict[str, Any]]: ...
     async def read_resource(self, server: str, uri: str) -> Any: ...
 
 
-def make_resources_server(
-    backend: ResourcesBackend, name: str = "resources"
-) -> FastMCP:
+def make_resources_server(backend: ResourcesBackend, name: str = "resources") -> FastMCP:
     """Create a lightweight MCP server that aggregates resources across servers.
 
     Exposes two tools:
@@ -24,21 +20,13 @@ def make_resources_server(
 
     Backend is supplied directly as an argument (e.g., McpManager).
     """
-    mcp = FastMCP(
-        name, instructions="Aggregates MCP resources and provides read with windowing"
-    )
+    mcp = FastMCP(name, instructions="Aggregates MCP resources and provides read with windowing")
 
     @mcp.tool()
-    async def list(
-        server: str | None = None, uri_prefix: str | None = None
-    ) -> dict[str, Any]:
+    async def list(server: str | None = None, uri_prefix: str | None = None) -> dict[str, Any]:
         items = await backend.list_resources(only=[server] if server else None)
         if uri_prefix:
-            items = [
-                it
-                for it in items
-                if isinstance(it.get("uri"), str) and it["uri"].startswith(uri_prefix)
-            ]
+            items = [it for it in items if isinstance(it.get("uri"), str) and it["uri"].startswith(uri_prefix)]
         return {"resources": items}
 
     @mcp.tool()
@@ -92,9 +80,7 @@ def make_resources_server(
                             }
                         )
                         remaining -= take
-            cursor += (
-                len(p.text.encode("utf-8")) if p.text is not None else len(p.data or "")
-            )
+            cursor += len(p.text.encode("utf-8")) if p.text is not None else len(p.data or "")
             if remaining <= 0 and max_bytes > 0:
                 break
 

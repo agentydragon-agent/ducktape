@@ -6,7 +6,7 @@ import shutil
 import pytest
 from adgn_llm.mcp.docker_exec.server import make_container_exec_mcp
 from adgn_llm.mcp.local_exec.server import make_local_exec_mcp
-from adgn_llm.mcp.inproc_utils import make_inproc_slot_spec
+from adgn_llm.mcp.inproc_transport import make_inproc_slot_spec
 
 from adgn_llm.mini_codex.mcp_manager import (
     McpManager,

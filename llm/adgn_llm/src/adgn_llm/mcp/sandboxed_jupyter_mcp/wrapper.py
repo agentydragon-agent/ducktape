@@ -8,6 +8,7 @@ import shlex
 import shutil
 import socket
 import subprocess
+import docker
 import sys
 import time
 from datetime import datetime, timezone
@@ -128,36 +129,61 @@ def _docker(
         start_new_runtime,
     )
     run_root = f"/tmp/sjmcp-{secrets.token_hex(6)}"
-    env_flags = [
-        "-e",
-        f"JP_PORT={jupyter_port}",
-        "-e",
-        f"JUPYTER_RUNTIME_DIR={run_root}/runtime",
-        "-e",
-        f"JUPYTER_DATA_DIR={run_root}/data",
-        "-e",
-        f"JUPYTER_CONFIG_DIR={run_root}/config",
-        "-e",
-        f"MPLCONFIGDIR={run_root}/mpl",
-    ]
-    cmd = [
-        "docker",
-        "run",
-        "--rm",
-        "-i",
-        *env_flags,
-        "-v",
-        f"{workspace}:/workspace",
-        "--cap-drop",
-        "ALL",
-        "--security-opt",
-        "no-new-privileges",
-        docker_image,
-        "bash",
-        "-lc",
-        bash_script,
-    ]
-    return subprocess.Popen(cmd).wait()
+
+    # Prepare environment for the container
+    env = {
+        "JP_PORT": str(jupyter_port),
+        "JUPYTER_RUNTIME_DIR": f"{run_root}/runtime",
+        "JUPYTER_DATA_DIR": f"{run_root}/data",
+        "JUPYTER_CONFIG_DIR": f"{run_root}/config",
+        "MPLCONFIGDIR": f"{run_root}/mpl",
+    }
+
+    # Start a background container via Docker SDK; keep it alive and exec the script to preserve stdio semantics
+    name = f"sjmcp-{secrets.token_hex(6)}"
+    try:
+        dclient = docker.from_env()
+        dclient.ping()
+    except Exception as e:
+        print(f"[wrapper] ERROR: Docker daemon not reachable: {e}", file=sys.stderr)
+        return 2
+
+    container = None
+    try:
+        try:
+            container = dclient.containers.run(
+                image=docker_image,
+                command=["sleep", "infinity"],
+                name=name,
+                remove=True,
+                detach=True,
+                environment=env,
+                volumes={str(workspace): {"bind": "/workspace", "mode": "rw"}},
+                cap_drop=["ALL"],
+                security_opt=["no-new-privileges"],
+                working_dir="/workspace",
+            )
+        except Exception as e:
+            print(f"[wrapper] ERROR: failed to start container: {e}", file=sys.stderr)
+            return 2
+
+        # Run the jupyter+mcp startup script inside the container attached to our stdio
+        exec_cmd = [
+            "docker",
+            "exec",
+            "-i",
+            name,
+            "bash",
+            "-lc",
+            bash_script,
+        ]
+        return subprocess.Popen(exec_cmd).wait()
+    finally:
+        try:
+            if container is not None:
+                container.stop()
+        except Exception:
+            pass
 
 
 # Jupyter helpers

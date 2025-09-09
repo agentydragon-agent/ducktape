@@ -30,7 +30,7 @@ from adgn_llm.inop.io.file_utils import collect_workspace_files
 from adgn_llm.inop.runners.base import AgentRunner
 from adgn_llm.mcp._shared.container_session import NetworkMode
 from adgn_llm.mcp.docker_exec.server import make_container_exec_mcp
-from adgn_llm.mcp.inproc_utils import make_inproc_slot_spec
+from adgn_llm.mcp.inproc_transport import make_inproc_slot_spec
 from adgn_llm.mini_codex.agent import MiniCodex
 from adgn_llm.mcp.local_exec.server import make_local_exec_mcp
 from adgn_llm.mini_codex.mcp_manager import McpManager

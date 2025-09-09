@@ -82,7 +82,7 @@ from adgn_llm.inop.prompting.truncation_utils import TruncationManager
 from adgn_llm.inop.mcp.prompt_feedback_server import (
     make_prompt_feedback_server_with_handle,
 )
-from adgn_llm.mcp.inproc_utils import make_inproc_slot_spec
+from adgn_llm.mcp.inproc_transport import make_inproc_slot_spec
 from adgn_llm.mini_codex.mcp_manager import McpManager
 from adgn_llm.mini_codex.agent import MiniCodex
 from adgn_llm.inop.prompting.pe_controller import ProposePromptNTimes

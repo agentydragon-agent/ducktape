@@ -17,14 +17,15 @@ Notes / Future work (TODOs):
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Protocol, TYPE_CHECKING
 
-from openai.types.responses import (
-    ResponseOutput,
-    ResponseFunctionToolCall,
-    ResponseReasoningItem,
-)
-from adgn_llm.mini_codex.agent import FunctionCallOutput
+if TYPE_CHECKING:
+    from openai.types.responses import (
+        ResponseOutput,
+        ResponseFunctionToolCall,
+        ResponseReasoningItem,
+    )
+    from adgn_llm.mini_codex.agent import FunctionCallOutput
 
 
 # ---------------------------------------------------------------------------
@@ -172,4 +173,11 @@ class DefaultController(BaseLoopController):
             self._step += 1
             return Continue(RequireAny())
         self._step += 1
+        return Continue(Auto())
+
+
+class AutoOnly(BaseLoopController):
+    """Always use Auto tool policy for every sampling step."""
+
+    def on_before_sample(self) -> LoopDecision:
         return Continue(Auto())

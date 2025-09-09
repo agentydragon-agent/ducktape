@@ -4,7 +4,7 @@ import pytest
 from contextlib import AsyncExitStack
 from mcp.server.fastmcp import FastMCP
 
-from adgn_llm.mcp.inproc_utils import make_inproc_slot_spec
+from adgn_llm.mcp.inproc_transport import make_inproc_slot_spec
 
 
 @pytest.mark.asyncio

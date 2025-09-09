@@ -461,36 +461,6 @@ class MiniCodex:
             transcript_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
         return AgentResult(text=text, sequence=sequence, metrics=self._metrics)
 
-    def _resource_tools_descriptors(self) -> list[dict[str, Any]]:
-        return [
-            {
-                "type": "function",
-                "name": "mcp__resources__list",
-                "description": "List MCP resources (optionally filter by server and uri prefix)",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "server": {"type": "string"},
-                        "uri_prefix": {"type": "string"},
-                    },
-                },
-            },
-            {
-                "type": "function",
-                "name": "mcp__resources__read",
-                "description": "Read a resource with byte windowing",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "server": {"type": "string"},
-                        "uri": {"type": "string"},
-                        "start_offset": {"type": "integer", "default": 0},
-                        "max_bytes": {"type": "integer"},
-                    },
-                    "required": ["server", "uri", "max_bytes"],
-                },
-            },
-        ]
 
     @classmethod
     async def create(

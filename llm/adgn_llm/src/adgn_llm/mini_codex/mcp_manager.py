@@ -12,7 +12,7 @@ import asyncio
 from contextlib import AsyncExitStack
 from typing import Any, Dict
 from adgn_llm.mcp.types import ServerSlot, ServerSlotSpec
-from adgn_llm.mcp.inproc_utils import make_inproc_slot_spec
+from adgn_llm.mcp.inproc_transport import make_inproc_slot_spec
 from adgn_llm.mcp.resources.server import make_resources_server
 
 from mcp.client.session import ClientSession
