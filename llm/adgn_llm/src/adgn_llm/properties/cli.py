@@ -900,10 +900,9 @@ def main(argv: list[str] | None = None) -> int:
     p_spec_lint.add_argument("--model", default="gpt-5")
     p_spec_lint.add_argument("--dry-run", action="store_true")
     p_spec_lint.add_argument(
-        "--occurrence",
+        "occurrence",
         type=int,
-        required=True,
-        help="0-based occurrence index within issue.instances (required)",
+        help="0-based occurrence index within issue.instances",
     )
     p_spec_lint.add_argument(
         "--gitconfig",

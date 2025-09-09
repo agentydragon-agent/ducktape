@@ -27,6 +27,7 @@ from adgn_llm.mcp.local_exec.server import make_local_exec_mcp
 from adgn_llm.mini_codex.mcp_manager import (
     McpManager,
 )
+from adgn_llm.mcp.inproc_utils import make_inproc_slot_spec
 
 LOCAL_EXEC_SERVER_NAME = "local"
 

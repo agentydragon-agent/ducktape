@@ -152,9 +152,7 @@ def main():
         (case_dir / "eval_request.json").write_text(eval_json, encoding="utf-8")
         (case_dir / "ccr_request.json").write_text(ccr_json, encoding="utf-8")
         # Diff
-        diff_text = unified_diff_str(
-            ccr_json, eval_json, fromfile="ccr_request.json", tofile="eval_request.json"
-        )
+        diff_text = unified_diff_str(ccr_json, eval_json, fromfile="ccr_request.json", tofile="eval_request.json")
         (case_dir / "diff.unified.txt").write_text(diff_text, encoding="utf-8")
         wrote.append(str(case_dir))
         count += 1

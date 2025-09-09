@@ -38,7 +38,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
-import random
 import signal
 import sys
 from dataclasses import dataclass
@@ -52,9 +51,6 @@ from adgn_llm.inop.clients.logging_openai_client import (
     LoggingOpenAIModel,
 )
 from adgn_llm.inop.config import OptimizerConfig
-from adgn_llm.inop.engine.exceptions import (
-    ContextWindowExceededException,
-)
 from adgn_llm.inop.engine.models import (
     AgentTaskType,
     Criterion,
@@ -77,7 +73,6 @@ from adgn_llm.inop.plots import ScoreEvolutionTracker
 from adgn_llm.inop.prompting.prompt_engineer import (
     FeedbackMode,
     FullRolloutsFeedbackProvider,
-    PromptEngineer,
     StatsOnlyFeedbackProvider,
 )
 from adgn_llm.inop.prompting.summarizer import PatternSummarizer
@@ -403,7 +398,6 @@ async def optimize_prompts(
         iterations=iterations,
         base_dir=base_dir,
     )
-
 
 
 def main() -> None:

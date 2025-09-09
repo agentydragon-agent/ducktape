@@ -200,9 +200,16 @@ def run_specimen_lint_issue(
         tmpdir.mkdir(parents=True, exist_ok=True)
         outfile = tmpdir / f"lint_issue_{issue_id}_{ts}.md"
         outfile.write_text(prompt, encoding="utf-8")
+        # Determine content root deterministically for dry-run
+        entries = [p for p in mount_root.iterdir() if p.is_dir()]
+        if len(entries) != 1:
+            raise SystemExit(
+                f"Unexpected archive layout under {mount_root}; expected a single top-level directory",
+            )
+        content_root = entries[0]
         print(
             (
-                f"[dry-run] docker run -d --rm -v '{mount_root}:/workspace:ro' -w /workspace "
+                f"[dry-run] docker run -d --rm -v '{content_root}:/workspace:ro' -w /workspace "
                 f"--name lint_{ts} {DOCKER_IMAGE} sleep infinity"
             ),
         )
@@ -218,12 +225,20 @@ def run_specimen_lint_issue(
         )
         _extract_tar_gz_to(archive, mount_root)
 
+        # Determine content root: expect exactly one top-level directory after extraction
+        entries = [p for p in mount_root.iterdir() if p.is_dir()]
+        if len(entries) != 1:
+            raise SystemExit(
+                f"Unexpected archive layout under {mount_root}; expected a single top-level directory",
+            )
+        content_root = entries[0]
+
         # Build in-process FastMCP server spec for docker exec (single-process for easier debug)
         spec = make_inproc_slot_spec(
             make_container_exec_mcp(
                 image=DOCKER_IMAGE,
                 working_dir="/workspace",
-                volumes={str(mount_root): {"bind": "/workspace", "mode": "ro"}},
+                volumes={str(content_root): {"bind": "/workspace", "mode": "ro"}},
                 describe=True,
             )
         )
@@ -231,6 +246,18 @@ def run_specimen_lint_issue(
         props = _find_property_files([str(p) for p in issue.properties])
         prompt = _build_prompt(issue, props, occurrence=occ)
         text = asyncio.run(_run_agent(prompt, specs, model, client))
+        # Print the exact occurrence representation as fed to the model
+        issue_dict = issue.model_dump(exclude_none=True)
+        issue_dict.pop("id", None)
+        try:
+            occ_dict = occ.model_dump(exclude_none=True)
+        except Exception:
+            occ_dict = occ  # fallback if already a dict-like
+        issue_dict["instances"] = [occ_dict]
+        issue_json = json.dumps(issue_dict, ensure_ascii=False)
+        print("Issue (JSON):")
+        print(issue_json)
+        print()
         print(text)
         # Heuristic: final line contains PASS → success
         tail = (text.splitlines() or [""])[-1].strip().upper()

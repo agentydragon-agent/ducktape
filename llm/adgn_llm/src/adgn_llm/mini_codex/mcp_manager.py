@@ -20,8 +20,6 @@ from mcp.types import InitializeResult
 OpenFn = Callable[[AsyncExitStack], Awaitable[ClientSession]]
 
 
-
-
 # ---- Legacy in-proc adapter removed (use FastMCP in-proc memory transport) ----
 
 

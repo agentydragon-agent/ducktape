@@ -45,9 +45,7 @@ def find_last_user_text(msg: Any) -> str | None:
         texts = [
             part.get("text")
             for part in content
-            if isinstance(part, dict)
-            and part.get("type") == "text"
-            and isinstance(part.get("text"), str)
+            if isinstance(part, dict) and part.get("type") == "text" and isinstance(part.get("text"), str)
         ]
         return "\n".join(texts) if texts else None
     return None
@@ -112,9 +110,7 @@ async def process_file(p: Path) -> list[dict]:
                     )
                 )
                 last_tick = now
-    print(
-        json.dumps({"event": "file_done", "file": str(p), "lines": lines, "kept": kept})
-    )
+    print(json.dumps({"event": "file_done", "file": str(p), "lines": lines, "kept": kept}))
     return out
 
 

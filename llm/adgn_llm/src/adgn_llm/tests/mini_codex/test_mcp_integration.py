@@ -48,7 +48,6 @@ async def test_stdio_server_list_tools() -> None:
     if proc.returncode != 0:
         pytest.skip(f"server-everything stdio help failed (rc={proc.returncode})")
 
-
     spec = McpManager.slot_from_spec(
         "everything",
         {
@@ -82,7 +81,6 @@ async def test_local_inprocess_server() -> None:
 @pytest.mark.asyncio
 async def test_inproc_container_exec_exposes_container_info_resource() -> None:
     """Smoke test: in-proc container exec exposes a container.info resource."""
-
 
     spec = make_inproc_slot_spec(
         make_container_exec_mcp(

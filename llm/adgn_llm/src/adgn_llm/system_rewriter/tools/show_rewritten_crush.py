@@ -8,11 +8,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-PROVIDER_WIRE = Path(
-    os.environ.get(
-        "CRUSH_WIRE_LOG", str(Path.home() / ".crush" / "logs" / "provider-wire.log")
-    )
-)
+PROVIDER_WIRE = Path(os.environ.get("CRUSH_WIRE_LOG", str(Path.home() / ".crush" / "logs" / "provider-wire.log")))
 DEMO_TEMPLATE = Path(__file__).parent / "demo_template.txt"
 
 ENV_INTRO = "Here is useful information about the environment you are running in:"
@@ -41,9 +37,11 @@ def iter_wire_lines(path: Path):
     if str(path).endswith(".gz"):
         import gzip  # lazy
 
-        opener = lambda p: gzip.open(p, "rt", encoding="utf-8", errors="ignore")
+        def opener(p):
+            return gzip.open(p, "rt", encoding="utf-8", errors="ignore")
     else:
-        opener = lambda p: open(p, encoding="utf-8", errors="ignore")
+        def opener(p):
+            return open(p, encoding="utf-8", errors="ignore")
     with opener(path) as f:  # type: ignore[misc]
         for line in f:
             yield line
@@ -85,9 +83,7 @@ def extract_ccr_blobs(system_text: str) -> dict[str, Any]:
     s = system_text or ""
     envGitBlobs: list[str] = []
     if ENV_INTRO in s:
-        env_re = re.compile(
-            re.escape(ENV_INTRO) + r"\n<env>[\s\S]*?</env>\s*", re.MULTILINE
-        )
+        env_re = re.compile(re.escape(ENV_INTRO) + r"\n<env>[\s\S]*?</env>\s*", re.MULTILINE)
         envGitBlobs = [m.group(0) for m in env_re.finditer(s)]
     toolsBlob = ""
     i_tools = s.find(TOOLS_HEADER)
@@ -140,9 +136,7 @@ def rewrite_system_with_template_py(system_text: str, template_path: Path) -> st
     return out
 
 
-def build_rewritten_request(
-    orig: dict[str, Any], new_system_text: str
-) -> dict[str, Any]:
+def build_rewritten_request(orig: dict[str, Any], new_system_text: str) -> dict[str, Any]:
     req = copy.deepcopy(orig)
     inp = req.get("input")
     if not isinstance(inp, list):
@@ -157,10 +151,7 @@ def build_rewritten_request(
     # Find first explicit user index
     first_user = None
     for i, it in enumerate(inp):
-        if (
-            isinstance(it, dict)
-            and (it.get("role") or it.get("message_role") or "").lower() == "user"
-        ):
+        if isinstance(it, dict) and (it.get("role") or it.get("message_role") or "").lower() == "user":
             first_user = i
             break
     tail = inp[first_user:] if first_user is not None else []

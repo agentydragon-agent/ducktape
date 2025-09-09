@@ -15,7 +15,6 @@ from mcp import types as mcp_types
 
 import openai
 import structlog
-from openai import APIConnectionError, APIStatusError, APITimeoutError, RateLimitError
 from openai.types.responses import (
     ResponseFunctionToolCall,
     ResponseOutputMessage,
@@ -79,6 +78,7 @@ class _ResponsesSubclient(Protocol):
     async def create(self, **kwargs: Any):  # pragma: no cover - structural protocol
         ...
 
+
 class ResponsesClient(Protocol):
     @property
     def responses(self) -> _ResponsesSubclient:  # pragma: no cover - structural protocol
@@ -87,8 +87,6 @@ class ResponsesClient(Protocol):
 
 def _openai_client() -> openai.AsyncOpenAI:
     return openai.AsyncOpenAI()
-
-
 
 
 @retry_decorator()
@@ -156,7 +154,6 @@ class MiniCodex:
     async def _single_turn(self, controller: "LoopController" = DefaultController()) -> AgentResult:
         sequence: list[dict[str, Any]] = []
         assistant_text_chunks: list[str] = []
-        have_used_tool = False
 
         while True:
             instructions = self._system
@@ -413,7 +410,6 @@ class MiniCodex:
                     self._emit_event(err_evt)
 
             self._metrics.tool_calls += len(requires)
-            have_used_tool = True
 
         self._metrics.turns += 1
         text = "\n".join(assistant_text_chunks)

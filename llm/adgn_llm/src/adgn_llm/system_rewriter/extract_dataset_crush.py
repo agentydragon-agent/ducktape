@@ -100,9 +100,11 @@ def iter_wire_lines(path: Path):
     if str(path).endswith(".gz"):
         import gzip  # lazy import
 
-        opener = lambda p: gzip.open(p, "rt", encoding="utf-8", errors="ignore")
+        def opener(p):
+            return gzip.open(p, "rt", encoding="utf-8", errors="ignore")
     else:
-        opener = lambda p: open(p, encoding="utf-8", errors="ignore")
+        def opener(p):
+            return open(p, encoding="utf-8", errors="ignore")
     with opener(path) as f:
         for line in f:
             yield line
@@ -126,9 +128,7 @@ def _extract_input_messages(
     for item in inp:
         if not isinstance(item, dict):
             continue
-        role = (
-            item.get("role") or item.get("message_role") or item.get("Role") or ""
-        ).lower()
+        role = (item.get("role") or item.get("message_role") or item.get("Role") or "").lower()
         content = item.get("content")
         # Extract text from either string or list-of-parts
         if isinstance(content, str):
@@ -144,11 +144,7 @@ def _extract_input_messages(
             text = "\n".join(texts) if texts else ""
         # Heuristic: if role missing, assume leading items are system until we see a 'user' later
         if not role:
-            role = (
-                "system"
-                if not any(m.get("role") == "user" for m in msgs)
-                else "assistant"
-            )
+            role = "system" if not any(m.get("role") == "user" for m in msgs) else "assistant"
         if role in ("system", "user", "assistant") and text:
             if role == "system" and TOOLS_HEADER in text:
                 has_header = True
@@ -241,18 +237,12 @@ def process_wire(path: Path, require_bad: bool = False) -> list[dict[str, Any]]:
                 )
             )
             last_tick = now
-    print(
-        json.dumps(
-            {"event": "file_done", "file": str(path), "lines": lines, "kept": kept}
-        )
-    )
+    print(json.dumps({"event": "file_done", "file": str(path), "lines": lines, "kept": kept}))
     return out
 
 
 def parse_args() -> argparse.Namespace:
-    ap = argparse.ArgumentParser(
-        description="Extract dataset from Crush provider wire logs"
-    )
+    ap = argparse.ArgumentParser(description="Extract dataset from Crush provider wire logs")
     ap.add_argument(
         "--wire-log",
         type=Path,
@@ -277,20 +267,18 @@ def parse_args() -> argparse.Namespace:
 
 def find_wire_logs(roots: list[Path]) -> list[Path]:
     found: list[Path] = []
+    patterns = (
+        "**/provider-wire.log",
+        "**/provider-wire-*.log",
+        "**/provider-wire-*.log.gz",
+    )
     for root in roots:
         if not root.exists():
             continue
-        # Match current and rotated files, including .gz
-        for globpat in (
-            "provider-wire.log",
-            "provider-wire.log.*",
-            "provider-wire.*.log",
-            "provider-wire.*.log.gz",
-        ):
-            for p in root.rglob(globpat):
+        for pat in patterns:
+            for p in root.glob(pat):
                 try:
-                    if ".crush/logs" in str(p.parent):
-                        found.append(p)
+                    found.append(p)
                 except Exception:
                     continue
     # Dedup and sort

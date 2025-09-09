@@ -14,16 +14,12 @@ from . import extract_dataset_ccr
 from . import extract_dataset_crush
 from . import leaderboard
 
-app = typer.Typer(
-    help="System rewriter toolkit: extract datasets, run evals, and compare against CCR."
-)
+app = typer.Typer(help="System rewriter toolkit: extract datasets, run evals, and compare against CCR.")
 
 
 @app.command("run")
 def cmd_run(
-    template: Path = typer.Argument(
-        ..., help="Path to system prompt template (mustache-style: {{toolsBlob}}, etc.)"
-    ),
+    template: Path = typer.Argument(..., help="Path to system prompt template (mustache-style: {{toolsBlob}}, etc.)"),
     dataset: List[Path] = typer.Option(
         None,
         "--dataset",
@@ -35,12 +31,8 @@ def cmd_run(
         "--out-dir",
         help="Output directory. If omitted, writes to runs/<ts>.",
     ),
-    n: Optional[int] = typer.Option(
-        None, "--n", help="Limit number of samples to process"
-    ),
-    concurrency: int = typer.Option(
-        32, "--concurrency", help="Parallelism for sampling/grading"
-    ),
+    n: Optional[int] = typer.Option(None, "--n", help="Limit number of samples to process"),
+    concurrency: int = typer.Option(32, "--concurrency", help="Parallelism for sampling/grading"),
 ):
     """Run an evaluation end-to-end (rewrite → sample → grade → report)."""
     dsets = dataset or [run_eval.DEFAULT_DATASET_PATH]
@@ -58,12 +50,8 @@ def cmd_run(
 
 @app.command("compare")
 def cmd_compare(
-    run_dir: Path = typer.Argument(
-        ..., help="Path to eval run directory (contains samples.jsonl)"
-    ),
-    out_dir: Optional[Path] = typer.Option(
-        None, "--out-dir", help="Output directory for diffs"
-    ),
+    run_dir: Path = typer.Argument(..., help="Path to eval run directory (contains samples.jsonl)"),
+    out_dir: Optional[Path] = typer.Option(None, "--out-dir", help="Output directory for diffs"),
     limit: int = typer.Option(5, "--limit", help="Max number of samples to compare"),
 ):
     """Diff eval sampler requests vs actual CCR chat completion requests."""
@@ -107,20 +95,14 @@ def cmd_compare(
 
 @app.command("extract")
 def cmd_extract(
-    source: str = typer.Option(
-        "auto", "--source", help="ccr|crush|auto (default: auto)"
-    ),
-    wire_log: Optional[Path] = typer.Option(
-        None, "--wire-log", help="Crush only: path to provider-wire.log"
-    ),
+    source: str = typer.Option("auto", "--source", help="ccr|crush|auto (default: auto)"),
+    wire_log: Optional[Path] = typer.Option(None, "--wire-log", help="Crush only: path to provider-wire.log"),
     scan_dir: List[Path] = typer.Option(
         None,
         "--scan-dir",
         help="Crush only: scan DIR recursively for **/.crush/logs/provider-wire.log (repeatable)",
     ),
-    output: Optional[Path] = typer.Option(
-        None, "--output", help="Output JSONL path (default depends on source)"
-    ),
+    output: Optional[Path] = typer.Option(None, "--output", help="Output JSONL path (default depends on source)"),
 ):
     """Unified dataset extractor for CCR and Crush logs."""
     src = source.lower()
@@ -168,8 +150,6 @@ def cmd_extract(
         return
 
     raise typer.BadParameter("--source must be one of: ccr, crush, auto")
-
-
 
 
 @app.command("leaderboard")

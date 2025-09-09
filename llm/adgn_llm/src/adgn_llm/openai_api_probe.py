@@ -157,9 +157,7 @@ async def _probe_once(
     try:
         async with limiter:
             t0 = time.perf_counter()  # measure pure API latency, not queueing time
-            resp = await asyncio.wait_for(
-                spec.create(client, model_id), timeout=REQUEST_TIMEOUT
-            )
+            resp = await asyncio.wait_for(spec.create(client, model_id), timeout=REQUEST_TIMEOUT)
         dt = time.perf_counter() - t0
         snippet = spec.snippet(resp)
         return ProbeResult(model_id=model_id, ok=True, content=snippet, latency_s=dt)
@@ -286,15 +284,11 @@ ERROR_RULES: dict[ErrorCode, tuple[str, Callable[[str], bool]]] = {
     ),
     ErrorCode.SERVER_ERROR: (
         "Server error while processing request",
-        lambda m: "server had an error" in m
-        or "an error occurred while processing" in m,
+        lambda m: "server had an error" in m or "an error occurred while processing" in m,
     ),
     ErrorCode.NOT_FOUND: (
         "Model does not exist or access denied",
-        lambda m: "does not exist" in m
-        or "do not have access" in m
-        or "model not found" in m
-        or "not available" in m,
+        lambda m: "does not exist" in m or "do not have access" in m or "model not found" in m or "not available" in m,
     ),
     ErrorCode.TOOLS_UNSUPPORTED: (
         "Tools/function calling not supported by this model",
@@ -480,9 +474,7 @@ async def main() -> None:
         print(f"Sub-sampled to {len(filtered)} models (random)", file=sys.stderr)
 
     # Build probe specs now that snippet functions are defined
-    RESPONSES_SPEC = ProbeSpec(
-        name="responses", create=_create_responses, snippet=_snippet_from_responses
-    )
+    RESPONSES_SPEC = ProbeSpec(name="responses", create=_create_responses, snippet=_snippet_from_responses)
     CHAT_SPEC = ProbeSpec(name="chat", create=_create_chat, snippet=_snippet_from_chat)
 
     sem = asyncio.Semaphore(max(args.concurrency, 1))
@@ -531,9 +523,7 @@ async def main() -> None:
     fails: list[ModelProbe] = []
     total_models = len(filtered)
     completed_models = 0
-    acc: dict[str, dict[str, list[CallResult]]] = {
-        mid: {"responses": [], "chat": []} for mid in filtered
-    }
+    acc: dict[str, dict[str, list[CallResult]]] = {mid: {"responses": [], "chat": []} for mid in filtered}
 
     console = Console()
 
@@ -619,11 +609,7 @@ async def main() -> None:
             return ""
         if isinstance(e, APIStatusError):
             body = e.body
-            msg = (
-                body.get("message")
-                if isinstance(body, dict) and "message" in body
-                else e.message
-            )
+            msg = body.get("message") if isinstance(body, dict) and "message" in body else e.message
             return msg or repr(e)
         return str(e) or repr(e)
 
@@ -698,15 +684,10 @@ async def main() -> None:
     with Live(console=console, refresh_per_second=4) as live:
         for fut in asyncio.as_completed(tasks):
             kind, mid, res = await fut
-            acc[mid][kind].append(
-                CallResult(content=res.content, exc=res.exc, latency_s=res.latency_s)
-            )
+            acc[mid][kind].append(CallResult(content=res.content, exc=res.exc, latency_s=res.latency_s))
 
             # When we have REPEATS for both kinds, build ModelProbe
-            if (
-                len(acc[mid]["responses"]) >= REPEATS
-                and len(acc[mid]["chat"]) >= REPEATS
-            ):
+            if len(acc[mid]["responses"]) >= REPEATS and len(acc[mid]["chat"]) >= REPEATS:
                 completed_models += 1
                 probe = ModelProbe(
                     model_id=mid,
@@ -737,11 +718,7 @@ async def main() -> None:
                     resp_cell = ok_cell(r.responses)
                     chat_cell = ok_cell(r.chat)
                 else:
-                    resp_cell = (
-                        ok_cell(r.responses)
-                        if r.responses.ok
-                        else err_cell(r.responses)
-                    )
+                    resp_cell = ok_cell(r.responses) if r.responses.ok else err_cell(r.responses)
                     chat_cell = ok_cell(r.chat) if r.chat.ok else err_cell(r.chat)
                 new_table.add_row(
                     r.model_id,
@@ -753,20 +730,12 @@ async def main() -> None:
             oks_both = [r for r in oks if r.responses.ok and r.chat.ok]
             oks_resp_only = [r for r in oks if r.responses.ok and not r.chat.ok]
             oks_chat_only = [r for r in oks if r.chat.ok and not r.responses.ok]
-            oks_both.sort(
-                key=lambda r: (class_rank(r.model_id), latency_both_key(r), r.model_id)
-            )
-            oks_resp_only.sort(
-                key=lambda r: (class_rank(r.model_id), latency_resp_key(r), r.model_id)
-            )
-            oks_chat_only.sort(
-                key=lambda r: (class_rank(r.model_id), latency_chat_key(r), r.model_id)
-            )
+            oks_both.sort(key=lambda r: (class_rank(r.model_id), latency_both_key(r), r.model_id))
+            oks_resp_only.sort(key=lambda r: (class_rank(r.model_id), latency_resp_key(r), r.model_id))
+            oks_chat_only.sort(key=lambda r: (class_rank(r.model_id), latency_chat_key(r), r.model_id))
 
             # Render both-ok rows into the single-column OK table
-            for r, end_section in iter_with_break(
-                oks_both, lambda x: classify(x.model_id)
-            ):
+            for r, end_section in iter_with_break(oks_both, lambda x: classify(x.model_id)):
                 render_row(r, end_section)
 
             # Prepare separate tables for responses-ok-only and chat-ok-only
@@ -783,9 +752,7 @@ async def main() -> None:
             )
 
             # Populate responses-ok-only
-            for r, end_section in iter_with_break(
-                oks_resp_only, lambda x: classify(x.model_id)
-            ):
+            for r, end_section in iter_with_break(oks_resp_only, lambda x: classify(x.model_id)):
                 resp_table.add_row(
                     r.model_id,
                     ok_cell(r.responses),
@@ -794,9 +761,7 @@ async def main() -> None:
                 )
 
             # Populate chat-ok-only
-            for r, end_section in iter_with_break(
-                oks_chat_only, lambda x: classify(x.model_id)
-            ):
+            for r, end_section in iter_with_break(oks_chat_only, lambda x: classify(x.model_id)):
                 chat_table.add_row(
                     r.model_id,
                     ok_cell(r.responses) if r.responses.ok else err_cell(r.responses),
@@ -810,9 +775,7 @@ async def main() -> None:
             for mid, pair in acc.items():
                 rpart = pair["responses"]
                 cpart = pair["chat"]
-                if (len(rpart) > 0 and len(cpart) < REPEATS) or (
-                    len(cpart) > 0 and len(rpart) < REPEATS
-                ):
+                if (len(rpart) > 0 and len(cpart) < REPEATS) or (len(cpart) > 0 and len(rpart) < REPEATS):
                     if len(rpart) > 0 and len(cpart) < REPEATS:
                         if kind_ok(mid, "responses"):
                             resp_cell = cell_for_kind(mid, "responses")
@@ -829,20 +792,14 @@ async def main() -> None:
 
             # Append in-flight rows to the pessimistic groups
             if partials_resp:
-                for (mid, rc, cc), end_section in iter_with_break(
-                    partials_resp, lambda x: classify(x[0])
-                ):
+                for (mid, rc, cc), end_section in iter_with_break(partials_resp, lambda x: classify(x[0])):
                     resp_table.add_row(mid, rc, cc, end_section=end_section)
             if partials_chat:
-                for (mid, rc, cc), end_section in iter_with_break(
-                    partials_chat, lambda x: classify(x[0])
-                ):
+                for (mid, rc, cc), end_section in iter_with_break(partials_chat, lambda x: classify(x[0])):
                     chat_table.add_row(mid, rc, cc, end_section=end_section)
 
             # Render OTHER family models at the very bottom
-            others_all = sorted(
-                [mid for mid in filtered if family_of(mid) == Family.OTHER]
-            )
+            others_all = sorted([mid for mid in filtered if family_of(mid) == Family.OTHER])
             others_table = make_results_table(
                 title="Other models (unclassified)",
                 header_style="bold magenta",
@@ -864,9 +821,7 @@ async def main() -> None:
             expand=True,
             box=box.SIMPLE,
         )
-        fail_table.add_column(
-            "Model", overflow="ellipsis", no_wrap=True, ratio=3, header_style="bold"
-        )
+        fail_table.add_column("Model", overflow="ellipsis", no_wrap=True, ratio=3, header_style="bold")
         fail_table.add_column("Responses", overflow="ellipsis", no_wrap=True, ratio=2)
         fail_table.add_column("Chat", overflow="ellipsis", no_wrap=True, ratio=2)
         for i, r in enumerate(fails):
@@ -879,9 +834,7 @@ async def main() -> None:
         console.print(fail_table)
         console.print()  # blank line
     bad_count = len(fails)
-    console.print(
-        f"[green]Success (any ok):[/green] {len(oks)}  |  [red]Failed (both failed):[/red] {bad_count}"
-    )
+    console.print(f"[green]Success (any ok):[/green] {len(oks)}  |  [red]Failed (both failed):[/red] {bad_count}")
 
     if used_codes:
         legend = Table(

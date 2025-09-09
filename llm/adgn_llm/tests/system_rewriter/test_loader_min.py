@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 from importlib import resources
 
@@ -10,6 +9,7 @@ import pytest
 
 # from run_eval import read_dataset
 from adgn_llm.system_rewriter.run_eval import read_dataset  # type: ignore
+
 # from schemas import CrushSample
 from adgn_llm.system_rewriter.schemas import CrushSample
 
@@ -63,9 +63,5 @@ async def test_read_crush_min():
     raw = s_bad.oai_request
     payload = raw if isinstance(raw, dict) else raw.model_dump()
     assert isinstance(payload.get("input"), list)
-    roles = [
-        (it.get("role") or "").lower()
-        for it in payload.get("input")
-        if isinstance(it, dict)
-    ]
+    roles = [(it.get("role") or "").lower() for it in payload.get("input") if isinstance(it, dict)]
     assert any(r in ("user", "assistant") for r in roles)

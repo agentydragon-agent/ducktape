@@ -1,7 +1,5 @@
-import datetime as _dt
 import json
 import os
-import re as _re
 import secrets
 import select
 import shutil
@@ -16,10 +14,12 @@ from pathlib import Path
 import pytest
 from policy_fixture import write_policy as _write_policy
 
+
 # Session-scoped temp base for tests (pytest-managed)
 @pytest.fixture(scope="session")
 def test_base(tmp_path_factory) -> Path:
     return tmp_path_factory.mktemp("mcp_tests")
+
 
 @pytest.fixture
 def artifacts_base(tmp_path: Path) -> Path:
@@ -240,8 +240,6 @@ def provision_ws(request, artifacts_base: Path):
     (run_root / "tmp").mkdir(parents=True, exist_ok=True)
     os.environ["SJ_POLICY_ECHO_DIR"] = str(run_root / "tmp")
     return ws, run_root
-
-
 
 
 @pytest.fixture

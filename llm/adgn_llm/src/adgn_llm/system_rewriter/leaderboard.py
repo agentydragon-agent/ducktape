@@ -1,12 +1,13 @@
 """
 Leaderboard reporter for eval runs (packaged).
 
-Scans runs/<ts>/ for summary.json and template.txt, maps template content
-hashes back to known templates (baseline and proposals), and prints a sorted
-leaderboard.
+Loads known templates from templates/ (baseline and proposals), matches run
+template hashes to these names, and prints a sorted leaderboard.
+Marks any run whose template isn't in templates/.
 
 Defaults to rich table output sorted by mean score desc.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -15,6 +16,7 @@ import io
 import json
 import os
 import sys
+import importlib.resources as res
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
@@ -40,22 +42,43 @@ def sha1_text(text: str) -> str:
 
 
 def load_known_templates(templates_dir: Path) -> dict[str, str]:
+    """Build hash->name mapping from packaged templates/ using importlib.resources.
+
+    Ignores templates_dir arg; relies on installed package resources so this works
+    from anywhere (zip/venv/installed wheel).
+    """
     mapping: dict[str, str] = {}
-    # baseline
-    base_tpl = templates_dir / "current_effective_template.txt"
-    if base_tpl.exists():
+    try:
+        root = res.files("adgn_llm.system_rewriter.templates")
+    except Exception:
+        return mapping
+
+    def _walk(dir_entry, prefix: str = ""):
         try:
-            mapping[sha1_text(base_tpl.read_text(encoding="utf-8"))] = str(base_tpl)
+            it = dir_entry.iterdir()
         except Exception:
-            pass
-    # proposals
-    props_dir = templates_dir / "proposals"
-    if props_dir.exists():
-        for txt in props_dir.rglob("*.txt"):
+            return
+        for child in it:
+            name = f"{prefix}{child.name}"
             try:
-                mapping[sha1_text(txt.read_text(encoding="utf-8"))] = str(txt)
+                is_dir = child.is_dir()
+            except Exception:
+                is_dir = False
+            if is_dir:
+                yield from _walk(child, f"{name}/")
+            else:
+                if name.endswith(".txt"):
+                    yield name, child
+
+    try:
+        for rel_name, file_entry in _walk(root, ""):
+            try:
+                text = file_entry.read_text(encoding="utf-8")
             except Exception:
                 continue
+            mapping[sha1_text(text)] = rel_name
+    except Exception:
+        pass
     return mapping
 
 
@@ -122,7 +145,7 @@ def load_row(run_dir: Path, known: dict[str, str]) -> Row | None:
         thash = sha1_text(t_path.read_text(encoding="utf-8"))
     except Exception:
         thash = "?"
-    label = known.get(thash, thash[:8])
+    label = known.get(thash) or f"UNKNOWN:{thash[:8]} [not in templates/]"
 
     def _f(key: str, default: float = 0.0) -> float:
         try:
@@ -201,9 +224,7 @@ def format_text(rows: list[Row]) -> str:
 
 
 def format_md(rows: list[Row]) -> str:
-    header = (
-        "| mean | ci95 | n | tools% | run | template |\n|---:|---:|---:|---:|:---|:---|"
-    )
+    header = "| mean | ci95 | n | tools% | run | template |\n|---:|---:|---:|---:|:---|:---|"
     lines = [header]
     for r in rows:
         lines.append(
@@ -215,9 +236,18 @@ def format_md(rows: list[Row]) -> str:
 def _color_for_hash(hash_hex: str) -> str:
     # Deterministic palette index from hash
     palette = [
-        "bright_cyan", "bright_magenta", "bright_green", "bright_yellow",
-        "bright_blue", "bright_red", "cyan", "magenta", "green", "yellow",
-        "blue", "red",
+        "bright_cyan",
+        "bright_magenta",
+        "bright_green",
+        "bright_yellow",
+        "bright_blue",
+        "bright_red",
+        "cyan",
+        "magenta",
+        "green",
+        "yellow",
+        "blue",
+        "red",
     ]
     try:
         idx = int(hash_hex[:8], 16) % len(palette)
@@ -254,7 +284,12 @@ def format_rich_table(rows: list[Row]) -> str:
         lcb = r.lcb if r.lcb is not None else (r.mean - r.ci95)
         ucb = r.ucb if r.ucb is not None else (r.mean + r.ci95)
         color = _color_for_hash(r.template_hash)
-        rel_label = _relpath(r.template_label)
+        # Highlight templates not present in packaged templates/
+        if r.template_label.startswith("UNKNOWN:"):
+            label_cell = f"[bold red]{r.template_label}[/]"
+        else:
+            rel_label = _relpath(r.template_label)
+            label_cell = f"[{color}]{rel_label}[/]"
         table.add_row(
             f"{lcb:.2f}",
             f"{r.mean:.2f}",
@@ -262,7 +297,7 @@ def format_rich_table(rows: list[Row]) -> str:
             f"{r.n}",
             f"{r.with_tools_pct * 100:.1f}%",
             r.run,
-            f"[{color}]{rel_label}[/]",
+            label_cell,
         )
 
     # Render off-screen to avoid duplicate stdout prints; caller prints returned text
@@ -279,10 +314,8 @@ def generate(
     asc: bool = False,
     limit: int | None = None,
 ) -> str:
-    # Prefer mapping built from runs; fall back to templates_dir if empty
-    known = load_known_templates_from_runs(runs_dir)
-    if not known:
-        known = load_known_templates(templates_dir)
+    # Build mapping from packaged templates/ only (stable names)
+    known = load_known_templates(templates_dir)
     if not runs_dir.exists():
         raise FileNotFoundError(f"No runs dir: {runs_dir}")
 
@@ -339,9 +372,7 @@ def parse_args() -> argparse.Namespace:
         default="mean",
         help="Sort key (default: mean)",
     )
-    ap.add_argument(
-        "--asc", action="store_true", default=False, help="Sort ascending"
-    )
+    ap.add_argument("--asc", action="store_true", default=False, help="Sort ascending")
     ap.add_argument("--limit", type=int, default=None)
     return ap.parse_args()
 

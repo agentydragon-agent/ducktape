@@ -28,9 +28,7 @@ def find_last_user_text(msg: Any) -> str | None:
         texts = [
             part.get("text")
             for part in content
-            if isinstance(part, dict)
-            and part.get("type") == "text"
-            and isinstance(part.get("text"), str)
+            if isinstance(part, dict) and part.get("type") == "text" and isinstance(part.get("text"), str)
         ]
         return "\n".join(texts) if texts else None
     return None

@@ -8,7 +8,6 @@ import shutil
 import subprocess
 import sys
 import time
-import re
 from pathlib import Path
 from typing import Any
 from importlib import resources
@@ -42,9 +41,7 @@ SAMPLER_MODEL = "gpt-5"
 GRADER_MODEL = "gpt-5"
 
 # Paths
-REWRITE_APPLY = resources.files("adgn_llm.system_rewriter").joinpath(
-    "js/system_rewrite_apply.js"
-)
+REWRITE_APPLY = resources.files("adgn_llm.system_rewriter").joinpath("js/system_rewrite_apply.js")
 
 
 def parse_args():
@@ -97,9 +94,7 @@ async def read_dataset(dataset_path: Path) -> list[Sample]:
                 ccr = CCRSample(
                     correlation_id=rec.get("correlation_id"),
                     timestamp=rec.get("timestamp"),
-                    anthropic_request=CCRRequest.model_validate(
-                        rec["anthropic_request"]
-                    ),  # type: ignore[arg-type]
+                    anthropic_request=CCRRequest.model_validate(rec["anthropic_request"]),  # type: ignore[arg-type]
                 )
                 items.append(ccr)
                 continue
@@ -146,11 +141,7 @@ def flatten_system_string(sys: Any) -> str:
     if isinstance(sys, list):
         parts: list[str] = []
         for it in sys:
-            if (
-                isinstance(it, dict)
-                and it.get("type") == "text"
-                and isinstance(it.get("text"), str)
-            ):
+            if isinstance(it, dict) and it.get("type") == "text" and isinstance(it.get("text"), str):
                 parts.append(it["text"])
         return "\n\n".join(parts)
     return ""
@@ -213,9 +204,7 @@ def map_tools_for_chat(tools_val):
         # Remove unsupported keys
         fn.pop("strict", None)
         # Keep only standard Chat function keys
-        out_fn = {
-            k: v for k, v in fn.items() if k in ("name", "description", "parameters")
-        }
+        out_fn = {k: v for k, v in fn.items() if k in ("name", "description", "parameters")}
         if not isinstance(out_fn.get("name"), str):
             return None
         if "parameters" not in out_fn:
@@ -244,11 +233,7 @@ def anthro_to_openai_messages(
     def _join_text_parts(parts: list[dict[str, Any]]) -> str:
         texts: list[str] = []
         for p in parts:
-            if (
-                isinstance(p, dict)
-                and p.get("type") == "text"
-                and isinstance(p.get("text"), str)
-            ):
+            if isinstance(p, dict) and p.get("type") == "text" and isinstance(p.get("text"), str):
                 texts.append(p["text"])
         return "\n".join(texts)
 
@@ -316,9 +301,7 @@ def anthro_to_openai_messages(
                     if text_buf:
                         msg["content"] = "\n".join(text_buf)
                     else:
-                        msg["content"] = (
-                            None  # no empty-string content when only tool_calls
-                        )
+                        msg["content"] = None  # no empty-string content when only tool_calls
                     if tool_calls:
                         msg["tool_calls"] = tool_calls
                     out.append(msg)
@@ -365,11 +348,7 @@ def anthro_to_openai_messages(
                         # If tcid missing, drop the tool message to avoid invalid Chat linkage
                 # Order: tool messages first (to mirror CCR), then user text (if any)
                 out.extend(
-                    [
-                        tm
-                        for tm in tool_msgs
-                        if (tm.get("content") or tm.get("tool_call_id"))
-                    ],
+                    [tm for tm in tool_msgs if (tm.get("content") or tm.get("tool_call_id"))],
                 )
                 txt = _join_text_parts(text_parts)
                 if txt.strip():
@@ -411,11 +390,7 @@ def anthro_to_responses_input(
     def _join_text_parts(parts: list[dict[str, Any]]) -> str:
         texts: list[str] = []
         for p in parts:
-            if (
-                isinstance(p, dict)
-                and p.get("type") == "text"
-                and isinstance(p.get("text"), str)
-            ):
+            if isinstance(p, dict) and p.get("type") == "text" and isinstance(p.get("text"), str):
                 texts.append(p["text"])
         return "\n".join(texts)
 
@@ -654,13 +629,7 @@ async def run_eval(
                 sys_val = (
                     ar.system
                     if isinstance(ar.system, str)
-                    else "\n\n".join(
-                        [
-                            p.get("text", "")
-                            for p in (ar.system or [])
-                            if isinstance(p, dict)
-                        ]
-                    )
+                    else "\n\n".join([p.get("text", "") for p in (ar.system or []) if isinstance(p, dict)])
                 )
                 new_sys = rewrite_system_with_template(sys_val, template_path)
                 # 2) Build OpenAI sampling request BEFORE the bad assistant turn
@@ -694,9 +663,7 @@ async def run_eval(
                         }
                     )
                     return None, None
-                samp_max = max(
-                    1, min(PER_OUTPUT_CAP, MAX_TOTAL_TOKENS - in_tokens - SAFETY_TOKENS)
-                )
+                samp_max = max(1, min(PER_OUTPUT_CAP, MAX_TOTAL_TOKENS - in_tokens - SAFETY_TOKENS))
                 tools_param = ar.tools
                 chat_tools = map_tools_for_chat(tools_param)
                 samp_req = {
@@ -709,8 +676,7 @@ async def run_eval(
                 }
                 try:
                     samp = await chat_create_with_retries(
-                        client,
-                        **{k: v for k, v in samp_req.items() if v is not None}
+                        client, **{k: v for k, v in samp_req.items() if v is not None}
                     )
                 except Exception as e:
                     counters["sampler_errors"] += 1
@@ -780,11 +746,7 @@ async def run_eval(
 
             # 4) Build grading inputs
             msgs = msgs_for_grader
-            raw_new_asst_obj = (
-                new_asst_obj
-                if isinstance(new_asst_obj, dict)
-                else new_asst_obj.model_dump()
-            )
+            raw_new_asst_obj = new_asst_obj if isinstance(new_asst_obj, dict) else new_asst_obj.model_dump()
             base_prefix = msgs[:-2] if len(msgs) >= 2 else []
             base_prefix = [m for m in base_prefix if m.get("role") != "system"]
             # Compute bad branch (inclusive of complaint)
@@ -793,11 +755,7 @@ async def run_eval(
             # Keep first 5 and last 5; truncate middle to fit token budget
             first = base_prefix[:5]
             tail = base_prefix[-5:] if len(base_prefix) > 5 else []
-            middle = (
-                base_prefix[5 : len(base_prefix) - len(tail)]
-                if len(base_prefix) > 10
-                else []
-            )
+            middle = base_prefix[5 : len(base_prefix) - len(tail)] if len(base_prefix) > 10 else []
 
             # Build a provisional grader input to compute tokens; start from minimal
             def mk_grader_input(
@@ -949,50 +907,38 @@ async def run_eval(
             "function_counts": {},
         },
     }
+
     def compute_and_write_summary(final: bool = False) -> None:
         # Compute mean and 95% CI (normal approx)
         mean = sum(scores) / len(scores) if scores else 0.0
-        var = (
-            sum((x - mean) ** 2 for x in scores) / (len(scores) - 1)
-            if len(scores) > 1
-            else 0.0
-        )
+        var = sum((x - mean) ** 2 for x in scores) / (len(scores) - 1) if len(scores) > 1 else 0.0
         se = math.sqrt(var / len(scores)) if len(scores) > 0 else 0.0
         ci95 = 1.96 * se
         lcb = mean - ci95
         ucb = mean + ci95
         # Secondary metrics
         total_samples = tool_stats["total_samples"] or 0
-        total_tool_calls = (
-            sum(tool_stats["function_counts"].values())
-            if tool_stats["function_counts"]
-            else 0
-        )
+        total_tool_calls = sum(tool_stats["function_counts"].values()) if tool_stats["function_counts"] else 0
         function_pct = {
-            k: (v / total_tool_calls) if total_tool_calls > 0 else 0.0
-            for k, v in tool_stats["function_counts"].items()
+            k: (v / total_tool_calls) if total_tool_calls > 0 else 0.0 for k, v in tool_stats["function_counts"].items()
         }
+
         # Per-source summaries
         def _mk_basic(scores_list: list[float]) -> tuple[float, float, float, float]:
             if not scores_list:
                 return 0.0, 0.0, 0.0, 0.0
             m = sum(scores_list) / len(scores_list)
-            v = (
-                (sum((x - m) ** 2 for x in scores_list) / (len(scores_list) - 1))
-                if len(scores_list) > 1
-                else 0.0
-            )
+            v = (sum((x - m) ** 2 for x in scores_list) / (len(scores_list) - 1)) if len(scores_list) > 1 else 0.0
             se_ = math.sqrt(v / len(scores_list)) if len(scores_list) > 0 else 0.0
             ci_ = 1.96 * se_
             return m, ci_, m - ci_, m + ci_
+
         by_source: dict[str, Any] = {}
         for sname in ("ccr", "crush"):
             m_s, ci_s, l_s, u_s = _mk_basic(scores_by_source[sname])
             ts_s = tool_stats_by_source[sname]
             total_s = ts_s["total_samples"] or 0
-            total_tool_calls_s = (
-                sum(ts_s["function_counts"].values()) if ts_s["function_counts"] else 0
-            )
+            total_tool_calls_s = sum(ts_s["function_counts"].values()) if ts_s["function_counts"] else 0
             func_pct_s = {
                 k: (v / total_tool_calls_s) if total_tool_calls_s > 0 else 0.0
                 for k, v in ts_s["function_counts"].items()
@@ -1016,12 +962,8 @@ async def run_eval(
             "counters": counters,
             "tooling": {
                 "total_samples": total_samples,
-                "text_only_pct": (
-                    (tool_stats["text_only"] / total_samples) if total_samples > 0 else 0.0
-                ),
-                "with_tools_pct": (
-                    (tool_stats["with_tools"] / total_samples) if total_samples > 0 else 0.0
-                ),
+                "text_only_pct": ((tool_stats["text_only"] / total_samples) if total_samples > 0 else 0.0),
+                "with_tools_pct": ((tool_stats["with_tools"] / total_samples) if total_samples > 0 else 0.0),
                 "function_counts": tool_stats["function_counts"],
                 "function_pct": function_pct,
             },
@@ -1029,12 +971,14 @@ async def run_eval(
         }
         with summary_out.open("w", encoding="utf-8") as f:
             json.dump(summary, f, sort_keys=True)
-        log_event({
-            "event": "summary_final" if final else "summary_progress",
-            "n": summary["n"],
-            "mean": summary["mean"],
-            "ci95": summary["ci95"],
-        })
+        log_event(
+            {
+                "event": "summary_final" if final else "summary_progress",
+                "n": summary["n"],
+                "mean": summary["mean"],
+                "ci95": summary["ci95"],
+            }
+        )
 
     with (
         samples_out.open("w", encoding="utf-8") as s_out,
@@ -1047,11 +991,7 @@ async def run_eval(
             src = None
             if isinstance(samp_rec, dict):
                 na = samp_rec.get("new_assistant_message") or {}
-                src = (
-                    "crush"
-                    if isinstance(na, dict) and "responses_output" in na
-                    else "ccr"
-                )
+                src = "crush" if isinstance(na, dict) and "responses_output" in na else "ccr"
             if samp_rec:
                 rec_obj = EvalSampleRecord.model_validate(samp_rec)
                 s_out.write(json.dumps(rec_obj.model_dump(), sort_keys=True) + "\n")
@@ -1065,9 +1005,7 @@ async def run_eval(
                     tool_stats["with_tools"] += 1
                     for tc in tcs:
                         fn = ((tc.get("function") or {}).get("name")) or "UNKNOWN"
-                        tool_stats["function_counts"][fn] = (
-                            tool_stats["function_counts"].get(fn, 0) + 1
-                        )
+                        tool_stats["function_counts"][fn] = tool_stats["function_counts"].get(fn, 0) + 1
                 # Per-source tool stats
                 if src in tool_stats_by_source:
                     ts = tool_stats_by_source[src]
@@ -1078,9 +1016,7 @@ async def run_eval(
                         ts["with_tools"] += 1
                         for tc in tcs:
                             fn = ((tc.get("function") or {}).get("name")) or "UNKNOWN"
-                            ts["function_counts"][fn] = (
-                                ts["function_counts"].get(fn, 0) + 1
-                            )
+                            ts["function_counts"][fn] = ts["function_counts"].get(fn, 0) + 1
             if grade_rec:
                 g_obj = EvalGradeRecord.model_validate(grade_rec)
                 g_out.write(json.dumps(g_obj.model_dump(), sort_keys=True) + "\n")
@@ -1148,35 +1084,27 @@ async def run_eval(
                     # Crush item: reconstruct minimal views from responses_input
                     rin = alt.get("responses_input") or []
                     orig_sys = responses_extract_system_text(rin)
-                    rewritten_sys = rewrite_system_with_template(
-                        orig_sys or "", template_file
-                    )
+                    rewritten_sys = rewrite_system_with_template(orig_sys or "", template_file)
                     msgs_disp = responses_to_ccr_messages(rin)
                     idx = prev_assistant_index(msgs_disp)
                     if idx is None:
                         shared_prefix = msgs_disp
                         bad_branch = []
                     else:
-                        shared_prefix = [
-                            m for m in (msgs_disp[:idx]) if m.get("role") != "system"
-                        ]
+                        shared_prefix = [m for m in (msgs_disp[:idx]) if m.get("role") != "system"]
                         bad_branch = msgs_disp[idx:]
                 else:
                     # CCR item
                     # Flatten original system
                     orig_sys = flatten_system_string(ar.get("system"))
-                    rewritten_sys = rewrite_system_with_template(
-                        orig_sys, template_file
-                    )
+                    rewritten_sys = rewrite_system_with_template(orig_sys, template_file)
                     msgs = ar.get("messages") or []
                     idx = prev_assistant_index(msgs)
                     if idx is None:
                         shared_prefix = msgs
                         bad_branch = []
                     else:
-                        shared_prefix = [
-                            m for m in (msgs[:idx]) if m.get("role") != "system"
-                        ]
+                        shared_prefix = [m for m in (msgs[:idx]) if m.get("role") != "system"]
                         bad_branch = msgs[idx:]
                 grade = grades_map.get(cid) or {}
                 rows.append(
@@ -1215,6 +1143,4 @@ def main():
     if not dataset_paths:
         dataset_paths = [DEFAULT_DATASET_PATH]
     base_out = Path(args.out_dir) if args.out_dir else None
-    asyncio.run(
-        run_eval(Path(args.template), dataset_paths, base_out, args.n, args.concurrency)
-    )
+    asyncio.run(run_eval(Path(args.template), dataset_paths, base_out, args.n, args.concurrency))
