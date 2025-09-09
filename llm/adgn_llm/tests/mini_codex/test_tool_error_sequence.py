@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 from adgn_llm.mini_codex.agent import MiniCodex
 from adgn_llm.mini_codex.mcp_manager import McpManager
-from adgn_llm.mcp.inproc_utils import make_inproc_slot_spec
+from adgn_llm.mcp.inproc_transport import make_inproc_slot_spec
 from mcp.server.fastmcp import FastMCP
 
 

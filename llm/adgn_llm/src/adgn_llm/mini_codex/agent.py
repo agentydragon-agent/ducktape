@@ -461,7 +461,6 @@ class MiniCodex:
             transcript_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
         return AgentResult(text=text, sequence=sequence, metrics=self._metrics)
 
-
     @classmethod
     async def create(
         cls,

@@ -136,7 +136,7 @@ def _make_bootstrap_controller(occ: Occurrence, content_root: Path) -> LoopContr
         if not hp.is_file():
             raise SystemExit(f"Expected a regular file for occurrence path: {hp}")
         sizes[p] = int(st.st_size)
-    big_detected = any(size>= BIG_THRESHOLD for st size in sizes.values())
+    big_detected = any(size >= BIG_THRESHOLD for size in sizes.values())
 
     # Pre-build calls per step
     step1 = [
@@ -180,7 +180,7 @@ def _make_bootstrap_controller(occ: Occurrence, content_root: Path) -> LoopContr
                     type="function_call",
                     name=build_mcp_function(DOCKER_SERVER_NAME, DOCKER_EXEC_TOOL_NAME),
                     call_id=f"bootstrap:show:{len(out) + 1}",
-                    arguments=json.dumps({"cmd": ["nl", "-ba", "-w1", "-s", " ", f"/workspace/{q}"]}),
+                    arguments=json.dumps({"cmd": ["nl", "-ba", "-w1", "-s", " ", f"/workspace/{p}"]}),
                 )
             )
         return out

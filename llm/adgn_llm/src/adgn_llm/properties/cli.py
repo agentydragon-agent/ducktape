@@ -1160,6 +1160,7 @@ def main(argv: list[str] | None = None) -> int:
         if not image:
             try:
                 from adgn_llm.properties.lint_issue import DOCKER_IMAGE as _DEFAULT_IMAGE  # type: ignore
+
                 image = _DEFAULT_IMAGE
             except Exception:
                 image = "python:3.12-slim"
