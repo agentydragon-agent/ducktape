@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from pathlib import Path
 from typing import Any
 
@@ -67,8 +68,13 @@ def sys_has_tools_header(system: Any) -> bool:
 
 async def process_file(p: Path) -> list[dict]:
     out: list[dict] = []
+    lines = 0
+    kept = 0
+    last_tick = time.monotonic()
+    interval = 2.0  # seconds
     with p.open("r", encoding="utf-8") as f:
         for line in f:
+            lines += 1
             try:
                 rec = json.loads(line)
             except json.JSONDecodeError:
@@ -94,8 +100,18 @@ async def process_file(p: Path) -> list[dict]:
                     "timestamp": rec.get("timestamp"),
                     "anthropic_request": body,
                     "log_file": str(p),
-                },
+                }
             )
+            kept += 1
+            now = time.monotonic()
+            if now - last_tick >= interval:
+                print(
+                    json.dumps(
+                        {"event": "progress", "file": str(p), "lines": lines, "kept": kept}
+                    )
+                )
+                last_tick = now
+    print(json.dumps({"event": "file_done", "file": str(p), "lines": lines, "kept": kept}))
     return out
 
 

@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 import argparse
 import asyncio
 import copy
@@ -9,11 +8,12 @@ import shutil
 import subprocess
 import sys
 import time
+import re
 from pathlib import Path
 from typing import Any
 from importlib import resources
-
-import tiktoken  # type: ignore
+from contextlib import suppress
+import tiktoken
 from .constants import TOOLS_HEADER
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from openai import AsyncOpenAI
@@ -41,7 +41,9 @@ SAMPLER_MODEL = "gpt-5"
 GRADER_MODEL = "gpt-5"
 
 # Paths
-REWRITE_APPLY = resources.files("adgn_llm.system_rewriter").joinpath("js/system_rewrite_apply.js")
+REWRITE_APPLY = resources.files("adgn_llm.system_rewriter").joinpath(
+    "js/system_rewrite_apply.js"
+)
 
 
 def parse_args():
@@ -116,9 +118,6 @@ async def read_dataset(dataset_path: Path) -> list[Sample]:
 
 # --- OpenAI client ---
 
-OPENAI_BASE = os.environ.get("OPENAI_BASE")
-OPENAI_KEY = os.environ.get("OPENAI_API_KEY", "")
-
 
 def estimate_tokens(text: str) -> int:
     return len(tiktoken.get_encoding("cl100k_base").encode(text))
@@ -179,80 +178,9 @@ def rewrite_system_with_template(system_text: str, template_path: Path) -> str:
     return proc.stdout.decode("utf-8")
 
 
-import re
-
 ENV_INTRO = "Here is useful information about the environment you are running in:"
 MODEL_PREFIX = "You are powered by the model"
 MCP_HEADER = "# MCP Server Instructions"
-
-
-def _extract_blobs_py(system_text: str) -> dict[str, Any]:
-    s = system_text or ""
-    # envGitBlobs: all <env>...</env> blocks following the intro line
-    envGitBlobs: list[str] = []
-    if ENV_INTRO in s:
-        env_re = re.compile(
-            re.escape(ENV_INTRO) + r"\n<env>[\s\S]*?</env>\s*", re.MULTILINE
-        )
-        envGitBlobs = [m.group(0) for m in env_re.finditer(s)]
-    # toolsBlob: text after TOOLS_HEADER until next known header
-    toolsBlob = ""
-    i_tools = s.find(TOOLS_HEADER)
-    if i_tools != -1:
-        after = i_tools + len(TOOLS_HEADER)
-        nxt = [
-            x
-            for x in [
-                s.find(ENV_INTRO, after),
-                s.find(MODEL_PREFIX, after),
-                s.find(MCP_HEADER, after),
-            ]
-            if x != -1
-        ]
-        end = min(nxt) if nxt else len(s)
-        toolsBlob = s[after:end]
-    # modelLine: first line starting with MODEL_PREFIX
-    mm = re.search(r"^" + re.escape(MODEL_PREFIX) + r"[^\n]*\n?", s, flags=re.MULTILINE)
-    modelLine = mm.group(0) if mm else ""
-    # mcpSection: all content after the MCP header's newline
-    mcpSection = ""
-    i_mcp = s.find(MCP_HEADER)
-    if i_mcp != -1:
-        nl = s.find("\n", i_mcp)
-        mcpSection = "" if nl == -1 else s[nl + 1 :]
-    return {
-        "toolsBlob": toolsBlob,
-        "envGitBlobs": envGitBlobs,
-        "modelLine": modelLine,
-        "mcpSection": mcpSection,
-    }
-
-
-def rewrite_system_with_template_py(system_text: str, template_path: Path) -> str:
-    template = Path(template_path).read_text(encoding="utf-8")
-    blobs = _extract_blobs_py(system_text)
-    # Support ONLY {{mustache}} variables (no legacy ${name})
-    # Render by simple replacement (no loops/sections), ensuring each core var occurs at most once
-    core = ["toolsBlob", "envGitBlobs", "modelLine", "mcpSection"]
-    for name in core:
-        token = "{{" + name + "}}"
-        cnt = template.count(token)
-        if cnt > 1:
-            raise RuntimeError(
-                f"template variable {token} appears {cnt} times (expected <=1)"
-            )
-    out = template
-    out = (
-        out.replace("{{toolsBlob}}", blobs["toolsBlob"])
-        .replace("{{envGitBlobs}}", "".join(blobs["envGitBlobs"]))
-        .replace("{{modelLine}}", blobs["modelLine"])
-        .replace("{{mcpSection}}", blobs["mcpSection"])
-    )
-    # Validate no unreplaced tokens remain for core vars
-    leftover = re.search(r"\{\{(toolsBlob|envGitBlobs|modelLine|mcpSection)\}\}", out)
-    if leftover:
-        raise RuntimeError(f"template contains unreplaced token '{leftover.group(0)}'")
-    return out
 
 
 def prev_assistant_index(msgs: list[dict[str, Any]]) -> int | None:
@@ -294,8 +222,7 @@ def map_tools_for_chat(tools_val):
     out = []
     if isinstance(tools_val, list):
         for t in tools_val:
-            ct = _to_chat_tool(t)
-            if ct:
+            if ct := _to_chat_tool(t):
                 out.append(ct)
     return out or None
 
@@ -559,22 +486,21 @@ def build_grader_prompt(
     return [sys, user]
 
 
-def grade_tool_def() -> dict[str, Any]:
-    return {
-        "type": "function",
-        "name": "grade",
-        "description": "Return a 1-5 score and a short rationale.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "score": {"type": "integer", "minimum": 1, "maximum": 5},
-                "rationale": {"type": "string"},
-            },
-            "required": ["score", "rationale"],
-            "additionalProperties": False,
+GRADE_TOOL = {
+    "type": "function",
+    "name": "grade",
+    "description": "Return a 1-5 score and a short rationale.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "score": {"type": "integer", "minimum": 1, "maximum": 5},
+            "rationale": {"type": "string"},
         },
-        "strict": True,
-    }
+        "required": ["score", "rationale"],
+        "additionalProperties": False,
+    },
+    "strict": True,
+}
 
 
 def parse_grade_from_responses(resp_obj) -> dict[str, Any]:
@@ -582,8 +508,7 @@ def parse_grade_from_responses(resp_obj) -> dict[str, Any]:
     out = data.get("output", []) or []
     for item in out:
         if item.get("type") == "function_call" and item.get("name") == "grade":
-            args_str = item.get("arguments", "{}")
-            return json.loads(args_str)
+            return json.loads(item.get("arguments", "{}"))
     raise RuntimeError("No grade tool call in responses output")
 
 
@@ -674,8 +599,6 @@ async def run_eval(
     summary_out = out_dir / "summary.json"
     out_dir.mkdir(parents=True, exist_ok=True)
     # copy template in
-    from contextlib import suppress
-
     with suppress(Exception):
         shutil.copyfile(template_path, out_dir / "template.txt")
     # Load dataset(s)
@@ -699,6 +622,12 @@ async def run_eval(
     )
 
     progress_path = out_dir / "progress.jsonl"
+
+    def log_event(event: dict[str, Any]):
+        print(json.dumps(event))
+        with progress_path.open("a", encoding="utf-8") as pg:
+            pg.write(json.dumps(event) + "\n")
+
     counters = {
         "processed": 0,
         "skipped_input_tokens": 0,
@@ -706,11 +635,7 @@ async def run_eval(
         "grader_errors": 0,
     }
 
-    client = (
-        AsyncOpenAI(api_key=OPENAI_KEY, base_url=OPENAI_BASE)
-        if OPENAI_BASE
-        else AsyncOpenAI(api_key=OPENAI_KEY)
-    )
+    client = AsyncOpenAI()
     sem = asyncio.Semaphore(max(1, int(concurrency)))
 
     async def process(item: Sample) -> tuple[dict | None, dict | None]:
@@ -736,16 +661,12 @@ async def run_eval(
                 msgs = ar.messages
                 prev_asst_idx = prev_assistant_index(msgs)
                 if prev_asst_idx is None:
-                    with progress_path.open("a", encoding="utf-8") as pg:
-                        pg.write(
-                            json.dumps(
-                                {
-                                    "correlation_id": item.correlation_id,
-                                    "status": "no_prev_assistant",
-                                },
-                            )
-                            + "\n",
-                        )
+                    log_event(
+                        {
+                            "correlation_id": item.correlation_id,
+                            "status": "no_prev_assistant",
+                        }
+                    )
                     return None, None
                 context_body = {"messages": msgs[:prev_asst_idx]}
                 oai_messages = anthro_to_openai_messages(context_body, new_sys)
@@ -759,17 +680,13 @@ async def run_eval(
                 )
                 if in_tokens > MAX_INPUT_TOKENS:
                     counters["skipped_input_tokens"] += 1
-                    with progress_path.open("a", encoding="utf-8") as pg:
-                        pg.write(
-                            json.dumps(
-                                {
-                                    "correlation_id": item.correlation_id,
-                                    "status": "skipped_input_too_large",
-                                    "input_tokens": in_tokens,
-                                },
-                            )
-                            + "\n",
-                        )
+                    log_event(
+                        {
+                            "correlation_id": item.correlation_id,
+                            "status": "skipped_input_too_large",
+                            "input_tokens": in_tokens,
+                        }
+                    )
                     return None, None
                 samp_max = max(
                     1, min(PER_OUTPUT_CAP, MAX_TOTAL_TOKENS - in_tokens - SAFETY_TOKENS)
@@ -790,17 +707,12 @@ async def run_eval(
                     )
                 except Exception as e:
                     counters["sampler_errors"] += 1
-                    msg = json.dumps(
-                        {
-                            "correlation_id": item.correlation_id,
-                            "status": "sampler_error",
-                            "error": str(e),
-                        }
-                    )
-                    with progress_path.open("a", encoding="utf-8") as pg:
-                        pg.write(msg + "\n")
-                    sys.stderr.write(msg + "\n")
-                    sys.stderr.flush()
+                    msg = {
+                        "correlation_id": item.correlation_id,
+                        "status": "sampler_error",
+                        "error": str(e),
+                    }
+                    log_event(msg, stderr=True)
                     return None, None
                 new_asst_obj = samp.choices[0].message.model_dump()
                 # For grader context construction later
@@ -816,16 +728,12 @@ async def run_eval(
                 # Find boundary and build context input (drop original system items)
                 prev_idx = responses_prev_assistant_index(inp)
                 if prev_idx is None:
-                    with progress_path.open("a", encoding="utf-8") as pg:
-                        pg.write(
-                            json.dumps(
-                                {
-                                    "correlation_id": item.correlation_id,
-                                    "status": "no_prev_assistant",
-                                }
-                            )
-                            + "\n"
-                        )
+                    log_event(
+                        {
+                            "correlation_id": item.correlation_id,
+                            "status": "no_prev_assistant",
+                        }
+                    )
                     return None, None
                 input_prefix = responses_slice_prefix(inp, prev_idx)
                 # Prepend rewritten system entry
@@ -851,10 +759,7 @@ async def run_eval(
                             "error": str(e),
                         }
                     )
-                    with progress_path.open("a", encoding="utf-8") as pg:
-                        pg.write(msg + "\n")
-                    sys.stderr.write(msg + "\n")
-                    sys.stderr.flush()
+                    log_event(msg)
                     return None, None
                 new_asst_obj = {
                     "responses_input": resp_input,
@@ -919,23 +824,19 @@ async def run_eval(
             # Attach tail (already accounted in gi)
             prefix_msgs = prefix_msgs + tail
             # Log truncation info
-            with progress_path.open("a", encoding="utf-8") as pg:
-                pg.write(
-                    json.dumps(
-                        {
-                            "correlation_id": item.correlation_id,
-                            "status": "grader_prefix_built",
-                            "prefix_counts": {
-                                "total": len(base_prefix),
-                                "kept_first": len(first),
-                                "kept_last": len(tail),
-                                "added_middle": added,
-                            },
-                            "token_estimate": tok,
-                        },
-                    )
-                    + "\n",
-                )
+            log_event(
+                {
+                    "correlation_id": item.correlation_id,
+                    "status": "grader_prefix_built",
+                    "prefix_counts": {
+                        "total": len(base_prefix),
+                        "kept_first": len(first),
+                        "kept_last": len(tail),
+                        "added_middle": added,
+                    },
+                    "token_estimate": tok,
+                }
+            )
             grader_messages = build_grader_prompt(
                 prefix_msgs,
                 raw_bad_branch,
@@ -951,17 +852,13 @@ async def run_eval(
             in_tokens_g = tokens_for_chat_messages(grader_input)
             if in_tokens_g > MAX_INPUT_TOKENS:
                 counters["skipped_input_tokens"] += 1
-                with progress_path.open("a", encoding="utf-8") as pg:
-                    pg.write(
-                        json.dumps(
-                            {
-                                "correlation_id": item.correlation_id,
-                                "status": "grader_skipped_input_too_large",
-                                "input_tokens": in_tokens_g,
-                            },
-                        )
-                        + "\n",
-                    )
+                log_event(
+                    {
+                        "correlation_id": item.correlation_id,
+                        "status": "grader_skipped_input_too_large",
+                        "input_tokens": in_tokens_g,
+                    },
+                )
                 return None, None
             grade_max = max(
                 1,
@@ -970,7 +867,7 @@ async def run_eval(
             grade_req = {
                 "model": GRADER_MODEL,
                 "input": grader_input,
-                "tools": [grade_tool_def()],
+                "tools": [GRADE_TOOL],
                 "tool_choice": {"type": "function", "name": "grade"},
                 "parallel_tool_calls": False,
                 "max_output_tokens": grade_max,
@@ -979,34 +876,24 @@ async def run_eval(
                 grade = await client.responses.create(**grade_req)
             except Exception as e:
                 counters["grader_errors"] += 1
-                msg = json.dumps(
-                    {
-                        "correlation_id": item.correlation_id,
-                        "status": "grader_error",
-                        "error": str(e),
-                    },
-                )
-                with progress_path.open("a", encoding="utf-8") as pg:
-                    pg.write(msg + "\n")
-                sys.stderr.write(msg + "\n")
-                sys.stderr.flush()
+                msg = {
+                    "correlation_id": item.correlation_id,
+                    "status": "grader_error",
+                    "error": str(e),
+                }
+                log_event(msg)
                 return None, None
             # Validate grade parse
             try:
                 _ = parse_grade_from_responses(grade)
             except Exception as e:
                 counters["grader_errors"] += 1
-                msg = json.dumps(
-                    {
-                        "correlation_id": item.correlation_id,
-                        "status": "grader_parse_error",
-                        "error": str(e),
-                    },
-                )
-                with progress_path.open("a", encoding="utf-8") as pg:
-                    pg.write(msg + "\n")
-                sys.stderr.write(msg + "\n")
-                sys.stderr.flush()
+                msg = {
+                    "correlation_id": item.correlation_id,
+                    "status": "grader_parse_error",
+                    "error": str(e),
+                }
+                log_event(msg)
                 return None, None
 
             # Return combined records for saving
@@ -1028,7 +915,6 @@ async def run_eval(
             )
 
     # Build tasks and run aggregator loop (dedented from process)
-    log_event({"event": "tasks_build_start", "selected": selected})
     tasks = [process(item) for item in dataset]
     log_event({"event": "tasks_built", "count": len(tasks)})
 
@@ -1123,13 +1009,7 @@ async def run_eval(
                     )
                 except Exception as e:
                     counters["grader_errors"] += 1
-                    with progress_path.open("a", encoding="utf-8") as pg:
-                        pg.write(
-                            json.dumps(
-                                {"status": "aggregate_parse_error", "error": str(e)},
-                            )
-                            + "\n",
-                        )
+                    log_event({"status": "aggregate_parse_error", "error": str(e)})
 
     # Compute mean and 95% CI (normal approx)
 
@@ -1185,17 +1065,11 @@ async def run_eval(
         by_source[sname] = {
             "n": len(scores_by_source[sname]),
             "mean": m_s,
-            "ci95": ci_s,
-            "lcb": l_s,
-            "ucb": u_s,
+            "ci95": {"lcb": l_s, "ucb": u_s},
             "tooling": {
                 "total_samples": total_s,
-                "text_only_pct": (
-                    (ts_s["text_only"] / total_s) if total_s > 0 else 0.0
-                ),
-                "with_tools_pct": (
-                    (ts_s["with_tools"] / total_s) if total_s > 0 else 0.0
-                ),
+                "text_only_pct": ((ts_s["text_only"] / total_s) if total_s else 0.0),
+                "with_tools_pct": ((ts_s["with_tools"] / total_s) if total_s else 0.0),
                 "function_counts": ts_s["function_counts"],
                 "function_pct": func_pct_s,
             },
@@ -1204,9 +1078,7 @@ async def run_eval(
     summary = {
         "n": len(scores),
         "mean": mean,
-        "ci95": ci95,
-        "lcb": lcb,
-        "ucb": ucb,
+        "ci95": {"lcb": lcb, "ucb": ucb},
         "counters": counters,
         "tooling": {
             "total_samples": total_samples,
@@ -1232,104 +1104,81 @@ async def run_eval(
         report_path = report_base / "report.html"
         # Build grades map
         grades_map: dict[str, dict[str, Any]] = {}
-        try:
-            with grades_path.open("r", encoding="utf-8") as gf:
-                for line in gf:
-                    try:
-                        grec = json.loads(line)
-                    except Exception:
-                        continue
-                    cid = grec.get("correlation_id")
-                    if not cid:
-                        continue
-                    try:
-                        parsed = parse_grade_from_responses(grec.get("response"))
-                        grades_map[cid] = parsed
-                    except Exception:
-                        grades_map[cid] = {"score": None, "rationale": None}
-        except FileNotFoundError:
-            pass
+        with grades_path.open("r", encoding="utf-8") as gf:
+            for line in gf:
+                grec = json.loads(line)
+                cid = grec.get("correlation_id")
+                if not cid:
+                    continue
+                try:
+                    parsed = parse_grade_from_responses(grec.get("response"))
+                    grades_map[cid] = parsed
+                except Exception:
+                    grades_map[cid] = {"score": None, "rationale": None}
 
         # Collect rows
         rows: list[dict[str, Any]] = []
 
         summary: dict[str, Any] = {}
-        try:
-            with (report_base / "summary.json").open("r", encoding="utf-8") as sf:
-                summary = json.load(sf)
-        except Exception:
-            summary = {}
+        with (report_base / "summary.json").open("r", encoding="utf-8") as sf:
+            summary = json.load(sf)
 
         template_file = report_base / "template.txt"
 
-        try:
-            with samples_path.open("r", encoding="utf-8") as sf:
-                for line in sf:
-                    try:
-                        srec = json.loads(line)
-                    except Exception:
-                        continue
-                    cid = srec.get("correlation_id") or ""
-                    ar = srec.get("anthropic_request") or {}
-                    alt = srec.get("new_assistant_message") or {}
-                    # Two display paths depending on source
-                    if alt and isinstance(alt, dict) and "responses_output" in alt:
-                        # Crush item: reconstruct minimal views from responses_input
-                        rin = alt.get("responses_input") or []
-                        orig_sys = responses_extract_system_text(rin)
-                        try:
-                            rewritten_sys = rewrite_system_with_template(
-                                orig_sys or "", template_file
-                            )
-                        except Exception:
-                            rewritten_sys = ""
-                        msgs_disp = responses_to_ccr_messages(rin)
-                        idx = prev_assistant_index(msgs_disp)
-                        if idx is None:
-                            shared_prefix = msgs_disp
-                            bad_branch = []
-                        else:
-                            shared_prefix = [
-                                m
-                                for m in (msgs_disp[:idx])
-                                if m.get("role") != "system"
-                            ]
-                            bad_branch = msgs_disp[idx:]
-                    else:
-                        # CCR item
-                        # Flatten original system
-                        orig_sys = flatten_system_string(ar.get("system"))
-                        try:
-                            rewritten_sys = rewrite_system_with_template(
-                                orig_sys, template_file
-                            )
-                        except Exception:
-                            rewritten_sys = ""
-                        msgs = ar.get("messages") or []
-                        idx = prev_assistant_index(msgs)
-                        if idx is None:
-                            shared_prefix = msgs
-                            bad_branch = []
-                        else:
-                            shared_prefix = [
-                                m for m in (msgs[:idx]) if m.get("role") != "system"
-                            ]
-                            bad_branch = msgs[idx:]
-                    grade = grades_map.get(cid) or {}
-                    rows.append(
-                        {
-                            "correlation_id": cid,
-                            "timestamp": srec.get("timestamp"),
-                            "orig_system": orig_sys,
-                            "rewritten_system": rewritten_sys,
-                            "shared_prefix": shared_prefix,
-                            "bad_branch": bad_branch,
-                            "alternative": alt,
-                            "grade": grade,
-                        },
+        with samples_path.open("r", encoding="utf-8") as sf:
+            for line in sf:
+                srec = json.loads(line)
+                cid = srec.get("correlation_id") or ""
+                ar = srec.get("anthropic_request") or {}
+                alt = srec.get("new_assistant_message") or {}
+                # Two display paths depending on source
+                if alt and isinstance(alt, dict) and "responses_output" in alt:
+                    # Crush item: reconstruct minimal views from responses_input
+                    rin = alt.get("responses_input") or []
+                    orig_sys = responses_extract_system_text(rin)
+                    rewritten_sys = rewrite_system_with_template(
+                        orig_sys or "", template_file
                     )
-        except FileNotFoundError:
-            pass
+                    msgs_disp = responses_to_ccr_messages(rin)
+                    idx = prev_assistant_index(msgs_disp)
+                    if idx is None:
+                        shared_prefix = msgs_disp
+                        bad_branch = []
+                    else:
+                        shared_prefix = [
+                            m for m in (msgs_disp[:idx]) if m.get("role") != "system"
+                        ]
+                        bad_branch = msgs_disp[idx:]
+                else:
+                    # CCR item
+                    # Flatten original system
+                    orig_sys = flatten_system_string(ar.get("system"))
+                    rewritten_sys = rewrite_system_with_template(
+                        orig_sys, template_file
+                    )
+                    msgs = ar.get("messages") or []
+                    idx = prev_assistant_index(msgs)
+                    if idx is None:
+                        shared_prefix = msgs
+                        bad_branch = []
+                    else:
+                        shared_prefix = [
+                            m for m in (msgs[:idx]) if m.get("role") != "system"
+                        ]
+                        bad_branch = msgs[idx:]
+                grade = grades_map.get(cid) or {}
+                rows.append(
+                    {
+                        "correlation_id": cid,
+                        "timestamp": srec.get("timestamp"),
+                        "orig_system": orig_sys,
+                        "rewritten_system": rewritten_sys,
+                        "shared_prefix": shared_prefix,
+                        "bad_branch": bad_branch,
+                        "alternative": alt,
+                        "grade": grade,
+                    },
+                )
 
         # Jinja2 template
         env = Environment(
@@ -1353,7 +1202,3 @@ def main():
     asyncio.run(
         run_eval(Path(args.template), dataset_paths, base_out, args.n, args.concurrency)
     )
-
-
-if __name__ == "__main__":
-    main()

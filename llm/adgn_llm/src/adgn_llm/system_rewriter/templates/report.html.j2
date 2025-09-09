@@ -78,7 +78,7 @@
 <section>
   <h1>Evaluation Summary</h1>
   <div class="meta">
-    n={{ summary.n or 0 }}; mean={{ (summary.mean or 0) | round(4) }}; ci95=±{{ (summary.ci95 or 0) | round(4) }};
+    n={{ summary.n or 0 }}; mean={{ (summary.mean or 0) | round(3) }}; ci95={{ (summary.ci95.lcb or 0) | round(3) }}..{{ (summary.ci95.ucb or 0) | round(3) }};
     with_tools_pct={{ (((summary.tooling or {}).with_tools_pct) or 0) * 100 | round(1) }}%
   </div>
 </section>

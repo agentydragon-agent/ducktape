@@ -6,15 +6,9 @@ const libA = path.join(__dirname, 'lib', 'system-utils');
 const libB = path.join(os.homedir(), '.claude-code-router', 'transformers', 'lib', 'system-utils');
 const { extractSystemBlobs } = require(fs.existsSync(libA + '.js') ? libA : libB);
 
-const TOOLS_HEADER = process.env.TOOLS_HEADER || 'You can use the following tools without requiring user approval:';
-const ENV_INTRO = 'Here is useful information about the environment you are running in:';
-const MODEL_PREFIX = 'You are powered by the model';
-const MCP_HEADER = '# MCP Server Instructions';
-
 function esc(x){
   return x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
-
 
 async function readAllStdin(){
   return new Promise((resolve, reject) => {
@@ -34,7 +28,7 @@ async function readAllStdin(){
   }
   const template = fs.readFileSync(templatePath, 'utf8');
   const sysIn = await readAllStdin();
-  const { toolsBlob, envGitBlobs, modelLine, mcpSection } = extractSystemBlobs(String(sysIn), { toolsHeader: TOOLS_HEADER });
+  const { toolsBlob, envGitBlobs, modelLine, mcpSection } = extractSystemBlobs(String(sysIn));
   const ctx = {
     toolsBlob,
     envGitBlobs: envGitBlobs.join(''),
@@ -42,37 +36,40 @@ async function readAllStdin(){
     mcpSection,
   };
 
-  // Use mustache for optional sections/vars. Require at runtime; no fallback.
-  let Mustache;
-  try {
-    Mustache = require('mustache');
-  } catch (e) {
-    console.error("Missing dependency 'mustache'. Please run: npm install mustache");
-    process.exit(5);
-  }
-
-  // Optional: enforce each core var appears at most once to avoid accidental duplication
+  // Enforce that template only uses the supported variables at most once each
   const coreVars = ['toolsBlob','envGitBlobs','modelLine','mcpSection'];
   for (const name of coreVars) {
     const reVar = new RegExp(`\\{\\{${esc(name)}\\}\\}`, 'g');
     const count = (template.match(reVar) || []).length;
     if (count > 1) {
-      console.error(`template variable ${name} appears ${count} times (expected ≤1)`);
+      console.error(`template variable ${name} appears ${count} times (expected \u22641)`);
       process.exit(6);
     }
   }
+  // Reject any other {{...}} tokens (including sections like {{#...}} or {{/...}})
+  const tokenRe = /\{\{\s*([#\/]?\w+)\s*}}/g;
+  let m;
+  while ((m = tokenRe.exec(template)) !== null) {
+    const raw = m[1];
+    if (!coreVars.includes(raw)) {
+      console.error(`template contains unsupported token '{{${raw}}}'`);
+      process.exit(5);
+    }
+  }
 
-  let out = Mustache.render(template, ctx);
-
-  // Legacy ${name} placeholders are not supported; use mustache {{name}} only
+  // Perform exact replacements for the known variables only
+  let out = template
+    .replace('{{toolsBlob}}', ctx.toolsBlob)
+    .replace('{{envGitBlobs}}', ctx.envGitBlobs)
+    .replace('{{modelLine}}', ctx.modelLine)
+    .replace('{{mcpSection}}', ctx.mcpSection);
 
   // Validate no unreplaced tokens remain
-  const leftover = out.match(/\{\{[#\/]?\w+}}/);
-  if (leftover) {
+  if (/\{\{\s*\w+\s*}}/.test(out)) {
+    const leftover = out.match(/\{\{\s*\w+\s*}}/);
     console.error(`template contains unreplaced tokens, e.g. '${leftover[0]}'`);
     process.exit(4);
   }
 
   process.stdout.write(out);
 })();
-

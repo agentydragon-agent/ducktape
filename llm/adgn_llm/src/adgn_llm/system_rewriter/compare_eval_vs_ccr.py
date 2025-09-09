@@ -24,26 +24,58 @@ def find_ccr_openai_request(correlation_id: str) -> dict[str, Any] | None:
     # Scan logs for outbound_request to OpenAI chat completions with this correlationId
     files = sorted(TRACE_DIR.glob("trace.*"))
     for p in files:
-        try:
-            with p.open("r", encoding="utf-8", errors="ignore") as f:
-                for line in f:
-                    try:
-                        rec = json.loads(line)
-                    except json.JSONDecodeError:
-                        continue
-                    if rec.get("event") != "outbound_request":
-                        continue
-                    if rec.get("correlationId") != correlation_id:
-                        continue
-                    url = rec.get("url", "")
-                    if not isinstance(url, str) or "/v1/chat/completions" not in url:
-                        continue
-                    body = rec.get("body")
-                    if isinstance(body, dict):
-                        return body
-        except OSError:
-            continue
+        with p.open("r", encoding="utf-8", errors="ignore") as f:
+            for line in f:
+                try:
+                    rec = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if rec.get("event") != "outbound_request":
+                    continue
+                if rec.get("correlationId") != correlation_id:
+                    continue
+                url = rec.get("url", "")
+                if not isinstance(url, str) or "/v1/chat/completions" not in url:
+                    continue
+                body = rec.get("body")
+                if isinstance(body, dict):
+                    return body
     return None
+
+
+def find_ccr_requests_for(correlation_ids: set[str]) -> dict[str, dict[str, Any]]:
+    """Scan CCR logs once and collect outbound chat completion requests for the given IDs.
+    Early-exits when all targets are found.
+    """
+    if not correlation_ids:
+        return {}
+    remaining = set(correlation_ids)
+    found: dict[str, dict[str, Any]] = {}
+    files = sorted(TRACE_DIR.glob("trace.*"))
+    for p in files:
+        if not remaining:
+            break
+        with p.open("r", encoding="utf-8", errors="ignore") as f:
+            for line in f:
+                if not remaining:
+                    break
+                try:
+                    rec = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if rec.get("event") != "outbound_request":
+                    continue
+                cid = rec.get("correlationId")
+                if cid not in remaining:
+                    continue
+                url = rec.get("url", "")
+                if not isinstance(url, str) or "/v1/chat/completions" not in url:
+                    continue
+                body = rec.get("body")
+                if isinstance(body, dict):
+                    found[cid] = body
+                    remaining.discard(cid)
+    return found
 
 
 def drop_none(d: dict[str, Any]) -> dict[str, Any]:
@@ -86,16 +118,28 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
 
     samples = load_samples(run_dir)
-    count = 0
-    wrote: list[str] = []
+    # Preselect up to limit targets that have a correlation_id and request
+    targets: list[dict[str, Any]] = []
+    target_ids: set[str] = set()
     for rec in samples:
-        if count >= args.limit:
+        if len(targets) >= args.limit:
             break
         cid = rec.get("correlation_id")
         eval_req = rec.get("request") or {}
         if not cid or not isinstance(eval_req, dict):
             continue
-        ccr_req = find_ccr_openai_request(cid)
+        targets.append(rec)
+        target_ids.add(cid)
+
+    # Single pass over CCR logs to collect needed requests
+    ccr_map = find_ccr_requests_for(target_ids)
+
+    count = 0
+    wrote: list[str] = []
+    for rec in targets:
+        cid = rec.get("correlation_id")
+        eval_req = rec.get("request") or {}
+        ccr_req = ccr_map.get(cid)
         if not ccr_req:
             continue
         # Prepare pretty JSONs
@@ -109,10 +153,7 @@ def main():
         (case_dir / "ccr_request.json").write_text(ccr_json, encoding="utf-8")
         # Diff
         diff_text = unified_diff_str(
-            ccr_json,
-            eval_json,
-            fromfile="ccr_request.json",
-            tofile="eval_request.json",
+            ccr_json, eval_json, fromfile="ccr_request.json", tofile="eval_request.json"
         )
         (case_dir / "diff.unified.txt").write_text(diff_text, encoding="utf-8")
         wrote.append(str(case_dir))
