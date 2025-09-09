@@ -28,7 +28,7 @@ from openai.types.responses import ResponseReasoningItem
 from openai.types.shared_params import Reasoning as ReasoningParams
 from openai.types.shared_params import ReasoningEffort
 from pydantic import BaseModel
-from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
+from adgn_llm.openai_retry import retry_decorator
 
 from .loggers import TranscriptLogger
 from adgn_llm.openai_utils import ReasoningSummary
@@ -89,20 +89,9 @@ def _openai_client() -> openai.AsyncOpenAI:
     return openai.AsyncOpenAI()
 
 
-def _is_retryable(e: Exception) -> bool:
-    if isinstance(e, (APITimeoutError, APIConnectionError, RateLimitError)):
-        return True
-    if isinstance(e, APIStatusError):
-        status = getattr(e, "status_code", None)
-        return status == 429 or (isinstance(status, int) and 500 <= status < 600)
-    return False
 
 
-@retry(
-    retry=retry_if_exception(_is_retryable),
-    wait=wait_exponential(multiplier=1, min=1, max=8),
-    stop=stop_after_attempt(4),
-)
+@retry_decorator()
 async def _responses_create_with_retry(client: ResponsesClient, **kwargs: Any):
     """Wrapper around client.responses.create with retry for transient errors."""
     return await client.responses.create(**kwargs)

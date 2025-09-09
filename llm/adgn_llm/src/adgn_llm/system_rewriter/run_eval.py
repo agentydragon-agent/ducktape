@@ -17,6 +17,7 @@ import tiktoken
 from .constants import TOOLS_HEADER
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from openai import AsyncOpenAI
+from adgn_llm.openai_retry import responses_create_with_retries, chat_create_with_retries
 from .schemas import (
     CCRRequest,
     CCRSample,
@@ -702,7 +703,8 @@ async def run_eval(
                     "max_completion_tokens": samp_max,
                 }
                 try:
-                    samp = await client.chat.completions.create(
+                    samp = await chat_create_with_retries(
+                        client,
                         **{k: v for k, v in samp_req.items() if v is not None}
                     )
                 except Exception as e:
@@ -749,7 +751,7 @@ async def run_eval(
                     base_req["model"] = SAMPLER_MODEL
                 samp_req = base_req
                 try:
-                    samp = await client.responses.create(**samp_req)
+                    samp = await responses_create_with_retries(client, **samp_req)
                 except Exception as e:
                     counters["sampler_errors"] += 1
                     msg = json.dumps(
@@ -873,7 +875,7 @@ async def run_eval(
                 "max_output_tokens": grade_max,
             }
             try:
-                grade = await client.responses.create(**grade_req)
+                grade = await responses_create_with_retries(client, **grade_req)
             except Exception as e:
                 counters["grader_errors"] += 1
                 msg = {
