@@ -20,7 +20,7 @@ import tiktoken
 from openai import AsyncOpenAI
 from adgn_llm.properties.lint_issue import DOCKER_IMAGE as _DEFAULT_IMAGE
 from importlib import resources
-import shutil
+import shlex
 
 from .specimen_utils import (
     build_scope_text,
@@ -961,10 +961,11 @@ def main(argv: list[str] | None = None) -> int:
                     dockerfile_trav = resources.files("adgn_llm").joinpath(
                         "docker/critic.Dockerfile"
                     )
+                    context_dir = str(dockerfile_trav.parent)
                     print("ERROR: Required Docker image not found:", image)
                     print("Build it first:")
                     print(
-                        f"docker build -f {shutil.quote(dockerfile_trav)} -t {image} {shlex.quote(context_dir)}"
+                        f"docker build -f {shlex.quote(str(dockerfile_trav))} -t {image} {shlex.quote(context_dir)}"
                     )
                     return 2
 
