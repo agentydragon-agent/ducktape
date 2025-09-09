@@ -17,6 +17,7 @@ from pathlib import Path
 from adgn_llm.logging_config import configure_logging
 import tiktoken
 from openai import AsyncOpenAI
+from adgn_llm.properties.lint_issue import DOCKER_IMAGE as _DEFAULT_IMAGE
 
 from .specimen_utils import (
     build_scope_text,
@@ -181,7 +182,11 @@ def _format_tools_table(available: list[str]) -> str:
         f"{'-' * 5}  {'-' * 12}  {'-' * 14}  {'-' * 40}",
     ]
     for name, cat, desc in TOOL_CATALOG:
-        status = "yes" if name in avail_set or (name == "jscpd" and "jscpd(npx)" in avail_set) else "no"
+        status = (
+            "yes"
+            if name in avail_set or (name == "jscpd" and "jscpd(npx)" in avail_set)
+            else "no"
+        )
         lines.append(f"{status:<5}  {name:<12}  {cat:<14}  {desc}")
     return "\n".join(lines)
 
@@ -601,7 +606,11 @@ def _run_specimen(  # noqa: PLR0913
 
     scope_text = build_scope_text(man.scope.include, man.scope.exclude)
     # Build supplemental text from embedded files (covered/not_covered_yet or user-specified)
-    supplemental_text = read_embedded_paths([Path(p) for p in (embed_paths or [])]) if embed_paths else None
+    supplemental_text = (
+        read_embedded_paths([Path(p) for p in (embed_paths or [])])
+        if embed_paths
+        else None
+    )
     # Build appropriate prompt
     if mode == "discover":
         # Hint: suppress already known findings; focus on new items
@@ -1156,15 +1165,6 @@ def main(argv: list[str] | None = None) -> int:
 
         man = load_manifest(manifest_path)
 
-        image = args.image
-        if not image:
-            try:
-                from adgn_llm.properties.lint_issue import DOCKER_IMAGE as _DEFAULT_IMAGE  # type: ignore
-
-                image = _DEFAULT_IMAGE
-            except Exception:
-                image = "python:3.12-slim"
-
         try:
             dclient = docker.from_env()
             # Light sanity check; will raise if daemon unavailable
@@ -1203,7 +1203,7 @@ def main(argv: list[str] | None = None) -> int:
             container = None
             try:
                 container = dclient.containers.run(
-                    image=image,
+                    image=(args.image or _DEFAULT_IMAGE),
                     command=["sleep", "infinity"],
                     name=name,
                     remove=True,
@@ -1216,9 +1216,13 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"ERROR: failed to start container: {e}")
                 return 2
 
-            rc = subprocess.run(["docker", "exec", "-it", name, "bash"], check=False).returncode
+            rc = subprocess.run(
+                ["docker", "exec", "-it", name, "bash"], check=False
+            ).returncode
             if rc != 0:
-                rc = subprocess.run(["docker", "exec", "-it", name, "sh"], check=False).returncode
+                rc = subprocess.run(
+                    ["docker", "exec", "-it", name, "sh"], check=False
+                ).returncode
 
             try:
                 if container:
