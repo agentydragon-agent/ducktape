@@ -1,6 +1,5 @@
-#!/usr/bin/env python3
 """
-Leaderboard reporter for eval runs.
+Leaderboard reporter for eval runs (packaged).
 
 Scans runs/<ts>/ for summary.json and template.txt, maps template content
 hashes back to known templates (baseline and proposals), and prints a sorted
@@ -8,7 +7,6 @@ leaderboard.
 
 Defaults to text output sorted by mean score desc.
 """
-
 from __future__ import annotations
 
 import argparse
@@ -43,9 +41,7 @@ def load_known_templates(templates_dir: Path) -> dict[str, str]:
     base_tpl = templates_dir / "current_effective_template.txt"
     if base_tpl.exists():
         try:
-            mapping[sha1_text(base_tpl.read_text(encoding="utf-8"))] = str(
-                base_tpl,
-            )
+            mapping[sha1_text(base_tpl.read_text(encoding="utf-8"))] = str(base_tpl)
         except Exception:
             pass
     # proposals
@@ -62,6 +58,37 @@ def load_known_templates(templates_dir: Path) -> dict[str, str]:
 def iter_run_dirs(runs_dir: Path) -> Iterable[Path]:
     for p in sorted([d for d in runs_dir.iterdir() if d.is_dir()]):
         yield p
+
+
+def load_known_templates_from_runs(runs_dir: Path) -> dict[str, str]:
+    """Scan runs/*/template.txt and build a mapping hash -> one representative path.
+    If multiple runs share the same template hash, keep the lexicographically first path.
+    """
+    mapping: dict[str, str] = {}
+    if not runs_dir.exists():
+        return mapping
+    for rd in iter_run_dirs(runs_dir):
+        t = rd / "template.txt"
+        if not t.exists():
+            # also check legacy single nested dir
+            try:
+                subs = [d for d in rd.iterdir() if d.is_dir()]
+            except FileNotFoundError:
+                subs = []
+            if len(subs) == 1:
+                t2 = subs[0] / "template.txt"
+                if t2.exists():
+                    t = t2
+        if t.exists():
+            try:
+                h = sha1_text(t.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            curr = mapping.get(h)
+            label = str(t)
+            if curr is None or label < curr:
+                mapping[h] = label
+    return mapping
 
 
 def find_summary_and_template(run_dir: Path) -> tuple[Path | None, Path | None]:
@@ -118,7 +145,90 @@ def load_row(run_dir: Path, known: dict[str, str]) -> Row | None:
     )
 
 
+def format_text(rows: list[Row]) -> str:
+    out_lines = []
+    for r in rows:
+        tools_pct = f"{r.with_tools_pct * 100:.1f}%"
+        out_lines.append(
+            f"{r.mean:.2f} ± {r.ci95:.2f} (n={r.n:>3}, tools={tools_pct:>6})  run={r.run}  prompt={r.template_label}",
+        )
+    return "\n".join(out_lines)
+
+
+def format_md(rows: list[Row]) -> str:
+    header = (
+        "| mean | ci95 | n | tools% | run | template |\n|---:|---:|---:|---:|:---|:---|"
+    )
+    lines = [header]
+    for r in rows:
+        lines.append(
+            f"| {r.mean:.2f} | {r.ci95:.2f} | {r.n} | {r.with_tools_pct * 100:.1f}% | {r.run} | {r.template_label} |",
+        )
+    return "\n".join(lines)
+
+
+def generate(
+    runs_dir: Path,
+    templates_dir: Path,
+    fmt: str = "text",
+    sort_key: str = "mean",
+    asc: bool = False,
+    limit: int | None = None,
+    since: int | None = None,
+) -> str:
+    # Prefer mapping built from runs; fall back to templates_dir if empty
+    known = load_known_templates_from_runs(runs_dir)
+    if not known:
+        known = load_known_templates(templates_dir)
+    if not runs_dir.exists():
+        raise FileNotFoundError(f"No runs dir: {runs_dir}")
+
+    rows: list[Row] = []
+    for rd in iter_run_dirs(runs_dir):
+        if since is not None:
+            try:
+                if int(rd.name) < int(since):
+                    continue
+            except ValueError:
+                pass
+        row = load_row(rd, known)
+        if row:
+            rows.append(row)
+
+    key = {
+        "mean": lambda r: r.mean,
+        "lcb": lambda r: r.lcb if r.lcb is not None else (r.mean - r.ci95),
+        "ucb": lambda r: r.ucb if r.ucb is not None else (r.mean + r.ci95),
+    }[sort_key]
+    rows.sort(key=key, reverse=not asc)
+    if limit is not None:
+        rows = rows[: max(0, limit)]
+
+    if fmt == "json":
+        return json.dumps(
+            [
+                {
+                    "run": r.run,
+                    "mean": r.mean,
+                    "ci95": r.ci95,
+                    "n": r.n,
+                    "lcb": r.lcb,
+                    "ucb": r.ucb,
+                    "template": r.template_label,
+                    "template_hash": r.template_hash,
+                    "with_tools_pct": r.with_tools_pct,
+                }
+                for r in rows
+            ],
+            ensure_ascii=False,
+        )
+    if fmt == "md":
+        return format_md(rows)
+    return format_text(rows)
+
+
 def parse_args() -> argparse.Namespace:
+    # Note: retained for direct CLI use via adgn-sysrw leaderboard; not used as module API.
     ap = argparse.ArgumentParser(
         description="Report leaderboard for eval runs (runs/<ts> → summary).",
     )
@@ -147,107 +257,29 @@ def parse_args() -> argparse.Namespace:
         help="Sort key (default: mean)",
     )
     ap.add_argument(
-        "--asc",
-        action="store_true",
-        default=False,
-        help="Sort ascending (default: descending)",
+        "--asc", action="store_true", default=False, help="Sort ascending"
     )
-    ap.add_argument(
-        "--limit",
-        type=int,
-        default=None,
-        help="Limit number of rows shown",
-    )
-    ap.add_argument(
-        "--since",
-        type=int,
-        default=None,
-        help="Only include runs with numeric name >= this timestamp",
-    )
+    ap.add_argument("--limit", type=int, default=None)
+    ap.add_argument("--since", type=int, default=None)
     return ap.parse_args()
-
-
-def format_text(rows: list[Row]) -> str:
-    out_lines = []
-    for r in rows:
-        tools_pct = f"{r.with_tools_pct * 100:.1f}%"
-        out_lines.append(
-            f"{r.mean:.2f} ± {r.ci95:.2f} (n={r.n:>3}, tools={tools_pct:>6})  run={r.run}  prompt={r.template_label}",
-        )
-    return "\n".join(out_lines)
-
-
-def format_md(rows: list[Row]) -> str:
-    header = (
-        "| mean | ci95 | n | tools% | run | template |\n|---:|---:|---:|---:|:---|:---|"
-    )
-    lines = [header]
-    for r in rows:
-        lines.append(
-            f"| {r.mean:.2f} | {r.ci95:.2f} | {r.n} | {r.with_tools_pct * 100:.1f}% | {r.run} | {r.template_label} |",
-        )
-    return "\n".join(lines)
 
 
 def main() -> int:
     args = parse_args()
-    runs_dir: Path = args.runs_dir
-    templates_dir: Path = args.templates_dir
-    known = load_known_templates(templates_dir)
-
-    if not runs_dir.exists():
-        print(f"No runs dir: {runs_dir}", file=sys.stderr)
-        return 2
-
-    rows: list[Row] = []
-    for rd in iter_run_dirs(runs_dir):
-        if args.since is not None:
-            try:
-                if int(rd.name) < int(args.since):
-                    continue
-            except ValueError:
-                # Allow non-numeric names like baseline-<ts>
-                # Keep them regardless of --since
-                pass
-        row = load_row(rd, known)
-        if row:
-            rows.append(row)
-
-    key = {
-        "mean": lambda r: r.mean,
-        "lcb": lambda r: r.lcb if r.lcb is not None else (r.mean - r.ci95),
-        "ucb": lambda r: r.ucb if r.ucb is not None else (r.mean + r.ci95),
-    }[args.sort]
-    reverse = not bool(args.asc)
-    rows.sort(key=key, reverse=reverse)
-    if args.limit is not None:
-        rows = rows[: max(0, args.limit)]
-
-    if args.format == "json":
-        print(
-            json.dumps(
-                [
-                    {
-                        "run": r.run,
-                        "mean": r.mean,
-                        "ci95": r.ci95,
-                        "n": r.n,
-                        "lcb": r.lcb,
-                        "ucb": r.ucb,
-                        "template": r.template_label,
-                        "template_hash": r.template_hash,
-                        "with_tools_pct": r.with_tools_pct,
-                    }
-                    for r in rows
-                ],
-                ensure_ascii=False,
-            ),
+    try:
+        out = generate(
+            runs_dir=args.runs_dir,
+            templates_dir=args.templates_dir,
+            fmt=args.format,
+            sort_key=args.sort,
+            asc=bool(args.asc),
+            limit=args.limit,
+            since=args.since,
         )
-    elif args.format == "md":
-        print(format_md(rows))
-    else:
-        print(format_text(rows))
-
+    except Exception as e:
+        print(str(e), file=sys.stderr)
+        return 2
+    print(out)
     return 0
 
 

@@ -12,6 +12,7 @@ from . import run_eval
 from . import compare_eval_vs_ccr
 from . import extract_dataset_ccr
 from . import extract_dataset_crush
+from . import leaderboard
 
 app = typer.Typer(
     help="System rewriter toolkit: extract datasets, run evals, and compare against CCR."
@@ -157,6 +158,36 @@ def cmd_extract_crush(
             }
         )
     )
+
+
+@app.command("leaderboard")
+def cmd_leaderboard(
+    runs_dir: Path = typer.Option(
+        Path(__file__).parent / "runs",
+        "--runs-dir",
+        help="Directory containing eval runs (runs/<ts>)",
+    ),
+    templates_dir: Path = typer.Option(
+        Path(__file__).parent / "templates",
+        "--templates-dir",
+        help="Directory containing templates (baseline and proposals)",
+    ),
+    fmt: str = typer.Option("text", "--format", help="Output format: text|json|md"),
+    sort_key: str = typer.Option("mean", "--sort", help="Sort key: mean|lcb|ucb"),
+    asc: bool = typer.Option(False, "--asc", help="Sort ascending"),
+    limit: int | None = typer.Option(None, "--limit", help="Limit rows"),
+    since: int | None = typer.Option(None, "--since", help="Only runs >= timestamp"),
+):
+    out = leaderboard.generate(
+        runs_dir=runs_dir,
+        templates_dir=templates_dir,
+        fmt=fmt,
+        sort_key=sort_key,
+        asc=asc,
+        limit=limit,
+        since=since,
+    )
+    print(out)
 
 
 if __name__ == "__main__":
