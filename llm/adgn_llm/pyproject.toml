@@ -40,6 +40,7 @@ dependencies = [
   "aiolimiter>=1.1.0",
   "pyhamcrest>=2.1",
   "rich>=13.0.0",
+  "Jinja2>=3.1",
 ]
 
 [project.scripts]
@@ -66,6 +67,8 @@ adgn_llm = [
   "properties/definitions/*.md",
   "properties/definitions/**/*.md",
   "properties/specimens/**",
+  "properties/prompts/*.j2",
+  "properties/prompts/**/*.j2",
 ]
 
 [project.optional-dependencies]
