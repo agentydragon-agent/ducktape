@@ -4,7 +4,6 @@ import asyncio
 import shutil
 
 import pytest
-from adgn_llm.mcp.inproc import fastmcp_inproc_client
 from adgn_llm.mcp.docker_exec.server import make_container_exec_mcp
 from adgn_llm.mcp.local_exec.server import make_local_exec_mcp
 from adgn_llm.mcp.inproc_utils import make_inproc_slot_spec
@@ -49,14 +48,6 @@ async def test_stdio_server_list_tools() -> None:
     if proc.returncode != 0:
         pytest.skip(f"server-everything stdio help failed (rc={proc.returncode})")
 
-    # Build session opener for stdio server
-    def cm_builder():
-        return stdio_client(
-            StdioServerParameters(
-                command="npx",
-                args=["@modelcontextprotocol/server-everything", "stdio"],
-            )
-        )
 
     spec = McpManager.slot_from_spec(
         "everything",
@@ -92,15 +83,6 @@ async def test_local_inprocess_server() -> None:
 async def test_inproc_container_exec_exposes_container_info_resource() -> None:
     """Smoke test: in-proc container exec exposes a container.info resource."""
 
-    def _cm_builder():
-        return fastmcp_inproc_client(
-            lambda: make_container_exec_mcp(
-                image="python:3.12-slim",
-                working_dir="/workspace",
-                volumes=None,
-                describe=False,
-            ),
-        )
 
     spec = make_inproc_slot_spec(
         make_container_exec_mcp(

@@ -5,17 +5,21 @@ Scans runs/<ts>/ for summary.json and template.txt, maps template content
 hashes back to known templates (baseline and proposals), and prints a sorted
 leaderboard.
 
-Defaults to text output sorted by mean score desc.
+Defaults to rich table output sorted by mean score desc.
 """
 from __future__ import annotations
 
 import argparse
 import hashlib
+import io
 import json
+import os
 import sys
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
+from rich.console import Console
+from rich.table import Table
 
 
 @dataclass
@@ -126,19 +130,60 @@ def load_row(run_dir: Path, known: dict[str, str]) -> Row | None:
         except Exception:
             return default
 
+    mean = _f("mean")
+
+    # Support both ci95 numeric (legacy) and ci95={lcb,ucb} (new)
+    ci95_val: float | None = None
+    lcb: float | None = None
+    ucb: float | None = None
+
+    ci95_field = summ.get("ci95")
+    if isinstance(ci95_field, dict):
+        # New format inside ci95
+        try:
+            lcb = float(ci95_field.get("lcb")) if ci95_field.get("lcb") is not None else None
+        except Exception:
+            lcb = None
+        try:
+            ucb = float(ci95_field.get("ucb")) if ci95_field.get("ucb") is not None else None
+        except Exception:
+            ucb = None
+        if lcb is not None and ucb is not None:
+            ci95_val = max(abs(mean - lcb), abs(ucb - mean))
+    else:
+        # Legacy numeric ci95
+        try:
+            ci95_val = float(ci95_field) if ci95_field is not None else None
+        except Exception:
+            ci95_val = None
+        # Try top-level lcb/ucb if present
+        if isinstance(summ.get("lcb"), (int, float)):
+            lcb = float(summ.get("lcb"))
+        if isinstance(summ.get("ucb"), (int, float)):
+            ucb = float(summ.get("ucb"))
+
+    # Derive ci95 half-width if missing but bounds present
+    if ci95_val is None:
+        if lcb is not None and ucb is not None:
+            ci95_val = max(abs(mean - lcb), abs(ucb - mean))
+        else:
+            ci95_val = 0.0
+
     tooling = summ.get("tooling") or {}
-    with_tools = 0.0
     try:
         with_tools = float(tooling.get("with_tools_pct", 0.0))
     except Exception:
         with_tools = 0.0
+
+    # TODO(mpokorny): deprecate legacy numeric ci95 once all runs use ci95={lcb,ucb}.
+
     return Row(
         run=run_dir.name,
-        mean=_f("mean"),
-        ci95=_f("ci95"),
+        mean=mean,
+        ci95=float(ci95_val),
         n=int(summ.get("n", 0) or 0),
-        lcb=(summ.get("lcb") if isinstance(summ.get("lcb"), (int, float)) else None),
-        ucb=(summ.get("ucb") if isinstance(summ.get("ucb"), (int, float)) else None),
+        lcb=lcb,
+        ucb=ucb,
         template_label=label,
         template_hash=thash,
         with_tools_pct=with_tools,
@@ -167,14 +212,72 @@ def format_md(rows: list[Row]) -> str:
     return "\n".join(lines)
 
 
+def _color_for_hash(hash_hex: str) -> str:
+    # Deterministic palette index from hash
+    palette = [
+        "bright_cyan", "bright_magenta", "bright_green", "bright_yellow",
+        "bright_blue", "bright_red", "cyan", "magenta", "green", "yellow",
+        "blue", "red",
+    ]
+    try:
+        idx = int(hash_hex[:8], 16) % len(palette)
+    except Exception:
+        idx = 0
+    return palette[idx]
+
+
+def _relpath(p: str) -> str:
+    # Prefer a path relative to current working directory when possible
+    try:
+        abs_p = str(Path(p).resolve())
+    except Exception:
+        abs_p = p
+    try:
+        return os.path.relpath(abs_p, start=os.getcwd())
+    except Exception:
+        return p
+
+
+def format_rich_table(rows: list[Row]) -> str:
+    """Render a pretty CLI table using rich and return its text output."""
+    table = Table(show_header=True, header_style="bold cyan")
+    table.add_column("lcb", justify="right")
+    table.add_column("mean", justify="right")
+    table.add_column("ucb", justify="right")
+    table.add_column("n", justify="right")
+    table.add_column("tools%", justify="right")
+    table.add_column("run", justify="left")
+    table.add_column("template", justify="left")
+
+    for r in rows:
+        # Derive display bounds if missing
+        lcb = r.lcb if r.lcb is not None else (r.mean - r.ci95)
+        ucb = r.ucb if r.ucb is not None else (r.mean + r.ci95)
+        color = _color_for_hash(r.template_hash)
+        rel_label = _relpath(r.template_label)
+        table.add_row(
+            f"{lcb:.2f}",
+            f"{r.mean:.2f}",
+            f"{ucb:.2f}",
+            f"{r.n}",
+            f"{r.with_tools_pct * 100:.1f}%",
+            r.run,
+            f"[{color}]{rel_label}[/]",
+        )
+
+    # Render off-screen to avoid duplicate stdout prints; caller prints returned text
+    buffer = io.StringIO()
+    console = Console(file=buffer, record=True)
+    console.print(table)
+    return buffer.getvalue()
+
+
 def generate(
     runs_dir: Path,
     templates_dir: Path,
-    fmt: str = "text",
     sort_key: str = "mean",
     asc: bool = False,
     limit: int | None = None,
-    since: int | None = None,
 ) -> str:
     # Prefer mapping built from runs; fall back to templates_dir if empty
     known = load_known_templates_from_runs(runs_dir)
@@ -183,48 +286,34 @@ def generate(
     if not runs_dir.exists():
         raise FileNotFoundError(f"No runs dir: {runs_dir}")
 
-    rows: list[Row] = []
+    # Build groups by template hash
+    by_hash: dict[str, list[Row]] = {}
     for rd in iter_run_dirs(runs_dir):
-        if since is not None:
-            try:
-                if int(rd.name) < int(since):
-                    continue
-            except ValueError:
-                pass
         row = load_row(rd, known)
-        if row:
-            rows.append(row)
+        if not row:
+            continue
+        by_hash.setdefault(row.template_hash, []).append(row)
 
-    key = {
+    # Row sort key
+    row_key = {
         "mean": lambda r: r.mean,
-        "lcb": lambda r: r.lcb if r.lcb is not None else (r.mean - r.ci95),
-        "ucb": lambda r: r.ucb if r.ucb is not None else (r.mean + r.ci95),
+        "lcb": lambda r: (r.lcb if r.lcb is not None else (r.mean - r.ci95)),
+        "ucb": lambda r: (r.ucb if r.ucb is not None else (r.mean + r.ci95)),
     }[sort_key]
-    rows.sort(key=key, reverse=not asc)
-    if limit is not None:
-        rows = rows[: max(0, limit)]
 
-    if fmt == "json":
-        return json.dumps(
-            [
-                {
-                    "run": r.run,
-                    "mean": r.mean,
-                    "ci95": r.ci95,
-                    "n": r.n,
-                    "lcb": r.lcb,
-                    "ucb": r.ucb,
-                    "template": r.template_label,
-                    "template_hash": r.template_hash,
-                    "with_tools_pct": r.with_tools_pct,
-                }
-                for r in rows
-            ],
-            ensure_ascii=False,
-        )
-    if fmt == "md":
-        return format_md(rows)
-    return format_text(rows)
+    # Sort within groups and then groups by best row
+    groups: list[list[Row]] = []
+    for rows in by_hash.values():
+        rows.sort(key=row_key, reverse=not asc)
+        groups.append(rows)
+    groups.sort(key=lambda g: row_key(g[0]) if g else float("-inf"), reverse=not asc)
+
+    # Flatten
+    flat_rows: list[Row] = [r for g in groups for r in g]
+    if limit is not None:
+        flat_rows = flat_rows[: max(0, limit)]
+
+    return format_rich_table(flat_rows)
 
 
 def parse_args() -> argparse.Namespace:
@@ -245,12 +334,6 @@ def parse_args() -> argparse.Namespace:
         help="Directory containing templates (default: ./templates)",
     )
     ap.add_argument(
-        "--format",
-        choices=["text", "json", "md"],
-        default="text",
-        help="Output format (default: text)",
-    )
-    ap.add_argument(
         "--sort",
         choices=["mean", "lcb", "ucb"],
         default="mean",
@@ -260,7 +343,6 @@ def parse_args() -> argparse.Namespace:
         "--asc", action="store_true", default=False, help="Sort ascending"
     )
     ap.add_argument("--limit", type=int, default=None)
-    ap.add_argument("--since", type=int, default=None)
     return ap.parse_args()
 
 
@@ -270,11 +352,9 @@ def main() -> int:
         out = generate(
             runs_dir=args.runs_dir,
             templates_dir=args.templates_dir,
-            fmt=args.format,
             sort_key=args.sort,
             asc=bool(args.asc),
             limit=args.limit,
-            since=args.since,
         )
     except Exception as e:
         print(str(e), file=sys.stderr)

@@ -1,26 +1,37 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import copy
 import json
 import os
 import re
-import sys
 from pathlib import Path
 from typing import Any
-
-# Reuse shared constants
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # add project dir to path
-from constants import TOOLS_HEADER  # type: ignore
 
 PROVIDER_WIRE = Path(
     os.environ.get(
         "CRUSH_WIRE_LOG", str(Path.home() / ".crush" / "logs" / "provider-wire.log")
     )
 )
+DEMO_TEMPLATE = Path(__file__).parent / "demo_template.txt"
 
 ENV_INTRO = "Here is useful information about the environment you are running in:"
 MODEL_PREFIX = "You are powered by the model"
 MCP_HEADER = "# MCP Server Instructions"
+TOOLS_HEADER = "You can use the following tools without requiring user approval:"
+
+
+def ensure_demo_template() -> Path:
+    if not DEMO_TEMPLATE.exists():
+        DEMO_TEMPLATE.write_text(
+            (
+                "You are an interactive CLI tool that helps users with software engineering tasks. Use the instructions below and the tools available to you to assist the user.\n\n"
+                "${toolsBlob}\n"
+                "${envGitBlobs}${modelLine}${mcpSection}\n"
+            ),
+            encoding="utf-8",
+        )
+    return DEMO_TEMPLATE
 
 
 def iter_wire_lines(path: Path):
@@ -44,10 +55,6 @@ def maybe_extract_payload(obj: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def extract_system_text_from_responses_input(payload: dict[str, Any]) -> str:
-    """Crush Responses requests can have input as a list of items with optional roles.
-    We treat leading items (before first explicit user) as system and join their text.
-    Each item's content may be a string or a list of parts with keys like text/input_text/content.
-    """
     inp = payload.get("input")
     if not isinstance(inp, list):
         return ""
@@ -76,14 +83,12 @@ def extract_system_text_from_responses_input(payload: dict[str, Any]) -> str:
 
 def extract_ccr_blobs(system_text: str) -> dict[str, Any]:
     s = system_text or ""
-    # envGitBlobs: all <env>...</env> blocks following the intro line
     envGitBlobs: list[str] = []
     if ENV_INTRO in s:
         env_re = re.compile(
             re.escape(ENV_INTRO) + r"\n<env>[\s\S]*?</env>\s*", re.MULTILINE
         )
         envGitBlobs = [m.group(0) for m in env_re.finditer(s)]
-    # toolsBlob: text after TOOLS_HEADER until next known header
     toolsBlob = ""
     i_tools = s.find(TOOLS_HEADER)
     if i_tools != -1:
@@ -99,10 +104,8 @@ def extract_ccr_blobs(system_text: str) -> dict[str, Any]:
         ]
         end = min(nxt) if nxt else len(s)
         toolsBlob = s[after:end]
-    # modelLine: first line starting with MODEL_PREFIX
     mm = re.search(r"^" + re.escape(MODEL_PREFIX) + r"[^\n]*\n?", s, flags=re.MULTILINE)
     modelLine = mm.group(0) if mm else ""
-    # mcpSection: all content after the MCP header's newline
     mcpSection = ""
     i_mcp = s.find(MCP_HEADER)
     if i_mcp != -1:
@@ -120,8 +123,9 @@ def rewrite_system_with_template_py(system_text: str, template_path: Path) -> st
     template = Path(template_path).read_text(encoding="utf-8")
     blobs = extract_ccr_blobs(system_text)
     placeholders = ["${toolsBlob}", "${envGitBlobs}", "${modelLine}", "${mcpSection}"]
+    # Ensure exactly once
     for ph in placeholders:
-        cnt = len(re.findall(re.escape(ph), template))
+        cnt = template.count(ph)
         if cnt != 1:
             raise RuntimeError(f"template placeholder {ph} count={cnt} (expected 1)")
     out = (
@@ -136,8 +140,44 @@ def rewrite_system_with_template_py(system_text: str, template_path: Path) -> st
     return out
 
 
+def build_rewritten_request(
+    orig: dict[str, Any], new_system_text: str
+) -> dict[str, Any]:
+    req = copy.deepcopy(orig)
+    inp = req.get("input")
+    if not isinstance(inp, list):
+        req["input"] = [
+            {
+                "role": "system",
+                "content": [{"type": "input_text", "text": new_system_text}],
+            },
+        ]
+        return req
+    # Keep only first 2 non-system items for readability
+    # Find first explicit user index
+    first_user = None
+    for i, it in enumerate(inp):
+        if (
+            isinstance(it, dict)
+            and (it.get("role") or it.get("message_role") or "").lower() == "user"
+        ):
+            first_user = i
+            break
+    tail = inp[first_user:] if first_user is not None else []
+    tail = tail[:2]
+    req["input"] = [
+        {
+            "role": "system",
+            "content": [{"type": "input_text", "text": new_system_text}],
+        },
+        *tail,
+    ]
+    return req
+
+
 def main():
-    # Find first Responses request
+    tpl = ensure_demo_template()
+    # Find first request
     for line in iter_wire_lines(PROVIDER_WIRE):
         try:
             e = json.loads(line)
@@ -148,27 +188,27 @@ def main():
         payload = maybe_extract_payload(e)
         if not payload:
             continue
+        # Shorten original for display (limit input to first 3 entries)
+        orig = copy.deepcopy(payload)
+        if isinstance(orig.get("input"), list) and len(orig["input"]) > 3:
+            orig["input"] = orig["input"][:3]
         sys_text = extract_system_text_from_responses_input(payload)
-        blobs = extract_ccr_blobs(sys_text)
+        new_sys = rewrite_system_with_template_py(sys_text, tpl)
+        rewritten = build_rewritten_request(payload, new_sys)
+        if isinstance(rewritten.get("input"), list) and len(rewritten["input"]) > 3:
+            rewritten["input"] = rewritten["input"][:3]
         print(
             json.dumps(
                 {
-                    "path": str(PROVIDER_WIRE),
-                    "timestamp": e.get("ts"),
-                    "has_tools_header": (TOOLS_HEADER in sys_text),
-                    "sys_preview": sys_text[:2000],
-                    "blobs": {
-                        "toolsBlob_len": len(blobs["toolsBlob"]),
-                        "envGitBlobs_count": len(blobs["envGitBlobs"]),
-                        "modelLine_present": bool(blobs["modelLine"]),
-                        "mcpSection_len": len(blobs["mcpSection"]),
-                    },
+                    "original_crush_request": orig,
+                    "rewritten_crush_request": rewritten,
                 },
                 ensure_ascii=False,
+                indent=2,
             )
         )
         return 0
-    print(json.dumps({"event": "no_request_found", "path": str(PROVIDER_WIRE)}))
+    print(json.dumps({"error": "no request found", "path": str(PROVIDER_WIRE)}))
     return 1
 
 

@@ -130,12 +130,20 @@ def cmd_extract(
     if src == "crush":
         out_path = output or extract_dataset_crush.OUTPUT_PATH
         out_path.parent.mkdir(parents=True, exist_ok=True)
-        logs: list[Path]
+        logs: list[Path] = []
         if wire_log:
             logs = [wire_log]
         else:
-            roots = scan_dir or [Path.home() / "code"]
-            logs = extract_dataset_crush.find_wire_logs(roots)
+            # Prefer default single log if it exists, else scan ~/.crush, else scan provided dirs
+            default_log = extract_dataset_crush.DEFAULT_WIRE_LOG
+            roots = scan_dir or [Path.home() / ".crush"]
+            logs = []
+            if isinstance(default_log, Path) and default_log.exists():
+                logs.append(default_log)
+            logs.extend(extract_dataset_crush.find_wire_logs(roots))
+            # Dedup while preserving order
+            seen = set()
+            logs = [p for p in logs if not (str(p) in seen or seen.add(str(p)))]
         total = 0
         with out_path.open("w", encoding="utf-8") as out_f:
             for log_path in logs:
@@ -176,20 +184,17 @@ def cmd_leaderboard(
         "--templates-dir",
         help="Directory containing templates (baseline and proposals)",
     ),
-    fmt: str = typer.Option("text", "--format", help="Output format: text|json|md"),
     sort_key: str = typer.Option("mean", "--sort", help="Sort key: mean|lcb|ucb"),
     asc: bool = typer.Option(False, "--asc", help="Sort ascending"),
     limit: int | None = typer.Option(None, "--limit", help="Limit rows"),
-    since: int | None = typer.Option(None, "--since", help="Only runs >= timestamp"),
+    # --since removed; grouping by template consolidates runs regardless of timestamp
 ):
     out = leaderboard.generate(
         runs_dir=runs_dir,
         templates_dir=templates_dir,
-        fmt=fmt,
         sort_key=sort_key,
         asc=asc,
         limit=limit,
-        since=since,
     )
     print(out)
 

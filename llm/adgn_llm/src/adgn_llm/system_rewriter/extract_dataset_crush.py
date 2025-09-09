@@ -32,20 +32,19 @@ from __future__ import annotations
 
 import argparse
 import json
+import time
 import os
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from openai.types.responses import ResponseCreateParams
-from pydantic import TypeAdapter
 
 ROOT = Path(__file__).parent
 DEFAULT_CRUSH_DIR = Path.home() / "code" / "crush"
 DEFAULT_WIRE_LOG = (
     Path(os.environ.get("CRUSH_WIRE_LOG", ""))
     if os.environ.get("CRUSH_WIRE_LOG")
-    else (Path.home() / ".crush" / "logs" / "provider-wire.log")
+    else (Path.home() / ".crush" / "logs" / "provider" / "provider-wire.log")
 )
 OUTPUT_PATH = ROOT / "data" / "dataset_crush.jsonl"
 
@@ -119,8 +118,7 @@ def maybe_extract_payload(obj: dict[str, Any]) -> dict[str, Any] | None:
 def _extract_input_messages(
     payload: dict[str, Any],
 ) -> tuple[list[dict[str, Any]] | None, bool]:
-    """Best-effort extraction of system/user messages from OpenAI Responses params.
-    Returns (messages, has_tools_header)."""
+    """Extract messages from Responses API payload (input array)."""
     inp = payload.get("input")
     if not isinstance(inp, list):
         return None, False
@@ -141,7 +139,6 @@ def _extract_input_messages(
             if isinstance(content, list):
                 for c in content:
                     if isinstance(c, dict):
-                        # Typical shape: {"type": "input_text", "text": "..."}
                         t = c.get("text") or c.get("input_text") or c.get("content")
                         if isinstance(t, str):
                             texts.append(t)
@@ -160,9 +157,46 @@ def _extract_input_messages(
     return (msgs if msgs else None), has_header
 
 
+def _extract_chat_messages(
+    payload: dict[str, Any],
+) -> tuple[list[dict[str, Any]] | None, bool]:
+    """Extract messages from Chat Completions payload (messages array)."""
+    arr = payload.get("messages")
+    if not isinstance(arr, list):
+        return None, False
+    msgs: list[dict[str, Any]] = []
+    has_header = False
+    for m in arr:
+        if not isinstance(m, dict):
+            continue
+        role = (m.get("role") or "").lower()
+        content = m.get("content")
+        if isinstance(content, str):
+            text = content
+        elif isinstance(content, list):
+            # list of parts: {type: "text", text: "..."}
+            texts: list[str] = []
+            for c in content:
+                if isinstance(c, dict) and isinstance(c.get("text"), str):
+                    texts.append(c["text"])   
+            text = "\n".join(texts) if texts else ""
+        else:
+            text = ""
+        if role in ("system", "user", "assistant") and text:
+            if role == "system" and TOOLS_HEADER in text:
+                has_header = True
+            msgs.append({"role": role, "content": text})
+    return (msgs if msgs else None), has_header
+
+
 def process_wire(path: Path, require_bad: bool = False) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
+    lines = 0
+    kept = 0
+    last_tick = time.monotonic()
+    interval = 2.0
     for line in iter_wire_lines(path):
+        lines += 1
         try:
             e = json.loads(line)
         except json.JSONDecodeError:
@@ -172,25 +206,34 @@ def process_wire(path: Path, require_bad: bool = False) -> list[dict[str, Any]]:
         payload = maybe_extract_payload(e)
         if not payload:
             continue
-        # Validate against OpenAI Responses schema via Pydantic TypeAdapter (ResponseCreateParams is a TypedDict)
-        rr = TypeAdapter(ResponseCreateParams).validate_python(payload)
-        # Reconstruct user messages to check for BAD marker
-        messages, has_header = _extract_input_messages(payload)
-        last_text = find_last_user_text_msg(messages)
-        if not has_header:
+        # Extract messages from either Responses or Chat payloads
+        messages = None
+        has_header = False
+        if isinstance(payload, dict) and "input" in payload:
+            messages, has_header = _extract_input_messages(payload)
+        elif isinstance(payload, dict) and "messages" in payload:
+            messages, has_header = _extract_chat_messages(payload)
+        else:
             continue
+        last_text = find_last_user_text_msg(messages)
         if require_bad and (not last_text or BAD_MARKER not in last_text):
             continue
         out.append(
             {
                 "timestamp": parse_rfc3339_millis(e.get("ts")),
-                "oai_request": rr,
+                "oai_request": payload,
                 "wirelog": {
                     "event_type": e.get("event_type"),
                     "path": str(path),
                 },
             },
         )
+        kept += 1
+        now = time.monotonic()
+        if now - last_tick >= interval:
+            print(json.dumps({"event": "progress", "file": str(path), "lines": lines, "kept": kept}))
+            last_tick = now
+    print(json.dumps({"event": "file_done", "file": str(path), "lines": lines, "kept": kept}))
     return out
 
 

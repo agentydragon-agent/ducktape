@@ -2,19 +2,26 @@
 from __future__ import annotations
 
 from pathlib import Path
+from contextlib import asynccontextmanager
 
 import pytest
 
 from adgn_llm.mcp.editor_server import make_editor_mcp, is_python_path
-from adgn_llm.mcp.inproc import open_fastmcp_client_session
+from adgn_llm.mcp.inproc_utils import make_inproc_slot_spec
+from adgn_llm.mini_codex.mcp_manager import McpManager
 
 
 @pytest.fixture
 def editor_session():
     """Factory fixture yielding an in-proc FastMCP client session context manager for a given path."""
 
-    def _open(p: Path):
-        return open_fastmcp_client_session(lambda: make_editor_mcp(p))
+    @asynccontextmanager
+    async def _open(p: Path):
+        # Open a one-off in-proc MCP session via the standard wrapper
+        spec = make_inproc_slot_spec(make_editor_mcp(p))
+        async with McpManager({"editor": spec}) as mcp:
+            sess = await mcp.get_session("editor")
+            yield sess
 
     return _open
 

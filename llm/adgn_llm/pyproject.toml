@@ -40,6 +40,7 @@ dependencies = [
   "requests>=2.32.5",
   "aiolimiter>=1.1.0",
   "pyhamcrest>=2.1",
+  "rich>=13.0.0",
 ]
 
 [project.scripts]
@@ -87,6 +88,7 @@ line-length = 120
 # Exclude generated/third‑party specimen snapshots from lint (vendored code not maintained here)
 extend-exclude = [
   "**/scratch/**",
+  "**/specimens/**",
   "src/adgn_llm/properties/specimens/**",
 ]
 
@@ -102,6 +104,7 @@ extend-ignore = [
 # Exclude embedded specimen repos from discovery
 markers = [
   "live_llm: Tests that exercise the real OpenAI API (requires env credentials)",
+  "macos: macOS-only tests",
 ]
 norecursedirs = [
   "**/scratch",

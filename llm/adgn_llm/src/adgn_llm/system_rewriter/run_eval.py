@@ -719,7 +719,7 @@ async def run_eval(
                         "status": "sampler_error",
                         "error": str(e),
                     }
-                    log_event(msg, stderr=True)
+                    log_event(msg)
                     return None, None
                 new_asst_obj = samp.choices[0].message.model_dump()
                 # For grader context construction later
@@ -949,6 +949,93 @@ async def run_eval(
             "function_counts": {},
         },
     }
+    def compute_and_write_summary(final: bool = False) -> None:
+        # Compute mean and 95% CI (normal approx)
+        mean = sum(scores) / len(scores) if scores else 0.0
+        var = (
+            sum((x - mean) ** 2 for x in scores) / (len(scores) - 1)
+            if len(scores) > 1
+            else 0.0
+        )
+        se = math.sqrt(var / len(scores)) if len(scores) > 0 else 0.0
+        ci95 = 1.96 * se
+        lcb = mean - ci95
+        ucb = mean + ci95
+        # Secondary metrics
+        total_samples = tool_stats["total_samples"] or 0
+        total_tool_calls = (
+            sum(tool_stats["function_counts"].values())
+            if tool_stats["function_counts"]
+            else 0
+        )
+        function_pct = {
+            k: (v / total_tool_calls) if total_tool_calls > 0 else 0.0
+            for k, v in tool_stats["function_counts"].items()
+        }
+        # Per-source summaries
+        def _mk_basic(scores_list: list[float]) -> tuple[float, float, float, float]:
+            if not scores_list:
+                return 0.0, 0.0, 0.0, 0.0
+            m = sum(scores_list) / len(scores_list)
+            v = (
+                (sum((x - m) ** 2 for x in scores_list) / (len(scores_list) - 1))
+                if len(scores_list) > 1
+                else 0.0
+            )
+            se_ = math.sqrt(v / len(scores_list)) if len(scores_list) > 0 else 0.0
+            ci_ = 1.96 * se_
+            return m, ci_, m - ci_, m + ci_
+        by_source: dict[str, Any] = {}
+        for sname in ("ccr", "crush"):
+            m_s, ci_s, l_s, u_s = _mk_basic(scores_by_source[sname])
+            ts_s = tool_stats_by_source[sname]
+            total_s = ts_s["total_samples"] or 0
+            total_tool_calls_s = (
+                sum(ts_s["function_counts"].values()) if ts_s["function_counts"] else 0
+            )
+            func_pct_s = {
+                k: (v / total_tool_calls_s) if total_tool_calls_s > 0 else 0.0
+                for k, v in ts_s["function_counts"].items()
+            }
+            by_source[sname] = {
+                "n": len(scores_by_source[sname]),
+                "mean": m_s,
+                "ci95": {"lcb": l_s, "ucb": u_s},
+                "tooling": {
+                    "total_samples": total_s,
+                    "text_only_pct": ((ts_s["text_only"] / total_s) if total_s else 0.0),
+                    "with_tools_pct": ((ts_s["with_tools"] / total_s) if total_s else 0.0),
+                    "function_counts": ts_s["function_counts"],
+                    "function_pct": func_pct_s,
+                },
+            }
+        summary = {
+            "n": len(scores),
+            "mean": mean,
+            "ci95": {"lcb": lcb, "ucb": ucb},
+            "counters": counters,
+            "tooling": {
+                "total_samples": total_samples,
+                "text_only_pct": (
+                    (tool_stats["text_only"] / total_samples) if total_samples > 0 else 0.0
+                ),
+                "with_tools_pct": (
+                    (tool_stats["with_tools"] / total_samples) if total_samples > 0 else 0.0
+                ),
+                "function_counts": tool_stats["function_counts"],
+                "function_pct": function_pct,
+            },
+            "by_source": by_source,
+        }
+        with summary_out.open("w", encoding="utf-8") as f:
+            json.dump(summary, f, sort_keys=True)
+        log_event({
+            "event": "summary_final" if final else "summary_progress",
+            "n": summary["n"],
+            "mean": summary["mean"],
+            "ci95": summary["ci95"],
+        })
+
     with (
         samples_out.open("w", encoding="utf-8") as s_out,
         grades_out.open("w", encoding="utf-8") as g_out,
@@ -1014,95 +1101,13 @@ async def run_eval(
                             },
                         ),
                     )
+                    compute_and_write_summary(False)
                 except Exception as e:
                     counters["grader_errors"] += 1
                     log_event({"status": "aggregate_parse_error", "error": str(e)})
 
-    # Compute mean and 95% CI (normal approx)
-
-    mean = sum(scores) / len(scores) if scores else 0.0
-    var = (
-        sum((x - mean) ** 2 for x in scores) / (len(scores) - 1)
-        if len(scores) > 1
-        else 0.0
-    )
-    se = math.sqrt(var / len(scores)) if len(scores) > 0 else 0.0
-    ci95 = 1.96 * se
-    out_dir.mkdir(parents=True, exist_ok=True)
-    lcb = mean - ci95
-    ucb = mean + ci95
-    # Compute secondary metrics
-    total_samples = tool_stats["total_samples"] or 0
-    total_tool_calls = (
-        sum(tool_stats["function_counts"].values())
-        if tool_stats["function_counts"]
-        else 0
-    )
-    function_pct = {
-        k: (v / total_tool_calls) if total_tool_calls > 0 else 0.0
-        for k, v in tool_stats["function_counts"].items()
-    }
-
-    # Per-source summaries
-    def mk_basic_stats(scores_list: list[float]) -> tuple[float, float, float, float]:
-        if not scores_list:
-            return 0.0, 0.0, 0.0, 0.0
-        m = sum(scores_list) / len(scores_list)
-        v = (
-            (sum((x - m) ** 2 for x in scores_list) / (len(scores_list) - 1))
-            if len(scores_list) > 1
-            else 0.0
-        )
-        se_ = math.sqrt(v / len(scores_list)) if len(scores_list) > 0 else 0.0
-        ci_ = 1.96 * se_
-        return m, ci_, m - ci_, m + ci_
-
-    by_source: dict[str, Any] = {}
-    for sname in ("ccr", "crush"):
-        m_s, ci_s, l_s, u_s = mk_basic_stats(scores_by_source[sname])
-        ts_s = tool_stats_by_source[sname]
-        total_s = ts_s["total_samples"] or 0
-        total_tool_calls_s = (
-            sum(ts_s["function_counts"].values()) if ts_s["function_counts"] else 0
-        )
-        func_pct_s = {
-            k: (v / total_tool_calls_s) if total_tool_calls_s > 0 else 0.0
-            for k, v in ts_s["function_counts"].items()
-        }
-        by_source[sname] = {
-            "n": len(scores_by_source[sname]),
-            "mean": m_s,
-            "ci95": {"lcb": l_s, "ucb": u_s},
-            "tooling": {
-                "total_samples": total_s,
-                "text_only_pct": ((ts_s["text_only"] / total_s) if total_s else 0.0),
-                "with_tools_pct": ((ts_s["with_tools"] / total_s) if total_s else 0.0),
-                "function_counts": ts_s["function_counts"],
-                "function_pct": func_pct_s,
-            },
-        }
-
-    summary = {
-        "n": len(scores),
-        "mean": mean,
-        "ci95": {"lcb": lcb, "ucb": ucb},
-        "counters": counters,
-        "tooling": {
-            "total_samples": total_samples,
-            "text_only_pct": (
-                (tool_stats["text_only"] / total_samples) if total_samples > 0 else 0.0
-            ),
-            "with_tools_pct": (
-                (tool_stats["with_tools"] / total_samples) if total_samples > 0 else 0.0
-            ),
-            "function_counts": tool_stats["function_counts"],
-            "function_pct": function_pct,
-        },
-        "by_source": by_source,
-    }
-    with summary_out.open("w", encoding="utf-8") as f:
-        json.dump(summary, f, sort_keys=True)
-    log_event(summary)
+    # Final summary after all grades
+    compute_and_write_summary(True)
 
     # Generate HTML report summarizing sequences per sample
     def _generate_html_report(report_base: Path):
@@ -1197,6 +1202,10 @@ async def run_eval(
         report_path.write_text(html_text, encoding="utf-8")
 
     _generate_html_report(out_dir)
+    # Emit report path for convenience
+    report_path = out_dir / "report.html"
+    print(json.dumps({"event": "report_written", "path": str(report_path)}))
+    print(str(report_path))
 
 
 def main():
