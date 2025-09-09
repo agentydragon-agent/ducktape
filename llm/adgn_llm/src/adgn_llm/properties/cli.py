@@ -705,13 +705,13 @@ def main(argv: list[str] | None = None) -> int:
         epilog=(
             "Examples:\n"
             "  # Check current repo for violations under a static path set\n"
-            "  adgn-codex-properties check $(pwd) 'all files under src/**' --dry-run\n\n"
+            "  adgn-properties check $(pwd) 'all files under src/**' --dry-run\n\n"
             "  # Fix code on a static path set (workspace-write sandbox)\n"
-            "  adgn-codex-properties fix $(pwd) 'all files under src/**'\n\n"
+            "  adgn-properties fix $(pwd) 'all files under src/**'\n\n"
             "  # Check a saved specimen by name (uses manifest.yaml)\n"
-            "  adgn-codex-properties specimen-check 2025-09-02-ducktape_wt --dry-run\n\n"
+            "  adgn-properties specimen-check 2025-09-02-ducktape_wt --dry-run\n\n"
             "  # Discover only-new findings vs specimen notes\n"
-            "  adgn-codex-properties specimen-discover 2025-09-02-ducktape_wt --dry-run\n"
+            "  adgn-properties specimen-discover 2025-09-02-ducktape_wt --dry-run\n"
         ),
     )
     sub = parser.add_subparsers(dest="command", required=True)

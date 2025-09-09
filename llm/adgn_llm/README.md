@@ -14,7 +14,7 @@ python -m pip install -e llm/adgn_llm
 CLI examples:
 
 ```bash
-adgn-codex-properties find /path/to/repo "all files under internal/app/**"
+adgn-properties find /path/to/repo "all files under internal/app/**"
 ```
 
 ```bash

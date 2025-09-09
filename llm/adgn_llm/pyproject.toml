@@ -43,9 +43,9 @@ dependencies = [
 ]
 
 [project.scripts]
-adgn-sysrw-extract-crush = "adgn_llm.system_rewriter.extract_dataset_crush:main"
+adgn-sysrw = "adgn_llm.system_rewriter.cli:app"
 adgn-mini-codex = "adgn_llm.mini_codex.cli:main"
-adgn-codex-properties = "adgn_llm.properties.cli:main"
+adgn-properties = "adgn_llm.properties.cli:main"
 git-commit-ai = "adgn_llm.git_commit_ai.cli:main"
 sandbox-jupyter-mcp = "adgn_llm.mcp.sandboxed_jupyter_mcp.wrapper:main"
 adgn-sandboxer = "adgn_llm.sandboxer:main"

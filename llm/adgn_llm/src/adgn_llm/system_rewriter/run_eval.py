@@ -1343,7 +1343,7 @@ async def run_eval(
     _generate_html_report(out_dir)
 
 
-if __name__ == "__main__":
+def main():
     args = parse_args()
     # Allow mixing multiple datasets in one run via repeated --dataset
     dataset_paths: list[Path] = [Path(p) for p in (args.dataset or [])]
@@ -1353,3 +1353,7 @@ if __name__ == "__main__":
     asyncio.run(
         run_eval(Path(args.template), dataset_paths, base_out, args.n, args.concurrency)
     )
+
+
+if __name__ == "__main__":
+    main()
