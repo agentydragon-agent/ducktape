@@ -400,28 +400,23 @@ def main() -> int:
             print(f"sandboxer: policy echo failed: {e}", file=sys.stderr)
 
     # Resolve sandbox-exec
-    sx = shutil.which("sandbox-exec")
-    if not sx:
+    if not (sx := shutil.which("sandbox-exec")):
         print("sandboxer: sandbox-exec not found (macOS only)", file=sys.stderr)
         return 4
 
     # Execute under sandbox
-    try:
-        sx_args = [sx]
-        for k, v in defs.items():
-            sx_args += ["-D", f"{k}={v}"]
-        sx_args += ["-f", str(sb_path), *cmd]
-        if args.debug:
-            print(
-                "sandboxer: exec:",
-                " ".join(_sh.quote(x) for x in sx_args),
-                file=sys.stderr,
-            )
-        proc = subprocess.Popen(sx_args, env=child_env)
-        return proc.wait()
-    finally:
-        # Keep tmpdir for trace inspection on failure; otherwise could be cleaned
-        pass
+    sx_args = [sx]
+    for k, v in defs.items():
+        sx_args += ["-D", f"{k}={v}"]
+    sx_args += ["-f", str(sb_path), *cmd]
+    if args.debug:
+        print(
+            "sandboxer: exec:",
+            " ".join(_sh.quote(x) for x in sx_args),
+            file=sys.stderr,
+        )
+    proc = subprocess.Popen(sx_args, env=child_env)
+    return proc.wait()
 
 
 if __name__ == "__main__":

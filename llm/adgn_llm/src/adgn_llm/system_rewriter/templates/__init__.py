@@ -30,9 +30,7 @@ def validate_template_text(text: str) -> None:
     # Duplicates
     dups = [m for m in required if text.count(m) > 1]
     if dups:
-        raise RuntimeError(
-            "Invalid template: duplicate placeholders (>1 occurrence): " + ", ".join(dups)
-        )
+        raise RuntimeError("Invalid template: duplicate placeholders (>1 occurrence): " + ", ".join(dups))
     # Unsupported tokens
     tokens = _TOKEN_RE.findall(text)
     bad = [t for t in tokens if t not in _ALLOWED_VARS]
@@ -40,8 +38,7 @@ def validate_template_text(text: str) -> None:
         # Dedup and format like '{{foo}}'
         uniq = sorted({t for t in bad})
         raise RuntimeError(
-            "Invalid template: unsupported tokens present: "
-            + ", ".join(["{{" + b + "}}" for b in uniq])
+            "Invalid template: unsupported tokens present: " + ", ".join(["{{" + b + "}}" for b in uniq])
         )
 
 

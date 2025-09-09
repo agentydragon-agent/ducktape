@@ -12,12 +12,7 @@ from adgn_llm.mini_codex.mcp_manager import (
     McpManager,
 )
 
-# FastMCP stdio client
-try:
-    from mcp.client.stdio import StdioServerParameters, stdio_client
-except Exception:  # pragma: no cover
-    stdio_client = None  # type: ignore[assignment]
-    StdioServerParameters = None  # type: ignore[assignment]
+# FastMCP stdio client (hard import)
 
 
 @pytest.mark.asyncio
@@ -28,8 +23,6 @@ async def test_stdio_server_list_tools() -> None:
     """
     if shutil.which("npx") is None:
         pytest.skip("npx not found in PATH; required for server-everything")
-    if stdio_client is None or StdioServerParameters is None:
-        pytest.skip("FastMCP stdio client not available")
 
     # Preflight: verify server-everything can start (help) quickly; skip if not
     try:

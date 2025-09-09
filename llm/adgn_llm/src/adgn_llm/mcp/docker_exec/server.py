@@ -17,16 +17,15 @@ from typing import Dict
 
 from mcp.server.fastmcp import FastMCP
 
-# Shared names for wiring and renderers
-SERVER_NAME = "docker"
-TOOL_EXEC_NAME = "docker_exec"
-
-# Shared container session core
 from .._shared.container_session import (
     make_container_lifespan,
     register_container,
     NetworkMode,
 )
+
+# Shared names for wiring and renderers
+SERVER_NAME = "docker"
+TOOL_EXEC_NAME = "docker_exec"
 
 
 def make_container_exec_mcp(

@@ -11,9 +11,6 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.rule import Rule
 from .templates import validate_template_file
-from rich.console import Console
-from rich.panel import Panel
-from rich.rule import Rule
 
 from . import run_eval
 from . import compare_eval_vs_ccr

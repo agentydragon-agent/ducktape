@@ -14,9 +14,10 @@ from dataclasses import dataclass
 from importlib.resources import files
 from pathlib import Path
 
-from openai import AsyncOpenAI
 import structlog
+from adgn_llm.logging_config import configure_logging
 import tiktoken
+from openai import AsyncOpenAI
 
 from .specimen_utils import (
     build_scope_text,
@@ -686,23 +687,8 @@ def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.WARNING)
     logging.getLogger().setLevel(logging.WARNING)
 
-    renderer = (
-        structlog.processors.JSONRenderer()
-        if os.environ.get("MINICODEX_DEBUG")
-        else structlog.processors.KeyValueRenderer(
-            key_order=["event"],
-        )  # stable, grep-friendly
-    )
-    min_level = logging.DEBUG if os.environ.get("MINICODEX_DEBUG") else logging.WARNING
-    structlog.configure(
-        processors=[
-            structlog.processors.TimeStamper(fmt="iso"),
-            structlog.processors.add_log_level,
-            renderer,
-        ],
-        wrapper_class=structlog.make_filtering_bound_logger(min_level),
-        logger_factory=structlog.PrintLoggerFactory(),
-    )
+    # Single, centralized logging config (structlog -> stdlib; console WARNING; optional file)
+    configure_logging()
 
     parser = argparse.ArgumentParser(
         description="adgn-llm codex properties CLI",

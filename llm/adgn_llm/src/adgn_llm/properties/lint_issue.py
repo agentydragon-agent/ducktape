@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-import asyncio
 import json
 import shutil
-import subprocess
 import tarfile
 import tempfile
 import time
@@ -19,10 +17,27 @@ from adgn_llm.mcp.docker_exec.server import make_container_exec_mcp
 from adgn_llm.mcp.inproc_utils import make_inproc_slot_spec
 from adgn_llm.mini_codex.agent import MiniCodex
 from adgn_llm.mini_codex.mcp_manager import McpManager, build_mcp_function
-from adgn_llm.mini_codex.loop_control import LoopController, BaseLoopController
-from adgn_llm.mcp.docker_exec.server import SERVER_NAME as DOCKER_SERVER_NAME, TOOL_EXEC_NAME as DOCKER_EXEC_TOOL_NAME
-from adgn_llm.mini_codex.event_renderer import ConsoleEventRenderer, PrettyPrintController
-from .specimen_utils import Specimen, ensure_archive_for_specimen_slug, LineRange, Occurrence
+from adgn_llm.mini_codex.loop_control import (
+    LoopController,
+    BaseLoopController,
+    Continue,
+    Auto,
+    SyntheticAction,
+)
+from adgn_llm.mcp.docker_exec.server import (
+    SERVER_NAME as DOCKER_SERVER_NAME,
+    TOOL_EXEC_NAME as DOCKER_EXEC_TOOL_NAME,
+)
+from adgn_llm.mini_codex.event_renderer import (
+    ConsoleEventRenderer,
+    PrettyPrintController,
+)
+from .specimen_utils import (
+    Specimen,
+    ensure_archive_for_specimen_slug,
+    LineRange,
+    Occurrence,
+)
 
 DOCKER_IMAGE = "python:3.12-slim"
 
@@ -35,7 +50,9 @@ class LintConfig:
     dry_run: bool = False
 
 
-def _load_single_issue(specimen: str, issue_id: str, gitconfig: str | None) -> tuple[Specimen, Path, Any]:
+def _load_single_issue(
+    specimen: str, issue_id: str, gitconfig: str | None
+) -> tuple[Specimen, Path, Any]:
     sp = Specimen.load(specimen)
     # Ensure we have a fresh, private checkout/copy of the specimen source.
     # TODO(mpokorny): Plumb a cleaner auth mechanism; for now auto-read a local gitconfig if present.
@@ -70,7 +87,9 @@ def _find_property_files(property_ids: list[str]) -> list[Path]:
     return sorted(found, key=lambda p: p.as_posix())
 
 
-def _build_prompt(issue: Any, property_md_files: list[Path], occurrence: Any | None = None) -> str:
+def _build_prompt(
+    issue: Any, property_md_files: list[Path], occurrence: Any | None = None
+) -> str:
     # Do not include specimen slug or issue id. Include only issue fields and property definitions.
     # The agent will read code from /workspace via MCP.
     issue_dict = issue.model_dump(exclude_none=True)
@@ -134,16 +153,6 @@ async def _run_agent(
         return result.text.strip() if result.text else ""
 
 
-def _nl_slice_cmd(path: str, r: LineRange | None) -> str:
-    q = path.replace('"', '\\"')
-    if r is None:
-        # Cap to first 2000 lines for safety
-        return f"bash -lc \"nl -ba -w1 -s' ' '/workspace/{q}' | sed -n '1,2000p'\""
-    if r.end_line is None:
-        return f"bash -lc \"nl -ba -w1 -s' ' '/workspace/{q}' | sed -n '{r.start_line},$p'\""
-    return f"bash -lc \"nl -ba -w1 -s' ' '/workspace/{q}' | sed -n '{r.start_line},{r.end_line}p'\""
-
-
 def _make_bootstrap_controller(occ: Occurrence, content_root: Path) -> LoopController:
     # Deterministic bootstrap with serial steps:
     # Turn 1: read docker container info resource
@@ -177,12 +186,14 @@ def _make_bootstrap_controller(occ: Occurrence, content_root: Path) -> LoopContr
             type="function_call",
             name="mcp__resources__read",
             call_id="bootstrap:res",
-            arguments=json.dumps({
-                "server": "docker",
-                "uri": "resource://container.info",
-                "start_offset": 0,
-                "max_bytes": 65536,
-            }),
+            arguments=json.dumps(
+                {
+                    "server": "docker",
+                    "uri": "resource://container.info",
+                    "start_offset": 0,
+                    "max_bytes": 65536,
+                }
+            ),
         )
     ]
 
@@ -194,9 +205,11 @@ def _make_bootstrap_controller(occ: Occurrence, content_root: Path) -> LoopContr
                 type="function_call",
                 name=build_mcp_function(DOCKER_SERVER_NAME, DOCKER_EXEC_TOOL_NAME),
                 call_id="bootstrap:ls",
-                arguments=json.dumps({
-                    "cmd": ["ls", "-la", *dir_args],
-                }),
+                arguments=json.dumps(
+                    {
+                        "cmd": ["ls", "-la", *dir_args],
+                    }
+                ),
             )
         ]
     else:
@@ -217,7 +230,7 @@ def _make_bootstrap_controller(occ: Occurrence, content_root: Path) -> LoopContr
                 ResponseFunctionToolCall(
                     type="function_call",
                     name=build_mcp_function(DOCKER_SERVER_NAME, DOCKER_EXEC_TOOL_NAME),
-                    call_id=f"bootstrap:show:{len(out)+1}",
+                    call_id=f"bootstrap:show:{len(out) + 1}",
                     arguments=json.dumps({"cmd": cmd}),
                 )
             )
@@ -226,6 +239,7 @@ def _make_bootstrap_controller(occ: Occurrence, content_root: Path) -> LoopContr
     class _BootstrapCtrl(BaseLoopController):
         def __init__(self) -> None:
             self._step = 0
+
         def on_before_sample(self):
             self._step += 1
             if self._step == 1:
@@ -235,38 +249,8 @@ def _make_bootstrap_controller(occ: Occurrence, content_root: Path) -> LoopContr
             if self._step == 3 and files and not big_detected:
                 return SyntheticAction(outputs=_content_calls())
             return Continue(Auto())
+
     return _BootstrapCtrl()
-
-
-def _docker_run_detached(root: Path, name: str) -> str:
-    argv = [
-        "docker",
-        "run",
-        "-d",
-        "--rm",
-        "-v",
-        f"{root!s}:/workspace:ro",
-        "-w",
-        "/workspace",
-        "--name",
-        name,
-        DOCKER_IMAGE,
-        "sleep",
-        "infinity",
-    ]
-    cp = subprocess.run(argv, check=False, text=True, capture_output=True)
-    if cp.returncode != 0:
-        raise SystemExit(f"docker run failed: {cp.stderr.strip()}")
-    return cp.stdout.strip()
-
-
-def _docker_rm_force(name_or_id: str) -> None:
-    subprocess.run(
-        ["docker", "rm", "-f", name_or_id],
-        check=False,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
 
 
 def _extract_tar_gz_to(archive: Path, dst: Path) -> None:
@@ -356,7 +340,9 @@ async def run_specimen_lint_issue_async(
         props = _find_property_files([str(p) for p in issue.properties])
         prompt = _build_prompt(issue, props, occurrence=occ)
         base_ctrl = _make_bootstrap_controller(occ, content_root)
-        ctrl = PrettyPrintController(base_ctrl, renderer=ConsoleEventRenderer(show_text=False))
+        ctrl = PrettyPrintController(
+            base_ctrl, renderer=ConsoleEventRenderer(show_text=False)
+        )
         text = await _run_agent(prompt, specs, model, client, controller=ctrl)
         # Print the exact occurrence representation as fed to the model
         issue_dict = issue.model_dump(exclude_none=True)
@@ -378,5 +364,3 @@ async def run_specimen_lint_issue_async(
         # Cleanup copied workspace
         if mount_root.exists():
             shutil.rmtree(mount_root, ignore_errors=True)
-
-

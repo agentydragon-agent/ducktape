@@ -21,8 +21,10 @@ from mcp.types import InitializeResult
 # Shared MCP naming helpers/constants
 MCP_NAMESPACE_PREFIX = "mcp__"
 
+
 def build_mcp_function(server: str, tool: str) -> str:
     return f"{MCP_NAMESPACE_PREFIX}{server}__{tool}"
+
 
 def parse_mcp_function(namespaced: str) -> tuple[str, str]:
     if not namespaced.startswith(MCP_NAMESPACE_PREFIX):
@@ -32,6 +34,7 @@ def parse_mcp_function(namespaced: str) -> tuple[str, str]:
         raise ValueError(f"Invalid MCP tool name: {namespaced}")
     server, tool = remainder.split("__", 1)
     return server, tool
+
 
 # ---- DRY: open a ready session under a single ExitStack ----
 OpenFn = Callable[[AsyncExitStack], Awaitable[ClientSession]]

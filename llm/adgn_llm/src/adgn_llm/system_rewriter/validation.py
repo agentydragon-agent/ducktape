@@ -24,6 +24,7 @@ def validate_template_file(template_path: Path) -> None:
     missing = [m for m in required if m not in text]
     if missing:
         raise RuntimeError(
-            "Invalid template: missing required placeholders: " + ", ".join(missing) +
-            " — expected mustache markers like {{toolsBlob}}."
+            "Invalid template: missing required placeholders: "
+            + ", ".join(missing)
+            + " — expected mustache markers like {{toolsBlob}}."
         )

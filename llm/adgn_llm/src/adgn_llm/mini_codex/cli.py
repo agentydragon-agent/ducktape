@@ -10,6 +10,7 @@ from shutil import which
 from typing import Any, Literal
 
 import openai
+from adgn_llm.logging_config import configure_logging
 from openai.types.responses import (
     ResponseFunctionToolCall,
     ResponseOutputMessage,
@@ -343,6 +344,8 @@ async def responses_followup_with_tool_outputs(
 
 
 async def main_async() -> None:
+    # Ensure consistent logging (quiet console, optional file)
+    configure_logging()
     print("mini-codex ready. Ctrl-D to exit. Type your task and press Enter.")
 
     # Build specs: load stdio MCP servers from config if available + local exec

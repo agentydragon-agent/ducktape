@@ -24,8 +24,6 @@ ROOT = Path(str(resources.files("adgn_llm.system_rewriter")))
 DATA = ROOT / "data" / "_test"
 
 
-
-
 @pytest.mark.asyncio
 async def test_read_ccr_min():
     ds = await read_dataset(DATA / "ccr_min.jsonl")

@@ -25,6 +25,7 @@ from .schemas import (
     EvalSampleRecord,
     Sample,
 )
+from .templates import validate_template_file
 
 # Config
 DEFAULT_DATASET_PATH = Path(__file__).parent / "data" / "dataset.jsonl"
@@ -42,8 +43,6 @@ GRADER_MODEL = "gpt-5"
 
 # Paths
 REWRITE_APPLY = resources.files("adgn_llm.system_rewriter").joinpath("js/system_rewrite_apply.js")
-
-from .templates import validate_template_file
 
 
 def parse_args():

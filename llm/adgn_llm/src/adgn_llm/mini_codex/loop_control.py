@@ -117,7 +117,9 @@ class LoopController(Protocol):
     def on_tool_call(self, call: "ResponseFunctionToolCall") -> None:  # pragma: no cover - interface only
         ...
 
-    def on_function_call_output(self, call: "ResponseFunctionToolCall", output: "FunctionCallOutput") -> None:  # pragma: no cover - interface only
+    def on_function_call_output(
+        self, call: "ResponseFunctionToolCall", output: "FunctionCallOutput"
+    ) -> None:  # pragma: no cover - interface only
         ...
 
     def on_reasoning(self, item: "ResponseReasoningItem") -> None:  # pragma: no cover - interface only
@@ -145,7 +147,9 @@ class BaseLoopController:
     def on_tool_call(self, call: "ResponseFunctionToolCall") -> None:  # pragma: no cover - default no-op
         return None
 
-    def on_function_call_output(self, call: "ResponseFunctionToolCall", output: "FunctionCallOutput") -> None:  # pragma: no cover - default no-op
+    def on_function_call_output(
+        self, call: "ResponseFunctionToolCall", output: "FunctionCallOutput"
+    ) -> None:  # pragma: no cover - default no-op
         return None
 
     def on_reasoning(self, item: "ResponseReasoningItem") -> None:  # pragma: no cover - default no-op

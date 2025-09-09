@@ -13,10 +13,10 @@ from tenacity import (
 )
 
 
-# Default retry policy: 5 attempts, exponential backoff with jitter (~0.5s..8s)
-_DEFAULT_ATTEMPTS = 5
+# Default retry policy: 5 attempts, exponential backoff with jitter (~0.5s..60s)
+_DEFAULT_ATTEMPTS = 10
 _DEFAULT_INITIAL = 0.5
-_DEFAULT_MAX = 8.0
+_DEFAULT_MAX = 60.0
 _RETRY_ON: Iterable[Type[BaseException]] = (
     openai.RateLimitError,
     openai.APIConnectionError,

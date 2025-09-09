@@ -400,6 +400,8 @@ class MiniCodex:
                 sequence.append(fco_evt)
                 self._transcript.append(fco)
                 self._emit_event(fco_evt)
+                # Notify controller so pretty renderers can print tool outputs
+                controller.on_function_call_output(fc, fco)
                 if not isinstance(res_ct, mcp_types.CallToolResult):
                     raise TypeError(f"Unexpected tool result type: {type(res_ct)!r}")
                 is_err = bool(res_ct.isError)
@@ -507,8 +509,7 @@ class MiniCodex:
         run_dir = agent_dir / f"run_{int(time.time())}_{os.getpid()}"
         run_dir.mkdir(parents=True, exist_ok=True)
         self._log_dir = run_dir
-        # Announce log path for the run (stdout) and via structlog
-        print(f"MiniCodex log dir: {run_dir}")
+        # Log path via structlog; avoid printing to stdout by default
         self._log.info("mini_codex_log_dir", path=str(run_dir))
         # Attach JSONL transcript logger (always on)
         run_logger = TranscriptLogger(run_dir)
@@ -531,8 +532,10 @@ class MiniCodex:
         (run_dir / "run.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
 
     def _emit_event(self, evt: dict[str, Any]) -> None:
-        self._log.info("mini_codex_event", **evt)
+        # First, forward to the configured handler (transcript, pretty renderer, etc.)
         self._on_event(evt)
+        # Always emit to structlog; routing to console/file is controlled by logger configuration
+        self._log.info("mini_codex_event", **evt)
 
     def _log_event(self, evt: dict[str, Any]) -> None:
         # Delegate to external transcript logger via _on_event

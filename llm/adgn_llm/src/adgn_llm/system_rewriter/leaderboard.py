@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import io
 import json
 import os
 import sys
@@ -43,8 +42,6 @@ class Row:
 
 def sha1_text(text: str) -> str:
     return hashlib.sha1(text.encode("utf-8")).hexdigest()
-
-
 
 
 def iter_run_dirs(runs_dir: Path) -> Iterable[Path]:
@@ -176,7 +173,7 @@ def load_row(run_dir: Path, known: dict[str, str]) -> Row | None:
     except Exception:
         with_tools = 0.0
 
-    # Extract models (sampler/evaluator); backfill defaults if missing and persist
+    # Extract models (sampler/evaluator) for display; do not persist/modify files here
     sampler_model: str | None = None
     grader_model: str | None = None
     models = summ.get("models")
@@ -185,14 +182,6 @@ def load_row(run_dir: Path, known: dict[str, str]) -> Row | None:
         gm = models.get("evaluator") or models.get("grader")
         sampler_model = sm if isinstance(sm, str) else None
         grader_model = gm if isinstance(gm, str) else None
-    if sampler_model is None or grader_model is None:
-        sampler_model = sampler_model or "gpt-5"
-        grader_model = grader_model or "gpt-5"
-        try:
-            summ["models"] = {"sampler": sampler_model, "evaluator": grader_model}
-            s_path.write_text(json.dumps(summ, sort_keys=True), encoding="utf-8")
-        except Exception:
-            pass
 
     # TODO(mpokorny): deprecate legacy numeric ci95 once all runs use ci95={lcb,ucb}.
 

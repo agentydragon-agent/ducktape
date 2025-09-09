@@ -13,7 +13,8 @@ from openai.types.responses import (
 
 from .agent import FunctionCallOutput
 from .loop_control import BaseLoopController, LoopController
-from .mcp_manager import parse_mcp_function, MCP_NAMESPACE_PREFIX  # constants below
+from .mcp_manager import parse_mcp_function  # constants below
+
 # Shared server/tool name constants
 DOCKER_SERVER_NAME = "docker"
 DOCKER_EXEC_TOOL_NAME = "docker_exec"
@@ -148,10 +149,10 @@ class ConsoleEventRenderer:
             out_parts.append(f"$ {cmd_line}")
         if header:
             out_parts.append(header)
-        if (stdout := data.get("stdout")):
+        if stdout := data.get("stdout"):
             out_parts.append("stdout:")
             out_parts.append(self._truncate_text(_coerce_str(stdout)))
-        if (stderr := data.get("stderr")):
+        if stderr := data.get("stderr"):
             if stderr:
                 out_parts.append("stderr:")
                 out_parts.append(self._truncate_text(_coerce_str(stderr)))

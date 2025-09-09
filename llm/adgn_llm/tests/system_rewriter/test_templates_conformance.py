@@ -9,6 +9,7 @@ from adgn_llm.system_rewriter.templates import iter_templates, validate_template
 def _templates_dir() -> Path:
     # Use package templates directory (for legacy path-based checks)
     from adgn_llm.system_rewriter import run_eval
+
     return Path(run_eval.__file__).parent / "templates"
 
 

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import json
 from pathlib import Path
 
@@ -13,7 +12,7 @@ from adgn_llm.mini_codex.mcp_manager import McpManager
 from adgn_llm.mcp.inproc_utils import make_inproc_slot_spec
 from adgn_llm.mcp.docker_exec.server import make_container_exec_mcp
 from adgn_llm.properties.lint_issue import _make_bootstrap_controller
-from adgn_llm.properties.specimen_utils import Occurrence, LineRange
+from adgn_llm.properties.specimen_utils import Occurrence
 
 
 class _MockResponsesClient:
@@ -53,9 +52,7 @@ class _MockResponsesClient:
                     type="message",
                     role="assistant",
                     status="completed",
-                    content=[
-                        ResponseOutputText(type="output_text", text="FINAL", annotations=[])
-                    ],
+                    content=[ResponseOutputText(type="output_text", text="FINAL", annotations=[])],
                 )
             ]
             return ResponsesResponse(
