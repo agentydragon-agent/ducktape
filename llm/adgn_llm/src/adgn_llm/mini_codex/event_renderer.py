@@ -20,7 +20,7 @@ DOCKER_SERVER_NAME = "docker"
 DOCKER_EXEC_TOOL_NAME = "docker_exec"
 
 
-__all__ = ["ConsoleEventRenderer", "PrettyPrintController"]
+__all__ = ["ConsoleEventRenderer", "DisplayEventsMixin", "PrettyPrintController"]
 
 
 class ConsoleEventRenderer:
@@ -193,12 +193,53 @@ def _coerce_str(x: object) -> str:
 OutputItem = ResponseFunctionToolCall | ResponseOutputMessage | ResponseReasoningItem | FunctionCallOutput
 
 
-class PrettyPrintController(BaseLoopController):
-    """LoopController wrapper that pretty-prints agent events to the console.
+class DisplayEventsMixin(BaseLoopController):
+    """Mixin base that pretty-prints agent events to the console.
 
-    - Delegates on_before_sample to an inner controller (e.g., bootstrap logic)
-    - Renders tool calls paired with outputs using ConsoleEventRenderer
-    - Optionally renders assistant/user text
+    Subclass this to get console rendering without wrapper layering. Implement
+    on_before_sample in your subclass to drive loop control.
+    """
+
+    def __init__(
+        self,
+        *,
+        renderer: ConsoleEventRenderer | None = None,
+        show_text: bool = False,
+        write: Callable[[str], None] = print,
+    ) -> None:
+        self._renderer = renderer or ConsoleEventRenderer(show_text=show_text)
+        self._write = write
+        self._calls: dict[str, ResponseFunctionToolCall] = {}
+
+    # Event hooks used by MiniCodex -------------------------------------------------
+    def on_user_text(self, text: str) -> None:  # type: ignore[override]
+        if self._renderer._show_text:
+            self._write(f"user:\n{self._renderer._truncate_text(text)}")
+
+    def on_assistant_text(self, text: str) -> None:  # type: ignore[override]
+        if self._renderer._show_text:
+            self._write(f"assistant:\n{self._renderer._truncate_text(text)}")
+
+    def on_tool_call(self, call: ResponseFunctionToolCall) -> None:  # type: ignore[override]
+        self._calls[call.call_id] = call
+        self._write(self._renderer._render_tool_call(call))
+
+    def on_function_call_output(self, call: ResponseFunctionToolCall, output: FunctionCallOutput) -> None:  # type: ignore[override]
+        c = call or self._calls.get(output.call_id)
+        if c is None:
+            self._write(self._renderer._render_tool_output_generic(output))
+            return
+        self._write(self._renderer.render_pair(c, output))
+
+    def on_reasoning(self, item: ResponseReasoningItem) -> None:  # type: ignore[override]
+        return None
+
+
+class PrettyPrintController(DisplayEventsMixin):
+    """Wrapper controller that delegates decisions to an inner controller.
+
+    Keeps the old PrettyPrintController API but now leverages DisplayEventsMixin
+    for rendering; this reduces layering elsewhere.
     """
 
     def __init__(
@@ -209,35 +250,8 @@ class PrettyPrintController(BaseLoopController):
         show_text: bool = False,
         write: Callable[[str], None] = print,
     ) -> None:
+        super().__init__(renderer=renderer, show_text=show_text, write=write)
         self._inner = inner
-        self._renderer = renderer or ConsoleEventRenderer(show_text=show_text)
-        self._write = write
-        self._calls: dict[str, ResponseFunctionToolCall] = {}
 
     def on_before_sample(self):  # type: ignore[override]
         return self._inner.on_before_sample()
-
-    def on_user_text(self, text: str) -> None:  # type: ignore[override]
-        if self._renderer._show_text:  # reuse renderer flag
-            self._write(f"user:\n{self._renderer._truncate_text(text)}")
-
-    def on_assistant_text(self, text: str) -> None:  # type: ignore[override]
-        if self._renderer._show_text:
-            self._write(f"assistant:\n{self._renderer._truncate_text(text)}")
-
-    def on_tool_call(self, call: ResponseFunctionToolCall) -> None:  # type: ignore[override]
-        self._calls[call.call_id] = call
-        # Also show the compact call input immediately
-        self._write(self._renderer._render_tool_call(call))
-
-    def on_function_call_output(self, call: ResponseFunctionToolCall, output: FunctionCallOutput) -> None:  # type: ignore[override]
-        # Prefer the call object passed in; fall back to cache
-        c = call or self._calls.get(output.call_id)
-        if c is None:
-            self._write(self._renderer._render_tool_output_generic(output))
-            return
-        self._write(self._renderer.render_pair(c, output))
-
-    def on_reasoning(self, item: ResponseReasoningItem) -> None:  # type: ignore[override]
-        # Omit by default
-        return None

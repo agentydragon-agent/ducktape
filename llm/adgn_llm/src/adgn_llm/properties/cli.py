@@ -13,11 +13,14 @@ import time
 from dataclasses import dataclass
 from adgn_llm.properties.prop_utils import properties_root
 from pathlib import Path
+from jinja2 import Environment, PackageLoader, select_autoescape
 
 from adgn_llm.logging_config import configure_logging
 import tiktoken
 from openai import AsyncOpenAI
 from adgn_llm.properties.lint_issue import DOCKER_IMAGE as _DEFAULT_IMAGE
+from importlib import resources
+import shutil
 
 from .specimen_utils import (
     build_scope_text,
@@ -30,21 +33,6 @@ from .specimen_utils import (
 )
 
 
-def build_supplemental_section(supplemental_text: str | None) -> str:
-    if not supplemental_text:
-        return ""
-    lines = [
-        "",
-        "Supplemental files (golden reviews):",
-        "These cover both the formal properties defined below and additional not-yet-formalized feedback.",
-        (
-            "Your analysis must ensure code passes all formal property definitions and also "
-            "the additional criteria captured here."
-        ),
-        "Generalize patterns from these supplements and flag similar issues in the input code.",
-        supplemental_text,
-    ]
-    return "\n".join(lines)
 
 
 def read_embedded_paths(paths: list[Path]) -> str:
@@ -63,27 +51,6 @@ def read_embedded_paths(paths: list[Path]) -> str:
     return "\n\n".join(blocks)
 
 
-def _scope_block(
-    scope_text: str,
-    *,
-    static_action: str,
-    ambiguity_tail: str,
-) -> list[str]:
-    return [
-        "Scope (freeform):",
-        f"- {scope_text}",
-        "",
-        "Scope interpretation rules:",
-        "- The scope may describe either:",
-        '  1) a Git diff range (e.g., "between merge-base with master and 2 commits before HEAD"), or',
-        "  2) a static set of files/paths",
-        (
-            "- If it's a diff description: resolve to a concrete diff range, enumerate files and hunks, and use "
-            "`git diff --unified=0` for references."
-        ),
-        f"- If it's a static file set: {static_action} only those files.",
-        f"- On ambiguity, choose the most conservative interpretation, state the resolved scope, and {ambiguity_tail}",
-    ]
 
 
 def _properties_text() -> str:
@@ -100,14 +67,25 @@ def _properties_text() -> str:
     return "\n\n".join(parts)
 
 
-def _properties_block(
-    properties_text: str,
-    supplemental_section: str | None,
-) -> list[str]:
-    lines = ["Property definitions:", properties_text]
-    if supplemental_section:
-        lines.append(supplemental_section)
-    return lines
+
+
+# --- Jinja2 template helpers ---
+
+
+def _get_templates_env() -> Environment:
+    # Load prompt templates from the installed package using importlib.resources (via Jinja2 PackageLoader)
+    return Environment(
+        loader=PackageLoader("adgn_llm.properties", "prompts"),
+        autoescape=select_autoescape(["md", "markdown", "txt", "j2"]),
+        trim_blocks=True,
+        lstrip_blocks=True,
+    )
+
+
+def _render_prompt_template(name: str, **ctx: object) -> str:
+    env = _get_templates_env()
+    tmpl = env.get_template(name)
+    return str(tmpl.render(**ctx)).strip()
 
 
 @dataclass(frozen=True)
@@ -139,7 +117,6 @@ RECOGNIZED_TOOLS: list[str] = [
     "xenon",
     "pylint",
     "lizard",
-    "clonedigger",
     "coverage",
     "diff-cover",
     "jscpd",
@@ -167,7 +144,6 @@ TOOL_CATALOG: list[tuple[str, str, str]] = [
     ("xenon", "complexity", "CI gate using radon thresholds"),
     ("pylint", "duplicates", "Includes duplicate-code (R0801) detector"),
     ("lizard", "duplicates", "Complexity and clone detection"),
-    ("clonedigger", "duplicates", "Clone detector for Python"),
     ("coverage", "coverage", "Code coverage measurement"),
     ("diff-cover", "coverage", "Changed-line coverage gating"),
     ("jscpd", "duplicates(node)", "Language-agnostic copy/paste detector (via npx)"),
@@ -191,29 +167,6 @@ def _format_tools_table(available: list[str]) -> str:
     return "\n".join(lines)
 
 
-def _tools_and_flow_block(available_tools: list[str]) -> list[str]:
-    detected = ", ".join(available_tools) if available_tools else "(none)"
-    return [
-        "",
-        f"Detected analysis tools on PATH: {detected}",
-        (
-            "Suggested order (analyze): ruff check → mypy/pyright → vulture → bandit → dupes (pylint R0801/lizard) "
-            "→ radon (report)."
-        ),
-        "Suggested order (fix): ruff --fix → pyupgrade --py312-plus → refurb → flynt; re-run ruff check.",
-        "After applying fixes, run the analysis tools again and include any remaining issues.",
-        (
-            "Include a short 'Missing tools' note in your final report if any commonly useful tools were unavailable "
-            "and how that limited you (if at all)."
-        ),
-    ] + (
-        [
-            "Tools with special invocation:",
-            "- jscpd(npx): npx --yes --no-install jscpd --path . --reporters json --ignore 'node_modules/**'",
-        ]
-        if "jscpd(npx)" in available_tools
-        else []
-    )
 
 
 def _detect_tools() -> list[str]:
@@ -240,7 +193,6 @@ def _detect_tools() -> list[str]:
         ("xenon", "xenon"),
         ("pylint", "pylint"),
         ("lizard", "lizard"),
-        ("clonedigger", "clonedigger"),
         ("coverage", "coverage"),
         ("diff-cover", "diff-cover"),
         ("jscpd", "jscpd"),
@@ -265,42 +217,21 @@ def _detect_tools() -> list[str]:
     return available
 
 
-def build_find_prompt(scope_text: str, supplemental_text: str | None = None) -> str:
+def build_find_prompt(
+    scope_text: str,
+    supplemental_text: str | None = None,
+    available_tools: list[str] | None = None,
+) -> str:
     properties_text = _properties_text()
-    supplemental_section = build_supplemental_section(supplemental_text)
-    lines: list[str] = [
-        (
-            "Analyze the codebase for violations of the properties defined below. Do not modify any files. "
-            "Output only violations; do not list properties/files with 'No violations'. "
-            "Produce a concise structured report."
-        ),
-        "",
-        *_scope_block(
-            scope_text,
-            static_action="analyze",
-            ambiguity_tail="do not include anything outside it.",
-        ),
-        "",
-        "Constraints:",
-        "- Read-only sandbox: do not execute commands that modify files or the repo",
-        "- You MAY run read-only commands to inspect context (e.g., `git status`, `git diff --unified=0`)",
-        "- You MUST check every changed hunk within scope",
-        "",
-        "Reporting requirements:",
-        (
-            "- For each violation: 1-line rationale and precise anchors (e.g., file:41-45, "
-            "function names, or concise symbol paths)"
-        ),
-        (
-            "- For many similar cases, write one short description then follow with a compact list of cases "
-            "(file:lines or symbol names)."
-        ),
-        "- Do not list properties/files without violations; omit any 'No violations' lines.",
-        "- Do not include preparatory narration; print only the report.",
-        "",
-        *_properties_block(properties_text, supplemental_section),
-    ]
-    return "\n".join(lines).strip()
+    return _render_prompt_template(
+        "find.md.j2",
+        scope_text=scope_text,
+        properties_text=properties_text,
+        supplemental_text=supplemental_text,
+        available_tools=available_tools or [],
+        static_action="analyze",
+        ambiguity_tail="do not include anything outside it.",
+    )
 
 
 def build_open_review_prompt(
@@ -309,179 +240,38 @@ def build_open_review_prompt(
     available_tools: list[str] | None = None,
 ) -> str:
     properties_text = _properties_text()
-    supplemental_section = build_supplemental_section(supplemental_text)
-    lines: list[str] = [
-        (
-            "Perform an open-ended code quality review within the scope. Find both violations of the properties below "
-            "and any other significant issues not already covered by properties or supplements. "
-            "Run the detected analysis tools first in the suggested order, then do targeted manual review. "
-            "Output only findings."
-        ),
-        "",
-        *_scope_block(
-            scope_text,
-            static_action="analyze",
-            ambiguity_tail="do not include anything outside it.",
-        ),
-        "",
-        "Constraints:",
-        "- Read-only sandbox: do not execute commands that modify files or the repo",
-        "- You MAY run read-only commands to inspect context (e.g., `git status`, `git diff --unified=0`)",
-        "- You MUST check every changed hunk within scope",
-        "",
-        "Reporting requirements:",
-        (
-            "- For each finding: 1-line rationale and precise anchors (e.g., file:41-45, "
-            "function names, or concise symbol paths)"
-        ),
-        (
-            "- For many similar cases, write one short description then follow with a compact list of cases "
-            "(file:lines or symbol names)."
-        ),
-        "- Do not include preparatory narration; print only the report.",
-        "",
-        *_properties_block(properties_text, supplemental_section),
-    ]
-    if available_tools is not None:
-        lines.extend(_tools_and_flow_block(available_tools))
-    return "\n".join(lines).strip()
+    return _render_prompt_template(
+        "open_review.md.j2",
+        scope_text=scope_text,
+        properties_text=properties_text,
+        supplemental_text=supplemental_text,
+        available_tools=available_tools or [],
+        static_action="analyze",
+        ambiguity_tail="do not include anything outside it.",
+    )
 
 
 def build_enforce_prompt(scope_text: str, supplemental_text: str | None = None) -> str:
     properties_text = _properties_text()
-    supplemental_section = build_supplemental_section(supplemental_text)
-    lines: list[str] = [
-        (
-            "Ensure code within the described scope conforms to the properties defined below and refactor as needed "
-            "to satisfy them without altering behavior."
-        ),
-        "",
-        *_scope_block(
-            scope_text,
-            static_action="edit",
-            ambiguity_tail="avoid touching anything outside it unless required by the editing policy below.",
-        ),
-        "",
-        "Editing policy:",
-        "- Prefer minimal, localized edits within the scoped hunks/sections.",
-        (
-            "- You MAY edit outside the scoped hunks/sections ONLY when necessary to bring the "
-            "scoped changes and any code you touched into full compliance with all properties "
-            "(e.g., moving imports to the top of file)."
-        ),
-        (
-            "- If such edits cascade (A requires B, which requires C, ...), keep fixing until everything you changed "
-            "and everything originally in scope is compliant, then stop."
-        ),
-        "- Do NOT perform broad or unrelated refactors beyond what is required for compliance.",
-        "- Do not commit changes.",
-        (
-            "- After edits, run existing linters/formatters if present (e.g., ruff, pre-commit) and re-verify "
-            "against properties."
-        ),
-        "",
-        "Requirements:",
-        "- You MUST check every changed hunk within the resolved scope",
-        (
-            "- You MUST bring all scoped files/sections and any cascaded edits into compliance with ALL property "
-            "definition files"
-        ),
-        "",
-        *_properties_block(properties_text, supplemental_section),
-        "",
-        "Operational guidance:",
-        (
-            "- Ask for confirmation before any destructive action (deletes/mass renames). Keep changes within the "
-            "workspace."
-        ),
-        (
-            "- If a property appears to conflict with code behavior, explain the conflict and "
-            "propose the smallest safe change in your final report."
-        ),
-        "",
-        "Deliverables:",
-        "- Apply changes directly in the workspace.",
-        (
-            "- Print a concise change report as your final message: files changed, "
-            "properties addressed per file, and any remaining violations you could not safely fix."
-        ),
-    ]
-    return "\n".join(lines).strip()
+    return _render_prompt_template(
+        "enforce.md.j2",
+        scope_text=scope_text,
+        properties_text=properties_text,
+        supplemental_text=supplemental_text,
+        static_action="edit",
+        ambiguity_tail="avoid touching anything outside it unless required by the editing policy below.",
+    )
 
 
 def build_grade_prompt(scope_text: str, canonical_text: str, critique_text: str) -> str:
-    """Build prompt to grade an input critique against canonical specimen findings.
-
-    Outputs required (freeform/plaintext is OK for now):
-    - Recall: proportion (0..1 float) of canonical positives (covered + not_covered_yet items)
-      that are also found by the input critique.
-    - False positive ratio: proportion (0..1 float) of input critique items that are listed in
-      canonical negatives (false_positives.md).
-    - Side output: list the input-critique items that match neither canonical positives nor negatives.
-
-    NOTE/TODO(mpokorny): Matching heuristic is underspecified. For now, treat an "item" as a
-    bullet/paragraph-level finding and match by clear semantic equivalence (filename/function anchors
-    and concise rationale). Use best judgment; include brief notes on any ambiguities.
-    """
-    # TODO(mpokorny): Expose weights via CLI flags and move matching rubric to a stable doc;
-    # add structured JSON output when needed.
-    lines: list[str] = [
-        "Grade the input critique against the canonical specimen findings.",
-        "Compute the following metrics and then print supporting details:",
-        "- Recall (0..1 float, 3 decimals): (# canonical positives found by input) / (# canonical positives total)",
-        (
-            "- Weighted recall (0..1 float, 3 decimals): treat matches with partial credit (see categories below); "
-            "report sum(weights of matched canonical positives) / sum(weights of all canonical positives)"
-        ),
-        (
-            "- False positive ratio (0..1 float, 3 decimals): (# input items that are canonical negatives) / "
-            "(# input items total)"
-        ),
-        (
-            "- 'Volume coverage' (0..1 float, 3 decimals): heuristic estimate of 'how much badness was caught' "
-            "by weighting canonical items by impact (multi-anchor or cross-cutting issues weigh more)."
-        ),
-        (
-            "  Use default weights unless specified otherwise: high-impact=3 (security, correctness, architectural, "
-            "multi-file), medium=2 (multiple anchors/functions), low=1 (style/minor refactors)."
-        ),
-        "- Then list 'Unknowns': input items that are neither canonical positives nor canonical negatives.",
-        "",
-        "Matching categories and default weights (for weighted recall):",
-        "- Exact match (1.0): clearly the same issue (same file/anchors/rationale)",
-        "- Partial match (0.5): substantially overlaps the same issue but misses scope/details (kinda-sorta-covered)",
-        (
-            "- Tangential (0.2): related but not the same (mentions a nearby concern without addressing the canonical "
-            "item)"
-        ),
-        "- No match (0.0): unrelated",
-        "",
-        "",
-        *_scope_block(
-            scope_text,
-            static_action="use for context only (do not re-scan code)",
-            ambiguity_tail="you are not re-running analysis; only use it for reference while matching.",
-        ),
-        "",
-        "Instructions:",
-        "- Treat each canonical finding as a distinct item (covered.md + not_covered_yet.md = positives).",
-        "- Treat false_positives.md entries as canonical negatives.",
-        "- Treat each bullet/paragraph in the input critique as an input item.",
-        "- Use fuzzy, semantic matching with filenames/line anchors and rationale to decide equivalence.",
-        "- Show counts used in denominators and numerators.",
-        "- Finally, print Unknowns as a bullet list with short rationale on why they didn't match.",
-        (
-            "- For Unknowns, paste the matched input-critique items verbatim (no summarization or truncation; no '...' "
-            "elisions). Preserve original formatting and all details."
-        ),
-        "",
-        "Canonical findings (positives and negatives):",
-        canonical_text,
-        "",
-        "Input critique:",
-        critique_text,
-    ]
-    return "\n".join(lines).strip()
+    return _render_prompt_template(
+        "grade.md.j2",
+        scope_text=scope_text,
+        canonical_text=canonical_text,
+        critique_text=critique_text,
+        static_action="use for context only (do not re-scan code)",
+        ambiguity_tail="you are not re-running analysis; only use it for reference while matching.",
+    )
 
 
 def _run_specimen_grade(  # noqa: PLR0913
@@ -537,12 +327,8 @@ def _run_specimen_grade(  # noqa: PLR0913
         outfile = tmpdir / f"codex_prompt_specimen_grade_{ts}.md"
         outfile.write_text(prompt, encoding="utf-8")
         tokens = None
-        try:
-            if "tiktoken" in globals() and tiktoken is not None:
-                enc = tiktoken.get_encoding("cl100k_base")
-                tokens = len(enc.encode(prompt))
-        except Exception:
-            tokens = None
+        enc = tiktoken.get_encoding("cl100k_base")
+        tokens = len(enc.encode(prompt))
         print(" ".join(cmd))
         print(
             f"Saved prompt: {outfile} (approx tokens: {tokens if tokens is not None else 'n/a'})",
@@ -551,13 +337,7 @@ def _run_specimen_grade(  # noqa: PLR0913
 
     rc = subprocess.run(cmd, check=False, input=prompt, text=True).returncode
     if out_last_file is not None:
-        try:
-            print(Path(out_last_file).read_text(encoding="utf-8"))
-        except Exception as e:
-            print(
-                f"[error reading final message file {out_last_file}: {e}]",
-                file=sys.stderr,
-            )
+        print(Path(out_last_file).read_text(encoding="utf-8"))
     return rc
 
 
@@ -613,20 +393,14 @@ def _run_specimen(  # noqa: PLR0913
     )
     # Build appropriate prompt
     if mode == "discover":
-        # Hint: suppress already known findings; focus on new items
-        discover_preamble = (
-            "Only report findings that are NOT already listed in the embedded supplements above. "
-            "This includes additional instances under existing properties, new categories under existing properties, "
-            "or entirely new issues not covered by current properties."
-        )
-        prompt = (
-            discover_preamble
-            + "\n\n"
-            + build_open_review_prompt(
-                scope_text,
-                supplemental_text=supplemental_text,
-                available_tools=_detect_tools(),
-            )
+        prompt = _render_prompt_template(
+            "discover.md.j2",
+            scope_text=scope_text,
+            properties_text=_properties_text(),
+            supplemental_text=supplemental_text,
+            available_tools=_detect_tools(),
+            static_action="analyze",
+            ambiguity_tail="do not include anything outside it.",
         )
     elif mode == "open":
         # Open-ended review without suppression
@@ -636,8 +410,11 @@ def _run_specimen(  # noqa: PLR0913
             available_tools=_detect_tools(),
         )
     else:
-        prompt = build_find_prompt(scope_text, supplemental_text=supplemental_text)
-        prompt = prompt + "\n\n" + "\n".join(_tools_and_flow_block(_detect_tools()))
+        prompt = build_find_prompt(
+            scope_text,
+            supplemental_text=supplemental_text,
+            available_tools=_detect_tools(),
+        )
 
     # Build codex command (read-only sandbox; full-auto; skip git repo check)
     cmd = build_cmd(
@@ -661,12 +438,8 @@ def _run_specimen(  # noqa: PLR0913
         outfile = tmpdir / f"codex_prompt_specimen_{mode}_{ts}.md"
         outfile.write_text(prompt, encoding="utf-8")
         tokens = None
-        try:
-            if "tiktoken" in globals() and tiktoken is not None:
-                enc = tiktoken.get_encoding("cl100k_base")
-                tokens = len(enc.encode(prompt))
-        except Exception:
-            tokens = None
+        enc = tiktoken.get_encoding("cl100k_base")
+        tokens = len(enc.encode(prompt))
         print(" ".join(cmd))
         print(
             f"Detected tools: {', '.join(_detect_tools()) if _detect_tools() else '(none)'}",
@@ -680,13 +453,7 @@ def _run_specimen(  # noqa: PLR0913
     # Execute codex with prompt on stdin
     rc = subprocess.run(cmd, check=False, input=prompt, text=True).returncode
     if out_last_file is not None:
-        try:
-            print(Path(out_last_file).read_text(encoding="utf-8"))
-        except Exception as e:
-            print(
-                f"[error reading final message file {out_last_file}: {e}]",
-                file=sys.stderr,
-            )
+        print(Path(out_last_file).read_text(encoding="utf-8"))
     return rc
 
 
@@ -1058,24 +825,8 @@ def main(argv: list[str] | None = None) -> int:
             prompt = (
                 build_open_review_prompt(args.scope, available_tools=detected_tools)
                 if args.allow_general_findings
-                else build_find_prompt(args.scope)
+                else build_find_prompt(args.scope, available_tools=detected_tools)
             )
-            if args.allow_general_findings:
-                prompt = prompt.replace(
-                    (
-                        "Analyze the codebase for violations of the properties defined below. Do not modify any files. "
-                        "Output only violations; do not list properties/files with 'No violations'. "
-                        "Produce a concise structured report."
-                    ),
-                    (
-                        "Perform an open-ended code quality review within the scope. "
-                        "Find both violations of the properties below and any other significant issues not already "
-                        "covered by properties or supplements. "
-                        "Run the detected analysis tools first in the suggested order, then do targeted manual review. "
-                        "Output only findings."
-                    ),
-                    1,
-                )
             cmd = build_cmd(
                 args.model,
                 workdir,
@@ -1202,8 +953,23 @@ def main(argv: list[str] | None = None) -> int:
             name = f"adgn_spec_shell_{ts}"
             container = None
             try:
+                # Ensure the image exists locally; if not, instruct how to build using our packaged Dockerfile.
+                image = args.image or _DEFAULT_IMAGE
+                try:
+                    dclient.images.get(image)
+                except docker.errors.ImageNotFound:
+                    dockerfile_trav = resources.files("adgn_llm").joinpath(
+                        "docker/critic.Dockerfile"
+                    )
+                    print("ERROR: Required Docker image not found:", image)
+                    print("Build it first:")
+                    print(
+                        f"docker build -f {shutil.quote(dockerfile_trav)} -t {image} {shlex.quote(context_dir)}"
+                    )
+                    return 2
+
                 container = dclient.containers.run(
-                    image=(args.image or _DEFAULT_IMAGE),
+                    image=image,
                     command=["sleep", "infinity"],
                     name=name,
                     remove=True,
@@ -1211,19 +977,17 @@ def main(argv: list[str] | None = None) -> int:
                     network_mode="none",
                     volumes={str(content_root): {"bind": "/workspace", "mode": "rw"}},
                     working_dir="/workspace",
+                    tty=True,
+                    stdin_open=True,
                 )
             except Exception as e:
                 print(f"ERROR: failed to start container: {e}")
                 return 2
 
+            # Attach an interactive shell using docker CLI (subprocess) — no fallback to sh
             rc = subprocess.run(
                 ["docker", "exec", "-it", name, "bash"], check=False
             ).returncode
-            if rc != 0:
-                rc = subprocess.run(
-                    ["docker", "exec", "-it", name, "sh"], check=False
-                ).returncode
-
             try:
                 if container:
                     container.stop()

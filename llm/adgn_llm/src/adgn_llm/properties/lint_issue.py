@@ -8,28 +8,29 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-
+import docker
 from openai import AsyncOpenAI
 from openai.types.responses import ResponseFunctionToolCall
 
 from adgn_llm.properties.prop_utils import properties_root, find_property_files
 from adgn_llm.properties.specimen_utils import load_single_issue
-
-from adgn_llm.mcp.docker_exec.server import make_container_exec_mcp
+from adgn_llm.mcp.docker_exec.server import (
+    make_container_exec_mcp,
+    SERVER_NAME as DOCKER_SERVER_NAME,
+    TOOL_EXEC_NAME as DOCKER_EXEC_TOOL_NAME,
+)
 from adgn_llm.mcp.inproc_transport import make_inproc_slot_spec
 from adgn_llm.mini_codex.agent import MiniCodex
 from adgn_llm.mini_codex.mcp_manager import McpManager, build_mcp_function
 from adgn_llm.mini_codex.loop_control import (
-    LoopController,
-    BaseLoopController,
     Continue,
-    Auto,
+    Abort,
     RequireAny,
     SyntheticAction,
 )
 from adgn_llm.mini_codex.event_renderer import (
     ConsoleEventRenderer,
-    PrettyPrintController,
+    DisplayEventsMixin,
 )
 from .specimen_utils import (
     ensure_archive_for_specimen_slug,
@@ -37,7 +38,7 @@ from .specimen_utils import (
 )
 from mcp.server.fastmcp import FastMCP
 
-DOCKER_IMAGE = "python:3.12-slim"
+DOCKER_IMAGE = "adgn-llm/properties-critic:latest"
 
 
 # ---------------------------------------------------------------------------
@@ -52,7 +53,9 @@ class LintSubmitState:
     message_md: str | None = None
 
 
-def make_lint_submit_server(state: LintSubmitState, name: str = "lint_submit") -> FastMCP:
+def make_lint_submit_server(
+    state: LintSubmitState, name: str = "lint_submit"
+) -> FastMCP:
     """Tiny FastMCP server exposing a single tool: submit_result.
 
     The linter agent must call this exactly once to signal completion. This flips
@@ -109,7 +112,7 @@ def _build_prompt(
             f'<file path=":/{rel.as_posix()}">\n{md.read_text(encoding="utf-8")}\n</file>',
         )
 
-    docker_tool_name = build_mcp_function("docker", "exec")
+    docker_tool_name = build_mcp_function(DOCKER_SERVER_NAME, DOCKER_EXEC_TOOL_NAME)
 
     lines = [
         "Lint the following single issue strictly against the provided property definition files.",
@@ -155,124 +158,100 @@ def _build_prompt(
 BIG_THRESHOLD = 20480
 
 
-def _make_bootstrap_controller(
-    occ: Occurrence,
-    content_root: Path,
-    *,
-    state: LintSubmitState,
-) -> LoopController:
-    # Deterministic bootstrap with serial steps:
-    # Turn 1: read docker container info resource
-    # Turn 2: ls -la on all parent directories in one command
-    # Turn 3: per-file content (nl -ba) when all are small; otherwise skip
 
-    files = list((occ.files or {}).keys())
-    dirs = sorted({str(Path(p).parent) for p in files})
 
-    # Determine sizes using local filesystem view of mounted content_root; fatal on missing/permission issues
-    sizes: dict[str, int] = {}
-    for p in files:
-        hp = (content_root / p).resolve()
-        st = hp.stat()  # Let FileNotFoundError/PermissionError crash: malformed specimen
-        if not hp.is_file():
-            raise SystemExit(f"Expected a regular file for occurrence path: {hp}")
-        sizes[p] = int(st.st_size)
-    big_detected = any(size >= BIG_THRESHOLD for size in sizes.values())
+# ---------------------------------------------------------------------------
+# LinterController (purpose-specific) with integrated display + tool policy
+# ---------------------------------------------------------------------------
 
-    # Pre-build calls per step
-    step1 = [
-        ResponseFunctionToolCall(
-            type="function_call",
-            name="mcp__resources__read",
-            call_id="bootstrap:res",
-            arguments=json.dumps(
-                {
-                    "server": "docker",
-                    "uri": "resource://container.info",
-                    "start_offset": 0,
-                    "max_bytes": 65536,
-                }
-            ),
-        )
-    ]
 
-    if dirs:
-        # Build argv without shell: ls -la dir1 dir2 ...
-        step2 = [
+class LinterController(DisplayEventsMixin):
+    def __init__(
+        self,
+        *,
+        state: LintSubmitState,
+        occ: Occurrence,
+        content_root: Path,
+        renderer: ConsoleEventRenderer | None = None,
+    ) -> None:
+        super().__init__(renderer=renderer, show_text=False)
+        self._state = state
+        self._step = 0
+        # Snapshot specimen inputs
+        self._files = list((occ.files or {}).keys())
+        self._dirs = sorted({str(Path(p).parent) for p in self._files})
+        # Determine sizes and big-file detection
+        sizes: dict[str, int] = {}
+        for p in self._files:
+            hp = (content_root / p).resolve()
+            st = hp.stat()
+            if not hp.is_file():
+                raise SystemExit(f"Expected a regular file for occurrence path: {hp}")
+            sizes[p] = int(st.st_size)
+        self._big_detected = any(size >= BIG_THRESHOLD for size in sizes.values())
+        # Pre-build synthetic steps
+        self._step1 = [
             ResponseFunctionToolCall(
                 type="function_call",
-                name=build_mcp_function("docker", "exec"),
-                call_id="bootstrap:ls",
-                arguments=json.dumps({"cmd": ["ls", "-la"] + ["/workspace/" + d for d in dirs]}),
+                name="mcp__resources__read",
+                call_id="bootstrap:res",
+                arguments=json.dumps(
+                    {
+                        "server": "docker",
+                        "uri": "resource://container.info",
+                        "start_offset": 0,
+                        "max_bytes": 65536,
+                    }
+                ),
             )
         ]
-    else:
-        step2 = []
-
-    # Build per-file content commands (only when all are small)
-    def _content_calls() -> list[ResponseFunctionToolCall]:
-        out: list[ResponseFunctionToolCall] = []
-        for p in files:
-            if sizes[p] > BIG_THRESHOLD:
-                # unreachable when big_detected is False; defer to model (no synthetic call)
-                continue
-            out.append(
+        if self._dirs:
+            self._step2 = [
                 ResponseFunctionToolCall(
                     type="function_call",
-                    name=build_mcp_function("docker", "exec"),
-                    call_id=f"bootstrap:show:{len(out) + 1}",
-                    arguments=json.dumps({"cmd": ["nl", "-ba", "-w1", "-s", " ", f"/workspace/{p}"]}),
+                    name=build_mcp_function(DOCKER_SERVER_NAME, DOCKER_EXEC_TOOL_NAME),
+                    call_id="bootstrap:ls",
+                    arguments=json.dumps(
+                        {"cmd": ["ls", "-la"] + ["/workspace/" + d for d in self._dirs]}
+                    ),
                 )
-            )
-        return out
+            ]
+        else:
+            self._step2 = []
 
-    class _BootstrapCtrl(BaseLoopController):
-        def __init__(self) -> None:
-            self._step = 0
+        def _content_calls() -> list[ResponseFunctionToolCall]:
+            out: list[ResponseFunctionToolCall] = []
+            for q in self._files:
+                if sizes[q] > BIG_THRESHOLD:
+                    continue
+                out.append(
+                    ResponseFunctionToolCall(
+                        type="function_call",
+                        name=build_mcp_function(DOCKER_SERVER_NAME, DOCKER_EXEC_TOOL_NAME),
+                        call_id=f"bootstrap:show:{len(out) + 1}",
+                        arguments=json.dumps(
+                            {"cmd": ["nl", "-ba", "-w1", "-s", " ", f"/workspace/{q}"]}
+                        ),
+                    )
+                )
+            return out
 
-        def on_before_sample(self):
-            # Stop immediately once submit_result was called
-            if state.done:
-                from adgn_llm.mini_codex.loop_control import Abort  # local import to avoid cycle
+        self._step3 = _content_calls()
 
-                return Abort()
-
-            # Bootstrap steps as synthetic outputs
-            self._step += 1
-            if self._step == 1:
-                return SyntheticAction(outputs=step1)
-            if self._step == 2 and step2:
-                return SyntheticAction(outputs=step2)
-            if self._step == 3 and files and not big_detected:
-                return SyntheticAction(outputs=_content_calls())
-
-            # After bootstrap, always require a tool call until submit_result flips the switch
-            return Continue(RequireAny())
-
-    return _BootstrapCtrl()
-
-
-# ---------------------------------------------------------------------------
-# Agent run
-# ---------------------------------------------------------------------------
-
-
-async def _run_agent(
-    prompt: str,
-    slots: dict[str, Any],
-    model: str,
-    client: AsyncOpenAI,
-    controller: LoopController,
-) -> str:
-    async with McpManager(slots) as mcp:
-        agent = await MiniCodex.create(
-            model=model,
-            mcp=mcp,
-            system="You are a code agent. Be concise.",
-            client=client,
-        )
-        result = await agent.run(prompt, controller=controller)
-        return result.text or ""
+    def on_before_sample(self):  # type: ignore[override]
+        # Stop immediately once submit_result was called
+        if self._state.done:
+            return Abort()
+        # Bootstrap synthetic steps
+        self._step += 1
+        if self._step == 1:
+            return SyntheticAction(outputs=self._step1)
+        if self._step == 2 and self._step2:
+            return SyntheticAction(outputs=self._step2)
+        if self._step == 3 and self._files and not self._big_detected:
+            return SyntheticAction(outputs=self._step3)
+        # After bootstrap, always require a tool call until submit_result flips the switch
+        return Continue(RequireAny())
 
 
 # ---------------------------------------------------------------------------
@@ -302,7 +281,9 @@ async def run_specimen_lint_issue_async(
     # Always mount from under $HOME to avoid Docker volume restrictions on /var/folders
     ts = int(time.time())
     name = f"lint_{ts}"
-    mount_root = Path.home() / ".cache" / "adgn-llm" / "workspaces" / f"{specimen}_{name}"
+    mount_root = (
+        Path.home() / ".cache" / "adgn-llm" / "workspaces" / f"{specimen}_{name}"
+    )
     mount_root.mkdir(parents=True, exist_ok=True)
 
     # Build submit server/tool naming early (used in dry-run prompt too)
@@ -313,7 +294,9 @@ async def run_specimen_lint_issue_async(
 
     if dry_run:
         props = find_property_files([str(p) for p in issue.properties])
-        prompt = _build_prompt(issue, props, submit_tool_name=submit_tool_name, occurrence=occ)
+        prompt = _build_prompt(
+            issue, props, submit_tool_name=submit_tool_name, occurrence=occ
+        )
         tmpdir = Path(tempfile.gettempdir()) / "adgn_codex_prompts"
         tmpdir.mkdir(parents=True, exist_ok=True)
         outfile = tmpdir / f"lint_issue_{issue_id}_{ts}.md"
@@ -340,6 +323,36 @@ async def run_specimen_lint_issue_async(
             )
         content_root = entries[0]
 
+        # Ensure required critic image is available locally; guide user if missing (Docker SDK, no subprocess)
+        try:
+            dclient = docker.from_env()
+            dclient.images.get(DOCKER_IMAGE)
+        except docker.errors.ImageNotFound:
+            build_hint = None
+            try:
+                from importlib import resources as ilres
+
+                pkg = "adgn_llm"
+                dockerfile_trav = ilres.files(pkg).joinpath("docker/critic.Dockerfile")
+                dockerfile_path = str(dockerfile_trav)
+                # Use the parent dir of Dockerfile as context by default
+                context_dir = str(dockerfile_trav.parent)
+                build_hint = f"docker build -f '{dockerfile_path}' -t {DOCKER_IMAGE} '{context_dir}'"
+            except Exception:
+                build_hint = None
+            print("ERROR: Required Docker image not found:", DOCKER_IMAGE)
+            if build_hint:
+                print("Build it first:")
+                print(build_hint)
+            else:
+                print(
+                    "Please build the critic image (see docker/critic.Dockerfile) and retry."
+                )
+            return 2
+        except Exception as e:
+            print(f"ERROR: Docker daemon not reachable: {e}")
+            return 2
+
         # Build in-process FastMCP servers: docker exec + submit server
         docker_spec = make_inproc_slot_spec(
             make_container_exec_mcp(
@@ -353,13 +366,27 @@ async def run_specimen_lint_issue_async(
         specs = {"docker": docker_spec, "lint_submit": submit_spec}
 
         props = find_property_files([str(p) for p in issue.properties])
-        prompt = _build_prompt(issue, props, submit_tool_name=submit_tool_name, occurrence=occ)
+        prompt = _build_prompt(
+            issue, props, submit_tool_name=submit_tool_name, occurrence=occ
+        )
 
-        # Controller: bootstrap synthetic steps, then require tool every step; stop when submit_state.done flips
-        base_ctrl = _make_bootstrap_controller(occ, content_root, state=submit_state)
-        ctrl = PrettyPrintController(base_ctrl, renderer=ConsoleEventRenderer(show_text=False))
+        # Controller: single-purpose LinterController with display mixin; always require tool; stop when submitted
+        ctrl = LinterController(
+            state=submit_state,
+            occ=occ,
+            content_root=content_root,
+            renderer=ConsoleEventRenderer(show_text=False),
+        )
 
-        text = await _run_agent(prompt, specs, model, client, controller=ctrl)
+        async with McpManager(specs) as mcp:
+            agent = await MiniCodex.create(
+                model=model,
+                mcp=mcp,
+                system="You are a code agent. Be concise.",
+                client=client,
+            )
+            result = await agent.run(prompt, controller=ctrl)
+            text = result.text or ""
 
         # Print the exact occurrence representation as fed to the model
         issue_dict = issue.model_dump(exclude_none=True)

@@ -11,7 +11,7 @@ from adgn_llm.mini_codex.agent import MiniCodex
 from adgn_llm.mini_codex.mcp_manager import McpManager
 from adgn_llm.mcp.inproc_transport import make_inproc_slot_spec
 from adgn_llm.mcp.docker_exec.server import make_container_exec_mcp
-from adgn_llm.properties.lint_issue import _make_bootstrap_controller
+from adgn_llm.properties.lint_issue import LinterController, LintSubmitState
 from adgn_llm.properties.specimen_utils import Occurrence
 
 
@@ -87,7 +87,7 @@ async def test_lint_issue_bootstrap_small_files(tmp_path: Path):
     occ = Occurrence(files={"pkg/a.py": None, "pkg/b.py": None})
 
     # Bootstrap controller (3-turn plan)
-    ctrl = _make_bootstrap_controller(occ, content_root)
+    ctrl = LinterController(state=LintSubmitState(), occ=occ, content_root=content_root)
 
     # Real MCP manager (in-proc docker exec) and mocked OpenAI client
     spec = make_inproc_slot_spec(
