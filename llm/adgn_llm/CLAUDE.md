@@ -25,6 +25,8 @@ Common commands
   - uv run pytest -q
 - Exclude live API tests by default:
   - uv run pytest -q -m "not live_llm"
+- Exclude sandboxer suite and live API tests:
+  - uv run pytest -q -m "not live_llm" -k "not sandboxed_jupyter_mcp"
 - Run a single test:
   - uv run pytest -q tests/cli/test_llm_edit_cli.py::test_help
 - Pre-commit (optional):
@@ -65,4 +67,5 @@ High-level architecture (big picture)
 Notes and caveats
 - Node requirement: The system_rewriter apply step is Node-only; no npm needed. The script src/adgn_llm/system_rewriter/js/system_rewrite_apply.js validates tokens and fails fast; missing Node or system-utils will cause a hard error.
 - Test data/specimens under src/adgn_llm/properties/specimens/** are excluded from lint and test discovery per pyproject configuration.
-- when running tests in this package (adgn_llm), by default skip sandboxer tests
+- when running tests in this package (adgn_llm), skip the sandboxer suite on macOS unless you’re explicitly working on it; use:
+  - uv run pytest -q -m "not live_llm" -k "not sandboxed_jupyter_mcp"
