@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Extract a CCR-like dataset from Crush provider wire logs without touching the
 existing dataset.jsonl used by eval.
@@ -178,7 +177,7 @@ def _extract_chat_messages(
             texts: list[str] = []
             for c in content:
                 if isinstance(c, dict) and isinstance(c.get("text"), str):
-                    texts.append(c["text"])   
+                    texts.append(c["text"])
             text = "\n".join(texts) if texts else ""
         else:
             text = ""
@@ -231,9 +230,22 @@ def process_wire(path: Path, require_bad: bool = False) -> list[dict[str, Any]]:
         kept += 1
         now = time.monotonic()
         if now - last_tick >= interval:
-            print(json.dumps({"event": "progress", "file": str(path), "lines": lines, "kept": kept}))
+            print(
+                json.dumps(
+                    {
+                        "event": "progress",
+                        "file": str(path),
+                        "lines": lines,
+                        "kept": kept,
+                    }
+                )
+            )
             last_tick = now
-    print(json.dumps({"event": "file_done", "file": str(path), "lines": lines, "kept": kept}))
+    print(
+        json.dumps(
+            {"event": "file_done", "file": str(path), "lines": lines, "kept": kept}
+        )
+    )
     return out
 
 

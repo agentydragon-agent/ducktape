@@ -1,6 +1,5 @@
-#!/usr/bin/env python3
 """
-Extract a CCR-like dataset from Claude Code router logs.
+Extract dataset from Claude Code Router logs.
 
 - Input: ~/.claude-code-router/logs/trace.*
 - Output: ./data/dataset_ccr.jsonl (one JSON object per line)
@@ -75,10 +74,7 @@ async def process_file(p: Path) -> list[dict]:
     with p.open("r", encoding="utf-8") as f:
         for line in f:
             lines += 1
-            try:
-                rec = json.loads(line)
-            except json.JSONDecodeError:
-                continue
+            rec = json.loads(line)
             if rec.get("event") != "inbound_request":
                 continue
             body = rec.get("body")
@@ -107,11 +103,18 @@ async def process_file(p: Path) -> list[dict]:
             if now - last_tick >= interval:
                 print(
                     json.dumps(
-                        {"event": "progress", "file": str(p), "lines": lines, "kept": kept}
+                        {
+                            "event": "progress",
+                            "file": str(p),
+                            "lines": lines,
+                            "kept": kept,
+                        }
                     )
                 )
                 last_tick = now
-    print(json.dumps({"event": "file_done", "file": str(p), "lines": lines, "kept": kept}))
+    print(
+        json.dumps({"event": "file_done", "file": str(p), "lines": lines, "kept": kept})
+    )
     return out
 
 
