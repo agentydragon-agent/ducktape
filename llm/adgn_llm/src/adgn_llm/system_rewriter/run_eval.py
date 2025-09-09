@@ -43,13 +43,15 @@ GRADER_MODEL = "gpt-5"
 # Paths
 REWRITE_APPLY = resources.files("adgn_llm.system_rewriter").joinpath("js/system_rewrite_apply.js")
 
+from .validation import validate_template_file
+
 
 def parse_args():
     ap = argparse.ArgumentParser()
     ap.add_argument(
         "--template",
         required=True,
-        help="Path to system prompt template file with ${toolsBlob}, ${envGitBlobs}, ${modelLine}, ${mcpSection}",
+        help="Path to system prompt template file with mustache placeholders: {{toolsBlob}}, {{envGitBlobs}}, {{modelLine}}, {{mcpSection}}",
     )
     ap.add_argument(
         "--dataset",
@@ -563,6 +565,7 @@ async def run_eval(
                     msgs.append({"role": role, "content": txt})
         return msgs
 
+    validate_template_file(template_path)
     # Determine output directory
     if base_out is not None:
         # Caller provided a final directory — use it directly (no nesting)

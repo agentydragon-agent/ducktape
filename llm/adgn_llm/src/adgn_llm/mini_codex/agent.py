@@ -19,9 +19,8 @@ from openai.types.responses import (
     ResponseFunctionToolCall,
     ResponseOutputMessage,
     ResponseOutputText,
+    ResponseReasoningItem,
 )
-
-from openai.types.responses import ResponseReasoningItem
 
 # Typed request params for reasoning
 from openai.types.shared_params import Reasoning as ReasoningParams
@@ -32,7 +31,7 @@ from adgn_llm.openai_retry import retry_decorator
 from .loggers import TranscriptLogger
 from adgn_llm.openai_utils import ReasoningSummary
 from .mcp_manager import McpManager
-from adgn_llm.mini_codex.loop_control import DefaultController, LoopController, RequireAny, Abort
+from adgn_llm.mini_codex.loop_control import DefaultController, LoopController, RequireAny, Abort, SyntheticAction
 
 
 @dataclass
@@ -163,10 +162,8 @@ class MiniCodex:
             decision = controller.on_before_sample()
             if isinstance(decision, Abort):
                 break
-            tool_choice_value: str | dict[str, Any] = (
-                "required" if isinstance(decision.tool_policy, RequireAny) else "auto"
-            )
 
+            # Compute instructions banner/tools regardless of synthetic vs real
             reasoning_kwargs: dict[str, Any] = {}
             if self._reasoning_effort is not None or self._reasoning_summary is not None:
                 reasoning_kwargs = {
@@ -178,7 +175,6 @@ class MiniCodex:
                         },
                     ),
                 }
-            # Per-server MCP resource FYI (max 5 URIs per server)
             resources = await self._mcp.list_resources()
             by_server: dict[str, list[str]] = {}
             for it in resources:
@@ -197,11 +193,9 @@ class MiniCodex:
                     else:
                         lines.append(f"server={s} resources: {first}")
                 banner_chunks.append("FYI: MCP resources available:\n- " + "\n- ".join(lines))
-            # Discover available server names from the manager specs
-            servers = list(self._mcp._specs.keys())
+            servers = self.server_names
             if servers:
                 banner_chunks.append(f"FYI: MCP servers available: {servers}")
-                # Surface server descriptions as provided during initialization (multi-line, XML-like blocks)
                 xml_blocks: list[str] = []
                 for sname in servers:
                     init_res = await self._mcp.get_server_initialize(sname)
@@ -216,24 +210,34 @@ class MiniCodex:
             tools_list = await self._mcp.list_tools()
             tools_list.extend(self._resource_tools_descriptors())
 
-            resp = await _responses_create_with_retry(
-                self._client,
-                model=self._model,
-                input=input_payload,
-                instructions=instructions,
-                stream=False,
-                tool_choice=tool_choice_value,
-                store=True,
-                tools=tools_list,
-                **reasoning_kwargs,
-            )
+            # SyntheticAction path: use controller-provided outputs and skip LLM
+            if isinstance(decision, SyntheticAction):
+                resp_output = decision.outputs
+            else:
+                tool_choice_value: str | dict[str, Any] = (
+                    "required" if isinstance(decision.tool_policy, RequireAny) else "auto"
+                )
+                resp = await _responses_create_with_retry(
+                    self._client,
+                    model=self._model,
+                    input=input_payload,
+                    instructions=instructions,
+                    stream=False,
+                    tool_choice=tool_choice_value,
+                    store=True,
+                    tools=tools_list,
+                    **reasoning_kwargs,
+                )
+                resp_output = resp.output
 
             requires: list[ResponseFunctionToolCall] = []
             reasoning_count = 0
-            for item in resp.output:
+            for item in resp_output:
                 if _is_reasoning_item(item):
                     self._transcript.append(item.model_dump(exclude_none=True))
                     reasoning_count += 1
+                    if isinstance(item, ResponseReasoningItem):
+                        controller.on_reasoning(item)
                 elif isinstance(item, ResponseOutputMessage):
                     parts = [part.text for part in item.content if isinstance(part, ResponseOutputText) and part.text]
                     if parts:
@@ -244,10 +248,12 @@ class MiniCodex:
                         evt = {"kind": "assistant_text", "text": combined}
                         sequence.append(evt)
                         self._emit_event(evt)
+                        controller.on_assistant_text(combined)
                 elif isinstance(item, ResponseFunctionToolCall):
                     requires.append(item)
                     # Persist tool call into transcript so the next turn has full context
                     self._transcript.append(item.model_dump(exclude_none=True))
+                    controller.on_tool_call(item)
 
             if os.environ.get("MINICODEX_DEBUG"):
                 dbg = [{"name": tc.name, "call_id": tc.call_id, "arguments": tc.arguments} for tc in requires]
@@ -283,6 +289,7 @@ class MiniCodex:
                     sequence.append(fco_evt)
                     self._transcript.append(fco)
                     self._emit_event(fco_evt)
+                    controller.on_function_call_output(fc, fco)
                     continue
 
                 if fc.name == "mcp__resources__read":
@@ -355,6 +362,7 @@ class MiniCodex:
                     sequence.append(fco_evt)
                     self._transcript.append(fco)
                     self._emit_event(fco_evt)
+                    controller.on_function_call_output(fc, fco)
                     continue
 
                 # Namespaced MCP tool
@@ -533,6 +541,11 @@ class MiniCodex:
     @property
     def messages(self) -> list[dict[str, Any]]:
         return dump_messages_for_api(self._transcript)
+
+    @property
+    def server_names(self) -> list[str]:
+        """Convenience accessor for configured MCP server names."""
+        return self._mcp.server_names
 
     async def run(
         self,

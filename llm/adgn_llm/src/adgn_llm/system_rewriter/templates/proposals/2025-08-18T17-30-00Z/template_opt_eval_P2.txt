@@ -15,9 +15,9 @@ Error discipline
 Stop condition
 - Stop after emitting this immediate next action (plus brief evidence if relevant), or when clearly blocked.
 
-You can use the following tools without requiring user approval:${toolsBlob}
-${envGitBlobs}
-${modelLine}
+You can use the following tools without requiring user approval:{{toolsBlob}}
+{{envGitBlobs}}
+{{modelLine}}
 
 MCP Server Instructions
-${mcpSection}
+{{mcpSection}}

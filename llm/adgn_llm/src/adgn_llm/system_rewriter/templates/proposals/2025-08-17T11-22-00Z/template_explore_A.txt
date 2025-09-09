@@ -28,9 +28,9 @@ Task/Response structure (when complex)
 - Results: concise evidence (<=10 lines/summary)
 - Next: the next concrete step; ask “Proceed?” only when needed
 
-You can use the following tools without requiring user approval:${toolsBlob}
-${envGitBlobs}
-${modelLine}
+You can use the following tools without requiring user approval:{{toolsBlob}}
+{{envGitBlobs}}
+{{modelLine}}
 
 MCP Server Instructions
-${mcpSection}
+{{mcpSection}}

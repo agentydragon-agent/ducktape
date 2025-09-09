@@ -36,6 +36,7 @@ import os
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from .constants import BAD_MARKER, TOOLS_HEADER
 
 
 ROOT = Path(__file__).parent
@@ -46,8 +47,6 @@ DEFAULT_WIRE_LOG = (
     else (Path.home() / ".crush" / "logs" / "provider" / "provider-wire.log")
 )
 OUTPUT_PATH = ROOT / "data" / "dataset_crush.jsonl"
-
-from .constants import BAD_MARKER, TOOLS_HEADER
 
 
 def parse_rfc3339_millis(ts: str | None) -> int | None:
@@ -96,15 +95,16 @@ def sys_has_tools_header(system: Any) -> bool:
 def iter_wire_lines(path: Path):
     if not path.exists():
         return
-    opener = None
-    if str(path).endswith(".gz"):
-        import gzip  # lazy import
 
-        def opener(p):
-            return gzip.open(p, "rt", encoding="utf-8", errors="ignore")
-    else:
-        def opener(p):
-            return open(p, encoding="utf-8", errors="ignore")
+    def _gzip_open(p: Path):
+        import gzip
+
+        return gzip.open(p, "rt", encoding="utf-8", errors="ignore")
+
+    def _plain_open(p: Path):
+        return open(p, encoding="utf-8", errors="ignore")
+
+    opener = _gzip_open if str(path).endswith(".gz") else _plain_open
     with opener(path) as f:
         for line in f:
             yield line

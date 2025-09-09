@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """Prompt Engineer loop controller(s).
 
 These controllers implement minimal, application-level policies on top of the
@@ -7,10 +5,12 @@ MiniCodex generic loop-control API without baking any app-specific behavior into
 MiniCodex itself.
 """
 
-from adgn_llm.mini_codex.loop_control import Abort, Continue, LoopController, RequireAny
+from __future__ import annotations
+
+from adgn_llm.mini_codex.loop_control import Abort, Continue, RequireAny, BaseLoopController
 
 
-class ProposePromptNTimes(LoopController):
+class ProposePromptNTimes(BaseLoopController):
     """Require a tool call for the first N sampling steps, then abort.
 
     This is used by the Prompt Engineer to force exactly N calls to the

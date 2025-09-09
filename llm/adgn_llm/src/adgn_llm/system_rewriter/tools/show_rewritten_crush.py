@@ -33,15 +33,16 @@ def ensure_demo_template() -> Path:
 def iter_wire_lines(path: Path):
     if not path.exists():
         return
-    opener = None
-    if str(path).endswith(".gz"):
-        import gzip  # lazy
 
-        def opener(p):
-            return gzip.open(p, "rt", encoding="utf-8", errors="ignore")
-    else:
-        def opener(p):
-            return open(p, encoding="utf-8", errors="ignore")
+    def _gzip_open(p: Path):
+        import gzip
+
+        return gzip.open(p, "rt", encoding="utf-8", errors="ignore")
+
+    def _plain_open(p: Path):
+        return open(p, encoding="utf-8", errors="ignore")
+
+    opener = _gzip_open if str(path).endswith(".gz") else _plain_open
     with opener(path) as f:  # type: ignore[misc]
         for line in f:
             yield line

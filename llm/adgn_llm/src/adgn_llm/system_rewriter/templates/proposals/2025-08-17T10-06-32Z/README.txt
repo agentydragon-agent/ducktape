@@ -37,4 +37,4 @@ Tradeoffs
 - B maximizes grading adherence and brevity; risk: too terse for nuanced design unless needed.
 - C emphasizes robustness via fallback; slightly longer logic but higher fix rate on flaky tools.
 
-Placeholders preserved: ${toolsBlob}, ${envGitBlobs}, ${modelLine}, ${mcpSection}
+Placeholders preserved: {{toolsBlob}}, {{envGitBlobs}}, {{modelLine}}, {{mcpSection}}

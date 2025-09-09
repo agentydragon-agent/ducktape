@@ -13,13 +13,16 @@ from pathlib import Path
 from typing import Any
 
 from openai import AsyncOpenAI
+from openai.types.responses import ResponseFunctionToolCall
 
 from adgn_llm.mcp.docker_exec.server import make_container_exec_mcp
 from adgn_llm.mcp.inproc_utils import make_inproc_slot_spec
 from adgn_llm.mini_codex.agent import MiniCodex
-from adgn_llm.mini_codex.mcp_manager import McpManager
-
-from .specimen_utils import Specimen, ensure_archive_for_specimen_slug
+from adgn_llm.mini_codex.mcp_manager import McpManager, build_mcp_function
+from adgn_llm.mini_codex.loop_control import LoopController, BaseLoopController
+from adgn_llm.mcp.docker_exec.server import SERVER_NAME as DOCKER_SERVER_NAME, TOOL_EXEC_NAME as DOCKER_EXEC_TOOL_NAME
+# from adgn_llm.mini_codex.event_renderer import ConsoleEventRenderer, PrettyPrintController  # (optional; not required for bootstrap)
+from .specimen_utils import Specimen, ensure_archive_for_specimen_slug, LineRange, Occurrence
 
 DOCKER_IMAGE = "python:3.12-slim"
 
@@ -87,9 +90,11 @@ def _build_prompt(issue: Any, property_md_files: list[Path], occurrence: Any | N
             f'<file path=":/{rel.as_posix()}">\n{md.read_text(encoding="utf-8")}\n</file>',
         )
 
+    tool_name = build_mcp_function(DOCKER_SERVER_NAME, DOCKER_EXEC_TOOL_NAME)
+
     lines = [
         "Lint the following single issue strictly against the provided property definition files.",
-        "Use the function mcp__docker__exec to read files under /workspace (read-only).",
+        f"Use the function {tool_name} to read files under /workspace (read-only).",
         "Do not modify code. Judge only by the definitions as written.",
         "",
         "Issue (JSON):",
@@ -100,8 +105,8 @@ def _build_prompt(issue: Any, property_md_files: list[Path], occurrence: Any | N
         "",
         "Requirements:",
         (
-            "- First, call mcp__docker__session_info to discover working_dir and volumes; then use "
-            "mcp__docker__exec to fetch and quote the exact anchored lines (and a few lines of context if helpful)."
+            "- First, call mcp__resources__read (server='docker', uri='resource://container.info') to discover working_dir and volumes; then use "
+            f"{tool_name} to fetch and quote the exact anchored lines (and a few lines of context if helpful)."
         ),
         "- For each property listed, verify the anchored code truly violates the definition.",
         "- If an anchor range misses, suggest minimal corrected 1-based ranges (file and [start,end?]).",
@@ -113,9 +118,10 @@ def _build_prompt(issue: Any, property_md_files: list[Path], occurrence: Any | N
 
 async def _run_agent(
     prompt: str,
-    slots: dict[str, ServerSlot],
+    slots: dict[str, Any],
     model: str,
     client: AsyncOpenAI,
+    controller: "LoopController" | None = None,
 ) -> str:
     async with McpManager(slots) as mcp:
         agent = await MiniCodex.create(
@@ -124,8 +130,114 @@ async def _run_agent(
             system="You are a code agent. Be concise.",
             client=client,
         )
-        result = await agent.run(prompt)
+        result = await agent.run(prompt, controller=controller)
         return result.text.strip() if result.text else ""
+
+
+def _nl_slice_cmd(path: str, r: LineRange | None) -> str:
+    q = path.replace('"', '\\"')
+    if r is None:
+        # Cap to first 2000 lines for safety
+        return f"bash -lc \"nl -ba -w1 -s' ' '/workspace/{q}' | sed -n '1,2000p'\""
+    if r.end_line is None:
+        return f"bash -lc \"nl -ba -w1 -s' ' '/workspace/{q}' | sed -n '{r.start_line},$p'\""
+    return f"bash -lc \"nl -ba -w1 -s' ' '/workspace/{q}' | sed -n '{r.start_line},{r.end_line}p'\""
+
+
+def _make_bootstrap_controller(occ: Occurrence, content_root: Path) -> LoopController:
+    # Deterministic bootstrap with serial steps:
+    # Turn 1: read docker container info resource
+    # Turn 2: ls -la on all parent directories in one command
+    # Turn 3: per-file content (cat for small); if any file >=20kB, abort bootstrap before turn 3
+
+    files = list((occ.files or {}).keys())
+    from pathlib import Path as _P
+    dirs = sorted({str(_P(p).parent) for p in files})
+
+    # Determine sizes using local filesystem view of mounted content_root, not by parsing ls
+    sizes: dict[str, int] = {}
+    big_detected = False
+    for p in files:
+        hp = (content_root / p).resolve()
+        try:
+            st = hp.stat()
+            if not hp.is_file():
+                big_detected = True  # unknown shape; defer to model
+                continue
+            sizes[p] = int(st.st_size)
+            if st.st_size >= 20480:
+                big_detected = True
+        except FileNotFoundError:
+            big_detected = True
+        except PermissionError:
+            big_detected = True
+
+    # Pre-build calls per step
+    step1 = [
+        ResponseFunctionToolCall(
+            type="function_call",
+            name="mcp__resources__read",
+            call_id="bootstrap:res",
+            arguments=json.dumps({
+                "server": "docker",
+                "uri": "resource://container.info",
+                "start_offset": 0,
+                "max_bytes": 65536,
+            }),
+        )
+    ]
+
+    if dirs:
+        # Build argv without shell: ls -la dir1 dir2 ...
+        dir_args = ["/workspace/" + d for d in dirs]
+        step2 = [
+            ResponseFunctionToolCall(
+                type="function_call",
+                name=build_mcp_function(DOCKER_SERVER_NAME, DOCKER_EXEC_TOOL_NAME),
+                call_id="bootstrap:ls",
+                arguments=json.dumps({
+                    "cmd": ["ls", "-la", *dir_args],
+                }),
+            )
+        ]
+    else:
+        step2 = []
+
+    # Build per-file content commands (only when all are small)
+    def _content_calls() -> list[ResponseFunctionToolCall]:
+        out: list[ResponseFunctionToolCall] = []
+        for p in files:
+            q = p.replace('"', '\\"')
+            sz = sizes.get(p, -1)
+            if 0 <= sz < 20480:
+                cmd = ["nl", "-ba", "-w1", "-s", " ", f"/workspace/{q}"]
+            else:
+                # unreachable when big_detected is False; defer to model (no synthetic call)
+                continue
+            out.append(
+                ResponseFunctionToolCall(
+                    type="function_call",
+                    name=build_mcp_function(DOCKER_SERVER_NAME, DOCKER_EXEC_TOOL_NAME),
+                    call_id=f"bootstrap:show:{len(out)+1}",
+                    arguments=json.dumps({"cmd": cmd}),
+                )
+            )
+        return out
+
+    class _BootstrapCtrl(BaseLoopController):
+        def __init__(self) -> None:
+            self._step = 0
+        def on_before_sample(self):
+            from adgn_llm.mini_codex.loop_control import Continue, Auto, SyntheticAction
+            self._step += 1
+            if self._step == 1:
+                return SyntheticAction(outputs=step1)
+            if self._step == 2 and step2:
+                return SyntheticAction(outputs=step2)
+            if self._step == 3 and files and not big_detected:
+                return SyntheticAction(outputs=_content_calls())
+            return Continue(Auto())
+    return _BootstrapCtrl()
 
 
 def _docker_run_detached(root: Path, name: str) -> str:
@@ -245,7 +357,8 @@ def run_specimen_lint_issue(
         specs = {"docker": spec}
         props = _find_property_files([str(p) for p in issue.properties])
         prompt = _build_prompt(issue, props, occurrence=occ)
-        text = asyncio.run(_run_agent(prompt, specs, model, client))
+        base_ctrl = _make_bootstrap_controller(occ, content_root)
+        text = asyncio.run(_run_agent(prompt, specs, model, client, controller=base_ctrl))
         # Print the exact occurrence representation as fed to the model
         issue_dict = issue.model_dump(exclude_none=True)
         issue_dict.pop("id", None)

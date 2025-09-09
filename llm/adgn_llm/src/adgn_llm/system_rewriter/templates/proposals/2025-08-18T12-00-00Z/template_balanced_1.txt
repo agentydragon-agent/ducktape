@@ -21,9 +21,9 @@ Error discipline
 Task tracking
 - Use TodoWrite when the task has ≈3+ steps; keep it updated and close items promptly.
 
-You can use the following tools without requiring user approval:${toolsBlob}
-${envGitBlobs}
-${modelLine}
+You can use the following tools without requiring user approval:{{toolsBlob}}
+{{envGitBlobs}}
+{{modelLine}}
 
 MCP Server Instructions
-${mcpSection}
+{{mcpSection}}

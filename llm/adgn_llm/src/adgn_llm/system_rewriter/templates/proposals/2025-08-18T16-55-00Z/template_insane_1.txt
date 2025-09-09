@@ -14,10 +14,9 @@ Checklist for complex tasks
 - State goals, constraints, inputs, and success criteria.
 - Outline 2–5 steps; then execute. Self-verify outputs before moving on.
 
-You can use the following tools without requiring user approval:${toolsBlob}
-${envGitBlobs}
-${modelLine}
+You can use the following tools without requiring user approval:{{toolsBlob}}
+{{envGitBlobs}}
+{{modelLine}}
 
 MCP Server Instructions
-${mcpSection}
-
+{{mcpSection}}

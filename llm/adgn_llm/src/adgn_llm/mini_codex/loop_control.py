@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """Generic loop-control primitives for MiniCodex agents.
 
 This module intentionally avoids application-specific concerns. It exposes a
@@ -16,8 +14,14 @@ Notes / Future work (TODOs):
   transcript messages or function-call outputs; default off to keep core clean.
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Protocol, TYPE_CHECKING
+
+if TYPE_CHECKING:  # precise output item type used by MiniCodex
+    from openai.types.responses import ResponseOutput, ResponseFunctionToolCall, ResponseReasoningItem
+    from adgn_llm.mini_codex.agent import FunctionCallOutput
 
 
 # ---------------------------------------------------------------------------
@@ -71,6 +75,20 @@ class Abort(LoopDecision):
     pass
 
 
+@dataclass(frozen=True)
+class SyntheticAction(LoopDecision):
+    """Provide synthetic model output items for this sampling step.
+
+    MiniCodex will skip calling the real LLM for this step and instead process
+    these output items (tool calls, assistant messages, reasoning items) as if
+    returned by the model. After processing, the loop continues to the next
+    sampling step where the controller can return another decision.
+    """
+
+    # Use the same types MiniCodex already handles from OpenAI Responses
+    outputs: list["ResponseOutput"]
+
+
 # ---------------------------------------------------------------------------
 # Controller protocol and default implementation
 # ---------------------------------------------------------------------------
@@ -81,13 +99,60 @@ class LoopController(Protocol):
 
     on_before_sample is invoked once per sampling step. It should return either
     Continue(policy) to proceed, or Abort() to end the current turn.
+
+    Controllers may also implement on_<agent event> hooks; default no-ops are
+    provided by BaseLoopController.
     """
 
     def on_before_sample(self) -> LoopDecision:  # pragma: no cover - interface only
         ...
 
+    # Optional agent event hooks (use BaseLoopController to get no-ops)
+    def on_user_text(self, text: str) -> None:  # pragma: no cover - interface only
+        ...
 
-class DefaultController:
+    def on_assistant_text(self, text: str) -> None:  # pragma: no cover - interface only
+        ...
+
+    def on_tool_call(self, call: "ResponseFunctionToolCall") -> None:  # pragma: no cover - interface only
+        ...
+
+    def on_function_call_output(self, call: "ResponseFunctionToolCall", output: "FunctionCallOutput") -> None:  # pragma: no cover - interface only
+        ...
+
+    def on_reasoning(self, item: "ResponseReasoningItem") -> None:  # pragma: no cover - interface only
+        ...
+
+
+class BaseLoopController:
+    """Base class with no-op agent event hooks.
+
+    Subclass this to conveniently handle on_<agent event> methods without
+    affecting core loop control semantics.
+    """
+
+    # Loop decision must be implemented by subclasses
+    def on_before_sample(self) -> LoopDecision:  # pragma: no cover - interface only
+        raise NotImplementedError
+
+    # No-op hooks; subclasses override as needed
+    def on_user_text(self, text: str) -> None:  # pragma: no cover - default no-op
+        return None
+
+    def on_assistant_text(self, text: str) -> None:  # pragma: no cover - default no-op
+        return None
+
+    def on_tool_call(self, call: "ResponseFunctionToolCall") -> None:  # pragma: no cover - default no-op
+        return None
+
+    def on_function_call_output(self, call: "ResponseFunctionToolCall", output: "FunctionCallOutput") -> None:  # pragma: no cover - default no-op
+        return None
+
+    def on_reasoning(self, item: "ResponseReasoningItem") -> None:  # pragma: no cover - default no-op
+        return None
+
+
+class DefaultController(BaseLoopController):
     """Default behavior: require a tool on the first sample, then auto.
 
     Mirrors legacy MiniCodex behavior (first step prefers a tool call, then

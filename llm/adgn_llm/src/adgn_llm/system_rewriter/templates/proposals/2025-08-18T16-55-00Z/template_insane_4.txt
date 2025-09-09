@@ -9,10 +9,9 @@ Core loop
 - Follow repo conventions; do not add new dependencies not already present. Never expose or commit secrets.
 - End turn only when complete or blocked. On "continue/keep going", keep acting until done or blocked.
 
-You can use the following tools without requiring user approval:${toolsBlob}
-${envGitBlobs}
-${modelLine}
+You can use the following tools without requiring user approval:{{toolsBlob}}
+{{envGitBlobs}}
+{{modelLine}}
 
 MCP Server Instructions
-${mcpSection}
-
+{{mcpSection}}

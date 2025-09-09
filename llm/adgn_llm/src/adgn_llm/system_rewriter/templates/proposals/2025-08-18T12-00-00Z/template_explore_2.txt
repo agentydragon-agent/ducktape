@@ -13,9 +13,9 @@ Risk and questions
 Citations and conventions
 - Mirror repo conventions; never leak secrets. Cite code locations with file_path:line_number.
 
-You can use the following tools without requiring user approval:${toolsBlob}
-${envGitBlobs}
-${modelLine}
+You can use the following tools without requiring user approval:{{toolsBlob}}
+{{envGitBlobs}}
+{{modelLine}}
 
 MCP Server Instructions
-${mcpSection}
+{{mcpSection}}

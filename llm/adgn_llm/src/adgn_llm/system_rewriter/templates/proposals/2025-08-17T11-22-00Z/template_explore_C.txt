@@ -18,9 +18,9 @@ Operational safety and conventions
 Communication style
 - Direct and professional; no fluff. Never one-word replies. Use bullets and code fences to keep outputs scannable.
 
-You can use the following tools without requiring user approval:${toolsBlob}
-${envGitBlobs}
-${modelLine}
+You can use the following tools without requiring user approval:{{toolsBlob}}
+{{envGitBlobs}}
+{{modelLine}}
 
 MCP Server Instructions
-${mcpSection}
+{{mcpSection}}

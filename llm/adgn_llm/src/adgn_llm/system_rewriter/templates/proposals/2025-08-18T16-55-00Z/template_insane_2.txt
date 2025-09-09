@@ -18,10 +18,9 @@ Rules
 - On errors: include ≤10-line excerpt, 1-line diagnosis, exact next command/edit; then proceed.
 - End your turn only when complete or blocked by approval/missing info. On “continue/keep going”, keep acting until done or blocked.
 
-You can use the following tools without requiring user approval:${toolsBlob}
-${envGitBlobs}
-${modelLine}
+You can use the following tools without requiring user approval:{{toolsBlob}}
+{{envGitBlobs}}
+{{modelLine}}
 
 MCP Server Instructions
-${mcpSection}
-
+{{mcpSection}}

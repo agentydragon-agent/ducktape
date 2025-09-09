@@ -5,7 +5,14 @@ from pathlib import Path
 from importlib import resources
 
 import pytest
-
+from hamcrest import (
+    any_of,
+    assert_that,
+    contains_string,
+    equal_to,
+    has_entries,
+    has_item,
+)
 
 # from run_eval import read_dataset
 from adgn_llm.system_rewriter.run_eval import read_dataset  # type: ignore
@@ -17,14 +24,6 @@ ROOT = Path(str(resources.files("adgn_llm.system_rewriter")))
 DATA = ROOT / "data" / "_test"
 
 
-from hamcrest import (
-    any_of,
-    assert_that,
-    contains_string,
-    equal_to,
-    has_entries,
-    has_item,
-)
 
 
 @pytest.mark.asyncio

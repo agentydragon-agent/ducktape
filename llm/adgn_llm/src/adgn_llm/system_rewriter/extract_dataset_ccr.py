@@ -26,11 +26,10 @@ import json
 import time
 from pathlib import Path
 from typing import Any
+from .constants import BAD_MARKER, TOOLS_HEADER
 
 TRACE_DIR = Path.home() / ".claude-code-router" / "logs"
 OUTPUT_PATH = Path(__file__).parent / "data" / "dataset_ccr.jsonl"
-
-from .constants import BAD_MARKER, TOOLS_HEADER
 
 
 def find_last_user_text(msg: Any) -> str | None:

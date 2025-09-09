@@ -16,6 +16,21 @@ from typing import Any, Awaitable, Callable, Dict
 from mcp.client.session import ClientSession
 from mcp.types import InitializeResult
 
+# Shared MCP naming helpers/constants
+MCP_NAMESPACE_PREFIX = "mcp__"
+
+def build_mcp_function(server: str, tool: str) -> str:
+    return f"{MCP_NAMESPACE_PREFIX}{server}__{tool}"
+
+def parse_mcp_function(namespaced: str) -> tuple[str, str]:
+    if not namespaced.startswith(MCP_NAMESPACE_PREFIX):
+        raise ValueError(f"Not an MCP tool name: {namespaced}")
+    remainder = namespaced[len(MCP_NAMESPACE_PREFIX) :]
+    if "__" not in remainder:
+        raise ValueError(f"Invalid MCP tool name: {namespaced}")
+    server, tool = remainder.split("__", 1)
+    return server, tool
+
 # ---- DRY: open a ready session under a single ExitStack ----
 OpenFn = Callable[[AsyncExitStack], Awaitable[ClientSession]]
 
@@ -144,6 +159,11 @@ class McpManager:
         slot = await self.ensure_open(server)
         return slot.init_result
 
+    @property
+    def server_names(self) -> list[str]:
+        """Configured server names (public API)."""
+        return list(self._specs.keys())
+
     @staticmethod
     def slot_from_spec(name: str, spec: Any) -> "ServerSlotSpec":
         """Create a ServerSlotSpec from a transport spec.
@@ -224,10 +244,5 @@ class McpManager:
         return {name: McpManager.slot_from_spec(name, spec) for name, spec in (specs or {}).items()}
 
     def resolve_function(self, namespaced: str) -> tuple[str, str]:
-        if not namespaced.startswith("mcp__"):
-            raise ValueError(f"Not an MCP tool name: {namespaced}")
-        remainder = namespaced[len("mcp__") :]
-        if "__" not in remainder:
-            raise ValueError(f"Invalid MCP tool name: {namespaced}")
-        server, tool = remainder.split("__", 1)
-        return server, tool
+        # Back-compat: instance method delegating to parse helper
+        return parse_mcp_function(namespaced)

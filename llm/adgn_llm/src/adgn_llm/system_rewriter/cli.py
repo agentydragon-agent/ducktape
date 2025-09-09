@@ -7,6 +7,9 @@ from pathlib import Path
 from typing import Optional, List
 
 import typer
+from rich.console import Console
+from rich.panel import Panel
+from rich.rule import Rule
 
 from . import run_eval
 from . import compare_eval_vs_ccr
@@ -37,6 +40,9 @@ def cmd_run(
     """Run an evaluation end-to-end (rewrite → sample → grade → report)."""
     dsets = dataset or [run_eval.DEFAULT_DATASET_PATH]
     base_out = out_dir if out_dir else None
+    # Fail fast on invalid/unreadable template
+    from .validation import validate_template_file
+    validate_template_file(template)
     asyncio.run(
         run_eval.run_eval(
             template_path=template,
@@ -169,14 +175,19 @@ def cmd_leaderboard(
     limit: int | None = typer.Option(None, "--limit", help="Limit rows"),
     # --since removed; grouping by template consolidates runs regardless of timestamp
 ):
-    out = leaderboard.generate(
+    table, errors = leaderboard.generate(
         runs_dir=runs_dir,
         templates_dir=templates_dir,
         sort_key=sort_key,
         asc=asc,
         limit=limit,
     )
-    print(out)
+    console = Console()
+    console.print(table)
+    if errors:
+        console.print(Rule("Template validation errors", style="red"))
+        for e in errors:
+            console.print(Panel(e, border_style="red"))
 
 
 if __name__ == "__main__":

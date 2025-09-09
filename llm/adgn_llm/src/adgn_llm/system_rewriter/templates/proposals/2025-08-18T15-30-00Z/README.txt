@@ -17,7 +17,7 @@ Variants
 - template_exploit_B4.txt (free-choice): Parallelization/throughput-first; stresses batching, caching findings, and avoiding redundant scans; good for discovery-heavy samples.
 - template_exploit_B5.txt (explore): Clarity-first minimalism; ultra-lean narration + same verification/error gates; intended to probe whether even terser scaffolding boosts adherence.
 
-Placeholders: All templates preserve ${toolsBlob}, ${envGitBlobs}, ${modelLine}, ${mcpSection} exactly once each.
+Placeholders: All templates preserve {{toolsBlob}}, {{envGitBlobs}}, {{modelLine}}, {{mcpSection}} exactly once each.
 
 Next steps
 - Run eval on all five proposals against the same suite as A1; compare mean, ci95, cluster performance, with_tools_pct, and error traces.

@@ -16,12 +16,12 @@ import io
 import json
 import os
 import sys
-import importlib.resources as res
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from rich.console import Console
 from rich.table import Table
+from .templates import validate_template_file, load_known_templates
 
 
 @dataclass
@@ -35,51 +35,14 @@ class Row:
     template_label: str
     template_hash: str
     with_tools_pct: float
+    template_error: bool = False
+    template_error_exc: str | None = None
 
 
 def sha1_text(text: str) -> str:
     return hashlib.sha1(text.encode("utf-8")).hexdigest()
 
 
-def load_known_templates(templates_dir: Path) -> dict[str, str]:
-    """Build hash->name mapping from packaged templates/ using importlib.resources.
-
-    Ignores templates_dir arg; relies on installed package resources so this works
-    from anywhere (zip/venv/installed wheel).
-    """
-    mapping: dict[str, str] = {}
-    try:
-        root = res.files("adgn_llm.system_rewriter.templates")
-    except Exception:
-        return mapping
-
-    def _walk(dir_entry, prefix: str = ""):
-        try:
-            it = dir_entry.iterdir()
-        except Exception:
-            return
-        for child in it:
-            name = f"{prefix}{child.name}"
-            try:
-                is_dir = child.is_dir()
-            except Exception:
-                is_dir = False
-            if is_dir:
-                yield from _walk(child, f"{name}/")
-            else:
-                if name.endswith(".txt"):
-                    yield name, child
-
-    try:
-        for rel_name, file_entry in _walk(root, ""):
-            try:
-                text = file_entry.read_text(encoding="utf-8")
-            except Exception:
-                continue
-            mapping[sha1_text(text)] = rel_name
-    except Exception:
-        pass
-    return mapping
 
 
 def iter_run_dirs(runs_dir: Path) -> Iterable[Path]:
@@ -142,10 +105,23 @@ def load_row(run_dir: Path, known: dict[str, str]) -> Row | None:
     except Exception:
         return None
     try:
-        thash = sha1_text(t_path.read_text(encoding="utf-8"))
+        t_text = t_path.read_text(encoding="utf-8")
     except Exception:
-        thash = "?"
-    label = known.get(thash) or f"UNKNOWN:{thash[:8]} [not in templates/]"
+        t_text = ""
+    thash = sha1_text(t_text) if t_text else "?"
+    label = known.get(t_text) or str(t_path)
+
+    # Validate the concrete template file in this run
+    is_err = False
+    err_repr: str | None = None
+    try:
+        validate_template_file(t_path)
+    except Exception as e:
+        is_err = True
+        try:
+            err_repr = repr(e)
+        except Exception:
+            err_repr = "<unprintable exception>"
 
     def _f(key: str, default: float = 0.0) -> float:
         try:
@@ -210,6 +186,8 @@ def load_row(run_dir: Path, known: dict[str, str]) -> Row | None:
         template_label=label,
         template_hash=thash,
         with_tools_pct=with_tools,
+        template_error=is_err,
+        template_error_exc=err_repr,
     )
 
 
@@ -234,6 +212,7 @@ def format_md(rows: list[Row]) -> str:
 
 
 def _color_for_hash(hash_hex: str) -> str:
+    # Kept for palette choice; may change to deterministic by template text if desired
     # Deterministic palette index from hash
     palette = [
         "bright_cyan",
@@ -268,8 +247,8 @@ def _relpath(p: str) -> str:
         return p
 
 
-def format_rich_table(rows: list[Row]) -> str:
-    """Render a pretty CLI table using rich and return its text output."""
+def format_rich_table(rows: list[Row]) -> Table:
+    """Build a rich.Table; caller is responsible for printing with Console."""
     table = Table(show_header=True, header_style="bold cyan")
     table.add_column("lcb", justify="right")
     table.add_column("mean", justify="right")
@@ -284,9 +263,8 @@ def format_rich_table(rows: list[Row]) -> str:
         lcb = r.lcb if r.lcb is not None else (r.mean - r.ci95)
         ucb = r.ucb if r.ucb is not None else (r.mean + r.ci95)
         color = _color_for_hash(r.template_hash)
-        # Highlight templates not present in packaged templates/
-        if r.template_label.startswith("UNKNOWN:"):
-            label_cell = f"[bold red]{r.template_label}[/]"
+        if r.template_error:
+            label_cell = f"[bold red]ERR: {_relpath(r.template_label)}[/]"
         else:
             rel_label = _relpath(r.template_label)
             label_cell = f"[{color}]{rel_label}[/]"
@@ -300,11 +278,7 @@ def format_rich_table(rows: list[Row]) -> str:
             label_cell,
         )
 
-    # Render off-screen to avoid duplicate stdout prints; caller prints returned text
-    buffer = io.StringIO()
-    console = Console(file=buffer, record=True)
-    console.print(table)
-    return buffer.getvalue()
+    return table
 
 
 def generate(
@@ -313,9 +287,9 @@ def generate(
     sort_key: str = "mean",
     asc: bool = False,
     limit: int | None = None,
-) -> str:
+) -> tuple[Table, list[str]]:
     # Build mapping from packaged templates/ only (stable names)
-    known = load_known_templates(templates_dir)
+    known = load_known_templates()
     if not runs_dir.exists():
         raise FileNotFoundError(f"No runs dir: {runs_dir}")
 
@@ -346,7 +320,15 @@ def generate(
     if limit is not None:
         flat_rows = flat_rows[: max(0, limit)]
 
-    return format_rich_table(flat_rows)
+    table = format_rich_table(flat_rows)
+
+    # Collect error reprs for any invalid templates
+    errors: list[str] = []
+    for r in flat_rows:
+        if r.template_error:
+            errors.append(f"{r.run}: {_relpath(r.template_label)} — {r.template_error_exc}")
+
+    return table, errors
 
 
 def parse_args() -> argparse.Namespace:
@@ -380,7 +362,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     try:
-        out = generate(
+        table, errors = generate(
             runs_dir=args.runs_dir,
             templates_dir=args.templates_dir,
             sort_key=args.sort,
@@ -390,7 +372,10 @@ def main() -> int:
     except Exception as e:
         print(str(e), file=sys.stderr)
         return 2
-    print(out)
+    console = Console()
+    console.print(table)
+    for e in errors:
+        console.print(f"[red]{e}[/]")
     return 0
 
 

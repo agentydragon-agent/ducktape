@@ -31,7 +31,8 @@ from adgn_llm.mini_codex.cli import (
     responses_followup_with_tool_outputs,
     responses_turn,
 )
-from adgn_llm.mini_codex.mcp_manager import McpManager
+from adgn_llm.mini_codex.mcp_manager import McpManager, build_mcp_function
+from adgn_llm.mcp.docker_exec.server import SERVER_NAME as DOCKER_SERVER_NAME, TOOL_EXEC_NAME as DOCKER_EXEC_TOOL_NAME
 
 CONSOLE_SCRIPT = "adgn-mcp-docker-exec"
 
@@ -72,14 +73,8 @@ async def run_demo() -> None:
         client = openai_client()
 
         async with McpManager(McpManager.slots_from_specs({"docker": servers["docker"]})) as mcp:
-            # Find the tool name the model will call (e.g., mcp__docker__docker_exec)
-            tool_names = [t.get("name") for t in (await mcp.list_tools()) if t.get("type") == "function"]
-            docker_tool = next(
-                (n for n in tool_names if n and n.startswith("mcp__docker__")),
-                None,
-            )
-            if not docker_tool:
-                raise RuntimeError("docker MCP tool not found in manager")
+            # Known tool name from constants (avoid brittle discovery)
+            docker_tool = build_mcp_function(DOCKER_SERVER_NAME, DOCKER_EXEC_TOOL_NAME)
 
             # 4) Build a short prompt instructing how to use the tool
             user_task = (

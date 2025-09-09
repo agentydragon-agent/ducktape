@@ -3,11 +3,10 @@ import asyncio
 import json
 from pathlib import Path
 from typing import Any
+from .constants import BAD_MARKER, TOOLS_HEADER
 
 TRACE_DIR = Path.home() / ".claude-code-router" / "logs"
 OUTPUT_PATH = Path(__file__).parent / "data" / "dataset.jsonl"
-
-from .constants import BAD_MARKER, TOOLS_HEADER
 
 
 def list_trace_files() -> list[Path]:

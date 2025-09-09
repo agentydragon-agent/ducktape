@@ -31,7 +31,7 @@ Variants
 - template_explore_1.txt (explore): Tight brevity + strict 2-round context budget before acting; probes whether lower search improves scores.
 - template_explore_2.txt (explore): Aggressive persistence + self-verification; probes whether fewer questions and more action boosts difficult samples.
 
-Placeholders: All templates include exactly once each: ${toolsBlob}, ${envGitBlobs}, ${modelLine}, ${mcpSection}.
+Placeholders: All templates include exactly once each: {{toolsBlob}}, {{envGitBlobs}}, {{modelLine}}, {{mcpSection}}.
 
 Next steps
 - Run all five templates through the eval harness.

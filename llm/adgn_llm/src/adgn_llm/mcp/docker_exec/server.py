@@ -17,6 +17,10 @@ from typing import Dict
 
 from mcp.server.fastmcp import FastMCP
 
+# Shared names for wiring and renderers
+SERVER_NAME = "docker"
+TOOL_EXEC_NAME = "docker_exec"
+
 # Shared container session core
 from .._shared.container_session import (
     make_container_lifespan,
@@ -57,5 +61,5 @@ def make_container_exec_mcp(
         instructions="Per-session container exec. See resource container.info for details.",
         lifespan=lifespan,
     )
-    register_container(server, tool_name="docker_exec")
+    register_container(server, tool_name=TOOL_EXEC_NAME)
     return server
