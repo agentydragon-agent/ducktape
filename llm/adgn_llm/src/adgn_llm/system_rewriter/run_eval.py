@@ -121,7 +121,9 @@ async def read_dataset(dataset_path: Path) -> list[Sample]:
 
 
 def estimate_tokens(text: str) -> int:
-    return len(tiktoken.get_encoding("cl100k_base").encode(text))
+    enc = tiktoken.get_encoding("cl100k_base")
+    # Encode special-token-looking sequences as plain text (no ValueError)
+    return len(enc.encode(text, disallowed_special=()))
 
 
 def tokens_for_chat_messages(msgs: list[dict[str, Any]]) -> int:
