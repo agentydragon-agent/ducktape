@@ -8,18 +8,21 @@ from typing import Optional, List
 
 import typer
 
-# Import modules to reuse their logic without duplicating parsing
-from . import run_eval as run_eval_mod
-from . import compare_eval_vs_ccr as compare_mod
-from . import extract_dataset_ccr as ccr_mod
-from . import extract_dataset_crush as crush_mod
+from . import run_eval
+from . import compare_eval_vs_ccr
+from . import extract_dataset_ccr
+from . import extract_dataset_crush
 
-app = typer.Typer(help="System rewriter toolkit: extract datasets, run evals, and compare against CCR." )
+app = typer.Typer(
+    help="System rewriter toolkit: extract datasets, run evals, and compare against CCR."
+)
 
 
 @app.command("run")
 def cmd_run(
-    template: Path = typer.Argument(..., help="Path to system prompt template (mustache-style: {{toolsBlob}}, etc.)"),
+    template: Path = typer.Argument(
+        ..., help="Path to system prompt template (mustache-style: {{toolsBlob}}, etc.)"
+    ),
     dataset: List[Path] = typer.Option(
         None,
         "--dataset",
@@ -31,14 +34,18 @@ def cmd_run(
         "--out-dir",
         help="Output directory. If omitted, writes to runs/<ts>.",
     ),
-    n: Optional[int] = typer.Option(None, "--n", help="Limit number of samples to process"),
-    concurrency: int = typer.Option(32, "--concurrency", help="Parallelism for sampling/grading"),
+    n: Optional[int] = typer.Option(
+        None, "--n", help="Limit number of samples to process"
+    ),
+    concurrency: int = typer.Option(
+        32, "--concurrency", help="Parallelism for sampling/grading"
+    ),
 ):
     """Run an evaluation end-to-end (rewrite → sample → grade → report)."""
-    dsets = dataset or [run_eval_mod.DEFAULT_DATASET_PATH]
+    dsets = dataset or [run_eval.DEFAULT_DATASET_PATH]
     base_out = out_dir if out_dir else None
     asyncio.run(
-        run_eval_mod.run_eval(
+        run_eval.run_eval(
             template_path=template,
             dataset_paths=dsets,
             base_out=base_out,
@@ -50,15 +57,19 @@ def cmd_run(
 
 @app.command("compare")
 def cmd_compare(
-    run_dir: Path = typer.Argument(..., help="Path to eval run directory (contains samples.jsonl)"),
-    out_dir: Optional[Path] = typer.Option(None, "--out-dir", help="Output directory for diffs"),
+    run_dir: Path = typer.Argument(
+        ..., help="Path to eval run directory (contains samples.jsonl)"
+    ),
+    out_dir: Optional[Path] = typer.Option(
+        None, "--out-dir", help="Output directory for diffs"
+    ),
     limit: int = typer.Option(5, "--limit", help="Max number of samples to compare"),
 ):
     """Diff eval sampler requests vs actual CCR chat completion requests."""
     out = out_dir or (run_dir / "compare_vs_ccr")
     out.mkdir(parents=True, exist_ok=True)
 
-    samples = compare_mod.load_samples(run_dir)
+    samples = compare_eval_vs_ccr.load_samples(run_dir)
     count = 0
     wrote: list[str] = []
     for rec in samples:
@@ -68,20 +79,20 @@ def cmd_compare(
         eval_req = rec.get("request") or {}
         if not cid or not isinstance(eval_req, dict):
             continue
-        ccr_req = compare_mod.find_ccr_openai_request(cid)
+        ccr_req = compare_eval_vs_ccr.find_ccr_openai_request(cid)
         if not ccr_req:
             continue
         # Prepare pretty JSONs
-        eval_body = compare_mod.drop_none(dict(eval_req))
-        eval_json = compare_mod.pretty(eval_body)
-        ccr_json = compare_mod.pretty(ccr_req)
+        eval_body = compare_eval_vs_ccr.drop_none(dict(eval_req))
+        eval_json = compare_eval_vs_ccr.pretty(eval_body)
+        ccr_json = compare_eval_vs_ccr.pretty(ccr_req)
         # Write files
         case_dir = out / f"cid-{cid}"
         case_dir.mkdir(parents=True, exist_ok=True)
         (case_dir / "eval_request.json").write_text(eval_json, encoding="utf-8")
         (case_dir / "ccr_request.json").write_text(ccr_json, encoding="utf-8")
         # Diff
-        diff_text = compare_mod.unified_diff_str(
+        diff_text = compare_eval_vs_ccr.unified_diff_str(
             ccr_json, eval_json, fromfile="ccr_request.json", tofile="eval_request.json"
         )
         (case_dir / "diff.unified.txt").write_text(diff_text, encoding="utf-8")
@@ -97,7 +108,7 @@ def cmd_compare(
 def cmd_extract_ccr():
     """Extract dataset from CCR router logs to ./data/dataset_ccr.jsonl."""
     # Reuse module's async entrypoint
-    asyncio.run(ccr_mod.main())
+    asyncio.run(extract_dataset_ccr.main())
 
 
 @app.command("extract-crush")
@@ -119,7 +130,7 @@ def cmd_extract_crush(
     ),
 ):
     """Extract dataset from Crush provider wire logs to ./data/dataset_crush.jsonl."""
-    out_path = output or crush_mod.OUTPUT_PATH
+    out_path = output or extract_dataset_crush.OUTPUT_PATH
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     logs: list[Path]
@@ -127,12 +138,12 @@ def cmd_extract_crush(
         logs = [wire_log]
     else:
         roots = scan_dir or [Path.home() / "code"]
-        logs = crush_mod.find_wire_logs(roots)
+        logs = extract_dataset_crush.find_wire_logs(roots)
 
     total = 0
     with out_path.open("w", encoding="utf-8") as out_f:
         for log_path in logs:
-            recs = crush_mod.process_wire(log_path, require_bad=True)
+            recs = extract_dataset_crush.process_wire(log_path, require_bad=True)
             for r in recs:
                 out_f.write(json.dumps(r, ensure_ascii=False) + "\n")
             total += len(recs)
