@@ -33,8 +33,6 @@ from .specimen_utils import (
 )
 
 
-
-
 def read_embedded_paths(paths: list[Path]) -> str:
     files_to_embed: list[Path] = []
     for q in paths:
@@ -51,8 +49,6 @@ def read_embedded_paths(paths: list[Path]) -> str:
     return "\n\n".join(blocks)
 
 
-
-
 def _properties_text() -> str:
     # Load packaged Markdown definitions and wrap each with a file tag that
     # encodes its path relative to the properties/ root, so cross-links are meaningful.
@@ -65,8 +61,6 @@ def _properties_text() -> str:
             f'<file path=":/{rel.as_posix()}">\n{md.read_text(encoding="utf-8")}\n</file>',
         )
     return "\n\n".join(parts)
-
-
 
 
 # --- Jinja2 template helpers ---
@@ -165,8 +159,6 @@ def _format_tools_table(available: list[str]) -> str:
         )
         lines.append(f"{status:<5}  {name:<12}  {cat:<14}  {desc}")
     return "\n".join(lines)
-
-
 
 
 def _detect_tools() -> list[str]:

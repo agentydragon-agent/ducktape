@@ -11,6 +11,7 @@ from typing import Any
 import docker
 from openai import AsyncOpenAI
 from openai.types.responses import ResponseFunctionToolCall
+from importlib import resources as ilres
 
 from adgn_llm.properties.prop_utils import properties_root, find_property_files
 from adgn_llm.properties.specimen_utils import load_single_issue
@@ -35,8 +36,11 @@ from adgn_llm.mini_codex.event_renderer import (
 from .specimen_utils import (
     ensure_archive_for_specimen_slug,
     Occurrence,
+    LineRange,
 )
+from .prompt_utils import render_prompt_template
 from mcp.server.fastmcp import FastMCP
+from pydantic import BaseModel, ConfigDict, Field
 
 DOCKER_IMAGE = "adgn-llm/properties-critic:latest"
 
@@ -46,15 +50,33 @@ DOCKER_IMAGE = "adgn-llm/properties-critic:latest"
 # ---------------------------------------------------------------------------
 
 
-@dataclass
+class LintSubmitPayload(BaseModel):
+    """Final linter result payload."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    fail: bool = Field(
+        ..., description="Set true if any property is violated; false if all checks pass."
+    )
+    message_md: str = Field(
+        ..., description="Concise Markdown report; do not restate pass/fail."
+    )
+    corrected_anchors: dict[str, list[LineRange] | None] | None = Field(
+        default=None,
+        description=(
+            "null or full replacement of Occurrence.files-style anchors: "
+            "{path: [{start_line: int, end_line: int|null}] | null}"
+        ),
+    )
+
+
 class LintSubmitState:
     done: bool = False
-    fail: bool | None = None
-    message_md: str | None = None
+    result: LintSubmitPayload | None = None
 
 
 def make_lint_submit_server(
-    state: LintSubmitState, name: str = "lint_submit"
+    state: LintSubmitState, *, name: str = "lint_submit", occ: Occurrence
 ) -> FastMCP:
     """Tiny FastMCP server exposing a single tool: submit_result.
 
@@ -64,9 +86,9 @@ def make_lint_submit_server(
     mcp = FastMCP(name, instructions="Final result submission for linting run")
 
     @mcp.tool()
-    async def submit_result(fail: bool, message_md: str) -> dict[str, Any]:
-        state.fail = bool(fail)
-        state.message_md = message_md
+    async def submit_result(result: LintSubmitPayload) -> dict[str, Any]:
+        """Submit final linter result."""
+        state.result = result
         state.done = True
         return {"ok": True}
 
@@ -86,68 +108,37 @@ class LintConfig:
     dry_run: bool = False
 
 
+def make_nl_tool_call(container_path: str, call_id: str) -> ResponseFunctionToolCall:
+    """Create a docker exec tool call to render a file with line numbers.
+
+    Reads the entire file (no size cap) using `nl -ba -w1 -s ' ' <path>`.
+    """
+    return ResponseFunctionToolCall(
+        type="function_call",
+        name=build_mcp_function(DOCKER_SERVER_NAME, DOCKER_EXEC_TOOL_NAME),
+        call_id=call_id,
+        arguments=json.dumps({"cmd": ["nl", "-ba", "-w1", "-s", " ", container_path]}),
+    )
+
+
 def _build_prompt(
-    issue: Any,
-    property_md_files: list[Path],
-    *,
-    submit_tool_name: str,
-    occurrence: Any | None = None,
+    issue: Any, property_md_files: list[Path], *, submit_tool_name: str, occurrence: Any
 ) -> str:
-    # Do not include specimen slug or issue id. Include only issue fields and property definitions.
-    # The agent will read code from /workspace via MCP.
+    # Do not include specimen slug or issue id. Include only issue fields.
+    # The agent will read code from /workspace and property definitions from /props via MCP.
     issue_dict = issue.model_dump(exclude_none=True)
     issue_dict.pop("id", None)
-    if occurrence is not None:
-        try:
-            issue_dict["instances"] = [occurrence.model_dump(exclude_none=True)]
-        except Exception:
-            issue_dict["instances"] = [occurrence]
+    issue_dict["instances"] = [occurrence.model_dump(exclude_none=True)]
     issue_json = json.dumps(issue_dict, ensure_ascii=False)
-
-    md_blocks: list[str] = []
-    props_root = properties_root()
-    for md in property_md_files:
-        rel = md.relative_to(props_root)
-        md_blocks.append(
-            f'<file path=":/{rel.as_posix()}">\n{md.read_text(encoding="utf-8")}\n</file>',
-        )
 
     docker_tool_name = build_mcp_function(DOCKER_SERVER_NAME, DOCKER_EXEC_TOOL_NAME)
 
-    lines = [
-        "Lint the following single issue strictly against the provided property definition files.",
-        f"Use the function {docker_tool_name} to read files under /workspace (read-only).",
-        "Do not modify code. Judge only by the definitions as written.",
-        "",
-        "Tool-calling policy:",
-        "- You MUST call a tool on every sampling step (no plain assistant replies).",
-        f"- When finished, you MUST call {submit_tool_name} exactly once to submit the final result.",
-        "",
-        "Issue (JSON):",
-        issue_json,
-        "",
-        "Property definitions:",
-        *md_blocks,
-        "",
-        "Requirements:",
-        (
-            "- First, call mcp__resources__read (server='docker', uri='resource://container.info') to discover working_dir and volumes; then use "
-            f"{docker_tool_name} to fetch and quote the exact anchored lines (and a few lines of context if helpful)."
-        ),
-        "- For each property listed, verify the anchored code truly violates the definition.",
-        "- If an anchor range misses, suggest minimal corrected 1-based ranges (file and [start,end?]).",
-        "- If any listed property does not apply, explain briefly why.",
-        "",
-        "Submit result (required, exactly once):",
-        f"- Call {submit_tool_name} with:",
-        "  - fail: true if any property is violated; false if all checks pass",
-        "  - message_md: concise Markdown report (do not restate pass/fail); include:",
-        "    - Bulleted findings (if any): 'path:line-range — short rationale'; include minimal quoted code (<= 15 lines) only when clarifying.",
-        "    - Mis-anchored ranges: propose corrected 1-based file:[start,end] ranges.",
-        "    - Non-applicable properties: one short bullet each with brief rationale.",
-        "",
-    ]
-    return "\n".join(lines).strip()
+    return render_prompt_template(
+        "lint_issue.md.j2",
+        issue_json=issue_json,
+        docker_tool_name=docker_tool_name,
+        submit_tool_name=submit_tool_name,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -156,8 +147,6 @@ def _build_prompt(
 
 
 BIG_THRESHOLD = 20480
-
-
 
 
 # ---------------------------------------------------------------------------
@@ -172,6 +161,7 @@ class LinterController(DisplayEventsMixin):
         state: LintSubmitState,
         occ: Occurrence,
         content_root: Path,
+        prop_paths: list[str] | None = None,
         renderer: ConsoleEventRenderer | None = None,
     ) -> None:
         super().__init__(renderer=renderer, show_text=False)
@@ -225,18 +215,15 @@ class LinterController(DisplayEventsMixin):
                 if sizes[q] > BIG_THRESHOLD:
                     continue
                 out.append(
-                    ResponseFunctionToolCall(
-                        type="function_call",
-                        name=build_mcp_function(DOCKER_SERVER_NAME, DOCKER_EXEC_TOOL_NAME),
-                        call_id=f"bootstrap:show:{len(out) + 1}",
-                        arguments=json.dumps(
-                            {"cmd": ["nl", "-ba", "-w1", "-s", " ", f"/workspace/{q}"]}
-                        ),
-                    )
+                    make_nl_tool_call(f"/workspace/{q}", f"bootstrap:show:{len(out) + 1}")
                 )
             return out
 
         self._step3 = _content_calls()
+        # Property definition reads (full files, no cap)
+        self._prop_calls: list[ResponseFunctionToolCall] = []
+        for i, p in enumerate(prop_paths or []):
+            self._prop_calls.append(make_nl_tool_call(p, f"bootstrap:prop:{i + 1}"))
 
     def on_before_sample(self):  # type: ignore[override]
         # Stop immediately once submit_result was called
@@ -250,6 +237,8 @@ class LinterController(DisplayEventsMixin):
             return SyntheticAction(outputs=self._step2)
         if self._step == 3 and self._files and not self._big_detected:
             return SyntheticAction(outputs=self._step3)
+        if self._step == 4 and self._prop_calls:
+            return SyntheticAction(outputs=self._prop_calls)
         # After bootstrap, always require a tool call until submit_result flips the switch
         return Continue(RequireAny())
 
@@ -286,10 +275,8 @@ async def run_specimen_lint_issue_async(
     )
     mount_root.mkdir(parents=True, exist_ok=True)
 
-    # Build submit server/tool naming early (used in dry-run prompt too)
+    # Build submit tool name early (used in dry-run prompt too). Server is created later after hydration.
     submit_state = LintSubmitState()
-    submit_server = make_lint_submit_server(submit_state, name="lint_submit")
-    submit_spec = make_inproc_slot_spec(submit_server)
     submit_tool_name = build_mcp_function("lint_submit", "submit_result")
 
     if dry_run:
@@ -329,17 +316,15 @@ async def run_specimen_lint_issue_async(
             dclient.images.get(DOCKER_IMAGE)
         except docker.errors.ImageNotFound:
             build_hint = None
-            try:
-                from importlib import resources as ilres
 
-                pkg = "adgn_llm"
-                dockerfile_trav = ilres.files(pkg).joinpath("docker/critic.Dockerfile")
-                dockerfile_path = str(dockerfile_trav)
-                # Use the parent dir of Dockerfile as context by default
-                context_dir = str(dockerfile_trav.parent)
-                build_hint = f"docker build -f '{dockerfile_path}' -t {DOCKER_IMAGE} '{context_dir}'"
-            except Exception:
-                build_hint = None
+            pkg = "adgn_llm"
+            dockerfile_trav = ilres.files(pkg).joinpath("docker/critic.Dockerfile")
+            dockerfile_path = str(dockerfile_trav)
+            # Use the parent dir of Dockerfile as context by default
+            context_dir = str(dockerfile_trav.parent)
+            build_hint = (
+                f"docker build -f '{dockerfile_path}' -t {DOCKER_IMAGE} '{context_dir}'"
+            )
             print("ERROR: Required Docker image not found:", DOCKER_IMAGE)
             if build_hint:
                 print("Build it first:")
@@ -354,18 +339,30 @@ async def run_specimen_lint_issue_async(
             return 2
 
         # Build in-process FastMCP servers: docker exec + submit server
+        defs_dir = (properties_root() / "definitions").resolve()
+        volumes = {
+            str(content_root): {"bind": "/workspace", "mode": "ro"},
+            str(defs_dir): {"bind": "/props", "mode": "ro"},
+        }
         docker_spec = make_inproc_slot_spec(
             make_container_exec_mcp(
                 image=DOCKER_IMAGE,
                 working_dir="/workspace",
-                volumes={str(content_root): {"bind": "/workspace", "mode": "ro"}},
+                volumes=volumes,
                 describe=True,
             )
         )
+        # Submit server needs occurrence for validation
+        submit_server = make_lint_submit_server(submit_state, name="lint_submit", occ=occ)
+        submit_spec = make_inproc_slot_spec(submit_server)
 
         specs = {"docker": docker_spec, "lint_submit": submit_spec}
 
         props = find_property_files([str(p) for p in issue.properties])
+        # Map to container /props paths for mock reads
+        prop_container_paths = [
+            "/props/" + str(Path(p).resolve().relative_to(defs_dir).as_posix()) for p in props
+        ]
         prompt = _build_prompt(
             issue, props, submit_tool_name=submit_tool_name, occurrence=occ
         )
@@ -375,6 +372,7 @@ async def run_specimen_lint_issue_async(
             state=submit_state,
             occ=occ,
             content_root=content_root,
+            prop_paths=prop_container_paths,
             renderer=ConsoleEventRenderer(show_text=False),
         )
 
@@ -400,21 +398,13 @@ async def run_specimen_lint_issue_async(
         print("Issue (JSON):")
         print(issue_json)
         print()
-
-        # Show agent's Markdown summary if provided
-        if submit_state.message_md:
-            print(submit_state.message_md)
+        if submit_state.result and submit_state.result.message_md:
+            print(submit_state.result.message_md)
             print()
 
-        # Determine exit code from shared state
-        if not submit_state.done:
-            print("Agent did not call submit_result; treating as failure.")
-            if text:
-                print("Assistant text (truncated):")
-                print("\n".join(text.splitlines()[:50]))
-            return 2
+        assert submit_state.done, "submit_result not called; should never happen."
 
-        return 0 if (submit_state.fail is False) else 2
+        return 0 if (submit_state.result and submit_state.result.fail is False) else 2
 
     finally:
         # Cleanup copied workspace

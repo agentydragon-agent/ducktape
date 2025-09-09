@@ -21,7 +21,7 @@ from urllib.request import urlopen
 
 import yaml
 from platformdirs import user_cache_dir
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, model_validator, Field
 
 from .specimen_frontmatter import GitHubSource, GitSource, LocalSource, SpecimenManifest
 
@@ -50,8 +50,19 @@ def _validate_property_ids(props: list[PropertyID]) -> None:
 
 
 class LineRange(BaseModel):
-    start_line: int
-    end_line: int | None = None
+    start_line: int = Field(..., description="1-based start line number")
+    end_line: int | None = Field(
+        default=None,
+        description="1-based end line number (inclusive); omit for single-line anchor",
+    )
+
+    @model_validator(mode="after")
+    def _validate_range(self) -> "LineRange":
+        if self.start_line < 1:
+            raise ValueError("start_line must be >= 1")
+        if self.end_line is not None and self.end_line < self.start_line:
+            raise ValueError("end_line must be >= start_line when provided")
+        return self
 
 
 class Occurrence(BaseModel):
