@@ -105,59 +105,63 @@ def cmd_compare(
     print(json.dumps({"compared": count, "out_dir": str(out)}))
 
 
-@app.command("extract-ccr")
-def cmd_extract_ccr():
-    """Extract dataset from CCR router logs to ./data/dataset_ccr.jsonl."""
-    # Reuse module's async entrypoint
-    asyncio.run(extract_dataset_ccr.main())
-
-
-@app.command("extract-crush")
-def cmd_extract_crush(
+@app.command("extract")
+def cmd_extract(
+    source: str = typer.Option(
+        "auto", "--source", help="ccr|crush|auto (default: auto)"
+    ),
     wire_log: Optional[Path] = typer.Option(
-        None,
-        "--wire-log",
-        help="Path to provider-wire.log (overrides scan mode)",
+        None, "--wire-log", help="Crush only: path to provider-wire.log"
     ),
     scan_dir: List[Path] = typer.Option(
         None,
         "--scan-dir",
-        help="Scan DIR recursively for **/.crush/logs/provider-wire.log (repeatable)",
+        help="Crush only: scan DIR recursively for **/.crush/logs/provider-wire.log (repeatable)",
     ),
     output: Optional[Path] = typer.Option(
-        None,
-        "--output",
-        help="Output JSONL path (default: ./data/dataset_crush.jsonl)",
+        None, "--output", help="Output JSONL path (default depends on source)"
     ),
 ):
-    """Extract dataset from Crush provider wire logs to ./data/dataset_crush.jsonl."""
-    out_path = output or extract_dataset_crush.OUTPUT_PATH
-    out_path.parent.mkdir(parents=True, exist_ok=True)
+    """Unified dataset extractor for CCR and Crush logs."""
+    src = source.lower()
+    if src == "auto":
+        src = "crush" if (wire_log or (scan_dir and len(scan_dir) > 0)) else "ccr"
 
-    logs: list[Path]
-    if wire_log:
-        logs = [wire_log]
-    else:
-        roots = scan_dir or [Path.home() / "code"]
-        logs = extract_dataset_crush.find_wire_logs(roots)
-
-    total = 0
-    with out_path.open("w", encoding="utf-8") as out_f:
-        for log_path in logs:
-            recs = extract_dataset_crush.process_wire(log_path, require_bad=True)
-            for r in recs:
-                out_f.write(json.dumps(r, ensure_ascii=False) + "\n")
-            total += len(recs)
-    print(
-        json.dumps(
-            {
-                "event": "dataset_crush_written",
-                "count": total,
-                "path": str(out_path),
-                "files_scanned": len(logs),
-            }
+    if src == "crush":
+        out_path = output or extract_dataset_crush.OUTPUT_PATH
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        logs: list[Path]
+        if wire_log:
+            logs = [wire_log]
+        else:
+            roots = scan_dir or [Path.home() / "code"]
+            logs = extract_dataset_crush.find_wire_logs(roots)
+        total = 0
+        with out_path.open("w", encoding="utf-8") as out_f:
+            for log_path in logs:
+                recs = extract_dataset_crush.process_wire(log_path, require_bad=True)
+                for r in recs:
+                    out_f.write(json.dumps(r, ensure_ascii=False) + "\n")
+                total += len(recs)
+        print(
+            json.dumps(
+                {
+                    "event": "dataset_crush_written",
+                    "count": total,
+                    "path": str(out_path),
+                    "files_scanned": len(logs),
+                }
+            )
         )
-    )
+        return
+
+    if src == "ccr":
+        asyncio.run(extract_dataset_ccr.main())
+        return
+
+    raise typer.BadParameter("--source must be one of: ccr, crush, auto")
+
+
 
 
 @app.command("leaderboard")

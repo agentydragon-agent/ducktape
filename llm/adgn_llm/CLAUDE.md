@@ -10,10 +10,11 @@ Environment and setup
   - cd /Users/mpokorny/code/ducktape/llm/adgn_llm
   - uv sync --extra dev
   - uv run pip install -e .
-- direnv option (not created automatically): If you prefer auto-activation, place an .envrc in this directory with:
-  - watch_file pyproject.toml uv.lock
-  - source .venv/bin/activate
-  Then run: direnv allow
+- direnv option (recommended): If an .envrc exists in this directory, direnv will auto-activate the project venv (devenv). In that case, you can run console scripts directly without `uv run`.
+  - Example .envrc:
+    - watch_file pyproject.toml uv.lock
+    - source .venv/bin/activate
+  - Then run: direnv allow
 - OpenAI credentials (used by many tools/tests): export OPENAI_API_KEY=... (and any provider-specific env you use).
 
 Common commands
@@ -35,19 +36,20 @@ CLIs provided by this package (installed via [project.scripts])
 - adgn-llm-edit: lightweight local editing CLI.
 - adgn-sysrw: system rewriter/eval toolkit orchestration.
 - adgn-properties: property definitions/queries utilities.
-- adgn-instruction-optimizer, adgn-mini-codex, sandbox-jupyter-mcp, adgn-sandboxer, adgn-mcp-* and git-commit-ai: additional tools used across workflows.
+- adgn-inop, adgn-mini-codex, sandbox-jupyter-mcp, adgn-sandboxer, adgn-mcp-* and git-commit-ai: additional tools used across workflows.
 
 Quick usage examples
 - System rewriter (requires Node; no npm deps; JS apply script performs exact {{...}} substitutions):
-  - uv run adgn-sysrw run \
+  - adgn-sysrw run \
     /Users/mpokorny/code/ducktape/llm/adgn_llm/src/adgn_llm/system_rewriter/templates/current_effective_template.txt
-  - uv run adgn-sysrw extract-ccr
-  - uv run adgn-sysrw extract-crush --scan-dir "$HOME/code"
-  - uv run adgn-sysrw compare /absolute/path/to/runs/<ts>
+  - adgn-sysrw extract --source ccr
+  - adgn-sysrw extract --source crush --scan-dir "$HOME/code"
+  - adgn-sysrw compare /absolute/path/to/runs/<ts>
+  - Tip: If not inside an activated devenv, prefix with `uv run`.
 - LLM edit CLI:
-  - uv run adgn-llm-edit --help
+  - adgn-llm-edit --help
 - Properties search (example):
-  - uv run adgn-properties find /path/to/repo "all files under internal/app/**"
+  - adgn-properties find /path/to/repo "all files under internal/app/**"
 
 High-level architecture (big picture)
 - adgn_llm.system_rewriter (src/adgn_llm/system_rewriter/...): End‑to‑end evaluation of rewritten system prompts.

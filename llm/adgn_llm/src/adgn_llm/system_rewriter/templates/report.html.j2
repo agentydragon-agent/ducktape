@@ -81,13 +81,34 @@
     n={{ summary.n or 0 }}; mean={{ (summary.mean or 0) | round(3) }}; ci95={{ (summary.ci95.lcb or 0) | round(3) }}..{{ (summary.ci95.ucb or 0) | round(3) }};
     with_tools_pct={{ (((summary.tooling or {}).with_tools_pct) or 0) * 100 | round(1) }}%
   </div>
+  {% set tooling = summary.tooling or {} %}
+  {% if tooling.function_counts %}
+  <details>
+    <summary><strong>Tool usage by function</strong></summary>
+    <table cellspacing="0" cellpadding="6" style="border-collapse:collapse">
+      <tr>
+        <th style="text-align:left">Function</th>
+        <th style="text-align:right">Count</th>
+        <th style="text-align:right">Share</th>
+      </tr>
+      {% set fn_counts = tooling.function_counts or {} %}
+      {% set fn_pct = tooling.function_pct or {} %}
+      {% for name, count in fn_counts | dictsort(by='value', reverse=True) %}
+      <tr>
+        <td>{{ name }}</td>
+        <td style="text-align:right">{{ count }}</td>
+        <td style="text-align:right">{{ ((fn_pct.get(name) or 0) * 100) | round(1) }}%</td>
+      </tr>
+      {% endfor %}
+    </table>
+  </details>
+  {% endif %}
 </section>
 {% for r in rows %}
 <section>
   <h2>Sample {{ r.correlation_id }}</h2>
   {% if r.timestamp %}<div class="meta">ts: {{ r.timestamp }}</div>{% endif %}
-  <h3>Systems</h3>
-  <table width="100%" cellspacing="0" cellpadding="6" style="border-collapse:collapse">
+    <table width="100%" cellspacing="0" cellpadding="6" style="border-collapse:collapse">
     <tr>
       <th style="text-align:left;width:50%">System A (original)</th>
       <th style="text-align:left;width:50%">System B (rewritten)</th>
@@ -111,8 +132,7 @@
   <h3>Shared prefix</h3>
   {{ render_messages(r.shared_prefix) }}
 
-  <h3>Rollouts</h3>
-  <table width="100%" cellspacing="0" cellpadding="6" style="border-collapse:collapse">
+    <table width="100%" cellspacing="0" cellpadding="6" style="border-collapse:collapse">
     <tr>
       <th style="text-align:left;width:50%">Original bad branch</th>
       <th style="text-align:left;width:50%">Alternative (new assistant)</th>

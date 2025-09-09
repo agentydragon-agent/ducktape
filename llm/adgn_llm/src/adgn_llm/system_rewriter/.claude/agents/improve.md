@@ -95,4 +95,4 @@ Fetch the Cookbook from GitHub and follow its advice when designing your propose
 - List runs: `rg -n "\"mean\"" runs/*/summary.json`
 - Leaderboard: `adgn-sysrw leaderboard --runs-dir ./runs --format text`
 - Run eval: `adgn-sysrw run ./templates/current_effective_template.txt -d ./data/dataset_ccr.jsonl -d ./data/dataset_crush.jsonl --concurrency 32`
-- Extract datasets: `adgn-sysrw extract-ccr`; `adgn-sysrw extract-crush --wire-log "$HOME/.crush/logs/provider-wire.log"`
+- Extract datasets: `adgn-sysrw extract --source ccr`; `adgn-sysrw extract --source crush --wire-log "$HOME/.crush/logs/provider-wire.log"`

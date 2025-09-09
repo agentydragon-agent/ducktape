@@ -283,6 +283,9 @@ def anthro_to_openai_messages(
                         name = part.get("name")
                         args = part.get("input")
                         tcid = part.get("id") or part.get("tool_use_id")
+                        # Remove extra nesting if input is a singleton list: [ {...} ] -> {...}
+                        if isinstance(args, list) and len(args) == 1:
+                            args = args[0]
                         # Preserve original JSON argument string if already a string; else serialize deterministically
                         if isinstance(args, str):
                             args_str = args  # preserve exactly
