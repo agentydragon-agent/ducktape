@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import argparse
 import importlib
 import logging
@@ -688,7 +689,7 @@ def main(argv: list[str] | None = None) -> int:
             key_order=["event"],
         )  # stable, grep-friendly
     )
-    min_level = logging.DEBUG if os.environ.get("MINICODEX_DEBUG") else logging.INFO
+    min_level = logging.DEBUG if os.environ.get("MINICODEX_DEBUG") else logging.WARNING
     structlog.configure(
         processors=[
             structlog.processors.TimeStamper(fmt="iso"),

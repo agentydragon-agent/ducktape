@@ -601,6 +601,8 @@ async def run_eval(
                 "dataset_paths": [str(p) for p in dataset_paths],
                 "total": total,
                 "selected": selected,
+                "sampler_model": SAMPLER_MODEL,
+                "grader_model": GRADER_MODEL,
             },
         ),
     )
@@ -654,6 +656,7 @@ async def run_eval(
                         "event": "sampler_tokens",
                         "cid": item.correlation_id,
                         "in_tokens": in_tokens,
+                        "model": SAMPLER_MODEL,
                     }
                 )
                 if in_tokens > MAX_INPUT_TOKENS:
@@ -963,6 +966,7 @@ async def run_eval(
             "mean": mean,
             "ci95": {"lcb": lcb, "ucb": ucb},
             "counters": counters,
+            "models": {"sampler": SAMPLER_MODEL, "evaluator": GRADER_MODEL},
             "tooling": {
                 "total_samples": total_samples,
                 "text_only_pct": ((tool_stats["text_only"] / total_samples) if total_samples > 0 else 0.0),
@@ -980,6 +984,7 @@ async def run_eval(
                 "n": summary["n"],
                 "mean": summary["mean"],
                 "ci95": summary["ci95"],
+                "models": summary["models"],
             }
         )
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shlex
 from typing import Callable, Sequence
 
 from openai.types.responses import (
@@ -139,8 +140,12 @@ class ConsoleEventRenderer:
             call_args = json.loads(call.arguments) if call.arguments else {}
         except Exception:
             call_args = {"_raw": call.arguments}
-        if isinstance(call_args, dict) and (cmd := call_args.get("cmd")):
-            out_parts.append(f"$ {cmd}")
+        if isinstance(call_args, dict) and (cmd := call_args.get("cmd")) is not None:
+            if isinstance(cmd, list):
+                cmd_line = shlex.join([str(x) for x in cmd])
+            else:
+                cmd_line = str(cmd)
+            out_parts.append(f"$ {cmd_line}")
         if header:
             out_parts.append(header)
         if (stdout := data.get("stdout")):

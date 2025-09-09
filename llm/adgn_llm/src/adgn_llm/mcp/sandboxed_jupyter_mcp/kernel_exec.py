@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import sys
+import traceback
 from pathlib import Path
 
 
@@ -56,10 +57,8 @@ def main() -> int:
         os.execv(sys.executable, argv)
     except Exception:
         # In case redirect succeeded, this goes to the file
-        import traceback as _tb  # noqa: PLC0415
-
         print(
-            "kernel_exec: unhandled exception:\n" + _tb.format_exc(),
+            "kernel_exec: unhandled exception:\n" + traceback.format_exc(),
             file=sys.stderr,
         )
         raise

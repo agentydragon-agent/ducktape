@@ -168,11 +168,6 @@ def cmd_leaderboard(
         "--runs-dir",
         help="Directory containing eval runs (runs/<ts>)",
     ),
-    templates_dir: Path = typer.Option(
-        Path(__file__).parent / "templates",
-        "--templates-dir",
-        help="Directory containing templates (baseline and proposals)",
-    ),
     sort_key: str = typer.Option("mean", "--sort", help="Sort key: mean|lcb|ucb"),
     asc: bool = typer.Option(False, "--asc", help="Sort ascending"),
     limit: int | None = typer.Option(None, "--limit", help="Limit rows"),
@@ -180,7 +175,6 @@ def cmd_leaderboard(
 ):
     table, errors, missing = leaderboard.generate(
         runs_dir=runs_dir,
-        templates_dir=templates_dir,
         sort_key=sort_key,
         asc=asc,
         limit=limit,

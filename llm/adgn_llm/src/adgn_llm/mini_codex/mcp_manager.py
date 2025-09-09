@@ -16,7 +16,6 @@ from typing import Any, Awaitable, Callable, Dict
 from mcp.client.session import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 from mcp.client.sse import sse_client
-from mcp.client.streamable_http import HttpClientParams, http_client
 from mcp.types import InitializeResult
 
 # Shared MCP naming helpers/constants
@@ -194,26 +193,22 @@ class McpManager:
             return ServerSlotSpec(open_uninitialized=open_uninitialized)
 
         if transport == "sse":
-            params = SseClientParams.model_validate(spec)
+            url = spec.get("url")
+            headers = spec.get("headers")
+            timeout = spec.get("timeout", 5)
+            sse_read_timeout = spec.get("sse_read_timeout", 60 * 5)
 
             async def open_uninitialized(stack: AsyncExitStack) -> ClientSession:
-                read, write = await stack.enter_async_context(sse_client(params))
+                read, write = await stack.enter_async_context(
+                    sse_client(url=url, headers=headers, timeout=timeout, sse_read_timeout=sse_read_timeout)
+                )
                 sess = ClientSession(read_stream=read, write_stream=write)
                 await stack.enter_async_context(sess)
                 return sess
 
             return ServerSlotSpec(open_uninitialized=open_uninitialized)
 
-        if transport == "http":
-            params = HttpClientParams.model_validate(spec)
-
-            async def open_uninitialized(stack: AsyncExitStack) -> ClientSession:
-                read, write = await stack.enter_async_context(http_client(params))
-                sess = ClientSession(read_stream=read, write_stream=write)
-                await stack.enter_async_context(sess)
-                return sess
-
-            return ServerSlotSpec(open_uninitialized=open_uninitialized)
+        # HTTP transport not supported in this environment version; add when needed.
 
         raise ValueError(f"Unsupported or missing transport in spec for {name!r} (keys={list(spec.keys())!r})")
 

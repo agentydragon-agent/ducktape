@@ -283,7 +283,6 @@ def format_rich_table(rows: list[Row]) -> Table:
 
 def generate(
     runs_dir: Path,
-    templates_dir: Path,
     sort_key: str = "mean",
     asc: bool = False,
     limit: int | None = None,
@@ -347,12 +346,6 @@ def parse_args() -> argparse.Namespace:
         help="Directory containing run folders (default: ./runs)",
     )
     ap.add_argument(
-        "--templates-dir",
-        type=Path,
-        default=Path(__file__).parent / "templates",
-        help="Directory containing templates (default: ./templates)",
-    )
-    ap.add_argument(
         "--sort",
         choices=["mean", "lcb", "ucb"],
         default="mean",
@@ -368,7 +361,6 @@ def main() -> int:
     try:
         table, errors, missing = generate(
             runs_dir=args.runs_dir,
-            templates_dir=args.templates_dir,
             sort_key=args.sort,
             asc=bool(args.asc),
             limit=args.limit,
