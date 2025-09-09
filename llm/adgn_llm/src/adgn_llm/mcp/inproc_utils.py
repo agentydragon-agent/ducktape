@@ -7,7 +7,7 @@ from mcp.client.session import ClientSession
 from mcp.server.fastmcp import FastMCP
 from mcp.shared.memory import create_client_server_memory_streams
 
-from adgn_llm.mini_codex.mcp_manager import ServerSlotSpec
+from adgn_llm.mcp.types import ServerSlotSpec
 
 
 def make_inproc_slot_spec(app: FastMCP) -> ServerSlotSpec:

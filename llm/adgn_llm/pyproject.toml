@@ -44,7 +44,7 @@ dependencies = [
 ]
 
 [project.scripts]
-adgn-sysrw = "adgn_llm.system_rewriter.cli:app"
+adgn-sysrw = "adgn_llm.sysrw.cli:app"
 adgn-mini-codex = "adgn_llm.mini_codex.cli:main"
 adgn-properties = "adgn_llm.properties.cli:main"
 git-commit-ai = "adgn_llm.git_commit_ai.cli:main"

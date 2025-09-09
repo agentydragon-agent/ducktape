@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import AsyncExitStack
-from dataclasses import dataclass, field
-from typing import Any, Awaitable, Callable, Dict
+from typing import Any, Dict
+from adgn_llm.mcp.types import ServerSlot, ServerSlotSpec
+from adgn_llm.mcp.inproc_utils import make_inproc_slot_spec
+from adgn_llm.mcp.resources.server import make_resources_server
 
 from mcp.client.session import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
@@ -36,44 +38,21 @@ def parse_mcp_function(namespaced: str) -> tuple[str, str]:
     return server, tool
 
 
-# ---- DRY: open a ready session under a single ExitStack ----
-OpenFn = Callable[[AsyncExitStack], Awaitable[ClientSession]]
-
-
 # ---- Legacy in-proc adapter removed (use FastMCP in-proc memory transport) ----
-
-
-@dataclass
-class ServerSlot:
-    """Realized slot (initialized session + initialization metadata)."""
-
-    session: ClientSession
-    init_result: InitializeResult
-
-
-@dataclass
-class ServerSlotSpec:
-    """Recipe for opening a server slot (returns an uninitialized session).
-
-    The McpManager dict key is the authoritative server name; the spec does not
-    need to carry a duplicate name field.
-    """
-
-    open_uninitialized: OpenFn
-    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
-
-    async def open(self, stack: AsyncExitStack) -> ServerSlot:
-        async with self.lock:
-            sess = await self.open_uninitialized(stack)
-            init = await sess.initialize()
-            return ServerSlot(session=sess, init_result=init)
 
 
 class McpManager:
     """Per-agent bag of MCP sessions; lazy-open; one lifetime (AsyncExitStack)."""
 
     def __init__(self, specs: Dict[str, ServerSlotSpec]):
-        self._specs = specs
+        # Always include the resources shim server; reserve the name 'resources'
+        self._specs = dict(specs)
+        assert "resources" not in self._specs, (
+            "'resources' server name is reserved; McpManager injects it automatically"
+        )
+        resources_server = make_resources_server(self, "resources")
+        self._specs["resources"] = make_inproc_slot_spec(resources_server)
+
         self._realized: Dict[str, ServerSlot] = {}
         self._stack = AsyncExitStack()
         self._lock = asyncio.Lock()

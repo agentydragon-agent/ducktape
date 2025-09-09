@@ -33,7 +33,8 @@ from adgn_llm.mcp.docker_exec.server import make_container_exec_mcp
 from adgn_llm.mcp.inproc_utils import make_inproc_slot_spec
 from adgn_llm.mini_codex.agent import MiniCodex
 from adgn_llm.mcp.local_exec.server import make_local_exec_mcp
-from adgn_llm.mini_codex.mcp_manager import McpManager, ServerSlotSpec
+from adgn_llm.mini_codex.mcp_manager import McpManager
+from adgn_llm.mcp.types import ServerSlotSpec
 
 
 class MiniCodexRunner(AgentRunner):
@@ -130,7 +131,6 @@ class MiniCodexRunner(AgentRunner):
         start_time = time.time()
         result = await self._agent.run(
             user_text=task.prompt,
-            require_at_least_one_tool=False,
         )
 
         trajectory: list[TrajectoryItem] = [UserInput(text=task.prompt)]

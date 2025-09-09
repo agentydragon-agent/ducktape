@@ -13,7 +13,6 @@ from pathlib import Path
 from typing import Any, Literal, Protocol, cast
 from mcp import types as mcp_types
 
-import openai
 import structlog
 from openai.types.responses import (
     ResponseFunctionToolCall,
@@ -22,7 +21,6 @@ from openai.types.responses import (
     ResponseReasoningItem,
 )
 
-# Typed request params for reasoning
 from openai.types.shared_params import Reasoning as ReasoningParams
 from openai.types.shared_params import ReasoningEffort
 from pydantic import BaseModel
@@ -31,7 +29,13 @@ from adgn_llm.openai_retry import retry_decorator
 from .loggers import TranscriptLogger
 from adgn_llm.openai_utils import ReasoningSummary
 from .mcp_manager import McpManager
-from adgn_llm.mini_codex.loop_control import DefaultController, LoopController, RequireAny, Abort, SyntheticAction
+from adgn_llm.mini_codex.loop_control import (
+    DefaultController,
+    LoopController,
+    RequireAny,
+    Abort,
+    SyntheticAction,
+)
 
 
 @dataclass
@@ -70,9 +74,6 @@ ToolMap = dict[str, Any]
 SYSTEM_INSTRUCTIONS = "You are a code agent. Be concise."
 
 
-_logger = structlog.get_logger("mini_codex.setup")
-
-
 class _ResponsesSubclient(Protocol):
     async def create(self, **kwargs: Any):  # pragma: no cover - structural protocol
         ...
@@ -80,12 +81,10 @@ class _ResponsesSubclient(Protocol):
 
 class ResponsesClient(Protocol):
     @property
-    def responses(self) -> _ResponsesSubclient:  # pragma: no cover - structural protocol
+    def responses(
+        self,
+    ) -> _ResponsesSubclient:  # pragma: no cover - structural protocol
         ...
-
-
-def _openai_client() -> openai.AsyncOpenAI:
-    return openai.AsyncOpenAI()
 
 
 @retry_decorator()
@@ -133,7 +132,6 @@ class MiniCodex:
         # Logging artifacts
         self._log_dir: Path | None = None
         self._transcript_jsonl: Path | None = None
-        self._run_require_one_tool: bool | None = None
 
     def inject_system_message(self, text: str) -> None:
         """Append a system message at the current end of transcript (temporal order)."""
@@ -143,11 +141,10 @@ class MiniCodex:
 
     def set_system_instructions(self, instructions: str | None) -> None:
         """Override base system instructions for future turns."""
-        self._system = (instructions or self._default_system).strip() or self._default_system
+        self._system = (instructions or self._default_system).strip()
 
-    async def sample(self, require_at_least_one_tool: bool | None = None) -> AgentResult:
+    async def sample(self) -> AgentResult:
         """Run a single model turn using the existing transcript (no new user message)."""
-        self._run_require_one_tool = True if require_at_least_one_tool is None else require_at_least_one_tool
         return await self._single_turn()
 
     async def _single_turn(self, controller: "LoopController" = DefaultController()) -> AgentResult:
@@ -208,7 +205,6 @@ class MiniCodex:
                 instructions = f"{instructions}\n\n" + "\n".join(banner_chunks)
 
             tools_list = await self._mcp.list_tools()
-            tools_list.extend(self._resource_tools_descriptors())
 
             # SyntheticAction path: use controller-provided outputs and skip LLM
             if isinstance(decision, SyntheticAction):
@@ -281,11 +277,20 @@ class MiniCodex:
                             it for it in items if isinstance(it.get("uri"), str) and it["uri"].startswith(uri_prefix)
                         ]
                     out_str = json.dumps({"resources": items}, ensure_ascii=False)
-                    call_evt = {"kind": "tool_call", "name": fc.name, "args": args, "call_id": fc.call_id}
+                    call_evt = {
+                        "kind": "tool_call",
+                        "name": fc.name,
+                        "args": args,
+                        "call_id": fc.call_id,
+                    }
                     sequence.append(call_evt)
                     self._emit_event(call_evt)
                     fco = FunctionCallOutput(type="function_call_output", call_id=fc.call_id, output=out_str)
-                    fco_evt = {"kind": "function_call_output", "name": fc.name, **fco.model_dump(exclude_none=True)}
+                    fco_evt = {
+                        "kind": "function_call_output",
+                        "name": fc.name,
+                        **fco.model_dump(exclude_none=True),
+                    }
                     sequence.append(fco_evt)
                     self._transcript.append(fco)
                     self._emit_event(fco_evt)
@@ -349,16 +354,28 @@ class MiniCodex:
                             break
 
                     payload = {
-                        "window": {"start_offset": start_offset, "max_bytes": max_bytes},
+                        "window": {
+                            "start_offset": start_offset,
+                            "max_bytes": max_bytes,
+                        },
                         "parts": parts_out,
                         "total_parts": len(contents),
                     }
                     out_str = json.dumps(payload, ensure_ascii=False)
-                    call_evt = {"kind": "tool_call", "name": fc.name, "args": args, "call_id": fc.call_id}
+                    call_evt = {
+                        "kind": "tool_call",
+                        "name": fc.name,
+                        "args": args,
+                        "call_id": fc.call_id,
+                    }
                     sequence.append(call_evt)
                     self._emit_event(call_evt)
                     fco = FunctionCallOutput(type="function_call_output", call_id=fc.call_id, output=out_str)
-                    fco_evt = {"kind": "function_call_output", "name": fc.name, **fco.model_dump(exclude_none=True)}
+                    fco_evt = {
+                        "kind": "function_call_output",
+                        "name": fc.name,
+                        **fco.model_dump(exclude_none=True),
+                    }
                     sequence.append(fco_evt)
                     self._transcript.append(fco)
                     self._emit_event(fco_evt)
@@ -396,7 +413,10 @@ class MiniCodex:
                     call_id=fc.call_id,
                     output=out_str,
                 )
-                fco_evt = {"kind": "function_call_output", **fco.model_dump(exclude_none=True)}
+                fco_evt = {
+                    "kind": "function_call_output",
+                    **fco.model_dump(exclude_none=True),
+                }
                 sequence.append(fco_evt)
                 self._transcript.append(fco)
                 self._emit_event(fco_evt)
@@ -413,7 +433,11 @@ class MiniCodex:
                 except Exception:
                     parsed_error = None
                 if is_err or parsed_error is not None:
-                    err_evt = {"kind": "tool_error", "name": fc.name, "call_id": fc.call_id}
+                    err_evt = {
+                        "kind": "tool_error",
+                        "name": fc.name,
+                        "call_id": fc.call_id,
+                    }
                     if parsed_error:
                         err_evt["error"] = parsed_error
                     sequence.append(err_evt)
@@ -424,23 +448,17 @@ class MiniCodex:
         self._metrics.turns += 1
         text = "\n".join(assistant_text_chunks)
         # Persist transcript and sequence to logs if configured
-        try:
-            if self._log_dir is not None:
-                transcript_path = self._log_dir / "transcript.json"
-                payload = {
-                    "transcript": dump_messages_for_api(self._transcript),
-                    "sequence": sequence,
-                    "metrics": {
-                        "turns": self._metrics.turns,
-                        "tool_calls": self._metrics.tool_calls,
-                    },
-                }
-                transcript_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-        except Exception:
-            self._log.exception("transcript_write_failed")
-            raise
-        finally:
-            pass
+        if self._log_dir is not None:
+            transcript_path = self._log_dir / "transcript.json"
+            payload = {
+                "transcript": dump_messages_for_api(self._transcript),
+                "sequence": sequence,
+                "metrics": {
+                    "turns": self._metrics.turns,
+                    "tool_calls": self._metrics.tool_calls,
+                },
+            }
+            transcript_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
         return AgentResult(text=text, sequence=sequence, metrics=self._metrics)
 
     def _resource_tools_descriptors(self) -> list[dict[str, Any]]:
@@ -475,7 +493,7 @@ class MiniCodex:
         ]
 
     @classmethod
-    async def create(  # noqa: PLR0913
+    async def create(
         cls,
         *,
         model: str,
@@ -554,7 +572,6 @@ class MiniCodex:
         self,
         user_text: str,
         stream: bool = False,
-        require_at_least_one_tool: bool | None = None,
         controller: "LoopController" = None,  # type: ignore[assignment]
     ) -> AgentResult | AsyncIterator[dict[str, Any]]:
         if stream:
@@ -563,7 +580,6 @@ class MiniCodex:
                 res = await self.run(
                     user_text,
                     stream=False,
-                    require_at_least_one_tool=require_at_least_one_tool,
                     controller=controller,
                 )  # type: ignore[assignment]
                 yield {"kind": "final", "result": res}
@@ -572,21 +588,13 @@ class MiniCodex:
 
         self._transcript.append(UserMessage(role="user", content=user_text))
         self._emit_event({"kind": "user_text", "text": user_text})
-        self._run_require_one_tool = True if require_at_least_one_tool is None else require_at_least_one_tool
-        # Ensure non-null controller (DefaultController mirrors legacy behavior)
-        if controller is None:
-            controller = DefaultController()
-        result = await self._single_turn(controller=controller)
+        result = await (self._single_turn() if controller is None else self._single_turn(controller=controller))
         return result
 
     async def __aenter__(self) -> "MiniCodex":
         return self
 
     async def __aexit__(self, exc_type, exc, tb) -> None:
-        return None
-
-    # Back-compat: noop close
-    async def close(self) -> None:
         return None
 
 

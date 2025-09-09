@@ -81,7 +81,6 @@ from adgn_llm.inop.prompting.truncation_utils import TruncationManager
 # MCP-based PE wiring (new path)
 from adgn_llm.inop.mcp.prompt_feedback_server import (
     make_prompt_feedback_server_with_handle,
-    PromptEvaluationDeps,
 )
 from adgn_llm.mcp.inproc_utils import make_inproc_slot_spec
 from adgn_llm.mini_codex.mcp_manager import McpManager
@@ -186,7 +185,10 @@ async def optimize_prompts_mcp(
         raise ValueError(f"Invalid {feedback_mode = }.")
 
     # Deps to run rollouts for a given prompt
-    class _Deps(PromptEvaluationDeps):  # type: ignore[misc]
+    class _Deps:
+        def __init__(self):
+            self._prompts: list[str] = []
+
         async def select_seed_tasks(self) -> list[TaskDefinition]:
             return seed_tasks
 
@@ -248,6 +250,10 @@ async def optimize_prompts_mcp(
             with feedback_log.open("a") as f:
                 f.write(json.dumps({"iteration": iteration, "feedback": feedback}) + "\n")
 
+            # Update prompts.json as a list built in-memory (no file read)
+            self._prompts.append(prompt)
+            (base_dir / "prompts.json").write_text(json.dumps(self._prompts, indent=2))
+
             # Persist each rollout and its grading under task/agent_0
             for gr in rollouts:
                 t_id = gr.rollout.task_id
@@ -276,14 +282,16 @@ async def optimize_prompts_mcp(
 
     deps = _Deps()
 
-    # Build the MCP server and session handle
+    # Build the MCP servers and session handle
     mcp_server, state_handle = make_prompt_feedback_server_with_handle(
         deps=deps,
         feedback_provider=feedback_provider,
     )
 
-    # Build a ServerSlotSpec via the in-proc JSON-RPC utility
-    specs = {"prompt_feedback": make_inproc_slot_spec(mcp_server)}
+    # Build ServerSlotSpecs via the in-proc JSON-RPC utility
+    specs = {
+        "prompt_feedback": make_inproc_slot_spec(mcp_server),
+    }
 
     async with McpManager(specs) as mcp:
         # Session will be initialized on first access via McpManager ensure_open
@@ -309,13 +317,10 @@ async def optimize_prompts_mcp(
         controller = ProposePromptNTimes(iterations)
         await pe.run(user_text="Start prompt optimization.", controller=controller)
 
-        # Read final state directly (in-proc)
-        first_prompt = state_handle.state.first_prompt if state_handle.state else ""
+        # Read final state directly (in-proc) for logging only
         last_prompt = state_handle.state.last_prompt if state_handle.state else ""
         last_feedback = state_handle.state.last_feedback if state_handle.state else ""
 
-        # Persist summary (include 0 and N keys)
-        (base_dir / "prompts.json").write_text(json.dumps({"0": first_prompt, str(iterations): last_prompt}, indent=2))
         logger.info(
             "Optimization complete (MCP)",
             last_prompt_preview=(last_prompt or "")[:160],

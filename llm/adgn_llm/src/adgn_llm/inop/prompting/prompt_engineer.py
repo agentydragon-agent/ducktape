@@ -144,7 +144,6 @@ class PromptEngineer:
 
         result = await agent.run(
             user_text="Generate an improved system prompt.",
-            require_at_least_one_tool=False,
         )
 
         new_prompt = result.text.strip()

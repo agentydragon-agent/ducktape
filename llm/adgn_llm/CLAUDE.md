@@ -52,8 +52,8 @@ Quick usage examples
   - adgn-properties find /path/to/repo "all files under internal/app/**"
 
 High-level architecture (big picture)
-- adgn_llm.system_rewriter (src/adgn_llm/system_rewriter/...): End‑to‑end evaluation of rewritten system prompts.
-  - CLI entry: adgn-sysrw (Typer app in src/adgn_llm/system_rewriter/cli.py)
+- adgn_llm.sysrw (src/adgn_llm/sysrw/...): End‑to‑end evaluation of rewritten system prompts.
+  - CLI entry: adgn-sysrw (Typer app in src/adgn_llm/sysrw/cli.py)
   - Node renderer performs exact single-use {{...}} substitutions of tools/env/model/mcp blobs; Node must be available; no npm install is required. It requires extractSystemBlobs from js/lib/system-utils.js or ~/.claude-code-router/transformers/lib/system-utils.js.
   - Produces runs/<timestamp>/ with samples.jsonl, grades.jsonl, summary.json, report.html.
 - adgn_llm.llm_edit (src/adgn_llm/llm_edit.py): Small helper CLI for local code/text editing tasks.
@@ -65,3 +65,4 @@ High-level architecture (big picture)
 Notes and caveats
 - Node requirement: The system_rewriter apply step is Node-only; no npm needed. The script src/adgn_llm/system_rewriter/js/system_rewrite_apply.js validates tokens and fails fast; missing Node or system-utils will cause a hard error.
 - Test data/specimens under src/adgn_llm/properties/specimens/** are excluded from lint and test discovery per pyproject configuration.
+- when running tests in this package (adgn_llm), by default skip sandboxer tests

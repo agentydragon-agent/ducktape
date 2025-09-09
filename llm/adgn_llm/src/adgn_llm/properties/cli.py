@@ -3,18 +3,15 @@ from __future__ import annotations
 import asyncio
 import argparse
 import importlib
-import logging
-import os
 import shutil
 import subprocess
 import sys
 import tempfile
 import time
 from dataclasses import dataclass
-from importlib.resources import files
+from adgn_llm.properties.prop_utils import properties_root
 from pathlib import Path
 
-import structlog
 from adgn_llm.logging_config import configure_logging
 import tiktoken
 from openai import AsyncOpenAI
@@ -88,7 +85,7 @@ def _scope_block(
 def _properties_text() -> str:
     # Load packaged Markdown definitions and wrap each with a file tag that
     # encodes its path relative to the properties/ root, so cross-links are meaningful.
-    props_root = Path(files("adgn_llm").joinpath("properties"))
+    props_root = properties_root()
     defs_dir = props_root / "definitions"
     parts: list[str] = []
     for md in sorted(defs_dir.rglob("*.md")):
@@ -684,8 +681,6 @@ def _run_specimen(  # noqa: PLR0913
 def main(argv: list[str] | None = None) -> int:
     # Configure structlog once per process; always configure, choose renderer by env
     # Silence stdlib logging INFO by default (keep file/JSON logs if configured elsewhere)
-    logging.basicConfig(level=logging.WARNING)
-    logging.getLogger().setLevel(logging.WARNING)
 
     # Single, centralized logging config (structlog -> stdlib; console WARNING; optional file)
     configure_logging()

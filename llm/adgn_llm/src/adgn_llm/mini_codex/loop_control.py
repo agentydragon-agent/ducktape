@@ -17,11 +17,14 @@ Notes / Future work (TODOs):
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol, TYPE_CHECKING
+from typing import Protocol
 
-if TYPE_CHECKING:  # precise output item type used by MiniCodex
-    from openai.types.responses import ResponseOutput, ResponseFunctionToolCall, ResponseReasoningItem
-    from adgn_llm.mini_codex.agent import FunctionCallOutput
+from openai.types.responses import (
+    ResponseOutput,
+    ResponseFunctionToolCall,
+    ResponseReasoningItem,
+)
+from adgn_llm.mini_codex.agent import FunctionCallOutput
 
 
 # ---------------------------------------------------------------------------
@@ -85,8 +88,7 @@ class SyntheticAction(LoopDecision):
     sampling step where the controller can return another decision.
     """
 
-    # Use the same types MiniCodex already handles from OpenAI Responses
-    outputs: list["ResponseOutput"]
+    outputs: list[ResponseOutput]
 
 
 # ---------------------------------------------------------------------------
@@ -107,22 +109,21 @@ class LoopController(Protocol):
     def on_before_sample(self) -> LoopDecision:  # pragma: no cover - interface only
         ...
 
-    # Optional agent event hooks (use BaseLoopController to get no-ops)
     def on_user_text(self, text: str) -> None:  # pragma: no cover - interface only
         ...
 
     def on_assistant_text(self, text: str) -> None:  # pragma: no cover - interface only
         ...
 
-    def on_tool_call(self, call: "ResponseFunctionToolCall") -> None:  # pragma: no cover - interface only
+    def on_tool_call(self, call: ResponseFunctionToolCall) -> None:  # pragma: no cover - interface only
         ...
 
     def on_function_call_output(
-        self, call: "ResponseFunctionToolCall", output: "FunctionCallOutput"
+        self, call: ResponseFunctionToolCall, output: FunctionCallOutput
     ) -> None:  # pragma: no cover - interface only
         ...
 
-    def on_reasoning(self, item: "ResponseReasoningItem") -> None:  # pragma: no cover - interface only
+    def on_reasoning(self, item: ResponseReasoningItem) -> None:  # pragma: no cover - interface only
         ...
 
 
@@ -144,15 +145,15 @@ class BaseLoopController:
     def on_assistant_text(self, text: str) -> None:  # pragma: no cover - default no-op
         return None
 
-    def on_tool_call(self, call: "ResponseFunctionToolCall") -> None:  # pragma: no cover - default no-op
+    def on_tool_call(self, call: ResponseFunctionToolCall) -> None:  # pragma: no cover - default no-op
         return None
 
     def on_function_call_output(
-        self, call: "ResponseFunctionToolCall", output: "FunctionCallOutput"
+        self, call: ResponseFunctionToolCall, output: FunctionCallOutput
     ) -> None:  # pragma: no cover - default no-op
         return None
 
-    def on_reasoning(self, item: "ResponseReasoningItem") -> None:  # pragma: no cover - default no-op
+    def on_reasoning(self, item: ResponseReasoningItem) -> None:  # pragma: no cover - default no-op
         return None
 
 

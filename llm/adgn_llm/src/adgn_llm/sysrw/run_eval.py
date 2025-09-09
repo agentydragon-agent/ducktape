@@ -42,7 +42,7 @@ SAMPLER_MODEL = "gpt-5"
 GRADER_MODEL = "gpt-5"
 
 # Paths
-REWRITE_APPLY = resources.files("adgn_llm.system_rewriter").joinpath("js/system_rewrite_apply.js")
+REWRITE_APPLY = resources.files("adgn_llm.sysrw").joinpath("js/system_rewrite_apply.js")
 
 
 def parse_args():
@@ -913,7 +913,7 @@ async def run_eval(
         },
     }
 
-    def compute_and_write_summary(final: bool = False) -> None:
+    def compute_and_write_summary(final: bool = False) -> dict[str, Any]:
         # Compute mean and 95% CI (normal approx)
         mean = sum(scores) / len(scores) if scores else 0.0
         var = sum((x - mean) ** 2 for x in scores) / (len(scores) - 1) if len(scores) > 1 else 0.0
@@ -977,15 +977,7 @@ async def run_eval(
         }
         with summary_out.open("w", encoding="utf-8") as f:
             json.dump(summary, f, sort_keys=True)
-        log_event(
-            {
-                "event": "summary_final" if final else "summary_progress",
-                "n": summary["n"],
-                "mean": summary["mean"],
-                "ci95": summary["ci95"],
-                "models": summary["models"],
-            }
-        )
+        return summary
 
     with (
         samples_out.open("w", encoding="utf-8") as s_out,
@@ -1034,6 +1026,7 @@ async def run_eval(
                     if src in scores_by_source:
                         scores_by_source[src].append(score)  # type: ignore[index]
                     counters["processed"] += 1
+                    s = compute_and_write_summary(False)
                     print(
                         json.dumps(
                             {
@@ -1041,16 +1034,28 @@ async def run_eval(
                                 "cid": grade_rec.get("correlation_id"),
                                 "score": score,
                                 "source": src,
+                                "n": s["n"],
+                                "mean": s["mean"],
+                                "ci95": s["ci95"],
+                                "models": s["models"],
                             },
                         ),
                     )
-                    compute_and_write_summary(False)
                 except Exception as e:
                     counters["grader_errors"] += 1
                     log_event({"status": "aggregate_parse_error", "error": str(e)})
 
     # Final summary after all grades
-    compute_and_write_summary(True)
+    s_final = compute_and_write_summary(True)
+    log_event(
+        {
+            "event": "summary_final",
+            "n": s_final["n"],
+            "mean": s_final["mean"],
+            "ci95": s_final["ci95"],
+            "models": s_final["models"],
+        }
+    )
 
     # Generate HTML report summarizing sequences per sample
     def _generate_html_report(report_base: Path):

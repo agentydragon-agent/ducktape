@@ -80,7 +80,7 @@ async def test_model_reads_container_info_with_stubbed_openai() -> None:
             system="test",
         )
 
-        res = await agent.run("read container info", require_at_least_one_tool=True)
+        res = await agent.run("read container info")
         kinds = [e.get("kind") for e in res.sequence]
         assert "tool_call" in kinds, f"no tool_call in sequence: {kinds}"
         assert "function_call_output" in kinds, f"no function_call_output in sequence: {kinds}"

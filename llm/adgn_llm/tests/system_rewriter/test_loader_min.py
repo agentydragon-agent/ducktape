@@ -15,12 +15,12 @@ from hamcrest import (
 )
 
 # from run_eval import read_dataset
-from adgn_llm.system_rewriter.run_eval import read_dataset  # type: ignore
+from adgn_llm.sysrw.run_eval import read_dataset  # type: ignore
 
 # from schemas import CrushSample
-from adgn_llm.system_rewriter.schemas import CrushSample
+from adgn_llm.sysrw.schemas import CrushSample
 
-ROOT = Path(str(resources.files("adgn_llm.system_rewriter")))
+ROOT = Path(str(resources.files("adgn_llm.sysrw")))
 DATA = ROOT / "data" / "_test"
 
 

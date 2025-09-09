@@ -9,13 +9,13 @@ import tarfile
 import tempfile
 from collections.abc import Iterable
 from functools import lru_cache
-from importlib.resources import files
+from typing import Any
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 import _jsonnet
 
 # ---- Canonical specimen issues schema (Jsonnet-only) ----
-from typing import NewType
+from adgn_llm.properties.prop_utils import PropertyID, properties_root, validate_property_ids
 from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
 
@@ -25,15 +25,18 @@ from pydantic import BaseModel, ConfigDict, model_validator
 
 from .specimen_frontmatter import GitHubSource, GitSource, LocalSource, SpecimenManifest
 
-PropertyID = NewType("PropertyID", str)
+
+# properties_root moved to prop_utils; import from there to avoid duplication
+# def properties_root() -> Path: ... (see adgn_llm.properties.prop_utils)
+
+
+# find_property_files moved to prop_utils; import from there to avoid duplication
+# def find_property_files(...): ... (see adgn_llm.properties.prop_utils)
 
 
 @lru_cache(maxsize=1)
 def _list_known_property_ids() -> set[PropertyID]:
-    try:
-        defs_root = Path(str(files("adgn_llm").joinpath("properties", "definitions")))
-    except Exception:
-        return set()
+    defs_root = properties_root() / "definitions"
     ids: set[PropertyID] = set()
     if defs_root.exists():
         for md in defs_root.rglob("*.md"):
@@ -42,15 +45,8 @@ def _list_known_property_ids() -> set[PropertyID]:
 
 
 def _validate_property_ids(props: list[PropertyID]) -> None:
-    if not props:
-        return
-    known = _list_known_property_ids()
-    unknown = [p for p in props if p not in known]
-    if unknown:
-        sample = ", ".join(sorted(str(k) for k in list(known)[:20]))
-        raise ValueError(
-            f"Unknown property IDs: {', '.join(unknown)}. Known (sample): {sample} ...",
-        )
+    # Back-compat wrapper; delegate to shared prop_utils
+    return validate_property_ids(props)
 
 
 class LineRange(BaseModel):
@@ -126,8 +122,7 @@ def load_specimen_issues(path: str | Path) -> SpecimenIssues:
 def find_specimens_base() -> Path:
     # 1) importlib.resources
     try:
-        res = files("adgn_llm").joinpath("properties", "specimens")
-        p = Path(str(res))
+        p = properties_root() / "specimens"
         if p.exists() and p.is_dir():
             return p
     except Exception:
@@ -143,7 +138,7 @@ def find_specimens_base() -> Path:
             if cand.exists():
                 return cand
     # Fallback
-    return Path(str(files("adgn_llm").joinpath("properties", "specimens")))
+    return properties_root() / "specimens"
 
 
 def list_specimen_names(base: Path) -> list[str]:
@@ -358,6 +353,22 @@ def resolve_source_root(
         return fresh_local_copy(manifest_path.parent / man.source.root)
 
     raise SystemExit(f"Unsupported source type: {type(man.source)}")
+
+
+def load_single_issue(specimen: str, issue_id: str, gitconfig: str | None) -> tuple["Specimen", Path, Any]:
+    """Resolve specimen, obtain code, and return (Specimen, root, Issue)."""
+    sp = Specimen.load(specimen)
+    # Optional default gitconfig fallback for private repos
+    if gitconfig is None:
+        cfg = properties_root() / "gitconfig.local"
+        if cfg.exists():
+            gitconfig = str(cfg)
+    gc_path = Path(gitconfig).expanduser().resolve() if gitconfig else None
+    root = sp.obtain_code(gitconfig=gc_path)
+    issue = sp.get_issue(issue_id)
+    if not issue.should_flag:
+        raise SystemExit(f"Issue should_flag=false is not supported by linter: {issue_id}")
+    return sp, root, issue
 
 
 class Specimen:

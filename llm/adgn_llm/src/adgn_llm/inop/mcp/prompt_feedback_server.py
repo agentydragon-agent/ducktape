@@ -22,7 +22,6 @@ class PromptEvaluationDeps(Protocol):
 @dataclass
 class PromptFeedbackState:
     iteration: int = 0
-    first_prompt: str | None = None
     last_prompt: str | None = None
     last_feedback: str = ""
 
@@ -71,8 +70,6 @@ def make_prompt_feedback_server_with_handle(
     async def propose_prompt(prompt: str) -> dict[str, str]:
         state = _state_var.get()
         state.iteration += 1
-        if state.first_prompt is None:
-            state.first_prompt = prompt
         state.last_prompt = prompt
         tasks = await deps.select_seed_tasks()
         rollouts = await deps.run_rollouts_with_prompt(prompt, tasks)

@@ -6,11 +6,12 @@ import tarfile
 import tempfile
 import time
 from dataclasses import dataclass
-from importlib.resources import files
 from pathlib import Path
 from typing import Any
 
 from openai import AsyncOpenAI
+from adgn_llm.properties.prop_utils import properties_root, find_property_files
+from adgn_llm.properties.specimen_utils import load_single_issue
 from openai.types.responses import ResponseFunctionToolCall
 
 from adgn_llm.mcp.docker_exec.server import make_container_exec_mcp
@@ -33,9 +34,7 @@ from adgn_llm.mini_codex.event_renderer import (
     PrettyPrintController,
 )
 from .specimen_utils import (
-    Specimen,
     ensure_archive_for_specimen_slug,
-    LineRange,
     Occurrence,
 )
 
@@ -50,46 +49,13 @@ class LintConfig:
     dry_run: bool = False
 
 
-def _load_single_issue(
-    specimen: str, issue_id: str, gitconfig: str | None
-) -> tuple[Specimen, Path, Any]:
-    sp = Specimen.load(specimen)
-    # Ensure we have a fresh, private checkout/copy of the specimen source.
-    # TODO(mpokorny): Plumb a cleaner auth mechanism; for now auto-read a local gitconfig if present.
-    if gitconfig is None:
-        try:
-            cfg = Path(files("adgn_llm").joinpath("properties", "gitconfig.local"))
-            if cfg.exists():
-                gitconfig = str(cfg)
-        except Exception:
-            pass
-    gc_path = Path(gitconfig).expanduser().resolve() if gitconfig else None
-    root = sp.obtain_code(gitconfig=gc_path)
-    issue = sp.get_issue(issue_id)
-    if not issue.should_flag:
-        raise SystemExit(
-            f"Issue should_flag=false is not supported by linter: {issue_id}",
-        )
-    return sp, root, issue
+# Moved to specimen_utils.load_single_issue
 
 
-def _find_property_files(property_ids: list[str]) -> list[Path]:
-    props_root = Path(files("adgn_llm").joinpath("properties"))
-    defs_dir = props_root / "definitions"
-    wanted = set(property_ids)
-    found: list[Path] = []
-    if not defs_dir.exists():
-        return found
-    # Search by filename stem
-    for md in defs_dir.rglob("*.md"):
-        if md.stem in wanted:
-            found.append(md)
-    return sorted(found, key=lambda p: p.as_posix())
+# Moved to specimen_utils.find_property_files
 
 
-def _build_prompt(
-    issue: Any, property_md_files: list[Path], occurrence: Any | None = None
-) -> str:
+def _build_prompt(issue: Any, property_md_files: list[Path], occurrence: Any | None = None) -> str:
     # Do not include specimen slug or issue id. Include only issue fields and property definitions.
     # The agent will read code from /workspace via MCP.
     issue_dict = issue.model_dump(exclude_none=True)
@@ -102,7 +68,7 @@ def _build_prompt(
     issue_json = json.dumps(issue_dict, ensure_ascii=False)
 
     md_blocks: list[str] = []
-    props_root = Path(files("adgn_llm").joinpath("properties"))
+    props_root = properties_root()
     for md in property_md_files:
         rel = md.relative_to(props_root)
         md_blocks.append(
@@ -162,22 +128,16 @@ def _make_bootstrap_controller(occ: Occurrence, content_root: Path) -> LoopContr
     files = list((occ.files or {}).keys())
     dirs = sorted({str(Path(p).parent) for p in files})
 
-    # Determine sizes using local filesystem view of mounted content_root, not by parsing ls
+    # Determine sizes using local filesystem view of mounted content_root; fatal on missing/permission issues
     sizes: dict[str, int] = {}
     big_detected = False
     for p in files:
         hp = (content_root / p).resolve()
-        try:
-            st = hp.stat()
-            if not hp.is_file():
-                big_detected = True  # unknown shape; defer to model
-                continue
-            sizes[p] = int(st.st_size)
-            if st.st_size >= 20480:
-                big_detected = True
-        except FileNotFoundError:
-            big_detected = True
-        except PermissionError:
+        st = hp.stat()  # Let FileNotFoundError/PermissionError crash: malformed specimen
+        if not hp.is_file():
+            raise SystemExit(f"Expected a regular file for occurrence path: {hp}")
+        sizes[p] = int(st.st_size)
+        if st.st_size >= 20480:
             big_detected = True
 
     # Pre-build calls per step
@@ -271,7 +231,7 @@ async def run_specimen_lint_issue_async(
     occurrence_index: int,
     client: AsyncOpenAI,
 ) -> int:
-    sp, root, issue = _load_single_issue(specimen, issue_id, gitconfig)
+    sp, root, issue = load_single_issue(specimen, issue_id, gitconfig)
 
     # Require a single occurrence; do not run on the full issue or mutate the Issue
     if occurrence_index < 0 or occurrence_index >= len(issue.instances):
@@ -288,7 +248,7 @@ async def run_specimen_lint_issue_async(
     mount_root = mount_base / f"{specimen}_{name}"
 
     if dry_run:
-        props = _find_property_files([str(p) for p in issue.properties])
+        props = find_property_files([str(p) for p in issue.properties])
         prompt = _build_prompt(issue, props, occurrence=occ)
         tmpdir = Path(tempfile.gettempdir()) / "adgn_codex_prompts"
         tmpdir.mkdir(parents=True, exist_ok=True)
@@ -337,12 +297,10 @@ async def run_specimen_lint_issue_async(
             )
         )
         specs = {"docker": spec}
-        props = _find_property_files([str(p) for p in issue.properties])
+        props = find_property_files([str(p) for p in issue.properties])
         prompt = _build_prompt(issue, props, occurrence=occ)
         base_ctrl = _make_bootstrap_controller(occ, content_root)
-        ctrl = PrettyPrintController(
-            base_ctrl, renderer=ConsoleEventRenderer(show_text=False)
-        )
+        ctrl = PrettyPrintController(base_ctrl, renderer=ConsoleEventRenderer(show_text=False))
         text = await _run_agent(prompt, specs, model, client, controller=ctrl)
         # Print the exact occurrence representation as fed to the model
         issue_dict = issue.model_dump(exclude_none=True)
