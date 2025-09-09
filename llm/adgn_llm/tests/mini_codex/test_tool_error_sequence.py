@@ -69,10 +69,7 @@ async def test_tool_error_is_surfaced_in_sequence(monkeypatch: pytest.MonkeyPatc
         system="You are a code agent.",
         client=fake_client,
     )
-    try:
-        result = await agent.run("call failing tool once")
-    finally:
-        await agent.close()
+    result = await agent.run("call failing tool once")
 
     # Extract the function_call_output from the sequence and assert failure payload surfaced
     fco_items = [evt for evt in result.sequence if evt.get("kind") == "function_call_output"]
