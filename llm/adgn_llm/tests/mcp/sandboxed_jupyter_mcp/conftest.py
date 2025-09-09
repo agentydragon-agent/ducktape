@@ -16,13 +16,23 @@ from pathlib import Path
 import pytest
 from policy_fixture import write_policy as _write_policy
 
+# Session-scoped temp base for tests (pytest-managed)
+@pytest.fixture(scope="session")
+def test_base(tmp_path_factory) -> Path:
+    return tmp_path_factory.mktemp("mcp_tests")
+
+@pytest.fixture
+def artifacts_base(tmp_path: Path) -> Path:
+    # Per-test base directory managed by pytest
+    return tmp_path
+
 
 # Bootstrap a dedicated control venv for Jupyter server + MCP bridge, then require tools
 @pytest.fixture(scope="session", autouse=True)
-def _bootstrap_control_venv_and_require_tools():
+def _bootstrap_control_venv_and_require_tools(test_base):
     # Always prefer our dedicated control venv; create it if missing, else just prefix PATH
-    root = Path(__file__).resolve().parents[1]
-    control = root / "scratch" / "control_venv"
+    base = test_base
+    control = base / "control_venv"
     py = shutil.which("python3") or sys.executable
     if not (control / "bin" / "python").exists():
         subprocess.run([py, "-m", "venv", str(control)], check=True)
@@ -106,11 +116,12 @@ def pytest_runtest_makereport(item, call):
     rep = outcome.get_result()
     if rep.when != "call" or rep.passed:
         return
-    # Create artifacts dir per test node
-    root = Path(__file__).resolve().parents[1] / "scratch" / "artifacts"
-    ts = _dt.datetime.now().strftime("%Y%m%dT%H%M%S")
-    safe_node = item.nodeid.replace(os.sep, "_").replace(":", "_")
-    dest = root / f"{ts}__{safe_node}"
+    # Create artifacts dir under the test's per-test base (fixture)
+    base = item.funcargs.get("artifacts_base")
+    if base is None:
+        # If the test didn't request artifacts_base, fall back to tmp_path if available
+        base = item.funcargs.get("tmp_path", Path.cwd())
+    dest = Path(base)
     dest.mkdir(parents=True, exist_ok=True)
     # 1) Copy recent /tmp sjmcp logs
     try:
@@ -215,8 +226,8 @@ def policy_factory():
     return _write_policy
 
 
-def provision_ws(request):
-    base = _artifacts_dir_for_request(request)
+def provision_ws(request, artifacts_base: Path):
+    base = artifacts_base
     ws = base / "ws"
     run_root = base / "run_root"
     ws.mkdir(parents=True, exist_ok=True)
@@ -231,19 +242,11 @@ def provision_ws(request):
     return ws, run_root
 
 
-def _artifacts_dir_for_request(request) -> Path:
-    base = Path(__file__).resolve().parents[1] / "scratch" / "artifacts"
-    node = request.node.nodeid
-    safe = _re.sub(r"[^A-Za-z0-9_.-]", "_", node)
-    ts = _dt.datetime.now().strftime("%Y%m%dT%H%M%S")
-    dest = base / f"{ts}__{safe}"
-    dest.mkdir(parents=True, exist_ok=True)
-    return dest
 
 
 @pytest.fixture
-def provision_ws_with_policy(request):
-    ws, run_root = provision_ws(request)
+def provision_ws_with_policy(request, artifacts_base: Path):
+    ws, run_root = provision_ws(request, artifacts_base)
     # Prefer param over marker to allow indirect parametrize
     if hasattr(request, "param"):
         kwargs = request.param or {}
@@ -580,10 +583,10 @@ def launch_proc():
 
 
 @pytest.fixture
-def launch_jupyter_server(request):
+def launch_jupyter_server(request, artifacts_base: Path):
     @contextmanager
     def _start(port: int, token: str):
-        base = _artifacts_dir_for_request(request)
+        base = artifacts_base
         ws = base / "ws"
         ws.mkdir(parents=True, exist_ok=True)
         nb_rel = Path(".mcp/test.ipynb")
