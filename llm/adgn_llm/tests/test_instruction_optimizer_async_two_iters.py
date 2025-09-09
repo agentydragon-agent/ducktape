@@ -286,11 +286,12 @@ async def test_optimize_prompts_two_iterations_async(
         grading = json.loads((rollout_dir / "grading.json").read_text())
         assert grading["overall_score"] == pytest.approx(9.0, rel=1e-6)
 
-    # prompts.json should include 0 and 2 (initial + second iteration)
+    # prompts.json is a list of prompts per iteration (1-based). Expect two entries for two iterations.
     prompts = json.loads((out_dir / "prompts.json").read_text())
-    assert set(prompts.keys()) == {"0", "2"}
-    assert prompts["0"].strip()
-    assert prompts["2"].strip()
+    assert isinstance(prompts, list)
+    assert len(prompts) == 2
+    assert isinstance(prompts[0], str) and prompts[0].strip()
+    assert isinstance(prompts[1], str) and prompts[1].strip()
 
     # Restore original method
     monkeypatch.setattr(
