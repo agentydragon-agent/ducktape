@@ -151,8 +151,7 @@ def _make_bootstrap_controller(occ: Occurrence, content_root: Path) -> LoopContr
     # Turn 3: per-file content (cat for small); if any file >=20kB, abort bootstrap before turn 3
 
     files = list((occ.files or {}).keys())
-    from pathlib import Path as _P
-    dirs = sorted({str(_P(p).parent) for p in files})
+    dirs = sorted({str(Path(p).parent) for p in files})
 
     # Determine sizes using local filesystem view of mounted content_root, not by parsing ls
     sizes: dict[str, int] = {}
@@ -228,7 +227,6 @@ def _make_bootstrap_controller(occ: Occurrence, content_root: Path) -> LoopContr
         def __init__(self) -> None:
             self._step = 0
         def on_before_sample(self):
-            from adgn_llm.mini_codex.loop_control import Continue, Auto, SyntheticAction
             self._step += 1
             if self._step == 1:
                 return SyntheticAction(outputs=step1)

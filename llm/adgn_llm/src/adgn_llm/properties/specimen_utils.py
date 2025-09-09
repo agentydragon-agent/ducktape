@@ -11,6 +11,8 @@ from collections.abc import Iterable
 from functools import lru_cache
 from importlib.resources import files
 from pathlib import Path
+from tempfile import NamedTemporaryFile
+import _jsonnet
 
 # ---- Canonical specimen issues schema (Jsonnet-only) ----
 from typing import NewType
@@ -116,12 +118,6 @@ def load_specimen_issues(path: str | Path) -> SpecimenIssues:
     suf = p.suffix.lower()
     if suf not in {".jsonnet", ".libsonnet"}:
         raise SystemExit(f"Canonical issues must be Jsonnet: {p}")
-    try:
-        import _jsonnet  # noqa: PLC0415
-    except Exception as e:
-        raise RuntimeError(
-            "python-jsonnet is required to load issues.libsonnet; install with `pip install jsonnet`",
-        ) from e
     json_str = _jsonnet.evaluate_file(str(p))
     data = json.loads(json_str)
     return SpecimenIssues.model_validate(data)
@@ -191,8 +187,6 @@ def _download_github_to(owner: str, repo: str, ref: str, dest: Path) -> bool:
     tmp = dest.with_suffix(".tmp")
     try:
         with urlopen(url) as resp:
-            from tempfile import NamedTemporaryFile  # noqa: PLC0415
-
             with NamedTemporaryFile(delete=False, dir=str(dest.parent)) as nf:
                 nf.write(resp.read())
                 tmp = Path(nf.name)
@@ -234,8 +228,6 @@ def ensure_archive_for_specimen_slug(
         return out
     out.parent.mkdir(parents=True, exist_ok=True)
     # Try fast GitHub codeload direct-to-dest when available
-    from .specimen_frontmatter import LocalSource  # noqa: PLC0415
-
     if isinstance(man.source, GitHubSource):
         if _download_github_to(man.source.org, man.source.repo, man.source.ref, out):
             return out if out.exists() else out

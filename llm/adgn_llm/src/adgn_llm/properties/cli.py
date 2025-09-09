@@ -682,6 +682,10 @@ def _run_specimen(  # noqa: PLR0913
 
 def main(argv: list[str] | None = None) -> int:
     # Configure structlog once per process; always configure, choose renderer by env
+    # Silence stdlib logging INFO by default (keep file/JSON logs if configured elsewhere)
+    logging.basicConfig(level=logging.WARNING)
+    logging.getLogger().setLevel(logging.WARNING)
+
     renderer = (
         structlog.processors.JSONRenderer()
         if os.environ.get("MINICODEX_DEBUG")

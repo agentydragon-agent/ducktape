@@ -35,6 +35,8 @@ class Row:
     template_label: str
     template_hash: str
     with_tools_pct: float
+    sampler_model: str | None = None
+    grader_model: str | None = None
     template_error: bool = False
     template_error_exc: str | None = None
 
@@ -174,6 +176,24 @@ def load_row(run_dir: Path, known: dict[str, str]) -> Row | None:
     except Exception:
         with_tools = 0.0
 
+    # Extract models (sampler/evaluator); backfill defaults if missing and persist
+    sampler_model: str | None = None
+    grader_model: str | None = None
+    models = summ.get("models")
+    if isinstance(models, dict):
+        sm = models.get("sampler")
+        gm = models.get("evaluator") or models.get("grader")
+        sampler_model = sm if isinstance(sm, str) else None
+        grader_model = gm if isinstance(gm, str) else None
+    if sampler_model is None or grader_model is None:
+        sampler_model = sampler_model or "gpt-5"
+        grader_model = grader_model or "gpt-5"
+        try:
+            summ["models"] = {"sampler": sampler_model, "evaluator": grader_model}
+            s_path.write_text(json.dumps(summ, sort_keys=True), encoding="utf-8")
+        except Exception:
+            pass
+
     # TODO(mpokorny): deprecate legacy numeric ci95 once all runs use ci95={lcb,ucb}.
 
     return Row(
@@ -186,6 +206,8 @@ def load_row(run_dir: Path, known: dict[str, str]) -> Row | None:
         template_label=label,
         template_hash=thash,
         with_tools_pct=with_tools,
+        sampler_model=sampler_model,
+        grader_model=grader_model,
         template_error=is_err,
         template_error_exc=err_repr,
     )
@@ -254,6 +276,7 @@ def format_rich_table(rows: list[Row]) -> Table:
     table.add_column("mean", justify="right")
     table.add_column("ucb", justify="right")
     table.add_column("n", justify="right")
+    table.add_column("models", justify="left")
     table.add_column("tools%", justify="right")
     table.add_column("run", justify="left")
     table.add_column("template", justify="left")
@@ -273,6 +296,7 @@ def format_rich_table(rows: list[Row]) -> Table:
             f"{r.mean:.2f}",
             f"{ucb:.2f}",
             f"{r.n}",
+            f"{(r.sampler_model or 'gpt-5')}|{(r.grader_model or 'gpt-5')}",
             f"{r.with_tools_pct * 100:.1f}%",
             r.run,
             label_cell,
