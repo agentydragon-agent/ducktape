@@ -5,25 +5,29 @@
 ## Single source of truth
 - Do not restate rules or schemas in this command.
 - Treat @README.md (Specimens format) as normative for structure and file set.
-- Treat src/adgn_llm/properties/specimen_frontmatter.py (SpecimenManifest) as the canonical manifest schema.
+- Treat specimen_issues.libsonnet as canonical for schema helpers (rootV2/source/scope/issue constructors).
 
 ## What this command does
 Interactively scaffold a new specimen under `specimens/` per @README.md. Ask user for inputs, then create:
 - `specimens/YYYY-MM-DD-<slug>/`
-  - `manifest.yaml` (valid SpecimenManifest)
+  - `issues.libsonnet` (unified specimen doc; start with `I.rootV2(I.source..., I.scope(...), [])`)
   - `README.md` (with optional Seed issues section)
-  - `issues.libsonnet` (canonical issues, starting with `I.root([])`)
+  - `covered.md` / `not_covered_yet.md` / `false_positives.md` (optional; narrative stays in README)
 
 Jsonnet scaffold example:
 ```jsonnet
 local I = import '../../specimen_issues.libsonnet';
-I.root([
-  // Add issues here using I.issueSingle / I.issueMultiFromLines
-])
+I.rootV2(
+  I.sourceGitHub('org', 'repo', 'main'),
+  I.scope(['src/**'], ['**/tests/**']),
+  [
+    // Add issues here using I.issueSingle / I.issueMultiFromLines / I.issueMultiFromFiles
+  ]
+)
 ```
 
 ## Inputs (ask interactively)
-- Source (choose one; collect only what is required by `SpecimenManifest`):
+- Source (choose one; collect only what is required by `rootV2` source helpers):
   - git: url, ref
   - github: org, repo, ref
   - local: root (default ".")
@@ -35,16 +39,16 @@ I.root([
 
 ## Output
 - New directory under @specimens named YYYY‑MM‑DD‑<slug>/ with required scaffold files.
-- Short summary of the path created and `manifest.yaml` content.
+- Short summary of the path created and the `issues.libsonnet` header (source/scope).
 
 ## Procedure
 1) Ensure `specimens/` exists relative to this package root.
 2) Ask for inputs above; confirm before writing.
 3) Compute today (`YYYY‑MM‑DD`) and slug (provided or derived), and target_dir = `specimens/${today}-${slug}`.
 4) If target dir exists: choose a different slug, ask user to confirm.
-5) Generate `manifest.yaml` following `SpecimenManifest` schema (do not invent extra fields).
+5) Generate `issues.libsonnet` with `I.rootV2(...)` (do not invent extra fields).
 6) After confirmation, write the files and print a concise summary.
 
 ## Notes
-- Keep this command DRY; when specifics change, @README.md and `SpecimenManifest` are the only places to update.
+- Keep this command DRY; when specifics change, @README.md and specimen_issues.libsonnet are the only places to update.
 - Prefer concise, confirmation‑oriented prompts (offer sensible defaults). Avoid duplicating policy text from @README.md.

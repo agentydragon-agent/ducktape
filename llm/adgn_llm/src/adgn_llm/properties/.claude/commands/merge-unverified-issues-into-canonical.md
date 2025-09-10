@@ -6,10 +6,10 @@ From context, you should see that we are working with some particular piece of c
 
 ## Canonical issues format (Jsonnet)
 
-- The canonical issues live in `issues.libsonnet` next to `manifest.yaml`.
+- The canonical issues live in `issues.libsonnet` (rootV2: source, scope, items).
 - Use the helpers in `src/adgn_llm/properties/specimen_issues.libsonnet`:
-  - `I.issueSingle(...)` for a single cross‑cutting issue with `files={path: [ranges]}`
-  - `I.issueMultiFromLines(...)` for many independent instances with `linesByFile={path: [line|[start,end], ...]}`
+  - `I.issueOneOccurrence(...)` for a single cross‑cutting issue with `filesToRanges={path: [ranges] | null}`
+  - `I.issueOccurrencesFromLines(...)` for many independent instances with `linesByFile={path: [line|[start,end], ...]}`
 - Coverage semantics:
   - `should_flag=true` and `properties!=[]` → covered by an existing property
   - `should_flag=true` and `properties==[]` → not covered yet (gap)
@@ -42,7 +42,7 @@ For each gathered issue:
 2. I will decide the disposition:
 
    If it’s a true positive (should be in canon):
-   * Add a new entry to `issues.libsonnet` using `I.issueSingle` or `I.issueMultiFromLines` as appropriate.
+   * Add a new entry to `issues.libsonnet` using `I.issueOneOccurrence` or `I.issueOccurrencesFromLines` as appropriate.
    * Choose `id` sequentially (iss-###) and preserve ordering.
    * Set `should_flag=true`.
    * Set `properties` to a non‑empty list only if the finding clearly violates a property definition as written; otherwise `[]`.

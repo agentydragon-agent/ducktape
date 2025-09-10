@@ -58,7 +58,7 @@ Example usage:
 
 ### General
 - Use hierarchical headings without skipping levels; no boilerplate H1 required.
-- Do not duplicate source/scope (that lives in manifest.yaml).
+- Do not duplicate source/scope (they live in issues.libsonnet via rootV2(...)).
 - Keep embedded diffs small (≤ 30 lines per embed).
 - Each finding must sufficiently identify the subject code (file, function - whatever suffices)
   - It's OK to not use full relative code paths - e.g., if there's only one `write.go`, it's fine to use
@@ -74,11 +74,11 @@ Example usage:
 - `not_covered_yet.md`: findings outside currently defined properties
 - `false_positives.md`: findings that should not be flagged
 
-#### `manifest.yaml`: machine-readable manifest (required)
-- Schema: `SpecimenManifest` (defined in: `src/adgn_llm/properties/specimen_frontmatter.py`)
-- Defines:
-  - Source: How to obtain code in specimen (discriminated union `GitSource | LocalSource`)
-  - Scope: If specimen is part of a bigger repo, list which files are in/out of scope
+#### `issues.libsonnet`: unified specimen document (required)
+- Use rootV2(source, scope, items) from `specimen_issues.libsonnet`
+  - source: one of `sourceGit(url, ref)` | `sourceGitHub(org, repo, ref)` | `sourceLocal(root='.')`
+  - scope: `scope(include=[...], exclude=[...]|null)`
+  - items: array built with `issueSingle(...)` / `issueMultiFromLines(...)` / `issueMultiFromFiles(...)`
 
 #### `README.md` (optional)
 - Optional, free‑form notes for humans; whatever context is useful (e.g., short narrative, relevant links).

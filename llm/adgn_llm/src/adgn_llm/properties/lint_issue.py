@@ -19,8 +19,9 @@ from adgn_llm.mcp.docker_exec.server import (
     TOOL_EXEC_NAME as DOCKER_EXEC_TOOL_NAME,
 )
 from adgn_llm.mcp.inproc_transport import make_inproc_slot_spec
-from adgn_llm.mini_codex.agent import MiniCodex
+from adgn_llm.mini_codex.agent import MiniCodex, ResponsesClient
 from adgn_llm.mini_codex.mcp_manager import McpManager, build_mcp_function
+from adgn_llm.mcp.types import ServerSlotSpec
 from adgn_llm.mini_codex.loop_control import (
     Continue,
     Abort,
@@ -36,8 +37,9 @@ from .specimen_utils import (
     Occurrence,
     LineRange,
     Issue,
+    IssueCore,
 )
-from .prompt_utils import render_prompt_template
+from .prompt_utils import render_prompt_template, build_input_schemas_json
 from mcp.server.fastmcp import FastMCP
 from pydantic import BaseModel, ConfigDict, Field
 from .docker_env import properties_docker_spec, PropertiesDockerWiring
@@ -184,7 +186,7 @@ def _build_prompt(
     *,
     submit_tool_name: str,
     occurrence: Occurrence,
-    docker_env_summary: str | None = None,
+    wiring: PropertiesDockerWiring,
 ) -> str:
     # Do not include specimen slug or issue id. Include only issue fields.
     # The agent will read code from /workspace and property definitions from /props via MCP.
@@ -195,12 +197,16 @@ def _build_prompt(
 
     docker_tool_name = build_mcp_function(DOCKER_SERVER_NAME, DOCKER_EXEC_TOOL_NAME)
 
+    # Input schemas for the agent (always included)
+    schemas_json = build_input_schemas_json((IssueCore, Occurrence, LineRange))
+
     return render_prompt_template(
         "lint_issue.j2.md",
         issue_json=issue_json,
         docker_tool_name=docker_tool_name,
         submit_tool_name=submit_tool_name,
-        docker_env_summary=docker_env_summary or "(container summary unavailable)",
+        wiring=wiring,
+        schemas_json=schemas_json,
     )
 
 
@@ -345,7 +351,16 @@ async def run_specimen_lint_issue_async(
 
     if dry_run:
         props = find_property_files([str(p) for p in issue.properties])
-        prompt = _build_prompt(issue, props, submit_tool_name=submit_tool_name, occurrence=occ)
+        # Build a wiring for prompt rendering (no container launched in dry-run)
+        dummy_root = properties_root()  # any existing directory works for template context
+        wiring = properties_docker_spec(dummy_root, mount_properties=True)
+        prompt = _build_prompt(
+            issue,
+            props,
+            submit_tool_name=submit_tool_name,
+            occurrence=occ,
+            wiring=wiring,
+        )
         tmpdir = Path(tempfile.gettempdir()) / "adgn_codex_prompts"
         tmpdir.mkdir(parents=True, exist_ok=True)
         outfile = tmpdir / f"lint_issue_{issue_id}_{ts}.md"
@@ -377,7 +392,7 @@ async def run_specimen_lint_issue_async(
         submit_spec = make_inproc_slot_spec(submit_server)
 
         wiring = properties_docker_spec(content_root, mount_properties=True)
-        specs = {wiring.server_name: wiring.server_spec, "lint_submit": submit_spec}
+        specs: dict[str, ServerSlotSpec] = {wiring.server_name: wiring.server_spec, "lint_submit": submit_spec}
 
         props = find_property_files([str(p) for p in issue.properties])
         prompt = _build_prompt(
@@ -385,7 +400,7 @@ async def run_specimen_lint_issue_async(
             props,
             submit_tool_name=submit_tool_name,
             occurrence=occ,
-            docker_env_summary=wiring.describe_markdown(),
+            wiring=wiring,
         )
 
         # Controller: single-purpose LinterController with display mixin; always require tool; stop when submitted
@@ -403,17 +418,14 @@ async def run_specimen_lint_issue_async(
                 model=model,
                 mcp=mcp,
                 system="You are a code agent. Be concise.",
-                client=client,
+                client=cast(ResponsesClient, client),
             )
             await agent.run(prompt, controller=ctrl)
 
         # Print the exact occurrence representation as fed to the model
         issue_dict = issue.model_dump(exclude_none=True)
         issue_dict.pop("id", None)
-        try:
-            occ_dict = occ.model_dump(exclude_none=True)
-        except Exception:
-            occ_dict = occ  # fallback if already a dict-like
+        occ_dict: dict[str, Any] = occ.model_dump(exclude_none=True)
         issue_dict["instances"] = [occ_dict]
         issue_json = json.dumps(issue_dict, ensure_ascii=False)
         print("Issue (JSON):")

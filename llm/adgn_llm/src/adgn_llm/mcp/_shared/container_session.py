@@ -54,9 +54,11 @@ def _start_container(
     environment: dict[str, str] | None = None,
     labels: dict[str, str] | None = None,
 ) -> Container:
+    from adgn_llm.properties.docker_env import SLEEP_FOREVER_CMD  # local import to avoid cycles
+
     container = client.containers.run(
         image=image,
-        command=["/bin/sh", "-lc", "sleep infinity"],
+        command=SLEEP_FOREVER_CMD,
         detach=True,
         tty=False,
         working_dir=working_dir,

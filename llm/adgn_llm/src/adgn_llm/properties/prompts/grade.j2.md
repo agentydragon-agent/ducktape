@@ -1,10 +1,19 @@
-{% from "_partials.j2" import scope_block %}
+{% extends "_base.j2.md" %}
+{% set header_schema_names = ["Occurrence", "LineRange"] %}
+{% set read_only = false %}
+{% set include_reporting = false %}
+{% set include_tools = false %}
+
+{% block title %}Grade{% endblock %}
+
+{% block body %}
 Grade the input critique against the canonical specimen findings.
 Compute the following metrics and then print supporting details:
 - Recall (0..1 float, 3 decimals): (# canonical positives found by input) / (# canonical positives total)
 - Weighted recall (0..1 float, 3 decimals):
   Treat matches with partial credit (see categories below).
   Report sum(weights of matched canonical positives) / sum(weights of all canonical positives)
+- Precision (0..1 float, 3 decimals): (# true positives) / (# input items that matched positives or negatives)
 - False positive ratio (0..1 float, 3 decimals):
   (# input items that are canonical negatives) / (# input items total)
 - 'Volume coverage' (0..1 float, 3 decimals):
@@ -21,11 +30,9 @@ Matching categories and default weights (for weighted recall):
 - Tangential (0.2): related but not the same (nearby concern but not the canonical item)
 - No match (0.0): unrelated
 
-{{ scope_block(scope_text, static_action, ambiguity_tail) }}
-
 Instructions:
-- Treat each canonical finding as a distinct item (covered.md + not_covered_yet.md = positives).
-- Treat false_positives.md entries as canonical negatives.
+- Treat each canonical finding as a distinct item (positives from ground truth).
+- Treat canonical negatives as do-not-flag exemplars.
 - Treat each bullet/paragraph in the input critique as an input item.
 - Use fuzzy, semantic matching with filenames/line anchors and rationale to decide equivalence.
 - Show counts used in denominators and numerators.
@@ -37,3 +44,4 @@ Canonical findings (positives and negatives):
 
 Input critique:
 {{ critique_text }}
+{% endblock %}

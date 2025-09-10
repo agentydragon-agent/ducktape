@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from typing import Iterable, Type
+
+from pydantic import BaseModel
 from jinja2 import Environment, PackageLoader, select_autoescape
 
 
@@ -20,3 +23,14 @@ def render_prompt_template(name: str, **ctx: object) -> str:
     env = get_templates_env()
     tmpl = env.get_template(name)
     return str(tmpl.render(**ctx)).strip()
+
+
+def build_input_schemas_json(models: Iterable[Type[BaseModel]]) -> dict[str, dict]:
+    """Return {ModelName: model_json_schema()} for all given Pydantic models.
+
+    This is passed wholesale to Jinja; templates choose which to render.
+    """
+    out: dict[str, dict] = {}
+    for m in models:
+        out[m.__name__] = m.model_json_schema()
+    return out

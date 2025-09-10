@@ -7,7 +7,8 @@
 
 ### shlex.quote does not accept PathLike
 
-A critique claimed **wt/wt/client/worktree_utils.py** line 98 as a violation of “Pass Path objects to PathLike APIs” because it casts `Path` to `str` before passing to `shlex.quote`. However, `shlex.quote` does not work with `PosixPath`:
+A critique claimed **wt/wt/client/worktree_utils.py** line 98 as a violation of “Pass Path objects to PathLike APIs” because it casts `Path` to `str` before passing to `shlex.quote`.
+However, `shlex.quote` does not work with `PosixPath`:
 
 ```python
 >>> shlex.quote(Path("foo"))

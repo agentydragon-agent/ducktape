@@ -36,27 +36,33 @@ local normFiles(files) = {
   for f in std.objectFields(files)
 };
 
-// Expand shorthand mapping {file: [lineSpec,...]} into a list of Occurrence objects
-// Each occurrence has exactly one file with a single LineRange (single line per occ is common; ranges also supported)
+// Expand shorthand mapping {file: [lineSpec,...]|null} into a list of Occurrence objects
+// - If value is null or empty array: one occurrence with an unspecified range for that file
+// - Otherwise: one occurrence per provided lineSpec (single line or span)
 local instancesFromLinesByFile(linesByFile) = std.flattenArrays([
-  [ { files: fileEntry(file, [ln]) } for ln in linesByFile[file] ]
+  (
+    local v = linesByFile[file];
+    if v == null || (std.type(v) == 'array' && std.length(v) == 0)
+    then [ { files: { [file]: null } } ]
+    else [ { files: fileEntry(file, [ln]) } for ln in v ]
+  )
   for file in std.objectFields(linesByFile)
 ]);
 
 // Issue constructors
 
-// Single-issue convenience: accept a {file: [int|[start,end]|{start_line,...}]|null} map and wrap as one instance
-local issueSingle(id, rationale, files, properties=[], gap_note=null, should_flag=true) = {
+// One occurrence that can span multiple files/ranges
+local issueOneOccurrence(id, rationale, filesToRanges, properties=[], gap_note=null, should_flag=true) = {
   id: id,
   should_flag: should_flag,
   rationale: rationale,
   properties: properties,
   gap_note: gap_note,
-  instances: [ { files: normFiles(files) } ],
+  instances: [ { files: normFiles(filesToRanges) } ],
 };
 
-// Multi-occurrence issue with explicit instances
-local issueMulti(id, rationale, instances, properties=[], gap_note=null, should_flag=true) = {
+// Many occurrences (explicit list)
+local issueWithOccurrences(id, rationale, occurrences, properties=[], gap_note=null, should_flag=true) = {
   id: id,
   should_flag: should_flag,
   rationale: rationale,
@@ -65,27 +71,55 @@ local issueMulti(id, rationale, instances, properties=[], gap_note=null, should_
   instances: [
     // Each instance.files may be a {file: [ranges]|null} map; normalize arrays to LineRange
     { files: normFiles(inst.files) }
-    for inst in instances
+    for inst in occurrences
   ],
 };
 
-// Multi-occurrence issue built from shorthand mapping file -> [lineSpec,...]
-local issueMultiFromLines(id, rationale, linesByFile, properties=[], gap_note=null, should_flag=true) =
-  issueMulti(id=id, rationale=rationale, instances=instancesFromLinesByFile(linesByFile), properties=properties, gap_note=gap_note, should_flag=should_flag);
+// Many occurrences, each single-file/single-range (built from shorthand mapping)
+local issueOccurrencesFromLines(id, rationale, linesByFile, properties=[], gap_note=null, should_flag=true) =
+  issueWithOccurrences(id=id, rationale=rationale, occurrences=instancesFromLinesByFile(linesByFile), properties=properties, gap_note=gap_note, should_flag=should_flag);
 
 // Multi-occurrence issue built from a simple list of files → each file as an instance with unspecified range
 local instancesFromFiles(filesList) = [ { files: { [f]: null } } for f in filesList ];
-local issueMultiFromFiles(id, rationale, filesList, properties=[], gap_note=null, should_flag=true) =
-  issueMulti(id=id, rationale=rationale, instances=instancesFromFiles(filesList), properties=properties, gap_note=gap_note, should_flag=should_flag);
+// Treat as a special case of linesByFile with empty arrays (unspecified ranges per file)
+local issueOccurrencesFromFiles(id, rationale, filesList, properties=[], gap_note=null, should_flag=true) =
+  issueOccurrencesFromLines(
+    id=id,
+    rationale=rationale,
+    linesByFile={ [f]: [] for f in filesList },
+    properties=properties,
+    gap_note=gap_note,
+    should_flag=should_flag,
+  );
 
 // Root wrapper for SpecimenIssues
 local root(items) = { items: items };
 
+// New v2 schema: embed source/scope (replaces YAML frontmatter)
+local sourceGit(url, ref) = { vcs: 'git', url: url, ref: ref };
+local sourceGitHub(org, repo, ref) = { vcs: 'github', org: org, repo: repo, ref: ref };
+local sourceLocal(root='.') = { vcs: 'local', root: root };
+local scope(include, exclude=null) = { include: include, exclude: exclude };
+
+// Root wrapper v2 with manifest-style fields co-located with items (source/scope above items)
+local rootV2(source, scope, items) = {
+  source: source,
+  scope: scope,
+  items: items,
+};
+
 {
   // exported symbols
-  issueSingle: issueSingle,
-  issueMulti: issueMulti,
-  issueMultiFromLines: issueMultiFromLines,
-  issueMultiFromFiles: issueMultiFromFiles,
+  issueOneOccurrence: issueOneOccurrence,
+  issueWithOccurrences: issueWithOccurrences,
+  issueOccurrencesFromLines: issueOccurrencesFromLines,
+  issueOccurrencesFromFiles: issueOccurrencesFromFiles,
+  // Legacy items-only root
   root: root,
+  // V2 helpers
+  sourceGit: sourceGit,
+  sourceGitHub: sourceGitHub,
+  sourceLocal: sourceLocal,
+  scope: scope,
+  rootV2: rootV2,
 }

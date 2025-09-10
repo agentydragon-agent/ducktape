@@ -1,7 +1,13 @@
-{% from "_partials.j2" import scope_block, tools_section, supplemental_section_md %}
-Ensure code within the described scope conforms to the properties defined below and refactor as needed to satisfy them without altering behavior.
+{% extends "_base.j2.md" %}
+{% set header_schema_names = ["Occurrence", "LineRange"] %}
+{% set read_only = false %}
+{% set include_reporting = false %}
+{% set include_tools = false %}
 
-{{ scope_block(scope_text, static_action, ambiguity_tail) }}
+{% block title %}Enforce{% endblock %}
+
+{% block body %}
+Ensure code within the described scope conforms to the properties defined below and refactor as needed to satisfy them without altering behavior.
 
 Editing policy:
 - Prefer minimal, localized edits within the scoped hunks/sections.
@@ -16,11 +22,6 @@ Requirements:
 - You MUST bring all scoped files/sections into compliance ALL property definition files
 - You MUST also apply any cascaded changes needed in other files as a result of bringing target files in compliance.
 
-Property definitions:
-{{ properties_text }}
-
-{{ supplemental_section_md(supplemental_text) }}
-
 Operational guidance:
 - Ask for confirmation before any destructive action (deletes/mass renames). Keep changes within the workspace.
 - If enforcing a property would make the code worse, explain and propose an adjustment of the property's definition.
@@ -29,3 +30,4 @@ Deliverables:
 - Apply changes directly in the workspace.
 - Print a concise change report as your final message:
   Files changed, properties addressed per file, and any remaining violations you could not safely fix.
+{% endblock %}

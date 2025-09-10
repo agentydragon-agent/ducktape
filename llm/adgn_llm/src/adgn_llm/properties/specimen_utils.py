@@ -9,10 +9,15 @@ import tarfile
 import tempfile
 from collections.abc import Iterable
 from functools import lru_cache
-from typing import Any
+from typing import Any, Annotated, Literal
 from pathlib import Path
 from tempfile import NamedTemporaryFile
+import warnings
 import _jsonnet
+
+
+
+
 from adgn_llm.properties.prop_utils import (
     PropertyID,
     properties_root,
@@ -25,7 +30,44 @@ import yaml
 from platformdirs import user_cache_dir
 from pydantic import BaseModel, ConfigDict, model_validator, Field
 
-from .specimen_frontmatter import GitHubSource, GitSource, LocalSource, SpecimenManifest
+# Specimen schema (v2): source/scope live alongside items in Jsonnet docs
+class GitSource(BaseModel):
+    vcs: Literal["git"]
+    url: str
+    ref: str
+
+
+class GitHubSource(BaseModel):
+    vcs: Literal["github"]
+    org: str
+    repo: str
+    ref: str
+
+
+class LocalSource(BaseModel):
+    vcs: Literal["local"]
+    root: str = "."
+
+
+Source = Annotated[GitSource | GitHubSource | LocalSource, Field(discriminator="vcs")]
+
+
+class Scope(BaseModel):
+    include: list[str]
+    exclude: list[str] | None = None
+
+
+class SpecimenDoc(BaseModel):
+    """Unified specimen document (v2): source/scope and items (Jsonnet-only)."""
+
+    source: Source
+    scope: Scope
+    items: list["Issue"]
+
+
+def _warn_deprecated_model(message: str) -> None:
+    """Emit a standardized deprecation warning for legacy protocol models."""
+    warnings.warn(message, DeprecationWarning, stacklevel=2)
 
 
 @lru_cache(maxsize=1)
@@ -64,6 +106,12 @@ class Occurrence(BaseModel):
 
 
 class Issue(BaseModel):
+    """DEPRECATED: Use IssueCore + Occurrence(s) instead.
+
+    This legacy model couples issue metadata with its occurrences. It will be
+    removed after agents migrate to the new protocols.
+    """
+
     id: str
     should_flag: bool
     rationale: str
@@ -73,8 +121,13 @@ class Issue(BaseModel):
     model_config = ConfigDict(extra="ignore")
     instances: list[Occurrence]
 
+    def model_post_init(self, __context: Any) -> None:  # type: ignore[override]
+        _warn_deprecated_model(
+            "Issue is deprecated: use IssueCore + Occurrence(s). This model will be removed after migration."
+        )
+
     @model_validator(mode="after")
-    def _validate_self(self) -> Issue:
+    def _validate_self(self) -> "Issue":
         _validate_property_ids(self.properties)
         if not self.instances:
             raise ValueError("`instances` must contain at least one occurrence")
@@ -88,8 +141,47 @@ class Issue(BaseModel):
         return paths
 
 
+class IssueCore(BaseModel):
+    """Issue metadata without occurrences.
+
+    This is the minimal issue header used when an agent receives a single
+    Occurrence separately (e.g., lint-issue). IDs are REQUIRED; never derived.
+    """
+
+    id: str
+    should_flag: bool
+    rationale: str
+    properties: list[PropertyID] = []
+    gap_note: str | None = None
+
+    model_config = ConfigDict(extra="ignore")
+
+    @model_validator(mode="after")
+    def _validate_self(self) -> "IssueCore":
+        _validate_property_ids(self.properties)
+        return self
+
+    @classmethod
+    def from_issue(cls, issue: "Issue") -> "IssueCore":
+        return cls(
+            id=issue.id,
+            should_flag=issue.should_flag,
+            rationale=issue.rationale,
+            properties=list(issue.properties),
+            gap_note=issue.gap_note,
+        )
+
+
 class SpecimenIssues(BaseModel):
+    """DEPRECATED: Will be superseded by SpecimenGroundTruth (positives/negatives).
+
+    Kept for compatibility with existing Jsonnet pipelines until migration completes.
+    """
+
     items: list[Issue]
+
+    def model_post_init(self, __context: Any) -> None:  # type: ignore[override]
+        _warn_deprecated_model("SpecimenIssues is deprecated: use SpecimenGroundTruth protocol.")
 
     def filter_by_paths(
         self,
@@ -100,7 +192,9 @@ class SpecimenIssues(BaseModel):
             return self
 
         def matches_any(path: str, globs: list[str] | None) -> bool:
-            return bool(globs) and any(fnmatch.fnmatch(path, g) for g in globs)
+            if not globs:
+                return False
+            return any(fnmatch.fnmatch(path, g) for g in globs)
 
         filtered: list[Issue] = []
         for issue in self.items:
@@ -148,7 +242,7 @@ def find_specimens_base() -> Path:
 
 def list_specimen_names(base: Path) -> list[str]:
     return sorted(
-        [p.name for p in base.iterdir() if p.is_dir() and (p / "manifest.yaml").exists()],
+        [p.name for p in base.iterdir() if p.is_dir() and (p / "issues.libsonnet").exists()],
     )
 
 
@@ -157,21 +251,31 @@ def resolve_manifest_arg(arg: str | None, base: Path | None = None) -> Path | No
         return None
     path = Path(arg)
     if path.exists():
-        return path / "manifest.yaml" if path.is_dir() else path
+        if path.is_dir():
+            cand = path / "issues.libsonnet"
+            return cand if cand.exists() else None
+        return path
     base_dir = base or find_specimens_base()
-    cand = base_dir / arg / "manifest.yaml"
+    cand = base_dir / arg / "issues.libsonnet"
     if cand.exists():
         return cand
     # unique prefix
     matches = [n for n in list_specimen_names(base_dir) if n.startswith(arg)]
     if len(matches) == 1:
-        return base_dir / matches[0] / "manifest.yaml"
+        return base_dir / matches[0] / "issues.libsonnet"
     return None
 
 
-def load_manifest(path: Path) -> SpecimenManifest:
-    data = yaml.safe_load(path.read_text(encoding="utf-8"))
-    return SpecimenManifest.model_validate(data)
+def load_manifest(path: Path) -> SpecimenDoc:
+    # Jsonnet-only: read unified specimen doc (source/scope/items) from issues.libsonnet
+    suf = path.suffix.lower()
+    if suf in {".yaml", ".yml"}:
+        raise NotImplementedError("YAML manifests are no longer supported; use issues.libsonnet with rootV2(...) exports")
+    if suf not in {".libsonnet", ".jsonnet"}:
+        raise SystemExit(f"Specimen must be Jsonnet: {path}")
+    json_str = _jsonnet.evaluate_file(str(path))
+    data = json.loads(json_str)
+    return SpecimenDoc.model_validate(data)
 
 
 def _xdg_cache_base() -> Path:
@@ -213,7 +317,7 @@ def _extract_tar_gz_to_temp(archive: Path) -> Path:
 
 
 def ensure_archive_for_specimen_slug(
-    man: SpecimenManifest,
+    man: SpecimenDoc,
     manifest_path: Path,
     gitconfig: Path | None,
 ) -> Path:
@@ -340,7 +444,7 @@ def build_scope_text(
 
 
 def resolve_source_root(
-    man: SpecimenManifest,
+    man: SpecimenDoc,
     manifest_path: Path,
     gitconfig: Path | None,
 ) -> Path:
@@ -387,7 +491,7 @@ class Specimen:
     def __init__(
         self,
         manifest_path: Path,
-        manifest: SpecimenManifest,
+        manifest: SpecimenDoc,
         root: Path,
     ) -> None:
         self.manifest_path = manifest_path

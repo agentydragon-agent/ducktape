@@ -15,11 +15,11 @@ yourself and submit a good description.
 
 ## Canonical issues format (Jsonnet)
 
-The canonical ground-truth file is issues.libsonnet next to manifest.yaml. Use the Jsonnet helpers in
+The canonical ground-truth file is `issues.libsonnet` (rootV2). Use the Jsonnet helpers in
 src/adgn_llm/properties/specimen_issues.libsonnet:
 
-- I.issueSingle(...) for a single cross-cutting issue (cardinality=single) with files={path: [ranges]}
-- I.issueMultiFromLines(...) for many independent instances (cardinality=multi_instances) using
+- I.issueOneOccurrence(...) for a single cross-cutting issue (one occurrence with filesToRanges={path: [ranges] | null})
+- I.issueOccurrencesFromLines(...) for many independent occurrences (one per lineSpec) using
   linesByFile={path: [line or [start,end], ...]}
 
 Required fields per issue:
@@ -42,7 +42,7 @@ Examples (Jsonnet):
 
 ```jsonnet
 // Many inline imports across files
-I.issueMultiFromLines(
+I.issueOccurrencesFromLines(
   id='iss-001',
   rationale=|||
   Inline imports inside functions that have no reason to be lazy. Move to module top.
@@ -52,7 +52,7 @@ I.issueMultiFromLines(
 ),
 
 // Single cross-cutting duplication within one file
-I.issueSingle(
+I.issueOneOccurrence(
   id='iss-002',
   rationale=|||
   Duplicate hydration/post-creation script invocation paths; consolidate on production path.
@@ -79,6 +79,6 @@ it does not fall under that property.
 ## Process
 
 1. Read **ALL** property definition files in `definitions/**.md` to make sure you know the *actual definition wording*.
-2. Find if we have the source code of the specimen already checked out. Check specimen `manifest.yaml` and see if there's a `work` subdir under specimen dir.
+2. Find if we have the source code of the specimen already checked out. Ensure the specimen contains `issues.libsonnet`; use any `work` subdir if present, or hydrate fresh per tooling.
 3. Check if finding submitted by user is already documented; if it is, omit it and tell the user.
 4. Add finding to the proper file (`covered/not_covered/false_positives.md`) following guidelines in @README.md.

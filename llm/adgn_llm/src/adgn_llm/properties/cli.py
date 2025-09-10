@@ -13,18 +13,25 @@ from adgn_llm.properties.docker_env import (
     WORKING_DIR as CRITIC_WORKDIR,
     ensure_critic_image,
     properties_docker_spec,
+    build_critic_volumes,
+    SLEEP_FOREVER_CMD,
+    PropertiesDockerWiring,
 )
 import time
 from dataclasses import dataclass
 from adgn_llm.properties.prop_utils import properties_root
 from pathlib import Path
 from jinja2 import Environment, PackageLoader, select_autoescape
+from adgn_llm.properties.prompt_utils import build_input_schemas_json
 
 from adgn_llm.logging_config import configure_logging
 import tiktoken
 from openai import AsyncOpenAI
-from adgn_llm.mini_codex.agent import MiniCodex
+from adgn_llm.mini_codex.agent import MiniCodex, ResponsesClient
 from adgn_llm.mini_codex.mcp_manager import McpManager
+from typing import Mapping, Any, cast
+from collections.abc import AsyncIterator
+from adgn_llm.mcp.types import ServerSlotSpec
 
 from .specimen_utils import (
     build_scope_text,
@@ -33,6 +40,9 @@ from .specimen_utils import (
     load_manifest,
     resolve_manifest_arg,
     ensure_archive_for_specimen_slug,
+    Occurrence,
+    LineRange,
+    IssueCore,
 )
 
 
@@ -185,6 +195,9 @@ def _detect_tools() -> list[str]:
 
 def build_find_prompt(
     scope_text: str,
+    *,
+    wiring: object,
+    schemas_json: dict[str, dict],
     supplemental_text: str | None = None,
     available_tools: list[str] | None = None,
 ) -> str:
@@ -197,11 +210,16 @@ def build_find_prompt(
         available_tools=available_tools or [],
         static_action="analyze",
         ambiguity_tail="do not include anything outside it.",
+        wiring=wiring,
+        schemas_json=schemas_json,
     )
 
 
 def build_open_review_prompt(
     scope_text: str,
+    *,
+    wiring: PropertiesDockerWiring,
+    schemas_json: dict[str, dict],
     supplemental_text: str | None = None,
     available_tools: list[str] | None = None,
 ) -> str:
@@ -214,10 +232,18 @@ def build_open_review_prompt(
         available_tools=available_tools or [],
         static_action="analyze",
         ambiguity_tail="do not include anything outside it.",
+        wiring=wiring,
+        schemas_json=schemas_json,
     )
 
 
-def build_enforce_prompt(scope_text: str, supplemental_text: str | None = None) -> str:
+def build_enforce_prompt(
+    scope_text: str,
+    *,
+    wiring: PropertiesDockerWiring,
+    schemas_json: dict[str, dict],
+    supplemental_text: str | None = None,
+) -> str:
     properties_text = _properties_text()
     return _render_prompt_template(
         "enforce.j2.md",
@@ -226,10 +252,19 @@ def build_enforce_prompt(scope_text: str, supplemental_text: str | None = None) 
         supplemental_text=supplemental_text,
         static_action="edit",
         ambiguity_tail="avoid touching anything outside it unless required by the editing policy below.",
+        wiring=wiring,
+        schemas_json=schemas_json,
     )
 
 
-def build_grade_prompt(scope_text: str, canonical_text: str, critique_text: str) -> str:
+def build_grade_prompt(
+    scope_text: str,
+    canonical_text: str,
+    critique_text: str,
+    *,
+    wiring: PropertiesDockerWiring,
+    schemas_json: dict[str, dict],
+) -> str:
     return _render_prompt_template(
         "grade.j2.md",
         scope_text=scope_text,
@@ -237,6 +272,8 @@ def build_grade_prompt(scope_text: str, canonical_text: str, critique_text: str)
         critique_text=critique_text,
         static_action="use for context only (do not re-scan code)",
         ambiguity_tail="you are not re-running analysis; only use it for reference while matching.",
+        wiring=wiring,
+        schemas_json=schemas_json,
     )
 
 
@@ -272,21 +309,35 @@ def build_cmd(
 async def _run_minicodex_simple(
     prompt: str,
     model: str,
-    specs: dict[str, object],
+    specs: Mapping[str, ServerSlotSpec],
     *,
     output_final_message: str | None = None,
     final_only: bool = False,
-    client: AsyncOpenAI | None = None,
+    client: AsyncOpenAI,
 ) -> int:
-    client = client or AsyncOpenAI()
-    async with McpManager(specs) as mcp:
-        agent = await MiniCodex.create(model=model, mcp=mcp, system="You are a code agent. Be concise.", client=client)
-        res = await agent.run(prompt)
-    text = (res.text or "").strip()
+    async with McpManager(dict(specs)) as mcp:
+        agent = await MiniCodex.create(
+            model=model,
+            mcp=mcp,
+            system="You are a code agent. Be concise.",
+            client=cast(ResponsesClient, client),
+        )
+        res_any: Any = await agent.run(prompt)
+
+    final_text = ""
+    if isinstance(res_any, AsyncIterator):
+        last: dict[str, Any] | None = None
+        async for m in res_any:
+            last = m
+        if isinstance(last, dict):
+            final_text = str((last.get("text") or "")).strip()
+    else:
+        final_text = str(getattr(res_any, "text", "") or "").strip()
+
     if output_final_message:
-        Path(output_final_message).write_text(text, encoding="utf-8")
+        Path(output_final_message).write_text(final_text, encoding="utf-8")
     # For parity with prior behavior, print final text to stdout unless explicitly suppressed
-    print(text)
+    print(final_text)
     return 0
 
 
@@ -297,7 +348,12 @@ async def _run_check_minicodex_async(
     wiring = properties_docker_spec(workdir, mount_properties=True)
     specs = {wiring.server_name: wiring.server_spec}
     return await _run_minicodex_simple(
-        prompt, model, specs, output_final_message=output_final_message, final_only=final_only
+        prompt,
+        model,
+        specs,
+        output_final_message=output_final_message,
+        final_only=final_only,
+        client=AsyncOpenAI(),
     )
 
 
@@ -345,7 +401,7 @@ async def _run_specimen_minicodex_async(
         scope_text = build_scope_text(man.scope.include, man.scope.exclude)
         if mode == "discover":
             prompt = _render_prompt_template(
-                "discover.md.j2",
+                "discover.j2.md",
                 scope_text=scope_text,
                 properties_text=_properties_text(),
                 supplemental_text=supplemental_text,
@@ -387,6 +443,7 @@ async def _run_specimen_minicodex_async(
             specs,
             output_final_message=output_final_message,
             final_only=final_only,
+            client=AsyncOpenAI(),
         )
     finally:
         # Clean up the extracted workspace dir
@@ -419,7 +476,19 @@ async def _run_specimen_grade_minicodex_async(
         return 2
     canonical_text = read_embedded_paths([p])
     critique_text = read_embedded_paths([critique_path])
-    prompt = build_grade_prompt(scope_text, canonical_text, critique_text)
+    prompt = build_grade_prompt(
+        scope_text,
+        canonical_text,
+        critique_text,
+        wiring=PropertiesDockerWiring(
+            _server_name="none",
+            server_spec=None,  # type: ignore[arg-type]
+            _working_dir=Path("/"),
+            definitions_container_dir=None,
+            image_name="n/a",
+        ),
+        schemas_json=build_input_schemas_json([Occurrence, LineRange, IssueCore]),
+    )
 
     if dry_run:
         tmpdir = Path(tempfile.gettempdir()) / "adgn_codex_prompts"
@@ -434,13 +503,14 @@ async def _run_specimen_grade_minicodex_async(
         return 0
 
     # Grade does not need tools; run MiniCodex without MCP servers
-    specs: dict[str, object] = {}
+    specs: Mapping[str, ServerSlotSpec] = {}
     return await _run_minicodex_simple(
         prompt,
         "gpt-5",
         specs,
         output_final_message=output_final_message,
         final_only=final_only,
+        client=AsyncOpenAI(),
     )
 
 
@@ -814,10 +884,12 @@ def main(argv: list[str] | None = None) -> int:
             print(_format_tools_table(detected_tools))
         out_last_file: Path | None = None
         if args.command == "check":
+            wiring = properties_docker_spec(workdir, mount_properties=True)
+            schemas_json = build_input_schemas_json([Occurrence, LineRange, IssueCore])
             prompt = (
-                build_open_review_prompt(args.scope, available_tools=detected_tools)
+                build_open_review_prompt(args.scope, wiring=wiring, schemas_json=schemas_json, available_tools=detected_tools)
                 if args.allow_general_findings
-                else build_find_prompt(args.scope, available_tools=detected_tools)
+                else build_find_prompt(args.scope, wiring=wiring, schemas_json=schemas_json, available_tools=detected_tools)
             )
             # MiniCodex path for check: run inside docker (RO mount)
             if args.dry_run:
@@ -846,7 +918,9 @@ def main(argv: list[str] | None = None) -> int:
                 )
             )
         else:
-            prompt = build_enforce_prompt(args.scope)
+            wiring = properties_docker_spec(workdir, mount_properties=True)
+            schemas_json = build_input_schemas_json([Occurrence, LineRange, IssueCore])
+            prompt = build_enforce_prompt(args.scope, wiring=wiring, schemas_json=schemas_json)
             cmd = build_cmd(
                 args.model,
                 workdir,
@@ -924,48 +998,27 @@ def main(argv: list[str] | None = None) -> int:
             print(f"ERROR: Docker daemon not reachable: {e}")
             return 2
 
-        ts = int(time.time())
-        slug = manifest_path.parent.name
-        mount_base = Path.home() / ".cache" / "adgn-llm" / "workspaces"
-        mount_base.mkdir(parents=True, exist_ok=True)
-        mount_root = mount_base / f"{slug}_{ts}"
-
+        content_root: Path | None = None
         try:
-            if mount_root.exists():
-                shutil.rmtree(mount_root, ignore_errors=True)
-
-            archive = ensure_archive_for_specimen_slug(
-                man, manifest_path, Path(gitconfig_path) if gitconfig_path else None
-            )
-
-            mount_root.mkdir(parents=True, exist_ok=True)
-            with tarfile.open(archive, "r:gz") as tf:
-                tf.extractall(mount_root)
-
-            entries = [p for p in mount_root.iterdir() if p.is_dir()]
-            if len(entries) != 1:
-                print(
-                    f"Unexpected archive layout under {mount_root}; expected a single top-level directory",
-                )
-                return 2
-            content_root = entries[0]
+            ts = int(time.time())
+            content_root = _hydrate_specimen_home_workspace(manifest_path, man, gitconfig_path)
 
             name = f"adgn_spec_shell_{ts}"
             container = None
             try:
                 # Always use the properties critic image and ensure it exists locally
-                image = PROPERTIES_DOCKER_IMAGE
                 ensure_critic_image()
+                volumes, _defs = build_critic_volumes(content_root, mount_properties=True, workspace_mode="rw")
 
                 container = dclient.containers.run(
-                    image=image,
-                    command=["sleep", "infinity"],
+                    image=PROPERTIES_DOCKER_IMAGE,
+                    command=SLEEP_FOREVER_CMD,
                     name=name,
                     remove=True,
                     detach=True,
                     network_mode="none",
-                    volumes={str(content_root): {"bind": CRITIC_WORKDIR, "mode": "rw"}},
-                    working_dir=CRITIC_WORKDIR,
+                    volumes=volumes,
+                    working_dir=str(CRITIC_WORKDIR),
                     tty=True,
                     stdin_open=True,
                 )
@@ -973,7 +1026,8 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"ERROR: failed to start container: {e}")
                 return 2
 
-            # Attach an interactive shell using docker CLI (subprocess) — no fallback to sh
+            # Attach an interactive shell using docker CLI. We assume bash exists in the
+            # properties-critic image; it is baked into our container image. No fallback to sh.
             rc = subprocess.run(["docker", "exec", "-it", name, "bash"], check=False).returncode
             try:
                 if container:
@@ -982,8 +1036,12 @@ def main(argv: list[str] | None = None) -> int:
                 pass
             return rc
         finally:
-            if mount_root.exists():
-                shutil.rmtree(mount_root, ignore_errors=True)
+            try:
+                if content_root is not None:
+                    parent = content_root.parent
+                    shutil.rmtree(parent, ignore_errors=True)
+            except Exception:
+                pass
 
     else:
         parser.error("command is required")

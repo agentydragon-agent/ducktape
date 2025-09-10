@@ -15,6 +15,8 @@ PROPERTIES_DOCKER_IMAGE = "adgn-llm/properties-critic:latest"
 SERVER_NAME = "docker"
 WORKING_DIR: Path = Path("/workspace")
 PROPS_DIR = "/props"
+# Shared startup command for long-lived containers
+SLEEP_FOREVER_CMD: list[str] = ["/bin/sh", "-lc", "sleep infinity"]
 
 
 @dataclass(slots=True)
@@ -23,6 +25,7 @@ class PropertiesDockerWiring:
     server_spec: ServerSlotSpec
     _working_dir: Path
     definitions_container_dir: str | None
+    image_name: str
 
     @property
     def server_name(self) -> str:
@@ -39,17 +42,20 @@ class PropertiesDockerWiring:
         return f"{self.definitions_container_dir}/{rel}"
 
     def describe_markdown(self) -> str:
+        """Return a terse environment summary without duplicating resource://container.info.
+
+        Only mention property definitions mount status; image/workdir are discoverable via container.info.
+        """
         if self.definitions_container_dir:
-            props = f"defs mounted RO at {self.definitions_container_dir}"
-        else:
-            props = "defs not mounted"
-        return f"Docker env: image={PROPERTIES_DOCKER_IMAGE}, workdir={self.working_dir}, {props}"
+            return f"Property definitions: mounted read-only at {self.definitions_container_dir}"
+        return "Property definitions: not mounted"
 
 
 def build_critic_build_hint() -> str:
     dockerfile_trav = ilres.files("adgn_llm").joinpath("docker/critic.Dockerfile")
+    # Convert Traversable to a real filesystem path for mypy/typeshed compatibility
     dockerfile_path = str(dockerfile_trav)
-    context_dir = str(dockerfile_trav.parent)
+    context_dir = str(Path(dockerfile_path).parent)
     return f"docker build -f '{dockerfile_path}' -t {PROPERTIES_DOCKER_IMAGE} '{context_dir}'"
 
 
@@ -65,11 +71,41 @@ def ensure_critic_image() -> None:
         ) from e
 
 
+def build_critic_volumes(
+    workspace_root: Path,
+    *,
+    mount_properties: bool = True,
+    workspace_mode: str = "ro",
+    extra_volumes: dict[str, dict[str, str]] | None = None,
+) -> tuple[dict[str, dict[str, str]], str | None]:
+    """Build standard volumes map for properties critic containers.
+
+    - Mounts workspace_root at /workspace with the provided workspace_mode ("ro" or "rw")
+    - Optionally mounts property definitions at /props (always read-only)
+    - Allows extra volumes to be merged in
+    Returns (volumes, definitions_container_dir|None)
+    """
+    volumes: dict[str, dict[str, str]] = {
+        str(Path(workspace_root).resolve()): {"bind": str(WORKING_DIR), "mode": str(workspace_mode)}
+    }
+
+    defs_container: str | None = None
+    if mount_properties:
+        defs_dir = (properties_root() / "definitions").resolve()
+        volumes[str(defs_dir)] = {"bind": PROPS_DIR, "mode": "ro"}
+        defs_container = PROPS_DIR
+
+    if extra_volumes:
+        volumes.update(extra_volumes)
+
+    return volumes, defs_container
+
+
 def properties_docker_spec(
     workspace_root: Path,
     *,
     mount_properties: bool = True,
-    extra_volumes: dict[str, dict] | None = None,
+    extra_volumes: dict[str, dict[str, str]] | None = None,
 ) -> PropertiesDockerWiring:
     """Return wiring for the properties critic container.
 
@@ -80,17 +116,12 @@ def properties_docker_spec(
     # Ensure image exists; let exceptions propagate with helpful message
     ensure_critic_image()
 
-    volumes: dict[str, dict] = {str(Path(workspace_root).resolve()): {"bind": str(WORKING_DIR), "mode": "ro"}}
-
-    defs_dir: Path | None = None
-    defs_container: str | None = None
-    if mount_properties:
-        defs_dir = (properties_root() / "definitions").resolve()
-        volumes[str(defs_dir)] = {"bind": PROPS_DIR, "mode": "ro"}
-        defs_container = PROPS_DIR
-
-    if extra_volumes:
-        volumes.update(extra_volumes)
+    volumes, defs_container = build_critic_volumes(
+        workspace_root,
+        mount_properties=mount_properties,
+        workspace_mode="ro",
+        extra_volumes=extra_volumes,
+    )
 
     server = make_container_exec_mcp(
         image=PROPERTIES_DOCKER_IMAGE,
@@ -104,4 +135,5 @@ def properties_docker_spec(
         server_spec=spec,
         _working_dir=WORKING_DIR,
         definitions_container_dir=defs_container,
+        image_name=PROPERTIES_DOCKER_IMAGE,
     )

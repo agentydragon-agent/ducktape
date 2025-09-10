@@ -151,9 +151,12 @@ def _docker(
     container = None
     try:
         try:
+            # Standardize long-lived container command across wrappers
+            from adgn_llm.properties.docker_env import SLEEP_FOREVER_CMD
+
             container = dclient.containers.run(
                 image=docker_image,
-                command=["sleep", "infinity"],
+                command=SLEEP_FOREVER_CMD,
                 name=name,
                 remove=True,
                 detach=True,
