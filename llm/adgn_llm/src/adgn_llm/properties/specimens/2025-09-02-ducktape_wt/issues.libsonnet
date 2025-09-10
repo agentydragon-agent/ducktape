@@ -509,7 +509,7 @@ I.rootV2(
     rationale='Dead/unused GitHub types: PullRequest (L65), PullRequestView (L92), PullRequestCache; remove or consolidate.',
     properties=['no-dead-code'],
     linesByFile={
-      'wt/wt/shared/github_models.py': [[65, 65, 'PullRequest'], [92, 92, 'PullRequestView'], [105, 105, 'PullRequestCache']],
+      'wt/wt/shared/github_models.py': [[65, 75, 'PullRequest'], [92, 104, 'PullRequestView'], [105, 136, 'PullRequestCache']],
     },
   ),
 
@@ -519,7 +519,132 @@ I.rootV2(
     rationale='Dead/unused protocol declarations: ProgressUpdate (L426), SUPPORTED_METHODS (L497).',
     properties=['no-dead-code'],
     linesByFile={
-      'wt/wt/shared/protocol.py': [[426, 426, 'ProgressUpdate'], [497, 497, 'SUPPORTED_METHODS']],
+      'wt/wt/shared/protocol.py': [[426, 433, 'ProgressUpdate'], [497, 513, 'SUPPORTED_METHODS']],
+    },
+  ),
+
+  // iss-032: Prefer timedelta over numeric total_seconds() for duration checks
+  I.issueOneOccurrence(
+    id='iss-032',
+    rationale=|||
+ Do not downgrade datetime objects to numbers via .total_seconds() for comparisons; prefer timedelta literals so types remain rich and intent is clear.
+
+Before:
+```python
+if (
+    self.daemon_health.last_error_time
+    and (datetime.now() - self.daemon_health.last_error_time).total_seconds() > 60
+):
+    ...
+```
+After:
+```python
+if self.daemon_health.last_error_time and (
+    datetime.now() - self.daemon_health.last_error_time
+) > datetime.timedelta(minutes=1):
+    ...
+```
+    This avoids unnecessary numeric conversions and preserves unit semantics.
+    |||,
+    properties=['time-and-units'],
+    filesToRanges={
+      'wt/wt/server/wt_server.py': [[1243, 1251]],
+    },
+  ),
+
+  // iss-033: Scope try/except to minimal risky call — path-within-worktrees check
+  I.issueOneOccurrence(
+    id='iss-033',
+    rationale=|||
+     In the path-within-worktrees check, scope the try/except to only the relative_to(...) call so it does not capture unrelated exceptions and hides real errors.
+
+     Before:
+     ```python
+     try:
+         rel_path = absolute_path.relative_to(self.config.worktrees_dir)
+         worktree_name = rel_path.parts[0] if rel_path.parts else None
+         if len(rel_path.parts) > 1:
+             relative_path = str(Path(*rel_path.parts[1:]))
+         else:
+             relative_path = ""
+     except ValueError:
+         # Path is not within worktrees directory - check if it's main repo
+         ...
+     ```
+
+     After:
+     ```python
+     try:
+         rel_path = absolute_path.relative_to(self.config.worktrees_dir)
+     except ValueError:
+         if not absolute_path.is_relative_to(self.config.main_repo):
+             raise ValueError(f"Path {absolute_path} is not a managed worktree")
+         worktree_name = MAIN_WORKTREE_DISPLAY_NAME
+         relative_path = str(absolute_path.relative_to(self.config.main_repo))
+         return self._create_success_response(...)
+     # happy path (in worktrees dir)
+     worktree_name = rel_path.parts[0] if rel_path.parts else None
+     relative_path = "" if len(rel_path.parts) <= 1 else str(Path(*rel_path.parts[1:]))
+     ```
+
+     This reduces nesting, keeps the happy path flat, and prevents the try/except from swallowing unrelated errors.
+    |||,
+    properties=['scoped-try-except', 'early-bailout'],
+    filesToRanges={
+      'wt/wt/server/wt_server.py': [[2186, 2240]],
+    },
+  ),
+
+  // iss-034: Early bailout — invert guard in process_single_worktree
+  I.issueOneOccurrence(
+    id='iss-034',
+    rationale=|||
+     In `process_single_worktree`, invert the guard to early-bail when `gs_client` is missing and keep the happy path flat. Extracting the branch into a helper improves readability and reduces nesting.
+
+     Before (shape):
+     ```python
+     if gs_client:
+         ...  # big branch
+     else:
+         ...  # small branch
+     ```
+
+     After (refactor sketch):
+     ```python
+     def _compute_single_status(worktree_path: Path, gs_client) -> WorktreeGitStatus:
+         if not gs_client:
+             return WorktreeGitStatus(
+                 state="stopped",
+                 dirty_files=[],
+                 untracked_files=[],
+                 ...,
+             )
+         # happy path (cache, bounded refresh, meta + PR fetch)
+         ...
+
+     # in process_single_worktree
+     single_start = time.time()
+     gs_client = self.gitstatusd_clients.get(worktree_path)
+     status = _compute_single_status(worktree_path, gs_client)
+     individual_times[worktree_path] = (time.time() - single_start) * 1000
+     return status
+     ```
+
+     This makes the happy path obvious and enables measuring/isolating the per-worktree timing more cleanly.
+    |||,
+    properties=['early-bailout','minimize-nesting'],
+    filesToRanges={
+      'wt/wt/server/wt_server.py': [[1648, 1660]],
+    },
+  ),
+
+  // iss-035: Use str.removeprefix for fixed affix removal
+  I.issueOccurrencesFromLines(
+    id='iss-035',
+    rationale='Use str.removeprefix("wtid:") for fixed prefix removal instead of slicing (e.g., `wtid[5:]`). This is clearer, avoids a magic constant, and is idiomatic in modern Python.',
+    properties=['str-affixes'],
+    linesByFile={
+      'wt/wt/shared/protocol.py': [[29, 31]],
     },
   ),
 

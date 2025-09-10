@@ -777,6 +777,13 @@ def main(argv: list[str] | None = None) -> int:
         help="Optional command to run after '--'; if omitted, opens interactive bash",
     )
 
+    # Eval harness: run all registered datasets (no options to keep CLI stable)
+    sub.add_parser(
+        "eval-all",
+        help="Run all registered eval datasets",
+        description="Runs all datasets and writes runs/evals/<ts>/index.json.",
+    )
+
     args = parser.parse_args(argv)
 
     if args.command == "lint-issue":
@@ -794,6 +801,18 @@ def main(argv: list[str] | None = None) -> int:
                 client=client,
             )
         )
+
+    if args.command == "eval-all":
+        eval_mod = importlib.import_module("adgn_llm.properties.eval_harness")
+        out_dir = asyncio.run(
+            eval_mod.run_all_evals(
+                model="gpt-5",
+                gitconfig=None,
+                client=AsyncOpenAI(),
+            )
+        )
+        print(f"Eval index written to: {out_dir / 'index.json'}")
+        return 0
 
     if args.command == "eval-lint-issue":
         # Lazy import to avoid cycles
