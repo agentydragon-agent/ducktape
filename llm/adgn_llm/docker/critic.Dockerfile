@@ -10,7 +10,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 # OS deps: git, curl, build tools, node+npm for pyright/jscpd, and vim
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates curl git build-essential nodejs npm vim \
+    ca-certificates curl git build-essential nodejs npm vim ripgrep \
  && rm -rf /var/lib/apt/lists/*
 
 # Upgrade pip toolchain

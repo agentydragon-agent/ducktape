@@ -1,6 +1,23 @@
+- **wt/wt/server/gitstatusd_client.py**: property `has_changes` — simplify by delegating to the other properties
+      Before:
+      ```python
+      if not self.is_git_repository:
+          return False
+      return (
+          (self.staged_changes or 0) > 0
+          or (self.unstaged_changes or 0) > 0
+          or (self.untracked_files or 0) > 0
+      )
+      ```
+      After:
+      ```python
+      return self.has_dirty_files or self.has_untracked_files
+      ```
+
 ## Dirty-state copy is never triggered
 
 - Client only sends `source_branch`, so the daemon passes `None`; as a result, a dirty-state copy never happens.
+  TODO: needs a bit more context
 
 ## RPC surface: worktree identity contract
 

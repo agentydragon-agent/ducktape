@@ -78,7 +78,7 @@ Example usage:
 - Use rootV2(source, scope, items) from `specimen_issues.libsonnet`
   - source: one of `sourceGit(url, ref)` | `sourceGitHub(org, repo, ref)` | `sourceLocal(root='.')`
   - scope: `scope(include=[...], exclude=[...]|null)`
-  - items: array built with `issueSingle(...)` / `issueMultiFromLines(...)` / `issueMultiFromFiles(...)`
+  - items: array built with `issueOneOccurrence(...)` / `issueOccurrencesFromLines(...)` / `issueWithOccurrences(...)`
 
 #### `README.md` (optional)
 - Optional, free‑form notes for humans; whatever context is useful (e.g., short narrative, relevant links).
@@ -116,7 +116,7 @@ Example usage:
      - Did it complain about what it should have complained about?
      - Did it avoid flagging the items explicitly marked as acceptable?
   5) Feedback loop:
-     - If the reviewer finds novel, useful issues not in the specimen, add them as new “should be found” items.
+     - If the reviewer finds novel, useful issues not in the specimen, add them as new “should find” items.
      - If the reviewer falsely flags acceptable patterns, add them as “negatives” (do-not-flag) to the specimen and/or clarify the property.
   6) Freeze specimens as ground truth snapshots; properties remain scope-agnostic and durable.
 - This keeps properties concise and objective, while allowing rich freeform context during discovery and tuning.
@@ -139,3 +139,23 @@ flowchart TD
   B -.-> J[LLM analyzers check arbitrary code]
   J -.-> E
 ```
+
+## Specimen inspection (for assistants)
+
+Use the specimen shell to safely inspect a specimen’s hydrated workspace inside an isolated container (no network). The workspace is mounted at /workspace and property definitions at /props.
+
+Examples
+- Open interactive shell:
+  - adgn-properties specimen-shell 2025-09-02-ducktape_wt
+- Execute a one-off command (after "--"):
+  - adgn-properties specimen-shell 2025-09-02-ducktape_wt -- sed -n '18,36p' /workspace/wt/wt/server/github_client.py
+- Numbered ranges with nl + sed:
+  - adgn-properties specimen-shell 2025-09-02-ducktape_wt -- nl -ba --number-width=6 --number-format=ln /workspace/wt/wt/shared/models.py | sed -n '130,170p'
+- Ripgrep search (rg is baked into the image):
+  - adgn-properties specimen-shell 2025-09-02-ducktape_wt -- rg -n "WorktreeService\.create_worktree\(|execute_post_creation_script\(" /workspace/wt --glob '!/workspace/wt/tests/**'
+- Multi-line convenience via heredoc:
+  - adgn-properties specimen-shell 2025-09-02-ducktape_wt -- bash -lc $'nl -ba /workspace/wt/wt/server/wt_server.py | sed -n \"220,240p\"; echo ---; sed -n \"2035,2060p\" /workspace/wt/wt/server/wt_server.py'
+
+Notes
+- Prefer specimen-shell for reading/grepping specimen files. Avoid mounting host paths directly.
+- For quoting-heavy commands, pass a single string after -- and let bash -lc interpret it, or use a $''-quoted heredoc as above.

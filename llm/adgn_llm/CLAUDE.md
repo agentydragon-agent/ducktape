@@ -34,6 +34,20 @@ Common commands
 - Build wheel/sdist:
   - uv build
 
+Specimen inspection (for assistants)
+- Use the specimen shell to safely inspect a specimen’s hydrated workspace inside an isolated container (no network):
+  - adgn-properties specimen-shell 2025-09-02-ducktape_wt
+  - Or execute a one‑off command (after --). The workspace is mounted at /workspace and property definitions at /props.
+
+Examples (read code with line numbers; search with ripgrep)
+- Print a numbered range (nl + sed):
+  - adgn-properties specimen-shell 2025-09-02-ducktape_wt -- sed -n '18,36p' /workspace/wt/wt/server/github_client.py
+  - adgn-properties specimen-shell 2025-09-02-ducktape_wt -- nl -ba --number-width=6 --number-format=ln /workspace/wt/wt/shared/models.py | sed -n '130,170p'
+- Search outside tests with ripgrep (rg is baked into the image):
+  - adgn-properties specimen-shell 2025-09-02-ducktape_wt -- rg -n "WorktreeService\.create_worktree\(|execute_post_creation_script\(" /workspace/wt --glob '!/workspace/wt/tests/**'
+- Multi‑line convenience via heredoc:
+  - adgn-properties specimen-shell 2025-09-02-ducktape_wt -- bash -lc $'nl -ba /workspace/wt/wt/server/wt_server.py | sed -n \"220,240p\"; echo ---; sed -n \"2035,2060p\" /workspace/wt/wt/server/wt_server.py'
+
 CLIs provided by this package (installed via [project.scripts])
 - adgn-llm-edit: lightweight local editing CLI.
 - adgn-sysrw: system rewriter/eval toolkit orchestration.

@@ -11,6 +11,7 @@ from adgn_llm.mini_codex.agent import MiniCodex
 from adgn_llm.mini_codex.mcp_manager import McpManager
 from adgn_llm.mcp.inproc_transport import make_inproc_slot_spec
 from adgn_llm.mcp.docker_exec.server import make_container_exec_mcp
+from adgn_llm.properties.docker_env import PropertiesDockerWiring
 from adgn_llm.properties.lint_issue import LinterController, LintSubmitState
 from adgn_llm.properties.specimen_utils import Occurrence
 
@@ -87,7 +88,7 @@ async def test_lint_issue_bootstrap_small_files(tmp_path: Path):
     occ = Occurrence(files={"pkg/a.py": None, "pkg/b.py": None})
 
     # Bootstrap controller (3-turn plan)
-    ctrl = LinterController(state=LintSubmitState(), occ=occ, content_root=content_root)
+    # We'll create the PropertiesDockerWiring after we build the inproc spec below and assign it directly.
 
     # Real MCP manager (in-proc docker exec) and mocked OpenAI client
     spec = make_inproc_slot_spec(
@@ -100,6 +101,16 @@ async def test_lint_issue_bootstrap_small_files(tmp_path: Path):
     )
     mcp = McpManager({"docker": spec})
     client = _MockResponsesClient()
+
+    # Now create the controller with real wiring
+    wiring = PropertiesDockerWiring(
+        _server_name="docker",
+        server_spec=spec,
+        _working_dir=Path('/workspace'),
+        definitions_container_dir=None,
+        image_name="n/a",
+    )
+    ctrl = LinterController(state=LintSubmitState(), occ=occ, content_root=content_root, docker_wiring=wiring)
 
     agent = await MiniCodex.create(model="gpt-5", mcp=mcp, system="test", client=client)
 

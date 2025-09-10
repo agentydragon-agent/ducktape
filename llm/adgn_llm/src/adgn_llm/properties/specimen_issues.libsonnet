@@ -36,15 +36,33 @@ local normFiles(files) = {
   for f in std.objectFields(files)
 };
 
-// Expand shorthand mapping {file: [lineSpec,...]|null} into a list of Occurrence objects
-// - If value is null or empty array: one occurrence with an unspecified range for that file
-// - Otherwise: one occurrence per provided lineSpec (single line or span)
+// Expand shorthand mapping {file: [entry,...]|null} into a list of Occurrence objects
+// Entry forms supported (per occurrence):
+// - number            → single line
+// - [start, end]      → span
+// - {range: <spec>, note: "..."} → range + occurrence-level note
+// - {note: "..."}    → unspecified range for that file with an occurrence-level note
+// If value is null or []: one occurrence with unspecified range for that file (no note)
+
+// Occurrence constructor helper: normalize per-entry forms to { files: {file: ranges|null}, note?: string }
+local occFromEntry(file, ln) =
+  if ln == null then { files: { [file]: null } }
+  else if std.type(ln) == 'string' then { files: { [file]: null }, note: ln }
+  else if std.type(ln) == 'number' then { files: fileEntry(file, [ln]) }
+  else if std.type(ln) == 'array' && std.length(ln) == 2 && std.type(ln[0]) == 'number' && std.type(ln[1]) == 'string' then
+    { files: fileEntry(file, [ln[0]]), note: ln[1] }
+  else if std.type(ln) == 'array' && std.length(ln) == 2 && std.type(ln[0]) == 'number' && std.type(ln[1]) == 'number' then
+    { files: fileEntry(file, [{ start_line: ln[0], end_line: ln[1] }]) }
+  else if std.type(ln) == 'array' && std.length(ln) == 3 && std.type(ln[0]) == 'number' && std.type(ln[1]) == 'number' && std.type(ln[2]) == 'string' then
+    { files: fileEntry(file, [{ start_line: ln[0], end_line: ln[1] }]), note: ln[2] }
+  else error 'Invalid entry in linesByFile for ' + file + ': ' + std.manifestJson(ln);
+
 local instancesFromLinesByFile(linesByFile) = std.flattenArrays([
   (
     local v = linesByFile[file];
     if v == null || (std.type(v) == 'array' && std.length(v) == 0)
     then [ { files: { [file]: null } } ]
-    else [ { files: fileEntry(file, [ln]) } for ln in v ]
+    else [ occFromEntry(file, ln) for ln in v ]
   )
   for file in std.objectFields(linesByFile)
 ]);

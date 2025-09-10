@@ -3,11 +3,13 @@ from __future__ import annotations
 import asyncio
 import argparse
 import importlib
+import json
 import shutil
 import subprocess
 import tempfile
 import tarfile
 import docker
+import importlib.resources as resources
 from adgn_llm.properties.docker_env import (
     PROPERTIES_DOCKER_IMAGE,
     WORKING_DIR as CRITIC_WORKDIR,
@@ -19,7 +21,6 @@ from adgn_llm.properties.docker_env import (
 )
 import time
 from dataclasses import dataclass
-from adgn_llm.properties.prop_utils import properties_root
 from pathlib import Path
 from jinja2 import Environment, PackageLoader, select_autoescape
 from adgn_llm.properties.prompt_utils import build_input_schemas_json
@@ -28,9 +29,11 @@ from adgn_llm.logging_config import configure_logging
 import tiktoken
 from openai import AsyncOpenAI
 from adgn_llm.mini_codex.agent import MiniCodex, ResponsesClient
+from adgn_llm.properties.agent_runner import run_prompt_async
 from adgn_llm.mini_codex.mcp_manager import McpManager
 from typing import Mapping, Any, cast
 from collections.abc import AsyncIterator
+from shlex import quote as shlex_quote
 from adgn_llm.mcp.types import ServerSlotSpec
 
 from .specimen_utils import (
@@ -62,18 +65,6 @@ def read_embedded_paths(paths: list[Path]) -> str:
     return "\n\n".join(blocks)
 
 
-def _properties_text() -> str:
-    # Load packaged Markdown definitions and wrap each with a file tag that
-    # encodes its path relative to the properties/ root, so cross-links are meaningful.
-    props_root = properties_root()
-    defs_dir = props_root / "definitions"
-    parts: list[str] = []
-    for md in sorted(defs_dir.rglob("*.md")):
-        rel = md.relative_to(props_root)  # e.g., definitions/python/type-hints.md
-        parts.append(
-            f'<file path=":/{rel.as_posix()}">\n{md.read_text(encoding="utf-8")}\n</file>',
-        )
-    return "\n\n".join(parts)
 
 
 # --- Jinja2 template helpers ---
@@ -93,6 +84,30 @@ def _render_prompt_template(name: str, **ctx: object) -> str:
     env = _get_templates_env()
     tmpl = env.get_template(name)
     return str(tmpl.render(**ctx)).strip()
+
+
+def _build_role_prompt(
+    mode: str,
+    scope_text: str,
+    *,
+    wiring: PropertiesDockerWiring,
+    supplemental_text: str | None,
+    available_tools: list[str] | None,
+) -> str:
+    """Build prompt for mode: 'find' | 'open' | 'discover'. Computes schemas_json internally."""
+    from adgn_llm.properties.specimen_utils import Occurrence, LineRange, IssueCore  # local import to avoid cycles
+    schemas_json = build_input_schemas_json([Occurrence, LineRange, IssueCore])
+    template = "discover.j2.md" if mode == "discover" else ("open.j2.md" if mode == "open" else "find.j2.md")
+    return _render_prompt_template(
+        template,
+        scope_text=scope_text,
+        supplemental_text=supplemental_text,
+        available_tools=available_tools or [],
+        static_action="analyze",
+        ambiguity_tail="do not include anything outside it.",
+        wiring=wiring,
+        schemas_json=schemas_json,
+    )
 
 
 @dataclass(frozen=True)
@@ -196,16 +211,14 @@ def _detect_tools() -> list[str]:
 def build_find_prompt(
     scope_text: str,
     *,
-    wiring: object,
+    wiring: PropertiesDockerWiring,
     schemas_json: dict[str, dict],
     supplemental_text: str | None = None,
     available_tools: list[str] | None = None,
 ) -> str:
-    properties_text = _properties_text()
     return _render_prompt_template(
         "find.j2.md",
         scope_text=scope_text,
-        properties_text=properties_text,
         supplemental_text=supplemental_text,
         available_tools=available_tools or [],
         static_action="analyze",
@@ -223,11 +236,9 @@ def build_open_review_prompt(
     supplemental_text: str | None = None,
     available_tools: list[str] | None = None,
 ) -> str:
-    properties_text = _properties_text()
     return _render_prompt_template(
-        "open_review.j2.md",
+        "open.j2.md",
         scope_text=scope_text,
-        properties_text=properties_text,
         supplemental_text=supplemental_text,
         available_tools=available_tools or [],
         static_action="analyze",
@@ -244,11 +255,9 @@ def build_enforce_prompt(
     schemas_json: dict[str, dict],
     supplemental_text: str | None = None,
 ) -> str:
-    properties_text = _properties_text()
     return _render_prompt_template(
         "enforce.j2.md",
         scope_text=scope_text,
-        properties_text=properties_text,
         supplemental_text=supplemental_text,
         static_action="edit",
         ambiguity_tail="avoid touching anything outside it unless required by the editing policy below.",
@@ -315,29 +324,14 @@ async def _run_minicodex_simple(
     final_only: bool = False,
     client: AsyncOpenAI,
 ) -> int:
-    async with McpManager(dict(specs)) as mcp:
-        agent = await MiniCodex.create(
-            model=model,
-            mcp=mcp,
-            system="You are a code agent. Be concise.",
-            client=cast(ResponsesClient, client),
-        )
-        res_any: Any = await agent.run(prompt)
-
-    final_text = ""
-    if isinstance(res_any, AsyncIterator):
-        last: dict[str, Any] | None = None
-        async for m in res_any:
-            last = m
-        if isinstance(last, dict):
-            final_text = str((last.get("text") or "")).strip()
-    else:
-        final_text = str(getattr(res_any, "text", "") or "").strip()
-
+    # Delegate execution to agent_runner.run_prompt_async so event loop control remains at callers
+    res = await run_prompt_async(prompt, model, specs, client=client, capture_transcript=not final_only)
+    # Write final message to file if requested
     if output_final_message:
-        Path(output_final_message).write_text(final_text, encoding="utf-8")
-    # For parity with prior behavior, print final text to stdout unless explicitly suppressed
-    print(final_text)
+        Path(output_final_message).write_text(res.final_text, encoding="utf-8")
+    # Print final text unless suppressed
+    if not final_only and res.final_text:
+        print(res.final_text)
     return 0
 
 
@@ -347,14 +341,15 @@ async def _run_check_minicodex_async(
     # Mount the provided workdir read-only and property definitions read-only
     wiring = properties_docker_spec(workdir, mount_properties=True)
     specs = {wiring.server_name: wiring.server_spec}
-    return await _run_minicodex_simple(
-        prompt,
-        model,
-        specs,
-        output_final_message=output_final_message,
-        final_only=final_only,
-        client=AsyncOpenAI(),
-    )
+    # Use agent_runner to execute prompt via MCP; keep event loop in CLI
+    res = await run_prompt_async(prompt, model, specs, client=AsyncOpenAI(), capture_transcript=not final_only)
+    # Write final message to file if requested
+    if output_final_message:
+        Path(output_final_message).write_text(res.final_text, encoding="utf-8")
+    # Print final text unless suppressed by final_only (CLI higher-level may still want it)
+    if not final_only and res.final_text:
+        print(res.final_text)
+    return 0
 
 
 def _hydrate_specimen_home_workspace(manifest_path: Path, man, gitconfig: str | None) -> Path:
@@ -399,28 +394,14 @@ async def _run_specimen_minicodex_async(
     try:
         # Build prompt according to mode
         scope_text = build_scope_text(man.scope.include, man.scope.exclude)
-        if mode == "discover":
-            prompt = _render_prompt_template(
-                "discover.j2.md",
-                scope_text=scope_text,
-                properties_text=_properties_text(),
-                supplemental_text=supplemental_text,
-                available_tools=_detect_tools(),
-                static_action="analyze",
-                ambiguity_tail="do not include anything outside it.",
-            )
-        elif mode == "open":
-            prompt = build_open_review_prompt(
-                scope_text,
-                supplemental_text=supplemental_text,
-                available_tools=_detect_tools(),
-            )
-        else:
-            prompt = build_find_prompt(
-                scope_text,
-                supplemental_text=supplemental_text,
-                available_tools=_detect_tools(),
-            )
+        wiring = properties_docker_spec(content_root, mount_properties=True)
+        prompt = _build_role_prompt(
+            mode if mode in ("discover", "open") else "find",
+            scope_text,
+            wiring=wiring,
+            supplemental_text=supplemental_text,
+            available_tools=_detect_tools(),
+        )
 
         if dry_run:
             tmpdir = Path(tempfile.gettempdir()) / "adgn_codex_prompts"
@@ -734,22 +715,66 @@ def main(argv: list[str] | None = None) -> int:
         help="Path to a gitconfig to use for private repo fallback (shallow git)",
     )
 
+    # New command: specimen-read — print a file slice from hydrated specimen inside container
+    p_spec_read = sub.add_parser(
+        "specimen-read",
+        help="Read a file range from a hydrated specimen (executes in container)",
+        description=(
+            "Hydrate a specimen workspace and print the specified line range from a relative path, "
+            "executed inside the standard properties container."
+        ),
+    )
+    p_spec_read.add_argument("specimen", help="Specimen name/dir/issues.libsonnet path")
+    p_spec_read.add_argument("rel_path", help="Path relative to specimen root (e.g., wt/wt/server/wt_server.py)")
+    p_spec_read.add_argument("start", type=int, help="Start line (1-based)")
+    p_spec_read.add_argument("end", type=int, help="End line (inclusive, 1-based)")
+    p_spec_read.add_argument(
+        "--gitconfig",
+        help="Path to a gitconfig to use for private repo fallback (shallow git)",
+    )
+
+    # New command: eval-lint-issue — run eval harness for a single issue with cases file
+    p_eval = sub.add_parser(
+        "eval-lint-issue",
+        help="Run eval harness for a lint-issue across multiple cases",
+        description=(
+            "Run the lint-issue agent for a specimen/issue across cases defined in a JSON file, "
+            "writing artifacts and a summary.json under runs/evals/."
+        ),
+    )
+    p_eval.add_argument("specimen", help="Specimen name/dir/issues.libsonnet path")
+    p_eval.add_argument("issue_id", help="Issue id (must exist in specimen issues)")
+    p_eval.add_argument("--cases", required=True, help="Path to cases file (JSON list of dicts)")
+    p_eval.add_argument("--out-dir", dest="out_dir", help="Output directory for eval artifacts")
+    p_eval.add_argument("--model", default="gpt-5")
+    p_eval.add_argument("--gitconfig")
+
     # New command: specimen-shell — interactive bash/sh inside the hydrated specimen container (RW mount)
     p_spec_shell = sub.add_parser(
         "specimen-shell",
-        help="Open an interactive shell in a container with the hydrated specimen mounted",
+        help="Open an interactive shell or execute a command in a container with the hydrated specimen mounted",
         description=(
-            "Hydrate specimen into a temporary workspace and open an interactive shell inside a container\n"
-            "with the workspace mounted at /workspace (read-write). Container uses no network and is removed on exit."
+            "Hydrate specimen into a temporary workspace and either open an interactive shell or execute a provided command\n"
+            "inside a container with the workspace mounted at /workspace (read-write). Container uses no network and is removed on exit."
         ),
     )
     p_spec_shell.add_argument(
         "specimen",
-        help="Specimen name (under properties/specimens), path to specimen dir, or path to manifest.yaml",
+        help="Specimen name (under properties/specimens), path to specimen dir, or path to issues.libsonnet",
     )
     p_spec_shell.add_argument(
         "--gitconfig",
         help="Path to a gitconfig to use for private repo fallback (shallow git)",
+    )
+    p_spec_shell.add_argument(
+        "--workdir",
+        default=str(CRITIC_WORKDIR),
+        help="Container working directory (default: /workspace)",
+    )
+    p_spec_shell.add_argument(
+        "cmd",
+        nargs=argparse.REMAINDER,
+        help="Optional command to run after '--'; if omitted, opens interactive bash",
     )
 
     args = parser.parse_args(argv)
@@ -769,6 +794,37 @@ def main(argv: list[str] | None = None) -> int:
                 client=client,
             )
         )
+
+    if args.command == "eval-lint-issue":
+        # Lazy import to avoid cycles
+        mod = importlib.import_module("adgn_llm.properties.eval_harness")
+        cases_path = Path(getattr(args, "cases"))
+        if not cases_path.exists():
+            print(f"ERROR: cases file not found: {cases_path}")
+            return 2
+        try:
+            cases = json.loads(cases_path.read_text(encoding="utf-8"))
+            if not isinstance(cases, list):
+                print("ERROR: cases file must contain a top-level list of case dicts")
+                return 2
+        except Exception as e:
+            print(f"ERROR: failed to parse cases JSON: {e}")
+            return 2
+        client = AsyncOpenAI()
+        out_dir = getattr(args, "out_dir", None)
+        path = asyncio.run(
+            mod.eval_lint_issue_cases(
+                getattr(args, "specimen"),
+                getattr(args, "issue_id"),
+                cases,
+                model=getattr(args, "model", "gpt-5"),
+                gitconfig=getattr(args, "gitconfig", None),
+                client=client,
+                out_dir=out_dir,
+            )
+        )
+        print(f"Eval summary written to: {path / 'summary.json'}")
+        return 0
 
     if args.command == "specimen-check":
         base = find_specimens_base()
@@ -885,11 +941,13 @@ def main(argv: list[str] | None = None) -> int:
         out_last_file: Path | None = None
         if args.command == "check":
             wiring = properties_docker_spec(workdir, mount_properties=True)
-            schemas_json = build_input_schemas_json([Occurrence, LineRange, IssueCore])
-            prompt = (
-                build_open_review_prompt(args.scope, wiring=wiring, schemas_json=schemas_json, available_tools=detected_tools)
-                if args.allow_general_findings
-                else build_find_prompt(args.scope, wiring=wiring, schemas_json=schemas_json, available_tools=detected_tools)
+            role = "open" if args.allow_general_findings else "find"
+            prompt = _build_role_prompt(
+                role,
+                args.scope,
+                wiring=wiring,
+                supplemental_text=None,
+                available_tools=detected_tools,
             )
             # MiniCodex path for check: run inside docker (RO mount)
             if args.dry_run:
@@ -967,6 +1025,92 @@ def main(argv: list[str] | None = None) -> int:
             if out_last_file is not None:
                 print(Path(out_last_file).read_text(encoding="utf-8"))
             return rc
+    if args.command == "specimen-read":
+        base = find_specimens_base()
+        manifest_path = resolve_manifest_arg(args.specimen, base)
+        if manifest_path is None:
+            names = list_specimen_names(base)
+            if not names:
+                print(f"No specimens found under: {base}")
+                return 2
+            print("Available specimens:")
+            for n in names:
+                print(" -", n)
+            return 2
+        # Validate gitconfig if provided
+        gitconfig_path = None
+        if getattr(args, "gitconfig", None):
+            p = Path(args.gitconfig).expanduser().resolve()
+            if not p.exists():
+                print(f"ERROR: --gitconfig file not found: {p}")
+                return 2
+            gitconfig_path = str(p)
+
+        man = load_manifest(manifest_path)
+        content_root: Path | None = None
+        try:
+            # Hydrate
+            content_root = _hydrate_specimen_home_workspace(manifest_path, man, gitconfig_path)
+            # Validate target path
+            target = (content_root / args.rel_path).resolve()
+            try:
+                target.relative_to(content_root)
+            except Exception:
+                print(f"ERROR: rel_path escapes workspace: {target}")
+                return 2
+            if not target.exists() or not target.is_file():
+                print(f"ERROR: file not found in specimen workspace: {target}")
+                return 2
+
+            # Start container
+            try:
+                dclient = docker.from_env(); dclient.ping()
+            except Exception as e:
+                print(f"ERROR: Docker daemon not reachable: {e}")
+                return 2
+            ensure_critic_image()
+            volumes, _defs = build_critic_volumes(content_root, mount_properties=True, workspace_mode="ro")
+            name = f"adgn_spec_read_{int(time.time())}"
+            container = None
+            try:
+                container = dclient.containers.run(
+                    image=PROPERTIES_DOCKER_IMAGE,
+                    command=SLEEP_FOREVER_CMD,
+                    name=name,
+                    remove=True,
+                    detach=True,
+                    network_mode="none",
+                    volumes=volumes,
+                    working_dir=str(CRITIC_WORKDIR),
+                    tty=False,
+                    stdin_open=False,
+                )
+            except Exception as e:
+                print(f"ERROR: failed to start container: {e}")
+                return 2
+
+            # Exec read command with line numbers
+            rel = f"/workspace/{args.rel_path}"
+            start = int(args.start); end = int(args.end)
+            cmd = [
+                "docker", "exec", name, "bash", "-lc",
+                f"nl -ba --number-width=6 --number-format=ln {shlex_quote(rel)} | sed -n '{start},{end}p'",
+            ]
+            rc = subprocess.run(cmd, check=False)
+            try:
+                if container:
+                    container.stop()
+            except Exception:
+                pass
+            return rc.returncode
+        finally:
+            try:
+                if content_root is not None:
+                    parent = content_root.parent
+                    shutil.rmtree(parent, ignore_errors=True)
+            except Exception:
+                pass
+
     if args.command == "specimen-shell":
         base = find_specimens_base()
         manifest_path = resolve_manifest_arg(args.specimen, base)
@@ -1018,17 +1162,36 @@ def main(argv: list[str] | None = None) -> int:
                     detach=True,
                     network_mode="none",
                     volumes=volumes,
-                    working_dir=str(CRITIC_WORKDIR),
+                    working_dir=str(getattr(args, "workdir", CRITIC_WORKDIR)),
                     tty=True,
                     stdin_open=True,
                 )
+
+                # Pre-shell setup: copy and run setup script from package resources to enable Vim line numbers
+                setup_rel = "specimen_shell_setup.sh"
+                with resources.as_file(resources.files("adgn_llm.properties") / setup_rel) as setup_path:
+                    rc_cp = subprocess.run([
+                        "docker", "cp", str(setup_path), f"{name}:/root/{setup_rel}"
+                    ], check=False).returncode
+                    if rc_cp != 0:
+                        return rc_cp
+                    rc_exec = subprocess.run([
+                        "docker", "exec", name, "bash", "-lc", f"chmod +x /root/{setup_rel} && /root/{setup_rel}"
+                    ], check=False).returncode
+                    if rc_exec != 0:
+                        return rc_exec
+
             except Exception as e:
                 print(f"ERROR: failed to start container: {e}")
                 return 2
 
-            # Attach an interactive shell using docker CLI. We assume bash exists in the
-            # properties-critic image; it is baked into our container image. No fallback to sh.
-            rc = subprocess.run(["docker", "exec", "-it", name, "bash"], check=False).returncode
+            # If a command was provided, execute it; otherwise open an interactive bash.
+            if args.cmd:
+                cmdline = " ".join(shlex_quote(x) for x in args.cmd)
+                rc = subprocess.run(["docker", "exec", name, "bash", "-lc", cmdline], check=False).returncode
+            else:
+                # We assume bash exists in the properties-critic image; it is baked into our container image. No fallback to sh.
+                rc = subprocess.run(["docker", "exec", "-it", name, "bash"], check=False).returncode
             try:
                 if container:
                     container.stop()

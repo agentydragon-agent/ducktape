@@ -38,6 +38,7 @@ from .specimen_utils import (
     LineRange,
     Issue,
     IssueCore,
+    Specimen,
 )
 from .prompt_utils import render_prompt_template, build_input_schemas_json
 from mcp.server.fastmcp import FastMCP
@@ -315,29 +316,33 @@ class LinterController(DisplayEventsMixin):
 
 
 # ---------------------------------------------------------------------------
-# CLI entry
+# Shared core runner (used by tests and CLI)
 # ---------------------------------------------------------------------------
 
-
-async def run_specimen_lint_issue_async(
+async def lint_issue_run(
     specimen: str,
-    issue_id: str,
+    issue_core: IssueCore,
+    occurrence: Occurrence,
     *,
     model: str = "gpt-5",
-    dry_run: bool = False,
     gitconfig: str | None = None,
-    occurrence_index: int,
     client: AsyncOpenAI,
-) -> int:
-    sp, root, issue = load_single_issue(specimen, issue_id, gitconfig)
-    issue = cast(Issue, issue)
+) -> LintSubmitPayload:
+    """Run the lint-issue agent and return the exact structured payload.
 
-    # Require a single occurrence; do not run on the full issue or mutate the Issue
-    if occurrence_index < 0 or occurrence_index >= len(issue.instances):
-        raise SystemExit(
-            f"occurrence_index out of range: {occurrence_index} (instances={len(issue.instances)})",
-        )
-    occ = issue.instances[occurrence_index]
+    - Hydrates the specimen workspace under $HOME/.cache to avoid Docker volume restrictions
+    - Launches in-proc submit server and docker_exec MCP per properties_docker_spec
+    - Uses the same LinterController bootstrap/tool policy as the CLI path
+    """
+    # Determine default gitconfig fallback (kept in sync with load_single_issue)
+    if gitconfig is None:
+        cfg = properties_root() / "gitconfig.local"
+        if cfg.exists():
+            gitconfig = str(cfg)
+    gc_path = Path(gitconfig).expanduser().resolve() if gitconfig else None
+
+    # Resolve specimen manifest for archive hydration
+    sp = Specimen.load(specimen)
 
     # Always mount from under $HOME to avoid Docker volume restrictions on /var/folders
     ts = int(time.time())
@@ -345,36 +350,13 @@ async def run_specimen_lint_issue_async(
     mount_root = Path.home() / ".cache" / "adgn-llm" / "workspaces" / f"{specimen}_{name}"
     mount_root.mkdir(parents=True, exist_ok=True)
 
-    # Build submit tool name early (used in dry-run prompt too). Server is created later after hydration.
     submit_state = LintSubmitState()
-    submit_tool_name = build_mcp_function("lint_submit", "submit_result")
-
-    if dry_run:
-        props = find_property_files([str(p) for p in issue.properties])
-        # Build a wiring for prompt rendering (no container launched in dry-run)
-        dummy_root = properties_root()  # any existing directory works for template context
-        wiring = properties_docker_spec(dummy_root, mount_properties=True)
-        prompt = _build_prompt(
-            issue,
-            props,
-            submit_tool_name=submit_tool_name,
-            occurrence=occ,
-            wiring=wiring,
-        )
-        tmpdir = Path(tempfile.gettempdir()) / "adgn_codex_prompts"
-        tmpdir.mkdir(parents=True, exist_ok=True)
-        outfile = tmpdir / f"lint_issue_{issue_id}_{ts}.md"
-        outfile.write_text(prompt, encoding="utf-8")
-        print(f"[dry-run] Saved prompt: {outfile}")
-        return 0
 
     try:
         # Prepare mount directory under $HOME from cached archive; hard-fail if cache missing
         if mount_root.exists():
             shutil.rmtree(mount_root, ignore_errors=True)
-        archive = ensure_archive_for_specimen_slug(
-            sp.manifest, sp.manifest_path, Path(gitconfig) if gitconfig else None
-        )
+        archive = ensure_archive_for_specimen_slug(sp.manifest, sp.manifest_path, gc_path)
         # Extract to mount_root
         with tarfile.open(archive, "r:gz") as tf:
             tf.extractall(mount_root)
@@ -387,26 +369,26 @@ async def run_specimen_lint_issue_async(
             )
         content_root = entries[0]
 
-        # Build in-process FastMCP servers: docker exec + submit server using properties wiring
-        submit_server = make_lint_submit_server(submit_state, name="lint_submit", occ=occ)
+        # Build in-process FastMCP servers
+        submit_server = make_lint_submit_server(submit_state, name="lint_submit", occ=occurrence)
         submit_spec = make_inproc_slot_spec(submit_server)
 
         wiring = properties_docker_spec(content_root, mount_properties=True)
         specs: dict[str, ServerSlotSpec] = {wiring.server_name: wiring.server_spec, "lint_submit": submit_spec}
 
-        props = find_property_files([str(p) for p in issue.properties])
+        props = find_property_files([str(p) for p in issue_core.properties])
         prompt = _build_prompt(
-            issue,
+            issue_core,  # accepts IssueCore; template receives instance via 'instances=[occurrence]'
             props,
-            submit_tool_name=submit_tool_name,
-            occurrence=occ,
+            submit_tool_name=build_mcp_function("lint_submit", "submit_result"),
+            occurrence=occurrence,
             wiring=wiring,
         )
 
-        # Controller: single-purpose LinterController with display mixin; always require tool; stop when submitted
+        # Controller: LinterController with identical bootstrap/tool policy
         ctrl = LinterController(
             state=submit_state,
-            occ=occ,
+            occ=occurrence,
             content_root=content_root,
             docker_wiring=wiring,
             prop_host_paths=props,
@@ -422,33 +404,92 @@ async def run_specimen_lint_issue_async(
             )
             await agent.run(prompt, controller=ctrl)
 
-        # Print the exact occurrence representation as fed to the model
-        issue_dict = issue.model_dump(exclude_none=True)
-        issue_dict.pop("id", None)
-        occ_dict: dict[str, Any] = occ.model_dump(exclude_none=True)
-        issue_dict["instances"] = [occ_dict]
-        issue_json = json.dumps(issue_dict, ensure_ascii=False)
-        print("Issue (JSON):")
-        print(issue_json)
-        print()
-
         assert submit_state.result is not None, "submit_result not called; should never happen."
-        assert submit_state.result is not None, "submit_result payload missing"
-        res = submit_state.result
-        if res.checklist:
-            print("Checklist:")
-            print(format_checklist(res.checklist))
-            print()
-        if res.corrected_anchors is not None:
-            print(format_corrected_anchors(res.corrected_anchors))
-            print()
-        if res.message_md:
-            print(res.message_md)
-            print()
-
-        return 0 if (res.fail is False) else 2
+        return submit_state.result  # type: ignore[return-value]
 
     finally:
         # Cleanup copied workspace
         if mount_root.exists():
             shutil.rmtree(mount_root, ignore_errors=True)
+
+
+# ---------------------------------------------------------------------------
+# CLI entry
+# ---------------------------------------------------------------------------
+
+
+async def run_specimen_lint_issue_async(
+    specimen: str,
+    issue_id: str,
+    *,
+    model: str = "gpt-5",
+    dry_run: bool = False,
+    gitconfig: str | None = None,
+    occurrence_index: int,
+    client: AsyncOpenAI,
+) -> int:
+    _sp, _root, issue = load_single_issue(specimen, issue_id, gitconfig)
+    issue = cast(Issue, issue)
+
+    # Require a single occurrence; do not run on the full issue or mutate the Issue
+    if occurrence_index < 0 or occurrence_index >= len(issue.instances):
+        raise SystemExit(
+            f"occurrence_index out of range: {occurrence_index} (instances={len(issue.instances)})",
+        )
+    occ = issue.instances[occurrence_index]
+
+    # Build submit tool name for dry-run prompt
+    submit_tool_name = build_mcp_function("lint_submit", "submit_result")
+
+    if dry_run:
+        props = find_property_files([str(p) for p in issue.properties])
+        # Build a wiring for prompt rendering (no container launched in dry-run)
+        dummy_root = properties_root()  # any existing directory works for template context
+        wiring = properties_docker_spec(dummy_root, mount_properties=True)
+        prompt = _build_prompt(
+            IssueCore.from_issue(issue),  # render via IssueCore + single occurrence
+            props,
+            submit_tool_name=submit_tool_name,
+            occurrence=occ,
+            wiring=wiring,
+        )
+        tmpdir = Path(tempfile.gettempdir()) / "adgn_codex_prompts"
+        tmpdir.mkdir(parents=True, exist_ok=True)
+        ts = int(time.time())
+        outfile = tmpdir / f"lint_issue_{issue_id}_{ts}.md"
+        outfile.write_text(prompt, encoding="utf-8")
+        print(f"[dry-run] Saved prompt: {outfile}")
+        return 0
+
+    # Shared core: run and capture structured payload
+    res = await lint_issue_run(
+        specimen,
+        IssueCore.from_issue(issue),
+        occ,
+        model=model,
+        gitconfig=gitconfig,
+        client=client,
+    )
+
+    # Print the exact occurrence representation as fed to the model
+    issue_dict = IssueCore.from_issue(issue).model_dump(exclude_none=True)
+    issue_dict.pop("id", None)
+    occ_dict: dict[str, Any] = occ.model_dump(exclude_none=True)
+    issue_dict["instances"] = [occ_dict]
+    issue_json = json.dumps(issue_dict, ensure_ascii=False)
+    print("Issue (JSON):")
+    print(issue_json)
+    print()
+
+    if res.checklist:
+        print("Checklist:")
+        print(format_checklist(res.checklist))
+        print()
+    if res.corrected_anchors is not None:
+        print(format_corrected_anchors(res.corrected_anchors))
+        print()
+    if res.message_md:
+        print(res.message_md)
+        print()
+
+    return 0 if (res.fail is False) else 2

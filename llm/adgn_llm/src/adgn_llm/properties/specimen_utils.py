@@ -103,6 +103,13 @@ class LineRange(BaseModel):
 
 class Occurrence(BaseModel):
     files: dict[str, list[LineRange] | None]
+    note: str | None = Field(
+        default=None,
+        description=(
+            "Occurrence-specific note. Use for details unique to this occurrence; "
+            "do not repeat the issue-level rationale here."
+        ),
+    )
 
 
 class Issue(BaseModel):

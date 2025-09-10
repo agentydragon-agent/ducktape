@@ -6,7 +6,6 @@
 ## [Try/except is scoped around the operation it guards](../../definitions/python/scoped-try-except.md)
 
 - **wt/wt/server/wt_server.py**:
-  - ~2074 — `except Exception: pass` silently swallows errors while streaming hook output; errors should not be silently discarded.
   - 2186–2240 — Path-within-worktrees check: scope try/except to only the relative_to(...) call and move follow-up logic outside;
     if not under main repo, early-bail with an error, otherwise return main immediately (overlaps with early-bailout)
     Before:
@@ -37,48 +36,28 @@
     relative_path = "" if len(rel_path.parts) <= 1 else str(Path(*rel_path.parts[1:]))
     ```
 
-## [Use PathLike for path parameters](../../definitions/python/pathlike.md)
-
-- Functions should accept `Path`/`PathLike` rather than `str` for filesystem paths.
-  - **wt/wt/server/git_manager.py**: 259 (worktree_add `path: str`), 297 (worktree_remove `path: str`)
-  - **wt/tests/integration/test_shell_integration.py**: 34, 37 — `run_shell_script` should take `cwd: Path` (not `str`)
-  - **wt/wt/client/wt_client.py**: 586 — `absolute_path: str` should be `Path`
-  - **wt/wt/server/wt_server.py**:
-    - 227 — `file_path: str | None` should be `Path | None`
-    - 381 — `_should_trigger_refresh(file_path: str)` should accept `Path` (no raw str); avoid redundant `str(file_path)` when already a string.
-    - 2046 — `_run_post_creation_script_streaming(script_path: str, ...)` should accept `Path`
-  - **wt/wt/server/worktree_service.py**: 299 — `execute_post_creation_script(script_path: str, ...)`; `script_path` should be passed as `Path`, not `str`
-
 ## [No dead code](../../definitions/no-dead-code.md)
 
-- **wt/wt/server/wt_server.py**: dead code: `StatusSnapshot` (L413), `WorktreeRuntime` (L425), `GitStatusdProcess` (L640), `_record_github_error` (L1230)
-- **wt/wt/server/github_client.py**: dead code: `DisabledGitHubInterface` (L18)
-- **wt/wt/shared/models.py**: dead code: `require_exists` (L40), `require_not_exists` (L44), `WorktreeParseState.finalize(...)` (L145)
+- **wt/wt/client/view_formatter.py**: dead code: `_get_sync_column` (L149), `render_worktree_processes`, `render_worktree_removal_progress`, `render_worktree_removal_git_status`
+- **wt/tests/conftest.py**: 122–124 — `empty_worktree_status()` is unused; delete the fixture.
+- **wt/wt/server/gitstatusd_client.py**:
+  - dead code: `parse_gitstatusd_response` (L358), `create_gitstatusd_request` (L363) — thin wrappers around GitStatusdProtocol migrate any callers to Protocol methods and delete.
+
 - **wt/wt/shared/constants.py**: 12 — `FILE_DISPLAY_LIMIT` is unreferenced.
   - Integrate: use as the default display cap in `wt/wt/client/view_formatter.py` (e.g., `format_list_with_more(..., max_items: int = FILE_DISPLAY_LIMIT)`).
   - Note: ViewFormatter currently defaults `max_items` to 3, while `FILE_DISPLAY_LIMIT` is 10 — decide desired UX and align (either set the constant to 3, or pass an explicit max where you want 3).
-- **wt/wt/shared/error_handling.py**: dead code: `WorktreeNotFoundError` (L23), `WorktreeAlreadyExistsError` (L27), `ProcessCheckError` (L31), `handle_git_errors` (L43), `handle_process_errors` (L76), `convert_to_click_exception` (L102), `safe_execute` (L120)
-- **wt/wt/shared/configuration.py**: 92–116 — Dead legacy aliases: `main_repo_resolved`, `worktrees_dir_resolved`, `daemon_dir`, `daemon_socket_file`, `daemon_pid_file`; migrate callers and delete.
-- **wt/wt/shared/github_models.py**: dead code: `PullRequest` (L65), `PullRequestView` (L92), `PullRequestCache`
-- **wt/wt/shared/protocol.py**: dead code: `ProgressUpdate` (L426), `SUPPORTED_METHODS` (L497)
-- **wt/wt/server/gitstatusd_client.py**: dead code: `branch_status`; remove.
-  GAP: Presentation/view concerns (branch display state) should not live in the core client.
-- **wt/wt/server/gitstatusd_client.py**: 294–355 — After validating `len(fields) >= MIN_GIT_REPO_FIELDS` at the boundary, internal helper parsers should not catch `IndexError` or substitute defaults; these branches are unreachable and should be removed or replaced with hard guards.
-  > "Unreachable branches (by invariants/types) are removed; if a 'can't happen' guard is desired, keep at most an `assert` or `TypeError`." (definitions/no-dead-code.md)
-  GAP: Clarify boundary vs helper responsibility for short‑array handling so index checks live in one place.
-- **wt/wt/client/view_formatter.py**: dead code: `_get_sync_column` (L149), `render_worktree_processes`, `render_worktree_removal_progress`, `render_worktree_removal_git_status`
-- **wt/tests/conftest.py**: 122–124 — `empty_worktree_status()` is unused; delete the fixture.
-- **wt/wt/server/wt_server.py**: 1789–1844 — Unreachable code continues after a return; remove the dead block or restructure control flow.
-- **wt/wt/server/wt_server.py**: 1995–2001 — `if writer is None` branch is dead within handle_client_request path; remove dead branch and unify script execution handling.
-  Rationale: `_handle_worktree_create_request(..., writer: asyncio.StreamWriter | None)` is only invoked from `handle_client_request(...)` (1472–1579) as `_handle_worktree_create_request(request, start_time, writer)` where `writer` is the non-None stream passed by asyncio. There are no call sites passing `None`, so the `writer is None` path is unreachable.
-  GAP: Link this dead branch with the typing finding (make writer non‑optional) so the contract is explicit in the signature.
-
-- **wt/wt/server/worktree_service.py**: dead code: `create_worktree` (L98), `execute_post_creation_script` (L299) — test-only; production uses server JSON-RPC handler. Heuristic: looks like someone implemented the migrated Service version but forgot to switch the prod path over (pre-switch migration state, not post-switch cleanup).
-  Verification: confirmed by tracing call stacks end-to-end — CLI "wt -c" → client handlers.handle_create_worktree → daemon_client.create_worktree (JSON-RPC) → server handle_client_request(...) → _handle_worktree_create_request(..., writer). Only tests call WorktreeService.create_worktree; no production callers.
-
-- **wt/wt/server/wt_server.py**: 1425–1430 — Redundant conditional block duplicated (same membership check twice); remove the duplicate branch.
-  > "Mutually exclusive guards and redundant checks are collapsed" (definitions/no-dead-code.md)
-  GAP: Choose a consistent layer for conversion (e.g., relative→absolute) and apply it symmetrically across inputs; avoid split responsibility.
+- **wt/wt/server/gitstatusd_client.py**:
+  - dead code: `branch_status`; remove.
+    GAP: Presentation/view concerns (branch display state) should not live in the core client.
+  - 294–355 — After validating `len(fields) >= MIN_GIT_REPO_FIELDS` at the boundary, internal helper parsers should not catch `IndexError` or substitute defaults; these branches are unreachable and should be removed or replaced with hard guards.
+    GAP: Clarify boundary vs helper responsibility for short‑array handling so index checks live in one place.
+- **wt/wt/server/wt_server.py**:
+  - 1425–1430 — Redundant conditional block duplicated (same membership check twice); remove the duplicate branch.
+    GAP: Choose a consistent layer for conversion (e.g., relative→absolute) and apply it symmetrically across inputs; avoid split responsibility.
+  - 1789–1844 — Unreachable code continues after a return; remove the dead block or revive it.
+  - 1995–2001 — `if writer is None` branch is dead within handle_client_request path; remove dead branch and unify script execution handling.
+    Rationale: `_handle_worktree_create_request(..., writer: asyncio.StreamWriter | None)` is only invoked from `handle_client_request(...)` (1472–1579) as `_handle_worktree_create_request(request, start_time, writer)` where `writer` is the non-None stream passed by asyncio. There are no call sites passing `None`, so the `writer is None` path is unreachable.
+    GAP: Link this dead branch with the typing finding (make writer non‑optional) so the contract is explicit in the signature.
 
 ## [Pydantic 2 only](../../definitions/python/pydantic-2.md)
 
@@ -86,33 +65,33 @@
 
 ## [Time and duration use rich time types](../../definitions/domain-types-and-units/time.md)
 
-- **wt/wt/server/wt_server.py**: 147–153 — `debounce_delay`, `periodic_interval` should be `datetime.timedelta` (not float seconds)
+- **wt/wt/server/wt_server.py**:
+  - 147–153 — `debounce_delay`, `periodic_interval` should be `datetime.timedelta` (not float seconds)
+  - 1243–1251 — don't downgrade datetime type to numeric with total_seconds() for threshold compare; prefer a timedelta literal.
+    Before:
+    ```python
+    if (
+        self.daemon_health.last_error_time
+        and (datetime.now() - self.daemon_health.last_error_time).total_seconds() > 60
+    ):
+        ...
+    ```
+    After:
+    ```python
+    if self.daemon_health.last_error_time and (
+        datetime.now() - self.daemon_health.last_error_time
+    ) > datetime.timedelta(minutes=1):
+        ...
+    ```
 - **wt/tests/test_utils.py**: 6, 33 — `run_cli_command`, `run_cli_sh_command` use float durations; prefer `timedelta`
-- **wt/wt/server/wt_server.py**: 1243–1251 — Avoid total_seconds() for threshold compare; prefer a timedelta literal.
-  Before:
-  ```python
-  if (
-      self.daemon_health.last_error_time
-      and (datetime.now() - self.daemon_health.last_error_time).total_seconds() > 60
-  ):
-      ...
-  ```
-  After:
-  ```python
-  if self.daemon_health.last_error_time and (
-      datetime.now() - self.daemon_health.last_error_time
-  ) > datetime.timedelta(minutes=1):
-      ...
-  ```
 
 ## [Modern type hints](../../definitions/python/type-hints.md)
 
 - **wt/tests/integration/test_shell_integration.py**: 37 — `env: dict = None` uses a non-None default with a non-optional type; annotate as `dict[str, str] | None` (or build a dict where needed) and handle `None` explicitly
-- **wt/wt/server/wt_server.py**: 72 — parameter `error_message: str = None` should be annotated as `str | None` to match the default.
-  > "Unions use `A | B` and optional uses `T | None`" (definitions/python/type-hints.md)
-- **wt/wt/server/wt_server.py**: 424–428 — WorktreeRuntime uses quoted forward references ("GitstatusdClient", "PRService"); remove quotes by enabling `from __future__ import annotations` (or reorder class definitions) and annotate directly.
-  > "Forward references do not use string type names when `from __future__ import annotations` can be used"
-
+- **wt/wt/server/wt_server.py**:
+  - 72 — parameter `error_message: str = None` should be annotated as `str | None` to match the default.
+  - 424–428 — WorktreeRuntime uses quoted forward references ("GitstatusdClient", "PRService");
+    use `from __future__ import annotations` reorder definitions, and annotate directly.
 
 ## [Use pytest's standard fixtures for temp dirs and monkeypatching](../../definitions/python/pytest-standard-fixtures.md)
 
@@ -125,41 +104,53 @@
 
 - **wt/wt/server/git_manager.py**: `repo_root` is a trivial pass-through to `get_repo_root`; delete it and make callers call `get_repo_root` instead.
   - Only user: `wt/wt/server/worktree_service.py`:221
-- **wt/tests/integration/test_shell_integration.py**: 29 — `create_shell_script()` is used exactly once; inline at call site (in `run_wt_command`) instead of keeping a one-off helper
-- **wt/tests/integration/test_shell_integration.py**: duplicate `daemon_cleanup` helper defined twice (one copy at 216–222); extract a single helper and reuse
-- **wt/wt/server/wt_server.py**: 1580–1582 — `_create_success_response` is a trivial pass-through; inline `Response(result=..., id=...)` at call sites.
+- **wt/tests/integration/test_shell_integration.py**:
+  - L29 — `create_shell_script()` is used exactly once; inline at call site (in `run_wt_command`) instead of keeping a one-off helper
+  - duplicate `daemon_cleanup` helper defined twice (one copy at 216–222); extract a single helper and reuse
+- **wt/wt/server/wt_server.py**:
+  - 1580–1582 — `_create_success_response` is a trivial pass-through; inline `Response(result=..., id=...)` at call sites.
+  - ~2168–2169 — Inline one-off `result` variable.
+    Before:
+    ```python
+    result = WorktreeListResult(worktrees=worktrees)
+    return self._create_success_response(result, request.id)
+    ```
+    After:
+    ```python
+    return self._create_success_response(WorktreeListResult(worktrees=worktrees), request.id)
+    ```
 - **wt/wt/cli.py**: 137–143 — `all_args` is a one‑off; inline the combined args directly in the loop (e.g., `for arg in [*args, *ctx.args]: ...`).
-- **wt/wt/plugins.py**: 76–78 — `resolve_command(pm, name)` is a trivial wrapper; inline `get_plugin_commands(pm).get(name)` at the call site.
-- **wt/wt/plugins.py**: 39–49 — `PluginIO` is a stateless thin wrapper over shell_utils; remove it, or refactor into a real interface (Protocol + concrete implementation) only if an IO boundary is needed.
-- **wt/wt/plugins.py**: 31, 35 — Align hook impl signatures with hookspecs; remove `# type: ignore[override]`, and prefer `pass` over `return None` when returning `None`.
+- **wt/wt/plugins.py**:
+  - 23–26 — Oneline the wt_init hookspec docstring: `"""Optional initialization hook; can modify config or set globals."""`
+    Before:
+    ```python
+    def wt_commands(self) -> dict[str, Callable]:  # type: ignore[override]
+        return {}
+    def wt_init(self, config) -> None:  # type: ignore[override]
+        return None
+    ```
+    After:
+    ```python
+    def wt_commands(self) -> dict[str, Callable] | None:
+        return {}
+    def wt_init(self, config) -> None:
+        pass
+  - 31, 35 — Align hook impl signatures with hookspecs; remove `# type: ignore[override]`, and prefer `pass` over `return None` when returning `None`.
+  - 39–49 — `PluginIO` is a stateless thin wrapper over shell_utils; remove it, or refactor into a real interface (Protocol + concrete implementation) only if an IO boundary is needed.
+  - 56–58 — Inline one-off variable in entry point iteration:
+    Before:
+    ```python
+    eps = md.entry_points().select(group=ENTRYPOINT_GROUP)
+    for ep in eps:
+        ...
+    ```
+    After:
+    ```python
+    for ep in md.entry_points().select(group=ENTRYPOINT_GROUP):
+        ...
+    ```
+  - 76–78 — `resolve_command(pm, name)` is a trivial wrapper; inline `get_plugin_commands(pm).get(name)` at the call site.
 - **wt/wt/shared/constants.py**: 4–5 — Make COMMAND_NAMES the single source of truth and use it in the CLI routing; remove duplicated hardcoded lists in the CLI.
-- **wt/wt/plugins.py**: 56–58 — Inline one-off variable in entry point iteration:
-  Before:
-  ```python
-  eps = md.entry_points().select(group=ENTRYPOINT_GROUP)
-  for ep in eps:
-      ...
-  ```
-  After:
-  ```python
-  for ep in md.entry_points().select(group=ENTRYPOINT_GROUP):
-      ...
-  ```
-- **wt/wt/plugins.py**: 23–26 — Oneline the wt_init hookspec docstring: `"""Optional initialization hook; can modify config or set globals."""`
-  Before:
-  ```python
-  def wt_commands(self) -> dict[str, Callable]:  # type: ignore[override]
-      return {}
-  def wt_init(self, config) -> None:  # type: ignore[override]
-      return None
-  ```
-  After:
-  ```python
-  def wt_commands(self) -> dict[str, Callable] | None:
-      return {}
-  def wt_init(self, config) -> None:
-      pass
-  ```
 - **wt/wt/server/gitstatusd_client.py**: 204–205 — Inline one-off temp: `is_git_repository = int(fields[1]) == 1` (or `== "1"` if wire is str).
   Before:
   ```python
@@ -170,22 +161,9 @@
   ```python
   is_git_repository = int(fields[1]) == 1
   ```
-- **wt/wt/server/wt_server.py**: ~2168–2169 — Inline one-off `result` variable.
-  Before:
-  ```python
-  result = WorktreeListResult(worktrees=worktrees)
-  return self._create_success_response(result, request.id)
-  ```
-  After:
-  ```python
-  return self._create_success_response(WorktreeListResult(worktrees=worktrees), request.id)
-  ```
-
-
 
 ## [Use pathlib for path manipulation](../../definitions/python/pathlib.md)
-- **wt/tests/conftest.py**: 420–421 — Use Path one-liner: `config_path.write_text(yaml.dumps(config_file.model_dump()))` (small file).
-- **wt/wt/shared/configuration.py**: fold file/read/parse/validate into concise, typed calls.
+- **wt/wt/shared/configuration.py**: fold file/read/parse/validate into concise pathlib oneliner
   Before:
   ```python
   with open(config_path) as f:
@@ -202,177 +180,87 @@
   except ValidationError as e:
       raise ConfigError(f"Configuration validation errors: {e}")
   ```
-  Note: use yaml.safe_load (not yaml.loads); keep exception wrapping if part of the public API.
-
-- **wt/wt/server/wt_server.py**: 2369–2382 — `_compute_teleport_target` returns `str`; return `Path` (preferred) and avoid downstream `str(...)` conversions.
-  GAP: Commit to a single type/contract across layers; avoid mixed str/Path states; specify where conversion happens.
-- **wt/wt/server/wt_server.py**: 2501–2502 — In async context, if kept as a synchronous write, prefer the one-liner Path I/O form: `self.pid_file.write_text(str(os.getpid()))`. Applies to any simple two-line "with open(..., 'w') as f; f.write(...)" pattern where `Path.write_text(...)` suffices.
-  GAP: Provide guidance for blocking I/O in async contexts (when allowed, preferred non-blocking patterns) and document exceptions.
-- **wt/wt/server/wt_server.py**: 414–416 — StatusSnapshot.dirty_files/untracked_files represent filesystem paths; prefer `list[Path]` over `list[str]`.
-  GAP: Clarify wire vs internal types; document conversion boundaries to avoid mixed types across layers.
-
+- **wt/wt/server/wt_server.py**:
+  - 414–416 — StatusSnapshot.dirty_files/untracked_files are filesystem paths; use `list[Path]` over `list[str]`.
+    GAP: Clarify wire vs internal types; document conversion boundaries to avoid mixed types across layers.
+  - 2369–2382 — `_compute_teleport_target` returns `str`; return `Path` (preferred) and avoid downstream `str(...)` conversions.
+    GAP: Commit to a single type/contract across layers; avoid mixed str/Path states; specify where conversion happens.
+  - 2501–2502 — In async context, if kept as a synchronous write, prefer the one-liner Path I/O form: `self.pid_file.write_text(str(os.getpid()))`. Applies to any simple two-line "with open(..., 'w') as f; f.write(...)" pattern where `Path.write_text(...)` suffices.
+    GAP: Provide guidance for blocking I/O in async contexts (when allowed, preferred non-blocking patterns) and document exceptions.
 
 ## [No useless documentation or comments](../../definitions/no-useless-docs.md)
 
-- **wt/tests/conftest.py**: 391–394 — Helper docstring includes historical workflow; trim to describe only current behavior.
-- **wt/tests/conftest.py**: 426 — Remove historical comment: "Config builder fixture removed - use config_factory directly".
-- **wt/tests/conftest.py**: 302–308 — Shorten `real_temp_repo` docstring to a single descriptive line; drop compatibility notes.
-- **wt/tests/conftest.py**: 312–337 — Trim `real_env` docstring and meta-comments; keep only non-obvious behavior.
-- **wt/wt/server/wt_server.py**: 674–675 — Remove historical comment (filesystem watching moved); document current state only.
-- **wt/wt/client/handlers.py**: 5 — Docstring for `handle_status` restates the obvious; delete.
-  > "No docstrings/comments that merely restate what is obvious from the immediate context" (definitions/no-useless-docs.md)
-- **wt/wt/server/wt_server.py**: 147–167 — DebouncedGitHubRefresh.__init__: replace inline “Configurable timing”/“State tracking” comments and trailing parameter comment with a proper Args docstring; remove redundant inline comments.
-- **wt/wt/server/gitstatusd_client.py**: 133–141 — `is_ahead_of_upstream` / `is_behind_upstream` docstrings restate the obvious; remove.
-- **wt/wt/server/gitstatusd_client.py**: properties `has_untracked_files` / `has_dirty_files` — Docstrings restate the obvious; remove. Collapse to truthy one‑liners:
-  ```python
-  @property
-  def has_untracked_files(self) -> bool:
-      return bool(self.is_git_repository and self.untracked_files)
+- **wt/wt/server/wt_server.py**:
+  - 147–167 — DebouncedGitHubRefresh.__init__: replace inline “Configurable timing”/“State tracking” comments and trailing parameter comment with a proper Args docstring; remove redundant inline comments.
+- **wt/wt/server/gitstatusd_client.py**:
+  - properties `has_untracked_files` / `has_dirty_files` — Docstrings restate the obvious; remove
 
-  @property
-  def has_dirty_files(self) -> bool:
-      return bool(self.is_git_repository and self.staged_changes or self.unstaged_changes)
-  ```
-  GAP: Prefer leveraging truthiness for simple numeric>0 checks when readable; avoid `(x or 0) > 0` patterns.
-- **wt/wt/shared/github_models.py**: 21–23, 55–57 — `is_merged` docstrings restate the obvious; remove (or drop the redundant property entirely if unused).
-- **wt/wt/server/gitstatusd_client.py**: properties `has_untracked_files` / `has_dirty_files` — Docstrings restate the obvious; remove. Collapse to truthy one‑liners:
-  ```python
-  @property
-  def has_untracked_files(self) -> bool:
-      return bool(self.is_git_repository and self.untracked_files)
-
-  @property
-  def has_dirty_files(self) -> bool:
-      return bool(self.is_git_repository and (self.staged_changes or self.unstaged_changes))
-  ```
-  GAP: Prefer leveraging truthiness for simple numeric>0 checks when readable; avoid `(x or 0) > 0` patterns.
-- **wt/wt/server/gitstatusd_client.py**: property `has_changes` — simplify using truthiness.
-  Before:
-  ```python
-  if not self.is_git_repository:
-      return False
-  return (
-      (self.staged_changes or 0) > 0
-      or (self.unstaged_changes or 0) > 0
-      or (self.untracked_files or 0) > 0
-  )
-  ```
-  After:
-  ```python
-  return self.has_dirty_files or self.has_untracked_files
-  ```
-
-
-## [Use walrus operator](../../definitions/python/walrus.md)
-> "When a simple condition depends on a value computed immediately before, the value is bound inline with the walrus operator (:=) inside the condition." (definitions/python/walrus.md)
-- **wt/wt/server/wt_server.py**: 1482–1484 — Use walrus to combine read-and-check: `if not (data := await reader.readline()): return`.
-- **wt/wt/server/wt_server.py**: ~1971–1977 — Post‑creation script check: shorten and use walrus; also drop redundant existence check and fold the error message into a concise one‑liner (no loss of expressiveness).
-  Before:
-  ```python
-  # If a post-creation script is configured, validate it exists before any side effects
-  if self.config.post_creation_script:
-      script = self.config.post_creation_script
-      if not script.exists() or not script.is_file():
-          raise ValueError(
-              f"Post-creation script configured but not found or not a file: {script}",
-          )
-  ```
-  After:
-  ```python
-  if (script := self.config.post_creation_script) and not script.is_file():
-      raise ValueError(f"Post-creation script is not a file: {script}")
-  ```
-  Also see: [No useless documentation or comments](../../definitions/no-useless-docs.md).
-
-- **wt/wt/server/gitstatusd_client.py**: response parsing — use walrus to bind and check in one line.
-  Before:
-  ```python
-  response_data = raw_response.rstrip("\x1e")
-  if not response_data:
-      raise GitStatusdParseError("Empty response from gitstatusd")
-  ```
-  After:
-  ```python
-  if not (response_data := raw_response.rstrip("\x1e")):
-      raise GitStatusdParseError("Empty response from gitstatusd")
-  ```
+    TODO: SEPARATE NON-DOCUMENTATION / gap: Collapse to truthy one‑liners:
+    ```python
+    @property
+    def has_untracked_files(self) -> bool:
+        return bool(self.is_git_repository and self.untracked_files)
+  
+    @property
+    def has_dirty_files(self) -> bool:
+        return bool(self.is_git_repository and (self.staged_changes or self.unstaged_changes))
+    ```
+    GAP: Leverage truthiness where readable (re. original code `(x or 0) > 0`)
 
 ## [No unnecessary line breaks](../../definitions/no-extra-linebreaks.md)
 - **wt/tests/conftest.py**: 298–300 — Collapse multi-line assert into one line: `assert shutil.which("gitstatusd"), "integration tests require gitstatusd on PATH"`.
-- **wt/wt/server/wt_server.py**: 1926–1930 — One-line function signature for `_handle_ping_request`; no need to split parameters across lines when short.
-- **wt/wt/plugins.py**: 24–26 — One-line the wt_init hookspec docstring: `"""Optional initialization hook; can modify config or set globals."""`.
-- **wt/wt/server/wt_server.py**: 1896–1898 — One-line initialization: `github=ComponentStatus(state=github_state),` (no unnecessary line breaks).
+- **wt/wt/server/wt_server.py**:
+  - 1926–1930 — One-line function signature for `_handle_ping_request`; no need to split parameters across lines when short.
+  - 1896–1898 — One-line initialization: `github=ComponentStatus(state=github_state),` (no unnecessary line breaks).
+- **wt/wt/plugins.py**: 24–26 — One-line wt_init hookspec docstring: `"""Optional initialization hook; can modify config or set globals."""`.
 
 ## [Uses str.removeprefix / str.removesuffix for fixed prefix/suffix removal](../../definitions/python/str-affixes.md)
 
-- **wt/wt/shared/protocol.py**: 29–31 — Prefer `str.removeprefix("wtid:")` over slicing (`wtid[5:]`) for fixed‑prefix removal.
-  > "For fixed prefix removal, use `s.removeprefix(prefix)` instead of `s[len(prefix):]` or `s[4:]`"
+- **wt/wt/shared/protocol.py**: 29–31 — Use `str.removeprefix("wtid:")`, not (`wtid[5:]`)
 
 ## [Early bailout (guard clauses and loop guards)](../../definitions/early-bailout.md)
 
-- **wt/wt/server/wt_server.py**: 2149–2156 — In `worktree_list`, replace nested block with a guard `continue` to reduce nesting.
-  > "Loop guard: When the first statement of a loop guards the entire body, use `continue` (or `break`) instead of wrapping the body in an if‑block"
-
-- **wt/wt/server/wt_server.py**: ~1648 — In `process_single_worktree`, invert the guard to early‑bail when `gs_client` is missing and keep the happy path flat. Consider extracting the if/else into a helper to enable clean return‑then‑massage flow.
-  Before (shape):
-  ```python
-  if gs_client:
-      ...  # big branch
-  else:
-      ...  # small branch
-  ```
-  After (refactor sketch):
-  ```python
-  from pathlib import Path
-  from datetime import datetime
-
-  def _compute_single_status(worktree_path: Path, gs_client) -> WorktreeGitStatus:
-      if not gs_client:
-          return WorktreeGitStatus(
-              state="stopped",
-              dirty_files=[],
-              untracked_files=[],
-              ...,
-          )
-      # happy path (cache, bounded refresh, meta + PR fetch)
-      ...
-
-  # in process_single_worktree
-  single_start = time.time()
-  gs_client = self.gitstatusd_clients.get(worktree_path)
-  status = _compute_single_status(worktree_path, gs_client)
-  individual_times[worktree_path] = (time.time() - single_start) * 1000
-  return status
-  ```
-
-- **wt/wt/server/wt_server.py**: `_handle_worktree_identify_request` — invert `if worktree_name and absolute_path.exists()` to a negative guard and early return to keep the happy path flat.
-  Before: `if worktree_name and absolute_path.exists(): ...`
-  After: `if not worktree_name or not absolute_path.exists(): return ...  # early bailout`
+- **wt/wt/server/wt_server.py**:
+  - 2149–2156 — In `worktree_list`, replace nested block with a guard `continue` to reduce nesting.
+  - ~1648 — In `process_single_worktree`, invert the guard to early‑bail when `gs_client` is missing and keep the happy path flat. Consider extracting the if/else into a helper to enable clean return‑then‑massage flow.
+    Before (shape):
+    ```python
+    if gs_client:
+        ...  # big branch
+    else:
+        ...  # small branch
+    ```
+    After (refactor sketch):
+    ```python
+    from pathlib import Path
+    from datetime import datetime
+  
+    def _compute_single_status(worktree_path: Path, gs_client) -> WorktreeGitStatus:
+        if not gs_client:
+            return WorktreeGitStatus(
+                state="stopped",
+                dirty_files=[],
+                untracked_files=[],
+                ...,
+            )
+        # happy path (cache, bounded refresh, meta + PR fetch)
+        ...
+  
+    # in process_single_worktree
+    single_start = time.time()
+    gs_client = self.gitstatusd_clients.get(worktree_path)
+    status = _compute_single_status(worktree_path, gs_client)
+    individual_times[worktree_path] = (time.time() - single_start) * 1000
+    return status
+    ```
+  - `_handle_worktree_identify_request` — invert `if worktree_name and absolute_path.exists()` to a negative guard and early return
+    to keep the happy path flat.
+    Before: `if worktree_name and absolute_path.exists(): ...`
+    After: `if not worktree_name or not absolute_path.exists(): return ...  # early bailout`
 
 ## [No unnecessary nesting (combine trivial guards)](../../definitions/minimize-nesting.md)
 
-- **wt/wt/server/wt_server.py**: 1610–1614 — Replace for+append with a list comprehension:
-  Before:
-  ```python
-  for wtid in worktree_ids:
-      worktree_name = parse_worktree_id(wtid)
-      worktree_path = self.config.worktrees_dir / worktree_name
-      worktree_paths.append(worktree_path)
-  ```
-  After:
-  ```python
-  worktree_paths = [
-      self.config.worktrees_dir / parse_worktree_id(wtid)
-      for wtid in worktree_ids
-  ]
-  ```
-  GAP: Prefer comprehensions for simple constructions over loops with append when readable.
-
-
-- **wt/wt/server/wt_server.py**: 257–275 — Inner `if self.is_running:` under a `while self.is_running` is redundant; combine trivial guards/early‑bail to flatten.
-  > "Patterns like `if a: if b:` (with no else between) are flattened to a single `if a and b:`"
-
-- **wt/wt/cli.py**: 143 — Simplify branching with a single pre-check and a comprehension.
+- **wt/wt/cli.py**: 143 — Core can be made shorter while not hurting readability with a single pre-check and a comprehension.
   Before:
   ```python
   for arg in all_args:

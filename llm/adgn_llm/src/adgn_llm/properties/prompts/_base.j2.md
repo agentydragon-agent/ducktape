@@ -19,12 +19,12 @@ Environment:
 
 {% if header_schema_names %}
 Input Schemas:
-{%- for name in header_schema_names %}
+{% for name in header_schema_names %}
 - {{ name }}
 ```json
 {{ schemas_json[name] | tojson(indent=2) }}
 ```
-{%- endfor %}
+{% endfor %}
 {% endif %}
 
 {% from "_partials.j2" import scope_block, constraints_read_only, supplemental_section_md, tools_section, reporting_requirements %}
