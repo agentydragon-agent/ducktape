@@ -5,10 +5,15 @@ import argparse
 import importlib
 import shutil
 import subprocess
-import sys
 import tempfile
 import tarfile
 import docker
+from adgn_llm.properties.docker_env import (
+    PROPERTIES_DOCKER_IMAGE,
+    WORKING_DIR as CRITIC_WORKDIR,
+    ensure_critic_image,
+    properties_docker_spec,
+)
 import time
 from dataclasses import dataclass
 from adgn_llm.properties.prop_utils import properties_root
@@ -18,9 +23,8 @@ from jinja2 import Environment, PackageLoader, select_autoescape
 from adgn_llm.logging_config import configure_logging
 import tiktoken
 from openai import AsyncOpenAI
-from adgn_llm.properties.lint_issue import DOCKER_IMAGE as _DEFAULT_IMAGE
-from importlib import resources
-import shlex
+from adgn_llm.mini_codex.agent import MiniCodex
+from adgn_llm.mini_codex.mcp_manager import McpManager
 
 from .specimen_utils import (
     build_scope_text,
@@ -28,7 +32,6 @@ from .specimen_utils import (
     list_specimen_names,
     load_manifest,
     resolve_manifest_arg,
-    resolve_source_root,
     ensure_archive_for_specimen_slug,
 )
 
@@ -90,32 +93,7 @@ class BuildOptions:
     extra_configs: list[str] | None = None
 
 
-# Recognized QA tools (names shown to users/agents)
-RECOGNIZED_TOOLS: list[str] = [
-    "ruff",
-    "mypy",
-    "pyright",
-    "vulture",
-    "bandit",
-    "pip-audit",
-    "safety",
-    "codespell",
-    "pyupgrade",
-    "refurb",
-    "flynt",
-    "pydocstyle",
-    "interrogate",
-    "import-linter",
-    "semgrep",
-    "radon",
-    "xenon",
-    "pylint",
-    "lizard",
-    "coverage",
-    "diff-cover",
-    "jscpd",
-    "jscpd(npx)",
-]
+# Removed dead constant: RECOGNIZED_TOOLS (replaced by dynamic _detect_tools())
 
 # Human-facing catalog for CLI table (name, category, description)
 TOOL_CATALOG: list[tuple[str, str, str]] = [
@@ -152,11 +130,7 @@ def _format_tools_table(available: list[str]) -> str:
         f"{'-' * 5}  {'-' * 12}  {'-' * 14}  {'-' * 40}",
     ]
     for name, cat, desc in TOOL_CATALOG:
-        status = (
-            "yes"
-            if name in avail_set or (name == "jscpd" and "jscpd(npx)" in avail_set)
-            else "no"
-        )
+        status = "yes" if name in avail_set or (name == "jscpd" and "jscpd(npx)" in avail_set) else "no"
         lines.append(f"{status:<5}  {name:<12}  {cat:<14}  {desc}")
     return "\n".join(lines)
 
@@ -216,7 +190,7 @@ def build_find_prompt(
 ) -> str:
     properties_text = _properties_text()
     return _render_prompt_template(
-        "find.md.j2",
+        "find.j2.md",
         scope_text=scope_text,
         properties_text=properties_text,
         supplemental_text=supplemental_text,
@@ -233,7 +207,7 @@ def build_open_review_prompt(
 ) -> str:
     properties_text = _properties_text()
     return _render_prompt_template(
-        "open_review.md.j2",
+        "open_review.j2.md",
         scope_text=scope_text,
         properties_text=properties_text,
         supplemental_text=supplemental_text,
@@ -246,7 +220,7 @@ def build_open_review_prompt(
 def build_enforce_prompt(scope_text: str, supplemental_text: str | None = None) -> str:
     properties_text = _properties_text()
     return _render_prompt_template(
-        "enforce.md.j2",
+        "enforce.j2.md",
         scope_text=scope_text,
         properties_text=properties_text,
         supplemental_text=supplemental_text,
@@ -257,80 +231,13 @@ def build_enforce_prompt(scope_text: str, supplemental_text: str | None = None) 
 
 def build_grade_prompt(scope_text: str, canonical_text: str, critique_text: str) -> str:
     return _render_prompt_template(
-        "grade.md.j2",
+        "grade.j2.md",
         scope_text=scope_text,
         canonical_text=canonical_text,
         critique_text=critique_text,
         static_action="use for context only (do not re-scan code)",
         ambiguity_tail="you are not re-running analysis; only use it for reference while matching.",
     )
-
-
-def _run_specimen_grade(  # noqa: PLR0913
-    manifest_path: Path,
-    critique_path: Path,
-    *,
-    dry_run: bool,
-    final_only: bool,
-    output_final_message: str | None,
-    gitconfig: str | None,
-) -> int:
-    man = load_manifest(manifest_path)
-    # Resolve root (fresh checkout/copy) so the agent has code context
-    root = resolve_source_root(man, manifest_path, gitconfig)
-
-    scope_text = build_scope_text(man.scope.include, man.scope.exclude)
-
-    # Collect canonical findings — Jsonnet-only (issues.libsonnet or issues.libsonnet)
-    spec_dir = manifest_path.parent
-    issues_path = None
-    p = spec_dir / "issues.libsonnet"
-    if not p.exists():
-        print(
-            f"ERROR: No issues.libsonnet found under {spec_dir}. "
-            "Specimen-grade requires Jsonnet canonical issues; please create issues.libsonnet.",
-        )
-        return 2
-    issues_path = p
-    canonical_text = read_embedded_paths([issues_path])
-    critique_text = read_embedded_paths([critique_path])
-
-    prompt = build_grade_prompt(scope_text, canonical_text, critique_text)
-
-    # Build codex command (read-only; full-auto; skip git repo check)
-    cmd = build_cmd(
-        "gpt-5",
-        root,
-        BuildOptions(sandbox="read-only", skip_git_repo_check=True, full_auto=True),
-    )
-
-    out_last_file: Path | None = None
-    if output_final_message:
-        cmd.extend(["--output-last-message", output_final_message])
-    elif final_only:
-        with tempfile.NamedTemporaryFile(delete=False) as tmp:
-            out_last_file = Path(tmp.name)
-        cmd.extend(["--output-last-message", str(out_last_file)])
-
-    if dry_run:
-        tmpdir = Path(tempfile.gettempdir()) / "adgn_codex_prompts"
-        tmpdir.mkdir(parents=True, exist_ok=True)
-        ts = int(time.time())
-        outfile = tmpdir / f"codex_prompt_specimen_grade_{ts}.md"
-        outfile.write_text(prompt, encoding="utf-8")
-        tokens = None
-        enc = tiktoken.get_encoding("cl100k_base")
-        tokens = len(enc.encode(prompt))
-        print(" ".join(cmd))
-        print(
-            f"Saved prompt: {outfile} (approx tokens: {tokens if tokens is not None else 'n/a'})",
-        )
-        return 0
-
-    rc = subprocess.run(cmd, check=False, input=prompt, text=True).returncode
-    if out_last_file is not None:
-        print(Path(out_last_file).read_text(encoding="utf-8"))
-    return rc
 
 
 def build_cmd(
@@ -359,94 +266,185 @@ def build_cmd(
     return cmd
 
 
-# ---- Specimen helpers moved to specimen_utils; duplicate definitions removed ----
+# ---- MiniCodex helpers for check/specimen/grade (docker for code scans) ----
 
 
-def _run_specimen(  # noqa: PLR0913
+async def _run_minicodex_simple(
+    prompt: str,
+    model: str,
+    specs: dict[str, object],
+    *,
+    output_final_message: str | None = None,
+    final_only: bool = False,
+    client: AsyncOpenAI | None = None,
+) -> int:
+    client = client or AsyncOpenAI()
+    async with McpManager(specs) as mcp:
+        agent = await MiniCodex.create(model=model, mcp=mcp, system="You are a code agent. Be concise.", client=client)
+        res = await agent.run(prompt)
+    text = (res.text or "").strip()
+    if output_final_message:
+        Path(output_final_message).write_text(text, encoding="utf-8")
+    # For parity with prior behavior, print final text to stdout unless explicitly suppressed
+    print(text)
+    return 0
+
+
+async def _run_check_minicodex_async(
+    workdir: Path, prompt: str, *, model: str, output_final_message: str | None, final_only: bool
+) -> int:
+    # Mount the provided workdir read-only and property definitions read-only
+    wiring = properties_docker_spec(workdir, mount_properties=True)
+    specs = {wiring.server_name: wiring.server_spec}
+    return await _run_minicodex_simple(
+        prompt, model, specs, output_final_message=output_final_message, final_only=final_only
+    )
+
+
+def _hydrate_specimen_home_workspace(manifest_path: Path, man, gitconfig: str | None) -> Path:
+    """Extract the specimen archive under $HOME/.cache/adgn-llm/workspaces/<slug>_<ts>/ and
+    return the single top-level directory path (content root). Raises on unexpected layouts.
+    """
+    ts = int(time.time())
+    slug = manifest_path.parent.name
+    mount_base = Path.home() / ".cache" / "adgn-llm" / "workspaces"
+    mount_base.mkdir(parents=True, exist_ok=True)
+    mount_root = mount_base / f"{slug}_{ts}"
+    if mount_root.exists():
+        shutil.rmtree(mount_root, ignore_errors=True)
+    archive = ensure_archive_for_specimen_slug(man, manifest_path, Path(gitconfig) if gitconfig else None)
+    mount_root.mkdir(parents=True, exist_ok=True)
+    with tarfile.open(archive, "r:gz") as tf:
+        tf.extractall(mount_root)
+    entries = [p for p in mount_root.iterdir() if p.is_dir()]
+    if len(entries) != 1:
+        raise SystemExit(
+            f"Unexpected archive layout under {mount_root}; expected a single top-level directory",
+        )
+    return entries[0]
+
+
+async def _run_specimen_minicodex_async(
     manifest_path: Path,
     *,
     dry_run: bool,
     embed_paths: list[str] | None,
     gitconfig: str | None,
-    mode: str = "find",
-    final_only: bool = False,
-    output_final_message: str | None = None,
+    mode: str,
+    final_only: bool,
+    output_final_message: str | None,
+) -> int:
+    # Hydrate specimen snapshot under ~/.cache to avoid Docker volume quirks
+    man = load_manifest(manifest_path)
+    content_root = _hydrate_specimen_home_workspace(manifest_path, man, gitconfig)
+
+    supplemental_text = read_embedded_paths([Path(p) for p in (embed_paths or [])]) if embed_paths else None
+
+    try:
+        # Build prompt according to mode
+        scope_text = build_scope_text(man.scope.include, man.scope.exclude)
+        if mode == "discover":
+            prompt = _render_prompt_template(
+                "discover.md.j2",
+                scope_text=scope_text,
+                properties_text=_properties_text(),
+                supplemental_text=supplemental_text,
+                available_tools=_detect_tools(),
+                static_action="analyze",
+                ambiguity_tail="do not include anything outside it.",
+            )
+        elif mode == "open":
+            prompt = build_open_review_prompt(
+                scope_text,
+                supplemental_text=supplemental_text,
+                available_tools=_detect_tools(),
+            )
+        else:
+            prompt = build_find_prompt(
+                scope_text,
+                supplemental_text=supplemental_text,
+                available_tools=_detect_tools(),
+            )
+
+        if dry_run:
+            tmpdir = Path(tempfile.gettempdir()) / "adgn_codex_prompts"
+            tmpdir.mkdir(parents=True, exist_ok=True)
+            ts = int(time.time())
+            outfile = tmpdir / f"codex_prompt_specimen_{mode}_{ts}.md"
+            outfile.write_text(prompt, encoding="utf-8")
+            enc = tiktoken.get_encoding("cl100k_base")
+            tokens = len(enc.encode(prompt))
+            print(
+                f"Saved prompt: {outfile} (approx tokens: {tokens})",
+            )
+            return 0
+
+        wiring = properties_docker_spec(content_root, mount_properties=True)
+        specs = {wiring.server_name: wiring.server_spec}
+        return await _run_minicodex_simple(
+            prompt,
+            "gpt-5",
+            specs,
+            output_final_message=output_final_message,
+            final_only=final_only,
+        )
+    finally:
+        # Clean up the extracted workspace dir
+        try:
+            parent = content_root.parent
+            shutil.rmtree(parent, ignore_errors=True)
+        except Exception:
+            pass
+
+
+async def _run_specimen_grade_minicodex_async(
+    manifest_path: Path,
+    critique_path: Path,
+    *,
+    dry_run: bool,
+    final_only: bool,
+    output_final_message: str | None,
+    gitconfig: str | None,
 ) -> int:
     man = load_manifest(manifest_path)
-    # Resolve root
-    root = resolve_source_root(man, manifest_path, gitconfig)
-
     scope_text = build_scope_text(man.scope.include, man.scope.exclude)
-    # Build supplemental text from embedded files (covered/not_covered_yet or user-specified)
-    supplemental_text = (
-        read_embedded_paths([Path(p) for p in (embed_paths or [])])
-        if embed_paths
-        else None
-    )
-    # Build appropriate prompt
-    if mode == "discover":
-        prompt = _render_prompt_template(
-            "discover.md.j2",
-            scope_text=scope_text,
-            properties_text=_properties_text(),
-            supplemental_text=supplemental_text,
-            available_tools=_detect_tools(),
-            static_action="analyze",
-            ambiguity_tail="do not include anything outside it.",
+    # Require issues.libsonnet
+    spec_dir = manifest_path.parent
+    p = spec_dir / "issues.libsonnet"
+    if not p.exists():
+        print(
+            f"ERROR: No issues.libsonnet found under {spec_dir}. "
+            "Specimen-grade requires Jsonnet canonical issues; please create issues.libsonnet.",
         )
-    elif mode == "open":
-        # Open-ended review without suppression
-        prompt = build_open_review_prompt(
-            scope_text,
-            supplemental_text=supplemental_text,
-            available_tools=_detect_tools(),
-        )
-    else:
-        prompt = build_find_prompt(
-            scope_text,
-            supplemental_text=supplemental_text,
-            available_tools=_detect_tools(),
-        )
-
-    # Build codex command (read-only sandbox; full-auto; skip git repo check)
-    cmd = build_cmd(
-        "gpt-5",
-        root,
-        BuildOptions(sandbox="read-only", skip_git_repo_check=True, full_auto=True),
-    )
-    out_last_file: Path | None = None
-    if output_final_message:
-        cmd.extend(["--output-last-message", output_final_message])
-    elif final_only:
-        with tempfile.NamedTemporaryFile(delete=False) as tmp:
-            out_last_file = Path(tmp.name)
-        cmd.extend(["--output-last-message", str(out_last_file)])
+        return 2
+    canonical_text = read_embedded_paths([p])
+    critique_text = read_embedded_paths([critique_path])
+    prompt = build_grade_prompt(scope_text, canonical_text, critique_text)
 
     if dry_run:
-        # Save prompt to system temp dir and print approx token count
         tmpdir = Path(tempfile.gettempdir()) / "adgn_codex_prompts"
         tmpdir.mkdir(parents=True, exist_ok=True)
         ts = int(time.time())
-        outfile = tmpdir / f"codex_prompt_specimen_{mode}_{ts}.md"
+        outfile = tmpdir / f"codex_prompt_specimen_grade_{ts}.md"
         outfile.write_text(prompt, encoding="utf-8")
         tokens = None
         enc = tiktoken.get_encoding("cl100k_base")
         tokens = len(enc.encode(prompt))
-        print(" ".join(cmd))
-        print(
-            f"Detected tools: {', '.join(_detect_tools()) if _detect_tools() else '(none)'}",
-        )
-        print(_format_tools_table(_detect_tools()))
-        print(
-            f"Saved prompt: {outfile} (approx tokens: {tokens if tokens is not None else 'n/a'})",
-        )
+        print(f"Saved prompt: {outfile} (approx tokens: {tokens if tokens is not None else 'n/a'})")
         return 0
 
-    # Execute codex with prompt on stdin
-    rc = subprocess.run(cmd, check=False, input=prompt, text=True).returncode
-    if out_last_file is not None:
-        print(Path(out_last_file).read_text(encoding="utf-8"))
-    return rc
+    # Grade does not need tools; run MiniCodex without MCP servers
+    specs: dict[str, object] = {}
+    return await _run_minicodex_simple(
+        prompt,
+        "gpt-5",
+        specs,
+        output_final_message=output_final_message,
+        final_only=final_only,
+    )
+
+
+# ---- Specimen helpers moved to specimen_utils; duplicate definitions removed ----
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -683,10 +681,6 @@ def main(argv: list[str] | None = None) -> int:
         "--gitconfig",
         help="Path to a gitconfig to use for private repo fallback (shallow git)",
     )
-    p_spec_shell.add_argument(
-        "--image",
-        help="Docker image to use (defaults to the linting image)",
-    )
 
     args = parser.parse_args(argv)
 
@@ -727,14 +721,16 @@ def main(argv: list[str] | None = None) -> int:
                 return 2
             gitconfig_path = str(p)
         mode = "open" if getattr(args, "allow_general_findings", False) else "find"
-        return _run_specimen(
-            manifest_path,
-            dry_run=args.dry_run,
-            embed_paths=args.embed_paths,
-            gitconfig=gitconfig_path,
-            mode=mode,
-            final_only=getattr(args, "final_only", False),
-            output_final_message=getattr(args, "output_final_message", None),
+        return asyncio.run(
+            _run_specimen_minicodex_async(
+                manifest_path,
+                dry_run=args.dry_run,
+                embed_paths=args.embed_paths,
+                gitconfig=gitconfig_path,
+                mode=mode,
+                final_only=getattr(args, "final_only", False),
+                output_final_message=getattr(args, "output_final_message", None),
+            )
         )
 
     if args.command == "specimen-discover":
@@ -762,14 +758,16 @@ def main(argv: list[str] | None = None) -> int:
             pth = manifest_path.parent / name
             if pth.exists():
                 embed_paths.append(str(pth))
-        return _run_specimen(
-            manifest_path,
-            dry_run=args.dry_run,
-            embed_paths=embed_paths,
-            gitconfig=gitconfig_path,
-            mode="discover",
-            final_only=getattr(args, "final_only", False),
-            output_final_message=getattr(args, "output_final_message", None),
+        return asyncio.run(
+            _run_specimen_minicodex_async(
+                manifest_path,
+                dry_run=args.dry_run,
+                embed_paths=embed_paths,
+                gitconfig=gitconfig_path,
+                mode="discover",
+                final_only=getattr(args, "final_only", False),
+                output_final_message=getattr(args, "output_final_message", None),
+            )
         )
 
     if args.command == "specimen-grade":
@@ -795,13 +793,15 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"ERROR: --gitconfig file not found: {p}")
                 return 2
             gitconfig_path = str(p)
-        return _run_specimen_grade(
-            manifest_path,
-            crit_path,
-            dry_run=args.dry_run,
-            final_only=getattr(args, "final_only", False),
-            output_final_message=getattr(args, "output_final_message", None),
-            gitconfig=gitconfig_path,
+        return asyncio.run(
+            _run_specimen_grade_minicodex_async(
+                manifest_path,
+                crit_path,
+                dry_run=args.dry_run,
+                final_only=getattr(args, "final_only", False),
+                output_final_message=getattr(args, "output_final_message", None),
+                gitconfig=gitconfig_path,
+            )
         )
 
     if args.command in ("check", "fix"):
@@ -819,14 +819,31 @@ def main(argv: list[str] | None = None) -> int:
                 if args.allow_general_findings
                 else build_find_prompt(args.scope, available_tools=detected_tools)
             )
-            cmd = build_cmd(
-                args.model,
-                workdir,
-                BuildOptions(
-                    sandbox="read-only",
-                    skip_git_repo_check=args.skip_git_repo_check,
-                    full_auto=args.full_auto,
-                ),
+            # MiniCodex path for check: run inside docker (RO mount)
+            if args.dry_run:
+                tmpdir = Path(tempfile.gettempdir()) / "adgn_codex_prompts"
+                tmpdir.mkdir(parents=True, exist_ok=True)
+                ts = int(time.time())
+                outfile = tmpdir / f"codex_prompt_{args.command}_{ts}.md"
+                outfile.write_text(prompt, encoding="utf-8")
+                enc = tiktoken.get_encoding("cl100k_base")
+                tokens = len(enc.encode(prompt))
+                print(
+                    f"Detected tools: {', '.join(_detect_tools()) if _detect_tools() else '(none)'}",
+                )
+                print(_format_tools_table(_detect_tools()))
+                print(
+                    f"Saved prompt: {outfile} (approx tokens: {tokens})",
+                )
+                return 0
+            return asyncio.run(
+                _run_check_minicodex_async(
+                    workdir,
+                    prompt,
+                    model=args.model,
+                    output_final_message=getattr(args, "output_final_message", None),
+                    final_only=args.final_only,
+                )
             )
         else:
             prompt = build_enforce_prompt(args.scope)
@@ -840,51 +857,42 @@ def main(argv: list[str] | None = None) -> int:
                     extra_configs=['sandbox_permissions=["disk-full-read-access"]'],
                 ),
             )
-        if getattr(args, "output_final_message", None):
-            cmd.extend(["--output-last-message", args.output_final_message])
-        elif args.final_only:
-            with tempfile.NamedTemporaryFile(delete=False) as tmp:
-                out_last_file = Path(tmp.name)
-            cmd.extend(["--output-last-message", str(out_last_file)])
+            if getattr(args, "output_final_message", None):
+                cmd.extend(["--output-last-message", args.output_final_message])
+            elif args.final_only:
+                with tempfile.NamedTemporaryFile(delete=False) as tmp:
+                    out_last_file = Path(tmp.name)
+                cmd.extend(["--output-last-message", str(out_last_file)])
 
-        if args.dry_run:
-            # Save prompt to system temp dir and print approx token count
-            tmpdir = Path(tempfile.gettempdir()) / "adgn_codex_prompts"
-            tmpdir.mkdir(parents=True, exist_ok=True)
-            ts = int(time.time())
-            outfile = tmpdir / f"codex_prompt_{args.command}_{ts}.md"
-            outfile.write_text(prompt, encoding="utf-8")
-            tokens = None
-            try:
-                if "tiktoken" in globals() and tiktoken is not None:
-                    enc = tiktoken.get_encoding("cl100k_base")
-                    tokens = len(enc.encode(prompt))
-            except Exception:
+            if args.dry_run:
+                # Save prompt to system temp dir and print approx token count
+                tmpdir = Path(tempfile.gettempdir()) / "adgn_codex_prompts"
+                tmpdir.mkdir(parents=True, exist_ok=True)
+                ts = int(time.time())
+                outfile = tmpdir / f"codex_prompt_{args.command}_{ts}.md"
+                outfile.write_text(prompt, encoding="utf-8")
                 tokens = None
-            print(" ".join(cmd))
-            print(
-                f"Detected tools: {', '.join(_detect_tools()) if _detect_tools() else '(none)'}",
-            )
-            print(_format_tools_table(_detect_tools()))
-            print(
-                f"Saved prompt: {outfile} (approx tokens: {tokens if tokens is not None else 'n/a'})",
-            )
-            return 0
+                try:
+                    if "tiktoken" in globals() and tiktoken is not None:
+                        enc = tiktoken.get_encoding("cl100k_base")
+                        tokens = len(enc.encode(prompt))
+                except Exception:
+                    tokens = None
+                print(" ".join(cmd))
+                print(
+                    f"Detected tools: {', '.join(_detect_tools()) if _detect_tools() else '(none)'}",
+                )
+                print(_format_tools_table(_detect_tools()))
+                print(
+                    f"Saved prompt: {outfile} (approx tokens: {tokens if tokens is not None else 'n/a'})",
+                )
+                return 0
 
-        # Stream to subprocess stdin
-        try:
+            # Stream to subprocess stdin for fix
             rc = subprocess.run(cmd, check=False, input=prompt, text=True).returncode
             if out_last_file is not None:
-                try:
-                    print(Path(out_last_file).read_text(encoding="utf-8"))
-                except Exception as e:
-                    print(
-                        f"[error reading final message file {out_last_file}: {e}]",
-                        file=sys.stderr,
-                    )
+                print(Path(out_last_file).read_text(encoding="utf-8"))
             return rc
-        except KeyboardInterrupt:
-            return 130
     if args.command == "specimen-shell":
         base = find_specimens_base()
         manifest_path = resolve_manifest_arg(args.specimen, base)
@@ -945,21 +953,9 @@ def main(argv: list[str] | None = None) -> int:
             name = f"adgn_spec_shell_{ts}"
             container = None
             try:
-                # Ensure the image exists locally; if not, instruct how to build using our packaged Dockerfile.
-                image = args.image or _DEFAULT_IMAGE
-                try:
-                    dclient.images.get(image)
-                except docker.errors.ImageNotFound:
-                    dockerfile_trav = resources.files("adgn_llm").joinpath(
-                        "docker/critic.Dockerfile"
-                    )
-                    context_dir = str(dockerfile_trav.parent)
-                    print("ERROR: Required Docker image not found:", image)
-                    print("Build it first:")
-                    print(
-                        f"docker build -f {shlex.quote(str(dockerfile_trav))} -t {image} {shlex.quote(context_dir)}"
-                    )
-                    return 2
+                # Always use the properties critic image and ensure it exists locally
+                image = PROPERTIES_DOCKER_IMAGE
+                ensure_critic_image()
 
                 container = dclient.containers.run(
                     image=image,
@@ -968,8 +964,8 @@ def main(argv: list[str] | None = None) -> int:
                     remove=True,
                     detach=True,
                     network_mode="none",
-                    volumes={str(content_root): {"bind": "/workspace", "mode": "rw"}},
-                    working_dir="/workspace",
+                    volumes={str(content_root): {"bind": CRITIC_WORKDIR, "mode": "rw"}},
+                    working_dir=CRITIC_WORKDIR,
                     tty=True,
                     stdin_open=True,
                 )
@@ -978,9 +974,7 @@ def main(argv: list[str] | None = None) -> int:
                 return 2
 
             # Attach an interactive shell using docker CLI (subprocess) — no fallback to sh
-            rc = subprocess.run(
-                ["docker", "exec", "-it", name, "bash"], check=False
-            ).returncode
+            rc = subprocess.run(["docker", "exec", "-it", name, "bash"], check=False).returncode
             try:
                 if container:
                     container.stop()

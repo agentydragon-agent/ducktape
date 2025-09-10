@@ -13,9 +13,11 @@ from typing import Any
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 import _jsonnet
-
-# ---- Canonical specimen issues schema (Jsonnet-only) ----
-from adgn_llm.properties.prop_utils import PropertyID, properties_root, validate_property_ids
+from adgn_llm.properties.prop_utils import (
+    PropertyID,
+    properties_root,
+    validate_property_ids,
+)
 from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
 
@@ -24,14 +26,6 @@ from platformdirs import user_cache_dir
 from pydantic import BaseModel, ConfigDict, model_validator, Field
 
 from .specimen_frontmatter import GitHubSource, GitSource, LocalSource, SpecimenManifest
-
-
-# properties_root moved to prop_utils; import from there to avoid duplication
-# def properties_root() -> Path: ... (see adgn_llm.properties.prop_utils)
-
-
-# find_property_files moved to prop_utils; import from there to avoid duplication
-# def find_property_files(...): ... (see adgn_llm.properties.prop_utils)
 
 
 @lru_cache(maxsize=1)
