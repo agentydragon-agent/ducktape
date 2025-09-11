@@ -280,8 +280,12 @@ $ {"git diff HEAD --stat" if include_all else "git diff --cached --stat"}
         new_prompt = prompt
         if i == 0:
             new_prompt += """\n\nPast commits (subjects):\n\n"""
-        msg = commit.message.split("\n\n")[0]  # subject line only
-        new_prompt += f"- {msg}\n"
+        raw_msg = commit.message
+        if isinstance(raw_msg, bytes):
+            subj = raw_msg.decode(errors="replace").split("\n\n", 1)[0]
+        else:
+            subj = raw_msg.split("\n\n", 1)[0]
+        new_prompt += f"- {subj}\n"
         if len(new_prompt) > PAST_COMMITS_MAX_CHARS:
             break
         prompt = new_prompt
@@ -1107,7 +1111,7 @@ class CodexAI:
     ):
         self.repo = repo
         self.debug = debug
-        self.codex_bin = codex_bin or os.environ.get("CODEX_BIN", "codex")
+        self.codex_bin: str = codex_bin or os.environ.get("CODEX_BIN") or "codex"
         self.timeout = timeout
         self.previous_message = previous_message
         self.logger = logging.getLogger(__name__)
@@ -1140,19 +1144,20 @@ class CodexAI:
                 f"Context:\n{context}\n"
             )
 
+        wd = Path(self.repo.working_tree_dir) if self.repo.working_tree_dir else Path(self.repo.git_dir)
         cmd = [
             self.codex_bin,
             "exec",
             "--sandbox",
             "read-only",
             "-C",
-            Path(self.repo.working_tree_dir),
+            str(wd),
             "--output-last-message",
-            last_msg_path,
+            str(last_msg_path),
         ]
         if model:
-            cmd += ["-m", model]
-        cmd.append(prompt)
+            cmd += ["-m", str(model)]
+        cmd.append(str(prompt))
 
         if self.debug:
             shell_cmd = subprocess.list2cmdline([str(x) for x in cmd])

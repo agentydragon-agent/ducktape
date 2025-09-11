@@ -2,6 +2,7 @@
 
 import json
 from pathlib import Path
+from typing import cast
 
 import tiktoken
 from openai.types.responses.response import Response
@@ -43,14 +44,12 @@ class TruncationManager:
         self,
         files: list[dict[str, str]],
         max_size: int,
-        purpose: str = "processing",
     ) -> dict[str, str]:
-        """Truncate file contents by character size for a specific purpose.
+        """Truncate file contents by character size.
 
         Args:
             files: List of file dicts with 'path' and 'content' keys
             max_size: Maximum characters per file
-            purpose: Purpose description for logging
 
         Returns:
             Dict mapping file paths to truncated content
@@ -77,34 +76,43 @@ class TruncationManager:
         """Truncate files to fit within token budget using binary search.
 
         Args:
-            files_info: List of file dicts with 'path' and 'content' keys
+            files_info: List of file dicts with 'path' and 'content' keys OR FileInfo objects
             max_tokens: Maximum tokens for all files combined
 
         Returns:
-            Truncated files_info that fits within token budget
+            Truncated files_info that fits within token budget (same element type as input)
         """
 
-        def count_files_tokens(files):
+        def count_files_tokens(files: list[dict[str, str]] | list[FileInfo]) -> int:
             if files and isinstance(files[0], FileInfo):
-                files_json = json.dumps([fi.model_dump() for fi in files], indent=2)
+                files_json = json.dumps([fi.model_dump() for fi in cast(list[FileInfo], files)], indent=2)
             else:
                 files_json = json.dumps(files, indent=2)
             return self.count_tokens(files_json)
 
         current_tokens = count_files_tokens(files_info)
-
         if current_tokens <= max_tokens:
             return files_info
 
-        # Sort by content size (largest first) to truncate big files first
-        truncated_files = []
+        # Build a normalized list [(path, content, original_obj)] so we can sort safely
+        normalized: list[tuple[str, str, dict[str, str] | FileInfo]] = []
+        if files_info and isinstance(files_info[0], FileInfo):
+            for fi in files_info:  # type: ignore[assignment]
+                assert isinstance(fi, FileInfo)
+                normalized.append((fi.path, fi.content, fi))
+        else:
+            for d in files_info:  # type: ignore[assignment]
+                assert isinstance(d, dict)
+                normalized.append((d["path"], d["content"], d))
+
+        # Sort by content length desc so we try to fit smaller ones later
+        normalized.sort(key=lambda t: len(t[1]), reverse=True)
+
+        truncated_files_dicts: list[dict[str, str]] = []
+        truncated_files_models: list[FileInfo] = []
         remaining_budget = max_tokens
-        sorted_files = sorted(files_info, key=lambda f: len(f["content"]), reverse=True)
 
-        for file_info in sorted_files:
-            path = file_info["path"]
-            content = file_info["content"]
-
+        for path, content, original in normalized:
             # Calculate tokens for this file in JSON format
             single_file_json = json.dumps(
                 [{"path": path, "content": content}],
@@ -113,46 +121,57 @@ class TruncationManager:
             file_tokens = self.count_tokens(single_file_json)
 
             if file_tokens <= remaining_budget:
-                # File fits, include it
-                truncated_files.append(file_info)
+                # File fits, include original object as-is
+                if isinstance(original, FileInfo):
+                    truncated_files_models.append(original)
+                else:
+                    truncated_files_dicts.append(original)
                 remaining_budget -= file_tokens
-            else:
-                # File doesn't fit, try to truncate it
-                if remaining_budget > 1000:  # Only try if we have reasonable space
-                    # Binary search to find max content that fits
-                    max_chars = len(content)
-                    min_chars = 0
+                continue
 
-                    while min_chars < max_chars:
-                        mid_chars = (min_chars + max_chars + 1) // 2
-                        truncated_content = self._truncated_content(content, mid_chars)
-                        test_file_json = json.dumps(
-                            [{"path": path, "content": truncated_content}],
-                            indent=2,
-                        )
-                        test_tokens = self.count_tokens(test_file_json)
-
-                        if test_tokens <= remaining_budget:
-                            min_chars = mid_chars
-                        else:
-                            max_chars = mid_chars - 1
-
-                    if min_chars > 0:
-                        final_content = self._truncated_content(content, min_chars)
-                        truncated_files.append({"path": path, "content": final_content})
-                        final_file_json = json.dumps(
-                            [{"path": path, "content": final_content}],
-                            indent=2,
-                        )
-                        remaining_budget -= self.count_tokens(final_file_json)
-
-                # Skip remaining files as we're at the limit
+            # File doesn't fit; attempt truncated version if we have reasonable space
+            if remaining_budget <= 1000:
                 break
 
-        final_tokens = count_files_tokens(truncated_files)
-        assert final_tokens <= max_tokens, f"File truncation failed: {final_tokens} tokens > {max_tokens} limit"
+            # Binary search to find max content that fits
+            max_chars = len(content)
+            min_chars = 0
+            while min_chars < max_chars:
+                mid_chars = (min_chars + max_chars + 1) // 2
+                truncated_content = self._truncated_content(content, mid_chars)
+                test_file_json = json.dumps(
+                    [{"path": path, "content": truncated_content}],
+                    indent=2,
+                )
+                test_tokens = self.count_tokens(test_file_json)
+                if test_tokens <= remaining_budget:
+                    min_chars = mid_chars
+                else:
+                    max_chars = mid_chars - 1
 
-        return truncated_files
+            if min_chars > 0:
+                final_content = self._truncated_content(content, min_chars)
+                if isinstance(original, FileInfo):
+                    truncated_files_models.append(FileInfo(path=path, content=final_content))
+                else:
+                    truncated_files_dicts.append({"path": path, "content": final_content})
+                final_file_json = json.dumps(
+                    [{"path": path, "content": final_content}],
+                    indent=2,
+                )
+                remaining_budget -= self.count_tokens(final_file_json)
+            # Continue loop; we may still try smaller files
+
+        # Compose result preserving input element type
+        result: list[dict[str, str]] | list[FileInfo]
+        if files_info and isinstance(files_info[0], FileInfo):
+            result = truncated_files_models
+        else:
+            result = truncated_files_dicts
+
+        final_tokens = count_files_tokens(result)
+        assert final_tokens <= max_tokens, f"File truncation failed: {final_tokens} tokens > {max_tokens} limit"
+        return result
 
     def truncate_file_by_bytes(
         self,

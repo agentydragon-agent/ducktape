@@ -1,15 +1,14 @@
 from __future__ import annotations
 
-import asyncio
 import json
 from dataclasses import dataclass
 from typing import Any, Dict, List, Mapping, Optional
 
 from openai import AsyncOpenAI
-from adgn_llm.mini_codex.agent import MiniCodex, ResponsesClient
+from adgn_llm.mini_codex.agent import MiniCodex
 from adgn_llm.mini_codex.mcp_manager import McpManager
 from adgn_llm.mcp.types import ServerSlotSpec
-from adgn_llm.properties.docker_env import properties_docker_spec, PropertiesDockerWiring
+from adgn_llm.properties.docker_env import PropertiesDockerWiring
 
 
 @dataclass
@@ -23,7 +22,7 @@ async def run_prompt_async(
     prompt: str,
     model: str,
     specs: Mapping[str, ServerSlotSpec],
-    client: Optional[AsyncOpenAI] = None,
+    client: AsyncOpenAI,
     capture_transcript: bool = True,
 ) -> AgentResult:
     """Run the prompt using MiniCodex + MCP specs and return an AgentResult.
@@ -32,7 +31,8 @@ async def run_prompt_async(
     - This is the low-level primitive for running prompts through MCP-backed MiniCodex.
     - Returns transcript (list) and final_text (string). Attempts to JSON-parse final_text into `parsed`.
     """
-    client = client or AsyncOpenAI()
+    if client is None:
+        raise ValueError("client must be provided by CLI entry point")
     transcript: List[Dict[str, Any]] = []
     async with McpManager(dict(specs)) as mcp:
         agent = await MiniCodex.create(model=model, mcp=mcp, system="You are a code agent. Be concise.", client=client)
@@ -79,7 +79,7 @@ async def run_prompt_with_wiring_async(
     model: str,
     wiring: PropertiesDockerWiring,
     *,
-    client: Optional[AsyncOpenAI] = None,
+    client: AsyncOpenAI,
     capture_transcript: bool = True,
 ) -> AgentResult:
     specs = {wiring.server_name: wiring.server_spec}

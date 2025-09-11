@@ -53,55 +53,47 @@ Example usage:
 
 ## Specimens format
 
-- Location: `specimens/YYYY-MM-DD-<slug>.md`
-- Slug: derived from the source code / filename (no frontmatter slug)
+Specimens are now expressed as a manifest YAML plus a directory of per-issue Jsonnet files. The canonical, tooling-friendly layout is:
 
-### General
-- Use hierarchical headings without skipping levels; no boilerplate H1 required.
-- Do not duplicate source/scope (they live in issues.libsonnet via rootV2(...)).
-- Keep embedded diffs small (≤ 30 lines per embed).
-- Each finding must sufficiently identify the subject code (file, function - whatever suffices)
-  - It's OK to not use full relative code paths - e.g., if there's only one `write.go`, it's fine to use
-    just that instead of full `internal/llm/tools/write.go`.
-- Name specimens as `YYYY-MM-DD-<slug>.md`.
-- Embedded diffs should be small (≤ 30 lines per embed).
-- Preserve the original reasoning/rationale/intuition as captured when entering the specimen; faithful capture > conciseness. This is the immutable input we may later transform into more standardized forms.
-- Routine duplicate cases can be recorded in shorthand (e.g., group similar trivial instances or “15 cases of ‘imports go to top’ in foo.py”); keep at least one fully reasoned exemplar.
+- manifest.yaml (required)
+  - YAML manifest that describes the specimen source and scope. Example:
+    ```yaml
+    source:
+      vcs: github
+      org: agentydragon
+      repo: ducktape
+      ref: <commit-sha>
+    scope:
+      include:
+        - 'wt/**'
+    ```
+  - The loader (src/adgn_llm/properties/specimen_utils.py) reads this manifest and materializes a deterministic archive for inspection.
 
-### Files
-- `README.md` (optional): free-form narrative / context
-- `covered.md`: findings under defined properties
-- `not_covered_yet.md`: findings outside currently defined properties
-- `false_positives.md`: findings that should not be flagged
+- issues/ (required for tooling)
+  - Per-issue Jsonnet files: `issues/<issue-id>.libsonnet`.
+  - Each .libsonnet must be a single Jsonnet expression that returns one Issue object built with the helpers in `specimen_issues.libsonnet` (import with: `local I = import '../../specimen_issues.libsonnet';`).
+  - Preferred constructors: `I.issueOneOccurrence`, `I.issueWithOccurrences`, `I.issueOccurrencesFromLines`, `I.issueOccurrencesFromFiles`. The v2 helper `rootV2(source, scope, items)` is available for programmatic assembly.
+  - Line anchors accept numbers (single line), `[start,end]` spans, or objects with `start_line`/`end_line`; the Jsonnet helpers normalize these into LineRange objects the Python loader expects.
 
-#### `issues.libsonnet`: unified specimen document (required)
-- Use rootV2(source, scope, items) from `specimen_issues.libsonnet`
-  - source: one of `sourceGit(url, ref)` | `sourceGitHub(org, repo, ref)` | `sourceLocal(root='.')`
-  - scope: `scope(include=[...], exclude=[...]|null)`
-  - items: array built with `issueOneOccurrence(...)` / `issueOccurrencesFromLines(...)` / `issueWithOccurrences(...)`
+- legacy support
+  - A single-file `issues.libsonnet` (monolithic) is still supported for backward compatibility, but the recommended approach is per-issue Jsonnet under `issues/`.
+  - Human-facing files like `covered.md`, `not_covered_yet.md`, and `false_positives.md` may remain as optional notes during migration, but they are NOT the canonical machine-readable source for tooling.
 
-#### `README.md` (optional)
-- Optional, free‑form notes for humans; whatever context is useful (e.g., short narrative, relevant links).
-- Do not duplicate `covered.md` / `not_covered_yet.md` / `false_positives.md`.
+Authoring rules (short)
 
-#### `covered.md`: findings already covered by defined properties.
-- Link the relevant property near the start of each item.
-- Include an item here only if the finding clearly satisfies that property's exact definition text (predicate and/or acceptance criteria and/or examples) as committed.
-- Do not include full verbatim quotes by default. Reference the property and use a concise paraphrase; include a minimal quote only when needed to disambiguate. If you cannot map it clearly to a property, move it to `not_covered_yet.md` or choose a correct property.
-- Property links must resolve to existing files under `properties/**`.
+- Issue id must match the filename stem (e.g., `issues/iss-032.libsonnet` → `id: 'iss-032'` or omit `id` and let the loader fill it).
+- Use the Jsonnet helpers from `specimen_issues.libsonnet` to normalize ranges and occurrence-level notes.
+- Avoid external network imports in Jsonnet; the loader uses a controlled importer that resolves relative imports and a package library directory only.
 
-#### `not_covered_yet.md`: confirmed findings not yet covered by defined properties.
-- Include items that do not exactly match any existing property's definition text; do not force tangential matches.
-- Optionally propose property name or brief sketch of rationale + what's wrong / why.
+Migration guidance
 
-#### `false_positives.md`: issues previously flagged that should not be flagged.
-- Provide a rationale (why acceptable) and subject code pointers.
+- When converting legacy `covered.md` / `not_covered_yet.md` findings, create explicit `issues/*.libsonnet` entries that capture rationale and file/line anchors. Keep `covered.md` as an optional human note while migrating; mark it legacy once issues are represented in `issues/`.
 
 ## Behavioral layer and scoping
 
-- Evaluation/refactoring scope (e.g., “only evaluate/refactor starting from edited hunks”) is handled by agent behavioral instructions (critics/reviewers/fixers), orthogonal to property definitions.
-- Properties should be scope-agnostic; avoid embedding “agent-edited only” limits in property docs.
-- Tooling (e.g., codex_checker — check/fix modes) supplies a freeform scope to agents:
+- Evaluation/refactoring scope (for example, “only evaluate/refactor starting from edited hunks”) is handled by agent behavioral instructions (critics/reviewers/fixers) and is orthogonal to property definitions.
+- Properties should remain scope-agnostic; avoid embedding "agent-edited only" limits in property docs.
+- Tooling supplies a freeform scope to agents:
   - If scope resolves to a diff range: the diff hunks define where to start reviewing/editing. Allow minimal cascades and necessary out-of-hunk edits to bring all touched code into compliance, then stop.
   - If scope resolves to static files: evaluate/edit the full files.
 
@@ -142,20 +134,20 @@ flowchart TD
 
 ## Specimen inspection (for assistants)
 
-Use the specimen shell to safely inspect a specimen’s hydrated workspace inside an isolated container (no network). The workspace is mounted at /workspace and property definitions at /props.
+Use the `specimen-exec` command to inspect a hydrated specimen’s workspace inside an isolated container (no network). The workspace is mounted at /workspace and property definitions at /props.
 
 Examples
 - Open interactive shell:
-  - adgn-properties specimen-shell 2025-09-02-ducktape_wt
+  - adgn-properties specimen-exec 2025-09-02-ducktape_wt
 - Execute a one-off command (after "--"):
-  - adgn-properties specimen-shell 2025-09-02-ducktape_wt -- sed -n '18,36p' /workspace/wt/wt/server/github_client.py
+  - adgn-properties specimen-exec 2025-09-02-ducktape_wt -- sed -n '18,36p' /workspace/wt/wt/server/github_client.py
 - Numbered ranges with nl + sed:
-  - adgn-properties specimen-shell 2025-09-02-ducktape_wt -- nl -ba --number-width=6 --number-format=ln /workspace/wt/wt/shared/models.py | sed -n '130,170p'
+  - adgn-properties specimen-exec 2025-09-02-ducktape_wt -- nl -ba --number-width=6 --number-format=ln /workspace/wt/wt/shared/models.py | sed -n '130,170p'
 - Ripgrep search (rg is baked into the image):
-  - adgn-properties specimen-shell 2025-09-02-ducktape_wt -- rg -n "WorktreeService\.create_worktree\(|execute_post_creation_script\(" /workspace/wt --glob '!/workspace/wt/tests/**'
+  - adgn-properties specimen-exec 2025-09-02-ducktape_wt -- rg -n "WorktreeService\.create_worktree\(|execute_post_creation_script\(" /workspace/wt --glob '!/workspace/wt/tests/**'
 - Multi-line convenience via heredoc:
-  - adgn-properties specimen-shell 2025-09-02-ducktape_wt -- bash -lc $'nl -ba /workspace/wt/wt/server/wt_server.py | sed -n \"220,240p\"; echo ---; sed -n \"2035,2060p\" /workspace/wt/wt/server/wt_server.py'
+  - adgn-properties specimen-exec 2025-09-02-ducktape_wt -- bash -lc $'nl -ba /workspace/wt/wt/server/wt_server.py | sed -n \"220,240p\"; echo ---; sed -n \"2035,2060p\" /workspace/wt/wt/server/wt_server.py'
 
 Notes
-- Prefer specimen-shell for reading/grepping specimen files. Avoid mounting host paths directly.
+- Prefer specimen-exec for reading/grepping specimen files. Avoid mounting host paths directly.
 - For quoting-heavy commands, pass a single string after -- and let bash -lc interpret it, or use a $''-quoted heredoc as above.

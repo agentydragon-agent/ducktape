@@ -23,6 +23,7 @@ Requirements:
 - Discover the container working directory and read anchored lines with sufficient surrounding context using the available MCP tools (do not hardcode tool names).
 - For each listed property, verify the anchored code truly violates the definition according to the property wording.
 - If any listed property does not apply, explain briefly why.
+- Property labeling: If the occurrence appears mislabeled (the listed properties do not apply but other committed properties do), set suggested_properties in submit_result to the list of property IDs you recommend instead. If labeling is correct, leave suggested_properties null. Use only committed property IDs from the repository (do not invent names).
 - Anchors and entity coverage:
   - Treat all line numbers as 1-based (both input anchors and any corrected_anchors you return).
   - Verify that the provided range precisely covers the affected construct in code (e.g., class/def/statement) that manifests the issue; if it does not, adjust it.

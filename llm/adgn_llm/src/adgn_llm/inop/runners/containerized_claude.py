@@ -79,7 +79,10 @@ def _monkey_patch_claude_sdk_for_containerization():
     def _patched_find_cli(self) -> str:
         if not isinstance(self._options, ContainerizedClaudeCodeOptions):
             raise RuntimeError("No claude_binary in options")
-        return self._options.claude_binary
+        bin_path = self._options.claude_binary
+        if not bin_path:
+            raise RuntimeError("claude_binary not set in options")
+        return bin_path
 
     SubprocessCLITransport._find_cli = _patched_find_cli
 
@@ -128,9 +131,9 @@ class TaskClaude:
         self._seed_task = seed_task
         self._docker_client = docker.from_env()
         self._container = None
-        self._message_queue = asyncio.Queue()
+        self._message_queue: asyncio.Queue[Any] = asyncio.Queue()
         self._query_task = None
-        self._docker_image = seed_task.docker_image
+        self._docker_image: str | None = seed_task.docker_image
         self._git_volume_name = "claude_shared_git"
         self._logger = logger
         self._exclusion_spec = pathspec.PathSpec.from_lines(
@@ -156,6 +159,12 @@ class TaskClaude:
             raise RuntimeError(
                 "Container not started - TaskClaude must be used as context manager",
             )
+
+    def _container_or_raise(self):
+        c = self._container
+        if c is None:
+            raise RuntimeError("Container not started")
+        return c
 
     def _get_container_volumes(self, git_readonly: bool) -> dict:
         """Get volume configuration for container with persistent logging.
@@ -196,6 +205,8 @@ class TaskClaude:
         Centralizes container creation to eliminate duplication and ensure
         consistent settings across initial and remounted containers.
         """
+        if self._docker_image is None:
+            raise RuntimeError("Docker image not set")
         return self._docker_client.containers.create(
             self._docker_image,
             command=[
@@ -215,29 +226,32 @@ class TaskClaude:
 
         # Validate running status
         try:
-            self._container.reload()
-            if self._container.status != "running":
-                logs = self._container.logs().decode("utf-8", errors="replace")
+            c = self._container_or_raise()
+            c.reload()
+            if c.status != "running":
+                logs = c.logs().decode("utf-8", errors="replace")
                 self._logger.error(
                     "Container not running - logs:",
-                    container_id=self._container.id,
-                    status=self._container.status,
+                    container_id=c.id,
+                    status=c.status,
                     logs=logs,
                 )
                 raise RuntimeError(
-                    f"Container {self._container.id} is not running, status: {self._container.status}",
+                    f"Container {c.id} is not running, status: {c.status}",
                 )
         except Exception as e:
-            raise RuntimeError(f"Container {self._container.id} check failed: {e}")
+            cid = self._container.id if self._container else "<none>"
+            raise RuntimeError(f"Container {cid} check failed: {e}")
 
+        c = self._container_or_raise()
         self._logger.info(
             "Query starting",
-            container_id=self._container.id,
-            container_status=self._container.status,
+            container_id=c.id,
+            container_status=c.status,
         )
 
         options = ContainerizedClaudeCodeOptions(
-            allowed_tools=None,
+            allowed_tools=[],
             cwd=str(self._output_dir),
             max_turns=self.config.get("max_turns", 30),
             permission_mode="bypassPermissions",
@@ -252,8 +266,9 @@ class TaskClaude:
         self._ensure_container_ready()
 
         # Set up environment variables for wrapper script execution
+        c = self._container_or_raise()
         wrapper_env = {
-            "CLAUDE_CONTAINER_ID": self._container.id,
+            "CLAUDE_CONTAINER_ID": c.id,
             "DOCKER_BINARY": self._docker_path,
         }
 
@@ -277,14 +292,11 @@ class TaskClaude:
         Writes system prompt to container /workspace via bind mount.
         Much simpler and safer than Docker API tar archives.
         """
-        if not self._container:
-            raise RuntimeError(
-                "Container must be started before setting up system prompt",
-            )
+        c = self._container_or_raise()
 
         self._logger.debug(
             "Writing system prompt to container",
-            container_id=self._container.id,
+            container_id=c.id,
             prompt_length=len(system_prompt),
         )
 
@@ -452,16 +464,17 @@ class TaskClaude:
             raise FileNotFoundError(f"{script_type} script not found: {setup_script}")
 
         # Debug: Log the exact command being executed
+        c = self._container_or_raise()
         cmd_args = [
             str(setup_script),
-            self._container.id,
+            c.id,
             self.task_id,
             str(self._output_dir),
         ]
         self._logger.info(
             f"Running {script_type.lower()} script",
             script=str(setup_script),
-            container_id=self._container.id,
+            container_id=c.id,
             task_id=self.task_id,
             cmd_args=cmd_args,
             script_permissions=oct(setup_script.stat().st_mode),
@@ -470,7 +483,7 @@ class TaskClaude:
 
         process = await asyncio.create_subprocess_exec(
             str(setup_script),
-            self._container.id,
+            c.id,
             self.task_id,
             str(self._output_dir),
             stdout=asyncio.subprocess.PIPE,
@@ -478,6 +491,8 @@ class TaskClaude:
         )
 
         # Stream output in real-time
+        if process.stdout is None:
+            raise RuntimeError("Setup script process has no stdout pipe")
         while True:
             try:
                 line = await process.stdout.readline()
@@ -487,7 +502,7 @@ class TaskClaude:
                 if line_text:  # Only log non-empty lines
                     self._logger.info(
                         log_prefix.lower(),
-                        container_id=self._container.id,
+                        container_id=c.id,
                         output=line_text,
                     )
             except UnicodeDecodeError as e:
@@ -496,7 +511,7 @@ class TaskClaude:
                     "Unicode decode error in setup script output",
                     error=str(e),
                     line_bytes=line.hex() if line else "None",
-                    container_id=self._container.id,
+                    container_id=c.id,
                     stack_trace=stack_trace,
                 )
                 # Continue processing despite decode error
@@ -507,16 +522,16 @@ class TaskClaude:
         if exit_code != 0:
             self._logger.error(
                 f"{script_type} script failed - CONTAINER LEFT RUNNING FOR DEBUG",
-                container_id=self._container.id,
+                container_id=c.id,
                 exit_code=exit_code,
-                debug_hint=f"Run: docker logs {self._container.id}",
+                debug_hint=f"Run: docker logs {c.id}",
             )
             raise RuntimeError(
                 f"{script_type} script failed with exit code {exit_code}",
             )
         self._logger.info(
             f"{script_type} script completed successfully",
-            container_id=self._container.id,
+            container_id=c.id,
         )
 
     async def _run_pre_task_always_setup(self):
@@ -544,9 +559,10 @@ class TaskClaude:
         if not commands or not commands.strip():
             return
 
+        c = self._container_or_raise()
         self._logger.info(
             "Running pre-task commands",
-            container_id=self._container.id,
+            container_id=c.id,
             commands_preview=commands[:100],
         )
 
@@ -554,7 +570,7 @@ class TaskClaude:
         process = await asyncio.create_subprocess_exec(
             "docker",
             "exec",
-            self._container.id,
+            c.id,
             "/bin/bash",
             "-c",
             commands,
@@ -563,6 +579,8 @@ class TaskClaude:
         )
 
         # Stream output in real-time
+        if process.stdout is None:
+            raise RuntimeError("Pre-task commands process has no stdout pipe")
         while True:
             try:
                 line = await process.stdout.readline()
@@ -572,14 +590,14 @@ class TaskClaude:
                 if line_text:
                     self._logger.info(
                         "pre-task-cmd",
-                        container_id=self._container.id,
+                        container_id=c.id,
                         output=line_text,
                     )
             except UnicodeDecodeError as e:
                 self._logger.error(
                     "Unicode decode error in pre-task commands output",
                     error=str(e),
-                    container_id=self._container.id,
+                    container_id=c.id,
                 )
                 continue
 
@@ -588,13 +606,13 @@ class TaskClaude:
         if exit_code != 0:
             self._logger.error(
                 "Pre-task commands failed",
-                container_id=self._container.id,
+                container_id=c.id,
                 exit_code=exit_code,
             )
             raise RuntimeError(f"Pre-task commands failed with exit code {exit_code}")
         self._logger.info(
             "Pre-task commands completed successfully",
-            container_id=self._container.id,
+            container_id=c.id,
         )
 
     async def _remount_git_readonly(self):
@@ -704,7 +722,7 @@ class TaskClaude:
 
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(self, _exc_type, _exc_val, _exc_tb):
         """Context manager exit - cleanup container and wrapper."""
         # Stop query task if running
         if self._query_task and not self._query_task.done():

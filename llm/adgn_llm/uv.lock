@@ -13,8 +13,10 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "aiolimiter" },
+    { name = "aiosqlite" },
     { name = "anthropic" },
     { name = "anyio" },
+    { name = "canonicaljson" },
     { name = "claude-code-sdk" },
     { name = "docker" },
     { name = "gitpython" },
@@ -61,8 +63,10 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "aiolimiter", specifier = ">=1.1.0" },
+    { name = "aiosqlite", specifier = ">=0.18.0" },
     { name = "anthropic" },
     { name = "anyio", specifier = ">=4.4" },
+    { name = "canonicaljson", specifier = ">=1.6.0" },
     { name = "claude-code-sdk", specifier = "<=0.0.21" },
     { name = "docker", specifier = ">=7.0.0" },
     { name = "gitpython", specifier = ">=3.1.43" },
@@ -108,6 +112,18 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/f1/23/b52debf471f7a1e42e362d959a3982bdcb4fe13a5d46e63d28868807a79c/aiolimiter-1.2.1.tar.gz", hash = "sha256:e02a37ea1a855d9e832252a105420ad4d15011505512a1a1d814647451b5cca9", size = 7185, upload-time = "2024-12-08T15:31:51.496Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/f3/ba/df6e8e1045aebc4778d19b8a3a9bc1808adb1619ba94ca354d9ba17d86c3/aiolimiter-1.2.1-py3-none-any.whl", hash = "sha256:d3f249e9059a20badcb56b61601a83556133655c11d1eb3dd3e04ff069e5f3c7", size = 6711, upload-time = "2024-12-08T15:31:49.874Z" },
+]
+
+[[package]]
+name = "aiosqlite"
+version = "0.21.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/13/7d/8bca2bf9a247c2c5dfeec1d7a5f40db6518f88d314b8bca9da29670d2671/aiosqlite-0.21.0.tar.gz", hash = "sha256:131bb8056daa3bc875608c631c678cda73922a2d4ba8aec373b19f18c17e7aa3", size = 13454, upload-time = "2025-02-03T07:30:16.235Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f5/10/6c25ed6de94c49f88a91fa5018cb4c0f3625f31d5be9f771ebe5cc7cd506/aiosqlite-0.21.0-py3-none-any.whl", hash = "sha256:2549cf4057f95f53dcba16f2b64e8e2791d7e1adedb13197dd8ed77bb226d7d0", size = 15792, upload-time = "2025-02-03T07:30:13.6Z" },
 ]
 
 [[package]]
@@ -291,6 +307,15 @@ wheels = [
 [package.optional-dependencies]
 css = [
     { name = "tinycss2" },
+]
+
+[[package]]
+name = "canonicaljson"
+version = "2.0.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/a8/f2/2835b7ab464988d1f85e351a19c4d6b2e4c317ba8484ebd2a311850eab8c/canonicaljson-2.0.0.tar.gz", hash = "sha256:e2fdaef1d7fadc5d9cb59bd3d0d41b064ddda697809ac4325dced721d12f113f", size = 10716, upload-time = "2023-03-15T01:51:52.883Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e5/54/346f681c24a9c3a08e2e74dcee2555ccd1081705b46f791f7b228e177d06/canonicaljson-2.0.0-py3-none-any.whl", hash = "sha256:c38a315de3b5a0532f1ec1f9153cd3d716abfc565a558d00a4835428a34fca5b", size = 7921, upload-time = "2023-03-15T01:51:50.931Z" },
 ]
 
 [[package]]

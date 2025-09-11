@@ -64,21 +64,21 @@ I.issueOneOccurrence(
 
 Make sure to properly respect classification into:
 
-- `covered.md` (= issues that are violations of already existing properties - in `definitions/**`),
+- `covered.md` (= issues that are violations of already existing properties - in `props/**`),
 - `not_covered.md` (= issues that would not clearly fall under already existing properties),
 - `false_positives.md` (properties some critique flagged that are not actually problematic).
 
 User may give you a mix. Make sure to properly classify each issue.
 
-**IMPORTANT**: Stick to the **ACTUAL** wording of the definitions **AS THEY EXIST** in `definitions/**.md`.
-Do not invent new non-existant properties. Do not stretch definitions beyond what the wording clearly says.
+**IMPORTANT**: Stick to the **ACTUAL** wording of the props **AS THEY EXIST** in `props/**.md`.
+Do not invent new non-existant properties. Do not stretch props beyond what the wording clearly says.
 If a finding only tangentially touches on a property but someone just asked "find every place this code
 violates this property" would not clearly point it out as "yes, here the property definition is clearly violated",
 it does not fall under that property.
 
 ## Process
 
-1. Read **ALL** property definition files in `definitions/**.md` to make sure you know the *actual definition wording*.
+1. Read **ALL** property definition files in `props/**.md` to make sure you know the *actual definition wording*.
 2. Find if we have the source code of the specimen already checked out. Ensure the specimen contains `issues.libsonnet`; use any `work` subdir if present, or hydrate fresh per tooling.
 3. Check if finding submitted by user is already documented; if it is, omit it and tell the user.
 4. Add finding to the proper file (`covered/not_covered/false_positives.md`) following guidelines in @README.md.

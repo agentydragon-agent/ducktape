@@ -913,7 +913,7 @@ async def run_eval(
         },
     }
 
-    def compute_and_write_summary(final: bool = False) -> dict[str, Any]:
+    def compute_and_write_summary(_final: bool = False) -> dict[str, Any]:
         # Compute mean and 95% CI (normal approx)
         mean = sum(scores) / len(scores) if scores else 0.0
         var = sum((x - mean) ** 2 for x in scores) / (len(scores) - 1) if len(scores) > 1 else 0.0

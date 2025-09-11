@@ -7,6 +7,7 @@ import uuid
 from pathlib import Path
 
 import structlog
+from typing import Any
 from claude_code_sdk import (
     AssistantMessage as ClaudeAssistantMessage,
 )
@@ -14,6 +15,7 @@ from claude_code_sdk import (
     ResultMessage,
     ToolResultBlock,
     ToolUseBlock,
+    TextBlock,
 )
 
 from adgn_llm.inop.engine.models import (
@@ -23,6 +25,7 @@ from adgn_llm.inop.engine.models import (
     SeedTask,
     TaskDefinition,
     TaskSetup,
+    TaskType,
     ToolCall,
     ToolResult,
     TrajectoryItem,
@@ -47,12 +50,12 @@ class ClaudeRunner(AgentRunner):
                 - strace_enabled: Whether to enable strace debugging
         """
         super().__init__(runner_id, config)
-        self.task_claude = None
-        self.current_task = None
+        self.task_claude: TaskClaude | None = None
+        self.current_task: TaskDefinition | None = None
         # Docker image will be set from task setup during setup()
         # TODO: Consider supporting (task, runner) specific Docker configs in the future
-        self.docker_image = None
-        self.docker_container = None  # For git clone support
+        self.docker_image: str | None = None
+        self.docker_container: Any | None = None  # For git clone support
 
         # Historical note: containerized_claude.py previously used a separate
         # git volume mounted at /git for pre-cloned repositories. This was an
@@ -67,7 +70,9 @@ class ClaudeRunner(AgentRunner):
             task: Task to execute
             task_type_config: Configuration from task type
         """
-        setup, _ = task.resolve_config({task.type: task_type_config})
+        # TaskType mapping requires TaskType values, not raw dicts
+        ttype = TaskType(name=task.type, grading=task_type_config.get("grading"))
+        setup, _ = task.resolve_config({task.type: ttype})
 
         # Create workspace directory
 
@@ -127,9 +132,9 @@ class ClaudeRunner(AgentRunner):
 
         trajectory: list[TrajectoryItem] = []
         start_time = time.time()
-        total_cost = 0.0
+        total_cost: float = 0.0
         success = True
-        error_message = None
+        error_message: str | None = None
 
         try:
             # Use TaskClaude as context manager for proper container lifecycle
@@ -159,8 +164,11 @@ class ClaudeRunner(AgentRunner):
                         if isinstance(content, str):
                             text = content
                         elif isinstance(content, list):
-                            # Extract text from content blocks (expect correct types)
-                            text_parts = [block.text for block in content]
+                            # Extract text from content blocks (only TextBlock has .text)
+                            text_parts: list[str] = []
+                            for block in content:
+                                if isinstance(block, TextBlock):
+                                    text_parts.append(block.text)
                             text = "\n".join(text_parts)
 
                         if text:
@@ -195,9 +203,12 @@ class ClaudeRunner(AgentRunner):
                         # Final result message with cost and status
                         if message.is_error:
                             success = False
-                            error_message = str(message.error)
+                            # Prefer 'error_message' if present; fallback to generic string
+                            err = getattr(message, "error_message", None)
+                            error_message = str(err) if err is not None else "Claude reported an error"
 
-                        total_cost = message.total_cost_usd
+                        # total_cost_usd may be Optional; coerce to float
+                        total_cost = float(getattr(message, "total_cost_usd", 0.0) or 0.0)
 
                         # ResultMessage indicates completion
                         break

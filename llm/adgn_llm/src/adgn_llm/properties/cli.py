@@ -24,16 +24,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from jinja2 import Environment, PackageLoader, select_autoescape
 from adgn_llm.properties.prompt_utils import build_input_schemas_json
+from typing import Mapping
 
 from adgn_llm.logging_config import configure_logging
 import tiktoken
 from openai import AsyncOpenAI
-from adgn_llm.mini_codex.agent import MiniCodex, ResponsesClient
 from adgn_llm.properties.agent_runner import run_prompt_async
-from adgn_llm.mini_codex.mcp_manager import McpManager
-from typing import Mapping, Any, cast
-from collections.abc import AsyncIterator
-from shlex import quote as shlex_quote
 from adgn_llm.mcp.types import ServerSlotSpec
 
 from .specimen_utils import (
@@ -43,6 +39,7 @@ from .specimen_utils import (
     load_manifest,
     resolve_manifest_arg,
     ensure_archive_for_specimen_slug,
+    properties_root,
     Occurrence,
     LineRange,
     IssueCore,
@@ -63,8 +60,6 @@ def read_embedded_paths(paths: list[Path]) -> str:
             continue
         blocks.append("\n".join([f'<file path=":/{p}">', content, "</file>"]))
     return "\n\n".join(blocks)
-
-
 
 
 # --- Jinja2 template helpers ---
@@ -95,7 +90,12 @@ def _build_role_prompt(
     available_tools: list[str] | None,
 ) -> str:
     """Build prompt for mode: 'find' | 'open' | 'discover'. Computes schemas_json internally."""
-    from adgn_llm.properties.specimen_utils import Occurrence, LineRange, IssueCore  # local import to avoid cycles
+    from adgn_llm.properties.specimen_utils import (
+        Occurrence,
+        LineRange,
+        IssueCore,
+    )  # local import to avoid cycles
+
     schemas_json = build_input_schemas_json([Occurrence, LineRange, IssueCore])
     template = "discover.j2.md" if mode == "discover" else ("open.j2.md" if mode == "open" else "find.j2.md")
     return _render_prompt_template(
@@ -286,11 +286,7 @@ def build_grade_prompt(
     )
 
 
-def build_cmd(
-    model: str,
-    workdir: Path,
-    opts: BuildOptions,
-) -> list[str]:
+def build_cmd(model: str, workdir: Path, opts: BuildOptions) -> list[str]:
     # Use codex exec with long flags for model/sandbox; pass configs via -c
     cmd: list[str] = [
         "codex",
@@ -336,13 +332,19 @@ async def _run_minicodex_simple(
 
 
 async def _run_check_minicodex_async(
-    workdir: Path, prompt: str, *, model: str, output_final_message: str | None, final_only: bool
+    workdir: Path,
+    prompt: str,
+    *,
+    model: str,
+    output_final_message: str | None,
+    final_only: bool,
+    client: AsyncOpenAI,
 ) -> int:
     # Mount the provided workdir read-only and property definitions read-only
     wiring = properties_docker_spec(workdir, mount_properties=True)
     specs = {wiring.server_name: wiring.server_spec}
     # Use agent_runner to execute prompt via MCP; keep event loop in CLI
-    res = await run_prompt_async(prompt, model, specs, client=AsyncOpenAI(), capture_transcript=not final_only)
+    res = await run_prompt_async(prompt, model, specs, client=client, capture_transcript=not final_only)
     # Write final message to file if requested
     if output_final_message:
         Path(output_final_message).write_text(res.final_text, encoding="utf-8")
@@ -384,6 +386,7 @@ async def _run_specimen_minicodex_async(
     mode: str,
     final_only: bool,
     output_final_message: str | None,
+    client: AsyncOpenAI,
 ) -> int:
     # Hydrate specimen snapshot under ~/.cache to avoid Docker volume quirks
     man = load_manifest(manifest_path)
@@ -424,7 +427,7 @@ async def _run_specimen_minicodex_async(
             specs,
             output_final_message=output_final_message,
             final_only=final_only,
-            client=AsyncOpenAI(),
+            client=client,
         )
     finally:
         # Clean up the extracted workspace dir
@@ -443,6 +446,7 @@ async def _run_specimen_grade_minicodex_async(
     final_only: bool,
     output_final_message: str | None,
     gitconfig: str | None,
+    client: AsyncOpenAI,
 ) -> int:
     man = load_manifest(manifest_path)
     scope_text = build_scope_text(man.scope.include, man.scope.exclude)
@@ -462,9 +466,8 @@ async def _run_specimen_grade_minicodex_async(
         canonical_text,
         critique_text,
         wiring=PropertiesDockerWiring(
-            _server_name="none",
             server_spec=None,  # type: ignore[arg-type]
-            _working_dir=Path("/"),
+            working_dir=Path("/"),
             definitions_container_dir=None,
             image_name="n/a",
         ),
@@ -491,7 +494,7 @@ async def _run_specimen_grade_minicodex_async(
         specs,
         output_final_message=output_final_message,
         final_only=final_only,
-        client=AsyncOpenAI(),
+        client=client,
     )
 
 
@@ -504,6 +507,7 @@ def main(argv: list[str] | None = None) -> int:
 
     # Single, centralized logging config (structlog -> stdlib; console WARNING; optional file)
     configure_logging()
+    client = AsyncOpenAI()
 
     parser = argparse.ArgumentParser(
         description="adgn-llm codex properties CLI",
@@ -691,8 +695,7 @@ def main(argv: list[str] | None = None) -> int:
         "lint-issue",
         help="Lint a single issue in a specimen (mini_codex + docker_exec)",
         description=(
-            "Resolve specimen source+scope from manifest.yaml, fresh checkout/copy, and run a one-off \n"
-            "mini_codex agent inside a container to lint exactly one issue against the property definitions."
+            "Lint/check a single instance of an issue on a specimen - for propery property definition linkage, etc."
         ),
     )
     p_spec_lint.add_argument(
@@ -715,24 +718,6 @@ def main(argv: list[str] | None = None) -> int:
         help="Path to a gitconfig to use for private repo fallback (shallow git)",
     )
 
-    # New command: specimen-read — print a file slice from hydrated specimen inside container
-    p_spec_read = sub.add_parser(
-        "specimen-read",
-        help="Read a file range from a hydrated specimen (executes in container)",
-        description=(
-            "Hydrate a specimen workspace and print the specified line range from a relative path, "
-            "executed inside the standard properties container."
-        ),
-    )
-    p_spec_read.add_argument("specimen", help="Specimen name/dir/issues.libsonnet path")
-    p_spec_read.add_argument("rel_path", help="Path relative to specimen root (e.g., wt/wt/server/wt_server.py)")
-    p_spec_read.add_argument("start", type=int, help="Start line (1-based)")
-    p_spec_read.add_argument("end", type=int, help="End line (inclusive, 1-based)")
-    p_spec_read.add_argument(
-        "--gitconfig",
-        help="Path to a gitconfig to use for private repo fallback (shallow git)",
-    )
-
     # New command: eval-lint-issue — run eval harness for a single issue with cases file
     p_eval = sub.add_parser(
         "eval-lint-issue",
@@ -749,12 +734,12 @@ def main(argv: list[str] | None = None) -> int:
     p_eval.add_argument("--model", default="gpt-5")
     p_eval.add_argument("--gitconfig")
 
-    # New command: specimen-shell — interactive bash/sh inside the hydrated specimen container (RW mount)
+    # New command: specimen-exec — execute a command inside the hydrated specimen container (RW mount)
     p_spec_shell = sub.add_parser(
-        "specimen-shell",
-        help="Open an interactive shell or execute a command in a container with the hydrated specimen mounted",
+        "specimen-exec",
+        help="Execute a command in a container with the hydrated specimen mounted",
         description=(
-            "Hydrate specimen into a temporary workspace and either open an interactive shell or execute a provided command\n"
+            "Hydrate specimen into a temporary workspace and execute the provided command\n"
             "inside a container with the workspace mounted at /workspace (read-write). Container uses no network and is removed on exit."
         ),
     )
@@ -774,7 +759,7 @@ def main(argv: list[str] | None = None) -> int:
     p_spec_shell.add_argument(
         "cmd",
         nargs=argparse.REMAINDER,
-        help="Optional command to run after '--'; if omitted, opens interactive bash",
+        help="Command to run after '--' (required)",
     )
 
     # Eval harness: run all registered datasets (no options to keep CLI stable)
@@ -789,7 +774,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "lint-issue":
         # Late import via importlib to avoid circular dependency while keeping lints happy
         mod = importlib.import_module("adgn_llm.properties.lint_issue")
-        client = AsyncOpenAI()
+        client = client
         return asyncio.run(
             mod.run_specimen_lint_issue_async(
                 args.specimen,
@@ -804,14 +789,14 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "eval-all":
         eval_mod = importlib.import_module("adgn_llm.properties.eval_harness")
-        out_dir = asyncio.run(
+        # Run evals silently (no rollout console output); artifacts written under runs/evals/
+        asyncio.run(
             eval_mod.run_all_evals(
                 model="gpt-5",
                 gitconfig=None,
-                client=AsyncOpenAI(),
+                client=client,
             )
         )
-        print(f"Eval index written to: {out_dir / 'index.json'}")
         return 0
 
     if args.command == "eval-lint-issue":
@@ -829,15 +814,30 @@ def main(argv: list[str] | None = None) -> int:
         except Exception as e:
             print(f"ERROR: failed to parse cases JSON: {e}")
             return 2
-        client = AsyncOpenAI()
+        client = client
         out_dir = getattr(args, "out_dir", None)
+        # Resolve optional gitconfig with fallback to properties/gitconfig.local
+        gitconfig_path = getattr(args, "gitconfig", None)
+        if gitconfig_path is not None:
+            p = Path(gitconfig_path).expanduser().resolve()
+            if not p.exists():
+                print(f"ERROR: --gitconfig file not found: {p}")
+                return 2
+            gitconfig_path = str(p)
+        else:
+            try:
+                cfg = properties_root() / "gitconfig.local"
+                if cfg.exists():
+                    gitconfig_path = str(cfg)
+            except Exception:
+                gitconfig_path = None
         path = asyncio.run(
             mod.eval_lint_issue_cases(
                 getattr(args, "specimen"),
                 getattr(args, "issue_id"),
                 cases,
                 model=getattr(args, "model", "gpt-5"),
-                gitconfig=getattr(args, "gitconfig", None),
+                gitconfig=gitconfig_path,
                 client=client,
                 out_dir=out_dir,
             )
@@ -865,6 +865,14 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"ERROR: --gitconfig file not found: {p}")
                 return 2
             gitconfig_path = str(p)
+        # default fallback to properties/gitconfig.local if not provided
+        if gitconfig_path is None:
+            try:
+                cfg = properties_root() / "gitconfig.local"
+                if cfg.exists():
+                    gitconfig_path = str(cfg)
+            except Exception:
+                gitconfig_path = None
         mode = "open" if getattr(args, "allow_general_findings", False) else "find"
         return asyncio.run(
             _run_specimen_minicodex_async(
@@ -875,6 +883,7 @@ def main(argv: list[str] | None = None) -> int:
                 mode=mode,
                 final_only=getattr(args, "final_only", False),
                 output_final_message=getattr(args, "output_final_message", None),
+                client=AsyncOpenAI(),
             )
         )
 
@@ -897,6 +906,14 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"ERROR: --gitconfig file not found: {p}")
                 return 2
             gitconfig_path = str(p)
+        # default fallback to properties/gitconfig.local if not provided
+        if gitconfig_path is None:
+            try:
+                cfg = properties_root() / "gitconfig.local"
+                if cfg.exists():
+                    gitconfig_path = str(cfg)
+            except Exception:
+                gitconfig_path = None
         # Embed existing findings to suppress repeats
         embed_paths = []
         for name in ("covered.md", "not_covered_yet.md"):
@@ -912,6 +929,7 @@ def main(argv: list[str] | None = None) -> int:
                 mode="discover",
                 final_only=getattr(args, "final_only", False),
                 output_final_message=getattr(args, "output_final_message", None),
+                client=AsyncOpenAI(),
             )
         )
 
@@ -938,6 +956,14 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"ERROR: --gitconfig file not found: {p}")
                 return 2
             gitconfig_path = str(p)
+        # default fallback to properties/gitconfig.local if not provided
+        if gitconfig_path is None:
+            try:
+                cfg = properties_root() / "gitconfig.local"
+                if cfg.exists():
+                    gitconfig_path = str(cfg)
+            except Exception:
+                gitconfig_path = None
         return asyncio.run(
             _run_specimen_grade_minicodex_async(
                 manifest_path,
@@ -946,6 +972,7 @@ def main(argv: list[str] | None = None) -> int:
                 final_only=getattr(args, "final_only", False),
                 output_final_message=getattr(args, "output_final_message", None),
                 gitconfig=gitconfig_path,
+                client=AsyncOpenAI(),
             )
         )
 
@@ -992,6 +1019,7 @@ def main(argv: list[str] | None = None) -> int:
                     model=args.model,
                     output_final_message=getattr(args, "output_final_message", None),
                     final_only=args.final_only,
+                    client=client,
                 )
             )
         else:
@@ -1044,93 +1072,8 @@ def main(argv: list[str] | None = None) -> int:
             if out_last_file is not None:
                 print(Path(out_last_file).read_text(encoding="utf-8"))
             return rc
-    if args.command == "specimen-read":
-        base = find_specimens_base()
-        manifest_path = resolve_manifest_arg(args.specimen, base)
-        if manifest_path is None:
-            names = list_specimen_names(base)
-            if not names:
-                print(f"No specimens found under: {base}")
-                return 2
-            print("Available specimens:")
-            for n in names:
-                print(" -", n)
-            return 2
-        # Validate gitconfig if provided
-        gitconfig_path = None
-        if getattr(args, "gitconfig", None):
-            p = Path(args.gitconfig).expanduser().resolve()
-            if not p.exists():
-                print(f"ERROR: --gitconfig file not found: {p}")
-                return 2
-            gitconfig_path = str(p)
 
-        man = load_manifest(manifest_path)
-        content_root: Path | None = None
-        try:
-            # Hydrate
-            content_root = _hydrate_specimen_home_workspace(manifest_path, man, gitconfig_path)
-            # Validate target path
-            target = (content_root / args.rel_path).resolve()
-            try:
-                target.relative_to(content_root)
-            except Exception:
-                print(f"ERROR: rel_path escapes workspace: {target}")
-                return 2
-            if not target.exists() or not target.is_file():
-                print(f"ERROR: file not found in specimen workspace: {target}")
-                return 2
-
-            # Start container
-            try:
-                dclient = docker.from_env(); dclient.ping()
-            except Exception as e:
-                print(f"ERROR: Docker daemon not reachable: {e}")
-                return 2
-            ensure_critic_image()
-            volumes, _defs = build_critic_volumes(content_root, mount_properties=True, workspace_mode="ro")
-            name = f"adgn_spec_read_{int(time.time())}"
-            container = None
-            try:
-                container = dclient.containers.run(
-                    image=PROPERTIES_DOCKER_IMAGE,
-                    command=SLEEP_FOREVER_CMD,
-                    name=name,
-                    remove=True,
-                    detach=True,
-                    network_mode="none",
-                    volumes=volumes,
-                    working_dir=str(CRITIC_WORKDIR),
-                    tty=False,
-                    stdin_open=False,
-                )
-            except Exception as e:
-                print(f"ERROR: failed to start container: {e}")
-                return 2
-
-            # Exec read command with line numbers
-            rel = f"/workspace/{args.rel_path}"
-            start = int(args.start); end = int(args.end)
-            cmd = [
-                "docker", "exec", name, "bash", "-lc",
-                f"nl -ba --number-width=6 --number-format=ln {shlex_quote(rel)} | sed -n '{start},{end}p'",
-            ]
-            rc = subprocess.run(cmd, check=False)
-            try:
-                if container:
-                    container.stop()
-            except Exception:
-                pass
-            return rc.returncode
-        finally:
-            try:
-                if content_root is not None:
-                    parent = content_root.parent
-                    shutil.rmtree(parent, ignore_errors=True)
-            except Exception:
-                pass
-
-    if args.command == "specimen-shell":
+    if args.command == "specimen-exec":
         base = find_specimens_base()
         manifest_path = resolve_manifest_arg(args.specimen, base)
         if manifest_path is None:
@@ -1152,6 +1095,16 @@ def main(argv: list[str] | None = None) -> int:
             gitconfig_path = str(p)
 
         man = load_manifest(manifest_path)
+
+        # Optional default gitconfig fallback for private repos
+        if gitconfig_path is None:
+            try:
+                cfg = properties_root() / "gitconfig.local"
+                if cfg.exists():
+                    gitconfig_path = str(cfg)
+            except Exception:
+                # If properties_root isn't available for some reason, proceed without fallback
+                gitconfig_path = None
 
         try:
             dclient = docker.from_env()
@@ -1189,14 +1142,23 @@ def main(argv: list[str] | None = None) -> int:
                 # Pre-shell setup: copy and run setup script from package resources to enable Vim line numbers
                 setup_rel = "specimen_shell_setup.sh"
                 with resources.as_file(resources.files("adgn_llm.properties") / setup_rel) as setup_path:
-                    rc_cp = subprocess.run([
-                        "docker", "cp", str(setup_path), f"{name}:/root/{setup_rel}"
-                    ], check=False).returncode
+                    rc_cp = subprocess.run(
+                        ["docker", "cp", str(setup_path), f"{name}:/root/{setup_rel}"],
+                        check=False,
+                    ).returncode
                     if rc_cp != 0:
                         return rc_cp
-                    rc_exec = subprocess.run([
-                        "docker", "exec", name, "bash", "-lc", f"chmod +x /root/{setup_rel} && /root/{setup_rel}"
-                    ], check=False).returncode
+                    rc_exec = subprocess.run(
+                        [
+                            "docker",
+                            "exec",
+                            name,
+                            "bash",
+                            "-lc",
+                            f"chmod +x /root/{setup_rel} && /root/{setup_rel}",
+                        ],
+                        check=False,
+                    ).returncode
                     if rc_exec != 0:
                         return rc_exec
 
@@ -1204,13 +1166,12 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"ERROR: failed to start container: {e}")
                 return 2
 
-            # If a command was provided, execute it; otherwise open an interactive bash.
-            if args.cmd:
-                cmdline = " ".join(shlex_quote(x) for x in args.cmd)
-                rc = subprocess.run(["docker", "exec", name, "bash", "-lc", cmdline], check=False).returncode
-            else:
-                # We assume bash exists in the properties-critic image; it is baked into our container image. No fallback to sh.
-                rc = subprocess.run(["docker", "exec", "-it", name, "bash"], check=False).returncode
+            # Require a command to be provided explicitly (no implicit interactive shell)
+            if not args.cmd:
+                print("ERROR: specimen-exec requires a command after '--'", flush=True)
+                return 2
+            # Execute the provided command as-is (no implicit bash -lc)
+            rc = subprocess.run(["docker", "exec", name, *args.cmd], check=False).returncode
             try:
                 if container:
                     container.stop()

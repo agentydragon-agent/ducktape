@@ -36,6 +36,8 @@ Common commands
 
 Specimen inspection (for assistants)
 - Use the specimen shell to safely inspect a specimen’s hydrated workspace inside an isolated container (no network):
+  - Schema (Pydantic source of truth): @src/adgn_llm/properties/specimen_utils.py
+  - NOTE: DO NOT duplicate examples or schema text here; the file above is transcluded as the single source of truth.
   - adgn-properties specimen-shell 2025-09-02-ducktape_wt
   - Or execute a one‑off command (after --). The workspace is mounted at /workspace and property definitions at /props.
 
@@ -77,6 +79,87 @@ High-level architecture (big picture)
 - adgn_llm.inop (src/adgn_llm/inop/...): Instruction optimizer components; async runners and iteration logic.
 - adgn_llm.mcp (src/adgn_llm/mcp/...): MCP utilities/launchers (e.g., sandboxed Jupyter MCP).
 - adgn_llm.mini_codex (src/adgn_llm/mini_codex/...): Minimal OpenAI API wrapper utilities used by other tools.
+
+Jsonnet authoring guidelines (||| blocks and issue files)
+
+- Location and shape
+  - All specimen issues live under: src/adgn_llm/properties/specimens/<specimen>/issues/*.libsonnet
+  - Each file is ONE standalone Jsonnet expression that returns a single Issue object built via helpers from specimen_issues.libsonnet
+  - Start every file with: `local I = import '../../specimen_issues.libsonnet';`
+  - File name must equal the issue id (e.g., issues/iss-032.libsonnet → id='iss-032'). Do not embed a different id.
+
+- Triple-bar text blocks (|||) — exact house style
+  - Opening delimiter: exactly one space before it
+    - Good: `rationale= |||`
+    - Bad:  `rationale=|||` (no space) or extra spaces
+  - Content lines: indent every line by exactly two spaces
+  - Closing delimiter: two spaces + `|||,` on its own line (include the comma there)
+  - Full correct pattern:
+    ```jsonnet
+    I.issueOneOccurrence(
+      id='iss-XYZ',
+      rationale= |||
+        First line of rationale...
+        Second line...
+      |||,
+      properties=['some-prop'],
+      filesToRanges={ 'path/to/file.py': [[10, 20]] },
+    )
+    ```
+  - Common failures we saw and fixes:
+    - Missing closing: add the `|||,` line (two-space indent)
+    - Comma on a separate line: move the comma to the closing `|||,` line
+    - Ragged indent inside: normalize all content lines to two spaces
+    - Closing indented differently than content: use the same two-space indent
+
+- Choosing the right constructor (and where notes go)
+  - One logical occurrence spanning multiple files/ranges → use `I.issueOneOccurrence(id, rationale, filesToRanges=...)`
+    - If you want commentary for specific ranges, put those sentences into the rationale text (bulleted or paragraph form). Do NOT put notes inside ranges for filesToRanges.
+  - Many independent occurrences (each can have its own note) → use `I.issueWithOccurrences(id, rationale, occurrences=[{ files: {...}, note: '...' }, ...])` or `I.issueOccurrencesFromLines(id, rationale, linesByFile={ ... })`
+    - `issueWithOccurrences` supports per-occurrence `note` strings.
+    - `issueOccurrencesFromLines` supports shorthand entries (numbers, [start,end], or strings to serve as occurrence-level notes on unspecified ranges).
+
+- Valid range specs by helper
+  - filesToRanges (for `issueOneOccurrence`):
+    - Allowed per-file entries: `null` (unspecified), `[]` (unspecified), `[line]` (single), `[start,end]` (span), or objects `{ start_line: n, end_line?: m }`
+    - NOT allowed: tuples with strings (e.g., `[137, 143, 'note']` or `[133, 'why']`) — move such note text into the rationale (bullet per file/lines)
+  - linesByFile (for `issueOccurrencesFromLines`):
+    - Allowed per-file entries: numbers, `[start,end]`, strings (become occurrence-level note with unspecified range), or `{range: <spec>, note: '...'}`
+
+- Import/search path
+  - Always import helpers via a relative path from the issues/ directory: `local I = import '../../specimen_issues.libsonnet';`
+  - Loader sets the library path; do not chdir or edit imports in-place.
+
+- Trailing commas & monolith split
+  - Each issue file is a standalone expression; remove aggregator-style trailing commas at the end of the expression.
+  - Keep commas only between arguments and after the closing `|||` line.
+
+- Quick examples of wrong vs right (|||)
+  - Wrong (comma alone after closing):
+    ```jsonnet
+    rationale= |||
+      Text
+    |||
+      ,
+    ```
+  - Right:
+    ```jsonnet
+    rationale= |||
+      Text
+    |||,
+    ```
+  - Wrong (no closing):
+    ```jsonnet
+    rationale= |||
+      Text
+    ,
+    ```
+  - Right (balanced):
+    ```jsonnet
+    rationale= |||
+      Text
+    |||,
+    ```
 
 Notes and caveats
 - Node requirement: The system_rewriter apply step is Node-only; no npm needed. The script src/adgn_llm/system_rewriter/js/system_rewrite_apply.js validates tokens and fails fast; missing Node or system-utils will cause a hard error.

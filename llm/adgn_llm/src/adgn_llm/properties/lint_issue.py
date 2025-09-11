@@ -5,10 +5,22 @@ import shutil
 import tarfile
 import tempfile
 import time
-import textwrap
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Annotated, Literal, cast
+
+from pydantic import BaseModel, ConfigDict, Field
+from mcp.server.fastmcp import FastMCP
+from .prompt_utils import render_prompt_template, build_input_schemas_json
+from .docker_env import properties_docker_spec, PropertiesDockerWiring
+
+from rich.console import Console, Group, ConsoleRenderable
+from rich.table import Table
+from rich.panel import Panel
+from rich.text import Text
+from rich.markdown import Markdown
+from adgn_llm.rendering.rich_renderers import render_to_rich
+
 from openai import AsyncOpenAI
 from openai.types.responses import ResponseFunctionToolCall
 
@@ -39,30 +51,112 @@ from .specimen_utils import (
     Issue,
     IssueCore,
     Specimen,
+    PropertyID,
 )
-from .prompt_utils import render_prompt_template, build_input_schemas_json
-from mcp.server.fastmcp import FastMCP
-from pydantic import BaseModel, ConfigDict, Field
-from .docker_env import properties_docker_spec, PropertiesDockerWiring
+
+
+# ---- Issue lint finding models (machine annotations) ----
+class PropertyIncorrectlyAssigned(BaseModel):
+    kind: Literal["PROPERTY_INCORRECTLY_ASSIGNED"] = Field(
+        description="Discriminator for property incorrectly assigned"
+    )
+    property: PropertyID
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class PropertyShouldBeAssigned(BaseModel):
+    kind: Literal["PROPERTY_SHOULD_BE_ASSIGNED"] = Field(
+        description="Discriminator for property that should be assigned"
+    )
+    property: PropertyID
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class Correction(BaseModel):
+    file: str
+    range: LineRange
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class AnchorIncorrect(BaseModel):
+    kind: Literal["ANCHOR_INCORRECT"] = Field(description="Discriminator for incorrect anchor")
+    correction: Correction
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class FalsePositive(BaseModel):
+    kind: Literal["FALSE_POSITIVE"] = Field(description="Discriminator for false-positive marking")
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class OtherError(BaseModel):
+    kind: Literal["OTHER_ERROR"] = Field(description="Discriminator for other errors / fallback")
+    description: str
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class RationaleError(BaseModel):
+    kind: Literal["RATIONALE_ERROR"] = Field(description="Discriminator for rationale being factually incorrect")
+    error_description: str
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class RationaleImprovement(BaseModel):
+    kind: Literal["RATIONALE_IMPROVEMENT"] = Field(
+        description="Discriminator for non-blocking rationale improvement suggestion"
+    )
+    suggested_improvement: str
+
+    model_config = ConfigDict(extra="forbid")
+
+
+IssueLintFinding = Annotated[
+    PropertyIncorrectlyAssigned
+    | PropertyShouldBeAssigned
+    | AnchorIncorrect
+    | FalsePositive
+    | OtherError
+    | RationaleError
+    | RationaleImprovement,
+    Field(discriminator="kind"),
+]
+
+
+class IssueLintFindingRecord(BaseModel):
+    finding: IssueLintFinding
+    rationale: str | None = None
+
+    model_config = ConfigDict(extra="forbid")
+
 
 # ---------------------------------------------------------------------------
 # Lint submit MCP server + shared state (accessible to controller and server)
 # ---------------------------------------------------------------------------
 
 
-class ChecklistItem(BaseModel):
-    """Hierarchical checklist for the agent's performed checks.
-
-    May be per-property or general. Answer should be "YES"/"NO" when binary; free strings allowed when necessary.
-    """
-
-    item: str = Field(..., description="Checklist question or assertion")
-    subitems: list["ChecklistItem"] = Field(default_factory=list, description="Nested checks under this item")
-    log: str = Field(default="", description="Short log of evidence or steps taken")
-    answer: bool | str = Field(
-        ...,
-        description="Answer; use boolean for binary (true/false); free text allowed when needed",
-    )
+# ChecklistItem (commented out — checklist handling is currently disabled)
+# class ChecklistItem(BaseModel):
+#     """Hierarchical checklist for the agent's performed checks.
+#
+#     May be per-property or general. Answer should be "YES"/"NO" when binary; free strings allowed when necessary.
+#     """
+#
+#     item: str = Field(..., description="Checklist question or assertion")
+#     subitems: list["ChecklistItem"] = Field(
+#         default_factory=list, description="Nested checks under this item"
+#     )
+#     log: str = Field(default="", description="Short log of evidence or steps taken")
+#     answer: bool | str = Field(
+#         ...,
+#         description="Answer; use boolean for binary (true/false); free text allowed when needed",
+#     )
 
 
 class LintSubmitPayload(BaseModel):
@@ -82,63 +176,89 @@ class LintSubmitPayload(BaseModel):
             "{path: [{start_line: int, end_line: int|null}] | null}"
         ),
     )
-    checklist: list[ChecklistItem] | None = Field(
+    suggested_properties: list[str] | None = Field(
         default=None,
-        description="Root checklist items (tree) summarizing checks performed (per-property or general)",
+        description=(
+            "If non-null, the linter suggests replacing the Issue properties with this list "
+            "(useful when the occurrence is mislabeled). Null means keep the original properties."
+        ),
     )
-
-
-def format_checklist(items: list["ChecklistItem"]) -> str:
-    """Format a checklist tree for human-readable console output.
-
-    - Boolean answers are printed as True/False; strings are shown verbatim
-    - Multi-line logs are indented under a "log:" label
-    - Subitems are indented two spaces deeper
-    """
-
-    def render_item(it: "ChecklistItem") -> str:
-        lines = [f"- {it.item} -> {it.answer}"]
-        if it.log:
-            lines.append("  log:")
-            lines.append(textwrap.indent(str(it.log).rstrip("\n"), "    "))
-        for child in it.subitems:
-            lines.append(textwrap.indent(render_item(child), "  "))
-        return "\n".join(lines)
-
-    return "\n".join(render_item(root) for root in items)
-
-
-def format_corrected_anchors(ca: dict[str, list[LineRange] | None] | None) -> str:
-    """Pretty-format corrected_anchors for console output.
-
-    Example:
-    Corrected anchors:
-    - path/to/file.py:
-      - [10]
-      - [25, 30]
-    - other/file.py: null
-    """
-    if ca is None:
-        return ""
-    lines: list[str] = ["Corrected anchors:"]
-    for path, ranges in ca.items():
-        if ranges is None:
-            lines.append(f"- {path}: null")
-            continue
-        lines.append(f"- {path}:")
-        for r in ranges:
-            if r.end_line is None:
-                lines.append(f"  - [{r.start_line}]")
-            else:
-                lines.append(f"  - [{r.start_line}, {r.end_line}]")
-    return "\n".join(lines)
+    suggested_rationale: str | None = Field(
+        default=None,
+        description=(
+            "If non-null, the linter suggests a corrected Issue rationale text based on the actual evidence "
+            "(e.g., remove mentions of nonexistent callers and prescribe deleting dead code). Null means keep original."
+        ),
+    )
+    # checklist: list[ChecklistItem] | None = Field(
+    #     default=None,
+    #     description="Root checklist items (tree) summarizing checks performed (per-property or general)",
+    # )
+    findings: list[IssueLintFindingRecord] | None = Field(
+        default=None,
+        description="Typed list of lint findings produced by the agent (structured, machine-readable).",
+    )
 
 
 class LintSubmitState:
     result: LintSubmitPayload | None = None
 
 
-def make_lint_submit_server(state: LintSubmitState, *, name: str = "lint_submit", occ: Occurrence) -> FastMCP:
+# Register Rich renderer for LintSubmitPayload here to avoid import cycles
+@render_to_rich.register
+def _render_lint_submit_payload(obj: LintSubmitPayload):  # type: ignore[misc]
+    # Anchors table
+    anchors_tbl = Table(title=None, show_lines=False, expand=True)
+    anchors_tbl.add_column("Path", style="cyan")
+    anchors_tbl.add_column("Ranges", style="magenta")
+    if obj.corrected_anchors:
+        for pth, ranges in obj.corrected_anchors.items():
+            if ranges is None:
+                anchors_tbl.add_row(pth, "(unchanged)")
+            else:
+                spans = ", ".join(
+                    f"[{r.start_line}, {r.end_line}]" if r.end_line is not None else f"[{r.start_line}]" for r in ranges
+                )
+                anchors_tbl.add_row(pth, spans)
+    else:
+        anchors_tbl.add_row("(no corrections)", "")
+
+    bits: list[ConsoleRenderable] = [anchors_tbl]
+    if obj.suggested_properties:
+        bits.append(Text("Suggested properties: " + ", ".join(obj.suggested_properties), style="yellow"))
+    if obj.suggested_rationale:
+        bits.append(Markdown("### Suggested rationale\n" + obj.suggested_rationale))
+
+    # Render findings
+    if obj.findings:
+        findings_tbl = Table(title="Findings", show_lines=False, expand=True)
+        findings_tbl.add_column("Kind", style="cyan")
+        findings_tbl.add_column("Details", style="magenta")
+        findings_tbl.add_column("Rationale", style="green")
+        for fr in obj.findings:
+            f: Any = fr.finding
+            kind = getattr(f, "kind", type(f).__name__)
+            if hasattr(f, "model_dump"):
+                try:
+                    details = json.dumps(f.model_dump(exclude_none=True), ensure_ascii=False)
+                except Exception:
+                    details = str(f)
+            else:
+                details = str(f)
+            rationale_text = fr.rationale or ""
+            findings_tbl.add_row(kind, details, rationale_text)
+        bits.append(findings_tbl)
+
+    if obj.message_md:
+        bits.append(Markdown(obj.message_md))
+
+    body: ConsoleRenderable = bits[0] if len(bits) == 1 else cast(ConsoleRenderable, Group(*tuple(bits)))
+    title = "Lint result (fail)" if obj.fail else "Lint result (pass)"
+    border = "red" if obj.fail else "green"
+    return Panel(body, title=title, border_style=border)
+
+
+def make_lint_submit_server(state: LintSubmitState, *, name: str = "lint_submit") -> FastMCP:
     """Tiny FastMCP server exposing a single tool: submit_result.
 
     The linter agent must call this exactly once to signal completion. This flips
@@ -168,7 +288,7 @@ class LintConfig:
     dry_run: bool = False
 
 
-def make_nl_tool_call(server_name: str, container_path: str, call_id: str) -> ResponseFunctionToolCall:
+def make_nl_tool_call(server_name: str, container_path: Path, call_id: str) -> ResponseFunctionToolCall:
     """Create a docker exec tool call to render a file with line numbers.
 
     Reads the entire file (no size cap) using `nl -ba -w1 -s ' ' <path>`.
@@ -177,13 +297,17 @@ def make_nl_tool_call(server_name: str, container_path: str, call_id: str) -> Re
         type="function_call",
         name=build_mcp_function(server_name, DOCKER_EXEC_TOOL_NAME),
         call_id=call_id,
-        arguments=json.dumps({"cmd": ["nl", "-ba", "-w1", "-s", " ", container_path]}),
+        arguments=json.dumps({"cmd": ["nl", "-ba", "-w1", "-s", " ", str(container_path)]}),
     )
 
 
+# TODO(mpokorny): Bridge: accept (IssueCore, Occurrence) now; migrate to IssueDoc
+# (header + occurrences) and select a single occurrence here. Keep emitted JSON
+# header-only (no id) by design for model context hygiene; remove legacy Issue.
+
+
 def _build_prompt(
-    issue: Issue,
-    _property_md_files: list[Path],
+    issue: Issue | IssueCore,
     *,
     submit_tool_name: str,
     occurrence: Occurrence,
@@ -280,7 +404,9 @@ class LinterController(DisplayEventsMixin):
                     continue
                 out.append(
                     make_nl_tool_call(
-                        self._wiring.server_name, str(self._wiring.working_dir / q), f"bootstrap:show:{len(out) + 1}"
+                        self._wiring.server_name,
+                        self._wiring.working_dir / q,
+                        f"bootstrap:show:{len(out) + 1}",
                     )
                 )
             return out
@@ -289,7 +415,7 @@ class LinterController(DisplayEventsMixin):
         # Property definition reads (full files, no cap)
         self._prop_calls: list[ResponseFunctionToolCall] = []
         if docker_wiring and prop_host_paths:
-            defs_dir = (properties_root() / "definitions").resolve()
+            defs_dir = (properties_root() / "props").resolve()
             for i, host_p in enumerate(prop_host_paths):
                 rel = Path(host_p).resolve().relative_to(defs_dir).as_posix()
                 cont_path = docker_wiring.container_path_for_prop_rel(rel)
@@ -319,6 +445,7 @@ class LinterController(DisplayEventsMixin):
 # Shared core runner (used by tests and CLI)
 # ---------------------------------------------------------------------------
 
+
 async def lint_issue_run(
     specimen: str,
     issue_core: IssueCore,
@@ -327,6 +454,7 @@ async def lint_issue_run(
     model: str = "gpt-5",
     gitconfig: str | None = None,
     client: AsyncOpenAI,
+    renderer: ConsoleEventRenderer | None = None,
 ) -> LintSubmitPayload:
     """Run the lint-issue agent and return the exact structured payload.
 
@@ -370,16 +498,18 @@ async def lint_issue_run(
         content_root = entries[0]
 
         # Build in-process FastMCP servers
-        submit_server = make_lint_submit_server(submit_state, name="lint_submit", occ=occurrence)
+        submit_server = make_lint_submit_server(submit_state, name="lint_submit")
         submit_spec = make_inproc_slot_spec(submit_server)
 
         wiring = properties_docker_spec(content_root, mount_properties=True)
-        specs: dict[str, ServerSlotSpec] = {wiring.server_name: wiring.server_spec, "lint_submit": submit_spec}
+        specs: dict[str, ServerSlotSpec] = {
+            wiring.server_name: wiring.server_spec,
+            "lint_submit": submit_spec,
+        }
 
         props = find_property_files([str(p) for p in issue_core.properties])
         prompt = _build_prompt(
             issue_core,  # accepts IssueCore; template receives instance via 'instances=[occurrence]'
-            props,
             submit_tool_name=build_mcp_function("lint_submit", "submit_result"),
             occurrence=occurrence,
             wiring=wiring,
@@ -392,7 +522,7 @@ async def lint_issue_run(
             content_root=content_root,
             docker_wiring=wiring,
             prop_host_paths=props,
-            renderer=ConsoleEventRenderer(show_text=False),
+            renderer=renderer,
         )
 
         async with McpManager(specs) as mcp:
@@ -404,7 +534,7 @@ async def lint_issue_run(
             )
             await agent.run(prompt, controller=ctrl)
 
-        assert submit_state.result is not None, "submit_result not called; should never happen."
+        assert submit_state.result is not None, "submit_result somehow not called?"
         return submit_state.result  # type: ignore[return-value]
 
     finally:
@@ -432,7 +562,7 @@ async def run_specimen_lint_issue_async(
     issue = cast(Issue, issue)
 
     # Require a single occurrence; do not run on the full issue or mutate the Issue
-    if occurrence_index < 0 or occurrence_index >= len(issue.instances):
+    if not (0 <= occurrence_index < len(issue.instances)):
         raise SystemExit(
             f"occurrence_index out of range: {occurrence_index} (instances={len(issue.instances)})",
         )
@@ -442,13 +572,13 @@ async def run_specimen_lint_issue_async(
     submit_tool_name = build_mcp_function("lint_submit", "submit_result")
 
     if dry_run:
-        props = find_property_files([str(p) for p in issue.properties])
+        _ = find_property_files([str(p) for p in issue.properties])
         # Build a wiring for prompt rendering (no container launched in dry-run)
-        dummy_root = properties_root()  # any existing directory works for template context
+        # any existing directory works for template context
+        dummy_root = properties_root()
         wiring = properties_docker_spec(dummy_root, mount_properties=True)
         prompt = _build_prompt(
             IssueCore.from_issue(issue),  # render via IssueCore + single occurrence
-            props,
             submit_tool_name=submit_tool_name,
             occurrence=occ,
             wiring=wiring,
@@ -469,6 +599,7 @@ async def run_specimen_lint_issue_async(
         model=model,
         gitconfig=gitconfig,
         client=client,
+        renderer=None,
     )
 
     # Print the exact occurrence representation as fed to the model
@@ -479,17 +610,7 @@ async def run_specimen_lint_issue_async(
     issue_json = json.dumps(issue_dict, ensure_ascii=False)
     print("Issue (JSON):")
     print(issue_json)
-    print()
 
-    if res.checklist:
-        print("Checklist:")
-        print(format_checklist(res.checklist))
-        print()
-    if res.corrected_anchors is not None:
-        print(format_corrected_anchors(res.corrected_anchors))
-        print()
-    if res.message_md:
-        print(res.message_md)
-        print()
-
+    # Pretty-print final agent output via Rich renderer
+    Console().print(render_to_rich(res))
     return 0 if (res.fail is False) else 2

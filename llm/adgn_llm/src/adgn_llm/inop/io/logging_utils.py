@@ -3,7 +3,7 @@
 import logging
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, MutableMapping, Mapping
 
 import structlog
 
@@ -63,7 +63,10 @@ class DualOutputLogging:
 
         # Configure timestamper and shared processors
         timestamper = structlog.processors.TimeStamper(fmt="iso")
-        shared_processors = [
+        ProcessorFunc = Callable[
+            [Any, str, MutableMapping[str, Any]], Mapping[str, Any] | str | bytes | bytearray | tuple[Any, ...]
+        ]
+        shared_processors: list[ProcessorFunc] = [
             structlog.stdlib.filter_by_level,
             structlog.stdlib.add_logger_name,
             structlog.stdlib.add_log_level,

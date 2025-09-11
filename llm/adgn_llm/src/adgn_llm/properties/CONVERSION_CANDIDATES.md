@@ -27,7 +27,6 @@ Deprioritized for later (more nuanced)
 - aggressive-dry (principle-level)
 - document-current-state (judgment-heavy)
 - proper-serde-libs (better as decomposed sub-rules per format)
-- self-describing-units (naming/typing judgment)
 
 Process, not outcome:
 - refactor-tools-libcst-semgrep (process/behavioral)
@@ -39,6 +38,7 @@ Probably skip:
 ---
 
 Converted (done)
+- [x] self-describing-units
 - [x] imports-at-top — `properties/imports-at-top.md`
 - [x] markdown-inline-formatting — `properties/markdown-inline-formatting.md`
 - [x] use-walrus-trivial-conditions — `properties/python/walrus.md`

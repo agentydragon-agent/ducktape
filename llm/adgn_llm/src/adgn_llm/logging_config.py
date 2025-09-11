@@ -18,7 +18,7 @@ def configure_logging() -> None:
     """
     log_dir_env = os.getenv("ADGN_LOG_DIR")
     file_enabled = bool(log_dir_env)
-    file_path = str((Path(log_dir_env) / "adgn.log").resolve()) if file_enabled else None
+    file_path = str((Path(log_dir_env or "./logs") / "adgn.log").resolve()) if file_enabled else None
 
     dictConfig(
         {

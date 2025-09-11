@@ -115,10 +115,10 @@ def load_row(run_dir: Path, known: dict[str, str]) -> Row | None:
     err_repr: str | None = None
     try:
         validate_template_file(t_path)
-    except Exception as e:
+    except Exception as exc:
         is_err = True
         try:
-            err_repr = repr(e)
+            err_repr = repr(exc)
         except Exception:
             err_repr = "<unprintable exception>"
 
@@ -139,11 +139,13 @@ def load_row(run_dir: Path, known: dict[str, str]) -> Row | None:
     if isinstance(ci95_field, dict):
         # New format inside ci95
         try:
-            lcb = float(ci95_field.get("lcb")) if ci95_field.get("lcb") is not None else None
+            raw_lcb = ci95_field.get("lcb")
+            lcb = float(raw_lcb) if raw_lcb is not None else None
         except Exception:
             lcb = None
         try:
-            ucb = float(ci95_field.get("ucb")) if ci95_field.get("ucb") is not None else None
+            raw_ucb = ci95_field.get("ucb")
+            ucb = float(raw_ucb) if raw_ucb is not None else None
         except Exception:
             ucb = None
         if lcb is not None and ucb is not None:
@@ -385,8 +387,8 @@ def main() -> int:
     console.print(table)
     if missing:
         console.print("Templates not yet evaluated:\n" + "\n".join(f"- {name}" for name in sorted(missing)))
-    for e in errors:
-        console.print(f"[red]{e}[/]")
+    for err in errors:
+        console.print(f"[red]{err}[/]")
     return 0
 
 

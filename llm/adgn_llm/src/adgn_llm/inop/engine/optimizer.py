@@ -130,7 +130,7 @@ cost_tracker = CostTracker()
 def setup_signal_handlers():
     """Setup signal handlers for graceful cost reporting on interruption."""
 
-    def signal_handler(signum, frame):
+    def signal_handler(signum, _frame):
         logger.info("Interrupt received, reporting costs before exit", signal=signum)
         cost_tracker.report_final_cost()
         sys.exit(1)
@@ -352,7 +352,7 @@ async def optimize_prompts(
     task_type: AgentTaskType,  # Type of agent being optimized
     iterations: int = 3,
     rollouts_per_task: int = 2,
-    max_parallel_rollouts: int | None = None,
+    _max_parallel_rollouts: int | None = None,
     tasks_per_iteration: int | None = None,
     base_dir: Path,
 ) -> Path:

@@ -42,6 +42,8 @@ dependencies = [
   "rich>=13.0.0",
   "Jinja2>=3.1",
   "httpx>=0.27.0",
+  "aiosqlite>=0.18.0",
+  "canonicaljson>=1.6.0",
 ]
 
 [project.scripts]
@@ -55,6 +57,7 @@ adgn-inop = "adgn_llm.inop.core.optimizer:main"
 adgn-mcp-docker-exec = "adgn_llm.mcp.docker_exec.launcher:main"
 adgn-mcp-gitea-mirror = "adgn_llm.mcp.gitea_mirror.launcher:main"
 adgn-llm-edit = "adgn_llm.llm_edit:app"
+rspcache = "adgn_llm.rspcache.cli:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

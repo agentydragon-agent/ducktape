@@ -17,7 +17,7 @@ def properties_root() -> Path:
 def find_property_files(property_ids: list[str]) -> list[Path]:
     """Resolve property definition Markdown files by ID (filename stem)."""
     props_root = properties_root()
-    defs_dir = props_root / "definitions"
+    defs_dir = props_root / "props"
     wanted = set(property_ids)
     found: list[Path] = []
     if not defs_dir.exists():
@@ -30,7 +30,7 @@ def find_property_files(property_ids: list[str]) -> list[Path]:
 
 @lru_cache(maxsize=1)
 def _list_known_property_ids() -> set[PropertyID]:
-    defs_root = properties_root() / "definitions"
+    defs_root = properties_root() / "props"
     ids: set[PropertyID] = set()
     if defs_root.exists():
         for md in defs_root.rglob("*.md"):

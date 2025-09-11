@@ -155,8 +155,8 @@ class PromptEngineer:
 
     async def add_result(
         self,
-        reasoning: list[Any],
-        function_call_message: Any,
+        _reasoning: list[Any],
+        _function_call_message: Any,
         proposed_prompt: str,
         rollouts: list[GradedRollout],
     ) -> None:

@@ -232,8 +232,8 @@ def _compose_seatbelt(
 
     # Platform seatbelt extras
     extra = policy.platform.seatbelt.extra_allow
-    for p in extra.file_read_extra or []:
-        lines.append(f'(allow file-read* (subpath "{_abs(p)}") )')
+    for path_str in extra.file_read_extra or []:
+        lines.append(f'(allow file-read* (subpath "{_abs(path_str)}") )')
     # Optional IPC/system allowances controlled by policy extras
     if extra.system_socket:
         lines.append("(allow system-socket)")

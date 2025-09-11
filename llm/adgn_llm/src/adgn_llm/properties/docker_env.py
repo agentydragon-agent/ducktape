@@ -14,32 +14,26 @@ from adgn_llm.properties.prop_utils import properties_root
 PROPERTIES_DOCKER_IMAGE = "adgn-llm/properties-critic:latest"
 SERVER_NAME = "docker"
 WORKING_DIR: Path = Path("/workspace")
-PROPS_DIR = "/props"
+PROPS_DIR = Path("/props")
 # Shared startup command for long-lived containers
 SLEEP_FOREVER_CMD: list[str] = ["/bin/sh", "-lc", "sleep infinity"]
 
 
 @dataclass(slots=True)
 class PropertiesDockerWiring:
-    _server_name: str
     server_spec: ServerSlotSpec
-    _working_dir: Path
-    definitions_container_dir: str | None
+    working_dir: Path
+    definitions_container_dir: Path | None
     image_name: str
 
     @property
     def server_name(self) -> str:
-        return self._server_name
+        return SERVER_NAME
 
-    @property
-    def working_dir(self) -> Path:
-        return self._working_dir
-
-    def container_path_for_prop_rel(self, rel: str) -> str:
-        if self.definitions_container_dir is None:
-            raise RuntimeError("Property definitions are not mounted in the container")
-        rel = rel.lstrip("/")
-        return f"{self.definitions_container_dir}/{rel}"
+    def container_path_for_prop_rel(self, rel: str) -> Path:
+        if not self.definitions_container_dir:
+            raise RuntimeError("Property definitions not mounted in container")
+        return self.definitions_container_dir / rel
 
     def describe_markdown(self) -> str:
         """Return a terse environment summary without duplicating resource://container.info.
@@ -77,7 +71,7 @@ def build_critic_volumes(
     mount_properties: bool = True,
     workspace_mode: str = "ro",
     extra_volumes: dict[str, dict[str, str]] | None = None,
-) -> tuple[dict[str, dict[str, str]], str | None]:
+) -> tuple[dict[str, dict[str, str]], Path | None]:
     """Build standard volumes map for properties critic containers.
 
     - Mounts workspace_root at /workspace with the provided workspace_mode ("ro" or "rw")
@@ -86,19 +80,18 @@ def build_critic_volumes(
     Returns (volumes, definitions_container_dir|None)
     """
     volumes: dict[str, dict[str, str]] = {
-        str(Path(workspace_root).resolve()): {"bind": str(WORKING_DIR), "mode": str(workspace_mode)}
+        str(workspace_root.resolve()): {
+            "bind": str(WORKING_DIR),
+            "mode": str(workspace_mode),
+        }
     }
-
-    defs_container: str | None = None
-    if mount_properties:
-        defs_dir = (properties_root() / "definitions").resolve()
-        volumes[str(defs_dir)] = {"bind": PROPS_DIR, "mode": "ro"}
-        defs_container = PROPS_DIR
-
     if extra_volumes:
         volumes.update(extra_volumes)
-
-    return volumes, defs_container
+    if not mount_properties:
+        return volumes, None
+    defs_dir = (properties_root() / "props").resolve()
+    volumes[str(defs_dir)] = {"bind": str(PROPS_DIR), "mode": "ro"}
+    return volumes, PROPS_DIR
 
 
 def properties_docker_spec(
@@ -129,11 +122,9 @@ def properties_docker_spec(
         volumes=volumes,
         describe=True,
     )
-    spec = make_inproc_slot_spec(server)
     return PropertiesDockerWiring(
-        _server_name=SERVER_NAME,
-        server_spec=spec,
-        _working_dir=WORKING_DIR,
+        server_spec=make_inproc_slot_spec(server),
+        working_dir=WORKING_DIR,
         definitions_container_dir=defs_container,
         image_name=PROPERTIES_DOCKER_IMAGE,
     )

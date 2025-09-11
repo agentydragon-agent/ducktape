@@ -41,11 +41,12 @@ def find_last_user_text(msg: Any) -> str | None:
     if isinstance(content, str):
         return content
     if isinstance(content, list):
-        texts = [
-            part.get("text")
-            for part in content
-            if isinstance(part, dict) and part.get("type") == "text" and isinstance(part.get("text"), str)
-        ]
+        texts: list[str] = []
+        for part in content:
+            if isinstance(part, dict) and part.get("type") == "text":
+                t = part.get("text")
+                if isinstance(t, str):
+                    texts.append(t)
         return "\n".join(texts) if texts else None
     return None
 

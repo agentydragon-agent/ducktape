@@ -9,4 +9,9 @@
     uv.sync.enable = true; # run `uv sync` during initialisation (cached by direnv)
     uv.sync.extras = [ "dev" ]; # install [project.optional-dependencies].dev
   };
+
+  # CLI tools available in the direnv shell
+  packages = with pkgs; [
+    jsonnet  # jsonnet CLI for syntax checks (used by jsonnet-fixer agent docs)
+  ];
 }

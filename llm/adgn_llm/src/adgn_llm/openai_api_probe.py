@@ -26,9 +26,11 @@ import sys
 import re
 from enum import Enum
 from aiolimiter import AsyncLimiter
-from typing import Iterable, Callable, Awaitable, Any
+from typing import Callable, Awaitable, Any, Final, Sequence
 
 from openai import AsyncOpenAI
+from openai.types.responses.function_tool_param import FunctionToolParam
+from openai.types.responses.tool_choice_function_param import ToolChoiceFunctionParam
 from rich.console import Console, Group
 from rich.live import Live
 from rich.table import Table
@@ -118,6 +120,24 @@ TOOL_FUNCTION = {
 }
 REQUEST_TIMEOUT = 10
 
+# Typed tool shapes for Responses API (mypy-safe)
+_GET_TIME_NAME: Final[str] = "get_time"
+GET_TIME_TOOL: FunctionToolParam = {
+    "type": "function",
+    "name": _GET_TIME_NAME,
+    "description": "Get current time for a city",
+    "parameters": {
+        "type": "object",
+        "properties": {"city": {"type": "string"}},
+        "required": ["city"],
+    },
+    "strict": True,
+}
+GET_TIME_TOOL_CHOICE: ToolChoiceFunctionParam = {
+    "type": "function",
+    "name": _GET_TIME_NAME,
+}
+
 
 # ---------- Probe spec creators ----------
 # Tool configs per API (Responses vs Chat)
@@ -125,25 +145,41 @@ async def _create_responses(c: AsyncOpenAI, m: str):
     return await c.responses.create(
         model=m,
         input=PROMPT,
-        tools=[{"type": "function", **TOOL_FUNCTION}],
-        tool_choice={"type": "function", "name": TOOL_FUNCTION["name"]},
+        tools=[GET_TIME_TOOL],
+        tool_choice=GET_TIME_TOOL_CHOICE,
         max_output_tokens=20,
     )
 
 
 async def _create_chat(c: AsyncOpenAI, m: str):
+    # Keep runtime-correct shapes but avoid heavy typed imports; annotate as Any for mypy
+    from typing import Any as _Any
+
+    messages: _Any = [
+        {"role": "system", "content": "You are a helpful assistant. Use the tool when appropriate."},
+        {"role": "user", "content": PROMPT},
+    ]
+    tools: _Any = [
+        {
+            "type": "function",
+            "function": {
+                "name": _GET_TIME_NAME,
+                "description": "Get current time for a city",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"city": {"type": "string"}},
+                    "required": ["city"],
+                },
+            },
+        }
+    ]
+    tool_choice: _Any = {"type": "function", "function": {"name": _GET_TIME_NAME}}
     return await c.chat.completions.create(
         model=m,
-        messages=[
-            {
-                "role": "system",
-                "content": "You are a helpful assistant. Use the tool when appropriate.",
-            },
-            {"role": "user", "content": PROMPT},
-        ],
-        tools=[{"type": "function", "function": TOOL_FUNCTION}],
-        tool_choice={"type": "function", "function": {"name": TOOL_FUNCTION["name"]}},
-        max_output_tokens=20,
+        messages=messages,
+        tools=tools,
+        tool_choice=tool_choice,
+        max_completion_tokens=20,
     )
 
 
@@ -407,7 +443,7 @@ def _snippet_from_chat(resp) -> str:
 # ---------- Main -------------------------------------------------------------
 
 
-def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:  # noqa: D401
+def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:  # noqa: D401
     """Minimal CLI."""
     parser = argparse.ArgumentParser(description="Filter and test OpenAI models")
     parser.add_argument(

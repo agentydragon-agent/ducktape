@@ -40,7 +40,7 @@
 - Use walrus for returncode check when no check=True available
   - Finding: asyncio.create_subprocess_exec lacks check=True; prefer walrus to bind and test in one line: `if (rc := await proc.wait()) != 0: raise CalledProcessError(rc, ...)`.
   - Anchors: llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py:599–606 (pattern repeats similarly for other subprocess execs)
-  - Rationale: Covered by [walrus](../../definitions/python/walrus.md) only when a freshly computed value is immediately checked; logging here matches that rule, but since this is outside agent-edited scope we keep it as a recommendation. If treated strictly, this could be filed under walrus when in edited hunks.
+  - Rationale: Covered by [walrus](../../props/python/walrus.md) only when a freshly computed value is immediately checked; logging here matches that rule, but since this is outside agent-edited scope we keep it as a recommendation. If treated strictly, this could be filed under walrus when in edited hunks.
 - Existence check only (let exec surface misconfiguration)
   - Finding: `if not (precommit_path.exists() and precommit_path.is_file()): return` silently ignores the case where the path exists but is not a regular file. Prefer checking only `.exists()` and letting the exec path surface an error for non-file cases (or, optionally, raise a specific error). Fewer branches; misconfigurations don’t get hidden.
   - Anchor: llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py:596–601
