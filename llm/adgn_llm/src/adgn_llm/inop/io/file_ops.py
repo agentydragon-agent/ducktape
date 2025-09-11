@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import fnmatch
 from pathlib import Path
+from typing import cast
 
 from adgn_llm.inop.config import OptimizerConfig
 from adgn_llm.inop.engine.models import FileInfo
@@ -30,12 +31,12 @@ def gather_agent_files(
             cfg.truncation.max_file_size_grading,
         )
         files_info.append(FileInfo(path=relative, content=content))
-    # Convert FileInfo to dicts for token counting, then map back
-    truncated = t_mgr.truncate_files_by_tokens(
-        [fi.model_dump() for fi in files_info],
+    # Truncate directly on FileInfo objects and return models
+    truncated_models = t_mgr.truncate_files_by_tokens(
+        files_info,
         cfg.tokens.max_files_tokens,
     )
-    return [FileInfo(**d) for d in truncated]
+    return cast(list[FileInfo], truncated_models)
 
 
 def should_exclude_file(

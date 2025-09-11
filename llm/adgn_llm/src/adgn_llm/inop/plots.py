@@ -8,7 +8,7 @@ from typing import Any
 
 # Force non-interactive backend to avoid UI popups (prod/tests)
 import matplotlib
-import pandas as pd
+import pandas as pd  # type: ignore[import-untyped]
 
 matplotlib.use("Agg", force=True)
 import tiktoken

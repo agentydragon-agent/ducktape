@@ -9,7 +9,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from importlib import resources
 from contextlib import suppress
 import tiktoken
@@ -695,7 +695,7 @@ async def run_eval(
                 new_asst_obj = samp.choices[0].message.model_dump()
                 # For grader context construction later
                 msgs_for_grader = msgs
-                prev_asst_idx_for_grader = prev_asst_idx
+                prev_asst_idx_for_grader: int = prev_asst_idx
             else:
                 # Crush / Responses-native path
                 payload = item.oai_request
@@ -721,22 +721,20 @@ async def run_eval(
                         "content": [{"type": "input_text", "text": new_sys}],
                     }
                 ] + input_prefix
-                base_req = copy.deepcopy(payload) if isinstance(payload, dict) else {}
+                base_req: dict[str, Any] = dict(payload) if isinstance(payload, dict) else {}
                 base_req["input"] = resp_input
                 if not base_req.get("model"):
                     base_req["model"] = SAMPLER_MODEL
-                samp_req = base_req
+                samp_req = cast(dict[str, Any], base_req)
                 try:
                     samp = await responses_create_with_retries(client, **samp_req)
                 except Exception as e:
                     counters["sampler_errors"] += 1
-                    msg = json.dumps(
-                        {
-                            "correlation_id": item.correlation_id,
-                            "status": "sampler_error",
-                            "error": str(e),
-                        }
-                    )
+                    msg = {
+                        "correlation_id": item.correlation_id,
+                        "status": "sampler_error",
+                        "error": str(e),
+                    }
                     log_event(msg)
                     return None, None
                 new_asst_obj = {
@@ -745,9 +743,7 @@ async def run_eval(
                 }
                 # For grader context later, build ephemeral CCR-like messages
                 msgs_for_grader = responses_to_ccr_messages(inp)
-                prev_asst_idx_for_grader = prev_assistant_index(msgs_for_grader)
-                if prev_asst_idx_for_grader is None:
-                    prev_asst_idx_for_grader = 0
+                prev_asst_idx_for_grader = prev_assistant_index(msgs_for_grader) or 0
 
             # 4) Build grading inputs
             msgs = msgs_for_grader
@@ -867,15 +863,17 @@ async def run_eval(
                 return None, None
 
             # Return combined records for saving
-            return (
-                {
+            sample_rec: dict[str, Any] = {
                     "request": samp_req,
                     "response": samp.model_dump(),
                     "new_assistant_message": raw_new_asst_obj,
                     "correlation_id": item.correlation_id,
                     "timestamp": item.timestamp,
-                    "anthropic_request": item.anthropic_request,
-                },
+                }
+            if isinstance(item, CCRSample):
+                sample_rec["anthropic_request"] = item.anthropic_request
+            return (
+                sample_rec,
                 {
                     "request": grade_req,
                     "response": grade.model_dump(),
@@ -914,6 +912,16 @@ async def run_eval(
     }
 
     def compute_and_write_summary(_final: bool = False) -> dict[str, Any]:
+        
+        def _as_int(x: Any) -> int:
+            if isinstance(x, int):
+                return x
+            if isinstance(x, float):
+                return int(x)
+            if isinstance(x, str):
+                with suppress(Exception):
+                    return int(x)
+            return 0
         # Compute mean and 95% CI (normal approx)
         mean = sum(scores) / len(scores) if scores else 0.0
         var = sum((x - mean) ** 2 for x in scores) / (len(scores) - 1) if len(scores) > 1 else 0.0
@@ -922,11 +930,12 @@ async def run_eval(
         lcb = mean - ci95
         ucb = mean + ci95
         # Secondary metrics
-        total_samples = tool_stats["total_samples"] or 0
-        total_tool_calls = sum(tool_stats["function_counts"].values()) if tool_stats["function_counts"] else 0
-        function_pct = {
-            k: (v / total_tool_calls) if total_tool_calls > 0 else 0.0 for k, v in tool_stats["function_counts"].items()
-        }
+        total_samples = _as_int(tool_stats.get("total_samples"))
+        text_only = _as_int(tool_stats.get("text_only"))
+        with_tools = _as_int(tool_stats.get("with_tools"))
+        fc = cast(dict[str, int], tool_stats.get("function_counts", {}))
+        total_tool_calls = sum(fc.values()) if fc else 0
+        function_pct = {k: (v / total_tool_calls) if total_tool_calls > 0 else 0.0 for k, v in fc.items()}
 
         # Per-source summaries
         def _mk_basic(scores_list: list[float]) -> tuple[float, float, float, float]:
@@ -943,11 +952,9 @@ async def run_eval(
             m_s, ci_s, l_s, u_s = _mk_basic(scores_by_source[sname])
             ts_s = tool_stats_by_source[sname]
             total_s = ts_s["total_samples"] or 0
-            total_tool_calls_s = sum(ts_s["function_counts"].values()) if ts_s["function_counts"] else 0
-            func_pct_s = {
-                k: (v / total_tool_calls_s) if total_tool_calls_s > 0 else 0.0
-                for k, v in ts_s["function_counts"].items()
-            }
+            fc_s = cast(dict[str, int], ts_s.get("function_counts", {}))
+            total_tool_calls_s = sum(fc_s.values()) if fc_s else 0
+            func_pct_s = {k: (v / total_tool_calls_s) if total_tool_calls_s > 0 else 0.0 for k, v in fc_s.items()}
             by_source[sname] = {
                 "n": len(scores_by_source[sname]),
                 "mean": m_s,
@@ -968,9 +975,9 @@ async def run_eval(
             "models": {"sampler": SAMPLER_MODEL, "evaluator": GRADER_MODEL},
             "tooling": {
                 "total_samples": total_samples,
-                "text_only_pct": ((tool_stats["text_only"] / total_samples) if total_samples > 0 else 0.0),
-                "with_tools_pct": ((tool_stats["with_tools"] / total_samples) if total_samples > 0 else 0.0),
-                "function_counts": tool_stats["function_counts"],
+                "text_only_pct": ((text_only / total_samples) if total_samples > 0 else 0.0),
+                "with_tools_pct": ((with_tools / total_samples) if total_samples > 0 else 0.0),
+                "function_counts": fc,
                 "function_pct": function_pct,
             },
             "by_source": by_source,
@@ -995,27 +1002,29 @@ async def run_eval(
                 rec_obj = EvalSampleRecord.model_validate(samp_rec)
                 s_out.write(json.dumps(rec_obj.model_dump(), sort_keys=True) + "\n")
                 # Update tool usage stats
-                tool_stats["total_samples"] += 1
+                tool_stats["total_samples"] = _as_int(tool_stats.get("total_samples")) + 1
                 nmsg = samp_rec.get("new_assistant_message") or {}
                 tcs = nmsg.get("tool_calls") or []
                 if not tcs:
-                    tool_stats["text_only"] += 1
+                    tool_stats["text_only"] = _as_int(tool_stats.get("text_only")) + 1
                 else:
-                    tool_stats["with_tools"] += 1
+                    tool_stats["with_tools"] = _as_int(tool_stats.get("with_tools")) + 1
+                    fc_top = cast(dict[str, int], tool_stats["function_counts"])  # type: ignore[index]
                     for tc in tcs:
                         fn = ((tc.get("function") or {}).get("name")) or "UNKNOWN"
-                        tool_stats["function_counts"][fn] = tool_stats["function_counts"].get(fn, 0) + 1
+                        fc_top[fn] = fc_top.get(fn, 0) + 1
                 # Per-source tool stats
                 if src in tool_stats_by_source:
                     ts = tool_stats_by_source[src]
-                    ts["total_samples"] += 1
+                    ts["total_samples"] = _as_int(ts.get("total_samples")) + 1
                     if not tcs:
-                        ts["text_only"] += 1
+                        ts["text_only"] = _as_int(ts.get("text_only")) + 1
                     else:
-                        ts["with_tools"] += 1
+                        ts["with_tools"] = _as_int(ts.get("with_tools")) + 1
+                        ts_fc = cast(dict[str, int], ts["function_counts"])  # type: ignore[index]
                         for tc in tcs:
                             fn = ((tc.get("function") or {}).get("name")) or "UNKNOWN"
-                            ts["function_counts"][fn] = ts["function_counts"].get(fn, 0) + 1
+                            ts_fc[fn] = ts_fc.get(fn, 0) + 1
             if grade_rec:
                 g_obj = EvalGradeRecord.model_validate(grade_rec)
                 g_out.write(json.dumps(g_obj.model_dump(), sort_keys=True) + "\n")
@@ -1026,7 +1035,7 @@ async def run_eval(
                     if src in scores_by_source:
                         scores_by_source[src].append(score)  # type: ignore[index]
                     counters["processed"] += 1
-                    s = compute_and_write_summary(False)
+                    summary_data = compute_and_write_summary(False)
                     print(
                         json.dumps(
                             {
@@ -1034,10 +1043,10 @@ async def run_eval(
                                 "cid": grade_rec.get("correlation_id"),
                                 "score": score,
                                 "source": src,
-                                "n": s["n"],
-                                "mean": s["mean"],
-                                "ci95": s["ci95"],
-                                "models": s["models"],
+                                "n": summary_data["n"],
+                                "mean": summary_data["mean"],
+                                "ci95": summary_data["ci95"],
+                                "models": summary_data["models"],
                             },
                         ),
                     )
