@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import json
-import shutil
-import tarfile
 import tempfile
 import time
 from dataclasses import dataclass
@@ -42,16 +40,12 @@ from adgn_llm.mini_codex.loop_control import (
     RequireAny,
     SyntheticAction,
 )
-from adgn_llm.mini_codex.event_renderer import (
-    ConsoleEventRenderer,
-)
 from adgn_llm.mini_codex.aggregating_handler import BaseHandler
 from adgn_llm.properties.models.issue import Occurrence, LineRange, Issue, IssueCore
 from adgn_llm.properties.models.lint import (
     IssueLintFindingRecord,
     LintSubmitPayload,
 )
-from .specimen_registry import ensure_archive_for_specimen_slug
 
 
 # ---- Issue lint finding models are defined in models/lint.py and imported above ----
@@ -85,12 +79,7 @@ def _render_lint_submit_payload(obj: LintSubmitPayload):  # type: ignore[misc]
     if corrections:
         for pth, ranges in corrections.items():
             spans = ", ".join(
-                (
-                    f"[{r.start_line}, {r.end_line}]"
-                    if r.end_line is not None
-                    else f"[{r.start_line}]"
-                )
-                for r in ranges
+                (f"[{r.start_line}, {r.end_line}]" if r.end_line is not None else f"[{r.start_line}]") for r in ranges
             )
             anchors_tbl.add_row(pth, spans)
     else:
@@ -121,15 +110,11 @@ def _render_lint_submit_payload(obj: LintSubmitPayload):  # type: ignore[misc]
     if obj.message_md:
         bits.append(Markdown(obj.message_md))
 
-    body: ConsoleRenderable = (
-        bits[0] if len(bits) == 1 else cast(ConsoleRenderable, Group(*tuple(bits)))
-    )
+    body: ConsoleRenderable = bits[0] if len(bits) == 1 else cast(ConsoleRenderable, Group(*tuple(bits)))
     return Panel(body, title="Lint result")
 
 
-def make_lint_submit_server(
-    state: LintSubmitState, *, name: str = "lint_submit"
-) -> FastMCP:
+def make_lint_submit_server(state: LintSubmitState, *, name: str = "lint_submit") -> FastMCP:
     """Tiny FastMCP server exposing a single tool: submit_result.
 
     The linter agent must call this exactly once to signal completion. This flips
@@ -159,9 +144,7 @@ class LintConfig:
     dry_run: bool = False
 
 
-def make_nl_tool_call(
-    server_name: str, container_path: Path, call_id: str
-) -> ResponseFunctionToolCall:
+def make_nl_tool_call(server_name: str, container_path: Path, call_id: str) -> ResponseFunctionToolCall:
     """Create a docker exec tool call to render a file with line numbers.
 
     Reads the entire file (no size cap) using `nl -ba -w1 -s ' ' <path>`.
@@ -170,9 +153,7 @@ def make_nl_tool_call(
         type="function_call",
         name=build_mcp_function(server_name, DOCKER_EXEC_TOOL_NAME),
         call_id=call_id,
-        arguments=json.dumps(
-            {"cmd": ["nl", "-ba", "-w1", "-s", " ", str(container_path)]}
-        ),
+        arguments=json.dumps({"cmd": ["nl", "-ba", "-w1", "-s", " ", str(container_path)]}),
     )
 
 
@@ -226,10 +207,7 @@ class LinterController(BaseHandler):
         content_root: Path,
         docker_wiring: PropertiesDockerWiring,
         prop_host_paths: list[Path] | None = None,
-        renderer: ConsoleEventRenderer | None = None,
     ) -> None:
-        # Initialize handler-style renderer (observer-only). Do not call super() with mixin args.
-        self._renderer = renderer or ConsoleEventRenderer(show_text=False)
         self._state = state
         self._step = 0
         self._wiring = docker_wiring
@@ -265,15 +243,10 @@ class LinterController(BaseHandler):
             self._step2 = [
                 ResponseFunctionToolCall(
                     type="function_call",
-                    name=build_mcp_function(
-                        self._wiring.server_name, DOCKER_EXEC_TOOL_NAME
-                    ),
+                    name=build_mcp_function(self._wiring.server_name, DOCKER_EXEC_TOOL_NAME),
                     call_id="bootstrap:ls",
                     arguments=json.dumps(
-                        {
-                            "cmd": ["ls", "-la"]
-                            + [str(self._wiring.working_dir / d) for d in self._dirs]
-                        }
+                        {"cmd": ["ls", "-la"] + [str(self._wiring.working_dir / d) for d in self._dirs]}
                     ),
                 )
             ]
@@ -303,9 +276,7 @@ class LinterController(BaseHandler):
                 rel = Path(host_p).resolve().relative_to(defs_dir).as_posix()
                 cont_path = docker_wiring.container_path_for_prop_rel(rel)
                 self._prop_calls.append(
-                    make_nl_tool_call(
-                        self._wiring.server_name, cont_path, f"bootstrap:prop:{i + 1}"
-                    )
+                    make_nl_tool_call(self._wiring.server_name, cont_path, f"bootstrap:prop:{i + 1}")
                 )
 
     def on_before_sample(self):  # type: ignore[override]
@@ -337,9 +308,8 @@ async def lint_issue_run(
     occurrence: Occurrence,
     *,
     model: str = "gpt-5",
-    gitconfig: str | None = None,
     client: AsyncOpenAI,
-    renderer: ConsoleEventRenderer | None = None,
+    gitconfig: str | None = None,
 ) -> LintSubmitPayload:
     """Run the lint-issue agent and return the exact structured payload.
 
@@ -387,7 +357,6 @@ async def lint_issue_run(
             content_root=content_root,
             docker_wiring=wiring,
             prop_host_paths=props,
-            renderer=renderer,
         )
 
         async with McpManager(specs) as mcp:

@@ -48,16 +48,12 @@ def _jsonnet_load_issues_dir(spec_dir: Path, strict: bool = True) -> IssuesLoadR
     for p in sorted(issues_dir.glob("*.libsonnet")):
         stem = p.stem
         try:
-            raw = _jsonnet.evaluate_file(
-                str(p), jpathdir=[str(jsonnet_libdir)], import_callback=_importer
-            )
+            raw = _jsonnet.evaluate_file(str(p), jpathdir=[str(jsonnet_libdir)], import_callback=_importer)
         except Exception as e:  # pragma: no cover - surfaced via errors list
             errors.append(f"{p}: Jsonnet evaluation error: {e}")
             continue
         if not isinstance(raw, str):
-            errors.append(
-                f"{p}: Jsonnet evaluator returned non-string (expected JSON text)"
-            )
+            errors.append(f"{p}: Jsonnet evaluator returned non-string (expected JSON text)")
             continue
         try:
             obj = json.loads(raw)
@@ -142,27 +138,19 @@ def _download_github_to(owner: str, repo: str, ref: str, dest: Path) -> bool:
         return False
 
 
-def _create_archive_from_git(
-    url: str, ref: str, out_archive: Path, gitconfig: Path | None
-) -> bool:
+def _create_archive_from_git(url: str, ref: str, out_archive: Path, gitconfig: Path | None) -> bool:
     tmpdir = Path(tempfile.mkdtemp(prefix="adgn-specimen-git-"))
     env = dict(**os.environ)
     if gitconfig is not None:
         env["GIT_CONFIG_GLOBAL"] = str(gitconfig.expanduser().resolve())
-    subprocess.run(
-        ["git", "init", str(tmpdir)], check=True, stdout=subprocess.DEVNULL, env=env
-    )
-    subprocess.run(
-        ["git", "-C", str(tmpdir), "remote", "add", "origin", url], check=True, env=env
-    )
+    subprocess.run(["git", "init", str(tmpdir)], check=True, stdout=subprocess.DEVNULL, env=env)
+    subprocess.run(["git", "-C", str(tmpdir), "remote", "add", "origin", url], check=True, env=env)
     subprocess.run(
         ["git", "-C", str(tmpdir), "fetch", "--depth", "1", "origin", ref],
         check=True,
         env=env,
     )
-    subprocess.run(
-        ["git", "-C", str(tmpdir), "checkout", "--detach", ref], check=True, env=env
-    )
+    subprocess.run(["git", "-C", str(tmpdir), "checkout", "--detach", ref], check=True, env=env)
     try:
         _repack_dir_with_mtime(tmpdir, out_archive, mtime=0)
         return True
@@ -170,9 +158,7 @@ def _create_archive_from_git(
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
-def ensure_archive_for_specimen_slug(
-    man: SpecimenDoc, manifest_path: Path, gitconfig: Path | None
-) -> Path:
+def ensure_archive_for_specimen_slug(man: SpecimenDoc, manifest_path: Path, gitconfig: Path | None) -> Path:
     slug = manifest_path.parent.name
     out = _xdg_cache_base() / "by-slug" / f"{slug}.tar.gz"
     if out.exists():
@@ -194,34 +180,20 @@ def ensure_archive_for_specimen_slug(
             return out
     elif isinstance(man.source, GitSource):
         if man.source.url.startswith("https://github.com/"):
-            parts = (
-                man.source.url.removeprefix("https://github.com/")
-                .rstrip("/")
-                .removesuffix(".git")
-                .split("/")
-            )
-            if len(parts) >= 2 and _download_github_to(
-                parts[0], parts[1], man.source.ref, out
-            ):
+            parts = man.source.url.removeprefix("https://github.com/").rstrip("/").removesuffix(".git").split("/")
+            if len(parts) >= 2 and _download_github_to(parts[0], parts[1], man.source.ref, out):
                 _repack_tar_with_mtime(out, mtime=0)
                 return out
-        if (
-            _create_archive_from_git(man.source.url, man.source.ref, out, gitconfig)
-            and out.exists()
-        ):
+        if _create_archive_from_git(man.source.url, man.source.ref, out, gitconfig) and out.exists():
             return out
     elif isinstance(man.source, LocalSource):
         src = (manifest_path.parent / man.source.root).resolve()
         _repack_dir_with_mtime(src, out, mtime=0)
         return out
-    raise SystemExit(
-        f"Can't archive specimen cache for '{slug}' (source={type(man.source).__name__}); "
-    )
+    raise SystemExit(f"Can't archive specimen cache for '{slug}' (source={type(man.source).__name__}); ")
 
 
-def resolve_source_root(
-    man: SpecimenDoc, manifest_path: Path, gitconfig: Path | None
-) -> Path:
+def resolve_source_root(man: SpecimenDoc, manifest_path: Path, gitconfig: Path | None) -> Path:
     if isinstance(man.source, (GitHubSource, GitSource)):
         archive = ensure_archive_for_specimen_slug(man, manifest_path, gitconfig)
         return _extract_tar_gz_to_temp(archive)
@@ -236,9 +208,7 @@ def resolve_source_root(
 
 
 def list_specimen_names(base: Path) -> list[str]:
-    return sorted(
-        p.name for p in base.iterdir() if p.is_dir() and (p / "manifest.yaml").exists()
-    )
+    return sorted(p.name for p in base.iterdir() if p.is_dir() and (p / "manifest.yaml").exists())
 
 
 def find_specimens_base() -> Path:
@@ -348,9 +318,7 @@ class SpecimenRegistry:
         return rec
 
     @classmethod
-    def load_lenient(
-        cls, slug: str, base: Path | None = None
-    ) -> tuple[SpecimenRecord, list[str]]:
+    def load_lenient(cls, slug: str, base: Path | None = None) -> tuple[SpecimenRecord, list[str]]:
         base_dir = base or find_specimens_base()
         manifest_path = (base_dir / slug / "manifest.yaml").resolve()
         man = load_manifest(manifest_path)

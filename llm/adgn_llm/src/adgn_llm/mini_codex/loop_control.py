@@ -25,6 +25,7 @@ if TYPE_CHECKING:
         ResponseFunctionToolCall,
         ResponseReasoningItem,
     )
+
     # Union of concrete output item types that the agent processes
     OutputItem = ResponseReasoningItem | ResponseOutputMessage | ResponseFunctionToolCall
     from adgn_llm.mini_codex.agent import FunctionCallOutput

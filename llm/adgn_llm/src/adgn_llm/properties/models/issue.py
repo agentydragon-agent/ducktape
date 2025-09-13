@@ -192,5 +192,3 @@ class IssueCore(BaseModel):
             properties=list(issue.properties),
             gap_note=issue.gap_note,
         )
-
-

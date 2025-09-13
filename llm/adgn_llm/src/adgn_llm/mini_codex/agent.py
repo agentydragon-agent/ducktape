@@ -168,9 +168,7 @@ def _tool_choice_from_policy(policy: TP_Base) -> str | dict[str, Any]:
     if isinstance(policy, TP_RequireSpecific):
         if len(policy.names) == 1:
             return {"type": "function", "name": policy.names[0]}
-        raise ValueError(
-            "RequireSpecific with multiple names is not supported for Responses.tool_choice"
-        )
+        raise ValueError("RequireSpecific with multiple names is not supported for Responses.tool_choice")
     raise TypeError(f"Unknown ToolPolicy: {type(policy).__name__}")
 
 

@@ -95,9 +95,7 @@ class LintSubmitPayload(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    message_md: str = Field(
-        ..., description="Concise Markdown report; do not restate pass/fail."
-    )
+    message_md: str = Field(..., description="Concise Markdown report; do not restate pass/fail.")
     suggested_rationale: str | None = Field(
         default=None,
         description=(

@@ -38,7 +38,10 @@ def test_validation_accepts_other_error_without_tp_fp():
 
 
 def test_validation_rejects_both_tp_and_fp_without_other_error():
-    with pytest.raises(ValueError, match=r"Findings must have: \(a\) exactly one false positive or true positive finding, or \(b\) at least 1 'other error' finding"):
+    with pytest.raises(
+        ValueError,
+        match=r"Findings must have: \(a\) exactly one false positive or true positive finding, or \(b\) at least 1 'other error' finding",
+    ):
         LintSubmitPayload(
             message_md="Bad mix",
             findings=[
@@ -50,7 +53,10 @@ def test_validation_rejects_both_tp_and_fp_without_other_error():
 
 def test_validation_rejects_no_tp_fp_and_no_other_error():
     # Only an anchor correction present — should fail because neither TP/FP nor OTHER_ERROR is present
-    with pytest.raises(ValueError, match=r"Findings must have: \(a\) exactly one false positive or true positive finding, or \(b\) at least 1 'other error' finding"):
+    with pytest.raises(
+        ValueError,
+        match=r"Findings must have: \(a\) exactly one false positive or true positive finding, or \(b\) at least 1 'other error' finding",
+    ):
         LintSubmitPayload(
             message_md="Missing TP/FP and OTHER_ERROR",
             findings=[

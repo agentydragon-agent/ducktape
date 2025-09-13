@@ -287,6 +287,7 @@ async def _run_specimen_minicodex_async(
 ) -> int:
     # Hydrate specimen snapshot via registry async context manager
     from adgn_llm.properties.specimen_registry import SpecimenRegistry
+
     man = load_manifest(manifest_path)
 
     supplemental_text = read_embedded_paths([Path(p) for p in (embed_paths or [])]) if embed_paths else None
@@ -333,7 +334,7 @@ async def _run_specimen_minicodex_async(
                 mcp=mcp,
                 system="You are a code agent. Be concise.",
                 client=cast(ResponsesClient, client),
-                handlers=[CriticHandler(submit_state), DisplayEventsHandler()],
+                handlers=[CriticHandler(submit_state), DisplayEventsHandler(max_lines=10)],
                 parallel_tool_calls=True,
             )
             result = await agent.run(prompt)
@@ -939,8 +940,10 @@ def main(argv: list[str] | None = None) -> int:
             return 2
 
         ensure_critic_image()
+
         async def _run_exec() -> int:
             from adgn_llm.properties.specimen_registry import SpecimenRegistry
+
             rec = SpecimenRegistry.load_strict(manifest_path.parent.name)
             async with rec.hydrated_copy(exec_gitconfig) as content_root:
                 # Sanity: ensure hydrated workspace is not empty before launching container
@@ -981,6 +984,7 @@ def main(argv: list[str] | None = None) -> int:
                 finally:
                     if container:
                         container.stop()
+
         return asyncio.run(_run_exec())
 
     else:

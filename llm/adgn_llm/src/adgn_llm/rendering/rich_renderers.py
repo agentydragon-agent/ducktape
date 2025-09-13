@@ -8,8 +8,8 @@ from rich.json import JSON
 from rich.pretty import Pretty
 
 # TODO(mpokorny): Consider wiring MiniCodex event-display into this layer as well.
-# - Provide a bridge adapter to surface event-stream pretty-printing (ConsoleEventRenderer/
-#   NullConsoleEventRenderer) as Rich renderables when desired
+# - Provide a bridge adapter to surface event-stream pretty-printing (ConsoleEventRenderer)
+#   as Rich renderables when desired
 # - Optionally unify final-output and event-stream rendering under a shared entrypoint
 # - Keep data-model rendering decoupled; return Rich renderables only (no side effects)
 
