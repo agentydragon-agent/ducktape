@@ -14,6 +14,7 @@ import os
 import tarfile
 import tempfile
 import subprocess
+import time
 
 from .models.specimen import SpecimenDoc, GitHubSource, GitSource, LocalSource
 from .models.issue import Issue, SpecimenIssuesLoadError
@@ -293,12 +294,40 @@ class SpecimenRecord:
 
     @asynccontextmanager
     async def hydrated_copy(self, gitconfig: Path | None = None) -> AsyncIterator[Path]:
-        """Yield a fresh private working tree path for this specimen and clean up on exit."""
-        root = resolve_source_root(self.manifest, self.manifest_path, gitconfig)
+        """Yield a fresh private working tree path under $HOME for Docker-friendly mounts; clean up on exit.
+
+        On macOS/Docker Desktop, mounts must be under $HOME to be shared with the VM. We therefore extract/copy under
+        ~/.cache/adgn-llm/workspaces/<slug>_<ts>/ and yield the single extracted top-level directory.
+        """
+        # Build a Docker-friendly mount root under $HOME
+        mount_base = Path.home() / ".cache" / "adgn-llm" / "workspaces"
+        mount_base.mkdir(parents=True, exist_ok=True)
+        mount_root = mount_base / f"{self.slug}_{int(time.time())}"
+        if mount_root.exists():
+            shutil.rmtree(mount_root, ignore_errors=True)
+        mount_root.mkdir(parents=True, exist_ok=True)
+
+        # Materialize contents into mount_root according to source
         try:
-            yield root
+            if isinstance(self.manifest.source, (GitHubSource, GitSource)):
+                archive = ensure_archive_for_specimen_slug(self.manifest, self.manifest_path, gitconfig)
+                with tarfile.open(archive, "r:gz") as tf:
+                    tf.extractall(mount_root)
+            elif isinstance(self.manifest.source, LocalSource):
+                src = (self.manifest_path.parent / self.manifest.source.root).resolve()
+                dest = mount_root / src.name
+                shutil.copytree(src, dest)
+            else:  # pragma: no cover - guarded by SpecimenDoc model
+                raise SystemExit(f"Unsupported source type: {type(self.manifest.source)}")
+
+            # Determine single content root
+            entries = [p for p in mount_root.iterdir() if p.is_dir()]
+            if len(entries) != 1:
+                raise SystemExit(f"Unexpected archive layout under {mount_root}; expected a single top-level directory")
+            content_root = entries[0]
+            yield content_root
         finally:
-            shutil.rmtree(root.parent, ignore_errors=True)
+            shutil.rmtree(mount_root, ignore_errors=True)
 
 
 class SpecimenRegistry:

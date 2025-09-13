@@ -285,13 +285,14 @@ async def _run_specimen_minicodex_async(
     output_final_message: Path | None,
     client: AsyncOpenAI,
 ) -> int:
-    # Hydrate specimen snapshot under ~/.cache to avoid Docker volume quirks
-    content_root = _hydrate_specimen_home_workspace(manifest_path, gitconfig)
+    # Hydrate specimen snapshot via registry async context manager
+    from adgn_llm.properties.specimen_registry import SpecimenRegistry
     man = load_manifest(manifest_path)
 
     supplemental_text = read_embedded_paths([Path(p) for p in (embed_paths or [])]) if embed_paths else None
 
-    try:
+    rec = SpecimenRegistry.load_strict(manifest_path.parent.name)
+    async with rec.hydrated_copy(gitconfig) as content_root:
         # Build prompt according to mode
         scope_text = build_scope_text(man.scope.include, man.scope.exclude)
         wiring = properties_docker_spec(content_root, mount_properties=True)
@@ -344,9 +345,6 @@ async def _run_specimen_minicodex_async(
         assert submit_state.result, "Critic did not call submit_result?"
         Console().print(render_to_rich(submit_state.result))
         return 0
-    finally:
-        # Clean up the extracted workspace dir
-        shutil.rmtree(content_root.parent, ignore_errors=True)
 
 
 async def _run_specimen_grade_minicodex_async(
@@ -941,43 +939,49 @@ def main(argv: list[str] | None = None) -> int:
             return 2
 
         ensure_critic_image()
-        ts = int(time.time())
-        content_root = _hydrate_specimen_home_workspace(manifest_path, exec_gitconfig)
-        try:
-            name = f"adgn_spec_shell_{ts}"
-            container = None
-            # Always use the properties critic image and ensure it exists locally
-            volumes, _defs = build_critic_volumes(content_root, mount_properties=True, workspace_mode="rw")
-
-            container = dclient.containers.run(
-                image=PROPERTIES_DOCKER_IMAGE,
-                command=SLEEP_FOREVER_CMD,
-                name=name,
-                remove=True,
-                detach=True,
-                network_mode="none",
-                volumes=volumes,
-                working_dir=str(args.workdir),
-                tty=True,
-                stdin_open=True,
-            )
-
-            try:
-                # Config is baked into the image now (neovim, bat, bash-completion, aliases)
-                # Execute the provided command; optionally wire up -i/-t (stdio/PTY)
-                exec_cmd = ["docker", "exec"]
-                if getattr(args, "interactive", False):
-                    exec_cmd.append("-i")
-                if getattr(args, "tty_exec", False):
-                    exec_cmd.append("-t")
-                exec_cmd.append(name)
-                exec_cmd.extend(args.cmd)
-                return subprocess.run(exec_cmd, check=False).returncode
-            finally:
-                if container:
-                    container.stop()
-        finally:
-            shutil.rmtree(content_root.parent, ignore_errors=True)
+        async def _run_exec() -> int:
+            from adgn_llm.properties.specimen_registry import SpecimenRegistry
+            rec = SpecimenRegistry.load_strict(manifest_path.parent.name)
+            async with rec.hydrated_copy(exec_gitconfig) as content_root:
+                # Sanity: ensure hydrated workspace is not empty before launching container
+                try:
+                    has_any = any(content_root.iterdir())
+                except Exception:
+                    has_any = False
+                if not has_any:
+                    print(f"ERROR: hydrated specimen is empty: {content_root}")
+                    return 2
+                name = f"adgn_spec_shell_{int(time.time())}"
+                container = None
+                # Always use the properties critic image and ensure it exists locally
+                # Mount repo root directly at /workspace (no intermediate dir)
+                volumes, _defs = build_critic_volumes(content_root, mount_properties=True, workspace_mode="rw")
+                container = dclient.containers.run(
+                    image=PROPERTIES_DOCKER_IMAGE,
+                    command=SLEEP_FOREVER_CMD,
+                    name=name,
+                    remove=True,
+                    detach=True,
+                    network_mode="none",
+                    volumes=volumes,
+                    working_dir=str(args.workdir),
+                    tty=True,
+                    stdin_open=True,
+                )
+                try:
+                    # Execute the provided command; optionally wire up -i/-t (stdio/PTY)
+                    exec_cmd = ["docker", "exec"]
+                    if getattr(args, "interactive", False):
+                        exec_cmd.append("-i")
+                    if getattr(args, "tty_exec", False):
+                        exec_cmd.append("-t")
+                    exec_cmd.append(name)
+                    exec_cmd.extend(args.cmd)
+                    return subprocess.run(exec_cmd, check=False).returncode
+                finally:
+                    if container:
+                        container.stop()
+        return asyncio.run(_run_exec())
 
     else:
         parser.error("command is required")

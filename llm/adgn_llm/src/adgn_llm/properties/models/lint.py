@@ -112,7 +112,8 @@ class LintSubmitPayload(BaseModel):
     @model_validator(mode="after")
     def _validate_tp_fp_one_of(self) -> "LintSubmitPayload":
         """Ensure either exactly one TRUE_POSITIVE or FALSE_POSITIVE, or (no TP/FP and >=1 OTHER_ERROR)."""
-        type_counter = Counter(type(f) for f in self.findings)
+        # Count by inner finding kinds (not the record wrapper)
+        type_counter = Counter(type(fr.finding) for fr in self.findings)
         if type_counter[TruePositive] == 0 and type_counter[FalsePositive] == 1:
             return self
         if type_counter[TruePositive] == 1 and type_counter[FalsePositive] == 0:

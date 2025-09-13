@@ -108,20 +108,12 @@ def _render_lint_submit_payload(obj: LintSubmitPayload):  # type: ignore[misc]
     findings_tbl.add_column("Rationale", style="green")
     if obj.findings:
         for fr in obj.findings:
-            f: Any = fr.finding
-            kind = getattr(f, "kind", type(f).__name__)
-            # Prefer a readable JSON dump when possible
-            if hasattr(f, "model_dump"):
-                try:
-                    details = json.dumps(
-                        f.model_dump(exclude_none=True), ensure_ascii=False, indent=2
-                    )
-                except Exception:
-                    details = str(f)
-            else:
-                details = str(f)
+            find: Any = fr.finding
+            kind = getattr(find, "kind", type(find).__name__)
+            # Render details via our Rich renderer (assume implementation present)
+            detail_render = render_to_rich(find)
             rationale_text = fr.rationale or ""
-            findings_tbl.add_row(kind, details, rationale_text)
+            findings_tbl.add_row(kind, detail_render, rationale_text)
     else:
         findings_tbl.add_row("(no findings)", "", "")
     bits.append(findings_tbl)
@@ -132,9 +124,7 @@ def _render_lint_submit_payload(obj: LintSubmitPayload):  # type: ignore[misc]
     body: ConsoleRenderable = (
         bits[0] if len(bits) == 1 else cast(ConsoleRenderable, Group(*tuple(bits)))
     )
-    title = "Lint result (fail)" if obj.fail else "Lint result (pass)"
-    border = "red" if obj.fail else "green"
-    return Panel(body, title=title, border_style=border)
+    return Panel(body, title="Lint result")
 
 
 def make_lint_submit_server(
@@ -368,35 +358,10 @@ async def lint_issue_run(
 
     rec = SpecimenRegistry.load_strict(Path(specimen).name)
 
-    # Always mount from under $HOME to avoid Docker volume restrictions on /var/folders
-    ts = int(time.time())
-    name = f"lint_{ts}"
-    mount_root = (
-        Path.home() / ".cache" / "adgn-llm" / "workspaces" / f"{specimen}_{name}"
-    )
-    mount_root.mkdir(parents=True, exist_ok=True)
-
     submit_state = LintSubmitState()
 
-    try:
-        # Prepare mount directory under $HOME from cached archive; hard-fail if cache missing
-        if mount_root.exists():
-            shutil.rmtree(mount_root, ignore_errors=True)
-        archive = ensure_archive_for_specimen_slug(
-            rec.manifest, rec.manifest_path, gc_path
-        )
-        # Extract to mount_root
-        with tarfile.open(archive, "r:gz") as tf:
-            tf.extractall(mount_root)
-
-        # Determine content root: expect exactly one top-level directory after extraction
-        entries = [p for p in mount_root.iterdir() if p.is_dir()]
-        if len(entries) != 1:
-            raise SystemExit(
-                f"Unexpected archive layout under {mount_root}; expected a single top-level directory",
-            )
-        content_root = entries[0]
-
+    # Hydrate specimen via registry context manager (centralized cleanup)
+    async with rec.hydrated_copy(gc_path) as content_root:
         # Build in-process FastMCP servers
         submit_server = make_lint_submit_server(submit_state, name="lint_submit")
         submit_spec = make_inproc_slot_spec(submit_server)
@@ -439,13 +404,8 @@ async def lint_issue_run(
             # Run without passing controller; loop control is provided by handlers.
             await agent.run(prompt)
 
-        assert submit_state.result, "submit_result somehow not called?"
-        return submit_state.result  # type: ignore[return-value]
-
-    finally:
-        # Cleanup copied workspace
-        if mount_root.exists():
-            shutil.rmtree(mount_root, ignore_errors=True)
+    assert submit_state.result, "submit_result somehow not called?"
+    return submit_state.result  # type: ignore[return-value]
 
 
 # ---------------------------------------------------------------------------
