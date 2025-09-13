@@ -66,18 +66,10 @@
   - Finding: `known, passthru = parser.parse_known_args()` and subsequent `if known.debug:` read oddly in broader context; prefer `args, passthru` or `known_args` for clarity.
   - Anchor: llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py (args parsing and debug check)
   - Rationale: Naming clarity; not covered by an explicit property.
-- Move single-use variable to first use site
-  - Finding: `commit_msg_path = Path(repo.git_dir) / "COMMIT_EDITMSG"` is declared many lines before the only use; move it to the first use location to improve locality.
-  - Anchors: decl at cli.py:884; use at cli.py:918
-  - Rationale: Avoid one-off variables and keep declarations close to use; not covered by an explicit property.
 - Inline editor returncode check with walrus
   - Finding: Replace two-step wait+check with `if (rc := await editor_proc.wait()) != 0: ...`.
   - Anchor: llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py:927–928
   - Rationale: Matches walrus guidance for immediate condition checks.
-- Extract function for scissors-strip + non-comment collapse
-  - Finding: The loop that strips content below scissors and collapses non-comment lines would be a natural small helper (e.g., ), improving testability and reuse.
-  - Anchor: llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py:936 (around empty-message check)
-  - Rationale: Refactor suggestion; no explicit property.
 
 - Avoid duplicating cleanup logic between git flag and Python parsing
   - Finding: Using  while also performing custom Python cleanup (scissors/comment stripping) risks partial duplication/drift. Prefer a single source of truth (either rely on git cleanup plus a minimal check, or centralize in Python helper and align flags accordingly).
@@ -213,20 +205,6 @@
   - Finding: Instead of resolving the exact MCP tool name for docker and interpolating it into the prompt, describe the desired action (“operate on the connected Docker container …”) and rely on the tool’s schema; reduces brittleness and saves lines of code that aren’t worth the runtime reflection.
   - Anchor: llm/adgn_llm/src/adgn_llm/mini_codex/examples/run_minicodex_docker_demo.py (docker_tool extraction and prompt assembly)
   - Rationale: Prompt robustness/maintainability; not covered explicitly.
-
-- Deduplicate helper functions across modules
-  - Finding: `_responses_create_with_retry` is defined in both mini_codex/agent.py and mini_codex/cli.py; define once (e.g., in agent) and import to avoid drift.
-  - Anchors:
-    - llm/adgn_llm/src/adgn_llm/mini_codex/agent.py:42
-    - llm/adgn_llm/src/adgn_llm/mini_codex/cli.py:184
-  - Rationale: DRY; not covered explicitly.
-
-- Unify OpenAI client factory
-  - Finding: `openai_client()` is duplicated in agent.py and cli.py; define in one place and import. Combined with “remove manual OPENAI_API_KEY plumbing” this simplifies configuration.
-  - Anchors:
-    - llm/adgn_llm/src/adgn_llm/mini_codex/agent.py:45
-    - llm/adgn_llm/src/adgn_llm/mini_codex/cli.py:158
-  - Rationale: DRY; not covered explicitly.
 
 - Deduplicate error paths in call_tool
   - Finding: Unknown function vs generic exception produce near-identical subprocess-shaped dicts; consolidate into one path (or better: structured returns per tool as noted elsewhere).
