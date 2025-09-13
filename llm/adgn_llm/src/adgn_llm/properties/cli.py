@@ -21,7 +21,7 @@ from adgn_llm.properties.docker_env import (
 import time
 from pathlib import Path
 from dataclasses import dataclass
-from adgn_llm.properties.prompts.util import build_input_schemas_json
+from adgn_llm.properties.prompts.util import build_input_schemas_json, build_scope_text
 from adgn_llm.properties.prompts.builder import (
     build_role_prompt,
     build_enforce_prompt,

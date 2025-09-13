@@ -194,38 +194,3 @@ class IssueCore(BaseModel):
         )
 
 
-class SpecimenIssues(BaseModel):
-    """DEPRECATED: Will be superseded by SpecimenGroundTruth (positives/negatives).
-
-    Kept for compatibility with existing Jsonnet pipelines until migration completes.
-    """
-
-    items: list[Issue]
-
-    def model_post_init(self, _: Any) -> None:  # type: ignore[override]
-        _warn_deprecated_model("SpecimenIssues is deprecated: use SpecimenGroundTruth protocol.")
-
-    def filter_by_paths(
-        self,
-        include: list[str] | None,
-        exclude: list[str] | None = None,
-    ) -> SpecimenIssues:
-        from fnmatch import fnmatch  # local import to avoid extra deps here
-
-        if not include and not exclude:
-            return self
-
-        def matches_any(path: str, globs: list[str] | None) -> bool:
-            if not globs:
-                return False
-            return any(fnmatch(path, g) for g in globs)
-
-        filtered: list[Issue] = []
-        for issue in self.items:
-            file_paths = list(issue.files_touched)
-            keep = any(matches_any(p, include) for p in file_paths) if include else True
-            if exclude and any(matches_any(p, exclude) for p in file_paths):
-                keep = False
-            if keep:
-                filtered.append(issue)
-        return SpecimenIssues.model_validate({"items": filtered})
