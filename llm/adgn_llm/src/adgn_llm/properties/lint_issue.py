@@ -7,9 +7,8 @@ import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Annotated, Literal, cast
+from typing import Any, cast
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
 from mcp.server.fastmcp import FastMCP
 from adgn_llm.properties.prompts.util import (
     render_prompt_template,
@@ -49,20 +48,10 @@ from adgn_llm.mini_codex.event_renderer import (
 from adgn_llm.mini_codex.aggregating_handler import BaseHandler
 from adgn_llm.properties.models.issue import Occurrence, LineRange, Issue, IssueCore
 from adgn_llm.properties.models.lint import (
-    Correction,
-    PropertyIncorrectlyAssigned,
-    PropertyShouldBeAssigned,
-    AnchorIncorrect,
-    FalsePositive,
-    TruePositive,
-    OtherError,
-    RationaleError,
-    RationaleImprovement,
-    IssueLintFinding,
     IssueLintFindingRecord,
+    LintSubmitPayload,
 )
 from .specimen_registry import ensure_archive_for_specimen_slug
-from .prop_utils import PropertyID
 
 
 # ---- Issue lint finding models are defined in models/lint.py and imported above ----
@@ -70,74 +59,6 @@ from .prop_utils import PropertyID
 # ---------------------------------------------------------------------------
 # Lint submit MCP server + shared state (accessible to controller and server)
 # ---------------------------------------------------------------------------
-
-
-# ChecklistItem (commented out — checklist handling is currently disabled)
-# class ChecklistItem(BaseModel):
-#     """Hierarchical checklist for the agent's performed checks.
-#
-#     May be per-property or general. Answer should be "YES"/"NO" when binary; free strings allowed when necessary.
-#     """
-#
-#     item: str = Field(..., description="Checklist question or assertion")
-#     subitems: list["ChecklistItem"] = Field(
-#         default_factory=list, description="Nested checks under this item"
-#     )
-#     log: str = Field(default="", description="Short log of evidence or steps taken")
-#     answer: bool | str = Field(
-#         ...,
-#         description="Answer; use boolean for binary (true/false); free text allowed when needed",
-#     )
-
-
-class LintSubmitPayload(BaseModel):
-    """Final linter result payload."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    fail: bool = Field(
-        ...,
-        description="Set true if any property is violated; false if all checks pass.",
-    )
-    message_md: str = Field(
-        ..., description="Concise Markdown report; do not restate pass/fail."
-    )
-    suggested_rationale: str | None = Field(
-        default=None,
-        description=(
-            "If non-null, the linter suggests a corrected Issue rationale text based on the actual evidence "
-            "(e.g., remove mentions of nonexistent callers and prescribe deleting dead code). Null means keep original."
-        ),
-    )
-    # checklist: list[ChecklistItem] | None = Field(
-    #     default=None,
-    #     description="Root checklist items (tree) summarizing checks performed (per-property or general)",
-    # )
-    findings: list[IssueLintFindingRecord] | None = Field(
-        default=None,
-        description="Typed list of lint findings produced by the agent (structured, machine-readable).",
-    )
-
-    @model_validator(mode="after")
-    def _validate_tp_fp_one_of(self) -> "LintSubmitPayload":
-        """Ensure either exactly one TRUE_POSITIVE or FALSE_POSITIVE, or (no TP/FP and >=1 OTHER_ERROR)."""
-        tp_fp_count = 0
-        other_count = 0
-        if self.findings:
-            for fr in self.findings:
-                f = fr.finding
-                kind = getattr(f, "kind", None)
-                if kind in ("TRUE_POSITIVE", "FALSE_POSITIVE"):
-                    tp_fp_count += 1
-                if kind == "OTHER_ERROR":
-                    other_count += 1
-        # Valid if exactly one TP/FP, or if no TP/FP but at least one OTHER_ERROR
-        if not (tp_fp_count == 1 or (tp_fp_count == 0 and other_count >= 1)):
-            raise ValueError(
-                "Lint output must contain exactly one TRUE_POSITIVE or FALSE_POSITIVE finding, "
-                "or no TP/FP and at least one OTHER_ERROR"
-            )
-        return self
 
 
 class LintSubmitState:
@@ -287,7 +208,9 @@ def _build_prompt(
     docker_tool_name = build_mcp_function(DOCKER_SERVER_NAME, DOCKER_EXEC_TOOL_NAME)
 
     # Input schemas for the agent (always included)
-    schemas_json = build_input_schemas_json((IssueCore, Occurrence, LineRange, LintSubmitPayload, IssueLintFindingRecord))
+    schemas_json = build_input_schemas_json(
+        (IssueCore, Occurrence, LineRange, LintSubmitPayload, IssueLintFindingRecord)
+    )
 
     return render_prompt_template(
         "lint_issue.j2.md",
@@ -599,4 +522,4 @@ async def run_specimen_lint_issue_async(
 
     # Pretty-print final agent output via Rich renderer
     Console().print(render_to_rich(res))
-    return 0 if (res.fail is False) else 2
+    return 0

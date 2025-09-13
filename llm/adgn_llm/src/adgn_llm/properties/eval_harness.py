@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-import datetime as _dt
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal, Annotated, Union
 
@@ -11,12 +11,22 @@ from pydantic import BaseModel, Field, ConfigDict
 from rich.console import Console
 from rich.table import Table
 from hamcrest import assert_that, has_item, has_properties
-from openai.types.responses import ResponseFunctionToolCall, ResponseFunctionToolCallItem
+from openai.types.responses import (
+    ResponseFunctionToolCall,
+    ResponseFunctionToolCallItem,
+)
 
 from adgn_llm.mini_codex.event_renderer import NullConsoleEventRenderer
 from adgn_llm.rendering.rich_renderers import render_to_rich
 from .lint_issue import lint_issue_run
-from adgn_llm.properties.models.issue import IssueCore, Occurrence, LineRange
+from adgn_llm.properties.models.issue import (
+    IssueCore,
+    Occurrence,
+    LineRange,
+)
+from adgn_llm.properties.models.lint import (
+    PropertyIncorrectlyAssigned,
+)
 
 
 # ---------- Expectations / Assertions ----------
@@ -197,9 +207,10 @@ async def _grade_rationale_with_llm(
     # Extract function call robustly; fail fast on missing/invalid
     call: ResponseFunctionToolCall | None = None
     for item in resp.output:
-        if (isinstance(item, ResponseFunctionToolCallItem) and item.type == "function_call") or isinstance(
-            item, ResponseFunctionToolCall
-        ):
+        if (
+            isinstance(item, ResponseFunctionToolCallItem)
+            and item.type == "function_call"
+        ) or isinstance(item, ResponseFunctionToolCall):
             call = item  # type: ignore[assignment]
             break
     if not call or call.name != "grade_rationale":
@@ -231,7 +242,7 @@ async def eval_issue_spec(
 
     Returns a structured SampleRunSummary and writes summary.json to out_dir.
     """
-    ts = _dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     base = (
         Path(out_dir)
         if out_dir is not None
@@ -268,7 +279,9 @@ async def eval_issue_spec(
         )
 
         # Print the structured output object produced by the agent for this case
-        Console().print(f"[bold]{spec.specimen} {spec.issue.id} case {idx} {path}[/bold]")
+        Console().print(
+            f"[bold]{spec.specimen} {spec.issue.id} case {idx} {path}[/bold]"
+        )
         Console().print(render_to_rich(payload))
 
         # Effective ranges: derive corrections from AnchorIncorrect findings when present
@@ -336,15 +349,14 @@ async def eval_issue_spec(
                 # Verify that the linter emitted the expected property finding
                 found = False
                 details: list[dict[str, str]] = []
-                if payload.findings:
-                    for fr in payload.findings:
-                        f = getattr(fr, "finding", None)
-                        kind = getattr(f, "kind", None)
-                        prop = getattr(f, "property", None)
-                        if kind and prop:
-                            details.append({"kind": str(kind), "property": str(prop)})
-                        if kind == exp.finding and prop == exp.property:
-                            found = True
+                for fr in payload.findings:
+                    f = getattr(fr, "finding", None)
+                    kind = getattr(f, "kind", None)
+                    prop = getattr(f, "property", None)
+                    if kind and prop:
+                        details.append({"kind": str(kind), "property": str(prop)})
+                    if kind == exp.finding and prop == exp.property:
+                        found = True
                 exp_results.append(
                     {
                         "kind": "property_finding",
@@ -356,11 +368,8 @@ async def eval_issue_spec(
                 case_pass = case_pass and found
             elif isinstance(exp, FindingsMatcherExpectation):
                 # Apply a PyHamcrest matcher to the REAL finding objects (not flattened dicts)
-                arr: list[Any] = []
-                if payload.findings:
-                    arr = [fr.finding for fr in payload.findings]
                 try:
-                    assert_that(arr, exp.matcher)
+                    assert_that(payload.findings, exp.matcher)
                     ok = True
                     reason = None
                 except AssertionError as e:
@@ -375,7 +384,7 @@ async def eval_issue_spec(
                 )
                 case_pass = case_pass and ok
 
-        passes += 1 if case_pass else 0
+        passes += int(case_pass)
 
         # Write per-case payload
         (base / f"case_{idx:02d}_payload.json").write_text(
@@ -415,12 +424,6 @@ async def eval_issue_spec(
         failed=len(spec.cases) - passes,
         summary_path=str(base / "summary.json"),
     )
-
-
-class IssueEvalSpec(BaseModel):
-    specimen: str
-    issue: IssueCore
-    cases: list[OccurrenceCase]
 
 
 # Flat list of samples (no dataset abstraction)
@@ -538,9 +541,8 @@ SAMPLES: list[IssueEvalSpec] = [
                 expectations=[
                     FindingsMatcherExpectation(
                         matcher=has_item(
-                            has_properties(
-                                kind="PROPERTY_INCORRECTLY_ASSIGNED",
-                                property="no-oneoff-vars-and-trivial-wrappers",
+                            PropertyIncorrectlyAssigned(
+                                property="no-oneoff-vars-and-trivial-wrappers"
                             )
                         ),
                     )
@@ -572,8 +574,7 @@ SAMPLES: list[IssueEvalSpec] = [
                 expectations=[
                     FindingsMatcherExpectation(
                         matcher=has_item(
-                            has_properties(
-                                kind="PROPERTY_INCORRECTLY_ASSIGNED",
+                            PropertyIncorrectlyAssigned(
                                 property="early-bailout",
                             )
                         ),
@@ -606,8 +607,7 @@ SAMPLES: list[IssueEvalSpec] = [
                 expectations=[
                     FindingsMatcherExpectation(
                         matcher=has_item(
-                            has_properties(
-                                kind="PROPERTY_INCORRECTLY_ASSIGNED",
+                            PropertyIncorrectlyAssigned(
                                 property="no-oneoff-vars-and-trivial-wrappers",
                             )
                         ),
@@ -628,7 +628,7 @@ async def run_all_evals(
     concurrency: int = 4,
 ) -> EvalIndex:
     """Run all samples concurrently (bounded), print a Rich summary, and return EvalIndex."""
-    ts = _dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     root = (
         Path(root_out)
         if root_out is not None
