@@ -50,9 +50,7 @@ from .grader import GradeSubmitState, make_grader_submit_server
 from .specimens.registry import (
     find_specimens_base,
     list_specimen_names,
-    load_manifest,
     resolve_manifest_arg,
-    ensure_archive_for_specimen_slug,
 )
 from adgn_llm.properties.prop_utils import properties_root
 from adgn_llm.properties.models.issue import Occurrence, LineRange, IssueCore
@@ -275,7 +273,8 @@ async def _run_specimen_minicodex_async(
     output_final_message: Path | None,
     client: AsyncOpenAI,
 ) -> int:
-    man = load_manifest(manifest_path)
+    rec = SpecimenRegistry.load_strict(manifest_path.parent.name)
+    man = rec.manifest
 
     supplemental_text = (
         read_embedded_paths([Path(p) for p in (embed_paths or [])])
@@ -283,7 +282,6 @@ async def _run_specimen_minicodex_async(
         else None
     )
 
-    rec = SpecimenRegistry.load_strict(manifest_path.parent.name)
     async with rec.hydrated_copy(gitconfig) as content_root:
         # Build prompt according to mode
         scope_text = build_scope_text(man.scope.include, man.scope.exclude)
@@ -366,10 +364,9 @@ async def _run_specimen_grade_minicodex_async(
     output_final_message: Path | None,
     client: AsyncOpenAI,
 ) -> int:
-    man = load_manifest(manifest_path)
+    rec = SpecimenRegistry.load_strict(manifest_path.parent.name)
+    man = rec.manifest
     scope_text = build_scope_text(man.scope.include, man.scope.exclude)
-    spec_dir = manifest_path.parent
-    rec = SpecimenRegistry.load_strict(spec_dir.name)
 
     # Canonical positives → list of {core, occurrences}
     canonical_list = [
@@ -380,13 +377,19 @@ async def _run_specimen_grade_minicodex_async(
         for it in rec.issues.values()
     ]
     # Known false positives (optional) → list of {core, occurrences}
-    known_fp_list = [
-        {
-            "core": it.core.model_dump(exclude_none=True),
-            "occurrences": [occ.model_dump(exclude_none=True) for occ in it.instances],
-        }
-        for it in rec.false_positives.values()
-    ] if hasattr(rec, "false_positives") and rec.false_positives else []
+    known_fp_list = (
+        [
+            {
+                "core": it.core.model_dump(exclude_none=True),
+                "occurrences": [
+                    occ.model_dump(exclude_none=True) for occ in it.instances
+                ],
+            }
+            for it in rec.false_positives.values()
+        ]
+        if hasattr(rec, "false_positives") and rec.false_positives
+        else []
+    )
 
     # Read critique JSON produced by specimen-check
     crit_text = Path(critique_path).read_text(encoding="utf-8")
@@ -399,6 +402,7 @@ async def _run_specimen_grade_minicodex_async(
 
     wiring = PropertiesDockerWiring(
         server_spec=None,  # no docker servers needed for grading
+        # TODO(mpokorny): Provide specimen container access (mount workspace) if we want grader to inspect files
         working_dir=Path("/"),
         definitions_container_dir=None,
         image_name="n/a",
@@ -410,7 +414,11 @@ async def _run_specimen_grade_minicodex_async(
         scope_text=scope_text,
         canonical_json=json.dumps(canonical_list, ensure_ascii=False, indent=2),
         critique_json=crit_text,
-        known_fp_json=(json.dumps(known_fp_list, ensure_ascii=False, indent=2) if known_fp_list else "[]"),
+        known_fp_json=(
+            json.dumps(known_fp_list, ensure_ascii=False, indent=2)
+            if known_fp_list
+            else "[]"
+        ),
         submit_tool_name=build_mcp_function("grader_submit", "submit_result"),
         wiring=wiring,
     )
@@ -422,13 +430,16 @@ async def _run_specimen_grade_minicodex_async(
         outfile = tmpdir / f"codex_prompt_specimen_grade_{ts}.md"
         outfile.write_text(prompt, encoding="utf-8")
         tokens = len(tiktoken.get_encoding("cl100k_base").encode(prompt))
-        print(f"Saved prompt: {outfile} (approx tokens: {tokens if tokens is not None else 'n/a'})")
+        print(
+            f"Saved prompt: {outfile} (approx tokens: {tokens if tokens is not None else 'n/a'})"
+        )
         return 0
 
     # MiniCodex run with in-proc grader_submit server; force tool calls until submit
     class GraderHandler(BaseHandler):
         def __init__(self, state: GradeSubmitState) -> None:
             self._state = state
+
         def on_before_sample(self):  # type: ignore[override]
             if self._state.result is not None:
                 return Abort()
@@ -447,7 +458,9 @@ async def _run_specimen_grade_minicodex_async(
         result = await agent.run(prompt)
         if isinstance(result, AgentResult):
             if output_final_message:
-                Path(output_final_message).write_text(result.text or "", encoding="utf-8")
+                Path(output_final_message).write_text(
+                    result.text or "", encoding="utf-8"
+                )
             if not final_only and result.text:
                 print(result.text)
 
@@ -968,7 +981,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "specimen-exec":
         base = find_specimens_base()
         manifest_path = resolve_manifest_arg(args.specimen, base)
-        if manifest_path:
+        if not manifest_path:
             names = list_specimen_names(base)
             if not names:
                 print(f"No specimens found under: {base}")

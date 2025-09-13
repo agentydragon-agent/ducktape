@@ -352,12 +352,6 @@ def resolve_manifest_arg(arg: str | None, base: Path | None = None) -> Path | No
     return None
 
 
-def load_manifest(path: Path) -> SpecimenDoc:
-    """Read specimen manifest (YAML) and validate into SpecimenDoc."""
-    raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    if not isinstance(raw, dict):
-        raise SystemExit(f"Manifest must be a mapping: {path}")
-    return SpecimenDoc.model_validate(raw)
 
 
 @dataclass(frozen=True)
@@ -434,7 +428,10 @@ class SpecimenRegistry:
     ) -> tuple[SpecimenRecord, list[str]]:
         base_dir = base or find_specimens_base()
         manifest_path = (base_dir / slug / "manifest.yaml").resolve()
-        man = load_manifest(manifest_path)
+        raw = yaml.safe_load(manifest_path.read_text(encoding="utf-8")) or {}
+        if not isinstance(raw, dict):
+            raise SystemExit(f"Manifest must be a mapping: {manifest_path}")
+        man = SpecimenDoc.model_validate(raw)
         res_pos = _jsonnet_load_issues_dir(manifest_path.parent, strict=False)
         res_fp = _jsonnet_load_false_positives_dir(manifest_path.parent, strict=False)
         rec = SpecimenRecord(

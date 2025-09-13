@@ -192,7 +192,9 @@ async def optimize_prompts_mcp(
         async def select_seed_tasks(self) -> list[TaskDefinition]:
             return seed_tasks
 
-        async def run_rollouts_with_prompt(self, prompt: str, tasks: list[TaskDefinition]) -> list[GradedRollout]:
+        async def run_rollouts_with_prompt(
+            self, prompt: str, tasks: list[TaskDefinition]
+        ) -> list[GradedRollout]:
             # Minimal serial implementation (can parallelize later)
             results: list[GradedRollout] = []
             for t in tasks:
@@ -237,7 +239,14 @@ async def optimize_prompts_mcp(
                 await runner.cleanup()
             return results
 
-        def persist_all(self, *, iteration: int, prompt: str, rollouts: list[GradedRollout], feedback: str) -> None:
+        def persist_all(
+            self,
+            *,
+            iteration: int,
+            prompt: str,
+            rollouts: list[GradedRollout],
+            feedback: str,
+        ) -> None:
             it_dir = base_dir / f"iter_{iteration:03d}"
             it_dir.mkdir(parents=True, exist_ok=True)
             (it_dir / "CLAUDE.md").write_text(prompt)
@@ -248,7 +257,9 @@ async def optimize_prompts_mcp(
             with prompts_log.open("a") as f:
                 f.write(json.dumps({"iteration": iteration, "prompt": prompt}) + "\n")
             with feedback_log.open("a") as f:
-                f.write(json.dumps({"iteration": iteration, "feedback": feedback}) + "\n")
+                f.write(
+                    json.dumps({"iteration": iteration, "feedback": feedback}) + "\n"
+                )
 
             # Update prompts.json as a list built in-memory (no file read)
             self._prompts.append(prompt)
@@ -273,12 +284,16 @@ async def optimize_prompts_mcp(
                     "files": gr.rollout.files,
                     "metadata": gr.rollout.metadata,
                 }
-                (rollout_dir / "rollout.json").write_text(json.dumps(rollout_data, indent=2))
+                (rollout_dir / "rollout.json").write_text(
+                    json.dumps(rollout_data, indent=2)
+                )
                 # grading.json
                 grading_data = {
                     "overall_score": gr.grade.overall_score,
                 }
-                (rollout_dir / "grading.json").write_text(json.dumps(grading_data, indent=2))
+                (rollout_dir / "grading.json").write_text(
+                    json.dumps(grading_data, indent=2)
+                )
 
     deps = _Deps()
 
@@ -350,10 +365,6 @@ async def optimize_prompts_mcp(
 # Helper functions for deduplication and common operations
 # (file collection lives in core/file_ops; keep local helpers here)
 # -----------------------------------------------------------------------------
-
-
-def _write_json(path: Path, data: dict) -> None:
-    path.write_text(json.dumps(data, indent=2))
 
 
 async def optimize_prompts(
