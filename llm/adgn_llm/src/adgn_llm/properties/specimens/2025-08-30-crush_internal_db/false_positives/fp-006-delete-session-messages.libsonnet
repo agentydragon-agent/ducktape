@@ -1,4 +1,4 @@
-local I = import '../../specimen_issues.libsonnet';
+local I = import '../../specimens/lib.libsonnet';
 
 // fp-006-delete-session-messages
 // False positive: DeleteSessionMessages early-bailout suggestion is unnecessary

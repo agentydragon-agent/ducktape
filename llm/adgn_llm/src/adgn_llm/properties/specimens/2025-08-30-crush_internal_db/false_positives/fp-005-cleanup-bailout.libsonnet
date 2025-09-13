@@ -1,4 +1,4 @@
-local I = import '../../specimen_issues.libsonnet';
+local I = import '../../specimens/lib.libsonnet';
 
 // fp-005-cleanup-bailout
 // False positive: cleanup loop early-bailout rewrite not necessary

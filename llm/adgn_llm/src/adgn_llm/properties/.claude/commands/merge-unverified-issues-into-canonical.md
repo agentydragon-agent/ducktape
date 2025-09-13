@@ -7,7 +7,7 @@ From context, you should see that we are working with some particular piece of c
 ## Canonical issues format (Jsonnet)
 
 - The canonical issues live in `issues.libsonnet` (rootV2: source, scope, items).
-- Use the helpers in `src/adgn_llm/properties/specimen_issues.libsonnet`:
+- Use the helpers in `src/adgn_llm/properties/specimens/lib.libsonnet`:
   - `I.issueOneOccurrence(...)` for a single cross‑cutting issue with `filesToRanges={path: [ranges] | null}`
   - `I.issueOccurrencesFromLines(...)` for many independent instances with `linesByFile={path: [line|[start,end], ...]}`
 - Coverage semantics:

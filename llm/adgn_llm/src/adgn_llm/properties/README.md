@@ -71,7 +71,7 @@ Specimens are now expressed as a manifest YAML plus a directory of per-issue Jso
 
 - issues/ (required for tooling)
   - Per-issue Jsonnet files: `issues/<issue-id>.libsonnet`.
-  - Each .libsonnet must be a single Jsonnet expression that returns one Issue object built with the helpers in `specimen_issues.libsonnet` (import with: `local I = import '../../specimen_issues.libsonnet';`).
+  - Each .libsonnet must be a single Jsonnet expression that returns one Issue object built with the helpers in `specimens/lib.libsonnet` (import with: `local I = import '../../specimens/lib.libsonnet';`).
   - Preferred constructors: `I.issueOneOccurrence`, `I.issueWithOccurrences`, `I.issueOccurrencesFromLines`, `I.issueOccurrencesFromFiles`. The v2 helper `rootV2(source, scope, items)` is available for programmatic assembly.
   - Line anchors accept numbers (single line), `[start,end]` spans, or objects with `start_line`/`end_line`; the Jsonnet helpers normalize these into LineRange objects the Python loader expects.
 
@@ -82,7 +82,7 @@ Specimens are now expressed as a manifest YAML plus a directory of per-issue Jso
 Authoring rules (short)
 
 - Issue id is derived from the filename stem (e.g., `issues/iss-032.libsonnet`). Do not include an `id` field in Jsonnet.
-- Use the Jsonnet helpers from `specimen_issues.libsonnet` to normalize ranges and occurrence-level notes.
+- Use the Jsonnet helpers from `specimens/lib.libsonnet` to normalize ranges and occurrence-level notes.
 - Avoid external network imports in Jsonnet; the loader uses a controlled importer that resolves relative imports and a package library directory only.
 
 Migration guidance

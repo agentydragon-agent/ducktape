@@ -91,8 +91,8 @@ Jsonnet authoring guidelines (||| blocks and issue files)
 
 - Location and shape
   - All specimen issues live under: src/adgn_llm/properties/specimens/<specimen>/issues/*.libsonnet
-  - Each file is ONE standalone Jsonnet expression that returns a single Issue object built via helpers from specimen_issues.libsonnet
-  - Start every file with: `local I = import '../../specimen_issues.libsonnet';`
+  - Each file is ONE standalone Jsonnet expression that returns a single Issue object built via helpers from specimens/lib.libsonnet
+  - Start every file with: `local I = import '../../specimens/lib.libsonnet';`
   - File name must equal the issue id (e.g., issues/iss-032.libsonnet). Do not include id in the Jsonnet; the loader derives it from the filename.
 
 - Triple-bar text blocks (|||) — exact house style
@@ -133,7 +133,7 @@ Jsonnet authoring guidelines (||| blocks and issue files)
     - Allowed per-file entries: numbers, `[start,end]`, strings (become occurrence-level note with unspecified range), or `{range: <spec>, note: '...'}`
 
 - Import/search path
-  - Always import helpers via a relative path from the issues/ directory: `local I = import '../../specimen_issues.libsonnet';`
+  - Always import helpers via a relative path from the issues/ directory: `local I = import '../../specimens/lib.libsonnet';`
   - Loader sets the library path; do not chdir or edit imports in-place.
 
 - Trailing commas & monolith split

@@ -1,0 +1,18 @@
+local I = import '../../specimens/lib.libsonnet';
+
+// iss-003: Avoid exceptions for normal control flow; detect "first commit" positively
+I.issueOccurrencesFromLines(
+  rationale=|||
+    Do not use try/except to detect normal, non-error conditions. Reserve exceptions for unexpected situations.
+    The current "first commit" detection relies on catching a diff failure, which can also swallow unrelated errors.
+    Prefer a positive repository capability/condition check with early bailout. Example pattern:
+      - If we're in the 90% normal case (without executing a failing operation), run the normal path.
+      - Else, handle the 10% case explicitly.
+    As a reviewer, seeing try/except signals "what's on fire" (unexpected), not a routine precondition check.
+  |||,
+  // properties=['scoped-try-except', 'early-bailout'],
+  gap_note='General heuristic: avoid exceptions for normal control flow; use explicit capability/condition checks. Not fully captured by existing properties.',
+  linesByFile={
+    'llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py': [304],
+  },
+)

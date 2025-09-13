@@ -1,4 +1,4 @@
-local I = import '../../specimen_issues.libsonnet';
+local I = import '../../specimens/lib.libsonnet';
 
 // fp-003-yolo-flag
 // False positive: CLI flag `--yolo` is acceptable branding and should not be renamed.

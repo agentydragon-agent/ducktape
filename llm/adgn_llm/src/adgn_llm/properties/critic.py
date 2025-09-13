@@ -19,16 +19,16 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from mcp.server.fastmcp import FastMCP
 
 from adgn_llm.properties.models.issue import IssueCore, Occurrence
+from adgn_llm.rendering.rich_renderers import render_to_rich
 
 from rich.table import Table
 from rich.panel import Panel
 from rich.markdown import Markdown
 from rich.console import Group, RenderableType
-from adgn_llm.rendering.rich_renderers import render_to_rich
 
 
 class ReportedIssue(BaseModel):
-    """Candidate issue: IssueCore metadata + >=1 Occurrence(s)."""
+    """Candidate issue: IssueCore header + >=1 Occurrence(s)."""
 
     core: IssueCore
     occurrences: list[Occurrence]
@@ -45,7 +45,9 @@ class ReportedIssue(BaseModel):
 class CriticSubmitPayload(BaseModel):
     """Structured critic output."""
 
-    issues: List[ReportedIssue] = Field(default_factory=list, description="List of issues found")
+    issues: List[ReportedIssue] = Field(
+        default_factory=list, description="Issues found"
+    )
     notes_md: str | None = Field(
         default=None,
         description="Optional Markdown note. Only for info not represented in structured form in `issues`.",
@@ -54,12 +56,14 @@ class CriticSubmitPayload(BaseModel):
 
 
 class CriticSubmitState:
-    """Container for the single submitted CriticSubmitPayload result."""
+    """Container for submitted CriticSubmitPayload."""
 
     result: CriticSubmitPayload | None = None
 
 
-def make_critic_submit_server(state: CriticSubmitState, *, name: str = "critic_submit") -> FastMCP:
+def make_critic_submit_server(
+    state: CriticSubmitState, *, name: str = "critic_submit"
+) -> FastMCP:
     """Create a FastMCP exposing submit_result(result: CriticSubmitPayload) -> {ok: True}.
 
     Agent must call submit_result exactly once to deliver a validated CriticSubmitPayload.
@@ -81,17 +85,15 @@ def make_critic_submit_server(state: CriticSubmitState, *, name: str = "critic_s
 @render_to_rich.register
 def _render_critic_submit_payload(obj: CriticSubmitPayload):  # type: ignore[misc]
     bits: list[RenderableType] = []
-    # Candidate issues table
+    # Candidate issues table (no properties column)
     tbl = Table(title="Candidate Issues", show_lines=False, expand=True)
     tbl.add_column("ID", style="cyan")
-    tbl.add_column("Properties", style="magenta")
     tbl.add_column("Rationale", style="green")
     tbl.add_column("Occurrences", style="yellow")
 
     if obj.issues:
         for ci in obj.issues:
             cid = ci.core.id or "(no id)"
-            props = ", ".join(ci.core.properties or [])
             rationale = ci.core.rationale or ""
             occs = []
             for occ in ci.occurrences:
@@ -101,13 +103,15 @@ def _render_critic_submit_payload(obj: CriticSubmitPayload):  # type: ignore[mis
                         files.append(f"{p}: (unspecified)")
                     else:
                         spans = ", ".join(
-                            f"{r.start_line}" + (f"-{r.end_line}" if r.end_line is not None else "") for r in ranges
+                            f"{r.start_line}"
+                            + (f"-{r.end_line}" if r.end_line is not None else "")
+                            for r in ranges
                         )
                         files.append(f"{p}: {spans}")
                 note = f" ({occ.note})" if occ.note else ""
                 occs.append("; ".join(files) + note)
             occs_text = "\n".join(occs)
-            tbl.add_row(cid, props, rationale, occs_text)
+            tbl.add_row(cid, rationale, occs_text)
     else:
         tbl.add_row("(no candidate issues)", "", "", "")
 

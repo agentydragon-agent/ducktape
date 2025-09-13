@@ -79,7 +79,7 @@ Operating procedure (checklist)
 4) Stop after syntax is clean; do not attempt schema fixes.
 
 Acceptance criteria
-- Each edited file evaluates with _jsonnet (imports resolved via specimen_issues.libsonnet) and emits a JSON object
+- Each edited file evaluates with _jsonnet (imports resolved via specimens/lib.libsonnet) and emits a JSON object
 - No textual semantics changed beyond indentation/commas required by (|||)
 - Test: `adgn_llm/tests/test_specimens_valid_strict.py::test_specimen_issues_are_valid_strict[...]` shows no EVAL STATIC ERRORs for the fixed files (schema/validation errors may remain)
 

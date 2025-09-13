@@ -18,7 +18,7 @@ import time
 
 from ..models.specimen import SpecimenDoc, GitHubSource, GitSource, LocalSource
 from ..models.issue import Issue, SpecimenIssuesLoadError
-from ..prop_utils import properties_root  # reuse existing root locator
+from ..prop_utils import properties_root
 
 
 @dataclass(frozen=True)

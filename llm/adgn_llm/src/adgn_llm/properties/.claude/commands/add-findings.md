@@ -16,7 +16,7 @@ yourself and submit a good description.
 ## Canonical issues format (Jsonnet)
 
 The canonical ground-truth file is `issues.libsonnet` (rootV2). Use the Jsonnet helpers in
-src/adgn_llm/properties/specimen_issues.libsonnet:
+src/adgn_llm/properties/specimens/lib.libsonnet:
 
 - I.issueOneOccurrence(...) for a single cross-cutting issue (one occurrence with filesToRanges={path: [ranges] | null})
 - I.issueOccurrencesFromLines(...) for many independent occurrences (one per lineSpec) using

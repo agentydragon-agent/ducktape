@@ -23,7 +23,7 @@ of good code.
 @specimens/
 
 The `specimens/` folder contains examples of bad code with critique. Canonical ground‑truth is now recorded in
-`issues.libsonnet` using the Jsonnet helpers (see `src/adgn_llm/properties/specimen_issues.libsonnet`).
+`issues.libsonnet` using the Jsonnet helpers (see `src/adgn_llm/properties/specimens/lib.libsonnet`).
 Use these to identify:
 - Covered items (should_flag=true and properties!=[]) — already explained by existing definitions
 - Not‑covered‑yet items (should_flag=true and properties==[]) — prime candidates to generalize into new/edited properties

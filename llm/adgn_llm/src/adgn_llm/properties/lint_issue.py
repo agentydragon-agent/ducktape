@@ -25,7 +25,7 @@ from adgn_llm.rendering.rich_renderers import render_to_rich
 from openai import AsyncOpenAI
 from openai.types.responses import ResponseFunctionToolCall
 
-from adgn_llm.properties.prop_utils import properties_root, find_property_files
+from adgn_llm.properties.prop_utils import properties_root, props_definitions_root
 from adgn_llm.mcp.docker_exec.server import (
     SERVER_NAME as DOCKER_SERVER_NAME,
     TOOL_EXEC_NAME as DOCKER_EXEC_TOOL_NAME,
@@ -287,7 +287,7 @@ class LinterController(BaseHandler):
         # Property definition reads (full files, no cap)
         self._prop_calls: list[ResponseFunctionToolCall] = []
         if docker_wiring and prop_host_paths:
-            defs_dir = (properties_root() / "props").resolve()
+            defs_dir = props_definitions_root().resolve()
             for i, host_p in enumerate(prop_host_paths):
                 rel = Path(host_p).resolve().relative_to(defs_dir).as_posix()
                 cont_path = docker_wiring.container_path_for_prop_rel(rel)
@@ -332,9 +332,9 @@ async def lint_issue_run(
 ) -> LintSubmitPayload:
     """Run the lint-issue agent and return the exact structured payload.
 
-    - Hydrates the specimen workspace under $HOME/.cache to avoid Docker volume restrictions
-    - Launches in-proc submit server and docker_exec MCP per properties_docker_spec
-    - Uses the same LinterController bootstrap/tool policy as the CLI path
+    - Hydrates specimen under $HOME/.cache
+    - Launches in-proc submit server and docker_exec MCP
+    - Uses same LinterController bootstrap/tool policy as the CLI path
     """
     # Determine default gitconfig fallback (kept in sync with load_single_issue)
     if gitconfig is None:
@@ -361,9 +361,9 @@ async def lint_issue_run(
             "lint_submit": submit_spec,
         }
 
-        props = find_property_files([str(p) for p in issue_core.properties])
+        props: list[Path] = []
         prompt = _build_prompt(
-            issue_core,  # accepts IssueCore; template receives instance via 'instances=[occurrence]'
+            issue_core,
             submit_tool_name=build_mcp_function("lint_submit", "submit_result"),
             occurrence=occurrence,
             wiring=wiring,
@@ -429,7 +429,6 @@ async def run_specimen_lint_issue_async(
     submit_tool_name = build_mcp_function("lint_submit", "submit_result")
 
     if dry_run:
-        _ = find_property_files([str(p) for p in issue.properties])
         # Build a wiring for prompt rendering (no container launched in dry-run)
         # any existing directory works for template context
         dummy_root = properties_root()

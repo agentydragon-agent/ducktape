@@ -1,4 +1,4 @@
-local I = import '../../specimen_issues.libsonnet';
+local I = import '../../specimens/lib.libsonnet';
 
 // fp-004-ls-guard-form
 // False positive: combining IsDir + ShouldSkip into one guard is not required

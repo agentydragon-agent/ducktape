@@ -14,23 +14,23 @@ def properties_root() -> Path:
     return Path(str(files("adgn_llm").joinpath("properties")))
 
 
+def props_definitions_root() -> Path:
+    """Directory with property definition Markdown files (.../props)."""
+    return properties_root() / "props"
+
+
 def find_property_files(property_ids: list[str]) -> list[Path]:
     """Resolve property definition Markdown files by ID (filename stem)."""
-    props_root = properties_root()
-    defs_dir = props_root / "props"
-    wanted = set(property_ids)
-    found: list[Path] = []
-    if not defs_dir.exists():
-        return found
-    for md in defs_dir.rglob("*.md"):
-        if md.stem in wanted:
-            found.append(md)
+    props_root = props_definitions_root()
+    found: list[Path] = [
+        md for md in props_root.rglob("*.md") if md.stem in set(property_ids)
+    ]
     return sorted(found, key=lambda p: p.as_posix())
 
 
 @lru_cache(maxsize=1)
 def _list_known_property_ids() -> set[PropertyID]:
-    return {PropertyID(md.stem) for md in (properties_root() / "props").rglob("*.md")}
+    return {PropertyID(md.stem) for md in props_definitions_root().rglob("*.md")}
 
 
 def validate_property_ids(props: list[PropertyID]) -> None:
@@ -41,4 +41,6 @@ def validate_property_ids(props: list[PropertyID]) -> None:
     if not unknown:
         return
     sample = ", ".join(sorted(str(k) for k in list(known)[:20]))
-    raise ValueError(f"No such property: {', '.join(unknown)}. Known properties: {sample} ...")
+    raise ValueError(
+        f"No such property: {', '.join(unknown)}. Known properties: {sample} ..."
+    )

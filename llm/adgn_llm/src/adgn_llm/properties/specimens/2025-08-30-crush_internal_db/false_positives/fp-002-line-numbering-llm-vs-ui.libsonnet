@@ -1,4 +1,4 @@
-local I = import '../../specimen_issues.libsonnet';
+local I = import '../../specimens/lib.libsonnet';
 
 // fp-002-line-numbering-llm-vs-ui
 // False positive: line-numbering for LLM vs human display are NOT duplication
