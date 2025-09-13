@@ -44,12 +44,14 @@ class TruncationManager:
         self,
         files: list[dict[str, str]],
         max_size: int,
+        purpose: str | None = None,
     ) -> dict[str, str]:
         """Truncate file contents by character size.
 
         Args:
             files: List of file dicts with 'path' and 'content' keys
             max_size: Maximum characters per file
+            purpose: Optional label for logging/UX (ignored in logic)
 
         Returns:
             Dict mapping file paths to truncated content

@@ -191,11 +191,6 @@
   - Anchor: llm/adgn_llm/src/adgn_llm/mini_codex/agent.py:110
   - Rationale: Testability/design; not covered explicitly.
 
-- Rename ambiguous parameter `system` (note)
-  - Finding: `system` is overloaded; prefer `system_message`. Current property doesn’t strictly mandate this; leave as not-covered-yet.
-  - Anchor: llm/adgn_llm/src/adgn_llm/mini_codex/agent.py (parameter `system: str | None`)
-  - Rationale: Naming clarity; not covered explicitly.
-
 - Consolidate local vs local_servers vs local_tools
   - Finding: `McpManager.from_servers(local, local_servers)` naming collides; if `local_tools` is subsumed by a local exec server, remove the dict and keep `local_servers`. Clarify naming to avoid `local` vs `local_servers` ambiguity.
   - Anchor: llm/adgn_llm/src/adgn_llm/mini_codex/mcp_manager.py: from_servers signature and related types

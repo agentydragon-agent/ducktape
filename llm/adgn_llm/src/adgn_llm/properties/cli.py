@@ -522,11 +522,6 @@ def main(argv: list[str] | None = None) -> int:
     )
     p_spec_new.add_argument("--dry-run", action="store_true")
     p_spec_new.add_argument(
-        "--json",
-        action="store_true",
-        help="Request JSON output from critic",
-    )
-    p_spec_new.add_argument(
         "--gitconfig",
         help="Path to a gitconfig to use for private repo fallback (shallow git)",
     )

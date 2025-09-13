@@ -22,7 +22,6 @@ from adgn_llm.properties.specimen_registry import SpecimenRegistry
 from rich.console import Console, Group, ConsoleRenderable
 from rich.table import Table
 from rich.panel import Panel
-from rich.text import Text
 from rich.markdown import Markdown
 from adgn_llm.rendering.rich_renderers import render_to_rich
 
@@ -49,106 +48,24 @@ from adgn_llm.mini_codex.event_renderer import (
 )
 from adgn_llm.mini_codex.aggregating_handler import BaseHandler
 from adgn_llm.properties.models.issue import Occurrence, LineRange, Issue, IssueCore
+from adgn_llm.properties.models.lint import (
+    Correction,
+    PropertyIncorrectlyAssigned,
+    PropertyShouldBeAssigned,
+    AnchorIncorrect,
+    FalsePositive,
+    TruePositive,
+    OtherError,
+    RationaleError,
+    RationaleImprovement,
+    IssueLintFinding,
+    IssueLintFindingRecord,
+)
 from .specimen_registry import ensure_archive_for_specimen_slug
 from .prop_utils import PropertyID
 
 
-# ---- Issue lint finding models (machine annotations) ----
-class PropertyIncorrectlyAssigned(BaseModel):
-    kind: Literal["PROPERTY_INCORRECTLY_ASSIGNED"] = Field(
-        description="Discriminator for property incorrectly assigned"
-    )
-    property: PropertyID
-
-    model_config = ConfigDict(extra="forbid")
-
-
-class PropertyShouldBeAssigned(BaseModel):
-    kind: Literal["PROPERTY_SHOULD_BE_ASSIGNED"] = Field(
-        description="Discriminator for property that should be assigned"
-    )
-    property: PropertyID
-
-    model_config = ConfigDict(extra="forbid")
-
-
-class Correction(BaseModel):
-    file: str
-    range: LineRange
-
-    model_config = ConfigDict(extra="forbid")
-
-
-class AnchorIncorrect(BaseModel):
-    kind: Literal["ANCHOR_INCORRECT"] = Field(
-        description="Discriminator for incorrect anchor"
-    )
-    correction: Correction
-
-    model_config = ConfigDict(extra="forbid")
-
-
-class FalsePositive(BaseModel):
-    kind: Literal["FALSE_POSITIVE"] = Field(
-        description="Discriminator for false-positive marking"
-    )
-
-    model_config = ConfigDict(extra="forbid")
-
-
-class TruePositive(BaseModel):
-    kind: Literal["TRUE_POSITIVE"] = Field(
-        description="Discriminator for true-positive finding (confirmed issue)"
-    )
-
-    model_config = ConfigDict(extra="forbid")
-
-
-class OtherError(BaseModel):
-    kind: Literal["OTHER_ERROR"] = Field(
-        description="Discriminator for other errors / fallback"
-    )
-    description: str
-
-    model_config = ConfigDict(extra="forbid")
-
-
-class RationaleError(BaseModel):
-    kind: Literal["RATIONALE_ERROR"] = Field(
-        description="Discriminator for rationale being factually incorrect"
-    )
-    error_description: str
-
-    model_config = ConfigDict(extra="forbid")
-
-
-class RationaleImprovement(BaseModel):
-    kind: Literal["RATIONALE_IMPROVEMENT"] = Field(
-        description="Discriminator for non-blocking rationale improvement suggestion"
-    )
-    suggested_improvement: str
-
-    model_config = ConfigDict(extra="forbid")
-
-
-IssueLintFinding = Annotated[
-    PropertyIncorrectlyAssigned
-    | PropertyShouldBeAssigned
-    | AnchorIncorrect
-    | FalsePositive
-    | OtherError
-    | RationaleError
-    | RationaleImprovement,
-    Field(discriminator="kind"),
-]
-
-
-class IssueLintFindingRecord(BaseModel):
-    finding: IssueLintFinding
-    rationale: str | None = None
-
-    model_config = ConfigDict(extra="forbid")
-
+# ---- Issue lint finding models are defined in models/lint.py and imported above ----
 
 # ---------------------------------------------------------------------------
 # Lint submit MCP server + shared state (accessible to controller and server)

@@ -4,7 +4,7 @@ import asyncio
 import json
 import datetime as _dt
 from pathlib import Path
-from typing import Any, Sequence, Literal, Annotated, Union
+from typing import Any, Literal, Annotated, Union
 
 from openai import AsyncOpenAI
 from pydantic import BaseModel, Field, ConfigDict
