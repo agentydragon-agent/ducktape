@@ -17,13 +17,18 @@ import subprocess
 import time
 
 from ..models.specimen import SpecimenDoc, GitHubSource, GitSource, LocalSource
-from ..models.issue import Issue, SpecimenIssuesLoadError
+from ..models.issue import SpecimenIssuesLoadError, Occurrence, IssueCore
 from ..prop_utils import properties_root
 
 
 @dataclass(frozen=True)
+class IssueRecord:
+    core: IssueCore
+    instances: list[Occurrence]
+
+@dataclass(frozen=True)
 class IssuesLoadResult:
-    items: list[Issue]
+    items: list[IssueRecord]
     errors: list[str]
 
 
@@ -31,7 +36,7 @@ def _jsonnet_load_issues_dir(spec_dir: Path, strict: bool = True) -> IssuesLoadR
     issues_dir = spec_dir / "issues"
     if not issues_dir.is_dir():
         raise SpecimenIssuesLoadError([f"No issues/ directory found under: {spec_dir}"])
-    items: list[Issue] = []
+    items: list[IssueRecord] = []
     errors: list[str] = []
     jsonnet_libdir = Path(__file__).resolve().parent
 
@@ -72,9 +77,79 @@ def _jsonnet_load_issues_dir(spec_dir: Path, strict: bool = True) -> IssuesLoadR
                 f"{p}: Embedded IDs no longer accepted, IDs are always derived from path - remove 'id' from jsonnet"
             )
             continue
-        obj["id"] = stem
         try:
-            items.append(Issue.model_validate(obj))
+            core_input = {k: obj.get(k) for k in ("rationale", "gap_note")}
+            core_input["id"] = stem
+            core_input["should_flag"] = True  # positives under issues/ always flag
+            core = IssueCore.model_validate(core_input)
+            inst_raw = obj.get("instances") or []
+            instances = [Occurrence.model_validate(inst) for inst in inst_raw]
+            items.append(IssueRecord(core=core, instances=instances))
+        except Exception as e:
+            errors.append(f"{p}: validation error: {e}")
+            continue
+
+    if errors and strict:
+        raise SpecimenIssuesLoadError(errors)
+    return IssuesLoadResult(items=items, errors=errors)
+
+
+def _jsonnet_load_false_positives_dir(spec_dir: Path, strict: bool = True) -> IssuesLoadResult:
+    """Load known false positives from false_positives/ and force should_flag=False.
+
+    If the directory does not exist, returns an empty set without error.
+    """
+    fp_dir = spec_dir / "false_positives"
+    items: list[IssueRecord] = []
+    errors: list[str] = []
+    if not fp_dir.is_dir():
+        return IssuesLoadResult(items=items, errors=errors)
+
+    jsonnet_libdir = Path(__file__).resolve().parent
+
+    def _importer(base: str, rel: str) -> tuple[str, bytes]:
+        cand1 = (Path(base) / rel).resolve()
+        if cand1.is_file():
+            return str(cand1), cand1.read_bytes()
+        rel_name = Path(rel).name
+        cand2 = (jsonnet_libdir / rel_name).resolve()
+        if cand2.is_file():
+            return str(cand2), cand2.read_bytes()
+        raise RuntimeError(f"import not found: base={base!r} rel={rel!r}")
+
+    for p in sorted(fp_dir.glob("*.libsonnet")):
+        stem = p.stem
+        try:
+            raw = _jsonnet.evaluate_file(
+                str(p), jpathdir=[str(jsonnet_libdir)], import_callback=_importer
+            )
+        except Exception as e:  # pragma: no cover
+            errors.append(f"{p}: Jsonnet evaluation error: {e}")
+            continue
+        if not isinstance(raw, str):
+            errors.append(f"{p}: Jsonnet evaluator returned non-string (expected JSON text)")
+            continue
+        try:
+            obj = json.loads(raw)
+        except Exception as e:
+            errors.append(f"{p}: Failed to parse Jsonnet output as JSON: {e}")
+            continue
+        if not isinstance(obj, dict):
+            errors.append(f"{p}: Jsonnet did not produce an object (got {type(obj)})")
+            continue
+        if "id" in obj:
+            errors.append(
+                f"{p}: Embedded IDs no longer accepted, IDs are always derived from path - remove 'id' from jsonnet"
+            )
+            continue
+        try:
+            core_input = {k: obj.get(k) for k in ("rationale", "gap_note")}
+            core_input["id"] = stem
+            core_input["should_flag"] = False  # known false positives do not flag
+            core = IssueCore.model_validate(core_input)
+            inst_raw = obj.get("instances") or []
+            instances = [Occurrence.model_validate(inst) for inst in inst_raw]
+            items.append(IssueRecord(core=core, instances=instances))
         except Exception as e:
             errors.append(f"{p}: validation error: {e}")
             continue
@@ -290,8 +365,8 @@ class SpecimenRecord:
     slug: str
     manifest_path: Path
     manifest: SpecimenDoc
-    issues: dict[str, Issue]
-
+    issues: dict[str, IssueRecord]
+    false_positives: dict[str, IssueRecord]
     @asynccontextmanager
     async def hydrated_copy(self, gitconfig: Path | None = None) -> AsyncIterator[Path]:
         """Yield a fresh private working tree path under $HOME for Docker-friendly mounts; clean up on exit.
@@ -360,14 +435,16 @@ class SpecimenRegistry:
         base_dir = base or find_specimens_base()
         manifest_path = (base_dir / slug / "manifest.yaml").resolve()
         man = load_manifest(manifest_path)
-        res = _jsonnet_load_issues_dir(manifest_path.parent, strict=False)
+        res_pos = _jsonnet_load_issues_dir(manifest_path.parent, strict=False)
+        res_fp = _jsonnet_load_false_positives_dir(manifest_path.parent, strict=False)
         rec = SpecimenRecord(
             slug=slug,
             manifest_path=manifest_path,
             manifest=man,
-            issues={it.id: it for it in res.items},
+            issues={it.core.id: it for it in res_pos.items},
+            false_positives={it.core.id: it for it in res_fp.items},
         )
-        return rec, res.errors
+        return rec, [*res_pos.errors, *res_fp.errors]
 
     @property
     def specimen_ids(self) -> list[str]:

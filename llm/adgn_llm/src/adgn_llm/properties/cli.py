@@ -7,7 +7,6 @@ import json
 import shutil
 import subprocess
 import tempfile
-import tarfile
 import docker
 from adgn_llm.properties.docker_env import (
     PROPERTIES_DOCKER_IMAGE,
@@ -28,6 +27,7 @@ from adgn_llm.properties.prompts.builder import (
     build_role_prompt,
     build_enforce_prompt,
     build_grade_prompt,
+    build_grade_from_json_prompt,
 )
 
 from typing import Mapping, cast, Literal
@@ -41,11 +41,12 @@ from adgn_llm.mcp.inproc_transport import make_inproc_slot_spec
 from adgn_llm.rendering.rich_renderers import render_to_rich
 from rich.console import Console
 from adgn_llm.mini_codex.agent import MiniCodex, ResponsesClient, AgentResult
-from adgn_llm.mini_codex.mcp_manager import McpManager
+from adgn_llm.mini_codex.mcp_manager import McpManager, build_mcp_function
 from adgn_llm.mini_codex.aggregating_handler import BaseHandler
 from adgn_llm.mini_codex.loop_control import Continue, Abort, RequireAny
 
 from .critic import CriticSubmitState, make_critic_submit_server
+from .grader import GradeSubmitState, make_grader_submit_server
 from .specimens.registry import (
     find_specimens_base,
     list_specimen_names,
@@ -263,31 +264,6 @@ async def _run_check_minicodex_async(
     return 0
 
 
-def _hydrate_specimen_home_workspace(
-    manifest_path: Path, gitconfig: Path | None
-) -> Path:
-    """Extract specimen archive under $HOME/.cache/adgn-llm/workspaces/<slug>_<ts>/.
-    Return single top-level content root. Raises on unexpected layouts.
-    """
-    ts = int(time.time())
-    slug = manifest_path.parent.name
-    mount_base = Path.home() / ".cache" / "adgn-llm" / "workspaces"
-    mount_base.mkdir(parents=True, exist_ok=True)
-    mount_root = mount_base / f"{slug}_{ts}"
-    if mount_root.exists():
-        shutil.rmtree(mount_root, ignore_errors=True)
-    archive = ensure_archive_for_specimen_slug(
-        load_manifest(manifest_path), manifest_path, gitconfig
-    )
-    mount_root.mkdir(parents=True, exist_ok=True)
-    with tarfile.open(archive, "r:gz") as tf:
-        tf.extractall(mount_root)
-    entries = [p for p in mount_root.iterdir() if p.is_dir()]
-    if len(entries) != 1:
-        raise SystemExit(f"Bad layout in {mount_root}; single top-level dir expected")
-    return entries[0]
-
-
 async def _run_specimen_minicodex_async(
     manifest_path: Path,
     *,
@@ -394,24 +370,49 @@ async def _run_specimen_grade_minicodex_async(
     scope_text = build_scope_text(man.scope.include, man.scope.exclude)
     spec_dir = manifest_path.parent
     rec = SpecimenRegistry.load_strict(spec_dir.name)
-    items = list(rec.issues.values())
-    # Embed canonical issues as JSON for the grading prompt
-    # TODO(mpokorny): Also include negatives from false_positives.md (if present)
-    #                 to enrich grading context with explicit do-not-flag items.
-    canonical_text = (
-        "```json\n" + json.dumps([it.model_dump() for it in items], indent=2) + "\n```"
+
+    # Canonical positives → list of {core, occurrences}
+    canonical_list = [
+        {
+            "core": it.core.model_dump(exclude_none=True),
+            "occurrences": [occ.model_dump(exclude_none=True) for occ in it.instances],
+        }
+        for it in rec.issues.values()
+    ]
+    # Known false positives (optional) → list of {core, occurrences}
+    known_fp_list = [
+        {
+            "core": it.core.model_dump(exclude_none=True),
+            "occurrences": [occ.model_dump(exclude_none=True) for occ in it.instances],
+        }
+        for it in rec.false_positives.values()
+    ] if hasattr(rec, "false_positives") and rec.false_positives else []
+
+    # Read critique JSON produced by specimen-check
+    crit_text = Path(critique_path).read_text(encoding="utf-8")
+    try:
+        # Validate it's JSON; keep original text for prompt
+        _ = json.loads(crit_text)
+    except Exception:
+        print(f"ERROR: critique is not valid JSON: {critique_path}")
+        return 2
+
+    wiring = PropertiesDockerWiring(
+        server_spec=None,  # no docker servers needed for grading
+        working_dir=Path("/"),
+        definitions_container_dir=None,
+        image_name="n/a",
     )
-    critique_text = read_embedded_paths([critique_path])
-    prompt = build_grade_prompt(
-        scope_text,
-        canonical_text,
-        critique_text,
-        wiring=PropertiesDockerWiring(
-            server_spec=None,  # type: ignore[arg-type]
-            working_dir=Path("/"),
-            definitions_container_dir=None,
-            image_name="n/a",
-        ),
+    submit_state = GradeSubmitState()
+    grader_server = make_grader_submit_server(submit_state, name="grader_submit")
+
+    prompt = build_grade_from_json_prompt(
+        scope_text=scope_text,
+        canonical_json=json.dumps(canonical_list, ensure_ascii=False, indent=2),
+        critique_json=crit_text,
+        known_fp_json=(json.dumps(known_fp_list, ensure_ascii=False, indent=2) if known_fp_list else "[]"),
+        submit_tool_name=build_mcp_function("grader_submit", "submit_result"),
+        wiring=wiring,
     )
 
     if dry_run:
@@ -421,21 +422,38 @@ async def _run_specimen_grade_minicodex_async(
         outfile = tmpdir / f"codex_prompt_specimen_grade_{ts}.md"
         outfile.write_text(prompt, encoding="utf-8")
         tokens = len(tiktoken.get_encoding("cl100k_base").encode(prompt))
-        print(
-            f"Saved prompt: {outfile} (approx tokens: {tokens if tokens is not None else 'n/a'})"
-        )
+        print(f"Saved prompt: {outfile} (approx tokens: {tokens if tokens is not None else 'n/a'})")
         return 0
 
-    # Grade does not need tools; run MiniCodex without MCP servers
-    specs: Mapping[str, ServerSlotSpec] = {}
-    return await _run_minicodex_simple(
-        prompt,
-        "gpt-5",
-        specs,
-        output_final_message=output_final_message,
-        final_only=final_only,
-        client=client,
-    )
+    # MiniCodex run with in-proc grader_submit server; force tool calls until submit
+    class GraderHandler(BaseHandler):
+        def __init__(self, state: GradeSubmitState) -> None:
+            self._state = state
+        def on_before_sample(self):  # type: ignore[override]
+            if self._state.result is not None:
+                return Abort()
+            return Continue(RequireAny())
+
+    specs = {"grader_submit": make_inproc_slot_spec(grader_server)}
+    async with McpManager(specs) as mcp:
+        agent = await MiniCodex.create(
+            model="gpt-5",
+            mcp=mcp,
+            system="You are a code agent. Be concise.",
+            client=cast(ResponsesClient, client),
+            handlers=[GraderHandler(submit_state), DisplayEventsHandler(max_lines=10)],
+            parallel_tool_calls=True,
+        )
+        result = await agent.run(prompt)
+        if isinstance(result, AgentResult):
+            if output_final_message:
+                Path(output_final_message).write_text(result.text or "", encoding="utf-8")
+            if not final_only and result.text:
+                print(result.text)
+
+    assert submit_state.result, "Grader did not call submit_result?"
+    Console().print(render_to_rich(submit_state.result))
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -447,13 +465,13 @@ def main(argv: list[str] | None = None) -> int:
         formatter_class=argparse.RawTextHelpFormatter,
         epilog=(
             "Examples:\n"
-            "  # Check current repo for violations under a static path set\n"
+            "  # Check for violations under a static path set\n"
             "  adgn-properties check $(pwd) 'all files under src/**' --dry-run\n\n"
-            "  # Fix code on a static path set (workspace-write sandbox)\n"
+            "  # Fix code on a path set (workspace-write sandbox)\n"
             "  adgn-properties fix $(pwd) 'all files under src/**'\n\n"
-            "  # Check a saved specimen by name (uses manifest.yaml)\n"
+            "  # Check saved specimen by name (uses manifest.yaml)\n"
             "  adgn-properties specimen-check 2025-09-02-ducktape_wt --dry-run\n\n"
-            "  # Discover only-new findings vs specimen notes\n"
+            "  # Discover new findings vs specimen notes\n"
             "  adgn-properties specimen-discover 2025-09-02-ducktape_wt --dry-run\n"
         ),
     )
@@ -950,7 +968,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "specimen-exec":
         base = find_specimens_base()
         manifest_path = resolve_manifest_arg(args.specimen, base)
-        if manifest_path is None:
+        if manifest_path:
             names = list_specimen_names(base)
             if not names:
                 print(f"No specimens found under: {base}")

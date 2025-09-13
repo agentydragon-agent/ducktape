@@ -41,7 +41,7 @@ from adgn_llm.mini_codex.loop_control import (
     SyntheticAction,
 )
 from adgn_llm.mini_codex.aggregating_handler import BaseHandler
-from adgn_llm.properties.models.issue import Occurrence, LineRange, Issue, IssueCore
+from adgn_llm.properties.models.issue import Occurrence, LineRange, IssueCore
 from adgn_llm.properties.models.lint import (
     IssueLintFindingRecord,
     LintSubmitPayload,
@@ -77,12 +77,7 @@ def _render_lint_submit_payload(obj: LintSubmitPayload):  # type: ignore[misc]
     if corrections:
         for pth, ranges in corrections.items():
             spans = ", ".join(
-                (
-                    f"[{r.start_line}, {r.end_line}]"
-                    if r.end_line is not None
-                    else f"[{r.start_line}]"
-                )
-                for r in ranges
+                (f"[{r.start_line}, {r.end_line}]" if r.end_line is not None else f"[{r.start_line}]") for r in ranges
             )
             anchors_tbl.add_row(pth, spans)
     else:
@@ -113,15 +108,11 @@ def _render_lint_submit_payload(obj: LintSubmitPayload):  # type: ignore[misc]
     if obj.message_md:
         bits.append(Markdown(obj.message_md))
 
-    body: ConsoleRenderable = (
-        bits[0] if len(bits) == 1 else cast(ConsoleRenderable, Group(*tuple(bits)))
-    )
+    body: ConsoleRenderable = bits[0] if len(bits) == 1 else cast(ConsoleRenderable, Group(*tuple(bits)))
     return Panel(body, title="Lint result")
 
 
-def make_lint_submit_server(
-    state: LintSubmitState, *, name: str = "lint_submit"
-) -> FastMCP:
+def make_lint_submit_server(state: LintSubmitState, *, name: str = "lint_submit") -> FastMCP:
     """Tiny FastMCP server exposing a single tool: submit_result.
 
     The linter agent must call this exactly once to signal completion. This flips
@@ -151,9 +142,7 @@ class LintConfig:
     dry_run: bool = False
 
 
-def make_nl_tool_call(
-    server_name: str, container_path: Path, call_id: str
-) -> ResponseFunctionToolCall:
+def make_nl_tool_call(server_name: str, container_path: Path, call_id: str) -> ResponseFunctionToolCall:
     """Create a docker exec tool call to render a file with line numbers.
 
     Reads the entire file (no size cap) using `nl -ba -w1 -s ' ' <path>`.
@@ -162,9 +151,7 @@ def make_nl_tool_call(
         type="function_call",
         name=build_mcp_function(server_name, DOCKER_EXEC_TOOL_NAME),
         call_id=call_id,
-        arguments=json.dumps(
-            {"cmd": ["nl", "-ba", "-w1", "-s", " ", str(container_path)]}
-        ),
+        arguments=json.dumps({"cmd": ["nl", "-ba", "-w1", "-s", " ", str(container_path)]}),
     )
 
 
@@ -174,7 +161,7 @@ def make_nl_tool_call(
 
 
 def _build_prompt(
-    issue: Issue | IssueCore,
+    issue: IssueCore,
     *,
     submit_tool_name: str,
     occurrence: Occurrence,
@@ -254,15 +241,10 @@ class LinterController(BaseHandler):
             self._step2 = [
                 ResponseFunctionToolCall(
                     type="function_call",
-                    name=build_mcp_function(
-                        self._wiring.server_name, DOCKER_EXEC_TOOL_NAME
-                    ),
+                    name=build_mcp_function(self._wiring.server_name, DOCKER_EXEC_TOOL_NAME),
                     call_id="bootstrap:ls",
                     arguments=json.dumps(
-                        {
-                            "cmd": ["ls", "-la"]
-                            + [str(self._wiring.working_dir / d) for d in self._dirs]
-                        }
+                        {"cmd": ["ls", "-la"] + [str(self._wiring.working_dir / d) for d in self._dirs]}
                     ),
                 )
             ]
@@ -292,9 +274,7 @@ class LinterController(BaseHandler):
                 rel = Path(host_p).resolve().relative_to(defs_dir).as_posix()
                 cont_path = docker_wiring.container_path_for_prop_rel(rel)
                 self._prop_calls.append(
-                    make_nl_tool_call(
-                        self._wiring.server_name, cont_path, f"bootstrap:prop:{i + 1}"
-                    )
+                    make_nl_tool_call(self._wiring.server_name, cont_path, f"bootstrap:prop:{i + 1}")
                 )
 
     def on_before_sample(self):  # type: ignore[override]
@@ -414,16 +394,16 @@ async def run_specimen_lint_issue_async(
     # Resolve specimen/issue via registry (strict load; crash on invalid specimen/issues)
     rec = SpecimenRegistry.load_strict(specimen)
     try:
-        issue: Issue = rec.issues[issue_id]
+        irec = rec.issues[issue_id]
     except KeyError:
         raise SystemExit(f"Issue id not found in specimen issues: {issue_id}")
 
     # Require a single occurrence; do not run on the full issue or mutate the Issue
-    if not (0 <= occurrence_index < len(issue.instances)):
+    if not (0 <= occurrence_index < len(irec.instances)):
         raise SystemExit(
-            f"occurrence_index out of range: {occurrence_index} (instances={len(issue.instances)})",
+            f"occurrence_index out of range: {occurrence_index} (instances={len(irec.instances)})",
         )
-    occ = issue.instances[occurrence_index]
+    occ = irec.instances[occurrence_index]
 
     # Build submit tool name for dry-run prompt
     submit_tool_name = build_mcp_function("lint_submit", "submit_result")
@@ -434,7 +414,7 @@ async def run_specimen_lint_issue_async(
         dummy_root = properties_root()
         wiring = properties_docker_spec(dummy_root, mount_properties=True)
         prompt = _build_prompt(
-            IssueCore.from_issue(issue),  # render via IssueCore + single occurrence
+            irec.core,  # render via IssueCore + single occurrence
             submit_tool_name=submit_tool_name,
             occurrence=occ,
             wiring=wiring,
@@ -450,7 +430,7 @@ async def run_specimen_lint_issue_async(
     # Shared core: run and capture structured payload
     res = await lint_issue_run(
         specimen,
-        IssueCore.from_issue(issue),
+        irec.core,
         occ,
         model=model,
         gitconfig=gitconfig,
@@ -459,7 +439,7 @@ async def run_specimen_lint_issue_async(
     )
 
     # Print the exact occurrence representation as fed to the model
-    issue_dict = IssueCore.from_issue(issue).model_dump(exclude_none=True)
+    issue_dict = irec.core.model_dump(exclude_none=True)
     issue_dict.pop("id", None)
     occ_dict: dict[str, Any] = occ.model_dump(exclude_none=True)
     issue_dict["instances"] = [occ_dict]

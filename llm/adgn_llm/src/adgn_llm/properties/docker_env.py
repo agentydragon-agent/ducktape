@@ -9,7 +9,7 @@ import docker
 from adgn_llm.mcp.inproc_transport import make_inproc_slot_spec
 from adgn_llm.mcp.types import ServerSlotSpec
 from adgn_llm.mcp.docker_exec.server import make_container_exec_mcp
-from adgn_llm.properties.prop_utils import properties_root, props_definitions_root
+from adgn_llm.properties.prop_utils import props_definitions_root
 
 PROPERTIES_DOCKER_IMAGE = "adgn-llm/properties-critic:latest"
 SERVER_NAME = "docker"

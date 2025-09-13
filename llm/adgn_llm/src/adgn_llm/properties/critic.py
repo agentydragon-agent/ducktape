@@ -45,9 +45,7 @@ class ReportedIssue(BaseModel):
 class CriticSubmitPayload(BaseModel):
     """Structured critic output."""
 
-    issues: List[ReportedIssue] = Field(
-        default_factory=list, description="Issues found"
-    )
+    issues: List[ReportedIssue] = Field(default_factory=list, description="Issues found")
     notes_md: str | None = Field(
         default=None,
         description="Optional Markdown note. Only for info not represented in structured form in `issues`.",
@@ -61,9 +59,7 @@ class CriticSubmitState:
     result: CriticSubmitPayload | None = None
 
 
-def make_critic_submit_server(
-    state: CriticSubmitState, *, name: str = "critic_submit"
-) -> FastMCP:
+def make_critic_submit_server(state: CriticSubmitState, *, name: str = "critic_submit") -> FastMCP:
     """Create a FastMCP exposing submit_result(result: CriticSubmitPayload) -> {ok: True}.
 
     Agent must call submit_result exactly once to deliver a validated CriticSubmitPayload.
@@ -103,9 +99,7 @@ def _render_critic_submit_payload(obj: CriticSubmitPayload):  # type: ignore[mis
                         files.append(f"{p}: (unspecified)")
                     else:
                         spans = ", ".join(
-                            f"{r.start_line}"
-                            + (f"-{r.end_line}" if r.end_line is not None else "")
-                            for r in ranges
+                            f"{r.start_line}" + (f"-{r.end_line}" if r.end_line is not None else "") for r in ranges
                         )
                         files.append(f"{p}: {spans}")
                 note = f" ({occ.note})" if occ.note else ""

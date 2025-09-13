@@ -5,6 +5,8 @@ from typing import Literal
 from adgn_llm.properties.docker_env import PropertiesDockerWiring
 from .util import build_input_schemas_json, render_prompt_template
 from adgn_llm.properties.models.issue import Occurrence, LineRange, IssueCore
+from adgn_llm.properties.critic import CriticSubmitPayload, ReportedIssue
+from adgn_llm.properties.grader import GradeSubmitPayload, GradeMetrics
 
 
 def build_role_prompt(
@@ -22,7 +24,7 @@ def build_role_prompt(
     - No stdout or subprocess; returns the composed Markdown string
     """
     # Compute the schemas map once here; templates pick header_schema_names
-    schemas_json = build_input_schemas_json([Occurrence, LineRange, IssueCore])
+    schemas_json = build_input_schemas_json([Occurrence, LineRange, IssueCore, ReportedIssue, CriticSubmitPayload, GradeMetrics, GradeSubmitPayload])
 
     template = "discover.j2.md" if mode == "discover" else ("open.j2.md" if mode == "open" else "find.j2.md")
     return render_prompt_template(
@@ -71,7 +73,7 @@ def build_grade_prompt(
     - Computes schemas_json internally
     - Returns the composed Markdown string
     """
-    schemas_json = build_input_schemas_json([Occurrence, LineRange, IssueCore])
+    schemas_json = build_input_schemas_json([Occurrence, LineRange, IssueCore, ReportedIssue, CriticSubmitPayload, GradeMetrics, GradeSubmitPayload])
     return render_prompt_template(
         "grade.j2.md",
         scope_text=scope_text,
@@ -137,6 +139,43 @@ def build_enforce_prompt(
         supplemental_text=supplemental_text,
         static_action="edit",
         ambiguity_tail="avoid touching anything outside it unless required by the editing policy below.",
+        wiring=wiring,
+        schemas_json=schemas_json,
+    )
+
+
+def build_grade_from_json_prompt(
+    *,
+    scope_text: str,
+    canonical_json: str,
+    critique_json: str,
+    known_fp_json: str | None,
+    submit_tool_name: str,
+    wiring: PropertiesDockerWiring,
+) -> str:
+    """Compose grader prompt that consumes structured JSON and requires submit via grader_submit.
+
+    - canonical_json: JSON block of canonical positives (IssueCore+Occurrence) list or mapping
+    - critique_json: JSON block produced by specimen-check (critic output)
+    - known_fp_json: JSON block of known false positives (IssueCore+Occurrence) list or mapping
+    - submit_tool_name: fully-qualified MCP function name for grader_submit.submit_result
+    """
+    schemas_json = build_input_schemas_json([
+        Occurrence,
+        LineRange,
+        IssueCore,
+        ReportedIssue,
+        CriticSubmitPayload,
+        GradeMetrics,
+        GradeSubmitPayload,
+    ])
+    return render_prompt_template(
+        "grade_from_json.j2.md",
+        scope_text=scope_text,
+        canonical_json=canonical_json,
+        critique_json=critique_json,
+        known_fp_json=known_fp_json or "",
+        submit_tool_name=submit_tool_name,
         wiring=wiring,
         schemas_json=schemas_json,
     )

@@ -1,5 +1,5 @@
 {% extends "_base.j2.md" %}
-{% set header_schema_names = ["Occurrence", "LineRange"] %}
+{% set header_schema_names = ["IssueCore", "Occurrence", "LineRange", "ReportedIssue", "CriticSubmitPayload"] %}
 {% set read_only = true %}
 {% set include_reporting = true %}
 {% set include_tools = true %}

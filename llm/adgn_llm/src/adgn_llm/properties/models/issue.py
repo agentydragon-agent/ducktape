@@ -75,11 +75,3 @@ class IssueCore(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    @classmethod
-    def from_issue(cls, issue: "Issue") -> "IssueCore":
-        return cls(
-            id=issue.id,
-            should_flag=issue.should_flag,
-            rationale=issue.rationale,
-            gap_note=issue.gap_note,
-        )
