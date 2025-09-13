@@ -20,6 +20,8 @@ from adgn_llm.properties.docker_env import (
 )
 import time
 from pathlib import Path
+from adgn_llm.properties.specimens.registry import SpecimenRegistry
+from adgn_llm.mini_codex.event_renderer import DisplayEventsHandler
 from dataclasses import dataclass
 from adgn_llm.properties.prompts.util import build_input_schemas_json, build_scope_text
 from adgn_llm.properties.prompts.builder import (
@@ -44,7 +46,7 @@ from adgn_llm.mini_codex.aggregating_handler import BaseHandler
 from adgn_llm.mini_codex.loop_control import Continue, Abort, RequireAny
 
 from .critic import CriticSubmitState, make_critic_submit_server
-from .specimen_registry import (
+from .specimens.registry import (
     find_specimens_base,
     list_specimen_names,
     load_manifest,
@@ -285,9 +287,6 @@ async def _run_specimen_minicodex_async(
     output_final_message: Path | None,
     client: AsyncOpenAI,
 ) -> int:
-    # Hydrate specimen snapshot via registry async context manager
-    from adgn_llm.properties.specimen_registry import SpecimenRegistry
-
     man = load_manifest(manifest_path)
 
     supplemental_text = read_embedded_paths([Path(p) for p in (embed_paths or [])]) if embed_paths else None
@@ -327,14 +326,15 @@ async def _run_specimen_minicodex_async(
             "critic_submit": make_inproc_slot_spec(critic_server),
         }
         async with McpManager(specs) as mcp:
-            from adgn_llm.mini_codex.event_renderer import DisplayEventsHandler
-
             agent = await MiniCodex.create(
                 model="gpt-5",
                 mcp=mcp,
                 system="You are a code agent. Be concise.",
                 client=cast(ResponsesClient, client),
-                handlers=[CriticHandler(submit_state), DisplayEventsHandler(max_lines=10)],
+                handlers=[
+                    CriticHandler(submit_state),
+                    DisplayEventsHandler(max_lines=10),
+                ],
                 parallel_tool_calls=True,
             )
             result = await agent.run(prompt)
@@ -345,6 +345,28 @@ async def _run_specimen_minicodex_async(
                     print(result.text)
         assert submit_state.result, "Critic did not call submit_result?"
         Console().print(render_to_rich(submit_state.result))
+        # Write critique JSON for specimen-check runs (find/open modes)
+        if mode in ("find", "open"):
+            ts = int(time.time())
+            out_dir = Path.cwd() / "runs" / "specimen-check" / f"{manifest_path.parent.name}_{ts}"
+            out_dir.mkdir(parents=True, exist_ok=True)
+            out_path = out_dir / "critique.json"
+            obj = submit_state.result
+            try:
+                s = obj.model_dump_json(indent=2)  # type: ignore[attr-defined]
+            except Exception:
+                try:
+                    d = obj.model_dump()  # type: ignore[attr-defined]
+                    s = json.dumps(d, ensure_ascii=False, indent=2)
+                except Exception:
+                    s = json.dumps(
+                        obj,
+                        default=lambda o: getattr(o, "__dict__", str(o)),
+                        ensure_ascii=False,
+                        indent=2,
+                    )
+            out_path.write_text(s, encoding="utf-8")
+            print(f"Saved critique JSON: {out_path}")
         return 0
 
 
@@ -360,9 +382,6 @@ async def _run_specimen_grade_minicodex_async(
     man = load_manifest(manifest_path)
     scope_text = build_scope_text(man.scope.include, man.scope.exclude)
     spec_dir = manifest_path.parent
-    # Load canonical issues via the registry (single loader; no monolith fallback)
-    from adgn_llm.properties.specimen_registry import SpecimenRegistry
-
     rec = SpecimenRegistry.load_strict(spec_dir.name)
     items = list(rec.issues.values())
     # Embed canonical issues as JSON for the grading prompt
@@ -942,8 +961,6 @@ def main(argv: list[str] | None = None) -> int:
         ensure_critic_image()
 
         async def _run_exec() -> int:
-            from adgn_llm.properties.specimen_registry import SpecimenRegistry
-
             rec = SpecimenRegistry.load_strict(manifest_path.parent.name)
             async with rec.hydrated_copy(exec_gitconfig) as content_root:
                 # Sanity: ensure hydrated workspace is not empty before launching container

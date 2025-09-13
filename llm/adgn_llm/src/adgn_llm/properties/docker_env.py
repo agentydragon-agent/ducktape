@@ -35,15 +35,6 @@ class PropertiesDockerWiring:
             raise RuntimeError("Property definitions not mounted in container")
         return self.definitions_container_dir / rel
 
-    def describe_markdown(self) -> str:
-        """Return a terse environment summary without duplicating resource://container.info.
-
-        Only mention property definitions mount status; image/workdir are discoverable via container.info.
-        """
-        if self.definitions_container_dir:
-            return f"Property definitions: mounted read-only at {self.definitions_container_dir}"
-        return "Property definitions: not mounted"
-
 
 def build_critic_build_hint() -> str:
     dockerfile_trav = ilres.files("adgn_llm").joinpath("docker/critic.Dockerfile")

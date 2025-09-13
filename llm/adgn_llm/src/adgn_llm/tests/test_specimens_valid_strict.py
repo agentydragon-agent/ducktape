@@ -4,7 +4,7 @@ from typing import List
 
 import pytest
 
-from adgn_llm.properties.specimen_registry import find_specimens_base, list_specimen_names, _jsonnet_load_issues_dir
+from adgn_llm.properties.specimens.registry import find_specimens_base, list_specimen_names, _jsonnet_load_issues_dir
 from adgn_llm.properties.models.issue import SpecimenIssuesLoadError
 
 

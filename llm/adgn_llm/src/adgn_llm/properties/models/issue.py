@@ -129,10 +129,13 @@ class Issue(BaseModel):
     """
 
     id: str
-    should_flag: bool
+    should_flag: bool = True
     rationale: str
     properties: list[PropertyID] = []
-    gap_note: str | None = None
+    gap_note: str | None = Field(
+        None,
+        description="Freeform description of aspects of this issue that need better coverage in formal properties. These may also include higher-level or messier heuristics. Issue rationale should be freestanding - without expecting that gap_note will be read by the reader.",
+    )
 
     model_config = ConfigDict(extra="forbid")
     instances: list[Occurrence]

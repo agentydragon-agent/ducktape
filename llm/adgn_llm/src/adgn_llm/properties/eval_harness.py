@@ -17,6 +17,7 @@ from openai.types.responses import (
 )
 
 from adgn_llm.rendering.rich_renderers import render_to_rich
+from adgn_llm.mini_codex.agent_progress import OneLineProgressHandler
 from .lint_issue import lint_issue_run
 from adgn_llm.properties.models.issue import (
     IssueCore,
@@ -249,6 +250,7 @@ async def eval_issue_spec(
             model=model,
             gitconfig=gitconfig,
             client=client,
+            handlers=[OneLineProgressHandler()],
         )
 
         # Print the structured output object produced by the agent for this case
