@@ -32,6 +32,8 @@ from adgn_llm.mcp._shared.container_session import NetworkMode
 from adgn_llm.mcp.docker_exec.server import make_container_exec_mcp
 from adgn_llm.mcp.inproc_transport import make_inproc_slot_spec
 from adgn_llm.mini_codex.agent import MiniCodex
+from adgn_llm.mini_codex.event_renderer import DisplayEventsHandler
+from adgn_llm.mini_codex.aggregating_handler import AutoHandler
 from adgn_llm.mcp.local_exec.server import make_local_exec_mcp
 from adgn_llm.mini_codex.mcp_manager import McpManager
 from adgn_llm.mcp.types import ServerSlotSpec
@@ -78,6 +80,7 @@ class MiniCodexRunner(AgentRunner):
             mcp=self._mcp_manager,
             client=self._logging_model.openai_client.openai_client,
             reasoning_effort=self.reasoning_effort,
+            handlers=[AutoHandler(), DisplayEventsHandler()],
         )
         self._agent = await self._exit_stack.enter_async_context(agent)
 

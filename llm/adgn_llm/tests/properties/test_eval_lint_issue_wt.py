@@ -6,7 +6,7 @@ from typing import Tuple
 from openai import AsyncOpenAI
 
 from adgn_llm.properties.lint_issue import lint_issue_run
-from adgn_llm.properties.specimen_utils import IssueCore, Occurrence, LineRange
+from adgn_llm.properties.models.issue import IssueCore, Occurrence, LineRange
 
 
 @pytest.mark.live_llm
@@ -24,7 +24,9 @@ from adgn_llm.properties.specimen_utils import IssueCore, Occurrence, LineRange
         ((1130, 1233), ((1129, 1130), (1232, 1233)), "_record_github_error"),
     ],
 )
-async def test_iss014_anchor_windows(initial_range: Tuple[int, int], allowed_window: Tuple[Tuple[int, int], Tuple[int, int]], entity: str):
+async def test_iss014_anchor_windows(
+    initial_range: Tuple[int, int], allowed_window: Tuple[Tuple[int, int], Tuple[int, int]], entity: str
+):
     """Runs the lint-issue agent for iss-014 on the wt specimen per occurrence and
     asserts the corrected anchors fall within allowed inclusive windows.
 
@@ -74,9 +76,5 @@ async def test_iss014_anchor_windows(initial_range: Tuple[int, int], allowed_win
     assert eend is not None, "Expected a closed interval (start,end), not a single-line anchor"
 
     (smin, smax), (emin, emax) = allowed_window
-    assert smin <= estart <= smax, (
-        f"start_line {estart} outside allowed [{smin}..{smax}] for entity {entity}"
-    )
-    assert emin <= eend <= emax, (
-        f"end_line {eend} outside allowed [{emin}..{emax}] for entity {entity}"
-    )
+    assert smin <= estart <= smax, f"start_line {estart} outside allowed [{smin}..{smax}] for entity {entity}"
+    assert emin <= eend <= emax, f"end_line {eend} outside allowed [{emin}..{emax}] for entity {entity}"

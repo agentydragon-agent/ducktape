@@ -4,7 +4,6 @@ local I = import '../../specimen_issues.libsonnet';
 // Deduplicate glob matching: standardize on doublestar.Match or isolate matching behind a helper.
 
 I.issueOneOccurrence(
-  id='iss-018-glob-dedup',
   rationale='Codebase contains two different glob implementations: watcher.go implements custom matchesGlob/matchesSimpleGlob while internal/fsext/fileutil.go uses doublestar.Match. Standardize on a single, well-documented implementation (prefer doublestar if it covers required semantics) or wrap matching behind a small helper API so semantics are explicit and maintained in one place.',
   properties=[],
   filesToRanges={

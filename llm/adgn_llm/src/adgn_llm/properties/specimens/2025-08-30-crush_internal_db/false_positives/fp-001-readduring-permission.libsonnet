@@ -4,9 +4,8 @@ local I = import '../../specimen_issues.libsonnet';
 // False positive: double-read before vs after permission request in internal/llm/tools/write.go
 
 I.issueOneOccurrence(
-  id='fp-001-readduring-permission',
   should_flag=false,
-  rationale= |||
+  rationale=|||
     A past critique flagged the two reads surrounding the permission gate in write.go as an
     "unnecessary re-read". This is a false positive. The first read is a lightweight early
     equality check to short-circuit a no-op; the subsequent read (after directory creation and
@@ -19,6 +18,6 @@ I.issueOneOccurrence(
   |||,
   properties=[],
   filesToRanges={
-    'internal/llm/tools/write.go': [[148,151], [161,167], [174,182]],
+    'internal/llm/tools/write.go': [[148, 151], [161, 167], [174, 182]],
   },
 )

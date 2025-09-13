@@ -10,10 +10,24 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 # OS deps: git, curl, build tools, node+npm for pyright/jscpd, and vim
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates curl git build-essential nodejs npm vim ripgrep \
+    ca-certificates curl git build-essential nodejs npm vim ripgrep neovim bat bash-completion \
  && rm -rf /var/lib/apt/lists/*
 
 # Upgrade pip toolchain
+RUN set -eux; \
+    command -v bat >/dev/null 2>&1 || (ln -s /usr/bin/batcat /usr/local/bin/bat || true); \
+    ln -sf /usr/bin/nvim /usr/local/bin/vim; \
+    mkdir -p /etc/xdg/nvim; \
+    printf '%s\n' \
+      'set number' \
+      'syntax on' \
+      'filetype plugin indent on' \
+      'set mouse=a' \
+      'set termguicolors' \
+    > /etc/xdg/nvim/sysinit.vim; \
+    printf '%s\n' "alias vim='nvim'" > /etc/profile.d/aliases.sh; \
+    grep -q 'bash_completion' /etc/bash.bashrc || echo '. /etc/bash_completion' >> /etc/bash.bashrc
+
 RUN python -m pip install --upgrade pip setuptools wheel
 
 # Python QA tools

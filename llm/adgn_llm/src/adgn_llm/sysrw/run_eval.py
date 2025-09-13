@@ -1,6 +1,5 @@
 import argparse
 import asyncio
-import copy
 import json
 import math
 import os
@@ -26,6 +25,19 @@ from .schemas import (
     Sample,
 )
 from .templates import validate_template_file
+
+
+def _as_int(x: Any) -> int:
+    """Best-effort conversion to int for counters read from loosely-typed dicts."""
+    if isinstance(x, int):
+        return x
+    if isinstance(x, float):
+        return int(x)
+    if isinstance(x, str):
+        with suppress(Exception):
+            return int(x)
+    return 0
+
 
 # Config
 DEFAULT_DATASET_PATH = Path(__file__).parent / "data" / "dataset.jsonl"
@@ -864,12 +876,12 @@ async def run_eval(
 
             # Return combined records for saving
             sample_rec: dict[str, Any] = {
-                    "request": samp_req,
-                    "response": samp.model_dump(),
-                    "new_assistant_message": raw_new_asst_obj,
-                    "correlation_id": item.correlation_id,
-                    "timestamp": item.timestamp,
-                }
+                "request": samp_req,
+                "response": samp.model_dump(),
+                "new_assistant_message": raw_new_asst_obj,
+                "correlation_id": item.correlation_id,
+                "timestamp": item.timestamp,
+            }
             if isinstance(item, CCRSample):
                 sample_rec["anthropic_request"] = item.anthropic_request
             return (
@@ -912,7 +924,6 @@ async def run_eval(
     }
 
     def compute_and_write_summary(_final: bool = False) -> dict[str, Any]:
-        
         def _as_int(x: Any) -> int:
             if isinstance(x, int):
                 return x
@@ -922,6 +933,7 @@ async def run_eval(
                 with suppress(Exception):
                     return int(x)
             return 0
+
         # Compute mean and 95% CI (normal approx)
         mean = sum(scores) / len(scores) if scores else 0.0
         var = sum((x - mean) ** 2 for x in scores) / (len(scores) - 1) if len(scores) > 1 else 0.0
@@ -1015,13 +1027,13 @@ async def run_eval(
                         fc_top[fn] = fc_top.get(fn, 0) + 1
                 # Per-source tool stats
                 if src in tool_stats_by_source:
-                    ts = tool_stats_by_source[src]
-                    ts["total_samples"] = _as_int(ts.get("total_samples")) + 1
+                    src_stats = tool_stats_by_source[src]
+                    src_stats["total_samples"] = _as_int(src_stats.get("total_samples")) + 1
                     if not tcs:
-                        ts["text_only"] = _as_int(ts.get("text_only")) + 1
+                        src_stats["text_only"] = _as_int(src_stats.get("text_only")) + 1
                     else:
-                        ts["with_tools"] = _as_int(ts.get("with_tools")) + 1
-                        ts_fc = cast(dict[str, int], ts["function_counts"])  # type: ignore[index]
+                        src_stats["with_tools"] = _as_int(src_stats.get("with_tools")) + 1
+                        ts_fc = cast(dict[str, int], src_stats["function_counts"])  # type: ignore[index]
                         for tc in tcs:
                             fn = ((tc.get("function") or {}).get("name")) or "UNKNOWN"
                             ts_fc[fn] = ts_fc.get(fn, 0) + 1

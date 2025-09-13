@@ -1,5 +1,4 @@
 local obj = {
-  id: "iss-015",
   should_flag: true,
   rationale: |||
     Final dump error handling should not swallow exceptions.
@@ -46,7 +45,7 @@ local obj = {
     ```
   |||,
   properties: [],
-  instances: [ { files: { "pyright_watch_report.py": [ { start_line: 292, end_line: 301 } ] } } ],
+  instances: [{ files: { 'pyright_watch_report.py': [{ start_line: 292, end_line: 301 }] } }],
 };
 
 obj

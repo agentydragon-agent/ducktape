@@ -1,5 +1,4 @@
 local obj = {
-  id: "iss-002",
   should_flag: true,
   rationale: |||
     Progress interval is encoded as a magic float literal `1.0` (seconds) in multiple places, which makes the unit implicit.
@@ -27,7 +26,7 @@ local obj = {
     ```
   |||,
   properties: ['time'],
-  instances: [ { files: { "pyright_watch_report.py": [ { start_line: 121 }, { start_line: 137 }, { start_line: 143 }, { start_line: 151 } ] } } ],
+  instances: [{ files: { 'pyright_watch_report.py': [{ start_line: 121 }, { start_line: 137 }, { start_line: 143 }, { start_line: 151 }] } }],
 };
 
 obj

@@ -4,12 +4,8 @@ from typing import List
 
 import pytest
 
-from adgn_llm.properties.specimen_utils import (
-    Specimen,
-    find_specimens_base,
-    list_specimen_names,
-    SpecimenIssuesLoadError,
-)
+from adgn_llm.properties.specimen_registry import find_specimens_base, list_specimen_names, _jsonnet_load_issues_dir
+from adgn_llm.properties.models.issue import SpecimenIssuesLoadError
 
 
 def _all_specimens() -> List[str]:
@@ -19,9 +15,11 @@ def _all_specimens() -> List[str]:
 
 @pytest.mark.parametrize("specimen", _all_specimens())
 def test_specimen_issues_are_valid_strict(specimen: str) -> None:
-    sp = Specimen.load(specimen)
+    # Use the single production loader (strict)
+    base = find_specimens_base()
+    spec_dir = base / specimen
     try:
-        sp.load_issues(strict=True)
+        _ = _jsonnet_load_issues_dir(spec_dir, strict=True)
     except SpecimenIssuesLoadError as e:
         # Echo a concise header + all collected errors to help debug quickly in CI output
         print(f"Specimen '{specimen}' has invalid issue files (count={len(e.errors)}):", flush=True)

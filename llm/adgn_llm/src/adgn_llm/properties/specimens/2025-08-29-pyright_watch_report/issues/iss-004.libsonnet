@@ -1,5 +1,4 @@
 local obj = {
-  id: "iss-004",
   should_flag: true,
   rationale: |||
     `dump_path` type annotation is misleading - it types it as `Path | None`, but the rhs is never `None`:
@@ -11,7 +10,7 @@ local obj = {
     Annotate as `Path` (not `Path | None`).
   |||,
   properties: [],
-  instances: [ { files: { "pyright_watch_report.py": [ { start_line: 50 } ] } } ],
+  instances: [{ files: { 'pyright_watch_report.py': [{ start_line: 50 }] } }],
 };
 
 obj

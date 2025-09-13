@@ -365,22 +365,24 @@ async def main_async() -> None:
 
     client = openai.AsyncOpenAI()
 
-    async with (
-        McpManager(specs) as mcp,
-        await MiniCodex.create(
+    async with McpManager(specs) as mcp:
+        from adgn_llm.mini_codex.event_renderer import DisplayEventsHandler
+
+        agent = await MiniCodex.create(
             model=DEFAULT_MODEL,
             mcp=mcp,
             system=SYSTEM_INSTRUCTIONS,
             client=client,
-        ) as agent,
-    ):
-        for line in sys.stdin:
-            user = line.rstrip("\n")
-            if not user:
-                continue
-            res = await agent.run(user_text=user, stream=False)
-            if res.text:
-                print(res.text)
+            handlers=[DisplayEventsHandler()],
+        )
+        async with agent:
+            for line in sys.stdin:
+                user = line.rstrip("\n")
+                if not user:
+                    continue
+                res = await agent.run(user_text=user, stream=False)
+                if res.text:
+                    print(res.text)
 
 
 def main() -> None:

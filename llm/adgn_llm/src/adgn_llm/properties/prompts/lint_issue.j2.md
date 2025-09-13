@@ -1,5 +1,5 @@
 {% extends "_base.j2.md" %}
-{% set header_schema_names = ["IssueCore", "Occurrence", "LineRange"] %}
+{% set header_schema_names = ["IssueCore", "Occurrence", "LineRange", "LintSubmitPayload", "IssueLintFindingRecord"] %}
 {% set read_only = true %}
 {% set include_reporting = false %}
 {% set include_tools = false %}
@@ -23,7 +23,12 @@ Requirements:
 - Discover the container working directory and read anchored lines with sufficient surrounding context using the available MCP tools (do not hardcode tool names).
 - For each listed property, verify the anchored code truly violates the definition according to the property wording.
 - If any listed property does not apply, explain briefly why.
-- Property labeling: If the occurrence appears mislabeled (the listed properties do not apply but other committed properties do), set suggested_properties in submit_result to the list of property IDs you recommend instead. If labeling is correct, leave suggested_properties null. Use only committed property IDs from the repository (do not invent names).
+- Property labeling: If the occurrence appears mislabeled (the listed properties do not apply but other committed properties do), add a PROPERTY_INCORRECTLY_ASSIGNED or PROPERTY_SHOULD_BE_ASSIGNED finding with the correct property IDs. Use only committed property IDs from the repository (do not invent names).
+  - IMPORTANT: Findings use a discriminated union with kind. Do NOT nest fields under the kind name. The field layout is flat.
+    - Correct examples (flat shape):
+      - {"finding": {"kind": "PROPERTY_INCORRECTLY_ASSIGNED", "property": "no-dead-code"}, "rationale": "Marked wrong; this is duplication, not dead code"}
+      - {"finding": {"kind": "PROPERTY_SHOULD_BE_ASSIGNED", "property": "no-dead-code"}, "rationale": "This is dead code per definition"}
+    - Incorrect (do NOT do): {"finding": {"kind": "PROPERTY_INCORRECTLY_ASSIGNED", "PROPERTY_INCORRECTLY_ASSIGNED": {"property": "no-dead-code"}}}
 - Anchors and entity coverage:
   - Treat all line numbers as 1-based (both input anchors and any corrected_anchors you return).
   - Verify that the provided range precisely covers the affected construct in code (e.g., class/def/statement) that manifests the issue; if it does not, adjust it.

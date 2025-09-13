@@ -62,13 +62,15 @@ def test_specimen_discover_dry_run_renders(capsys):
 def test_specimen_grade_dry_run_renders(tmp_path: Path, capsys):
     crit = tmp_path / "critique.txt"
     crit.write_text("- example critique item", encoding="utf-8")
-    rc = props_cli.main([
-        "specimen-grade",
-        SPECIMEN_NAME,
-        "--critique",
-        str(crit),
-        "--dry-run",
-    ])
+    rc = props_cli.main(
+        [
+            "specimen-grade",
+            SPECIMEN_NAME,
+            "--critique",
+            str(crit),
+            "--dry-run",
+        ]
+    )
     assert rc == 0
     out = capsys.readouterr().out
     saved = _extract_saved_prompt_path(out)

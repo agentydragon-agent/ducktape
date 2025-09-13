@@ -7,7 +7,7 @@ from __future__ import annotations
 import json
 import os
 import time
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, Protocol, cast
@@ -30,12 +30,16 @@ from .loggers import TranscriptLogger
 from adgn_llm.openai_utils import ReasoningSummary
 from .mcp_manager import McpManager
 from adgn_llm.mini_codex.loop_control import (
-    DefaultController,
-    LoopController,
-    RequireAny,
+    Auto as TP_Auto,
+    RequireAny as TP_RequireAny,
+    Forbid as TP_Forbid,
+    RequireSpecific as TP_RequireSpecific,
+    ToolPolicy as TP_Base,
+    Continue,
     Abort,
     SyntheticAction,
 )
+from .aggregating_handler import AggregatingController, BaseHandler
 
 
 @dataclass
@@ -72,6 +76,102 @@ def _is_reasoning_item(item: Any) -> bool:
 ToolMap = dict[str, Any]
 
 SYSTEM_INSTRUCTIONS = "You are a code agent. Be concise."
+
+
+class _ResourceContent(Protocol):
+    mimeType: str | None
+    text: str | None
+    data: str | None
+
+
+def _parse_read_window_args(args: dict[str, Any]) -> tuple[int, int | None]:
+    start_v = args.get("start_offset")
+    start_offset = int(start_v) if isinstance(start_v, (int, str)) else 0
+    max_v = args.get("max_bytes")
+    if max_v is None:
+        max_bytes: int | None = None
+    elif isinstance(max_v, (int, str)):
+        max_bytes = int(max_v)
+    else:
+        raise ValueError("max_bytes must be an int, str, or null")
+    return start_offset, max_bytes
+
+
+def _build_resource_window(contents: list[Any], start_offset: int, max_bytes: int | None) -> dict[str, Any]:
+    remaining: int | None = max_bytes if isinstance(max_bytes, int) else None
+    cursor = 0
+    parts_out: list[dict[str, Any]] = []
+    for part_any in contents:
+        p = cast(_ResourceContent, part_any)
+        if p.text is not None:
+            raw = p.text.encode("utf-8")
+            total_len = len(raw)
+            if remaining is None or remaining > 0:
+                start_in_part = max(0, start_offset - cursor)
+                take_cap = remaining if isinstance(remaining, int) else total_len
+                take = max(0, min(take_cap, total_len - start_in_part))
+                if take > 0:
+                    chunk = raw[start_in_part : start_in_part + take]
+                    parts_out.append(
+                        {
+                            "mime": p.mimeType,
+                            "text": chunk.decode("utf-8", errors="replace"),
+                            "total_bytes": total_len,
+                            "bytes_returned": take,
+                        }
+                    )
+                    if remaining is not None:
+                        remaining -= take
+        elif p.data is not None:
+            base = p.data
+            total_len = len(base)
+            if remaining is None or remaining > 0:
+                start_in_part = max(0, start_offset - cursor)
+                take_cap = remaining if isinstance(remaining, int) else total_len
+                take = max(0, min(take_cap, total_len - start_in_part))
+                if take > 0:
+                    parts_out.append(
+                        {
+                            "mime": p.mimeType,
+                            "base64": base[start_in_part : start_in_part + take],
+                            "total_bytes": total_len,
+                            "bytes_returned": take,
+                        }
+                    )
+                    if remaining is not None:
+                        remaining -= take
+        cursor += len(p.text.encode("utf-8")) if p.text is not None else len(p.data or "")
+        if remaining is not None and remaining <= 0:
+            break
+    return {
+        "window": {"start_offset": start_offset, "max_bytes": max_bytes},
+        "parts": parts_out,
+        "total_parts": len(contents),
+    }
+
+
+def _read_window_payload(contents: list[Any], start_offset: int, max_bytes: int | None) -> dict[str, Any]:
+    return _build_resource_window(contents, start_offset, max_bytes)
+
+
+def _tool_choice_from_policy(policy: TP_Base) -> str | dict[str, Any]:
+    """Map a ToolPolicy to Responses API tool_choice value.
+
+    Exhaustive and strict: raises on unknown policy; RequireSpecific supports exactly one name.
+    """
+    if isinstance(policy, TP_RequireAny):
+        return "required"
+    if isinstance(policy, TP_Auto):
+        return "auto"
+    if isinstance(policy, TP_Forbid):
+        return "none"
+    if isinstance(policy, TP_RequireSpecific):
+        if len(policy.names) == 1:
+            return {"type": "function", "name": policy.names[0]}
+        raise ValueError(
+            "RequireSpecific with multiple names is not supported for Responses.tool_choice"
+        )
+    raise TypeError(f"Unknown ToolPolicy: {type(policy).__name__}")
 
 
 class _ResponsesSubclient(Protocol):
@@ -113,6 +213,8 @@ class MiniCodex:
         reasoning_effort: ReasoningEffort | None = None,
         reasoning_summary: ReasoningSummary | None = None,
         agent_name: str | None = None,
+        parallel_tool_calls: bool,
+        handlers: Iterable[BaseHandler],
     ) -> None:
         self._model = model
         self._default_system = system or SYSTEM_INSTRUCTIONS
@@ -121,6 +223,7 @@ class MiniCodex:
         self._mcp = mcp
         self._client = client
         self._agent_name = agent_name or "mini_codex"
+        self._parallel_tool_calls = parallel_tool_calls
         self._transcript: list[TranscriptItem] = []
         self._reasoning_effort = reasoning_effort
         self._reasoning_summary = reasoning_summary
@@ -132,6 +235,11 @@ class MiniCodex:
         # Logging artifacts
         self._log_dir: Path | None = None
         self._transcript_jsonl: Path | None = None
+        # Aggregating controller (owns handlers and loop-decision semantics)
+        handlers_list = list(handlers)
+        if not handlers_list:
+            raise ValueError("MiniCodex requires at least one handler; add AutoHandler() or a control handler")
+        self._controller = AggregatingController(handlers_list)
 
     def inject_system_message(self, text: str) -> None:
         """Append a system message at the current end of transcript (temporal order)."""
@@ -147,9 +255,11 @@ class MiniCodex:
         """Run a single model turn using the existing transcript (no new user message)."""
         return await self._single_turn()
 
-    async def _single_turn(self, controller: "LoopController" = DefaultController()) -> AgentResult:
+    async def _single_turn(self) -> AgentResult:
         sequence: list[dict[str, Any]] = []
         assistant_text_chunks: list[str] = []
+        # Use the agent-owned aggregating controller (handlers provide loop control)
+        controller = self._controller
 
         while True:
             instructions = self._system
@@ -210,9 +320,10 @@ class MiniCodex:
             if isinstance(decision, SyntheticAction):
                 resp_output = decision.outputs
             else:
-                tool_choice_value: str | dict[str, Any] = (
-                    "required" if isinstance(decision.tool_policy, RequireAny) else "auto"
-                )
+                if not isinstance(decision, Continue):
+                    raise TypeError(f"Unsupported loop decision: {type(decision).__name__}")
+                policy = decision.tool_policy
+                tool_choice_value: str | dict[str, Any] = _tool_choice_from_policy(policy)
                 resp = await _responses_create_with_retry(
                     self._client,
                     model=self._model,
@@ -221,6 +332,7 @@ class MiniCodex:
                     stream=False,
                     tool_choice=tool_choice_value,
                     store=True,
+                    parallel_tool_calls=self._parallel_tool_calls,
                     tools=tools_list,
                     **reasoning_kwargs,
                 )
@@ -233,7 +345,7 @@ class MiniCodex:
                     self._transcript.append(item.model_dump(exclude_none=True))
                     reasoning_count += 1
                     if isinstance(item, ResponseReasoningItem):
-                        controller.on_reasoning(item)
+                        self._controller.on_reasoning(item)
                 elif isinstance(item, ResponseOutputMessage):
                     parts = [part.text for part in item.content if isinstance(part, ResponseOutputText) and part.text]
                     if parts:
@@ -244,12 +356,12 @@ class MiniCodex:
                         evt = {"kind": "assistant_text", "text": combined}
                         sequence.append(evt)
                         self._emit_event(evt)
-                        controller.on_assistant_text(combined)
+                        self._controller.on_assistant_text(combined)
                 elif isinstance(item, ResponseFunctionToolCall):
                     requires.append(item)
                     # Persist tool call into transcript so the next turn has full context
                     self._transcript.append(item.model_dump(exclude_none=True))
-                    controller.on_tool_call(item)
+                    self._controller.on_tool_call(item)
 
             if os.environ.get("MINICODEX_DEBUG"):
                 dbg = [{"name": tc.name, "call_id": tc.call_id, "arguments": tc.arguments} for tc in requires]
@@ -262,10 +374,77 @@ class MiniCodex:
             if not requires:
                 break
 
+            # Precompute tool call outputs in parallel
+            import asyncio as _asyncio
+
+            _calls: list[tuple[int, ResponseFunctionToolCall, dict[str, Any]]] = []
+            for i, _fc in enumerate(requires):
+                _args = json.loads(_fc.arguments) if _fc.arguments else {}
+                if not isinstance(_args, dict):
+                    _args = {}
+                # Emit call-start event before scheduling execution
+                self._emit_tool_call_start(_fc, _args, sequence)
+                _calls.append((i, _fc, _args))
+
+            async def _invoke(_fc: ResponseFunctionToolCall, _args: dict[str, Any]) -> tuple[str, str | None]:
+                # Built-in resource tools
+                if _fc.name == "mcp__resources__list":
+                    server_filter = _args.get("server")
+                    uri_prefix = _args.get("uri_prefix")
+                    items = await self._mcp.list_resources(only=[server_filter] if server_filter else None)
+                    if uri_prefix:
+                        items = [
+                            it for it in items if isinstance(it.get("uri"), str) and it["uri"].startswith(uri_prefix)
+                        ]
+                    return json.dumps({"resources": items}, ensure_ascii=False), None
+                if _fc.name == "mcp__resources__read":
+                    server = _args.get("server")
+                    uri = _args.get("uri")
+                    start_v = _args.get("start_offset")
+                    start_offset = int(start_v) if isinstance(start_v, (int, str)) else 0
+                    max_v = _args.get("max_bytes")
+                    if max_v is None:
+                        max_bytes = None
+                    elif isinstance(max_v, (int, str)):
+                        max_bytes = int(max_v)
+                    else:
+                        raise ValueError("max_bytes must be an int, str, or null")
+                    if not isinstance(server, str) or not isinstance(uri, str):
+                        raise ValueError("server and uri are required and must be strings")
+                    res = await self._mcp.read_resource(server, uri)
+                    if not isinstance(res, mcp_types.ReadResourceResult):
+                        raise TypeError(f"Unexpected read_resource result type: {type(res)!r}")
+                    contents = res.contents or []
+                    payload = _read_window_payload(contents, start_offset, max_bytes)
+                    return json.dumps(payload, ensure_ascii=False), None
+
+                # Namespaced MCP tool
+                server, tool_name = self._mcp.resolve_function(_fc.name)
+                session = await self._mcp.get_session(server)
+                res_ct = await session.call_tool(name=tool_name, arguments=_args)
+                out_str = _responses_output_from_calltool(res_ct)
+                parsed_error: str | None = None
+                try:
+                    data = json.loads(out_str)
+                    if isinstance(data, dict) and data.get("ok") is False and isinstance(data.get("error"), str):
+                        parsed_error = data.get("error")
+                except Exception:
+                    parsed_error = None
+                return out_str, parsed_error
+
+            _results = await _asyncio.gather(*[_invoke(fc, args) for _, fc, args in _calls])
+            out_map: dict[str, tuple[str, str | None]] = {fc.call_id: res for (_, fc, _), res in zip(_calls, _results)}
+
             for fc in requires:
                 args = json.loads(fc.arguments) if fc.arguments else {}
                 if not isinstance(args, dict):
                     args = {}
+                # Use precomputed parallel outputs
+                _pre = out_map.get(fc.call_id)
+                if _pre is not None:
+                    out_str, parsed_error = _pre
+                    self._emit_tool_result(fc, args, out_str, parsed_error, sequence)
+                    continue
 
                 # Built-in resource tools
                 if fc.name == "mcp__resources__list":
@@ -277,109 +456,30 @@ class MiniCodex:
                             it for it in items if isinstance(it.get("uri"), str) and it["uri"].startswith(uri_prefix)
                         ]
                     out_str = json.dumps({"resources": items}, ensure_ascii=False)
-                    call_evt = {
-                        "kind": "tool_call",
-                        "name": fc.name,
-                        "args": args,
-                        "call_id": fc.call_id,
-                    }
-                    sequence.append(call_evt)
-                    self._emit_event(call_evt)
-                    fco = FunctionCallOutput(type="function_call_output", call_id=fc.call_id, output=out_str)
-                    fco_evt = {
-                        "kind": "function_call_output",
-                        "name": fc.name,
-                        **fco.model_dump(exclude_none=True),
-                    }
-                    sequence.append(fco_evt)
-                    self._transcript.append(fco)
-                    self._emit_event(fco_evt)
-                    controller.on_function_call_output(fc, fco)
+                    self._emit_tool_result(fc, args, out_str, None, sequence)
                     continue
 
                 if fc.name == "mcp__resources__read":
                     server = args.get("server")
                     uri = args.get("uri")
-                    start_offset = int(args.get("start_offset", 0))
-                    if "max_bytes" not in args:
-                        raise ValueError("max_bytes is required for mcp__resources__read")
-                    max_bytes = int(args.get("max_bytes"))
+                    start_v = args.get("start_offset")
+                    start_offset = int(start_v) if isinstance(start_v, (int, str)) else 0
+                    max_v = args.get("max_bytes")
+                    if max_v is None:
+                        max_bytes = None
+                    elif isinstance(max_v, (int, str)):
+                        max_bytes = int(max_v)
+                    else:
+                        raise ValueError("max_bytes must be an int, str, or null")
                     if not isinstance(server, str) or not isinstance(uri, str):
                         raise ValueError("server and uri are required and must be strings")
                     res = await self._mcp.read_resource(server, uri)
                     if not isinstance(res, mcp_types.ReadResourceResult):
                         raise TypeError(f"Unexpected read_resource result type: {type(res)!r}")
                     contents = res.contents or []
-                    # Build faithful multipart-style representation with a global window
-                    remaining = max_bytes
-                    cursor = 0
-                    parts_out: list[dict[str, Any]] = []
-                    for p in contents:
-                        # Determine raw bytes length for each modality
-                        if p.text is not None:
-                            raw = p.text.encode("utf-8")
-                            total_len = len(raw)
-                            if remaining > 0:
-                                start_in_part = max(0, start_offset - cursor)
-                                take = max(0, min(remaining, total_len - start_in_part))
-                                if take > 0:
-                                    chunk = raw[start_in_part : start_in_part + take]
-                                    parts_out.append(
-                                        {
-                                            "mime": p.mimeType,
-                                            "text": chunk.decode("utf-8", errors="replace"),
-                                            "total_bytes": total_len,
-                                            "bytes_returned": take,
-                                        }
-                                    )
-                                    remaining -= take
-                        elif p.data is not None:
-                            base = p.data  # base64 string
-                            total_len = len(base)
-                            if remaining > 0:
-                                start_in_part = max(0, start_offset - cursor)
-                                take = max(0, min(remaining, total_len - start_in_part))
-                                if take > 0:
-                                    parts_out.append(
-                                        {
-                                            "mime": p.mimeType,
-                                            "base64": base[start_in_part : start_in_part + take],
-                                            "total_bytes": total_len,
-                                            "bytes_returned": take,
-                                        }
-                                    )
-                                    remaining -= take
-                        cursor += len(p.text.encode("utf-8")) if p.text is not None else len(p.data or "")
-                        if remaining <= 0:
-                            break
-
-                    payload = {
-                        "window": {
-                            "start_offset": start_offset,
-                            "max_bytes": max_bytes,
-                        },
-                        "parts": parts_out,
-                        "total_parts": len(contents),
-                    }
+                    payload = _read_window_payload(contents, start_offset, max_bytes)
                     out_str = json.dumps(payload, ensure_ascii=False)
-                    call_evt = {
-                        "kind": "tool_call",
-                        "name": fc.name,
-                        "args": args,
-                        "call_id": fc.call_id,
-                    }
-                    sequence.append(call_evt)
-                    self._emit_event(call_evt)
-                    fco = FunctionCallOutput(type="function_call_output", call_id=fc.call_id, output=out_str)
-                    fco_evt = {
-                        "kind": "function_call_output",
-                        "name": fc.name,
-                        **fco.model_dump(exclude_none=True),
-                    }
-                    sequence.append(fco_evt)
-                    self._transcript.append(fco)
-                    self._emit_event(fco_evt)
-                    controller.on_function_call_output(fc, fco)
+                    self._emit_tool_result(fc, args, out_str, None, sequence)
                     continue
 
                 # Namespaced MCP tool
@@ -389,13 +489,6 @@ class MiniCodex:
                 start = time.perf_counter()
                 res_ct = await session.call_tool(name=tool_name, arguments=args)
                 latency = time.perf_counter() - start
-                call_evt = {
-                    "kind": "tool_call",
-                    "name": fc.name,
-                    "args": args,
-                    "call_id": fc.call_id,
-                }
-                sequence.append(call_evt)
                 if os.environ.get("MINICODEX_DEBUG") and isinstance(res_ct, mcp_types.CallToolResult):
                     self._log.debug(
                         "tool_result",
@@ -406,42 +499,17 @@ class MiniCodex:
                         is_error=bool(res_ct.isError),
                         latency_ms=int(latency * 1000),
                     )
-                self._emit_event(call_evt)
                 out_str = _responses_output_from_calltool(res_ct)
-                fco = FunctionCallOutput(
-                    type="function_call_output",
-                    call_id=fc.call_id,
-                    output=out_str,
-                )
-                fco_evt = {
-                    "kind": "function_call_output",
-                    **fco.model_dump(exclude_none=True),
-                }
-                sequence.append(fco_evt)
-                self._transcript.append(fco)
-                self._emit_event(fco_evt)
-                # Notify controller so pretty renderers can print tool outputs
-                controller.on_function_call_output(fc, fco)
-                if not isinstance(res_ct, mcp_types.CallToolResult):
-                    raise TypeError(f"Unexpected tool result type: {type(res_ct)!r}")
-                is_err = bool(res_ct.isError)
-                parsed_error: str | None = None
+                parsed_err2: str | None = None
                 try:
                     data = json.loads(out_str)
                     if isinstance(data, dict) and data.get("ok") is False and isinstance(data.get("error"), str):
-                        parsed_error = data.get("error")
+                        parsed_err2 = data.get("error")
                 except Exception:
-                    parsed_error = None
-                if is_err or parsed_error is not None:
-                    err_evt = {
-                        "kind": "tool_error",
-                        "name": fc.name,
-                        "call_id": fc.call_id,
-                    }
-                    if parsed_error:
-                        err_evt["error"] = parsed_error
-                    sequence.append(err_evt)
-                    self._emit_event(err_evt)
+                    parsed_err2 = None
+                self._emit_tool_result(fc, args, out_str, parsed_err2, sequence)
+                if not isinstance(res_ct, mcp_types.CallToolResult):
+                    raise TypeError(f"Unexpected tool result type: {type(res_ct)!r}")
 
             self._metrics.tool_calls += len(requires)
 
@@ -467,11 +535,13 @@ class MiniCodex:
         *,
         model: str,
         mcp: McpManager,
+        handlers: Iterable[BaseHandler],
         system: str | None = None,
         on_event: Callable[[dict[str, Any]], None] | None = None,
         client: ResponsesClient | None = None,
         reasoning_effort: ReasoningEffort | None = None,
         reasoning_summary: ReasoningSummary | None = None,
+        parallel_tool_calls: bool = True,
     ) -> MiniCodex:
         if client is None:
             raise ValueError("MiniCodex.create requires an OpenAI client instance")
@@ -484,6 +554,8 @@ class MiniCodex:
             client=client,
             reasoning_effort=reasoning_effort,
             reasoning_summary=reasoning_summary,
+            parallel_tool_calls=parallel_tool_calls,
+            handlers=handlers,
         )
         inst._init_logging()
         return inst
@@ -528,6 +600,48 @@ class MiniCodex:
         # Delegate to external transcript logger via _on_event
         self._emit_event(evt)
 
+    def _emit_tool_call_start(
+        self,
+        fc: ResponseFunctionToolCall,
+        args: dict[str, Any],
+        sequence: list[dict[str, Any]],
+    ) -> None:
+        call_evt = {
+            "kind": "tool_call",
+            "name": fc.name,
+            "args": args,
+            "call_id": fc.call_id,
+        }
+        sequence.append(call_evt)
+        self._emit_event(call_evt)
+
+    def _emit_tool_result(
+        self,
+        fc: ResponseFunctionToolCall,
+        args: dict[str, Any],
+        out_str: str,
+        parsed_error: str | None,
+        sequence: list[dict[str, Any]],
+    ) -> None:
+        """Emit result events and transcript entries for a completed tool call.
+
+        Assumes the call_start event was already emitted earlier.
+        """
+        fco = FunctionCallOutput(type="function_call_output", call_id=fc.call_id, output=out_str)
+        fco_evt = {
+            "kind": "function_call_output",
+            "name": fc.name,
+            **fco.model_dump(exclude_none=True),
+        }
+        sequence.append(fco_evt)
+        self._transcript.append(fco)
+        self._emit_event(fco_evt)
+        self._controller.on_function_call_output(fc, fco)
+        if parsed_error is not None:
+            err_evt = {"kind": "tool_error", "name": fc.name, "call_id": fc.call_id, "error": parsed_error}
+            sequence.append(err_evt)
+            self._emit_event(err_evt)
+
     @property
     def messages(self) -> list[dict[str, Any]]:
         return dump_messages_for_api(self._transcript)
@@ -541,7 +655,6 @@ class MiniCodex:
         self,
         user_text: str,
         stream: bool = False,
-        controller: "LoopController" = None,  # type: ignore[assignment]
     ) -> AgentResult | AsyncIterator[dict[str, Any]]:
         if stream:
 
@@ -549,15 +662,14 @@ class MiniCodex:
                 res = await self.run(
                     user_text,
                     stream=False,
-                    controller=controller,
-                )  # type: ignore[assignment]
+                )
                 yield {"kind": "final", "result": res}
 
             return _gen()
 
         self._transcript.append(UserMessage(role="user", content=user_text))
         self._emit_event({"kind": "user_text", "text": user_text})
-        result = await (self._single_turn() if controller is None else self._single_turn(controller=controller))
+        result = await self._single_turn()
         return result
 
     async def __aenter__(self) -> "MiniCodex":

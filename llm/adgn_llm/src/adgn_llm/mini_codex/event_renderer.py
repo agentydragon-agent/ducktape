@@ -14,6 +14,7 @@ from openai.types.responses import (
 from .agent import FunctionCallOutput
 from .loop_control import BaseLoopController, LoopController
 from .mcp_manager import parse_mcp_function  # constants below
+from .aggregating_handler import BaseHandler, NoLoopDecision
 
 # Shared server/tool name constants
 DOCKER_SERVER_NAME = "docker"
@@ -244,6 +245,43 @@ class NullConsoleEventRenderer(ConsoleEventRenderer):
         return ""
 
 
+class DisplayEventsHandler(BaseHandler):
+    """Standalone handler that pretty-prints agent events using a ConsoleEventRenderer.
+
+    Observer-only: on_before_sample returns NoLoopDecision() to explicitly defer.
+    """
+
+    def __init__(
+        self,
+        *,
+        renderer: ConsoleEventRenderer | None = None,
+        show_text: bool = False,
+        write: Callable[[str], None] = print,
+    ) -> None:
+        self._renderer = renderer or ConsoleEventRenderer(show_text=show_text, write=write)
+        self._calls: dict[str, ResponseFunctionToolCall] = {}
+
+    def on_user_text(self, text: str) -> None:
+        self._renderer.emit_user_text(text)
+
+    def on_assistant_text(self, text: str) -> None:
+        self._renderer.emit_assistant_text(text)
+
+    def on_tool_call(self, call: ResponseFunctionToolCall) -> None:
+        self._calls[call.call_id] = call
+        self._renderer.emit_tool_call(call)
+
+    def on_function_call_output(self, call: ResponseFunctionToolCall | None, output: FunctionCallOutput) -> None:
+        c = call or self._calls.get(output.call_id)
+        self._renderer.emit_function_call_output(c, output)
+
+    def on_reasoning(self, item: ResponseReasoningItem) -> None:
+        return None
+
+    def on_before_sample(self) -> NoLoopDecision:
+        return NoLoopDecision()
+
+
 class DisplayEventsMixin(BaseLoopController):
     """Mixin base that pretty-prints agent events using a renderer that does the printing."""
 
@@ -277,7 +315,7 @@ class DisplayEventsMixin(BaseLoopController):
         return None
 
 
-class PrettyPrintController(DisplayEventsMixin):
+class PrettyPrintController(BaseHandler):
     """Wrapper controller that delegates decisions to an inner controller.
 
     Keeps the old PrettyPrintController API but now leverages DisplayEventsMixin
@@ -292,8 +330,10 @@ class PrettyPrintController(DisplayEventsMixin):
         show_text: bool = False,
         write: Callable[[str], None] = print,
     ) -> None:
-        super().__init__(renderer=renderer, show_text=show_text, write=write)
+        # Keep signature for backward compatibility but do not perform rendering here.
+        # Rendering is handled by DisplayEventsHandler registered separately.
         self._inner = inner
 
     def on_before_sample(self):  # type: ignore[override]
+        # Delegate decision to wrapped inner controller (migrated behavior preserved).
         return self._inner.on_before_sample()

@@ -25,7 +25,7 @@ local toRange(x) =
   else error 'Invalid line spec: ' + std.manifestJson(x);
 
 // Normalize an array of mixed line specs to LineRange[]
-local normRanges(arr) = [ toRange(x) for x in arr ];
+local normRanges(arr) = [toRange(x) for x in arr];
 
 // Build a files mapping entry: file -> [LineRange...]
 local fileEntry(file, ranges) = { [file]: normRanges(ranges) };
@@ -61,8 +61,8 @@ local instancesFromLinesByFile(linesByFile) = std.flattenArrays([
   (
     local v = linesByFile[file];
     if v == null || (std.type(v) == 'array' && std.length(v) == 0)
-    then [ { files: { [file]: null } } ]
-    else [ occFromEntry(file, ln) for ln in v ]
+    then [{ files: { [file]: null } }]
+    else [occFromEntry(file, ln) for ln in v]
   )
   for file in std.objectFields(linesByFile)
 ]);
@@ -70,18 +70,16 @@ local instancesFromLinesByFile(linesByFile) = std.flattenArrays([
 // Issue constructors
 
 // One occurrence that can span multiple files/ranges
-local issueOneOccurrence(id, rationale, filesToRanges, properties=[], gap_note=null, should_flag=true) = {
-  id: id,
+local issueOneOccurrence(rationale, filesToRanges, properties=[], gap_note=null, should_flag=true) = {
   should_flag: should_flag,
   rationale: rationale,
   properties: properties,
   gap_note: gap_note,
-  instances: [ { files: normFiles(filesToRanges) } ],
+  instances: [{ files: normFiles(filesToRanges) }],
 };
 
 // Many occurrences (explicit list)
-local issueWithOccurrences(id, rationale, occurrences, properties=[], gap_note=null, should_flag=true) = {
-  id: id,
+local issueWithOccurrences(rationale, occurrences, properties=[], gap_note=null, should_flag=true) = {
   should_flag: should_flag,
   rationale: rationale,
   properties: properties,
@@ -94,15 +92,14 @@ local issueWithOccurrences(id, rationale, occurrences, properties=[], gap_note=n
 };
 
 // Many occurrences, each single-file/single-range (built from shorthand mapping)
-local issueOccurrencesFromLines(id, rationale, linesByFile, properties=[], gap_note=null, should_flag=true) =
-  issueWithOccurrences(id=id, rationale=rationale, occurrences=instancesFromLinesByFile(linesByFile), properties=properties, gap_note=gap_note, should_flag=should_flag);
+local issueOccurrencesFromLines(rationale, linesByFile, properties=[], gap_note=null, should_flag=true) =
+  issueWithOccurrences(rationale=rationale, occurrences=instancesFromLinesByFile(linesByFile), properties=properties, gap_note=gap_note, should_flag=should_flag);
 
 // Multi-occurrence issue built from a simple list of files → each file as an instance with unspecified range
-local instancesFromFiles(filesList) = [ { files: { [f]: null } } for f in filesList ];
+local instancesFromFiles(filesList) = [{ files: { [f]: null } } for f in filesList];
 // Treat as a special case of linesByFile with empty arrays (unspecified ranges per file)
-local issueOccurrencesFromFiles(id, rationale, filesList, properties=[], gap_note=null, should_flag=true) =
+local issueOccurrencesFromFiles(rationale, filesList, properties=[], gap_note=null, should_flag=true) =
   issueOccurrencesFromLines(
-    id=id,
     rationale=rationale,
     linesByFile={ [f]: [] for f in filesList },
     properties=properties,

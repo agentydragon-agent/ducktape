@@ -128,8 +128,8 @@ def make_gitea_mirror_mcp(
     poll_timeout_secs: float | None = None,
 ) -> FastMCP:
     cfg = MirrorConfig(
-        base_url=base_url or os.environ.get("GITEA_BASE_URL", ""),
-        token=token or os.environ.get("GITEA_TOKEN", ""),
+        base_url=str(base_url or os.environ.get("GITEA_BASE_URL", "")),
+        token=str(token or os.environ.get("GITEA_TOKEN", "")),
         poll_interval_secs=poll_interval_secs or float(os.environ.get("GITEA_POLL_INTERVAL_SECS", 2.0)),
         poll_timeout_secs=poll_timeout_secs or float(os.environ.get("GITEA_POLL_TIMEOUT_SECS", 60.0)),
     )

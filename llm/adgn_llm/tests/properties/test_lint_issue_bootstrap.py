@@ -13,7 +13,8 @@ from adgn_llm.mcp.inproc_transport import make_inproc_slot_spec
 from adgn_llm.mcp.docker_exec.server import make_container_exec_mcp
 from adgn_llm.properties.docker_env import PropertiesDockerWiring
 from adgn_llm.properties.lint_issue import LinterController, LintSubmitState
-from adgn_llm.properties.specimen_utils import Occurrence
+from adgn_llm.mini_codex.event_renderer import DisplayEventsHandler
+from adgn_llm.properties.models.issue import Occurrence
 
 
 class _MockResponsesClient:
@@ -104,18 +105,19 @@ async def test_lint_issue_bootstrap_small_files(tmp_path: Path):
 
     # Now create the controller with real wiring
     wiring = PropertiesDockerWiring(
-        _server_name="docker",
         server_spec=spec,
-        _working_dir=Path('/workspace'),
+        working_dir=Path("/workspace"),
         definitions_container_dir=None,
         image_name="n/a",
     )
     ctrl = LinterController(state=LintSubmitState(), occ=occ, content_root=content_root, docker_wiring=wiring)
 
-    agent = await MiniCodex.create(model="gpt-5", mcp=mcp, system="test", client=client)
+    agent = await MiniCodex.create(
+        model="gpt-5", mcp=mcp, system="test", client=client, handlers=[ctrl, DisplayEventsHandler()]
+    )
 
     # Act
-    res = await agent.run(user_text="bootstrap lint", controller=ctrl)
+    res = await agent.run(user_text="bootstrap lint")
 
     # Assert final text
     assert res.text.strip() == "FINAL"

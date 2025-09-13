@@ -1,5 +1,4 @@
 local obj = {
-  id: "iss-014",
   should_flag: true,
   rationale: |||
     Use comprehension + seen-update pattern for per-include unique counts to make the code shorter and less nested while remaining readable and correct.
@@ -34,7 +33,7 @@ local obj = {
     This primarily reduces nesting and temporary counters while keeping the same semantics.
   |||,
   properties: [],
-  instances: [ { files: { "pyright_watch_report.py": [ { start_line: 232, end_line: 244 } ] } } ],
+  instances: [{ files: { 'pyright_watch_report.py': [{ start_line: 232, end_line: 244 }] } }],
 };
 
 obj

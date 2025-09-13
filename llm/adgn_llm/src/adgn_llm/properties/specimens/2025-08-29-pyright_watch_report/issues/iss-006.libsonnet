@@ -1,5 +1,4 @@
 local obj = {
-  id: "iss-006",
   should_flag: true,
   rationale: |||
     If `load_config` is run with explicit `--config=<file>`, it will *silently skip it* if it's broken and instead potentially use other autodiscovered candidates, which (A) *discards user intent* despite the *explicit flags*, and (B) does so *silently*, without announcing any kind of error.
@@ -26,7 +25,7 @@ local obj = {
     (Motivating scary example: imagine a PII-holding server, with `--config=explicit_config.json`, `explicit_config.json` having `{"dangerous_pii_exposing_debug_switch"=false}` (type) and silently discovered fallback `random_debug_developer_config.json` setting it to `true`).
   |||,
   properties: [],
-  instances: [ { files: { "pyright_watch_report.py": [ { start_line: 12 }, { start_line: 46 } ] } } ],
+  instances: [{ files: { 'pyright_watch_report.py': [{ start_line: 12 }, { start_line: 46 }] } }],
 };
 
 obj

@@ -2,7 +2,6 @@ local I = import '../../specimen_issues.libsonnet';
 
 // iss-040: Quoted forward references; prefer annotations from __future__
 I.issueOneOccurrence(
-  id='iss-040',
   rationale='WorktreeRuntime uses quoted forward references ("GitstatusdClient", "PRService"); should use `from __future__ import annotations`, reorder definitions, and annotate directly.',
   properties=['type-hints'],
   filesToRanges={

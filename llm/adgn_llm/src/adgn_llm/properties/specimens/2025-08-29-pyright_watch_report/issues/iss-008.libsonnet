@@ -1,5 +1,4 @@
 local obj = {
-  id: "iss-008",
   should_flag: true,
   rationale: |||
     Normalize patterns in one place.
@@ -37,7 +36,7 @@ local obj = {
   |||,
   gap_note: "there's analogous gaps in other places about things like clear contract boundary layers / gates (e.g. compiler: 'lex -> AST -> compile pass 1 -> codegen -> optimize -> emit'. Code belongs in clear phases with clear input/output contracts that never or very rarely mix/punch through. 'fn foo(raw input string, piece of AST, 3x piece of Assembly, another raw input string, commandline argv array)' is inherently very suspicious.)",
   properties: [],
-  instances: [ { files: { "pyright_watch_report.py": [ { start_line: 65 }, { start_line: 70 } ] } } ],
+  instances: [{ files: { 'pyright_watch_report.py': [{ start_line: 65 }, { start_line: 70 }] } }],
 };
 
 obj

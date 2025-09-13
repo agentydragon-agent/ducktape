@@ -44,9 +44,11 @@ async def _execute(
     slots = {"editor": spec}
 
     # Folded context: per-agent MCP lifetime + agent lifetime
-    async with (
-        McpManager(slots) as mcp,
-        await MiniCodex.create(
+    async with McpManager(slots) as mcp:
+        from adgn_llm.mini_codex.event_renderer import DisplayEventsHandler
+        from adgn_llm.mini_codex.aggregating_handler import AutoHandler
+
+        agent = await MiniCodex.create(
             model=model,
             mcp=mcp,
             system=(
@@ -57,14 +59,15 @@ async def _execute(
             client=client,
             reasoning_effort=reasoning_effort,
             reasoning_summary=reasoning_summary,
-        ) as agent,
-    ):
-        res = await agent.run(
-            f"Edit file: {target_path}\nGoal: {prompt}\n",
-            stream=False,
+            handlers=[AutoHandler(), DisplayEventsHandler()],
         )
-        print(res.text)
-        return 0
+        async with agent:
+            res = await agent.run(
+                f"Edit file: {target_path}\nGoal: {prompt}\n",
+                stream=False,
+            )
+            print(res.text)
+            return 0
 
 
 app = typer.Typer(help="LLM-powered single-file editor", add_completion=False)

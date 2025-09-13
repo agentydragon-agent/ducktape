@@ -73,11 +73,15 @@ async def test_model_reads_container_info_with_stubbed_openai() -> None:
 
     async with McpManager({"docker": spec}) as mcp:
         client = FakeOpenAIClient()
+        from adgn_llm.mini_codex.event_renderer import DisplayEventsHandler
+        from adgn_llm.mini_codex.aggregating_handler import AutoHandler
+
         agent = await MiniCodex.create(
             model="gpt-5.1-mini",
             mcp=mcp,
             client=client,  # type: ignore[arg-type]
             system="test",
+            handlers=[AutoHandler(), DisplayEventsHandler()],
         )
 
         res = await agent.run("read container info")

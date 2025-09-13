@@ -1,5 +1,4 @@
 local obj = {
-  id: "iss-003b",
   should_flag: true,
   rationale: |||
     Extension list is misleading and duplicated.
@@ -18,7 +17,7 @@ local obj = {
     This makes the message not misleading and avoids future drift.
   |||,
   properties: [],
-  instances: [ { files: { "pyright_watch_report.py": [ { start_line: 36 } ] } } ],
+  instances: [{ files: { 'pyright_watch_report.py': [{ start_line: 36 }] } }],
 };
 
 obj

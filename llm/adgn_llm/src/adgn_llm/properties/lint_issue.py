@@ -9,10 +9,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Annotated, Literal, cast
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from mcp.server.fastmcp import FastMCP
-from .prompt_utils import render_prompt_template, build_input_schemas_json
+from adgn_llm.properties.prompts.util import (
+    render_prompt_template,
+    build_input_schemas_json,
+)
 from .docker_env import properties_docker_spec, PropertiesDockerWiring
+from adgn_llm.mini_codex.event_renderer import DisplayEventsHandler
+from adgn_llm.properties.specimen_registry import SpecimenRegistry
 
 from rich.console import Console, Group, ConsoleRenderable
 from rich.table import Table
@@ -25,7 +30,6 @@ from openai import AsyncOpenAI
 from openai.types.responses import ResponseFunctionToolCall
 
 from adgn_llm.properties.prop_utils import properties_root, find_property_files
-from adgn_llm.properties.specimen_utils import load_single_issue
 from adgn_llm.mcp.docker_exec.server import (
     SERVER_NAME as DOCKER_SERVER_NAME,
     TOOL_EXEC_NAME as DOCKER_EXEC_TOOL_NAME,
@@ -42,17 +46,11 @@ from adgn_llm.mini_codex.loop_control import (
 )
 from adgn_llm.mini_codex.event_renderer import (
     ConsoleEventRenderer,
-    DisplayEventsMixin,
 )
-from .specimen_utils import (
-    ensure_archive_for_specimen_slug,
-    Occurrence,
-    LineRange,
-    Issue,
-    IssueCore,
-    Specimen,
-    PropertyID,
-)
+from adgn_llm.mini_codex.aggregating_handler import BaseHandler
+from adgn_llm.properties.models.issue import Occurrence, LineRange, Issue, IssueCore
+from .specimen_registry import ensure_archive_for_specimen_slug
+from .prop_utils import PropertyID
 
 
 # ---- Issue lint finding models (machine annotations) ----
@@ -82,27 +80,43 @@ class Correction(BaseModel):
 
 
 class AnchorIncorrect(BaseModel):
-    kind: Literal["ANCHOR_INCORRECT"] = Field(description="Discriminator for incorrect anchor")
+    kind: Literal["ANCHOR_INCORRECT"] = Field(
+        description="Discriminator for incorrect anchor"
+    )
     correction: Correction
 
     model_config = ConfigDict(extra="forbid")
 
 
 class FalsePositive(BaseModel):
-    kind: Literal["FALSE_POSITIVE"] = Field(description="Discriminator for false-positive marking")
+    kind: Literal["FALSE_POSITIVE"] = Field(
+        description="Discriminator for false-positive marking"
+    )
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class TruePositive(BaseModel):
+    kind: Literal["TRUE_POSITIVE"] = Field(
+        description="Discriminator for true-positive finding (confirmed issue)"
+    )
 
     model_config = ConfigDict(extra="forbid")
 
 
 class OtherError(BaseModel):
-    kind: Literal["OTHER_ERROR"] = Field(description="Discriminator for other errors / fallback")
+    kind: Literal["OTHER_ERROR"] = Field(
+        description="Discriminator for other errors / fallback"
+    )
     description: str
 
     model_config = ConfigDict(extra="forbid")
 
 
 class RationaleError(BaseModel):
-    kind: Literal["RATIONALE_ERROR"] = Field(description="Discriminator for rationale being factually incorrect")
+    kind: Literal["RATIONALE_ERROR"] = Field(
+        description="Discriminator for rationale being factually incorrect"
+    )
     error_description: str
 
     model_config = ConfigDict(extra="forbid")
@@ -168,20 +182,8 @@ class LintSubmitPayload(BaseModel):
         ...,
         description="Set true if any property is violated; false if all checks pass.",
     )
-    message_md: str = Field(..., description="Concise Markdown report; do not restate pass/fail.")
-    corrected_anchors: dict[str, list[LineRange] | None] | None = Field(
-        default=None,
-        description=(
-            "null or full replacement of Occurrence.files-style anchors: "
-            "{path: [{start_line: int, end_line: int|null}] | null}"
-        ),
-    )
-    suggested_properties: list[str] | None = Field(
-        default=None,
-        description=(
-            "If non-null, the linter suggests replacing the Issue properties with this list "
-            "(useful when the occurrence is mislabeled). Null means keep the original properties."
-        ),
+    message_md: str = Field(
+        ..., description="Concise Markdown report; do not restate pass/fail."
     )
     suggested_rationale: str | None = Field(
         default=None,
@@ -199,6 +201,27 @@ class LintSubmitPayload(BaseModel):
         description="Typed list of lint findings produced by the agent (structured, machine-readable).",
     )
 
+    @model_validator(mode="after")
+    def _validate_tp_fp_one_of(self) -> "LintSubmitPayload":
+        """Ensure either exactly one TRUE_POSITIVE or FALSE_POSITIVE, or (no TP/FP and >=1 OTHER_ERROR)."""
+        tp_fp_count = 0
+        other_count = 0
+        if self.findings:
+            for fr in self.findings:
+                f = fr.finding
+                kind = getattr(f, "kind", None)
+                if kind in ("TRUE_POSITIVE", "FALSE_POSITIVE"):
+                    tp_fp_count += 1
+                if kind == "OTHER_ERROR":
+                    other_count += 1
+        # Valid if exactly one TP/FP, or if no TP/FP but at least one OTHER_ERROR
+        if not (tp_fp_count == 1 or (tp_fp_count == 0 and other_count >= 1)):
+            raise ValueError(
+                "Lint output must contain exactly one TRUE_POSITIVE or FALSE_POSITIVE finding, "
+                "or no TP/FP and at least one OTHER_ERROR"
+            )
+        return self
+
 
 class LintSubmitState:
     result: LintSubmitPayload | None = None
@@ -207,58 +230,78 @@ class LintSubmitState:
 # Register Rich renderer for LintSubmitPayload here to avoid import cycles
 @render_to_rich.register
 def _render_lint_submit_payload(obj: LintSubmitPayload):  # type: ignore[misc]
-    # Anchors table
+    # Anchors table - derive corrections from findings (AnchorIncorrect) when present
     anchors_tbl = Table(title=None, show_lines=False, expand=True)
     anchors_tbl.add_column("Path", style="cyan")
     anchors_tbl.add_column("Ranges", style="magenta")
-    if obj.corrected_anchors:
-        for pth, ranges in obj.corrected_anchors.items():
-            if ranges is None:
-                anchors_tbl.add_row(pth, "(unchanged)")
-            else:
-                spans = ", ".join(
-                    f"[{r.start_line}, {r.end_line}]" if r.end_line is not None else f"[{r.start_line}]" for r in ranges
+
+    corrections: dict[str, list[LineRange]] = {}
+    if obj.findings:
+        for fr in obj.findings:
+            f: Any = fr.finding
+            if getattr(f, "kind", None) == "ANCHOR_INCORRECT":
+                corr = getattr(f, "correction", None)
+                if corr:
+                    corrections.setdefault(corr.file, []).append(corr.range)
+
+    if corrections:
+        for pth, ranges in corrections.items():
+            spans = ", ".join(
+                (
+                    f"[{r.start_line}, {r.end_line}]"
+                    if r.end_line is not None
+                    else f"[{r.start_line}]"
                 )
-                anchors_tbl.add_row(pth, spans)
+                for r in ranges
+            )
+            anchors_tbl.add_row(pth, spans)
     else:
         anchors_tbl.add_row("(no corrections)", "")
 
     bits: list[ConsoleRenderable] = [anchors_tbl]
-    if obj.suggested_properties:
-        bits.append(Text("Suggested properties: " + ", ".join(obj.suggested_properties), style="yellow"))
     if obj.suggested_rationale:
         bits.append(Markdown("### Suggested rationale\n" + obj.suggested_rationale))
 
     # Render findings
+    # Findings table (always present)
+    findings_tbl = Table(title="Findings", show_lines=False, expand=True)
+    findings_tbl.add_column("Kind", style="cyan")
+    findings_tbl.add_column("Details", style="magenta")
+    findings_tbl.add_column("Rationale", style="green")
     if obj.findings:
-        findings_tbl = Table(title="Findings", show_lines=False, expand=True)
-        findings_tbl.add_column("Kind", style="cyan")
-        findings_tbl.add_column("Details", style="magenta")
-        findings_tbl.add_column("Rationale", style="green")
         for fr in obj.findings:
             f: Any = fr.finding
             kind = getattr(f, "kind", type(f).__name__)
+            # Prefer a readable JSON dump when possible
             if hasattr(f, "model_dump"):
                 try:
-                    details = json.dumps(f.model_dump(exclude_none=True), ensure_ascii=False)
+                    details = json.dumps(
+                        f.model_dump(exclude_none=True), ensure_ascii=False, indent=2
+                    )
                 except Exception:
                     details = str(f)
             else:
                 details = str(f)
             rationale_text = fr.rationale or ""
             findings_tbl.add_row(kind, details, rationale_text)
-        bits.append(findings_tbl)
+    else:
+        findings_tbl.add_row("(no findings)", "", "")
+    bits.append(findings_tbl)
 
     if obj.message_md:
         bits.append(Markdown(obj.message_md))
 
-    body: ConsoleRenderable = bits[0] if len(bits) == 1 else cast(ConsoleRenderable, Group(*tuple(bits)))
+    body: ConsoleRenderable = (
+        bits[0] if len(bits) == 1 else cast(ConsoleRenderable, Group(*tuple(bits)))
+    )
     title = "Lint result (fail)" if obj.fail else "Lint result (pass)"
     border = "red" if obj.fail else "green"
     return Panel(body, title=title, border_style=border)
 
 
-def make_lint_submit_server(state: LintSubmitState, *, name: str = "lint_submit") -> FastMCP:
+def make_lint_submit_server(
+    state: LintSubmitState, *, name: str = "lint_submit"
+) -> FastMCP:
     """Tiny FastMCP server exposing a single tool: submit_result.
 
     The linter agent must call this exactly once to signal completion. This flips
@@ -288,7 +331,9 @@ class LintConfig:
     dry_run: bool = False
 
 
-def make_nl_tool_call(server_name: str, container_path: Path, call_id: str) -> ResponseFunctionToolCall:
+def make_nl_tool_call(
+    server_name: str, container_path: Path, call_id: str
+) -> ResponseFunctionToolCall:
     """Create a docker exec tool call to render a file with line numbers.
 
     Reads the entire file (no size cap) using `nl -ba -w1 -s ' ' <path>`.
@@ -297,7 +342,9 @@ def make_nl_tool_call(server_name: str, container_path: Path, call_id: str) -> R
         type="function_call",
         name=build_mcp_function(server_name, DOCKER_EXEC_TOOL_NAME),
         call_id=call_id,
-        arguments=json.dumps({"cmd": ["nl", "-ba", "-w1", "-s", " ", str(container_path)]}),
+        arguments=json.dumps(
+            {"cmd": ["nl", "-ba", "-w1", "-s", " ", str(container_path)]}
+        ),
     )
 
 
@@ -323,7 +370,7 @@ def _build_prompt(
     docker_tool_name = build_mcp_function(DOCKER_SERVER_NAME, DOCKER_EXEC_TOOL_NAME)
 
     # Input schemas for the agent (always included)
-    schemas_json = build_input_schemas_json((IssueCore, Occurrence, LineRange))
+    schemas_json = build_input_schemas_json((IssueCore, Occurrence, LineRange, LintSubmitPayload, IssueLintFindingRecord))
 
     return render_prompt_template(
         "lint_issue.j2.md",
@@ -338,7 +385,7 @@ def _build_prompt(
 BIG_THRESHOLD = 20480
 
 
-class LinterController(DisplayEventsMixin):
+class LinterController(BaseHandler):
     """LinterController (purpose-specific) with integrated display + tool policy"""
 
     def __init__(
@@ -351,7 +398,8 @@ class LinterController(DisplayEventsMixin):
         prop_host_paths: list[Path] | None = None,
         renderer: ConsoleEventRenderer | None = None,
     ) -> None:
-        super().__init__(renderer=renderer, show_text=False)
+        # Initialize handler-style renderer (observer-only). Do not call super() with mixin args.
+        self._renderer = renderer or ConsoleEventRenderer(show_text=False)
         self._state = state
         self._step = 0
         self._wiring = docker_wiring
@@ -387,10 +435,15 @@ class LinterController(DisplayEventsMixin):
             self._step2 = [
                 ResponseFunctionToolCall(
                     type="function_call",
-                    name=build_mcp_function(self._wiring.server_name, DOCKER_EXEC_TOOL_NAME),
+                    name=build_mcp_function(
+                        self._wiring.server_name, DOCKER_EXEC_TOOL_NAME
+                    ),
                     call_id="bootstrap:ls",
                     arguments=json.dumps(
-                        {"cmd": ["ls", "-la"] + [str(self._wiring.working_dir / d) for d in self._dirs]}
+                        {
+                            "cmd": ["ls", "-la"]
+                            + [str(self._wiring.working_dir / d) for d in self._dirs]
+                        }
                     ),
                 )
             ]
@@ -420,7 +473,9 @@ class LinterController(DisplayEventsMixin):
                 rel = Path(host_p).resolve().relative_to(defs_dir).as_posix()
                 cont_path = docker_wiring.container_path_for_prop_rel(rel)
                 self._prop_calls.append(
-                    make_nl_tool_call(self._wiring.server_name, cont_path, f"bootstrap:prop:{i + 1}")
+                    make_nl_tool_call(
+                        self._wiring.server_name, cont_path, f"bootstrap:prop:{i + 1}"
+                    )
                 )
 
     def on_before_sample(self):  # type: ignore[override]
@@ -469,13 +524,16 @@ async def lint_issue_run(
             gitconfig = str(cfg)
     gc_path = Path(gitconfig).expanduser().resolve() if gitconfig else None
 
-    # Resolve specimen manifest for archive hydration
-    sp = Specimen.load(specimen)
+    # Resolve specimen manifest for archive hydration (fail fast on errors)
+
+    rec = SpecimenRegistry.load_strict(Path(specimen).name)
 
     # Always mount from under $HOME to avoid Docker volume restrictions on /var/folders
     ts = int(time.time())
     name = f"lint_{ts}"
-    mount_root = Path.home() / ".cache" / "adgn-llm" / "workspaces" / f"{specimen}_{name}"
+    mount_root = (
+        Path.home() / ".cache" / "adgn-llm" / "workspaces" / f"{specimen}_{name}"
+    )
     mount_root.mkdir(parents=True, exist_ok=True)
 
     submit_state = LintSubmitState()
@@ -484,7 +542,9 @@ async def lint_issue_run(
         # Prepare mount directory under $HOME from cached archive; hard-fail if cache missing
         if mount_root.exists():
             shutil.rmtree(mount_root, ignore_errors=True)
-        archive = ensure_archive_for_specimen_slug(sp.manifest, sp.manifest_path, gc_path)
+        archive = ensure_archive_for_specimen_slug(
+            rec.manifest, rec.manifest_path, gc_path
+        )
         # Extract to mount_root
         with tarfile.open(archive, "r:gz") as tf:
             tf.extractall(mount_root)
@@ -526,15 +586,20 @@ async def lint_issue_run(
         )
 
         async with McpManager(specs) as mcp:
+            # Register LinterController instance (ctrl) first so it provides loop decisions,
+            # then register the display handler for rendering events.
             agent = await MiniCodex.create(
                 model=model,
                 mcp=mcp,
                 system="You are a code agent. Be concise.",
                 client=cast(ResponsesClient, client),
+                handlers=[ctrl, DisplayEventsHandler()],
+                parallel_tool_calls=True,
             )
-            await agent.run(prompt, controller=ctrl)
+            # Run without passing controller; loop control is provided by handlers.
+            await agent.run(prompt)
 
-        assert submit_state.result is not None, "submit_result somehow not called?"
+        assert submit_state.result, "submit_result somehow not called?"
         return submit_state.result  # type: ignore[return-value]
 
     finally:
@@ -558,8 +623,12 @@ async def run_specimen_lint_issue_async(
     occurrence_index: int,
     client: AsyncOpenAI,
 ) -> int:
-    _sp, _root, issue = load_single_issue(specimen, issue_id, gitconfig)
-    issue = cast(Issue, issue)
+    # Resolve specimen/issue via registry (strict load; crash on invalid specimen/issues)
+    rec = SpecimenRegistry.load_strict(specimen)
+    try:
+        issue: Issue = rec.issues[issue_id]
+    except KeyError:
+        raise SystemExit(f"Issue id not found in specimen issues: {issue_id}")
 
     # Require a single occurrence; do not run on the full issue or mutate the Issue
     if not (0 <= occurrence_index < len(issue.instances)):

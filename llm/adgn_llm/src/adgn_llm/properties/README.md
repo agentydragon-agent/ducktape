@@ -67,7 +67,7 @@ Specimens are now expressed as a manifest YAML plus a directory of per-issue Jso
       include:
         - 'wt/**'
     ```
-  - The loader (src/adgn_llm/properties/specimen_utils.py) reads this manifest and materializes a deterministic archive for inspection.
+  - The loader (src/adgn_llm/properties/specimen_registry.py) reads this manifest and materializes a deterministic archive for inspection.
 
 - issues/ (required for tooling)
   - Per-issue Jsonnet files: `issues/<issue-id>.libsonnet`.
@@ -81,7 +81,7 @@ Specimens are now expressed as a manifest YAML plus a directory of per-issue Jso
 
 Authoring rules (short)
 
-- Issue id must match the filename stem (e.g., `issues/iss-032.libsonnet` → `id: 'iss-032'` or omit `id` and let the loader fill it).
+- Issue id is derived from the filename stem (e.g., `issues/iss-032.libsonnet`). Do not include an `id` field in Jsonnet.
 - Use the Jsonnet helpers from `specimen_issues.libsonnet` to normalize ranges and occurrence-level notes.
 - Avoid external network imports in Jsonnet; the loader uses a controlled importer that resolves relative imports and a package library directory only.
 

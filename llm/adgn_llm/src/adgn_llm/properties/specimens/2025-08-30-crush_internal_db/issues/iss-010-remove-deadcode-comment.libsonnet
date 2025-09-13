@@ -4,7 +4,6 @@ local I = import '../../specimen_issues.libsonnet';
 // Not-useful historical comment: remove "deadcode pruned: emitStage1 was unused" from e2e/mock_openai_responses.go
 
 I.issueOneOccurrence(
-  id='iss-010-remove-deadcode-comment',
   rationale='Historical "deadcode pruned" comment appears to document an edit history ("emitStage1 was unused") and is no longer useful to readers; delete the comment to avoid confusion.',
   properties=['no-useless-docs'],
   filesToRanges={

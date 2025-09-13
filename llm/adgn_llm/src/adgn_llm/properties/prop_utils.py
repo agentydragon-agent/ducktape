@@ -30,21 +30,15 @@ def find_property_files(property_ids: list[str]) -> list[Path]:
 
 @lru_cache(maxsize=1)
 def _list_known_property_ids() -> set[PropertyID]:
-    defs_root = properties_root() / "props"
-    ids: set[PropertyID] = set()
-    if defs_root.exists():
-        for md in defs_root.rglob("*.md"):
-            ids.add(PropertyID(md.stem))
-    return ids
+    return {PropertyID(md.stem) for md in (properties_root() / "props").rglob("*.md")}
 
 
 def validate_property_ids(props: list[PropertyID]) -> None:
     if not props:
         return
     known = _list_known_property_ids()
-    unknown = [p for p in props if p not in known]
-    if unknown:
-        sample = ", ".join(sorted(str(k) for k in list(known)[:20]))
-        raise ValueError(
-            f"Unknown property IDs: {', '.join(unknown)}. Known (sample): {sample} ...",
-        )
+    unknown = set(props) - known
+    if not unknown:
+        return
+    sample = ", ".join(sorted(str(k) for k in list(known)[:20]))
+    raise ValueError(f"No such property: {', '.join(unknown)}. Known properties: {sample} ...")

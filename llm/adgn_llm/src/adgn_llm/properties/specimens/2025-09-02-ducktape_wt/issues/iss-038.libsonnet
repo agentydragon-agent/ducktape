@@ -2,7 +2,6 @@ local I = import '../../specimen_issues.libsonnet';
 
 // iss-038: Non-None default with non-optional type in test helper
 I.issueOccurrencesFromLines(
-  id='iss-038',
   rationale='`env: dict = None` uses a non-None default with a non-optional type; annotate as `dict[str, str] | None` (or build a dict where needed) and handle `None` explicitly',
   properties=['type-hints'],
   linesByFile={

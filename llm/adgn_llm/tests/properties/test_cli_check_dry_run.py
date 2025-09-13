@@ -16,12 +16,14 @@ def _extract_saved_prompt_path(stdout: str) -> Path:
 
 def test_cli_check_dry_run_tmp_workdir(tmp_path, capsys):
     # Minimal run: check --dry-run on a temp dir
-    rc = props_cli.main([
-        "check",
-        str(tmp_path),
-        "all files under src/**",
-        "--dry-run",
-    ])
+    rc = props_cli.main(
+        [
+            "check",
+            str(tmp_path),
+            "all files under src/**",
+            "--dry-run",
+        ]
+    )
     assert rc == 0
     out = capsys.readouterr().out
     saved = _extract_saved_prompt_path(out)

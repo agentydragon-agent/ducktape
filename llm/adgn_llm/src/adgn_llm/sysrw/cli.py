@@ -129,9 +129,16 @@ def cmd_extract(
             if isinstance(default_log, Path) and default_log.exists():
                 logs.append(default_log)
             logs.extend(extract_dataset_crush.find_wire_logs(roots))
-            # Dedup while preserving order
-            seen = set()
-            logs = [p for p in logs if not (str(p) in seen or seen.add(str(p)))]
+            # Dedup while preserving order (avoid set.add() in expression for mypy correctness)
+            seen: set[str] = set()
+            deduped: list[Path] = []
+            for p in logs:
+                sp = str(p)
+                if sp in seen:
+                    continue
+                seen.add(sp)
+                deduped.append(p)
+            logs = deduped
         total = 0
         with out_path.open("w", encoding="utf-8") as out_f:
             for log_path in logs:

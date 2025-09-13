@@ -59,3 +59,12 @@ repos:
     hooks:
       - id: buildifier
       - id: buildifier-lint
+
+  # Jsonnet formatter for specimen .libsonnet files (adgn_llm)
+  - repo: https://github.com/serokell/jsonnet-pre-commit
+    rev: v0.2.0
+    hooks:
+      - id: jsonnetfmt
+        name: jsonnetfmt (format adgn_llm specimen .libsonnet files)
+        files: "^llm/adgn_llm/src/adgn_llm/properties/specimens/.*\\.libsonnet$"
+        args: ["-i"]

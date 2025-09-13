@@ -149,7 +149,7 @@ class Configuration:
             startup_timeout=timedelta(seconds=config_file.startup_timeout),
             post_creation_timeout=timedelta(seconds=config_file.post_creation_timeout),
             git_watcher_debounce_delay=timedelta(
-                seconds=config_file.git_watcher_debounce_delay
+                seconds=config_file.git_watcher_debounce_delay,
             ),
             hydrate_worktrees=config_file.hydrate_worktrees,
         )

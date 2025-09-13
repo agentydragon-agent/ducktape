@@ -4,9 +4,8 @@ local I = import '../../specimen_issues.libsonnet';
 // False positive: cleanup loop early-bailout rewrite not necessary
 
 I.issueOneOccurrence(
-  id='fp-005-cleanup-bailout',
   should_flag=false,
-  rationale= |||
+  rationale=|||
     A reviewer suggested refactoring the cleanup loop in internal/app/app.go from:
 
       for _, cleanup := range app.cleanupFuncs {
@@ -21,6 +20,6 @@ I.issueOneOccurrence(
   |||,
   properties=[],
   filesToRanges={
-    'internal/app/app.go': [[200,206]],
+    'internal/app/app.go': [[200, 206]],
   },
 )

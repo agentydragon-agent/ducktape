@@ -179,7 +179,7 @@ Return a JSON object with:
             raise ContextWindowExceededException(
                 f"Context window exceeded for task {task.id}: {e!s}",
                 task_id=task.id,
-                agent_id=rollout.agent_id,
+                agent_id=None,
             )
         raise
 
@@ -312,7 +312,7 @@ async def _grade_with_criteria(
             raise ContextWindowExceededException(
                 f"Context window exceeded for task {task.id}: {e!s}",
                 task_id=task.id,
-                agent_id=rollout.agent_id,
+                agent_id=None,
             )
         raise
 

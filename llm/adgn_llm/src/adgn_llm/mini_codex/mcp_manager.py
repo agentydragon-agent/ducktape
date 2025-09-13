@@ -10,7 +10,8 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import AsyncExitStack
-from typing import Any, Dict
+from typing import Any, Dict, cast
+from pydantic import AnyUrl
 from adgn_llm.mcp.types import ServerSlot, ServerSlotSpec
 from adgn_llm.mcp.inproc_transport import make_inproc_slot_spec
 from adgn_llm.mcp.resources.server import make_resources_server
@@ -136,7 +137,8 @@ class McpManager:
     async def read_resource(self, server: str, uri: str) -> Any:
         """Thin wrapper around ClientSession.read_resource(uri)."""
         sess = await self.get_session(server)
-        return await sess.read_resource(uri)
+        # ClientSession.read_resource expects AnyUrl; inputs come as strings
+        return await sess.read_resource(cast(AnyUrl, uri))
 
     async def get_server_initialize(self, server: str) -> InitializeResult:
         """Return the InitializeResult for a server from the cached slot after opening."""
@@ -175,14 +177,16 @@ class McpManager:
             return ServerSlotSpec(open_uninitialized=open_uninitialized)
 
         if transport == "sse":
-            url = spec.get("url")
+            url_val = spec.get("url")
+            if not isinstance(url_val, str) or not url_val:
+                raise ValueError("SSE transport requires a non-empty 'url' string in spec")
             headers = spec.get("headers")
             timeout = spec.get("timeout", 5)
             sse_read_timeout = spec.get("sse_read_timeout", 60 * 5)
 
             async def open_uninitialized(stack: AsyncExitStack) -> ClientSession:
                 read, write = await stack.enter_async_context(
-                    sse_client(url=url, headers=headers, timeout=timeout, sse_read_timeout=sse_read_timeout)
+                    sse_client(url=url_val, headers=headers, timeout=timeout, sse_read_timeout=sse_read_timeout)
                 )
                 sess = ClientSession(read_stream=read, write_stream=write)
                 await stack.enter_async_context(sess)

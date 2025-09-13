@@ -1,5 +1,4 @@
 local obj = {
-  id: "iss-007",
   should_flag: true,
   rationale: |||
     Compute include impacts during the scan (not post‑hoc)
@@ -37,7 +36,7 @@ local obj = {
     This reduces moving parts and cognitive load needed do understand the pipeline.
   |||,
   properties: [],
-  instances: [ { files: { "pyright_watch_report.py": [ { start_line: 218 }, { start_line: 236 } ] } } ],
+  instances: [{ files: { 'pyright_watch_report.py': [{ start_line: 218 }, { start_line: 236 }] } }],
 };
 
 obj

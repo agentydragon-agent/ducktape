@@ -2,7 +2,6 @@ local I = import '../../specimen_issues.libsonnet';
 
 // iss-039: Function parameter default mismatch with annotation
 I.issueOneOccurrence(
-  id='iss-039',
   rationale='parameter `error_message: str = None` should be annotated as `str | None` to match the default.',
   properties=['type-hints'],
   filesToRanges={

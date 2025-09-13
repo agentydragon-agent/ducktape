@@ -1,0 +1,23 @@
+local I = import '../../specimen_issues.libsonnet';
+
+// iss-019: Prefer pathlib.Path APIs over os.path/os.getcwd for clearer semantics
+I.issueWithOccurrences(
+  rationale= |||
+    Prefer using pathlib.Path methods (e.g., Path.exists(), Path.cwd(), Path.is_file()) instead of the older os.path / os.getcwd helpers.
+
+    Benefits:
+    - Stronger typing and clearer semantics: callers see Path objects and don't need ad-hoc conversions.
+    - Better cross-platform behavior and richer API (methods for joins, parents, resolves, etc.).
+    - Reduces repeated str()/Path(...) conversions spread through call sites.
+
+    When migrating, prefer accepting/returning Path objects at API boundaries and use Path.* helpers in implementation.
+
+    Gap note: sometimes it is reasonable to keep values as strings when the entire path value flows as a str through the stack (e.g., an HTTP request param immediately passed to a Docker API that expects strings). The decision is a cost-vs-benefit judgment: use Path where you benefit from pathlib API; avoid needless wrap/unwrap where it buys little.
+  |||,
+  properties=['pathlib','type-correctness-and-specificity'],
+  gap_note='Sometimes it is acceptable to keep values as strings when they flow as strings through the stack (e.g., an HTTP request param immediately passed to a Docker API). Decide by cost-vs-benefit: use Path where pathlib APIs are beneficial.',
+  occurrences=[
+    { files: { 'llm/adgn_llm/src/adgn_llm/mini_codex/cli.py': [[340,343]] }, note: 'cfg_path computed with Path(..) vs os.path usage; prefer Path APIs' },
+    { files: { 'llm/adgn_llm/src/adgn_llm/mini_codex/cli.py': [[122,123]] }, note: 'cwd handling: prefer Path.cwd()/Path(...) semantics instead of os.getcwd()/os.path' },
+  ],
+)

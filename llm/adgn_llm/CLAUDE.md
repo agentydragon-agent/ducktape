@@ -31,12 +31,19 @@ Common commands
   - uv run pytest -q tests/cli/test_llm_edit_cli.py::test_help
 - Pre-commit (optional):
   - pre-commit run -a
+  - Format Jsonnet specimens after editing (recommended):
+    - git ls-files "src/adgn_llm/properties/specimens/**/*.libsonnet" | xargs -r jsonnetfmt -i
+    - or run under the project environment: direnv exec "$(pwd)" git ls-files "src/adgn_llm/properties/specimens/**/*.libsonnet" | xargs -r jsonnetfmt -i
+    - Note: jsonnetfmt is provided by the devenv (uv sync --extra dev) and available via direnv.
 - Build wheel/sdist:
   - uv build
 
 Specimen inspection (for assistants)
 - Use the specimen shell to safely inspect a specimen’s hydrated workspace inside an isolated container (no network):
-  - Schema (Pydantic source of truth): @src/adgn_llm/properties/specimen_utils.py
+  - Schema (Pydantic source of truth):
+    - @src/adgn_llm/properties/models/specimen.py
+    - @src/adgn_llm/properties/models/issue.py
+  - Loader and hydration: @src/adgn_llm/properties/specimen_registry.py
   - NOTE: DO NOT duplicate examples or schema text here; the file above is transcluded as the single source of truth.
   - adgn-properties specimen-shell 2025-09-02-ducktape_wt
   - Or execute a one‑off command (after --). The workspace is mounted at /workspace and property definitions at /props.
@@ -86,7 +93,7 @@ Jsonnet authoring guidelines (||| blocks and issue files)
   - All specimen issues live under: src/adgn_llm/properties/specimens/<specimen>/issues/*.libsonnet
   - Each file is ONE standalone Jsonnet expression that returns a single Issue object built via helpers from specimen_issues.libsonnet
   - Start every file with: `local I = import '../../specimen_issues.libsonnet';`
-  - File name must equal the issue id (e.g., issues/iss-032.libsonnet → id='iss-032'). Do not embed a different id.
+  - File name must equal the issue id (e.g., issues/iss-032.libsonnet). Do not include id in the Jsonnet; the loader derives it from the filename.
 
 - Triple-bar text blocks (|||) — exact house style
   - Opening delimiter: exactly one space before it
@@ -97,7 +104,6 @@ Jsonnet authoring guidelines (||| blocks and issue files)
   - Full correct pattern:
     ```jsonnet
     I.issueOneOccurrence(
-      id='iss-XYZ',
       rationale= |||
         First line of rationale...
         Second line...
@@ -113,9 +119,9 @@ Jsonnet authoring guidelines (||| blocks and issue files)
     - Closing indented differently than content: use the same two-space indent
 
 - Choosing the right constructor (and where notes go)
-  - One logical occurrence spanning multiple files/ranges → use `I.issueOneOccurrence(id, rationale, filesToRanges=...)`
+  - One logical occurrence spanning multiple files/ranges → use `I.issueOneOccurrence(rationale, filesToRanges=...)`
     - If you want commentary for specific ranges, put those sentences into the rationale text (bulleted or paragraph form). Do NOT put notes inside ranges for filesToRanges.
-  - Many independent occurrences (each can have its own note) → use `I.issueWithOccurrences(id, rationale, occurrences=[{ files: {...}, note: '...' }, ...])` or `I.issueOccurrencesFromLines(id, rationale, linesByFile={ ... })`
+  - Many independent occurrences (each can have its own note) → use `I.issueWithOccurrences(rationale, occurrences=[{ files: {...}, note: '...' }, ...])` or `I.issueOccurrencesFromLines(rationale, linesByFile={ ... })`
     - `issueWithOccurrences` supports per-occurrence `note` strings.
     - `issueOccurrencesFromLines` supports shorthand entries (numbers, [start,end], or strings to serve as occurrence-level notes on unspecified ranges).
 

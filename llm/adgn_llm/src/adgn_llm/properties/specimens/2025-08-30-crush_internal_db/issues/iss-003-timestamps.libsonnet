@@ -15,20 +15,19 @@ local I = import '../../specimen_issues.libsonnet';
 // Align types: prefer time.Time / time.Duration or explicit unit-suffixed integer names.
 
 I.issueWithOccurrences(
-  id='iss-003-timestamps',
   rationale='Use `time.Time` for timestamps, `time.Duration` for timeouts/durations (avoid bare ints; if you must use int, suffix units in names).',
   occurrences=[
-    { files: { 'internal/llm/tools/download.go': [ [17,27], [155,166] ] } },
-    { files: { 'internal/llm/tools/fetch.go': [ [1,6], [60,68], [120,124] ] } },
-    { files: { 'internal/llm/tools/tools.go': [ [1,10] ] } },
-    { files: { 'internal/message/content.go': [ [41,62], [338,378] ] } },
-    { files: { 'internal/message/message.go': [ [120,136], [228,236] ] } },
-    { files: { 'internal/history/file.go': [ [1,20] ] } },
-    { files: { 'internal/tui/components/chat/chat.go': [ [500,520] ] } },
-    { files: { 'internal/tui/components/chat/messages/renderer.go': [ [420,436] ] } },
-    { files: { 'internal/pubsub/broker.go': [ [50,58], [160,172] ] } },
-    { files: { 'internal/session/session.go': [ [21,23], [140,146] ] } },
-    { files: { 'internal/transform/transform.go': [ [34,38] ] } },
+    { files: { 'internal/llm/tools/download.go': [[17, 27], [155, 166]] } },
+    { files: { 'internal/llm/tools/fetch.go': [[1, 6], [60, 68], [120, 124]] } },
+    { files: { 'internal/llm/tools/tools.go': [[1, 10]] } },
+    { files: { 'internal/message/content.go': [[41, 62], [338, 378]] } },
+    { files: { 'internal/message/message.go': [[120, 136], [228, 236]] } },
+    { files: { 'internal/history/file.go': [[1, 20]] } },
+    { files: { 'internal/tui/components/chat/chat.go': [[500, 520]] } },
+    { files: { 'internal/tui/components/chat/messages/renderer.go': [[420, 436]] } },
+    { files: { 'internal/pubsub/broker.go': [[50, 58], [160, 172]] } },
+    { files: { 'internal/session/session.go': [[21, 23], [140, 146]] } },
+    { files: { 'internal/transform/transform.go': [[34, 38]] } },
   ],
   properties=[],
 )

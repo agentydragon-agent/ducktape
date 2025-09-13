@@ -34,3 +34,14 @@ def build_input_schemas_json(models: Iterable[Type[BaseModel]]) -> dict[str, dic
     for m in models:
         out[m.__name__] = m.model_json_schema()
     return out
+
+
+def build_scope_text(include: list[str], exclude: list[str] | None = None) -> str:
+    """Human-readable scope string used in prompt headers.
+
+    Example: "all files under wt/** (excluding: wt/tests/**)"
+    """
+    inc = ", ".join(include)
+    if exclude:
+        return f"all files under {inc} (excluding: {', '.join(exclude)})"
+    return f"all files under {inc}"

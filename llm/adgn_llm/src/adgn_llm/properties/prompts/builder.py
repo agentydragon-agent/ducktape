@@ -3,11 +3,8 @@ from __future__ import annotations
 from typing import Literal
 
 from adgn_llm.properties.docker_env import PropertiesDockerWiring
-from adgn_llm.properties.prompt_utils import build_input_schemas_json
-from adgn_llm.properties.specimen_utils import Occurrence, LineRange, IssueCore
-
-# Reuse the existing Jinja renderers in cli.py to avoid duplicating template plumbing.
-from adgn_llm.properties import cli as _cli
+from .util import build_input_schemas_json, render_prompt_template
+from adgn_llm.properties.models.issue import Occurrence, LineRange, IssueCore
 
 
 def build_role_prompt(
@@ -28,7 +25,7 @@ def build_role_prompt(
     schemas_json = build_input_schemas_json([Occurrence, LineRange, IssueCore])
 
     template = "discover.j2.md" if mode == "discover" else ("open.j2.md" if mode == "open" else "find.j2.md")
-    return _cli._render_prompt_template(
+    return render_prompt_template(
         template,
         scope_text=scope_text,
         supplemental_text=supplemental_text,
@@ -75,10 +72,71 @@ def build_grade_prompt(
     - Returns the composed Markdown string
     """
     schemas_json = build_input_schemas_json([Occurrence, LineRange, IssueCore])
-    return _cli.build_grade_prompt(
-        scope_text,
-        canonical_text,
-        critique_text,
+    return render_prompt_template(
+        "grade.j2.md",
+        scope_text=scope_text,
+        canonical_text=canonical_text,
+        critique_text=critique_text,
+        static_action="use for context only (do not re-scan code)",
+        ambiguity_tail="you are not re-running analysis; only use it for reference while matching.",
+        wiring=wiring,
+        schemas_json=schemas_json,
+    )
+
+
+def build_find_prompt(
+    scope_text: str,
+    *,
+    wiring: PropertiesDockerWiring,
+    schemas_json: dict[str, dict],
+    supplemental_text: str | None = None,
+    available_tools: list[str] | None = None,
+) -> str:
+    return render_prompt_template(
+        "find.j2.md",
+        scope_text=scope_text,
+        supplemental_text=supplemental_text,
+        available_tools=available_tools or [],
+        static_action="analyze",
+        ambiguity_tail="do not include anything outside it.",
+        wiring=wiring,
+        schemas_json=schemas_json,
+    )
+
+
+def build_open_review_prompt(
+    scope_text: str,
+    *,
+    wiring: PropertiesDockerWiring,
+    schemas_json: dict[str, dict],
+    supplemental_text: str | None = None,
+    available_tools: list[str] | None = None,
+) -> str:
+    return render_prompt_template(
+        "open.j2.md",
+        scope_text=scope_text,
+        supplemental_text=supplemental_text,
+        available_tools=available_tools or [],
+        static_action="analyze",
+        ambiguity_tail="do not include anything outside it.",
+        wiring=wiring,
+        schemas_json=schemas_json,
+    )
+
+
+def build_enforce_prompt(
+    scope_text: str,
+    *,
+    wiring: PropertiesDockerWiring,
+    schemas_json: dict[str, dict],
+    supplemental_text: str | None = None,
+) -> str:
+    return render_prompt_template(
+        "enforce.j2.md",
+        scope_text=scope_text,
+        supplemental_text=supplemental_text,
+        static_action="edit",
+        ambiguity_tail="avoid touching anything outside it unless required by the editing policy below.",
         wiring=wiring,
         schemas_json=schemas_json,
     )

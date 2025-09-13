@@ -20,13 +20,12 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import os
 import random
 import sys
 import re
 from enum import Enum
 from aiolimiter import AsyncLimiter
-from typing import Callable, Awaitable, Any, Final, Sequence
+from typing import Callable, Awaitable, Any, Final, Sequence, cast
 
 from openai import AsyncOpenAI
 from openai.types.responses.function_tool_param import FunctionToolParam
@@ -108,9 +107,10 @@ class ProbeSpec:
     snippet: Callable[[Any], str]
 
 
+_GET_TIME_NAME: Final[str] = "get_time"
 PROMPT = "What's the time in Prague? Use get_time."
 TOOL_FUNCTION = {
-    "name": "get_time",
+    "name": _GET_TIME_NAME,
     "description": "Get current time for a city",
     "parameters": {
         "type": "object",
@@ -120,19 +120,10 @@ TOOL_FUNCTION = {
 }
 REQUEST_TIMEOUT = 10
 
-# Typed tool shapes for Responses API (mypy-safe)
-_GET_TIME_NAME: Final[str] = "get_time"
-GET_TIME_TOOL: FunctionToolParam = {
-    "type": "function",
-    "name": _GET_TIME_NAME,
-    "description": "Get current time for a city",
-    "parameters": {
-        "type": "object",
-        "properties": {"city": {"type": "string"}},
-        "required": ["city"],
-    },
-    "strict": True,
-}
+# Typed tool shapes for Responses API (mypy-safe) without duplicating TOOL_FUNCTION
+_base_tool: dict[str, object] = {"type": "function", "strict": True}
+_base_tool.update(TOOL_FUNCTION)  # merge name/description/parameters
+GET_TIME_TOOL: FunctionToolParam = cast(FunctionToolParam, _base_tool)
 GET_TIME_TOOL_CHOICE: ToolChoiceFunctionParam = {
     "type": "function",
     "name": _GET_TIME_NAME,
@@ -156,23 +147,10 @@ async def _create_chat(c: AsyncOpenAI, m: str):
     from typing import Any as _Any
 
     messages: _Any = [
-        {"role": "system", "content": "You are a helpful assistant. Use the tool when appropriate."},
+        {"role": "system", "content": "You are a helpful assistant."},
         {"role": "user", "content": PROMPT},
     ]
-    tools: _Any = [
-        {
-            "type": "function",
-            "function": {
-                "name": _GET_TIME_NAME,
-                "description": "Get current time for a city",
-                "parameters": {
-                    "type": "object",
-                    "properties": {"city": {"type": "string"}},
-                    "required": ["city"],
-                },
-            },
-        }
-    ]
+    tools: _Any = [{"type": "function", "function": TOOL_FUNCTION}]
     tool_choice: _Any = {"type": "function", "function": {"name": _GET_TIME_NAME}}
     return await c.chat.completions.create(
         model=m,
@@ -362,11 +340,9 @@ def _squeeze_one_line(text: str, max_len: int = 120) -> str:
 
 def _tool_ok_if_expected(name: str | None, args: object) -> bool:
     """Return True if tool call matches our expected probe signature.
-    Accepts either dict args or JSON string; supports get_time or get_temperature.
+    Accepts either dict args or JSON string; supports get_time.
     """
-    if not name:
-        return False
-    if name not in {"get_time", "get_temperature"}:
+    if name != "get_time":
         return False
     args_obj = args
     if isinstance(args, str):
@@ -376,10 +352,7 @@ def _tool_ok_if_expected(name: str | None, args: object) -> bool:
 
 
 def _snippet_from_responses(resp) -> str:
-    # Prefer plain text when available
-    # Prefer plain text when available via attribute
-    txt = resp.output_text
-    if txt:
+    if txt := resp.output_text:
         return _squeeze_one_line(txt)
     # Fallback: inspect model_dump for output blocks and tool/function calls
     data = resp.model_dump(exclude_none=True)
@@ -406,7 +379,7 @@ def _snippet_from_responses(resp) -> str:
             text = item.get("text") or ""
             if text:
                 return "✓ " + _squeeze_one_line(text)
-        if name is not None:
+        if name:
             if _tool_ok_if_expected(name, args):
                 return "✓ tool OK"
             if isinstance(args, (dict, list)):
@@ -478,13 +451,6 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:  # noqa
 
 async def main() -> None:
     args = parse_args()
-
-    # Basic environment check -------------------------------------------------
-    if "OPENAI_API_KEY" not in os.environ:
-        sys.exit("OPENAI_API_KEY environment variable not set.")
-
-    # Shared async client for everything
-    async_client = AsyncOpenAI()
     # Create a single limiter for the whole run. No disable path; coerce to >= 1e-6.
     qps = float(args.max_qps)
     if qps <= 0:
@@ -495,8 +461,9 @@ async def main() -> None:
     else:
         limiter = AsyncLimiter(1, 1.0 / qps)
 
+    async_client = AsyncOpenAI()
     print("Fetching model list …", file=sys.stderr)
-    resp = await async_client.models.list()  # async SDK supports this
+    resp = await async_client.models.list()
     model_ids = [m.id for m in resp.data]
     print(f"Total models from API: {len(model_ids)}", file=sys.stderr)
 
@@ -563,9 +530,6 @@ async def main() -> None:
 
     console = Console()
 
-    def class_rank(mid: str) -> int:
-        return priority_index(mid)
-
     def classify(mid: str) -> str:
         return family_of(mid).value
 
@@ -624,7 +588,7 @@ async def main() -> None:
         def key(item: tuple[str, str, str]):
             mid = item[0]
             avg = _avg_lat(ProbeRun(model_id=mid, calls=acc[mid][kind])) or INF
-            return (class_rank(mid), avg, mid)
+            return (priority_index(mid), avg, mid)
 
         return key
 
@@ -766,9 +730,27 @@ async def main() -> None:
             oks_both = [r for r in oks if r.responses.ok and r.chat.ok]
             oks_resp_only = [r for r in oks if r.responses.ok and not r.chat.ok]
             oks_chat_only = [r for r in oks if r.chat.ok and not r.responses.ok]
-            oks_both.sort(key=lambda r: (class_rank(r.model_id), latency_both_key(r), r.model_id))
-            oks_resp_only.sort(key=lambda r: (class_rank(r.model_id), latency_resp_key(r), r.model_id))
-            oks_chat_only.sort(key=lambda r: (class_rank(r.model_id), latency_chat_key(r), r.model_id))
+            oks_both.sort(
+                key=lambda r: (
+                    priority_index(r.model_id),
+                    latency_both_key(r),
+                    r.model_id,
+                )
+            )
+            oks_resp_only.sort(
+                key=lambda r: (
+                    priority_index(r.model_id),
+                    latency_resp_key(r),
+                    r.model_id,
+                )
+            )
+            oks_chat_only.sort(
+                key=lambda r: (
+                    priority_index(r.model_id),
+                    latency_chat_key(r),
+                    r.model_id,
+                )
+            )
 
             # Render both-ok rows into the single-column OK table
             for r, end_section in iter_with_break(oks_both, lambda x: classify(x.model_id)):

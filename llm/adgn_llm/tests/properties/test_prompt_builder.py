@@ -2,17 +2,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from adgn_llm.properties.prompt_builder import build_check_prompt, build_role_prompt
+from adgn_llm.properties.prompts.builder import build_check_prompt, build_role_prompt
 from adgn_llm.properties.docker_env import PropertiesDockerWiring
 
 
 def _dummy_wiring(defs_dir: str | None = "/props") -> PropertiesDockerWiring:
     # Minimal wiring sufficient for env line; no MCP servers used in prompt-only compose
     return PropertiesDockerWiring(
-        _server_name="none",
         server_spec=None,  # type: ignore[arg-type]
-        _working_dir=Path("/"),
-        definitions_container_dir=defs_dir,
+        working_dir=Path("/"),
+        definitions_container_dir=Path(defs_dir),
         image_name="n/a",
     )
 

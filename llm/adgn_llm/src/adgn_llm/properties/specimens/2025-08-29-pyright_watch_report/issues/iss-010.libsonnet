@@ -1,5 +1,4 @@
 local obj = {
-  id: "iss-010",
   should_flag: true,
   rationale: |||
     Repeated periodic progress-logging block.
@@ -38,10 +37,10 @@ local obj = {
   |||,
   properties: ['no-oneoff-vars-and-trivial-wrappers'],
   instances: [
-    { files: { "pyright_watch_report.py": [ { start_line: 123, end_line: 132 } ] } },
-    { files: { "pyright_watch_report.py": [ { start_line: 142, end_line: 150 } ] } },
-    { files: { "pyright_watch_report.py": [ { start_line: 151, end_line: 158 } ] } },
-    { files: { "pyright_watch_report.py": [ { start_line: 162, end_line: 167 } ] } },
+    { files: { 'pyright_watch_report.py': [{ start_line: 123, end_line: 132 }] } },
+    { files: { 'pyright_watch_report.py': [{ start_line: 142, end_line: 150 }] } },
+    { files: { 'pyright_watch_report.py': [{ start_line: 151, end_line: 158 }] } },
+    { files: { 'pyright_watch_report.py': [{ start_line: 162, end_line: 167 }] } },
   ],
 };
 

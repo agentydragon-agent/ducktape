@@ -1,5 +1,4 @@
 local obj = {
-  id: "iss-005",
   should_flag: true,
   rationale: |||
     Clarify accounting: first‑match vs all‑matches
@@ -15,7 +14,7 @@ local obj = {
     Document the chosen mode in output to avoid confusion.
   |||,
   properties: [],
-  instances: [ { files: { "pyright_watch_report.py": null } } ],
+  instances: [{ files: { 'pyright_watch_report.py': null } }],
 };
 
 obj

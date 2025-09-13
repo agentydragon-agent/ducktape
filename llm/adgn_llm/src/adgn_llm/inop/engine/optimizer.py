@@ -303,19 +303,36 @@ async def optimize_prompts_mcp(
             context_window_tokens=cfg.tokens.max_context_tokens,
             reasoning_effort=cfg.grader.reasoning_effort,
         )
+        # Build the expert prompt-engineer system message (same wording formerly in PromptEngineer.prompt_messages)
+        agent_description = "a coding agent"
+        task_description = (
+            "- Agent has access to a filesystem and a shell through tools. "
+            "Tasks should be solved by writing code files on disk using these tools, "
+            "not just shown to user in conversation.\n"
+        )
+        system_message = (
+            f"You are an expert LLM prompt engineer. Your task is to design the best prompt for a LLM used as {agent_description}.\n"
+            f"{task_description}"
+            "- Agent has a fixed system prompt that teaches it how to use its tools (and other basics).\n"
+            "- Avoid giving your own instructions on how to use the tools - agent's baked-in tool use instructions "
+            "are already correct and additional conflicting instructions could easily make it worse.\n"
+            "- Each turn, you will propose a prompt. The agent will be run with that prompt on several tasks, "
+            "and you will receive information from these rollouts to help you design a better prompt.\n"
+            "- Your goal is to *find the best performing prompt you can* over *N turns* of (propose prompt1 -> "
+            "receive feedback1 -> propose prompt2 -> ...). You will be scored by the max score, not the last score.\n"
+            f"- The feedback will take the form of: {feedback_provider.verbal_description()}\n"
+        )
+
         pe = await MiniCodex.create(
             model=model.model,
             mcp=mcp,
             client=model.openai_client.openai_client,
-            system=(
-                "You optimize the coding agent’s system prompt. Always evaluate a candidate by calling the 'propose_prompt' tool. "
-                "Do not produce assistant text after tool output."
-            ),
+            system=system_message,
+            handlers=[ProposePromptNTimes(iterations)],
         )
 
-        # Force N propose_prompt tool calls then abort
-        controller = ProposePromptNTimes(iterations)
-        await pe.run(user_text="Start prompt optimization.", controller=controller)
+        # Force N propose_prompt tool calls then abort (handled by ProposePromptNTimes registered above)
+        await pe.run(user_text="Start prompt optimization.")
 
         # Read final state directly (in-proc) for logging only
         last_prompt = state_handle.state.last_prompt if state_handle.state else ""
@@ -352,7 +369,7 @@ async def optimize_prompts(
     task_type: AgentTaskType,  # Type of agent being optimized
     iterations: int = 3,
     rollouts_per_task: int = 2,
-    _max_parallel_rollouts: int | None = None,
+    max_parallel_rollouts: int | None = None,
     tasks_per_iteration: int | None = None,
     base_dir: Path,
 ) -> Path:

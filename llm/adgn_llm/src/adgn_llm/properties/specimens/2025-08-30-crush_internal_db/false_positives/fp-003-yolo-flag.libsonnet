@@ -4,9 +4,8 @@ local I = import '../../specimen_issues.libsonnet';
 // False positive: CLI flag `--yolo` is acceptable branding and should not be renamed.
 
 I.issueOneOccurrence(
-  id='fp-003-yolo-flag',
   should_flag=false,
-  rationale= |||
+  rationale=|||
     A past critique suggested renaming the CLI flag `--yolo` (and local variable `yolo`) to a more
     descriptive predicate such as `--skip-permission-requests`. This is a false positive.
 
@@ -19,6 +18,6 @@ I.issueOneOccurrence(
   |||,
   properties=[],
   filesToRanges={
-    'internal/cmd/root.go': [[29,31],[132,169]],
+    'internal/cmd/root.go': [[29, 31], [132, 169]],
   },
 )

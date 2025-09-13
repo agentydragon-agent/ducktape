@@ -4,7 +4,7 @@ import shlex
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any, Dict, Iterable
+from typing import Any, Dict, Iterable, cast
 
 import docker
 from docker.errors import APIError
@@ -102,7 +102,11 @@ def _container_exec(
     else:
         exec_cmd = prepared_cmd
 
-    exec_id = container.client.api.exec_create(
+    cli = container.client
+    if cli is None:  # mypy: Container.client can be Optional in stubs
+        raise RuntimeError("Docker client not available on container")
+    api = cast(Any, cli).api  # DockerClient.api → low-level APIClient; use Any for compatibility with stubs
+    exec_id = api.exec_create(
         container=container.id,
         cmd=exec_cmd,
         stdout=True,
@@ -117,7 +121,7 @@ def _container_exec(
     stdout_buf = bytearray()
     stderr_buf = bytearray()
 
-    for out_err in container.client.api.exec_start(exec_id, stream=True, demux=True):
+    for out_err in api.exec_start(exec_id, stream=True, demux=True):
         if not isinstance(out_err, tuple):
             if out_err:
                 stdout_buf.extend(out_err)
@@ -129,8 +133,8 @@ def _container_exec(
             stderr_buf.extend(err_b)
 
     try:
-        inspect = container.client.api.exec_inspect(exec_id)
-        exit_code = inspect.get("ExitCode")
+        inspect_info = api.exec_inspect(exec_id)
+        exit_code = inspect_info.get("ExitCode")
     except APIError:
         exit_code = None
 

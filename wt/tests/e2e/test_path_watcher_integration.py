@@ -26,7 +26,9 @@ def _status(env) -> str:
 
 
 def wait_for_status_contains(
-    env, needle: str, timeout: float = DEBOUNCE_SECS * 8
+    env,
+    needle: str,
+    timeout: float = DEBOUNCE_SECS * 8,
 ) -> None:
     deadline = time.time() + timeout
     last = ""
@@ -36,12 +38,14 @@ def wait_for_status_contains(
             return
         time.sleep(DEBOUNCE_SECS)
     pytest.fail(
-        f"Timed out waiting for status to contain '{needle}'. Last output:\n{last}"
+        f"Timed out waiting for status to contain '{needle}'. Last output:\n{last}",
     )
 
 
 def wait_for_status_contains_all(
-    env, needles: list[str], timeout: float = DEBOUNCE_SECS * 8
+    env,
+    needles: list[str],
+    timeout: float = DEBOUNCE_SECS * 8,
 ) -> None:
     deadline = time.time() + timeout
     last = ""
@@ -58,7 +62,9 @@ def wait_for_status_contains_all(
 
 
 def wait_for_status_not_contains(
-    env, needle: str, timeout: float = DEBOUNCE_SECS * 8
+    env,
+    needle: str,
+    timeout: float = DEBOUNCE_SECS * 8,
 ) -> None:
     deadline = time.time() + timeout
     last = ""
@@ -68,7 +74,7 @@ def wait_for_status_not_contains(
             return
         time.sleep(DEBOUNCE_SECS)
     pytest.fail(
-        f"Timed out waiting for status to drop '{needle}'. Last output:\n{last}"
+        f"Timed out waiting for status to drop '{needle}'. Last output:\n{last}",
     )
 
 

@@ -4,9 +4,8 @@ local I = import '../../specimen_issues.libsonnet';
 // False positive: line-numbering for LLM vs human display are NOT duplication
 
 I.issueOneOccurrence(
-  id='fp-002-line-numbering-llm-vs-ui',
   should_flag=false,
-  rationale= |||
+  rationale=|||
     A past critique reported the LLM-facing in-band plaintext line numbering (internal/llm/tools/view.go)
     and the TUI's styled, width-aware line numbering (internal/tui/components/chat/messages/renderer.go) as
     duplicated functionality deserving consolidation.
@@ -22,7 +21,7 @@ I.issueOneOccurrence(
   |||,
   properties=[],
   filesToRanges={
-    'internal/llm/tools/view.go': [[258,276]],
-    'internal/tui/components/chat/messages/renderer.go': [[817,883]],
+    'internal/llm/tools/view.go': [[258, 276]],
+    'internal/tui/components/chat/messages/renderer.go': [[817, 883]],
   },
 )

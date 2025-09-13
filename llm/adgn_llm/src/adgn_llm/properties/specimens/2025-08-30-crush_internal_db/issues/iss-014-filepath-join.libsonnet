@@ -4,10 +4,9 @@ local I = import '../../specimen_issues.libsonnet';
 // Use filepath.Join instead of string concatenation when composing file paths (dir + "/old", "/new").
 
 I.issueOneOccurrence(
-  id='iss-014-filepath-join',
   rationale='Constructing file paths via string concatenation is error-prone (OS path separators) and less idiomatic. Use filepath.Join(dir, "old") / filepath.Join(dir, "new") for portability and clarity.',
   properties=['pathlike'],
   filesToRanges={
-    'internal/diff/word_inline.go': [[41,46], [48,48]]
+    'internal/diff/word_inline.go': [[41, 46], [48, 48]],
   },
 )

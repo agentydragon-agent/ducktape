@@ -2,8 +2,7 @@ local I = import '../../specimen_issues.libsonnet';
 
 // iss-007: Scoped try/except
 I.issueOneOccurrence(
-  id='iss-007',
-  rationale= |||
+  rationale=|||
     This code silently hides ImportError/AttributeError when loading plugins.
     Those would be real and severe errors that should:
       - At the very least be logged if nothing better is possible
@@ -12,6 +11,6 @@ I.issueOneOccurrence(
   |||,
   properties=[],
   filesToRanges={
-    'wt/wt/plugins.py': [[59,63]],
+    'wt/wt/plugins.py': [[59, 63]],
   },
 )

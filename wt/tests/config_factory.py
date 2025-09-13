@@ -73,7 +73,7 @@ class ConfigFactory:
             "gitstatusd_path": None,  # Will be filled by tests that need it
             "post_creation_script": None,
             "git_watcher_debounce_delay": __import__(
-                "tests.test_data"
+                "tests.test_data",
             ).test_data.WATCHER_DEBOUNCE_SECS,  # Lower debounce in tests for faster watcher reaction (prod default ~0.5s)
         }
 

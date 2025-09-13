@@ -12,7 +12,6 @@ Provides async methods used by the proxy:
  - append_frame(key, seq, frame_obj)
  - finalize_response(key, response_obj, summary_obj=None)
  - get_frames(key) -> list[dict]
- - list_keys_by_model(model, limit)
 
 Small, dependency: aiosqlite
 """
@@ -124,7 +123,8 @@ class ResponsesDB:
         assert self._conn is not None, "DB not initialized"
         frame_json = json.dumps(frame_obj, ensure_ascii=False)
         await self._conn.execute(
-            "INSERT INTO response_frames (key, seq, frame_json) VALUES (?, ?, ?)", (key, seq, frame_json)
+            "INSERT INTO response_frames (key, seq, frame_json) VALUES (?, ?, ?)",
+            (key, seq, frame_json),
         )
         await self._conn.commit()
 
@@ -144,32 +144,7 @@ class ResponsesDB:
 
     async def get_frames(self, key: str) -> List[Dict[str, Any]]:
         assert self._conn is not None, "DB not initialized"
-        cur = await self._conn.execute("SELECT seq, frame_json FROM response_frames WHERE key = ? ORDER BY seq", (key,))
+        cur = await self._conn.execute("SELECT frame_json FROM response_frames WHERE key = ? ORDER BY seq", (key,))
         rows = await cur.fetchall()
         await cur.close()
-        out: List[Dict[str, Any]] = []
-        for seq, frame_json in rows:
-            try:
-                out.append(json.loads(frame_json))
-            except json.JSONDecodeError:
-                out.append({"_raw": frame_json})
-        return out
-
-    async def list_keys_by_model(self, model: str, limit: int = 100) -> List[str]:
-        assert self._conn is not None, "DB not initialized"
-        cur = await self._conn.execute(
-            "SELECT key FROM responses WHERE model = ? ORDER BY created_ts DESC LIMIT ?", (model, limit)
-        )
-        rows = await cur.fetchall()
-        await cur.close()
-        return [r[0] for r in rows]
-
-
-# helper: import from existing diskcache (optional migration)
-async def import_from_diskcache(disk_dir: Optional[str] = None, db: Optional[ResponsesDB] = None) -> int:
-    """Diskcache import disabled.
-
-    We migrated to SQLite-backed storage. If a migration from diskcache is
-    required, run the external migration tool/scripts instead of this helper.
-    """
-    raise RuntimeError("diskcache import/migration is disabled; use SQLite migration tool instead")
+        return [json.loads(frame_json) for (frame_json,) in rows]

@@ -2,7 +2,6 @@ local I = import '../../specimen_issues.libsonnet';
 
 // iss-046: parse_gitstatusd_response thin wrapper (dead)
 I.issueOneOccurrence(
-  id='iss-046',
   rationale='`parse_gitstatusd_response` is a thin wrapper around GitStatusdProtocol; migrate callers to Protocol methods and delete.',
   properties=['no-dead-code'],
   filesToRanges={

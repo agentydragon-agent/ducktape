@@ -1,67 +1,59 @@
 """Lightweight OpenAI Responses-compatible proxy (SQLite authoritative store).
 
-Quick hello-world and standup instructions
+# Hello-world and standup instructions
 
-1) Install dev deps and get console script (one-time):
+## Start the proxy (in one shell):
 
-   uv sync --extra dev
+export OPENAI_API_KEY=sk-...
+rspcache --host 127.0.0.1 --port 8000   # start using the console script
 
-   This installs the project in editable mode and makes the `rspcache` console
-   script available in your active devenv. (If you don't use `uv`, you can
-   `python -m pip install -e .` in the project root.)
+# or run directly with uvicorn
+uvicorn adgn_llm.openai_responses_proxy:APP --host 127.0.0.1 --port 8000
 
-2) Start the proxy (in one shell):
+## Point a client at the proxy and fire a request (in another shell):
 
-   # set the upstream OpenAI key the proxy will use to call OpenAI
-   export OPENAI_API_KEY=sk-...                # required by proxy to forward
+# direct the OpenAI SDK to use the local proxy as the API base
+export OPENAI_API_BASE=http://127.0.0.1:8000
 
-   # start using the console script (recommended)
-   rspcache --host 127.0.0.1 --port 8000
+### Example: non-streaming Python call
 
-   # or run directly with uvicorn
-   uvicorn adgn_llm.openai_responses_proxy:APP --host 127.0.0.1 --port 8000
+python - <<'PY'
+import asyncio
+from openai import AsyncOpenAI
 
-3) Point a client at the proxy and fire a request (in another shell):
+async def main():
+   client = AsyncOpenAI()
+   resp = await client.responses.create(model="o4-mini", input=[{"role":"user","content":"Hello"}])
+   print(resp)
 
-   # direct the OpenAI SDK to use the local proxy as the API base
-   export OPENAI_API_BASE=http://127.0.0.1:8000
+asyncio.run(main())
+PY
 
-   # Example: non-streaming Python call
-   python - <<'PY'
-   import asyncio
-   from openai import AsyncOpenAI
+### Example: streaming Python call (proxy will forward chunks as they arrive)
 
-   async def main():
-       client = AsyncOpenAI()
-       resp = await client.responses.create(model="o4-mini", input=[{"role":"user","content":"Hello"}])
-       print(resp)
+python - <<'PY'
+import asyncio
+from openai import AsyncOpenAI
 
-   asyncio.run(main())
-   PY
+async def main():
+   client = AsyncOpenAI()
+   maybe_iter = await client.responses.create(model="o4-mini", input=[{"role":"user","content":"Stream 1..3"}], stream=True)
+   async for event in maybe_iter:
+       print(event)
 
-   # Example: streaming Python call (proxy will forward chunks as they arrive)
-   python - <<'PY'
-   import asyncio
-   from openai import AsyncOpenAI
+asyncio.run(main())
+PY
 
-   async def main():
-       client = AsyncOpenAI()
-       maybe_iter = await client.responses.create(model="o4-mini", input=[{"role":"user","content":"Stream 1..3"}], stream=True)
-       async for event in maybe_iter:
-           print(event)
+## Proxy behavior notes (important)
+- Uses SQLite as store (responses + response_frames). Derives deterministic key from request fields (model, input, explicitly-included knobs).
+- Streaming: proxy *forwards chunks to client immediately as upstream sends them* (does not buffer and send only at the end).
+- NDJSON/SSE frames are parsed and persisted in DB once stream completes successfully.
+- Non-streaming: proxy forwards request, waits for full JSON response, then persists in DB.
+- Proxy requires OPENAI_API_KEY in environment to talk to backend; API key is not needed to talk to frontend.
 
-   asyncio.run(main())
-   PY
-
-Proxy behavior notes (important)
-- The proxy uses a single SQLite DB as the authoritative store (responses + response_frames). It derives a deterministic key from the request fields only (model, input, and the explicitly-included request knobs).
-- Streaming: the proxy *forwards chunks to the client immediately as upstream sends them* (it does not buffer and send only at the end). It also parses NDJSON/SSE frames and persists the parsed frames to the DB when the stream completes successfully.
-- Non-streaming: the proxy forwards the request, waits for the full JSON response, and persists the summary/response in the DB.
-- The proxy requires OPENAI_API_KEY in its own environment for upstream access; client-side OPENAI_API_KEY is optional when pointing at the proxy because the proxy handles upstream authentication.
-
-Security
-- Do not expose the proxy publicly without proper authentication; the DB may contain sensitive content. Protect the host with firewall or authentication in front if needed.
-
+## Security
+- Do not expose publicly without proper auth; DB may contain sensitive content.
+- Protect host with firewall or auth if needed.
 """
 
 from __future__ import annotations
@@ -73,8 +65,8 @@ from typing import Any, Dict
 
 import httpx
 from fastapi import FastAPI, Header, HTTPException, Request
-from fastapi.responses import JSONResponse, StreamingResponse
-from adgn_llm.responses_db import ResponsesDB
+from fastapi.responses import JSONResponse, StreamingResponse, Response
+from adgn_llm.rspcache.responses_db import ResponsesDB
 
 
 APP = FastAPI(title="adgn-llm OpenAI Responses proxy (diskcache)")
@@ -98,25 +90,15 @@ def make_key_from_body(body: Dict[str, Any]) -> str:
     Primary rule: include `model` and `input` in canonical form. Also include other
     stable request fields except known non-deterministic fields.
     """
-    model = body.get("model")
-    if model is None:
-        raise ValueError("`model` missing from request body; required for key derivation")
-    input_seq = body.get("input")
-    if input_seq is None:
-        # Some clients may send `input` as string; accept either
-        raise ValueError("`input` missing from request body; required for key derivation")
-
-    # Exclude fields that are normally transient or not affecting response semantics
-    exclude = {"request_id", "request_timestamp", "nonce", "__meta__"}
-
-    # Collect other kwargs sorted by key
-    keyed = {k: body[k] for k in sorted(body.keys()) if k not in {"model", "input"} and k not in exclude}
+    # Collect non-transient args, including model, input
+    keyed = {
+        k: body[k]
+        for k in sorted(body.keys())
+        # Exclude fields that are normally transient or not affecting response semantics
+        if k not in {"request_id", "request_timestamp", "nonce", "__meta__"}
+    }
 
     h = hashlib.sha256()
-    h.update(str(model).encode("utf-8"))
-    h.update(b"\n")
-    h.update(canonical_json(input_seq).encode("utf-8"))
-    h.update(b"\n")
     h.update(canonical_json(keyed).encode("utf-8"))
     return h.hexdigest()
 
@@ -127,8 +109,8 @@ async def health() -> Dict[str, str]:
 
 
 @APP.post("/v1/responses")
-async def responses_endpoint(request: Request, x_cache_skip: str | None = Header(None)) -> JSONResponse:
-    """OpenAI Responses-compatible endpoint (minimal compatibility).
+async def responses_endpoint(request: Request, x_cache_skip: str | None = Header(None)) -> Response:
+    """Minimal OpenAI Responses API-compatible endpoint
 
     Accepts JSON body similar to OpenAI Responses.create(). Uses an exact-key cache.
     Supports streaming by forwarding upstream stream chunks to the client and
@@ -197,11 +179,7 @@ async def responses_endpoint(request: Request, x_cache_skip: str | None = Header
                             yield chunk
 
                             # Maintain a UTF-8 decoded rolling buffer for line parsing
-                            try:
-                                chunk_text = chunk.decode("utf-8")
-                            except Exception:
-                                # fallback replace errors
-                                chunk_text = chunk.decode("utf-8", errors="replace")
+                            chunk_text = chunk.decode("utf-8")
                             text_buffer += chunk_text
 
                             # Process complete lines; leave the last partial line in buffer
@@ -254,8 +232,6 @@ async def responses_endpoint(request: Request, x_cache_skip: str | None = Header
                     # After stream completes, store parsed frames as NDJSON list
                     try:
                         if frames:
-                            from adgn_llm.responses_db import ResponsesDB
-
                             db = ResponsesDB()
                             await db.init()
                             try:
@@ -269,7 +245,6 @@ async def responses_endpoint(request: Request, x_cache_skip: str | None = Header
                     except Exception:
                         print(f"WARNING: failed to write DB entry key={key} after streaming")
 
-        # StreamResponse - return with streaming media-type for SSE/NDJSON
         return StreamingResponse(
             stream_generator(),
             media_type="text/event-stream",

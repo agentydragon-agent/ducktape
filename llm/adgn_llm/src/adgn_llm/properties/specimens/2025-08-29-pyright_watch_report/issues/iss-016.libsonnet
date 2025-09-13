@@ -1,5 +1,4 @@
 local obj = {
-  id: "iss-016",
   should_flag: true,
   rationale: |||
     Prefer Path.write_text for concise dump writing when appropriate.
@@ -24,7 +23,7 @@ local obj = {
     can be very large (streaming required), keep the streaming form; prefer clarity over micro-optimizations.
   |||,
   properties: [],
-  instances: [ { files: { "pyright_watch_report.py": [ { start_line: 292, end_line: 299 } ] } } ],
+  instances: [{ files: { 'pyright_watch_report.py': [{ start_line: 292, end_line: 299 }] } }],
 };
 
 obj

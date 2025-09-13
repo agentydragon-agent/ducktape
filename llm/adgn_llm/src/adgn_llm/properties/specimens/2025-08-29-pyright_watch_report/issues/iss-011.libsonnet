@@ -1,5 +1,4 @@
 local obj = {
-  id: "iss-011",
   should_flag: true,
   rationale: |||
     Do not silently swallow config read/parse errors.
@@ -44,7 +43,7 @@ local obj = {
     Either option makes configuration problems visible to users and avoids silently violating explicit `--config` intent.
   |||,
   properties: [],
-  instances: [ { files: { "pyright_watch_report.py": [ { start_line: 46, end_line: 51 } ] } } ],
+  instances: [{ files: { 'pyright_watch_report.py': [{ start_line: 46, end_line: 51 }] } }],
 };
 
 obj

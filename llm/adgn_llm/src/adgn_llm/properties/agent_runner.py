@@ -9,6 +9,8 @@ from adgn_llm.mini_codex.agent import MiniCodex
 from adgn_llm.mini_codex.mcp_manager import McpManager
 from adgn_llm.mcp.types import ServerSlotSpec
 from adgn_llm.properties.docker_env import PropertiesDockerWiring
+from adgn_llm.mini_codex.aggregating_handler import AutoHandler
+from adgn_llm.mini_codex.agent_progress import OneLineProgressHandler
 
 
 @dataclass
@@ -35,7 +37,14 @@ async def run_prompt_async(
         raise ValueError("client must be provided by CLI entry point")
     transcript: List[Dict[str, Any]] = []
     async with McpManager(dict(specs)) as mcp:
-        agent = await MiniCodex.create(model=model, mcp=mcp, system="You are a code agent. Be concise.", client=client)
+        # Quiet, single-line progress by default (DisplayEventsHandler available for verbose UI)
+        agent = await MiniCodex.create(
+            model=model,
+            mcp=mcp,
+            system="You are a code agent. Be concise.",
+            client=client,
+            handlers=[AutoHandler(), OneLineProgressHandler()],
+        )
         res_any = await agent.run(prompt)
 
     # res_any may be an AsyncIterator of dicts or a single response object

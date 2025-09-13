@@ -7,10 +7,11 @@ MiniCodex itself.
 
 from __future__ import annotations
 
-from adgn_llm.mini_codex.loop_control import Abort, Continue, RequireAny, BaseLoopController
+from adgn_llm.mini_codex.loop_control import Abort, Continue, RequireAny
+from adgn_llm.mini_codex.aggregating_handler import BaseHandler
 
 
-class ProposePromptNTimes(BaseLoopController):
+class ProposePromptNTimes(BaseHandler):
     """Require a tool call for the first N sampling steps, then abort.
 
     This is used by the Prompt Engineer to force exactly N calls to the

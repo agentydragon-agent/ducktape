@@ -63,11 +63,19 @@ async def test_tool_error_is_surfaced_in_sequence(monkeypatch: pytest.MonkeyPatc
     fake_client = type("_FakeClient", (), {"responses": FakeResponses()})()
 
     # Create agent and run one turn
+    from adgn_llm.mini_codex.aggregating_handler import BaseHandler
+    from adgn_llm.mini_codex.loop_control import Continue, Auto
+
+    class _AutoHandler(BaseHandler):
+        def on_before_sample(self):
+            return Continue(Auto())
+
     agent = await MiniCodex.create(
         model="dummy-model",
         mcp=mcp,
         system="You are a code agent.",
         client=fake_client,
+        handlers=[_AutoHandler()],
     )
     result = await agent.run("call failing tool once")
 

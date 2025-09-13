@@ -4,9 +4,8 @@ local I = import '../../specimen_issues.libsonnet';
 // False positive: DeleteSessionMessages early-bailout suggestion is unnecessary
 
 I.issueOneOccurrence(
-  id='fp-006-delete-session-messages',
   should_flag=false,
-  rationale= |||
+  rationale=|||
     A reviewer suggested converting a small loop that performs a conditional delete
     into an early-bailout (continue) style to save one indentation level:
 
@@ -23,6 +22,6 @@ I.issueOneOccurrence(
   |||,
   properties=[],
   filesToRanges={
-    'internal/message/message.go': [[160,172]],
+    'internal/message/message.go': [[160, 172]],
   },
 )

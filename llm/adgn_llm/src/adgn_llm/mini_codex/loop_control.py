@@ -21,10 +21,12 @@ from typing import Protocol, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from openai.types.responses import (
-        ResponseOutput,
+        ResponseOutputMessage,
         ResponseFunctionToolCall,
         ResponseReasoningItem,
     )
+    # Union of concrete output item types that the agent processes
+    OutputItem = ResponseReasoningItem | ResponseOutputMessage | ResponseFunctionToolCall
     from adgn_llm.mini_codex.agent import FunctionCallOutput
 
 
@@ -89,7 +91,7 @@ class SyntheticAction(LoopDecision):
     sampling step where the controller can return another decision.
     """
 
-    outputs: list[ResponseOutput]
+    outputs: list["OutputItem"]
 
 
 # ---------------------------------------------------------------------------

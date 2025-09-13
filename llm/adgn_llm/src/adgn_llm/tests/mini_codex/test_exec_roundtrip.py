@@ -10,7 +10,7 @@ from adgn_llm.mcp.docker_exec.server import (
 )
 from adgn_llm.mcp.inproc_transport import make_inproc_slot_spec
 from adgn_llm.mini_codex.mcp_manager import McpManager, build_mcp_function
-from adgn_llm.mini_codex.agent import MiniCodex, _openai_client
+from adgn_llm.mini_codex.agent import MiniCodex
 from mcp import types as mcp_types
 
 ECHO_CMD = ["sh", "-lc", "printf hello"]
@@ -54,7 +54,9 @@ async def test_live_llm_exec_echo() -> None:
     """End-to-end: real LLM is instructed to call docker exec to print hello and return exactly it."""
 
     async with McpManager(_build_specs()) as mcp:
-        client = _openai_client()
+        from openai import AsyncOpenAI
+
+        client = AsyncOpenAI()
         agent = await MiniCodex.create(
             model=os.environ.get("OPENAI_MODEL", "gpt-5"),
             mcp=mcp,

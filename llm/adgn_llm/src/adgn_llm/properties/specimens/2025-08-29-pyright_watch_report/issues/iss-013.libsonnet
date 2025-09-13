@@ -1,5 +1,4 @@
 local obj = {
-  id: "iss-013",
   should_flag: true,
   rationale: |||
     Use collections.Counter for tallying exclude-pattern hits.
@@ -30,8 +29,8 @@ local obj = {
   |||,
   properties: [],
   instances: [
-    { files: { "pyright_watch_report.py": [ { start_line: 104, end_line: 105 } ] } },
-    { files: { "pyright_watch_report.py": [ { start_line: 134, end_line: 139 } ] } },
+    { files: { 'pyright_watch_report.py': [{ start_line: 104, end_line: 105 }] } },
+    { files: { 'pyright_watch_report.py': [{ start_line: 134, end_line: 139 }] } },
   ],
 };
 

@@ -1,5 +1,4 @@
 local obj = {
-  id: "iss-017",
   should_flag: true,
   rationale: |||
     Condense and de-duplicate config printing.
@@ -22,7 +21,7 @@ local obj = {
     This is a readability-focused micro-refactor: it reduces branching for a simple, readable output and keeps intent clear.
   |||,
   properties: [],
-  instances: [ { files: { "pyright_watch_report.py": [ { start_line: 259, end_line: 262 } ] } } ],
+  instances: [{ files: { 'pyright_watch_report.py': [{ start_line: 259, end_line: 262 }] } }],
 };
 
 obj

@@ -1,8 +1,7 @@
 local I = import '../../specimen_issues.libsonnet';
 
 I.issueWithOccurrences(
-  id='iss-027',
-  rationale= |||
+  rationale=|||
     Post‑creation script check: shorten and use walrus. Also:
     - Drop redundant existence check
     - Fold error message into a concise one‑liner (can be done without loss of expressiveness).

@@ -1,5 +1,4 @@
 local obj = {
-  id: "iss-012",
   should_flag: true,
   rationale: |||
     Use a dict comprehension for per_include_kept to reduce ephemeral state and make intent clear.
@@ -24,7 +23,7 @@ local obj = {
     This is clearer, fewer moving parts, and avoids an imperative accumulation pattern.
   |||,
   properties: ['no-oneoff-vars-and-trivial-wrappers'],
-  instances: [ { files: { "pyright_watch_report.py": [ { start_line: 228, end_line: 231 } ] } } ],
+  instances: [{ files: { 'pyright_watch_report.py': [{ start_line: 228, end_line: 231 }] } }],
 };
 
 obj

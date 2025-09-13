@@ -4,7 +4,7 @@ import json
 import os
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from adgn_llm.inop.config import OptimizerConfig
 from adgn_llm.inop.engine.models import (
@@ -19,8 +19,9 @@ from adgn_llm.inop.engine.models import (
     TaskDefinition,
     ToolCall,
     TrajectoryItem,
+    FileInfo,
 )
-from adgn_llm.inop.io.yaml_loader import load_yaml_files
+from adgn_llm.inop.io.yaml_loader import load_yaml_files, YamlLoader
 from adgn_llm.inop.prompting.truncation_utils import TruncationManager
 
 
@@ -172,14 +173,21 @@ class FileBasedGradingStrategy(GradingStrategy):
             )
 
         # Further truncate by total token count
-        truncated_files = t_mgr.truncate_files_by_tokens(
+        truncated_union = t_mgr.truncate_files_by_tokens(
             truncated_files,
             config.tokens.max_files_tokens,
         )
+        # Normalize to list[dict[str, Any]] for downstream JSON
+        if truncated_union and isinstance(truncated_union[0], FileInfo):
+            tu = cast(list[FileInfo], truncated_union)
+            normalized_files: list[dict[str, Any]] = [{"path": fi.path, "content": fi.content} for fi in tu]
+        else:
+            td = cast(list[dict[str, str]], truncated_union)
+            normalized_files = [{"path": d["path"], "content": d["content"]} for d in td]
 
         return {
             "type": "file_based",
-            "files": truncated_files,
+            "files": normalized_files,
             "criteria": self.criteria,
         }
 
@@ -355,9 +363,9 @@ def create_grading_strategy(
                 criteria_file = Path(grading_config.criteria_file)
 
             if criteria_file.exists():
-                data = load_yaml_files([str(criteria_file)])
-                # Convert to Criterion objects
-                criteria = [Criterion(name=c["name"], description=c["description"]) for c in data.get("criteria", [])]
+                # Load graders YAML via YamlLoader and map to Criterion list
+                gl_file: YamlLoader = load_yaml_files(str(criteria_file), str(criteria_file))
+                criteria = [Criterion(name=g.id, description=g.description) for g in gl_file.graders_data]
         return FileBasedGradingStrategy(criteria)
 
     if isinstance(grading_config, MessageBasedGrading):
@@ -369,8 +377,8 @@ def create_grading_strategy(
                 criteria_file = Path(grading_config.criteria_file)
 
             if criteria_file.exists():
-                data = load_yaml_files([str(criteria_file)])
-                criteria = [Criterion(name=c["name"], description=c["description"]) for c in data.get("criteria", [])]
+                gl2: YamlLoader = load_yaml_files(str(criteria_file), str(criteria_file))
+                criteria = [Criterion(name=g.id, description=g.description) for g in gl2.graders_data]
         return MessageBasedGradingStrategy(criteria)
 
     if isinstance(grading_config, ComparisonGrading):

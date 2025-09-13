@@ -4,9 +4,8 @@ local I = import '../../specimen_issues.libsonnet';
 // False positive: combining IsDir + ShouldSkip into one guard is not required
 
 I.issueOneOccurrence(
-  id='fp-004-ls-guard-form',
   should_flag=false,
-  rationale= |||
+  rationale=|||
     A reviewer suggested refactoring the following code in internal/fsext/ls.go
     to combine the nested dir check and skip check into a single condition.
 
@@ -34,6 +33,6 @@ I.issueOneOccurrence(
   |||,
   properties=[],
   filesToRanges={
-    'internal/fsext/ls.go': [[202,206]],
+    'internal/fsext/ls.go': [[202, 206]],
   },
 )
