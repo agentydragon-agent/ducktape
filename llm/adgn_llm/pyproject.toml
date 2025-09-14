@@ -50,6 +50,7 @@ dependencies = [
 adgn-sysrw = "adgn_llm.sysrw.cli:app"
 adgn-mini-codex = "adgn_llm.mini_codex.cli:main"
 adgn-properties = "adgn_llm.properties.cli:main"
+adgn-properties2 = "adgn_llm.properties.cli_app.main:app"
 git-commit-ai = "adgn_llm.git_commit_ai.cli:main"
 sandbox-jupyter-mcp = "adgn_llm.mcp.sandboxed_jupyter_mcp.wrapper:main"
 adgn-sandboxer = "adgn_llm.sandboxer:main"

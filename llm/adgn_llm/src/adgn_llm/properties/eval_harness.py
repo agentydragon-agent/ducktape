@@ -395,7 +395,7 @@ SAMPLES: list[IssueEvalSpec] = [
             id="iss-014",
             should_flag=True,
             rationale="Delete StatusSnapshot - dead code; never used and should be removed.",
-            properties=["no-dead-code"],
+            # properties=["no-dead-code"],
         ),
         cases=list(WT_ISS014_CASES),
     ),
@@ -407,7 +407,7 @@ SAMPLES: list[IssueEvalSpec] = [
             rationale=(
                 "Prefer a single pre-check + list comprehension for simple arg filtering to reduce nesting and eliminate one-off append/continue state."
             ),
-            properties=["minimize-nesting"],
+            # properties=["minimize-nesting"],
             gap_note=(
                 "GAP: Prefer comprehensions for simple filter/map over loops with append/continue when it fits on one readable line."
             ),
@@ -428,7 +428,7 @@ SAMPLES: list[IssueEvalSpec] = [
             id="iss-046",
             should_flag=True,
             rationale="`parse_gitstatusd_response` is a thin wrapper around GitStatusdProtocol; migrate callers to Protocol methods and delete.",
-            properties=["no-dead-code"],
+            # properties=["no-dead-code"],
         ),
         cases=[
             OccurrenceCase(
@@ -451,7 +451,7 @@ SAMPLES: list[IssueEvalSpec] = [
             id="iss-047",
             should_flag=True,
             rationale="`create_gitstatusd_request` is a thin wrapper around GitStatusdProtocol; migrate callers to Protocol methods and delete.",
-            properties=["no-dead-code"],
+            # properties=["no-dead-code"],
         ),
         cases=[
             OccurrenceCase(

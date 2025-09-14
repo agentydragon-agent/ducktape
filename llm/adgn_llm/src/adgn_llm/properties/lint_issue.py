@@ -14,7 +14,7 @@ from adgn_llm.properties.prompts.util import (
 )
 from .docker_env import properties_docker_spec, PropertiesDockerWiring
 from adgn_llm.mini_codex.event_renderer import DisplayEventsHandler
-from adgn_llm.properties.specimen_registry import SpecimenRegistry
+from adgn_llm.properties.specimens.registry import SpecimenRegistry
 
 from rich.console import Console, Group, ConsoleRenderable
 from rich.table import Table

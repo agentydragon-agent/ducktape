@@ -173,12 +173,9 @@ def _compose_seatbelt(
         dirs = []
         d = p if p.is_dir() else p.parent
         dirs.append(d)
-        try:
-            rp = p.resolve(strict=False)
-            rd = rp if rp.is_dir() else rp.parent
-            dirs.append(rd)
-        except Exception:
-            pass
+        rp = p.resolve(strict=False)
+        rd = rp if rp.is_dir() else rp.parent
+        dirs.append(rd)
         for dd in dirs:
             ap = str(dd)
             if ap not in read_dirs:
@@ -349,10 +346,7 @@ def main() -> int:
     for key in ("TMPDIR", "TMP", "TEMP", "MPLCONFIGDIR", "PYTHONPYCACHEPREFIX"):
         p = child_env.get(key)
         if p:
-            try:
-                Path(p).mkdir(parents=True, exist_ok=True)
-            except Exception:
-                pass
+            Path(p).mkdir(parents=True, exist_ok=True)
 
     # Compose seatbelt policy file
     tmpdir = tempfile.mkdtemp(prefix="sandboxer-")
@@ -370,11 +364,8 @@ def main() -> int:
             base = Path(tmpdir)
         base.mkdir(parents=True, exist_ok=True)
         tp = base / "seatbelt.trace.log"
-        try:
-            # Ensure file exists for diagnostics collection
-            tp.touch(exist_ok=True)
-        except Exception:
-            pass
+        # Ensure file exists for diagnostics collection
+        tp.touch(exist_ok=True)
         trace_path = str(tp)
     sb_path = Path(tmpdir) / "policy.sb"
     sb_text, defs = _compose_seatbelt(policy, trace_path)

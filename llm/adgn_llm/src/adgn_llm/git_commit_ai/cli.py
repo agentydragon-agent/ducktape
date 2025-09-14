@@ -436,10 +436,12 @@ def build_commit_template(repo: Repo, passthru: list[str]) -> str:
     # Determine verbose per git semantics: '-v' flag OR commit.verbose=true
     include_verbose = ("-v" in passthru) or ("--verbose" in passthru)
     if not include_verbose:
-        with contextlib.suppress(Exception):
-            if (val := repo.git.config("--get", "commit.verbose")) and str(
-                val,
-            ).strip().lower() in {"true", "1", "yes", "on"}:
+        try:
+            val = repo.git.config("--get", "commit.verbose")
+        except GitCommandError:
+            pass
+        else:
+            if str(val).strip().lower() in {"true", "1", "yes", "on"}:
                 include_verbose = True
 
     if include_verbose:
@@ -700,8 +702,10 @@ class ParallelTaskRunner:
 
         status = " ".join(parts)
         # Truncate to fit terminal width. If we can't get size, use full status.
-        with contextlib.suppress(Exception):
+        try:
             status = status[: shutil.get_terminal_size().columns - 1]
+        except (OSError, ValueError):
+            pass
         print(f"\r{status}", end="", flush=True)
         self._status_visible = True
 
