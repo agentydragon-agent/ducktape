@@ -39,8 +39,13 @@ from adgn_llm.mini_codex.mcp_manager import (
 )
 from adgn_llm.mini_codex.transcript_handler import TranscriptHandler
 from adgn_llm.properties.agent_runner import run_prompt_async
-from adgn_llm.properties.critic import CriticSubmitState, CriticSubmitPayload, make_critic_submit_server
+from adgn_llm.properties.critic import (
+    CriticSubmitState,
+    CriticSubmitPayload,
+    make_critic_submit_server,
+)
 from adgn_llm.properties.grader import GradeSubmitState, make_grader_submit_server
+from adgn_llm.properties.grade_runner import _metrics_row
 from adgn_llm.properties.prompts.util import build_input_schemas_json, build_scope_text
 from adgn_llm.properties.specimens.registry import SpecimenRegistry
 from adgn_llm.properties.prompts.builder import (
@@ -123,7 +128,11 @@ def _format_tools_table(available: list[str]) -> str:
         f"{'-' * 5}  {'-' * 12}  {'-' * 14}  {'-' * 40}",
     ]
     for name, cat, desc in TOOL_CATALOG:
-        status = "yes" if name in avail_set or (name == "jscpd" and "jscpd(npx)" in avail_set) else "no"
+        status = (
+            "yes"
+            if name in avail_set or (name == "jscpd" and "jscpd(npx)" in avail_set)
+            else "no"
+        )
         lines.append(f"{status:<5}  {name:<12}  {cat:<14}  {desc}")
     return "\n".join(lines)
 
@@ -262,7 +271,9 @@ async def _run_minicodex_simple(
     client: AsyncOpenAI,
 ) -> int:
     # Delegate execution to agent_runner.run_prompt_async so event loop control remains at callers
-    res = await run_prompt_async(prompt, model, specs, client=client, capture_transcript=not final_only)
+    res = await run_prompt_async(
+        prompt, model, specs, client=client, capture_transcript=not final_only
+    )
     if output_final_message:
         Path(output_final_message).write_text(res.final_text, encoding="utf-8")
     if not final_only and res.final_text:
@@ -283,7 +294,9 @@ async def _run_check_minicodex_async(
     wiring = properties_docker_spec(workdir, mount_properties=True)
     specs = {wiring.server_name: wiring.server_spec}
     # Use agent_runner to execute prompt via MCP; keep event loop in CLI
-    res = await run_prompt_async(prompt, model, specs, client=client, capture_transcript=not final_only)
+    res = await run_prompt_async(
+        prompt, model, specs, client=client, capture_transcript=not final_only
+    )
     if output_final_message:
         Path(output_final_message).write_text(res.final_text, encoding="utf-8")
     if not final_only and res.final_text:
@@ -305,7 +318,11 @@ async def _run_specimen_minicodex_async(
     rec = SpecimenRegistry.load_strict(manifest_path.parent.name)
     man = rec.manifest
 
-    supplemental_text = read_embedded_paths([Path(p) for p in (embed_paths or [])]) if embed_paths else None
+    supplemental_text = (
+        read_embedded_paths([Path(p) for p in (embed_paths or [])])
+        if embed_paths
+        else None
+    )
 
     # Build prompt according to mode
     scope_text = build_scope_text(man.scope.include, man.scope.exclude)
@@ -369,7 +386,9 @@ async def _run_specimen_minicodex_async(
             result = await agent.run(prompt)
             if isinstance(result, AgentResult):
                 if output_final_message:
-                    Path(output_final_message).write_text(result.text or "", encoding="utf-8")
+                    Path(output_final_message).write_text(
+                        result.text or "", encoding="utf-8"
+                    )
                 if not final_only and result.text:
                     print(result.text)
         assert submit_state.result, "Critic did not call submit_result?"
@@ -377,7 +396,12 @@ async def _run_specimen_minicodex_async(
         # Write critique JSON for specimen-check runs (find/open modes)
         if mode in ("find", "open"):
             ts = int(time.time())
-            out_dir = Path.cwd() / "runs" / "specimen-check" / f"{manifest_path.parent.name}_{ts}"
+            out_dir = (
+                Path.cwd()
+                / "runs"
+                / "specimen-check"
+                / f"{manifest_path.parent.name}_{ts}"
+            )
             out_dir.mkdir(parents=True, exist_ok=True)
             out_path = out_dir / "critique.json"
             obj = submit_state.result
@@ -413,7 +437,9 @@ async def _run_specimen_grade_minicodex_async(
         [
             {
                 "core": it.core.model_dump(exclude_none=True),
-                "occurrences": [occ.model_dump(exclude_none=True) for occ in it.instances],
+                "occurrences": [
+                    occ.model_dump(exclude_none=True) for occ in it.instances
+                ],
             }
             for it in rec.false_positives.values()
         ]
@@ -444,7 +470,11 @@ async def _run_specimen_grade_minicodex_async(
         scope_text=scope_text,
         canonical_json=json.dumps(canonical_list, ensure_ascii=False, indent=2),
         critique_json=crit_text,
-        known_fp_json=(json.dumps(known_fp_list, ensure_ascii=False, indent=2) if known_fp_list else "[]"),
+        known_fp_json=(
+            json.dumps(known_fp_list, ensure_ascii=False, indent=2)
+            if known_fp_list
+            else "[]"
+        ),
         submit_tool_name=build_mcp_function("grader_submit", "submit_result"),
         wiring=wiring,
     )
@@ -456,7 +486,9 @@ async def _run_specimen_grade_minicodex_async(
         outfile = tmpdir / f"codex_prompt_specimen_grade_{ts}.md"
         outfile.write_text(prompt, encoding="utf-8")
         tokens = len(tiktoken.get_encoding("cl100k_base").encode(prompt))
-        print(f"Saved prompt: {outfile} (approx tokens: {tokens if tokens is not None else 'n/a'})")
+        print(
+            f"Saved prompt: {outfile} (approx tokens: {tokens if tokens is not None else 'n/a'})"
+        )
         return 0
 
     # MiniCodex run with in-proc grader_submit server; force tool calls until submit
@@ -482,7 +514,9 @@ async def _run_specimen_grade_minicodex_async(
         result = await agent.run(prompt)
         if isinstance(result, AgentResult):
             if output_final_message:
-                Path(output_final_message).write_text(result.text or "", encoding="utf-8")
+                Path(output_final_message).write_text(
+                    result.text or "", encoding="utf-8"
+                )
             if not final_only and result.text:
                 print(result.text)
 
@@ -665,7 +699,9 @@ def main(argv: list[str] | None = None) -> int:
         "prompt-eval",
         help="Evaluate a candidate critic system prompt across all known specimens (returns only metrics)",
     )
-    p_pe.add_argument("--prompt", required=True, help="Candidate system prompt for critic agent")
+    p_pe.add_argument(
+        "--prompt", required=True, help="Candidate system prompt for critic agent"
+    )
     p_pe.add_argument(
         "--out-dir",
         dest="out_dir",
@@ -691,6 +727,12 @@ def main(argv: list[str] | None = None) -> int:
         "--out-dir",
         dest="out_dir",
         help="Root directory for run artifacts (default: runs/prompt_optimize)",
+    )
+    p_pe_opt.add_argument(
+        "--context",
+        choices=["minimal", "props"],
+        default="minimal",
+        help="Prompt-eval agent context: 'minimal' (no extra servers) or 'props' (mount /props via docker MCP)",
     )
 
     # New command: lint-issue — lint exactly one issue using mini_codex + docker_exec MCP
@@ -732,8 +774,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     p_eval.add_argument("specimen", help="Specimen name/dir/issues.libsonnet path")
     p_eval.add_argument("issue_id", help="Issue id (must exist in specimen issues)")
-    p_eval.add_argument("--cases", required=True, help="Path to cases file (JSON list of dicts)")
-    p_eval.add_argument("--out-dir", dest="out_dir", help="Output directory for eval artifacts")
+    p_eval.add_argument(
+        "--cases", required=True, help="Path to cases file (JSON list of dicts)"
+    )
+    p_eval.add_argument(
+        "--out-dir", dest="out_dir", help="Output directory for eval artifacts"
+    )
     p_eval.add_argument("--model", default="gpt-5")
     p_eval.add_argument("--gitconfig")
 
@@ -890,7 +936,9 @@ def main(argv: list[str] | None = None) -> int:
         gitconfig_path = _resolve_gitconfig(getattr(args, "gitconfig", None))
         # Embed existing findings to suppress repeats
         embed_paths = [
-            str(pth) for name in ("covered.md", "not_covered_yet.md") if (pth := manifest_path.parent / name).exists()
+            str(pth)
+            for name in ("covered.md", "not_covered_yet.md")
+            if (pth := manifest_path.parent / name).exists()
         ]
         return asyncio.run(
             _run_specimen_minicodex_async(
@@ -929,21 +977,29 @@ def main(argv: list[str] | None = None) -> int:
 
         # Run grader via shared grade_runner (no duplicate wiring here)
         async def _run() -> int:
-            grade = await grade_critic_output(manifest_path.parent.name, critique, AsyncOpenAI())
+            grade = await grade_critic_output(
+                manifest_path.parent.name, critique, AsyncOpenAI()
+            )
             # Print concise metrics including fuzzy values
             row = _metrics_row(grade, specimen=manifest_path.parent.name)
             print(json.dumps(row, indent=2))
             # Persist to runs/specimen-grade/<ts>
             ts_dir = Path.cwd() / "runs" / "specimen-grade"
             ts_dir.mkdir(parents=True, exist_ok=True)
-            (ts_dir / f"{manifest_path.parent.name}.grade.json").write_text(grade.model_dump_json(), encoding="utf-8")
+            (ts_dir / f"{manifest_path.parent.name}.grade.json").write_text(
+                grade.model_dump_json(), encoding="utf-8"
+            )
             return 0
 
         return asyncio.run(_run())
 
     if args.command == "prompt-eval":
         prompt = getattr(args, "prompt")
-        out_root = Path(args.out_dir).expanduser().resolve() if getattr(args, "out_dir", None) else None
+        out_root = (
+            Path(args.out_dir).expanduser().resolve()
+            if getattr(args, "out_dir", None)
+            else None
+        )
 
         async def _run_pe() -> int:
             base = find_specimens_base()
@@ -952,7 +1008,11 @@ def main(argv: list[str] | None = None) -> int:
             # run dir
 
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-            run_dir = (out_root if out_root is not None else (pkg_dir() / "runs" / "prompt_eval")) / ts
+            run_dir = (
+                out_root
+                if out_root is not None
+                else (pkg_dir() / "runs" / "prompt_eval")
+            ) / ts
             run_dir.mkdir(parents=True, exist_ok=True)
             (run_dir / "prompt.txt").write_text(prompt, encoding="utf-8")
 
@@ -960,8 +1020,12 @@ def main(argv: list[str] | None = None) -> int:
                 critic_obj = await _run_critic_for_specimen(s, prompt, client, run_dir)
                 out_dir = run_dir / s
                 out_dir.mkdir(parents=True, exist_ok=True)
-                grade_obj = await grade_critic_output(s, critic_obj, client, transcript_out_dir=out_dir)
-                (out_dir / "grade.json").write_text(grade_obj.model_dump_json(indent=2), encoding="utf-8")
+                grade_obj = await grade_critic_output(
+                    s, critic_obj, client, transcript_out_dir=out_dir
+                )
+                (out_dir / "grade.json").write_text(
+                    grade_obj.model_dump_json(indent=2), encoding="utf-8"
+                )
                 critic_log = out_dir / "critic" / "events.jsonl"
                 grader_log = out_dir / "grader" / "events.jsonl"
                 print(f"[logs] critic: {critic_log}")
@@ -975,7 +1039,9 @@ def main(argv: list[str] | None = None) -> int:
                 return m.model_dump()
 
             metrics_list = await asyncio.gather(*[one(s) for s in specimens])
-            (run_dir / "results.json").write_text(json.dumps(metrics_list, indent=2), encoding="utf-8")
+            (run_dir / "results.json").write_text(
+                json.dumps(metrics_list, indent=2), encoding="utf-8"
+            )
             print(json.dumps(metrics_list, indent=2))
             return 0
 
@@ -986,7 +1052,12 @@ def main(argv: list[str] | None = None) -> int:
         out_root = (
             Path(args.out_dir).expanduser().resolve()
             if getattr(args, "out_dir", None)
-            else (pkg_dir() / "runs" / "prompt_optimize" / datetime.now().strftime("%Y%m%d_%H%M%S"))
+            else (
+                pkg_dir()
+                / "runs"
+                / "prompt_optimize"
+                / datetime.now().strftime("%Y%m%d_%H%M%S")
+            )
         )
         out_root.mkdir(parents=True, exist_ok=True)
         # In-proc prompt_eval MCP server
@@ -999,13 +1070,31 @@ def main(argv: list[str] | None = None) -> int:
             "You will have a given maximum budget of prompt_eval.test_prompt calls. Wisely trade off exploration and exploitation."
         )
         pe_user = (
-            f"Your budget is: {max_iters} prompt_eval.test_prompt calls. "
-            "Iterate to find an optimal prompt for a code reviewer/critic LLM agent. "
+            f"Your budget is: {max_iters} prompt_eval.test_prompt calls."
+            "\n\n"
+            "Iterate to find an optimal prompt for a code reviewer/critic LLM agent."
+            "\n\n"
             "Your priorities are: recall first, then precision."
             "\n\n"
             "Your prompt will in a harness that ensures the critic follows required downstream format. "
             "As such, do not give the critic any prescription on which specific format to use (e.g., JSON)."
         )
+        # Optionally add a docker MCP server with /props mounted
+        if getattr(args, "context", "minimal") == "props":
+            from adgn_llm.properties.docker_env import (
+                properties_docker_spec,
+                SERVER_NAME as DOCKER_SERVER_NAME,
+                PROPS_DIR,
+            )
+
+            wiring = properties_docker_spec(pkg_dir(), mount_properties=True)
+            specs[DOCKER_SERVER_NAME] = wiring.server_spec
+            pe_user += f"\n\nYou also have a docker MCP server '{DOCKER_SERVER_NAME}'."
+            pe_user += (
+                f"\n\nRead content at {PROPS_DIR} to find some *nonexhaustive* examples of properties of good code critics should enforce. "
+                "Note that these are only some specific formal examples that we captured formally - many issues we want to catch are not covered yet by any of these formal properties."
+            )
+            pe_user += f"\n\nThe critic agent will run on the same Docker image as you have available."
 
         async def _run_pe_agent() -> int:
             async with McpManager(specs) as mcp:
@@ -1026,7 +1115,9 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"[logs] prompt_optimize: {pe_log}")
                 res = await agent.run(pe_user)
                 ts = int(time.time())
-                (out_root / f"final_{ts}.md").write_text(getattr(res, "text", ""), encoding="utf-8")
+                (out_root / f"final_{ts}.md").write_text(
+                    getattr(res, "text", ""), encoding="utf-8"
+                )
                 if getattr(res, "text", ""):
                     print(res.text)
             return 0
@@ -1044,7 +1135,9 @@ def main(argv: list[str] | None = None) -> int:
         out_last_file: Path | None = None
         if args.command == "check":
             wiring = properties_docker_spec(workdir, mount_properties=True)
-            role_mode: Literal["find", "open", "discover"] = "open" if args.allow_general_findings else "find"
+            role_mode: Literal["find", "open", "discover"] = (
+                "open" if args.allow_general_findings else "find"
+            )
             prompt = build_role_prompt(
                 role_mode,
                 args.scope,
@@ -1082,7 +1175,9 @@ def main(argv: list[str] | None = None) -> int:
         else:
             wiring = properties_docker_spec(workdir, mount_properties=True)
             schemas_json = build_input_schemas_json([Occurrence, LineRange, IssueCore])
-            prompt = build_enforce_prompt(args.scope, wiring=wiring, schemas_json=schemas_json)
+            prompt = build_enforce_prompt(
+                args.scope, wiring=wiring, schemas_json=schemas_json
+            )
             cmd = build_cmd(
                 args.model,
                 workdir,
@@ -1176,7 +1271,9 @@ def main(argv: list[str] | None = None) -> int:
                 container = None
                 # Always use the properties critic image and ensure it exists locally
                 # Mount repo root directly at /workspace (no intermediate dir)
-                volumes, _defs = build_critic_volumes(content_root, mount_properties=True, workspace_mode="rw")
+                volumes, _defs = build_critic_volumes(
+                    content_root, mount_properties=True, workspace_mode="rw"
+                )
                 container = dclient.containers.run(
                     image=PROPERTIES_DOCKER_IMAGE,
                     command=SLEEP_FOREVER_CMD,
