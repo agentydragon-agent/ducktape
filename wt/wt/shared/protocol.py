@@ -553,21 +553,3 @@ class NoParams(BaseModel):
 
 
 # Method registry for type safety
-SUPPORTED_METHODS = {
-    # Existing methods
-    "get_status": (StatusParams, StatusResponse),
-    "ping": (NoParams, PingResult),  # No parameters
-    "shutdown": (NoParams, str),  # No parameters, simple string response
-    # New worktree operations
-    "worktree_create": (WorktreeCreateParams, WorktreeCreateResult),
-    "worktree_delete": (WorktreeDeleteParams, WorktreeDeleteResult),
-    "worktree_list": (NoParams, WorktreeListResult),  # No parameters
-    "worktree_identify": (WorktreeIdentifyParams, WorktreeIdentifyResult),
-    "worktree_get_by_name": (WorktreeGetByNameParams, WorktreeGetByNameResult),
-    "worktree_resolve_path": (WorktreeResolvePathParams, WorktreeResolvePathResult),
-    "worktree_teleport_target": (
-        WorktreeTeleportTargetParams,
-        TeleportResult,
-    ),
-    "pr_refresh_now": (PRRefreshParams, str),
-}

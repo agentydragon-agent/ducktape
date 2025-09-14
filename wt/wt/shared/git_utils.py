@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 import subprocess
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 
@@ -16,14 +16,14 @@ def build_sanitized_git_env(env: Mapping[str, str] | None = None) -> dict[str, s
 
 
 def git_run(  # noqa: PLR0913
-    args: list[str],
+    args: Sequence[str | os.PathLike[str]],
     cwd: Path | str,
     check: bool = True,
     capture_output: bool = True,
     env: Mapping[str, str] | None = None,
     input: bytes | None = None,
 ) -> subprocess.CompletedProcess:
-    cmd = ["git", "-c", "core.hooksPath=", *args]
+    cmd: list[str | os.PathLike[str]] = ["git", "-c", "core.hooksPath=", *args]
     return subprocess.run(
         cmd,
         cwd=cwd,

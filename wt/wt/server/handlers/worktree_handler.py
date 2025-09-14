@@ -196,21 +196,26 @@ async def worktree_identify(
 ) -> WorktreeIdentifyResult:
     # params already validated by rpc layer
     absolute_path = Path(params.absolute_path)
+    # Scope try/except narrowly to the relative_to(...) calls
     try:
         rel_path = absolute_path.relative_to(config.worktrees_dir)
-        worktree_name = rel_path.parts[0] if rel_path.parts else None
-        if len(rel_path.parts) > 1:
-            relative_path = str(Path(*rel_path.parts[1:]))
-        else:
-            relative_path = ""
     except ValueError:
+        rel_path = None
+
+    if rel_path is not None:
+        worktree_name = rel_path.parts[0] if rel_path.parts else None
+        relative_path = (
+            str(Path(*rel_path.parts[1:])) if len(rel_path.parts) > 1 else ""
+        )
+    else:
         try:
             absolute_path.relative_to(config.main_repo)
-            worktree_name = MAIN_WORKTREE_DISPLAY_NAME
-            relative_path = str(absolute_path.relative_to(config.main_repo))
         except ValueError:
             worktree_name = None
             relative_path = None
+        else:
+            worktree_name = MAIN_WORKTREE_DISPLAY_NAME
+            relative_path = str(absolute_path.relative_to(config.main_repo))
     if not worktree_name or not absolute_path.exists():
         raise RpcError(
             code=ErrorCodes.WORKTREE_NOT_FOUND,

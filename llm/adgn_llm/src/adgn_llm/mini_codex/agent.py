@@ -7,7 +7,7 @@ from __future__ import annotations
 import json
 import os
 import time
-from collections.abc import AsyncIterator, Callable, Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, Protocol, cast
@@ -646,19 +646,7 @@ class MiniCodex:
     async def run(
         self,
         user_text: str,
-        stream: bool = False,
-    ) -> AgentResult | AsyncIterator[dict[str, Any]]:
-        if stream:
-
-            async def _gen() -> AsyncIterator[dict[str, Any]]:
-                res = await self.run(
-                    user_text,
-                    stream=False,
-                )
-                yield {"kind": "final", "result": res}
-
-            return _gen()
-
+    ) -> AgentResult:
         self._transcript.append(UserMessage(role="user", content=user_text))
         self._emit_event({"kind": "user_text", "text": user_text})
         result = await self._single_turn()

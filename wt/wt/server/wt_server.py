@@ -17,7 +17,7 @@ import signal
 import subprocess
 import time
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -275,8 +275,8 @@ class WtDaemon:
         if (
             self.daemon_health.status == DaemonHealthStatus.ERROR
             and self.daemon_health.last_error_time
-            and (datetime.now() - self.daemon_health.last_error_time).total_seconds()
-            > 60
+            and (datetime.now() - self.daemon_health.last_error_time)
+            > timedelta(seconds=60)
         ):
             self.daemon_health.status = DaemonHealthStatus.OK
             self.daemon_health.last_error = None
@@ -301,7 +301,7 @@ class WtDaemon:
                 )
                 if result.returncode == 0:
                     logger.info("Using configured gitstatusd at: %s", gitstatusd_path)
-                    return gitstatusd_path, None
+                    return str(gitstatusd_path), None
                 return (
                     None,
                     f"Configured gitstatusd path not working: {gitstatusd_path} (exit code {result.returncode})",

@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from ...shared.configuration import Configuration
@@ -78,57 +78,88 @@ async def get_status(  # noqa: PLR0913
         def _compute_status(path: Path):
             return (*meta.summarize_status(path), None)
 
-        if gs_client:
-            try:
-                dirty_count, untracked_count, last_updated_at, have_cache = (
-                    gs_client.get_cached_working_status()
-                )
-                cache_age_ms = (
-                    (time.time() - last_updated_at.timestamp()) * 1000
-                    if last_updated_at
-                    else None
-                )
-                if not have_cache:
-                    task = asyncio.create_task(gs_client.update_working_status())
-                    _bg_tasks.add(task)
-                    task.add_done_callback(lambda t: _bg_tasks.discard(t))
-                if last_updated_at is None:
-                    last_updated_at = datetime.now()
-                    cache_age_ms = None
-                commit_info_data, ahead_behind, branch_name, worktree_last_error = (
-                    _compute_status(worktree_path)
-                )
-                wt_info = index.get_by_path(worktree_path)
-                wtid_cached = (
-                    wt_info.wtid if wt_info else make_worktree_id(worktree_path.name)
-                )
-                pr_info = prs.get_pr_info_cached(wtid_cached, branch_name)
-                prs.schedule_pr_refresh(wtid_cached, branch_name)
-                is_cached = have_cache
-                is_stale = bool(
-                    cache_age_ms
-                    and cache_age_ms > config.cache_refresh_age.total_seconds() * 1000,
-                )
-                state = (
-                    GitstatusdState.RUNNING
-                    if gs_client.is_running
-                    else GitstatusdState.STOPPED
-                )
-            except asyncio.TimeoutError:
-                single_time = (time.time() - single_start) * 1000
-                state = GitstatusdState.STARTING
-                dirty_count, untracked_count = 0, 0
-                commit_info_data, ahead_behind, branch_name, worktree_last_error = (
-                    _compute_status(worktree_path)
-                )
-                last_updated_at = datetime.now()
-                pr_info = None
-                is_cached = False
-                cache_age_ms = None
-                is_stale = False
-        else:
+        if not gs_client:
             single_time = (time.time() - single_start) * 1000
             state = GitstatusdState.STOPPED
+            dirty_count, untracked_count = 0, 0
+            commit_info_data, ahead_behind, branch_name, worktree_last_error = (
+                _compute_status(worktree_path)
+            )
+            last_updated_at = datetime.now()
+            pr_info = None
+            is_cached = False
+            cache_age_ms = None
+            is_stale = False
+            commit_info = (
+                CommitInfo.model_validate(commit_info_data)
+                if commit_info_data
+                else None
+            )
+            wtid = make_worktree_id(worktree_path.name)
+            return (
+                wtid,
+                StatusResult(
+                    wtid=wtid,
+                    name=worktree_path.name,
+                    absolute_path=str(worktree_path),
+                    branch_name=branch_name,
+                    has_dirty_files=dirty_count > 0,
+                    has_untracked_files=untracked_count > 0,
+                    processing_time_ms=single_time,
+                    last_updated_at=last_updated_at,
+                    is_cached=is_cached,
+                    cache_age_ms=cache_age_ms,
+                    is_stale=is_stale,
+                    commit_info=commit_info,
+                    ahead_count=ahead_behind[0],
+                    behind_count=ahead_behind[1],
+                    is_main=worktree_path.resolve() == config.main_repo.resolve(),
+                    upstream_branch=config.upstream_branch,
+                    pr_info=pr_info,
+                    gitstatusd_state=state,
+                    restarts=0,
+                    last_error=worktree_last_error,
+                ),
+                single_time,
+            )
+        try:
+            dirty_count, untracked_count, last_updated_at, have_cache = (
+                gs_client.get_cached_working_status()
+            )
+            cache_age_ms = (
+                (time.time() - last_updated_at.timestamp()) * 1000
+                if last_updated_at
+                else None
+            )
+            if not have_cache:
+                task = asyncio.create_task(gs_client.update_working_status())
+                _bg_tasks.add(task)
+                task.add_done_callback(lambda t: _bg_tasks.discard(t))
+            if last_updated_at is None:
+                last_updated_at = datetime.now()
+                cache_age_ms = None
+            commit_info_data, ahead_behind, branch_name, worktree_last_error = (
+                _compute_status(worktree_path)
+            )
+            wt_info = index.get_by_path(worktree_path)
+            wtid_cached = (
+                wt_info.wtid if wt_info else make_worktree_id(worktree_path.name)
+            )
+            pr_info = prs.get_pr_info_cached(wtid_cached, branch_name)
+            prs.schedule_pr_refresh(wtid_cached, branch_name)
+            is_cached = have_cache
+            is_stale = bool(
+                cache_age_ms
+                and timedelta(milliseconds=cache_age_ms) > config.cache_refresh_age,
+            )
+            state = (
+                GitstatusdState.RUNNING
+                if gs_client.is_running
+                else GitstatusdState.STOPPED
+            )
+        except asyncio.TimeoutError:
+            single_time = (time.time() - single_start) * 1000
+            state = GitstatusdState.STARTING
             dirty_count, untracked_count = 0, 0
             commit_info_data, ahead_behind, branch_name, worktree_last_error = (
                 _compute_status(worktree_path)

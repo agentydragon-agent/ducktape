@@ -5,7 +5,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Any, Literal
 
 import openai
 from adgn_llm.logging_config import configure_logging
@@ -14,7 +14,6 @@ from pydantic import BaseModel
 from adgn_llm.mini_codex.agent import (
     load_mcp_file,
     MiniCodex,
-    AgentResult,
 )
 from adgn_llm.mini_codex.event_renderer import DisplayEventsHandler
 from adgn_llm.mcp.local_exec.server import make_local_exec_mcp
@@ -149,7 +148,7 @@ async def main_async() -> None:
                 user = line.rstrip("\n")
                 if not user:
                     continue
-                res = cast(AgentResult, await agent.run(user_text=user, stream=False))
+                res = await agent.run(user_text=user)
                 if res.text:
                     print(res.text)
 

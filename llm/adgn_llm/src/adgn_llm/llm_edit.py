@@ -16,7 +16,8 @@ from pathlib import Path
 
 import openai
 import typer
-from .openai_utils import ReasoningEffort, ReasoningSummary
+from .openai_utils import ReasoningSummary
+from openai.types.shared_params import ReasoningEffort
 
 from .mcp.editor_server import make_editor_mcp
 from .mcp.inproc_transport import make_inproc_slot_spec
@@ -64,7 +65,6 @@ async def _execute(
         async with agent:
             res = await agent.run(
                 f"Edit file: {target_path}\nGoal: {prompt}\n",
-                stream=False,
             )
             print(res.text)
             return 0

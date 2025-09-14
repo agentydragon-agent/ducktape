@@ -103,8 +103,10 @@ def exec_handler(args: dict[str, Any], *, sandbox_enabled: bool = True) -> dict[
     to = DEFAULT_TIMEOUT_S if not isinstance(timeout_ms, int) else max(1, int(timeout_ms / 1000))
     cwd_val = args.get("cwd") if isinstance(args.get("cwd"), str) else None
 
-    runner = _run_in_sandbox if sandbox_enabled else _run_proc
-    code, out, err = runner(cmd, timeout_s=to, cwd=cwd_val)
+    if sandbox_enabled:
+        code, out, err = _run_in_sandbox(cmd, to, cwd_val)
+    else:
+        code, out, err = _run_proc(cmd, to, cwd_val)
     return {"exit": code, "stdout": out, "stderr": err}
 
 

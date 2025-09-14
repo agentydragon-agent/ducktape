@@ -1,6 +1,7 @@
 """Unified Git operations manager combining all git functionality."""
 
 import logging
+import os
 import re
 import subprocess
 from dataclasses import dataclass
@@ -215,7 +216,7 @@ class GitManager:
 
     def worktree_remove(self, path: Path, force: bool = False) -> None:
         path_obj = path
-        args = ["worktree", "remove"]
+        args: list[str | os.PathLike[str]] = ["worktree", "remove"]
         if force:
             args.append("--force")
         args.append(path_obj)

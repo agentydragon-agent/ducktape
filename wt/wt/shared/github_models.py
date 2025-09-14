@@ -1,5 +1,3 @@
-import json
-import time
 from enum import StrEnum
 from typing import Any, Protocol, runtime_checkable
 
@@ -60,18 +58,6 @@ class PRMergeability(StrEnum):
     UNKNOWN = "UNKNOWN"
 
 
-class PullRequest(BaseModel):
-    number: int
-    title: str
-    state: PRState
-    url: str
-    mergeable: PRMergeability | None = None
-    merged_at: str | None = Field(None, alias="mergedAt")
-
-    class Config:
-        validate_by_name = True
-
-
 class PullRequestSearch(BaseModel):
     number: int
     title: str
@@ -85,53 +71,6 @@ class PullRequestList(BaseModel):
     state: PRState
     title: str
     merged_at: str | None = Field(None, alias="mergedAt")
-
-
-class PullRequestView(BaseModel):
-    number: int
-    title: str
-    body: str
-    state: PRState
-    url: str
-    mergeable: PRMergeability | None = None
-    merged_at: str | None = Field(None, alias="mergedAt")
-
-    class Config:
-        validate_by_name = True
-
-
-class PullRequestCache(BaseModel):
-    timestamp: float
-    prs: list[PullRequestList]
-
-    @classmethod
-    def load(cls, cache_file) -> "PullRequestCache | None":
-        if not cache_file.exists():
-            return None
-
-        cache_data = json.loads(cache_file.read_text())
-        return cls.model_validate(cache_data)
-
-    def save(self, cache_file) -> None:
-        cache_file.write_text(self.model_dump_json())
-
-    def should_invalidate(self, cache_expiration: int) -> bool:
-        return time.time() - self.timestamp > cache_expiration
-
-    @classmethod
-    def get_or_refresh(
-        cls,
-        cache_file,
-        cache_expiration: int,
-        github_interface,
-    ) -> "PullRequestCache":
-        cache = cls.load(cache_file)
-        if cache is None or cache.should_invalidate(cache_expiration):
-            # No cache or invalid cache - fetch fresh data
-            fresh_prs = github_interface.pr_list()
-            cache = cls(timestamp=time.time(), prs=fresh_prs)
-            cache.save(cache_file)
-        return cache
 
 
 class PRData(BaseModel):

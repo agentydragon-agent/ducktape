@@ -10,7 +10,8 @@ from adgn_llm.mcp.docker_exec.server import (
 )
 from adgn_llm.mcp.inproc_transport import make_inproc_slot_spec
 from adgn_llm.mini_codex.mcp_manager import McpManager, build_mcp_function
-from adgn_llm.mini_codex.agent import MiniCodex
+from adgn_llm.mini_codex.agent import MiniCodex, AgentResult
+from adgn_llm.mini_codex.aggregating_handler import AutoHandler
 from mcp import types as mcp_types
 
 ECHO_CMD = ["sh", "-lc", "printf hello"]
@@ -65,7 +66,8 @@ async def test_live_llm_exec_echo() -> None:
                 f"Call the tool {build_mcp_function(DOCKER_SERVER_NAME, DOCKER_EXEC_TOOL_NAME)} with cmd={ECHO_CMD!r} and return exactly the stdout."
             ),
             client=client,
+            handlers=[AutoHandler()],
         )
-        res = await agent.run("Run the command now and output exactly the stdout value.")
+        res: AgentResult = await agent.run("Run the command now and output exactly the stdout value.")
         text = (res.text or "").strip()
         assert text == "hello"

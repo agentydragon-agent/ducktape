@@ -151,20 +151,13 @@ def sh(ctx, args):
     # Combine args from Click with any extra args
     all_args = list(args) + ctx.args
 
-    # Parse flags and commands
-    filtered_args = []
-
-    # Process arguments to extract flags
-    for arg in all_args:
-        if arg in {"--help", "-h"}:
-            show_help()
-            return
-        if arg in ["-c", "--force"]:
-            filtered_args.append(arg)
-        elif arg.startswith("-"):
-            continue
-        else:
-            filtered_args.append(arg)
+    # Pre-check help, then filter args in one pass (keep -c/--force and non-flags)
+    if any(a in {"--help", "-h"} for a in all_args):
+        show_help()
+        return
+    filtered_args = [
+        a for a in all_args if (a in {"-c", "--force"} or not a.startswith("-"))
+    ]
 
     verbose = bool((ctx.obj or {}).get("verbose", False))
     config, formatter, daemon_client, plugin_manager = _create_cli_dependencies(
