@@ -1,7 +1,7 @@
 exclude: ".*/testdata/.*|nonrcm-dotfiles/config/cronomix/.*\\.json$"  # Cronomix overwrites these JSON files
 
 repos:
-  - repo: https://github.com/pre-commit/pre-commit-hooks
+  - repo: git@github.com:pre-commit/pre-commit-hooks
     rev: v5.0.0
     hooks:
       # Safety guard: block pushes to protected branches.
@@ -16,7 +16,8 @@ repos:
       # Syntax checks
       - id: check-ast  # valid Python parse
       - id: check-yaml
-        exclude: ansible/host_vars/.*\.yml$
+        args: ["--allow-multiple-documents"]
+        exclude: ansible/host_vars/.*\.yml$|^claude/claude_optimizer/config\.example\.yaml$
       - id: check-toml
 
       # TODO: this one should NOT fix within dotfiles e.g. OrcaSlicer
@@ -28,7 +29,7 @@ repos:
       # - check-shebang-scripts-are-executable
 
   # Ruff = linter + import sorter + formatter
-  - repo: https://github.com/astral-sh/ruff-pre-commit
+  - repo: git@github.com:astral-sh/ruff-pre-commit
     rev: v0.11.10
     hooks:
       - id: ruff-check
@@ -36,7 +37,7 @@ repos:
       - id: ruff-format
 
   # Static type checking
-  - repo: https://github.com/pre-commit/mirrors-mypy
+  - repo: git@github.com:pre-commit/mirrors-mypy
     rev: v1.10.0
     hooks:
       - id: mypy
@@ -54,17 +55,17 @@ repos:
           - types-aiofiles
 
   # Buildifier for Bazel files
-  - repo: https://github.com/keith/pre-commit-buildifier
+  - repo: git@github.com:keith/pre-commit-buildifier
     rev: 6.4.0
     hooks:
       - id: buildifier
       - id: buildifier-lint
 
   # Jsonnet formatter for specimen .libsonnet files (adgn_llm)
-  - repo: https://github.com/serokell/jsonnet-pre-commit
-    rev: v0.2.0
-    hooks:
-      - id: jsonnetfmt
-        name: jsonnetfmt (format adgn_llm specimen .libsonnet files)
-        files: "^llm/adgn_llm/src/adgn_llm/properties/specimens/.*\\.libsonnet$"
-        args: ["-i"]
+  # - repo: git@github.com:serokell/jsonnet-pre-commit
+  #   rev: v0.2.0
+  #   hooks:
+  #     - id: jsonnetfmt
+  #       name: jsonnetfmt (format adgn_llm specimen .libsonnet files)
+  #       files: "^llm/adgn_llm/src/adgn_llm/properties/specimens/.*\\.libsonnet$"
+  #       args: ["-i"]

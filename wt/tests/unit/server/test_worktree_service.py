@@ -1,8 +1,12 @@
 """Integration tests for WorktreeService with real git repositories."""
 
+import asyncio
 from pathlib import Path
 
 import pytest
+from tests.mock_factory import ServiceBuilder
+
+from wt.server.worktree_service import WorktreeService
 
 
 class TestWorktreeService:
@@ -18,7 +22,6 @@ class TestWorktreeService:
             github_enabled=False,
             log_operations=True,
         )
-        from tests.mock_factory import ServiceBuilder
 
         service = (
             ServiceBuilder(config)
@@ -39,7 +42,6 @@ class TestWorktreeService:
             repo_path = repo_factory.create_repo()
         factory = config_factory(repo_path)
         config = factory.minimal(**minimal_kwargs)
-        from tests.mock_factory import ServiceBuilder
 
         service = (
             ServiceBuilder(config)
@@ -88,7 +90,6 @@ class TestWorktreeService:
         assert worktree_path.exists()
 
         # Remove it (using async method)
-        import asyncio
 
         asyncio.run(worktree_service.remove_worktree(config, "to-remove", force=True))
 
@@ -158,10 +159,6 @@ echo "Script executed at: $worktree_root" > "$worktree_root/script_output.txt"
         )
 
         worktree_path = service.create_worktree(config, "script-test")
-
-        import asyncio
-
-        from wt.server.worktree_service import WorktreeService
 
         result = asyncio.run(
             WorktreeService.run_post_creation_script(str(script_path), worktree_path),

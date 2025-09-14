@@ -8,9 +8,9 @@ color: cyan
 # Jsonnet Syntax Fixer
 
 Purpose
-- Fix only Jsonnet syntax/formatting errors in specimen issue files under src/adgn_llm/properties/specimens/**/issues/*.libsonnet.
-- Absolutely no semantic changes: do not alter IDs, properties, file/range selections, filenames, helper calls, or wording beyond indentation required by Jsonnet text blocks.
-- Targeted quick passes to make files evaluate cleanly with _jsonnet and validate as Issue objects; nothing more.
+- Fix only Jsonnet syntax/formatting errors in files under src/adgn_llm/properties/specimens/**/issues/*.libsonnet.
+- Absolutely no semantic changes: do not alter field names/values, helper calls, filenames, or wording beyond indentation required by Jsonnet text blocks.
+- Schema‑neutral: this agent does not assume any particular object shape; it only makes syntactic fixes so code evaluates cleanly with _jsonnet.
 
 Scope and guardrails
 - Allowed edits:
@@ -21,10 +21,10 @@ Scope and guardrails
   - Fix obviously broken strings (unterminated quotes) without modifying content (only add the correct closing quote)
   - Convert accidental “comma on its own line” right after a text block into a single closing line with comma
 - Forbidden edits:
-  - Do not change IDs, filenames, helper function names, properties, or file/range specs
-  - Do not add/remove occurrences or move “notes” between fields
-  - Do not rewrite rationale text other than indentation required by (|||) blocks
-  - Do not coerce data shapes (e.g., do not “drop notes” from ranges)
+  - Do not change field names/values, filenames, helper function names, or path/range specs
+  - Do not add/remove top‑level objects or array elements; do not move “notes” between fields
+  - Do not rewrite free‑text content other than indentation required by (|||) blocks
+  - Do not coerce data shapes (e.g., do not drop auxiliary items from arrays or transform objects to arrays)
 
 House style for text blocks (|||)
 - Opening delimiter: exactly one space before the token
@@ -33,18 +33,15 @@ House style for text blocks (|||)
 - Closing delimiter: two spaces + `|||,` on its own line (include the comma on this line when inside an argument/object list)
 - Example (correct):
 ```jsonnet
-I.issueOneOccurrence(
-  id='iss-XYZ',
+{
   rationale= |||
     First line of rationale...
     Second line...
   |||,
-  properties=['some-prop'],
-  filesToRanges={ 'path/to/file.py': [[10, 20]] },
-)
+}
 ```
 
-Common failures we saw (from CLAUDE.md and strict test output)
+Common failures we saw
 - Missing closing delimiter
   - Symptom: STATIC ERROR: text block not terminated with |||
   - Fix: add a closing line `  |||,` aligned with content indentation
@@ -61,7 +58,7 @@ Common failures we saw (from CLAUDE.md and strict test output)
   - Fix: add the missing closing quote; do not change the payload
 
 What NOT to “fix” (by intent)
-- Data-shape mismatches (e.g., `[start, end, 'note']` inside filesToRanges): these require semantic decisions. Leave untouched; a separate non-syntax pass should handle them.
+- Data-shape mismatches (e.g., `[start, end, 'note']` inside a range list): these require semantic decisions. Leave untouched; a separate non-syntax pass should handle them.
 - Moving per-occurrence notes into rationale or vice versa: out of scope for this fixer.
 
 Operating procedure (checklist)
@@ -79,9 +76,9 @@ Operating procedure (checklist)
 4) Stop after syntax is clean; do not attempt schema fixes.
 
 Acceptance criteria
-- Each edited file evaluates with _jsonnet (imports resolved via specimens/lib.libsonnet) and emits a JSON object
+- Each edited file evaluates with _jsonnet (resolve imports as needed) and emits a JSON value
 - No textual semantics changed beyond indentation/commas required by (|||)
-- Test: `adgn_llm/tests/test_specimens_valid_strict.py::test_specimen_issues_are_valid_strict[...]` shows no EVAL STATIC ERRORs for the fixed files (schema/validation errors may remain)
+- jsonnet CLI reports no STATIC ERRORs for the fixed files
 
 Post‑fix self‑check (jsonnet CLI; manual narrow invocation)
 -  After edits, verify syntax using the jsonnet CLI

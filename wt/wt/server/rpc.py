@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-
-logger = logging.getLogger(__name__)
 from collections.abc import Awaitable, Callable
 from datetime import datetime
 from inspect import signature
@@ -30,6 +28,19 @@ from ..shared.protocol import (
     Response,
     create_error_response,
 )
+from .services import (
+    DiscoveryService,
+    GitService,
+    GitstatusdService,
+    HealthService,
+    PRServiceProvider,
+    StatusService,
+    WorktreeCoordinator,
+    WorktreeIndexService,
+)
+from .worktree_service import WorktreeService
+
+logger = logging.getLogger(__name__)
 
 ParamsT = TypeVar("ParamsT", bound=BaseModel)
 ResultT = TypeVar("ResultT")
@@ -84,16 +95,6 @@ class RpcRegistry:
     ):
         sig = signature(fn)
         c = Container()
-        from .services import (
-            DiscoveryService,
-            GitService,
-            GitstatusdService,
-            HealthService,
-            PRServiceProvider,
-            StatusService,
-            WorktreeCoordinator,
-            WorktreeIndexService,
-        )
 
         # Core config and per-request context
         c.register(Configuration, instance=daemon.config)
@@ -107,10 +108,7 @@ class RpcRegistry:
         c.register(DiscoveryService, instance=daemon.discovery_service)
         c.register(HealthService, instance=daemon.health_service)
         c.register(WorktreeCoordinator, instance=daemon.coordinator)
-        # Also expose WorktreeService for orchestration flows
-        # Import here to avoid module import cycles during daemon bootstrap
-        from .worktree_service import WorktreeService
-
+        # Also expose WorktreeService for orchestration flows (imported at module level)
         c.register(WorktreeService, instance=daemon.worktree_service)
         args = []
         type_hints = get_type_hints(fn)

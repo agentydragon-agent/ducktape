@@ -8,15 +8,14 @@ submit_result.
 
 from __future__ import annotations
 
-from adgn_llm.properties.critic import CriticSubmitPayload, ReportedIssue
-from adgn_llm.properties.specimens.registry import SpecimenRecord
+from adgn_llm.properties.critic import CriticSubmitPayload
+from adgn_llm.properties.specimens.registry import SpecimenRecord, IssueRecord
 
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 from mcp.server.fastmcp import FastMCP
 from dataclasses import dataclass
-from typing import Set
 from adgn_llm.rendering.rich_renderers import render_to_rich
 from rich.table import Table
 from rich.panel import Panel
@@ -111,17 +110,19 @@ def make_grader_submit_server(
     """
 
     # Derive allowed ID sets and counts from specimen and critique
-    def _prefixed_ids(items: list[ReportedIssue], prefix: str) -> set[str]:
+    from collections.abc import Iterable
+
+    def _prefixed_ids(items: Iterable[IssueRecord], prefix: str) -> set[str]:
         out: set[str] = set()
-        for ri in items:
-            cid = ri.core.id
+        for rec in items:
+            cid = rec.core.id
             if cid:
                 out.add(f"{prefix}{cid}")
         return out
 
-    allowed_canon_ids: set[str] = _prefixed_ids(list(inputs.specimen.issues.values()), "canon_tp_")
+    allowed_canon_ids: set[str] = _prefixed_ids(inputs.specimen.issues.values(), "canon_tp_")
     if getattr(inputs.specimen, "false_positives", None):
-        allowed_canon_ids |= _prefixed_ids(list(inputs.specimen.false_positives.values()), "canon_fp_")
+        allowed_canon_ids |= _prefixed_ids(inputs.specimen.false_positives.values(), "canon_fp_")
 
     allowed_critique_ids: set[str] = set()
     for it in inputs.critique.issues:
@@ -179,43 +180,11 @@ def make_grader_submit_server(
 def make_grader_submit_server_from_inputs(
     state: GradeSubmitState, *, name: str = "grader_submit", inputs: GradeInputs
 ) -> FastMCP:
-    """Helper: derive ID sets/counts from GradeInputs and delegate to legacy builder."""
+    """Thin wrapper: pass GradeInputs through to the primary builder.
 
-    # Derive allowed canonical IDs
-    def _prefixed_ids(items: list[ReportedIssue], prefix: str) -> Set[str]:
-        out: Set[str] = set()
-        for ri in items:
-            cid = ri.core.id
-            if cid:
-                out.add(f"{prefix}{cid}")
-        return out
-
-    canon_tp = _prefixed_ids([v for v in inputs.specimen.issues.values()], "canon_tp_")
-    canon_fp = (
-        _prefixed_ids([v for v in inputs.specimen.false_positives.values()], "canon_fp_")
-        if getattr(inputs.specimen, "false_positives", None)
-        else set()
-    )
-    allowed_canon_ids: Set[str] = canon_tp | canon_fp
-
-    # Derive critique IDs (prefixed crit_)
-    allowed_critique_ids: Set[str] = set()
-    for it in inputs.critique.issues:
-        cid = it.core.id
-        if cid:
-            allowed_critique_ids.add(cid if str(cid).startswith("crit_") else f"crit_{cid}")
-
-    expected_count = len(inputs.specimen.issues)
-    reported_count = len(inputs.critique.issues)
-
-    return make_grader_submit_server(
-        state,
-        name=name,
-        allowed_canon_ids=allowed_canon_ids,
-        allowed_critique_ids=allowed_critique_ids,
-        expected_count=expected_count,
-        reported_count=reported_count,
-    )
+    The main make_grader_submit_server() derives allowed IDs and counts internally.
+    """
+    return make_grader_submit_server(state, name=name, inputs=inputs)
 
 
 @render_to_rich.register

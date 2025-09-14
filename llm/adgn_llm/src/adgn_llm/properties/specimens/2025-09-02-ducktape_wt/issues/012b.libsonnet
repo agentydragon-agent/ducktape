@@ -15,5 +15,8 @@ I.issueOneOccurrence(
     Instead:
     - Pass the constant directly (`PRESET = "preset"`), or
     - Have the constant hold the config object itself (`PRESET = Preset(...)`).
+
+    Testing/mocks guidance: avoid hasattr/getattr entirely. Prefer `unittest.mock.create_autospec(..., instance=True, spec_set=True)`
+    and `mock.configure_mock({"method.return_value": ..., "method.side_effect": ...})` to configure behaviors safely without reflection.
   |||,
 )

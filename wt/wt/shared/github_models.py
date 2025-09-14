@@ -19,7 +19,6 @@ class PRStatus(StrEnum):
 
     @property
     def is_merged(self) -> bool:
-        """Check if the PR is merged."""
         return self == PRStatus.MERGED
 
     @property
@@ -53,7 +52,6 @@ class PRState(StrEnum):
 
     @property
     def is_merged(self) -> bool:
-        """Check if the PR is merged."""
         return self == PRState.MERGED
 
 

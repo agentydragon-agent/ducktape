@@ -1,6 +1,6 @@
 """Shell utilities for command emission and error handling."""
 
-import contextlib
+import errno
 import os
 import sys
 
@@ -10,9 +10,13 @@ import click
 def emit_command(cmd: str) -> None:
     """Emit a command for shell execution via fd3."""
     # fd3 not available (e.g., in tests or non-shell environments)
-    # Silently ignore - this is expected in many contexts
-    with contextlib.suppress(OSError):
+    # Only ignore specific, expected errno values; re-raise others
+    try:
         os.write(3, (cmd + "\n").encode())
+    except OSError as e:
+        if e.errno in (errno.EBADF, errno.EINVAL):  # fd 3 not open/invalid
+            return
+        raise
 
 
 def controlled_error(message: str, commands: list[str] | None = None) -> None:

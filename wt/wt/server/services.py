@@ -37,7 +37,7 @@ class GitService:
         return shorthand if shorthand else None
 
     def worktree_remove(self, path: Path, *, force: bool = False) -> None:
-        self._gm.worktree_remove(str(path), force=force)
+        self._gm.worktree_remove(path, force=force)
 
 
 class WorktreeIndexService:

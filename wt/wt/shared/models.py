@@ -6,8 +6,6 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-import click
-
 from .constants import MAIN_WORKTREE_DISPLAY_NAME
 
 
@@ -31,21 +29,6 @@ class Worktree:
 
     def exists(self) -> bool:
         return self.path.exists()
-
-    def require_exists(self) -> None:
-        if not self.exists():
-            raise click.ClickException(f"Worktree '{self.name}' does not exist")
-
-    def require_not_exists(self) -> None:
-        if self.exists():
-            raise click.ClickException(f"Worktree '{self.name}' already exists")
-
-    def resolve_subpath(self, subpath: str) -> Path:
-        if subpath.startswith("/"):
-            return self.path / subpath[1:]
-        if subpath.startswith("./"):
-            return self.path / subpath[2:]
-        return self.path / subpath
 
 
 @dataclass
@@ -102,22 +85,3 @@ class CommitInfo:
     @property
     def short_hash(self) -> str:
         return self.last_commit[:8]
-
-
-@dataclass
-class WorktreeParseState:
-    """State during git worktree list parsing."""
-
-    path: str | None = None
-    branch: str | None = None
-    head: str | None = None
-    is_bare: bool = False
-    is_detached: bool = False
-
-    def finalize(self) -> tuple[Path, str | None] | None:
-        if self.path is None:
-            return None
-
-        # If detached, clear branch
-        final_branch = None if self.is_detached else self.branch
-        return (Path(self.path), final_branch)

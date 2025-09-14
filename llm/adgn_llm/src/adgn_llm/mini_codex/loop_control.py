@@ -28,7 +28,7 @@ if TYPE_CHECKING:
     )
 
     # Union of concrete output item types that the agent processes
-    OutputItem = ResponseReasoningItem | ResponseOutputMessage | ResponseFunctionToolCall
+    OutputItem: TypeAlias = ResponseReasoningItem | ResponseOutputMessage | ResponseFunctionToolCall
 
 
 # ---------------------------------------------------------------------------
@@ -97,7 +97,7 @@ class SyntheticAction:
     sampling step where handlers can return another decision.
     """
 
-    outputs: list["OutputItem"]
+    outputs: list[OutputItem]
 
 
 # Union type for loop decisions (for static type checking)

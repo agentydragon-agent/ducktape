@@ -2,6 +2,8 @@ import time
 
 import pytest
 
+from wt.shared.git_utils import git_run
+
 from ..test_utils import run_cli_command
 
 pytestmark = pytest.mark.timeout(20)
@@ -34,7 +36,6 @@ def test_worktree_add_then_remove_reflected_in_status(real_env, real_temp_repo):
     assert r2.returncode == 0
 
     # Ensure git no longer lists the worktree (verifies git worktree remove)
-    from wt.shared.git_utils import git_run
 
     git_list = git_run(["worktree", "list"], cwd=real_temp_repo)
     assert str(real_temp_repo / "worktrees" / name) not in git_list.stdout.decode(), (

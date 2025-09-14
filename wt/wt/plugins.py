@@ -58,9 +58,13 @@ def get_manager(config) -> pluggy.PluginManager:
         # Only catch expected plugin loading errors; let programming errors crash
         try:
             pm.register(ep.load())
-        except (ImportError, AttributeError) as e:
-            # Plugin is misconfigured or missing; log and skip
-            logger.warning("Failed to load plugin entry point %s: %s", ep.name, e)
+        except (ImportError, AttributeError):
+            # Plugin is misconfigured or missing; log full traceback and skip
+            logger.exception(
+                "Failed to load plugin entry point %s (%s)",
+                ep.name,
+                ep.value,
+            )
             continue
 
     pm.hook.wt_init(config=config)

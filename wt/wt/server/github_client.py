@@ -16,29 +16,9 @@ from ..shared.github_models import (
     GitHubPRResponse,
     PRState,
     PullRequestList,
-    PullRequestSearch,
 )
 
 logger = logging.getLogger(__name__)
-
-
-class DisabledGitHubInterface:
-    """GitHub interface that returns 'disabled' responses instead of making API calls."""
-
-    def __init__(self, github_repo: str):
-        self.github_repo = github_repo
-
-    def pr_list(self) -> list[PullRequestList]:
-        """Return empty list when GitHub is disabled."""
-        return []
-
-    def pr_search(self, branch: str) -> list[PullRequestSearch]:
-        """Return empty list when GitHub is disabled."""
-        return []
-
-    def pr_view(self, pr_number: int) -> dict[str, str] | None:
-        """Return None when GitHub is disabled."""
-        return None
 
 
 def get_github_token(

@@ -1,4 +1,8 @@
 import os
+import shutil
+import subprocess
+import time
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -8,9 +12,11 @@ import yaml
 from click.testing import CliRunner
 
 from wt.server import github_client
+from wt.server.git_manager import GitManager
 from wt.server.worktree_service import WorktreeService
 from wt.shared.config_file import ConfigFile
 from wt.shared.configuration import Configuration
+from wt.shared.models import CommitInfo
 
 from .config_factory import ConfigFactory
 from .mock_factory import MockFactory
@@ -108,9 +114,6 @@ def temp_dir(tmp_path: Path) -> Path:
 @pytest.fixture
 def sample_commit_info():
     """Sample CommitInfo for testing."""
-    from datetime import datetime
-
-    from wt.shared.models import CommitInfo
 
     return CommitInfo(
         last_commit="abc123def456",
@@ -153,8 +156,6 @@ def kill_daemon_at_wt_dir(wt_dir: Path) -> None:
     - Wait briefly for pid/socket removal
     - If leftovers remain, raise AssertionError to surface leaks early
     """
-    import subprocess
-    import time
 
     pid_file = wt_dir / "daemon.pid"
     sock_file = wt_dir / "daemon.sock"
@@ -221,8 +222,6 @@ def create_integration_test_config_file(repo_path: Path) -> Path:
 
 @pytest.fixture(scope="session", autouse=True)
 def _require_gitstatusd_on_path():
-    import shutil
-
     assert shutil.which(
         "gitstatusd",
     ), "gitstatusd not found on PATH - required for integration tests"
@@ -275,7 +274,6 @@ def real_env_with_existing_worktrees(real_temp_repo, config_factory):
     kill_daemon_at_wt_dir(config.wt_dir)
 
     # Create some test worktrees using real worktree service
-    from wt.server.git_manager import GitManager
 
     git_manager = GitManager(config=config)
     github_mock = Mock()  # GitHub not needed for worktree creation
@@ -341,8 +339,7 @@ def build_test_configuration(
     wt_dir.mkdir(parents=True, exist_ok=True)
     config_path = wt_dir / "config.yaml"
 
-    with config_path.open("w") as f:
-        yaml.dump(config_file.model_dump(), f)
+    config_path.write_text(yaml.dump(config_file.model_dump()), encoding="utf-8")
 
     return Configuration.resolve(wt_dir)
 

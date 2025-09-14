@@ -127,8 +127,8 @@ norecursedirs = [
 
 [tool.mypy]
 plugins = ["pydantic.mypy"]
-# Exclude vendored/specimen snapshots from type checking
-exclude = ["^adgn_llm/properties/specimens/"]
+# Exclude vendored/specimen snapshots and third-party code from type checking
+exclude = ["^adgn_llm/properties/specimens/", ".*/scratch/"]
 
 [tool.uv]
 package = true

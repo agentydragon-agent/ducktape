@@ -56,7 +56,7 @@ def make_container_exec_mcp(
         labels=labels,
     )
     server = FastMCP(
-        "container_exec",
+        SERVER_NAME,
         instructions="Per-session container exec. See resource container.info for details.",
         lifespan=lifespan,
     )

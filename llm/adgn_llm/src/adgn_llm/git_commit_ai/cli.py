@@ -34,7 +34,6 @@ import hashlib
 import logging
 import os
 import pty
-import re
 import select
 import shutil
 import struct
@@ -49,16 +48,15 @@ from pathlib import Path
 
 from git import Repo
 from git.exc import GitCommandError
+from adgn_llm.git_commit_ai.backends.claude_backend import ClaudeAI
+from adgn_llm.git_commit_ai.backends.codex_backend import CodexAI
 
 # ---------- constants -------------------------------------------------
 MAX_FILE_LINES = 400  # truncate each file's hunk lines (per-file preview)
-PAST_COMMITS_MAX_CHARS = 6000  # legacy safety cap for past commit subjects
 DEFAULT_MODEL = "claude:sonnet"
 SPINNER_CHARS = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 MAX_VERBOSE_DIFF_LINES = 3000  # cap verbose diff lines under scissors
-DEFAULT_AI_TIMEOUT = timedelta(seconds=30)  # shared subprocess timeout for providers
-MAX_PROMPT_CONTEXT_BYTES = 100 * 1024  # 100 KiB cap for AI context block
-RECENT_COMMITS_FOR_CONTEXT = 30
+DEFAULT_AI_TIMEOUT = timedelta(seconds=60)  # shared subprocess timeout for providers
 
 
 @dataclass
@@ -96,200 +94,6 @@ class AppConfig:
             model_str=model_str,
             timeout=timeout,
         )
-
-
-def _len_bytes(s: str) -> int:
-    return len(s.encode("utf-8"))
-
-
-def _cap_append(
-    parts: list[str],
-    chunk: str,
-    cap_bytes: int,
-    truncation_note: str,
-) -> bool:
-    """Append chunk to parts unless this would exceed cap.
-
-    Returns True if truncation occurred (chunk was cut and note appended).
-    """
-    current_bytes = _len_bytes("".join(parts))
-    needed_bytes = _len_bytes(chunk)
-    if current_bytes + needed_bytes >= cap_bytes:
-        remaining_bytes = cap_bytes - current_bytes
-        if remaining_bytes > 0:
-            parts.append(
-                chunk.encode("utf-8")[:remaining_bytes].decode(
-                    "utf-8",
-                    errors="ignore",
-                ),
-            )
-        parts.append(truncation_note + "\n")
-        return True
-    parts.append(chunk)
-    return False
-
-
-def _build_ai_context(repo: Repo, include_all: bool) -> str:
-    """Assemble a compact context block for the AI.
-
-    Includes: status, recent commits with diffstats, and staged per-file
-    diffs up to the configured cap.
-    """
-    parts: list[str] = []
-
-    # 1) Raw git outputs so the agent can parse natively
-    try:
-        parts.append("$ git status --porcelain\n")
-        status_out = repo.git.status("--porcelain") + "\n"
-        _cap_append(
-            parts,
-            status_out,
-            MAX_PROMPT_CONTEXT_BYTES,
-            "[Context truncated to 100 KiB]",
-        )
-    except GitCommandError:
-        parts.append("[Could not retrieve git status]\n")
-
-    # 1b) Name-status for what will be committed
-    try:
-        ns_cmd = "git diff HEAD --name-status" if include_all else "git diff --cached --name-status"
-        parts.append(f"$ {ns_cmd}\n")
-        ns_out = (
-            repo.git.diff("HEAD", "--name-status") if include_all else repo.git.diff("--cached", "--name-status")
-        ) + "\n"
-        _cap_append(
-            parts,
-            ns_out,
-            MAX_PROMPT_CONTEXT_BYTES,
-            "[Context truncated to 100 KiB]",
-        )
-    except GitCommandError:
-        parts.append("[Could not compute name-status]\n")
-
-    # 2) Recent commits with diffstat via git log
-    parts.append(
-        f"$ git log --no-color -n {RECENT_COMMITS_FOR_CONTEXT} --stat --pretty=format:%h %s\n",
-    )
-    try:
-        log_out = (
-            repo.git.log(
-                "--no-color",
-                f"-n{RECENT_COMMITS_FOR_CONTEXT}",
-                "--stat",
-                "--pretty=format:%h %s",
-            )
-            + "\n"
-        )
-        _cap_append(
-            parts,
-            log_out,
-            MAX_PROMPT_CONTEXT_BYTES,
-            "[Context truncated to 100 KiB]",
-        )
-    except GitCommandError:
-        parts.append("[Could not retrieve recent commits]\n")
-
-    # 3) The diff that will be committed (unified=0) so the agent can parse hunks directly
-    try:
-        diff_cmd = "git diff HEAD --unified=0" if include_all else "git diff --cached --unified=0"
-        parts.append(f"$ {diff_cmd}\n")
-        diff_out = (
-            repo.git.diff("HEAD", "--unified=0") if include_all else repo.git.diff("--cached", "--unified=0")
-        ) + "\n"
-        _cap_append(
-            parts,
-            diff_out,
-            MAX_PROMPT_CONTEXT_BYTES,
-            "[Context truncated to 100 KiB]",
-        )
-    except GitCommandError:
-        parts.append("[Could not compute diff]\n")
-
-    out = "".join(parts)
-    # Final cap enforcement
-    if _len_bytes(out) > MAX_PROMPT_CONTEXT_BYTES:
-        out = out.encode("utf-8")[:MAX_PROMPT_CONTEXT_BYTES].decode(
-            "utf-8",
-            errors="ignore",
-        )
-        out += "\n[Context truncated to 100 KiB]\n"
-    return out
-
-
-def build_prompt(repo: Repo, diff: str, passthru, previous_message: str | None = None):
-    include_all = ("-a" in passthru) or ("--all" in passthru)
-    context = _build_ai_context(repo, include_all)
-
-    if previous_message:
-        prompt = f"""Update and refine this existing commit message based on the current changes.
-
-Previous commit message:
-{previous_message}
-
-The commit is being amended. Write an updated message that accurately reflects all changes.
-Output ONLY the commit message between <message> and </message> tags.
-No explanations, no markdown, no signatures. Do NOT include 'Generated with' or 'Co-Authored-By' lines.
-
-Context:
-{context}
-"""
-    else:
-        prompt = f"""Write a concise, imperative-mood Git commit message.
-Output ONLY the commit message between <message> and </message> tags.
-No explanations, no markdown, no signatures. Do NOT include 'Generated with' or 'Co-Authored-By' lines.
-
-Context:
-{context}
-
-Example outputs:
-<message>
-Add user authentication to API endpoints
-</message>
-
-<message>
-Refactor database connection handling
-
-- Extract connection pool logic into separate module
-- Add retry mechanism for transient failures
-</message>
-
-Diffstat:
-$ {"git diff HEAD --stat" if include_all else "git diff --cached --stat"}
-
-{diffstat(repo, passthru)}
-"""
-
-    # try to add whole staged diff
-    if len(diff) < 5000:
-        prompt = (
-            prompt
-            + f"""\nStaged diff:\
-
-{diff}"""
-        )
-    else:
-        prompt = (
-            prompt
-            + f"""\nStaged diff (first to 5000 of {len(diff)} chars)
-
-{diff[:5000]}"""
-        )
-
-    # Keep legacy short 'Past commits' section small (subjects only, as a fallback)
-    for i, commit in enumerate(repo.iter_commits("HEAD", max_count=10)):
-        new_prompt = prompt
-        if i == 0:
-            new_prompt += """\n\nPast commits (subjects):\n\n"""
-        raw_msg = commit.message
-        if isinstance(raw_msg, bytes):
-            subj = raw_msg.decode(errors="replace").split("\n\n", 1)[0]
-        else:
-            subj = raw_msg.split("\n\n", 1)[0]
-        new_prompt += f"- {subj}\n"
-        if len(new_prompt) > PAST_COMMITS_MAX_CHARS:
-            break
-        prompt = new_prompt
-    return prompt
 
 
 def get_commit_diff(
@@ -356,13 +160,6 @@ def get_commit_diff(
     if cur:
         out.append("\n".join(cur[:MAX_FILE_LINES]))
     return "\n\n".join(out)
-
-
-def diffstat(repo: Repo, passthru: list[str]) -> str:
-    """Get diffstat for what would be committed."""
-    if "-a" in passthru or "--all" in passthru:
-        return repo.git.diff("HEAD", "--stat")
-    return repo.git.diff("--cached", "--stat")
 
 
 def get_short_commitish(repo: Repo) -> str:
@@ -882,11 +679,33 @@ async def async_main():
                 timeout=config.timeout,
                 previous_message=previous_message,
             )
+        elif provider == "minicodex":
+            from adgn_llm.git_commit_ai.minicodex_backend import generate_commit_message_minicodex
+
+            # Wrap as a task to reuse the runner logic below
+            ai_task = asyncio.create_task(generate_commit_message_minicodex(model=model_name or "gpt-5"))
+            run_precommit = "--no-verify" not in passthru
+            msg = await ParallelTaskRunner.create_and_run(
+                repo,
+                ai_task,
+                run_precommit=run_precommit,
+            )
+            cache[key] = msg
+            cached = False
+            # Skip legacy provider runner path
+            elapsed_s = time.monotonic() - start_monotonic_s
+            stats_comment = (
+                f"\n# ai-draft{'(cached)' if cached else ''}: prompt: {len(diff)} chars, "
+                f"response: {len(msg)} chars, elapsed: {elapsed_s:.2f}s\n"
+            )
+            # Continue into existing editor/commit flow using msg set above
+            # (fall through)
         else:
             raise ValueError(f"Unknown AI provider: {provider}")
 
         # Factor out task creation to a single place
-        ai_task = asyncio.create_task(ai_client.generate(include_all, model_name))
+        if provider != "minicodex":
+            ai_task = asyncio.create_task(ai_client.generate(include_all, model_name))
         # Respect --no-verify to skip running pre-commit inside this wrapper
         run_precommit = "--no-verify" not in passthru
         msg = await ParallelTaskRunner.create_and_run(
@@ -1000,219 +819,8 @@ async def async_main():
     sys.exit(await commit_proc.wait())
 
 
-def _extract_message_from_text(text: str) -> str:
-    if match := re.search(r"<message>\s*(.*?)\s*</message>", text, re.DOTALL):
-        return match.group(1).strip()
-    return text.strip()
-
-
-class ClaudeAI:
-    """AI provider using `claude` CLI to draft commit messages.
-
-    Caching is handled by the caller before invoking this provider.
-    """
-
-    def __init__(
-        self,
-        repo: Repo,
-        diff: str,
-        passthru: list[str],
-        debug: bool = False,
-        timeout: timedelta | None = None,
-        previous_message: str | None = None,
-    ):
-        self.repo = repo
-        self.diff = diff
-        self.passthru = passthru
-        self.debug = debug
-        self.timeout = timeout
-        self.previous_message = previous_message
-        self.logger = logging.getLogger(__name__)
-
-    async def generate(self, include_all: bool, model: str) -> str:
-        # Build prompt from the provided diff and repo context
-        prompt = build_prompt(
-            self.repo,
-            self.diff,
-            self.passthru,
-            self.previous_message,
-        )
-
-        # Truncate prompt if too long and warn (stderr) in debug mode only
-        max_chars = int(os.environ.get("GIT_AI_MAX_PROMPT", "20000"))
-        if len(prompt) >= max_chars:
-            prompt = prompt[: max(0, max_chars - 100)] + "\n\n[TRUNCATED - prompt was too long]"
-            if self.debug:
-                print(
-                    f"# Warning: Prompt truncated to {max_chars} chars",
-                    file=sys.stderr,
-                )
-
-        cmd = [
-            "claude",
-            "--model",
-            (model or "sonnet"),
-            "-p",
-            prompt,
-            "--disallowedTools",
-            "*",
-        ]
-        if self.debug:
-            shell_cmd = subprocess.list2cmdline(cmd)
-            self.logger.debug("Claude command:\n%s", shell_cmd)
-            self.logger.debug("Claude prompt:\n%s", prompt)
-
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        try:
-            if self.timeout is None:
-                stdout, stderr = await proc.communicate()
-            else:
-                stdout, stderr = await asyncio.wait_for(
-                    proc.communicate(),
-                    timeout=self.timeout.total_seconds(),
-                )
-        except TimeoutError:
-            proc.terminate()
-            await proc.wait()
-            secs_str = "infinite" if self.timeout is None else str(int(self.timeout.total_seconds()))
-            print(
-                f"# Error: Claude command timed out after {secs_str} seconds",
-                file=sys.stderr,
-            )
-            raise
-
-        if self.debug and stderr:
-            self.logger.debug("Claude stderr:\n%s", stderr.decode(errors="replace"))
-
-        if proc.returncode != 0:
-            raise subprocess.CalledProcessError(
-                proc.returncode or 1,
-                ["claude"],
-                (stderr or b"").decode(),
-            )
-
-        response = (stdout or b"").decode().strip()
-        return _extract_message_from_text(response)
-
-
-class CodexAI:
-    """AI provider using `codex exec` to draft commit messages.
-
-    Caching is handled by the caller before invoking this provider.
-    """
-
-    def __init__(
-        self,
-        repo: Repo,
-        debug: bool = False,
-        codex_bin: str | None = None,
-        timeout: timedelta | None = None,
-        previous_message: str | None = None,
-    ):
-        self.repo = repo
-        self.debug = debug
-        self.codex_bin: str = codex_bin or os.environ.get("CODEX_BIN") or "codex"
-        self.timeout = timeout
-        self.previous_message = previous_message
-        self.logger = logging.getLogger(__name__)
-
-    async def generate(self, include_all: bool, model: str) -> str:
-        """Run codex in read-only sandbox at repo root and return the commit message."""
-        # Where codex should write the final assistant message
-        last_msg_path = Path(self.repo.git_dir) / "codex_last_message.txt"
-
-        # Build prompt - let the agent inspect the repo itself
-        context = _build_ai_context(self.repo, include_all)
-        if self.previous_message:  # amending
-            prompt = (
-                "You are an expert engineer updating a Git commit message for an amended commit.\n"
-                f"Previous commit message:\n{self.previous_message}\n\n"
-                "Requirements:\n"
-                "- Review the provided repository context and update the message to reflect all changes.\n"
-                "- Write a concise, imperative-mood subject; if helpful, add a short bullet list body.\n"
-                "- Output ONLY the message between <message> and </message> tags. No extra text.\n\n"
-                f"Context:\n{context}\n"
-            )
-        else:
-            prompt = (
-                "You are an expert engineer writing a Git commit message for the current changes.\n"
-                "Requirements:\n"
-                "- Review the provided repository context. If more context is needed, "
-                "you may query the repository as needed.\n"
-                "- Write a concise, imperative-mood subject; if helpful, add a short bullet list body.\n"
-                "- Output ONLY the message between <message> and </message> tags. No extra text.\n\n"
-                f"Context:\n{context}\n"
-            )
-
-        wd = Path(self.repo.working_tree_dir) if self.repo.working_tree_dir else Path(self.repo.git_dir)
-        cmd = [
-            self.codex_bin,
-            "exec",
-            "--sandbox",
-            "read-only",
-            "-C",
-            str(wd),
-            "--output-last-message",
-            str(last_msg_path),
-        ]
-        if model:
-            cmd += ["-m", str(model)]
-        cmd.append(str(prompt))
-
-        if self.debug:
-            shell_cmd = subprocess.list2cmdline([str(x) for x in cmd])
-            self.logger.debug("Codex command:\n%s", shell_cmd)
-            self.logger.debug("Codex prompt:\n%s", prompt)
-
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        try:
-            if self.timeout is None:
-                stdout, stderr = await proc.communicate()
-            else:
-                stdout, stderr = await asyncio.wait_for(
-                    proc.communicate(),
-                    timeout=self.timeout.total_seconds(),
-                )
-        except TimeoutError:
-            proc.terminate()
-            await proc.wait()
-            secs_str = "infinite" if self.timeout is None else str(int(self.timeout.total_seconds()))
-            print(
-                f"# Error: codex exec timed out after {secs_str} seconds",
-                file=sys.stderr,
-            )
-            raise
-
-        if self.debug:
-            if stdout:
-                self.logger.debug("Codex stdout:\n%s", stdout.decode(errors="replace"))
-            if stderr:
-                self.logger.debug("Codex stderr:\n%s", stderr.decode(errors="replace"))
-
-        if proc.returncode != 0:
-            raise subprocess.CalledProcessError(
-                proc.returncode or 1,
-                cmd,
-                (stderr or b"").decode(),
-            )
-
-        # Read last message file and extract commit message
-        try:
-            raw_last = last_msg_path.read_text()
-        except Exception as e:
-            raise RuntimeError(
-                f"codex exec did not produce a last message file: {e}",
-            )
-
-        return _extract_message_from_text(raw_last)
+# NOTE: Backends have been moved to adgn_llm.git_commit_ai.backends.*
+# This module now imports ClaudeAI and CodexAI from those packages.
 
 
 def main():

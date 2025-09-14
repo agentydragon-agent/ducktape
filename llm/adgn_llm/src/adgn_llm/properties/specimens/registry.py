@@ -53,7 +53,8 @@ def _jsonnet_load_issues_dir(spec_dir: Path, strict: bool = True) -> IssuesLoadR
     for p in sorted(issues_dir.glob("*.libsonnet")):
         stem = p.stem
         try:
-            raw = _jsonnet.evaluate_file(
+            # NOTE: _jsonnet type stubs omit jpathdir/import_callback; runtime supports them.
+            raw = _jsonnet.evaluate_file(  # type: ignore[call-arg]
                 str(p), jpathdir=[str(jsonnet_libdir)], import_callback=_importer
             )
         except Exception as e:  # pragma: no cover - surfaced via errors list
@@ -120,7 +121,8 @@ def _jsonnet_load_false_positives_dir(spec_dir: Path, strict: bool = True) -> Is
     for p in sorted(fp_dir.glob("*.libsonnet")):
         stem = p.stem
         try:
-            raw = _jsonnet.evaluate_file(
+            # NOTE: _jsonnet type stubs omit jpathdir/import_callback; runtime supports them.
+            raw = _jsonnet.evaluate_file(  # type: ignore[call-arg]
                 str(p), jpathdir=[str(jsonnet_libdir)], import_callback=_importer
             )
         except Exception as e:  # pragma: no cover

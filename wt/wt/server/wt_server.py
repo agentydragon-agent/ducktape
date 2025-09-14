@@ -52,6 +52,16 @@ from .handlers import (
 from .pr_service import PRService
 from .repo_status import RepoStatus
 from .rpc import rpc
+from .services import (
+    DiscoveryService,
+    GitService,
+    GitstatusdService,
+    HealthService,
+    PRServiceProvider,
+    StatusService,
+    WorktreeCoordinator,
+    WorktreeIndexService,
+)
 from .types import DiscoveredWorktree
 from .worktree_index import WorktreeIndex
 from .worktree_registry import WorktreeRegistry
@@ -177,16 +187,6 @@ class WtDaemon:
         self.repo_status = RepoStatus(self.git_manager, self.config)
         self.worktree_service = WorktreeService(self.git_manager, self.github_interface)
         # Build DI services
-        from .services import (
-            DiscoveryService,
-            GitService,
-            GitstatusdService,
-            HealthService,
-            PRServiceProvider,
-            StatusService,
-            WorktreeCoordinator,
-            WorktreeIndexService,
-        )
 
         self.git_service = GitService(self.git_manager)
         self.index_service = WorktreeIndexService(
@@ -291,7 +291,7 @@ class WtDaemon:
         """
         # Use config value if set
         if self.config.gitstatusd_path:
-            gitstatusd_path = str(self.config.gitstatusd_path)
+            gitstatusd_path = self.config.gitstatusd_path
             try:
                 result = subprocess.run(
                     [gitstatusd_path, "--version"],
@@ -672,7 +672,6 @@ class WtDaemon:
         await self.pr_provider.start()
         await self.gitstatusd_service.start()
 
-        # Kick an initial discovery (non-blocking) to seed state early
         self._discovery_kick = asyncio.create_task(self._run_discovery_once())
 
     async def stop(self) -> None:
@@ -755,9 +754,8 @@ if __name__ == "__main__":
     config = load_config()
 
     # Configure logging to write only to daemon log file
-    daemon_dir = config.wt_dir
-    daemon_dir.mkdir(exist_ok=True)
-    log_file = daemon_dir / "daemon.log"
+    config.wt_dir.mkdir(exist_ok=True)
+    log_file = config.wt_dir / "daemon.log"
 
     logging.basicConfig(
         level=logging.INFO,

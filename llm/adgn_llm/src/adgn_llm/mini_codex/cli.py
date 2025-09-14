@@ -14,7 +14,6 @@ from pydantic import BaseModel
 from adgn_llm.mini_codex.agent import (
     load_mcp_file,
     MiniCodex,
-    ResponsesClient,
     AgentResult,
 )
 from adgn_llm.mini_codex.event_renderer import DisplayEventsHandler
@@ -142,7 +141,7 @@ async def main_async() -> None:
             model=DEFAULT_MODEL,
             mcp=mcp,
             system=SYSTEM_INSTRUCTIONS,
-            client=cast(ResponsesClient, client),
+            client=client,
             handlers=[DisplayEventsHandler()],
         )
         async with agent:

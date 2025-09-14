@@ -1,5 +1,6 @@
 """Configuration factory to reduce duplication in test configuration building."""
 
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -26,7 +27,7 @@ class ConfigFactory:
 
     def create(
         self,
-        preset: str = "MINIMAL",
+        preset: str | Mapping[str, Any] = "MINIMAL",
         *,
         wt_dir: Path | None = None,
         **config_overrides,
@@ -41,8 +42,10 @@ class ConfigFactory:
         Returns:
             Resolved Configuration instance
         """
-        # Get base configuration from preset
-        if hasattr(ConfigPresets, preset):
+        # Get base configuration from preset (by value or by name)
+        if isinstance(preset, Mapping):
+            base_config = dict(preset)
+        elif hasattr(ConfigPresets, preset):
             base_config = getattr(ConfigPresets, preset)
         else:
             raise ValueError(
@@ -86,19 +89,19 @@ class ConfigFactory:
 
     def minimal(self, **overrides) -> Configuration:
         """Create minimal configuration for fast tests."""
-        return self.create("MINIMAL", **overrides)
+        return self.create(ConfigPresets.MINIMAL, **overrides)
 
     def integration(self, **overrides) -> Configuration:
         """Create configuration for integration tests."""
-        return self.create("INTEGRATION", **overrides)
+        return self.create(ConfigPresets.INTEGRATION, **overrides)
 
     def e2e(self, **overrides) -> Configuration:
         """Create configuration for end-to-end tests."""
-        return self.create("E2E", **overrides)
+        return self.create(ConfigPresets.E2E, **overrides)
 
     def with_github(self, **overrides) -> Configuration:
         """Create configuration with GitHub enabled."""
-        return self.create("GITHUB_ENABLED", **overrides)
+        return self.create(ConfigPresets.GITHUB_ENABLED, **overrides)
 
     def custom(self, **config_fields) -> Configuration:
         """Create configuration with all custom fields (no preset)."""

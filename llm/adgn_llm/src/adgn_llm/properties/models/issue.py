@@ -74,7 +74,7 @@ class SpecimenIssuesLoadError(Exception):
 
 
 # Strongly-typed identifiers with validation
-IssueId = Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9_-]{1,40}$")]
+IssueId = Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9_-]{0,200}$")]
 
 
 class IssueCore(BaseModel):

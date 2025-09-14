@@ -1,4 +1,5 @@
 import os
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -67,14 +68,9 @@ def test_post_creation_python_script_runs(real_env_with_python_post_script, stdi
 
     # Run CLI in "sh -c <name>" mode which triggers creation and post-create hook
     # Choose stdin behavior: open (default) vs closed (simulate bad fd 0 for daemon)
-    if stdin_mode == "open":
-        stdin = None  # inherit normal stdin
-    else:
-        import subprocess
-
-        stdin = (
-            subprocess.DEVNULL
-        )  # parent CLI stdin is /dev/null; daemon inherits this
+    stdin = (
+        None if stdin_mode == "open" else subprocess.DEVNULL
+    )  # parent CLI stdin is /dev/null; daemon inherits this
 
     result = run_cli_command(["sh", "-c", name], env=env, timeout=30.0, stdin=stdin)
 
@@ -93,7 +89,8 @@ def test_post_creation_python_script_runs(real_env_with_python_post_script, stdi
         assert "Fatal Python error" not in combined
 
     wt_path = Path(repo) / "worktrees" / name
-    assert wt_path.exists() and wt_path.is_dir(), f"missing worktree at {wt_path}"
+    assert wt_path.exists(), f"missing worktree at {wt_path}"
+    assert wt_path.is_dir(), f"worktree path is not a directory: {wt_path}"
     marker = wt_path / ".py_post_create_ran"
     if stdin_mode == "open":
         assert marker.exists(), ".py_post_create_ran not created by python post-create"

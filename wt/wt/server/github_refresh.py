@@ -83,11 +83,10 @@ class DebouncedGitHubRefresh:
         while self.is_running:
             try:
                 await asyncio.sleep(self.periodic_interval)
-                if self.is_running:
-                    current_time = time.time()
-                    time_since_last = current_time - self.last_refresh_time
-                    if time_since_last >= self.periodic_interval * 0.8:
-                        await self._do_refresh("periodic")
+                current_time = time.time()
+                time_since_last = current_time - self.last_refresh_time
+                if time_since_last >= self.periodic_interval * 0.8:
+                    await self._do_refresh("periodic")
             except asyncio.CancelledError:
                 break
             except Exception:

@@ -1,5 +1,3 @@
-"""Pure handler functions for CLI commands."""
-
 import asyncio
 import os
 import signal

@@ -24,6 +24,7 @@ from openai.types.responses import (
 from openai.types.shared_params import Reasoning as ReasoningParams
 from openai.types.shared_params import ReasoningEffort
 from pydantic import BaseModel
+from openai.resources.responses import AsyncResponses
 from adgn_llm.openai_retry import retry_decorator
 
 from .loggers import TranscriptLogger
@@ -172,16 +173,9 @@ def _tool_choice_from_policy(policy: TP_Base) -> str | dict[str, Any]:
     raise TypeError(f"Unknown ToolPolicy: {type(policy).__name__}")
 
 
-class _ResponsesSubclient(Protocol):
-    async def create(self, **kwargs: Any):  # pragma: no cover - structural protocol
-        ...
-
-
 class ResponsesClient(Protocol):
     @property
-    def responses(
-        self,
-    ) -> _ResponsesSubclient:  # pragma: no cover - structural protocol
+    def responses(self) -> AsyncResponses:  # pragma: no cover - structural protocol
         ...
 
 

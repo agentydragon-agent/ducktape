@@ -13,9 +13,9 @@ Makes switching between git worktrees feel like `git switch` while adding copy-o
 
 ## Requirements
 
-- **gitstatusd**: Must be installed and available on PATH. This binary provides fast git status queries.
+- **gitstatusd**: Must be installed and available on `PATH`. This binary provides fast git status queries.
 - **wt package**: Must be properly installed and importable (via `pip install -e .`)
-- **wt CLI**: Must be available on PATH after package installation
+- **wt CLI**: Must be available on `PATH` after package installation
 
 **Note**: Tests explicitly check for these dependencies and will fail immediately with clear error messages if any are missing, rather than producing cryptic import or subprocess errors.
 
@@ -168,7 +168,7 @@ When switching between worktrees, the tool:
 
 ## Configuration
 
-The tool uses WT_DIR environment variable to locate configuration:
+The tool uses `WT_DIR` environment variable to locate configuration:
 
 ```bash
 export WT_DIR=/path/to/.wt
@@ -198,7 +198,7 @@ FD behavior of post-creation hooks
 - Other fds: closed on exec. Only 0/1/2 are set as above.
 
 Daemon stdio summary (for context)
-- Daemon stdout is redirected to $WT_DIR/daemon.log; stderr is /dev/null. This does not affect hook I/O, which is independently piped and streamed.
+- Daemon stdout is redirected to `$WT_DIR/daemon.log`; stderr is `/dev/null`. This does not affect hook I/O, which is independently piped and streamed.
 
 Sample config.yaml:
 
@@ -283,10 +283,10 @@ vim $(wt path feature /src/main.py)
 From `~/code/worktrees/feature/src/components`:
 
 ```bash
-wt path                           # ~/code/worktrees/feature
-wt path /tests                    # ~/code/worktrees/feature/tests  
-wt path ./test.py                 # ~/code/worktrees/feature/src/components/test.py
-wt path main ./test.py            # ~/code/repo/src/components/test.py
+wt path                  # ~/code/worktrees/feature
+wt path /tests           # ~/code/worktrees/feature/tests  
+wt path ./test.py        # ~/code/worktrees/feature/src/components/test.py
+wt path main ./test.py   # ~/code/repo/src/components/test.py
 ```
 
 ## Troubleshooting

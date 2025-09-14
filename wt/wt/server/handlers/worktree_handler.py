@@ -76,13 +76,6 @@ async def worktree_create(  # noqa: PLR0913
             code=ErrorCodes.INVALID_PARAMS,
             message=f"Worktree path {worktree_path} already exists",
         )
-    if config.post_creation_script:
-        script = config.post_creation_script
-        if not script.exists() or not script.is_file():
-            raise RpcError(
-                code=ErrorCodes.INVALID_PARAMS,
-                message=f"Post-creation script {script} is not a file",
-            )
     source_path = None
     if params.source_wtid:
         source_path = wtid_to_path(config, params.source_wtid)
@@ -132,13 +125,6 @@ async def worktree_create(  # noqa: PLR0913
 
     post = None
     if config.post_creation_script:
-        script = config.post_creation_script
-        if not script.exists() or not script.is_file():
-            raise RpcError(
-                code=ErrorCodes.INVALID_PARAMS,
-                message=f"Post-creation script not found at execution time: {script}",
-            )
-
         # run_post_creation_script is async; we stream via the same writer
         async def _sink(name: str, data: str) -> None:
             ev = HookOutputEvent(
@@ -148,7 +134,7 @@ async def worktree_create(  # noqa: PLR0913
             stream.emit(ev)
 
         post = await WorktreeService.run_post_creation_script(
-            str(script),
+            str(config.post_creation_script),
             worktree_path,
             _sink,
             timeout=config.post_creation_timeout.total_seconds(),

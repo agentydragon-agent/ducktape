@@ -14,6 +14,8 @@ from hamcrest import assert_that, has_item
 from openai.types.responses import (
     ResponseFunctionToolCall,
     ResponseFunctionToolCallItem,
+    FunctionToolParam,
+    ToolChoiceFunctionParam,
 )
 
 from adgn_llm.rendering.rich_renderers import render_to_rich
@@ -157,7 +159,7 @@ async def _grade_rationale_with_llm(
     """Force a tool call that returns verdict: YES | PARTIALLY | NO, with reason."""
     if not proposed or not proposed.strip():
         return {"verdict": "NO", "reason": "No suggested rationale provided by linter."}
-    tools = [
+    tools: list[FunctionToolParam] = [
         {
             "type": "function",
             "name": "grade_rationale",
@@ -175,11 +177,12 @@ async def _grade_rationale_with_llm(
         + rubric.strip()
         + "\n\nQuestion: Is the new description corrected as it should be?"
     )
+    tool_choice: ToolChoiceFunctionParam = {"type": "function", "name": "grade_rationale"}
     resp = await client.responses.create(
         model=model,
         input=[{"role": "user", "content": prompt}],
         tools=tools,
-        tool_choice={"type": "function", "name": "grade_rationale"},
+        tool_choice=tool_choice,
     )
     # Extract function call robustly; fail fast on missing/invalid
     call: ResponseFunctionToolCall | None = None
@@ -213,16 +216,29 @@ async def eval_issue_spec(
     gitconfig: str | None = None,
     client: AsyncOpenAI,
     out_dir: Path | str | None = None,
+    id_prefix: str = "",
 ) -> SampleRunSummary:
     """Run lint_issue_run over a list of cases and write an eval summary.
 
     Returns a structured SampleRunSummary and writes summary.json to out_dir.
     """
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    # Allow local renamings/prefix for clustering or grading runs
+    effective_issue = (
+        spec.issue
+        if not id_prefix
+        else IssueCore(
+            id=f"{id_prefix}{spec.issue.id}",
+            should_flag=spec.issue.should_flag,
+            rationale=spec.issue.rationale,
+            gap_note=spec.issue.gap_note,
+        )
+    )
+
     base = (
         Path(out_dir)
         if out_dir is not None
-        else (Path.cwd() / "runs" / "evals" / f"{spec.specimen}_{spec.issue.id}_{ts}")
+        else (Path.cwd() / "runs" / "evals" / f"{spec.specimen}_{effective_issue.id}_{ts}")
     )
     base.mkdir(parents=True, exist_ok=True)
 
@@ -237,6 +253,9 @@ async def eval_issue_spec(
         if len(files_items) != 1:
             raise SystemExit("Case occurrence must target exactly one file")
         path, ranges = files_items[0]
+        # Occurrence.files values are list[LineRange] | None in the schema; enforce exactly one range here.
+        if ranges is None:
+            raise SystemExit(f"Case occurrence for {path} must have exactly one range (got None)")
         if len(ranges) != 1:
             raise SystemExit(f"Case occurrence for {path} must have exactly one range")
         first = ranges[0]
@@ -246,7 +265,7 @@ async def eval_issue_spec(
 
         payload = await lint_issue_run(
             specimen=spec.specimen,
-            issue_core=spec.issue,
+            issue_core=effective_issue,
             occurrence=occ,
             model=model,
             gitconfig=gitconfig,
@@ -255,7 +274,7 @@ async def eval_issue_spec(
         )
 
         # Print the structured output object produced by the agent for this case
-        Console().print(f"[bold]{spec.specimen} {spec.issue.id} case {idx} {path}[/bold]")
+        Console().print(f"[bold]{spec.specimen} {effective_issue.id} case {idx} {path}[/bold]")
         Console().print(render_to_rich(payload))
 
         # Effective ranges: derive corrections from AnchorIncorrect findings when present
@@ -369,7 +388,7 @@ async def eval_issue_spec(
 
     summary_obj = {
         "specimen": spec.specimen,
-        "issue_id": spec.issue.id,
+        "issue_id": effective_issue.id,
         "total": len(spec.cases),
         "passed": passes,
         "failed": len(spec.cases) - passes,
@@ -379,7 +398,7 @@ async def eval_issue_spec(
 
     return SampleRunSummary(
         specimen=spec.specimen,
-        issue_id=spec.issue.id,
+        issue_id=effective_issue.id,
         total=len(spec.cases),
         passed=passes,
         failed=len(spec.cases) - passes,
@@ -477,7 +496,7 @@ SAMPLES: list[IssueEvalSpec] = [
             rationale=(
                 "Duplicate `daemon_cleanup` helper defined twice (one copy at 216–222); extract a single helper and reuse."
             ),
-            properties=["no-oneoff-vars-and-trivial-wrappers"],
+            # properties=["no-oneoff-vars-and-trivial-wrappers"],
         ),
         cases=[
             OccurrenceCase(
@@ -502,7 +521,7 @@ SAMPLES: list[IssueEvalSpec] = [
             rationale=(
                 "Remove no-op timeout branch (dead code); prefer fail-fast or enforce real timeout. Delete empty branch."
             ),
-            properties=["no-dead-code", "early-bailout"],
+            # properties=["no-dead-code", "early-bailout"],
         ),
         cases=[
             OccurrenceCase(
@@ -533,7 +552,7 @@ SAMPLES: list[IssueEvalSpec] = [
             rationale=(
                 "`format_list_with_more` exposes an unused `max_items` parameter; callers never vary it so the parameter should be removed. Prefer a named constant for the default if needed."
             ),
-            properties=["no-oneoff-vars-and-trivial-wrappers"],
+            # properties=["no-oneoff-vars-and-trivial-wrappers"],
         ),
         cases=[
             OccurrenceCase(
@@ -563,6 +582,7 @@ async def run_all_evals(
     client: AsyncOpenAI,
     root_out: Path | None = None,
     concurrency: int = 4,
+    id_prefix: str = "",
 ) -> EvalIndex:
     """Run all samples concurrently (bounded), print a Rich summary, and return EvalIndex."""
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -573,18 +593,20 @@ async def run_all_evals(
 
     async def _run_one(sample: IssueEvalSpec) -> SampleIndexEntry:
         async with sem:
-            out_dir = root / sample.issue.id
+            effective_id = f"{id_prefix}{sample.issue.id}" if id_prefix else sample.issue.id
+            out_dir = root / effective_id
             summary = await eval_issue_spec(
                 spec=sample,
                 model=model,
                 gitconfig=gitconfig,
                 client=client,
                 out_dir=out_dir,
+                id_prefix=id_prefix,
             )
             return SampleIndexEntry(
-                name=sample.issue.id,
+                name=effective_id,
                 specimen=sample.specimen,
-                issue_id=sample.issue.id,
+                issue_id=effective_id,
                 summary=summary.summary_path,
                 total=summary.total,
                 passed=summary.passed,

@@ -2,34 +2,27 @@ from __future__ import annotations
 
 import asyncio
 import argparse
-import importlib
 import json
 import shutil
 import subprocess
 import tempfile
-import docker
 from adgn_llm.properties.docker_env import (
-    PROPERTIES_DOCKER_IMAGE,
-    WORKING_DIR as CRITIC_WORKDIR,
-    ensure_critic_image,
     properties_docker_spec,
-    build_critic_volumes,
-    SLEEP_FOREVER_CMD,
     PropertiesDockerWiring,
 )
 import time
 from pathlib import Path
 from datetime import datetime
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 
-from typing import Mapping, cast, Literal
+from typing import Literal
 
 from adgn_llm.logging_config import configure_logging
 import tiktoken
 from openai import AsyncOpenAI
 from rich.console import Console
 
-from adgn_llm.mini_codex.agent import MiniCodex, ResponsesClient, AgentResult
+from adgn_llm.mini_codex.agent import MiniCodex, AgentResult
 from adgn_llm.mini_codex.aggregating_handler import BaseHandler
 from adgn_llm.mini_codex.event_renderer import DisplayEventsHandler
 from adgn_llm.mini_codex.loop_control import Continue, Abort, RequireAny, Forbid
@@ -44,7 +37,11 @@ from adgn_llm.properties.critic import (
     CriticSubmitPayload,
     make_critic_submit_server,
 )
-from adgn_llm.properties.grader import GradeSubmitState, make_grader_submit_server
+from adgn_llm.properties.grader import (
+    GradeSubmitState,
+    make_grader_submit_server,
+    GradeInputs,
+)
 from adgn_llm.properties.grade_runner import _metrics_row
 from adgn_llm.properties.prompts.util import build_input_schemas_json, build_scope_text
 from adgn_llm.properties.specimens.registry import SpecimenRegistry
@@ -54,17 +51,14 @@ from adgn_llm.properties.prompts.builder import (
     build_grade_from_json_prompt,
 )
 from adgn_llm.mcp.inproc_transport import make_inproc_slot_spec
-from adgn_llm.mcp.types import ServerSlotSpec
 from adgn_llm.rendering.rich_renderers import render_to_rich
-from adgn_llm.prompt_eval.server import (
-    _run_critic_for_specimen,
+from adgn_llm.properties.prompt_eval.server import (
     build_server as build_prompt_eval_server,
 )
 from adgn_llm.properties.grade_runner import grade_critic_output
 from adgn_llm.properties.specimens.registry import (
     find_specimens_base,
     list_specimen_names,
-    resolve_manifest_arg,
 )
 from adgn_llm.properties.prop_utils import pkg_dir
 from adgn_llm.properties.models.issue import Occurrence, LineRange, IssueCore
@@ -91,6 +85,17 @@ class BuildOptions:
     skip_git_repo_check: bool
     full_auto: bool
     extra_configs: list[str] | None = None
+
+
+@dataclass(frozen=True)
+class MetricsRow:
+    iteration: int
+    mean_recall: float
+    tp: int
+    fp: int
+    fn: int
+    unknown: int
+    dir: str
 
 
 # Human-facing catalog for CLI table (name, category, description)
@@ -257,24 +262,6 @@ class PromptOptimizeHandler(BaseHandler):
         return Abort()
 
 
-async def _run_minicodex_simple(
-    prompt: str,
-    model: str,
-    specs: Mapping[str, ServerSlotSpec],
-    *,
-    output_final_message: Path | None = None,
-    final_only: bool = False,
-    client: AsyncOpenAI,
-) -> int:
-    # Delegate execution to agent_runner.run_prompt_async so event loop control remains at callers
-    res = await run_prompt_async(prompt, model, specs, client=client, capture_transcript=not final_only)
-    if output_final_message:
-        Path(output_final_message).write_text(res.final_text, encoding="utf-8")
-    if not final_only and res.final_text:
-        print(res.final_text)
-    return 0
-
-
 async def _run_check_minicodex_async(
     workdir: Path,
     prompt: str,
@@ -364,7 +351,7 @@ async def _run_specimen_minicodex_async(
                 model="gpt-5",
                 mcp=mcp,
                 system="You are a code agent. Be concise.",
-                client=cast(ResponsesClient, client),
+                client=client,
                 handlers=[
                     CriticHandler(submit_state),
                     DisplayEventsHandler(max_lines=10),
@@ -436,14 +423,16 @@ async def _run_specimen_grade_minicodex_async(
         return 2
 
     wiring = PropertiesDockerWiring(
-        server_spec=None,  # no docker servers needed for grading
+        server_spec=None,  # type: ignore[arg-type]  # no docker servers needed for grading
         # TODO(mpokorny): Provide specimen container access (mount workspace) if we want grader to inspect files
         working_dir=Path("/"),
         definitions_container_dir=None,
         image_name="n/a",
     )
     submit_state = GradeSubmitState()
-    grader_server = make_grader_submit_server(submit_state, name="grader_submit")
+    crit_obj = CriticSubmitPayload.model_validate(json.loads(crit_text))
+    inputs = GradeInputs(specimen=rec, critique=crit_obj)
+    grader_server = make_grader_submit_server(submit_state, name="grader_submit", inputs=inputs)
 
     prompt = build_grade_from_json_prompt(
         scope_text=scope_text,
@@ -480,7 +469,7 @@ async def _run_specimen_grade_minicodex_async(
             model="gpt-5",
             mcp=mcp,
             system="You are a code agent. Be concise.",
-            client=cast(ResponsesClient, client),
+            client=client,
             handlers=[GraderHandler(submit_state), DisplayEventsHandler(max_lines=10)],
             parallel_tool_calls=True,
         )
@@ -509,8 +498,6 @@ def main(argv: list[str] | None = None) -> int:
             "  adgn-properties check $(pwd) 'all files under src/**' --dry-run\n\n"
             "  # Fix code on a path set (workspace-write sandbox)\n"
             "  adgn-properties fix $(pwd) 'all files under src/**'\n\n"
-            "  # Check saved specimen by name (uses manifest.yaml)\n"
-            "  adgn-properties specimen-check 2025-09-02-ducktape_wt --dry-run\n\n"
             "  # Discover new findings vs specimen notes\n"
             "  adgn-properties specimen-discover 2025-09-02-ducktape_wt --dry-run\n"
         ),
@@ -559,42 +546,6 @@ def main(argv: list[str] | None = None) -> int:
             "- Uses a workspace-write sandbox\n"
             "- Keeps edits minimal and scoped; runs linters/formatters if present"
         ),
-    )
-
-    # Specimen runner subcommand (integrated)
-    p_spec = sub.add_parser(
-        "specimen-check",
-        help="Run property scan on a saved specimen, by specimen name",
-    )
-    p_spec.add_argument(
-        "specimen",
-        nargs="?",
-        help="Specimen name (under properties/specimens), path to specimen dir, or path to manifest.yaml",
-    )
-    p_spec.add_argument("--dry-run", action="store_true")
-    p_spec.add_argument(
-        "--embed-path",
-        action="append",
-        dest="embed_paths",
-        help="Extra files to embed into the prompt (Markdown); repeatable",
-    )
-    p_spec.add_argument(
-        "--gitconfig",
-        help="Path to a gitconfig to use for private repo fallback (shallow git)",
-    )
-    p_spec.add_argument(
-        "--final-only",
-        action="store_true",
-        help="Print only the agent's final message to stdout (suppresses trajectory output)",
-    )
-    p_spec.add_argument(
-        "--output-final-message",
-        help="Write only the agent's final message to this path (passthrough to codex --output-last-message)",
-    )
-    p_spec.add_argument(
-        "--allow-general-findings",
-        action="store_true",
-        help="Also allow general code-quality findings beyond formal properties",
     )
 
     # New command: specimen-discover — report only new findings vs current specimen notes
@@ -665,18 +616,6 @@ def main(argv: list[str] | None = None) -> int:
         help="Write only the agent's final message to this path (passthrough to codex --output-last-message)",
     )
 
-    # New command: prompt-eval — evaluate a candidate critic system prompt across all specimens
-    p_pe = sub.add_parser(
-        "prompt-eval",
-        help="Evaluate a candidate critic system prompt across all known specimens (returns only metrics)",
-    )
-    p_pe.add_argument("--prompt", required=True, help="Candidate system prompt for critic agent")
-    p_pe.add_argument(
-        "--out-dir",
-        dest="out_dir",
-        help="Root directory for run artifacts (default: runs/prompt_eval)",
-    )
-
     # New command: prompt-optimize — run a PE agent that iteratively optimizes a critic system prompt using the prompt_eval MCP tool
     p_pe_opt = sub.add_parser(
         "prompt-optimize",
@@ -704,208 +643,49 @@ def main(argv: list[str] | None = None) -> int:
         help="Prompt-eval agent context: 'minimal' (no extra servers) or 'props' (mount /props via docker MCP)",
     )
 
-    # New command: lint-issue — lint exactly one issue using mini_codex + docker_exec MCP
-    p_spec_lint = sub.add_parser(
-        "lint-issue",
-        help="Lint a single issue in a specimen (mini_codex + docker_exec)",
+    # New command: cluster-unknowns — cluster all unknown YAMLs across runs using an LLM with in-proc MCP submit
+    p_cluster = sub.add_parser(
+        "cluster-unknowns",
+        help="Cluster all unknown issues from runs/prompt_optimize across specimens using an LLM",
         description=(
-            "Lint/check a single instance of an issue on a specimen - for propery property definition linkage, etc."
+            "Reads all runs/prompt_optimize/**/unknowns/*.yaml and feeds structured issues to an LLM. "
+            "The agent MUST call cluster_submit.submit_result once with clusters: [{name: string, issues: [string,...]}]."
         ),
     )
-    p_spec_lint.add_argument(
-        "specimen",
-        help="Specimen name (under properties/specimens), path to specimen dir, or path to manifest.yaml",
-    )
-    p_spec_lint.add_argument(
-        "issue_id",
-        help="Issue id to lint (must have should_flag=true)",
-    )
-    p_spec_lint.add_argument("--model", default="gpt-5")
-    p_spec_lint.add_argument("--dry-run", action="store_true")
-    p_spec_lint.add_argument(
-        "occurrence",
-        type=int,
-        help="0-based occurrence index within issue.instances",
-    )
-    p_spec_lint.add_argument(
-        "--gitconfig",
-        help="Path to a gitconfig to use for private repo fallback (shallow git)",
-    )
-
-    # New command: eval-lint-issue — run eval harness for a single issue with cases file
-    p_eval = sub.add_parser(
-        "eval-lint-issue",
-        help="Run eval harness for a lint-issue across multiple cases",
-        description=(
-            "Run the lint-issue agent for a specimen/issue across cases defined in a JSON file, "
-            "writing artifacts and a summary.json under runs/evals/."
-        ),
-    )
-    p_eval.add_argument("specimen", help="Specimen name/dir/issues.libsonnet path")
-    p_eval.add_argument("issue_id", help="Issue id (must exist in specimen issues)")
-    p_eval.add_argument("--cases", required=True, help="Path to cases file (JSON list of dicts)")
-    p_eval.add_argument("--out-dir", dest="out_dir", help="Output directory for eval artifacts")
-    p_eval.add_argument("--model", default="gpt-5")
-    p_eval.add_argument("--gitconfig")
-
-    # New command: specimen-exec — execute a command inside the hydrated specimen container (RW mount)
-    p_spec_shell = sub.add_parser(
-        "specimen-exec",
-        help="Execute a command in a container with the hydrated specimen mounted",
-        description=(
-            "Hydrate specimen into a temporary workspace and execute the provided command\n"
-            "inside a container with the workspace mounted at /workspace (read-write). Container uses no network and is removed on exit."
-        ),
-    )
-    p_spec_shell.add_argument(
-        "specimen",
-        help="Specimen name (under properties/specimens), path to specimen dir, or path to issues.libsonnet",
-    )
-    p_spec_shell.add_argument(
-        "--gitconfig",
-        help="Path to a gitconfig to use for private repo fallback (shallow git)",
-    )
-    p_spec_shell.add_argument(
-        "--workdir",
-        default=str(CRITIC_WORKDIR),
-        help="Container working directory (default: /workspace)",
-    )
-    # Interactive stdio/PTY wiring for docker exec (use -i and/or -t)
-    p_spec_shell.add_argument(
-        "-i",
-        dest="interactive",
-        action="store_true",
-        help="Attach STDIN for docker exec (equivalent to 'docker exec -i')",
-    )
-    p_spec_shell.add_argument(
-        "-t",
-        dest="tty_exec",
-        action="store_true",
-        help="Allocate a TTY for docker exec (equivalent to 'docker exec -t')",
-    )
-    p_spec_shell.add_argument(
-        "cmd",
-        nargs=argparse.REMAINDER,
-        help="Command to run after '--' (required)",
-    )
-
-    # Eval harness: run all registered datasets (no options to keep CLI stable)
-    sub.add_parser(
-        "eval-all",
-        help="Run all registered eval datasets",
-        description="Runs all datasets and writes runs/evals/<ts>/index.json.",
+    p_cluster.add_argument("--model", default="gpt-5")
+    p_cluster.add_argument(
+        "--out-dir",
+        dest="out_dir",
+        help="Output directory for clusters.json (default: runs/cluster_unknowns/<ts>)",
     )
 
     args = parser.parse_args(argv)
 
-    if args.command == "lint-issue":
-        # Late import via importlib to avoid circular dependency while keeping lints happy
-        mod = importlib.import_module("adgn_llm.properties.lint_issue")
-        client = client
-        return asyncio.run(
-            mod.run_specimen_lint_issue_async(
-                args.specimen,
-                args.issue_id,
-                model=getattr(args, "model", "gpt-5"),
-                dry_run=getattr(args, "dry_run", False),
-                gitconfig=getattr(args, "gitconfig", None),
-                occurrence_index=getattr(args, "occurrence"),
-                client=client,
-            )
-        )
-
-    if args.command == "eval-all":
-        eval_mod = importlib.import_module("adgn_llm.properties.eval_harness")
-        # Run evals silently (no rollout console output); artifacts written under runs/evals/
-        asyncio.run(
-            eval_mod.run_all_evals(
-                model="gpt-5",
-                gitconfig=None,
-                client=client,
-            )
-        )
-        return 0
-
-    if args.command == "eval-lint-issue":
-        # Lazy import to avoid cycles
-        mod = importlib.import_module("adgn_llm.properties.eval_harness")
-        cases_path = Path(getattr(args, "cases"))
-        if not cases_path.exists():
-            print(f"ERROR: cases file not found: {cases_path}")
-            return 2
-        try:
-            cases = json.loads(cases_path.read_text(encoding="utf-8"))
-            if not isinstance(cases, list):
-                print("ERROR: cases file must contain a top-level list of case dicts")
-                return 2
-        except Exception as e:
-            print(f"ERROR: failed to parse cases JSON: {e}")
-            return 2
-        client = client
-        out_dir = getattr(args, "out_dir", None)
-        # Resolve optional gitconfig with fallback to properties/gitconfig.local
-        gitconfig_eval = _resolve_gitconfig(getattr(args, "gitconfig", None))
-        path = asyncio.run(
-            mod.eval_lint_issue_cases(
-                getattr(args, "specimen"),
-                getattr(args, "issue_id"),
-                cases,
-                model=getattr(args, "model", "gpt-5"),
-                gitconfig=gitconfig_eval,
-                client=client,
-                out_dir=out_dir,
-            )
-        )
-        print(f"Eval summary written to: {path / 'summary.json'}")
-        return 0
-
-    if args.command == "specimen-check":
-        base = find_specimens_base()
-        manifest_path = resolve_manifest_arg(args.specimen, base)
-        if manifest_path is None:
-            names = list_specimen_names(base)
-            if not names:
-                print(f"No specimens found under: {base}")
-                return 2
-            print("Available specimens:")
-            for n in names:
-                print(" -", n)
-            return 0
-        # Validate gitconfig if provided
-        gitconfig_path = _resolve_gitconfig(getattr(args, "gitconfig", None))
-        mode = "open" if getattr(args, "allow_general_findings", False) else "find"
-        return asyncio.run(
-            _run_specimen_minicodex_async(
-                manifest_path,
-                dry_run=args.dry_run,
-                embed_paths=args.embed_paths,
-                gitconfig=gitconfig_path,
-                mode=mode,
-                final_only=getattr(args, "final_only", False),
-                output_final_message=args.output_final_message,  # TODO: make the type Path
-                client=AsyncOpenAI(),
-            )
-        )
-
     if args.command == "specimen-discover":
         base = find_specimens_base()
-        manifest_path = resolve_manifest_arg(args.specimen, base)
-        if not manifest_path:
-            if not (names := list_specimen_names(base)):
+        names = list_specimen_names(base)
+        slug = getattr(args, "specimen", None)
+        if not slug:
+            if not names:
                 print(f"No specimens under {base}")
                 return 2
             print("Available specimens:")
             for n in names:
                 print(" -", n)
             return 0
+        if slug not in names:
+            print(f"Unknown specimen slug: {slug}")
+            print("Available specimens:")
+            for n in names:
+                print(" -", n)
+            return 2
         gitconfig_path = _resolve_gitconfig(getattr(args, "gitconfig", None))
         # Embed existing findings to suppress repeats
-        embed_paths = [
-            str(pth) for name in ("covered.md", "not_covered_yet.md") if (pth := manifest_path.parent / name).exists()
-        ]
+        spec_dir = base / slug
+        embed_paths = [str(p) for p in [spec_dir / "covered.md", spec_dir / "not_covered_yet.md"] if p.exists()]
         return asyncio.run(
             _run_specimen_minicodex_async(
-                manifest_path,
+                slug,
                 dry_run=args.dry_run,
                 embed_paths=embed_paths,
                 gitconfig=gitconfig_path,
@@ -918,8 +698,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "specimen-grade":
         base = find_specimens_base()
-        if not (manifest_path := resolve_manifest_arg(args.specimen, base)):
-            names = list_specimen_names(base)
+        names = list_specimen_names(base)
+        slug = getattr(args, "specimen", None)
+        if not slug or slug not in names:
             if not names:
                 print(f"No specimens found under: {base}")
                 return 2
@@ -938,59 +719,21 @@ def main(argv: list[str] | None = None) -> int:
             print(f"ERROR: failed to parse or validate critique JSON: {e}")
             return 2
 
-        # Run grader via shared grade_runner (no duplicate wiring here)
+        # Run grader via shared grade_runner
         async def _run() -> int:
-            grade = await grade_critic_output(manifest_path.parent.name, critique, AsyncOpenAI())
+            out_dir = Path.cwd() / "runs" / "specimen-grade" / slug
+            out_dir.mkdir(parents=True, exist_ok=True)
+            grade = await grade_critic_output(slug, critique, AsyncOpenAI(), transcript_out_dir=out_dir)
             # Print concise metrics including fuzzy values
-            row = _metrics_row(grade, specimen=manifest_path.parent.name)
+            row = _metrics_row(grade, specimen=slug)
             print(json.dumps(row, indent=2))
             # Persist to runs/specimen-grade/<ts>
-            ts_dir = Path.cwd() / "runs" / "specimen-grade"
-            ts_dir.mkdir(parents=True, exist_ok=True)
-            (ts_dir / f"{manifest_path.parent.name}.grade.json").write_text(grade.model_dump_json(), encoding="utf-8")
+            out_path = Path.cwd() / "runs" / "specimen-grade" / f"{slug}.grade.json"
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_path.write_text(grade.model_dump_json(), encoding="utf-8")
             return 0
 
         return asyncio.run(_run())
-
-    if args.command == "prompt-eval":
-        prompt = getattr(args, "prompt")
-        out_root = Path(args.out_dir).expanduser().resolve() if getattr(args, "out_dir", None) else None
-
-        async def _run_pe() -> int:
-            base = find_specimens_base()
-            specimens = list_specimen_names(base)
-            client = AsyncOpenAI()
-            # run dir
-
-            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-            run_dir = (out_root if out_root is not None else (pkg_dir() / "runs" / "prompt_eval")) / ts
-            run_dir.mkdir(parents=True, exist_ok=True)
-            (run_dir / "prompt.txt").write_text(prompt, encoding="utf-8")
-
-            async def one(s: str):
-                critic_obj = await _run_critic_for_specimen(s, prompt, client, run_dir)
-                out_dir = run_dir / s
-                out_dir.mkdir(parents=True, exist_ok=True)
-                grade_obj = await grade_critic_output(s, critic_obj, client, transcript_out_dir=out_dir)
-                (out_dir / "grade.json").write_text(grade_obj.model_dump_json(indent=2), encoding="utf-8")
-                critic_log = out_dir / "critic" / "events.jsonl"
-                grader_log = out_dir / "grader" / "events.jsonl"
-                print(f"[logs] critic: {critic_log}")
-                print(f"[logs] grader: {grader_log}")
-                m = grade_obj.metrics
-                print(
-                    f"[metrics] specimen={s} expected={m.expected} reported={m.reported} "
-                    f"tp={m.true_positives} fp={m.false_positive} unk={m.unknown} fn={m.false_negatives} "
-                    f"precision={m.precision:.3f} recall={m.recall:.3f}"
-                )
-                return m.model_dump()
-
-            metrics_list = await asyncio.gather(*[one(s) for s in specimens])
-            (run_dir / "results.json").write_text(json.dumps(metrics_list, indent=2), encoding="utf-8")
-            print(json.dumps(metrics_list, indent=2))
-            return 0
-
-        return asyncio.run(_run_pe())
 
     if args.command == "prompt-optimize":
         max_iters = int(getattr(args, "max_iters", 10))
@@ -1057,10 +800,89 @@ def main(argv: list[str] | None = None) -> int:
                 ts = int(time.time())
                 (out_root / f"final_{ts}.md").write_text(getattr(res, "text", ""), encoding="utf-8")
                 if getattr(res, "text", ""):
-                    print(res.text)
+                    print(getattr(res, "text", ""))
             return 0
 
-        return asyncio.run(_run_pe_agent())
+        rc = asyncio.run(_run_pe_agent())
+        # Generate summary plots (mean recall and counts) across iterations under out_root
+        import re
+        import csv
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+
+        iter_dirs = [p for p in out_root.iterdir() if p.is_dir() and (p.name.isdigit() or p.name.startswith("round_"))]
+        rows: list[MetricsRow] = []
+        for d in iter_dirs:
+            res_path = d / "results.json"
+            if not res_path.exists():
+                continue
+            data = json.loads(res_path.read_text(encoding="utf-8"))
+            m = re.search(r"(\d+)$", d.name)
+            it = int(m.group(1)) if m else 0
+            sum_tp = sum(int(x.get("true_positives", 0) or 0) for x in data)
+            sum_fp = sum(int(x.get("false_positive", 0) or 0) for x in data)
+            sum_fn = sum(int(x.get("false_negatives", 0) or 0) for x in data)
+            sum_unk = sum(int(x.get("unknown", 0) or 0) for x in data)
+            recs: list[float] = []
+            for x in data:
+                val = x.get("fuzzy_recall") if x.get("fuzzy_recall") is not None else x.get("recall")
+                if isinstance(val, (int, float)):
+                    recs.append(float(val))
+            mean_recall = (sum(recs) / len(recs)) if recs else 0.0
+            rows.append(
+                MetricsRow(
+                    iteration=it,
+                    mean_recall=mean_recall,
+                    tp=sum_tp,
+                    fp=sum_fp,
+                    fn=sum_fn,
+                    unknown=sum_unk,
+                    dir=d.name,
+                )
+            )
+        if rows:
+            rows.sort(key=lambda r: r.iteration)
+            csv_path = out_root / "recall_and_counts_by_iter.csv"
+            with open(csv_path, "w", newline="", encoding="utf-8") as f:
+                w = csv.DictWriter(
+                    f,
+                    fieldnames=[
+                        "iteration",
+                        "mean_recall",
+                        "tp",
+                        "fp",
+                        "fn",
+                        "unknown",
+                        "dir",
+                    ],
+                )
+                w.writeheader()
+                for r in rows:
+                    w.writerow(asdict(r))
+            xs = [r.iteration for r in rows]
+            fig, axes = plt.subplots(2, 3, figsize=(10, 6), constrained_layout=True)
+            (ax_rec, ax_tp, ax_fp), (ax_fn, ax_unk, ax_empty) = axes
+            ax_rec.plot(xs, [r.mean_recall for r in rows], marker="o")
+            ax_rec.set_title("Mean recall")
+            ax_rec.grid(True, alpha=0.3)
+            ax_tp.plot(xs, [r.tp for r in rows], marker="o", color="#2ca02c")
+            ax_tp.set_title("True positives (sum)")
+            ax_tp.grid(True, alpha=0.3)
+            ax_fp.plot(xs, [r.fp for r in rows], marker="o", color="#d62728")
+            ax_fp.set_title("False positives (sum)")
+            ax_fp.grid(True, alpha=0.3)
+            ax_fn.plot(xs, [r.fn for r in rows], marker="o", color="#9467bd")
+            ax_fn.set_title("Positives missed (FN sum)")
+            ax_fn.grid(True, alpha=0.3)
+            ax_unk.plot(xs, [r.unknown for r in rows], marker="o", color="#8c564b")
+            ax_unk.set_title("Unknown (sum)")
+            ax_unk.grid(True, alpha=0.3)
+            ax_empty.axis("off")
+            fig.suptitle("Prompt optimize: recall and counts by iteration", fontsize=12)
+            fig.savefig(out_root / "recall_and_counts_by_iter.png", dpi=150)
+        return rc
 
     if args.command in ("check", "fix"):
         workdir = Path(args.workdir).resolve()
@@ -1071,8 +893,8 @@ def main(argv: list[str] | None = None) -> int:
             )
             print(_format_tools_table(detected_tools))
         out_last_file: Path | None = None
+        wiring = properties_docker_spec(workdir, mount_properties=True)
         if args.command == "check":
-            wiring = properties_docker_spec(workdir, mount_properties=True)
             role_mode: Literal["find", "open", "discover"] = "open" if args.allow_general_findings else "find"
             prompt = build_role_prompt(
                 role_mode,
@@ -1109,7 +931,6 @@ def main(argv: list[str] | None = None) -> int:
                 )
             )
         else:
-            wiring = properties_docker_spec(workdir, mount_properties=True)
             schemas_json = build_input_schemas_json([Occurrence, LineRange, IssueCore])
             prompt = build_enforce_prompt(args.scope, wiring=wiring, schemas_json=schemas_json)
             cmd = build_cmd(
@@ -1152,87 +973,16 @@ def main(argv: list[str] | None = None) -> int:
                 print(Path(out_last_file).read_text(encoding="utf-8"))
             return rc
 
-    if args.command == "specimen-exec":
-        base = find_specimens_base()
-        manifest_path = resolve_manifest_arg(args.specimen, base)
-        if not manifest_path:
-            names = list_specimen_names(base)
-            if not names:
-                print(f"No specimens found under: {base}")
-                return 2
-            print("Available specimens:")
-            for n in names:
-                print(" -", n)
-            return 2
+    if args.command == "cluster-unknowns":
+        from adgn_llm.properties.cluster_unknowns import cluster_unknowns
 
-        if not args.cmd:
-            print("ERROR: specimen-exec requires a command after '--'")
-            return 2
-
-        exec_gitconfig: Path | None = args.gitconfig
-        if exec_gitconfig:
-            exec_gitconfig = Path(exec_gitconfig).expanduser().resolve()
-            if not exec_gitconfig.exists():
-                print(f"ERROR: --gitconfig file not found: {exec_gitconfig}")
-                return 2
-        else:
-            exec_gitconfig = pkg_dir() / "gitconfig.local"
-            if not exec_gitconfig.exists():
-                exec_gitconfig = None
-
-        try:
-            dclient = docker.from_env()
-            # Light sanity check; will raise if daemon unavailable
-            dclient.ping()
-        except Exception as e:
-            print(f"ERROR: Docker daemon not reachable: {e}")
-            return 2
-
-        ensure_critic_image()
-
-        async def _run_exec() -> int:
-            rec = SpecimenRegistry.load_strict(manifest_path.parent.name)
-            async with rec.hydrated_copy(exec_gitconfig) as content_root:
-                # Sanity: ensure hydrated workspace is not empty before launching container
-                try:
-                    has_any = any(content_root.iterdir())
-                except Exception:
-                    has_any = False
-                if not has_any:
-                    print(f"ERROR: hydrated specimen is empty: {content_root}")
-                    return 2
-                name = f"adgn_spec_shell_{int(time.time())}"
-                container = None
-                # Always use the properties critic image and ensure it exists locally
-                # Mount repo root directly at /workspace (no intermediate dir)
-                volumes, _defs = build_critic_volumes(content_root, mount_properties=True, workspace_mode="rw")
-                container = dclient.containers.run(
-                    image=PROPERTIES_DOCKER_IMAGE,
-                    command=SLEEP_FOREVER_CMD,
-                    name=name,
-                    remove=True,
-                    detach=True,
-                    network_mode="none",
-                    volumes=volumes,
-                    working_dir=str(args.workdir),
-                    tty=True,
-                    stdin_open=True,
-                )
-                try:
-                    # Execute the provided command; optionally wire up -i/-t (stdio/PTY)
-                    exec_cmd = ["docker", "exec"]
-                    if getattr(args, "interactive", False):
-                        exec_cmd.append("-i")
-                    if getattr(args, "tty_exec", False):
-                        exec_cmd.append("-t")
-                    exec_cmd.append(name)
-                    exec_cmd.extend(args.cmd)
-                    return subprocess.run(exec_cmd, check=False).returncode
-                finally:
-                    if container:
-                        container.stop()
-
-        return asyncio.run(_run_exec())
+        out_dir = getattr(args, "out_dir", None)
+        root = cluster_unknowns(
+            model=getattr(args, "model", "gpt-5"),
+            out_dir=(Path(out_dir).expanduser().resolve() if out_dir else None),
+        )
+        print(f"Clusters written to: {root / 'clusters.json'}")
+        return 0
 
     else:
         parser.error("command is required")

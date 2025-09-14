@@ -12,7 +12,7 @@ from ..shared.configuration import CowMethod
 
 
 def _get_copyable_entries(src: Path) -> list[Path]:
-    return [src / p.name for p in src.iterdir() if p.name not in (".worktrees", ".git")]
+    return [src / p.name for p in src.iterdir() if p.name != ".git"]
 
 
 class StrategyType(StrEnum):
@@ -43,8 +43,7 @@ class ClonefileCopyStrategy(CopyStrategy):
     def copy(self, src: Path, dst: Path) -> None:
         entries = _get_copyable_entries(src)
         if entries:
-            cmd = ["cp", "-c", "-R", *entries, dst]
-            subprocess.run(cmd, check=True)
+            subprocess.run(["cp", "-c", "-R", *entries, dst], check=True)
 
     @property
     def method_name(self) -> str:
@@ -59,8 +58,10 @@ class ReflinkCopyStrategy(CopyStrategy):
     def copy(self, src: Path, dst: Path) -> None:
         entries = _get_copyable_entries(src)
         if entries:
-            cmd = ["cp", "--archive", "--reflink=auto", *entries, dst]
-            subprocess.run(cmd, check=True)
+            subprocess.run(
+                ["cp", "--archive", "--reflink=auto", *entries, dst],
+                check=True,
+            )
 
     @property
     def method_name(self) -> str:
@@ -73,16 +74,18 @@ class ReflinkCopyStrategy(CopyStrategy):
 
 class RsyncCopyStrategy(CopyStrategy):
     def copy(self, src: Path, dst: Path) -> None:
-        cmd = [
-            "rsync",
-            "-a",
-            "--delete",
-            "--exclude=.git/",
-            "--exclude=.worktrees/",
-            f"{src}/",
-            f"{dst}/",
-        ]
-        subprocess.run(cmd, check=True)
+        subprocess.run(
+            [
+                "rsync",
+                "-a",
+                "--delete",
+                "--exclude=.git/",
+                "--exclude=.worktrees/",
+                f"{src}/",
+                f"{dst}/",
+            ],
+            check=True,
+        )
 
     @property
     def method_name(self) -> str:

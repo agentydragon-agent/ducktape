@@ -3,12 +3,10 @@
 This module defines the strict structured output used by the critic agent (codebase → candidate issues)
 and a tiny FastMCP server that accepts exactly one submission per run via submit_result.
 
-Key constraints enforced here:
-- No provenance, no suggested patches, no top-level pass/fail booleans.
-- Candidate issues are expressed as IssueCore + Occurrence(s); freeform notes allowed only via notes_md.
-- The MCP server validates the payload using Pydantic and stores the parsed manifest in the provided state.
+Candidate issues are expressed as IssueCore + Occurrence(s); freeform notes allowed only via notes_md.
+Payload is validated with Pydantic.
 
-The critic agent MUST call submit_result(result) where result conforms to CriticSubmitPayload.
+Critic agent MUST call submit_result(result) where result conforms to CriticSubmitPayload.
 """
 
 from __future__ import annotations
@@ -63,11 +61,18 @@ def make_critic_submit_server(state: CriticSubmitState, *, name: str = "critic_s
     """Create a FastMCP exposing submit_result(result: CriticSubmitPayload) -> {ok: True}.
 
     Agent must call submit_result exactly once to deliver a validated CriticSubmitPayload.
-    Server validates payload with Pydantic and stores it in state.result. Invalid payloads
+    Payload is validated with Pydantic and stored in state.result. Invalid payloads
     will raise and be returned to the caller as an error.
     """
 
-    mcp = FastMCP(name, instructions="Final critic submission for specimen scan")
+    mcp = FastMCP(
+        name,
+        instructions=(
+            "Used to submit final complete critique. "
+            "NOTE: submit_result will *complete your turn*. "
+            "Call submit_result with *all* your findings, only once you have completed *all* your analysis."
+        ),
+    )
 
     @mcp.tool()
     async def submit_result(result: CriticSubmitPayload) -> dict[str, Any]:

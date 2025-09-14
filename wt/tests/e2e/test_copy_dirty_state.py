@@ -1,3 +1,4 @@
+import subprocess
 from pathlib import Path
 
 from ..test_utils import run_cli_sh_command
@@ -18,7 +19,6 @@ def test_copy_dirty_state_cli(real_env, real_temp_repo):
     tracked = src_path / "README.md"
     tracked.write_text("base\n")
     # stage and commit in source worktree so file is tracked
-    import subprocess
 
     subprocess.run(["git", "add", "README.md"], cwd=src_path, check=True)
     subprocess.run(["git", "commit", "-m", "add readme"], cwd=src_path, check=True)

@@ -1,5 +1,6 @@
 """Git repository factory to eliminate fixture duplication."""
 
+import subprocess
 from pathlib import Path
 
 import pygit2
@@ -161,14 +162,13 @@ class GitRepoFactory:
 
             try:
                 # Use git command to create worktree (pygit2 doesn't support worktrees well)
-                import subprocess
 
                 subprocess.run(
                     [
                         "git",
                         "worktree",
                         "add",
-                        str(worktree_path),
+                        worktree_path,
                         branch_name,
                     ],
                     cwd=repo_path,
@@ -184,7 +184,7 @@ class GitRepoFactory:
                         "add",
                         "-b",
                         branch_name,
-                        str(worktree_path),
+                        worktree_path,
                     ],
                     cwd=repo_path,
                     check=True,

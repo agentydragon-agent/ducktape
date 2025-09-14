@@ -22,6 +22,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -127,7 +128,7 @@ echo "Shell function loaded successfully"
 
     def test_successful_teleport_with_pwd_verification(self, real_temp_repo, real_env):
         """Test that wt teleport actually changes directory using pwd verification."""
-        from contextlib import contextmanager
+        # imported at module top
 
         # Cleaned by real_env fixture
 
@@ -197,7 +198,7 @@ echo "$create_exit:$nav_exit:$pwd_before:$pwd_after"
             assert worktree_path.is_dir()
 
     def test_wt_main_changes_directory(self, real_temp_repo, real_env):
-        from contextlib import contextmanager
+        # imported at module top
 
         # Cleaned by real_env fixture
 

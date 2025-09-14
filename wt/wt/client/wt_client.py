@@ -389,47 +389,34 @@ class WtClient:
                     raise RuntimeError(error_response.error.message)
                 success_response = Response.model_validate(response_json)
                 result = WorktreeCreateResult.model_validate(success_response.result)
-                if result.post_hook:
-                    # Non-zero exit code => fail
-                    if result.post_hook.exit_code and result.post_hook.exit_code != 0:
-                        out = (
-                            (result.post_hook.stdout or "")
-                            + ("\n" if result.post_hook.stdout else "")
-                            + (result.post_hook.stderr or "")
-                        )
+                if post := result.post_hook:
+
+                    def _echo_io() -> None:
+                        out = "\n".join(s for s in [post.stdout, post.stderr] if s)
                         if out.strip():
                             click.echo(out)
+
+                    # Non-zero exit code => fail
+                    if (ec := post.exit_code) not in (None, 0):
+                        _echo_io()
                         raise RuntimeError(
-                            f"Post-creation script failed with exit code {result.post_hook.exit_code}",
+                            f"Post-creation script failed with exit code {ec}",
                         )
                     # Execution error surfaced by server (e.g. script disappeared)
-                    if result.post_hook.error:
-                        out = (
-                            (result.post_hook.stdout or "")
-                            + ("\n" if result.post_hook.stdout else "")
-                            + (result.post_hook.stderr or "")
-                        )
-                        if out.strip():
-                            click.echo(out)
-                        if result.post_hook.error == "timeout":
-                            ts = result.post_hook.timeout_secs
-                            if ts is not None:
+                    if err := post.error:
+                        _echo_io()
+                        if err == "timeout":
+                            if (ts := post.timeout_secs) is not None:
                                 raise RuntimeError(
                                     f"Post-creation script timed out after {ts:.1f}s",
                                 )
                             raise RuntimeError("Post-creation script timed out")
                         raise RuntimeError(
-                            f"Post-creation script error: {result.post_hook.error}",
+                            f"Post-creation script error: {err}",
                         )
                     # Ran flag false (e.g. not_found/not_file in legacy path) => fail
-                    if not result.post_hook.ran:
-                        out = (
-                            (result.post_hook.stdout or "")
-                            + ("\n" if result.post_hook.stdout else "")
-                            + (result.post_hook.stderr or "")
-                        )
-                        if out.strip():
-                            click.echo(out)
+                    if not post.ran:
+                        _echo_io()
                         raise RuntimeError("Post-creation script did not run")
                 return result
             except (json.JSONDecodeError, ValidationError, TypeError, ValueError) as e:
@@ -524,7 +511,7 @@ class WtClient:
             raise RuntimeError(f"RPC {method} failed: {e}")
 
     async def resolve_path(self, params: WorktreeResolvePathParams) -> str:
-        result = await self._rpc(
+        result: WorktreeResolvePathResult = await self._rpc(
             "worktree_resolve_path",
             params,
             TypeAdapter(WorktreeResolvePathResult),

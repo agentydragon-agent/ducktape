@@ -4,7 +4,7 @@ This document captures the vision for evolving `wt` from a single-repository wor
 
 ## Current State (Completed Rationalization)
 
-The configuration system has been fully rationalized into a clean, predictable system using WT_DIR-based configuration.
+The configuration system has been fully rationalized into a clean, predictable system using `WT_DIR`-based configuration.
 
 ### ✅ Completed Configuration System
 
@@ -13,7 +13,7 @@ The rationalized system now uses a single, clear configuration approach:
 2. `$WT_DIR/config.yaml` contains explicit configuration with no defaults
 3. All paths are explicit and validated upfront during Configuration.resolve()
 
-All configuration and daemon state live under the configured WT_DIR location, providing clean separation between configuration storage and git repository location. This eliminates confusion around multiple config sources and provides flexible deployment options.
+All configuration and daemon state live under the configured `WT_DIR` location, providing clean separation between configuration storage and git repository location. This eliminates confusion around multiple config sources and provides flexible deployment options.
 
 ## Multi-Repository Vision
 

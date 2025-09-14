@@ -174,8 +174,8 @@ class GitManager:
 
         return worktree_infos
 
-    def worktree_add(self, path: str, branch: str) -> None:
-        path_obj = Path(path)
+    def worktree_add(self, path: Path, branch: str) -> None:
+        path_obj = path
 
         # Validate path doesn't already exist
         if path_obj.exists():
@@ -205,7 +205,7 @@ class GitManager:
         # for very large repos; consolidating via CLI here avoids heavy libgit operations.
         try:
             git_run(
-                ["worktree", "add", "--no-checkout", str(path_obj), branch],
+                ["worktree", "add", "--no-checkout", path_obj, branch],
                 cwd=self.config.main_repo,
             )
         except subprocess.CalledProcessError as e:
@@ -213,12 +213,12 @@ class GitManager:
                 f"git worktree add failed: {e.stderr.decode(errors='replace').strip()}",
             ) from e
 
-    def worktree_remove(self, path: str, force: bool = False) -> None:
-        path_obj = Path(path)
+    def worktree_remove(self, path: Path, force: bool = False) -> None:
+        path_obj = path
         args = ["worktree", "remove"]
         if force:
             args.append("--force")
-        args.append(str(path_obj))
+        args.append(path_obj)
         try:
             git_run(args, cwd=self.config.main_repo)
         except subprocess.CalledProcessError as e:

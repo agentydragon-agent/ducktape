@@ -40,8 +40,8 @@ class MockFactory:
 
         # Allow override of any method via kwargs
         for method_name, return_value in kwargs.items():
-            if hasattr(mock, method_name):
-                getattr(mock, method_name).return_value = return_value
+            if method_name in mock.__dir__():
+                mock.configure_mock(**{f"{method_name}.return_value": return_value})
 
         return mock
 
@@ -72,8 +72,8 @@ class MockFactory:
 
         # Allow override of any method via kwargs
         for method_name, return_value in kwargs.items():
-            if hasattr(mock, method_name):
-                getattr(mock, method_name).return_value = return_value
+            if method_name in mock.__dir__():
+                mock.configure_mock(**{f"{method_name}.return_value": return_value})
 
         return mock
 
@@ -105,8 +105,8 @@ class MockFactory:
 
         # Allow override of any method via kwargs
         for method_name, return_value in kwargs.items():
-            if hasattr(mock, method_name):
-                getattr(mock, method_name).return_value = return_value
+            if method_name in mock.__dir__():
+                mock.configure_mock(**{f"{method_name}.return_value": return_value})
 
         return mock
 
@@ -121,8 +121,8 @@ class MockFactory:
 
         # Allow override of any method via kwargs
         for method_name, return_value in kwargs.items():
-            if hasattr(mock, method_name):
-                getattr(mock, method_name).return_value = return_value
+            if method_name in mock.__dir__():
+                mock.configure_mock(**{f"{method_name}.return_value": return_value})
 
         return mock
 

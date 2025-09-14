@@ -1,11 +1,12 @@
 """Shared test utilities to avoid duplication across test files."""
 
+import os
 import subprocess
+from pathlib import Path
 
 
 def add_project_root_to_env(env: dict) -> None:
     """Ensure the repository root is on PYTHONPATH for tests."""
-    from pathlib import Path
 
     project_root = str(Path(__file__).resolve().parents[1])
     existing = env.get("PYTHONPATH", "")
@@ -16,8 +17,6 @@ def run_cli_command(args, cwd=None, env=None, timeout: float = 60.0, stdin=None)
     """Run the actual CLI command as subprocess."""
     cmd = ["python3", "-m", "wt.cli", *args]
     if env is None:
-        import os
-
         env = os.environ.copy()
     add_project_root_to_env(env)
     return subprocess.run(

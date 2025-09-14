@@ -45,7 +45,7 @@ async def test_iss014_anchor_windows(
         id="iss-014",
         should_flag=True,
         rationale="Delete StatusSnapshot - dead code; never used and should be removed.",
-        properties=["no-dead-code"],
+        # properties=["no-dead-code"],  # deprecated; omit
     )
     s, e = initial_range
     occ = Occurrence(files={PATH: [LineRange(start_line=s, end_line=e)]}, note=entity)

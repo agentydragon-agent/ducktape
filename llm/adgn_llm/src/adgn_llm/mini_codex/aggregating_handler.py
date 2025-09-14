@@ -7,6 +7,8 @@ from adgn_llm.mini_codex.loop_control import (
     Continue,
     NoLoopDecision,
     Auto,
+    Abort,
+    SyntheticAction,
 )
 
 
@@ -79,8 +81,8 @@ class AggregatingController:
             # Explicit deferral must be the NoLoopDecision() sentinel
             if isinstance(dec, NoLoopDecision):
                 continue
-            # Anything that is not a LoopDecision (by union) is a programming error
-            if not isinstance(dec, LoopDecision):
+            # Anything that is not one of the concrete decision classes is a programming error
+            if not isinstance(dec, (Continue, Abort, SyntheticAction)):
                 raise TypeError(f"Handler {h!r} returned invalid decision type: {type(dec).__name__} ({dec!r})")
             decisions.append(dec)
 

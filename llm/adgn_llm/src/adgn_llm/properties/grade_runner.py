@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import Any
 import json
 from pathlib import Path
 import yaml
@@ -9,7 +9,7 @@ from openai import AsyncOpenAI
 
 from adgn_llm.properties.specimens.registry import SpecimenRegistry
 from adgn_llm.properties.docker_env import PropertiesDockerWiring
-from adgn_llm.mini_codex.agent import MiniCodex, ResponsesClient
+from adgn_llm.mini_codex.agent import MiniCodex
 from adgn_llm.mini_codex.mcp_manager import McpManager, build_mcp_function
 from adgn_llm.mini_codex.aggregating_handler import BaseHandler
 from adgn_llm.mini_codex.loop_control import Continue, Abort, RequireAny
@@ -134,7 +134,7 @@ async def grade_critic_output(
             model="gpt-5",
             mcp=mcp,
             system="You are a strict grader. Return only metrics via submit_result.",
-            client=cast(ResponsesClient, client),
+            client=client,
             handlers=handlers,
             parallel_tool_calls=True,
         )

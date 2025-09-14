@@ -37,8 +37,11 @@ import os
 import pygit2
 import pytest
 
-# from ..conftest import kill_daemon_at_wt_dir
+from wt.shared.git_utils import git_run
+
 from ..test_utils import run_cli_command
+
+# from ..conftest import kill_daemon_at_wt_dir
 
 # Very distinctive test branch name to avoid conflicts
 TEST_BRANCH_NAME = "XXX-ADGN-WT-INTERACTION-TEST-BRANCH-NAME-XXX"
@@ -290,7 +293,6 @@ class TestRealGitOperations:
         assert entries == []
 
         # Extend cone using git, then verify files appear
-        from wt.shared.git_utils import git_run
 
         git_run(["sparse-checkout", "init", "--no-cone"], cwd=wt_path)
         git_run(
