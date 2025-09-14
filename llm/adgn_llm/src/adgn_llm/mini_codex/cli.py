@@ -1,29 +1,23 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import os
 import subprocess
 import sys
 from pathlib import Path
-from shutil import which
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import openai
 from adgn_llm.logging_config import configure_logging
-from openai.types.responses import (
-    ResponseFunctionToolCall,
-    ResponseOutputMessage,
-    ResponseOutputText,
-)
 from pydantic import BaseModel
 
 from adgn_llm.mini_codex.agent import (
-    _responses_create_with_retry,
     load_mcp_file,
-    _responses_output_from_calltool,
     MiniCodex,
+    ResponsesClient,
+    AgentResult,
 )
+from adgn_llm.mini_codex.event_renderer import DisplayEventsHandler
 from adgn_llm.mcp.local_exec.server import make_local_exec_mcp
 from adgn_llm.mini_codex.mcp_manager import (
     McpManager,
@@ -37,7 +31,7 @@ DEFAULT_TIMEOUT_S = int(os.getenv("DUCK_TIMEOUT_S", "30"))
 TRUNCATE_BYTES = 8 * 1024
 SYSTEM_INSTRUCTIONS = os.getenv(
     "SYSTEM_INSTRUCTIONS",
-    ("You are a code agent. Use the tool shell.run to execute commands. Respond with helpful, concise text."),
+    ("You are a code agent. Use tools to execute commands. Respond with helpful, concise text."),
 )
 
 BWRAP = os.getenv("BWRAP", "bwrap")
@@ -121,228 +115,6 @@ def _run_proc(
     )
 
 
-def run_in_sandbox(
-    cmd: list[str],
-    timeout_s: int = DEFAULT_TIMEOUT_S,
-    cwd: str | None = None,
-) -> tuple[int, str, str]:
-    # Optional dev-mode fallback to run without sandbox on non-Linux
-    if sys.platform != "linux":
-        if ALLOW_UNSANDBOXED:
-            return _run_proc(cmd, timeout_s=timeout_s, cwd=cwd)
-        raise ExecError("Sandbox requires Linux (bubblewrap)")
-    # Check bwrap exists
-    if which(BWRAP) is None:
-        raise ExecError("bubblewrap (bwrap) not found in PATH")
-
-    cwd_val = cwd or str(Path.cwd())
-
-    argv: list[str] = [
-        BWRAP,
-        "--unshare-all",
-        "--die-with-parent",
-    ]
-    if ALLOW_UNSHARE_NET:
-        argv.append("--unshare-net")
-
-    argv += [
-        "--ro-bind",
-        "/",
-        "/",
-        "--bind",
-        cwd_val,
-        cwd_val,
-        "--chdir",
-        cwd_val,
-        "--proc",
-        "/proc",
-        "--dev",
-        "/dev",
-        "--tmpfs",
-        "/tmp",
-        "--setenv",
-        "HOME",
-        "/tmp",
-        "--",
-        *cmd,
-    ]
-
-    # chdir handled inside bwrap; pass cwd=None to subprocess
-    return _run_proc(argv, timeout_s=timeout_s, cwd=None)
-
-
-def openai_client() -> openai.OpenAI:
-    # Let the SDK read configuration from environment; no manual key plumbing
-    return openai.OpenAI()
-
-
-async def responses_turn(
-    client: openai.OpenAI,
-    messages: list[Message],
-    mcp_manager: McpManager | None = None,
-) -> tuple[list[Message], str | None]:
-    """Send a single non-streaming turn via Responses API.
-
-    Returns (new_messages, terminal_text). If terminal_text is not None,
-    print it to stdout for the user.
-    """
-    # Include MCP server descriptions in the instructions, if available
-    instructions = SYSTEM_INSTRUCTIONS
-
-    tools_list = await mcp_manager.list_tools() if mcp_manager else []
-    resp = _responses_create_with_retry(
-        client,
-        model=DEFAULT_MODEL,
-        input=dump_messages_for_api(messages),
-        instructions=instructions,
-        stream=False,
-        tool_choice="auto",
-        store=False,
-        tools=tools_list,
-    )
-
-    new_messages: list[Message] = []
-    terminal_text: str | None = None
-
-    # Collect assistant output items and action requirements
-    output = resp.output
-    # We only handle messages and function tool calls
-    requires: list[ResponseFunctionToolCall] = []
-    for item in output:
-        if isinstance(item, ResponseOutputMessage):
-            # Print assistant text; also add to transcript
-            text_parts = []
-            for part in item.content:
-                if isinstance(part, ResponseOutputText):
-                    text_parts.append(part.text)
-            combined = "\n".join([p for p in text_parts if p])
-            if combined:
-                terminal_text = (terminal_text + "\n" if terminal_text else "") + combined
-                new_messages.append(
-                    AssistantMessage(role="assistant", content=combined),
-                )
-        elif isinstance(item, ResponseFunctionToolCall):
-            requires.append(item)
-        # ignore other item types for MVP
-
-    # Execute required tool calls and enqueue function_call_output
-    for fc in requires:
-        fn = fc.name
-        call_id = fc.call_id
-        try:
-            args = json.loads(fc.arguments)
-        except json.JSONDecodeError as e:
-            # Malformed args from the model: surface error directly
-            new_messages.append(
-                FunctionCallOutput(
-                    type="function_call_output",
-                    call_id=call_id,
-                    output=json.dumps(
-                        {"exit": 2, "stdout": "", "stderr": f"invalid arguments: {e}"},
-                    ),
-                ),
-            )
-            continue
-        out_str: str
-        if mcp_manager is not None:
-            try:
-                server, tool_name = mcp_manager.resolve_function(fn)
-                session = await mcp_manager.get_session(server)
-                res_ct = await session.call_tool(
-                    name=tool_name,
-                    arguments=args if isinstance(args, dict) else {},
-                )
-                out_str = _responses_output_from_calltool(res_ct)
-            except Exception as e:
-                out_str = json.dumps({"exit": 127, "stdout": "", "stderr": f"mcp error: {e}"})
-        else:
-            out_str = json.dumps({"exit": 127, "stdout": "", "stderr": f"unknown function: {fn}"})
-        new_messages.append(
-            FunctionCallOutput(
-                type="function_call_output",
-                call_id=call_id,
-                output=out_str,
-            ),
-        )
-
-    return new_messages, terminal_text
-
-
-async def responses_followup_with_tool_outputs(
-    client: openai.OpenAI,
-    messages: list[Message],
-    tool_outputs: list[FunctionCallOutput],
-    mcp_manager: McpManager | None = None,
-) -> tuple[list[Message], str | None]:
-    instructions = SYSTEM_INSTRUCTIONS
-    input_payload = dump_messages_for_api(messages) + [t.model_dump(exclude_none=True) for t in tool_outputs]
-    tools_list = await mcp_manager.list_tools() if mcp_manager else []
-    resp = _responses_create_with_retry(
-        client,
-        model=DEFAULT_MODEL,
-        input=input_payload,
-        instructions=instructions,
-        stream=False,
-        tool_choice="auto",
-        store=False,
-        tools=tools_list,
-    )
-    new_messages: list[Message] = []
-    terminal_text: str | None = None
-    requires: list[ResponseFunctionToolCall] = []
-    for item in resp.output:
-        if isinstance(item, ResponseOutputMessage):
-            text_parts = []
-            for part in item.content:
-                if isinstance(part, ResponseOutputText):
-                    text_parts.append(part.text)
-            combined = "\n".join([p for p in text_parts if p])
-            if combined:
-                terminal_text = (terminal_text + "\n" if terminal_text else "") + combined
-                new_messages.append(
-                    AssistantMessage(role="assistant", content=combined),
-                )
-        elif isinstance(item, ResponseFunctionToolCall):
-            requires.append(item)
-    for fc in requires:
-        call_id = fc.call_id
-        try:
-            args = json.loads(fc.arguments)
-        except json.JSONDecodeError as e:
-            new_messages.append(
-                FunctionCallOutput(
-                    type="function_call_output",
-                    call_id=call_id,
-                    output=json.dumps(
-                        {"exit": 2, "stdout": "", "stderr": f"invalid arguments: {e}"},
-                    ),
-                ),
-            )
-            continue
-        fn = fc.name
-        if mcp_manager is not None:
-            try:
-                server, tool_name = mcp_manager.resolve_function(fn)
-                session = await mcp_manager.get_session(server)
-                res_ct = await session.call_tool(
-                    name=tool_name,
-                    arguments=args if isinstance(args, dict) else {},
-                )
-                out_str = _responses_output_from_calltool(res_ct)
-            except Exception as e:
-                out_str = json.dumps({"exit": 127, "stdout": "", "stderr": f"mcp error: {e}"})
-        else:
-            out_str = json.dumps({"exit": 127, "stdout": "", "stderr": f"unknown function: {fn}"})
-        new_messages.append(
-            FunctionCallOutput(
-                type="function_call_output",
-                call_id=call_id,
-                output=out_str,
-            ),
-        )
-    return new_messages, terminal_text
-
-
 async def main_async() -> None:
     # Ensure consistent logging (quiet console, optional file)
     configure_logging()
@@ -366,13 +138,11 @@ async def main_async() -> None:
     client = openai.AsyncOpenAI()
 
     async with McpManager(specs) as mcp:
-        from adgn_llm.mini_codex.event_renderer import DisplayEventsHandler
-
         agent = await MiniCodex.create(
             model=DEFAULT_MODEL,
             mcp=mcp,
             system=SYSTEM_INSTRUCTIONS,
-            client=client,
+            client=cast(ResponsesClient, client),
             handlers=[DisplayEventsHandler()],
         )
         async with agent:
@@ -380,7 +150,7 @@ async def main_async() -> None:
                 user = line.rstrip("\n")
                 if not user:
                     continue
-                res = await agent.run(user_text=user, stream=False)
+                res = cast(AgentResult, await agent.run(user_text=user, stream=False))
                 if res.text:
                     print(res.text)
 

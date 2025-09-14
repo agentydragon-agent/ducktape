@@ -18,7 +18,7 @@ import time
 
 from ..models.specimen import SpecimenDoc, GitHubSource, GitSource, LocalSource
 from ..models.issue import SpecimenIssuesLoadError, Occurrence, IssueCore
-from ..prop_utils import properties_root
+from ..prop_utils import pkg_dir
 
 
 @dataclass(frozen=True)
@@ -317,7 +317,7 @@ def list_specimen_names(base: Path) -> list[str]:
 
 
 def find_specimens_base() -> Path:
-    p = properties_root() / "specimens"
+    p = pkg_dir() / "specimens"
     if p.exists() and p.is_dir():
         return p
     here = Path(__file__).resolve()
@@ -329,7 +329,7 @@ def find_specimens_base() -> Path:
             cand = (parent / rel).resolve()
             if cand.exists():
                 return cand
-    return properties_root() / "specimens"
+    return pkg_dir() / "specimens"
 
 
 def resolve_manifest_arg(arg: str | None, base: Path | None = None) -> Path | None:
@@ -386,20 +386,20 @@ class SpecimenRecord:
                     tf.extractall(mount_root)
             elif isinstance(self.manifest.source, LocalSource):
                 src = (self.manifest_path.parent / self.manifest.source.root).resolve()
-                dest = mount_root / src.name
-                shutil.copytree(src, dest)
+                # For local specimens, materialize directly into mount_root (no extra subdir)
+                shutil.copytree(src, mount_root, dirs_exist_ok=True)
             else:  # pragma: no cover - guarded by SpecimenDoc model
                 raise SystemExit(
                     f"Unsupported source type: {type(self.manifest.source)}"
                 )
 
-            # Determine single content root
-            entries = [p for p in mount_root.iterdir() if p.is_dir()]
-            if len(entries) != 1:
-                raise SystemExit(
-                    f"Unexpected archive layout under {mount_root}; expected a single top-level directory"
-                )
-            content_root = entries[0]
+            # Determine content root:
+            # - If exactly one directory and no files: use that directory (typical for tarball extractions)
+            # - Otherwise (e.g., local specimens copied directly): use mount_root itself
+            all_entries = list(mount_root.iterdir())
+            dirs = [p for p in all_entries if p.is_dir()]
+            files = [p for p in all_entries if p.is_file()]
+            content_root = dirs[0] if (len(dirs) == 1 and not files) else mount_root
             yield content_root
         finally:
             shutil.rmtree(mount_root, ignore_errors=True)

@@ -8,7 +8,8 @@ from itertools import cycle
 from rich.console import Console
 from rich.text import Text
 
-from .aggregating_handler import BaseHandler, NoLoopDecision
+from .aggregating_handler import BaseHandler
+from .loop_control import NoLoopDecision
 
 
 class OneLineProgressHandler(BaseHandler):

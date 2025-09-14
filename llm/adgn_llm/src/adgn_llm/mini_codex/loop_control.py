@@ -1,8 +1,9 @@
 """Generic loop-control primitives for MiniCodex agents.
 
-This module intentionally avoids application-specific concerns. It exposes a
-minimal controller interface to influence the agent loop each sampling step
-(e.g., requiring a tool call for the next sampling or aborting the turn).
+This module intentionally avoids application-specific concerns. It exposes
+minimal algebraic types used by handlers to influence the agent loop each
+sampling step (e.g., requiring a tool call for the next sampling or aborting
+the turn).
 
 Policies and decisions are expressed as algebraic types to keep them disjoint
 and easy to compose.
@@ -17,7 +18,7 @@ Notes / Future work (TODOs):
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol, TYPE_CHECKING
+from typing import TYPE_CHECKING, TypeAlias
 
 if TYPE_CHECKING:
     from openai.types.responses import (
@@ -28,7 +29,6 @@ if TYPE_CHECKING:
 
     # Union of concrete output item types that the agent processes
     OutputItem = ResponseReasoningItem | ResponseOutputMessage | ResponseFunctionToolCall
-    from adgn_llm.mini_codex.agent import FunctionCallOutput
 
 
 # ---------------------------------------------------------------------------
@@ -68,119 +68,37 @@ class RequireSpecific(ToolPolicy):
 # ---------------------------------------------------------------------------
 
 
-class LoopDecision:
-    """Base class for loop decisions returned by the controller."""
+@dataclass(frozen=True)
+class NoLoopDecision:
+    """Explicit null-object sentinel for handler-level on_before_sample.
+
+    Handlers that do not want to claim the LoopDecision MUST return
+    NoLoopDecision() rather than None or any other sentinel.
+    """
 
 
 @dataclass(frozen=True)
-class Continue(LoopDecision):
+class Continue:
     tool_policy: ToolPolicy
 
 
 @dataclass(frozen=True)
-class Abort(LoopDecision):
+class Abort:
     pass
 
 
 @dataclass(frozen=True)
-class SyntheticAction(LoopDecision):
+class SyntheticAction:
     """Provide synthetic model output items for this sampling step.
 
     MiniCodex will skip calling the real LLM for this step and instead process
     these output items (tool calls, assistant messages, reasoning items) as if
     returned by the model. After processing, the loop continues to the next
-    sampling step where the controller can return another decision.
+    sampling step where handlers can return another decision.
     """
 
     outputs: list["OutputItem"]
 
 
-# ---------------------------------------------------------------------------
-# Controller protocol and default implementation
-# ---------------------------------------------------------------------------
-
-
-class LoopController(Protocol):
-    """Determines next-step loop behavior for MiniCodex agents.
-
-    on_before_sample is invoked once per sampling step. It should return either
-    Continue(policy) to proceed, or Abort() to end the current turn.
-
-    Controllers may also implement on_<agent event> hooks; default no-ops are
-    provided by BaseLoopController.
-    """
-
-    def on_before_sample(self) -> LoopDecision:  # pragma: no cover - interface only
-        ...
-
-    def on_user_text(self, text: str) -> None:  # pragma: no cover - interface only
-        ...
-
-    def on_assistant_text(self, text: str) -> None:  # pragma: no cover - interface only
-        ...
-
-    def on_tool_call(self, call: ResponseFunctionToolCall) -> None:  # pragma: no cover - interface only
-        ...
-
-    def on_function_call_output(
-        self, call: ResponseFunctionToolCall, output: FunctionCallOutput
-    ) -> None:  # pragma: no cover - interface only
-        ...
-
-    def on_reasoning(self, item: ResponseReasoningItem) -> None:  # pragma: no cover - interface only
-        ...
-
-
-class BaseLoopController:
-    """Base class with no-op agent event hooks.
-
-    Subclass this to conveniently handle on_<agent event> methods without
-    affecting core loop control semantics.
-    """
-
-    # Loop decision must be implemented by subclasses
-    def on_before_sample(self) -> LoopDecision:  # pragma: no cover - interface only
-        raise NotImplementedError
-
-    # No-op hooks; subclasses override as needed
-    def on_user_text(self, text: str) -> None:  # pragma: no cover - default no-op
-        return None
-
-    def on_assistant_text(self, text: str) -> None:  # pragma: no cover - default no-op
-        return None
-
-    def on_tool_call(self, call: ResponseFunctionToolCall) -> None:  # pragma: no cover - default no-op
-        return None
-
-    def on_function_call_output(
-        self, call: ResponseFunctionToolCall, output: FunctionCallOutput
-    ) -> None:  # pragma: no cover - default no-op
-        return None
-
-    def on_reasoning(self, item: ResponseReasoningItem) -> None:  # pragma: no cover - default no-op
-        return None
-
-
-class DefaultController(BaseLoopController):
-    """Default behavior: require a tool on the first sample, then auto.
-
-    Mirrors legacy MiniCodex behavior (first step prefers a tool call, then
-    auto). No RequireSpecific here to keep default generic.
-    """
-
-    def __init__(self) -> None:
-        self._step = 0
-
-    def on_before_sample(self) -> LoopDecision:
-        if self._step == 0:
-            self._step += 1
-            return Continue(RequireAny())
-        self._step += 1
-        return Continue(Auto())
-
-
-class AutoOnly(BaseLoopController):
-    """Always use Auto tool policy for every sampling step."""
-
-    def on_before_sample(self) -> LoopDecision:
-        return Continue(Auto())
+# Union type for loop decisions (for static type checking)
+LoopDecision: TypeAlias = Continue | Abort | SyntheticAction | NoLoopDecision

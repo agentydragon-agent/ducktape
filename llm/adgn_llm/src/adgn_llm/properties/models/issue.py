@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from typing import Annotated
+from pydantic import BaseModel, ConfigDict, Field, model_validator, StringConstraints
 
 
 class LineRange(BaseModel):
@@ -18,6 +19,8 @@ class LineRange(BaseModel):
             raise ValueError("end_line must be >= start_line when provided")
         return self
 
+    model_config = ConfigDict(extra="forbid")
+
 
 class Occurrence(BaseModel):
     """One occurrence of an Issue.
@@ -32,7 +35,7 @@ class Occurrence(BaseModel):
 
     files: dict[str, list[LineRange] | None] = Field(
         description=(
-            "Maps file paths -> either a list of LineRange objects (one or more ranges within that file) or `None` to indicate an unspecified anchor in the file. "
+            "Maps file paths -> list of LineRanges within that file or `None` to indicate an unspecified anchor in the file. "
             + "One Occurrence may reference multiple files (e.g., multi-file code fragment) but represents a single logical location instance."
         ),
     )
@@ -43,6 +46,16 @@ class Occurrence(BaseModel):
             "do not repeat issue-level rationale here."
         ),
     )
+
+    model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="after")
+    def _validate_files_keys(self) -> "Occurrence":
+        # TODO(mpokorny): During grading/runs, validate that each path resolves within the hydrated specimen root.
+        for k in self.files or {}:
+            if k in {"paths", ""}:
+                raise ValueError(f"Invalid files key: {k!r} — expected a real file path")
+        return self
 
 
 class SpecimenIssuesLoadError(Exception):
@@ -60,6 +73,10 @@ class SpecimenIssuesLoadError(Exception):
         return "Specimen issue loading errors:\n" + "\n".join(self.errors)
 
 
+# Strongly-typed identifiers with validation
+IssueId = Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9_-]{1,40}$")]
+
+
 class IssueCore(BaseModel):
     """Issue metadata without occurrences.
 
@@ -68,10 +85,9 @@ class IssueCore(BaseModel):
     one or more Occurrence objects rather than repeating metadata.
     """
 
-    id: str
+    id: IssueId
     should_flag: bool
     rationale: str
     gap_note: str | None = None
 
     model_config = ConfigDict(extra="forbid")
-

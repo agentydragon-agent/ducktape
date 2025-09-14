@@ -6,7 +6,7 @@ from adgn_llm.properties.docker_env import PropertiesDockerWiring
 from .util import build_input_schemas_json, render_prompt_template
 from adgn_llm.properties.models.issue import Occurrence, LineRange, IssueCore
 from adgn_llm.properties.critic import CriticSubmitPayload, ReportedIssue
-from adgn_llm.properties.grader import GradeSubmitPayload, GradeMetrics
+from adgn_llm.properties.grader import GradeSubmitInput, GradeSubmitPayload, GradeMetrics
 
 
 def build_role_prompt(
@@ -24,7 +24,9 @@ def build_role_prompt(
     - No stdout or subprocess; returns the composed Markdown string
     """
     # Compute the schemas map once here; templates pick header_schema_names
-    schemas_json = build_input_schemas_json([Occurrence, LineRange, IssueCore, ReportedIssue, CriticSubmitPayload, GradeMetrics, GradeSubmitPayload])
+    schemas_json = build_input_schemas_json(
+        [Occurrence, LineRange, IssueCore, ReportedIssue, CriticSubmitPayload, GradeMetrics, GradeSubmitPayload]
+    )
 
     template = "discover.j2.md" if mode == "discover" else ("open.j2.md" if mode == "open" else "find.j2.md")
     return render_prompt_template(
@@ -73,7 +75,9 @@ def build_grade_prompt(
     - Computes schemas_json internally
     - Returns the composed Markdown string
     """
-    schemas_json = build_input_schemas_json([Occurrence, LineRange, IssueCore, ReportedIssue, CriticSubmitPayload, GradeMetrics, GradeSubmitPayload])
+    schemas_json = build_input_schemas_json(
+        [Occurrence, LineRange, IssueCore, ReportedIssue, CriticSubmitPayload, GradeMetrics, GradeSubmitPayload]
+    )
     return render_prompt_template(
         "grade.j2.md",
         scope_text=scope_text,
@@ -160,15 +164,20 @@ def build_grade_from_json_prompt(
     - known_fp_json: JSON block of known false positives (IssueCore+Occurrence) list or mapping
     - submit_tool_name: fully-qualified MCP function name for grader_submit.submit_result
     """
-    schemas_json = build_input_schemas_json([
-        Occurrence,
-        LineRange,
-        IssueCore,
-        ReportedIssue,
-        CriticSubmitPayload,
-        GradeMetrics,
-        GradeSubmitPayload,
-    ])
+    schemas_json = build_input_schemas_json(
+        [
+            Occurrence,
+            LineRange,
+            IssueCore,
+            ReportedIssue,
+            CriticSubmitPayload,
+            GradeMetrics,
+            GradeSubmitInput,
+        ]
+    )
+    # Pass shared ID prefix constants into the template to avoid drift
+    from adgn_llm.properties.grader import CANON_TP_PREFIX, CANON_FP_PREFIX, CRIT_PREFIX
+
     return render_prompt_template(
         "grade_from_json.j2.md",
         scope_text=scope_text,
@@ -176,6 +185,9 @@ def build_grade_from_json_prompt(
         critique_json=critique_json,
         known_fp_json=known_fp_json or "",
         submit_tool_name=submit_tool_name,
+        canon_tp_prefix=CANON_TP_PREFIX,
+        canon_fp_prefix=CANON_FP_PREFIX,
+        crit_prefix=CRIT_PREFIX,
         wiring=wiring,
         schemas_json=schemas_json,
     )

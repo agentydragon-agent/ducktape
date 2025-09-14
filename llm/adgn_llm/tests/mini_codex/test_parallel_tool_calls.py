@@ -8,11 +8,12 @@ from mcp import types as mcp_types
 from openai.types.responses import ResponseFunctionToolCall
 
 from adgn_llm.mini_codex.agent import MiniCodex
-from adgn_llm.mini_codex.loop_control import Abort, LoopController, SyntheticAction
+from adgn_llm.mini_codex.loop_control import Abort, SyntheticAction
+from adgn_llm.mini_codex.aggregating_handler import BaseHandler
 
 
-class OneShotSynthetic(LoopController):
-    """Controller that returns a SyntheticAction once, then Abort."""
+class OneShotSyntheticHandler(BaseHandler):
+    """Handler that returns a SyntheticAction once, then Abort."""
 
     def __init__(self, outputs: list[Any]):
         self._done = False
@@ -108,9 +109,7 @@ async def test_parallel_tool_calls_reduce_wall_time():
     tc1 = ResponseFunctionToolCall(type="function_call", name="mcp__dummy__slow", arguments="{}", call_id="c1")
     tc2 = ResponseFunctionToolCall(type="function_call", name="mcp__dummy__slow2", arguments="{}", call_id="c2")
 
-    controller = OneShotSynthetic(outputs=[tc1, tc2])
-
-    from adgn_llm.mini_codex.event_renderer import PrettyPrintController
+    handler = OneShotSyntheticHandler(outputs=[tc1, tc2])
 
     # Create agent with the controller wrapped as a handler so loop control comes from handlers
     agent = MiniCodex(
@@ -119,7 +118,7 @@ async def test_parallel_tool_calls_reduce_wall_time():
         mcp=mcp,
         client=None,  # SyntheticAction path bypasses OpenAI
         parallel_tool_calls=True,
-        handlers=[PrettyPrintController(controller)],
+        handlers=[handler],
     )
 
     t0 = time.perf_counter()

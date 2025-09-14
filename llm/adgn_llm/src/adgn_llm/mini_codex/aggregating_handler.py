@@ -2,15 +2,12 @@ from __future__ import annotations
 
 from typing import Any, Iterable
 
-from adgn_llm.mini_codex.loop_control import BaseLoopController, LoopDecision, DefaultController
-
-
-class NoLoopDecision(LoopDecision):
-    """Explicit null-object sentinel for handler-level on_before_sample.
-
-    Handlers that do not want to claim the LoopDecision MUST return
-    NoLoopDecision() rather than None or any other sentinel.
-    """
+from adgn_llm.mini_codex.loop_control import (
+    LoopDecision,
+    Continue,
+    NoLoopDecision,
+    Auto,
+)
 
 
 class BaseHandler:
@@ -49,17 +46,14 @@ class BaseHandler:
 class AutoHandler(BaseHandler):
     """Common simple handler that signals Continue(Auto()) for every turn.
 
-    Useful as a default handler in tests and simple agents.
+    Useful as default handler in simple agents.
     """
 
     def on_before_sample(self):
-        # Local import to avoid top-level dependency cycles and keep this file self-contained
-        from adgn_llm.mini_codex.loop_control import Continue, Auto
-
         return Continue(Auto())
 
 
-class AggregatingController(BaseLoopController):
+class AggregatingController:
     """Single controller owning event forwarding and loop-decision semantics.
 
     Behavior:
@@ -76,9 +70,6 @@ class AggregatingController(BaseLoopController):
 
     def __init__(self, handlers: Iterable[BaseHandler]) -> None:
         self._handlers = list(handlers)
-        # Keep a DefaultController instance around only for possible reuse in
-        # earlier designs; here we will crash on no-decision per user request.
-        self._default_ctrl = DefaultController()
 
     def on_before_sample(self) -> LoopDecision:  # type: ignore[override]
         # Collect concrete decisions (non-NoLoopDecision) from handlers in order.
@@ -88,7 +79,7 @@ class AggregatingController(BaseLoopController):
             # Explicit deferral must be the NoLoopDecision() sentinel
             if isinstance(dec, NoLoopDecision):
                 continue
-            # Anything that is not a LoopDecision is a programming error
+            # Anything that is not a LoopDecision (by union) is a programming error
             if not isinstance(dec, LoopDecision):
                 raise TypeError(f"Handler {h!r} returned invalid decision type: {type(dec).__name__} ({dec!r})")
             decisions.append(dec)
@@ -111,24 +102,19 @@ class AggregatingController(BaseLoopController):
     def on_user_text(self, text: str) -> None:  # type: ignore[override]
         for h in self._handlers:
             h.on_user_text(text)
-        super().on_user_text(text)
 
     def on_assistant_text(self, text: str) -> None:  # type: ignore[override]
         for h in self._handlers:
             h.on_assistant_text(text)
-        super().on_assistant_text(text)
 
     def on_tool_call(self, call: Any) -> None:  # type: ignore[override]
         for h in self._handlers:
             h.on_tool_call(call)
-        super().on_tool_call(call)
 
     def on_function_call_output(self, call: Any, output: Any) -> None:  # type: ignore[override]
         for h in self._handlers:
             h.on_function_call_output(call, output)
-        super().on_function_call_output(call, output)
 
     def on_reasoning(self, item: Any) -> None:  # type: ignore[override]
         for h in self._handlers:
             h.on_reasoning(item)
-        super().on_reasoning(item)

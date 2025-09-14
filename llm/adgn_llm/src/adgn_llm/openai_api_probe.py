@@ -18,6 +18,7 @@ The script performs the following steps:
 
 from __future__ import annotations
 
+from typing import Any
 import argparse
 import asyncio
 import random
@@ -25,7 +26,7 @@ import sys
 import re
 from enum import Enum
 from aiolimiter import AsyncLimiter
-from typing import Callable, Awaitable, Any, Final, Sequence, cast
+from typing import Callable, Awaitable, Final, Sequence, cast
 
 from openai import AsyncOpenAI
 from openai.types.responses.function_tool_param import FunctionToolParam
@@ -144,14 +145,13 @@ async def _create_responses(c: AsyncOpenAI, m: str):
 
 async def _create_chat(c: AsyncOpenAI, m: str):
     # Keep runtime-correct shapes but avoid heavy typed imports; annotate as Any for mypy
-    from typing import Any as _Any
 
-    messages: _Any = [
+    messages: Any = [
         {"role": "system", "content": "You are a helpful assistant."},
         {"role": "user", "content": PROMPT},
     ]
-    tools: _Any = [{"type": "function", "function": TOOL_FUNCTION}]
-    tool_choice: _Any = {"type": "function", "function": {"name": _GET_TIME_NAME}}
+    tools: Any = [{"type": "function", "function": TOOL_FUNCTION}]
+    tool_choice: Any = {"type": "function", "function": {"name": _GET_TIME_NAME}}
     return await c.chat.completions.create(
         model=m,
         messages=messages,

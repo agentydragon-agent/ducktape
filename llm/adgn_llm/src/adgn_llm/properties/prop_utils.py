@@ -9,14 +9,14 @@ from typing import NewType
 PropertyID = NewType("PropertyID", str)
 
 
-def properties_root() -> Path:
-    """Root directory for packaged properties (importlib.resources aware)."""
+def pkg_dir() -> Path:
+    """Root directory of the adgn_llm/properties package resources."""
     return Path(str(files("adgn_llm").joinpath("properties")))
 
 
 def props_definitions_root() -> Path:
     """Directory with property definition Markdown files (.../props)."""
-    return properties_root() / "props"
+    return pkg_dir() / "props"
 
 
 def find_property_files(property_ids: list[str]) -> list[Path]:

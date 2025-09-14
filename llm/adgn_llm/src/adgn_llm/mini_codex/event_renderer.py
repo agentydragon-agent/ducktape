@@ -11,7 +11,8 @@ from openai.types.responses import (
 
 from .agent import FunctionCallOutput
 from .mcp_manager import parse_mcp_function  # constants below
-from .aggregating_handler import BaseHandler, NoLoopDecision
+from .aggregating_handler import BaseHandler
+from .loop_control import NoLoopDecision
 
 # Shared server/tool name constants
 DOCKER_SERVER_NAME = "docker"

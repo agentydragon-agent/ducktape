@@ -192,9 +192,7 @@ async def optimize_prompts_mcp(
         async def select_seed_tasks(self) -> list[TaskDefinition]:
             return seed_tasks
 
-        async def run_rollouts_with_prompt(
-            self, prompt: str, tasks: list[TaskDefinition]
-        ) -> list[GradedRollout]:
+        async def run_rollouts_with_prompt(self, prompt: str, tasks: list[TaskDefinition]) -> list[GradedRollout]:
             # Minimal serial implementation (can parallelize later)
             results: list[GradedRollout] = []
             for t in tasks:
@@ -257,9 +255,7 @@ async def optimize_prompts_mcp(
             with prompts_log.open("a") as f:
                 f.write(json.dumps({"iteration": iteration, "prompt": prompt}) + "\n")
             with feedback_log.open("a") as f:
-                f.write(
-                    json.dumps({"iteration": iteration, "feedback": feedback}) + "\n"
-                )
+                f.write(json.dumps({"iteration": iteration, "feedback": feedback}) + "\n")
 
             # Update prompts.json as a list built in-memory (no file read)
             self._prompts.append(prompt)
@@ -284,16 +280,12 @@ async def optimize_prompts_mcp(
                     "files": gr.rollout.files,
                     "metadata": gr.rollout.metadata,
                 }
-                (rollout_dir / "rollout.json").write_text(
-                    json.dumps(rollout_data, indent=2)
-                )
+                (rollout_dir / "rollout.json").write_text(json.dumps(rollout_data, indent=2))
                 # grading.json
                 grading_data = {
                     "overall_score": gr.grade.overall_score,
                 }
-                (rollout_dir / "grading.json").write_text(
-                    json.dumps(grading_data, indent=2)
-                )
+                (rollout_dir / "grading.json").write_text(json.dumps(grading_data, indent=2))
 
     deps = _Deps()
 

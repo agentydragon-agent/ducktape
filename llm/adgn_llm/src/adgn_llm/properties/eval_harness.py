@@ -23,6 +23,7 @@ from adgn_llm.properties.models.issue import (
     IssueCore,
     Occurrence,
     LineRange,
+    IssueId,
 )
 from adgn_llm.properties.models.lint import (
     PropertyIncorrectlyAssigned,
@@ -32,12 +33,8 @@ from adgn_llm.properties.models.lint import (
 # ---------- Expectations / Assertions ----------
 class AnchorExpectation(BaseModel):
     kind: Literal["anchor"] = "anchor"
-    start_window: tuple[int, int] = Field(
-        ..., description="Allowed start window [smin, smax]"
-    )
-    end_window: tuple[int, int] = Field(
-        ..., description="Allowed end window [emin, emax]"
-    )
+    start_window: tuple[int, int] = Field(..., description="Allowed start window [smin, smax]")
+    end_window: tuple[int, int] = Field(..., description="Allowed end window [emin, emax]")
 
 
 class RationaleExpectation(BaseModel):
@@ -53,9 +50,7 @@ class RationaleExpectation(BaseModel):
 class PropertyFindingExpectation(BaseModel):
     kind: Literal["property_finding"] = "property_finding"
     finding: Literal["PROPERTY_INCORRECTLY_ASSIGNED", "PROPERTY_SHOULD_BE_ASSIGNED"]
-    property: str = Field(
-        ..., description="Property id expected in the finding payload"
-    )
+    property: str = Field(..., description="Property id expected in the finding payload")
 
 
 class FindingsMatcherExpectation(BaseModel):
@@ -84,9 +79,7 @@ class OccurrenceCase(BaseModel):
     """One occurrence and its expectations."""
 
     occurrence: Occurrence
-    expectations: list[Expectation] | None = Field(
-        default=None, description="Expectations for this occurrence"
-    )
+    expectations: list[Expectation] | None = Field(default=None, description="Expectations for this occurrence")
 
 
 class IssueEvalSpec(BaseModel):
@@ -101,54 +94,38 @@ class IssueEvalSpec(BaseModel):
 WT_ISS014_CASES: list[OccurrenceCase] = [
     OccurrenceCase(
         occurrence=Occurrence(
-            files={
-                "wt/wt/server/wt_server.py": [LineRange(start_line=413, end_line=424)]
-            },
+            files={"wt/wt/server/wt_server.py": [LineRange(start_line=413, end_line=424)]},
             note="StatusSnapshot",
         ),
-        expectations=[
-            AnchorExpectation(start_window=(410, 412), end_window=(421, 423))
-        ],
+        expectations=[AnchorExpectation(start_window=(410, 412), end_window=(421, 423))],
     ),
     OccurrenceCase(
         occurrence=Occurrence(
-            files={
-                "wt/wt/server/wt_server.py": [LineRange(start_line=425, end_line=429)]
-            },
+            files={"wt/wt/server/wt_server.py": [LineRange(start_line=425, end_line=429)]},
             note="WorktreeRuntime",
         ),
-        expectations=[
-            AnchorExpectation(start_window=(422, 424), end_window=(427, 429))
-        ],
+        expectations=[AnchorExpectation(start_window=(422, 424), end_window=(427, 429))],
     ),
     OccurrenceCase(
         occurrence=Occurrence(
-            files={
-                "wt/wt/server/wt_server.py": [LineRange(start_line=640, end_line=1144)]
-            },
+            files={"wt/wt/server/wt_server.py": [LineRange(start_line=640, end_line=1144)]},
             note="GitStatusdProcess",
         ),
-        expectations=[
-            AnchorExpectation(start_window=(638, 640), end_window=(1142, 1144))
-        ],
+        expectations=[AnchorExpectation(start_window=(638, 640), end_window=(1142, 1144))],
     ),
     OccurrenceCase(
         occurrence=Occurrence(
-            files={
-                "wt/wt/server/wt_server.py": [LineRange(start_line=1130, end_line=1233)]
-            },
+            files={"wt/wt/server/wt_server.py": [LineRange(start_line=1130, end_line=1233)]},
             note="_record_github_error",
         ),
-        expectations=[
-            AnchorExpectation(start_window=(1129, 1130), end_window=(1232, 1233))
-        ],
+        expectations=[AnchorExpectation(start_window=(1129, 1130), end_window=(1232, 1233))],
     ),
 ]
 
 
 class SampleRunSummary(BaseModel):
     specimen: str
-    issue_id: str
+    issue_id: IssueId
     total: int
     passed: int
     failed: int
@@ -158,7 +135,7 @@ class SampleRunSummary(BaseModel):
 class SampleIndexEntry(BaseModel):
     name: str
     specimen: str
-    issue_id: str
+    issue_id: IssueId
     summary: str
     total: int
     passed: int
@@ -207,10 +184,9 @@ async def _grade_rationale_with_llm(
     # Extract function call robustly; fail fast on missing/invalid
     call: ResponseFunctionToolCall | None = None
     for item in resp.output:
-        if (
-            isinstance(item, ResponseFunctionToolCallItem)
-            and item.type == "function_call"
-        ) or isinstance(item, ResponseFunctionToolCall):
+        if (isinstance(item, ResponseFunctionToolCallItem) and item.type == "function_call") or isinstance(
+            item, ResponseFunctionToolCall
+        ):
             call = item  # type: ignore[assignment]
             break
     if not call or call.name != "grade_rationale":
@@ -279,9 +255,7 @@ async def eval_issue_spec(
         )
 
         # Print the structured output object produced by the agent for this case
-        Console().print(
-            f"[bold]{spec.specimen} {spec.issue.id} case {idx} {path}[/bold]"
-        )
+        Console().print(f"[bold]{spec.specimen} {spec.issue.id} case {idx} {path}[/bold]")
         Console().print(render_to_rich(payload))
 
         # Effective ranges: derive corrections from AnchorIncorrect findings when present
@@ -306,11 +280,7 @@ async def eval_issue_spec(
             if isinstance(exp, AnchorExpectation):
                 smin, smax = exp.start_window
                 emin, emax = exp.end_window
-                ok = (
-                    (eend is not None)
-                    and (smin <= estart <= smax)
-                    and (emin <= eend <= emax)
-                )
+                ok = (eend is not None) and (smin <= estart <= smax) and (emin <= eend <= emax)
                 exp_results.append(
                     {
                         "kind": "anchor",
@@ -382,9 +352,7 @@ async def eval_issue_spec(
         passes += int(case_pass)
 
         # Write per-case payload
-        (base / f"case_{idx:02d}_payload.json").write_text(
-            payload.model_dump_json(indent=2), encoding="utf-8"
-        )
+        (base / f"case_{idx:02d}_payload.json").write_text(payload.model_dump_json(indent=2), encoding="utf-8")
 
         item: dict[str, Any] = {
             "index": idx,
@@ -407,9 +375,7 @@ async def eval_issue_spec(
         "failed": len(spec.cases) - passes,
         "results": results,
     }
-    (base / "summary.json").write_text(
-        json.dumps(summary_obj, indent=2), encoding="utf-8"
-    )
+    (base / "summary.json").write_text(json.dumps(summary_obj, indent=2), encoding="utf-8")
 
     return SampleRunSummary(
         specimen=spec.specimen,
@@ -452,9 +418,7 @@ SAMPLES: list[IssueEvalSpec] = [
                     files={"wt/wt/cli.py": [LineRange(start_line=143, end_line=143)]},
                     note="arg filtering loop (prefer comprehension)",
                 ),
-                expectations=[
-                    AnchorExpectation(start_window=(138, 143), end_window=(152, 153))
-                ],
+                expectations=[AnchorExpectation(start_window=(138, 143), end_window=(152, 153))],
             )
         ],
     ),
@@ -469,11 +433,7 @@ SAMPLES: list[IssueEvalSpec] = [
         cases=[
             OccurrenceCase(
                 occurrence=Occurrence(
-                    files={
-                        "wt/wt/server/gitstatusd_client.py": [
-                            LineRange(start_line=358, end_line=360)
-                        ]
-                    },
+                    files={"wt/wt/server/gitstatusd_client.py": [LineRange(start_line=358, end_line=360)]},
                     note="parse_gitstatusd_response",
                 ),
                 expectations=[
@@ -496,11 +456,7 @@ SAMPLES: list[IssueEvalSpec] = [
         cases=[
             OccurrenceCase(
                 occurrence=Occurrence(
-                    files={
-                        "wt/wt/server/gitstatusd_client.py": [
-                            LineRange(start_line=363, end_line=370)
-                        ]
-                    },
+                    files={"wt/wt/server/gitstatusd_client.py": [LineRange(start_line=363, end_line=370)]},
                     note="create_gitstatusd_request",
                 ),
                 expectations=[
@@ -526,20 +482,12 @@ SAMPLES: list[IssueEvalSpec] = [
         cases=[
             OccurrenceCase(
                 occurrence=Occurrence(
-                    files={
-                        "wt/tests/integration/test_shell_integration.py": [
-                            LineRange(start_line=216, end_line=222)
-                        ]
-                    },
+                    files={"wt/tests/integration/test_shell_integration.py": [LineRange(start_line=216, end_line=222)]},
                     note="daemon_cleanup duplicate",
                 ),
                 expectations=[
                     FindingsMatcherExpectation(
-                        matcher=has_item(
-                            PropertyIncorrectlyAssigned(
-                                property="no-oneoff-vars-and-trivial-wrappers"
-                            )
-                        ),
+                        matcher=has_item(PropertyIncorrectlyAssigned(property="no-oneoff-vars-and-trivial-wrappers")),
                     )
                 ],
             )
@@ -560,9 +508,7 @@ SAMPLES: list[IssueEvalSpec] = [
             OccurrenceCase(
                 occurrence=Occurrence(
                     files={
-                        "llm/adgn_llm/src/adgn_llm/mcp/docker_exec/server.py": [
-                            LineRange(start_line=181, end_line=183)
-                        ]
+                        "llm/adgn_llm/src/adgn_llm/mcp/docker_exec/server.py": [LineRange(start_line=181, end_line=183)]
                     },
                     note="no-op timeout branch",
                 ),
@@ -592,11 +538,7 @@ SAMPLES: list[IssueEvalSpec] = [
         cases=[
             OccurrenceCase(
                 occurrence=Occurrence(
-                    files={
-                        "wt/wt/client/view_formatter.py": [
-                            LineRange(start_line=37, end_line=37)
-                        ]
-                    },
+                    files={"wt/wt/client/view_formatter.py": [LineRange(start_line=37, end_line=37)]},
                     note="format_list_with_more max_items unused",
                 ),
                 expectations=[
@@ -624,11 +566,7 @@ async def run_all_evals(
 ) -> EvalIndex:
     """Run all samples concurrently (bounded), print a Rich summary, and return EvalIndex."""
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    root = (
-        Path(root_out)
-        if root_out is not None
-        else (Path.cwd() / "runs" / "evals" / f"all_{ts}")
-    )
+    root = Path(root_out) if root_out is not None else (Path.cwd() / "runs" / "evals" / f"all_{ts}")
     root.mkdir(parents=True, exist_ok=True)
 
     sem = asyncio.Semaphore(max(1, concurrency))
@@ -656,9 +594,7 @@ async def run_all_evals(
     entries = await asyncio.gather(*[_run_one(s) for s in SAMPLES])
 
     eval_index = EvalIndex(samples=list(entries))
-    (root / "index.json").write_text(
-        eval_index.model_dump_json(indent=2), encoding="utf-8"
-    )
+    (root / "index.json").write_text(eval_index.model_dump_json(indent=2), encoding="utf-8")
 
     # Pretty print a concise Rich table summary (in-memory; no read-back)
     table = Table(title="Eval Summary", show_lines=False)

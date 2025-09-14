@@ -25,7 +25,7 @@ from adgn_llm.rendering.rich_renderers import render_to_rich
 from openai import AsyncOpenAI
 from openai.types.responses import ResponseFunctionToolCall
 
-from adgn_llm.properties.prop_utils import properties_root, props_definitions_root
+from adgn_llm.properties.prop_utils import pkg_dir, props_definitions_root
 from adgn_llm.mcp.docker_exec.server import (
     SERVER_NAME as DOCKER_SERVER_NAME,
     TOOL_EXEC_NAME as DOCKER_EXEC_TOOL_NAME,
@@ -41,7 +41,7 @@ from adgn_llm.mini_codex.loop_control import (
     SyntheticAction,
 )
 from adgn_llm.mini_codex.aggregating_handler import BaseHandler
-from adgn_llm.properties.models.issue import Occurrence, LineRange, IssueCore
+from adgn_llm.properties.models.issue import Occurrence, LineRange, IssueCore, IssueId
 from adgn_llm.properties.models.lint import (
     IssueLintFindingRecord,
     LintSubmitPayload,
@@ -137,7 +137,7 @@ def make_lint_submit_server(state: LintSubmitState, *, name: str = "lint_submit"
 @dataclass
 class LintConfig:
     specimen: str
-    issue_id: str
+    issue_id: IssueId
     model: str = "gpt-5"
     dry_run: bool = False
 
@@ -318,7 +318,7 @@ async def lint_issue_run(
     """
     # Determine default gitconfig fallback (kept in sync with load_single_issue)
     if gitconfig is None:
-        cfg = properties_root() / "gitconfig.local"
+        cfg = pkg_dir() / "gitconfig.local"
         if cfg.exists():
             gitconfig = str(cfg)
     gc_path = Path(gitconfig).expanduser().resolve() if gitconfig else None
@@ -383,7 +383,7 @@ async def lint_issue_run(
 
 async def run_specimen_lint_issue_async(
     specimen: str,
-    issue_id: str,
+    issue_id: IssueId,
     *,
     model: str = "gpt-5",
     dry_run: bool = False,
@@ -411,7 +411,7 @@ async def run_specimen_lint_issue_async(
     if dry_run:
         # Build a wiring for prompt rendering (no container launched in dry-run)
         # any existing directory works for template context
-        dummy_root = properties_root()
+        dummy_root = pkg_dir()
         wiring = properties_docker_spec(dummy_root, mount_properties=True)
         prompt = _build_prompt(
             irec.core,  # render via IssueCore + single occurrence
