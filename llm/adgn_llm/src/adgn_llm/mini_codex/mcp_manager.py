@@ -140,6 +140,11 @@ class McpManager:
         # ClientSession.read_resource expects AnyUrl; inputs come as strings
         return await sess.read_resource(cast(AnyUrl, uri))
 
+    async def call_tool(self, server: str, name: str, arguments: dict[str, Any]) -> Any:
+        """Delegate tool call to the underlying ClientSession for the given server."""
+        sess = await self.get_session(server)
+        return await sess.call_tool(name=name, arguments=arguments)
+
     async def get_server_initialize(self, server: str) -> InitializeResult:
         """Return the InitializeResult for a server from the cached slot after opening."""
         slot = await self.ensure_open(server)

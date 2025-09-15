@@ -21,8 +21,14 @@ from adgn_llm.mini_codex.loop_control import (
     SyntheticAction,
 )
 from adgn_llm.mcp.inproc_transport import make_inproc_slot_spec
-from adgn_llm.properties.docker_env import properties_docker_spec
-from adgn_llm.mcp.docker_exec.server import TOOL_EXEC_NAME as DOCKER_EXEC_TOOL_NAME
+from adgn_llm.mcp.git_ro.server import (
+    make_git_ro_server,
+    GIT_RO_SERVER_NAME,
+    StatusInput,
+    DiffInput,
+    DiffFormat,
+    ListSlice,
+)
 
 
 class CommitMessage(BaseModel):
@@ -60,44 +66,58 @@ class CommitController(BaseHandler):
         self._state = state
         self._server = server_name
         self._step = 0
+        # Bootstrap with read-only Git MCP tools (structured payloads)
         self._bootstrap = [
             ResponseFunctionToolCall(
                 type="function_call",
-                name=build_mcp_function(self._server, DOCKER_EXEC_TOOL_NAME),
+                name=build_mcp_function(self._server, "git_status"),
                 call_id="bootstrap:status",
+                arguments=json.dumps({"payload": StatusInput(porcelain=True).model_dump()}),
+            ),
+            # Structured name-status and stat via consolidated git_diff formats
+            ResponseFunctionToolCall(
+                type="function_call",
+                name=build_mcp_function(self._server, "git_diff"),
+                call_id="bootstrap:diff-name-status",
                 arguments=json.dumps(
                     {
-                        "cmd": [
-                            "git",
-                            "-c",
-                            "color.ui=false",
-                            "-c",
-                            "core.quotepath=false",
-                            "status",
-                            "--porcelain=v2",
-                            "-z",
-                        ]
+                        "payload": DiffInput(
+                            format=DiffFormat.NAME_STATUS,
+                            staged=True,
+                            find_renames=True,
+                            list_slice=ListSlice(offset=0, limit=2000),
+                        ).model_dump()
                     }
                 ),
             ),
             ResponseFunctionToolCall(
                 type="function_call",
-                name=build_mcp_function(self._server, DOCKER_EXEC_TOOL_NAME),
-                call_id="bootstrap:stat",
+                name=build_mcp_function(self._server, "git_diff"),
+                call_id="bootstrap:diff-stat",
                 arguments=json.dumps(
                     {
-                        "cmd": [
-                            "git",
-                            "-c",
-                            "color.ui=false",
-                            "-c",
-                            "core.quotepath=false",
-                            "--no-pager",
-                            "diff",
-                            "--staged",
-                            "--stat",
-                            "--find-renames",
-                        ]
+                        "payload": DiffInput(
+                            format=DiffFormat.STAT,
+                            staged=True,
+                            find_renames=True,
+                            list_slice=ListSlice(offset=0, limit=2000),
+                        ).model_dump()
+                    }
+                ),
+            ),
+            # Textual patch view when needed
+            ResponseFunctionToolCall(
+                type="function_call",
+                name=build_mcp_function(self._server, "git_diff"),
+                call_id="bootstrap:diff-patch",
+                arguments=json.dumps(
+                    {
+                        "payload": {
+                            "format": "patch",
+                            "staged": True,
+                            "unified": 0,
+                            "slice": {"offset_chars": 0, "max_chars": 50000},
+                        }
                     }
                 ),
             ),
@@ -114,21 +134,26 @@ class CommitController(BaseHandler):
 
 async def generate_commit_message_minicodex(model: str = "gpt-5") -> str:
     """Run MiniCodex with docker_exec + submit_commit_message MCP servers and return the commit message text."""
-    # Wire a RO docker MCP with the Git repo root mounted at /workspace
-    repo_root = Path(Repo(Path.cwd(), search_parent_directories=True).working_tree_dir)
-    wiring = properties_docker_spec(repo_root, mount_properties=False)
+    # Wire an in-proc read-only Git MCP server bound to the current repo
+    worktree_dir = Repo(Path.cwd(), search_parent_directories=True).working_tree_dir
+    assert worktree_dir is not None, "Unable to locate git working tree directory"
+    repo_root = Path(worktree_dir)
 
     submit_state = SubmitState()
     submit_server = make_submit_server(submit_state)
     specs = {
-        wiring.server_name: wiring.server_spec,
+        GIT_RO_SERVER_NAME: make_inproc_slot_spec(make_git_ro_server(repo_root)),
         "submit_commit_message": make_inproc_slot_spec(submit_server),
     }
 
     prompt = (
         "You are an expert at writing high-quality git commit messages.\n\n"
-        "Use tools to inspect the repository (git status, staged diff, and per-file diffs as needed).\n"
+        "Prefer structured tools to build your summary:\n"
+        "- git_changed_files (with rename detection)\n"
+        "- git_diffstat (per-file additions/deletions)\n"
+        "Use git_diff only when you need patch text or context.\n\n"
         "Then produce a concise, imperative subject (<=72 chars) and an optional body with wrapped lines.\n"
+        "Mention notable renames and summarize totals succinctly.\n"
         "Finally, call submit_commit_message.submit_commit_message with subject and body."
     )
 
@@ -145,7 +170,7 @@ async def generate_commit_message_minicodex(model: str = "gpt-5") -> str:
             system="You are a code agent. Be concise.",
             client=AsyncOpenAI(),
             handlers=[
-                CommitController(submit_state, wiring.server_name),
+                CommitController(submit_state, GIT_RO_SERVER_NAME),
             ],
             parallel_tool_calls=True,
         )

@@ -3,7 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 import re
 
-from adgn_llm.properties import cli as props_cli
+from typer.testing import CliRunner
+from adgn_llm.properties.cli_app.main import app as props_app
 
 
 def _extract_saved_prompt_path(stdout: str) -> Path:
@@ -14,18 +15,20 @@ def _extract_saved_prompt_path(stdout: str) -> Path:
     return p
 
 
-def test_cli_check_dry_run_tmp_workdir(tmp_path, capsys):
+def test_cli_check_dry_run_tmp_workdir(tmp_path):
     # Minimal run: check --dry-run on a temp dir
-    rc = props_cli.main(
+    runner = CliRunner()
+    result = runner.invoke(
+        props_app,
         [
             "check",
             str(tmp_path),
             "all files under src/**",
             "--dry-run",
-        ]
+        ],
     )
-    assert rc == 0
-    out = capsys.readouterr().out
+    assert result.exit_code == 0, result.output
+    out = result.output
     saved = _extract_saved_prompt_path(out)
     text = saved.read_text(encoding="utf-8")
     # Header present and schemas rendered (Occurrence/LineRange are the defaults in templates)

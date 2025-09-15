@@ -35,6 +35,7 @@ from adgn_llm.mini_codex.aggregating_handler import BaseHandler
 from adgn_llm.mini_codex.loop_control import Continue, Abort, RequireAny
 from adgn_llm.mcp.inproc_transport import make_inproc_slot_spec
 from adgn_llm.mini_codex.transcript_handler import TranscriptHandler
+from adgn_llm.mini_codex.loggers import TranscriptLoggerHandler
 from adgn_llm.properties.critic import CriticSubmitState, CriticSubmitPayload, make_critic_submit_server
 from adgn_llm.properties.grade_runner import grade_critic_output, _metrics_row
 from adgn_llm.properties.prompts.util import build_scope_text, render_prompt_template
@@ -53,7 +54,7 @@ class _RequireSubmitHandler(BaseHandler):
 
 
 async def _run_critic_for_specimen(
-    specimen: str, system_prompt: str, client: AsyncOpenAI, run_dir: Path
+    specimen: str, system_prompt: str, client: AsyncOpenAI, run_dir: Path, *, agent_model: str = "gpt-5"
 ) -> CriticSubmitPayload:
     """Run critic with a custom system prompt (no properties mount); return CriticSubmitPayload model and persist."""
     rec = SpecimenRegistry.load_strict(specimen)
@@ -71,9 +72,13 @@ async def _run_critic_for_specimen(
             "critic_submit": make_inproc_slot_spec(critic_server),
         }
         async with McpManager(specs) as mcp:
-            handlers = [TranscriptHandler(dest_dir=run_dir / specimen / "critic"), _RequireSubmitHandler(critic_state)]
+            handlers = [
+                TranscriptHandler(dest_dir=run_dir / specimen / "critic"),
+                TranscriptLoggerHandler(run_dir / specimen / "critic"),
+                _RequireSubmitHandler(critic_state),
+            ]
             agent = await MiniCodex.create(
-                model="gpt-5",
+                model=agent_model,
                 mcp=mcp,
                 system=system_prompt,
                 client=client,
@@ -81,12 +86,21 @@ async def _run_critic_for_specimen(
                 parallel_tool_calls=True,
             )
             await agent.run(user_prompt)
-    assert critic_state.result, "critic_submit.submit_result was not called"
+    assert (critic_state.result is not None) or (critic_state.error is not None), (
+        "critic_submit.submit_result or submit_error was not called"
+    )
     # Persist
     out_dir = run_dir / specimen
     out_dir.mkdir(parents=True, exist_ok=True)
-    (out_dir / "critic.json").write_text(critic_state.result.model_dump_json(indent=2), encoding="utf-8")  # type: ignore[attr-defined]
-    return critic_state.result  # type: ignore[return-value]
+    if critic_state.error is not None:
+        (out_dir / "critic_error.json").write_text(critic_state.error.model_dump_json(indent=2), encoding="utf-8")  # type: ignore[attr-defined]
+        raise RuntimeError(
+            f"critic error: {critic_state.error.message}"
+        )  # surfaced to caller; per-round errors.json aggregates
+    else:
+        assert critic_state.result is not None
+        (out_dir / "critic.json").write_text(critic_state.result.model_dump_json(indent=2), encoding="utf-8")  # type: ignore[attr-defined]
+        return critic_state.result
 
 
 @dataclass
@@ -94,7 +108,7 @@ class PromptEvalState:
     successful_calls: int = 0
 
 
-def build_server(name: str = "prompt_eval") -> Tuple[FastMCP, PromptEvalState]:
+def build_server(name: str = "prompt_eval", agent_model: str = "gpt-5") -> Tuple[FastMCP, PromptEvalState]:
     """Build a prompt_eval server that tracks rounds and writes under a fixed run dir.
 
     Layout (per server instance):
@@ -130,7 +144,9 @@ def build_server(name: str = "prompt_eval") -> Tuple[FastMCP, PromptEvalState]:
             out_dir = round_dir / specimen
             out_dir.mkdir(parents=True, exist_ok=True)
             try:
-                critic_obj = await _run_critic_for_specimen(specimen, prompt, client, round_dir)
+                critic_obj = await _run_critic_for_specimen(
+                    specimen, prompt, client, round_dir, agent_model=agent_model
+                )
                 # Persist grade JSON and transcript under round/specimen
                 grade_obj = await grade_critic_output(specimen, critic_obj, client, transcript_out_dir=out_dir)
                 (out_dir / "grade.json").write_text(grade_obj.model_dump_json(indent=2), encoding="utf-8")
@@ -178,3 +194,21 @@ def build_server(name: str = "prompt_eval") -> Tuple[FastMCP, PromptEvalState]:
         return metrics_list
 
     return mcp, state
+
+
+class PromptOptimizeHandler(BaseHandler):
+    """Force a tool call each turn; stop immediately after N successful evaluations.
+
+    Reads successful_calls from PromptEvalState and:
+      - While budget remains: requires a tool call (RequireAny)
+      - Once budget is reached: Abort immediately (no final non-tool message)
+    """
+
+    def __init__(self, *, state: PromptEvalState, max_iters: int) -> None:
+        self._state = state
+        self._max_iters = max_iters
+
+    def on_before_sample(self):  # type: ignore[override]
+        if self._state.successful_calls >= self._max_iters:
+            return Abort()
+        return Continue(RequireAny())

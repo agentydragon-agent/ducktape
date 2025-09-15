@@ -22,7 +22,6 @@ import os
 import shutil
 import subprocess
 import tempfile
-from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -31,11 +30,6 @@ from wt.shell.install import main as emit_function
 
 # Global constants for paths
 PROJECT_ROOT = Path(__file__).parent.parent.parent
-
-
-def create_shell_script(wt_args: list[str]) -> str:
-    """Create a shell script that calls wt with the given arguments."""
-    return f"wt {' '.join(wt_args)}"
 
 
 def run_shell_script(
@@ -86,58 +80,55 @@ def run_shell_script(
         )
 
 
-def run_wt_command(main_repo: Path, wt_args: list[str]) -> subprocess.CompletedProcess:
-    """Create and run a shell script that calls wt with the given arguments."""
-    shell_script = create_shell_script(wt_args)
-    return run_shell_script(shell_script, str(main_repo))
-
-
 @pytest.mark.integration
 @pytest.mark.shell
 class TestShellIntegration:
-    def test_help_command_basic(self, test_config):
+    def test_help_command_basic(self, test_config, shell_runner):
         """Test that help command works through shell integration."""
         # Test basic help command - should not require real git repo setup
-        result = run_wt_command(test_config.main_repo, ["--help"])
+        result = shell_runner.run_wt(
+            main_repo=test_config.main_repo,
+            wt_args=["--help"],
+        )
 
         # Should succeed and show help output
         assert result.returncode == 0, f"Help command failed: {result.stderr}"
         assert "USAGE:" in result.stdout
 
-    def test_wt_help_lists_examples(self, test_config):
+    def test_wt_help_lists_examples(self, test_config, shell_runner):
         """Test that wt help shows example usage."""
-        result = run_wt_command(test_config.main_repo, ["sh", "help"])
+        result = shell_runner.run_wt(
+            main_repo=test_config.main_repo,
+            wt_args=["sh", "help"],
+        )
 
         # Basic test that it doesn't crash
         # Note: May fail if it tries to access real daemon/git, but should show some output
         if result.returncode == 0:
             assert len(result.stdout) > 0
 
-    def test_shell_script_execution_basic(self, test_config):
+    def test_shell_script_execution_basic(self, test_config, shell_runner):
         """Test that shell script can execute basic wt commands."""
         test_script = """# Test that wt function is available
 type wt
 echo "Shell function loaded successfully"
 """
 
-        result = run_shell_script(test_script, str(test_config.main_repo))
+        result = shell_runner.run_script(test_script, cwd=test_config.main_repo)
 
         # Should be able to source the function
         assert result.returncode == 0, f"Shell setup failed: {result.stderr}"
         assert "Shell function loaded successfully" in result.stdout
 
-    def test_successful_teleport_with_pwd_verification(self, real_temp_repo, real_env):
+    def test_successful_teleport_with_pwd_verification(
+        self,
+        real_temp_repo,
+        real_env,
+        shell_runner,
+    ):
         """Test that wt teleport actually changes directory using pwd verification."""
-        # imported at module top
 
         # Cleaned by real_env fixture
-
-        @contextmanager
-        def daemon_cleanup():
-            try:
-                yield
-            finally:
-                pass
 
         def parse_teleport_output(result):
             output_lines = [line for line in result.stdout.strip().split("\n") if line]
@@ -178,36 +169,30 @@ pwd_after=$(pwd)
 echo "$create_exit:$nav_exit:$pwd_before:$pwd_after"
 """
 
-        with daemon_cleanup():
-            result = run_shell_script(shell_script, str(real_temp_repo), env=real_env)
+        result = shell_runner.run_script(
+            shell_script,
+            cwd=real_temp_repo,
+            env=real_env,
+        )
 
-            data = parse_teleport_output(result)
+        data = parse_teleport_output(result)
 
-            assert data["create_exit"] == 0, (
-                f"Create failed: stdout={result.stdout}, stderr={result.stderr}"
-            )
-            assert data["nav_exit"] == 0, f"Navigate failed: {result.stderr}"
+        assert data["create_exit"] == 0, (
+            f"Create failed: stdout={result.stdout}, stderr={result.stderr}"
+        )
+        assert data["nav_exit"] == 0, f"Navigate failed: {result.stderr}"
 
-            expected_dir = str(real_temp_repo / "worktrees" / "teleport-test")
-            assert data["pwd_after"] == expected_dir, (
-                f"Directory change failed. Expected: {expected_dir}, Got: {data['pwd_after']}"
-            )
+        expected_dir = str(real_temp_repo / "worktrees" / "teleport-test")
+        assert data["pwd_after"] == expected_dir, (
+            f"Directory change failed. Expected: {expected_dir}, Got: {data['pwd_after']}"
+        )
 
-            worktree_path = real_temp_repo / "worktrees" / "teleport-test"
-            assert worktree_path.exists()
-            assert worktree_path.is_dir()
+        worktree_path = real_temp_repo / "worktrees" / "teleport-test"
+        assert worktree_path.exists()
+        assert worktree_path.is_dir()
 
-    def test_wt_main_changes_directory(self, real_temp_repo, real_env):
-        # imported at module top
-
+    def test_wt_main_changes_directory(self, real_temp_repo, real_env, shell_runner):
         # Cleaned by real_env fixture
-
-        @contextmanager
-        def daemon_cleanup():
-            try:
-                yield
-            finally:
-                pass
 
         def parse_output(result):
             lines = [line for line in result.stdout.strip().split("\n") if line]
@@ -233,28 +218,29 @@ pwd_after=$(pwd)
 echo "$create_exit:$to_wt_exit:$to_main_exit:$pwd_before:$pwd_after"
 """
 
-        with daemon_cleanup():
-            result = run_shell_script(shell_script, str(real_temp_repo), env=real_env)
-            c, e1, e2, before, after = parse_output(result)
-            assert c == 0, (
-                f"Create failed: stdout={result.stdout}, stderr={result.stderr}"
-            )
-            assert e1 == 0, f"Navigate to worktree failed: {result.stderr}"
-            assert e2 == 0, f"Navigate to main failed: {result.stderr}"
-            expected_before = str(real_temp_repo / "worktrees" / "to-main")
-            assert before == expected_before
-            assert after == str(real_temp_repo)
+        result = shell_runner.run_script(
+            shell_script,
+            cwd=real_temp_repo,
+            env=real_env,
+        )
+        c, e1, e2, before, after = parse_output(result)
+        assert c == 0, f"Create failed: stdout={result.stdout}, stderr={result.stderr}"
+        assert e1 == 0, f"Navigate to worktree failed: {result.stderr}"
+        assert e2 == 0, f"Navigate to main failed: {result.stderr}"
+        expected_before = str(real_temp_repo / "worktrees" / "to-main")
+        assert before == expected_before
+        assert after == str(real_temp_repo)
 
 
 @pytest.mark.integration
 @pytest.mark.shell
 class TestShellIntegrationEdgeCases:
-    def test_shell_environment_isolation(self, test_config):
+    def test_shell_environment_isolation(self, test_config, shell_runner):
         """Test that shell environment is properly isolated."""
         # Basic environment test
         env_test_script = """echo "Environment test completed"
 """
 
-        result = run_shell_script(env_test_script, str(test_config.main_repo))
+        result = shell_runner.run_script(env_test_script, cwd=test_config.main_repo)
         assert result.returncode == 0
         assert "Environment test completed" in result.stdout

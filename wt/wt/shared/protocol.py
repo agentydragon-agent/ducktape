@@ -11,11 +11,11 @@ import uuid
 from datetime import datetime
 from enum import IntEnum, StrEnum
 from pathlib import Path
-from typing import Annotated, Any, Literal, NewType
+from typing import Annotated, Literal, NewType
 
 from pydantic import BaseModel, Field, ValidationError
 
-from .github_models import PRInfo
+from .github_models import PRData
 
 # WorktreeID: Deliberately scrambled identifier to prevent accidental misuse
 WorktreeID = NewType("WorktreeID", str)  # Opaque to clients; server owns parsing
@@ -82,7 +82,7 @@ class Error(BaseModel):
 
     code: int = Field(..., description="Error code")
     message: str = Field(..., description="Error message")
-    data: Any = Field(default=None, description="Additional error data")
+    data: object | None = Field(default=None, description="Additional error data")
 
 
 class ErrorResponse(BaseModel):
@@ -200,6 +200,24 @@ class CommitInfo(BaseModel):
     date: str = Field(..., description="Commit date in ISO format")
 
 
+# Algebraic (tagged) PR info for wire
+class PRInfoOk(BaseModel):
+    type: Literal["ok"] = "ok"
+    pr_data: PRData
+
+
+class PRInfoError(BaseModel):
+    type: Literal["error"] = "error"
+    error: str
+
+
+class PRInfoDisabled(BaseModel):
+    type: Literal["disabled"] = "disabled"
+
+
+PRInfo = Annotated[PRInfoOk | PRInfoError | PRInfoDisabled, Field(discriminator="type")]
+
+
 class StatusResult(BaseModel):
     """Result for individual worktree status."""
 
@@ -252,9 +270,9 @@ class StatusResult(BaseModel):
         ...,
         description="Upstream branch name for ahead/behind calculations",
     )
-    pr_info: PRInfo | None = Field(
-        default=None,
-        description="GitHub pull request information if available",
+    pr_info: PRInfo = Field(
+        default_factory=PRInfoDisabled,
+        description="GitHub pull request information (ok | error | disabled)",
     )
     gitstatusd_state: GitstatusdState | None = Field(
         default=None,
@@ -528,7 +546,7 @@ def create_error_response(
     code: int,
     message: str,
     request_id: uuid.UUID,
-    data: Any = None,
+    data: object | None = None,
 ) -> ErrorResponse:
     """Create a JSON-RPC 2.0 error response."""
     error = Error(code=code, message=message, data=data)

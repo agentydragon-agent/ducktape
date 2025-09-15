@@ -26,6 +26,7 @@ from adgn_llm.properties.prompts.builder import build_grade_from_json_prompt
 from adgn_llm.properties.critic import ReportedIssue, CriticSubmitPayload
 from adgn_llm.mini_codex.transcript_handler import TranscriptHandler
 from adgn_llm.properties.grader import CRIT_PREFIX
+from adgn_llm.mini_codex.loggers import TranscriptLoggerHandler
 
 
 class _RequireSubmitHandler(BaseHandler):
@@ -129,7 +130,11 @@ async def grade_critic_output(
         handlers: list[BaseHandler] = [
             _RequireSubmitHandler(grader_state),
             TranscriptHandler(dest_dir=transcript_out_dir / "grader"),
+            TranscriptLoggerHandler(transcript_out_dir / "grader"),
         ]
+        # TODO(mpokorny): Expose grader model via CLI/caller; unify under
+        # a typed AgentRecipe once the recipe system lands. For now this is
+        # hardcoded and follows the default used across properties tools.
         agent = await MiniCodex.create(
             model="gpt-5",
             mcp=mcp,

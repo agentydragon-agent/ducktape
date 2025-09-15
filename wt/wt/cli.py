@@ -22,7 +22,7 @@ from .client.handlers import (
 )
 from .client.view_formatter import ViewFormatter
 from .client.wt_client import WtClient
-from .plugins import PluginIO, get_manager, resolve_command
+from .plugins import get_manager, get_plugin_commands
 from .shared.configuration import load_config
 from .shared.constants import MAIN_REPO_ALIASES
 
@@ -199,10 +199,9 @@ async def _async_sh_main(  # noqa: PLR0913
     cmd, *remaining_args = filtered_args
 
     # Plugin subcommand dispatch: wt <plugin> <args>
-    plugin_callable = resolve_command(plugin_manager, cmd)
+    plugin_callable = get_plugin_commands(plugin_manager).get(cmd)
     if plugin_callable:
-        io = PluginIO()
-        result = plugin_callable(remaining_args, daemon_client, config, io)
+        result = plugin_callable(remaining_args, daemon_client, config)
         if inspect.isawaitable(result):
             result = await result
         if isinstance(result, int):

@@ -12,12 +12,17 @@ if TYPE_CHECKING:
     from .gitstatus_refresh import DebouncedGitstatusRefresh
     from .worktree_index import WorktreeIndex
 
-from ..shared.github_models import PRInfo
-from ..shared.protocol import DaemonHealth
+from ..shared.protocol import (
+    DaemonHealth,
+    PRInfo,
+    PRInfoDisabled,
+    PRInfoError,
+    PRInfoOk,
+)
 from .git_manager import GitManager
 from .git_manager import WorktreeInfo as GMWorktreeInfo
 from .gitstatusd_listener import GitstatusdListener
-from .pr_service import PRService
+from .pr_service import PRCacheError, PRCacheOk, PRService
 from .repo_status import RepoStatus
 from .types import DiscoveredWorktree
 
@@ -153,11 +158,17 @@ class PRServiceProvider:
             with contextlib.suppress(Exception):
                 await svc.stop()
 
-    def get_pr_info_cached(self, wtid: WorktreeID, branch: str) -> PRInfo | None:
+    def get_pr_info_cached(self, wtid: WorktreeID, branch: str) -> PRInfo:
         prsvc = self._services.get(wtid)
-        if not prsvc or not prsvc.cached or not prsvc.cached.data:
-            return None
-        return PRInfo(branch=branch, pr_data=prsvc.cached.data)
+        if not prsvc or prsvc.cached is None:
+            return PRInfoDisabled()
+        cached = prsvc.cached
+        # Map runtime cache variants to wire variants
+        if isinstance(cached, PRCacheOk):
+            return PRInfoOk(pr_data=cached.data)
+        if isinstance(cached, PRCacheError):
+            return PRInfoError(error=cached.error)
+        return PRInfoDisabled()
 
     def schedule_pr_refresh(self, wtid: WorktreeID, branch: str) -> None:
         prsvc = self._services.get(wtid)

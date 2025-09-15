@@ -3,10 +3,12 @@
 import ast
 import subprocess
 import textwrap
+import traceback
 from dataclasses import dataclass
 from pathlib import Path
 
 import git
+from platformdirs import user_state_dir
 
 from claude_hooks.actions import (
     PostToolAction,
@@ -16,6 +18,7 @@ from claude_hooks.actions import (
 from claude_hooks.base import PostToolUseHook
 from claude_hooks.config import AutofixerConfig
 from claude_hooks.inputs import HookContext, PostToolInput
+from claude_hooks.logging_context import get_current_invocation_id
 from claude_hooks.tool_models import EditInput, MultiEditInput, WriteInput
 
 PRECOMMIT_CONFIG_FILE = ".pre-commit-config.yaml"
@@ -45,7 +48,7 @@ PreCommitResult = ChangesMade | NoChanges | Crashed
 
 def extract_file_path(tool_input) -> Path | None:
     """Extract file path from tool input if available."""
-    if isinstance(tool_input, (EditInput, MultiEditInput, WriteInput)):
+    if isinstance(tool_input, EditInput | MultiEditInput | WriteInput):
         return Path(tool_input.file_path)
     return None
 
@@ -74,7 +77,11 @@ def truncate_output(output: str, max_lines: int = 20) -> str:
     omitted_count = total_lines - (max_lines * 2)
 
     return "\n".join(
-        first_part + [f"... {omitted_count} lines omitted ..."] + last_part,
+        [
+            *first_part,
+            f"... {omitted_count} lines omitted ...",
+            *last_part,
+        ],
     )
 
 
@@ -196,12 +203,6 @@ class PreCommitAutoFixerHook(PostToolUseHook):
             # rather than cryptic tool failures.
             self.logger.exception(f"Pre-commit autofix failed: {e}")
             # Show feedback for unexpected exceptions with debugging guidance
-            import traceback
-
-            from platformdirs import user_state_dir
-
-            from claude_hooks.logging_context import get_current_invocation_id
-
             tb_str = traceback.format_exc()
             invocation_id = get_current_invocation_id() or "unknown"
             log_path = (

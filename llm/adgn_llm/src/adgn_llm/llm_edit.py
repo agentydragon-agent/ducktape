@@ -12,12 +12,13 @@ Notes / Design:
 from __future__ import annotations
 
 import asyncio
+import os
+import time
 from pathlib import Path
 
 import openai
 import typer
-from .openai_utils import ReasoningSummary
-from openai.types.shared_params import ReasoningEffort
+from .openai_utils import ReasoningSummary, to_reasoning_effort
 
 from .mcp.editor_server import make_editor_mcp
 from .mcp.inproc_transport import make_inproc_slot_spec
@@ -30,8 +31,8 @@ async def _execute(
     file_path: Path,
     prompt: str,
     model: str,
-    reasoning_effort: ReasoningEffort | None,
-    reasoning_summary: ReasoningSummary | None,
+    reasoning_effort: str | None,
+    reasoning_summary: str | None,
     client: openai.AsyncOpenAI,
 ) -> int:
     # Validate input path
@@ -48,6 +49,21 @@ async def _execute(
     async with McpManager(slots) as mcp:
         from adgn_llm.mini_codex.event_renderer import DisplayEventsHandler
         from adgn_llm.mini_codex.aggregating_handler import AutoHandler
+        from adgn_llm.mini_codex.loggers import TranscriptLoggerHandler
+
+        # Normalize CLI strings to SDK-accepted values
+        from openai.types.shared_params import ReasoningEffort as SDKReasoningEffort
+
+        eff_str = to_reasoning_effort(reasoning_effort)
+        effort_val: SDKReasoningEffort | None = None
+        if eff_str is not None:
+            effort_val = eff_str  # Literal-compatible; validated upstream
+        summary_val = None if reasoning_summary is None else ReasoningSummary(reasoning_summary)
+
+        # Create a per-run transcript directory (aligned with MiniCodex defaults)
+        run_dir = Path.cwd() / "logs" / "mini_codex" / "llm_edit"
+        run_dir = run_dir / f"run_{int(time.time())}_{os.getpid()}"
+        run_dir.mkdir(parents=True, exist_ok=True)
 
         agent = await MiniCodex.create(
             model=model,
@@ -58,9 +74,9 @@ async def _execute(
                 "Finish with done(success, report)."
             ),
             client=client,
-            reasoning_effort=reasoning_effort,
-            reasoning_summary=reasoning_summary,
-            handlers=[AutoHandler(), DisplayEventsHandler()],
+            reasoning_effort=effort_val,
+            reasoning_summary=summary_val,
+            handlers=[AutoHandler(), DisplayEventsHandler(), TranscriptLoggerHandler(run_dir)],
         )
         async with agent:
             res = await agent.run(
@@ -78,8 +94,8 @@ def _run_cli(
     file_path: Path,
     prompt: str,
     model: str,
-    reasoning_effort: ReasoningEffort | None,
-    reasoning_summary: ReasoningSummary | None,
+    reasoning_effort: str | None,
+    reasoning_summary: str | None,
 ) -> None:
     client = openai.AsyncOpenAI()
     code = asyncio.run(
@@ -100,13 +116,13 @@ def edit(
     file_path: Path = typer.Argument(..., exists=True, dir_okay=False, readable=True, help="Path to file to edit"),
     prompt: str = typer.Argument(..., help="Editing prompt"),
     model: str = typer.Option("o4-mini", "--model", help="Model name"),
-    reasoning_effort: ReasoningEffort | None = typer.Option(
+    reasoning_effort: str | None = typer.Option(
         None,
-        help="Reasoning effort for reasoning-capable models",
+        help="Reasoning effort for reasoning-capable models (minimal/low/medium/high)",
     ),
-    reasoning_summary: ReasoningSummary | None = typer.Option(
+    reasoning_summary: str | None = typer.Option(
         None,
-        help="Emit reasoning summaries (omit to disable)",
+        help="Emit reasoning summaries (auto/concise/detailed)",
     ),
 ) -> None:
     _run_cli(

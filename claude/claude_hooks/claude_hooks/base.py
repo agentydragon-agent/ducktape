@@ -14,6 +14,7 @@ from claude_hooks.actions import (
     HookAction,
     NotificationAction,
     PostToolAction,
+    PostToolContinue,
     PreCompactAction,
     PreToolAction,
     StopAction,
@@ -70,9 +71,10 @@ class HookBase(ABC, Generic[InputT, OutputT]):
     def _load_config(self) -> dict[str, Any]:
         """Load configuration from XDG config directory."""
         config_file = Path(user_config_dir("adgn-claude-hooks")) / "settings.yaml"
-        if config_file.exists():
-            if config_data := yaml.safe_load(config_file.read_text()):
-                return config_data.get(self.hook_name, {})
+        if config_file.exists() and (
+            config_data := yaml.safe_load(config_file.read_text())
+        ):
+            return config_data.get(self.hook_name, {})
         return {}
 
     def run_hook(self) -> None:
@@ -129,8 +131,6 @@ class HookBase(ABC, Generic[InputT, OutputT]):
         except Exception as e:
             self.logger.exception(f"Fatal error in run_hook: {e}")
             # Still need to output something to not break Claude
-            from claude_hooks.actions import PostToolContinue
-
             fallback = PostToolContinue()
             print(json.dumps(fallback.to_protocol()))
             sys.exit(1)

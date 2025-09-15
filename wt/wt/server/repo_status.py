@@ -21,7 +21,7 @@ class RepoStatus:
             repo = self.git_manager.get_repo(worktree_path)
         except (pygit2.GitError, OSError, ValueError):
             return None, (0, 0), ""
-        branch_name = repo.head.shorthand
+        branch_name = repo.head.shorthand or ""
         commit_info: CommitInfo | None
         try:
             commit_info = self.git_manager.get_commit_info("HEAD", worktree_path)

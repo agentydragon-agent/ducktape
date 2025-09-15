@@ -1,6 +1,11 @@
+import contextlib
+import importlib.util
+import io
 import os
+import shlex
 import shutil
 import subprocess
+import tempfile
 import time
 from datetime import datetime
 from pathlib import Path
@@ -17,6 +22,7 @@ from wt.server.worktree_service import WorktreeService
 from wt.shared.config_file import ConfigFile
 from wt.shared.configuration import Configuration
 from wt.shared.models import CommitInfo
+from wt.shell.install import main as emit_function
 
 from .config_factory import ConfigFactory
 from .mock_factory import MockFactory
@@ -354,3 +360,67 @@ def _apply_isolated_git_env(tmp_path: Path, monkeypatch):
     """
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+
+
+@pytest.fixture
+def shell_runner():
+    """Factory for running shell commands via the installed wt shell function."""
+
+    class ShellRunner:
+        def run_script(
+            self,
+            script_content: str,
+            *,
+            cwd: Path,
+            env: dict[str, str] | None = None,
+        ):
+            assert importlib.util.find_spec("wt"), (
+                "wt package not installed - required for shell integration tests"
+            )
+            # Ensure env is a copy
+            env = os.environ.copy() if env is None else env.copy()
+
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                emit_function()
+            wt_fn = buf.getvalue()
+
+            full_script = f"""#!/bin/bash
+# Install wt function via builtin
+{wt_fn}
+
+# Original script content
+{script_content}
+"""
+            with tempfile.NamedTemporaryFile(mode="w", suffix=".sh") as f:
+                f.write(full_script)
+                f.flush()
+                Path(f.name).chmod(0o755)
+                return subprocess.run(
+                    ["/bin/bash", f.name],
+                    capture_output=True,
+                    text=True,
+                    cwd=str(cwd),
+                    env=env,
+                    check=False,
+                )
+
+        def run_argv(
+            self,
+            *,
+            cwd: Path,
+            argv: list[str],
+            env: dict[str, str] | None = None,
+        ):
+            return self.run_script(shlex.join(argv), cwd=cwd, env=env)
+
+        def run_wt(
+            self,
+            *,
+            main_repo: Path,
+            wt_args: list[str],
+            env: dict[str, str] | None = None,
+        ):
+            return self.run_argv(cwd=main_repo, argv=["wt", *wt_args], env=env)
+
+    return ShellRunner()

@@ -15,7 +15,7 @@ from hamcrest import assert_that, contains_string
 
 
 @pytest.mark.parametrize(
-    "tool_input,expected",
+    ("tool_input", "expected"),
     [
         (
             EditInput(

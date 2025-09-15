@@ -2,23 +2,41 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+
+from adgn_llm.mini_codex.handler import (
+    BaseHandler,
+    UserText,
+    AssistantText,
+    ToolCall,
+    FunctionCallOutput,
+    Response,
+    JsonlRecord,
+    to_jsonl_record,
+)
 
 
-class TranscriptLogger:
-    """Event hook that mirrors the conversation progressively.
-
-    - Writes one JSON object per line to transcript.jsonl
-    - Emits a structlog info event for each item (mini_codex_event)
-
-    This object is intended to be registered as an on-event callback in MiniCodex.
-    It is synchronous; callers can await it via a maybe_await wrapper.
-    """
+class TranscriptLoggerHandler(BaseHandler):
+    """Typed handler that writes one JSONL record per event."""
 
     def __init__(self, run_dir: Path) -> None:
         self._path = run_dir / "transcript.jsonl"
 
-    def __call__(self, event: dict[str, Any]) -> None:
-        # Single sink: append to JSONL transcript
+    def _write(self, rec: JsonlRecord) -> None:
         with self._path.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(event, ensure_ascii=False) + "\n")
+            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+
+    # Typed hook implementations
+    def on_response(self, evt: Response) -> None:  # type: ignore[override]
+        self._write(to_jsonl_record(evt))
+
+    def on_user_text_event(self, evt: UserText) -> None:  # type: ignore[override]
+        self._write(to_jsonl_record(evt))
+
+    def on_assistant_text_event(self, evt: AssistantText) -> None:  # type: ignore[override]
+        self._write(to_jsonl_record(evt))
+
+    def on_tool_call_event(self, evt: ToolCall) -> None:  # type: ignore[override]
+        self._write(to_jsonl_record(evt))
+
+    def on_function_call_output_event(self, evt: FunctionCallOutput) -> None:  # type: ignore[override]
+        self._write(to_jsonl_record(evt))

@@ -51,10 +51,18 @@ class CriticSubmitPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class CriticErrorPayload(BaseModel):
+    """Structured error report from critic when it cannot produce findings."""
+
+    message: str = Field(description="Human-readable error summary")
+    model_config = ConfigDict(extra="forbid")
+
+
 class CriticSubmitState:
-    """Container for submitted CriticSubmitPayload."""
+    """Container for submitted CriticSubmitPayload or an error."""
 
     result: CriticSubmitPayload | None = None
+    error: CriticErrorPayload | None = None
 
 
 def make_critic_submit_server(state: CriticSubmitState, *, name: str = "critic_submit") -> FastMCP:
@@ -68,17 +76,26 @@ def make_critic_submit_server(state: CriticSubmitState, *, name: str = "critic_s
     mcp = FastMCP(
         name,
         instructions=(
-            "Used to submit final complete critique. "
-            "NOTE: submit_result will *complete your turn*. "
-            "Call submit_result with *all* your findings, only once you have completed *all* your analysis."
+            "Used to submit final complete critique or report a blocking error. "
+            "Tools: submit_result(result) for success; submit_error(error) for unrecoverable errors. "
+            "NOTE: either tool will complete your turn; call exactly once."
         ),
     )
 
     @mcp.tool()
     async def submit_result(result: CriticSubmitPayload) -> dict[str, Any]:
         # Payload is already validated by FastMCP via type annotation
+        if getattr(state, "result", None) is not None or getattr(state, "error", None) is not None:
+            raise ValueError("submit already called (result or error set)")
         state.result = result
         return {"ok": True}
+
+    @mcp.tool()
+    async def submit_error(error: CriticErrorPayload) -> dict[str, Any]:
+        if getattr(state, "result", None) is not None or getattr(state, "error", None) is not None:
+            raise ValueError("submit already called (result or error set)")
+        state.error = error
+        return {"ok": False}
 
     return mcp
 
@@ -127,3 +144,9 @@ def _render_critic_submit_payload(obj: CriticSubmitPayload):  # type: ignore[mis
     title = f"Critic result ({len(obj.issues)} issues)"
     border = "red" if obj.issues else "green"
     return Panel(body, title=title, border_style=border)
+
+
+@render_to_rich.register
+def _render_critic_error_payload(obj: CriticErrorPayload):  # type: ignore[misc]
+    body: RenderableType = Markdown(obj.message)
+    return Panel(body, title="Critic error", border_style="red")

@@ -85,9 +85,8 @@ async def test_inproc_container_exec_exposes_container_info_resource() -> None:
     )
 
     async with McpManager({"docker": spec}) as mcp:
-        sess = await mcp.get_session("docker")
         # Existence: can read the resource
-        res = await sess.read_resource("resource://container.info")
+        res = await mcp.read_resource("docker", "resource://container.info")
         assert res.contents, "container.info returned no contents"
 
 
@@ -105,7 +104,6 @@ async def test_inproc_container_exec_container_info_shape() -> None:
     )
 
     async with McpManager({"docker": spec}) as mcp:
-        sess = await mcp.get_session("docker")
-        res = await sess.read_resource("resource://container.info")
+        res = await mcp.read_resource("docker", "resource://container.info")
         contents = res.contents or []
         assert contents, "container.info returned no contents"

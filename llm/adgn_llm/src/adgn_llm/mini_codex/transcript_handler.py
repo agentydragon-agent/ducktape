@@ -6,7 +6,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from adgn_llm.mini_codex.aggregating_handler import BaseHandler
+from adgn_llm.mini_codex.handler import (
+    BaseHandler,
+    UserText,
+    AssistantText,
+    ToolCall,
+    FunctionCallOutput,
+)
 from adgn_llm.mini_codex.loop_control import NoLoopDecision
 
 
@@ -47,39 +53,19 @@ class TranscriptHandler(BaseHandler):
         with self._events_path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(asdict(ev), ensure_ascii=False) + "\n")
 
-    # ---- BaseHandler hooks ----
-    def on_user_text(self, text: str) -> None:  # type: ignore[override]
-        self._append("user_text", {"text": text})
+    # ---- BaseHandler hooks (typed) ----
+    def on_user_text_event(self, evt: UserText) -> None:  # type: ignore[override]
+        self._append("user_text", {"text": evt.text})
 
-    def on_assistant_text(self, text: str) -> None:  # type: ignore[override]
-        self._append("assistant_text", {"text": text})
+    def on_assistant_text_event(self, evt: AssistantText) -> None:  # type: ignore[override]
+        self._append("assistant_text", {"text": evt.text})
 
-    def on_tool_call(self, call: Any) -> None:  # type: ignore[override]
-        try:
-            payload = (
-                call
-                if isinstance(call, dict)
-                else {
-                    "name": getattr(call, "name", None),
-                    "type": getattr(call, "type", None),
-                    "call_id": getattr(call, "call_id", None),
-                    "arguments": getattr(call, "arguments", None),
-                }
-            )
-        except Exception:
-            payload = {"repr": repr(call)}
+    def on_tool_call_event(self, evt: ToolCall) -> None:  # type: ignore[override]
+        payload = {"name": evt.name, "call_id": evt.call_id, "args": evt.args}
         self._append("tool_call", payload)
 
-    def on_function_call_output(self, call: Any, output: Any) -> None:  # type: ignore[override]
-        # Record only a small summary to keep logs readable
-        try:
-            name = getattr(call, "name", None) or getattr(call, "type", None)
-            summary = str(output)
-            if isinstance(summary, str) and len(summary) > 2000:
-                summary = summary[:2000] + "..."
-            payload = {"call": name, "output": summary}
-        except Exception:
-            payload = {"repr": repr(output)}
+    def on_function_call_output_event(self, evt: FunctionCallOutput) -> None:  # type: ignore[override]
+        payload = {"call_id": evt.call_id, "output": evt.output}
         self._append("tool_output", payload)
 
     def on_reasoning(self, item: Any) -> None:  # type: ignore[override]

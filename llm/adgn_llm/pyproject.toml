@@ -26,6 +26,7 @@ dependencies = [
   "jupyter-core",
   "PyYAML>=6",
   "GitPython>=3.1.43",
+  "pygit2>=1.13",
   # instruction optimizer deps
   "structlog",
   "anthropic",

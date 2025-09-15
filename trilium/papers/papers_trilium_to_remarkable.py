@@ -281,7 +281,7 @@ def sync():
         print(f"{sp.stdout = }")
         # Print the standard error of the command
         print(f"{sp.stderr = }")
-        raise "unhandled"
+        raise RuntimeError("unhandled")
 
 
 def main(_):

@@ -12,8 +12,7 @@ from adgn_llm.properties.docker_env import (
 )
 import time
 from pathlib import Path
-from datetime import datetime
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 
 from typing import Literal
 
@@ -25,12 +24,11 @@ from rich.console import Console
 from adgn_llm.mini_codex.agent import MiniCodex, AgentResult
 from adgn_llm.mini_codex.aggregating_handler import BaseHandler
 from adgn_llm.mini_codex.event_renderer import DisplayEventsHandler
-from adgn_llm.mini_codex.loop_control import Continue, Abort, RequireAny, Forbid
+from adgn_llm.mini_codex.loop_control import Continue, Abort, RequireAny
 from adgn_llm.mini_codex.mcp_manager import (
     McpManager,
     build_mcp_function,
 )
-from adgn_llm.mini_codex.transcript_handler import TranscriptHandler
 from adgn_llm.properties.agent_runner import run_prompt_async
 from adgn_llm.properties.critic import (
     CriticSubmitState,
@@ -52,9 +50,6 @@ from adgn_llm.properties.prompts.builder import (
 )
 from adgn_llm.mcp.inproc_transport import make_inproc_slot_spec
 from adgn_llm.rendering.rich_renderers import render_to_rich
-from adgn_llm.properties.prompt_eval.server import (
-    build_server as build_prompt_eval_server,
-)
 from adgn_llm.properties.grade_runner import grade_critic_output
 from adgn_llm.properties.specimens.registry import (
     find_specimens_base,
@@ -85,17 +80,6 @@ class BuildOptions:
     skip_git_repo_check: bool
     full_auto: bool
     extra_configs: list[str] | None = None
-
-
-@dataclass(frozen=True)
-class MetricsRow:
-    iteration: int
-    mean_recall: float
-    tp: int
-    fp: int
-    fn: int
-    unknown: int
-    dir: str
 
 
 # Human-facing catalog for CLI table (name, category, description)
@@ -229,37 +213,9 @@ class CriticHandler(BaseHandler):
         self._state = state
 
     def on_before_sample(self):  # type: ignore[override]
-        if self._state.result is not None:
+        if (self._state.result is not None) or (self._state.error is not None):
             return Abort()
         return Continue(RequireAny())
-
-
-class PromptOptimizeHandler(BaseHandler):
-    """Stop after N successful evaluations tracked by the MCP server.
-
-    Reads successful call count from shared MCP state and enforces budget.
-    After budget is exhausted, allows one final non-tool assistant message, then aborts.
-    """
-
-    def __init__(self, *, state, max_iters: int) -> None:
-        self._state = state
-        self._max_iters = max_iters
-        self._finalizing = False
-        self._done = False
-
-    def on_assistant_text(self, text: str) -> None:  # type: ignore[override]
-        if self._finalizing and text:
-            self._done = True
-
-    def on_before_sample(self):  # type: ignore[override]
-        if self._done:
-            return Abort()
-        if getattr(self._state, "successful_calls", 0) < self._max_iters:
-            return Continue(RequireAny())
-        if not self._finalizing:
-            self._finalizing = True
-            return Continue(Forbid())
-        return Abort()
 
 
 async def _run_check_minicodex_async(
@@ -364,7 +320,11 @@ async def _run_specimen_minicodex_async(
                     Path(output_final_message).write_text(result.text or "", encoding="utf-8")
                 if not final_only and result.text:
                     print(result.text)
-        assert submit_state.result, "Critic did not call submit_result?"
+        # Allow either a successful result or an explicit error
+        if submit_state.error is not None:
+            Console().print(render_to_rich(submit_state.error))
+            return 2
+        assert submit_state.result is not None, "Critic did not call submit_result or submit_error?"
         Console().print(render_to_rich(submit_state.result))
         # Write critique JSON for specimen-check runs (find/open modes)
         if mode in ("find", "open"):
@@ -616,85 +576,7 @@ def main(argv: list[str] | None = None) -> int:
         help="Write only the agent's final message to this path (passthrough to codex --output-last-message)",
     )
 
-    # New command: prompt-optimize — run a PE agent that iteratively optimizes a critic system prompt using the prompt_eval MCP tool
-    p_pe_opt = sub.add_parser(
-        "prompt-optimize",
-        help="Run a Prompt Engineering agent that optimizes a critic system prompt over all specimens",
-        description=(
-            "Launch a PE agent that uses the prompt_eval MCP tool to evaluate candidate critic prompts across all specimens, "
-            "iterating up to a fixed evaluation budget. Shows progress and writes artifacts under runs/prompt_optimize/."
-        ),
-    )
-    p_pe_opt.add_argument(
-        "--max-iters",
-        type=int,
-        default=10,
-        help="Maximum number of prompt evaluations (tool calls)",
-    )
-    p_pe_opt.add_argument(
-        "--out-dir",
-        dest="out_dir",
-        help="Root directory for run artifacts (default: runs/prompt_optimize)",
-    )
-    p_pe_opt.add_argument(
-        "--context",
-        choices=["minimal", "props"],
-        default="minimal",
-        help="Prompt-eval agent context: 'minimal' (no extra servers) or 'props' (mount /props via docker MCP)",
-    )
-
-    # New command: cluster-unknowns — cluster all unknown YAMLs across runs using an LLM with in-proc MCP submit
-    p_cluster = sub.add_parser(
-        "cluster-unknowns",
-        help="Cluster all unknown issues from runs/prompt_optimize across specimens using an LLM",
-        description=(
-            "Reads all runs/prompt_optimize/**/unknowns/*.yaml and feeds structured issues to an LLM. "
-            "The agent MUST call cluster_submit.submit_result once with clusters: [{name: string, issues: [string,...]}]."
-        ),
-    )
-    p_cluster.add_argument("--model", default="gpt-5")
-    p_cluster.add_argument(
-        "--out-dir",
-        dest="out_dir",
-        help="Output directory for clusters.json (default: runs/cluster_unknowns/<ts>)",
-    )
-
     args = parser.parse_args(argv)
-
-    if args.command == "specimen-discover":
-        base = find_specimens_base()
-        names = list_specimen_names(base)
-        slug = getattr(args, "specimen", None)
-        if not slug:
-            if not names:
-                print(f"No specimens under {base}")
-                return 2
-            print("Available specimens:")
-            for n in names:
-                print(" -", n)
-            return 0
-        if slug not in names:
-            print(f"Unknown specimen slug: {slug}")
-            print("Available specimens:")
-            for n in names:
-                print(" -", n)
-            return 2
-        gitconfig_path = _resolve_gitconfig(getattr(args, "gitconfig", None))
-        # Embed existing findings to suppress repeats
-        spec_dir = base / slug
-        embed_paths = [str(p) for p in [spec_dir / "covered.md", spec_dir / "not_covered_yet.md"] if p.exists()]
-        return asyncio.run(
-            _run_specimen_minicodex_async(
-                slug,
-                dry_run=args.dry_run,
-                embed_paths=embed_paths,
-                gitconfig=gitconfig_path,
-                mode="discover",
-                final_only=getattr(args, "final_only", False),
-                output_final_message=getattr(args, "output_final_message", None),
-                client=AsyncOpenAI(),
-            )
-        )
 
     if args.command == "specimen-grade":
         base = find_specimens_base()
@@ -734,156 +616,6 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         return asyncio.run(_run())
-
-    if args.command == "prompt-optimize":
-        max_iters = int(getattr(args, "max_iters", 10))
-        out_root = (
-            Path(args.out_dir).expanduser().resolve()
-            if getattr(args, "out_dir", None)
-            else (pkg_dir() / "runs" / "prompt_optimize" / datetime.now().strftime("%Y%m%d_%H%M%S"))
-        )
-        out_root.mkdir(parents=True, exist_ok=True)
-        # In-proc prompt_eval MCP server
-        pe_server, pe_state = build_prompt_eval_server()
-        specs = {"prompt_eval": make_inproc_slot_spec(pe_server)}
-        # PE agent prompts
-        pe_system = (
-            "You are an expert LLM prompt engineer.\n\n"
-            "You can evaluate performance of a given prompt using prompt_eval.test_prompt(prompt: str).\n\n"
-            "You will have a given maximum budget of prompt_eval.test_prompt calls. Wisely trade off exploration and exploitation."
-        )
-        pe_user = (
-            f"Your budget is: {max_iters} prompt_eval.test_prompt calls."
-            "\n\n"
-            "Iterate to find an optimal prompt for a code reviewer/critic LLM agent."
-            "\n\n"
-            "Your priorities are: recall first, then precision."
-            "\n\n"
-            "Your prompt will in a harness that ensures the critic follows required downstream format. "
-            "As such, do not give the critic any prescription on which specific format to use (e.g., JSON)."
-        )
-        # Optionally add a docker MCP server with /props mounted
-        if getattr(args, "context", "minimal") == "props":
-            from adgn_llm.properties.docker_env import (
-                properties_docker_spec,
-                SERVER_NAME as DOCKER_SERVER_NAME,
-                PROPS_DIR,
-            )
-
-            wiring = properties_docker_spec(pkg_dir(), mount_properties=True)
-            specs[DOCKER_SERVER_NAME] = wiring.server_spec
-            pe_user += f"\n\nYou also have a docker MCP server '{DOCKER_SERVER_NAME}'."
-            pe_user += (
-                f"\n\nRead content at {PROPS_DIR} to find some *nonexhaustive* examples of properties of good code critics should enforce. "
-                "Note that these are only some specific formal examples that we captured formally - many issues we want to catch are not covered yet by any of these formal properties."
-            )
-            pe_user += "\n\nThe critic agent will run on the same Docker image as you have available."
-
-        async def _run_pe_agent() -> int:
-            async with McpManager(specs) as mcp:
-                agent = await MiniCodex.create(
-                    model="gpt-5",
-                    mcp=mcp,
-                    system=pe_system,
-                    client=AsyncOpenAI(),
-                    handlers=[
-                        TranscriptHandler(dest_dir=out_root / "prompt_optimize"),
-                        DisplayEventsHandler(max_lines=10),
-                        PromptOptimizeHandler(state=pe_state, max_iters=max_iters),
-                    ],
-                    parallel_tool_calls=True,
-                )
-                # Display progress by streaming events via DisplayEventsHandler; final text printed below
-                pe_log = out_root / "prompt_optimize" / "events.jsonl"
-                print(f"[logs] prompt_optimize: {pe_log}")
-                res = await agent.run(pe_user)
-                ts = int(time.time())
-                (out_root / f"final_{ts}.md").write_text(getattr(res, "text", ""), encoding="utf-8")
-                if getattr(res, "text", ""):
-                    print(getattr(res, "text", ""))
-            return 0
-
-        rc = asyncio.run(_run_pe_agent())
-        # Generate summary plots (mean recall and counts) across iterations under out_root
-        import re
-        import csv
-        import matplotlib
-
-        matplotlib.use("Agg")
-        import matplotlib.pyplot as plt
-
-        iter_dirs = [p for p in out_root.iterdir() if p.is_dir() and (p.name.isdigit() or p.name.startswith("round_"))]
-        rows: list[MetricsRow] = []
-        for d in iter_dirs:
-            res_path = d / "results.json"
-            if not res_path.exists():
-                continue
-            data = json.loads(res_path.read_text(encoding="utf-8"))
-            m = re.search(r"(\d+)$", d.name)
-            it = int(m.group(1)) if m else 0
-            sum_tp = sum(int(x.get("true_positives", 0) or 0) for x in data)
-            sum_fp = sum(int(x.get("false_positive", 0) or 0) for x in data)
-            sum_fn = sum(int(x.get("false_negatives", 0) or 0) for x in data)
-            sum_unk = sum(int(x.get("unknown", 0) or 0) for x in data)
-            recs: list[float] = []
-            for x in data:
-                val = x.get("fuzzy_recall") if x.get("fuzzy_recall") is not None else x.get("recall")
-                if isinstance(val, (int, float)):
-                    recs.append(float(val))
-            mean_recall = (sum(recs) / len(recs)) if recs else 0.0
-            rows.append(
-                MetricsRow(
-                    iteration=it,
-                    mean_recall=mean_recall,
-                    tp=sum_tp,
-                    fp=sum_fp,
-                    fn=sum_fn,
-                    unknown=sum_unk,
-                    dir=d.name,
-                )
-            )
-        if rows:
-            rows.sort(key=lambda r: r.iteration)
-            csv_path = out_root / "recall_and_counts_by_iter.csv"
-            with open(csv_path, "w", newline="", encoding="utf-8") as f:
-                w = csv.DictWriter(
-                    f,
-                    fieldnames=[
-                        "iteration",
-                        "mean_recall",
-                        "tp",
-                        "fp",
-                        "fn",
-                        "unknown",
-                        "dir",
-                    ],
-                )
-                w.writeheader()
-                for r in rows:
-                    w.writerow(asdict(r))
-            xs = [r.iteration for r in rows]
-            fig, axes = plt.subplots(2, 3, figsize=(10, 6), constrained_layout=True)
-            (ax_rec, ax_tp, ax_fp), (ax_fn, ax_unk, ax_empty) = axes
-            ax_rec.plot(xs, [r.mean_recall for r in rows], marker="o")
-            ax_rec.set_title("Mean recall")
-            ax_rec.grid(True, alpha=0.3)
-            ax_tp.plot(xs, [r.tp for r in rows], marker="o", color="#2ca02c")
-            ax_tp.set_title("True positives (sum)")
-            ax_tp.grid(True, alpha=0.3)
-            ax_fp.plot(xs, [r.fp for r in rows], marker="o", color="#d62728")
-            ax_fp.set_title("False positives (sum)")
-            ax_fp.grid(True, alpha=0.3)
-            ax_fn.plot(xs, [r.fn for r in rows], marker="o", color="#9467bd")
-            ax_fn.set_title("Positives missed (FN sum)")
-            ax_fn.grid(True, alpha=0.3)
-            ax_unk.plot(xs, [r.unknown for r in rows], marker="o", color="#8c564b")
-            ax_unk.set_title("Unknown (sum)")
-            ax_unk.grid(True, alpha=0.3)
-            ax_empty.axis("off")
-            fig.suptitle("Prompt optimize: recall and counts by iteration", fontsize=12)
-            fig.savefig(out_root / "recall_and_counts_by_iter.png", dpi=150)
-        return rc
-
     if args.command in ("check", "fix"):
         workdir = Path(args.workdir).resolve()
         detected_tools = _detect_tools()
@@ -972,18 +704,6 @@ def main(argv: list[str] | None = None) -> int:
             if out_last_file is not None:
                 print(Path(out_last_file).read_text(encoding="utf-8"))
             return rc
-
-    if args.command == "cluster-unknowns":
-        from adgn_llm.properties.cluster_unknowns import cluster_unknowns
-
-        out_dir = getattr(args, "out_dir", None)
-        root = cluster_unknowns(
-            model=getattr(args, "model", "gpt-5"),
-            out_dir=(Path(out_dir).expanduser().resolve() if out_dir else None),
-        )
-        print(f"Clusters written to: {root / 'clusters.json'}")
-        return 0
-
     else:
         parser.error("command is required")
 

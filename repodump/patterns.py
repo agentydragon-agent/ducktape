@@ -38,7 +38,7 @@ def path_pattern_to_regex(pat: str) -> re.Pattern:
         else:
             # For normal segments, interpret '*' and '?' in a single directory
             seg_escaped = re.escape(seg)
-            # Re‐interpret escaped `\*` => [^/]*, `\?` => [^/]
+            # Re-interpret escaped `\*` => [^/]*, `\?` => [^/]
             seg_escaped = seg_escaped.replace("\\*", "[^/]*")
             seg_escaped = seg_escaped.replace("\\?", "[^/]")
             # This segment must match exactly once at this directory level
@@ -96,11 +96,10 @@ def _assemble_pattern_regex(segs):
             regex += seg_escaped
 
             # if not last segment, add a slash
-            if i < len(segs) - 1:
-                # look ahead: if the next seg is '**', we do no slash,
-                # because '**' begins with '.*' pattern that can handle its own slash
-                if segs[i + 1] != "**":
-                    regex += "/"
+            # look ahead: if the next seg is '**', we do no slash,
+            # because '**' begins with '.*' pattern that can handle its own slash
+            if i < len(segs) - 1 and segs[i + 1] != "**":
+                regex += "/"
     regex += "$"
     return re.compile(regex)
 

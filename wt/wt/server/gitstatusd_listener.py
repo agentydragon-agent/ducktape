@@ -341,24 +341,23 @@ class GitStatusdProtocol:
     def _safe_get_repository_state(
         fields: list[str],
         index: int,
-    ) -> RepositoryState | None:
-        """Get repository state enum with validation."""
+    ) -> RepositoryState:
+        """Get repository state enum with validation (do not mask errors)."""
         try:
             value = fields[index]
-            if not value:
-                return RepositoryState.NORMAL
+        except IndexError as e:
+            raise GitStatusdValidationError("Missing repository state field") from e
 
-            # Find matching repository state
-            for state in RepositoryState:
-                if state.value == value:
-                    return state
+        if not value:
+            raise GitStatusdValidationError("Empty repository state")
 
-            # Unknown state - log warning but don't fail
-            logger.warning("Unknown repository state: %s", value)
-            return RepositoryState.NORMAL
+        # Find matching repository state
+        for state in RepositoryState:
+            if state.value == value:
+                return state
 
-        except IndexError:
-            return RepositoryState.NORMAL
+        # Unknown state: treat as validation error
+        raise GitStatusdValidationError(f"Unknown repository state: {value}")
 
 
 def gitstatusd_response_to_legacy_format(
@@ -523,8 +522,8 @@ class GitstatusdListener:
             if self.error_callback:
                 with contextlib.suppress(Exception):
                     self.error_callback("update_failed")
-            # Mark failure by clearing cache so has_cache=False is reported
-            self.cached_working_status = None
+            # On failure, record a safe empty cache to avoid 'unknown' UI churn
+            self.cached_working_status = ([], [])
             if not self.last_updated_at:
                 self.last_updated_at = datetime.now()
         finally:

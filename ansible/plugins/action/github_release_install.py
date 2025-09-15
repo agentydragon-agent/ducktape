@@ -63,6 +63,7 @@ Example:
 from __future__ import annotations
 
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -103,8 +104,6 @@ class ActionModule(ActionBase):
         3. Copy specific file to destination
         4. Clean up temp files
         """
-        import os
-        import tempfile
 
         asset_url = args["asset_url"]
         extract_file = args["extract_file"]
@@ -112,8 +111,9 @@ class ActionModule(ActionBase):
 
         # Use ansible temp dir if available, otherwise system temp
         temp_base = tmp or tempfile.gettempdir()
-        temp_archive = os.path.join(temp_base, "github_release_archive.tar.gz")
-        temp_extract_dir = os.path.join(temp_base, "github_release_extract")
+        base_path = Path(temp_base)
+        temp_archive = str(base_path / "github_release_archive.tar.gz")
+        temp_extract_dir = str(base_path / "github_release_extract")
 
         result = {"changed": False}
 
@@ -146,7 +146,7 @@ class ActionModule(ActionBase):
             # Clean up downloaded archive
             self._execute_module(
                 module_name="ansible.builtin.file",
-                module_args={"path": temp_archive, "state": "absent"},
+                module_args={"path": str(temp_archive), "state": "absent"},
                 task_vars=task_vars,
                 tmp=tmp,
             )
@@ -166,14 +166,14 @@ class ActionModule(ActionBase):
             # Clean up downloaded archive
             self._execute_module(
                 module_name="ansible.builtin.file",
-                module_args={"path": temp_archive, "state": "absent"},
+                module_args={"path": str(temp_archive), "state": "absent"},
                 task_vars=task_vars,
                 tmp=tmp,
             )
             return extract_result
 
         # Step 3: Copy specific file to destination
-        source_file = os.path.join(temp_extract_dir, extract_file)
+        source_file = str(Path(temp_extract_dir) / extract_file)
         copy_result = self._execute_module(
             module_name="ansible.builtin.copy",
             module_args={
@@ -187,13 +187,8 @@ class ActionModule(ActionBase):
         )
 
         # Step 4: Clean up temp files
-        for path in [temp_archive, temp_extract_dir]:
-            self._execute_module(
-                module_name="ansible.builtin.file",
-                module_args={"path": path, "state": "absent"},
-                task_vars=task_vars,
-                tmp=tmp,
-            )
+        for path in (temp_archive, temp_extract_dir):
+            self._rm_temp(path, task_vars, tmp)
 
         if copy_result.get("failed"):
             return copy_result

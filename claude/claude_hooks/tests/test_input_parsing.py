@@ -27,7 +27,7 @@ from .test_helpers import assert_tool_input_parsing, load_test_json
 
 
 @pytest.mark.parametrize(
-    "tool_name,scenario,expected_tool_input",
+    ("tool_name", "scenario", "expected_tool_input"),
     [
         (
             "Bash",

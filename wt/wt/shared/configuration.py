@@ -4,6 +4,8 @@ This module contains the frozen Configuration dataclass that represents
 resolved configuration with all paths validated and computed upfront.
 """
 
+from __future__ import annotations
+
 import os
 import sys
 import tempfile
@@ -92,7 +94,7 @@ class Configuration:
         return self.wt_dir / "pr_cache.json"
 
     @classmethod
-    def resolve(cls, wt_dir: Path) -> "Configuration":
+    def resolve(cls, wt_dir: Path) -> Configuration:
         """Resolve configuration from WT_DIR - does all filesystem validation upfront."""
         config_path = wt_dir / "config.yaml"
 

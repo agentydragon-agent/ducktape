@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Dict, List, Mapping
+import os
+import time
+from pathlib import Path
 
 from openai import AsyncOpenAI
 from adgn_llm.mini_codex.agent import MiniCodex
@@ -9,6 +12,7 @@ from adgn_llm.mini_codex.mcp_manager import McpManager
 from adgn_llm.mcp.types import ServerSlotSpec
 from adgn_llm.mini_codex.aggregating_handler import AutoHandler
 from adgn_llm.mini_codex.agent_progress import OneLineProgressHandler
+from adgn_llm.mini_codex.loggers import TranscriptLoggerHandler
 
 
 @dataclass
@@ -34,12 +38,16 @@ async def run_prompt_async(
     transcript: List[Dict[str, Any]] = []
     async with McpManager(dict(specs)) as mcp:
         # Quiet, single-line progress by default (DisplayEventsHandler available for verbose UI)
+        # Per-run transcript directory
+        run_dir = Path.cwd() / "logs" / "mini_codex" / "agent_runner"
+        run_dir = run_dir / f"run_{int(time.time())}_{os.getpid()}"
+        run_dir.mkdir(parents=True, exist_ok=True)
         agent = await MiniCodex.create(
             model=model,
             mcp=mcp,
             system=system_prompt,
             client=client,
-            handlers=[AutoHandler(), OneLineProgressHandler()],
+            handlers=[AutoHandler(), OneLineProgressHandler(), TranscriptLoggerHandler(run_dir)],
         )
         res_any = await agent.run(prompt)
 

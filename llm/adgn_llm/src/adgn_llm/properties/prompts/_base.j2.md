@@ -55,16 +55,13 @@ Identify occurrences by exact 1-based line ranges that manifest (or do not manif
 
 {% if header_schema_names %}
 
-## Schemas
+## Input Schemas:
 
 {% for name in header_schema_names %}
-
-### {{ name }}
-
+- {{ name }}
 ```json
 {{ schemas_json[name] | tojson(indent=2) }}
 ```
-
 {% endfor %}
 {% endif %}
 

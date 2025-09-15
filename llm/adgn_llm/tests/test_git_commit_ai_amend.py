@@ -6,7 +6,8 @@ from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from adgn_llm.git_commit_ai.cli import ClaudeAI, build_prompt, get_commit_diff
+from adgn_llm.git_commit_ai.cli import ClaudeAI, get_commit_diff
+from adgn_llm.git_commit_ai.core import build_prompt
 from git import Repo
 
 

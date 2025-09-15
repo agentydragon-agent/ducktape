@@ -5,11 +5,10 @@ import shlex
 from typing import Callable
 
 from openai.types.responses import (
-    ResponseFunctionToolCall,
     ResponseReasoningItem,
 )
 
-from .agent import FunctionCallOutput
+from .handler import UserText, AssistantText, ToolCall, FunctionCallOutput
 from .mcp_manager import parse_mcp_function  # constants below
 from .aggregating_handler import BaseHandler
 from .loop_control import NoLoopDecision
@@ -36,30 +35,27 @@ class DisplayEventsHandler(BaseHandler):
         self._max_lines = max_lines
         self._max_bytes = max_bytes
         self._write = write
-        self._calls: dict[str, ResponseFunctionToolCall] = {}
+        self._calls: dict[str, ToolCall] = {}
 
     # Observer hooks ---------------------------------------------------------
 
-    def on_user_text(self, text: str) -> None:
-        if text:
-            self._write(f"user:\n{self._truncate_text(text)}")
+    def on_user_text_event(self, evt: UserText) -> None:
+        if evt.text:
+            self._write(f"user:\n{self._truncate_text(evt.text)}")
 
-    def on_assistant_text(self, text: str) -> None:
-        if text:
-            self._write(f"assistant:\n{self._truncate_text(text)}")
+    def on_assistant_text_event(self, evt: AssistantText) -> None:
+        if evt.text:
+            self._write(f"assistant:\n{self._truncate_text(evt.text)}")
 
-    def on_tool_call(self, call: ResponseFunctionToolCall) -> None:
-        self._calls[call.call_id] = call
+    def on_tool_call_event(self, evt: ToolCall) -> None:
+        self._calls[evt.call_id] = evt
         # For docker_exec: render a concise bash-like input line here and skip JSON args
         try:
-            server, tool = parse_mcp_function(call.name or "")
+            server, tool = parse_mcp_function(evt.name or "")
         except Exception:
             server, tool = "", ""
         if (server, tool) == (DOCKER_SERVER_NAME, DOCKER_EXEC_TOOL_NAME):
-            try:
-                call_args = json.loads(call.arguments) if call.arguments else {}
-            except Exception:
-                call_args = {"_raw": call.arguments}
+            call_args = evt.args or {}
             if isinstance(call_args, dict) and (cmd := call_args.get("cmd")) is not None:
                 if isinstance(cmd, list):
                     cmd_line = shlex.join([str(x) for x in cmd])
@@ -67,13 +63,13 @@ class DisplayEventsHandler(BaseHandler):
                     cmd_line = str(cmd)
                 self._write(f"$ {cmd_line}")
             return
-        s = self._render_tool_call(call)
+        s = self._render_tool_call(evt)
         if s:
             self._write(s)
 
-    def on_function_call_output(self, call: ResponseFunctionToolCall | None, output: FunctionCallOutput) -> None:
-        c = call or self._calls.get(output.call_id)
-        s = self._render_function_call_output(c, output)
+    def on_function_call_output_event(self, evt: FunctionCallOutput) -> None:
+        c = self._calls.get(evt.call_id)
+        s = self._render_function_call_output(c, evt)
         if s:
             self._write(s)
 
@@ -85,16 +81,13 @@ class DisplayEventsHandler(BaseHandler):
 
     # Rendering helpers ------------------------------------------------------
 
-    def _render_tool_call(self, tc: ResponseFunctionToolCall) -> str:
+    def _render_tool_call(self, tc: ToolCall) -> str:
         name = tc.name or "<unknown>"
-        try:
-            args = json.loads(tc.arguments) if tc.arguments else {}
-        except Exception:
-            args = {"_raw": tc.arguments}
+        args = tc.args if isinstance(tc.args, dict) else {"_raw": tc.args}
         header = f"▶ {name} input:"
         return f"{header}\n{self._pp_json(args)}"
 
-    def _render_function_call_output(self, call: ResponseFunctionToolCall | None, output: FunctionCallOutput) -> str:
+    def _render_function_call_output(self, call: ToolCall | None, output: FunctionCallOutput) -> str:
         # Try structured JSON; fall back to raw text
         try:
             data = json.loads(output.output)
@@ -112,7 +105,7 @@ class DisplayEventsHandler(BaseHandler):
 
         return f"◀ {(call.name if call else 'tool_output')}:\n{self._pp_json(data)}"
 
-    def _render_docker_exec(self, name: str, call: ResponseFunctionToolCall, data: object) -> str:
+    def _render_docker_exec(self, name: str, call: ToolCall, data: object) -> str:
         # Prefer structured keys when available; otherwise fall back to pretty JSON
         if not isinstance(data, dict):
             return f"$ <{name}>\n{self._pp_json(data)}"

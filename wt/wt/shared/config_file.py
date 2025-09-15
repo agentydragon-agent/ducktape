@@ -9,6 +9,8 @@ resolvers, no computed properties - just the raw data structure.
 For runtime configuration with logic and resolvers, see configuration.py.
 """
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -32,7 +34,7 @@ class ConfigFile(BaseModel):
 
     # Behavior settings
     log_operations: bool = False
-    cow_method: str = "auto"  # "auto", "reflink", "copy", or "rsync"  # TODO(mpokorny): Consider Literal[...]/Enum for stricter typing
+    cow_method: Literal["auto", "reflink", "copy", "rsync"] = "auto"
     hydrate_worktrees: bool = True
 
     # GitHub integration

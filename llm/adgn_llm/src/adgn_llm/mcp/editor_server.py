@@ -4,10 +4,10 @@ import ast
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, Annotated
 
 from mcp.server.fastmcp import FastMCP
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, ConfigDict
 
 PYTHON_SUFFIXES = {".py", ".pyi"}
 
@@ -16,9 +16,31 @@ def is_python_path(path: Path) -> bool:
     return path.suffix in PYTHON_SUFFIXES
 
 
-class DoneResult(BaseModel):
-    report: str
-    success: bool = True
+class DoneInput(BaseModel):
+    """Single-argument payload for the done() tool.
+
+    outcome: explicit algebraic outcome selector ("success"|"failure")
+    summary: short human-readable summary
+    """
+
+    outcome: Literal["success", "failure"] = "success"
+    summary: str = ""
+
+    # Strict: no legacy aliases accepted (force new format everywhere)
+    model_config = ConfigDict(extra="forbid")
+
+
+class Success(BaseModel):
+    kind: Literal["Success"] = "Success"
+    summary: str
+
+
+class Failure(BaseModel):
+    kind: Literal["Failure"] = "Failure"
+    summary: str
+
+
+DoneResponse = Annotated[Success | Failure, Field(discriminator="kind")]
 
 
 # Canonical FastMCP server: state via lifespan; lines derived from content
@@ -111,19 +133,27 @@ def make_editor_mcp(file_path: str | Path, *, name: str = "editor") -> FastMCP:
         return {"ok": True}
 
     @mcp.tool()
-    def done(success: bool = True, report: str = "") -> dict[str, Any]:
-        if success and is_python_path(state.file_path):
-            try:
-                ast.parse(state.content + "\n")
-            except SyntaxError as e:
-                return DoneResult(
-                    report=f"Cannot complete: Syntax error line {e.lineno}: {e.msg}",
-                    success=False,
-                ).model_dump()
-        if not success:
-            state.content = state.original
-            return DoneResult(report=report or "aborted", success=False).model_dump()
-        state.file_path.write_text(state.content.rstrip("\n") + "\n", encoding="utf-8")
-        return DoneResult(report=report or "ok", success=True).model_dump()
+    def done(payload: DoneInput) -> DoneResponse:
+        """Finish the editing session (typed: DoneInput → Success|Failure).
+
+        - On outcome=="success": for Python files, perform a quick syntax check; if it fails, do NOT save,
+          revert in-memory buffer to original, and return Failure with a summary.
+        - On outcome=="failure": revert in-memory buffer to original and return Failure with the given summary.
+        - On success with no syntax errors: save current buffer to disk and return Success.
+        """
+        if payload.outcome == "success":
+            if is_python_path(state.file_path):
+                try:
+                    ast.parse(state.content + "\n")
+                except SyntaxError as e:
+                    # Revert in-memory buffer on failure so callers can inspect original state
+                    state.content = state.original
+                    return Failure(summary=f"Cannot complete: syntax error line {e.lineno}: {e.msg}")
+            # Save edited contents
+            state.file_path.write_text(state.content.rstrip("\n") + "\n", encoding="utf-8")
+            return Success(summary=(payload.summary or "ok"))
+        # Explicit failure: revert in-memory buffer
+        state.content = state.original
+        return Failure(summary=(payload.summary or "aborted"))
 
     return mcp

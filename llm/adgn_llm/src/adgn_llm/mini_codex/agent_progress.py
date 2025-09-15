@@ -8,7 +8,7 @@ from itertools import cycle
 from rich.console import Console
 from rich.text import Text
 
-from .aggregating_handler import BaseHandler
+from .handler import BaseHandler, UserText, AssistantText, ToolCall, FunctionCallOutput
 from .loop_control import NoLoopDecision
 
 
@@ -30,24 +30,22 @@ class OneLineProgressHandler(BaseHandler):
         self._last_render = 0.0
 
     # --- observer hooks (fast, non-blocking) ---
-    def on_tool_call(self, call: Any) -> None:
+    def on_tool_call_event(self, evt: "ToolCall") -> None:
         self._tool_calls += 1
-        self._last_action = f"tool:{getattr(call, 'name', str(call))}"
+        self._last_action = f"tool:{evt.name}"
         self._render()
 
-    def on_function_call_output(self, call: Any, output: Any) -> None:
-        # call may be None if not available; prefer output.call_id
-        cid = getattr(output, "call_id", None) or getattr(call, "call_id", "")
-        self._last_action = f"fco:{cid}"
+    def on_function_call_output_event(self, evt: "FunctionCallOutput") -> None:
+        self._last_action = f"fco:{evt.call_id}"
         self._render()
 
-    def on_assistant_text(self, text: str) -> None:
+    def on_assistant_text_event(self, evt: "AssistantText") -> None:
         # Keep last assistant snippet short
-        excerpt = text.strip().replace("\n", " ")[:40]
+        excerpt = evt.text.strip().replace("\n", " ")[:40]
         self._last_action = f"assistant:{excerpt}"
         self._render()
 
-    def on_user_text(self, text: str) -> None:
+    def on_user_text_event(self, evt: "UserText") -> None:
         self._last_action = "user"
         self._render()
 

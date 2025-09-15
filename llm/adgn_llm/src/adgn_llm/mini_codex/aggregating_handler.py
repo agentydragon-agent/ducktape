@@ -12,37 +12,15 @@ from adgn_llm.mini_codex.loop_control import (
 )
 
 
-class BaseHandler:
-    """Base handler protocol with no-op implementations.
-
-    Subclass this and override any on_* hooks you need. Implementations must be
-    fast and non-blocking. Exceptions should be allowed to propagate so failures
-    are loud and visible.
-    """
-
-    def on_user_text(self, text: str) -> None:  # default no-op
-        return None
-
-    def on_assistant_text(self, text: str) -> None:  # default no-op
-        return None
-
-    def on_tool_call(self, call: Any) -> None:  # default no-op
-        return None
-
-    def on_function_call_output(self, call: Any, output: Any) -> None:  # default no-op
-        return None
-
-    def on_reasoning(self, item: Any) -> None:  # default no-op
-        return None
-
-    def on_before_sample(self) -> LoopDecision:
-        """Handler-level on_before_sample.
-
-        Return a concrete LoopDecision (Continue/Abort/SyntheticAction) to claim
-        the decision for this sampling step, or return NoLoopDecision() to
-        explicitly defer. Returning None is forbidden.
-        """
-        return NoLoopDecision()
+# Typed event classes and BaseHandler
+from adgn_llm.mini_codex.handler import (
+    BaseHandler,
+    UserText,
+    AssistantText,
+    ToolCall,
+    FunctionCallOutput,
+    Response,
+)
 
 
 class AutoHandler(BaseHandler):
@@ -100,22 +78,26 @@ class AggregatingController:
 
         return first
 
-    # ---- Event forwarding (observer-only) ----
-    def on_user_text(self, text: str) -> None:  # type: ignore[override]
+    # ---- Event forwarding (typed, observer-only) ----
+    def on_response(self, evt: Response) -> None:
         for h in self._handlers:
-            h.on_user_text(text)
+            h.on_response(evt)
 
-    def on_assistant_text(self, text: str) -> None:  # type: ignore[override]
+    def on_user_text(self, evt: UserText) -> None:
         for h in self._handlers:
-            h.on_assistant_text(text)
+            h.on_user_text_event(evt)
 
-    def on_tool_call(self, call: Any) -> None:  # type: ignore[override]
+    def on_assistant_text(self, evt: AssistantText) -> None:
         for h in self._handlers:
-            h.on_tool_call(call)
+            h.on_assistant_text_event(evt)
 
-    def on_function_call_output(self, call: Any, output: Any) -> None:  # type: ignore[override]
+    def on_tool_call(self, evt: ToolCall) -> None:
         for h in self._handlers:
-            h.on_function_call_output(call, output)
+            h.on_tool_call_event(evt)
+
+    def on_function_call_output(self, evt: FunctionCallOutput) -> None:
+        for h in self._handlers:
+            h.on_function_call_output_event(evt)
 
     def on_reasoning(self, item: Any) -> None:  # type: ignore[override]
         for h in self._handlers:

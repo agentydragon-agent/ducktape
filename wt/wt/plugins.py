@@ -6,8 +6,6 @@ from collections.abc import Callable
 
 import pluggy
 
-from .client.shell_utils import controlled_error, emit_command
-
 PROJECT_NAME = "wt"
 ENTRYPOINT_GROUP = "wt.plugins"
 
@@ -31,20 +29,15 @@ class _Spec:
 
 class _Impl:
     @pluggy.HookimplMarker(PROJECT_NAME)
-    def wt_commands(self) -> dict[str, Callable]:  # type: ignore[override]
+    def wt_commands(self) -> dict[str, Callable]:
         return {}
 
     @pluggy.HookimplMarker(PROJECT_NAME)
-    def wt_init(self, config) -> None:  # type: ignore[override]
-        return None
+    def wt_init(self, config) -> None:
+        pass
 
 
-class PluginIO:
-    def emit(self, cmd: str) -> None:
-        emit_command(cmd)
-
-    def controlled_error(self, message: str, commands: list[str] | None = None) -> None:
-        controlled_error(message, commands)
+# Note: PluginIO removed as a thin wrapper; plugins should import shell_utils if needed.
 
 
 def get_manager(config) -> pluggy.PluginManager:
@@ -53,8 +46,7 @@ def get_manager(config) -> pluggy.PluginManager:
     pm.register(_Impl())
 
     logger = logging.getLogger(__name__)
-    eps = importlib_metadata.entry_points().select(group=ENTRYPOINT_GROUP)  # type: ignore[attr-defined]
-    for ep in eps:
+    for ep in importlib_metadata.entry_points().select(group=ENTRYPOINT_GROUP):  # type: ignore[attr-defined]
         # Only catch expected plugin loading errors; let programming errors crash
         try:
             pm.register(ep.load())
@@ -78,6 +70,4 @@ def get_plugin_commands(pm: pluggy.PluginManager) -> dict[str, Callable]:
     return commands
 
 
-def resolve_command(pm: pluggy.PluginManager, name: str):
-    mapping = get_plugin_commands(pm)
-    return mapping.get(name)
+# resolve_command removed; callers should use get_plugin_commands(pm).get(name)

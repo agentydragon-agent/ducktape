@@ -122,7 +122,7 @@ async def test_parallel_tool_calls_reduce_wall_time():
     )
 
     t0 = time.perf_counter()
-    res = await agent.run("go", stream=False)
+    res = await agent.run("go")
     elapsed = time.perf_counter() - t0
 
     # Assert shorter than serial (~0.60s), with generous headroom for CI noise

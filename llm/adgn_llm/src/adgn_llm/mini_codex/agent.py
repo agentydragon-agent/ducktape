@@ -7,7 +7,7 @@ from __future__ import annotations
 import json
 import os
 import time
-from collections.abc import Callable, Iterable
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, Protocol, cast
@@ -27,7 +27,6 @@ from pydantic import BaseModel
 from openai.resources.responses import AsyncResponses
 from adgn_llm.openai_retry import retry_decorator
 
-from .loggers import TranscriptLogger
 from adgn_llm.openai_utils import ReasoningSummary
 from .mcp_manager import McpManager
 from adgn_llm.mini_codex.loop_control import (
@@ -41,6 +40,14 @@ from adgn_llm.mini_codex.loop_control import (
     SyntheticAction,
 )
 from .aggregating_handler import AggregatingController, BaseHandler
+from adgn_llm.mini_codex.handler import (
+    UserText as EvUserText,
+    AssistantText as EvAssistantText,
+    ToolCall as EvToolCall,
+    FunctionCallOutput as EvFunctionCallOutput,
+    Response as EvResponse,
+    GroundTruthUsage as EvUsage,
+)
 
 
 @dataclass
@@ -199,7 +206,6 @@ class MiniCodex:
         *,
         model: str,
         system: str | None,
-        on_event: Callable[[dict[str, Any]], None] | None = None,
         mcp: McpManager,
         client: ResponsesClient | None = None,
         reasoning_effort: ReasoningEffort | None = None,
@@ -211,7 +217,6 @@ class MiniCodex:
         self._model = model
         self._default_system = system or SYSTEM_INSTRUCTIONS
         self._system = self._default_system
-        self._on_event = on_event or (lambda _evt: None)
         self._mcp = mcp
         self._client = client
         self._agent_name = agent_name or "mini_codex"
@@ -328,6 +333,20 @@ class MiniCodex:
                     tools=tools_list,
                     **reasoning_kwargs,
                 )
+                # Emit a typed Response event with ground-truth usage per SDK (openai==1.106.1)
+                u = resp.usage
+                self._controller.on_response(
+                    EvResponse(
+                        response_id=resp.id,
+                        usage=EvUsage(
+                            model=self._model,
+                            input_tokens=u.input_tokens,
+                            output_tokens=u.output_tokens,
+                            total_tokens=u.total_tokens,
+                        ),
+                        model=self._model,
+                    )
+                )
                 resp_output = resp.output
 
             requires: list[ResponseFunctionToolCall] = []
@@ -345,15 +364,23 @@ class MiniCodex:
                         assistant_text_chunks.append(combined)
                         msg = AssistantMessage(role="assistant", content=combined)
                         self._transcript.append(msg)
-                        evt = {"kind": "assistant_text", "text": combined}
-                        sequence.append(evt)
-                        self._emit_event(evt)
-                        self._controller.on_assistant_text(combined)
+                        sequence.append({"kind": "assistant_text", "text": combined})
+                        self._controller.on_assistant_text(EvAssistantText(text=combined))
                 elif isinstance(item, ResponseFunctionToolCall):
                     requires.append(item)
                     # Persist tool call into transcript so the next turn has full context
                     self._transcript.append(item.model_dump(exclude_none=True))
-                    self._controller.on_tool_call(item)
+                    try:
+                        _args = json.loads(item.arguments) if item.arguments else {}
+                    except Exception:
+                        _args = {"_raw": item.arguments} if item.arguments is not None else {}
+                    self._controller.on_tool_call(
+                        EvToolCall(
+                            name=item.name or "",
+                            args=_args if isinstance(_args, dict) else {},
+                            call_id=item.call_id or "",
+                        )
+                    )
 
             if os.environ.get("MINICODEX_DEBUG"):
                 dbg = [{"name": tc.name, "call_id": tc.call_id, "arguments": tc.arguments} for tc in requires]
@@ -412,8 +439,7 @@ class MiniCodex:
 
                 # Namespaced MCP tool
                 server, tool_name = self._mcp.resolve_function(_fc.name)
-                session = await self._mcp.get_session(server)
-                res_ct = await session.call_tool(name=tool_name, arguments=_args)
+                res_ct = await self._mcp.call_tool(server, tool_name, _args)
                 out_str = _responses_output_from_calltool(res_ct)
                 parsed_error: str | None = None
                 try:
@@ -476,10 +502,8 @@ class MiniCodex:
 
                 # Namespaced MCP tool
                 server, tool_name = self._mcp.resolve_function(fc.name)
-                # Get the session and invoke the MCP tool
-                session = await self._mcp.get_session(server)
                 start = time.perf_counter()
-                res_ct = await session.call_tool(name=tool_name, arguments=args)
+                res_ct = await self._mcp.call_tool(server, tool_name, args)
                 latency = time.perf_counter() - start
                 if os.environ.get("MINICODEX_DEBUG") and isinstance(res_ct, mcp_types.CallToolResult):
                     self._log.debug(
@@ -529,7 +553,6 @@ class MiniCodex:
         mcp: McpManager,
         handlers: Iterable[BaseHandler],
         system: str | None = None,
-        on_event: Callable[[dict[str, Any]], None] | None = None,
         client: ResponsesClient | None = None,
         reasoning_effort: ReasoningEffort | None = None,
         reasoning_summary: ReasoningSummary | None = None,
@@ -541,7 +564,6 @@ class MiniCodex:
         inst = cls(
             model=model,
             system=system,
-            on_event=on_event,
             mcp=mcp,
             client=client,
             reasoning_effort=reasoning_effort,
@@ -562,17 +584,6 @@ class MiniCodex:
         self._log_dir = run_dir
         # Log path via structlog; avoid printing to stdout by default
         self._log.info("mini_codex_log_dir", path=str(run_dir))
-        # Attach JSONL transcript logger (always on)
-        run_logger = TranscriptLogger(run_dir)
-        prev_on_event = self._on_event
-
-        def _chained(evt: dict[str, Any]) -> None:
-            try:
-                run_logger(evt)
-            finally:
-                prev_on_event(evt)
-
-        self._on_event = _chained
         # Keep a run.json for quick metadata
         meta = {
             "model": self._model,
@@ -583,9 +594,7 @@ class MiniCodex:
         (run_dir / "run.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
 
     def _emit_event(self, evt: dict[str, Any]) -> None:
-        # First, forward to the configured handler (transcript, pretty renderer, etc.)
-        self._on_event(evt)
-        # Always emit to structlog; routing to console/file is controlled by logger configuration
+        # Emit to structlog; routing to console/file is controlled by logger configuration
         self._log.info("mini_codex_event", **evt)
 
     def _log_event(self, evt: dict[str, Any]) -> None:
@@ -628,7 +637,7 @@ class MiniCodex:
         sequence.append(fco_evt)
         self._transcript.append(fco)
         self._emit_event(fco_evt)
-        self._controller.on_function_call_output(fc, fco)
+        self._controller.on_function_call_output(EvFunctionCallOutput(call_id=fc.call_id, output=out_str))
         if parsed_error is not None:
             err_evt = {"kind": "tool_error", "name": fc.name, "call_id": fc.call_id, "error": parsed_error}
             sequence.append(err_evt)
@@ -648,7 +657,7 @@ class MiniCodex:
         user_text: str,
     ) -> AgentResult:
         self._transcript.append(UserMessage(role="user", content=user_text))
-        self._emit_event({"kind": "user_text", "text": user_text})
+        self._controller.on_user_text(EvUserText(text=user_text))
         result = await self._single_turn()
         return result
 

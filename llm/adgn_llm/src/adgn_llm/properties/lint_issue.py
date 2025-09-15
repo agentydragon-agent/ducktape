@@ -6,6 +6,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
+import os
 
 from mcp.server.fastmcp import FastMCP
 from adgn_llm.properties.prompts.util import (
@@ -41,6 +42,7 @@ from adgn_llm.mini_codex.loop_control import (
     SyntheticAction,
 )
 from adgn_llm.mini_codex.aggregating_handler import BaseHandler
+from adgn_llm.mini_codex.loggers import TranscriptLoggerHandler
 from adgn_llm.properties.models.issue import Occurrence, LineRange, IssueCore, IssueId
 from adgn_llm.properties.models.lint import (
     IssueLintFindingRecord,
@@ -428,6 +430,11 @@ async def run_specimen_lint_issue_async(
         return 0
 
     # Shared core: run and capture structured payload
+    # Add per-run transcript logger handler
+    run_dir = Path.cwd() / "logs" / "mini_codex" / "lint_issue"
+    run_dir = run_dir / f"run_{int(time.time())}_{os.getpid()}"
+    run_dir.mkdir(parents=True, exist_ok=True)
+
     res = await lint_issue_run(
         specimen,
         irec.core,
@@ -435,7 +442,7 @@ async def run_specimen_lint_issue_async(
         model=model,
         gitconfig=gitconfig,
         client=client,
-        handlers=[DisplayEventsHandler()],
+        handlers=[DisplayEventsHandler(), TranscriptLoggerHandler(run_dir)],
     )
 
     # Print the exact occurrence representation as fed to the model

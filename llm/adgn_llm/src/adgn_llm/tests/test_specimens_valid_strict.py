@@ -4,8 +4,7 @@ from typing import List
 
 import pytest
 
-from adgn_llm.properties.specimens.registry import find_specimens_base, list_specimen_names, _jsonnet_load_issues_dir
-from adgn_llm.properties.models.issue import SpecimenIssuesLoadError
+from adgn_llm.properties.specimens.registry import find_specimens_base, list_specimen_names, SpecimenRegistry
 
 
 def _all_specimens() -> List[str]:
@@ -14,24 +13,17 @@ def _all_specimens() -> List[str]:
 
 
 @pytest.mark.parametrize("specimen", _all_specimens())
-def test_specimen_issues_are_valid_strict(specimen: str) -> None:
-    # Use the single production loader (strict)
+def test_specimen_issues_and_false_positives_load(specimen: str) -> None:
+    # Load both issues/ and false_positives/ via the registry; assert no load errors
     base = find_specimens_base()
-    spec_dir = base / specimen
-    try:
-        _ = _jsonnet_load_issues_dir(spec_dir, strict=True)
-    except SpecimenIssuesLoadError as e:
-        # Echo a concise header + all collected errors to help debug quickly in CI output
-        print(f"Specimen '{specimen}' has invalid issue files (count={len(e.errors)}):", flush=True)
-        # Jsonnet (_jsonnet) does not expose structured diagnostics via Python;
-        # errors are human-formatted strings. We parse file:line:col from the message
-        # to print helpful context for debugging in CI.
+    rec, errors = SpecimenRegistry.load_lenient(specimen, base=base)
+    if errors:
+        print(f"Specimen '{specimen}' has invalid Jsonnet files (count={len(errors)}):", flush=True)
         import re
         from pathlib import Path
 
-        for line in e.errors:
+        for line in errors:
             print(line, flush=True)
-            # Attempt to extract file:line and print context
             try:
                 matches = re.findall(r"(/[^:]+):(\d+):", line)
                 if matches:
@@ -47,5 +39,4 @@ def test_specimen_issues_are_valid_strict(specimen: str) -> None:
                             print(f"{i:>4}: {src_lines[i - 1]}", flush=True)
             except Exception:
                 pass
-        # Re-raise to mark this specimen as failing
-        raise
+    assert not errors, f"Specimen '{specimen}' has invalid Jsonnet files (count={len(errors)})"

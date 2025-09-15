@@ -37,7 +37,7 @@ def test_precommit_autofix_on_badly_formatted_python(integration_env):
     assert integration_env.file_exists("test.py")
     compile(final_content, "test.py", "exec")
     # Hook may return Continue (no changes) or FeedbackToClaude (changes made)
-    assert isinstance(hook_result, (PostToolContinue, PostToolFeedbackToClaude))
+    assert isinstance(hook_result, PostToolContinue | PostToolFeedbackToClaude)
 
 
 def test_precommit_autofix_on_import_sorting(integration_env):
@@ -61,7 +61,7 @@ def use_foo():
     final_content = integration_env.read_file("imports.py")
 
     compile(final_content, "imports.py", "exec")
-    assert isinstance(hook_result, (PostToolContinue, PostToolFeedbackToClaude))
+    assert isinstance(hook_result, PostToolContinue | PostToolFeedbackToClaude)
 
 
 def test_precommit_autofix_skips_excluded_files(integration_env):
@@ -79,7 +79,7 @@ def test_precommit_autofix_skips_excluded_files(integration_env):
     hook = PreCommitAutoFixerHook()
     hook_result = hook.execute(hook_input, integration_env.create_context())
 
-    assert isinstance(hook_result, (PostToolContinue, PostToolFeedbackToClaude))
+    assert isinstance(hook_result, PostToolContinue | PostToolFeedbackToClaude)
 
 
 def test_precommit_autofix_handles_non_python_files(integration_env):
@@ -99,7 +99,7 @@ def test_precommit_autofix_handles_non_python_files(integration_env):
     final_content = integration_env.read_file("config.json")
 
     json.loads(final_content)
-    assert isinstance(hook_result, (PostToolContinue, PostToolFeedbackToClaude))
+    assert isinstance(hook_result, PostToolContinue | PostToolFeedbackToClaude)
 
 
 def test_edit_vs_write_operations(integration_env):
@@ -118,7 +118,7 @@ def test_edit_vs_write_operations(integration_env):
     hook = PreCommitAutoFixerHook()
     hook_result = hook.execute(hook_input, integration_env.create_context())
 
-    assert isinstance(hook_result, (PostToolContinue, PostToolFeedbackToClaude))
+    assert isinstance(hook_result, PostToolContinue | PostToolFeedbackToClaude)
 
 
 @pytest.mark.slow
@@ -182,7 +182,7 @@ def test_workflow_simulation(integration_env):
         hook_result = hook.execute(hook_input, integration_env.create_context())
         final_content = integration_env.read_file(filename)
 
-        assert isinstance(hook_result, (PostToolContinue, PostToolFeedbackToClaude))
+        assert isinstance(hook_result, PostToolContinue | PostToolFeedbackToClaude)
         compile(final_content, filename, "exec")
 
     python_files = list(integration_env.project_dir.rglob("*.py"))

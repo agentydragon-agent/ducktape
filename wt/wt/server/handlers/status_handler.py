@@ -13,6 +13,7 @@ from ...shared.protocol import (
     ComponentState,
     ComponentStatus,
     GitstatusdState,
+    PRInfoDisabled,
     ReadinessSummary,
     StatusItem,
     StatusParams,
@@ -86,7 +87,7 @@ async def get_status(  # noqa: PLR0913
                 _compute_status(worktree_path)
             )
             last_updated_at = datetime.now()
-            pr_info = None
+            pr_info = PRInfoDisabled()
             is_cached = False
             cache_age_ms = None
             is_stale = False
@@ -165,7 +166,7 @@ async def get_status(  # noqa: PLR0913
                 _compute_status(worktree_path)
             )
             last_updated_at = datetime.now()
-            pr_info = None
+            pr_info = PRInfoDisabled()
             is_cached = False
             cache_age_ms = None
             is_stale = False

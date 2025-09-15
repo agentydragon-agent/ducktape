@@ -7,6 +7,8 @@ One daemon per main git repository that:
 - Handles concurrent requests efficiently
 """
 
+from __future__ import annotations
+
 import asyncio
 import contextlib
 import json

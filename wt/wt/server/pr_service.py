@@ -18,9 +18,21 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+# Runtime-only algebraic cache (not serialized)
 @dataclass
-class PRCacheEntry:
-    data: PRData | None
+class PRCacheOk:
+    data: PRData
+    fetched_at: datetime
+
+
+@dataclass
+class PRCacheError:
+    error: str
+    fetched_at: datetime
+
+
+@dataclass
+class PRCacheDisabled:
     fetched_at: datetime
 
 
@@ -32,7 +44,7 @@ class PRService:
     config: Configuration
     worktree_info: DiscoveredWorktree
     git_manager: GitManager
-    cached: PRCacheEntry | None = None
+    cached: PRCacheOk | PRCacheError | PRCacheDisabled | None = None
     github_refresh: DebouncedGitHubRefresh | None = None
 
     async def start(self) -> None:
@@ -69,9 +81,11 @@ class PRService:
             and self.cached is not None
             and (now - self.cached.fetched_at).total_seconds() < 60
         ):
-            return self.cached.data
+            if isinstance(self.cached, PRCacheOk):
+                return self.cached.data
+            return None
         if not self.github_interface:
-            self.cached = PRCacheEntry(data=None, fetched_at=now)
+            self.cached = PRCacheDisabled(fetched_at=now)
             return None
         pr_info_data: PRData | None = None
         try:
@@ -96,6 +110,11 @@ class PRService:
                 )
         except (OSError, RuntimeError) as e:
             logger.warning("PR fetch failed for %s: %s", branch_name, e)
-            pr_info_data = None
-        self.cached = PRCacheEntry(data=pr_info_data, fetched_at=now)
-        return pr_info_data
+            self.cached = PRCacheError(error=str(e), fetched_at=now)
+            return None
+        else:
+            if pr_info_data is not None:
+                self.cached = PRCacheOk(data=pr_info_data, fetched_at=now)
+            else:
+                self.cached = PRCacheDisabled(fetched_at=now)
+            return pr_info_data

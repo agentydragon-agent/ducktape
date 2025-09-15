@@ -1,3 +1,6 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any, Protocol, runtime_checkable
 
@@ -96,7 +99,7 @@ class GitHubPRResponse(BaseModel):
     deletions: int | None = None
 
     @classmethod
-    def from_github_pr(cls, pr) -> "GitHubPRResponse":
+    def from_github_pr(cls, pr) -> GitHubPRResponse:
         """Create from PyGithub PR object"""
         return cls(
             number=pr.number,
@@ -152,14 +155,12 @@ class HasBasicPR(Protocol):  # minimal protocol for PyGithub-like PR
     title: str
 
 
-class PRInfo(BaseModel):
+@dataclass
+class PRInfo:
     branch: str
     pr_data: PRData | None = None
-    github_pr: HasBasicPR | None = None  # Store minimal PR interface to avoid Any
+    github_pr: HasBasicPR | None = None  # runtime object, not serialized
     gh_error: str | None = None
-
-    class Config:
-        arbitrary_types_allowed = True
 
     def to_repr(self) -> PRInfoRepr:
         return PRInfoRepr(

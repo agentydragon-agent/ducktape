@@ -43,6 +43,8 @@ import sys
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+import logging
+from adgn_llm.inop.prompting.prompt_engineer import FeedbackProvider
 
 from openai import AsyncOpenAI
 
@@ -86,9 +88,10 @@ from adgn_llm.mcp.inproc_transport import make_inproc_slot_spec
 from adgn_llm.mini_codex.mcp_manager import McpManager
 from adgn_llm.mini_codex.agent import MiniCodex
 from adgn_llm.inop.prompting.pe_controller import ProposePromptNTimes
+from adgn_llm.mini_codex.loggers import TranscriptLoggerHandler
 
-# Logging will be configured after argument parsing
-logger = None
+# Always get a module logger; handler config is applied by DualOutputLogging
+logger: logging.Logger = logging.getLogger(__name__)
 
 # Global trackers
 score_tracker = ScoreEvolutionTracker()
@@ -108,18 +111,22 @@ class CostTracker:
         self.rollout_count += 1
         logger.info(
             "Rollout cost added",
-            rollout_cost_usd=cost_usd,
-            total_cost_usd=self.total_cost_usd,
-            rollout_count=self.rollout_count,
+            extra={
+                "rollout_cost_usd": cost_usd,
+                "total_cost_usd": self.total_cost_usd,
+                "rollout_count": self.rollout_count,
+            },
         )
 
     def report_final_cost(self):
         """Report final cost summary."""
         logger.info(
             "FINAL COST SUMMARY",
-            total_cost_usd=self.total_cost_usd,
-            rollout_count=self.rollout_count,
-            avg_cost_per_rollout_usd=self.total_cost_usd / max(1, self.rollout_count),
+            extra={
+                "total_cost_usd": self.total_cost_usd,
+                "rollout_count": self.rollout_count,
+                "avg_cost_per_rollout_usd": self.total_cost_usd / max(1, self.rollout_count),
+            },
         )
 
 
@@ -168,14 +175,14 @@ async def optimize_prompts_mcp(
     # Choose feedback provider per config
     feedback_mode = FeedbackMode(cfg.prompt_engineer.feedback_mode)
     if feedback_mode == FeedbackMode.SUMMARY:
-        feedback_provider = PatternSummarizer(
+        feedback_provider: FeedbackProvider = PatternSummarizer(
             model=LoggingOpenAIModel(
                 openai_client=openai_client,
                 model=cfg.grader.model,
                 context_window_tokens=cfg.tokens.max_context_tokens,
             ),
             truncation_manager=TruncationManager(cfg),
-            max_file_size_pattern_analysis=cfg.truncation.max_file_pattern_analysis,
+            max_file_size_pattern_analysis=cfg.truncation.max_file_size_pattern_analysis,
         )
     elif feedback_mode == FeedbackMode.STATS_ONLY:
         feedback_provider = StatsOnlyFeedbackProvider()
@@ -219,6 +226,8 @@ async def optimize_prompts_mcp(
 
                 # Grade rollout
                 _, grading_config = t.resolve_config(task_types)
+                if grading_config is None:
+                    raise ValueError("grading_config is required for grade_rollout")
                 grade = await grade_rollout(
                     rollout=rollout,
                     task=t,
@@ -330,12 +339,15 @@ async def optimize_prompts_mcp(
             f"- The feedback will take the form of: {feedback_provider.verbal_description()}\n"
         )
 
+        # Write PE transcripts into the main optimization output directory
+        run_dir = base_dir
+        run_dir.mkdir(parents=True, exist_ok=True)
         pe = await MiniCodex.create(
             model=model.model,
             mcp=mcp,
             client=model.openai_client.openai_client,
             system=system_message,
-            handlers=[ProposePromptNTimes(iterations)],
+            handlers=[ProposePromptNTimes(iterations), TranscriptLoggerHandler(run_dir)],
         )
 
         # Force N propose_prompt tool calls then abort (handled by ProposePromptNTimes registered above)
@@ -347,8 +359,10 @@ async def optimize_prompts_mcp(
 
         logger.info(
             "Optimization complete (MCP)",
-            last_prompt_preview=(last_prompt or "")[:160],
-            last_feedback_preview=(last_feedback or "")[:160],
+            extra={
+                "last_prompt_preview": (last_prompt or "")[:160],
+                "last_feedback_preview": (last_feedback or "")[:160],
+            },
         )
         return base_dir
 
@@ -596,8 +610,10 @@ Examples:
 
     logger.info(
         "Score evolution report generated",
-        report_path=str(final_report_path),
-        run_directory=str(run_dir),
+        extra={
+            "report_path": str(final_report_path),
+            "run_directory": str(run_dir),
+        },
     )
     cost_tracker.report_final_cost()
 

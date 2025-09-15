@@ -37,19 +37,20 @@ logger = logging.getLogger(__name__)
 async def worktree_list(git: GitService, config: Configuration) -> WorktreeListResult:
     worktrees: list[WorktreeInfo] = []
     for info in git.list_worktrees():
-        if not info.is_main:
-            worktree_name = info.path.name
-            worktree_id = make_worktree_id(worktree_name)
-            worktrees.append(
-                WorktreeInfo(
-                    wtid=worktree_id,
-                    name=worktree_name,
-                    absolute_path=str(info.path),
-                    branch_name=info.branch,
-                    exists=info.exists,
-                    is_main=False,
-                ),
-            )
+        if info.is_main:
+            continue
+        worktree_name = info.path.name
+        worktree_id = make_worktree_id(worktree_name)
+        worktrees.append(
+            WorktreeInfo(
+                wtid=worktree_id,
+                name=worktree_name,
+                absolute_path=str(info.path),
+                branch_name=info.branch,
+                exists=info.exists,
+                is_main=False,
+            ),
+        )
 
     return WorktreeListResult(worktrees=worktrees)
 
@@ -196,18 +197,21 @@ async def worktree_identify(
 ) -> WorktreeIdentifyResult:
     # params already validated by rpc layer
     absolute_path = Path(params.absolute_path)
-    # Scope try/except narrowly to the relative_to(...) calls
+    # Fail fast on non-existent path
+    if not absolute_path.exists():
+        raise RpcError(
+            code=ErrorCodes.WORKTREE_NOT_FOUND,
+            message=f"{absolute_path} is not a managed worktree",
+        )
+
+    # Determine worktree name and relative path with minimal nesting
     try:
         rel_path = absolute_path.relative_to(config.worktrees_dir)
-    except ValueError:
-        rel_path = None
-
-    if rel_path is not None:
         worktree_name = rel_path.parts[0] if rel_path.parts else None
         relative_path = (
             str(Path(*rel_path.parts[1:])) if len(rel_path.parts) > 1 else ""
         )
-    else:
+    except ValueError:
         try:
             absolute_path.relative_to(config.main_repo)
         except ValueError:
@@ -216,7 +220,8 @@ async def worktree_identify(
         else:
             worktree_name = MAIN_WORKTREE_DISPLAY_NAME
             relative_path = str(absolute_path.relative_to(config.main_repo))
-    if not worktree_name or not absolute_path.exists():
+
+    if not worktree_name:
         raise RpcError(
             code=ErrorCodes.WORKTREE_NOT_FOUND,
             message=f"{absolute_path} is not a managed worktree",

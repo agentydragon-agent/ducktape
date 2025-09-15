@@ -1,12 +1,21 @@
 import os
 from pathlib import Path
+from typing import Literal
 
 import click
 from colorama import Style
 from tabulate import tabulate
 
-from ..shared.github_models import PRData, PRInfo, PRState, PRStatus
-from ..shared.protocol import StatusResult
+from ..shared.github_models import PRData, PRState, PRStatus
+from ..shared.protocol import (
+    PRInfo,
+    PRInfoError,
+    PRInfoOk,
+    StatusResult,
+)
+
+# Display limit for list summaries in UI
+FILE_LIST_DISPLAY_LIMIT = 3
 
 # PR status display mapping centralized via PRStatus.display_text
 PR_STATUS_DISPLAY_MAP = {
@@ -46,11 +55,12 @@ class ViewFormatter:
     def __init__(self):
         pass
 
-    def format_list_with_more(self, items: list[str], max_items: int = 3) -> str:
-        if len(items) <= max_items:
+    def format_list_with_more(self, items: list[str]) -> str:
+        limit = FILE_LIST_DISPLAY_LIMIT
+        if len(items) <= limit:
             return ", ".join(items)
-        shown = ", ".join(items[:max_items])
-        return f"{shown} and {len(items) - max_items} more"
+        shown = ", ".join(items[:limit])
+        return f"{shown} and {len(items) - limit} more"
 
     def make_hyperlink(self, url: str, text: str) -> str:
         if os.getenv("TERM_PROGRAM") in ("iTerm.app", "vscode") or os.getenv(
@@ -59,10 +69,17 @@ class ViewFormatter:
             return f"\033]8;;{url}\007{text}\033]8;;\007"
         return text
 
+    def _mergeability_label(
+        self, mergeable: bool | None
+    ) -> Literal["mergeable", "conflicting", "unknown"]:
+        if mergeable is None:
+            return "unknown"
+        return "mergeable" if mergeable else "conflicting"
+
     def get_pr_status_text(
         self,
         pr_state: PRState,
-        pr_mergeable,
+        mergeability: Literal["mergeable", "conflicting", "unknown"],
         is_draft: bool = False,
         merged_at: str | None = None,
     ) -> str:
@@ -76,9 +93,9 @@ class ViewFormatter:
                 return "merged"
             return "closed"
         if pr_state == PRState.OPEN:
-            if pr_mergeable is None:
+            if mergeability == "unknown":
                 return PRStatus.OPEN_UNKNOWN.display_text
-            if pr_mergeable:
+            if mergeability == "mergeable":
                 return PRStatus.OPEN_MERGEABLE.display_text
             return PRStatus.OPEN_CONFLICTING.display_text
         return str(pr_state.value).lower()
@@ -87,7 +104,7 @@ class ViewFormatter:
         self,
         name: str,
         status: StatusResult,
-        pr_info: PRInfo | None,
+        pr_info: PRInfo,
         name_width: int = 22,
     ) -> str:
         """Format a status row with nice alignment."""
@@ -102,7 +119,7 @@ class ViewFormatter:
 
         # GitHub PR status with clickable hyperlinks and clear text
         pr_status = ""
-        if pr_info and pr_info.pr_data:
+        if isinstance(pr_info, PRInfoOk):
             d: PRData = pr_info.pr_data
             pr_number = d.pr_number
             pr_state = d.pr_state
@@ -121,7 +138,7 @@ class ViewFormatter:
 
             pr_status_text = self.get_pr_status_text(
                 pr_state,
-                d.mergeable,
+                self._mergeability_label(d.mergeable),
                 d.draft,
                 d.merged_at,
             )
@@ -141,15 +158,6 @@ class ViewFormatter:
         else:
             click.echo("No worktrees found")
 
-    def _get_commit_column(self, status: StatusResult) -> str:
-        """Get commit hash column."""
-        return status.commit_info.short_hash if status.commit_info else "ERROR"
-
-    def _get_sync_column(self, status: StatusResult) -> str:
-        """Get ahead/behind sync status column (compact variant)."""
-        # Use compact variant for table context
-        return format_sync_status(status.ahead_count, status.behind_count, compact=True)
-
     def _work_status_text(self, status: StatusResult) -> str:
         """Human-readable working directory status (shared)."""
         if not status.is_cached:
@@ -164,23 +172,9 @@ class ViewFormatter:
             return f"{s} (stale)" if status.is_stale else s
         return "clean (stale)" if status.is_stale else "clean"
 
-    def _get_work_status_column(self, status: StatusResult) -> str:
-        """Get working directory status column (compact variant for table)."""
-        if not status.is_cached:
-            return "unknown"
-        if status.has_dirty_files or status.has_untracked_files:
-            parts = []
-            if status.has_dirty_files:
-                parts.append("M")
-            if status.has_untracked_files:
-                parts.append("?")
-            s = "+".join(parts)
-            return f"{s} (stale)" if status.is_stale else s
-        return "clean (stale)" if status.is_stale else "clean"
-
     def _get_pr_link_column(self, status: StatusResult) -> str:
         """Get PR link column."""
-        if not status.pr_info or not status.pr_info.pr_data:
+        if not isinstance(status.pr_info, PRInfoOk):
             return ""
         pr_number = status.pr_info.pr_data.pr_number
         # Hardcoded helper: map PR number -> http://go/pull/{n}
@@ -188,19 +182,21 @@ class ViewFormatter:
 
     def _get_pr_status_column(self, status: StatusResult) -> str:
         """Get PR status text column."""
-        if not status.pr_info or not status.pr_info.pr_data:
+        if isinstance(status.pr_info, PRInfoError):
+            return f"github error: {status.pr_info.error}"
+        if not isinstance(status.pr_info, PRInfoOk):
             return ""
         d = status.pr_info.pr_data
         return self.get_pr_status_text(
             d.pr_state,
-            d.mergeable,
+            self._mergeability_label(d.mergeable),
             d.draft,
             d.merged_at,
         )
 
     def _get_pr_changes_column(self, status: StatusResult) -> str:
         """Get PR changes (+lines/-lines) column."""
-        if not status.pr_info or not status.pr_info.pr_data:
+        if not isinstance(status.pr_info, PRInfoOk):
             return ""
         d = status.pr_info.pr_data
         if d.additions is not None and d.deletions is not None:
@@ -260,8 +256,8 @@ class ViewFormatter:
             table_data.append(
                 [
                     name,
-                    self._get_commit_column(status),
-                    self._get_work_status_column(status),
+                    (status.commit_info.short_hash if status.commit_info else "ERROR"),
+                    self._work_status_text(status),
                     state,
                     pr_info,
                 ],
@@ -335,7 +331,7 @@ class ViewFormatter:
             # Format detailed PR status
             status_text = self.get_pr_status_text(
                 pr_state,
-                d.mergeable,
+                self._mergeability_label(d.mergeable),
                 d.draft,
                 d.merged_at,
             )
@@ -344,35 +340,6 @@ class ViewFormatter:
                 click.echo(f"{icon} Status: This PR {message}")
             else:
                 click.echo(f"Status: {status_text}")
-
-    def render_worktree_processes(self, worktree_path: Path, processes) -> None:
-        if not processes:
-            click.echo("  ✓ No running processes found")
-            return
-
-        proc_strings = [f"PID {p.pid} ({p.name})" for p in processes]
-        proc_info = self.format_list_with_more(proc_strings)
-
-        click.echo(f"  ⚠️  Found running processes: {proc_info}")
-
-    def render_worktree_removal_progress(self, name: str, worktree_path: Path) -> None:
-        click.echo(f"🔍 Checking worktree '{name}' for removal...")
-        click.echo("  Checking for running processes...")
-
-    def render_worktree_removal_git_status(
-        self,
-        name: str,
-        has_changes: bool,
-        force: bool,
-    ) -> None:
-        click.echo("  Checking for uncommitted changes...")
-        if not has_changes:
-            click.echo("  ✓ Working directory is clean")
-        elif force:
-            click.echo("  ⚠️  Found uncommitted changes (using --force)")
-        else:
-            # This should trigger an error in the business logic
-            pass
 
     def render_worktree_removal_confirmation(
         self,
@@ -385,11 +352,3 @@ class ViewFormatter:
 
     def render_worktree_removal_success(self, name: str) -> None:
         click.echo(f"✅ Successfully removed worktree '{name}'")
-
-    def render_worktree_creation_progress(self, worktree_path: Path) -> None:
-        """Render worktree creation progress."""
-        click.echo(f"Creating worktree at: {worktree_path}")
-
-    def render_hydration_progress(self, strategy_name: str) -> None:
-        """Render hydration progress."""
-        click.echo(f"Hydrating worktree via {strategy_name}...")

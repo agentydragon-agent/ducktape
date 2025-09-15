@@ -11,7 +11,6 @@ import uuid
 from contextlib import AsyncExitStack
 from pathlib import Path
 from typing import Any
-
 from adgn_llm.inop.clients.logging_openai_client import (
     LoggingOpenAIModel,
 )
@@ -21,6 +20,7 @@ from adgn_llm.inop.engine.models import (
     Rollout,
     RunnerEnvironment,
     TaskDefinition,
+    TaskType,
     ToolCall,
     ToolResult,
     TrajectoryItem,
@@ -34,6 +34,7 @@ from adgn_llm.mcp.inproc_transport import make_inproc_slot_spec
 from adgn_llm.mini_codex.agent import MiniCodex
 from adgn_llm.mini_codex.event_renderer import DisplayEventsHandler
 from adgn_llm.mini_codex.aggregating_handler import AutoHandler
+from adgn_llm.mini_codex.loggers import TranscriptLoggerHandler
 from adgn_llm.mcp.local_exec.server import make_local_exec_mcp
 from adgn_llm.mini_codex.mcp_manager import McpManager
 from adgn_llm.mcp.types import ServerSlotSpec
@@ -58,8 +59,10 @@ class MiniCodexRunner(AgentRunner):
         self._mcp_manager: McpManager | None = None
         self._logging_model = openai_model
 
-    async def setup(self, task: TaskDefinition, task_type_config: dict) -> None:
-        setup, _ = task.resolve_config({task.type: task_type_config})
+    async def setup(self, task: TaskDefinition, task_type_config: dict[str, Any]) -> None:
+        # Ensure proper typing for resolve_config: expects dict[str, TaskType]
+        typed_map: dict[str, TaskType] = {task.type: TaskType.model_validate(task_type_config)}
+        setup, _ = task.resolve_config(typed_map)
 
         self.workspace_path = Path(tempfile.mkdtemp(prefix="minicodex_"))
 
@@ -74,13 +77,17 @@ class MiniCodexRunner(AgentRunner):
 
         self._exit_stack = AsyncExitStack()
         self._mcp_manager = await self._exit_stack.enter_async_context(McpManager(slots))
+        # Per-run transcript directory
+        run_dir = Path.cwd() / "logs" / "mini_codex" / "minicodex_runner"
+        run_dir = run_dir / f"run_{int(time.time())}_{os.getpid()}"
+        run_dir.mkdir(parents=True, exist_ok=True)
         agent = await MiniCodex.create(
             model=self.model,
             system=None,
             mcp=self._mcp_manager,
             client=self._logging_model.openai_client.openai_client,
             reasoning_effort=self.reasoning_effort,
-            handlers=[AutoHandler(), DisplayEventsHandler()],
+            handlers=[AutoHandler(), DisplayEventsHandler(), TranscriptLoggerHandler(run_dir)],
         )
         self._agent = await self._exit_stack.enter_async_context(agent)
 
@@ -179,6 +186,7 @@ class MiniCodexRunner(AgentRunner):
         if result.text:
             trajectory.append(FinalOutput(text=result.text))
 
+        assert self.workspace_path is not None, "Workspace path not initialised"
         files = collect_workspace_files(self.workspace_path)
 
         return Rollout(

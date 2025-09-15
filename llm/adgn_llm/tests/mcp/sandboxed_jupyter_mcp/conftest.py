@@ -29,7 +29,10 @@ def artifacts_base(tmp_path: Path) -> Path:
 
 # Bootstrap a dedicated control venv for Jupyter server + MCP bridge, then require tools
 @pytest.fixture(scope="session", autouse=True)
-def _bootstrap_control_venv_and_require_tools(test_base):
+def _bootstrap_control_venv_and_require_tools(test_base, request):
+    # Skip heavy bootstrap unless explicitly enabled via --run-sandboxer
+    if not getattr(request.config.option, "run_sandboxer", False):
+        return
     # Always prefer our dedicated control venv; create it if missing, else just prefix PATH
     base = test_base
     control = base / "control_venv"
@@ -99,14 +102,51 @@ def require_macos_rtc():
         )
 
 
-# Auto-skip @pytest.mark.macos on non-darwin
+# Suite-level opt-in to run slow sandboxer tests
+
+
+def _is_sandboxer_item(item) -> bool:
+    try:
+        base_dir = Path(__file__).parent
+        p = getattr(item, "path", None)
+        if p is None:
+            # Fallback for older pytest
+            p = Path(str(getattr(item, "fspath", "")))
+        return p and Path(p).is_relative_to(base_dir)
+    except Exception:
+        return False
+
+
+def pytest_addoption(parser):
+    parser.addoption(
+        "--run-sandboxer",
+        action="store_true",
+        help="Run slow sandboxed_jupyter_mcp tests (otherwise each test is SKIPPED loudly)",
+    )
+
+
+# Auto-skip whole suite unless --run-sandboxer; also skip @pytest.mark.macos on non-darwin
+
+
 def pytest_collection_modifyitems(config, items):
-    if sys.platform == "darwin":
-        return
-    skip = pytest.mark.skip(reason="macOS-only")
-    for item in items:
-        if "macos" in item.keywords:
-            item.add_marker(skip)
+    # Opt-in gate for slow suite (safe when option absent)
+    run_flag = getattr(config.option, "run_sandboxer", False)
+    if not run_flag:
+        skip_all = pytest.mark.skip(
+            reason="SLOW suite disabled — pass --run-sandboxer to run",
+        )
+        for item in items:
+            if _is_sandboxer_item(item):
+                item.add_marker(skip_all)
+        # Do not return; allow other suites to proceed and other hooks to run
+        # (we only marked sandboxer tests)
+
+    # Platform-specific skip for macOS-only tests
+    if sys.platform != "darwin":
+        skip_macos = pytest.mark.skip(reason="macOS-only")
+        for item in items:
+            if _is_sandboxer_item(item) and "macos" in item.keywords:
+                item.add_marker(skip_macos)
 
 
 # Postmortem artifact collection on failures

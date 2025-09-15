@@ -32,7 +32,7 @@ from adgn_llm.mini_codex.agent import MiniCodex
 from openai import AsyncOpenAI
 from adgn_llm.mini_codex.event_renderer import DisplayEventsHandler
 from adgn_llm.mini_codex.transcript_handler import TranscriptHandler
-from adgn_llm.properties.cli import PromptOptimizeHandler  # reuse handler
+from adgn_llm.properties.prompt_eval.server import PromptOptimizeHandler
 from adgn_llm.properties.prop_utils import pkg_dir
 from adgn_llm.mcp.inproc_transport import make_inproc_slot_spec
 from adgn_llm.properties.prompt_eval.server import (
@@ -52,6 +52,7 @@ from adgn_llm.properties.cli import (
     _resolve_gitconfig,
     build_cmd,
     BuildOptions,
+    _detect_tools,
 )
 from adgn_llm.properties.docker_env import (
     properties_docker_spec,
@@ -110,15 +111,50 @@ async def cmd_check(
 ) -> None:
     """Check a static path set against committed property definitions (docker RO mount)."""
 
-    # Delegate to existing async helper to stay DRY during migration
-    await _run_check_minicodex_async(
-        workdir,
+    # Dry-run path: compose prompt only and save it to a temp file (compat with legacy tests)
+    if dry_run:
+        from adgn_llm.properties.prompts.builder import build_check_prompt
+        from adgn_llm.properties.docker_env import PropertiesDockerWiring
+        import tiktoken
+
+        # Compose prompt without spinning up docker/agent
+        wiring = PropertiesDockerWiring(
+            server_spec=None,  # type: ignore[arg-type]
+            working_dir=Path("/"),
+            definitions_container_dir=None,
+            image_name="n/a",
+        )
+        prompt_text = build_check_prompt(scope, wiring=wiring, allow_general_findings=allow_general_findings)
+        tmpdir = Path(tempfile.gettempdir()) / "adgn_codex_prompts"
+        tmpdir.mkdir(parents=True, exist_ok=True)
+        ts = int(time.time())
+        outfile = tmpdir / f"codex_prompt_check_{ts}.md"
+        outfile.write_text(prompt_text, encoding="utf-8")
+        tokens = len(tiktoken.get_encoding("cl100k_base").encode(prompt_text))
+        typer.echo(f"Saved prompt: {outfile} (approx tokens: {tokens})")
+        return
+
+    # Build prompt and execute via existing async helper
+    from adgn_llm.properties.prompts.builder import build_role_prompt
+
+    wiring = properties_docker_spec(workdir, mount_properties=True)
+    role_mode: Literal["find", "open", "discover"] = "open" if allow_general_findings else "find"
+    prompt_text = build_role_prompt(
+        role_mode,
         scope,
+        wiring=wiring,
+        supplemental_text=None,
+        available_tools=_detect_tools(),
+    )
+    rc = await _run_check_minicodex_async(
+        workdir,
+        prompt_text,
         model=model,
         output_final_message=output_final_message,
         final_only=final_only,
         client=AsyncOpenAI(),
     )
+    raise typer.Exit(code=rc)
 
 
 @app.command("specimen-check")
@@ -144,7 +180,7 @@ async def cmd_specimen_check(
     git_path = _resolve_gitconfig(str(gitconfig) if gitconfig else None)
     mode: Literal["discover", "open", "find"] = "open" if allow_general_findings else "find"
 
-    await _run_specimen_minicodex_async(
+    rc = await _run_specimen_minicodex_async(
         specimen,
         dry_run=dry_run,
         embed_paths=None,
@@ -154,6 +190,7 @@ async def cmd_specimen_check(
         output_final_message=output_final_message,
         client=AsyncOpenAI(),
     )
+    raise typer.Exit(code=rc)
 
 
 @app.command("specimen-discover")
@@ -174,7 +211,7 @@ async def cmd_specimen_discover(
     spec_dir = base / specimen
     embed_paths = [str(p) for p in [spec_dir / "covered.md", spec_dir / "not_covered_yet.md"] if p.exists()]
     git_path = _resolve_gitconfig(str(gitconfig) if gitconfig else None)
-    await _run_specimen_minicodex_async(
+    rc = await _run_specimen_minicodex_async(
         specimen,
         dry_run=dry_run,
         embed_paths=embed_paths,
@@ -184,6 +221,7 @@ async def cmd_specimen_discover(
         output_final_message=output_final_message,
         client=AsyncOpenAI(),
     )
+    raise typer.Exit(code=rc)
 
 
 @app.command("cluster-unknowns")
@@ -215,10 +253,11 @@ async def prompt_optimize(
         "minimal",
         help="Agent context: minimal (no extra servers) or props (mount /props via docker MCP)",
     ),
+    model: str = typer.Option("gpt-5", help="Model id for optimizer agent and evaluator"),
 ) -> None:
     """Run a Prompt Engineering agent to optimize a critic system prompt using prompt_eval MCP."""
     # Build base specs with prompt_eval MCP
-    pe_server, pe_state = build_prompt_eval_server()
+    pe_server, pe_state = build_prompt_eval_server(agent_model=model)
     specs = {"prompt_eval": make_inproc_slot_spec(pe_server)}
 
     system = (
@@ -240,7 +279,7 @@ async def prompt_optimize(
 
     async with McpManager(specs) as mcp:
         agent = await MiniCodex.create(
-            model="gpt-5",
+            model=model,
             mcp=mcp,
             system=system,
             client=AsyncOpenAI(),
@@ -461,7 +500,7 @@ async def cmd_lint_issue(
     gitconfig: Optional[Path] = typer.Option(None, help="Path to a gitconfig for private repo fallback"),
 ) -> None:
     git_path = _resolve_gitconfig(str(gitconfig) if gitconfig else None)
-    await run_specimen_lint_issue_async(
+    rc = await run_specimen_lint_issue_async(
         specimen,
         issue_id,
         model=model,
@@ -470,6 +509,7 @@ async def cmd_lint_issue(
         occurrence_index=occurrence,
         client=AsyncOpenAI(),
     )
+    raise typer.Exit(code=rc)
 
 
 @app.command("eval-all")
