@@ -1,4 +1,5 @@
-from __future__ import annotations
+import re
+
 
 from typing import List
 
@@ -168,8 +169,6 @@ Staged diff (first to 5000 of {len(diff)} chars)
 
 
 def _extract_message_from_text(text: str) -> str:
-    import re
-
     if match := re.search(r"<message>\s*(.*?)\s*</message>", text, re.DOTALL):
         return match.group(1).strip()
     return text.strip()

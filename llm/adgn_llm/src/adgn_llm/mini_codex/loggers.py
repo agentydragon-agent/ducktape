@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+
 import json
 from pathlib import Path
+from typing import Any
 
 from adgn_llm.mini_codex.handler import (
     BaseHandler,
@@ -10,7 +12,6 @@ from adgn_llm.mini_codex.handler import (
     ToolCall,
     FunctionCallOutput,
     Response,
-    JsonlRecord,
     to_jsonl_record,
 )
 
@@ -21,7 +22,7 @@ class TranscriptLoggerHandler(BaseHandler):
     def __init__(self, run_dir: Path) -> None:
         self._path = run_dir / "transcript.jsonl"
 
-    def _write(self, rec: JsonlRecord) -> None:
+    def _write(self, rec: dict[str, Any]) -> None:
         with self._path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(rec, ensure_ascii=False) + "\n")
 

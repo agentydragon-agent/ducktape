@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+
+from platformdirs import user_cache_dir
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -26,38 +28,56 @@ class IssueRecord:
     core: IssueCore
     instances: list[Occurrence]
 
+
 @dataclass(frozen=True)
 class IssuesLoadResult:
     items: list[IssueRecord]
     errors: list[str]
 
 
-def _jsonnet_load_issues_dir(spec_dir: Path, strict: bool = True) -> IssuesLoadResult:
-    issues_dir = spec_dir / "issues"
-    if not issues_dir.is_dir():
-        raise SpecimenIssuesLoadError([f"No issues/ directory found under: {spec_dir}"])
+# ---- Shared Jsonnet loader helpers ----
+JSONNET_LIBDIR = Path(__file__).resolve().parent
+
+
+def _jsonnet_importer(base: str, rel: str) -> tuple[str, bytes]:
+    cand1 = (Path(base) / rel).resolve()
+    if cand1.is_file():
+        return str(cand1), cand1.read_bytes()
+    rel_name = Path(rel).name
+    cand2 = (JSONNET_LIBDIR / rel_name).resolve()
+    if cand2.is_file():
+        return str(cand2), cand2.read_bytes()
+    raise RuntimeError(f"import not found: base={base!r} rel={rel!r}")
+
+
+def _jsonnet_load_dir(
+    spec_dir: Path,
+    subdir: str,
+    should_flag: bool,
+    *,
+    strict: bool = True,
+    allow_missing: bool = False,
+) -> IssuesLoadResult:
+    dir_path = spec_dir / subdir
     items: list[IssueRecord] = []
     errors: list[str] = []
-    jsonnet_libdir = Path(__file__).resolve().parent
+    if not dir_path.is_dir():
+        if allow_missing:
+            return IssuesLoadResult(items=items, errors=errors)
+        raise SpecimenIssuesLoadError(
+            [f"No {subdir}/ directory found under: {spec_dir}"]
+        )
 
-    def _importer(base: str, rel: str) -> tuple[str, bytes]:
-        cand1 = (Path(base) / rel).resolve()
-        if cand1.is_file():
-            return str(cand1), cand1.read_bytes()
-        rel_name = Path(rel).name
-        cand2 = (jsonnet_libdir / rel_name).resolve()
-        if cand2.is_file():
-            return str(cand2), cand2.read_bytes()
-        raise RuntimeError(f"import not found: base={base!r} rel={rel!r}")
-
-    for p in sorted(issues_dir.glob("*.libsonnet")):
+    for p in sorted(dir_path.glob("*.libsonnet")):
         stem = p.stem
         try:
             # NOTE: _jsonnet type stubs omit jpathdir/import_callback; runtime supports them.
             raw = _jsonnet.evaluate_file(  # type: ignore[call-arg]
-                str(p), jpathdir=[str(jsonnet_libdir)], import_callback=_importer
+                str(p),
+                jpathdir=[str(JSONNET_LIBDIR)],
+                import_callback=_jsonnet_importer,
             )
-        except Exception as e:  # pragma: no cover - surfaced via errors list
+        except Exception as e:  # pragma: no cover
             errors.append(f"{p}: Jsonnet evaluation error: {e}")
             continue
         if not isinstance(raw, str):
@@ -81,7 +101,7 @@ def _jsonnet_load_issues_dir(spec_dir: Path, strict: bool = True) -> IssuesLoadR
         try:
             core_input = {k: obj.get(k) for k in ("rationale", "gap_note")}
             core_input["id"] = stem
-            core_input["should_flag"] = True  # positives under issues/ always flag
+            core_input["should_flag"] = should_flag
             core = IssueCore.model_validate(core_input)
             inst_raw = obj.get("instances") or []
             instances = [Occurrence.model_validate(inst) for inst in inst_raw]
@@ -95,75 +115,30 @@ def _jsonnet_load_issues_dir(spec_dir: Path, strict: bool = True) -> IssuesLoadR
     return IssuesLoadResult(items=items, errors=errors)
 
 
-def _jsonnet_load_false_positives_dir(spec_dir: Path, strict: bool = True) -> IssuesLoadResult:
-    """Load known false positives from false_positives/ and force should_flag=False.
+def _jsonnet_load_issues_dir(spec_dir: Path, strict: bool = True) -> IssuesLoadResult:
+    return _jsonnet_load_dir(
+        spec_dir, "issues", True, strict=strict, allow_missing=False
+    )
 
-    If the directory does not exist, returns an empty set without error.
+
+def _jsonnet_load_false_positives_dir(
+    spec_dir: Path, strict: bool = True
+) -> IssuesLoadResult:
+    """Load false positives from false_positives/ and force should_flag=False.
+
+    If directory does not exist, returns empty set without error.
     """
-    fp_dir = spec_dir / "false_positives"
-    items: list[IssueRecord] = []
-    errors: list[str] = []
-    if not fp_dir.is_dir():
-        return IssuesLoadResult(items=items, errors=errors)
-
-    jsonnet_libdir = Path(__file__).resolve().parent
-
-    def _importer(base: str, rel: str) -> tuple[str, bytes]:
-        cand1 = (Path(base) / rel).resolve()
-        if cand1.is_file():
-            return str(cand1), cand1.read_bytes()
-        rel_name = Path(rel).name
-        cand2 = (jsonnet_libdir / rel_name).resolve()
-        if cand2.is_file():
-            return str(cand2), cand2.read_bytes()
-        raise RuntimeError(f"import not found: base={base!r} rel={rel!r}")
-
-    for p in sorted(fp_dir.glob("*.libsonnet")):
-        stem = p.stem
-        try:
-            # NOTE: _jsonnet type stubs omit jpathdir/import_callback; runtime supports them.
-            raw = _jsonnet.evaluate_file(  # type: ignore[call-arg]
-                str(p), jpathdir=[str(jsonnet_libdir)], import_callback=_importer
-            )
-        except Exception as e:  # pragma: no cover
-            errors.append(f"{p}: Jsonnet evaluation error: {e}")
-            continue
-        if not isinstance(raw, str):
-            errors.append(f"{p}: Jsonnet evaluator returned non-string (expected JSON text)")
-            continue
-        try:
-            obj = json.loads(raw)
-        except Exception as e:
-            errors.append(f"{p}: Failed to parse Jsonnet output as JSON: {e}")
-            continue
-        if not isinstance(obj, dict):
-            errors.append(f"{p}: Jsonnet did not produce an object (got {type(obj)})")
-            continue
-        if "id" in obj:
-            errors.append(
-                f"{p}: Embedded IDs no longer accepted, IDs are always derived from path - remove 'id' from jsonnet"
-            )
-            continue
-        try:
-            core_input = {k: obj.get(k) for k in ("rationale", "gap_note")}
-            core_input["id"] = stem
-            core_input["should_flag"] = False  # known false positives do not flag
-            core = IssueCore.model_validate(core_input)
-            inst_raw = obj.get("instances") or []
-            instances = [Occurrence.model_validate(inst) for inst in inst_raw]
-            items.append(IssueRecord(core=core, instances=instances))
-        except Exception as e:
-            errors.append(f"{p}: validation error: {e}")
-            continue
-
-    if errors and strict:
-        raise SpecimenIssuesLoadError(errors)
-    return IssuesLoadResult(items=items, errors=errors)
+    return _jsonnet_load_dir(
+        spec_dir,
+        "false_positives",
+        False,
+        strict=strict,
+        allow_missing=True,
+    )
 
 
 def _xdg_cache_base() -> Path:
     # Prefer shared cache dir alongside existing helpers
-    from platformdirs import user_cache_dir
 
     root = Path(user_cache_dir(appname="adgn-llm", appauthor=False)) / "specimens"
     root.mkdir(parents=True, exist_ok=True)
@@ -354,8 +329,6 @@ def resolve_manifest_arg(arg: str | None, base: Path | None = None) -> Path | No
     return None
 
 
-
-
 @dataclass(frozen=True)
 class SpecimenRecord:
     slug: str
@@ -363,6 +336,7 @@ class SpecimenRecord:
     manifest: SpecimenDoc
     issues: dict[str, IssueRecord]
     false_positives: dict[str, IssueRecord]
+
     @asynccontextmanager
     async def hydrated_copy(self, gitconfig: Path | None = None) -> AsyncIterator[Path]:
         """Yield a fresh private working tree path under $HOME for Docker-friendly mounts; clean up on exit.

@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-
 from typing import Annotated, Any, Literal
-
 from openai.types.responses import ResponseCreateParams
 from pydantic import BaseModel, Field
+
 
 # ------------------------
 # Crush (OpenAI Responses)

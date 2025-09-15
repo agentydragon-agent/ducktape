@@ -13,6 +13,7 @@ from ...shared.protocol import (
     ComponentState,
     ComponentStatus,
     GitstatusdState,
+    PRInfo,
     PRInfoDisabled,
     ReadinessSummary,
     StatusItem,
@@ -75,6 +76,7 @@ async def get_status(  # noqa: PLR0913
         gs_client = gitstat.get_client(worktree_path)
         worktree_last_error: str | None = None
         meta = status
+        pr_info: PRInfo = PRInfoDisabled()
 
         def _compute_status(path: Path):
             return (*meta.summarize_status(path), None)

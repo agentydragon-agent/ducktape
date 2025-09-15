@@ -1,11 +1,8 @@
 from __future__ import annotations
-
 import json
 from pathlib import Path
-
 import pytest
 from hamcrest import assert_that, has_entries, instance_of, anything, equal_to
-
 from adgn_llm.mcp.editor_server import make_editor_mcp
 from adgn_llm.mcp.inproc_transport import make_inproc_slot_spec
 from adgn_llm.mini_codex.mcp_manager import McpManager

@@ -1,5 +1,4 @@
 import sys
-
 from .wrapper import main as _main
 
 

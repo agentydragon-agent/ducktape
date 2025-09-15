@@ -1,5 +1,5 @@
 from __future__ import annotations
-
+import runpy
 import json
 import os
 import sys
@@ -11,10 +11,7 @@ from pathlib import Path
 def _runtime_dir() -> Path:
     rd = os.environ.get("JUPYTER_RUNTIME_DIR") or os.environ.get("TMPDIR") or os.environ.get("HOME") or "."
     p = Path(rd)
-    try:
-        p.mkdir(parents=True, exist_ok=True)
-    except Exception:
-        pass
+    p.mkdir(parents=True, exist_ok=True)
     return p
 
 
@@ -22,19 +19,16 @@ def _log_path(name: str = "kernel_boot.log") -> Path:
     return _runtime_dir() / name
 
 
-def _log(msg: str) -> None:
-    try:
-        lp = _log_path()
-        with lp.open("a", encoding="utf-8") as f:
-            ts = datetime.now(UTC).isoformat(timespec="seconds") + "Z"
-            f.write(f"[{ts}] {msg}\n")
-    except Exception:
-        pass
+def log(msg: str) -> None:
+    lp = _log_path()
+    with lp.open("a", encoding="utf-8") as f:
+        ts = datetime.now(UTC).isoformat(timespec="seconds") + "Z"
+        f.write(f"[{ts}] {msg}\n")
 
 
 def main() -> int:
     try:
-        _log("shim: starting kernel_shim")
+        log("shim: starting kernel_shim")
         # Log basic environment for venv/API mismatch debugging
         info = {
             "sys.executable": sys.executable,
@@ -52,29 +46,24 @@ def main() -> int:
                 ]
             },
         }
-        _log("shim: info=" + json.dumps(info, indent=2, default=str))
+        log("shim: info=" + json.dumps(info, indent=2, default=str))
         # Also log first few entries of sys.path
-        _log("shim: sys.path head=" + json.dumps(sys.path[:10]))
+        log("shim: sys.path head=" + json.dumps(sys.path[:10]))
         # Try importing critical packages
         for mod in ("ipykernel", "jupyter_client", "zmq"):
-            try:
-                __import__(mod)
-                _log(f"shim: import {mod} OK")
-            except Exception as e:
-                _log(f"shim: import {mod} FAILED: {e}\n" + traceback.format_exc())
-        # Run ipykernel_launcher as if invoked with -m
-        import runpy as _runpy  # noqa: PLC0415
+            __import__(mod)
+            log(f"shim: import {mod} OK")
 
-        _log("shim: launching ipykernel_launcher")
+        log("shim: launching ipykernel_launcher")
         # Rewrite argv to mimic -m ipykernel_launcher execution
         sys.argv = [sys.executable, "-m", "ipykernel_launcher", *sys.argv[1:]]
-        _runpy.run_module("ipykernel_launcher", run_name="__main__")
+        runpy.run_module("ipykernel_launcher", run_name="__main__")
         return 0
     except SystemExit as e:
-        _log(f"shim: SystemExit code={getattr(e, 'code', None)}")
+        log(f"shim: SystemExit code={getattr(e, 'code', None)}")
         raise
     except Exception:
-        _log("shim: unhandled exception:\n" + traceback.format_exc())
+        log("shim: unhandled exception:\n" + traceback.format_exc())
         raise
 
 

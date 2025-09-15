@@ -30,11 +30,7 @@ Configuration:
 * Context limits: PromptEngineer handles 200k token o3 context automatically
 """
 
-# TODO: consider showing grader text Assistant messages, not just code
-# TODO: track exact OpenAI & Anthropic model used in database tables
-
 from __future__ import annotations
-
 import argparse
 import asyncio
 import json
@@ -45,9 +41,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 import logging
 from adgn_llm.inop.prompting.prompt_engineer import FeedbackProvider
-
 from openai import AsyncOpenAI
-
 from adgn_llm.inop.clients.logging_openai_client import (
     LoggingOpenAIClient,
     LoggingOpenAIModel,
@@ -69,8 +63,6 @@ from adgn_llm.inop.io.task_loader import (
     load_task_types,
 )
 from adgn_llm.inop.io.yaml_loader import load_yaml_files
-
-# Database removed - using JSON files instead
 from adgn_llm.inop.plots import ScoreEvolutionTracker
 from adgn_llm.inop.prompting.prompt_engineer import (
     FeedbackMode,
@@ -79,8 +71,6 @@ from adgn_llm.inop.prompting.prompt_engineer import (
 )
 from adgn_llm.inop.prompting.summarizer import PatternSummarizer
 from adgn_llm.inop.prompting.truncation_utils import TruncationManager
-
-# MCP-based PE wiring (new path)
 from adgn_llm.inop.mcp.prompt_feedback_server import (
     make_prompt_feedback_server_with_handle,
 )
@@ -89,6 +79,15 @@ from adgn_llm.mini_codex.mcp_manager import McpManager
 from adgn_llm.mini_codex.agent import MiniCodex
 from adgn_llm.inop.prompting.pe_controller import ProposePromptNTimes
 from adgn_llm.mini_codex.loggers import TranscriptLoggerHandler
+
+
+# TODO: consider showing grader text Assistant messages, not just code
+# TODO: track exact OpenAI & Anthropic model used in database tables
+
+
+# Database removed - using JSON files instead
+
+# MCP-based PE wiring (new path)
 
 # Always get a module logger; handler config is applied by DualOutputLogging
 logger: logging.Logger = logging.getLogger(__name__)

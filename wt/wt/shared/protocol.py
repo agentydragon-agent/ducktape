@@ -11,7 +11,7 @@ import uuid
 from datetime import datetime
 from enum import IntEnum, StrEnum
 from pathlib import Path
-from typing import Annotated, Any, Literal, NewType
+from typing import Annotated, Literal, NewType, cast
 
 from pydantic import BaseModel, Field, ValidationError
 
@@ -49,7 +49,7 @@ class Request(BaseModel):
 
     jsonrpc: str = "2.0"
     method: str = Field(..., description="Method name to call")
-    params: dict[str, Any] = Field(
+    params: dict[str, object] = Field(
         default_factory=dict,
         description="Method parameters",
     )
@@ -557,7 +557,7 @@ def parse_request(data: str) -> Request:
     """Parse JSON string into JSON-RPC request."""
     try:
         raw_data = json.loads(data)
-        return Request.model_validate(raw_data)
+        return cast(Request, Request.model_validate(raw_data))
     except json.JSONDecodeError as e:
         raise ValueError(f"Invalid JSON (parse error): {e}") from e
     except ValidationError as e:

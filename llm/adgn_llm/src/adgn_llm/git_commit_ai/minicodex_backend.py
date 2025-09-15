@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from mcp.server.fastmcp import FastMCP
+
+
 from dataclasses import dataclass
 from pathlib import Path
 from git import Repo
@@ -24,7 +27,6 @@ from adgn_llm.mcp.inproc_transport import make_inproc_slot_spec
 from adgn_llm.mcp.git_ro.server import (
     make_git_ro_server,
     GIT_RO_SERVER_NAME,
-    StatusInput,
     DiffInput,
     DiffFormat,
     ListSlice,
@@ -44,8 +46,6 @@ class SubmitState:
 
 
 def make_submit_server(state: SubmitState):
-    from mcp.server.fastmcp import FastMCP
-
     m = FastMCP(
         "submit_commit_message",
         instructions="Submit commit message (subject/body) and finish",
@@ -72,7 +72,7 @@ class CommitController(BaseHandler):
                 type="function_call",
                 name=build_mcp_function(self._server, "git_status"),
                 call_id="bootstrap:status",
-                arguments=json.dumps({"payload": StatusInput(porcelain=True).model_dump()}),
+                arguments=json.dumps({}),
             ),
             # Structured name-status and stat via consolidated git_diff formats
             ResponseFunctionToolCall(

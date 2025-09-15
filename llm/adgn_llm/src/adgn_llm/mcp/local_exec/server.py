@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+
 from typing import Any
 import os
 import sys
@@ -41,9 +42,17 @@ def _run_proc(argv: list[str], timeout_s: int, cwd: str | None = None) -> tuple[
     except subprocess.TimeoutExpired:
         p.kill()
         out, err = p.communicate()
-        return (124, _truncate_bytes(out, TRUNCATE_BYTES), _truncate_bytes(err + "\n[TIMEOUT]", TRUNCATE_BYTES))
+        return (
+            124,
+            _truncate_bytes(out, TRUNCATE_BYTES),
+            _truncate_bytes(err + "\n[TIMEOUT]", TRUNCATE_BYTES),
+        )
 
-    return (p.returncode, _truncate_bytes(out, TRUNCATE_BYTES), _truncate_bytes(err, TRUNCATE_BYTES))
+    return (
+        p.returncode,
+        _truncate_bytes(out, TRUNCATE_BYTES),
+        _truncate_bytes(err, TRUNCATE_BYTES),
+    )
 
 
 def _run_in_sandbox(cmd: list[str], timeout_s: int, cwd: str | None) -> tuple[int, str, str]:
@@ -51,7 +60,11 @@ def _run_in_sandbox(cmd: list[str], timeout_s: int, cwd: str | None) -> tuple[in
     if sys.platform != "linux":
         if ALLOW_UNSANDBOXED:
             return _run_proc(cmd, timeout_s=timeout_s, cwd=cwd)
-        return (2, "", "sandbox unavailable on this platform; set DUCK_ALLOW_UNSANDBOXED=1 to override")
+        return (
+            2,
+            "",
+            "sandbox unavailable on this platform; set DUCK_ALLOW_UNSANDBOXED=1 to override",
+        )
 
     # Linux: require bubblewrap
     if which(BWRAP) is None:

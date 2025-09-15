@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+
 from dataclasses import dataclass
 from importlib import resources as ilres
 from pathlib import Path

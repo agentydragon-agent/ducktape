@@ -1,14 +1,12 @@
+import asyncio
 import json
 from datetime import datetime
 from pathlib import Path
 from typing import Iterable, Optional
-
 import yaml
 from pydantic import BaseModel, Field
 from mcp.server.fastmcp import FastMCP  # type: ignore
-
 from openai import AsyncOpenAI
-
 from adgn_llm.mcp.inproc_transport import make_inproc_slot_spec
 from adgn_llm.mini_codex.agent import MiniCodex
 from adgn_llm.mini_codex.aggregating_handler import BaseHandler
@@ -187,7 +185,5 @@ def cluster_unknowns(
         # Run in parallel; await all
         await asyncio.gather(*tasks)
         return root
-
-    import asyncio
 
     return asyncio.run(_run_all())

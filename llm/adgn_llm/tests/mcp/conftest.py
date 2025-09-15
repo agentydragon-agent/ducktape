@@ -52,3 +52,32 @@ async def mcp_git_ro(git_ro_server: FastMCP) -> McpManager:
     spec = make_inproc_slot_spec(git_ro_server)
     async with McpManager({GIT_RO_SERVER_NAME: spec}) as m:
         yield m
+
+
+# --- Unified repo fixture for all git-ro tests ---
+@pytest.fixture()
+def repo_git_ro(git_repo_factory, git_run) -> Path:
+    repo: Path = git_repo_factory("repo_git_ro")
+    # Commit 1: README from factory
+    # Commit 2: add file1
+    (repo / "file1.txt").write_text("hello\n", encoding="utf-8")
+    git_run(["git", "add", "-A"], repo)
+    git_run(["git", "commit", "-m", "add file1"], repo)
+    # Commit 3: rename + modify
+    (repo / "file1.txt").rename(repo / "file_renamed.txt")
+    (repo / "file_renamed.txt").write_text("hello world\n", encoding="utf-8")
+    git_run(["git", "add", "-A"], repo)
+    git_run(["git", "commit", "-m", "rename + modify"], repo)
+    # Staged large file (not committed) for diff pagination tests
+    big = repo / "big.txt"
+    big.write_text("\n".join(f"line {i}" for i in range(20000)) + "\n", encoding="utf-8")
+    git_run(["git", "add", "-A"], repo)
+    return repo
+
+
+@pytest_asyncio.fixture()
+async def git_ro_session(repo_git_ro: Path):
+    spec = make_inproc_slot_spec(make_git_ro_server(repo_git_ro))
+    async with McpManager({GIT_RO_SERVER_NAME: spec}) as m:
+        sess = await m.get_session(GIT_RO_SERVER_NAME)
+        yield m, sess

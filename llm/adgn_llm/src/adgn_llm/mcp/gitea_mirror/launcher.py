@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
+
 """CLI to run the gitea_mirror MCP server via stdio transport."""
 
 from __future__ import annotations
+
 
 import argparse
 import os
@@ -16,7 +18,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--base-url", default=os.environ.get("GITEA_BASE_URL"), help="Gitea base URL")
     parser.add_argument("--token", default=os.environ.get("GITEA_TOKEN"), help="Gitea API token")
     parser.add_argument(
-        "--token-file", default=os.environ.get("GITEA_TOKEN_FILE"), help="Path to file containing Gitea API token"
+        "--token-file",
+        default=os.environ.get("GITEA_TOKEN_FILE"),
+        help="Path to file containing Gitea API token",
     )
     parser.add_argument(
         "--poll-interval",

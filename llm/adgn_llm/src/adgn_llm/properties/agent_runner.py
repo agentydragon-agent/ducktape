@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+
 from dataclasses import dataclass
 from typing import Any, Dict, List, Mapping
 import os
@@ -47,7 +48,11 @@ async def run_prompt_async(
             mcp=mcp,
             system=system_prompt,
             client=client,
-            handlers=[AutoHandler(), OneLineProgressHandler(), TranscriptLoggerHandler(run_dir)],
+            handlers=[
+                AutoHandler(),
+                OneLineProgressHandler(),
+                TranscriptLoggerHandler(run_dir),
+            ],
         )
         res_any = await agent.run(prompt)
 

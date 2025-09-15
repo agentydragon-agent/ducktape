@@ -28,7 +28,6 @@ Each output record has shape:
 """
 
 from __future__ import annotations
-
 import argparse
 import json
 import time
@@ -36,7 +35,13 @@ import os
 from datetime import datetime
 from pathlib import Path
 from typing import Any
-from .constants import BAD_MARKER, TOOLS_HEADER
+from .constants import BAD_MARKER
+from .extract_common import (
+    iter_wire_lines,
+    maybe_extract_payload,
+    find_last_user_text_from_messages,
+    sys_has_tools_header,
+)
 
 
 ROOT = Path(__file__).parent
@@ -58,62 +63,6 @@ def parse_rfc3339_millis(ts: str | None) -> int | None:
         return int(dt.timestamp() * 1000)
     except Exception:
         return None
-
-
-def find_last_user_text_msg(messages: Any) -> str | None:
-    if not isinstance(messages, list) or not messages:
-        return None
-    last = messages[-1]
-    # OpenAI chat format
-    if isinstance(last, dict) and last.get("role") == "user":
-        content = last.get("content")
-        if isinstance(content, str):
-            return content
-        if isinstance(content, list):
-            texts: list[str] = []
-            for part in content:
-                if isinstance(part, dict) and part.get("type") == "text":
-                    t = part.get("text")
-                    if isinstance(t, str):
-                        texts.append(t)
-            return "\n".join(texts) if texts else None
-    return None
-
-
-def sys_has_tools_header(system: Any) -> bool:
-    if isinstance(system, str):
-        return TOOLS_HEADER in system
-    if isinstance(system, list):
-        for item in system:
-            if isinstance(item, dict) and item.get("type") == "text":
-                t = item.get("text")
-                if isinstance(t, str) and TOOLS_HEADER in t:
-                    return True
-    return False
-
-
-def iter_wire_lines(path: Path):
-    if not path.exists():
-        return
-
-    def _gzip_open(p: Path):
-        import gzip
-
-        return gzip.open(p, "rt", encoding="utf-8", errors="ignore")
-
-    def _plain_open(p: Path):
-        return open(p, encoding="utf-8", errors="ignore")
-
-    opener = _gzip_open if str(path).endswith(".gz") else _plain_open
-    with opener(path) as f:
-        for line in f:
-            yield line
-
-
-def maybe_extract_payload(obj: dict[str, Any]) -> dict[str, Any] | None:
-    # Crush logs payload under key "payload"; for requests this is the OpenAI Responses params
-    p = obj.get("payload")
-    return p if isinstance(p, dict) else None
 
 
 def _extract_input_messages(
@@ -146,7 +95,7 @@ def _extract_input_messages(
         if not role:
             role = "system" if not any(m.get("role") == "user" for m in msgs) else "assistant"
         if role in ("system", "user", "assistant") and text:
-            if role == "system" and TOOLS_HEADER in text:
+            if role == "system" and sys_has_tools_header(text):
                 has_header = True
             msgs.append({"role": role, "content": text})
     return (msgs if msgs else None), has_header
@@ -178,7 +127,7 @@ def _extract_chat_messages(
         else:
             text = ""
         if role in ("system", "user", "assistant") and text:
-            if role == "system" and TOOLS_HEADER in text:
+            if role == "system" and sys_has_tools_header(text):
                 has_header = True
             msgs.append({"role": role, "content": text})
     return (msgs if msgs else None), has_header
@@ -210,7 +159,7 @@ def process_wire(path: Path, require_bad: bool = False) -> list[dict[str, Any]]:
             messages, has_header = _extract_chat_messages(payload)
         else:
             continue
-        last_text = find_last_user_text_msg(messages)
+        last_text = find_last_user_text_from_messages(messages)
         if require_bad and (not last_text or BAD_MARKER not in last_text):
             continue
         out.append(

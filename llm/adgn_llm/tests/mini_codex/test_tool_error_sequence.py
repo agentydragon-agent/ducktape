@@ -4,7 +4,18 @@ import json
 from typing import Any
 
 import pytest
-from pydantic import BaseModel
+
+from openai.types.responses import (
+    Response,
+    ResponseFunctionToolCall,
+    ResponseOutputMessage,
+    ResponseOutputText,
+)
+from openai.types.responses.response_usage import (
+    ResponseUsage,
+    InputTokensDetails,
+    OutputTokensDetails,
+)
 
 from adgn_llm.mini_codex.agent import MiniCodex
 from adgn_llm.mini_codex.mcp_manager import McpManager
@@ -22,65 +33,114 @@ def _make_failing_server() -> FastMCP:
     return mcp
 
 
-class DummyClient(BaseModel):
-    pass  # placeholder so MiniCodex type checks; we will not invoke real API
+class FakeResponses:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def create(self, **kwargs: Any) -> Response:  # type: ignore[override]
+        self.calls += 1
+        # First call: request to invoke the failing tool once
+        if self.calls == 1:
+            tc = ResponseFunctionToolCall(
+                type="function_call",
+                call_id="call1",
+                name="mcp__editor__fail",
+                arguments=json.dumps({"x": 1}),
+            )
+            return Response(
+                id="r1",
+                created_at=0,
+                model="dummy-model",
+                object="response",
+                output=[tc],
+                parallel_tool_calls=False,
+                tool_choice="auto",
+                tools=[],
+                usage=ResponseUsage(
+                    input_tokens=0,
+                    input_tokens_details=InputTokensDetails(cached_tokens=0),
+                    output_tokens=0,
+                    output_tokens_details=OutputTokensDetails(reasoning_tokens=0),
+                    total_tokens=0,
+                ),
+            )
+        # Second call: no further tool calls (break loop)
+        msg = ResponseOutputMessage(
+            id="m1",
+            type="message",
+            role="assistant",
+            status="completed",
+            content=[ResponseOutputText(type="output_text", text="done", annotations=[])],
+        )
+        return Response(
+            id="r2",
+            created_at=1,
+            model="dummy-model",
+            object="response",
+            output=[msg],
+            parallel_tool_calls=False,
+            tool_choice="auto",
+            tools=[],
+            usage=ResponseUsage(
+                input_tokens=0,
+                input_tokens_details=InputTokensDetails(cached_tokens=0),
+                output_tokens=1,
+                output_tokens_details=OutputTokensDetails(reasoning_tokens=0),
+                total_tokens=1,
+            ),
+        )
+
+
+class FakeOpenAIClient:
+    def __init__(self) -> None:
+        self.responses = FakeResponses()
 
 
 @pytest.mark.asyncio
-async def test_tool_error_is_surfaced_in_sequence(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_tool_error_is_surfaced_in_sequence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     # Build in-proc failing server spec using FastMCP
     spec = make_inproc_slot_spec(_make_failing_server())
-    mcp = McpManager({"editor": spec})
+    async with McpManager({"editor": spec}) as mcp:
+        # Create agent and run one turn
+        from adgn_llm.mini_codex.aggregating_handler import BaseHandler
+        from adgn_llm.mini_codex.loop_control import Continue, Auto
 
-    # Stub OpenAI responses to return one tool call first, then no further calls (break loop)
-    from openai.types.responses import ResponseFunctionToolCall
+        class _AutoHandler(BaseHandler):
+            def on_before_sample(self):  # type: ignore[override]
+                return Continue(Auto())
 
-    class _RespOneCall:
-        def __init__(self):
-            self.output = [
-                ResponseFunctionToolCall(
-                    type="function_call",  # required by pydantic
-                    call_id="call1",
-                    name="mcp__editor__fail",
-                    arguments=json.dumps({"x": 1}),
-                )
-            ]
+        from adgn_llm.mini_codex.handler import (
+            BaseHandler,
+            to_jsonl_record,
+            FunctionCallOutput,
+            ToolCall,
+        )
 
-    class _RespNoCall:
-        def __init__(self):
-            self.output = []
+        class RecordingHandler(BaseHandler):
+            def __init__(self):
+                self.records: list[dict] = []
 
-    class FakeResponses:
-        def __init__(self) -> None:
-            self.calls = 0
+            def on_tool_call_event(self, evt: ToolCall) -> None:  # type: ignore[override]
+                self.records.append(to_jsonl_record(evt))
 
-        async def create(self, **kwargs):
-            self.calls += 1
-            if self.calls == 1:
-                return _RespOneCall()
-            return _RespNoCall()
+            def on_function_call_output_event(self, evt: FunctionCallOutput) -> None:  # type: ignore[override]
+                self.records.append(to_jsonl_record(evt))
 
-    fake_client = type("_FakeClient", (), {"responses": FakeResponses()})()
+        rec = RecordingHandler()
 
-    # Create agent and run one turn
-    from adgn_llm.mini_codex.aggregating_handler import BaseHandler
-    from adgn_llm.mini_codex.loop_control import Continue, Auto
+        agent = await MiniCodex.create(
+            model="dummy-model",
+            mcp=mcp,
+            system="You are a code agent.",
+            client=FakeOpenAIClient(),  # type: ignore[arg-type]
+            handlers=[_AutoHandler(), rec],
+        )
+        await agent.run("call failing tool once")
 
-    class _AutoHandler(BaseHandler):
-        def on_before_sample(self):
-            return Continue(Auto())
-
-    agent = await MiniCodex.create(
-        model="dummy-model",
-        mcp=mcp,
-        system="You are a code agent.",
-        client=fake_client,
-        handlers=[_AutoHandler()],
-    )
-    result = await agent.run("call failing tool once")
-
-    # Extract the function_call_output from the sequence and assert failure payload surfaced
-    fco_items = [evt for evt in result.sequence if evt.get("kind") == "function_call_output"]
+    # Extract the function_call_output from the recording handler and assert failure payload surfaced
+    fco_items = [evt for evt in rec.records if evt.get("kind") == "function_call_output"]
     assert fco_items, "No function_call_output captured"
     payload = json.loads(fco_items[-1]["output"])  # output is JSON-serialized string
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+
 from contextlib import asynccontextmanager
 from contextvars import ContextVar, Token
 from dataclasses import dataclass
@@ -64,7 +65,11 @@ def make_prompt_feedback_server_with_handle(
         finally:
             _state_var.reset(token)
 
-    mcp = FastMCP(name, instructions="Prompt evaluation (rollouts+grading+persistence)", lifespan=lifespan)
+    mcp = FastMCP(
+        name,
+        instructions="Prompt evaluation (rollouts+grading+persistence)",
+        lifespan=lifespan,
+    )
 
     @mcp.tool()
     async def propose_prompt(prompt: str) -> dict[str, str]:
@@ -75,7 +80,12 @@ def make_prompt_feedback_server_with_handle(
         rollouts = await deps.run_rollouts_with_prompt(prompt, tasks)
         # Let the configured provider compute feedback (may grade/aggregate internally)
         feedback = await feedback_provider.provide_feedback(rollouts)
-        deps.persist_all(iteration=state.iteration, prompt=prompt, rollouts=rollouts, feedback=feedback)
+        deps.persist_all(
+            iteration=state.iteration,
+            prompt=prompt,
+            rollouts=rollouts,
+            feedback=feedback,
+        )
         state.last_feedback = feedback
         return {"feedback": feedback}
 

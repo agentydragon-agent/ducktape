@@ -1,11 +1,9 @@
 from __future__ import annotations
-
 import asyncio
 import json
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal, Annotated, Union
-
 from openai import AsyncOpenAI
 from pydantic import BaseModel, Field, ConfigDict
 from rich.console import Console
@@ -17,7 +15,6 @@ from openai.types.responses import (
     FunctionToolParam,
     ToolChoiceFunctionParam,
 )
-
 from adgn_llm.rendering.rich_renderers import render_to_rich
 from adgn_llm.mini_codex.agent_progress import OneLineProgressHandler
 from .lint_issue import lint_issue_run
@@ -177,7 +174,10 @@ async def _grade_rationale_with_llm(
         + rubric.strip()
         + "\n\nQuestion: Is the new description corrected as it should be?"
     )
-    tool_choice: ToolChoiceFunctionParam = {"type": "function", "name": "grade_rationale"}
+    tool_choice: ToolChoiceFunctionParam = {
+        "type": "function",
+        "name": "grade_rationale",
+    }
     resp = await client.responses.create(
         model=model,
         input=[{"role": "user", "content": prompt}],

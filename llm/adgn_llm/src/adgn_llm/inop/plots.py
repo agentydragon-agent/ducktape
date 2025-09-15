@@ -5,12 +5,8 @@ import statistics
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-
-# Force non-interactive backend to avoid UI popups (prod/tests)
 import matplotlib
 import pandas as pd  # type: ignore[import-untyped]
-
-matplotlib.use("Agg", force=True)
 import tiktoken
 from plotnine import (
     aes,
@@ -25,8 +21,13 @@ from plotnine import (
     theme,
     theme_minimal,
 )
-
 from adgn_llm.inop.io.logging_utils import DualOutputLogging
+
+
+# Force non-interactive backend to avoid UI popups (prod/tests)
+
+matplotlib.use("Agg", force=True)
+
 
 logger = DualOutputLogging.get_logger()
 

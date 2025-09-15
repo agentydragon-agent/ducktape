@@ -14,17 +14,15 @@ Design
 """
 
 from __future__ import annotations
-
-import os
-from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Annotated, Literal
+from typing import Any, Annotated, Literal, cast
 from enum import StrEnum
-
 import pygit2
+from pygit2 import enums as git_enums
 from mcp.server.fastmcp import FastMCP
 from pydantic import BaseModel, Field
+
 
 # Shared server name constant for clients/tests
 GIT_RO_SERVER_NAME = "git-ro"
@@ -34,7 +32,12 @@ GIT_RO_SERVER_NAME = "git-ro"
 
 class TextSlice(BaseModel):
     offset_chars: int = Field(default=0, ge=0, description="Start offset into output (characters)")
-    max_chars: int = Field(default=200_000, gt=0, le=500_000, description="Maximum characters to return (cap 500k)")
+    max_chars: int = Field(
+        default=200_000,
+        gt=0,
+        le=500_000,
+        description="Maximum characters to return (cap 500k)",
+    )
 
 
 class TextPage(BaseModel):
@@ -49,30 +52,15 @@ def apply_text_slice(body: str, sl: TextSlice) -> TextPage:
     end = max(start, start + int(sl.max_chars))
     total = len(body)
     sliced = body[start:end]
-    return TextPage(body=sliced, truncated=(total > end), next_offset=(end if total > end else None), total_chars=total)
+    return TextPage(
+        body=sliced,
+        truncated=(total > end),
+        next_offset=(end if total > end else None),
+        total_chars=total,
+    )
 
 
 # -------------------------- helpers -----------------------------------------
-
-
-def _resolve_repo(git_repo: Path, raw: Path) -> Path:
-    if raw is None:
-        raise ValueError("worktree_root is required")
-    rp = Path(raw).resolve()
-    if not rp.exists() or not rp.is_dir():
-        raise ValueError(f"worktree_root must be an existing directory: {rp}")
-    root = Path(git_repo).resolve()
-    try:
-        in_scope = rp.is_relative_to(root)  # py311+
-    except Exception:
-        in_scope = (str(rp) == str(root)) or str(rp).startswith(str(root) + os.sep)
-    if not in_scope:
-        raise ValueError(f"worktree_root {rp} is outside allowed root {root}")
-    # Verify it's a git repository/worktree using pygit2 discovery
-    gitdir = pygit2.discover_repository(str(rp))
-    if not gitdir:
-        raise ValueError(f"Not a git repository/worktree: {rp}")
-    return rp
 
 
 def _open_repo(root: Path) -> pygit2.Repository:
@@ -82,17 +70,12 @@ def _open_repo(root: Path) -> pygit2.Repository:
     return pygit2.Repository(gitdir)
 
 
+def get_oid(obj: Any):
+    """Return a pygit2.Oid from an object that may have .oid or .id."""
+    return obj.oid if hasattr(obj, "oid") else obj.id
+
+
 # -------------------------- inputs ------------------------------------------
-
-
-class RepoInput(BaseModel):
-    """No user-supplied repo path; server is bound to a single git_repo at construction."""
-
-    pass
-
-
-class StatusInput(RepoInput):
-    porcelain: bool = Field(default=True, description="Use compact status markers akin to --porcelain=v1")
 
 
 class DiffFormat(StrEnum):
@@ -101,8 +84,11 @@ class DiffFormat(StrEnum):
     STAT = "stat"
 
 
-class DiffInput(RepoInput):
-    format: DiffFormat = Field(default=DiffFormat.PATCH, description='Output format: "patch" | "name-status" | "stat"')
+class DiffInput(BaseModel):
+    format: DiffFormat = Field(
+        default=DiffFormat.PATCH,
+        description='Output format: "patch" | "name-status" | "stat"',
+    )
     staged: bool = Field(default=False, description="If true, diff --cached (staged changes)")
     unified: int = Field(
         default=0,
@@ -115,39 +101,51 @@ class DiffInput(RepoInput):
     paths: list[str] | None = Field(default=None, description="Optional pathspecs to limit diff")
     find_renames: bool = Field(default=True, description="Detect renames (-M)")
     slice: TextSlice = Field(
-        default_factory=TextSlice, description="Pagination for patch output (format=patch; max_chars<=500k)"
+        default_factory=TextSlice,
+        description="Pagination for patch output (format=patch; max_chars<=500k)",
     )
     list_slice: "ListSlice" = Field(
-        default_factory=lambda: ListSlice(), description="Pagination for list outputs (name-status/stat; limit<=5000)"
+        default_factory=lambda: ListSlice(),
+        description="Pagination for list outputs (name-status/stat; limit<=5000)",
     )
 
 
-class LogInput(RepoInput):
+class LogInput(BaseModel):
     rev: str = Field(default="HEAD", description="Revision or range (e.g., HEAD, HEAD~10..HEAD)")
     max_count: int = Field(default=50, description="Maximum number of entries")
     oneline: bool = Field(default=True, description="Format each commit as one line")
     slice: TextSlice = Field(default_factory=TextSlice, description="Pagination controls for large outputs")
 
 
-class ShowInput(RepoInput):
+class ShowInput(BaseModel):
     object: str = Field(description="Object spec, e.g., HEAD, <sha>, or REV:PATH for blob content")
     format: DiffFormat = Field(
-        default=DiffFormat.PATCH, description='Output format: "patch" | "name-status" | "stat" (patch for blobs)'
+        default=DiffFormat.PATCH,
+        description='Output format: "patch" | "name-status" | "stat" (patch for blobs)',
     )
     slice: TextSlice = Field(default_factory=TextSlice, description="Pagination for patch/blob text outputs")
     list_slice: "ListSlice" = Field(
-        default_factory=lambda: ListSlice(), description="Pagination for list outputs (name-status/stat)"
+        default_factory=lambda: ListSlice(),
+        description="Pagination for list outputs (name-status/stat)",
     )
 
 
-class RevParseInput(RepoInput):
-    arg: str = Field(default="HEAD", description="Argument to rev-parse (e.g., HEAD, --show-toplevel)")
+class RevParseInput(BaseModel):
+    arg: str = Field(
+        default="HEAD",
+        description="Argument to rev-parse (e.g., HEAD, --show-toplevel)",
+    )
     short: bool = Field(default=False, description="If true, shorten OIDs")
 
 
 class ListSlice(BaseModel):
     offset: int = Field(default=0, ge=0, description="Start index for list pagination (>=0)")
-    limit: int = Field(default=1000, gt=0, le=5000, description="Maximum number of items to return (cap 5000)")
+    limit: int = Field(
+        default=1000,
+        gt=0,
+        le=5000,
+        description="Maximum number of items to return (cap 5000)",
+    )
 
 
 class StringListPage(BaseModel):
@@ -177,12 +175,11 @@ def paginate_items(items_names: tuple[list[Any], list[str]], sl: "ListSlice") ->
 
 # Map pygit2 delta statuses -> single-letter codes (like git --name-status)
 STATUS_MAP: dict[int, str] = {
-    getattr(pygit2, "GIT_DELTA_ADDED"): "A",
-    getattr(pygit2, "GIT_DELTA_MODIFIED"): "M",
-    getattr(pygit2, "GIT_DELTA_DELETED"): "D",
-    getattr(pygit2, "GIT_DELTA_RENAMED"): "R",
-    getattr(pygit2, "GIT_DELTA_COPIED", 18): "C",
-    getattr(pygit2, "GIT_DELTA_TYPECHANGE"): "T",
+    pygit2.GIT_DELTA_ADDED: "A",
+    pygit2.GIT_DELTA_MODIFIED: "M",
+    pygit2.GIT_DELTA_DELETED: "D",
+    pygit2.GIT_DELTA_RENAMED: "R",
+    pygit2.GIT_DELTA_TYPECHANGE: "T",
 }
 
 
@@ -199,32 +196,94 @@ def delta_to_changed_file(d: pygit2.DiffDelta) -> ChangedFile:
     )
 
 
+def diff_to_changed_files(diff: pygit2.Diff) -> list[ChangedFile]:
+    """Convert a pygit2.Diff to a flat list of ChangedFile entries.
+
+    Shared between git_diff(format=name-status) and git_show(format=name-status).
+    """
+    return [delta_to_changed_file(patch.delta) for patch in diff]
+
+
+def diff_to_file_stats(diff: pygit2.Diff) -> list[DiffFileStat]:
+    """Convert a pygit2.Diff to per-file stat entries (additions/deletions).
+
+    Shared between git_diff(format=stat) and git_show(format=stat).
+    """
+    stats: list[DiffFileStat] = []
+    for patch in diff:
+        cf = delta_to_changed_file(patch.delta)
+        additions = getattr(patch, "additions", 0) or 0
+        deletions = getattr(patch, "deletions", 0) or 0
+        stats.append(
+            DiffFileStat(
+                status=cf.status,
+                path=cf.path,
+                additions=int(additions),
+                deletions=int(deletions),
+                rename_from=cf.rename_from,
+                rename_to=cf.rename_to,
+            )
+        )
+    return stats
+
+
+def build_changed_files_page(items: list[ChangedFile], sl: ListSlice) -> ChangedFilesPage:
+    """Paginate ChangedFile items into a ChangedFilesPage."""
+    sliced, page = paginate_items((items, [i.path for i in items]), sl)
+    return ChangedFilesPage(
+        items=sliced,
+        truncated=page.truncated,
+        next_offset=page.next_offset,
+        total_count=page.total_count,
+    )
+
+
+def build_diff_stat_page(stats: list[DiffFileStat], sl: ListSlice) -> DiffStatPage:
+    """Paginate DiffFileStat items into a DiffStatPage."""
+    sliced, page = paginate_items((stats, [s.path for s in stats]), sl)
+    return DiffStatPage(
+        items=sliced,
+        truncated=page.truncated,
+        next_offset=page.next_offset,
+        total_count=page.total_count,
+    )
+
+
 class RevParseResult(BaseModel):
     kind: str  # "oid" | "toplevel"
     value: str
 
 
-class LsFilesInput(RepoInput):
-    cached: bool = Field(default=False, description="List index entries (same as non-cached here); kept for parity")
+class LsFilesInput(BaseModel):
+    cached: bool = Field(
+        default=False,
+        description="List index entries (same as non-cached here); kept for parity",
+    )
     list_slice: "ListSlice" = Field(
-        default_factory=lambda: ListSlice(), description="Pagination controls for file lists"
+        default_factory=lambda: ListSlice(),
+        description="Pagination controls for file lists",
     )
 
 
-class BranchListInput(RepoInput):
+class BranchListInput(BaseModel):
     remote: bool = Field(default=False, description="List remote branches instead of local")
-    list_slice: "ListSlice" = Field(
-        default_factory=lambda: ListSlice(), description="Pagination controls for branch lists"
+    list_slice: ListSlice = Field(
+        default_factory=lambda: ListSlice(),
+        description="Pagination controls for branch lists",
     )
 
 
 # Structured diff listing inputs/outputs
-class DiffListInput(RepoInput):
-    staged: bool = Field(default=False, description="If true, examine staged (index) changes; else worktree")
+class DiffListInput(BaseModel):
+    staged: bool = Field(
+        default=False,
+        description="If true, examine staged (index) changes; else worktree",
+    )
     paths: list[str] | None = Field(default=None, description="Optional pathspecs to limit the diff")
     find_renames: bool = Field(default=True, description="Detect renames (diff.find_similar)")
-    list_slice: "ListSlice" = Field(
-        default_factory=lambda: ListSlice(), description="Pagination controls for file lists"
+    list_slice: ListSlice = Field(
+        default_factory=lambda: ListSlice(),
+        description="Pagination controls for file lists",
     )
 
 
@@ -258,8 +317,7 @@ class ChangedFilesPage(BaseModel):
     total_count: int
 
 
-# Structured, object-shaped log entries (prefer over text bodies when possible)
-class LogEntriesInput(RepoInput):
+class LogEntriesInput(BaseModel):
     rev: str = Field(default="HEAD", description="Revision to start from (e.g., HEAD)")
     offset: int = Field(default=0, ge=0, description="Number of commits to skip (pagination offset)")
     limit: int = Field(default=50, gt=0, le=1000, description="Max commits to return")
@@ -370,20 +428,11 @@ def make_git_ro_server(git_repo: Path, *, name: str = "git-ro") -> FastMCP:
     Only non-mutating tools are registered. Any attempt to pass a worktree_root outside the
     configured root results in an error.
     """
-    resolved_root = Path(git_repo).resolve()
-    state = GitRoState(git_repo=resolved_root)
-
-    @asynccontextmanager
-    async def lifespan(_server: FastMCP):
-        try:
-            yield state
-        finally:
-            pass
-
-    mcp = FastMCP(name, instructions=f"Read-only Git tools scoped to repo: {resolved_root}")
+    state = GitRoState(git_repo=git_repo.resolve())
+    mcp = FastMCP(name, instructions=f"Read-only Git tools scoped to repo: {git_repo}")
 
     @mcp.tool()
-    def git_status(payload: StatusInput) -> StatusPage:
+    def git_status() -> StatusPage:
         """Return compact status entries similar to porcelain v1 (no headers)."""
         root = state.git_repo
         repo = _open_repo(root)
@@ -420,72 +469,38 @@ def make_git_ro_server(git_repo: Path, *, name: str = "git-ro") -> FastMCP:
         - format=stat: per-file additions/deletions (DiffStatPage)
         """
         repo = _open_repo(state.git_repo)
-        # Build base diff once
-        opts: dict[str, Any] = {}
-        if payload.format == DiffFormat.PATCH:
-            opts["context_lines"] = payload.unified
-        if payload.paths:
-            opts["paths"] = payload.paths
+        # Build base diff using repository-level APIs that match type stubs
         if payload.staged:
-            head_tree = repo[repo.head.target].tree if not repo.head_is_unborn else None
-            index_tree_oid = repo.index.write_tree()
-            index_tree = repo[index_tree_oid].peel(pygit2.Tree)
-            diff = repo.diff(head_tree, index_tree, **opts)
+            a = None if repo.head_is_unborn else repo.head.target
+            diff = repo.diff(a, None, cached=True)
         else:
-            diff = repo.diff(repo.index, None, **opts)
+            diff = repo.index.diff_to_workdir(repo)
+
         if payload.find_renames:
             diff.find_similar()
 
         if payload.format == DiffFormat.PATCH:
-            patch = diff.patch or ""
-            return PatchResult(result=apply_text_slice(patch, payload.slice))
-
-        if payload.format == DiffFormat.NAME_STATUS:
-            items = [delta_to_changed_file(patch.delta) for patch in diff]
-            sliced, page = paginate_items((items, [i.path for i in items]), payload.list_slice)
-            return ShowNameStatusResult(
-                result=ChangedFilesPage(
-                    items=sliced, truncated=page.truncated, next_offset=page.next_offset, total_count=page.total_count
-                )
-            )
-
-        # STAT
-        stats: list[DiffFileStat] = []
-        for patch in diff:
-            cf = delta_to_changed_file(patch.delta)
-            additions = getattr(patch, "additions", 0) or 0
-            deletions = getattr(patch, "deletions", 0) or 0
-            stats.append(
-                DiffFileStat(
-                    status=cf.status,
-                    path=cf.path,
-                    additions=int(additions),
-                    deletions=int(deletions),
-                    rename_from=cf.rename_from,
-                    rename_to=cf.rename_to,
-                )
-            )
-        page = apply_list_slice([s.path for s in stats], payload.list_slice)
-        start = payload.list_slice.offset
-        end = start + payload.list_slice.limit
-        return StatResult(
-            result=DiffStatPage(
-                items=stats[start:end],
-                truncated=page.truncated,
-                next_offset=page.next_offset,
-                total_count=page.total_count,
-            )
-        )
+            patch_text = diff.patch or ""
+            return PatchResult(result=apply_text_slice(patch_text, payload.slice))
+        elif payload.format == DiffFormat.NAME_STATUS:
+            items = diff_to_changed_files(diff)
+            return NameStatusResult(result=build_changed_files_page(items, payload.list_slice))
+        else:
+            # STAT
+            stats = diff_to_file_stats(diff)
+            return StatResult(result=build_diff_stat_page(stats, payload.list_slice))
 
     @mcp.tool()
     def git_log(payload: LogInput) -> TextPage:
         """Return recent commits as oneline entries or multi-line blocks, with pagination."""
         root = state.git_repo
         repo = _open_repo(root)
-        obj = repo.revparse_single(payload.rev) if not repo.head_is_unborn else repo[repo.head.target]
-        head_oid = obj.oid if hasattr(obj, "oid") else obj.id
+        if repo.head_is_unborn:
+            return apply_text_slice("", payload.slice)
+        obj = repo.revparse_single(payload.rev)
+        head_oid = get_oid(obj)
         lines: list[str] = []
-        walker = repo.walk(head_oid, pygit2.GIT_SORT_TIME)
+        walker = repo.walk(head_oid)
         count = 0
         for c in walker:
             if payload.oneline:
@@ -508,9 +523,11 @@ def make_git_ro_server(git_repo: Path, *, name: str = "git-ro") -> FastMCP:
         """Return structured commit entries with offset/limit pagination (preferred for programmatic use)."""
         root = state.git_repo
         repo = _open_repo(root)
-        obj = repo.revparse_single(payload.rev) if not repo.head_is_unborn else repo[repo.head.target]
-        head_oid = obj.oid if hasattr(obj, "oid") else obj.id
-        walker = repo.walk(head_oid, pygit2.GIT_SORT_TIME)
+        if repo.head_is_unborn:
+            return LogEntriesPage(entries=[], truncated=False, next_offset=None)
+        obj = repo.revparse_single(payload.rev)
+        head_oid = get_oid(obj)
+        walker = repo.walk(head_oid)
         # Skip offset
         skipped = 0
         for _ in walker:
@@ -554,70 +571,57 @@ def make_git_ro_server(git_repo: Path, *, name: str = "git-ro") -> FastMCP:
         # Blob contents: REV:PATH always as text
         if ":" in objspec:
             rev, path = objspec.split(":", 1)
-            obj = repo.revparse_single(rev)
-            tree = obj.tree if isinstance(obj, pygit2.Commit) else obj.peel(pygit2.Tree)
+            root_obj = repo.revparse_single(rev)
+            tree = root_obj.tree if isinstance(root_obj, pygit2.Commit) else root_obj.peel(pygit2.Tree)
             cur: pygit2.Tree = tree
             for part in filter(None, path.split("/")):
                 entry = cur[part]
                 if entry.filemode == pygit2.GIT_FILEMODE_TREE:
-                    cur = repo[entry.oid]
+                    cur = repo[entry.id].peel(pygit2.Tree)
                 else:
-                    blob = repo[entry.oid]
+                    blob = repo[entry.id].peel(pygit2.Blob)
                     data = blob.data
                     try:
                         text = data.decode("utf-8")
-                    except Exception:
+                    except UnicodeDecodeError:
                         text = f"[binary blob {len(data)} bytes]"
                     return ShowPatchResult(result=apply_text_slice(text, payload.slice))
             raise FileNotFoundError(f"Path not found: {path}")
-        obj = repo.revparse_single(objspec)
-        if isinstance(obj, pygit2.Tag):
-            obj = obj.peel(pygit2.Commit)
-        if not isinstance(obj, pygit2.Commit):
-            raise TypeError(f"Unsupported object type for show: {type(obj).__name__}")
-
-        # Build commit diff against first parent (or NULL tree)
-        if obj.parent_ids:
-            parent = repo[obj.parent_ids[0]]
-            diff = repo.diff(parent.tree, obj.tree)
+        obj_any = repo.revparse_single(objspec)
+        # Narrow runtime types explicitly and bind to a typed local variable so mypy can follow.
+        if isinstance(obj_any, pygit2.Tag):
+            maybe_commit = obj_any.peel(pygit2.Commit)
+        elif isinstance(obj_any, pygit2.Commit):
+            maybe_commit = obj_any
         else:
-            diff = repo.diff(None, obj.tree)
+            raise TypeError(f"Unexpected git object type for {objspec}: {type(obj_any)!r}")
+        obj: pygit2.Commit = cast(pygit2.Commit, maybe_commit)
+
+        # Build commit diff against first parent (or empty tree)
+        if obj.parent_ids:
+            parent = repo[obj.parent_ids[0]].peel(pygit2.Commit)
+            diff = repo.diff(parent, obj)
+        else:
+            diff = repo.diff(None, obj)
         diff.find_similar()
 
         if payload.format == DiffFormat.PATCH:
-            patch = diff.patch or ""
-            header = f"commit {obj.id}\nAuthor: {obj.author.name} <{obj.author.email}>\n\n{obj.message or ''}\n"
-            return ShowPatchResult(result=apply_text_slice(header + patch, payload.slice))
+            patch_text = diff.patch or ""
+            return ShowPatchResult(
+                result=apply_text_slice(patch_text, payload.slice),
+                commit_id=str(obj.id),
+                author_name=obj.author.name,
+                author_email=obj.author.email,
+                message=obj.message or None,
+            )
 
         if payload.format == DiffFormat.NAME_STATUS:
-            items = [delta_to_changed_file(patch.delta) for patch in diff]
-            sliced, page = paginate_items((items, [i.path for i in items]), payload.list_slice)
-            return ShowNameStatusResult(
-                result=ChangedFilesPage(
-                    items=sliced, truncated=page.truncated, next_offset=page.next_offset, total_count=page.total_count
-                )
-            )
+            items = diff_to_changed_files(diff)
+            return ShowNameStatusResult(result=build_changed_files_page(items, payload.list_slice))
 
         # STAT
-        stats: list[DiffFileStat] = []
-        for patch in diff:
-            cf = delta_to_changed_file(patch.delta)
-            additions = getattr(patch, "additions", 0) or 0
-            deletions = getattr(patch, "deletions", 0) or 0
-            stats.append(
-                DiffFileStat(
-                    status=cf.status,
-                    path=cf.path,
-                    additions=int(additions),
-                    deletions=int(deletions),
-                    rename_from=cf.rename_from,
-                    rename_to=cf.rename_to,
-                )
-            )
-        sliced, page = paginate_items((stats, [s.path for s in stats]), payload.list_slice)
-        return DiffStatPage(
-            items=sliced, truncated=page.truncated, next_offset=page.next_offset, total_count=page.total_count
-        )
+        stats = diff_to_file_stats(diff)
+        return ShowStatResult(result=build_diff_stat_page(stats, payload.list_slice))
 
     @mcp.tool()
     def git_rev_parse(payload: RevParseInput) -> RevParseResult:
@@ -627,7 +631,7 @@ def make_git_ro_server(git_repo: Path, *, name: str = "git-ro") -> FastMCP:
         if payload.arg == "--show-toplevel":
             return RevParseResult(kind="toplevel", value=str(Path(repo.workdir).resolve()))
         obj = repo.revparse_single(payload.arg)
-        oid = obj.oid if hasattr(obj, "oid") else obj.id
+        oid = get_oid(obj)
         s = str(oid)
         if payload.short:
             s = s[:7]
@@ -646,43 +650,8 @@ def make_git_ro_server(git_repo: Path, *, name: str = "git-ro") -> FastMCP:
         """List local or remote branches (short names) with offset/limit pagination (structured output)."""
         root = state.git_repo
         repo = _open_repo(root)
-        kind = pygit2.GIT_BRANCH_REMOTE if payload.remote else pygit2.GIT_BRANCH_LOCAL
+        kind = git_enums.BranchType.REMOTE if payload.remote else git_enums.BranchType.LOCAL
         names = repo.listall_branches(kind)
         return apply_list_slice(names, payload.list_slice)
-
-    # Internal helper for list-style diffs
-    def _build_diff_for_lists(repo: pygit2.Repository, params: DiffListInput) -> pygit2.Diff:
-        opts: dict[str, Any] = {}
-        if params.paths:
-            opts["paths"] = params.paths
-        if params.staged:
-            head_tree = repo[repo.head.target].tree if not repo.head_is_unborn else None
-            index_tree_oid = repo.index.write_tree()
-            index_tree = repo[index_tree_oid].peel(pygit2.Tree)
-            diff = repo.diff(head_tree, index_tree, **opts)
-        else:
-            diff = repo.diff(repo.index, None, **opts)
-        if params.find_renames:
-            diff.find_similar()
-        return diff
-
-    def _list_changed_files(repo: pygit2.Repository, payload: DiffListInput) -> list[ChangedFile]:
-        diff = _build_diff_for_lists(repo, payload)
-        items: list[ChangedFile] = []
-        for patch in diff:
-            d = patch.delta
-            status_char = STATUS_MAP.get(d.status, "?")
-            old_path = d.old_file.path or None
-            new_path = d.new_file.path or None
-            path = new_path or old_path or ""
-            items.append(
-                ChangedFile(
-                    status=status_char,
-                    path=path,
-                    rename_from=old_path if status_char == "R" else None,
-                    rename_to=new_path if status_char == "R" else None,
-                )
-            )
-        return items
 
     return mcp

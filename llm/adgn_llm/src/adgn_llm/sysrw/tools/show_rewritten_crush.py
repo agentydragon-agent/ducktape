@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-
 import copy
 import json
 import os
 import re
 from pathlib import Path
 from typing import Any
+from ..extract_common import iter_wire_lines
+
 
 PROVIDER_WIRE = Path(os.environ.get("CRUSH_WIRE_LOG", str(Path.home() / ".crush" / "logs" / "provider-wire.log")))
 DEMO_TEMPLATE = Path(__file__).parent / "demo_template.txt"
@@ -28,24 +29,6 @@ def ensure_demo_template() -> Path:
             encoding="utf-8",
         )
     return DEMO_TEMPLATE
-
-
-def iter_wire_lines(path: Path):
-    if not path.exists():
-        return
-
-    def _gzip_open(p: Path):
-        import gzip
-
-        return gzip.open(p, "rt", encoding="utf-8", errors="ignore")
-
-    def _plain_open(p: Path):
-        return open(p, encoding="utf-8", errors="ignore")
-
-    opener = _gzip_open if str(path).endswith(".gz") else _plain_open
-    with opener(path) as f:  # type: ignore[misc]
-        for line in f:
-            yield line
 
 
 def maybe_extract_payload(obj: dict[str, Any]) -> dict[str, Any] | None:

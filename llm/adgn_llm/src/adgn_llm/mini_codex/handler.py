@@ -7,11 +7,10 @@ string derived from the concrete type.
 """
 
 from __future__ import annotations
-
 from datetime import datetime
 from typing import Any, Literal, TypedDict, Union
-
 from pydantic import BaseModel
+from adgn_llm.mini_codex.loop_control import NoLoopDecision
 
 
 # ---- Ground-truth usage (OpenAI upstream fields only; no derived numbers) ----
@@ -46,6 +45,7 @@ class ToolCall(BaseModel):
 
 
 class FunctionCallOutput(BaseModel):
+    type: Literal["function_call_output"] = "function_call_output"
     call_id: str
     output: str
 
@@ -85,10 +85,10 @@ class JsonlRecord(TypedDict, total=False):
     # All remaining keys are event fields (model_dump output)
 
 
-def to_jsonl_record(evt: EventType) -> JsonlRecord:
+def to_jsonl_record(evt: EventType) -> dict[str, Any]:
     kind = KIND_MAP[type(evt)]
-    payload = evt.model_dump(exclude_none=True)
-    out: JsonlRecord = {"kind": kind, **payload}
+    out: dict[str, Any] = {"kind": kind}
+    out.update(evt.model_dump(exclude_none=True))
     return out
 
 
@@ -101,6 +101,9 @@ class BaseHandler:
     # Typed hooks (final API)
     def on_response(self, evt: Response) -> None:  # default no-op
         return None
+
+    def on_before_sample(self):  # default: no decision
+        return NoLoopDecision()
 
     def on_user_text_event(self, evt: UserText) -> None:  # default no-op
         return None

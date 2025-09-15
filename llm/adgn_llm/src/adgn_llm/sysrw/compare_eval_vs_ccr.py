@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+
 TRACE_DIR = Path.home() / ".claude-code-router" / "logs"
 
 

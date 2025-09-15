@@ -7,12 +7,10 @@ submit_result.
 """
 
 from __future__ import annotations
-
+from collections.abc import Iterable
 from adgn_llm.properties.critic import CriticSubmitPayload
 from adgn_llm.properties.specimens.registry import SpecimenRecord, IssueRecord
-
 from typing import Any
-
 from pydantic import BaseModel, ConfigDict, Field
 from mcp.server.fastmcp import FastMCP
 from dataclasses import dataclass
@@ -21,6 +19,7 @@ from rich.table import Table
 from rich.panel import Panel
 from rich.markdown import Markdown
 from rich.console import Group, RenderableType
+
 
 # Shared ID prefix constants (single source of truth)
 CANON_TP_PREFIX = "canon_tp_"
@@ -58,7 +57,12 @@ class GradeSubmitInput(BaseModel):
     true_positive_ids: list[str] = Field(default_factory=list)
     false_positive_ids: list[str] = Field(default_factory=list)
     unknown_critique_ids: list[str] = Field(default_factory=list)
-    precision: float = Field(..., ge=0.0, le=1.0, description="LLM-assessed precision in [0,1] (smart-weighted)")
+    precision: float = Field(
+        ...,
+        ge=0.0,
+        le=1.0,
+        description="LLM-assessed precision in [0,1] (smart-weighted)",
+    )
     recall: float = Field(..., ge=0.0, le=1.0, description="LLM-assessed recall in [0,1] (smart-weighted)")
     message_md: str | None = Field(
         default=None,
@@ -110,7 +114,6 @@ def make_grader_submit_server(
     """
 
     # Derive allowed ID sets and counts from specimen and critique
-    from collections.abc import Iterable
 
     def _prefixed_ids(items: Iterable[IssueRecord], prefix: str) -> set[str]:
         out: set[str] = set()

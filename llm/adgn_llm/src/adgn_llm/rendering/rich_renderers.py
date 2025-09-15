@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+
 from functools import singledispatch
 from typing import Any
 

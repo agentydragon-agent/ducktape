@@ -1,15 +1,13 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-
 import argparse
 import json
 import sys
 from pathlib import Path
-
 import yaml
 from pydantic import BaseModel, Field, ValidationError
-
 from adgn_llm.sandboxer import Policy as SandboxPolicy
+
 
 # -----------------------------------------------------------------------------
 # Pydantic config schema (single path, no profiles)
@@ -85,45 +83,42 @@ def _ensure_policy_minimums(
     # Ensure kernel executable and its venv root are readable
     if kernel_exec and kernel_exec not in rp:
         rp.append(kernel_exec)
+    kexec_path = Path(kernel_exec)
+    if not kexec_path.is_absolute():
+        kexec_path = kexec_path.absolute()  # preserve symlinks, avoid resolve() here
+    # Add both the symlink path and the resolved real path (if different)
+    exec_symlink = kexec_path.as_posix()
+    if exec_symlink not in rp:
+        rp.append(exec_symlink)
     try:
-        kexec_path = Path(kernel_exec)
-        if not kexec_path.is_absolute():
-            kexec_path = kexec_path.absolute()  # preserve symlinks, avoid resolve() here
-        # Add both the symlink path and the resolved real path (if different)
-        exec_symlink = kexec_path.as_posix()
-        if exec_symlink not in rp:
-            rp.append(exec_symlink)
-        try:
-            exec_real = kexec_path.resolve(strict=False).as_posix()
-        except Exception:
-            exec_real = exec_symlink
-        if exec_real and exec_real not in rp:
-            rp.append(exec_real)
-        # Add parent dirs for directory-based allowances (subpath)
-        kexec_dir = kexec_path.parent.as_posix()
-        if kexec_dir not in rp:
-            rp.append(kexec_dir)
-        try:
-            real_dir = Path(exec_real).parent.as_posix()
-            if real_dir not in rp:
-                rp.append(real_dir)
-        except Exception:
-            pass
-        # Add venv root and lib dirs (site-packages lives here)
-        venv_root_path = kexec_path.parents[1]
-        venv_root = venv_root_path.as_posix()
-        if venv_root not in rp:
-            rp.append(venv_root)
-        venv_lib = (venv_root_path / "lib").as_posix()
-        if venv_lib not in rp:
-            rp.append(venv_lib)
-        # Best-effort add versioned lib, lib-dynload, and site-packages (common layout)
-        for sub in ("python3.12", "python3.12/lib-dynload", "python3.12/site-packages"):
-            p = (venv_root_path / "lib" / sub).as_posix()
-            if p not in rp:
-                rp.append(p)
+        exec_real = kexec_path.resolve(strict=False).as_posix()
+    except Exception:
+        exec_real = exec_symlink
+    if exec_real and exec_real not in rp:
+        rp.append(exec_real)
+    # Add parent dirs for directory-based allowances (subpath)
+    kexec_dir = kexec_path.parent.as_posix()
+    if kexec_dir not in rp:
+        rp.append(kexec_dir)
+    try:
+        real_dir = Path(exec_real).parent.as_posix()
+        if real_dir not in rp:
+            rp.append(real_dir)
     except Exception:
         pass
+    # Add venv root and lib dirs (site-packages lives here)
+    venv_root_path = kexec_path.parents[1]
+    venv_root = venv_root_path.as_posix()
+    if venv_root not in rp:
+        rp.append(venv_root)
+    venv_lib = (venv_root_path / "lib").as_posix()
+    if venv_lib not in rp:
+        rp.append(venv_lib)
+    # Best-effort add versioned lib, lib-dynload, and site-packages (common layout)
+    for sub in ("python3.12", "python3.12/lib-dynload", "python3.12/site-packages"):
+        p = (venv_root_path / "lib" / sub).as_posix()
+        if p not in rp:
+            rp.append(p)
 
     platform_map = policy.setdefault("platform", {})
     seatbelt_map = platform_map.setdefault("seatbelt", {})

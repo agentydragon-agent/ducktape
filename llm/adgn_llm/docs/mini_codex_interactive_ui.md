@@ -25,7 +25,7 @@ Current state (quick map)
 
 Design overview
 We add three minimally-coupled pieces:
-1) Approvals proxy around MCP (modular): a wrapper around McpManager that enforces a hardcoded policy ("allow" or "ask"). For "ask", it emits a pending-approval event and awaits a UI decision; deny triggers server-side cancellation of the current turn (no further tool execution).
+1) Approvals proxy around MCP (modular): a wrapper around McpManager that enforces a hardcoded policy ("allow" or "ask"). For "ask", it consults an ApprovalsProvider (UI/CLI/headless). If the provider returns deny, the wrapper raises TurnAbortRequested(details) — a control-plane exception — instead of returning a tool result.
 2) Lightweight HTTP UI (FastAPI+WebSocket) to:
    - Show transcript/events and pending tool calls.
    - Allow the user to send a message, toggle pre-approvals per tool, and abort the active run.
@@ -39,15 +39,15 @@ Component details
   - ToolKey: str = namespaced tool name "mcp__{server}__{tool}" (existing naming)
   - Policy: hardcoded Python function tool_policy(tool_key: str) -> Literal["allow","ask"]; no config/overrides yet.
 - Proxy classes
-  - class ApprovalHub: in-memory registry of pending approvals; exposes await_decision(call_id, tool_key, args) and resolve(call_id, allow: bool)
-  - class McpManagerWithApprovals: wraps an underlying McpManager; decorates call_tool(server,name,args) and read_resource(server,uri). For call_tool, consult tool_policy; if "ask", emit approval_pending and await ApprovalHub; deny → return synthetic {ok:false,error:"User denied: <name>"}; allow → delegate to inner. For read_resource, use a virtual key (e.g., resource_read::{server}) and similar flow.
+  - class ApprovalsProvider: request_tool_approval(request: dict) -> Literal["allow","deny"] (pluggable; UI/CLI/headless). Optional async API.
+  - class McpManagerWithApprovals: wraps an underlying McpManager; decorates call_tool(server,name,args) and read_resource(server,uri). For call_tool/read_resource, consult policy; if "ask", call ApprovalsProvider. deny → raise TurnAbortRequested(reason="approval_denied", context=...); allow → delegate to inner.
 - Resources and approvals (note for MVP/follow‑up)
   - The agent uses both tools and resources (mcp__resources__list/read and manager.read_resource()). The wrapper should also gate resource reads.
   - Minimal approach: treat resource read as a virtual key like "resource_read::{server}" (include {uri} in the pending event payload for context). Policy can say ask/allow at server granularity; UI shows the exact URI before approving.
   - list_resources() stays allow; read_resource(server, uri) consults policy and, if "ask", emits approval_pending {kind:"approval_pending", call_id, type:"resource_read", server, uri} and awaits a decision.
 - Agent integration
   - No changes to agent loop required; pass McpManagerWithApprovals into MiniCodex.create instead of bare McpManager.
-- Minimal UX: When a tool or resource read is "ask", the UI shows a Pending Approvals item with Allow/Deny (including server/uri for resources); that specific call blocks until decision, then proceeds (deny → synthetic error, allow → execute).
+- Minimal UX: When a tool or resource read is "ask", a UI-backed ApprovalsProvider shows a Pending Approvals item with Allow/Deny (including server/uri for resources). The provider returns allow/deny to the wrapper. deny → TurnAbortRequested; allow → execute. No UI coupling in agent/wrapper APIs.
 
 2) HTTP UI server
 - New package: src/adgn_llm/mini_codex/ui/
@@ -69,19 +69,24 @@ Component details
     - WebSocket /ws: duplex channel:
       - Outbound: emit events (user_text, assistant_text, tool_call, function_call_output, tool_error), approval_pending, approval_decision, and synthetic notifications (aborted, status).
       - Inbound messages:
-        - {type: "send", text: "..."} -> appends a user message and triggers agent.sample() or agent.run(text)
-        - {type: "approve", call_id: string} / {type: "deny", call_id: string} -> resolve a pending approval in ApprovalHub; deny also cancels the current turn
-        - {type: "abort"}
+        - {type: "send", text: "..."} -> appends a user message and triggers agent.run(text)
+        - {type: "approve", call_id: string} / {type: "deny", call_id: string} -> ApprovalsProvider resolves a pending approval; deny leads to TurnAbortRequested inside wrapper (agent ends the turn via catch)
+        - {type: "abort"} -> orchestrator cancels the outer task running agent.run()
   - Keyboard shortcuts: In index.html, attach keydown listener for Cmd/Ctrl+Enter to send; Shift+Enter inserts newline (browser default).
 - Launch entrypoint (optional now): small CLI to run the server, eg: adgn-mini-codex-ui --port 8765
 
-3) Abort model rollout
-- Session.run() creates an asyncio.Task for agent.run(); store ref.
-- Abort path:
-  - Cancel the task; if the cancellation happens during _responses_create_with_retry awaiting the OpenAI call, asyncio.CancelledError will propagate; server catches and emits "aborted".
-  - Denied approval uses the same path: upon receiving approval_decision {allowed:false}, cancel the current turn task.
-  - In Phase 2, track per-tool gather() tasks and cancel them similarly.
-- No agent-level changes are required for Phase 1 if we only cancel the outer task; the OpenAI client awaits will respond to task cancellation.
+3) Abort model rollout and abort-turn semantics
+
+Responses API invariant (must-answer-all tool calls)
+- For every ResponseFunctionToolCall the model emits in a response, we must emit exactly one function_call_output back before attempting another sampling call.
+- On approval denial within a batch of tool calls:
+  - The agent catches TurnAbortRequested for the denied call and emits a synthetic function_call_output (structured error) for that specific call.
+  - For any remaining tool calls in the same batch that were not executed yet, the agent emits synthetic function_call_output records with a minimal error payload (e.g., {ok:false, error:"turn aborted"}). If some calls were already in-flight, await their completion or replace with the synthetic error output, but ensure every call_id gets exactly one output.
+  - After all function_call_output messages for that batch are emitted, the agent ends the turn (does not sample again).
+- Session.run() may be wrapped in a task by the orchestrator (UI/CLI) for user-initiated Abort.
+- Abort-TURN on approval denial:
+  - Wrapper raises TurnAbortRequested on deny. Agent catches it around each mcp.call_tool/read_resource, emits a synthetic function_call_output (error payload) and tool_error, then ends the turn immediately (returns AgentResult). No task cancellation needed; API is UI-agnostic.
+- Abort-BUTTON (user-triggered stop): orchestrator cancels the outer task running agent.run(); server emits {kind:"aborted"}. Phase 2 can track per-tool tasks to cancel mid-batch if desired.
 
 Wire-up and minimal code edits
 
@@ -156,11 +161,36 @@ Phased plan
   - Multi-session support; auth; nicer UI; streaming tokens; richer keyboard mapping
 
 Acceptance criteria
-- With a policy that marks e.g. mcp__local__bash as "ask", the first model-issued call pauses and appears in Pending Approvals. Clicking Deny cancels the current agent turn immediately (no further tool execution); control returns to the user. Clicking Allow executes the tool. Approval events approval_pending and approval_decision are visible in the transcript and via /ws.
-- With a policy that marks resource reads for server "local" as "ask", a read_resource(local, "/path") pauses with a Pending Approval showing the exact URI; Deny cancels the current agent turn; Allow returns the real content.
-- The UI shows live events, allows sending a new user message, and toggling a tool to allowed (preapproval) so subsequent calls succeed.
+- With a policy that marks e.g. mcp__local__bash as "ask", the first model-issued call triggers an approval request. Clicking Deny makes ApprovalsProvider return deny; wrapper raises TurnAbortRequested; the agent logs a synthetic function_call_output + tool_error for the denied call, emits function_call_output for any other pending call_ids in that batch with an aborted error, and ends the turn. Clicking Allow executes the tool. Approval events approval_pending and approval_decision are visible in the transcript and via /ws (when UI-backed).
+- With a policy that marks resource reads for server "local" as "ask", a read_resource(local, "/path") triggers the same approval flow; Deny ends the turn after all batch call_ids have been answered; Allow returns the real content.
+- The UI shows live events, allows sending a new user message, and (when UI-backed) handles approvals. Headless runs can use an ApprovalsProvider that auto-returns allow.
 - Hitting Abort during a pending model call returns control within ~1s and emits an "aborted" notification; server remains healthy and can start another run.
 - Refreshing /transcript shows the full in-memory transcript of the current run so far.
+
+Refinement: typed approvals events (no dicts; no agent coupling)
+- Keep approvals optional and independent. The MiniCodex agent does not import or depend on approvals types, publishers, or hooks.
+- Typed models only (no base class, no internal discriminator):
+  - ApprovalRequested: call_id: UUID, mode: Literal["tool","resource_read"], tool: str|None, server: str|None, uri: str|None, args: dict[str, Any]|None, requested_at: datetime
+  - ApprovalResolved: call_id: UUID, allowed: bool, resolved_at: datetime, reason: str|None
+- Publisher protocol (typed, pluggable):
+  - ApprovalsPublisher with methods:
+    - on_requested(evt: ApprovalRequested) -> None
+    - on_resolved(evt: ApprovalResolved) -> None
+  - Default: NoopPublisher (headless). Optional adapters (e.g., JsonlApprovalsPublisher, UISocketApprovalsPublisher) serialize at the edge; core stays typed-only.
+- Wrapper contract (no agent coupling):
+  - McpManagerWithApprovals(inner, hub, policy, publisher=None)
+    - allow → delegate to inner
+    - ask → publisher.on_requested(ApprovalRequested); await hub.await_decision(call_id, payload); publisher.on_resolved(ApprovalResolved)
+      - deny → raise TurnAbortRequested(request, decision)
+      - allow → delegate
+- Agent behavior (unchanged surface; minimal catch):
+  - Agent catches TurnAbortRequested around call_tool/read_resource, emits synthetic function_call_output error for the denied call_id (and for remaining unprocessed call_ids in that batch), then ends the turn. This preserves the Responses invariant of exactly one function_call_output per tool_call. No approvals hooks in agent.
+- Logging/storage separation:
+  - Agent transcript remains via TranscriptLoggerHandler (typed agent events only).
+  - ApprovalsPublisher owns its logs/bridges (e.g., approvals.jsonl, WebSocket UI); default path can co-locate under the same run_dir without mixing concerns.
+- Tests (scoped):
+  - Wrapper: ask → publishes typed requested/resolved events; deny → TurnAbortRequested; allow → delegate.
+  - Agent: denial leads to one synthetic output per call_id and turn termination.
 
 Future enhancements
 - Should approvals be per-session or global? MVP: per-session with optional Save/Load.
@@ -170,9 +200,13 @@ Future enhancements
 Implementation notes (code pointers)
 - Agent refactor: route all tool calls via mcp.call_tool(server, name, arguments) and resource reads via mcp.read_resource(server, uri); remove direct session.get + session.call_tool usage.
 - Approvals gating is entirely in McpManagerWithApprovals; no approval logic in the agent.
-- Abort turn on denial: the UI server keeps a current_turn_task; upon {type:"deny", call_id}, it calls approvals.resolve(call_id, False) then current_turn_task.cancel(); emit {kind:"aborted"} when cancellation completes.
-- Event forwarding is already in place via _emit_event(); UI subscribes to these along with approval_pending/approval_decision.
+- Abort turn on denial: define TurnAbortRequested(Exception) in approvals.py; wrapper raises it on deny; agent wraps mcp.call_tool/read_resource in try/except TurnAbortRequested, then:
+  - Emits function_call_output for the denied call with a structured error payload, and tool_error for visibility.
+  - Emits function_call_output with a minimal aborted/error payload for each remaining call_id in the same batch that hasn't been answered yet.
+  - Ends the turn without re-sampling.
+- Event forwarding is already in place via _emit_event(); UI-backed providers also send approval_pending/approval_decision to /ws.
 
 Progress log
 - 2025-09-14T00:00:00Z sha=6f2877fa: Drafted minimal design; next: implement approvals manager, add agent guard, scaffold FastAPI server and simple HTML UI.
 - 2025-09-14T18:55:00Z sha=6f2877fa: Refactored MiniCodex to manager-level mcp.call_tool/read_resource; added approvals wrapper scaffold (ApprovalHub + McpManagerWithApprovals); enforced handler on_reasoning; aligned ResponseUsage to SDK; updated editor_server.done to typed; tests passing (7/7).
+- 2025-09-14T19:20:00Z sha=6f2877fa: Revised abort-turn design to be UI-agnostic: introduce ApprovalsProvider and TurnAbortRequested; wrapper raises on deny; agent catches and ends the turn with synthetic events.

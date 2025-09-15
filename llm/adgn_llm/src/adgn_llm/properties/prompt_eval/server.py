@@ -9,7 +9,6 @@ Behavior:
 """
 
 from __future__ import annotations
-
 from typing import Any, List, Tuple
 import asyncio
 import json
@@ -18,10 +17,8 @@ from pathlib import Path
 from datetime import datetime
 from dataclasses import dataclass
 import logging
-
 from mcp.server.fastmcp import FastMCP
 from openai import AsyncOpenAI
-
 from adgn_llm.properties.specimens.registry import (
     find_specimens_base,
     list_specimen_names,
@@ -36,25 +33,25 @@ from adgn_llm.mini_codex.loop_control import Continue, Abort, RequireAny
 from adgn_llm.mcp.inproc_transport import make_inproc_slot_spec
 from adgn_llm.mini_codex.transcript_handler import TranscriptHandler
 from adgn_llm.mini_codex.loggers import TranscriptLoggerHandler
-from adgn_llm.properties.critic import CriticSubmitState, CriticSubmitPayload, make_critic_submit_server
-from adgn_llm.properties.grade_runner import grade_critic_output, _metrics_row
+from adgn_llm.properties.critic import (
+    CriticSubmitState,
+    CriticSubmitPayload,
+    make_critic_submit_server,
+)
+from adgn_llm.properties.grade_runner import grade_critic_output, _metrics_row, _RequireSubmitHandler
 from adgn_llm.properties.prompts.util import build_scope_text, render_prompt_template
+
 
 logger = logging.getLogger(__name__)
 
 
-class _RequireSubmitHandler(BaseHandler):
-    def __init__(self, state_obj: Any) -> None:
-        self._state = state_obj
-
-    def on_before_sample(self):  # type: ignore[override]
-        if getattr(self._state, "result", None) is not None:
-            return Abort()
-        return Continue(RequireAny())
-
-
 async def _run_critic_for_specimen(
-    specimen: str, system_prompt: str, client: AsyncOpenAI, run_dir: Path, *, agent_model: str = "gpt-5"
+    specimen: str,
+    system_prompt: str,
+    client: AsyncOpenAI,
+    run_dir: Path,
+    *,
+    agent_model: str = "gpt-5",
 ) -> CriticSubmitPayload:
     """Run critic with a custom system prompt (no properties mount); return CriticSubmitPayload model and persist."""
     rec = SpecimenRegistry.load_strict(specimen)
@@ -121,7 +118,10 @@ def build_server(name: str = "prompt_eval", agent_model: str = "gpt-5") -> Tuple
     round_idx = {"n": -1}  # mutable cell for closure
 
     state = PromptEvalState()
-    mcp = FastMCP(name, instructions="Prompt Evaluation server — evaluate candidate critic prompts")
+    mcp = FastMCP(
+        name,
+        instructions="Prompt Evaluation server — evaluate candidate critic prompts",
+    )
     # TODO(mpokorny): FastMCP wraps tool Exceptions into ToolError, so this tool cannot crash the server;
     # failures propagate as tool errors. We log at ERROR and surface per-specimen/round summaries.
 

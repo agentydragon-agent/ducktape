@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+
 from typing import Any, Iterable
 
 from adgn_llm.mini_codex.loop_control import (
@@ -10,9 +11,6 @@ from adgn_llm.mini_codex.loop_control import (
     Abort,
     SyntheticAction,
 )
-
-
-# Typed event classes and BaseHandler
 from adgn_llm.mini_codex.handler import (
     BaseHandler,
     UserText,
@@ -43,15 +41,12 @@ class AggregatingController:
       - If multiple handlers emit concrete LoopDecision values that differ,
         crash (conflicting opinions). Only identical decisions across handlers
         would be permitted (but we crash on any conflict per policy).
-
-    This keeps semantics explicit and fails fast on ambiguous or missing
-    decision signals.
     """
 
     def __init__(self, handlers: Iterable[BaseHandler]) -> None:
         self._handlers = list(handlers)
 
-    def on_before_sample(self) -> LoopDecision:  # type: ignore[override]
+    def on_before_sample(self) -> LoopDecision:
         # Collect concrete decisions (non-NoLoopDecision) from handlers in order.
         decisions: list[LoopDecision] = []
         for h in self._handlers:
@@ -67,7 +62,9 @@ class AggregatingController:
         # Crash if no handler emitted a decision
         if not decisions:
             raise RuntimeError(
-                "No handler emitted a LoopDecision (all returned NoLoopDecision()); crashing per policy."
+                "MiniCodex loop control misconfiguration: no handler emitted a LoopDecision (all returned NoLoopDecision()). "
+                "MiniCodex instances must have a configured loop-control handler (that can emit Continue/Abort). "
+                "Fix the MiniCodex instance to provide a loop handler."
             )
 
         # Crash if handlers disagree (any differing decision)

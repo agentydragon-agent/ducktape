@@ -5,28 +5,31 @@ Current scope: prompt-optimize (with --context) and prompt-eval will be added ne
 """
 
 from __future__ import annotations
-
 from pathlib import Path
 from typing import Literal, Optional, List
-
 import asyncio
 import json
+from datetime import datetime
 import subprocess
 import tempfile
 import time
-from datetime import datetime
+from adgn_llm.properties.prompts.builder import build_check_prompt
+from adgn_llm.properties.docker_env import PropertiesDockerWiring
+import tiktoken
 import re
 import csv
 import matplotlib
+from adgn_llm.properties.prompts.builder import (
+    build_enforce_prompt,
+    build_input_schemas_json,
+)
 import matplotlib.pyplot as plt
-
 import typer
 import docker
 import functools
 from dataclasses import dataclass, asdict
 from adgn_llm.logging_config import configure_logging
-
-
+from adgn_llm.properties.prompts.builder import build_role_prompt
 from adgn_llm.mini_codex.mcp_manager import McpManager
 from adgn_llm.mini_codex.agent import MiniCodex
 from openai import AsyncOpenAI
@@ -66,6 +69,7 @@ from adgn_llm.properties.specimens.registry import SpecimenRegistry
 from adgn_llm.properties.lint_issue import run_specimen_lint_issue_async
 from adgn_llm.properties.eval_harness import run_all_evals
 from adgn_llm.properties.cluster_unknowns import cluster_unknowns
+
 
 app = typer.Typer(help="adgn-properties (Typer) — properties tooling")
 
@@ -113,10 +117,6 @@ async def cmd_check(
 
     # Dry-run path: compose prompt only and save it to a temp file (compat with legacy tests)
     if dry_run:
-        from adgn_llm.properties.prompts.builder import build_check_prompt
-        from adgn_llm.properties.docker_env import PropertiesDockerWiring
-        import tiktoken
-
         # Compose prompt without spinning up docker/agent
         wiring = PropertiesDockerWiring(
             server_spec=None,  # type: ignore[arg-type]
@@ -133,9 +133,6 @@ async def cmd_check(
         tokens = len(tiktoken.get_encoding("cl100k_base").encode(prompt_text))
         typer.echo(f"Saved prompt: {outfile} (approx tokens: {tokens})")
         return
-
-    # Build prompt and execute via existing async helper
-    from adgn_llm.properties.prompts.builder import build_role_prompt
 
     wiring = properties_docker_spec(workdir, mount_properties=True)
     role_mode: Literal["find", "open", "discover"] = "open" if allow_general_findings else "find"
@@ -397,7 +394,6 @@ async def prompt_eval(
     ),
 ) -> None:
     """Evaluate a critic system prompt across all known specimens and emit metrics list."""
-    from datetime import datetime
 
     pe_server, _state = build_prompt_eval_server()
 
@@ -461,10 +457,6 @@ def cmd_fix(
     full_auto: bool = typer.Option(False, help="Pass --full-auto to codex exec"),
 ) -> None:
     """Refactor code within scope to satisfy property definitions (workspace-write sandbox)."""
-    from adgn_llm.properties.prompts.builder import (
-        build_enforce_prompt,
-        build_input_schemas_json,
-    )
 
     schemas_json = build_input_schemas_json([Occurrence, LineRange, IssueCore])
     wiring = properties_docker_spec(workdir, mount_properties=True)

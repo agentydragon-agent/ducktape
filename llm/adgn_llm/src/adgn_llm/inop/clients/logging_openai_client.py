@@ -1,8 +1,6 @@
 from dataclasses import dataclass
-
 import tiktoken
 from openai import AsyncOpenAI
-
 from adgn_llm.inop.io.jsonl_logger import JSONLLogger, safe_serialize
 
 

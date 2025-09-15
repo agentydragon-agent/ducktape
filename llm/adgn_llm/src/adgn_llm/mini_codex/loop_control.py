@@ -16,19 +16,17 @@ Notes / Future work (TODOs):
 """
 
 from __future__ import annotations
-
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, TypeAlias
+from typing import TypeAlias
+from openai.types.responses import (
+    ResponseOutputMessage,
+    ResponseFunctionToolCall,
+    ResponseReasoningItem,
+)
 
-if TYPE_CHECKING:
-    from openai.types.responses import (
-        ResponseOutputMessage,
-        ResponseFunctionToolCall,
-        ResponseReasoningItem,
-    )
 
-    # Union of concrete output item types that the agent processes
-    OutputItem: TypeAlias = ResponseReasoningItem | ResponseOutputMessage | ResponseFunctionToolCall
+# Union of concrete output item types that the agent processes
+OutputItem: TypeAlias = ResponseReasoningItem | ResponseOutputMessage | ResponseFunctionToolCall
 
 
 # ---------------------------------------------------------------------------

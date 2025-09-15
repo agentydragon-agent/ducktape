@@ -1,12 +1,20 @@
 from __future__ import annotations
 
+
+from adgn_llm.properties.grader import CANON_TP_PREFIX, CANON_FP_PREFIX, CRIT_PREFIX
+
+
 from typing import Literal
 
 from adgn_llm.properties.docker_env import PropertiesDockerWiring
 from .util import build_input_schemas_json, render_prompt_template
 from adgn_llm.properties.models.issue import Occurrence, LineRange, IssueCore
 from adgn_llm.properties.critic import CriticSubmitPayload, ReportedIssue
-from adgn_llm.properties.grader import GradeSubmitInput, GradeSubmitPayload, GradeMetrics
+from adgn_llm.properties.grader import (
+    GradeSubmitInput,
+    GradeSubmitPayload,
+    GradeMetrics,
+)
 
 
 def build_role_prompt(
@@ -25,7 +33,15 @@ def build_role_prompt(
     """
     # Compute the schemas map once here; templates pick header_schema_names
     schemas_json = build_input_schemas_json(
-        [Occurrence, LineRange, IssueCore, ReportedIssue, CriticSubmitPayload, GradeMetrics, GradeSubmitPayload]
+        [
+            Occurrence,
+            LineRange,
+            IssueCore,
+            ReportedIssue,
+            CriticSubmitPayload,
+            GradeMetrics,
+            GradeSubmitPayload,
+        ]
     )
 
     template = "discover.j2.md" if mode == "discover" else ("open.j2.md" if mode == "open" else "find.j2.md")
@@ -76,7 +92,15 @@ def build_grade_prompt(
     - Returns the composed Markdown string
     """
     schemas_json = build_input_schemas_json(
-        [Occurrence, LineRange, IssueCore, ReportedIssue, CriticSubmitPayload, GradeMetrics, GradeSubmitPayload]
+        [
+            Occurrence,
+            LineRange,
+            IssueCore,
+            ReportedIssue,
+            CriticSubmitPayload,
+            GradeMetrics,
+            GradeSubmitPayload,
+        ]
     )
     return render_prompt_template(
         "grade.j2.md",
@@ -176,7 +200,6 @@ def build_grade_from_json_prompt(
         ]
     )
     # Pass shared ID prefix constants into the template to avoid drift
-    from adgn_llm.properties.grader import CANON_TP_PREFIX, CANON_FP_PREFIX, CRIT_PREFIX
 
     return render_prompt_template(
         "grade_from_json.j2.md",

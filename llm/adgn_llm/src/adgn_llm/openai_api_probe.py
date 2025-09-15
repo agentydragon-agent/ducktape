@@ -17,7 +17,6 @@ The script performs the following steps:
 """
 
 from __future__ import annotations
-
 from typing import Any
 import argparse
 import asyncio
@@ -27,7 +26,6 @@ import re
 from enum import Enum
 from aiolimiter import AsyncLimiter
 from typing import Callable, Awaitable, Final, Sequence, cast
-
 from openai import AsyncOpenAI
 from openai.types.responses.function_tool_param import FunctionToolParam
 from openai.types.responses.tool_choice_function_param import ToolChoiceFunctionParam

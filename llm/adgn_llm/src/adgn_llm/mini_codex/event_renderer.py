@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+
 import json
 import shlex
 from typing import Callable
@@ -9,7 +10,7 @@ from openai.types.responses import (
 )
 
 from .handler import UserText, AssistantText, ToolCall, FunctionCallOutput
-from .mcp_manager import parse_mcp_function  # constants below
+from .mcp_manager import parse_mcp_function
 from .aggregating_handler import BaseHandler
 from .loop_control import NoLoopDecision
 

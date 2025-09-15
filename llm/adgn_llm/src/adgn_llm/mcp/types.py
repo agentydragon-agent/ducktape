@@ -1,15 +1,15 @@
 from __future__ import annotations
-
 import asyncio
 from contextlib import AsyncExitStack
 from dataclasses import dataclass, field
-from typing import Awaitable, Callable
-
+from typing import Callable, AsyncContextManager
 from mcp.client.session import ClientSession
 from mcp.types import InitializeResult
 
-# Type alias for functions that open an UNINITIALIZED client session under a shared stack
-OpenFn = Callable[[AsyncExitStack], Awaitable[ClientSession]]
+
+# Canonical OpenFn protocol: factories MUST return an async context manager
+# that yields an uninitialized ClientSession when entered by the caller.
+OpenFn = Callable[[AsyncExitStack], AsyncContextManager[ClientSession]]
 
 
 @dataclass
@@ -33,6 +33,10 @@ class ServerSlotSpec:
 
     async def open(self, stack: AsyncExitStack) -> ServerSlot:
         async with self.lock:
-            sess = await self.open_uninitialized(stack)
+            # open_uninitialized follows the canonical protocol and returns an
+            # async context manager that yields an UNINITIALIZED ClientSession when
+            # entered. Enter it via the provided AsyncExitStack so the same lifetime
+            # boundary manages session teardown.
+            sess = await stack.enter_async_context(self.open_uninitialized(stack))
             init = await sess.initialize()
             return ServerSlot(session=sess, init_result=init)

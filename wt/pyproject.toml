@@ -82,6 +82,12 @@ warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = false
 check_untyped_defs = true
-mypy_path = ["stubs"]
+# Prefer third-party stubs; exclude our incomplete vendored stubs from checking
+exclude = "^(wt/stubs/|wt/tests/)"
+
 # Note: requires 'typing' optional dependencies for type stubs
+
+[tool.ruff]
+# Exclude vendored stubs from linting noise
+exclude = ["stubs/"]
 

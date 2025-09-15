@@ -1,16 +1,18 @@
 from __future__ import annotations
 
+
 import asyncio
 import uuid
-from typing import Any, Callable, Literal, Optional, NewType
+from typing import Any, Literal, NewType, Callable as _Callable  # internal alias only
 
 from mcp import types as mcp_types
+from .mcp_manager import build_mcp_function
 
 # Types
 ApprovalMode = Literal["allow", "ask"]
 ToolKind = Literal["tool", "resource_read"]
-ToolPolicyFn = Callable[[dict[str, Any]], ApprovalMode]
-OnEventFn = Optional[Callable[[dict[str, Any]], None]]
+
+ToolPolicyFn = _Callable[[dict[str, Any]], ApprovalMode]
 
 
 # Strongly-typed call identifiers for approvals rendezvous
@@ -63,12 +65,10 @@ class McpManagerWithApprovals:
         inner: Any,
         hub: ApprovalHub | None = None,
         tool_policy: ToolPolicyFn | None = None,
-        on_event: OnEventFn = None,
     ) -> None:
         self._inner = inner
         self._hub = hub or ApprovalHub()
         self._policy = tool_policy or default_allow_all_policy
-        self._on_event = on_event or (lambda _evt: None)
 
     # ---- Pass-throughs ----
     async def list_tools(self, only: list[str] | None = None) -> list[dict[str, Any]]:
@@ -93,7 +93,7 @@ class McpManagerWithApprovals:
 
     # ---- Gated call_tool ----
     async def call_tool(self, server: str, name: str, arguments: dict[str, Any]) -> Any:
-        tool_key = f"mcp__{server}__{name}"
+        tool_key = build_mcp_function(server, name)
         payload = {
             "kind": "tool",
             "server": server,
@@ -105,30 +105,9 @@ class McpManagerWithApprovals:
         if mode == "allow":
             return await self._inner.call_tool(server, name, arguments)
 
-        # ask-mode: emit pending, await decision
+        # ask-mode: block until a decision is provided via ApprovalHub.resolve
         call_id: CallId = CallId(f"appr-{uuid.uuid4().hex}")
-        self._on_event(
-            {
-                "kind": "approval_pending",
-                "type": "tool",
-                "call_id": call_id,
-                "server": server,
-                "tool": name,
-                "tool_key": tool_key,
-                "args": arguments or {},
-            }
-        )
         allow = await self._hub.await_decision(call_id, payload)
-        self._on_event(
-            {
-                "kind": "approval_decision",
-                "type": "tool",
-                "call_id": call_id,
-                "server": server,
-                "tool": name,
-                "allowed": bool(allow),
-            }
-        )
         if not allow:
             # Synthesize a structured CallToolResult with an error payload the agent will surface
             return mcp_types.CallToolResult(

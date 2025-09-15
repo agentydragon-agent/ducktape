@@ -1,7 +1,6 @@
 """Factory for creating agent runners."""
 
 from typing import Any
-
 from adgn_llm.inop.clients.logging_openai_client import (
     LoggingOpenAIModel,
 )

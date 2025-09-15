@@ -88,3 +88,82 @@ asyncio.run(main())
 
 ## Notes
 - Output schemas are not always consumed by clients; still return typed models to enforce structure in tests and in‑proc flows.
+
+
+<\!-- Addendum merged from src/adgn_llm/instructions/fastmcp_pydantic.md on 2025-09-15T03:39:58Z -->
+# FastMCP + Pydantic: Typed tool I/O (canonical patterns)
+
+Scope
+- How to define FastMCP tools with precise, validated inputs and stable, typed outputs
+- When to use Pydantic TypeAdapter explicitly (rare)
+
+Core rules
+- Inputs: Prefer a single Pydantic BaseModel parameter for non‑trivial tools
+  - FastMCP parses and validates the inbound dict against your model automatically
+  - Use ConfigDict(extra="forbid") on models that must be strict
+- Outputs: Return Pydantic models and discriminated unions for stable shapes
+  - Object‑like returns (dict, BaseModel, dataclass) become structuredContent automatically
+  - Use Annotated[..., Field(discriminator="kind")] for unions
+- Don’t hand‑parse or re‑validate inside tools; FastMCP already does it for you
+  - Manual TypeAdapter is only for ad‑hoc parsing outside FastMCP’s auto‑path (e.g., tests)
+
+Minimal example (single BaseModel input + discriminated union output)
+```python
+from typing import Annotated, Literal
+from pydantic import BaseModel, Field, ConfigDict
+from mcp.server.fastmcp import FastMCP
+
+mcp = FastMCP("editor")
+
+class DoneInput(BaseModel):
+    outcome: Literal["success", "failure"] = "success"
+    summary: str = ""
+    model_config = ConfigDict(extra="forbid")  # strict
+
+class Success(BaseModel):
+    kind: Literal["Success"] = "Success"
+    summary: str
+
+class Failure(BaseModel):
+    kind: Literal["Failure"] = "Failure"
+    summary: str
+
+DoneResponse = Annotated[Success | Failure, Field(discriminator="kind")]
+
+@mcp.tool()
+def done(payload: DoneInput) -> DoneResponse:
+    # payload is already a validated DoneInput (no TypeAdapter needed)
+    if payload.outcome == "success":
+        return Success(summary=payload.summary or "ok")
+    return Failure(summary=payload.summary or "aborted")
+```
+
+Testing and ad‑hoc parsing (TypeAdapter)
+- Use TypeAdapter only when you need to parse a dict/JSON outside a tool (e.g., tests asserting server output):
+```python
+from pydantic import TypeAdapter
+page = TypeAdapter(TextPage).validate_python(payload_dict)
+# or
+page = TypeAdapter(TextPage).validate_json(payload_json)
+```
+- Inside tools: do not call TypeAdapter; FastMCP validates parameters before your function runs, and serializes BaseModel returns to structuredContent.
+
+Gotchas and best practices
+- Unions must be discriminated to give clients a stable schema; prefer a single discriminator key like kind
+- Output schemas must be objects (MCP constraint). Primitive returns are wrapped under {"result": ...} with x-fastmcp-wrap-result (FastMCP handles this)
+- Keep models small and descriptive; add Field(..., description="...") to help the planner
+- Use ConfigDict(extra="forbid") where strictness matters
+- Return concrete models from tools; avoid mixing raw dicts and models for the same tool
+
+When to introduce TypeAdapter in code
+- Converting free‑form JSON (not bound to a tool) into a typed model
+- Validating nested fragments returned from external APIs before further processing
+- Tests that assert on structured payloads (e.g., DiffResult, TextPage) — prefer TypeAdapter over model_validate
+
+Version notes
+- Structured outputs and output schemas are supported in FastMCP ≥ 2.10
+- FastMCP preserves Annotated metadata (include_extras=True), so discriminators are exported in JSON Schema
+
+References
+- FastMCP tools (Pydantic models, structured output, output schemas): https://gofastmcp.com/servers/tools
+- Pydantic v2 TypeAdapter: https://docs.pydantic.dev/latest/usage/validators/#typeadapter

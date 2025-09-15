@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+from adgn_llm.properties.docker_env import (
+    SLEEP_FOREVER_CMD,
+)  # local import to avoid cycles
+
+
 import shlex
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -54,8 +59,6 @@ def _start_container(
     environment: dict[str, str] | None = None,
     labels: dict[str, str] | None = None,
 ) -> Container:
-    from adgn_llm.properties.docker_env import SLEEP_FOREVER_CMD  # local import to avoid cycles
-
     container = client.containers.run(
         image=image,
         command=SLEEP_FOREVER_CMD,

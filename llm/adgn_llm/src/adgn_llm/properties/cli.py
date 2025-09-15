@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+
 import asyncio
 import argparse
 import json
@@ -57,6 +58,13 @@ from adgn_llm.properties.specimens.registry import (
 )
 from adgn_llm.properties.prop_utils import pkg_dir
 from adgn_llm.properties.models.issue import Occurrence, LineRange, IssueCore
+
+
+def _emit_final_text(result: AgentResult, output_final_message: Path | None, final_only: bool) -> None:
+    if output_final_message:
+        Path(output_final_message).write_text(result.text or "", encoding="utf-8")
+    if not final_only and (result.text or ""):
+        print(result.text)
 
 
 def read_embedded_paths(paths: list[Path]) -> str:
@@ -316,10 +324,7 @@ async def _run_specimen_minicodex_async(
             )
             result = await agent.run(prompt)
             if isinstance(result, AgentResult):
-                if output_final_message:
-                    Path(output_final_message).write_text(result.text or "", encoding="utf-8")
-                if not final_only and result.text:
-                    print(result.text)
+                _emit_final_text(result, output_final_message, final_only)
         # Allow either a successful result or an explicit error
         if submit_state.error is not None:
             Console().print(render_to_rich(submit_state.error))
@@ -435,10 +440,7 @@ async def _run_specimen_grade_minicodex_async(
         )
         result = await agent.run(prompt)
         if isinstance(result, AgentResult):
-            if output_final_message:
-                Path(output_final_message).write_text(result.text or "", encoding="utf-8")
-            if not final_only and result.text:
-                print(result.text)
+            _emit_final_text(result, output_final_message, final_only)
 
     assert submit_state.result, "Grader did not call submit_result?"
     Console().print(render_to_rich(submit_state.result))

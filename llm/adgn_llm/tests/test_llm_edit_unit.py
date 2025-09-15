@@ -44,8 +44,8 @@ async def test_done_for_non_python_no_syntax_check(tmp_path: Path, editor_sessio
         # Finish successfully; should not run python syntax checks
         res = await sess.call_tool(name="done", arguments={"success": True, "report": "ok"})
         data = res.structuredContent or {}
-        assert data["success"] is True
-        assert data["report"] == "ok"
+        assert data["kind"] == "Success"
+        assert data["summary"] == "ok"
 
     # file saved with edits
     assert p.read_text(encoding="utf-8") == "hello\nworld\n"
@@ -61,8 +61,8 @@ async def test_done_python_syntax_failure_returns_structured_failure(tmp_path: P
         await sess.call_tool(name="replace_text", arguments={"old_text": "def f():", "new_text": "def f(:"})
         res = await sess.call_tool(name="done", arguments={"success": True, "report": "finish"})
         data = res.structuredContent or {}
-        assert data["success"] is False
-        assert "Cannot complete" in data["report"]
+        assert data["kind"] == "Failure"
+        assert "Cannot complete" in data["summary"]
 
     # file on disk should not have been overwritten with bad content
     assert p.read_text(encoding="utf-8") == "def f():\n    return 1\n"
@@ -79,8 +79,8 @@ async def test_done_explicit_failure_reverts_in_memory(tmp_path: Path, editor_se
         await sess.call_tool(name="add_line_after", arguments={"line_number": 0, "content": "B"})
         res = await sess.call_tool(name="done", arguments={"success": False, "report": "abort"})
         data = res.structuredContent or {}
-        assert data["success"] is False
-        assert data["report"] == "abort"
+        assert data["kind"] == "Failure"
+        assert data["summary"] == "abort"
         # Ensure in-memory state reverted by reading current first line
         rr = await sess.call_tool(name="read_line_range", arguments={"start": 1, "end": 1})
         body = (rr.structuredContent or {}).get("body", "")

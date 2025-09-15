@@ -1,65 +1,81 @@
 # FastMCP tool exceptions and error handling
 
 ## TL;DR
-- Do not blanket-catch exceptions inside @mcp.tool. Let FastMCP handle unexpected exceptions.
-- For expected, user-facing failures, raise ToolError with a safe message.
-- Prefer Pydantic validation (typed inputs) to fail fast with informative errors.
+- Don’t blanket-catch exceptions inside @mcp.tool — let FastMCP surface unexpected failures as MCP errors.
+- Use typed, discriminated unions for expected OK/ERR flows; reserve ToolError for operational failures.
+- Prefer strict, typed inputs (Pydantic) so FastMCP returns clear validation errors automatically.
 
 ## How FastMCP surfaces errors
-- Tool exceptions are caught by FastMCP and returned as MCP errors (isError=true). The server remains running; the transport stays healthy.
-- Successful calls return structured content (structured JSON when you return Pydantic models) and traditional content blocks. Error calls carry text content describing the failure.
+- Tool exceptions are caught and returned as MCP errors (isError=true). The server stays healthy; inspect server logs for details.
+- Successful calls return structured content (when you return Pydantic models/dicts/dataclasses) and traditional content blocks.
+- For error results, structured content is typically absent; read the error text from content blocks.
 
 ## Best practices
-- Don’t catch Exception just to wrap an {ok: False}. It hides useful traces and bypasses the protocol’s error channel.
-- Raise fastmcp.exceptions.ToolError for predictable, user-visible errors (e.g., bad user input, denied scope). This message is passed through even when error detail masking is enabled.
-- Use Pydantic inputs with Field descriptions and constraints. FastMCP will validate parameters and return clear validation errors automatically.
-- Keep tool bodies small and let the outer server boundary handle unexpected failures (crash-only philosophy inside a tool; process does not crash).
+- Validation first:
+  - Define a single Pydantic BaseModel parameter per non‑trivial tool; add Field descriptions/constraints.
+  - Use ConfigDict(extra="forbid") when shape must be strict.
+- Expected failures (normal control flow):
+  - Return a typed, discriminated union (stable JSON Schema for clients).
+- Operational failures (I/O, environment, timeouts):
+  - Raise fastmcp.exceptions.ToolError("message", code="...", details={...}).
+  - Enable mask_error_details to avoid leaking internals; ToolError message passes through as user‑facing text.
+- Keep tool bodies small; let the server boundary handle unexpected exceptions.
 
-## Client behavior
-- call_tool() raises ToolError by default if the tool failed. Use raise_on_error=False to receive a result object where result.is_error is True and content contains the error text.
-- structured_content is typically absent for error results; read error text from content blocks.
+## Typed error payloads (normal control flow)
+Use a discriminated union so clients get a stable, machine‑usable shape.
 
-## Lifespan
-- Errors in lifespan (startup/shutdown) prevent successful server initialization; clients see initialize failures. Use server logs to debug.
-
-## References
-- Tools — error handling, validation, structured content: https://gofastmcp.com/servers/tools
-- Client tool operations — success/error envelopes: https://gofastmcp.com/clients/tools
-- Exceptions reference (ToolError, ValidationError): https://gofastmcp.com/python-sdk/fastmcp-exceptions
-- Server settings/logging: https://gofastmcp.com/servers/server
-
-## Minimal example
-
-Server:
 ```python
-from fastmcp import FastMCP
-from fastmcp.exceptions import ToolError
+from typing import Annotated, Literal
+from pydantic import BaseModel, Field, ConfigDict
+from mcp.server.fastmcp import FastMCP
 
-mcp = FastMCP("ErrDemo")
+mcp = FastMCP("critic")
+
+class Ok(BaseModel):
+    kind: Literal["Ok"] = "Ok"
+    result: str
+
+class Err(BaseModel):
+    kind: Literal["Err"] = "Err"
+    message: str
+
+Result = Annotated[Ok | Err, Field(discriminator="kind")]
 
 @mcp.tool()
-def explode(kind: str) -> dict[str, str]:
-    if kind == "value":
-        raise ValueError("Bad value X")   # unexpected → MCP error
-    if kind == "tool":
-        raise ToolError("User-facing error message")  # expected → exposed message
-    return {"ok": "true"}
+def check(path: str) -> Result:
+    if path.endswith(".py"):
+        return Ok(result="looks good")
+    return Err(message="unsupported file type")
 ```
 
-Client:
+## Operational errors (raise ToolError)
+Raise ToolError for failures where retry/diagnostics are appropriate.
+
 ```python
-import asyncio
-from fastmcp import Client
-from fastmcp.exceptions import ToolError
+from mcp.server.fastmcp import FastMCP, ToolError
 
-async def main():
-    async with Client("http://localhost:8000/mcp") as c:
-        try:
-            await c.call_tool("explode", {"kind": "value"})
-        except ToolError as e:
-            print("raised:", e)
-        r = await c.call_tool("explode", {"kind": "value"}, raise_on_error=False)
-        print("is_error:", r.is_error, "text:", r.content[0].text)
+mcp = FastMCP("fetcher")
 
-asyncio.run(main())
+@mcp.tool()
+def fetch(url: str) -> dict:
+    try:
+        resp = http_get(url, timeout=5)
+    except TimeoutError as e:
+        raise ToolError("timeout", code="TIMEOUT", details={"url": url}) from e
+    if resp.status != 200:
+        raise ToolError("bad status", code="HTTP", details={"status": resp.status})
+    return {"ok": True, "body": resp.text}
 ```
+
+## Client behavior
+- Default: client.call_tool(...) raises ToolError on tool failure.
+- With raise_on_error=False you receive a result object where result.is_error is True and content contains the error text.
+
+## Lifespan
+- Errors in lifespan (startup/shutdown) prevent successful initialize; clients see initialize failure. Diagnose via server logs.
+
+## References
+- Tools — validation, structured output, error handling: https://gofastmcp.com/servers/tools
+- Clients — tool success/error envelopes: https://gofastmcp.com/clients/tools
+- Exceptions reference (ToolError, ValidationError): https://gofastmcp.com/python-sdk/fastmcp-exceptions
+- Server settings/logging: https://gofastmcp.com/servers/server

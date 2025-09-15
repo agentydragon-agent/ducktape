@@ -1,9 +1,6 @@
 from __future__ import annotations
-
 from typing import List
-
 import pytest
-
 from adgn_llm.properties.specimens.registry import find_specimens_base, list_specimen_names, SpecimenRegistry
 
 

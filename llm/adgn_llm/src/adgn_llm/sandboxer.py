@@ -1,18 +1,16 @@
-from __future__ import annotations
-
 import argparse
 import json
 import os
-import shlex as _sh  # Top-level for debug quoting
+import shlex
 import shutil
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
 from typing import Literal
-
 import yaml
 from pydantic import BaseModel, Field
+
 
 # -----------------------------
 # Pydantic models for policy
@@ -403,7 +401,7 @@ def main() -> int:
     if args.debug:
         print(
             "sandboxer: exec:",
-            " ".join(_sh.quote(x) for x in sx_args),
+            " ".join(shlex.quote(x) for x in sx_args),
             file=sys.stderr,
         )
     proc = subprocess.Popen(sx_args, env=child_env)

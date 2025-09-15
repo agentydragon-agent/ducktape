@@ -17,32 +17,20 @@ export OPENAI_API_BASE=http://127.0.0.1:8000
 
 ### Example: non-streaming Python call
 
-python - <<'PY'
-import asyncio
-from openai import AsyncOpenAI
-
-async def main():
-   client = AsyncOpenAI()
-   resp = await client.responses.create(model="o4-mini", input=[{"role":"user","content":"Hello"}])
-   print(resp)
-
-asyncio.run(main())
-PY
+>> import asyncio
+>> from openai import AsyncOpenAI
+>> client = AsyncOpenAI()
+>> asyncio.run(client.responses.create(model="o4-mini", input=[{"role":"user","content":"Hello"}]))
 
 ### Example: streaming Python call (proxy will forward chunks as they arrive)
 
-python - <<'PY'
-import asyncio
-from openai import AsyncOpenAI
-
-async def main():
-   client = AsyncOpenAI()
-   maybe_iter = await client.responses.create(model="o4-mini", input=[{"role":"user","content":"Stream 1..3"}], stream=True)
-   async for event in maybe_iter:
-       print(event)
-
-asyncio.run(main())
-PY
+>> async def main():
+>>    client = AsyncOpenAI()
+>>    maybe_iter = await client.responses.create(model="o4-mini", input=[{"role":"user","content":"Stream 1..3"}], stream=True)
+>>    async for event in maybe_iter:
+>>        print(event)
+>>
+>> asyncio.run(main())
 
 ## Proxy behavior notes (important)
 - Uses SQLite as store (responses + response_frames). Derives deterministic key from request fields (model, input, explicitly-included knobs).
@@ -57,12 +45,10 @@ PY
 """
 
 from __future__ import annotations
-
 import hashlib
 import json
 import os
 from typing import Any, Dict
-
 import httpx
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse, Response

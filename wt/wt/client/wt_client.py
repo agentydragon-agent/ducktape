@@ -15,7 +15,7 @@ import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, TypeVar, cast
+from typing import TypeVar, cast
 
 import click
 import psutil
@@ -57,7 +57,7 @@ T = TypeVar("T")
 
 
 class RpcError(RuntimeError):
-    def __init__(self, code: int, message: str, data: Any | None = None) -> None:
+    def __init__(self, code: int, message: str, data: object | None = None) -> None:
         super().__init__(message)
         self.code = code
         self.data = data
@@ -238,7 +238,7 @@ class WtClient:
         # Store read pipe so _read_handshake_from_pipe can consume it
         self._handshake_pipe = read_fd
 
-    def _read_handshake_from_pipe(self) -> dict:
+    def _read_handshake_from_pipe(self) -> dict[str, object]:
         """Read streaming JSON handshake/progress until ready or failure.
 
         The daemon emits multiple JSON lines:
@@ -268,7 +268,7 @@ class WtClient:
                     obj = StartupMessage.model_validate_json(line)
                 except ValidationError:
                     continue
-                last_obj = obj.model_dump()
+                last_obj = cast(dict[str, object], obj.model_dump())
                 if not obj.success:
                     return last_obj
                 if obj.ready:
@@ -467,7 +467,7 @@ class WtClient:
     async def _rpc(
         self,
         method: str,
-        params_model: BaseModel | dict[str, Any],
+        params_model: BaseModel | dict[str, object],
         result_adapter: TypeAdapter[T],
     ) -> T:
         await self._start_daemon_if_needed()

@@ -4,12 +4,12 @@ Provides `rspcache` console script that boots the FastAPI app with uvicorn.
 """
 
 from __future__ import annotations
-
+import uvicorn
 from typing import Optional
 from pathlib import Path
 import os
-
 import typer
+
 
 app = typer.Typer(help="adgn-llm utilities CLI")
 
@@ -29,8 +29,6 @@ def main(
     # Allow env override
     if db_path:
         os.environ["ADGN_RESP_DB"] = str(db_path)
-
-    import uvicorn
 
     uvicorn.run("adgn_llm.openai_responses_proxy:APP", host=host, port=port, reload=reload)
 

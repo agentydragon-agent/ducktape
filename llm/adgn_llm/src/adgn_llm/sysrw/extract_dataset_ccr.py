@@ -20,47 +20,19 @@ Each output record has shape:
 """
 
 from __future__ import annotations
-
 import asyncio
 import json
 import time
 from pathlib import Path
-from typing import Any
-from .constants import BAD_MARKER, TOOLS_HEADER
+from .constants import BAD_MARKER
+from .extract_common import (
+    sys_has_tools_header,
+    find_last_user_text_from_msg as find_last_user_text,
+)
+
 
 TRACE_DIR = Path.home() / ".claude-code-router" / "logs"
 OUTPUT_PATH = Path(__file__).parent / "data" / "dataset_ccr.jsonl"
-
-
-def find_last_user_text(msg: Any) -> str | None:
-    if not isinstance(msg, dict):
-        return None
-    if msg.get("role") != "user":
-        return None
-    content = msg.get("content")
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        texts: list[str] = []
-        for part in content:
-            if isinstance(part, dict) and part.get("type") == "text":
-                t = part.get("text")
-                if isinstance(t, str):
-                    texts.append(t)
-        return "\n".join(texts) if texts else None
-    return None
-
-
-def sys_has_tools_header(system: Any) -> bool:
-    if isinstance(system, str):
-        return TOOLS_HEADER in system
-    if isinstance(system, list):
-        for item in system:
-            if isinstance(item, dict) and item.get("type") == "text":
-                t = item.get("text")
-                if isinstance(t, str) and TOOLS_HEADER in t:
-                    return True
-    return False
 
 
 async def process_file(p: Path) -> list[dict]:

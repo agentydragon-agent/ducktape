@@ -9,6 +9,20 @@ from openai.types.responses import (
     ResponseOutputMessage,
     ResponseOutputText,
 )
+from openai.types.responses.response_usage import (
+    ResponseUsage,
+    InputTokensDetails,
+    OutputTokensDetails,
+)
+from adgn_llm.mini_codex.event_renderer import DisplayEventsHandler
+from adgn_llm.mini_codex.aggregating_handler import AutoHandler
+
+from adgn_llm.mini_codex.handler import (
+    BaseHandler,
+    to_jsonl_record,
+    FunctionCallOutput,
+    ToolCall,
+)
 
 from adgn_llm.mcp.docker_exec.server import make_container_exec_mcp
 from adgn_llm.mcp.inproc_transport import make_inproc_slot_spec
@@ -20,7 +34,7 @@ class FakeResponses:
     def __init__(self) -> None:
         self.calls = 0
 
-    async def create(self, **kwargs: Any) -> Response:  # type: ignore[override]
+    async def create(self, model: str, **kwargs: Any) -> Response:  # type: ignore[override]
         self.calls += 1
         # First call: request to read the container.info resource via built-in tool
         if self.calls == 1:
@@ -34,12 +48,19 @@ class FakeResponses:
             return Response(
                 id="r1",
                 created_at=0,
-                model="gpt-5.1-mini",
+                model=model,
                 object="response",
                 output=[tc],
                 parallel_tool_calls=False,
                 tool_choice="auto",
                 tools=[],
+                usage=ResponseUsage(
+                    input_tokens=0,
+                    input_tokens_details=InputTokensDetails(cached_tokens=0),
+                    output_tokens=0,
+                    output_tokens_details=OutputTokensDetails(reasoning_tokens=0),
+                    total_tokens=0,
+                ),
             )
         # Second call: assistant final text
         msg = ResponseOutputMessage(
@@ -52,18 +73,36 @@ class FakeResponses:
         return Response(
             id="r2",
             created_at=1,
-            model="gpt-5.1-mini",
+            model=model,
             object="response",
             output=[msg],
             parallel_tool_calls=False,
             tool_choice="auto",
             tools=[],
+            usage=ResponseUsage(
+                input_tokens=0,
+                input_tokens_details=InputTokensDetails(cached_tokens=0),
+                output_tokens=1,
+                output_tokens_details=OutputTokensDetails(reasoning_tokens=0),
+                total_tokens=1,
+            ),
         )
 
 
 class FakeOpenAIClient:
     def __init__(self) -> None:
         self.responses = FakeResponses()
+
+
+class RecordingHandler(BaseHandler):
+    def __init__(self):
+        self.records: list[dict] = []
+
+    def on_tool_call_event(self, evt: ToolCall) -> None:  # type: ignore[override]
+        self.records.append(to_jsonl_record(evt))
+
+    def on_function_call_output_event(self, evt: FunctionCallOutput) -> None:  # type: ignore[override]
+        self.records.append(to_jsonl_record(evt))
 
 
 @pytest.mark.asyncio
@@ -73,19 +112,18 @@ async def test_model_reads_container_info_with_stubbed_openai() -> None:
 
     async with McpManager({"docker": spec}) as mcp:
         client = FakeOpenAIClient()
-        from adgn_llm.mini_codex.event_renderer import DisplayEventsHandler
-        from adgn_llm.mini_codex.aggregating_handler import AutoHandler
+        rec = RecordingHandler()
 
         agent = await MiniCodex.create(
-            model="gpt-5.1-mini",
+            model="gpt-4.1-mini",
             mcp=mcp,
-            client=client,  # type: ignore[arg-type]
+            client=client,
             system="test",
-            handlers=[AutoHandler(), DisplayEventsHandler()],
+            handlers=[AutoHandler(), DisplayEventsHandler(), rec],
         )
 
-        res = await agent.run("read container info")
-        kinds = [e.get("kind") for e in res.sequence]
-        assert "tool_call" in kinds, f"no tool_call in sequence: {kinds}"
-        assert "function_call_output" in kinds, f"no function_call_output in sequence: {kinds}"
+        await agent.run("read container info")
+        kinds = [e.get("kind") for e in rec.records]
+        assert "tool_call" in kinds
+        assert "function_call_output" in kinds
         assert client.responses.calls == 2

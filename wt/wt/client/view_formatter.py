@@ -104,7 +104,7 @@ class ViewFormatter:
         self,
         name: str,
         status: StatusResult,
-        pr_info: PRInfo,
+        pr_info: PRInfo | None,
         name_width: int = 22,
     ) -> str:
         """Format a status row with nice alignment."""
@@ -318,7 +318,7 @@ class ViewFormatter:
             click.echo("❓ Has untracked files")
 
         # Show PR details if available
-        if pr_info and pr_info.pr_data:
+        if isinstance(pr_info, PRInfoOk):
             d: PRData = pr_info.pr_data
             pr_number = d.pr_number
             pr_state = d.pr_state

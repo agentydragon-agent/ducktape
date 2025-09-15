@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+
 from typing import Any
 
 from time import monotonic
@@ -67,11 +68,4 @@ class OneLineProgressHandler(BaseHandler):
         s = next(self._spinner)
         txt = Text(f"{s} tools={self._tool_calls} last={self._last_action}")
         # Print without newline and flush; rely on carriage return
-        try:
-            self.console.print(txt, end="\r")
-        except Exception:
-            # Fallback: write to stderr raw
-            import sys
-
-            sys.stderr.write(txt.plain + "\r")
-            sys.stderr.flush()
+        self.console.print(txt, end="\r")

@@ -10,16 +10,18 @@ Notes / Design:
 """
 
 from __future__ import annotations
-
+from adgn_llm.mini_codex.event_renderer import DisplayEventsHandler
+from adgn_llm.mini_codex.aggregating_handler import AutoHandler
+from adgn_llm.mini_codex.loggers import TranscriptLoggerHandler
+from openai.types.shared_params import ReasoningEffort as SDKReasoningEffort
 import asyncio
 import os
 import time
 from pathlib import Path
-
+from typing import cast
 import openai
 import typer
 from .openai_utils import ReasoningSummary, to_reasoning_effort
-
 from .mcp.editor_server import make_editor_mcp
 from .mcp.inproc_transport import make_inproc_slot_spec
 from .mini_codex.agent import MiniCodex
@@ -47,17 +49,12 @@ async def _execute(
 
     # Folded context: per-agent MCP lifetime + agent lifetime
     async with McpManager(slots) as mcp:
-        from adgn_llm.mini_codex.event_renderer import DisplayEventsHandler
-        from adgn_llm.mini_codex.aggregating_handler import AutoHandler
-        from adgn_llm.mini_codex.loggers import TranscriptLoggerHandler
-
         # Normalize CLI strings to SDK-accepted values
-        from openai.types.shared_params import ReasoningEffort as SDKReasoningEffort
 
         eff_str = to_reasoning_effort(reasoning_effort)
         effort_val: SDKReasoningEffort | None = None
         if eff_str is not None:
-            effort_val = eff_str  # Literal-compatible; validated upstream
+            effort_val = cast(SDKReasoningEffort, eff_str)
         summary_val = None if reasoning_summary is None else ReasoningSummary(reasoning_summary)
 
         # Create a per-run transcript directory (aligned with MiniCodex defaults)

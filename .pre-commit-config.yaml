@@ -33,15 +33,31 @@ repos:
     rev: v0.11.10
     hooks:
       - id: ruff-check
-        args: [--fix]
+        name: ruff-check (wt)
+        args: [--fix, --config=wt/pyproject.toml]
+        files: "^wt/"
+        exclude: "^wt/stubs/"
       - id: ruff-format
+        name: ruff-format (wt)
+        args: [--config=wt/pyproject.toml]
+        files: "^wt/"
+        exclude: "^wt/stubs/"
+      - id: ruff-check
+        name: ruff-check (adgn_llm)
+        args: [--fix, --config=llm/adgn_llm/pyproject.toml]
+        files: "^llm/adgn_llm/"
+      - id: ruff-format
+        name: ruff-format (adgn_llm)
+        args: [--config=llm/adgn_llm/pyproject.toml]
+        files: "^llm/adgn_llm/"
 
   # Static type checking
   - repo: git@github.com:pre-commit/mirrors-mypy
     rev: v1.10.0
     hooks:
       - id: mypy
-        exclude: ^(ansible|gatelet)/
+        name: mypy (generic)
+        files: "^$"
         additional_dependencies:
           # deps of gatelet that still lack bundled typings
           - types-psycopg2    # stubs for psycopg2-binary
@@ -53,6 +69,40 @@ repos:
           - types-tabulate
           - types-toml
           - types-aiofiles
+      - id: mypy
+        name: mypy (wt)
+        files: "^wt/wt/"
+        args: ["--config-file=wt/pyproject.toml"]
+        additional_dependencies:
+          - pydantic>=2
+          - types-colorama
+          - types-psutil
+          - types-tabulate
+          - types-PyYAML
+      - id: mypy
+        name: mypy (adgn_llm)
+        files: "^llm/adgn_llm/src/adgn_llm/(mini_codex|mcp/resources|mcp/git_ro|rspcache)/"
+        args: [
+          "--config-file=llm/adgn_llm/pyproject.toml",
+          "--namespace-packages",
+          "--ignore-missing-imports",
+          "--exclude",
+          "llm/adgn_llm/src/adgn_llm/mcp/git_ro/server.py"
+        ]
+        additional_dependencies:
+          - pydantic>=2
+          - types-PyYAML
+          - types-requests
+          - types-tabulate
+          # Runtime packages needed for imports in this package (pre-commit uses isolated env)
+          - openai>=1.0
+          - httpx
+          - tenacity
+          - structlog
+          - docker
+          - pygit2
+          - anyio
+          - pytest
 
   # Buildifier for Bazel files
   - repo: git@github.com:keith/pre-commit-buildifier

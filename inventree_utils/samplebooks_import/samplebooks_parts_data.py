@@ -395,9 +395,6 @@ def eyeball_check():
 # existingTemplates = len(ParameterTemplate.list(self.api))
 #
 # param = Parameter.create(self.api, data={'part': p.pk, 'template': parametertemplate.pk, 'data': 10})
-import dataclasses
-
-import pint
 
 E24 = [
     1,

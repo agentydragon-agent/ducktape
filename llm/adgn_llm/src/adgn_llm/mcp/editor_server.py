@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+
 import ast
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -72,7 +73,11 @@ def make_editor_mcp(file_path: str | Path, *, name: str = "editor") -> FastMCP:
 
     @mcp.tool()
     def read_info() -> dict[str, Any]:
-        return {"ok": True, "path": str(state.file_path), "lines": len(state.content.splitlines())}
+        return {
+            "ok": True,
+            "path": str(state.file_path),
+            "lines": len(state.content.splitlines()),
+        }
 
     @mcp.tool()
     def read_line_range(start: int, end: int | None = None) -> dict[str, Any]:
@@ -81,7 +86,10 @@ def make_editor_mcp(file_path: str | Path, *, name: str = "editor") -> FastMCP:
         start_idx = max(1, start) - 1
         end_idx = min(len(lines), end) - 1
         if start_idx < 0 or end_idx >= len(lines) or start_idx > end_idx:
-            return {"ok": False, "error": f"out of bounds: {start}-{end} (len={len(lines)})"}
+            return {
+                "ok": False,
+                "error": f"out of bounds: {start}-{end} (len={len(lines)})",
+            }
         body = "\n".join(f"{i + 1:4d}: {lines[i]}" for i in range(start_idx, end_idx + 1))
         return {"ok": True, "body": body}
 
@@ -92,7 +100,10 @@ def make_editor_mcp(file_path: str | Path, *, name: str = "editor") -> FastMCP:
         if old_text not in state.content:
             return {"ok": False, "error": "old_text not found"}
         if state.content.count(old_text) > 1:
-            return {"ok": False, "error": "old_text appears multiple times; be more specific"}
+            return {
+                "ok": False,
+                "error": "old_text appears multiple times; be more specific",
+            }
         state.content = state.content.replace(old_text, new_text)
         return {"ok": True}
 
@@ -110,7 +121,10 @@ def make_editor_mcp(file_path: str | Path, *, name: str = "editor") -> FastMCP:
     def delete_line(line_number: int) -> dict[str, Any]:
         lines = state.content.splitlines()
         if line_number < 1 or line_number > len(lines):
-            return {"ok": False, "error": f"line {line_number} out of bounds (len={len(lines)})"}
+            return {
+                "ok": False,
+                "error": f"line {line_number} out of bounds (len={len(lines)})",
+            }
         deleted = lines.pop(line_number - 1)
         state.content = "\n".join(lines)
         return {"ok": True, "deleted": deleted}
@@ -119,7 +133,10 @@ def make_editor_mcp(file_path: str | Path, *, name: str = "editor") -> FastMCP:
     def add_line_after(line_number: int, content: str) -> dict[str, Any]:
         lines = state.content.splitlines()
         if line_number < 0 or line_number > len(lines):
-            return {"ok": False, "error": f"line {line_number} out of bounds (len={len(lines)})"}
+            return {
+                "ok": False,
+                "error": f"line {line_number} out of bounds (len={len(lines)})",
+            }
         if line_number == 0:
             lines.insert(0, content)
         else:

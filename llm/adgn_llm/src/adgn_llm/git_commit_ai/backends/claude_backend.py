@@ -1,16 +1,14 @@
 from __future__ import annotations
 
-import asyncio
+
 import logging
-import os
-import sys
 import subprocess
 from datetime import timedelta
 from typing import Optional
 
 from git import Repo
 
-from ..core import build_prompt, _extract_message_from_text
+from ._common import run_subprocess, build_prompt_for_claude, extract_message
 
 
 class ClaudeAI:
@@ -27,7 +25,7 @@ class ClaudeAI:
         debug: bool = False,
         timeout: Optional[timedelta] = None,
         previous_message: Optional[str] = None,
-    ):
+    ) -> None:
         self.repo = repo
         self.diff = diff
         self.passthru = passthru
@@ -36,24 +34,13 @@ class ClaudeAI:
         self.previous_message = previous_message
         self.logger = logging.getLogger(__name__)
 
-    async def generate(self, include_all: bool, model: str) -> str:
-        # Build prompt from the provided diff and repo context
-        prompt = build_prompt(
+    async def generate(self, include_all: bool, model: str) -> str:  # include_all unused (kept for signature parity)
+        prompt = build_prompt_for_claude(
             self.repo,
             self.diff,
             self.passthru,
             self.previous_message,
         )
-
-        # Truncate prompt if too long and warn (stderr) in debug mode only
-        max_chars = int(os.environ.get("GIT_AI_MAX_PROMPT", "20000"))
-        if len(prompt) >= max_chars:
-            prompt = prompt[: max(0, max_chars - 100)] + "\n\n[TRUNCATED - prompt was too long]"
-            if self.debug:
-                print(
-                    f"# Warning: Prompt truncated to {max_chars} chars",
-                    file=sys.stderr,
-                )
 
         cmd = [
             "claude",
@@ -69,31 +56,13 @@ class ClaudeAI:
             self.logger.debug("Claude command:\n%s", shell_cmd)
             self.logger.debug("Claude prompt:\n%s", prompt)
 
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        try:
-            if self.timeout is None:
-                stdout, stderr = await proc.communicate()
-            else:
-                stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=self.timeout.total_seconds())
-        except TimeoutError:
-            proc.terminate()
-            await proc.wait()
-            secs_str = "infinite" if self.timeout is None else str(int(self.timeout.total_seconds()))
-            print(
-                f"# Error: Claude command timed out after {secs_str} seconds",
-                file=sys.stderr,
-            )
-            raise
+        rc, stdout_b, stderr_b = await run_subprocess(cmd, timeout=self.timeout, debug=self.debug, logger=self.logger)
 
-        if self.debug and stderr:
-            self.logger.debug("Claude stderr:\n%s", stderr.decode(errors="replace"))
+        if self.debug and stderr_b:
+            self.logger.debug("Claude stderr:\n%s", stderr_b.decode(errors="replace"))
 
-        if proc.returncode != 0:
-            raise subprocess.CalledProcessError(proc.returncode or 1, ["claude"], (stderr or b"").decode())
+        if rc != 0:
+            raise subprocess.CalledProcessError(rc or 1, ["claude"], (stderr_b or b"").decode())
 
-        response = (stdout or b"").decode().strip()
-        return _extract_message_from_text(response)
+        response = (stdout_b or b"").decode().strip()
+        return extract_message(response)

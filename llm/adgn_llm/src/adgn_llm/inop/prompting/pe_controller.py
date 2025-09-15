@@ -1,14 +1,14 @@
+from __future__ import annotations
+from adgn_llm.mini_codex.loop_control import Abort, Continue, RequireAny
+from adgn_llm.mini_codex.aggregating_handler import BaseHandler
+
+
 """Prompt Engineer loop controller(s).
 
 These controllers implement minimal, application-level policies on top of the
 MiniCodex generic loop-control API without baking any app-specific behavior into
 MiniCodex itself.
 """
-
-from __future__ import annotations
-
-from adgn_llm.mini_codex.loop_control import Abort, Continue, RequireAny
-from adgn_llm.mini_codex.aggregating_handler import BaseHandler
 
 
 class ProposePromptNTimes(BaseHandler):

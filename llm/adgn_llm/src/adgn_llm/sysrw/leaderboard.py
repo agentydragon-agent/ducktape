@@ -1,7 +1,6 @@
-"""
-Leaderboard reporter for eval runs (packaged).
+"""Leaderboard reporter for eval runs (packaged).
 
-Loads known templates from templates/ (baseline and proposals), matches run
+Loads templates from templates/ (baseline and proposals), matches run
 template hashes to these names, and prints a sorted leaderboard.
 Marks any run whose template isn't in templates/.
 
@@ -9,7 +8,6 @@ Defaults to rich table output sorted by mean score desc.
 """
 
 from __future__ import annotations
-
 import argparse
 import hashlib
 import json

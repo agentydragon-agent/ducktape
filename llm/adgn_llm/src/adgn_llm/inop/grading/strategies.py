@@ -5,7 +5,6 @@ import os
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, cast
-
 from adgn_llm.inop.config import OptimizerConfig
 from adgn_llm.inop.engine.models import (
     AssistantMessage,

@@ -5,7 +5,6 @@ import tempfile
 import time
 import uuid
 from pathlib import Path
-
 import structlog
 from typing import Any
 from claude_code_sdk import (
@@ -17,7 +16,6 @@ from claude_code_sdk import (
     ToolUseBlock,
     TextBlock,
 )
-
 from adgn_llm.inop.engine.models import (
     AssistantMessage,
     Rollout,

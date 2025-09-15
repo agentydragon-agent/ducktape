@@ -10,15 +10,11 @@ Critic agent MUST call submit_result(result) where result conforms to CriticSubm
 """
 
 from __future__ import annotations
-
 from typing import Any, List
-
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from mcp.server.fastmcp import FastMCP
-
 from adgn_llm.properties.models.issue import IssueCore, Occurrence
 from adgn_llm.rendering.rich_renderers import render_to_rich
-
 from rich.table import Table
 from rich.panel import Panel
 from rich.markdown import Markdown

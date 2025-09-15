@@ -1,11 +1,8 @@
 from __future__ import annotations
-
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from typing import Any, Literal
-
-# Removed claude_code_sdk dependency - using provider-independent types
 from pydantic import (
     BaseModel,
     Field,
@@ -13,6 +10,9 @@ from pydantic import (
     field_validator,
     model_validator,
 )
+
+
+# Removed claude_code_sdk dependency - using provider-independent types
 
 
 class AgentTaskType(str, Enum):

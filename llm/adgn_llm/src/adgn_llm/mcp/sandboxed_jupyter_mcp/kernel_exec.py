@@ -1,5 +1,4 @@
 from __future__ import annotations
-
 import os
 import sys
 import traceback
@@ -7,10 +6,7 @@ from pathlib import Path
 
 
 def _ensure_parent(path: Path) -> None:
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-    except Exception:
-        pass
+    path.parent.mkdir(parents=True, exist_ok=True)
 
 
 def main() -> int:

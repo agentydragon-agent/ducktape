@@ -23,9 +23,7 @@ Example
     git-commit-ai -a               # like "git commit -a"
 """
 
-# ---------------------------------------------------------------------
 from __future__ import annotations
-
 import argparse
 import asyncio
 import contextlib
@@ -45,11 +43,15 @@ from dataclasses import dataclass
 from datetime import timedelta
 from enum import StrEnum
 from pathlib import Path
-
 from git import Repo
 from git.exc import GitCommandError
 from adgn_llm.git_commit_ai.backends.claude_backend import ClaudeAI
 from adgn_llm.git_commit_ai.backends.codex_backend import CodexAI
+from adgn_llm.git_commit_ai.minicodex_backend import generate_commit_message_minicodex
+
+
+# ---------------------------------------------------------------------
+
 
 # ---------- constants -------------------------------------------------
 MAX_FILE_LINES = 400  # truncate each file's hunk lines (per-file preview)
@@ -680,8 +682,6 @@ async def async_main():
                 previous_message=previous_message,
             )
         elif provider == "minicodex":
-            from adgn_llm.git_commit_ai.minicodex_backend import generate_commit_message_minicodex
-
             # Wrap as a task to reuse the runner logic below
             ai_task = asyncio.create_task(generate_commit_message_minicodex(model=model_name or "gpt-5"))
             run_precommit = "--no-verify" not in passthru

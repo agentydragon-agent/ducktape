@@ -1,0 +1,3 @@
+[url "github-foss-personal:"]
+    insteadOf = https://github.com/
+    pushInsteadOf = https://github.com/

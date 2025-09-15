@@ -1,11 +1,10 @@
 """Centralized test data to reduce duplication across test fixtures."""
 
 from typing import ClassVar
+import pygit2
 
 # Shared timing constants for tests
 WATCHER_DEBOUNCE_SECS: float = 0.05
-
-import pygit2
 
 
 class TestData:

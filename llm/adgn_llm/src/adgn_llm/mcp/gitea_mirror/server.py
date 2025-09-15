@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+
 """Host-side MCP server for managing Gitea pull mirrors.
 
 Tools:
@@ -13,7 +15,6 @@ Configuration (env or kwargs):
 """
 
 from __future__ import annotations
-
 import os
 import time
 from dataclasses import dataclass

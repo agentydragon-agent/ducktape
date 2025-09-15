@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+
 import logging
 import os
 from logging.config import dictConfig
+from structlog.typing import Processor
 from pathlib import Path
 
 import structlog
@@ -62,16 +64,17 @@ def configure_logging() -> None:
     )
 
     # Route structlog through stdlib, obeying the same handlers
+    procs: list[Processor] = [
+        structlog.processors.TimeStamper(fmt="iso"),
+        structlog.processors.add_log_level,
+    ]
+    if os.getenv("MINICODEX_DEBUG"):
+        procs.append(structlog.processors.JSONRenderer())
+    else:
+        procs.append(structlog.processors.KeyValueRenderer(key_order=["event"]))
+
     structlog.configure(
-        processors=[
-            structlog.processors.TimeStamper(fmt="iso"),
-            structlog.processors.add_log_level,
-            (
-                structlog.processors.JSONRenderer()
-                if os.getenv("MINICODEX_DEBUG")
-                else structlog.processors.KeyValueRenderer(key_order=["event"])
-            ),
-        ],
+        processors=procs,
         wrapper_class=structlog.make_filtering_bound_logger(logging.INFO),
         logger_factory=structlog.stdlib.LoggerFactory(),
         cache_logger_on_first_use=False,

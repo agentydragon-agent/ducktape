@@ -1,32 +1,22 @@
-"""
-MiniCodex agent built on OpenAI Responses API with direct MCP tool wiring.
-"""
+"""MiniCodex agent on OpenAI Responses API with MCP tool wiring."""
 
 from __future__ import annotations
-
 import json
-import os
-import time
 from collections.abc import Iterable
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any, Literal, Protocol, cast
 from mcp import types as mcp_types
-
-import structlog
 from openai.types.responses import (
     ResponseFunctionToolCall,
     ResponseOutputMessage,
     ResponseOutputText,
     ResponseReasoningItem,
 )
-
-from openai.types.shared_params import Reasoning as ReasoningParams
-from openai.types.shared_params import ReasoningEffort
+import asyncio
+from openai.types.shared_params import Reasoning as ReasoningParams, ReasoningEffort
 from pydantic import BaseModel
 from openai.resources.responses import AsyncResponses
 from adgn_llm.openai_retry import retry_decorator
-
 from adgn_llm.openai_utils import ReasoningSummary
 from .mcp_manager import McpManager
 from adgn_llm.mini_codex.loop_control import (
@@ -41,125 +31,34 @@ from adgn_llm.mini_codex.loop_control import (
 )
 from .aggregating_handler import AggregatingController, BaseHandler
 from adgn_llm.mini_codex.handler import (
-    UserText as EvUserText,
-    AssistantText as EvAssistantText,
-    ToolCall as EvToolCall,
-    FunctionCallOutput as EvFunctionCallOutput,
-    Response as EvResponse,
-    GroundTruthUsage as EvUsage,
+    UserText,
+    AssistantText,
+    ToolCall,
+    FunctionCallOutput,
+    Response,
+    GroundTruthUsage,
 )
 
 
 @dataclass
 class AgentResult:
     text: str
-    sequence: list[dict[str, Any]]
-    metrics: Metrics
-
-
-class Metrics:
-    def __init__(self) -> None:
-        self.turns = 0
-        self.tool_calls = 0
+    # NOTE: We intentionally do NOT return transcript/events in agent result.
+    # Tests or callers that need access to the event sequence should register a handler
+    # (e.g. a test-only RecordingHandler) and pass it via `handlers` argument to MiniCodex.create().
 
 
 def _responses_output_from_calltool(res: Any) -> str:
-    if isinstance(res, mcp_types.CallToolResult):
-        if res.structuredContent is not None:
-            return json.dumps(res.structuredContent)
-        blocks = [b.model_dump(by_alias=True) for b in (res.content or [])]
-        return json.dumps({"content": blocks})
-    raise TypeError(f"Unsupported tool result type: {type(res)!r}")
-
-
-def _is_reasoning_item(item: Any) -> bool:
-    if isinstance(item, ResponseReasoningItem):
-        return True
-    if isinstance(item, dict):
-        return item.get("type") == "reasoning"
-    return False
+    assert isinstance(res, mcp_types.CallToolResult), f"Unsupported tool result: {type(res)!r}"
+    if res.structuredContent:
+        return json.dumps(res.structuredContent)
+    return json.dumps({"content": [b.model_dump(by_alias=True) for b in (res.content or [])]})
 
 
 # Namespaced tool form: mcp__{server}__{tool}
 ToolMap = dict[str, Any]
 
 SYSTEM_INSTRUCTIONS = "You are a code agent. Be concise."
-
-
-class _ResourceContent(Protocol):
-    mimeType: str | None
-    text: str | None
-    data: str | None
-
-
-def _parse_read_window_args(args: dict[str, Any]) -> tuple[int, int | None]:
-    start_v = args.get("start_offset")
-    start_offset = int(start_v) if isinstance(start_v, (int, str)) else 0
-    max_v = args.get("max_bytes")
-    if max_v is None:
-        max_bytes: int | None = None
-    elif isinstance(max_v, (int, str)):
-        max_bytes = int(max_v)
-    else:
-        raise ValueError("max_bytes must be an int, str, or null")
-    return start_offset, max_bytes
-
-
-def _build_resource_window(contents: list[Any], start_offset: int, max_bytes: int | None) -> dict[str, Any]:
-    remaining: int | None = max_bytes if isinstance(max_bytes, int) else None
-    cursor = 0
-    parts_out: list[dict[str, Any]] = []
-    for part_any in contents:
-        p = cast(_ResourceContent, part_any)
-        if p.text is not None:
-            raw = p.text.encode("utf-8")
-            total_len = len(raw)
-            if remaining is None or remaining > 0:
-                start_in_part = max(0, start_offset - cursor)
-                take_cap = remaining if isinstance(remaining, int) else total_len
-                take = max(0, min(take_cap, total_len - start_in_part))
-                if take > 0:
-                    chunk = raw[start_in_part : start_in_part + take]
-                    parts_out.append(
-                        {
-                            "mime": p.mimeType,
-                            "text": chunk.decode("utf-8", errors="replace"),
-                            "total_bytes": total_len,
-                            "bytes_returned": take,
-                        }
-                    )
-                    if remaining is not None:
-                        remaining -= take
-        elif p.data is not None:
-            base = p.data
-            total_len = len(base)
-            if remaining is None or remaining > 0:
-                start_in_part = max(0, start_offset - cursor)
-                take_cap = remaining if isinstance(remaining, int) else total_len
-                take = max(0, min(take_cap, total_len - start_in_part))
-                if take > 0:
-                    parts_out.append(
-                        {
-                            "mime": p.mimeType,
-                            "base64": base[start_in_part : start_in_part + take],
-                            "total_bytes": total_len,
-                            "bytes_returned": take,
-                        }
-                    )
-                    if remaining is not None:
-                        remaining -= take
-        cursor += len(p.text.encode("utf-8")) if p.text is not None else len(p.data or "")
-        if remaining is not None and remaining <= 0:
-            break
-    return {
-        "window": {"start_offset": start_offset, "max_bytes": max_bytes},
-        "parts": parts_out,
-        "total_parts": len(contents),
-    }
-
-
-def _read_window_payload(contents: list[Any], start_offset: int, max_bytes: int | None) -> dict[str, Any]:
-    return _build_resource_window(contents, start_offset, max_bytes)
 
 
 def _tool_choice_from_policy(policy: TP_Base) -> str | dict[str, Any]:
@@ -192,12 +91,18 @@ async def _responses_create_with_retry(client: ResponsesClient, **kwargs: Any):
     return await client.responses.create(**kwargs)
 
 
-def load_mcp_file(path: str) -> ToolMap:
-    data = json.loads(Path(path).read_text(encoding="utf-8"))
-    servers = data.get("mcpServers") or {}
-    if not isinstance(servers, dict):
-        raise ValueError(".mcp.json: mcpServers must be object")
-    return dict(servers)
+class UserMessage(BaseModel):
+    role: Literal["user"]
+    content: str
+
+
+class AssistantMessage(BaseModel):
+    role: Literal["assistant"]
+    content: str
+
+
+Message = UserMessage | AssistantMessage | FunctionCallOutput
+TranscriptItem = Message | ResponseFunctionToolCall | ResponseReasoningItem
 
 
 class MiniCodex:
@@ -207,10 +112,9 @@ class MiniCodex:
         model: str,
         system: str | None,
         mcp: McpManager,
-        client: ResponsesClient | None = None,
+        client: ResponsesClient,
         reasoning_effort: ReasoningEffort | None = None,
         reasoning_summary: ReasoningSummary | None = None,
-        agent_name: str | None = None,
         parallel_tool_calls: bool,
         handlers: Iterable[BaseHandler],
     ) -> None:
@@ -219,55 +123,42 @@ class MiniCodex:
         self._system = self._default_system
         self._mcp = mcp
         self._client = client
-        self._agent_name = agent_name or "mini_codex"
         self._parallel_tool_calls = parallel_tool_calls
         self._transcript: list[TranscriptItem] = []
         self._reasoning_effort = reasoning_effort
         self._reasoning_summary = reasoning_summary
-        self._metrics = Metrics()
-        self._log = structlog.get_logger("mini_codex").bind(
-            component="MiniCodex",
-            model=self._model,
-        )
-        # Logging artifacts
-        self._log_dir: Path | None = None
-        self._transcript_jsonl: Path | None = None
         # Aggregating controller (owns handlers and loop-decision semantics)
         handlers_list = list(handlers)
         if not handlers_list:
             raise ValueError("MiniCodex requires at least one handler; add AutoHandler() or a control handler")
         self._controller = AggregatingController(handlers_list)
 
-    def inject_system_message(self, text: str) -> None:
-        """Append a system message at the current end of transcript (temporal order)."""
-        msg = {"role": "system", "content": text}
-        self._transcript.append(msg)
-        self._emit_event({"kind": "system_note", "text": text})
-
     def set_system_instructions(self, instructions: str | None) -> None:
         """Override base system instructions for future turns."""
         self._system = (instructions or self._default_system).strip()
 
-    async def sample(self) -> AgentResult:
-        """Run a single model turn using the existing transcript (no new user message)."""
-        return await self._single_turn()
+    async def _build_effective_instructions(self) -> str:
+        """Compose effective system instructions with an MCP banner.
 
-    async def _single_turn(self) -> AgentResult:
-        sequence: list[dict[str, Any]] = []
+        - Summarizes available resources per server (first 5 URIs per server)
+        - Appends per-server initialize instructions when available
+        """
+        instructions = self._system
+        if banner := await self._mcp.render_banner():
+            instructions += f"\n\n{banner}"
+        return instructions
+
+    async def run(self, user_text: str) -> AgentResult:
+        self._transcript.append(UserMessage(role="user", content=user_text))
+        self._controller.on_user_text(UserText(text=user_text))
+
         assistant_text_chunks: list[str] = []
         # Use the agent-owned aggregating controller (handlers provide loop control)
         controller = self._controller
 
         while True:
-            instructions = self._system
-            input_payload = dump_messages_for_api(self._transcript)
+            input_payload = self.messages
 
-            # Determine tool choice via controller
-            decision = controller.on_before_sample()
-            if isinstance(decision, Abort):
-                break
-
-            # Compute instructions banner/tools regardless of synthetic vs real
             reasoning_kwargs: dict[str, Any] = {}
             if self._reasoning_effort is not None or self._reasoning_summary is not None:
                 reasoning_kwargs = {
@@ -279,66 +170,33 @@ class MiniCodex:
                         },
                     ),
                 }
-            resources = await self._mcp.list_resources()
-            by_server: dict[str, list[str]] = {}
-            for it in resources:
-                s = it.get("server")
-                u = it.get("uri")
-                if s and isinstance(u, str):
-                    by_server.setdefault(s, []).append(u)
-            banner_chunks: list[str] = []
-            if by_server:
-                lines: list[str] = []
-                for s, uris in by_server.items():
-                    first = uris[:5]
-                    more = max(0, len(uris) - len(first))
-                    if more:
-                        lines.append(f"server={s} resources: {first} (+{more} more; list via mcp__resources__list)")
-                    else:
-                        lines.append(f"server={s} resources: {first}")
-                banner_chunks.append("FYI: MCP resources available:\n- " + "\n- ".join(lines))
-            servers = self.server_names
-            if servers:
-                banner_chunks.append(f"FYI: MCP servers available: {servers}")
-                xml_blocks: list[str] = []
-                for sname in servers:
-                    init_res = await self._mcp.get_server_initialize(sname)
-                    desc = init_res.instructions
-                    if isinstance(desc, str) and desc:
-                        xml_blocks.append(f"<{sname} server desc>\n{desc}\n</{sname} server desc>")
-                if xml_blocks:
-                    banner_chunks.append("\n".join(xml_blocks))
-            if banner_chunks:
-                instructions = f"{instructions}\n\n" + "\n".join(banner_chunks)
 
-            tools_list = await self._mcp.list_tools()
-
-            # SyntheticAction path: use controller-provided outputs and skip LLM
+            # Determine tool choice via controller
+            decision = controller.on_before_sample()
+            if isinstance(decision, Abort):
+                break
             if isinstance(decision, SyntheticAction):
+                # SyntheticAction path: use controller-provided outputs and skip LLM
                 resp_output = decision.outputs
-            else:
-                if not isinstance(decision, Continue):
-                    raise TypeError(f"Unsupported loop decision: {type(decision).__name__}")
-                policy = decision.tool_policy
-                tool_choice_value: str | dict[str, Any] = _tool_choice_from_policy(policy)
+            elif isinstance(decision, Continue):
                 resp = await _responses_create_with_retry(
                     self._client,
                     model=self._model,
                     input=input_payload,
-                    instructions=instructions,
+                    instructions=await self._build_effective_instructions(),
                     stream=False,
-                    tool_choice=tool_choice_value,
+                    tool_choice=_tool_choice_from_policy(decision.tool_policy),
                     store=True,
                     parallel_tool_calls=self._parallel_tool_calls,
-                    tools=tools_list,
+                    tools=(await self._mcp.list_tools()),
                     **reasoning_kwargs,
                 )
                 # Emit a typed Response event with ground-truth usage per SDK (openai==1.106.1)
                 u = resp.usage
                 self._controller.on_response(
-                    EvResponse(
+                    Response(
                         response_id=resp.id,
-                        usage=EvUsage(
+                        usage=GroundTruthUsage(
                             model=self._model,
                             input_tokens=u.input_tokens,
                             output_tokens=u.output_tokens,
@@ -348,99 +206,52 @@ class MiniCodex:
                     )
                 )
                 resp_output = resp.output
+            else:
+                raise TypeError(f"Unsupported loop decision: {type(decision).__name__}")
 
-            requires: list[ResponseFunctionToolCall] = []
-            reasoning_count = 0
+            function_calls: list[ResponseFunctionToolCall] = []
             for item in resp_output:
-                if _is_reasoning_item(item):
-                    self._transcript.append(item.model_dump(exclude_none=True))
-                    reasoning_count += 1
-                    if isinstance(item, ResponseReasoningItem):
-                        self._controller.on_reasoning(item)
+                if isinstance(item, ResponseReasoningItem):
+                    # Store typed SDK reasoning item (output-only; filtered from next-turn input)
+                    self._transcript.append(item)
+                    self._controller.on_reasoning(item)
                 elif isinstance(item, ResponseOutputMessage):
                     parts = [part.text for part in item.content if isinstance(part, ResponseOutputText) and part.text]
-                    if parts:
-                        combined = "\n".join(parts)
-                        assistant_text_chunks.append(combined)
-                        msg = AssistantMessage(role="assistant", content=combined)
-                        self._transcript.append(msg)
-                        sequence.append({"kind": "assistant_text", "text": combined})
-                        self._controller.on_assistant_text(EvAssistantText(text=combined))
+                    combined = "\n".join(parts)
+                    assistant_text_chunks.append(combined)
+                    msg = AssistantMessage(role="assistant", content=combined)
+                    self._transcript.append(msg)
+                    self._controller.on_assistant_text(AssistantText(text=combined))
                 elif isinstance(item, ResponseFunctionToolCall):
-                    requires.append(item)
-                    # Persist tool call into transcript so the next turn has full context
-                    self._transcript.append(item.model_dump(exclude_none=True))
+                    function_calls.append(item)
+                    # Persist typed SDK tool call for next-turn input serialization
+                    self._transcript.append(item)
                     try:
-                        _args = json.loads(item.arguments) if item.arguments else {}
+                        args = json.loads(item.arguments) if item.arguments else {}
                     except Exception:
-                        _args = {"_raw": item.arguments} if item.arguments is not None else {}
+                        args = {"_raw": item.arguments} if item.arguments is not None else {}
                     self._controller.on_tool_call(
-                        EvToolCall(
+                        ToolCall(
                             name=item.name or "",
-                            args=_args if isinstance(_args, dict) else {},
+                            args=args if isinstance(args, dict) else {},
                             call_id=item.call_id or "",
                         )
                     )
 
-            if os.environ.get("MINICODEX_DEBUG"):
-                dbg = [{"name": tc.name, "call_id": tc.call_id, "arguments": tc.arguments} for tc in requires]
-                self._log.debug(
-                    "tool_calls",
-                    count=len(dbg),
-                    reasoning_items=reasoning_count,
-                )
-
-            if not requires:
+            if not function_calls:
                 break
 
-            # Precompute tool call outputs in parallel
-            import asyncio as _asyncio
+            calls: list[tuple[ResponseFunctionToolCall, dict[str, Any]]] = []
+            for function_call in function_calls:
+                args = json.loads(function_call.arguments) if function_call.arguments else {}
+                if not isinstance(args, dict):
+                    args = {}
+                calls.append((function_call, args))
 
-            _calls: list[tuple[int, ResponseFunctionToolCall, dict[str, Any]]] = []
-            for i, _fc in enumerate(requires):
-                _args = json.loads(_fc.arguments) if _fc.arguments else {}
-                if not isinstance(_args, dict):
-                    _args = {}
-                # Emit call-start event before scheduling execution
-                self._emit_tool_call_start(_fc, _args, sequence)
-                _calls.append((i, _fc, _args))
-
-            async def _invoke(_fc: ResponseFunctionToolCall, _args: dict[str, Any]) -> tuple[str, str | None]:
-                # Built-in resource tools
-                if _fc.name == "mcp__resources__list":
-                    server_filter = _args.get("server")
-                    uri_prefix = _args.get("uri_prefix")
-                    items = await self._mcp.list_resources(only=[server_filter] if server_filter else None)
-                    if uri_prefix:
-                        items = [
-                            it for it in items if isinstance(it.get("uri"), str) and it["uri"].startswith(uri_prefix)
-                        ]
-                    return json.dumps({"resources": items}, ensure_ascii=False), None
-                if _fc.name == "mcp__resources__read":
-                    server = _args.get("server")
-                    uri = _args.get("uri")
-                    start_v = _args.get("start_offset")
-                    start_offset = int(start_v) if isinstance(start_v, (int, str)) else 0
-                    max_v = _args.get("max_bytes")
-                    if max_v is None:
-                        max_bytes = None
-                    elif isinstance(max_v, (int, str)):
-                        max_bytes = int(max_v)
-                    else:
-                        raise ValueError("max_bytes must be an int, str, or null")
-                    if not isinstance(server, str) or not isinstance(uri, str):
-                        raise ValueError("server and uri are required and must be strings")
-                    res = await self._mcp.read_resource(server, uri)
-                    if not isinstance(res, mcp_types.ReadResourceResult):
-                        raise TypeError(f"Unexpected read_resource result type: {type(res)!r}")
-                    contents = res.contents or []
-                    payload = _read_window_payload(contents, start_offset, max_bytes)
-                    return json.dumps(payload, ensure_ascii=False), None
-
+            async def _invoke(function_call: ResponseFunctionToolCall, args: dict[str, Any]) -> tuple[str, str | None]:
                 # Namespaced MCP tool
-                server, tool_name = self._mcp.resolve_function(_fc.name)
-                res_ct = await self._mcp.call_tool(server, tool_name, _args)
-                out_str = _responses_output_from_calltool(res_ct)
+                server, tool_name = self._mcp.resolve_function(function_call.name)
+                out_str = _responses_output_from_calltool(await self._mcp.call_tool(server, tool_name, args))
                 parsed_error: str | None = None
                 try:
                     data = json.loads(out_str)
@@ -450,100 +261,33 @@ class MiniCodex:
                     parsed_error = None
                 return out_str, parsed_error
 
-            _results = await _asyncio.gather(*[_invoke(fc, args) for _, fc, args in _calls])
-            out_map: dict[str, tuple[str, str | None]] = {fc.call_id: res for (_, fc, _), res in zip(_calls, _results)}
+            results = await asyncio.gather(*[_invoke(fc, args) for fc, args in calls])
+            out_map: dict[str, tuple[str, str | None]] = {
+                function_call.call_id: res for (function_call, _), res in zip(calls, results)
+            }
 
-            for fc in requires:
-                args = json.loads(fc.arguments) if fc.arguments else {}
+            for function_call in function_calls:
+                args = json.loads(function_call.arguments) if function_call.arguments else {}
                 if not isinstance(args, dict):
                     args = {}
                 # Use precomputed parallel outputs
-                _pre = out_map.get(fc.call_id)
+                _pre = out_map.get(function_call.call_id)
                 if _pre is not None:
                     out_str, parsed_error = _pre
-                    self._emit_tool_result(fc, args, out_str, parsed_error, sequence)
-                    continue
-
-                # Built-in resource tools
-                if fc.name == "mcp__resources__list":
-                    server_filter = args.get("server")
-                    uri_prefix = args.get("uri_prefix")
-                    items = await self._mcp.list_resources(only=[server_filter] if server_filter else None)
-                    if uri_prefix:
-                        items = [
-                            it for it in items if isinstance(it.get("uri"), str) and it["uri"].startswith(uri_prefix)
-                        ]
-                    out_str = json.dumps({"resources": items}, ensure_ascii=False)
-                    self._emit_tool_result(fc, args, out_str, None, sequence)
-                    continue
-
-                if fc.name == "mcp__resources__read":
-                    server = args.get("server")
-                    uri = args.get("uri")
-                    start_v = args.get("start_offset")
-                    start_offset = int(start_v) if isinstance(start_v, (int, str)) else 0
-                    max_v = args.get("max_bytes")
-                    if max_v is None:
-                        max_bytes = None
-                    elif isinstance(max_v, (int, str)):
-                        max_bytes = int(max_v)
-                    else:
-                        raise ValueError("max_bytes must be an int, str, or null")
-                    if not isinstance(server, str) or not isinstance(uri, str):
-                        raise ValueError("server and uri are required and must be strings")
-                    res = await self._mcp.read_resource(server, uri)
-                    if not isinstance(res, mcp_types.ReadResourceResult):
-                        raise TypeError(f"Unexpected read_resource result type: {type(res)!r}")
-                    contents = res.contents or []
-                    payload = _read_window_payload(contents, start_offset, max_bytes)
-                    out_str = json.dumps(payload, ensure_ascii=False)
-                    self._emit_tool_result(fc, args, out_str, None, sequence)
+                    self._emit_tool_result(function_call, out_str)
                     continue
 
                 # Namespaced MCP tool
-                server, tool_name = self._mcp.resolve_function(fc.name)
-                start = time.perf_counter()
-                res_ct = await self._mcp.call_tool(server, tool_name, args)
-                latency = time.perf_counter() - start
-                if os.environ.get("MINICODEX_DEBUG") and isinstance(res_ct, mcp_types.CallToolResult):
-                    self._log.debug(
-                        "tool_result",
-                        name=fc.name,
-                        args=args,
-                        has_structured=res_ct.structuredContent is not None,
-                        blocks=len(res_ct.content or []),
-                        is_error=bool(res_ct.isError),
-                        latency_ms=int(latency * 1000),
-                    )
-                out_str = _responses_output_from_calltool(res_ct)
-                parsed_err2: str | None = None
-                try:
-                    data = json.loads(out_str)
-                    if isinstance(data, dict) and data.get("ok") is False and isinstance(data.get("error"), str):
-                        parsed_err2 = data.get("error")
-                except Exception:
-                    parsed_err2 = None
-                self._emit_tool_result(fc, args, out_str, parsed_err2, sequence)
-                if not isinstance(res_ct, mcp_types.CallToolResult):
-                    raise TypeError(f"Unexpected tool result type: {type(res_ct)!r}")
+                server, tool_name = self._mcp.resolve_function(function_call.name)
+                out_str = _responses_output_from_calltool(await self._mcp.call_tool(server, tool_name, args))
+                self._emit_tool_result(function_call, out_str)
 
-            self._metrics.tool_calls += len(requires)
-
-        self._metrics.turns += 1
         text = "\n".join(assistant_text_chunks)
-        # Persist transcript and sequence to logs if configured
-        if self._log_dir is not None:
-            transcript_path = self._log_dir / "transcript.json"
-            payload = {
-                "transcript": dump_messages_for_api(self._transcript),
-                "sequence": sequence,
-                "metrics": {
-                    "turns": self._metrics.turns,
-                    "tool_calls": self._metrics.tool_calls,
-                },
-            }
-            transcript_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-        return AgentResult(text=text, sequence=sequence, metrics=self._metrics)
+
+        # Do not return transcript/events from AgentResult. Tests needing the
+        # event sequence should register a RecordingHandler and pass it via
+        # `handlers` to MiniCodex.create().
+        return AgentResult(text=text)
 
     @classmethod
     async def create(
@@ -552,16 +296,13 @@ class MiniCodex:
         model: str,
         mcp: McpManager,
         handlers: Iterable[BaseHandler],
+        client: ResponsesClient,
         system: str | None = None,
-        client: ResponsesClient | None = None,
         reasoning_effort: ReasoningEffort | None = None,
         reasoning_summary: ReasoningSummary | None = None,
         parallel_tool_calls: bool = True,
     ) -> MiniCodex:
-        if client is None:
-            raise ValueError("MiniCodex.create requires an OpenAI client instance")
-
-        inst = cls(
+        return cls(
             model=model,
             system=system,
             mcp=mcp,
@@ -571,138 +312,36 @@ class MiniCodex:
             parallel_tool_calls=parallel_tool_calls,
             handlers=handlers,
         )
-        inst._init_logging()
-        return inst
 
-    def _init_logging(self) -> None:
-        base = Path(os.environ.get("MINICODEX_LOG_DIR") or (Path.cwd() / "logs" / "mini_codex"))
-        base.mkdir(parents=True, exist_ok=True)
-        agent_dir = base / self._agent_name
-        agent_dir.mkdir(parents=True, exist_ok=True)
-        run_dir = agent_dir / f"run_{int(time.time())}_{os.getpid()}"
-        run_dir.mkdir(parents=True, exist_ok=True)
-        self._log_dir = run_dir
-        # Log path via structlog; avoid printing to stdout by default
-        self._log.info("mini_codex_log_dir", path=str(run_dir))
-        # Keep a run.json for quick metadata
-        meta = {
-            "model": self._model,
-            "agent_name": self._agent_name,
-            "ts": int(time.time()),
-            "pid": os.getpid(),
-        }
-        (run_dir / "run.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
-
-    def _emit_event(self, evt: dict[str, Any]) -> None:
-        # Emit to structlog; routing to console/file is controlled by logger configuration
-        self._log.info("mini_codex_event", **evt)
-
-    def _log_event(self, evt: dict[str, Any]) -> None:
-        # Delegate to external transcript logger via _on_event
-        self._emit_event(evt)
-
-    def _emit_tool_call_start(
-        self,
-        fc: ResponseFunctionToolCall,
-        args: dict[str, Any],
-        sequence: list[dict[str, Any]],
-    ) -> None:
-        call_evt = {
-            "kind": "tool_call",
-            "name": fc.name,
-            "args": args,
-            "call_id": fc.call_id,
-        }
-        sequence.append(call_evt)
-        self._emit_event(call_evt)
-
-    def _emit_tool_result(
-        self,
-        fc: ResponseFunctionToolCall,
-        args: dict[str, Any],
-        out_str: str,
-        parsed_error: str | None,
-        sequence: list[dict[str, Any]],
-    ) -> None:
-        """Emit result events and transcript entries for a completed tool call.
-
-        Assumes the call_start event was already emitted earlier.
-        """
-        fco = FunctionCallOutput(type="function_call_output", call_id=fc.call_id, output=out_str)
-        fco_evt = {
-            "kind": "function_call_output",
-            "name": fc.name,
-            **fco.model_dump(exclude_none=True),
-        }
-        sequence.append(fco_evt)
+    def _emit_tool_result(self, function_call: ResponseFunctionToolCall, out_str: str) -> None:
+        """Emit a single typed function_call_output event (no duplicates)."""
+        fco = FunctionCallOutput(call_id=function_call.call_id, output=out_str)
         self._transcript.append(fco)
-        self._emit_event(fco_evt)
-        self._controller.on_function_call_output(EvFunctionCallOutput(call_id=fc.call_id, output=out_str))
-        if parsed_error is not None:
-            err_evt = {"kind": "tool_error", "name": fc.name, "call_id": fc.call_id, "error": parsed_error}
-            sequence.append(err_evt)
-            self._emit_event(err_evt)
+        self._controller.on_function_call_output(fco)
 
     @property
     def messages(self) -> list[dict[str, Any]]:
-        return dump_messages_for_api(self._transcript)
+        """Format transcript for OpenAI Responses API.
 
-    @property
-    def server_names(self) -> list[str]:
-        """Convenience accessor for configured MCP server names."""
-        return self._mcp.server_names
-
-    async def run(
-        self,
-        user_text: str,
-    ) -> AgentResult:
-        self._transcript.append(UserMessage(role="user", content=user_text))
-        self._controller.on_user_text(EvUserText(text=user_text))
-        result = await self._single_turn()
-        return result
+        Accepts a mixed list of:
+        - message dicts {"role": "user"|"assistant", "content": str}
+        - function_call (typed SDK item) and function_call_output items
+        Note: Reasoning items are output-only and are NOT included in input. We always send
+        the full transcript each turn; do not send deltas.
+        """
+        out: list[dict[str, Any]] = []
+        for item in self._transcript:
+            # Filter out reasoning items (output-only)
+            if isinstance(item, ResponseReasoningItem):
+                continue
+            if not isinstance(item, BaseModel):
+                # We only persist typed SDK objects (BaseModel) in the transcript
+                raise TypeError(f"Unsupported transcript item type: {type(item)!r}")
+            out.append(item.model_dump(exclude_none=True))
+        return out
 
     async def __aenter__(self) -> "MiniCodex":
         return self
 
     async def __aexit__(self, exc_type, exc, tb) -> None:
         return None
-
-
-class UserMessage(BaseModel):
-    role: Literal["user"]
-    content: str
-
-
-class AssistantMessage(BaseModel):
-    role: Literal["assistant"]
-    content: str
-
-
-class FunctionCallOutput(BaseModel):
-    type: Literal["function_call_output"]
-    call_id: str
-    output: str
-
-
-Message = UserMessage | AssistantMessage | FunctionCallOutput
-TranscriptItem = Message | dict[str, Any]
-
-
-def dump_messages_for_api(messages: list[TranscriptItem]) -> list[dict[str, Any]]:
-    """Format transcript for OpenAI Responses API.
-
-    Accepts a mixed list of:
-    - message dicts {"role": "user"|"assistant", "content": str}
-    - reasoning items (dict with type="reasoning") — forwarded verbatim
-    - function_call_output items: {"type": "function_call_output", "call_id": "...", "output": "..."}
-    Note: We always send the full transcript each turn; do not send deltas.
-    """
-    out: list[dict[str, Any]] = []
-    for item in messages:
-        if isinstance(item, BaseModel):
-            out.append(item.model_dump(exclude_none=True))
-        elif isinstance(item, dict):
-            out.append(dict(item))
-        else:  # pragma: no cover
-            raise TypeError(f"Unsupported transcript item type: {type(item)!r}")
-    return out

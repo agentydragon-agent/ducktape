@@ -1,5 +1,5 @@
 from __future__ import annotations
-
+from adgn_llm.properties.docker_env import SLEEP_FOREVER_CMD
 import argparse
 import json
 import os
@@ -13,10 +13,8 @@ import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-
 import yaml
 from pydantic import BaseModel
-
 from adgn_llm.sandboxer import Policy
 
 
@@ -152,7 +150,6 @@ def _docker(
     try:
         try:
             # Standardize long-lived container command across wrappers
-            from adgn_llm.properties.docker_env import SLEEP_FOREVER_CMD
 
             container = dclient.containers.run(
                 image=docker_image,
