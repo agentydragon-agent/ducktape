@@ -25,7 +25,7 @@ Current state (quick map)
 
 Design overview
 We add three minimally-coupled pieces:
-1) Approvals proxy around MCP (modular): a wrapper around McpManager/Sessions that enforces a hardcoded policy ("allow" or "ask"). For "ask", it emits a pending-approval event and awaits a UI decision; deny synthesizes a structured failure result and continues.
+1) Approvals proxy around MCP (modular): a wrapper around McpManager that enforces a hardcoded policy ("allow" or "ask"). For "ask", it emits a pending-approval event and awaits a UI decision; deny triggers server-side cancellation of the current turn (no further tool execution).
 2) Lightweight HTTP UI (FastAPI+WebSocket) to:
    - Show transcript/events and pending tool calls.
    - Allow the user to send a message, toggle pre-approvals per tool, and abort the active run.
@@ -70,7 +70,7 @@ Component details
       - Outbound: emit events (user_text, assistant_text, tool_call, function_call_output, tool_error), approval_pending, approval_decision, and synthetic notifications (aborted, status).
       - Inbound messages:
         - {type: "send", text: "..."} -> appends a user message and triggers agent.sample() or agent.run(text)
-        - {type: "approve", call_id: string} / {type: "deny", call_id: string} -> resolve a pending approval in ApprovalHub
+        - {type: "approve", call_id: string} / {type: "deny", call_id: string} -> resolve a pending approval in ApprovalHub; deny also cancels the current turn
         - {type: "abort"}
   - Keyboard shortcuts: In index.html, attach keydown listener for Cmd/Ctrl+Enter to send; Shift+Enter inserts newline (browser default).
 - Launch entrypoint (optional now): small CLI to run the server, eg: adgn-mini-codex-ui --port 8765
@@ -79,6 +79,7 @@ Component details
 - Session.run() creates an asyncio.Task for agent.run(); store ref.
 - Abort path:
   - Cancel the task; if the cancellation happens during _responses_create_with_retry awaiting the OpenAI call, asyncio.CancelledError will propagate; server catches and emits "aborted".
+  - Denied approval uses the same path: upon receiving approval_decision {allowed:false}, cancel the current turn task.
   - In Phase 2, track per-tool gather() tasks and cancel them similarly.
 - No agent-level changes are required for Phase 1 if we only cancel the outer task; the OpenAI client awaits will respond to task cancellation.
 
@@ -169,7 +170,9 @@ Future enhancements
 Implementation notes (code pointers)
 - Agent refactor: route all tool calls via mcp.call_tool(server, name, arguments) and resource reads via mcp.read_resource(server, uri); remove direct session.get + session.call_tool usage.
 - Approvals gating is entirely in McpManagerWithApprovals; no approval logic in the agent.
+- Abort turn on denial: the UI server keeps a current_turn_task; upon {type:"deny", call_id}, it calls approvals.resolve(call_id, False) then current_turn_task.cancel(); emit {kind:"aborted"} when cancellation completes.
 - Event forwarding is already in place via _emit_event(); UI subscribes to these along with approval_pending/approval_decision.
 
 Progress log
 - 2025-09-14T00:00:00Z sha=6f2877fa: Drafted minimal design; next: implement approvals manager, add agent guard, scaffold FastAPI server and simple HTML UI.
+- 2025-09-14T18:55:00Z sha=6f2877fa: Refactored MiniCodex to manager-level mcp.call_tool/read_resource; added approvals wrapper scaffold (ApprovalHub + McpManagerWithApprovals); enforced handler on_reasoning; aligned ResponseUsage to SDK; updated editor_server.done to typed; tests passing (7/7).
