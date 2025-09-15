@@ -29,7 +29,7 @@ async def test_git_show_name_status(repo_git_ro) -> None:
             {
                 "payload": ShowInput(
                     object="HEAD", format=DiffFormat.NAME_STATUS, list_slice=ListSlice(offset=0, limit=100)
-                ).model_dump()
+                ),
             },
         )
         res_ns = await m.call_tool(func["name"], arguments=func["arguments"])
@@ -50,9 +50,7 @@ async def test_git_show_stat(repo_git_ro) -> None:
         res_st = await m.call_tool(
             build_mcp_function(GIT_RO_SERVER_NAME, st_tool),
             arguments={
-                "payload": ShowInput(
-                    object="HEAD", format=DiffFormat.STAT, list_slice=ListSlice(offset=0, limit=100)
-                ).model_dump()
+                "payload": ShowInput(object="HEAD", format=DiffFormat.STAT, list_slice=ListSlice(offset=0, limit=100)),
             },
         )
         payload_st = res_st.structuredContent
@@ -71,7 +69,7 @@ async def test_git_show_patch(repo_git_ro) -> None:
         _, pt_tool = parse_mcp_function(pt_name)
         res_pt = await m.call_tool(
             build_mcp_function(GIT_RO_SERVER_NAME, pt_tool),
-            arguments={"payload": ShowInput(object="HEAD", format=DiffFormat.PATCH).model_dump()},
+            arguments={"payload": ShowInput(object="HEAD", format=DiffFormat.PATCH)},
         )
         payload_pt = res_pt.structuredContent
         if isinstance(payload_pt, str):

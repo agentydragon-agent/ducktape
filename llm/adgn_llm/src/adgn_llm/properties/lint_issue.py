@@ -316,7 +316,7 @@ async def lint_issue_run(
     model: str = "gpt-5",
     client: AsyncOpenAI,
     gitconfig: str | None = None,
-    handlers: list[BaseHandler],
+    handlers: list[BaseHandler] | None = None,
 ) -> LintSubmitPayload:
     """Run the lint-issue agent and return the exact structured payload.
 
@@ -374,7 +374,7 @@ async def lint_issue_run(
                 mcp=mcp,
                 system="You are a code agent. Be concise.",
                 client=client,
-                handlers=[GateUntil(lambda: submit_state.result is not None), ctrl, *handlers],
+                handlers=[GateUntil(lambda: submit_state.result is not None), ctrl, *(handlers or [])],
                 parallel_tool_calls=True,
             )
             # Run without passing controller; loop control is provided by handlers.

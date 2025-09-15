@@ -1,5 +1,5 @@
 from __future__ import annotations
-from adgn_llm.properties.docker_env import SLEEP_FOREVER_CMD
+from adgn_llm.mcp._shared.constants import SLEEP_FOREVER_CMD
 import argparse
 import json
 import os

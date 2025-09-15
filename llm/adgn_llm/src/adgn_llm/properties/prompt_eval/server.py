@@ -28,8 +28,6 @@ from adgn_llm.properties.prop_utils import pkg_dir
 from adgn_llm.properties.docker_env import properties_docker_spec
 from adgn_llm.mini_codex.agent import MiniCodex
 from adgn_llm.mini_codex.mcp_manager import McpManager
-from adgn_llm.mini_codex.aggregating_handler import BaseHandler
-from adgn_llm.mini_codex.loop_control import Continue, Abort, RequireAny
 from adgn_llm.mini_codex.aggregating_handler import GateUntil
 from adgn_llm.mcp.inproc_transport import make_inproc_slot_spec
 from adgn_llm.mini_codex.transcript_handler import TranscriptHandler
@@ -195,21 +193,3 @@ def build_server(name: str = "prompt_eval", agent_model: str = "gpt-5") -> Tuple
         return metrics_list
 
     return mcp, state
-
-
-class PromptOptimizeHandler(BaseHandler):
-    """Force a tool call each turn; stop immediately after N successful evaluations.
-
-    Reads successful_calls from PromptEvalState and:
-      - While budget remains: requires a tool call (RequireAny)
-      - Once budget is reached: Abort immediately (no final non-tool message)
-    """
-
-    def __init__(self, *, state: PromptEvalState, max_iters: int) -> None:
-        self._state = state
-        self._max_iters = max_iters
-
-    def on_before_sample(self):  # type: ignore[override]
-        if self._state.successful_calls >= self._max_iters:
-            return Abort()
-        return Continue(RequireAny())

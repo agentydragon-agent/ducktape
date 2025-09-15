@@ -7,7 +7,7 @@ import json
 
 import pytest
 
-from adgn_llm.mcp.editor_server import make_editor_mcp, is_python_path
+from adgn_llm.mcp.editor_server import make_editor_mcp, is_python_path, DoneInput
 from adgn_llm.mcp.inproc_transport import make_inproc_slot_spec
 from adgn_llm.mini_codex.mcp_manager import McpManager
 
@@ -63,7 +63,7 @@ async def test_done_for_non_python_no_syntax_check(tmp_path: Path, editor_sessio
         # Append a line after the first line (1-based after = insert at index 1)
         await sess.call_tool(name="add_line_after", arguments={"line_number": 1, "content": "world"})
         # Finish successfully; should not run python syntax checks
-        res = await sess.call_tool(name="done", arguments={"payload": {"outcome": "success", "summary": "ok"}})
+        res = await sess.call_tool(name="done", arguments={"payload": DoneInput(outcome="success", summary="ok")})
         data = _extract_result(res)
         assert data.get("kind") == "Success"
         assert data.get("summary") == "ok"
@@ -80,7 +80,7 @@ async def test_done_python_syntax_failure_returns_structured_failure(tmp_path: P
     async with editor_session(p) as sess:
         # Introduce a syntax error by replacing the function header
         await sess.call_tool(name="replace_text", arguments={"old_text": "def f():", "new_text": "def f(:"})
-        res = await sess.call_tool(name="done", arguments={"payload": {"outcome": "success", "summary": "finish"}})
+        res = await sess.call_tool(name="done", arguments={"payload": DoneInput(outcome="success", summary="finish")})
         data = _extract_result(res)
         assert data.get("kind") == "Failure"
         assert "Cannot complete" in (data.get("summary") or "")
@@ -98,7 +98,7 @@ async def test_done_explicit_failure_reverts_in_memory(tmp_path: Path, editor_se
         # Stage change to "B" in-memory: delete line 1 and insert B at start
         await sess.call_tool(name="delete_line", arguments={"line_number": 1})
         await sess.call_tool(name="add_line_after", arguments={"line_number": 0, "content": "B"})
-        res = await sess.call_tool(name="done", arguments={"payload": {"outcome": "failure", "summary": "abort"}})
+        res = await sess.call_tool(name="done", arguments={"payload": DoneInput(outcome="failure", summary="abort")})
         data = _extract_result(res)
         assert data.get("kind") == "Failure"
         assert data.get("summary") == "abort"

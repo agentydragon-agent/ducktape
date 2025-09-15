@@ -19,6 +19,7 @@ from openai.resources.responses import AsyncResponses
 from adgn_llm.openai_retry import retry_decorator
 from adgn_llm.openai_utils import ReasoningSummary
 from .mcp_manager import McpManager
+from .approvals import TurnAbortRequested
 from adgn_llm.mini_codex.loop_control import (
     Auto as TP_Auto,
     RequireAny as TP_RequireAny,
@@ -191,7 +192,7 @@ class MiniCodex:
                     tools=(await self._mcp.list_tools()),
                     **reasoning_kwargs,
                 )
-                # Emit a typed Response event with ground-truth usage per SDK (openai==1.106.1)
+                # Emit a typed Response event with ground-truth usage (tests must populate usage)
                 u = resp.usage
                 self._controller.on_response(
                     Response(
@@ -260,25 +261,116 @@ class MiniCodex:
                     parsed_error = None
                 return out_str, parsed_error
 
-            results = await asyncio.gather(*[_invoke(fc, args) for fc, args in calls])
-            out_map: dict[str, tuple[str, str | None]] = {
-                function_call.call_id: res for (function_call, _), res in zip(calls, results)
-            }
+            # Branch behavior based on parallel_tool_calls
+            if self._parallel_tool_calls:
+                # Parallel execution: create tasks for each _invoke so we can react to
+                # control-plane exceptions (TurnAbortRequested) immediately.
+                task_to_call: dict[asyncio.Task, ResponseFunctionToolCall] = {}
+                for function_call, args in calls:
+                    t = asyncio.create_task(_invoke(function_call, args))
+                    task_to_call[t] = function_call
 
-            for function_call in function_calls:
-                args = json.loads(function_call.arguments) if function_call.arguments else {}
-                if not isinstance(args, dict):
-                    args = {}
-                # Use precomputed parallel outputs
-                _pre = out_map.get(function_call.call_id)
-                if _pre is not None:
-                    out_str, parsed_error = _pre
+                # Wait until either all complete or the first exception is raised
+                done, pending = await asyncio.wait(task_to_call.keys(), return_when=asyncio.FIRST_EXCEPTION)
+
+                # Check for exception among completed
+                first_exc: BaseException | None = None
+                for t in done:
+                    if t.cancelled():
+                        continue
+                    exc = t.exception()
+                    if exc is not None:
+                        first_exc = exc
+                        break
+
+                if first_exc is None:
+                    # All tasks completed successfully; emit outputs in original order
+                    results = [t.result() for t in task_to_call.keys()]
+                    out_map: dict[str, tuple[str, str | None]] = {
+                        function_call.call_id: res for (function_call, _), res in zip(calls, results)
+                    }
+                    for function_call in function_calls:
+                        out_str, parsed_error = out_map.get(
+                            function_call.call_id, (json.dumps({"ok": False, "error": "missing tool output"}), None)
+                        )
+                        self._emit_tool_result(function_call, out_str)
+                    # Continue to next loop iteration
+                else:
+                    # An exception occurred in one of the tasks
+                    # Cancel pending tasks first
+                    for t in pending:
+                        t.cancel()
+                    # Gather pending to silence cancellation
+                    await asyncio.gather(*pending, return_exceptions=True)
+
+                    # If it's a TurnAbortRequested, synthesize outputs accordingly
+                    if isinstance(first_exc, TurnAbortRequested):
+                        denied_call_id = first_exc.call_id
+                        # Build a map of completed task results
+                        completed_results: dict[str, tuple[str, str | None]] = {}
+                        for t in done:
+                            if t is None or t.cancelled():
+                                continue
+                            if t is t and t.exception() is first_exc:
+                                # skip the task that raised
+                                continue
+                            try:
+                                res = t.result()
+                            except Exception:
+                                continue
+                            fc = task_to_call.get(t)
+                            if fc:
+                                completed_results[fc.call_id] = res
+
+                        # Emit outputs in original order: completed -> real outputs; denied -> user-denied; pending -> turn aborted
+                        for function_call in function_calls:
+                            if function_call.call_id in completed_results:
+                                out_str, parsed_error = completed_results[function_call.call_id]
+                                self._emit_tool_result(function_call, out_str)
+                                continue
+                            if function_call.call_id == denied_call_id:
+                                deny_payload = json.dumps({"ok": False, "error": f"User denied: {denied_call_id}"})
+                                self._emit_tool_result(function_call, deny_payload)
+                                continue
+                            # remaining calls were not run
+                            abort_payload = json.dumps({"ok": False, "error": "turn aborted"})
+                            self._emit_tool_result(function_call, abort_payload)
+
+                        # End the turn after synthetic emissions
+                        break
+                    else:
+                        # Unexpected exception: re-raise to surface the bug
+                        raise first_exc
+            else:
+                # Sequential execution: call tools one by one. If a denial/error occurs for
+                # a call (e.g., approvals wrapper returns structured error with "User denied"),
+                # emit that call's output then synthesize "turn aborted" outputs for remaining
+                # call_ids in the batch, and end the turn.
+                for i, function_call in enumerate(function_calls):
+                    args = json.loads(function_call.arguments) if function_call.arguments else {}
+                    if not isinstance(args, dict):
+                        args = {}
+
+                    # Execute the call sequentially and get its output/result
+                    res = await self._mcp.call_tool(function_call.name, args)
+                    out_str = _responses_output_from_calltool(res)
+
+                    seq_error: str | None = None
+                    try:
+                        data = json.loads(out_str)
+                        if isinstance(data, dict) and data.get("ok") is False and isinstance(data.get("error"), str):
+                            seq_error = data.get("error")
+                    except Exception:
+                        seq_error = None
+
                     self._emit_tool_result(function_call, out_str)
-                    continue
 
-                # Namespaced MCP tool
-                out_str = _responses_output_from_calltool(await self._mcp.call_tool(function_call.name, args))
-                self._emit_tool_result(function_call, out_str)
+                    # If this call was explicitly denied, synthesize abort outputs for remaining calls
+                    if seq_error and "User denied" in seq_error:
+                        for remaining in function_calls[i + 1 :]:
+                            abort_payload = json.dumps({"ok": False, "error": "turn aborted"})
+                            self._emit_tool_result(remaining, abort_payload)
+                        break
 
         text = "\n".join(assistant_text_chunks)
 
@@ -317,6 +409,32 @@ class MiniCodex:
         self._transcript.append(fco)
         self._controller.on_function_call_output(fco)
 
+    def _emit_aborted_outputs(
+        self,
+        denied_call_id: str | None,
+        completed_results: dict[str, tuple[str, str | None]],
+        function_calls: list[ResponseFunctionToolCall],
+    ) -> None:
+        """Emit outputs for a batch when an abort/denial occurs.
+
+        - completed_results: mapping call_id -> (out_str, parsed_error) for calls that already completed
+        - denied_call_id: the call_id that was explicitly denied (may be None)
+        - function_calls: original ordered list to preserve emission order
+        """
+        for function_call in function_calls:
+            cid = function_call.call_id
+            if cid in completed_results:
+                out_str, _ = completed_results[cid]
+                self._emit_tool_result(function_call, out_str)
+                continue
+            if denied_call_id is not None and cid == denied_call_id:
+                deny_payload = json.dumps({"ok": False, "error": f"User denied: {denied_call_id}"})
+                self._emit_tool_result(function_call, deny_payload)
+                continue
+            # remaining calls were not executed
+            abort_payload = json.dumps({"ok": False, "error": "turn aborted"})
+            self._emit_tool_result(function_call, abort_payload)
+
     @property
     def messages(self) -> list[dict[str, Any]]:
         """Format transcript for OpenAI Responses API.
@@ -332,6 +450,13 @@ class MiniCodex:
             # Filter out reasoning items (output-only)
             if isinstance(item, ResponseReasoningItem):
                 continue
+            # Include function_call items so the API can match subsequent
+            # function_call_output by call_id (required for bootstrap and parallel tools).
+            # The service ignores them as content; they establish the tool call context.
+            # See Responses API tool orchestration examples in the OpenAI Cookbook.
+            # (We still filter out reasoning items above.)
+            # if isinstance(item, ResponseFunctionToolCall):
+            #     continue
             if not isinstance(item, BaseModel):
                 # We only persist typed SDK objects (BaseModel) in the transcript
                 raise TypeError(f"Unsupported transcript item type: {type(item)!r}")

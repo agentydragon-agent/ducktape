@@ -208,18 +208,34 @@ def diff_to_file_stats(diff: pygit2.Diff) -> list[DiffFileStat]:
     """Convert a pygit2.Diff to per-file stat entries (additions/deletions).
 
     Shared between git_diff(format=stat) and git_show(format=stat).
+
+    Note: pygit2's Patch objects may not expose per-file additions/deletions totals
+    reliably across versions. Compute counts by walking hunk lines and tallying
+    origins ('+' for insertions, '-' for deletions).
     """
     stats: list[DiffFileStat] = []
     for patch in diff:
         cf = delta_to_changed_file(patch.delta)
-        additions = getattr(patch, "additions", 0) or 0
-        deletions = getattr(patch, "deletions", 0) or 0
+        add = 0
+        delete = 0
+        try:
+            for h in getattr(patch, "hunks", []) or []:
+                for ln in getattr(h, "lines", []) or []:
+                    origin = getattr(ln, "origin", None)
+                    if origin == "+":
+                        add += 1
+                    elif origin == "-":
+                        delete += 1
+        except Exception:
+            # Fallback to any attributes if available
+            add = int(getattr(patch, "additions", 0) or 0)
+            delete = int(getattr(patch, "deletions", 0) or 0)
         stats.append(
             DiffFileStat(
                 status=cf.status,
                 path=cf.path,
-                additions=int(additions),
-                deletions=int(deletions),
+                additions=int(add),
+                deletions=int(delete),
                 rename_from=cf.rename_from,
                 rename_to=cf.rename_to,
             )

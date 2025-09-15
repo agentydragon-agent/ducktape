@@ -24,9 +24,7 @@ async def test_git_diff_patch_first_page(repo_git_ro) -> None:
         res = await m.call_tool(
             build_mcp_function(GIT_RO_SERVER_NAME, "git_diff"),
             {
-                "payload": DiffInput(
-                    staged=True, unified=0, slice=TextSlice(offset_chars=0, max_chars=2000)
-                ).model_dump()
+                "payload": DiffInput(staged=True, unified=0, slice=TextSlice(offset_chars=0, max_chars=2000)),
             },
         )
         payload = res.structuredContent
@@ -48,9 +46,7 @@ async def test_git_diff_patch_second_page(repo_git_ro) -> None:
         res1 = await m.call_tool(
             build_mcp_function(GIT_RO_SERVER_NAME, "git_diff"),
             {
-                "payload": DiffInput(
-                    staged=True, unified=0, slice=TextSlice(offset_chars=0, max_chars=2000)
-                ).model_dump()
+                "payload": DiffInput(staged=True, unified=0, slice=TextSlice(offset_chars=0, max_chars=2000)),
             },
         )
         payload1 = res1.structuredContent
@@ -63,9 +59,7 @@ async def test_git_diff_patch_second_page(repo_git_ro) -> None:
         res2 = await m.call_tool(
             build_mcp_function(GIT_RO_SERVER_NAME, "git_diff"),
             {
-                "payload": DiffInput(
-                    staged=True, unified=0, slice=TextSlice(offset_chars=next_offset, max_chars=2000)
-                ).model_dump()
+                "payload": DiffInput(staged=True, unified=0, slice=TextSlice(offset_chars=next_offset, max_chars=2000)),
             },
         )
         payload2 = res2.structuredContent

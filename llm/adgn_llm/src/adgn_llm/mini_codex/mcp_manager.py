@@ -26,10 +26,24 @@ MCP_NAMESPACE_PREFIX = "mcp__"
 
 
 def build_mcp_function(server: str, tool: str) -> str:
+    """Compose the canonical namespaced MCP tool name.
+
+    Single source of truth for composing names like "mcp__{server}__{tool}".
+    Do not hand-roll f-strings elsewhere; always use this helper.
+    Mostly an implementation detail of McpManager; occasionally useful in tests
+    or when composing prompts for LLMs.
+    """
     return f"{MCP_NAMESPACE_PREFIX}{server}__{tool}"
 
 
 def parse_mcp_function(namespaced: str) -> tuple[str, str]:
+    """Parse a canonical namespaced MCP tool name into (server, tool).
+
+    Single source of truth for parsing names like "mcp__{server}__{tool}".
+    Never parse with ad-hoc string ops elsewhere; always call this helper.
+    Mostly an implementation detail of McpManager; occasionally useful in tests
+    or when composing prompts for LLMs.
+    """
     if not namespaced.startswith(MCP_NAMESPACE_PREFIX):
         raise ValueError(f"Not an MCP tool name: {namespaced}")
     remainder = namespaced[len(MCP_NAMESPACE_PREFIX) :]
@@ -56,10 +70,17 @@ class McpManager:
 
         self._realized: Dict[str, ServerSlot] = {}
         self._stack = AsyncExitStack()
+        self._entered = False
         self._lock = asyncio.Lock()
+
+    async def _ensure_stack_entered(self) -> None:
+        if not self._entered:
+            await self._stack.__aenter__()
+            self._entered = True
 
     async def ensure_open(self, name: str) -> ServerSlot:
         async with self._lock:
+            await self._ensure_stack_entered()
             slot = self._realized.get(name)
             if slot is not None:
                 return slot
@@ -75,7 +96,9 @@ class McpManager:
             return slot
 
     async def __aenter__(self) -> McpManager:  # type: ignore[name-defined]
-        await self._stack.__aenter__()
+        if not self._entered:
+            await self._stack.__aenter__()
+            self._entered = True
         # Eagerly open all configured specs under the manager's task so all
         # subordinate contexts (task-groups, sessions) are entered in this same
         # task and will be cleanly exited in __aexit__ without cancel-scope races.
@@ -122,7 +145,9 @@ class McpManager:
                     pass
 
         # Finally, exit the AsyncExitStack to run remaining exit callbacks.
-        await self._stack.__aexit__(exc_type, exc, tb)
+        if self._entered:
+            await self._stack.__aexit__(exc_type, exc, tb)
+            self._entered = False
 
     async def get_session(self, name: str) -> ClientSession:
         return (await self.ensure_open(name)).session

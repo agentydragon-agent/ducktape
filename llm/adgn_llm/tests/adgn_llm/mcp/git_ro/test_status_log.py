@@ -45,7 +45,7 @@ async def test_git_log_oneline_basic(repo_git_ro) -> None:
                     max_count=5,
                     oneline=True,
                     slice=TextSlice(offset_chars=0, max_chars=1000),
-                ).model_dump()
+                ),
             },
         )
         payload = res.structuredContent

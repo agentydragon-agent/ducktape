@@ -1,5 +1,4 @@
 import pytest
-import json
 from git import Repo
 from pathlib import Path
 
@@ -38,19 +37,18 @@ async def test_git_ro_stat_counts(tmp_path: Path) -> None:
         payload = DiffInput(
             format=DiffFormat.STAT, staged=True, find_renames=True, list_slice=ListSlice(offset=0, limit=100)
         )
+        # Pass the Pydantic model instance directly so FastMCP can validate types natively
         res = await sess.call_tool(name="git_diff", arguments={"payload": payload})
 
-    # Extract structured content and normalize to dict
-    out = getattr(res, "structuredContent", None)
-    if isinstance(out, str):
-        try:
-            out = json.loads(out)
-        except Exception:
-            out = {}
-    if not isinstance(out, dict):
-        out = {}
-    result = out.get("result", out)
-    items = result.get("items") or []
+    # Extract structured content with concrete typed shape: {result: {type, result{items}}}
+    out = res.structuredContent
+    assert isinstance(out, dict)
+    assert "result" in out
+    inner = out["result"]
+    assert isinstance(inner, dict)
+    assert inner.get("type") == "stat"
+    items = inner["result"]["items"]
+    assert isinstance(items, list)
 
     assert items, "No stat items returned"
 
