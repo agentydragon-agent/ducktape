@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 
-from typing import Any, Iterable
+from typing import Any, Iterable, Callable
 
 from adgn_llm.mini_codex.loop_control import (
     LoopDecision,
@@ -9,6 +9,7 @@ from adgn_llm.mini_codex.loop_control import (
     NoLoopDecision,
     Auto,
     Abort,
+    RequireAny,
     SyntheticAction,
 )
 from adgn_llm.mini_codex.handler import (
@@ -29,6 +30,23 @@ class AutoHandler(BaseHandler):
 
     def on_before_sample(self):
         return Continue(Auto())
+
+
+class GateUntil(BaseHandler):
+    """Loop controller: require tool call until condition is met, then abort.
+
+    Pass an is_done callable that returns True when the external state indicates
+    completion (e.g., submit_state.result is set). While not done, the handler
+    enforces RequireAny so the agent keeps making tool calls.
+    """
+
+    def __init__(self, is_done: Callable[[], bool]) -> None:
+        self._is_done = is_done
+
+    def on_before_sample(self):  # type: ignore[override]
+        if self._is_done():
+            return Abort()
+        return Continue(RequireAny())
 
 
 class AggregatingController:

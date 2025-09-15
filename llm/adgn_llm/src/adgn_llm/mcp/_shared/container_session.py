@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-from adgn_llm.properties.docker_env import (
-    SLEEP_FOREVER_CMD,
-)  # local import to avoid cycles
+from adgn_llm.mcp._shared.constants import SLEEP_FOREVER_CMD
 
 
 import shlex

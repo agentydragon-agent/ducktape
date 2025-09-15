@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import gzip
+import json
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -80,3 +81,25 @@ def maybe_extract_payload(obj: dict[str, Any]) -> dict[str, Any] | None:
     """Return embedded provider payload dict when present (Crush wire logs)."""
     p = obj.get("payload")
     return p if isinstance(p, dict) else None
+
+
+# ---------------------------------------------------------------------------
+# Shared helpers for dataset extraction scripts
+# ---------------------------------------------------------------------------
+
+
+def write_jsonl_batches(results: list[list[dict]], output_path: Path, *, event: str) -> None:
+    """Write a 2D list of JSON-serializable dicts to a JSONL file and emit a summary.
+
+    - results: list of batches (each batch is a list of dict records)
+    - output_path: destination file path
+    - event: event name to include in the summary line printed to stdout
+    """
+    count = 0
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("w", encoding="utf-8") as out:
+        for batch in results:
+            for dp in batch:
+                out.write(json.dumps(dp, ensure_ascii=False) + "\n")
+                count += 1
+    print(json.dumps({"event": event, "count": count, "path": str(output_path)}))

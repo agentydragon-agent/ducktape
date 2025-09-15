@@ -9,7 +9,6 @@ import docker
 
 from adgn_llm.mcp.inproc_transport import make_inproc_slot_spec
 from adgn_llm.mcp.types import ServerSlotSpec
-from adgn_llm.mcp.docker_exec.server import make_container_exec_mcp
 from adgn_llm.properties.prop_utils import props_definitions_root
 
 PROPERTIES_DOCKER_IMAGE = "adgn-llm/properties-critic:latest"
@@ -17,7 +16,6 @@ SERVER_NAME = "docker"
 WORKING_DIR: Path = Path("/workspace")
 PROPS_DIR = Path("/props")
 # Shared startup command for long-lived containers
-SLEEP_FOREVER_CMD: list[str] = ["/bin/sh", "-lc", "sleep infinity"]
 
 
 @dataclass(slots=True)
@@ -107,6 +105,8 @@ def properties_docker_spec(
         workspace_mode="ro",
         extra_volumes=extra_volumes,
     )
+
+    from adgn_llm.mcp.docker_exec.server import make_container_exec_mcp
 
     server = make_container_exec_mcp(
         image=PROPERTIES_DOCKER_IMAGE,

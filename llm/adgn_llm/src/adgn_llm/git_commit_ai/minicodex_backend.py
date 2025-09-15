@@ -2,12 +2,13 @@ from __future__ import annotations
 
 from mcp.server.fastmcp import FastMCP
 
-
 from dataclasses import dataclass
 from pathlib import Path
 from git import Repo
 import json
 
+from adgn_llm.mini_codex.event_renderer import DisplayEventsHandler
+import sys
 from pydantic import BaseModel, Field
 from openai import AsyncOpenAI
 from openai.types.responses import ResponseFunctionToolCall
@@ -30,14 +31,82 @@ from adgn_llm.mcp.git_ro.server import (
     DiffInput,
     DiffFormat,
     ListSlice,
+    ShowInput,
 )
+
+
+def _default_bootstrap(
+    server: str, *, staged_limit: int = 2000, patch_slice_chars: int = 50000
+) -> list[ResponseFunctionToolCall]:
+    """Build the default list of bootstrap tool calls for a commit flow.
+
+    Returns a list of ResponseFunctionToolCall objects representing the initial
+    set of MCP function calls an agent should see when composing a commit
+    message. Parameters control pagination sizes used for heavy payloads.
+    """
+    return [
+        ResponseFunctionToolCall(
+            type="function_call",
+            name=build_mcp_function(server, "git_status"),
+            call_id="bootstrap:status",
+            arguments=json.dumps({}),
+        ),
+        ResponseFunctionToolCall(
+            type="function_call",
+            name=build_mcp_function(server, "git_diff"),
+            call_id="bootstrap:diff-name-status",
+            arguments=json.dumps(
+                {
+                    "payload": DiffInput(
+                        format=DiffFormat.NAME_STATUS,
+                        staged=True,
+                        find_renames=True,
+                        list_slice=ListSlice(offset=0, limit=staged_limit),
+                    ).model_dump()
+                }
+            ),
+        ),
+        ResponseFunctionToolCall(
+            type="function_call",
+            name=build_mcp_function(server, "git_diff"),
+            call_id="bootstrap:diff-stat",
+            arguments=json.dumps(
+                {
+                    "payload": DiffInput(
+                        format=DiffFormat.STAT,
+                        staged=True,
+                        find_renames=True,
+                        list_slice=ListSlice(offset=0, limit=staged_limit),
+                    ).model_dump()
+                }
+            ),
+        ),
+        ResponseFunctionToolCall(
+            type="function_call",
+            name=build_mcp_function(server, "git_diff"),
+            call_id="bootstrap:diff-patch",
+            arguments=json.dumps(
+                {
+                    "payload": {
+                        "format": "patch",
+                        "staged": True,
+                        "unified": 0,
+                        "slice": {"offset_chars": 0, "max_chars": patch_slice_chars},
+                    }
+                }
+            ),
+        ),
+    ]
 
 
 class CommitMessage(BaseModel):
     """Minimal commit message payload."""
 
     subject: str = Field(..., description="<=72 chars, imperative mood")
-    body: str | None = Field(default=None, description="Optional body")
+    body: str | None = Field(
+        default=None,
+        description="Optional body. If given, will be auto-appended to header to form full commit message.",
+    )
 
 
 @dataclass
@@ -60,68 +129,53 @@ def make_submit_server(state: SubmitState):
 
 
 class CommitController(BaseHandler):
-    """Emit bootstrap git calls in parallel on first turn; then require tools until submit."""
+    """Emit bootstrap git calls in parallel on first turn; then require tools until submit.
 
-    def __init__(self, state: SubmitState, server_name: str) -> None:
+    The controller can be configured with `amend=True` to include additional
+    bootstrap calls that inspect the commit being amended (HEAD) and the original
+    commit diff (HEAD^..HEAD) so the agent has explicit amendment context.
+    """
+
+    def __init__(self, state: SubmitState, server_name: str, amend: bool = False) -> None:
         self._state = state
         self._server = server_name
         self._step = 0
         # Bootstrap with read-only Git MCP tools (structured payloads)
-        self._bootstrap = [
-            ResponseFunctionToolCall(
-                type="function_call",
-                name=build_mcp_function(self._server, "git_status"),
-                call_id="bootstrap:status",
-                arguments=json.dumps({}),
-            ),
-            # Structured name-status and stat via consolidated git_diff formats
-            ResponseFunctionToolCall(
-                type="function_call",
-                name=build_mcp_function(self._server, "git_diff"),
-                call_id="bootstrap:diff-name-status",
-                arguments=json.dumps(
-                    {
-                        "payload": DiffInput(
-                            format=DiffFormat.NAME_STATUS,
-                            staged=True,
-                            find_renames=True,
-                            list_slice=ListSlice(offset=0, limit=2000),
-                        ).model_dump()
-                    }
-                ),
-            ),
-            ResponseFunctionToolCall(
-                type="function_call",
-                name=build_mcp_function(self._server, "git_diff"),
-                call_id="bootstrap:diff-stat",
-                arguments=json.dumps(
-                    {
-                        "payload": DiffInput(
-                            format=DiffFormat.STAT,
-                            staged=True,
-                            find_renames=True,
-                            list_slice=ListSlice(offset=0, limit=2000),
-                        ).model_dump()
-                    }
-                ),
-            ),
-            # Textual patch view when needed
-            ResponseFunctionToolCall(
-                type="function_call",
-                name=build_mcp_function(self._server, "git_diff"),
-                call_id="bootstrap:diff-patch",
-                arguments=json.dumps(
-                    {
-                        "payload": {
-                            "format": "patch",
-                            "staged": True,
-                            "unified": 0,
-                            "slice": {"offset_chars": 0, "max_chars": 50000},
+        self._bootstrap = _default_bootstrap(self._server)
+
+        # If amending, append dedicated bootstrap calls for the amended commit and its original diff
+        if amend:
+            extra_boots = [
+                ResponseFunctionToolCall(
+                    type="function_call",
+                    name=build_mcp_function(self._server, "git_show"),
+                    call_id="bootstrap:show-head",
+                    arguments=json.dumps(
+                        {
+                            "payload": ShowInput(
+                                object="HEAD", format=DiffFormat.PATCH, slice=ListSlice(offset=0, max_chars=50000)
+                            ).model_dump()
                         }
-                    }
+                    ),
                 ),
-            ),
-        ]
+                ResponseFunctionToolCall(
+                    type="function_call",
+                    name=build_mcp_function(self._server, "git_diff"),
+                    call_id="bootstrap:orig-diff",
+                    arguments=json.dumps(
+                        {
+                            "payload": DiffInput(
+                                format=DiffFormat.PATCH,
+                                rev_a="HEAD^",
+                                rev_b="HEAD",
+                                unified=0,
+                                slice=ListSlice(offset=0, max_chars=50000),
+                            ).model_dump()
+                        }
+                    ),
+                ),
+            ]
+            self._bootstrap.extend(extra_boots)
 
     def on_before_sample(self):  # type: ignore[override]
         if self._state.result is not None:
@@ -132,7 +186,7 @@ class CommitController(BaseHandler):
         return Continue(RequireAny())
 
 
-async def generate_commit_message_minicodex(model: str = "gpt-5") -> str:
+async def generate_commit_message_minicodex(model: str, *, debug: bool = False, amend: bool = False) -> str:
     """Run MiniCodex with docker_exec + submit_commit_message MCP servers and return the commit message text."""
     # Wire an in-proc read-only Git MCP server bound to the current repo
     worktree_dir = Repo(Path.cwd(), search_parent_directories=True).working_tree_dir
@@ -146,16 +200,16 @@ async def generate_commit_message_minicodex(model: str = "gpt-5") -> str:
         "submit_commit_message": make_inproc_slot_spec(submit_server),
     }
 
-    prompt = (
-        "You are an expert at writing high-quality git commit messages.\n\n"
-        "Prefer structured tools to build your summary:\n"
-        "- git_changed_files (with rename detection)\n"
-        "- git_diffstat (per-file additions/deletions)\n"
-        "Use git_diff only when you need patch text or context.\n\n"
-        "Then produce a concise, imperative subject (<=72 chars) and an optional body with wrapped lines.\n"
-        "Mention notable renames and summarize totals succinctly.\n"
-        "Finally, call submit_commit_message.submit_commit_message with subject and body."
-    )
+    def _build_commit_prompt(is_amend: bool) -> str:
+        base = "You are an expert at writing high-quality git commit messages.\n\n"
+        common_tail = "Produce a concise, imperative subject (<=80 chars) and optional body with wrapped lines and call submit_commit_message."
+        if is_amend:
+            middle = "You are AMENDING the last commit. Inspect the original commit (HEAD) and its diff against its parent, then update the commit message to reflect the staged changes being applied.\n"
+        else:
+            middle = "You are COMMITTING the staged diff. Inspect the staged changes and then "
+        return base + middle + common_tail
+
+    prompt = _build_commit_prompt(amend)
 
     # Initialize global logging (console at WARNING; file at ADGN_LOG_DIR if set)
     configure_logging()
@@ -163,15 +217,17 @@ async def generate_commit_message_minicodex(model: str = "gpt-5") -> str:
     for name in ("mini_codex", "MiniCodex", "adgn_llm.mini_codex", "mcp", "openai"):
         logging.getLogger(name).setLevel(logging.WARNING)
 
+    handlers = [CommitController(submit_state, GIT_RO_SERVER_NAME, amend=amend)]
+    if debug:
+        handlers.insert(0, DisplayEventsHandler(write=lambda s: print(s, file=sys.stderr)))
+
     async with McpManager(specs) as mcp:
         agent = await MiniCodex.create(
             model=model,
             mcp=mcp,
             system="You are a code agent. Be concise.",
             client=AsyncOpenAI(),
-            handlers=[
-                CommitController(submit_state, GIT_RO_SERVER_NAME),
-            ],
+            handlers=handlers,
             parallel_tool_calls=True,
         )
         await agent.run(prompt)

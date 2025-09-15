@@ -28,6 +28,7 @@ from .constants import BAD_MARKER
 from .extract_common import (
     sys_has_tools_header,
     find_last_user_text_from_msg as find_last_user_text,
+    write_jsonl_batches,
 )
 
 
@@ -96,17 +97,7 @@ async def main():
             return await process_file(p)
 
     results: list[list[dict]] = await asyncio.gather(*[wrapped(p) for p in files])
-    count = 0
-    with OUTPUT_PATH.open("w", encoding="utf-8") as out:
-        for batch in results:
-            for dp in batch:
-                out.write(json.dumps(dp, ensure_ascii=False) + "\n")
-                count += 1
-    print(
-        json.dumps(
-            {"event": "dataset_ccr_written", "count": count, "path": str(OUTPUT_PATH)},
-        ),
-    )
+    write_jsonl_batches(results, OUTPUT_PATH, event="dataset_ccr_written")
 
 
 # Console entrypoint

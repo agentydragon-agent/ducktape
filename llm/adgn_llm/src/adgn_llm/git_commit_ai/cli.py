@@ -683,7 +683,9 @@ async def async_main():
             )
         elif provider == "minicodex":
             # Wrap as a task to reuse the runner logic below
-            ai_task = asyncio.create_task(generate_commit_message_minicodex(model=model_name or "gpt-5"))
+            ai_task = asyncio.create_task(
+                generate_commit_message_minicodex(model=model_name or "gpt-5", debug=args.debug)
+            )
             run_precommit = "--no-verify" not in passthru
             msg = await ParallelTaskRunner.create_and_run(
                 repo,
@@ -817,10 +819,6 @@ async def async_main():
         *commit_passthru,
     )
     sys.exit(await commit_proc.wait())
-
-
-# NOTE: Backends have been moved to adgn_llm.git_commit_ai.backends.*
-# This module now imports ClaudeAI and CodexAI from those packages.
 
 
 def main():

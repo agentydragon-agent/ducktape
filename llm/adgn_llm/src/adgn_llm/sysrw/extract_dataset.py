@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 import asyncio
-import json
 from pathlib import Path
 from .extract_dataset_ccr import process_file as process_ccr_file
+from .extract_common import write_jsonl_batches
 
 
 TRACE_DIR = Path.home() / ".claude-code-router" / "logs"
@@ -26,15 +26,7 @@ async def main():
             return await process_ccr_file(p)
 
     results: list[list[dict]] = await asyncio.gather(*[wrapped(p) for p in files])
-    count = 0
-    with OUTPUT_PATH.open("w", encoding="utf-8") as out:
-        for batch in results:
-            for dp in batch:
-                out.write(json.dumps(dp, ensure_ascii=False) + "\n")
-                count += 1
-    print(
-        json.dumps({"event": "dataset_written", "count": count, "path": str(OUTPUT_PATH)}),
-    )
+    write_jsonl_batches(results, OUTPUT_PATH, event="dataset_written")
 
 
 if __name__ == "__main__":

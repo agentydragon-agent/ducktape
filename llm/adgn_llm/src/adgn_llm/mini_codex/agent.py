@@ -250,8 +250,7 @@ class MiniCodex:
 
             async def _invoke(function_call: ResponseFunctionToolCall, args: dict[str, Any]) -> tuple[str, str | None]:
                 # Namespaced MCP tool
-                server, tool_name = self._mcp.resolve_function(function_call.name)
-                out_str = _responses_output_from_calltool(await self._mcp.call_tool(server, tool_name, args))
+                out_str = _responses_output_from_calltool(await self._mcp.call_tool(function_call.name, args))
                 parsed_error: str | None = None
                 try:
                     data = json.loads(out_str)
@@ -278,8 +277,7 @@ class MiniCodex:
                     continue
 
                 # Namespaced MCP tool
-                server, tool_name = self._mcp.resolve_function(function_call.name)
-                out_str = _responses_output_from_calltool(await self._mcp.call_tool(server, tool_name, args))
+                out_str = _responses_output_from_calltool(await self._mcp.call_tool(function_call.name, args))
                 self._emit_tool_result(function_call, out_str)
 
         text = "\n".join(assistant_text_chunks)

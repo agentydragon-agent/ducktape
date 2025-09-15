@@ -23,8 +23,8 @@ async def test_git_status_basic(repo_git_ro) -> None:
     async with McpManager({GIT_RO_SERVER_NAME: spec}) as m:
         sess = await m.get_session(GIT_RO_SERVER_NAME)
         name = build_mcp_function(GIT_RO_SERVER_NAME, "git_status")
-        _server, tool = m.resolve_function(name)
-        res = await sess.call_tool(name=tool, arguments={})
+        # call via namespaced call_tool
+        res = await m.call_tool(name, arguments={})
         payload = res.structuredContent
         if isinstance(payload, str):
             payload = json.loads(payload)
@@ -38,9 +38,9 @@ async def test_git_log_oneline_basic(repo_git_ro) -> None:
     async with McpManager({GIT_RO_SERVER_NAME: spec}) as m:
         sess = await m.get_session(GIT_RO_SERVER_NAME)
         name = build_mcp_function(GIT_RO_SERVER_NAME, "git_log")
-        _server, tool = m.resolve_function(name)
-        res = await sess.call_tool(
-            name=tool,
+        # call via namespaced call_tool
+        res = await m.call_tool(
+            name,
             arguments={
                 "payload": LogInput(
                     rev="HEAD",

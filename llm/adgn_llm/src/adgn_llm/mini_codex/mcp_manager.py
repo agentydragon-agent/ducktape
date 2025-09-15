@@ -1,5 +1,4 @@
-"""
-MCP session manager — per-agent, FastMCP-first, DRY wiring.
+"""MCP session manager — per-agent, FastMCP-first, DRY wiring.
 
 - Per-agent isolation: each agent builds its own McpManager (its own sessions)
 - One lifetime boundary: AsyncExitStack on the manager
@@ -137,7 +136,7 @@ class McpManager:
                 out.append(
                     {
                         "type": "function",
-                        "name": f"mcp__{name}__{t.name}",
+                        "name": build_mcp_function(name, t.name),
                         "description": t.description or "",
                         "parameters": t.inputSchema,
                     },
@@ -172,8 +171,13 @@ class McpManager:
         # ClientSession.read_resource expects AnyUrl; inputs come as strings
         return await sess.read_resource(cast(AnyUrl, uri))
 
-    async def call_tool(self, server: str, name: str, arguments: dict[str, Any]) -> Any:
-        """Delegate tool call to the underlying ClientSession for the given server."""
+    async def call_tool(self, namespaced: str, arguments: dict[str, Any]) -> Any:
+        """Call a namespaced MCP tool identified as 'mcp__{server}__{tool}'.
+
+        This method accepts the single namespaced identifier so callers do not need
+        to split server/tool. Parsing is an internal detail and centralized here.
+        """
+        server, name = parse_mcp_function(namespaced)
         sess = await self.get_session(server)
         return await sess.call_tool(name=name, arguments=arguments)
 
@@ -252,51 +256,26 @@ class McpManager:
             text: str | None
             data: str | None
 
-        remaining: int | None = req.max_bytes if isinstance(req.max_bytes, int) else None
-        cursor = 0
         parts_out: list[McpManager.ResourcePart] = []
-        for any_p in contents:
-            p = cast(_Part, any_p)
-            if isinstance(p.text, str):
-                raw = p.text.encode("utf-8")
-                total_len = len(raw)
-                if remaining is None or remaining > 0:
-                    start_in_part = max(0, req.start_offset - cursor)
-                    take_cap = remaining if isinstance(remaining, int) else total_len
-                    take = max(0, min(take_cap, total_len - start_in_part))
-                    if take > 0:
-                        chunk = raw[start_in_part : start_in_part + take]
-                        parts_out.append(
-                            self.ResourcePartText(
-                                mime=p.mimeType,
-                                text=chunk.decode("utf-8", errors="replace"),
-                                total_bytes=total_len,
-                                bytes_returned=take,
-                            )
-                        )
-                        if remaining is not None:
-                            remaining -= take
-            elif isinstance(p.data, str):
-                base = p.data
-                total_len = len(base)
-                if remaining is None or remaining > 0:
-                    start_in_part = max(0, req.start_offset - cursor)
-                    take_cap = remaining if isinstance(remaining, int) else total_len
-                    take = max(0, min(take_cap, total_len - start_in_part))
-                    if take > 0:
-                        parts_out.append(
-                            self.ResourcePartBase64(
-                                mime=p.mimeType,
-                                base64=base[start_in_part : start_in_part + take],
-                                total_bytes=total_len,
-                                bytes_returned=take,
-                            )
-                        )
-                        if remaining is not None:
-                            remaining -= take
-            cursor += len(p.text.encode("utf-8")) if isinstance(p.text, str) else len(p.data or "")
-            if remaining is not None and remaining <= 0:
-                break
+        for part in self._iter_window_parts(contents, req.start_offset, req.max_bytes):
+            if part["kind"] == "text":
+                parts_out.append(
+                    self.ResourcePartText(
+                        mime=part["mime"],
+                        text=part["text"],
+                        total_bytes=part["total_bytes"],
+                        bytes_returned=part["bytes_returned"],
+                    )
+                )
+            else:
+                parts_out.append(
+                    self.ResourcePartBase64(
+                        mime=part["mime"],
+                        base64=part["base64"],
+                        total_bytes=part["total_bytes"],
+                        bytes_returned=part["bytes_returned"],
+                    )
+                )
         return self.ResourcesReadResponse(
             window=self.Window(start_offset=req.start_offset, max_bytes=req.max_bytes),
             parts=parts_out,
@@ -308,17 +287,16 @@ class McpManager:
         return json.dumps(resp.model_dump(exclude_none=True), ensure_ascii=False)
 
     @staticmethod
-    def _build_resource_window(contents: list[Any], start_offset: int, max_bytes: int | None) -> dict[str, Any]:
-        class _ResourcePart(Protocol):
+    def _iter_window_parts(contents: list[Any], start_offset: int, max_bytes: int | None):
+        class _Part(Protocol):
             mimeType: str | None
             text: str | None
             data: str | None
 
         remaining: int | None = max_bytes if isinstance(max_bytes, int) else None
         cursor = 0
-        parts_out: list[dict[str, Any]] = []
-        for part_any in contents or []:
-            p = cast(_ResourcePart, part_any)
+        for any_p in contents or []:
+            p = cast(_Part, any_p)
             if isinstance(p.text, str):
                 raw = p.text.encode("utf-8")
                 total_len = len(raw)
@@ -328,14 +306,13 @@ class McpManager:
                     take = max(0, min(take_cap, total_len - start_in_part))
                     if take > 0:
                         chunk = raw[start_in_part : start_in_part + take]
-                        parts_out.append(
-                            {
-                                "mime": p.mimeType,
-                                "text": chunk.decode("utf-8", errors="replace"),
-                                "total_bytes": total_len,
-                                "bytes_returned": take,
-                            }
-                        )
+                        yield {
+                            "kind": "text",
+                            "mime": p.mimeType,
+                            "text": chunk.decode("utf-8", errors="replace"),
+                            "total_bytes": total_len,
+                            "bytes_returned": take,
+                        }
                         if remaining is not None:
                             remaining -= take
             elif isinstance(p.data, str):
@@ -346,19 +323,38 @@ class McpManager:
                     take_cap = remaining if isinstance(remaining, int) else total_len
                     take = max(0, min(take_cap, total_len - start_in_part))
                     if take > 0:
-                        parts_out.append(
-                            {
-                                "mime": p.mimeType,
-                                "base64": base[start_in_part : start_in_part + take],
-                                "total_bytes": total_len,
-                                "bytes_returned": take,
-                            }
-                        )
+                        yield {
+                            "kind": "base64",
+                            "mime": p.mimeType,
+                            "base64": base[start_in_part : start_in_part + take],
+                            "total_bytes": total_len,
+                            "bytes_returned": take,
+                        }
                         if remaining is not None:
                             remaining -= take
             cursor += len(p.text.encode("utf-8")) if isinstance(p.text, str) else len(p.data or "")
             if remaining is not None and remaining <= 0:
                 break
+
+    @staticmethod
+    def _build_resource_window(contents: list[Any], start_offset: int, max_bytes: int | None) -> dict[str, Any]:
+        parts_out: list[dict[str, Any]] = []
+        for part in McpManager._iter_window_parts(contents, start_offset, max_bytes):
+            parts_out.append(
+                {
+                    k: v
+                    for k, v in part.items()
+                    if k
+                    in {
+                        "kind",
+                        "mime",
+                        "text",
+                        "base64",
+                        "total_bytes",
+                        "bytes_returned",
+                    }
+                }
+            )
         return {
             "window": {"start_offset": start_offset, "max_bytes": max_bytes},
             "parts": parts_out,
@@ -420,7 +416,16 @@ class McpManager:
 
         Accepted shapes:
         - Dict with explicit "transport": "stdio" | "sse" | "http" parsed via the corresponding Pydantic params
-        The returned spec's opener yields an UNINITIALIZED ClientSession; initialize is performed by ServerSlotSpec.open.
+
+        IMPORTANT: This function implements the ONE supported OpenFn API: each
+        returned open_uninitialized must accept an AsyncExitStack and register all
+        subordinate contexts (streams, task-groups, ClientSession) on that stack by
+        calling stack.enter_async_context(...).
+
+        Why: transports and sessions create internal anyio task-groups during
+        __aenter__ which must be *entered* and *exited* in the same task/cancel
+        scope. By centralizing entry/exit on the manager's AsyncExitStack we avoid
+        cross-task cancel-scope mismatches and ensure deterministic teardown.
         """
         if not isinstance(spec, dict):
             raise TypeError(f"Unsupported MCP server spec type for {name!r}: {type(spec)!r}")
@@ -502,8 +507,10 @@ class McpManager:
         Each entry yields an UNINITIALIZED ClientSession when opened; initialization
         is performed exactly once in ServerSlotSpec.open().
         """
-        return {name: McpManager.slot_from_spec(name, spec) for name, spec in (specs or {}).items()}
+        return {name: McpManager.slot_from_spec(name, spec) for name, spec in specs.items()}
 
-    def resolve_function(self, namespaced: str) -> tuple[str, str]:
-        # Back-compat: instance method delegating to parse helper
-        return parse_mcp_function(namespaced)
+    # NOTE: parse_mcp_function is provided as a top-level helper for parsing namespaced
+    # MCP tool identifiers (mcp__{server}__{tool}). The instance-level resolve_function
+    # method was removed: call_tool() now accepts the single namespaced identifier and
+    # parses it internally. Keep parse_mcp_function exported for callers that need to
+    # parse names directly (tests and event renderers).

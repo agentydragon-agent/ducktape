@@ -7,8 +7,31 @@ from mcp.client.session import ClientSession
 from mcp.types import InitializeResult
 
 
-# Canonical OpenFn protocol: factories MUST return an async context manager
-# that yields an uninitialized ClientSession when entered by the caller.
+# Canonical OpenFn protocol — single lifetime boundary
+#
+# Design decision: every transport factory (OpenFn) MUST accept the manager's
+# AsyncExitStack and return an async context manager yielding an
+# UNINITIALIZED mcp.client.session.ClientSession when entered via that stack.
+#
+# Rationale:
+# - mcp's ServerSession / ClientSession and transport helpers (stdio_client, sse_client)
+#   create their own anyio task-groups and cancel scopes during __aenter__.
+# - anyio enforces that a cancel scope must be *entered* and *exited* in the
+#   same task. If different tasks perform enter/exit, a RuntimeError is raised
+#   ("Attempted to exit cancel scope in a different task than it was entered in").
+# - To make resource lifetime deterministic and avoid subtle cross-task races,
+#   the McpManager is the single lifetime owner. Openers therefore must register
+#   their subordinate contexts (streams, task-groups, sessions) by calling
+#   stack.enter_async_context(...) so enter/exit happen under the manager's
+#   AsyncExitStack and within the same cancel scope/task.
+#
+# This file's ServerSlotSpec.open() will call stack.enter_async_context(open_uninitialized(stack))
+# and then call ClientSession.initialize() — this is the ONE supported API.
+# See related modules:
+# - adgn_llm/mcp/inproc_transport.py (in-proc FastMCP wiring)
+# - adgn_llm/mini_codex/mcp_manager.py (slot_from_spec implementations)
+# - mcp/shared/session.py (BaseSession: creates its own task group on enter)
+# - mcp/server/lowlevel/server.py (Server.run uses AsyncExitStack + task group)
 OpenFn = Callable[[AsyncExitStack], AsyncContextManager[ClientSession]]
 
 

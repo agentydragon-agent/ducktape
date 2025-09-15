@@ -89,7 +89,9 @@ class McpManagerWithApprovals:
         return list(self._inner.server_names)
 
     def resolve_function(self, namespaced: str) -> tuple[str, str]:
-        return self._inner.resolve_function(namespaced)
+        from .mcp_manager import parse_mcp_function
+
+        return parse_mcp_function(namespaced)
 
     # ---- Gated call_tool ----
     async def call_tool(self, server: str, name: str, arguments: dict[str, Any]) -> Any:
