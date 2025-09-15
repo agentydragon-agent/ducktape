@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 from openai.types.responses import Response as ResponsesResponse
 from openai.types.responses import ResponseFunctionToolCall, ResponseOutputMessage, ResponseOutputText
+from openai.types.responses.response_usage import ResponseUsage, InputTokensDetails, OutputTokensDetails
 
 from adgn_llm.mini_codex.agent import MiniCodex
 from adgn_llm.mini_codex.mcp_manager import McpManager
@@ -46,6 +47,13 @@ class _MockResponsesClient:
                     tools=kwargs.get("tools", []),
                     tool_choice=kwargs.get("tool_choice", "auto"),
                     parallel_tool_calls=False,
+                    usage=ResponseUsage(
+                        input_tokens=1,
+                        input_tokens_details=InputTokensDetails(cached_tokens=0),
+                        output_tokens=0,
+                        output_tokens_details=OutputTokensDetails(reasoning_tokens=0),
+                        total_tokens=1,
+                    ),
                 )
             # 2nd real LLM call: return final assistant text
             output = [
@@ -66,6 +74,13 @@ class _MockResponsesClient:
                 tools=kwargs.get("tools", []),
                 tool_choice=kwargs.get("tool_choice", "auto"),
                 parallel_tool_calls=False,
+                usage=ResponseUsage(
+                    input_tokens=1,
+                    input_tokens_details=InputTokensDetails(cached_tokens=0),
+                    output_tokens=5,
+                    output_tokens_details=OutputTokensDetails(reasoning_tokens=0),
+                    total_tokens=6,
+                ),
             )
 
     @property
@@ -100,7 +115,6 @@ async def test_lint_issue_bootstrap_small_files(tmp_path: Path):
             describe=False,
         )
     )
-    mcp = McpManager({"docker": spec})
     client = _MockResponsesClient()
 
     # Now create the controller with real wiring
@@ -112,12 +126,13 @@ async def test_lint_issue_bootstrap_small_files(tmp_path: Path):
     )
     ctrl = LinterController(state=LintSubmitState(), occ=occ, content_root=content_root, docker_wiring=wiring)
 
-    agent = await MiniCodex.create(
-        model="gpt-5", mcp=mcp, system="test", client=client, handlers=[ctrl, DisplayEventsHandler()]
-    )
+    async with McpManager({"docker": spec}) as mcp:
+        agent = await MiniCodex.create(
+            model="gpt-5", mcp=mcp, system="test", client=client, handlers=[ctrl, DisplayEventsHandler()]
+        )
 
-    # Act
-    res = await agent.run(user_text="bootstrap lint")
+        # Act
+        res = await agent.run(user_text="bootstrap lint")
 
     # Assert final text
     assert res.text.strip() == "FINAL"

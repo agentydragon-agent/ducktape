@@ -23,6 +23,7 @@ from adgn_llm.inop.engine.models import (
 )
 from adgn_llm.inop.io.jsonl_logger import JSONLLogger
 from openai.types.responses import Response
+from openai.types.responses.response_usage import ResponseUsage, InputTokensDetails, OutputTokensDetails
 from openai.types.responses.response_function_tool_call_item import (
     ResponseFunctionToolCallItem,
 )
@@ -65,6 +66,23 @@ def mk_response(
     tool_choice: str | dict | None = None,
     parallel_tool_calls: bool = False,
 ) -> Response:
+    # Simple deterministic usage accounting for tests
+    out_tokens = 0
+    for item in output:
+        if isinstance(item, ResponseOutputMessage):
+            # Approximate tokens as length of text (non-zero)
+            txt_parts = [p.text for p in item.content if isinstance(p, ResponseOutputText)]
+            out_tokens += sum(max(1, len(t)) for t in txt_parts)
+        else:
+            # Function tool call or other item — minimal token count
+            out_tokens += 1
+    usage = ResponseUsage(
+        input_tokens=1,
+        input_tokens_details=InputTokensDetails(cached_tokens=0),
+        output_tokens=out_tokens,
+        output_tokens_details=OutputTokensDetails(reasoning_tokens=0),
+        total_tokens=1 + out_tokens,
+    )
     return Response(
         id=id or f"resp-{int(time.time() * 1000)}",
         object="response",
@@ -74,6 +92,7 @@ def mk_response(
         tools=tools or [],
         tool_choice=tool_choice or "auto",
         parallel_tool_calls=parallel_tool_calls,
+        usage=usage,
     )
 
 

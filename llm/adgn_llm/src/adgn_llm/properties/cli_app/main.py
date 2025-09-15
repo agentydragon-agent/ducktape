@@ -62,8 +62,8 @@ from adgn_llm.properties.docker_env import (
     build_critic_volumes,
     PROPERTIES_DOCKER_IMAGE,
     WORKING_DIR as CRITIC_WORKDIR,
-    SLEEP_FOREVER_CMD,
 )
+from adgn_llm.mcp._shared.constants import SLEEP_FOREVER_CMD
 from adgn_llm.properties.specimens.registry import SpecimenRegistry
 from adgn_llm.properties.lint_issue import run_specimen_lint_issue_async
 from adgn_llm.properties.eval_harness import run_all_evals
