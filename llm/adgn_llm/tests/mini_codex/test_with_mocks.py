@@ -52,15 +52,7 @@ async def test_minicodex_with_sdk_mocks_executes_tool_and_returns_text() -> None
     async with McpManager({"echo": spec}) as mcp:
         # Minimal handler stack: use a RecordingHandler to capture function_call_output events
         from adgn_llm.mini_codex.aggregating_handler import AutoHandler
-        from adgn_llm.mini_codex.handler import BaseHandler, to_jsonl_record, FunctionCallOutput
-
-        class RecordingHandler(BaseHandler):
-            def __init__(self):
-                self.records: list[dict] = []
-
-            def on_function_call_output_event(self, evt: FunctionCallOutput) -> None:  # type: ignore[override]
-                # record JSONL-style dict for easy assertions
-                self.records.append(to_jsonl_record(evt))
+        from adgn_llm.mini_codex.loggers import RecordingHandler
 
         rec = RecordingHandler()
 

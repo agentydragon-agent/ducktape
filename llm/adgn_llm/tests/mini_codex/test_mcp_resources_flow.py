@@ -16,13 +16,8 @@ from openai.types.responses.response_usage import (
 )
 from adgn_llm.mini_codex.event_renderer import DisplayEventsHandler
 from adgn_llm.mini_codex.aggregating_handler import AutoHandler
+from adgn_llm.mini_codex.loggers import RecordingHandler
 
-from adgn_llm.mini_codex.handler import (
-    BaseHandler,
-    to_jsonl_record,
-    FunctionCallOutput,
-    ToolCall,
-)
 
 from adgn_llm.mcp.docker_exec.server import make_container_exec_mcp
 from adgn_llm.mcp.inproc_transport import make_inproc_slot_spec
@@ -94,17 +89,6 @@ class FakeOpenAIClient:
         self.responses = FakeResponses()
 
 
-class RecordingHandler(BaseHandler):
-    def __init__(self):
-        self.records: list[dict] = []
-
-    def on_tool_call_event(self, evt: ToolCall) -> None:  # type: ignore[override]
-        self.records.append(to_jsonl_record(evt))
-
-    def on_function_call_output_event(self, evt: FunctionCallOutput) -> None:  # type: ignore[override]
-        self.records.append(to_jsonl_record(evt))
-
-
 @pytest.mark.asyncio
 async def test_model_reads_container_info_with_stubbed_openai() -> None:
     # Build in-proc FastMCP server spec named 'docker'
@@ -112,8 +96,7 @@ async def test_model_reads_container_info_with_stubbed_openai() -> None:
 
     async with McpManager({"docker": spec}) as mcp:
         client = FakeOpenAIClient()
-        rec = RecordingHandler()
-
+        rec = RecordingHandler()  # from adgn_llm.mini_codex.loggers
         agent = await MiniCodex.create(
             model="gpt-4.1-mini",
             mcp=mcp,

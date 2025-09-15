@@ -341,6 +341,9 @@ async def optimize_prompts_mcp(
         # Write PE transcripts into the main optimization output directory
         run_dir = base_dir
         run_dir.mkdir(parents=True, exist_ok=True)
+        # TODO(mpokorny): GateUntil(max_iters) and current ProposePromptNTimes can be exceeded under
+        # parallel_tool_calls if multiple calls are in flight when the budget flips. Centralize budget
+        # accounting at the server boundary or serialize within 1 of the limit to enforce a hard cap.
         pe = await MiniCodex.create(
             model=model.model,
             mcp=mcp,

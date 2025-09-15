@@ -41,3 +41,21 @@ class TranscriptLoggerHandler(BaseHandler):
 
     def on_function_call_output_event(self, evt: FunctionCallOutput) -> None:  # type: ignore[override]
         self._write(to_jsonl_record(evt))
+
+
+class RecordingHandler(BaseHandler):
+    """In-memory event recorder for tests.
+
+    Collects selected events into `records` as JSON-serializable dicts using
+    to_jsonl_record(). Keep lightweight and deterministic for unit tests.
+    """
+
+    def __init__(self) -> None:
+        self.records: list[dict[str, Any]] = []
+
+    # Minimal subset used by tests; extend as needed
+    def on_tool_call_event(self, evt: ToolCall) -> None:  # type: ignore[override]
+        self.records.append(to_jsonl_record(evt))
+
+    def on_function_call_output_event(self, evt: FunctionCallOutput) -> None:  # type: ignore[override]
+        self.records.append(to_jsonl_record(evt))

@@ -9,8 +9,7 @@ from mcp.server.fastmcp import FastMCP  # type: ignore
 from openai import AsyncOpenAI
 from adgn_llm.mcp.inproc_transport import make_inproc_slot_spec
 from adgn_llm.mini_codex.agent import MiniCodex
-from adgn_llm.mini_codex.aggregating_handler import BaseHandler
-from adgn_llm.mini_codex.loop_control import Abort, Continue, RequireAny
+from adgn_llm.mini_codex.aggregating_handler import GateUntil
 from adgn_llm.mini_codex.mcp_manager import McpManager
 from adgn_llm.mini_codex.transcript_handler import TranscriptHandler
 from adgn_llm.properties.prop_utils import pkg_dir
@@ -115,10 +114,6 @@ async def cluster_unknowns_async(issues: list[UnknownIssue], *, model: str, out_
 
     specs = {"cluster_submit": make_inproc_slot_spec(mcp)}
 
-    class RequireSubmitHandler(BaseHandler):
-        def on_before_sample(self):  # type: ignore[override]
-            return Abort() if state.result is not None else Continue(RequireAny())
-
     async with McpManager(specs) as mcp_mgr:
         system = (
             "You cluster semantically equivalent issues. You MUST call cluster_submit.submit_result exactly once with: "
@@ -132,7 +127,7 @@ async def cluster_unknowns_async(issues: list[UnknownIssue], *, model: str, out_
             mcp=mcp_mgr,
             system=system,
             client=AsyncOpenAI(),
-            handlers=[TranscriptHandler(dest_dir=out_root), RequireSubmitHandler()],
+            handlers=[TranscriptHandler(dest_dir=out_root), GateUntil(lambda: state.result is not None)],
             parallel_tool_calls=True,
         )
         user = (

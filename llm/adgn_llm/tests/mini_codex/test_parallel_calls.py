@@ -3,7 +3,6 @@ import time
 from typing import Any
 
 import pytest
-from openai.types.responses import ResponseFunctionToolCall
 
 from adgn_llm.mini_codex.agent import MiniCodex
 from adgn_llm.mini_codex.loop_control import Abort, SyntheticAction
@@ -11,6 +10,7 @@ from adgn_llm.mini_codex.aggregating_handler import BaseHandler
 from adgn_llm.mcp.inproc_transport import make_inproc_slot_spec
 from mcp.server.fastmcp import FastMCP
 from adgn_llm.mini_codex.mcp_manager import McpManager
+from adgn_llm.mcp.helpers import make_response_function_tool_call_full
 
 
 class OneShotSyntheticHandler(BaseHandler):
@@ -67,22 +67,12 @@ async def test_parallel_tool_calls_reduce_wall_time():
     spec = make_inproc_slot_spec(_make_slow_server())
 
     # Two tool calls with ~0.30s latency each; if run in parallel, wall time ~0.30–0.45s
-    tc1 = ResponseFunctionToolCall(type="function_call", name="mcp__dummy__slow", arguments="{}", call_id="c1")
-    tc2 = ResponseFunctionToolCall(type="function_call", name="mcp__dummy__slow2", arguments="{}", call_id="c2")
+    tc1 = make_response_function_tool_call_full("dummy", "slow", {}, as_json=True)
+    tc2 = make_response_function_tool_call_full("dummy", "slow2", {}, as_json=True)
 
     handler = OneShotSyntheticHandler(outputs=[tc1, tc2])
 
-    from adgn_llm.mini_codex.handler import BaseHandler, to_jsonl_record, FunctionCallOutput, ToolCall
-
-    class RecordingHandler(BaseHandler):
-        def __init__(self):
-            self.records: list[dict] = []
-
-        def on_tool_call_event(self, evt: ToolCall) -> None:  # type: ignore[override]
-            self.records.append(to_jsonl_record(evt))
-
-        def on_function_call_output_event(self, evt: FunctionCallOutput) -> None:  # type: ignore[override]
-            self.records.append(to_jsonl_record(evt))
+    from adgn_llm.mini_codex.loggers import RecordingHandler
 
     rec = RecordingHandler()
 

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 
-from typing import Any
 import json
 from pathlib import Path
 import yaml
@@ -12,8 +11,7 @@ from adgn_llm.properties.specimens.registry import SpecimenRegistry
 from adgn_llm.properties.docker_env import PropertiesDockerWiring
 from adgn_llm.mini_codex.agent import MiniCodex
 from adgn_llm.mini_codex.mcp_manager import McpManager, build_mcp_function
-from adgn_llm.mini_codex.aggregating_handler import BaseHandler
-from adgn_llm.mini_codex.loop_control import Continue, Abort, RequireAny
+from adgn_llm.mini_codex.aggregating_handler import BaseHandler, GateUntil
 from adgn_llm.mcp.inproc_transport import make_inproc_slot_spec
 from adgn_llm.properties.grader import (
     GradeSubmitState,
@@ -28,16 +26,6 @@ from adgn_llm.properties.critic import ReportedIssue, CriticSubmitPayload
 from adgn_llm.mini_codex.transcript_handler import TranscriptHandler
 from adgn_llm.properties.grader import CRIT_PREFIX
 from adgn_llm.mini_codex.loggers import TranscriptLoggerHandler
-
-
-class _RequireSubmitHandler(BaseHandler):
-    def __init__(self, state_obj: Any) -> None:
-        self._state = state_obj
-
-    def on_before_sample(self):  # type: ignore[override]
-        if getattr(self._state, "result", None) is not None:
-            return Abort()
-        return Continue(RequireAny())
 
 
 def _metrics_row(grade: GradeSubmitPayload, *, specimen: str | None = None) -> dict:
@@ -129,7 +117,7 @@ async def grade_critic_output(
 
     async with McpManager({"grader_submit": make_inproc_slot_spec(grader_server)}) as mcp:
         handlers: list[BaseHandler] = [
-            _RequireSubmitHandler(grader_state),
+            GateUntil(lambda: grader_state.result is not None),
             TranscriptHandler(dest_dir=transcript_out_dir / "grader"),
             TranscriptLoggerHandler(transcript_out_dir / "grader"),
         ]

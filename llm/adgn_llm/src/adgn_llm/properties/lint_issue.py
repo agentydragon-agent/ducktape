@@ -42,7 +42,7 @@ from adgn_llm.mini_codex.loop_control import (
     RequireAny,
     SyntheticAction,
 )
-from adgn_llm.mini_codex.aggregating_handler import BaseHandler
+from adgn_llm.mini_codex.aggregating_handler import BaseHandler, GateUntil
 from adgn_llm.mini_codex.loggers import TranscriptLoggerHandler
 from adgn_llm.properties.models.issue import Occurrence, LineRange, IssueCore, IssueId
 from adgn_llm.properties.models.lint import (
@@ -198,7 +198,12 @@ BIG_THRESHOLD = 20480
 
 
 class LinterController(BaseHandler):
-    """LinterController (purpose-specific) with integrated display + tool policy"""
+    """LinterController (purpose-specific) with integrated display + tool policy
+
+    TODO(mpokorny): Split bootstrap from gating and rely on GateUntil for the
+    steady-state loop; keep this class focused on composing SyntheticAction
+    bootstrap sequences only.
+    """
 
     def __init__(
         self,
@@ -369,7 +374,7 @@ async def lint_issue_run(
                 mcp=mcp,
                 system="You are a code agent. Be concise.",
                 client=client,
-                handlers=[ctrl, *handlers],
+                handlers=[GateUntil(lambda: submit_state.result is not None), ctrl, *handlers],
                 parallel_tool_calls=True,
             )
             # Run without passing controller; loop control is provided by handlers.

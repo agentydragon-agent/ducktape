@@ -21,7 +21,6 @@ from adgn_llm.mcp.git_ro.server import make_git_ro_server
 async def test_git_status_basic(repo_git_ro) -> None:
     spec = make_inproc_slot_spec(make_git_ro_server(repo_git_ro))
     async with McpManager({GIT_RO_SERVER_NAME: spec}) as m:
-        sess = await m.get_session(GIT_RO_SERVER_NAME)
         name = build_mcp_function(GIT_RO_SERVER_NAME, "git_status")
         # call via namespaced call_tool
         res = await m.call_tool(name, arguments={})
@@ -36,7 +35,6 @@ async def test_git_status_basic(repo_git_ro) -> None:
 async def test_git_log_oneline_basic(repo_git_ro) -> None:
     spec = make_inproc_slot_spec(make_git_ro_server(repo_git_ro))
     async with McpManager({GIT_RO_SERVER_NAME: spec}) as m:
-        sess = await m.get_session(GIT_RO_SERVER_NAME)
         name = build_mcp_function(GIT_RO_SERVER_NAME, "git_log")
         # call via namespaced call_tool
         res = await m.call_tool(

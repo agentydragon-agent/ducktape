@@ -35,7 +35,7 @@ from adgn_llm.mini_codex.agent import MiniCodex
 from openai import AsyncOpenAI
 from adgn_llm.mini_codex.event_renderer import DisplayEventsHandler
 from adgn_llm.mini_codex.transcript_handler import TranscriptHandler
-from adgn_llm.properties.prompt_eval.server import PromptOptimizeHandler
+from adgn_llm.mini_codex.aggregating_handler import GateUntil
 from adgn_llm.properties.prop_utils import pkg_dir
 from adgn_llm.mcp.inproc_transport import make_inproc_slot_spec
 from adgn_llm.properties.prompt_eval.server import (
@@ -52,7 +52,6 @@ from adgn_llm.properties.critic import CriticSubmitPayload
 from adgn_llm.properties.cli import (
     _run_check_minicodex_async,
     _run_specimen_minicodex_async,
-    _resolve_gitconfig,
     build_cmd,
     BuildOptions,
     _detect_tools,
@@ -72,6 +71,23 @@ from adgn_llm.properties.cluster_unknowns import cluster_unknowns
 
 
 app = typer.Typer(help="adgn-properties (Typer) — properties tooling")
+
+
+def _resolve_gitconfig(arg_val: str | None) -> Path | None:
+    """Resolve --gitconfig consistently.
+
+    - If provided: expanduser/resolve and require that it exists (exit 2 on missing)
+    - Else: fallback to pkg_dir()/gitconfig.local if present
+    - Else: return None
+    """
+    if arg_val:
+        p = Path(arg_val).expanduser().resolve()
+        if not p.exists():
+            print(f"ERROR: --gitconfig file not found: {p}")
+            raise SystemExit(2)
+        return p
+    cfg = pkg_dir() / "gitconfig.local"
+    return cfg if cfg.exists() else None
 
 
 @app.callback()
@@ -283,7 +299,10 @@ async def prompt_optimize(
             handlers=[
                 TranscriptHandler(dest_dir=root / "prompt_optimize"),
                 DisplayEventsHandler(max_lines=10),
-                PromptOptimizeHandler(state=pe_state, max_iters=max_iters),
+                # TODO(mpokorny): This gate can be exceeded under parallel_tool_calls if
+                # multiple prompt_eval.test_prompt calls are in-flight when the budget flips.
+                # Consider moving budget enforcement into the server or serialize near limit.
+                GateUntil(lambda: pe_state.successful_calls >= max_iters),
             ],
             parallel_tool_calls=True,
         )

@@ -21,12 +21,9 @@ from adgn_llm.mcp.git_ro.server import (
 async def test_git_diff_patch_first_page(repo_git_ro) -> None:
     spec = make_inproc_slot_spec(make_git_ro_server(repo_git_ro))
     async with McpManager({GIT_RO_SERVER_NAME: spec}) as m:
-        sess = await m.get_session(GIT_RO_SERVER_NAME)
-        name = build_mcp_function(GIT_RO_SERVER_NAME, "git_diff")
-        server, tool = m.resolve_function(name)
-        res = await sess.call_tool(
-            name=tool,
-            arguments={
+        res = await m.call_tool(
+            build_mcp_function(GIT_RO_SERVER_NAME, "git_diff"),
+            {
                 "payload": DiffInput(
                     staged=True, unified=0, slice=TextSlice(offset_chars=0, max_chars=2000)
                 ).model_dump()
@@ -47,14 +44,10 @@ async def test_git_diff_patch_first_page(repo_git_ro) -> None:
 async def test_git_diff_patch_second_page(repo_git_ro) -> None:
     spec = make_inproc_slot_spec(make_git_ro_server(repo_git_ro))
     async with McpManager({GIT_RO_SERVER_NAME: spec}) as m:
-        sess = await m.get_session(GIT_RO_SERVER_NAME)
-        name = build_mcp_function(GIT_RO_SERVER_NAME, "git_diff")
-        server, tool = m.resolve_function(name)
-
         # First page to get next_offset
-        res1 = await sess.call_tool(
-            name=tool,
-            arguments={
+        res1 = await m.call_tool(
+            build_mcp_function(GIT_RO_SERVER_NAME, "git_diff"),
+            {
                 "payload": DiffInput(
                     staged=True, unified=0, slice=TextSlice(offset_chars=0, max_chars=2000)
                 ).model_dump()
@@ -67,9 +60,9 @@ async def test_git_diff_patch_second_page(repo_git_ro) -> None:
         next_offset = union1.result.next_offset or 0
 
         # Second page
-        res2 = await sess.call_tool(
-            name=tool,
-            arguments={
+        res2 = await m.call_tool(
+            build_mcp_function(GIT_RO_SERVER_NAME, "git_diff"),
+            {
                 "payload": DiffInput(
                     staged=True, unified=0, slice=TextSlice(offset_chars=next_offset, max_chars=2000)
                 ).model_dump()

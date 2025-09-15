@@ -111,22 +111,7 @@ async def test_tool_error_is_surfaced_in_sequence(
             def on_before_sample(self):  # type: ignore[override]
                 return Continue(Auto())
 
-        from adgn_llm.mini_codex.handler import (
-            BaseHandler,
-            to_jsonl_record,
-            FunctionCallOutput,
-            ToolCall,
-        )
-
-        class RecordingHandler(BaseHandler):
-            def __init__(self):
-                self.records: list[dict] = []
-
-            def on_tool_call_event(self, evt: ToolCall) -> None:  # type: ignore[override]
-                self.records.append(to_jsonl_record(evt))
-
-            def on_function_call_output_event(self, evt: FunctionCallOutput) -> None:  # type: ignore[override]
-                self.records.append(to_jsonl_record(evt))
+        from adgn_llm.mini_codex.loggers import RecordingHandler
 
         rec = RecordingHandler()
 

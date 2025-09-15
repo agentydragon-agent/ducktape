@@ -86,6 +86,14 @@ High-level architecture (big picture)
 - adgn_llm.mcp (src/adgn_llm/mcp/...): MCP utilities/launchers (e.g., sandboxed Jupyter MCP).
 - adgn_llm.mini_codex (src/adgn_llm/mini_codex/...): Minimal OpenAI API wrapper utilities used by other tools.
 
+Tests and directory layout
+- Test files live under this package’s tests/ tree, not under src/.
+- Mirror the src/ structure for discoverability (e.g., tests/mini_codex for src/adgn_llm/mini_codex).
+- Use the package-local pytest config in pyproject.toml when running from here. Typical invocations:
+  - uv run pytest -q
+  - uv run pytest -q -m "not live_llm"
+  - uv run pytest -q -m "not live_llm" -k "not sandboxed_jupyter_mcp"
+
 Notes and caveats
 - Node requirement: The system_rewriter apply step is Node-only; no npm needed. The script src/adgn_llm/system_rewriter/js/system_rewrite_apply.js validates tokens and fails fast; missing Node or system-utils will cause a hard error.
 - Test data/specimens under src/adgn_llm/properties/specimens/** are excluded from lint and test discovery per pyproject configuration.

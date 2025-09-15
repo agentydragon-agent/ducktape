@@ -30,6 +30,7 @@ from adgn_llm.mini_codex.agent import MiniCodex
 from adgn_llm.mini_codex.mcp_manager import McpManager
 from adgn_llm.mini_codex.aggregating_handler import BaseHandler
 from adgn_llm.mini_codex.loop_control import Continue, Abort, RequireAny
+from adgn_llm.mini_codex.aggregating_handler import GateUntil
 from adgn_llm.mcp.inproc_transport import make_inproc_slot_spec
 from adgn_llm.mini_codex.transcript_handler import TranscriptHandler
 from adgn_llm.mini_codex.loggers import TranscriptLoggerHandler
@@ -38,7 +39,7 @@ from adgn_llm.properties.critic import (
     CriticSubmitPayload,
     make_critic_submit_server,
 )
-from adgn_llm.properties.grade_runner import grade_critic_output, _metrics_row, _RequireSubmitHandler
+from adgn_llm.properties.grade_runner import grade_critic_output, _metrics_row
 from adgn_llm.properties.prompts.util import build_scope_text, render_prompt_template
 
 
@@ -72,7 +73,7 @@ async def _run_critic_for_specimen(
             handlers = [
                 TranscriptHandler(dest_dir=run_dir / specimen / "critic"),
                 TranscriptLoggerHandler(run_dir / specimen / "critic"),
-                _RequireSubmitHandler(critic_state),
+                GateUntil(lambda: (critic_state.result is not None) or (critic_state.error is not None)),
             ]
             agent = await MiniCodex.create(
                 model=agent_model,

@@ -23,12 +23,10 @@ from openai import AsyncOpenAI
 from rich.console import Console
 
 from adgn_llm.mini_codex.agent import MiniCodex, AgentResult
-from adgn_llm.mini_codex.aggregating_handler import BaseHandler
+from adgn_llm.mini_codex.aggregating_handler import GateUntil
 from adgn_llm.mini_codex.event_renderer import DisplayEventsHandler
-from adgn_llm.mini_codex.loop_control import Continue, Abort, RequireAny
 from adgn_llm.mini_codex.mcp_manager import (
     McpManager,
-    build_mcp_function,
 )
 from adgn_llm.properties.agent_runner import run_prompt_async
 from adgn_llm.properties.critic import (
@@ -36,18 +34,12 @@ from adgn_llm.properties.critic import (
     CriticSubmitPayload,
     make_critic_submit_server,
 )
-from adgn_llm.properties.grader import (
-    GradeSubmitState,
-    make_grader_submit_server,
-    GradeInputs,
-)
 from adgn_llm.properties.grade_runner import _metrics_row
 from adgn_llm.properties.prompts.util import build_input_schemas_json, build_scope_text
 from adgn_llm.properties.specimens.registry import SpecimenRegistry
 from adgn_llm.properties.prompts.builder import (
     build_role_prompt,
     build_enforce_prompt,
-    build_grade_from_json_prompt,
 )
 from adgn_llm.mcp.inproc_transport import make_inproc_slot_spec
 from adgn_llm.rendering.rich_renderers import render_to_rich
@@ -56,7 +48,6 @@ from adgn_llm.properties.specimens.registry import (
     find_specimens_base,
     list_specimen_names,
 )
-from adgn_llm.properties.prop_utils import pkg_dir
 from adgn_llm.properties.models.issue import Occurrence, LineRange, IssueCore
 
 
@@ -175,23 +166,6 @@ def _detect_tools() -> list[str]:
     return available
 
 
-def _resolve_gitconfig(arg_val: str | None) -> Path | None:
-    """Resolve --gitconfig consistently.
-
-    - If provided: expanduser/resolve and require that it exists (exit 2 on missing)
-    - Else: fallback to pkg_dir()/gitconfig.local if present
-    - Else: return None
-    """
-    if arg_val:
-        p = Path(arg_val).expanduser().resolve()
-        if not p.exists():
-            print(f"ERROR: --gitconfig file not found: {p}")
-            raise SystemExit(2)
-        return p
-    cfg = pkg_dir() / "gitconfig.local"
-    return cfg if cfg.exists() else None
-
-
 def build_cmd(model: str, workdir: Path, opts: BuildOptions) -> list[str]:
     # Use codex exec with long flags for model/sandbox; pass configs via -c
     cmd: list[str] = [
@@ -216,14 +190,6 @@ def build_cmd(model: str, workdir: Path, opts: BuildOptions) -> list[str]:
 
 # ---- MiniCodex helpers for check/specimen/grade (docker for code scans) ----
 # Handler that forces a tool call each turn and stops when critic_submit.submit_result is called.
-class CriticHandler(BaseHandler):
-    def __init__(self, state: CriticSubmitState) -> None:
-        self._state = state
-
-    def on_before_sample(self):  # type: ignore[override]
-        if (self._state.result is not None) or (self._state.error is not None):
-            return Abort()
-        return Continue(RequireAny())
 
 
 async def _run_check_minicodex_async(
@@ -317,7 +283,7 @@ async def _run_specimen_minicodex_async(
                 system="You are a code agent. Be concise.",
                 client=client,
                 handlers=[
-                    CriticHandler(submit_state),
+                    GateUntil(lambda: (submit_state.result is not None) or (submit_state.error is not None)),
                     DisplayEventsHandler(max_lines=10),
                 ],
                 parallel_tool_calls=True,
@@ -342,109 +308,6 @@ async def _run_specimen_minicodex_async(
             out_path.write_text(s, encoding="utf-8")
             print(f"Saved critique JSON: {out_path}")
         return 0
-
-
-async def _run_specimen_grade_minicodex_async(
-    manifest_path: Path,
-    critique_path: Path,
-    *,
-    dry_run: bool,
-    final_only: bool,
-    output_final_message: Path | None,
-    client: AsyncOpenAI,
-) -> int:
-    rec = SpecimenRegistry.load_strict(manifest_path.parent.name)
-    man = rec.manifest
-    scope_text = build_scope_text(man.scope.include, man.scope.exclude)
-
-    # Canonical positives → list of {core, occurrences}
-    canonical_list = [
-        {
-            "core": it.core.model_dump(exclude_none=True),
-            "occurrences": [occ.model_dump(exclude_none=True) for occ in it.instances],
-        }
-        for it in rec.issues.values()
-    ]
-    # Known false positives (optional) → list of {core, occurrences}
-    known_fp_list = (
-        [
-            {
-                "core": it.core.model_dump(exclude_none=True),
-                "occurrences": [occ.model_dump(exclude_none=True) for occ in it.instances],
-            }
-            for it in rec.false_positives.values()
-        ]
-        if hasattr(rec, "false_positives") and rec.false_positives
-        else []
-    )
-
-    # Read critique JSON produced by specimen-check
-    crit_text = Path(critique_path).read_text(encoding="utf-8")
-    try:
-        # Validate it's JSON; keep original text for prompt
-        _ = json.loads(crit_text)
-    except Exception:
-        print(f"ERROR: critique is not valid JSON: {critique_path}")
-        return 2
-
-    wiring = PropertiesDockerWiring(
-        server_spec=None,  # type: ignore[arg-type]  # no docker servers needed for grading
-        # TODO(mpokorny): Provide specimen container access (mount workspace) if we want grader to inspect files
-        working_dir=Path("/"),
-        definitions_container_dir=None,
-        image_name="n/a",
-    )
-    submit_state = GradeSubmitState()
-    crit_obj = CriticSubmitPayload.model_validate(json.loads(crit_text))
-    inputs = GradeInputs(specimen=rec, critique=crit_obj)
-    grader_server = make_grader_submit_server(submit_state, name="grader_submit", inputs=inputs)
-
-    prompt = build_grade_from_json_prompt(
-        scope_text=scope_text,
-        canonical_json=json.dumps(canonical_list, ensure_ascii=False, indent=2),
-        critique_json=crit_text,
-        known_fp_json=(json.dumps(known_fp_list, ensure_ascii=False, indent=2) if known_fp_list else "[]"),
-        submit_tool_name=build_mcp_function("grader_submit", "submit_result"),
-        wiring=wiring,
-    )
-
-    if dry_run:
-        tmpdir = Path(tempfile.gettempdir()) / "adgn_codex_prompts"
-        tmpdir.mkdir(parents=True, exist_ok=True)
-        ts = int(time.time())
-        outfile = tmpdir / f"codex_prompt_specimen_grade_{ts}.md"
-        outfile.write_text(prompt, encoding="utf-8")
-        tokens = len(tiktoken.get_encoding("cl100k_base").encode(prompt))
-        print(f"Saved prompt: {outfile} (approx tokens: {tokens if tokens is not None else 'n/a'})")
-        return 0
-
-    # MiniCodex run with in-proc grader_submit server; force tool calls until submit
-    class GraderHandler(BaseHandler):
-        def __init__(self, state: GradeSubmitState) -> None:
-            self._state = state
-
-        def on_before_sample(self):  # type: ignore[override]
-            if self._state.result is not None:
-                return Abort()
-            return Continue(RequireAny())
-
-    specs = {"grader_submit": make_inproc_slot_spec(grader_server)}
-    async with McpManager(specs) as mcp:
-        agent = await MiniCodex.create(
-            model="gpt-5",
-            mcp=mcp,
-            system="You are a code agent. Be concise.",
-            client=client,
-            handlers=[GraderHandler(submit_state), DisplayEventsHandler(max_lines=10)],
-            parallel_tool_calls=True,
-        )
-        result = await agent.run(prompt)
-        if isinstance(result, AgentResult):
-            _emit_final_text(result, output_final_message, final_only)
-
-    assert submit_state.result, "Grader did not call submit_result?"
-    Console().print(render_to_rich(submit_state.result))
-    return 0
 
 
 def main(argv: list[str] | None = None) -> int:

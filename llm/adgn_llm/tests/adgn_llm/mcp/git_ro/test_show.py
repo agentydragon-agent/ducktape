@@ -7,7 +7,7 @@ from pydantic import TypeAdapter
 from adgn_llm.mini_codex.mcp_manager import build_mcp_function, McpManager
 from adgn_llm.mcp.inproc_transport import make_inproc_slot_spec
 from adgn_llm.mini_codex.mcp_manager import parse_mcp_function
-from adgn_llm.mcp.helpers import make_openai_function_call
+from adgn_llm.mcp.helpers import make_openai_function_call_full
 from adgn_llm.mcp.git_ro.server import (
     GIT_RO_SERVER_NAME,
     ShowInput,
@@ -22,10 +22,16 @@ from adgn_llm.mcp.git_ro.server import (
 async def test_git_show_name_status(repo_git_ro) -> None:
     spec = make_inproc_slot_spec(make_git_ro_server(repo_git_ro))
     async with McpManager({GIT_RO_SERVER_NAME: spec}) as m:
-        sess = await m.get_session(GIT_RO_SERVER_NAME)
-        ns_name = build_mcp_function(GIT_RO_SERVER_NAME, "git_show")
         # Use helper to build a model-like function_call and then route via McpManager
-        func = make_openai_function_call(GIT_RO_SERVER_NAME, "git_show", {"payload": ShowInput(object="HEAD", format=DiffFormat.NAME_STATUS, list_slice=ListSlice(offset=0, limit=100)).model_dump()})
+        func = make_openai_function_call_full(
+            GIT_RO_SERVER_NAME,
+            "git_show",
+            {
+                "payload": ShowInput(
+                    object="HEAD", format=DiffFormat.NAME_STATUS, list_slice=ListSlice(offset=0, limit=100)
+                ).model_dump()
+            },
+        )
         res_ns = await m.call_tool(func["name"], arguments=func["arguments"])
         payload_ns = res_ns.structuredContent
         if isinstance(payload_ns, str):
@@ -39,11 +45,10 @@ async def test_git_show_name_status(repo_git_ro) -> None:
 async def test_git_show_stat(repo_git_ro) -> None:
     spec = make_inproc_slot_spec(make_git_ro_server(repo_git_ro))
     async with McpManager({GIT_RO_SERVER_NAME: spec}) as m:
-        sess = await m.get_session(GIT_RO_SERVER_NAME)
         st_name = build_mcp_function(GIT_RO_SERVER_NAME, "git_show")
         _, st_tool = parse_mcp_function(st_name)
-        res_st = await sess.call_tool(
-            name=st_tool,
+        res_st = await m.call_tool(
+            build_mcp_function(GIT_RO_SERVER_NAME, st_tool),
             arguments={
                 "payload": ShowInput(
                     object="HEAD", format=DiffFormat.STAT, list_slice=ListSlice(offset=0, limit=100)
@@ -62,11 +67,10 @@ async def test_git_show_stat(repo_git_ro) -> None:
 async def test_git_show_patch(repo_git_ro) -> None:
     spec = make_inproc_slot_spec(make_git_ro_server(repo_git_ro))
     async with McpManager({GIT_RO_SERVER_NAME: spec}) as m:
-        sess = await m.get_session(GIT_RO_SERVER_NAME)
         pt_name = build_mcp_function(GIT_RO_SERVER_NAME, "git_show")
         _, pt_tool = parse_mcp_function(pt_name)
-        res_pt = await sess.call_tool(
-            name=pt_tool,
+        res_pt = await m.call_tool(
+            build_mcp_function(GIT_RO_SERVER_NAME, pt_tool),
             arguments={"payload": ShowInput(object="HEAD", format=DiffFormat.PATCH).model_dump()},
         )
         payload_pt = res_pt.structuredContent
