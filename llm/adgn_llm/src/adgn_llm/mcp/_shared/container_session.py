@@ -4,11 +4,10 @@ import shlex
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any, Dict, Iterable, cast
+from typing import Any, Iterable, cast
 
 import docker
 from adgn_llm.mcp._shared.constants import SLEEP_FOREVER_CMD
-from docker.errors import APIError
 from docker.models.containers import Container
 from mcp.server.fastmcp import FastMCP
 
@@ -71,83 +70,6 @@ def _start_container(
     return container
 
 
-def _container_exec(
-    *,
-    container: Container,
-    cmd: list[str],
-    cwd: str | None = None,
-    env: dict[str, str] | None = None,
-    user: str | None = None,
-    tty: bool = False,
-    shell: bool = False,
-    timeout_secs: float | None = None,
-) -> dict[str, Any]:
-    prepared_cmd: list[str] | str
-    if timeout_secs and timeout_secs > 0:
-        timeout_arg = f"timeout -s TERM {int(timeout_secs)}"
-        if shell:
-            prepared_cmd = f"{timeout_arg} {_shell_join(cmd)}"
-        else:
-            prepared_cmd = ["sh", "-lc", f"{timeout_arg} {_shell_join(cmd)}"]
-    else:
-        prepared_cmd = _shell_join(cmd) if shell else cmd
-
-    if (
-        shell
-        and not (isinstance(prepared_cmd, list) and prepared_cmd[:2] == ["sh", "-lc"])
-        and not isinstance(prepared_cmd, list)
-    ):
-        exec_cmd: list[str] | str = ["sh", "-lc", prepared_cmd]  # type: ignore[list-item]
-    else:
-        exec_cmd = prepared_cmd
-
-    cli = container.client
-    if cli is None:  # mypy: Container.client can be Optional in stubs
-        raise RuntimeError("Docker client not available on container")
-    api = cast(Any, cli).api  # DockerClient.api → low-level APIClient; use Any for compatibility with stubs
-    exec_id = api.exec_create(
-        container=container.id,
-        cmd=exec_cmd,
-        stdout=True,
-        stderr=True,
-        stdin=False,
-        tty=tty,
-        user=user,
-        workdir=cwd,
-        environment=env,
-    )["Id"]
-
-    stdout_buf = bytearray()
-    stderr_buf = bytearray()
-
-    for out_err in api.exec_start(exec_id, stream=True, demux=True):
-        if not isinstance(out_err, tuple):
-            if out_err:
-                stdout_buf.extend(out_err)
-            continue
-        out_b, err_b = out_err
-        if out_b:
-            stdout_buf.extend(out_b)
-        if err_b:
-            stderr_buf.extend(err_b)
-
-    try:
-        inspect_info = api.exec_inspect(exec_id)
-        exit_code = inspect_info.get("ExitCode")
-    except APIError:
-        exit_code = None
-
-    timed_out = bool(timeout_secs) and exit_code == 143
-    if timed_out:
-        exit_code = None
-    return {
-        "exit_code": exit_code,
-        "timed_out": timed_out,
-        "stdout": stdout_buf.decode(errors="replace"),
-        "stderr": stderr_buf.decode(errors="replace"),
-    }
-
-
 # ---- Lifespan factory (per-session container) ----
 
 
@@ -206,7 +128,7 @@ def register_container(mcp: FastMCP, *, tool_name: str = "exec") -> None:
         title="Container session metadata",
         description="Docker container details for this session",
     )
-    def container_info_json() -> Dict[str, Any]:
+    def container_info_json() -> dict[str, Any]:
         ctx = mcp.get_context()
         s: ContainerSessionState = ctx.request_context.lifespan_context  # type: ignore[assignment]
         img = s.docker_client.images.get(s.image)
@@ -228,21 +150,72 @@ def register_container(mcp: FastMCP, *, tool_name: str = "exec") -> None:
     def tool_exec(
         cmd: list[str],
         cwd: str | None = None,
-        env: Dict[str, str] | None = None,
+        env: dict[str, str] | None = None,
         user: str | None = None,
         tty: bool = False,
         shell: bool = False,
         timeout_secs: float | None = None,
     ) -> dict[str, Any]:
         ctx = mcp.get_context()
-        s = ctx.request_context.lifespan_context  # type: ignore[assignment]
-        return _container_exec(
-            container=s.container,
-            cmd=cmd,
-            cwd=cwd,
-            env=env,
-            user=user,
+        s: ContainerSessionState = ctx.request_context.lifespan_context  # type: ignore[assignment]
+        prepared_cmd: list[str] | str
+        if timeout_secs and timeout_secs > 0:
+            timeout_arg = f"timeout -s TERM {int(timeout_secs)}"
+            if shell:
+                prepared_cmd = f"{timeout_arg} {_shell_join(cmd)}"
+            else:
+                prepared_cmd = ["sh", "-lc", f"{timeout_arg} {_shell_join(cmd)}"]
+        else:
+            prepared_cmd = _shell_join(cmd) if shell else cmd
+
+        if (
+            shell
+            and not (isinstance(prepared_cmd, list) and prepared_cmd[:2] == ["sh", "-lc"])
+            and not isinstance(prepared_cmd, list)
+        ):
+            exec_cmd: list[str] | str = ["sh", "-lc", prepared_cmd]  # type: ignore[list-item]
+        else:
+            exec_cmd = prepared_cmd
+
+        cli = s.container.client
+        if cli is None:  # mypy: Container.client can be Optional in stubs
+            raise RuntimeError("Docker client not available on container")
+        api = cast(Any, cli).api  # DockerClient.api → low-level APIClient; use Any for compatibility with stubs
+        exec_id = api.exec_create(
+            container=s.container.id,
+            cmd=exec_cmd,
+            stdout=True,
+            stderr=True,
+            stdin=False,
             tty=tty,
-            shell=shell,
-            timeout_secs=timeout_secs,
-        )
+            user=user,
+            workdir=cwd,
+            environment=env,
+        )["Id"]
+
+        stdout_buf = bytearray()
+        stderr_buf = bytearray()
+
+        for out_err in api.exec_start(exec_id, stream=True, demux=True):
+            if not isinstance(out_err, tuple):
+                if out_err:
+                    stdout_buf.extend(out_err)
+                continue
+            out_b, err_b = out_err
+            if out_b:
+                stdout_buf.extend(out_b)
+            if err_b:
+                stderr_buf.extend(err_b)
+
+        inspect_info = api.exec_inspect(exec_id)
+        exit_code = inspect_info.get("ExitCode")
+
+        timed_out = bool(timeout_secs) and exit_code == 143
+        if timed_out:
+            exit_code = None
+        return {
+            "exit_code": exit_code,
+            "timed_out": timed_out,
+            "stdout": stdout_buf.decode(errors="replace"),
+            "stderr": stderr_buf.decode(errors="replace"),
+        }

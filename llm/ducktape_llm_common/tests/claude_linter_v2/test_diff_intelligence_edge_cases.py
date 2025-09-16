@@ -31,9 +31,7 @@ class TestDiffParserEdgeCases:
             ]
         }
 
-        parsed = parser.parse_tool_response(
-            "Edit", {"file_path": "/test.py"}, tool_response
-        )
+        parsed = parser.parse_tool_response("Edit", {"file_path": "/test.py"}, tool_response)
 
         assert parsed is not None
         assert parsed.added_lines == {12}  # Only the + line
@@ -67,9 +65,7 @@ class TestDiffParserEdgeCases:
             ]
         }
 
-        parsed = parser.parse_tool_response(
-            "MultiEdit", {"file_path": "/test.py"}, tool_response
-        )
+        parsed = parser.parse_tool_response("MultiEdit", {"file_path": "/test.py"}, tool_response)
 
         assert parsed is not None
         assert parsed.added_lines == {10, 11, 12, 22}
@@ -80,9 +76,7 @@ class TestDiffParserEdgeCases:
 
         # Empty patch array
         tool_response = {"structuredPatch": []}
-        parsed = parser.parse_tool_response(
-            "Edit", {"file_path": "/test.py"}, tool_response
-        )
+        parsed = parser.parse_tool_response("Edit", {"file_path": "/test.py"}, tool_response)
         assert parsed is not None
         assert len(parsed.hunks) == 0
         assert len(parsed.added_lines) == 0
@@ -93,9 +87,7 @@ class TestDiffParserEdgeCases:
 
         # No structuredPatch field
         tool_response = {"someOtherField": "value"}
-        parsed = parser.parse_tool_response(
-            "Edit", {"file_path": "/test.py"}, tool_response
-        )
+        parsed = parser.parse_tool_response("Edit", {"file_path": "/test.py"}, tool_response)
         assert parsed is None
 
     def test_parse_special_diff_markers(self):
@@ -118,9 +110,7 @@ class TestDiffParserEdgeCases:
             ]
         }
 
-        parsed = parser.parse_tool_response(
-            "Edit", {"file_path": "/test.py"}, tool_response
-        )
+        parsed = parser.parse_tool_response("Edit", {"file_path": "/test.py"}, tool_response)
 
         assert parsed is not None
         assert parsed.added_lines == {10}
@@ -220,9 +210,7 @@ class TestDiffIntelligenceEdgeCases:
         # Create many out-of-diff violations
         out_diff_violations = [
             CategorizedViolation(
-                violation=Violation(
-                    rule=f"E{i}", line=i * 10, column=0, message=f"Error {i}"
-                ),
+                violation=Violation(rule=f"E{i}", line=i * 10, column=0, message=f"Error {i}"),
                 category="out-of-diff",
                 distance_from_change=None,
             )

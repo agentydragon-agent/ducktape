@@ -462,6 +462,13 @@ class MiniCodex:
         reasoning_summary: ReasoningSummary | None = None,
         parallel_tool_calls: bool = True,
     ) -> MiniCodex:
+        # Enforce explicit injection of a non-None ResponsesClient so tests must opt-in
+        if client is None:
+            raise ValueError(
+                "MiniCodex.create requires a non-None `client` (ResponsesClient). "
+                "Pass a fake client in tests or use the `openai_client` fixture to opt-in."
+            )
+
         return cls(
             model=model,
             system=system,

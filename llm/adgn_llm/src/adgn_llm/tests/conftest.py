@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Callable, Iterable
+from typing import Any, Callable, Iterable, Iterator
 
 import pytest
 from openai.types.responses import Response, ResponseOutputMessage, ResponseOutputText
@@ -14,7 +14,7 @@ from openai.types.responses.response_usage import (
 
 # Ensure MiniCodex logs go to a temp dir in tests
 @pytest.fixture(autouse=True)
-def _mini_codex_logdir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def _mini_codex_logdir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     log_dir = tmp_path / "mini_codex_logs"
     monkeypatch.setenv("MINICODEX_LOG_DIR", str(log_dir))
     yield

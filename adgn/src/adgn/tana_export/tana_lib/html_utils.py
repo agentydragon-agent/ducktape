@@ -15,6 +15,7 @@ import re
 from collections.abc import Callable
 from html.parser import HTMLParser
 from io import StringIO
+from typing import Any
 
 from .types import NodeId
 
@@ -79,13 +80,13 @@ def parse_inline_date(date_ref_data: str) -> str:
     Returns:
         ISO-formatted date string with timezone notation
     """
-    data = json.loads(html.unescape(date_ref_data))
-    date_str = data["dateTimeString"]
-    timezone = data.get("timezone", "")
+    data: dict[str, Any] = json.loads(html.unescape(date_ref_data))
+    date_str: str = str(data["dateTimeString"])  # ensure precise type for mypy
+    timezone: str = str(data.get("timezone", "")) if data.get("timezone", "") else ""
 
     # Check if it's a date-only value (no time component)
     # Date-only formats: YYYY, YYYY-MM, YYYY-MM-DD, YYYY-Www
-    if "T" not in date_str and "/" not in date_str:
+    if ("T" not in date_str) and ("/" not in date_str):
         # Date-only values don't include timezone
         return date_str
     if "/" in date_str and timezone:

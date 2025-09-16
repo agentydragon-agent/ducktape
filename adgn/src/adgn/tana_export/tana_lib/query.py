@@ -7,7 +7,6 @@ from __future__ import annotations
 from collections.abc import Iterator
 
 from .models import BaseNode, NodeStore, TupleNode
-from .types import NodeId
 
 
 def get_field_values(
@@ -110,22 +109,3 @@ def find_nodes_by_tag(store: NodeStore, tag_name: str) -> Iterator[BaseNode]:
     for node in store.values():
         if store.has_supertag(node.id, tag_name):
             yield node
-
-
-def get_tuple_value(node: BaseNode, key_id: NodeId) -> BaseNode | None:
-    """
-    Get the value node for a specific key from a node's tuple children.
-
-    Args:
-        node: The node to search in
-        key_id: The ID of the key node (e.g., CHECKBOX_KEY_ID)
-
-    Returns:
-        The value node if found, None otherwise
-    """
-    for child in node.child_nodes:
-        if isinstance(child, TupleNode) and len(child.child_nodes) >= 2:
-            key_node, val_node = child.child_nodes[:2]
-            if key_node.id == key_id:
-                return val_node
-    return None

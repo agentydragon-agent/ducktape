@@ -132,7 +132,9 @@ class PromptEvalSuccess(BaseModel):
 PromptEvalResult = Annotated[PromptEvalSuccess | PromptEvalFailure, Field(discriminator="kind")]
 
 
-def build_server(name: str = "prompt_eval", agent_model: str = "gpt-5") -> Tuple[FastMCP, PromptEvalState]:
+def build_server(
+    *, client: AsyncOpenAI, name: str = "prompt_eval", agent_model: str = "gpt-5"
+) -> Tuple[FastMCP, PromptEvalState]:
     """Build a prompt_eval server that tracks rounds and writes under a fixed run dir.
 
     Layout (per server instance):
@@ -170,7 +172,9 @@ def build_server(name: str = "prompt_eval", agent_model: str = "gpt-5") -> Tuple
 
         base = find_specimens_base()
         specimens = list_specimen_names(base)
-        client = AsyncOpenAI()
+        # client is required and injected by the caller to avoid implicit network clients
+        if client is None:
+            raise ValueError("build_server requires a non-None client to be passed; tests must opt-in via fixtures")
 
         async def one(specimen: str) -> dict[str, Any]:
             out_dir = round_dir / specimen

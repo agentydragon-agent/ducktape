@@ -1,0 +1,92 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+Scope: This document covers the adgn Python package located in this directory. It explains how to set up the environment (direnv + devenv), run tests, lint, and the high‑level module layout so you can be productive quickly.
+
+Environment and setup (direnv + devenv)
+- Requirements: Nix + devenv, direnv (recommended), Python 3.11+, optionally uv.
+- First time in this directory:
+  - cd /Users/mpokorny/code/ducktape/adgn
+  - direnv allow
+  - This loads .envrc → devenv, creates a Python 3.11 venv, and installs the package in editable mode with dev extras ([project.optional-dependencies].dev).
+- Re-entering the shell later: just cd into adgn; direnv will activate the same environment. To refresh after pyproject/devenv.nix edits: direnv reload
+
+Common commands
+- Run all tests (pytest discovery is configured for repo-root tests/):
+  - from repo root: direnv exec adgn pytest tests
+  - or from adgn/: pytest ../tests
+  - Note: parallel execution via pytest-xdist is enabled by default (see Pytest configuration below).
+- Run a single test file or test:
+  - direnv exec adgn pytest tests/adgn/tana_export/test_convert.py
+  - direnv exec adgn pytest tests/adgn/tana_export/test_convert.py::test_node_export
+  - direnv exec adgn pytest tests/wt/integration/test_cli_integration.py
+- Lint/format (ruff):
+  - direnv exec adgn ruff format .
+  - direnv exec adgn ruff check . --fix
+- Pre-commit (optional in this subpackage):
+  - direnv exec adgn pre-commit install
+  - direnv exec adgn pre-commit run -a
+- Install optional extras (example: GNOME console script deps):
+  - direnv exec adgn python -m pip install -e '.[gnome]'
+- Build a wheel/sdist (optional):
+  - If uv is available: direnv exec adgn uv build
+  - Otherwise: direnv exec adgn python -m pip install build; direnv exec adgn python -m build
+
+Console scripts
+- switch_gnome_terminal_profile → adgn.gnome.switch_gnome_terminal_profile:run
+- rspcache → adgn.rspcache.cli:main
+- wt → wt.cli:main
+- wt-install → wt.shell.install:main
+
+Pytest configuration (from pyproject.toml)
+- timeout = 30; timeout_method = "thread" (pytest-timeout)
+- asyncio_mode = "auto" (pytest-asyncio)
+- testpaths = ["tests"]
+- addopts (defaults applied automatically):
+  - -n=auto (pytest-xdist parallelism)
+  - -v, --tb=short, --strict-markers, --disable-warnings, --durations=25
+- markers:
+  - slow, integration, unit, shell, asyncio, real_github (real network/GitHub)
+- env (pytest-env ensures hermetic git by default):
+  - GIT_CONFIG_NOSYSTEM=1, GIT_CONFIG_GLOBAL=/dev/null
+
+High‑level architecture
+- Packaging (pyproject.toml)
+  - name: adgn; requires-python: ">=3.11"; src-layout under adgn/src
+  - Dev extras include pytest, pytest-asyncio, pytest-timeout, pytest-xdist, ruff, pre-commit
+  - Optional extras:
+    - gnome: absl-py, dbus-python, PyGObject (large system deps; install only when needed)
+- Selected modules and domains
+  - Tana export (src/adgn/tana_export/)
+    - convert.py: Export Tana JSON dump to Markdown or TanaPaste text (export_node_as_tanapaste, CLI)
+    - export_node_subset.py: Export a single node with dependency tracking and produce a subset JSON
+    - materialize_searches.py: Inspect and materialize Tana search nodes, compare stored vs materialized
+    - tana_lib/: Pydantic models and helpers for traversing/inspecting node trees (models.py, query.py, search_parser.py, search_materializer.py, filters.py, ...)
+  - Response cache (src/adgn/rspcache/)
+    - responses_db.py: Lightweight response store; CLI at adgn.rspcache.cli:main (entry point: rspcache)
+  - Worktree tools (src/adgn/wt/)
+    - CLI and plugin system: wt.cli, wt.plugins, wt.demo_plugin (entry point: wt)
+    - Server/services: wt.server.*, handlers (PR/status/worktree), registry and discovery
+    - Client: wt.client.* (formatting, shell utils, handlers)
+    - Shared/types: wt.shared.* (configuration, constants, models, protocol)
+    - Purpose: Manage git worktrees and status, integrate with GitHub, and provide a local server/CLI with plugin hooks
+- Tests and data
+  - Tests live under repo-root tests/, mirroring src structure
+    - tests/adgn/tana_export/test_convert.py → verifies Markdown/TanaPaste outputs using fixture JSON
+    - tests/wt/... includes unit, integration, and e2e coverage for worktree flows and GitHub display
+
+Notes and caveats
+- The GNOME console script dependencies require system libraries and are intentionally not part of the default install; use the [gnome] extra if you need that tool.
+- Some tana_lib modules import helpers lazily to avoid circular imports (accepted pattern here).
+- Tests marked real_github talk to real GitHub/network; run them explicitly when needed.
+
+Quick references
+- Enter env here: direnv allow (in adgn/)
+- Run all tests: direnv exec adgn pytest tests
+- Alternative (use uv runner): uv run pytest tests
+- Single tests:
+  - direnv exec adgn pytest tests/adgn/tana_export/test_convert.py::test_node_export
+  - direnv exec adgn pytest tests/wt/integration/test_cli_integration.py
+- Lint/format: direnv exec adgn ruff check . --fix; direnv exec adgn ruff format .
+- Install GNOME extras: direnv exec adgn python -m pip install -e '.[gnome]'

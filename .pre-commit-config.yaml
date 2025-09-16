@@ -33,23 +33,12 @@ repos:
     rev: v0.11.10
     hooks:
       - id: ruff-check
-        name: ruff-check (wt)
-        args: [--fix, --config=wt/pyproject.toml]
-        files: "^wt/"
-        exclude: "^wt/stubs/"
+        name: ruff-check (repo-wide)
+        args: [--fix]
+        files: "\\.py$"
       - id: ruff-format
-        name: ruff-format (wt)
-        args: [--config=wt/pyproject.toml]
-        files: "^wt/"
-        exclude: "^wt/stubs/"
-      - id: ruff-check
-        name: ruff-check (adgn_llm)
-        args: [--fix, --config=llm/adgn_llm/pyproject.toml]
-        files: "^llm/adgn_llm/"
-      - id: ruff-format
-        name: ruff-format (adgn_llm)
-        args: [--config=llm/adgn_llm/pyproject.toml]
-        files: "^llm/adgn_llm/"
+        name: ruff-format (repo-wide)
+        files: "\\.py$"
 
   # isort: explicit import sorting for Python projects
   - repo: https://github.com/pycqa/isort
@@ -79,16 +68,6 @@ repos:
           - types-toml
           - types-aiofiles
       - id: mypy
-        name: mypy (wt)
-        files: "^wt/wt/"
-        args: ["--config-file=wt/pyproject.toml"]
-        additional_dependencies:
-          - pydantic>=2
-          - types-colorama
-          - types-psutil
-          - types-tabulate
-          - types-PyYAML
-      - id: mypy
         name: mypy (adgn_llm)
         files: "^llm/adgn_llm/src/adgn_llm/(mini_codex|mcp/resources|mcp/git_ro|rspcache)/"
         args: [
@@ -112,6 +91,20 @@ repos:
           - pygit2
           - anyio
           - pytest
+      - id: mypy
+        name: mypy (adgn)
+        files: "^adgn/src/(adgn|wt)/"
+        args: ["--config-file=adgn/pyproject.toml", "--namespace-packages", "--ignore-missing-imports"]
+        additional_dependencies:
+          - pydantic>=2
+          - types-PyYAML
+          - types-requests
+          - types-toml
+          - types-aiofiles
+          - types-Markdown
+          - types-colorama
+          - types-psutil
+          - types-tabulate
 
   # Buildifier for Bazel files
   - repo: git@github.com:keith/pre-commit-buildifier

@@ -19,12 +19,21 @@ def main() -> None:
         help="Transport mode (default: stdio)",
     )
     parser.add_argument(
-        "--host", default="localhost", help="Host for SSE mode (default: localhost)"
+        "--host",
+        default="localhost",
+        help="Host for SSE mode (default: localhost)",
     )
-    parser.add_argument("--port", type=int, default=8000, help="Port for SSE mode (default: 8000)")
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=8000,
+        help="Port for SSE mode (default: 8000)",
+    )
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
     parser.add_argument(
-        "--debug-mcp", action="store_true", help="Enable full MCP request/response logging"
+        "--debug-mcp",
+        action="store_true",
+        help="Enable full MCP request/response logging",
     )
 
     args = parser.parse_args()

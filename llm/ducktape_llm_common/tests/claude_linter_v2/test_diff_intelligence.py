@@ -188,18 +188,14 @@ class TestDiffIntelligence:
         groups = {
             "in-diff": [
                 CategorizedViolation(
-                    violation=Violation(
-                        rule="E722", line=10, column=0, message="Bare except"
-                    ),
+                    violation=Violation(rule="E722", line=10, column=0, message="Bare except"),
                     category="in-diff",
                     distance_from_change=0,
                 )
             ],
             "near-diff": [
                 CategorizedViolation(
-                    violation=Violation(
-                        rule="W293", line=8, column=0, message="Trailing whitespace"
-                    ),
+                    violation=Violation(rule="W293", line=8, column=0, message="Trailing whitespace"),
                     category="near-diff",
                     distance_from_change=2,
                 )

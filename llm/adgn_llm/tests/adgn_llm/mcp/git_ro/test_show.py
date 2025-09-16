@@ -9,23 +9,14 @@ from adgn_llm.mcp.git_ro.server import (
     ListSlice,
     ShowInput,
     ShowResult,
-    make_git_ro_server,
 )
 from adgn_llm.mcp.helpers import make_openai_function_call_full
-from adgn_llm.mcp.inproc_transport import make_inproc_slot_spec
-from adgn_llm.mini_codex.mcp_manager import (
-    McpManager,
-    build_mcp_function,
-    parse_mcp_function,
-)
 from pydantic import TypeAdapter
 
 
 @pytest.mark.asyncio
-async def test_git_show_name_status(repo_git_ro) -> None:
-    spec = make_inproc_slot_spec(make_git_ro_server(repo_git_ro))
-    async with McpManager({GIT_RO_SERVER_NAME: spec}) as m:
-        # Use helper to build a model-like function_call and then route via McpManager
+async def test_git_show_name_status(git_ro_session) -> None:
+    async with git_ro_session() as session:
         func = make_openai_function_call_full(
             GIT_RO_SERVER_NAME,
             "git_show",
@@ -35,7 +26,7 @@ async def test_git_show_name_status(repo_git_ro) -> None:
                 ),
             },
         )
-        res_ns = await m.call_tool(func["name"], arguments=func["arguments"])
+        res_ns = await session.call_tool(name="git_show", arguments=func["arguments"])
         payload_ns = res_ns.structuredContent
         if isinstance(payload_ns, str):
             payload_ns = json.loads(payload_ns)
@@ -45,13 +36,10 @@ async def test_git_show_name_status(repo_git_ro) -> None:
 
 
 @pytest.mark.asyncio
-async def test_git_show_stat(repo_git_ro) -> None:
-    spec = make_inproc_slot_spec(make_git_ro_server(repo_git_ro))
-    async with McpManager({GIT_RO_SERVER_NAME: spec}) as m:
-        st_name = build_mcp_function(GIT_RO_SERVER_NAME, "git_show")
-        _, st_tool = parse_mcp_function(st_name)
-        res_st = await m.call_tool(
-            build_mcp_function(GIT_RO_SERVER_NAME, st_tool),
+async def test_git_show_stat(git_ro_session) -> None:
+    async with git_ro_session() as session:
+        res_st = await session.call_tool(
+            name="git_show",
             arguments={
                 "payload": ShowInput(object="HEAD", format=DiffFormat.STAT, list_slice=ListSlice(offset=0, limit=100)),
             },
@@ -65,13 +53,10 @@ async def test_git_show_stat(repo_git_ro) -> None:
 
 
 @pytest.mark.asyncio
-async def test_git_show_patch(repo_git_ro) -> None:
-    spec = make_inproc_slot_spec(make_git_ro_server(repo_git_ro))
-    async with McpManager({GIT_RO_SERVER_NAME: spec}) as m:
-        pt_name = build_mcp_function(GIT_RO_SERVER_NAME, "git_show")
-        _, pt_tool = parse_mcp_function(pt_name)
-        res_pt = await m.call_tool(
-            build_mcp_function(GIT_RO_SERVER_NAME, pt_tool),
+async def test_git_show_patch(git_ro_session) -> None:
+    async with git_ro_session() as session:
+        res_pt = await session.call_tool(
+            name="git_show",
             arguments={"payload": ShowInput(object="HEAD", format=DiffFormat.PATCH)},
         )
         payload_pt = res_pt.structuredContent

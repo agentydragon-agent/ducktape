@@ -461,7 +461,7 @@ def main(argv: list[str] | None = None) -> int:
         async def _run() -> int:
             out_dir = Path.cwd() / "runs" / "specimen-grade" / slug
             out_dir.mkdir(parents=True, exist_ok=True)
-            grade = await grade_critic_output(slug, critique, AsyncOpenAI(), transcript_out_dir=out_dir)
+            grade = await grade_critic_output(slug, critique, client, transcript_out_dir=out_dir)
             # Print concise metrics including fuzzy values
             row = _metrics_row(grade, specimen=slug)
             print(json.dumps(row, indent=2))

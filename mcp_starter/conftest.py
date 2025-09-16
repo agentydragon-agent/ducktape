@@ -15,9 +15,10 @@ async def mcp_client() -> AsyncIterator[Client]:
         MCPConfig(
             mcpServers={
                 "starter": StdioMCPServer(
-                    command="python", args=["-m", "adgn_mcp_starter", "--debug"]
-                )
-            }
-        )
+                    command="python",
+                    args=["-m", "adgn_mcp_starter", "--debug"],
+                ),
+            },
+        ),
     ) as client:
         yield client

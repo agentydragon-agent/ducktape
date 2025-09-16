@@ -92,9 +92,7 @@ class HookHandler:
         # Console handler (always present for critical errors)
         console_handler = logging.StreamHandler()
         console_handler.setLevel(logging.ERROR)
-        console_formatter = logging.Formatter(
-            "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-        )
+        console_formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
         console_handler.setFormatter(console_formatter)
         root_logger.addHandler(console_handler)
 
@@ -157,17 +155,13 @@ class HookHandler:
             log_entry["decision_details"]["tool"] = request.tool_name
             # Just dump the entire tool_input as a dict
             if request.tool_input:
-                log_entry["decision_details"][
-                    "tool_input"
-                ] = request.tool_input.model_dump()
+                log_entry["decision_details"]["tool_input"] = request.tool_input.model_dump()
 
         # Write to log file
         with open(log_file, "a") as f:
             f.write(json.dumps(log_entry) + "\n")
 
-    def _log_decision(
-        self, session_id: SessionID, decision_point: str, details: dict[str, Any]
-    ) -> None:
+    def _log_decision(self, session_id: SessionID, decision_point: str, details: dict[str, Any]) -> None:
         """Log a specific decision point."""
         log_file = self.log_dir / f"{session_id}.log"
 
@@ -219,9 +213,7 @@ class HookHandler:
 
         self.session_manager.track_session(session_id, working_dir)
 
-    def _dispatch_hook(
-        self, hook_type: str, request: BaseHookRequest, session_id: SessionID
-    ) -> HookOutcome:
+    def _dispatch_hook(self, hook_type: str, request: BaseHookRequest, session_id: SessionID) -> HookOutcome:
         """Dispatch to appropriate typed handler."""
         if hook_type == "PreToolUse" and isinstance(request, PreToolUseRequest):
             return self._handle_pre_hook(request, session_id)
@@ -236,9 +228,7 @@ class HookHandler:
         else:
             raise HookBugError(f"Invalid hook type: {hook_type}")
 
-    def _handle_pre_hook(
-        self, request: PreToolUseRequest, session_id: SessionID
-    ) -> HookOutcome:
+    def _handle_pre_hook(self, request: PreToolUseRequest, session_id: SessionID) -> HookOutcome:
         """Handle PreToolUse with early bailout pattern."""
         config = self.config_loader.config
 
@@ -253,12 +243,8 @@ class HookHandler:
             "pre_hook_start",
             {
                 "tool": request.tool_name,
-                "file_path": (
-                    request.tool_input.file_path if request.tool_input else None
-                ),
-                "has_content": bool(
-                    request.tool_input.content if request.tool_input else None
-                ),
+                "file_path": (request.tool_input.file_path if request.tool_input else None),
+                "has_content": bool(request.tool_input.content if request.tool_input else None),
             },
         )
 
@@ -290,9 +276,7 @@ class HookHandler:
             "file_type_check",
             {
                 "is_python": is_python,
-                "file_path": (
-                    request.tool_input.file_path if request.tool_input else None
-                ),
+                "file_path": (request.tool_input.file_path if request.tool_input else None),
             },
         )
 
@@ -305,9 +289,7 @@ class HookHandler:
             "python_violations",
             {
                 "count": len(violations),
-                "violations": [
-                    v.model_dump() for v in violations[:3]
-                ],  # All violations are Pydantic models
+                "violations": [v.model_dump() for v in violations[:3]],  # All violations are Pydantic models
             },
         )
 
@@ -358,9 +340,7 @@ class HookHandler:
                 tool_response=None,  # PreToolUse has no response
                 violations=blocking_violations,
             )
-            formatted_violations = self.diff_intelligence.format_violations_by_category(
-                categorized_groups
-            )
+            formatted_violations = self.diff_intelligence.format_violations_by_category(categorized_groups)
         else:
             # Standard formatting for other tools
             violation_messages = []
@@ -395,9 +375,7 @@ class HookHandler:
 
         return PreToolDeny(llm_message=formatted)
 
-    def _handle_post_hook(
-        self, request: PostToolUseRequest, session_id: SessionID
-    ) -> HookOutcome:
+    def _handle_post_hook(self, request: PostToolUseRequest, session_id: SessionID) -> HookOutcome:
         """Handle PostToolUse."""
         config = self.config_loader.config
         messages = []
@@ -413,13 +391,9 @@ class HookHandler:
             "post_hook_start",
             {
                 "tool": request.tool_name,
-                "file_path": (
-                    request.tool_input.file_path if request.tool_input else None
-                ),
+                "file_path": (request.tool_input.file_path if request.tool_input else None),
                 "has_tool_response": isinstance(request, PostToolUseRequest)
-                and (
-                    request.tool_response is not None or request.tool_result is not None
-                ),
+                and (request.tool_response is not None or request.tool_result is not None),
             },
         )
 
@@ -439,10 +413,7 @@ class HookHandler:
             messages.append(f"Warning: {warning}")
 
         post_hook_config = config.hooks.get("post")
-        if (
-            isinstance(post_hook_config, PostToolHookConfig)
-            and post_hook_config.inject_permissions
-        ):
+        if isinstance(post_hook_config, PostToolHookConfig) and post_hook_config.inject_permissions:
             perms = self._build_permissions_info(session_id)
             if perms:
                 messages.append(perms)
@@ -459,9 +430,7 @@ class HookHandler:
                 "has_messages": bool(messages),
                 "messages": messages,
                 "has_autofix": bool(autofix_msg),
-                "has_important_info": (
-                    self._has_important_info(messages) if messages else False
-                ),
+                "has_important_info": (self._has_important_info(messages) if messages else False),
             },
         )
 
@@ -477,9 +446,7 @@ class HookHandler:
         else:
             return PostToolSuccess()
 
-    def _handle_stop_hook(
-        self, request: StopRequest, session_id: SessionID
-    ) -> HookOutcome:
+    def _handle_stop_hook(self, request: StopRequest, session_id: SessionID) -> HookOutcome:
         """
         Handle Stop hook (Claude ending its turn).
 
@@ -491,10 +458,7 @@ class HookHandler:
         logger.info(f"Stop hook for session {session_id}")
 
         stop_hook_config = config.hooks.get("stop")
-        if (
-            isinstance(stop_hook_config, StopHookConfig)
-            and not stop_hook_config.quality_gate
-        ):
+        if isinstance(stop_hook_config, StopHookConfig) and not stop_hook_config.quality_gate:
             return StopAllow()
 
         # TODO: Read transcript to find only files touched since last Stop
@@ -511,9 +475,7 @@ class HookHandler:
         # Find all Python files in the working directory that are tracked by git
         # This respects .gitignore and won't scan node_modules, venv, etc.
         python_files = get_git_tracked_files(working_dir, "*.py")
-        logger.info(
-            f"Stop hook: Found {len(python_files)} git-tracked Python files in {working_dir}"
-        )
+        logger.info(f"Stop hook: Found {len(python_files)} git-tracked Python files in {working_dir}")
 
         for py_file in python_files:
             if not py_file.exists():
@@ -533,21 +495,15 @@ class HookHandler:
                 critical_only=False,  # Stop hook checks all violations
             )
 
-            logger.info(
-                f"Stop hook: Checked {py_file}, found {len(violations)} violations"
-            )
+            logger.info(f"Stop hook: Checked {py_file}, found {len(violations)} violations")
             if violations:
                 for v in violations:
-                    logger.info(
-                        f"  - Violation: {v.rule} at line {v.line}: {v.message}"
-                    )
+                    logger.info(f"  - Violation: {v.rule} at line {v.line}: {v.message}")
 
             if violations:
                 # Only track violations that block stop hooks for quality gate
                 blocking_violations = filter_violations(violations, config, "stop")
-                logger.info(
-                    f"Stop hook: {len(blocking_violations)} are blocking violations"
-                )
+                logger.info(f"Stop hook: {len(blocking_violations)} are blocking violations")
                 if blocking_violations:
                     files_with_errors[str(py_file)] = blocking_violations
                     all_violations.extend(blocking_violations)
@@ -561,16 +517,8 @@ class HookHandler:
         error_parts = [f"Code has {len(all_violations)} errors that must be fixed:"]
 
         # Get configured limits
-        max_files = (
-            stop_hook_config.max_files_to_show
-            if isinstance(stop_hook_config, StopHookConfig)
-            else 5
-        )
-        max_per_file = (
-            stop_hook_config.max_violations_per_file
-            if isinstance(stop_hook_config, StopHookConfig)
-            else 3
-        )
+        max_files = stop_hook_config.max_files_to_show if isinstance(stop_hook_config, StopHookConfig) else 5
+        max_per_file = stop_hook_config.max_violations_per_file if isinstance(stop_hook_config, StopHookConfig) else 3
 
         # Show up to max_files files with their violations
         for file_path, file_violations in list(files_with_errors.items())[:max_files]:
@@ -583,14 +531,10 @@ class HookHandler:
                 else:
                     error_parts.append(f"  Line {v.line}: {v.message}")
             if len(file_violations) > max_per_file:
-                error_parts.append(
-                    f"  ... and {len(file_violations) - max_per_file} more"
-                )
+                error_parts.append(f"  ... and {len(file_violations) - max_per_file} more")
 
         if len(files_with_errors) > max_files:
-            error_parts.append(
-                f"\n... and {len(files_with_errors) - max_files} more files"
-            )
+            error_parts.append(f"\n... and {len(files_with_errors) - max_files} more files")
 
         # Add single command to check all files with violations
         error_parts.append("\n\nCommand to check all violations:")
@@ -599,17 +543,13 @@ class HookHandler:
 
         return StopPrevent(llm_message="".join(error_parts))
 
-    def _handle_subagent_stop(
-        self, request: SubagentStopRequest, session_id: SessionID
-    ) -> HookOutcome:
+    def _handle_subagent_stop(self, request: SubagentStopRequest, session_id: SessionID) -> HookOutcome:
         """Handle SubagentStop."""
         logger.info(f"SubagentStop hook for session {session_id}")
         # For now, always allow subagent to stop
         return SubagentStopAllow()
 
-    def _handle_notification(
-        self, request: NotificationRequest, session_id: SessionID
-    ) -> HookOutcome:
+    def _handle_notification(self, request: NotificationRequest, session_id: SessionID) -> HookOutcome:
         """Handle Notification."""
         logger.info(f"Notification hook for session {session_id}")
 
@@ -634,9 +574,7 @@ class HookHandler:
 
         return NotificationAcknowledge()
 
-    def _send_dbus_notification(
-        self, title: str, message: str, session_id: SessionID, urgency: str = "normal"
-    ) -> None:
+    def _send_dbus_notification(self, title: str, message: str, session_id: SessionID, urgency: str = "normal") -> None:
         """Send a notification via D-Bus, replacing any existing notification for this session."""
         # Import here to avoid circular import
 
@@ -645,9 +583,7 @@ class HookHandler:
             replaces_id = self.session_manager.get_notification_id(session_id) or 0
 
             # Send notification, replacing the previous one if it exists
-            notification_id = send_desktop_notification(
-                title, message, urgency=urgency, replaces_id=replaces_id
-            )
+            notification_id = send_desktop_notification(title, message, urgency=urgency, replaces_id=replaces_id)
 
             # Store the notification ID in session data
             self.session_manager.set_notification_id(session_id, notification_id)
@@ -668,18 +604,12 @@ class HookHandler:
             try:
                 close_desktop_notification(notification_id)
                 self.session_manager.clear_notification_id(session_id)
-                logger.debug(
-                    f"Cleared notification {notification_id} for session {session_id}"
-                )
+                logger.debug(f"Cleared notification {notification_id} for session {session_id}")
             except (OSError, ImportError, AttributeError) as e:
-                logger.debug(
-                    f"Failed to clear notification for session {session_id}: {e}"
-                )
+                logger.debug(f"Failed to clear notification for session {session_id}: {e}")
 
     # Helper methods
-    def _check_access_control(
-        self, request: PreToolUseRequest, session_id: SessionID
-    ) -> tuple[RuleAction, str | None]:
+    def _check_access_control(self, request: PreToolUseRequest, session_id: SessionID) -> tuple[RuleAction, str | None]:
         """Check access control rules."""
         context = PredicateContext(
             tool=request.tool_name,
@@ -698,9 +628,7 @@ class HookHandler:
         file_path = request.tool_input.file_path or ""
         return file_path.endswith(".py") and bool(request.tool_input.content)
 
-    def _check_python_violations(
-        self, request: PreToolUseRequest, config: Any
-    ) -> list[Violation]:
+    def _check_python_violations(self, request: PreToolUseRequest, config: Any) -> list[Violation]:
         """Check for Python AST and ruff violations."""
         file_path = request.tool_input.file_path
         content = request.tool_input.content
@@ -762,9 +690,7 @@ class HookHandler:
 
         # Format the code
         formatter = PythonFormatter(config.python_tools)
-        formatted_code, changes = formatter.format_code(
-            request.tool_input.content, file_path, categories
-        )
+        formatted_code, changes = formatter.format_code(request.tool_input.content, file_path, categories)
 
         if not changes or formatted_code == request.tool_input.content:
             return None
@@ -782,9 +708,7 @@ class HookHandler:
             # For Edit/MultiEdit, we can only notify
             return f"Code formatting issues: {', '.join(changes)}"
 
-    def _update_violation_tracking(
-        self, request: PostToolUseRequest, session_id: SessionID
-    ) -> None:
+    def _update_violation_tracking(self, request: PostToolUseRequest, session_id: SessionID) -> None:
         """Update violation tracking after tool execution."""
         file_path = request.tool_input.file_path
         if not file_path or not Path(file_path).exists():
@@ -808,11 +732,7 @@ class HookHandler:
                 # PostToolUseRequest may have either tool_response or tool_result
                 tool_response = None
                 if isinstance(request, PostToolUseRequest):
-                    tool_response = (
-                        request.tool_response
-                        if request.tool_response is not None
-                        else request.tool_result
-                    )
+                    tool_response = request.tool_response if request.tool_response is not None else request.tool_result
                 categorized_groups = self.diff_intelligence.analyze(
                     tool_name=request.tool_name,
                     tool_input=request.tool_input.model_dump(),
@@ -821,9 +741,7 @@ class HookHandler:
                 )
 
                 # Only track in-diff and near-diff violations as important
-                important_violations = categorized_groups.get(
-                    "in-diff", []
-                ) + categorized_groups.get("near-diff", [])
+                important_violations = categorized_groups.get("in-diff", []) + categorized_groups.get("near-diff", [])
 
                 if important_violations:
                     # Convert back to plain violations for tracker

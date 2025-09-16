@@ -1,0 +1,22 @@
+- tests must exercise as close to real code as possible; minimize any special "test mode" swiches.
+  strongly prefer mocking and options to override needed missing dependencies.
+
+341 +              import os as _os
+342 +              if not _os.environ.get("WT_TEST_MODE"):
+343 +                  current = asyncio.get_event_loop().run_until_complete(
+344 +                      self.discovery_scanner.scan(self.config.worktrees_dir)
+345 +                  )
+346 +                  changes = self.registry.apply(current)
+347 +                  self.known_worktrees = dict(self.registry.known)
+348 +                  for wt in changes.added:
+349 +                      self.shared_async_run(self._start_gitstatusd_for_worktree(wt))
+350 +                  self.worktree_index = WorktreeIndex.build(self.known_worktrees.values(), self.config.main_repo)
+351 +              else:
+352 +                  self.known_worktrees = {}
+353 +                  self.worktree_index = WorktreeIndex.build([], self.config.main_repo)
+
+
+Model Context Protocol
+--add-mcp <json> Adds MCP server definition to user profile. Accepts JSON input in the form '{"name":"server-name","command":...}'
+
+//"reasoning_summary": "concise",

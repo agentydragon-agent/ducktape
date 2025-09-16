@@ -1,6 +1,4 @@
-"""
-Core data models for working with Tana JSON dumps.
-"""
+"""Core data models for working with Tana JSON dumps."""
 
 from __future__ import annotations
 
@@ -14,6 +12,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 from .constants import LANGUAGE_KEY_ID, MEDIA_KEY_ID, SUPERTAG_KEY_ID
+from .query_core import get_tuple_value
 from .types import NodeId
 
 
@@ -98,9 +97,12 @@ class VisualNode(BaseNode):
         if not metanode:
             return None
 
-        from .query import get_tuple_value
-        if val_node := get_tuple_value(metanode, MEDIA_KEY_ID):
-            return val_node.name
+        # get_tuple_value returns a BaseNode when called from query.py, or
+        # a raw resolved node when callers pass a NodeStore; ensure we return
+        # a string name if available.
+        val_node = get_tuple_value(metanode, MEDIA_KEY_ID)
+        if val_node:
+            return getattr(val_node, "name", None)
 
         return None
 
@@ -113,9 +115,9 @@ class CodeBlockNode(BaseNode):
         if not self._store:
             raise RuntimeError("Node not attached to a store")
 
-        from .query import get_tuple_value
-        if lang_node := get_tuple_value(self, LANGUAGE_KEY_ID):
-            return lang_node.name or ""
+        lang_node = get_tuple_value(self, LANGUAGE_KEY_ID)
+        if lang_node:
+            return getattr(lang_node, "name", "") or ""
 
         return ""
 
@@ -203,7 +205,7 @@ class NodeStore(Mapping[NodeId, BaseNode]):
         self._supertag_index = dict(idx)
 
     @classmethod
-    def from_file(cls, path: Path):
+    def from_file(cls, path: Path) -> NodeStore:
         with path.open(encoding="utf-8") as fh:
             data = json.load(fh)
 
@@ -228,7 +230,6 @@ def load_tana_export(path: Path) -> NodeStore:
     Args:
         path: Path to the Tana JSON export file
 
-    Returns:
-        NodeStore with supertag index built
+    Returns: NodeStore with supertag index built
     """
     return NodeStore.from_file(path)

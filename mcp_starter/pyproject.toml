@@ -13,9 +13,6 @@ dependencies = [
 [project.scripts]
 adgn-mcp-starter = "adgn_mcp_starter.__main__:main"
 
-[tool.ruff]
-extend = "../ruff-base.toml"
-
 [tool.mypy]
 strict = true
 

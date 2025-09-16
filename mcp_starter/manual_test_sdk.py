@@ -13,12 +13,13 @@ import socket
 import subprocess
 import tempfile
 import uuid
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, AsyncIterator
+from typing import Any
 
-import claude_code_sdk._internal.transport.subprocess_cli as subprocess_cli
 from claude_code_sdk import ClaudeCodeOptions, ClaudeSDKClient
+from claude_code_sdk._internal.transport import subprocess_cli
 from claude_code_sdk.types import McpSSEServerConfig, McpStdioServerConfig
 from rich.console import Console
 from rich.logging import RichHandler
@@ -143,7 +144,7 @@ def find_unused_port(start_port: int = SSE_PORT_START, max_attempts: int = 100) 
             raise
 
     raise RuntimeError(
-        f"Could not find unused port in range {start_port}-{start_port + max_attempts}"
+        f"Could not find unused port in range {start_port}-{start_port + max_attempts}",
     )
 
 
@@ -158,7 +159,7 @@ async def sse_server_manager() -> AsyncIterator[McpSSEServerConfig]:
     sse_log_file = Path(tempfile.gettempdir()) / "mcp_starter_sse_server.log"
 
     logger.info(
-        f"[blue]Starting SSE server on port {sse_port}. Logs: {sse_log_file}[/blue]"
+        f"[blue]Starting SSE server on port {sse_port}. Logs: {sse_log_file}[/blue]",
     )
 
     # Set up clean isolated environment
@@ -173,7 +174,7 @@ async def sse_server_manager() -> AsyncIterator[McpSSEServerConfig]:
             "PYTHONUNBUFFERED": "1",
             "CLAUDE_CONFIG_PATH": "/nonexistent",
             "CLAUDE_CODE_CONFIG_PATH": "/nonexistent",
-        }
+        },
     )
 
     server_process = None
@@ -237,7 +238,8 @@ async def sse_server_manager() -> AsyncIterator[McpSSEServerConfig]:
 
 
 async def run_test_suite(
-    mcp_server_config: McpStdioServerConfig | McpSSEServerConfig, mode_name: str
+    mcp_server_config: McpStdioServerConfig | McpSSEServerConfig,
+    mode_name: str,
 ) -> None:
     """Run the complete test suite using the provided MCP server config"""
     # Create options with strict MCP isolation
@@ -286,7 +288,7 @@ async def run_test_suite(
                 failed_tests += 1
             else:
                 logger.error(
-                    f"[red]✗ Test {i} ({test_case['name']}): INVALID (no PASS/FAIL found)[/red]"
+                    f"[red]✗ Test {i} ({test_case['name']}): INVALID (no PASS/FAIL found)[/red]",
                 )
                 failed_tests += 1
 
@@ -300,18 +302,18 @@ async def run_test_suite(
 
         if failed_tests == 0:
             logger.info(
-                f"[green]✓ All {mode_name} mode tests completed successfully[/green]"
+                f"[green]✓ All {mode_name} mode tests completed successfully[/green]",
             )
         else:
             logger.error(
-                f"[red]✗ {failed_tests} out of {passed_tests + failed_tests} {mode_name} tests failed[/red]"
+                f"[red]✗ {failed_tests} out of {passed_tests + failed_tests} {mode_name} tests failed[/red]",
             )
 
 
 async def main() -> None:
     """Main test function"""
     logger.info(
-        "[blue]Starting MCP Starter Template tests with Claude Code SDK...[/blue]"
+        "[blue]Starting MCP Starter Template tests with Claude Code SDK...[/blue]",
     )
 
     logger.info("[blue]Testing STDIO mode with Claude Code SDK...[/blue]")

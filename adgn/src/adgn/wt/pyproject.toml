@@ -1,0 +1,20 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "wt"
+version = "0.1.0"
+description = "Worktree management with POSIX shell integration and COW operations"
+dependencies = [
+]
+
+[project.optional-dependencies]
+test = [
+    'pytest>=7.0.0',
+    'pytest-timeout>=2.2.0',
+]
+
+[tool.pytest.ini_options]
+addopts = [
+]

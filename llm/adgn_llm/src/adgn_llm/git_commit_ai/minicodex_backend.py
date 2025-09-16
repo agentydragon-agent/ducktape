@@ -215,7 +215,7 @@ async def generate_commit_message_minicodex(model: str, *, debug: bool = False, 
     for name in ("mini_codex", "MiniCodex", "adgn_llm.mini_codex", "mcp", "openai"):
         logging.getLogger(name).setLevel(logging.WARNING)
 
-    handlers = [CommitController(submit_state, GIT_RO_SERVER_NAME, amend=amend)]
+    handlers: list[BaseHandler] = [CommitController(submit_state, GIT_RO_SERVER_NAME, amend=amend)]
     if debug:
         handlers.insert(0, DisplayEventsHandler(write=lambda s: print(s, file=sys.stderr)))
 

@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import json
+from contextlib import AsyncExitStack
 
 import pytest
 from adgn_llm.mcp.git_ro.server import (
-    GIT_RO_SERVER_NAME,
     DiffInput,
     DiffResult,
     PatchResult,
@@ -13,17 +13,18 @@ from adgn_llm.mcp.git_ro.server import (
     make_git_ro_server,
 )
 from adgn_llm.mcp.inproc_transport import make_inproc_slot_spec
-from adgn_llm.mini_codex.mcp_manager import McpManager, build_mcp_function
 from pydantic import TypeAdapter
 
 
 @pytest.mark.asyncio
 async def test_git_diff_patch_first_page(repo_git_ro) -> None:
     spec = make_inproc_slot_spec(make_git_ro_server(repo_git_ro))
-    async with McpManager({GIT_RO_SERVER_NAME: spec}) as m:
-        res = await m.call_tool(
-            build_mcp_function(GIT_RO_SERVER_NAME, "git_diff"),
-            {
+    async with AsyncExitStack() as stack:
+        slot = await spec.open(stack)
+        session = slot.session
+        res = await session.call_tool(
+            name="git_diff",
+            arguments={
                 "payload": DiffInput(staged=True, unified=0, slice=TextSlice(offset_chars=0, max_chars=2000)),
             },
         )
@@ -41,11 +42,13 @@ async def test_git_diff_patch_first_page(repo_git_ro) -> None:
 @pytest.mark.asyncio
 async def test_git_diff_patch_second_page(repo_git_ro) -> None:
     spec = make_inproc_slot_spec(make_git_ro_server(repo_git_ro))
-    async with McpManager({GIT_RO_SERVER_NAME: spec}) as m:
+    async with AsyncExitStack() as stack:
+        slot = await spec.open(stack)
+        session = slot.session
         # First page to get next_offset
-        res1 = await m.call_tool(
-            build_mcp_function(GIT_RO_SERVER_NAME, "git_diff"),
-            {
+        res1 = await session.call_tool(
+            name="git_diff",
+            arguments={
                 "payload": DiffInput(staged=True, unified=0, slice=TextSlice(offset_chars=0, max_chars=2000)),
             },
         )
@@ -56,9 +59,9 @@ async def test_git_diff_patch_second_page(repo_git_ro) -> None:
         next_offset = union1.result.next_offset or 0
 
         # Second page
-        res2 = await m.call_tool(
-            build_mcp_function(GIT_RO_SERVER_NAME, "git_diff"),
-            {
+        res2 = await session.call_tool(
+            name="git_diff",
+            arguments={
                 "payload": DiffInput(staged=True, unified=0, slice=TextSlice(offset_chars=next_offset, max_chars=2000)),
             },
         )

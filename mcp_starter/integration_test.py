@@ -17,12 +17,13 @@ async def test_list_tools_includes_expected(mcp_client: Client) -> None:
 async def test_content_chunks_via_client(mcp_client: Client) -> None:
     """Test content chunking via the public MCP interface."""
     result = await mcp_client.call_tool(
-        name="get_text_chunks", arguments={"text": "Hello World", "chunk_size": 5}
+        name="get_text_chunks",
+        arguments={"text": "Hello World", "chunk_size": 5},
     )
     assert not result.is_error
     # The server returns structured content as {"result": [ContentChunk, ...]}
     sc = result.structured_content
-    assert isinstance(sc, dict) and "result" in sc, f"Unexpected structured_content: {sc!r}"
+    assert isinstance(sc, dict)
     chunks = sc["result"]
     assert isinstance(chunks, list), f"Unexpected chunks type: {type(chunks)}"
     assert len(chunks) == 3
@@ -48,7 +49,8 @@ async def test_image_generation_via_client(mcp_client: Client) -> None:
     img = next((c for c in contents if isinstance(c, mcp_types.ImageContent)), None)
     assert isinstance(img, mcp_types.ImageContent), "No image content block returned"
     assert img.mimeType == "image/png"
-    assert isinstance(img.data, str) and len(img.data) > 0
+    assert isinstance(img.data, str)
+    assert len(img.data) > 0
 
 
 async def test_unknown_tool_raises(mcp_client: Client) -> None:

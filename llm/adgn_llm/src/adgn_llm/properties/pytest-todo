@@ -4,3 +4,4 @@ in pytest, temporary dirs must use standard pytest tmp_path or tmpdir fixtures u
 
 - Markdown: 'mini-headings' should not be plain text - bold or subheadings or something. here 'Purpose' and 'Core concepts':
 
+- no backcompat shims (e.g. in renames)

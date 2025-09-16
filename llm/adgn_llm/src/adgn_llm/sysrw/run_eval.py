@@ -517,7 +517,11 @@ async def run_eval(
     base_out: Path | None,
     n_limit: int | None = None,
     concurrency: int = 32,
+    *,
+    client: AsyncOpenAI,
 ):
+    """Run eval pipeline. `client` (AsyncOpenAI) is required and must be injected by caller."""
+
     # ---- Helpers for Responses-native inputs ----
     def _responses_join_text(parts: Any) -> str:
         if isinstance(parts, str):
@@ -637,7 +641,9 @@ async def run_eval(
         "grader_errors": 0,
     }
 
-    client = AsyncOpenAI()
+    # client is injected by caller (no implicit AsyncOpenAI() here)
+    if client is None:
+        raise ValueError("run_eval requires a non-None AsyncOpenAI client injected by caller")
     sem = asyncio.Semaphore(max(1, int(concurrency)))
 
     async def process(item: Sample) -> tuple[dict | None, dict | None]:

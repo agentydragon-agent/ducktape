@@ -118,7 +118,7 @@ async def test_tool_error_is_surfaced_in_sequence(
             model=responses_factory.model,
             mcp=mcp,
             system="You are a code agent.",
-            client=FakeOpenAIClient(),  # type: ignore[arg-type]
+            client=FakeOpenAIClient(responses_factory.model),  # type: ignore[arg-type]
             handlers=[_AutoHandler(), rec],
         )
         await agent.run("call failing tool once")

@@ -59,7 +59,6 @@ adgn-inop = "adgn_llm.inop.core.optimizer:main"
 adgn-mcp-docker-exec = "adgn_llm.mcp.docker_exec.launcher:main"
 adgn-mcp-gitea-mirror = "adgn_llm.mcp.gitea_mirror.launcher:main"
 adgn-llm-edit = "adgn_llm.llm_edit:app"
-rspcache = "adgn_llm.rspcache.cli:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
@@ -83,11 +82,13 @@ adgn_llm = [
   "pytest>=8",
   "pytest-asyncio>=0.23",
   "pytest-timeout>=2.2",
+  "pytest-xdist>=3.6",
 ]
  dev = [
   "pytest>=8",
   "pytest-asyncio>=0.23",
   "pytest-timeout>=2.2",
+  "pytest-xdist>=3.6",
   "ruff>=0.5",
   "mypy>=1.8",
   "types-requests",
@@ -136,7 +137,7 @@ timeout_method = "thread"
 [tool.mypy]
 plugins = ["pydantic.mypy"]
 # Exclude vendored/specimen snapshots and third-party code from type checking
-exclude = ["^adgn_llm/properties/specimens/", ".*/scratch/"]
+exclude = ["^src/adgn_llm/properties/specimens/", ".*/scratch/"]
 
 [tool.uv]
 package = true

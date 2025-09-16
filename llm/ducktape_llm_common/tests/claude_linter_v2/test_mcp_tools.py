@@ -65,9 +65,7 @@ class TestMCPTools:
             session_id=str(session_id),
             hook_event_name="PostToolUse",
             tool_name="mcp_puppeteer_navigate",
-            tool_input=ToolInput(
-                url="https://example.com", allowDangerous=True, wait_for="networkidle2"
-            ),
+            tool_input=ToolInput(url="https://example.com", allowDangerous=True, wait_for="networkidle2"),
             tool_result={"success": True, "screenshot": "base64_data_here"},
         )
 
@@ -80,9 +78,7 @@ class TestMCPTools:
         mock_config = MagicMock()
         mock_config.access_control = []
         mock_config.repo_rules = []
-        mock_config.hooks = {
-            "post": MagicMock(auto_fix=False, inject_permissions=False)
-        }
+        mock_config.hooks = {"post": MagicMock(auto_fix=False, inject_permissions=False)}
         mock_config.python.hard_blocks.bare_except = True
         mock_config.python.hard_blocks.getattr_setattr = True
         mock_config.python.hard_blocks.barrel_init = True
@@ -144,9 +140,7 @@ class TestMCPTools:
 
         # Create a real config model with proper nested structure
         config = ModularConfig()
-        config.hooks["post"] = PostToolHookConfig(
-            auto_fix=True, autofix_categories=[AutofixCategory.FORMATTING]
-        )
+        config.hooks["post"] = PostToolHookConfig(auto_fix=True, autofix_categories=[AutofixCategory.FORMATTING])
 
         # Replace the config loader's config
         handler.config_loader._config = config
@@ -199,9 +193,7 @@ class TestMCPTools:
             session_id=str(session_id),
             hook_event_name="PostToolUse",
             tool_name="mcp_knowledge_graph_query",
-            tool_input=ToolInput(
-                query="MATCH (n:Node) RETURN n LIMIT 10", database="neo4j"
-            ),
+            tool_input=ToolInput(query="MATCH (n:Node) RETURN n LIMIT 10", database="neo4j"),
             tool_result={
                 "nodes": [
                     {
@@ -262,9 +254,7 @@ class TestMCPTools:
             ),  # No path
         ],
     )
-    def test_mcp_tool_python_detection(
-        self, handler, session_id, tool_name, input_fields, should_check_python
-    ):
+    def test_mcp_tool_python_detection(self, handler, session_id, tool_name, input_fields, should_check_python):
         """Test that Python file detection works correctly for various MCP tools."""
         # Create request with specific fields
         tool_input_dict = {"file_path": None, "content": None, **input_fields}
@@ -307,9 +297,7 @@ class TestMCPTools:
             session_id=str(session_id),
             hook_event_name="PreToolUse",
             tool_name="mcp_file_manager_open",
-            tool_input=ToolInput(
-                file_path="/home/user/projects/myapp/src/main.py", content="# Main file"
-            ),
+            tool_input=ToolInput(file_path="/home/user/projects/myapp/src/main.py", content="# Main file"),
         )
 
         with patch.object(handler.session_manager, "track_session") as mock_track:

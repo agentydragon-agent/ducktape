@@ -18,11 +18,12 @@ async def test_greet_tool(mcp_client: FastMCPClient) -> None:
 @pytest.mark.asyncio
 async def test_get_text_chunks_tool(mcp_client: FastMCPClient) -> None:
     result = await mcp_client.call_tool(
-        name="get_text_chunks", arguments={"text": "Hello World", "chunk_size": 5}
+        name="get_text_chunks",
+        arguments={"text": "Hello World", "chunk_size": 5},
     )
     assert not getattr(result, "is_error", False)
     sc = result.structured_content
-    assert isinstance(sc, dict) and "result" in sc
+    assert isinstance(sc, dict)
     chunks = sc["result"]
     assert len(chunks) == 3
     assert chunks[0]["content"] == "Hello"

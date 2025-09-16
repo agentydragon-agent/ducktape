@@ -97,6 +97,7 @@ def _run_cli(
     reasoning_effort: str | None,
     reasoning_summary: str | None,
 ) -> None:
+    # Construct a real AsyncOpenAI client only in the top-level CLI path and pass it explicitly
     client = openai.AsyncOpenAI()
     code = asyncio.run(
         _execute(

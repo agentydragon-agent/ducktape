@@ -271,7 +271,7 @@ async def prompt_optimize(
 ) -> None:
     """Run a Prompt Engineering agent to optimize a critic system prompt using prompt_eval MCP."""
     # Build base specs with prompt_eval MCP
-    pe_server, pe_state = build_prompt_eval_server(agent_model=model)
+    pe_server, pe_state = build_prompt_eval_server(agent_model=model, client=AsyncOpenAI())
     specs = {"prompt_eval": make_inproc_slot_spec(pe_server)}
 
     system = (
@@ -415,7 +415,7 @@ async def prompt_eval(
 ) -> None:
     """Evaluate a critic system prompt across all known specimens and emit metrics list."""
 
-    pe_server, _state = build_prompt_eval_server()
+    pe_server, _state = build_prompt_eval_server(client=AsyncOpenAI())
 
     async def _run() -> List[dict]:
         base = find_specimens_base()

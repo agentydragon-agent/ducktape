@@ -46,6 +46,8 @@ async def test_minicodex_with_sdk_mocks_executes_tool_and_returns_text(
         responses_factory.make_assistant_text_response(text="done"),
     ]
     client = responses_factory.make_fake_client(seq)
+    # Sanity: ensure test is using the fake client and not a real AsyncOpenAI
+    assert type(client).__name__ == "FakeOpenAIClient", "test must use FakeOpenAIClient to avoid real network calls"
 
     async with McpManager({"echo": spec}) as mcp:
         # Minimal handler stack: use a RecordingHandler to capture function_call_output events

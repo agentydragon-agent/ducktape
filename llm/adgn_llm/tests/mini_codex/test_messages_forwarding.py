@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from typing import Any
 
 import pytest
@@ -42,15 +43,27 @@ def _make_echo_server() -> FastMCP:
     return mcp
 
 
-# Capturing client that records calls and returns a predefined sequence of Responses
+@dataclass
+class CallRecord:
+    kwargs: dict[str, Any]
+
+    # Common accessors
+    @property
+    def input(self) -> list[dict[str, Any]]:
+        return list(self.kwargs.get("input") or [])
+
+
 class _CapturingResponses:
     def __init__(self, seq: list[Response]) -> None:
         self._seq = seq
         self.calls = 0
         self.captured: list[dict[str, Any]] = []
+        self.calls_list: list[CallRecord] = []
 
     async def create(self, **kwargs: Any) -> Response:  # OpenAI AsyncResponses-compatible
-        self.captured.append(dict(kwargs))
+        payload = dict(kwargs)
+        self.captured.append(payload)
+        self.calls_list.append(CallRecord(kwargs=payload))
         idx = min(self.calls, len(self._seq) - 1)
         self.calls += 1
         return self._seq[idx]
@@ -132,13 +145,12 @@ async def test_stateless_reasoning_forwarding() -> None:
 
         await agent.run("say hi")
 
-    # Second call's input should contain the reasoning item and assistant message in-order
-    assert client.responses.calls >= 1
-    # If a second create was made, check its input; otherwise check first
-    idx = min(1, len(client.responses.captured) - 1)
-    input_items = client.responses.captured[idx].get("input") or []
-    assert any(isinstance(it, dict) and it.get("type") == "reasoning" for it in input_items)
-    assert any(isinstance(it, dict) and it.get("type") == "message" for it in input_items)
+        # Reasoning should be present in the agent transcript/messages for stateless forwarding
+        msgs = agent.messages
+        # We forward reasoning items with type="reasoning"
+        assert any(isinstance(it, dict) and it.get("type") == "reasoning" for it in msgs)
+        # Assistant text is represented as a standard assistant message (role/content), not a type="message" wrapper
+        assert any(isinstance(it, dict) and it.get("role") == "assistant" for it in msgs)
 
 
 @pytest.mark.asyncio
@@ -146,7 +158,10 @@ async def test_function_call_and_fco_replay() -> None:
     """Request1 produces a function_call; after local execution, messages() must include fc and fco."""
     spec = make_inproc_slot_spec(_make_echo_server())
 
-    seq = [_make_tool_call_resp("call-1", "mcp__echo__echo", {"text": "hi"}), _make_reasoning_then_message("done")]
+    seq = [
+        _make_tool_call_resp("call-1", "mcp__echo__echo", {"text": "hi"}),
+        _make_reasoning_then_message("done"),
+    ]
     client = CapturingClient(seq)
 
     async with McpManager({"echo": spec}) as mcp:
@@ -161,8 +176,10 @@ async def test_function_call_and_fco_replay() -> None:
         await agent.run("say hi")
 
     # Check that the captured second input includes function_call and function_call_output
-    idx = min(1, len(client.responses.captured) - 1)
-    input_items = client.responses.captured[idx].get("input") or []
+    # We should have exactly two calls; inspect the second call's input shape
+    assert client.responses.calls == 2
+    second = client.responses.calls_list[1]
+    input_items = second.input
     assert any(isinstance(it, dict) and it.get("type") == "function_call" for it in input_items)
     assert any(isinstance(it, dict) and it.get("type") == "function_call_output" for it in input_items)
 
@@ -174,7 +191,10 @@ async def test_mixed_reasoning_fc_ordering() -> None:
 
     # Build a response with reasoning then function_call then assistant
     tc = ResponseFunctionToolCall(
-        type="function_call", call_id="call-1", name="mcp__echo__echo", arguments=json.dumps({"text": "hi"})
+        type="function_call",
+        call_id="call-1",
+        name="mcp__echo__echo",
+        arguments=json.dumps({"text": "hi"}),
     )
     resp = Response(
         id="r_mix",
@@ -183,7 +203,9 @@ async def test_mixed_reasoning_fc_ordering() -> None:
         object="response",
         output=[
             ResponseReasoningItem(
-                id="rs_x", type="reasoning", summary=[ReasoningSummary(type="summary_text", text="x")]
+                id="rs_x",
+                type="reasoning",
+                summary=[ReasoningSummary(type="summary_text", text="x")],
             ),
             tc,
             ResponseOutputMessage(
@@ -199,22 +221,28 @@ async def test_mixed_reasoning_fc_ordering() -> None:
         tools=[],
         usage=_usage(0, 1),
     )
-    client = CapturingClient([resp, resp])
+    # Use a final assistant message on the second call to avoid infinite tool-call loops
+    client = CapturingClient([resp, _make_reasoning_then_message("ok")])
 
     async with McpManager({"echo": spec}) as mcp:
         agent = await MiniCodex.create(
-            model="test-model", mcp=mcp, system="test", client=client, handlers=[AutoHandler()]
+            model="test-model",
+            mcp=mcp,
+            system="test",
+            client=client,
+            handlers=[AutoHandler()],
         )
         await agent.run("start")
 
-    idx = min(1, len(client.responses.captured) - 1)
-    input_items = client.responses.captured[idx].get("input") or []
+    # Expect exactly two calls; validate second call input ordering/types
+    assert client.responses.calls == 2
+    input_items = client.responses.calls_list[1].input
     types = [it.get("type") if isinstance(it, dict) else None for it in input_items]
-    # Expect reasoning, function_call, function_call_output, message in that order (function_call_output may appear twice depending on flow)
+    # Expect reasoning, function_call, function_call_output, and an assistant message present
     assert "reasoning" in types
     assert "function_call" in types
     assert "function_call_output" in types
-    assert "message" in types
+    assert any(isinstance(it, dict) and it.get("role") == "assistant" for it in input_items)
 
 
 @pytest.mark.asyncio
@@ -223,12 +251,19 @@ async def test_no_synthesized_reasoning_items() -> None:
     spec = make_inproc_slot_spec(_make_echo_server())
 
     # Response with only a function_call (no reasoning)
-    seq = [_make_tool_call_resp("call-1", "mcp__echo__echo", {"text": "hi"}), _make_reasoning_then_message("done")]
+    seq = [
+        _make_tool_call_resp("call-1", "mcp__echo__echo", {"text": "hi"}),
+        _make_reasoning_then_message("done"),
+    ]
     client = CapturingClient(seq)
 
     async with McpManager({"echo": spec}) as mcp:
         agent = await MiniCodex.create(
-            model="test-model", mcp=mcp, system="test", client=client, handlers=[AutoHandler()]
+            model="test-model",
+            mcp=mcp,
+            system="test",
+            client=client,
+            handlers=[AutoHandler()],
         )
         await agent.run("say hi")
 

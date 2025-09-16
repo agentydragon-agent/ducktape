@@ -58,9 +58,7 @@ def parse_expiry_duration(duration_str: str) -> datetime:
     """
     seconds = parse_duration(duration_str)
     if seconds is None:
-        raise click.ClickException(
-            f"Invalid duration format: {duration_str}\nValid formats: 30m, 2h, 1d, 1h30m, etc."
-        )
+        raise click.ClickException(f"Invalid duration format: {duration_str}\nValid formats: 30m, 2h, 1d, 1h30m, etc.")
     return datetime.now() + timedelta(seconds=seconds)
 
 
@@ -156,9 +154,7 @@ def hook(request_json: str | None) -> None:
         logger.error(f"FATAL: JSON parse error: {e}")
 
         # Send desktop notification
-        _try_send_crash_notification(
-            "Claude Linter Hook Crashed", f"JSON parse error: {str(e)}"
-        )
+        _try_send_crash_notification("Claude Linter Hook Crashed", f"JSON parse error: {str(e)}")
 
         # DO NOT output JSON - just crash
         raise
@@ -173,9 +169,7 @@ def hook(request_json: str | None) -> None:
         logger.error(f"FATAL: Unknown hook type: {hook_type}")
 
         # Send desktop notification
-        _try_send_crash_notification(
-            "Claude Linter Hook Crashed", f"Unknown hook type: {hook_type}"
-        )
+        _try_send_crash_notification("Claude Linter Hook Crashed", f"Unknown hook type: {hook_type}")
 
         # DO NOT output JSON - just crash
         raise ValueError(f"Unknown hook type: {hook_type}")
@@ -184,9 +178,7 @@ def hook(request_json: str | None) -> None:
         request = request_class(**request_data)
     except Exception as e:
         # Log the actual error
-        logger.error(
-            f"FATAL: Request validation error for {hook_type}: {e}", exc_info=True
-        )
+        logger.error(f"FATAL: Request validation error for {hook_type}: {e}", exc_info=True)
 
         # Send desktop notification
         _try_send_crash_notification(
@@ -207,9 +199,7 @@ def hook(request_json: str | None) -> None:
         logger.error(f"FATAL: Hook bug: {e}", exc_info=True)
 
         # Send desktop notification
-        _try_send_crash_notification(
-            "Claude Linter Hook Bug", f"Hook implementation error: {str(e)}"
-        )
+        _try_send_crash_notification("Claude Linter Hook Bug", f"Hook implementation error: {str(e)}")
 
         # DO NOT output JSON - just crash
         raise
@@ -221,9 +211,7 @@ def hook(request_json: str | None) -> None:
         logger.error(traceback.format_exc())
 
         # Send desktop notification
-        _try_send_crash_notification(
-            "Claude Linter Hook Crashed", f"Unexpected error in {hook_type}: {str(e)}"
-        )
+        _try_send_crash_notification("Claude Linter Hook Crashed", f"Unexpected error in {hook_type}: {str(e)}")
 
         # DO NOT output JSON - just crash
         raise
@@ -241,13 +229,9 @@ def session() -> None:
 @session.command("allow")
 @click.argument("predicate")
 @click.option("--expires", type=str, help="Duration (e.g., '2h', '30m')")
-@click.option(
-    "--session", type=str, help="Specific session ID (default: all in current dir)"
-)
+@click.option("--session", type=str, help="Specific session ID (default: all in current dir)")
 @click.option("--dir", type=Path, help="Directory to affect (default: current)")
-def session_allow(
-    predicate: str, expires: str | None, session: str | None, dir: Path | None
-) -> None:
+def session_allow(predicate: str, expires: str | None, session: str | None, dir: Path | None) -> None:
     """Grant temporary permissions using Python predicates."""
 
     manager = SessionManager()
@@ -277,13 +261,9 @@ def session_allow(
 @session.command("deny")
 @click.argument("predicate")
 @click.option("--expires", type=str, help="Duration (e.g., '2h', '30m')")
-@click.option(
-    "--session", type=str, help="Specific session ID (default: all in current dir)"
-)
+@click.option("--session", type=str, help="Specific session ID (default: all in current dir)")
 @click.option("--dir", type=Path, help="Directory to affect (default: current)")
-def session_deny(
-    predicate: str, expires: str | None, session: str | None, dir: Path | None
-) -> None:
+def session_deny(predicate: str, expires: str | None, session: str | None, dir: Path | None) -> None:
     """Deny permissions using Python predicates.
 
     Examples:
@@ -389,9 +369,7 @@ def profile() -> None:
 
 @profile.command("activate")
 @click.argument("name")
-@click.option(
-    "--session", type=str, help="Specific session ID (default: all in current dir)"
-)
+@click.option("--session", type=str, help="Specific session ID (default: all in current dir)")
 def profile_activate(name: str, session: str | None) -> None:
     """Activate a predefined permission profile."""
     # TODO: Implement profile activation
@@ -510,9 +488,7 @@ def check(
         else:
             if fix:
                 click.echo("🔧 Fixed issues where possible")
-            click.echo(
-                f"{'❌' if not fix else '⚠️ '} Found {total_violations} issue(s) in {len(results)} file(s)"
-            )
+            click.echo(f"{'❌' if not fix else '⚠️ '} Found {total_violations} issue(s) in {len(results)} file(s)")
 
     # Exit with error code if violations found
     sys.exit(1 if total_violations > 0 and not fix else 0)
@@ -529,9 +505,7 @@ def fix(paths: tuple[Path, ...], categories: tuple[str, ...]) -> None:
 
 
 @cli.command()
-@click.option(
-    "--dry-run", is_flag=True, help="Show what would be done without modifying files"
-)
+@click.option("--dry-run", is_flag=True, help="Show what would be done without modifying files")
 @click.option(
     "--config",
     type=Path,
@@ -590,9 +564,7 @@ def install(dry_run: bool, config: Path) -> None:
             existing_hooks.append(hook_name)
 
     if existing_hooks and not dry_run:
-        click.echo(
-            f"⚠️  Warning: The following hooks already exist: {', '.join(existing_hooks)}"
-        )
+        click.echo(f"⚠️  Warning: The following hooks already exist: {', '.join(existing_hooks)}")
         if not click.confirm("Do you want to overwrite them?"):
             click.echo("Installation cancelled.")
             return
@@ -602,9 +574,7 @@ def install(dry_run: bool, config: Path) -> None:
     click.echo(f"   Command: {cl2_path}")
     click.echo("   Events:")
     for hook_name, _ in hooks.items():
-        status = (
-            "✅ exists" if hook_name in claude_config.get("hooks", {}) else "➕ new"
-        )
+        status = "✅ exists" if hook_name in claude_config.get("hooks", {}) else "➕ new"
         click.echo(f"     - {hook_name} [{status}]")
 
     if dry_run:

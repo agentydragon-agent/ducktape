@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
+import openai as _openai
 import pytest
 from openai.types.responses import Response, ResponseOutputMessage, ResponseOutputText
 from openai.types.responses.response_usage import (
@@ -86,3 +87,57 @@ def fake_openai_client_factory() -> Callable[[Iterable[Response]], FakeOpenAICli
         return FakeOpenAIClient(outputs)
 
     return _make
+
+
+# --- Opt-in OpenAI client policy for tests ---
+# By default, tests should NOT create real AsyncOpenAI() instances. Replace the
+# constructor with a raising stub so tests must explicitly opt-in via the
+# `openai_client` fixture when they need a real (or mocked) AsyncOpenAI instance.
+
+_orig_async = getattr(_openai, "AsyncOpenAI", None)
+
+
+def _raising_async(*args, **kwargs):
+    raise RuntimeError(
+        "AsyncOpenAI() is disabled by default for tests.\n"
+        "If a test needs an OpenAI client, request the `openai_client` fixture or add an explicit patch.\n"
+        "This ensures tests explicitly opt-in to using live/mocked clients and avoid accidental network calls."
+    )
+
+
+@pytest.fixture(autouse=True)
+def fail_openai_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Autouse fixture that replaces openai.AsyncOpenAI with a raising stub.
+
+    Tests that need access must explicitly use the `openai_client` fixture which
+    temporarily restores the real AsyncOpenAI constructor for that test.
+    """
+    monkeypatch.setattr(_openai, "AsyncOpenAI", _raising_async)
+    yield
+
+
+@pytest.fixture
+async def openai_client(monkeypatch: pytest.MonkeyPatch):
+    """Opt-in fixture: restore the real AsyncOpenAI for the duration of the test and yield an instance.
+
+    Usage:
+        async def test_x(openai_client):
+            resp = await openai_client.responses.create(...)
+    """
+    if _orig_async is None:
+        raise RuntimeError("No openai.AsyncOpenAI available in this environment to restore")
+
+    # restore the original constructor for this test
+    monkeypatch.setattr(_openai, "AsyncOpenAI", _orig_async)
+    client = _orig_async()
+    try:
+        yield client
+    finally:
+        # cleanup client if it supports aclose()
+        try:
+            aclose = getattr(client, "aclose", None)
+            if aclose is not None:
+                await aclose()
+        finally:
+            # ensure we put back the raising stub
+            monkeypatch.setattr(_openai, "AsyncOpenAI", _raising_async)

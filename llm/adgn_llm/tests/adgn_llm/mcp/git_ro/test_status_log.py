@@ -3,26 +3,14 @@ from __future__ import annotations
 import json
 
 import pytest
-from adgn_llm.mcp.git_ro.server import (
-    GIT_RO_SERVER_NAME,
-    LogInput,
-    StatusPage,
-    TextPage,
-    TextSlice,
-    make_git_ro_server,
-)
-from adgn_llm.mcp.inproc_transport import make_inproc_slot_spec
-from adgn_llm.mini_codex.mcp_manager import McpManager, build_mcp_function
+from adgn_llm.mcp.git_ro.server import LogInput, StatusPage, TextPage, TextSlice
 from pydantic import TypeAdapter
 
 
 @pytest.mark.asyncio
-async def test_git_status_basic(repo_git_ro) -> None:
-    spec = make_inproc_slot_spec(make_git_ro_server(repo_git_ro))
-    async with McpManager({GIT_RO_SERVER_NAME: spec}) as m:
-        name = build_mcp_function(GIT_RO_SERVER_NAME, "git_status")
-        # call via namespaced call_tool
-        res = await m.call_tool(name, arguments={})
+async def test_git_status_basic(git_ro_session) -> None:
+    async with git_ro_session() as session:
+        res = await session.call_tool(name="git_status", arguments={})
         payload = res.structuredContent
         if isinstance(payload, str):
             payload = json.loads(payload)
@@ -31,13 +19,10 @@ async def test_git_status_basic(repo_git_ro) -> None:
 
 
 @pytest.mark.asyncio
-async def test_git_log_oneline_basic(repo_git_ro) -> None:
-    spec = make_inproc_slot_spec(make_git_ro_server(repo_git_ro))
-    async with McpManager({GIT_RO_SERVER_NAME: spec}) as m:
-        name = build_mcp_function(GIT_RO_SERVER_NAME, "git_log")
-        # call via namespaced call_tool
-        res = await m.call_tool(
-            name,
+async def test_git_log_oneline_basic(git_ro_session) -> None:
+    async with git_ro_session() as session:
+        res = await session.call_tool(
+            name="git_log",
             arguments={
                 "payload": LogInput(
                     rev="HEAD",

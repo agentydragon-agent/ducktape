@@ -25,12 +25,8 @@ class RuleConfig(BaseModel):
     """Configuration for a single rule."""
 
     enabled: bool = Field(True, description="Whether this rule is enabled")
-    blocks_pre_hook: bool | None = Field(
-        None, description="Override default pre-hook blocking (None = use default)"
-    )
-    blocks_stop_hook: bool | None = Field(
-        None, description="Override default stop-hook blocking (None = use default)"
-    )
+    blocks_pre_hook: bool | None = Field(None, description="Override default pre-hook blocking (None = use default)")
+    blocks_stop_hook: bool | None = Field(None, description="Override default stop-hook blocking (None = use default)")
     message: str | None = Field(None, description="Override default error message")
 
 
@@ -41,9 +37,7 @@ class ModularConfig(BaseModel):
 
     # Core settings
     version: Literal["2.0"] = Field("2.0", description="Config version")
-    max_errors_to_show: int = Field(
-        3, description="Maximum errors to display in hook responses"
-    )
+    max_errors_to_show: int = Field(3, description="Maximum errors to display in hook responses")
 
     # Rules configuration - single dict for all rules
     rules: dict[str, RuleConfig] = Field(
@@ -52,14 +46,10 @@ class ModularConfig(BaseModel):
     )
 
     # Access control
-    access_control: list[AccessControlRule] = Field(
-        default_factory=list, description="Path-based access control rules"
-    )
+    access_control: list[AccessControlRule] = Field(default_factory=list, description="Path-based access control rules")
 
     # Repo-wide predicate rules
-    repo_rules: list[PredicateRule] = Field(
-        default_factory=list, description="Repository-wide predicate rules"
-    )
+    repo_rules: list[PredicateRule] = Field(default_factory=list, description="Repository-wide predicate rules")
 
     # Python tools
     python_tools: list[str] = Field(
@@ -70,17 +60,11 @@ class ModularConfig(BaseModel):
     # Hook configurations
     hooks: dict[
         str,
-        PreToolHookConfig
-        | PostToolHookConfig
-        | StopHookConfig
-        | NotificationHookConfig
-        | SubagentStopHookConfig,
+        PreToolHookConfig | PostToolHookConfig | StopHookConfig | NotificationHookConfig | SubagentStopHookConfig,
     ] = Field(
         default_factory=lambda: {
             "pre": PreToolHookConfig(),
-            "post": PostToolHookConfig(
-                auto_fix=True, autofix_categories=[AutofixCategory.FORMATTING]
-            ),
+            "post": PostToolHookConfig(auto_fix=True, autofix_categories=[AutofixCategory.FORMATTING]),
             "stop": StopHookConfig(quality_gate=True),
             "notification": NotificationHookConfig(send_to_dbus=True),
             "subagent_stop": SubagentStopHookConfig(),
@@ -108,9 +92,7 @@ class ModularConfig(BaseModel):
     )
 
     # Task profiles
-    profiles: list[TaskProfile] = Field(
-        default_factory=list, description="Pre-defined permission profiles"
-    )
+    profiles: list[TaskProfile] = Field(default_factory=list, description="Pre-defined permission profiles")
 
     # Logging
     log_level: str = Field("INFO", description="Logging level")

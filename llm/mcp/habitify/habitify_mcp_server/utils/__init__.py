@@ -133,7 +133,6 @@ def with_api_key(func: F) -> F:
         # Get API key
         api_key = get_server_api_key()
         if not api_key:
-
             raise HabitifyError(
                 "API key is required. Set HABITIFY_API_KEY environment variable or configure server metadata."
             )
