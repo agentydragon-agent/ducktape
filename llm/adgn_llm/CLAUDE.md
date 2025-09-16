@@ -103,3 +103,8 @@ Notes and caveats
 @instructions/jsonnet_authoring.md
 @instructions/fastmcp_pydantic.md
 @instructions/fastmcp_exceptions.md
+
+## Examples: stateless reasoning demos
+- examples/stateless_two_step_demo.py — combined text & tools stateless 2-step continuation demo demonstrating forwarding reasoning items and function_call outputs. Run: python examples/stateless_two_step_demo.py [text|tools|both]
+
+@examples/README.md

@@ -1,4 +1,5 @@
 """MiniCodex agent on OpenAI Responses API with MCP tool wiring."""
+# Example demos: see examples/stateless_two_step_demo.py for a concise stateless reasoning/tool replay demo
 
 from __future__ import annotations
 
