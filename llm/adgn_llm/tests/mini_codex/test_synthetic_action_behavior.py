@@ -27,23 +27,17 @@ def _make_spy_server(counter: list[str]) -> FastMCP:
 
     @mcp.tool()
     def echo(text: str) -> dict[str, Any]:  # noqa: ARG001
-        print(f"DEBUG: echo called with {text}", flush=True)
         counter.append(text)
-        print("DEBUG: echo returning", flush=True)
         return {"ok": True, "echo": text}
 
     # Also provide a tiny editor tool on the same inproc server for tests so
     # we don't need a separate 'editor' slot.
     @mcp.tool(name="tool1")
     def tool1(old_text: str, new_text: str) -> dict[str, Any]:  # noqa: ARG001
-        print(f"DEBUG: tool1 called with {old_text} -> {new_text}", flush=True)
-        # Simulate successful edit
-        print("DEBUG: tool1 returning", flush=True)
         return {"ok": True, "replaced": True}
 
     @mcp.tool(name="tool2")
     def tool2() -> dict[str, Any]:  # noqa: ARG001
-        print("DEBUG: tool2 called", flush=True)
         return {"ok": True}
 
     return mcp
@@ -80,16 +74,14 @@ class LocalInjectHandler(AutoHandler):
 
 @pytest.mark.parametrize("mode", ["mock", "live"])
 @pytest.mark.asyncio
-async def test_synthetic_function_call_local_tool(
-    mode: str, fake_openai_client_factory, assistant_response_factory
-) -> None:
+async def test_synthetic_function_call_local_tool(mode: str, responses_factory) -> None:
     # Mock mode uses FakeOpenAIClient and an inproc MCP; live mode is a placeholder
     counter: list[str] = []
     spec = make_inproc_slot_spec(_make_spy_server(counter))
 
     # Minimal sequence: no actual function_call from model (we use SyntheticAction)
-    seq = [assistant_response_factory("dummy-model", "done")]
-    client = fake_openai_client_factory(seq)
+    seq = [responses_factory.make_assistant_text_response(text="done")]
+    client = responses_factory.make_fake_client(seq)
 
     injected_result = mcp_types.CallToolResult(
         content=[], isError=False, structuredContent={"ok": True, "injected": "yes"}
@@ -100,7 +92,7 @@ async def test_synthetic_function_call_local_tool(
         inj = LocalInjectHandler(result=injected_result)
 
         agent = await MiniCodex.create(
-            model="dummy-model",
+            model=responses_factory.model,
             mcp=mcp,
             system="test",
             client=client,  # type: ignore[arg-type]

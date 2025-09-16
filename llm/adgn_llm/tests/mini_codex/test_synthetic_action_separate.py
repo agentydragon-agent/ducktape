@@ -89,20 +89,20 @@ class BypassInjector(AutoHandler):
 
 
 @pytest.mark.asyncio
-async def test_synthetic_action_executes_tool_via_mcp():
+async def test_synthetic_action_executes_tool_via_mcp(responses_factory):
     """SyntheticAction should cause the agent to execute the tool through MCP."""
     counter: list[str] = []
     spec = make_inproc_slot_spec(_make_spy_server(counter))
 
-    seq = [make_assistant_text_response(model="dummy-model", text="done")]
-    client = FakeOpenAIClient(seq)
+    seq = [responses_factory.make_assistant_text_response(text="done")]
+    client = responses_factory.make_fake_client(seq)
 
     async with McpManager({"spy": spec}) as mcp:
         rec = RecordingHandler()
         inv = SyntheticInvoker()
 
         agent = await MiniCodex.create(
-            model="dummy-model",
+            model=responses_factory.model,
             mcp=mcp,
             system="test",
             client=client,  # type: ignore[arg-type]
@@ -118,13 +118,13 @@ async def test_synthetic_action_executes_tool_via_mcp():
 
 
 @pytest.mark.asyncio
-async def test_bypass_inject_preempts_mcp_call():
+async def test_bypass_inject_preempts_mcp_call(responses_factory):
     """BypassToolInjectOutput should preempt MCP execution and prevent the tool call."""
     counter: list[str] = []
     spec = make_inproc_slot_spec(_make_spy_server(counter))
 
-    seq = [make_assistant_text_response(model="dummy-model", text="done")]
-    client = FakeOpenAIClient(seq)
+    seq = [responses_factory.make_assistant_text_response(text="done")]
+    client = responses_factory.make_fake_client(seq)
 
     injected_result = mcp_types.CallToolResult(
         content=[], isError=False, structuredContent={"ok": True, "injected": "yes"}
@@ -136,7 +136,7 @@ async def test_bypass_inject_preempts_mcp_call():
         inj = BypassInjector(result=injected_result)
 
         agent = await MiniCodex.create(
-            model="dummy-model",
+            model=responses_factory.model,
             mcp=mcp,
             system="test",
             client=client,  # type: ignore[arg-type]

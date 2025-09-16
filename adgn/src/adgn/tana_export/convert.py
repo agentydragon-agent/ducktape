@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-from tana_lib import (
+from .tana_lib import (
     CHECKBOX_CHECKED_ID,
     CHECKBOX_KEY_ID,
     CHECKBOX_UNCHECKED_ID,
@@ -29,7 +29,7 @@ from tana_lib import (
     VisualNode,
     get_tuple_value,
 )
-from tana_lib.html_utils import (
+from .tana_lib.html_utils import (
     DATE_SPAN_PATTERN,
     NODE_SPAN_PATTERN,
     find_inline_node_refs,

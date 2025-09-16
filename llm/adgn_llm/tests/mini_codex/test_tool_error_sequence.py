@@ -35,7 +35,8 @@ def _make_failing_server() -> FastMCP:
 
 
 class FakeResponses:
-    def __init__(self) -> None:
+    def __init__(self, model: str) -> None:
+        self.model = model
         self.calls = 0
 
     async def create(self, **kwargs: Any) -> Response:  # type: ignore[override]
@@ -51,7 +52,7 @@ class FakeResponses:
             return Response(
                 id="r1",
                 created_at=0,
-                model="dummy-model",
+                model=self.model,
                 object="response",
                 output=[tc],
                 parallel_tool_calls=False,
@@ -76,7 +77,7 @@ class FakeResponses:
         return Response(
             id="r2",
             created_at=1,
-            model="dummy-model",
+            model=self.model,
             object="response",
             output=[msg],
             parallel_tool_calls=False,
@@ -93,13 +94,14 @@ class FakeResponses:
 
 
 class FakeOpenAIClient:
-    def __init__(self) -> None:
-        self.responses = FakeResponses()
+    def __init__(self, model: str) -> None:
+        self.responses = FakeResponses(model)
 
 
 @pytest.mark.asyncio
 async def test_tool_error_is_surfaced_in_sequence(
     monkeypatch: pytest.MonkeyPatch,
+    responses_factory,
 ) -> None:
     # Build in-proc failing server spec using FastMCP
     spec = make_inproc_slot_spec(_make_failing_server())
@@ -113,7 +115,7 @@ async def test_tool_error_is_surfaced_in_sequence(
         rec = RecordingHandler()
 
         agent = await MiniCodex.create(
-            model="dummy-model",
+            model=responses_factory.model,
             mcp=mcp,
             system="You are a code agent.",
             client=FakeOpenAIClient(),  # type: ignore[arg-type]

@@ -14,7 +14,6 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 from .constants import LANGUAGE_KEY_ID, MEDIA_KEY_ID, SUPERTAG_KEY_ID
-from .query import get_tuple_value
 from .types import NodeId
 
 
@@ -99,6 +98,7 @@ class VisualNode(BaseNode):
         if not metanode:
             return None
 
+        from .query import get_tuple_value
         if val_node := get_tuple_value(metanode, MEDIA_KEY_ID):
             return val_node.name
 
@@ -113,6 +113,7 @@ class CodeBlockNode(BaseNode):
         if not self._store:
             raise RuntimeError("Node not attached to a store")
 
+        from .query import get_tuple_value
         if lang_node := get_tuple_value(self, LANGUAGE_KEY_ID):
             return lang_node.name or ""
 

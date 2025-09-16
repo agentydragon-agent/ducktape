@@ -112,61 +112,30 @@ class GitStatusdResponse:
 
     @property
     def has_changes(self) -> bool:
-        """True if repository has any staged, unstaged, or untracked changes."""
-        if not self.is_git_repository:
-            return False
-        return (
-            (self.staged_changes or 0) > 0
-            or (self.unstaged_changes or 0) > 0
-            or (self.untracked_files or 0) > 0
+        return bool(
+            self.is_git_repository
+            and (self.staged_changes or self.unstaged_changes or self.untracked_files)
         )
 
     @property
     def has_dirty_files(self) -> bool:
-        """True if repository has staged or unstaged changes (excludes untracked)."""
-        if not self.is_git_repository:
-            return False
-        return (self.staged_changes or 0) > 0 or (self.unstaged_changes or 0) > 0
+        return bool(
+            self.is_git_repository and (self.staged_changes or self.unstaged_changes)
+        )
 
     @property
     def has_untracked_files(self) -> bool:
-        """True if repository has untracked files."""
-        if not self.is_git_repository:
-            return False
-        return (self.untracked_files or 0) > 0
+        return bool(self.is_git_repository and self.untracked_files)
 
     @property
     def is_ahead_of_upstream(self) -> bool:
         """True if local branch is ahead of upstream."""
-        return (self.commits_ahead_upstream or 0) > 0
+        return bool(self.commits_ahead_upstream)
 
     @property
     def is_behind_upstream(self) -> bool:
         """True if local branch is behind upstream."""
-        return (self.commits_behind_upstream or 0) > 0
-
-    @property
-    def branch_status(self) -> str:
-        """Human-readable branch status string."""
-        if not self.is_git_repository:
-            return "not a git repository"
-
-        if not self.local_branch:
-            return "detached HEAD"
-
-        if not self.upstream_branch:
-            return f"on {self.local_branch} (no upstream)"
-
-        ahead = self.commits_ahead_upstream or 0
-        behind = self.commits_behind_upstream or 0
-
-        if ahead == 0 and behind == 0:
-            return f"on {self.local_branch} (up to date)"
-        if ahead > 0 and behind == 0:
-            return f"on {self.local_branch} (ahead {ahead})"
-        if ahead == 0 and behind > 0:
-            return f"on {self.local_branch} (behind {behind})"
-        return f"on {self.local_branch} (ahead {ahead}, behind {behind})"
+        return bool(self.commits_behind_upstream)
 
 
 class GitStatusdProtocol:
@@ -208,8 +177,7 @@ class GitStatusdProtocol:
             request_id = fields[0]
 
             try:
-                is_git_repo_flag = int(fields[1])
-                is_git_repository = is_git_repo_flag == 1
+                is_git_repository = int(fields[1]) == 1
             except (ValueError, IndexError) as e:
                 raise GitStatusdValidationError(f"Invalid git repository flag: {e}")
 
@@ -230,6 +198,11 @@ class GitStatusdProtocol:
                     f"Incomplete git repository response: expected {GitStatusdProtocol.MIN_GIT_REPO_FIELDS} fields, "
                     f"got {len(fields)}",
                 )
+
+            # Invariant: after this point, `fields` has at least MIN_GIT_REPO_FIELDS entries.
+            # Helper accessors (_safe_get_*) therefore may assume the indexed positions exist;
+            # an IndexError here would indicate a protocol mismatch upstream and should fail loudly.
+            assert len(fields) >= GitStatusdProtocol.MIN_GIT_REPO_FIELDS
 
             # Parse git repository fields with proper validation
             return GitStatusdResponse(
@@ -300,42 +273,32 @@ class GitStatusdProtocol:
     @staticmethod
     def _safe_get_optional_string(fields: list[str], index: int) -> str | None:
         """Get optional string field, returning None for empty strings."""
-        try:
-            value = fields[index]
-            return value if value else None
-        except IndexError:
-            return None
+        value = fields[index]
+        return value if value else None
 
     @staticmethod
     def _safe_get_int(fields: list[str], index: int) -> int | None:
         """Get integer field with validation."""
-        try:
-            value = fields[index]
-            if not value:
-                return None
-            return int(value)
-        except IndexError:
+        value = fields[index]
+        if not value:
             return None
+        try:
+            return int(value)
         except ValueError as e:
             raise GitStatusdValidationError(f"Invalid integer in field {index}: {e}")
 
     @staticmethod
     def _safe_get_commit_hash(fields: list[str], index: int) -> str | None:
         """Get commit hash with validation."""
-        try:
-            value = fields[index]
-            if not value:
-                return None
-
-            # Validate commit hash format (40 hex characters)
-            if len(value) != 40 or not all(
-                c in "0123456789abcdef" for c in value.lower()
-            ):
-                raise GitStatusdValidationError(f"Invalid commit hash format: {value}")
-
-            return value
-        except IndexError:
+        value = fields[index]
+        if not value:
             return None
+
+        # Validate commit hash format (40 hex characters)
+        if len(value) != 40 or not all(c in "0123456789abcdef" for c in value.lower()):
+            raise GitStatusdValidationError(f"Invalid commit hash format: {value}")
+
+        return value
 
     @staticmethod
     def _safe_get_repository_state(

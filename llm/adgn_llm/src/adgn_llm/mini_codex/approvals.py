@@ -127,7 +127,7 @@ class McpManagerWithApprovals:
 
         mode = self._policy(payload)
         if mode == "allow":
-            return await self._inner.call_tool(namespaced, arguments)
+            return await self._inner.call_tool(server, tool, arguments)
 
         # ask-mode
         call_id = f"appr-{uuid.uuid4().hex}"
@@ -137,7 +137,7 @@ class McpManagerWithApprovals:
 
         # Pattern-match on the algebraic decision type
         if isinstance(decision, ContinueDecision):
-            return await self._inner.call_tool(namespaced, arguments)
+            return await self._inner.call_tool(server, tool, arguments)
 
         if isinstance(decision, AbortTurnDecision):
             raise TurnAbortRequested(

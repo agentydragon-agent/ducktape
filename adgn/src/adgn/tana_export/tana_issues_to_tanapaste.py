@@ -8,8 +8,8 @@ Usage: python tana_issues_to_tanapaste.py <input.json>
 import sys
 from pathlib import Path
 
-from convert import RenderContext
-from tana_lib import filter_open_issues, load_tana_export
+from .convert import RenderContext
+from .tana_lib import filter_open_issues, load_tana_export
 
 
 def main():

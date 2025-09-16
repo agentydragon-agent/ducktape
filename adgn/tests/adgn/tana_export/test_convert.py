@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Tests for convert.py - Tana JSON to Markdown/TanaPaste conversion."""
+"""Tests for convert.py - Tana JSON to Markdown/TanaPaste conversion.
+"""
 
 from __future__ import annotations
 
@@ -7,9 +8,11 @@ import difflib
 from pathlib import Path
 
 import pytest
-from convert import export_node_as_tanapaste
-from tana_lib import NodeStore
 
+from adgn.tana_export.convert import export_node_as_tanapaste
+from adgn.tana_export.tana_lib import NodeStore
+
+# Testdata lives alongside this test under tests/adgn/tana_export/testdata
 TESTDATA_PATH = Path(__file__).parent / "testdata"
 
 

@@ -1,6 +1,7 @@
-#!/usr/bin/python3
+# Converted from dotfiles/local/bin/switch_gnome_terminal_profile
+# Now part of the adgn package under adgn.gnome
 # Works on gnome-terminal 3.44.0 as of 2022-09-03.
-# Requirements: absl-py, dbus-python, pygobject
+# Requirements: absl-py, dbus-python, PyGObject
 
 import ast
 import subprocess
@@ -148,11 +149,6 @@ def get_profile_uuid_by_name_mapping() -> dict[str, UUID]:
 
     for profile_uuid in GSettingsProfiles().profile_uuids:
         try:
-            # As of 2022-09-03 (gnome-terminal 3.44.0), somehow the visible-name only
-            # seems to propagate correctly into dconf, not into gsettings...
-            # but the list of profiles (ProfileList) is up in gsettings.
-            # dconf list /org/gnome/terminal/legacy/profiles:/ returns a lot of profiles
-            # which I've deleted a long time back.
             name = ProfileDConf(profile_uuid).visible_name
         except Exception as e:
             logging.warning(f"Failed to get name for profile {profile_uuid}: {e}")
@@ -219,38 +215,23 @@ def dbus_update_profile_on_all_windows(new_uuid: UUID) -> None:
     logging.info(f"requesting new uuid: {new_uuid}")
 
     def _get_window_profile_uuid(window_actions_iface):
-        # gnome-terminal source code pointer:
-        # https://gitlab.gnome.org/GNOME/gnome-terminal/-/blob/f85f2a381e5ba9904d00236e46fc72ae31253ff0/src/terminal-window.cc#L402
-        # d-feet (https://wiki.gnome.org/action/show/Apps/DFeet) is useful for
-        # manual poking.
         description = window_actions_iface.Describe("profile")
         return UUID(description[2][0])
 
     for window in windows:
         window_path = f"/org/gnome/Terminal/window/{window}"
-        # TODO: if there's other windows open - like Gnome Terminal preferences,
-        # About dialog etc. - this will also catch those windows and fail
-        # because they do not have the 'profile' action.
-
         obj = bus.get_object("org.gnome.Terminal", window_path)
         window_actions_iface = dbus.Interface(obj, "org.gtk.Actions")
         original_uuid = _get_window_profile_uuid(window_actions_iface)
         logging.info(f"talking to {obj}, starting profile uuid: {original_uuid}")
-        # res = window_actions_iface.Activate('about', [], [])
         window_actions_iface.SetState(
-            # https://wiki.gnome.org/Projects/GLib/GApplication/DBusAPI#Overview-2
-            # https://gitlab.gnome.org/GNOME/gnome-terminal/-/blob/f85f2a381e5ba9904d00236e46fc72ae31253ff0/src/terminal-window.cc#L2132
             "profile",
-            # Requested new state
-            # https://gitlab.gnome.org/GNOME/gnome-terminal/-/blob/f85f2a381e5ba9904d00236e46fc72ae31253ff0/src/terminal-window.cc#L1319
             str(new_uuid),
-            # "Platform data" - `a{sv}`
             [],
         )
         uuid_after = _get_window_profile_uuid(window_actions_iface)
         logging.info(f"new uuid after action: {uuid_after}")
         assert uuid_after == new_uuid
-        # TODO: this only includes currently active tabs, not background tabs :/
 
 
 def main(_):
@@ -260,6 +241,7 @@ def main(_):
     gsettings_set_default_profile_uuid(auto_uuid)
 
 
-if __name__ == "__main__":
+def run():
+    # Entrypoint used by the console_script. Enforce required flag and run.
     flags.mark_flag_as_required(_PROFILE.name)
     app.run(main)

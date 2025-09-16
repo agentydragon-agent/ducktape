@@ -23,13 +23,13 @@ class SyntheticOnceHandler(BaseHandler):
 
 @pytest.mark.asyncio
 async def test_mini_codex_handles_synthetic_action_without_api_calls(
-    fake_openai_client_factory, assistant_response_factory
+    fake_openai_client_factory, assistant_response_factory, responses_factory
 ) -> None:
-    client = fake_openai_client_factory([assistant_response_factory(model="o4-mini", text="should_not_be_used")])
+    client = fake_openai_client_factory([responses_factory.make_assistant_text_response(text="should_not_be_used")])
     async with McpManager({}) as mcp:
-        resp = assistant_response_factory(model="o4-mini", text="hello")
+        resp = responses_factory.make_assistant_text_response(text="hello")
         agent = await MiniCodex.create(
-            model="o4-mini",
+            model=responses_factory.model,
             mcp=mcp,
             system="You are a code agent.",
             client=client,

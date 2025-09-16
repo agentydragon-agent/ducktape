@@ -22,9 +22,7 @@ class _Spec:
 
     @pluggy.HookspecMarker(PROJECT_NAME)
     def wt_init(self, config) -> None:
-        """
-        Optional initialization hook; can modify config or set globals.
-        """
+        """Optional initialization hook; can modify config or set globals."""
 
 
 class _Impl:

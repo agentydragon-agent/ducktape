@@ -32,7 +32,9 @@ def _make_echo_server() -> FastMCP:
 
 
 @pytest.mark.asyncio
-async def test_minicodex_with_sdk_mocks_executes_tool_and_returns_text() -> None:
+async def test_minicodex_with_sdk_mocks_executes_tool_and_returns_text(
+    responses_factory,
+) -> None:
     # Build in-proc FastMCP server spec named 'echo'
     spec = make_inproc_slot_spec(_make_echo_server())
 
@@ -40,15 +42,10 @@ async def test_minicodex_with_sdk_mocks_executes_tool_and_returns_text() -> None
     # 1) Model asks to call mcp__echo__echo with {"text": "hi"}
     # 2) Model returns a final assistant message "done"
     seq = [
-        make_tool_call_response(
-            model="dummy-model",
-            call_id="call-1",
-            name="mcp__echo__echo",
-            arguments={"text": "hi"},
-        ),
-        make_assistant_text_response(model="dummy-model", text="done"),
+        responses_factory.make_tool_call_response(call_id="call-1", name="mcp__echo__echo", arguments={"text": "hi"}),
+        responses_factory.make_assistant_text_response(text="done"),
     ]
-    client = FakeOpenAIClient(seq)
+    client = responses_factory.make_fake_client(seq)
 
     async with McpManager({"echo": spec}) as mcp:
         # Minimal handler stack: use a RecordingHandler to capture function_call_output events
@@ -56,7 +53,7 @@ async def test_minicodex_with_sdk_mocks_executes_tool_and_returns_text() -> None
         rec = RecordingHandler()
 
         agent = await MiniCodex.create(
-            model="dummy-model",
+            model=responses_factory.model,
             mcp=mcp,
             system="test",
             client=client,  # type: ignore[arg-type]

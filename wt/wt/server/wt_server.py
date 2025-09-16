@@ -192,16 +192,21 @@ class WtDaemon:
             rebuild_index=lambda: self.rebuild_index(),
             run_discovery_once=lambda: self._run_discovery_once(),
         )
+
+        # Helper to fetch known worktree info without repeated membership checks
+        def get_known_worktree(p):
+            return self.known_worktrees.get(p)
+
         self.gitstatusd_service = GitstatusdService(
             get_client=lambda p: (
-                self.gitstatusd_clients.get(self.known_worktrees[p].wtid)  # type: ignore[return-value]
-                if p in self.known_worktrees
+                self.gitstatusd_clients.get(get_known_worktree(p).wtid)  # type: ignore[return-value]
+                if get_known_worktree(p)
                 else None
             ),
             iter_client_paths=lambda: list(self.known_worktrees.keys()),
             ensure_watcher_for_path=lambda p: (
-                self._ensure_git_watcher(self.known_worktrees[p])
-                if p in self.known_worktrees
+                self._ensure_git_watcher(get_known_worktree(p))
+                if get_known_worktree(p)
                 else asyncio.sleep(0)
             ),
             list_watchers=lambda: list(self.git_watchers.values()),
@@ -564,9 +569,7 @@ class WtDaemon:
         await writer.drain()
 
     async def _handle_ping_request(
-        self,
-        request: Request,
-        start_time: datetime,
+        self, request: Request, start_time: datetime
     ) -> Response:
         """Handle ping JSON-RPC method."""
         result = PingResult(
@@ -649,7 +652,8 @@ class WtDaemon:
             self.handle_client_request,
             self.socket_path,
         )
-        self.pid_file.write_text(str(os.getpid()))
+        # Write PID file in thread to avoid blocking the event loop
+        await asyncio.to_thread(self.pid_file.write_text, str(os.getpid()))
         self.running = True
 
         # Signal listening via single handshake; redirect stdout to log afterward

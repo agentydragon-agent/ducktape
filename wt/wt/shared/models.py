@@ -58,8 +58,8 @@ class SyncStatus:
 class WorkingStatus:
     """Working directory status."""
 
-    dirty_files: list[str]
-    untracked_files: list[str]
+    dirty_files: list[Path]
+    untracked_files: list[Path]
 
     @property
     def is_clean(self) -> bool:

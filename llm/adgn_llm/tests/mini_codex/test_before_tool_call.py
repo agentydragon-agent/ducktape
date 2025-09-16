@@ -50,14 +50,14 @@ class AbortHandler(AutoHandler):
 
 @pytest.mark.asyncio
 async def test_before_tool_call_inject_result_does_not_call_underlying_tool(
-    fake_openai_client_factory, tool_call_response_factory, assistant_response_factory
+    fake_openai_client_factory, tool_call_response_factory, assistant_response_factory, responses_factory
 ) -> None:
     counter: list[str] = []
     spec = make_inproc_slot_spec(_make_spy_server(counter))
 
     seq = [
-        tool_call_response_factory("dummy-model", "call-1", "mcp__spy__echo", {"text": "hi"}),
-        assistant_response_factory("dummy-model", "done"),
+        responses_factory.make_tool_call_response(call_id="call-1", name="mcp__spy__echo", arguments={"text": "hi"}),
+        responses_factory.make_assistant_text_response(text="done"),
     ]
     client = fake_openai_client_factory(seq)
 
@@ -70,7 +70,7 @@ async def test_before_tool_call_inject_result_does_not_call_underlying_tool(
         inj = InjectHandler(result=injected_result)
 
         agent = await MiniCodex.create(
-            model="dummy-model",
+            model=responses_factory.model,
             mcp=mcp,
             system="test",
             client=client,  # type: ignore[arg-type]
@@ -92,7 +92,7 @@ async def test_before_tool_call_inject_result_does_not_call_underlying_tool(
 
 @pytest.mark.asyncio
 async def test_before_tool_call_abort_turn_synthesizes_denied_and_aborted_outputs(
-    fake_openai_client_factory, tool_call_response_factory, assistant_response_factory
+    fake_openai_client_factory, tool_call_response_factory, assistant_response_factory, responses_factory
 ) -> None:
     counter: list[str] = []
     spec = make_inproc_slot_spec(_make_spy_server(counter))
@@ -108,7 +108,7 @@ async def test_before_tool_call_abort_turn_synthesizes_denied_and_aborted_output
         abort = AbortHandler()
 
         agent = await MiniCodex.create(
-            model="dummy-model",
+            model=responses_factory.model,
             mcp=mcp,
             system="test",
             client=client,  # type: ignore[arg-type]

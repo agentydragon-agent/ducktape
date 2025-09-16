@@ -204,34 +204,35 @@ async def worktree_identify(
             message=f"{absolute_path} is not a managed worktree",
         )
 
-    # Determine worktree name and relative path with minimal nesting
-    try:
+    # Determine worktree name and relative path with guard clauses (early bailout)
+    if absolute_path.is_relative_to(config.worktrees_dir):
         rel_path = absolute_path.relative_to(config.worktrees_dir)
         worktree_name = rel_path.parts[0] if rel_path.parts else None
         relative_path = (
             str(Path(*rel_path.parts[1:])) if len(rel_path.parts) > 1 else ""
         )
-    except ValueError:
-        try:
-            absolute_path.relative_to(config.main_repo)
-        except ValueError:
-            worktree_name = None
-            relative_path = None
-        else:
-            worktree_name = MAIN_WORKTREE_DISPLAY_NAME
-            relative_path = str(absolute_path.relative_to(config.main_repo))
+    elif absolute_path.is_relative_to(config.main_repo):
+        worktree_name = MAIN_WORKTREE_DISPLAY_NAME
+        relative_path = str(absolute_path.relative_to(config.main_repo))
+    else:
+        raise RpcError(
+            code=ErrorCodes.WORKTREE_NOT_FOUND,
+            message=f"{absolute_path} is not a managed worktree",
+        )
 
     if not worktree_name:
         raise RpcError(
             code=ErrorCodes.WORKTREE_NOT_FOUND,
             message=f"{absolute_path} is not a managed worktree",
         )
+
     found_worktree = _resolve_worktree_name_to_info(index, worktree_name)
     if not found_worktree:
         raise RpcError(
             code=ErrorCodes.WORKTREE_NOT_FOUND,
             message=f"{absolute_path} is not a managed worktree",
         )
+
     resolved_name = (
         MAIN_WORKTREE_DISPLAY_NAME
         if found_worktree.path.resolve() == config.main_repo.resolve()

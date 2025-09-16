@@ -55,6 +55,19 @@ def _resolve_path_spec(
     return target_path / path_spec
 
 
+def _compute_teleport_target_path(target_path: Path, relative_path: str | None) -> Path:
+    """Compute the absolute target Path for teleport, returning a Path.
+
+    This keeps internal code working with Path objects; RPC boundary converts to str.
+    """
+    if not relative_path or relative_path == ".":
+        return target_path
+    candidate = target_path / relative_path
+    if candidate.exists() and candidate.is_dir():
+        return candidate
+    return target_path
+
+
 @rpc.method("worktree_resolve_path", params=WorktreeResolvePathParams)
 async def handle_resolve_path(
     index: WorktreeIndexService,
@@ -92,14 +105,5 @@ async def handle_teleport_target(
         return TeleportDoesNotExist(type="does_not_exist", name=params.target_name)
     resolved = index.resolve_target(None, current_path)
     relative_path = resolved[1] if resolved else None
-    cd_path = (
-        target_wt.path
-        if not relative_path or relative_path == "."
-        else (
-            target_wt.path / relative_path
-            if (target_wt.path / relative_path).exists()
-            and (target_wt.path / relative_path).is_dir()
-            else target_wt.path
-        )
-    )
+    cd_path = _compute_teleport_target_path(target_wt.path, relative_path)
     return TeleportCdThere(type="cd_there", cd_path=str(cd_path))

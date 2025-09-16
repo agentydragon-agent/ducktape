@@ -205,15 +205,30 @@ class McpManager:
         # ClientSession.read_resource expects AnyUrl; inputs come as strings
         return await sess.read_resource(cast(AnyUrl, uri))
 
-    async def call_tool(self, namespaced: str, arguments: dict[str, Any]) -> Any:
-        """Call a namespaced MCP tool identified as 'mcp__{server}__{tool}'.
+    async def call_tool(self, server: str, name: str, arguments: dict[str, Any]) -> Any:
+        """Call a named tool on a named server: call_tool(server, name, arguments).
 
-        This method accepts the single namespaced identifier so callers do not need
-        to split server/tool. Parsing is an internal detail and centralized here.
+        This is the one supported call shape. Callers must provide the server and tool
+        names explicitly; the legacy namespaced string form is not supported here.
         """
-        server, name = parse_mcp_function(namespaced)
         sess = await self.get_session(server)
         return await sess.call_tool(name=name, arguments=arguments)
+
+    async def call_tool_typed(self, server: str, name: str, arguments: dict[str, Any], result_model: type) -> Any:
+        """Call a tool and validate the structured 'result' payload into result_model.
+
+        Contract: the server MUST return a structured payload under structuredContent['result'] (a native JSON tree).
+        This method enforces that invariant and uses pydantic.TypeAdapter to validate/parse into the provided
+        Pydantic model or typing annotation (Annotated/Union). If the invariant is broken, raise ValueError.
+        """
+        from pydantic import TypeAdapter
+
+        res = await self.call_tool(server, name, arguments)
+        structured = getattr(res, "structuredContent", None)
+        if not isinstance(structured, dict) or "result" not in structured:
+            raise ValueError(f"Tool {server}/{name} did not return a structured 'result' payload")
+        payload = structured["result"]
+        return TypeAdapter(result_model).validate_python(payload)
 
     async def get_server_initialize(self, server: str) -> InitializeResult:
         """Return the InitializeResult for a server from the cached slot after opening."""

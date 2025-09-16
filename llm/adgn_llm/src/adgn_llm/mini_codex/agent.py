@@ -1,14 +1,13 @@
 """MiniCodex agent on OpenAI Responses API with MCP tool wiring."""
+
 # Example demos: see examples/stateless_two_step_demo.py for a concise stateless reasoning/tool replay demo
 
 from __future__ import annotations
 
 import asyncio
 import json
-import time
 from collections.abc import Iterable
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any, Literal, Protocol, cast
 
 from adgn_llm.mini_codex.approvals import TurnAbortRequested
@@ -47,7 +46,7 @@ from openai.types.shared_params import ReasoningEffort
 from pydantic import BaseModel
 
 from .aggregating_handler import AggregatingController, BaseHandler
-from .mcp_manager import McpManager
+from .mcp_manager import McpManager, parse_mcp_function
 
 
 @dataclass
@@ -97,39 +96,7 @@ class ResponsesClient(Protocol):
 
 @retry_decorator()
 async def _responses_create_with_retry(client: ResponsesClient, **kwargs: Any):
-    """Wrapper around client.responses.create with retry for transient errors.
-
-    Instrumentation: append a compact summary of the outgoing kwargs to
-    ./scratch/responses_payload_debug.json to aid debugging of invalid Requests
-    returned by the upstream OpenAI Responses API. The summary focuses on the
-    'input' list and reasoning/tool metadata and uses json.dumps(default=str)
-    to avoid serialization failures.
-    """
-    dump = {
-        "ts": time.time(),
-        "model": kwargs.get("model"),
-        "instructions": kwargs.get("instructions"),
-        "tool_choice": kwargs.get("tool_choice"),
-        "parallel_tool_calls": kwargs.get("parallel_tool_calls"),
-        "reasoning": kwargs.get("reasoning"),
-    }
-    # Attempt to capture the 'input' payload (usually a list of dicts)
-    try:
-        dump["input"] = kwargs.get("input")
-    except Exception:
-        dump["input"] = repr(kwargs.get("input"))
-    # Summarize tools list if present
-    tools = kwargs.get("tools")
-    if isinstance(tools, (list, tuple)):
-        dump["tools"] = [t.get("name") if isinstance(t, dict) else str(t) for t in tools]
-    else:
-        dump["tools"] = str(tools)
-
-    p = Path("./scratch/responses_payload_debug.json")
-    p.parent.mkdir(parents=True, exist_ok=True)
-    with p.open("a", encoding="utf-8") as f:
-        f.write(json.dumps(dump, default=str) + "\n")
-
+    """Wrapper around client.responses.create with retry for transient errors."""
     return await client.responses.create(**kwargs)
 
 
@@ -233,21 +200,6 @@ class MiniCodex:
                     tools=(await self._mcp.list_tools()),
                     **reasoning_kwargs,
                 )
-                # Emit a typed Response event with ground-truth usage (tests must populate usage)
-                # DEBUG DUMP: write a compact summary of resp.output to aid troubleshooting
-                try:
-                    out_items = []
-                    for it in getattr(resp, "output", []) or []:
-                        try:
-                            dump = it.model_dump(exclude_none=True)
-                        except Exception:
-                            dump = repr(it)
-                        out_items.append({"type": type(it).__name__, "dump": dump})
-                    p = Path("./scratch/last_resp_debug.json")
-                    p.parent.mkdir(parents=True, exist_ok=True)
-                    p.write_text(json.dumps({"output": out_items}, default=str), encoding="utf-8")
-                except Exception:
-                    pass
                 u = resp.usage
                 self._controller.on_response(
                     Response(
@@ -368,8 +320,9 @@ class MiniCodex:
                         parsed_error = None
                     return out_str, parsed_error
 
-                # Execute the real tool
-                res = await self._mcp.call_tool(function_call.name, args)
+                # Execute the real tool (manager now expects server and tool separately)
+                server, tool = parse_mcp_function(function_call.name or "")
+                res = await self._mcp.call_tool(server, tool, args)
                 out_str = _responses_output_from_calltool(res)
                 parsed_error = None
                 try:
@@ -590,53 +543,25 @@ class MiniCodex:
 
         out: list[dict[str, Any]] = []
 
-        # Only include reasoning items when there exists at least one function_call
-        # in the transcript that does NOT yet have a corresponding function_call_output.
-        include_reasoning = any(
-            isinstance(evt, ResponseFunctionToolCall) and getattr(evt, "call_id", None) and evt.call_id not in fco_map
-            for evt in self._transcript
-        )
-
+        # Always forward reasoning items and the full transcript in-order. The Responses
+        # API requires that reasoning items be replayed in the exact local context the
+        # model produced them in; we preserve ordering and do NOT synthesize missing items.
         for item in self._transcript:
             if not isinstance(item, BaseModel):
                 raise TypeError(f"Unsupported transcript item type: {type(item)!r}")
 
-            # Include reasoning items only when they are still relevant for pending function_call handling
+            # Forward reasoning items as-is (do not gate or synthesize)
             if isinstance(item, ResponseReasoningItem):
-                if include_reasoning:
-                    out.append(item.model_dump(exclude_none=True))
+                out.append(item.model_dump(exclude_none=True))
                 continue
 
-            # If this is a function_call and we have a locally-produced function_call_output
-            # for the same call_id, include both in the input so the server sees the function_call
-            # and its tool output produced by us (local execution).
+            # If this is a function_call, include it; if we have a locally produced
+            # function_call_output for the same call_id, append it immediately after.
             if isinstance(item, ResponseFunctionToolCall):
                 fc_dict = item.model_dump(exclude_none=True)
-                # Ensure a corresponding reasoning item is present when replaying
-                # a function_call into the next request. The Responses API expects a
-                # 'reasoning' item with id 'rs_<hex>' paired with a function_call
-                # id 'fc_<hex>'. If missing, synthesize a minimal SDK reasoning
-                # item so the API accepts the input.
-                try:
-                    fc_id = fc_dict.get("id") or fc_dict.get("call_id")
-                    if isinstance(fc_id, str) and fc_id.startswith("fc_"):
-                        rs_id = "rs_" + fc_id[len("fc_") :]
-                        has_rs = any(
-                            isinstance(evt, ResponseReasoningItem) and getattr(evt, "id", None) == rs_id
-                            for evt in self._transcript
-                        )
-                        if not has_rs:
-                            # Construct a minimal SDK reasoning item and include it
-                            rs_item = ResponseReasoningItem(id=rs_id, summary=[], type="reasoning", content=[])
-                            out.append(rs_item.model_dump(exclude_none=True))
-                except Exception:
-                    # Best-effort only; fall back to sending the function_call as-is
-                    pass
-
                 out.append(fc_dict)
                 cid = fc_dict.get("call_id")
                 if cid and cid in fco_map:
-                    # Append function_call_output object for the same call_id
                     out.append(
                         {
                             "type": "function_call_output",

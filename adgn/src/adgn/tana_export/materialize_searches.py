@@ -9,10 +9,10 @@ import argparse
 import sys
 from pathlib import Path
 
-from tana_lib import NodeStore
-from tana_lib.search_materializer import compare_search_results
-from tana_lib.search_parser import parse_search_expression
-from tana_lib.types import NodeId
+from .tana_lib import NodeStore
+from .tana_lib.search_materializer import compare_search_results
+from .tana_lib.search_parser import parse_search_expression
+from .tana_lib.types import NodeId
 
 
 def find_all_searches(store: NodeStore) -> list[str]:

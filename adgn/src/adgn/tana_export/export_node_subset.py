@@ -16,10 +16,10 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from convert import _DOC_CLASS, RenderContext, UnknownNode
-from tana_lib import SUPERTAG_KEY_ID, BaseNode, NodeStore, TupleNode
-from tana_lib.supertags import attach_supertag_property
-from tana_lib.types import NodeId
+from .convert import _DOC_CLASS, RenderContext, UnknownNode
+from .tana_lib import SUPERTAG_KEY_ID, BaseNode, NodeStore, TupleNode
+from .tana_lib.supertags import attach_supertag_property
+from .tana_lib.types import NodeId
 
 # Constants from convert.py
 _SUPERTAG_KEY_ID = NodeId(SUPERTAG_KEY_ID)

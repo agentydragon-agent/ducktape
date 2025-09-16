@@ -19,6 +19,14 @@ class DebouncedGitHubRefresh:
         debounce_delay: float = 5.0,
         periodic_interval: float = 60.0,
     ):
+        """Initialize DebouncedGitHubRefresh.
+
+        Args:
+            worktree_path: Path to the worktree directory to watch.
+            refresh_callback: Async callback invoked as refresh_callback(reason: str, files_changed: list[str]).
+            debounce_delay: Seconds to wait after filesystem events before triggering a refresh.
+            periodic_interval: Seconds between periodic refresh attempts.
+        """
         self.worktree_path = worktree_path
         self.refresh_callback = refresh_callback
         self.debounce_delay = debounce_delay

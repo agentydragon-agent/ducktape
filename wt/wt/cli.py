@@ -24,7 +24,7 @@ from .client.view_formatter import ViewFormatter
 from .client.wt_client import WtClient
 from .plugins import get_manager, get_plugin_commands
 from .shared.configuration import load_config
-from .shared.constants import MAIN_REPO_ALIASES
+from .shared.constants import COMMAND_DESCRIPTIONS, MAIN_REPO_ALIASES
 
 
 def show_help() -> None:
@@ -47,20 +47,23 @@ def show_help() -> None:
     click.echo()
 
     # Commands with dynamic padding
+    # Use shared COMMAND_NAMES as the single source of truth for reserved CLI commands
+    # Commands come from the single source-of-truth COMMAND_DESCRIPTIONS in shared.constants
+
+    # Always include the interactive/navigation entries first
     commands = [
         ("wt", "Show status of all worktrees (includes GitHub PR status)"),
         ("wt <n>", "Navigate to worktree (or offer to create)"),
         ("wt status [name]", "Show detailed status"),
-        ("wt ls", "List all worktrees"),
-        ("wt -c <n>", "Create new worktree from main branch"),
-        ("wt cp <src> <dst>", "Copy worktree (with dirty state)"),
-        ("wt cp <n>", "Copy current worktree to new name"),
-        ("wt rm <n>", "Remove worktree (with safety checks)"),
-        ("wt path [name] [/path]", "Resolve worktree paths"),
-        ("wt main", "Navigate to main repo"),
-        ("wt kill-daemon", "Kill the wt daemon"),
-        ("wt help", "Show this help"),
     ]
+
+    # Append reserved commands discovered from shared COMMAND_DESCRIPTIONS
+    for name in sorted(COMMAND_DESCRIPTIONS.keys()):
+        commands.append((f"wt {name}", COMMAND_DESCRIPTIONS[name]))
+
+    # Also keep a direct "wt main" navigation entry
+    commands.append(("wt main", "Navigate to main repo"))
+
     max_cmd = max(len(cmd) for cmd, _ in commands)
     click.echo("COMMANDS:")
     for cmd, desc in commands:
@@ -148,15 +151,14 @@ async def _async_main(verbose: bool = False):
 @click.pass_context
 def sh(ctx, args):
     """Handle shell integration with argument parsing."""
-    # Combine args from Click with any extra args
-    all_args = list(args) + ctx.args
-
-    # Pre-check help, then filter args in one pass (keep -c/--force and non-flags)
-    if any(a in {"--help", "-h"} for a in all_args):
+    # Combine args from Click with any extra args inline (avoid one-off variable)
+    if any(a in {"--help", "-h"} for a in [*args, *ctx.args]):
         show_help()
         return
     filtered_args = [
-        a for a in all_args if (a in {"-c", "--force"} or not a.startswith("-"))
+        a
+        for a in [*args, *ctx.args]
+        if (a in {"-c", "--force"} or not a.startswith("-"))
     ]
 
     verbose = bool((ctx.obj or {}).get("verbose", False))

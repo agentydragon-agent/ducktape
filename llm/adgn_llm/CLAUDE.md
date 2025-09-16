@@ -1,8 +1,6 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
-Scope: This document covers the adgn-llm Python package under llm/adgn_llm. It provides environment setup, common commands, and a high‑level map of the major modules so you can be productive quickly.
+This document covers the adgn-llm Python package under llm/adgn_llm. It provides environment setup, common commands, and a high‑level map of the major modules so you can be productive quickly.
 
 Environment and setup
 - Requirements: Python 3.11+, uv (https://docs.astral.sh/uv/), pre-commit, Node.js (for system_rewriter templating), direnv (optional but recommended).
@@ -34,8 +32,6 @@ Common commands
   - git ls-files "src/adgn_llm/properties/specimens/**/*.libsonnet" | xargs -r jsonnetfmt -i
   - or run under the project environment: direnv exec "$(pwd)" git ls-files "src/adgn_llm/properties/specimens/**/*.libsonnet" | xargs -r jsonnetfmt -i
   - Note: jsonnetfmt is provided by the devenv (uv sync --extra dev) and available via direnv.
-- Build wheel/sdist:
-  - uv build
 
 Specimen inspection (for assistants)
 - Use the specimen shell to safely inspect a specimen’s hydrated workspace inside an isolated container (no network):

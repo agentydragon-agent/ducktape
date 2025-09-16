@@ -11,14 +11,7 @@ from adgn_llm.mini_codex.mcp_manager import McpManager
 from mcp.server.fastmcp import FastMCP
 
 # OpenAI Responses SDK types
-from openai.types.responses import (
-    Response,
-    ResponseFunctionToolCall,
-    ResponseOutputMessage,
-    ResponseOutputText,
-)
-from openai.types.responses.response_reasoning_item import ResponseReasoningItem
-from openai.types.responses.response_reasoning_item import Summary as ReasoningSummary
+from openai.types.responses import Response
 from openai.types.responses.response_usage import (
     InputTokensDetails,
     OutputTokensDetails,
@@ -33,53 +26,6 @@ def _usage(inp: int = 0, out: int = 0) -> ResponseUsage:
         output_tokens=out,
         output_tokens_details=OutputTokensDetails(reasoning_tokens=0),
         total_tokens=inp + out,
-    )
-
-
-def _make_reasoning_then_tool(*, call_id: str, name: str, arguments: dict[str, Any]) -> Response:
-    return Response(
-        id="resp_1",
-        created_at=0,
-        model="dummy-model",
-        object="response",
-        output=[
-            ResponseReasoningItem(
-                id="rs_1",
-                type="reasoning",
-                summary=[ReasoningSummary(type="summary_text", text="thinking...")],
-            ),
-            ResponseFunctionToolCall(
-                type="function_call",
-                call_id=call_id,
-                name=name,
-                arguments=json.dumps(arguments),
-            ),
-        ],
-        parallel_tool_calls=False,
-        tool_choice="auto",
-        tools=[],
-        usage=_usage(0, 0),
-    )
-
-
-def _make_final_assistant(text: str) -> Response:
-    msg = ResponseOutputMessage(
-        id="m1",
-        type="message",
-        role="assistant",
-        status="completed",
-        content=[ResponseOutputText(type="output_text", text=text, annotations=[])],
-    )
-    return Response(
-        id="resp_2",
-        created_at=1,
-        model="dummy-model",
-        object="response",
-        output=[msg],
-        parallel_tool_calls=False,
-        tool_choice="auto",
-        tools=[],
-        usage=_usage(0, max(1, len(text))),
     )
 
 
@@ -112,19 +58,21 @@ def _make_echo_server() -> FastMCP:
 
 
 @pytest.mark.asyncio
-async def test_reasoning_threading_filters_reasoning_from_next_input() -> None:
+async def test_reasoning_threading_filters_reasoning_from_next_input(reasoning_model: str, responses_factory) -> None:
     spec = make_inproc_slot_spec(_make_echo_server())
 
     # Sequence: model reasons then calls a tool, then returns a final message
     seq = [
-        _make_reasoning_then_tool(call_id="call-1", name="mcp__echo__echo", arguments={"text": "hi"}),
-        _make_final_assistant("ok"),
+        responses_factory.make_reasoning_then_tool(call_id="call-1", name="mcp__echo__echo", arguments={"text": "hi"}),
+        responses_factory.make_final_assistant("ok"),
     ]
     client = CapturingClient(seq)
+    # For live tests that exercise real models, prefer a reasoning-capable model via env override
+    # (tests here use Fake client so this is only a hint for live variants)
 
     async with McpManager({"echo": spec}) as mcp:
         agent = await MiniCodex.create(
-            model="dummy-model",
+            model=responses_factory.model,
             mcp=mcp,
             system="test",
             client=client,  # type: ignore[arg-type]
@@ -133,13 +81,14 @@ async def test_reasoning_threading_filters_reasoning_from_next_input() -> None:
 
         res = await agent.run("say hi")
 
-    # Assertions: the second Responses.create should NOT include any reasoning items in input
+    # Assertions: the second Responses.create SHOULD include the prior reasoning item in the stateless full-input
     assert res.text.strip() == "ok"
     assert client.responses.calls == 2
     # Capture the input sent on the second call
     second = client.responses.captured[1]
     input_items = second.get("input") or []
     assert isinstance(input_items, list)
-    assert all((not isinstance(it, dict)) or (it.get("type") != "reasoning") for it in input_items), (
-        f"Reasoning item leaked into next-turn input: {json.dumps(input_items, ensure_ascii=False)}"
+    # Expect at least one reasoning item forwarded from the prior response
+    assert any(isinstance(it, dict) and it.get("type") == "reasoning" for it in input_items), (
+        f"Expected reasoning item to be forwarded in next-turn input: {json.dumps(input_items, ensure_ascii=False)}"
     )

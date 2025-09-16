@@ -21,3 +21,10 @@ dotfiles/config/OrcaSlicer/**
 node_modules
 
 .direnv/
+
+# Devenv
+.devenv*
+devenv.local.nix
+
+# direnv
+.direnv

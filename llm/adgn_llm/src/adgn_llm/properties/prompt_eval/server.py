@@ -17,7 +17,7 @@ import traceback
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, List, Tuple
+from typing import Annotated, Any, List, Literal, Tuple
 
 from adgn_llm.mcp.inproc_transport import make_inproc_slot_spec
 from adgn_llm.mini_codex.agent import MiniCodex
@@ -41,6 +41,7 @@ from adgn_llm.properties.specimens.registry import (
 )
 from mcp.server.fastmcp import FastMCP
 from openai import AsyncOpenAI
+from pydantic import BaseModel, ConfigDict, Field
 
 logger = logging.getLogger(__name__)
 
@@ -105,6 +106,32 @@ class PromptEvalState:
     successful_calls: int = 0
 
 
+# Structured return types for prompt_eval.test_prompt (module-level so FastMCP can resolve)
+class SpecimenError(BaseModel):
+    specimen: str
+    type: str
+    message: str
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class PromptEvalFailure(BaseModel):
+    kind: Literal["Failure"] = "Failure"
+    errors: list[SpecimenError]
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class PromptEvalSuccess(BaseModel):
+    kind: Literal["Success"] = "Success"
+    metrics: list[dict[str, Any]]
+
+    model_config = ConfigDict(extra="forbid")
+
+
+PromptEvalResult = Annotated[PromptEvalSuccess | PromptEvalFailure, Field(discriminator="kind")]
+
+
 def build_server(name: str = "prompt_eval", agent_model: str = "gpt-5") -> Tuple[FastMCP, PromptEvalState]:
     """Build a prompt_eval server that tracks rounds and writes under a fixed run dir.
 
@@ -118,6 +145,7 @@ def build_server(name: str = "prompt_eval", agent_model: str = "gpt-5") -> Tuple
     round_idx = {"n": -1}  # mutable cell for closure
 
     state = PromptEvalState()
+
     mcp = FastMCP(
         name,
         instructions="Prompt Evaluation server — evaluate candidate critic prompts",
@@ -126,8 +154,12 @@ def build_server(name: str = "prompt_eval", agent_model: str = "gpt-5") -> Tuple
     # failures propagate as tool errors. We log at ERROR and surface per-specimen/round summaries.
 
     @mcp.tool()
-    async def test_prompt(prompt: str) -> list[dict[str, Any]]:
-        """Evaluate a candidate system prompt across all known specimens and return only numeric metrics."""
+    async def test_prompt(prompt: str) -> PromptEvalResult:
+        """Evaluate a candidate system prompt across all known specimens and return a structured result.
+
+        Returns a discriminated union: PromptEvalSuccess(kind='Success', metrics=...) or
+        PromptEvalFailure(kind='Failure', errors=[SpecimenError,...])
+        """
         # Next round
         round_idx["n"] += 1
         this_round = round_idx["n"]
@@ -167,30 +199,35 @@ def build_server(name: str = "prompt_eval", agent_model: str = "gpt-5") -> Tuple
                 logger.exception("Unhandled error during specimen run", extra={"specimen": specimen})
                 raise
 
+        # Run all specimens concurrently and return structured success/failure to the caller.
         results = await asyncio.gather(*[one(s) for s in specimens], return_exceptions=True)
-        metrics_list: List[dict[str, Any]] = [r for r in results if not isinstance(r, BaseException)]
-        (round_dir / "results.json").write_text(json.dumps(metrics_list, indent=2), encoding="utf-8")
-        errors: list[Exception] = [
-            e for e in results if isinstance(e, Exception)
-        ]  # ignore BaseException like KeyboardInterrupt
-        if errors:
-            # Write a summary with exception types and messages; per-specimen traces are in <specimen>/error.txt
-            err_summary = [{"type": type(e).__name__, "message": str(e)} for e in errors]
-            (round_dir / "errors.json").write_text(json.dumps(err_summary, indent=2), encoding="utf-8")
-            logger.error(
-                "Round had %d specimen failures; see %s/errors.json (tool boundary prevents hard crash)",
-                len(errors),
-                round_dir,
-            )
-            if len(errors) == 1:
-                raise errors[0]
+
+        metrics_list: List[dict[str, Any]] = []
+        errors_objs: list[SpecimenError] = []
+        for spec, res in zip(specimens, results):
+            if isinstance(res, BaseException):
+                # per-specimen error.txt is already written inside `one`; summarize here
+                errors_objs.append(SpecimenError(specimen=spec, type=type(res).__name__, message=str(res)))
             else:
-                raise ExceptionGroup(
-                    f"{len(errors)} specimens failed; see {round_dir}/errors.json and per-specimen error.txt",
-                    errors,
-                )
-        # Count this completed evaluation as one successful call
+                metrics_list.append(res)
+
+        # Persist results and/or errors
+        if metrics_list:
+            (round_dir / "results.json").write_text(json.dumps(metrics_list, indent=2), encoding="utf-8")
+        if errors_objs:
+            # write a lightweight serialized errors list for human consumption
+            errors_serial = [e.model_dump(exclude_none=True) for e in errors_objs]
+            (round_dir / "errors.json").write_text(json.dumps(errors_serial, indent=2), encoding="utf-8")
+            logger.error(
+                "Round completed with specimen errors; see %s/errors.json (first error: %s)",
+                round_dir,
+                errors_serial[0],
+            )
+            # Return structured failure to caller; let the agent/handler decide to abort
+            return PromptEvalFailure(errors=errors_objs)
+
+        # All specimens succeeded
         state.successful_calls += 1
-        return metrics_list
+        return PromptEvalSuccess(metrics=metrics_list)
 
     return mcp, state

@@ -26,8 +26,11 @@ from openai.types.responses.response_usage import (
 class FakeResponses:
     def __init__(self) -> None:
         self.calls = 0
+        self.captured: list[dict[str, Any]] = []
 
     async def create(self, model: str, **kwargs: Any) -> Response:  # type: ignore[override]
+        # capture kwargs for inspection by tests
+        self.captured.append(dict(kwargs))
         self.calls += 1
         # First call: request to read the container.info resource via built-in tool
         if self.calls == 1:
@@ -88,7 +91,7 @@ class FakeOpenAIClient:
 
 
 @pytest.mark.asyncio
-async def test_model_reads_container_info_with_stubbed_openai() -> None:
+async def test_model_reads_container_info_with_stubbed_openai(reasoning_model, responses_factory) -> None:
     # Build in-proc FastMCP server spec named 'docker'
     spec = make_inproc_slot_spec(make_container_exec_mcp(image="alpine:3.19", describe=False))
 
@@ -96,7 +99,7 @@ async def test_model_reads_container_info_with_stubbed_openai() -> None:
         client = FakeOpenAIClient()
         rec = RecordingHandler()  # from adgn_llm.mini_codex.loggers
         agent = await MiniCodex.create(
-            model="gpt-4.1-mini",
+            model=reasoning_model,
             mcp=mcp,
             client=client,
             system="test",
@@ -108,3 +111,12 @@ async def test_model_reads_container_info_with_stubbed_openai() -> None:
         assert "tool_call" in kinds
         assert "function_call_output" in kinds
         assert client.responses.calls == 2
+        # Verify that the second call included the function_call and function_call_output (stateless replay).
+        second = client.responses.captured[1]
+        input_items = second.get("input") or []
+        assert any(isinstance(it, dict) and it.get("type") == "function_call" for it in input_items), (
+            f"Expected function_call in next-turn input: {input_items}"
+        )
+        assert any(isinstance(it, dict) and it.get("type") == "function_call_output" for it in input_items), (
+            f"Expected function_call_output in next-turn input: {input_items}"
+        )

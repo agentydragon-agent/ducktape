@@ -74,8 +74,8 @@ class GitManager:
             target_commit = self._main_repo.revparse_single(source_branch)
             self._main_repo.branches.local.create(branch_name, target_commit)
 
-    async def get_working_directory_status(self) -> tuple[list[str], list[str]]:
-        """Get working directory status using fastest available method."""
+    async def get_working_directory_status(self) -> tuple[list[Path], list[Path]]:
+        """Get working directory status using fastest available method. Returns absolute Path objects."""
         try:
             # Get status - dirty (staged/modified) and untracked files
             dirty_files = []
@@ -86,9 +86,9 @@ class GitManager:
                     cast(Any, pygit2).GIT_STATUS_WT_MODIFIED
                     | cast(Any, pygit2).GIT_STATUS_INDEX_MODIFIED
                 ):
-                    dirty_files.append(file_path)
+                    dirty_files.append(Path(self.config.main_repo) / file_path)
                 elif flags & cast(Any, pygit2).GIT_STATUS_WT_NEW:
-                    untracked_files.append(file_path)
+                    untracked_files.append(Path(self.config.main_repo) / file_path)
 
             return dirty_files, untracked_files
 

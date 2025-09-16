@@ -101,11 +101,10 @@ class Configuration:
         if not config_path.exists():
             raise ConfigError(f"Config file not found: {config_path}")
 
-        with config_path.open() as f:
-            data = yaml.safe_load(f)
-
         try:
-            config_file = ConfigFile(**data)  # Pydantic validation
+            config_file = ConfigFile.model_validate(
+                yaml.safe_load(config_path.read_text())
+            )
         except ValidationError as e:
             raise ConfigError(f"Configuration validation errors: {e}")
 
