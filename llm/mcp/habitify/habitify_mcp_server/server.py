@@ -7,8 +7,8 @@ from typing import Any, Optional
 from mcp.server.fastmcp import FastMCP
 
 from . import tools
-from .types import Status
 from .config import load_api_key
+from .types import Status
 
 
 def create_habitify_mcp_server(

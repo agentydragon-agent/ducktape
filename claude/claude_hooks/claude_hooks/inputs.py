@@ -6,8 +6,6 @@ from pathlib import Path
 from typing import Any, Literal
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, Field, ValidationInfo, field_validator
-
 from claude_hooks.tool_models import (
     BashInput,
     EditInput,
@@ -19,6 +17,7 @@ from claude_hooks.tool_models import (
     TaskInput,
     WriteInput,
 )
+from pydantic import BaseModel, Field, ValidationInfo, field_validator
 
 # Map tool names to their input classes - shared by both PreToolInput and PostToolInput
 TOOL_INPUT_MAP: dict[str, type[BaseModel]] = {

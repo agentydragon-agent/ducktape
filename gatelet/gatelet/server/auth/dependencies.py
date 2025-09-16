@@ -5,12 +5,7 @@ from typing import Annotated, Optional
 from fastapi import Cookie, Depends
 
 from .. import database
-from .handlers import (
-    AuthContext,
-    admin_auth,
-    key_path_auth,
-    session_auth,
-)
+from .handlers import AuthContext, admin_auth, key_path_auth, session_auth
 
 
 class AuthDependency:

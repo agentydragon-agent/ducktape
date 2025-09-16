@@ -2,9 +2,8 @@ import json
 from collections.abc import Iterator
 
 import pytest
-from mcp.server.fastmcp.exceptions import ToolError
-
 from adgn_llm.mcp.gitea_mirror import server as gitea_server
+from mcp.server.fastmcp.exceptions import ToolError
 
 
 class _DummyResponse:

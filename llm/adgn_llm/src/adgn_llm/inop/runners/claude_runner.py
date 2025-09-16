@@ -5,17 +5,9 @@ import tempfile
 import time
 import uuid
 from pathlib import Path
-import structlog
 from typing import Any
-from claude_code_sdk import (
-    AssistantMessage as ClaudeAssistantMessage,
-)
-from claude_code_sdk import (
-    ResultMessage,
-    ToolResultBlock,
-    ToolUseBlock,
-    TextBlock,
-)
+
+import structlog
 from adgn_llm.inop.engine.models import (
     AssistantMessage,
     Rollout,
@@ -32,6 +24,8 @@ from adgn_llm.inop.engine.models import (
 from adgn_llm.inop.io.file_utils import collect_docker_files
 from adgn_llm.inop.runners.base import AgentRunner
 from adgn_llm.inop.runners.containerized_claude import TaskClaude
+from claude_code_sdk import AssistantMessage as ClaudeAssistantMessage
+from claude_code_sdk import ResultMessage, TextBlock, ToolResultBlock, ToolUseBlock
 
 
 class ClaudeRunner(AgentRunner):

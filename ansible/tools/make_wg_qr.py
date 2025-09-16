@@ -6,13 +6,13 @@ import sys
 from pathlib import Path
 
 import qrcode
-
-from ansible import constants as C  # type: ignore[attr-defined]  # noqa: N812
 from ansible.cli import CLI
 from ansible.inventory.manager import InventoryManager
 from ansible.parsing.dataloader import DataLoader
 from ansible.template import Templar
 from ansible.vars.manager import VariableManager
+
+from ansible import constants as C  # type: ignore[attr-defined]  # noqa: N812
 
 
 def generate_config(host: str) -> str:

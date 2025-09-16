@@ -1,9 +1,12 @@
 """Tests for diff intelligence module."""
 
 from ducktape_llm_common.claude_linter_v2.config.models import Violation
-from ducktape_llm_common.claude_linter_v2.diff.categorizer import ViolationCategorizer
+from ducktape_llm_common.claude_linter_v2.diff.categorizer import (
+    CategorizedViolation,
+    ViolationCategorizer,
+)
 from ducktape_llm_common.claude_linter_v2.diff.intelligence import DiffIntelligence
-from ducktape_llm_common.claude_linter_v2.diff.parser import DiffParser
+from ducktape_llm_common.claude_linter_v2.diff.parser import DiffParser, ParsedDiff
 
 
 class TestDiffParser:
@@ -13,11 +16,21 @@ class TestDiffParser:
         """Test parsing Edit tool response."""
         parser = DiffParser()
 
-        tool_input = {"file_path": "/test.py", "old_string": "def foo():", "new_string": "def bar():"}
+        tool_input = {
+            "file_path": "/test.py",
+            "old_string": "def foo():",
+            "new_string": "def bar():",
+        }
 
         tool_response = {
             "structuredPatch": [
-                {"oldStart": 10, "oldLines": 1, "newStart": 10, "newLines": 1, "lines": ["-def foo():", "+def bar():"]}
+                {
+                    "oldStart": 10,
+                    "oldLines": 1,
+                    "newStart": 10,
+                    "newLines": 1,
+                    "lines": ["-def foo():", "+def bar():"],
+                }
             ]
         }
 
@@ -34,13 +47,28 @@ class TestDiffParser:
 
         tool_input = {
             "file_path": "/test.py",
-            "edits": [{"old_string": "foo", "new_string": "bar"}, {"old_string": "baz", "new_string": "qux"}],
+            "edits": [
+                {"old_string": "foo", "new_string": "bar"},
+                {"old_string": "baz", "new_string": "qux"},
+            ],
         }
 
         tool_response = {
             "structuredPatch": [
-                {"oldStart": 10, "oldLines": 1, "newStart": 10, "newLines": 1, "lines": ["-foo", "+bar"]},
-                {"oldStart": 20, "oldLines": 1, "newStart": 20, "newLines": 1, "lines": ["-baz", "+qux"]},
+                {
+                    "oldStart": 10,
+                    "oldLines": 1,
+                    "newStart": 10,
+                    "newLines": 1,
+                    "lines": ["-foo", "+bar"],
+                },
+                {
+                    "oldStart": 20,
+                    "oldLines": 1,
+                    "newStart": 20,
+                    "newLines": 1,
+                    "lines": ["-baz", "+qux"],
+                },
             ]
         }
 
@@ -79,10 +107,12 @@ class TestViolationCategorizer:
             Violation(rule="E722", line=20, column=0, message="Bare except"),
         ]
 
-        from ducktape_llm_common.claude_linter_v2.diff.parser import ParsedDiff
-
         parsed_diff = ParsedDiff(
-            file_path="/test.py", hunks=[], added_lines={10}, removed_lines=set(), context_lines=set()
+            file_path="/test.py",
+            hunks=[],
+            added_lines={10},
+            removed_lines=set(),
+            context_lines=set(),
         )
 
         categorized = categorizer.categorize_violations(violations, parsed_diff)
@@ -103,10 +133,12 @@ class TestViolationCategorizer:
             Violation(rule="E722", line=20, column=0, message="Far away"),
         ]
 
-        from ducktape_llm_common.claude_linter_v2.diff.parser import ParsedDiff
-
         parsed_diff = ParsedDiff(
-            file_path="/test.py", hunks=[], added_lines={10}, removed_lines=set(), context_lines=set()
+            file_path="/test.py",
+            hunks=[],
+            added_lines={10},
+            removed_lines=set(),
+            context_lines=set(),
         )
 
         categorized = categorizer.categorize_violations(violations, parsed_diff)
@@ -120,8 +152,6 @@ class TestViolationCategorizer:
     def test_filter_by_priority(self):
         """Test filtering violations by priority."""
         categorizer = ViolationCategorizer()
-
-        from ducktape_llm_common.claude_linter_v2.diff.categorizer import CategorizedViolation
 
         categorized = [
             CategorizedViolation(
@@ -155,19 +185,21 @@ class TestDiffIntelligence:
         """Test formatting categorized violations."""
         di = DiffIntelligence()
 
-        from ducktape_llm_common.claude_linter_v2.diff.categorizer import CategorizedViolation
-
         groups = {
             "in-diff": [
                 CategorizedViolation(
-                    violation=Violation(rule="E722", line=10, column=0, message="Bare except"),
+                    violation=Violation(
+                        rule="E722", line=10, column=0, message="Bare except"
+                    ),
                     category="in-diff",
                     distance_from_change=0,
                 )
             ],
             "near-diff": [
                 CategorizedViolation(
-                    violation=Violation(rule="W293", line=8, column=0, message="Trailing whitespace"),
+                    violation=Violation(
+                        rule="W293", line=8, column=0, message="Trailing whitespace"
+                    ),
                     category="near-diff",
                     distance_from_change=2,
                 )

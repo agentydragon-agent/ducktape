@@ -1,54 +1,45 @@
 from __future__ import annotations
 
-
-import asyncio
 import argparse
+import asyncio
 import json
 import shutil
 import subprocess
 import tempfile
-from adgn_llm.properties.docker_env import (
-    properties_docker_spec,
-    PropertiesDockerWiring,
-)
 import time
-from pathlib import Path
 from dataclasses import dataclass
-
+from pathlib import Path
 from typing import Literal
 
-from adgn_llm.logging_config import configure_logging
 import tiktoken
-from openai import AsyncOpenAI
-from rich.console import Console
-
-from adgn_llm.mini_codex.agent import MiniCodex, AgentResult
+from adgn_llm.logging_config import configure_logging
+from adgn_llm.mcp.inproc_transport import make_inproc_slot_spec
+from adgn_llm.mini_codex.agent import AgentResult, MiniCodex
 from adgn_llm.mini_codex.aggregating_handler import GateUntil
 from adgn_llm.mini_codex.event_renderer import DisplayEventsHandler
-from adgn_llm.mini_codex.mcp_manager import (
-    McpManager,
-)
+from adgn_llm.mini_codex.mcp_manager import McpManager
 from adgn_llm.properties.agent_runner import run_prompt_async
 from adgn_llm.properties.critic import (
-    CriticSubmitState,
     CriticSubmitPayload,
+    CriticSubmitState,
     make_critic_submit_server,
 )
-from adgn_llm.properties.grade_runner import _metrics_row
-from adgn_llm.properties.prompts.util import build_input_schemas_json, build_scope_text
-from adgn_llm.properties.specimens.registry import SpecimenRegistry
-from adgn_llm.properties.prompts.builder import (
-    build_role_prompt,
-    build_enforce_prompt,
+from adgn_llm.properties.docker_env import (
+    PropertiesDockerWiring,
+    properties_docker_spec,
 )
-from adgn_llm.mcp.inproc_transport import make_inproc_slot_spec
-from adgn_llm.rendering.rich_renderers import render_to_rich
-from adgn_llm.properties.grade_runner import grade_critic_output
+from adgn_llm.properties.grade_runner import _metrics_row, grade_critic_output
+from adgn_llm.properties.models.issue import IssueCore, LineRange, Occurrence
+from adgn_llm.properties.prompts.builder import build_enforce_prompt, build_role_prompt
+from adgn_llm.properties.prompts.util import build_input_schemas_json, build_scope_text
 from adgn_llm.properties.specimens.registry import (
+    SpecimenRegistry,
     find_specimens_base,
     list_specimen_names,
 )
-from adgn_llm.properties.models.issue import Occurrence, LineRange, IssueCore
+from adgn_llm.rendering.rich_renderers import render_to_rich
+from openai import AsyncOpenAI
+from rich.console import Console
 
 
 def _emit_final_text(result: AgentResult, output_final_message: Path | None, final_only: bool) -> None:

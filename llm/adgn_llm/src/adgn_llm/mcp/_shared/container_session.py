@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-from adgn_llm.mcp._shared.constants import SLEEP_FOREVER_CMD
-
-
 import shlex
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -10,6 +7,7 @@ from enum import StrEnum
 from typing import Any, Dict, Iterable, cast
 
 import docker
+from adgn_llm.mcp._shared.constants import SLEEP_FOREVER_CMD
 from docker.errors import APIError
 from docker.models.containers import Container
 from mcp.server.fastmcp import FastMCP

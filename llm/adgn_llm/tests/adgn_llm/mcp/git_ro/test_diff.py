@@ -1,20 +1,20 @@
 from __future__ import annotations
 
 import json
-import pytest
-from pydantic import TypeAdapter
 
-from adgn_llm.mini_codex.mcp_manager import build_mcp_function, McpManager
-from adgn_llm.mcp.inproc_transport import make_inproc_slot_spec
+import pytest
 from adgn_llm.mcp.git_ro.server import (
-    TextPage,
-    TextSlice,
-    DiffInput,
     GIT_RO_SERVER_NAME,
+    DiffInput,
     DiffResult,
     PatchResult,
+    TextPage,
+    TextSlice,
     make_git_ro_server,
 )
+from adgn_llm.mcp.inproc_transport import make_inproc_slot_spec
+from adgn_llm.mini_codex.mcp_manager import McpManager, build_mcp_function
+from pydantic import TypeAdapter
 
 
 @pytest.mark.asyncio

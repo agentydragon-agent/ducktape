@@ -20,9 +20,9 @@ from typing import Dict
 from mcp.server.fastmcp import FastMCP
 
 from .._shared.container_session import (
+    NetworkMode,
     make_container_lifespan,
     register_container,
-    NetworkMode,
 )
 
 # Shared names for wiring and renderers

@@ -23,12 +23,16 @@ from adgn_llm.inop.engine.models import (
 )
 from adgn_llm.inop.io.jsonl_logger import JSONLLogger
 from openai.types.responses import Response
-from openai.types.responses.response_usage import ResponseUsage, InputTokensDetails, OutputTokensDetails
 from openai.types.responses.response_function_tool_call_item import (
     ResponseFunctionToolCallItem,
 )
 from openai.types.responses.response_output_message import ResponseOutputMessage
 from openai.types.responses.response_output_text import ResponseOutputText
+from openai.types.responses.response_usage import (
+    InputTokensDetails,
+    OutputTokensDetails,
+    ResponseUsage,
+)
 
 
 def mk_func_call(

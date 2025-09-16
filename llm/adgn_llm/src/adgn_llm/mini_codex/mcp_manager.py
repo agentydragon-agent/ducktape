@@ -6,20 +6,29 @@
 """
 
 from __future__ import annotations
+
 import asyncio
+import json
 from contextlib import AsyncExitStack, asynccontextmanager
-from typing import Any, Dict, Protocol, cast, Annotated, Union, AsyncContextManager
-from pydantic import AnyUrl, BaseModel, Field
-from typing import Literal
-from adgn_llm.mcp.types import ServerSlot, ServerSlotSpec
+from typing import (
+    Annotated,
+    Any,
+    AsyncContextManager,
+    Dict,
+    Literal,
+    Protocol,
+    Union,
+    cast,
+)
+
 from adgn_llm.mcp.inproc_transport import make_inproc_slot_spec
 from adgn_llm.mcp.resources.server import make_resources_server
-import json
+from adgn_llm.mcp.types import ServerSlot, ServerSlotSpec
 from mcp.client.session import ClientSession
-from mcp.client.stdio import StdioServerParameters, stdio_client
 from mcp.client.sse import sse_client
+from mcp.client.stdio import StdioServerParameters, stdio_client
 from mcp.types import InitializeResult
-
+from pydantic import AnyUrl, BaseModel, Field
 
 # Shared MCP naming helpers/constants
 MCP_NAMESPACE_PREFIX = "mcp__"

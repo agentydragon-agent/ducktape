@@ -1,9 +1,10 @@
 """Configuration management for the Claude instruction optimizer."""
 
 from pathlib import Path
+
 import yaml
-from pydantic import BaseModel, Field
 from adgn_llm.openai_utils import ReasoningEffort
+from pydantic import BaseModel, Field
 
 
 class RolloutConfig(BaseModel):

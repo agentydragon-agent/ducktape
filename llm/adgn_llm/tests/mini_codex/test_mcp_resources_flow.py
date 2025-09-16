@@ -3,6 +3,13 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from adgn_llm.mcp.docker_exec.server import make_container_exec_mcp
+from adgn_llm.mcp.inproc_transport import make_inproc_slot_spec
+from adgn_llm.mini_codex.agent import MiniCodex
+from adgn_llm.mini_codex.aggregating_handler import AutoHandler
+from adgn_llm.mini_codex.event_renderer import DisplayEventsHandler
+from adgn_llm.mini_codex.loggers import RecordingHandler
+from adgn_llm.mini_codex.mcp_manager import McpManager
 from openai.types.responses import (
     Response,
     ResponseFunctionToolCall,
@@ -10,19 +17,10 @@ from openai.types.responses import (
     ResponseOutputText,
 )
 from openai.types.responses.response_usage import (
-    ResponseUsage,
     InputTokensDetails,
     OutputTokensDetails,
+    ResponseUsage,
 )
-from adgn_llm.mini_codex.event_renderer import DisplayEventsHandler
-from adgn_llm.mini_codex.aggregating_handler import AutoHandler
-from adgn_llm.mini_codex.loggers import RecordingHandler
-
-
-from adgn_llm.mcp.docker_exec.server import make_container_exec_mcp
-from adgn_llm.mcp.inproc_transport import make_inproc_slot_spec
-from adgn_llm.mini_codex.agent import MiniCodex
-from adgn_llm.mini_codex.mcp_manager import McpManager
 
 
 class FakeResponses:

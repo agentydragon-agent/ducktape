@@ -5,12 +5,6 @@ import contextlib
 from collections.abc import Awaitable, Callable, Iterable
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from ..shared.protocol import WorktreeID
-    from .gitstatus_refresh import DebouncedGitstatusRefresh
-    from .worktree_index import WorktreeIndex
 
 from ..shared.protocol import (
     DaemonHealth,
@@ -18,13 +12,16 @@ from ..shared.protocol import (
     PRInfoDisabled,
     PRInfoError,
     PRInfoOk,
+    WorktreeID,
 )
 from .git_manager import GitManager
 from .git_manager import WorktreeInfo as GMWorktreeInfo
+from .gitstatus_refresh import DebouncedGitstatusRefresh
 from .gitstatusd_listener import GitstatusdListener
 from .pr_service import PRCacheError, PRCacheOk, PRService
 from .repo_status import RepoStatus
 from .types import DiscoveredWorktree
+from .worktree_index import WorktreeIndex
 
 
 class GitService:

@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import asyncio
 import logging
 import os
@@ -6,8 +7,11 @@ import sys
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import Optional
+
 from git import Repo
-from ..core import build_prompt as _build_prompt_claude, _extract_message_from_text, _build_ai_context
+
+from ..core import _build_ai_context, _extract_message_from_text
+from ..core import build_prompt as _build_prompt_claude
 
 
 @dataclass

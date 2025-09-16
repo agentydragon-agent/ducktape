@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from adgn_llm.sandboxer import _compose_seatbelt  # type: ignore[attr-defined]
 from adgn_llm.sandboxer import (
     FSConfig,
     NetConfig,
     PlatformConfig,
     Policy,
     SeatbeltPlatform,
-    _compose_seatbelt,  # type: ignore[attr-defined]
 )
 
 

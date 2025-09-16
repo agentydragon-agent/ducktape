@@ -5,9 +5,11 @@ import statistics
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
 import matplotlib
 import pandas as pd  # type: ignore[import-untyped]
 import tiktoken
+from adgn_llm.inop.io.logging_utils import DualOutputLogging
 from plotnine import (
     aes,
     element_text,
@@ -21,8 +23,6 @@ from plotnine import (
     theme,
     theme_minimal,
 )
-from adgn_llm.inop.io.logging_utils import DualOutputLogging
-
 
 # Force non-interactive backend to avoid UI popups (prod/tests)
 

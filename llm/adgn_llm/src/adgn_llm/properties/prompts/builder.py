@@ -1,20 +1,20 @@
 from __future__ import annotations
 
-
-from adgn_llm.properties.grader import CANON_TP_PREFIX, CANON_FP_PREFIX, CRIT_PREFIX
-
-
 from typing import Literal
 
-from adgn_llm.properties.docker_env import PropertiesDockerWiring
-from .util import build_input_schemas_json, render_prompt_template
-from adgn_llm.properties.models.issue import Occurrence, LineRange, IssueCore
 from adgn_llm.properties.critic import CriticSubmitPayload, ReportedIssue
+from adgn_llm.properties.docker_env import PropertiesDockerWiring
 from adgn_llm.properties.grader import (
+    CANON_FP_PREFIX,
+    CANON_TP_PREFIX,
+    CRIT_PREFIX,
+    GradeMetrics,
     GradeSubmitInput,
     GradeSubmitPayload,
-    GradeMetrics,
 )
+from adgn_llm.properties.models.issue import IssueCore, LineRange, Occurrence
+
+from .util import build_input_schemas_json, render_prompt_template
 
 
 def build_role_prompt(

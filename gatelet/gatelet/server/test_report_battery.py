@@ -1,3 +1,5 @@
+from collections import namedtuple
+
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
@@ -24,8 +26,6 @@ async def test_send_battery_status(
             is_enabled=True,
         ),
     )
-
-    from collections import namedtuple
 
     Battery = namedtuple("Battery", ["percent", "secsleft", "power_plugged"])
     percent = 80

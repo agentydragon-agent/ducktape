@@ -1,25 +1,28 @@
 from __future__ import annotations
 
+from typing import Any, Callable, Iterable
 
-from typing import Any, Iterable, Callable
-
+from adgn_llm.mini_codex.handler import (
+    AssistantText,
+    BaseHandler,
+    BeforeToolCallDecision,
+    BypassToolInjectOutput,
+    ContinueDecision,
+    FunctionCallOutput,
+    Response,
+    ToolCall,
+    UserText,
+)
 from adgn_llm.mini_codex.loop_control import (
-    LoopDecision,
-    Continue,
-    NoLoopDecision,
-    Auto,
     Abort,
+    Auto,
+    Continue,
+    LoopDecision,
+    NoLoopDecision,
     RequireAny,
     SyntheticAction,
 )
-from adgn_llm.mini_codex.handler import (
-    BaseHandler,
-    UserText,
-    AssistantText,
-    ToolCall,
-    FunctionCallOutput,
-    Response,
-)
+from mcp import types as mcp_types
 
 
 class AutoHandler(BaseHandler):
@@ -85,13 +88,33 @@ class AggregatingController:
                 "Fix the MiniCodex instance to provide a loop handler."
             )
 
-        # Crash if handlers disagree (any differing decision)
+        # Reduction rules:
+        # - If all decisions are identical -> return that decision
+        # - Otherwise, prefer a single non-Continue decision if present (e.g., SyntheticAction or Abort)
+        # - If multiple differing non-Continue decisions are present -> conflict -> crash
         first = decisions[0]
-        for other in decisions[1:]:
-            if other != first:
-                raise RuntimeError(f"Conflicting handler decisions: {decisions!r}; crashing per policy.")
+        if all(d == first for d in decisions):
+            return first
 
-        return first
+        # If all decisions are Continue but not identical, this is a conflict
+        if all(isinstance(d, Continue) for d in decisions):
+            # decisions differ but all are Continue -> treat as conflict
+            raise RuntimeError(f"Conflicting Continue decisions from handlers: {decisions!r}")
+
+        # Collect non-Continue decisions (Concrete ones other than Continue)
+        non_continue = [d for d in decisions if not isinstance(d, Continue)]
+        if len(non_continue) == 0:
+            # Fallback: return the first
+            return first
+        if len(non_continue) == 1:
+            return non_continue[0]
+
+        # Multiple non-Continue decisions: they must be identical or it's a conflict
+        first_nc = non_continue[0]
+        for other in non_continue[1:]:
+            if other != first_nc:
+                raise RuntimeError(f"Conflicting handler decisions: {decisions!r}; crashing per policy.")
+        return first_nc
 
     # ---- Event forwarding (typed, observer-only) ----
     def on_response(self, evt: Response) -> None:
@@ -109,6 +132,58 @@ class AggregatingController:
     def on_tool_call(self, evt: ToolCall) -> None:
         for h in self._handlers:
             h.on_tool_call_event(evt)
+
+    async def on_before_tool_call(self, evt: ToolCall) -> BeforeToolCallDecision:
+        """Ask handlers for a required before-tool-call decision.
+
+        Rules:
+        - Call handlers' async before_tool_call(evt) in registration order.
+        - Each handler MUST return a BeforeToolCallDecision.
+        - If multiple handlers return decisions that differ, crash (conflict).
+        - If handlers list is empty, crash.
+        """
+        decisions: list[BeforeToolCallDecision] = []
+        if not self._handlers:
+            raise RuntimeError("No handlers registered to make before_tool_call decisions")
+
+        for h in self._handlers:
+            # Call each handler's before_tool_call; BaseHandler provides a default ContinueDecision.
+            dec = await h.before_tool_call(evt)
+            if dec is None:
+                # Defensive: shouldn't happen because BaseHandler returns ContinueDecision(), but fail-fast if it does
+                raise TypeError(f"Handler {h!r}.before_tool_call returned None; must return a BeforeToolCallDecision")
+            # If injecting a result, ensure the result field is the concrete CallToolResult type
+
+            if isinstance(dec, BypassToolInjectOutput):
+                if not isinstance(dec.result, mcp_types.CallToolResult):
+                    raise TypeError(
+                        f"Handler {h!r} returned BypassToolInjectOutput with invalid result; result must be an mcp.types.CallToolResult instance"
+                    )
+            decisions.append(dec)
+
+        # Reduction rules:
+        # - If all decisions are identical -> return that decision
+        # - If there are multiple non-Continue decisions that differ -> conflict (error)
+        # - If there is exactly one non-Continue decision and others are ContinueDecision, return the non-Continue one
+        first = decisions[0]
+        if all(d == first for d in decisions):
+            return first
+
+        # Find non-ContinueDecision decisions (type-based, not string matching)
+
+        non_continue = [d for d in decisions if not isinstance(d, ContinueDecision)]
+        if len(non_continue) == 0:
+            # all continue but not identical (shouldn't happen) -> return first
+            return first
+        if len(non_continue) == 1:
+            return non_continue[0]
+
+        # Multiple non-continue decisions: they must be identical or it's a conflict
+        first_nc = non_continue[0]
+        for other in non_continue[1:]:
+            if other != first_nc:
+                raise RuntimeError(f"Conflicting before_tool_call decisions from handlers: {decisions!r}")
+        return first_nc
 
     def on_function_call_output(self, evt: FunctionCallOutput) -> None:
         for h in self._handlers:

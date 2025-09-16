@@ -7,12 +7,7 @@ from colorama import Style
 from tabulate import tabulate
 
 from ..shared.github_models import PRData, PRState, PRStatus
-from ..shared.protocol import (
-    PRInfo,
-    PRInfoError,
-    PRInfoOk,
-    StatusResult,
-)
+from ..shared.protocol import PRInfo, PRInfoError, PRInfoOk, StatusResult
 
 # Display limit for list summaries in UI
 FILE_LIST_DISPLAY_LIMIT = 3

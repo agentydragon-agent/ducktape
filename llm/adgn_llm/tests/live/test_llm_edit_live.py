@@ -5,6 +5,7 @@ from pathlib import Path
 
 import openai
 import pytest
+from adgn_llm.llm_edit import _execute
 
 
 # Live LLM test: uses real OpenAI API via environment credentials
@@ -23,7 +24,6 @@ async def test_llm_edit_live_obvious_replace(tmp_path: Path) -> None:
     )
 
     # Invoke inner execution function directly (no sys/argv)
-    from adgn_llm.llm_edit import _execute
 
     model = os.getenv("OPENAI_MODEL", "o4-mini")
     code = await _execute(

@@ -5,6 +5,7 @@ Core data models for working with Tana JSON dumps.
 from __future__ import annotations
 
 import json
+from collections import defaultdict
 from collections.abc import Mapping
 from datetime import datetime, timezone
 from pathlib import Path
@@ -12,6 +13,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from .constants import LANGUAGE_KEY_ID, MEDIA_KEY_ID, SUPERTAG_KEY_ID
+from .query import get_tuple_value
 from .types import NodeId
 
 
@@ -96,11 +99,6 @@ class VisualNode(BaseNode):
         if not metanode:
             return None
 
-        # Look for media tuple in metanode children
-        # Import here to avoid circular dependency
-        from .constants import MEDIA_KEY_ID
-        from .query import get_tuple_value
-
         if val_node := get_tuple_value(metanode, MEDIA_KEY_ID):
             return val_node.name
 
@@ -114,10 +112,6 @@ class CodeBlockNode(BaseNode):
         """Get the programming language of the code block."""
         if not self._store:
             raise RuntimeError("Node not attached to a store")
-
-        # Import here to avoid circular dependency
-        from .constants import LANGUAGE_KEY_ID
-        from .query import get_tuple_value
 
         if lang_node := get_tuple_value(self, LANGUAGE_KEY_ID):
             return lang_node.name or ""
@@ -168,9 +162,6 @@ class NodeStore(Mapping[NodeId, BaseNode]):
 
     def _build_supertag_index(self) -> None:
         """Build the supertag index from node relationships."""
-        from collections import defaultdict
-
-        from .constants import SUPERTAG_KEY_ID
 
         idx: defaultdict[NodeId, list[str]] = defaultdict(list)
 

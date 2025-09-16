@@ -3,14 +3,12 @@
 from typing import Any
 from unittest.mock import Mock
 
+from wt.client.view_formatter import ViewFormatter
 from wt.client.wt_client import WtClient
 from wt.server.git_manager import GitManager
 from wt.server.github_client import GitHubInterface
-from wt.shared.protocol import (
-    DaemonHealth,
-    DaemonHealthStatus,
-    StatusResponse,
-)
+from wt.server.worktree_service import WorktreeService
+from wt.shared.protocol import DaemonHealth, DaemonHealthStatus, StatusResponse
 
 from .test_data import MockBehaviors
 
@@ -113,7 +111,6 @@ class MockFactory:
     @staticmethod
     def view_formatter(**kwargs) -> Mock:
         """Create a view formatter mock."""
-        from wt.client.view_formatter import ViewFormatter
 
         mock = Mock(spec=ViewFormatter)
         mock.render_worktree_status_all.return_value = None
@@ -181,9 +178,6 @@ class ServiceBuilder:
 
     def build_worktree_service(self):
         """Build WorktreeService with configured dependencies."""
-        from wt.server.git_manager import GitManager
-        from wt.server.github_client import GitHubInterface
-        from wt.server.worktree_service import WorktreeService
 
         # Create real instances for components marked as 'real'
         if "git" in self._use_real:

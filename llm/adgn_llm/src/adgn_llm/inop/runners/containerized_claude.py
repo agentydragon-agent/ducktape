@@ -25,16 +25,14 @@ from collections.abc import AsyncIterator
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
+
 import claude_code_sdk
 import docker
 import pathspec
+from adgn_llm.inop.engine.models import SeedTask
 from claude_code_sdk import ClaudeCodeOptions, ClaudeSDKClient
 from claude_code_sdk._internal.transport.subprocess_cli import SubprocessCLITransport
-
-
-if TYPE_CHECKING:
-    from adgn_llm.inop.engine.models import SeedTask
 
 
 @contextmanager

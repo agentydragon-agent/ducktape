@@ -4,7 +4,12 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Union
 
-from .claude_code_api import BaseResponse, PostToolResponse, PreToolResponse, StopResponse
+from .claude_code_api import (
+    BaseResponse,
+    PostToolResponse,
+    PreToolResponse,
+    StopResponse,
+)
 
 
 # Outcome types - more user-friendly representations

@@ -4,7 +4,13 @@ import json
 from typing import Any
 
 import pytest
-
+from adgn_llm.mcp.inproc_transport import make_inproc_slot_spec
+from adgn_llm.mini_codex.agent import MiniCodex
+from adgn_llm.mini_codex.aggregating_handler import BaseHandler
+from adgn_llm.mini_codex.loggers import RecordingHandler
+from adgn_llm.mini_codex.loop_control import Auto, Continue
+from adgn_llm.mini_codex.mcp_manager import McpManager
+from mcp.server.fastmcp import FastMCP
 from openai.types.responses import (
     Response,
     ResponseFunctionToolCall,
@@ -12,15 +18,10 @@ from openai.types.responses import (
     ResponseOutputText,
 )
 from openai.types.responses.response_usage import (
-    ResponseUsage,
     InputTokensDetails,
     OutputTokensDetails,
+    ResponseUsage,
 )
-
-from adgn_llm.mini_codex.agent import MiniCodex
-from adgn_llm.mini_codex.mcp_manager import McpManager
-from adgn_llm.mcp.inproc_transport import make_inproc_slot_spec
-from mcp.server.fastmcp import FastMCP
 
 
 def _make_failing_server() -> FastMCP:
@@ -104,14 +105,10 @@ async def test_tool_error_is_surfaced_in_sequence(
     spec = make_inproc_slot_spec(_make_failing_server())
     async with McpManager({"editor": spec}) as mcp:
         # Create agent and run one turn
-        from adgn_llm.mini_codex.aggregating_handler import BaseHandler
-        from adgn_llm.mini_codex.loop_control import Continue, Auto
 
         class _AutoHandler(BaseHandler):
             def on_before_sample(self):  # type: ignore[override]
                 return Continue(Auto())
-
-        from adgn_llm.mini_codex.loggers import RecordingHandler
 
         rec = RecordingHandler()
 

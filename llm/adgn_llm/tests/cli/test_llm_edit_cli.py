@@ -3,9 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from typer.testing import CliRunner
-
+from adgn_llm import llm_edit as mod
 from adgn_llm.llm_edit import app
+from typer.testing import CliRunner
 
 
 def test_typer_cli_invokes_execute_without_sys(
@@ -20,8 +20,6 @@ def test_typer_cli_invokes_execute_without_sys(
     prompt = "Do a trivial change (mocked; no real API call)"
 
     called: dict[str, object] = {}
-
-    from adgn_llm import llm_edit as mod
 
     def _mk_client(*args: object, **kwargs: object):
         called.update({"client_args": args, "client_kwargs": kwargs})

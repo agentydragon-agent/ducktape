@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-
 import logging
 import subprocess
 from datetime import timedelta
@@ -8,7 +7,7 @@ from typing import Optional
 
 from git import Repo
 
-from ._common import run_subprocess, build_prompt_for_claude, extract_message
+from ._common import build_prompt_for_claude, extract_message, run_subprocess
 
 
 class ClaudeAI:

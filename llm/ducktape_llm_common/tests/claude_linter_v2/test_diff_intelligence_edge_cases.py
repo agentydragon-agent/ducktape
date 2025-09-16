@@ -1,6 +1,7 @@
 """Edge case tests for diff intelligence module."""
 
 from ducktape_llm_common.claude_linter_v2.config.models import Violation
+from ducktape_llm_common.claude_linter_v2.diff.categorizer import CategorizedViolation
 from ducktape_llm_common.claude_linter_v2.diff.intelligence import DiffIntelligence
 from ducktape_llm_common.claude_linter_v2.diff.parser import DiffParser
 
@@ -30,7 +31,9 @@ class TestDiffParserEdgeCases:
             ]
         }
 
-        parsed = parser.parse_tool_response("Edit", {"file_path": "/test.py"}, tool_response)
+        parsed = parser.parse_tool_response(
+            "Edit", {"file_path": "/test.py"}, tool_response
+        )
 
         assert parsed is not None
         assert parsed.added_lines == {12}  # Only the + line
@@ -47,7 +50,12 @@ class TestDiffParserEdgeCases:
                     "oldLines": 1,
                     "newStart": 10,
                     "newLines": 3,  # Added 2 lines
-                    "lines": ["-def foo():", "+def foo():", "+    # Added comment", "+    pass"],
+                    "lines": [
+                        "-def foo():",
+                        "+def foo():",
+                        "+    # Added comment",
+                        "+    pass",
+                    ],
                 },
                 {
                     "oldStart": 20,
@@ -59,7 +67,9 @@ class TestDiffParserEdgeCases:
             ]
         }
 
-        parsed = parser.parse_tool_response("MultiEdit", {"file_path": "/test.py"}, tool_response)
+        parsed = parser.parse_tool_response(
+            "MultiEdit", {"file_path": "/test.py"}, tool_response
+        )
 
         assert parsed is not None
         assert parsed.added_lines == {10, 11, 12, 22}
@@ -70,7 +80,9 @@ class TestDiffParserEdgeCases:
 
         # Empty patch array
         tool_response = {"structuredPatch": []}
-        parsed = parser.parse_tool_response("Edit", {"file_path": "/test.py"}, tool_response)
+        parsed = parser.parse_tool_response(
+            "Edit", {"file_path": "/test.py"}, tool_response
+        )
         assert parsed is not None
         assert len(parsed.hunks) == 0
         assert len(parsed.added_lines) == 0
@@ -81,7 +93,9 @@ class TestDiffParserEdgeCases:
 
         # No structuredPatch field
         tool_response = {"someOtherField": "value"}
-        parsed = parser.parse_tool_response("Edit", {"file_path": "/test.py"}, tool_response)
+        parsed = parser.parse_tool_response(
+            "Edit", {"file_path": "/test.py"}, tool_response
+        )
         assert parsed is None
 
     def test_parse_special_diff_markers(self):
@@ -104,7 +118,9 @@ class TestDiffParserEdgeCases:
             ]
         }
 
-        parsed = parser.parse_tool_response("Edit", {"file_path": "/test.py"}, tool_response)
+        parsed = parser.parse_tool_response(
+            "Edit", {"file_path": "/test.py"}, tool_response
+        )
 
         assert parsed is not None
         assert parsed.added_lines == {10}
@@ -120,7 +136,13 @@ class TestDiffIntelligenceEdgeCases:
 
         tool_response = {
             "structuredPatch": [
-                {"oldStart": 10, "oldLines": 1, "newStart": 10, "newLines": 1, "lines": ["-old", "+new"]}
+                {
+                    "oldStart": 10,
+                    "oldLines": 1,
+                    "newStart": 10,
+                    "newLines": 1,
+                    "lines": ["-old", "+new"],
+                }
             ]
         }
 
@@ -156,7 +178,10 @@ class TestDiffIntelligenceEdgeCases:
         ]
 
         groups = di.analyze(
-            tool_name="Edit", tool_input={"file_path": "/test.py"}, tool_response=tool_response, violations=violations
+            tool_name="Edit",
+            tool_input={"file_path": "/test.py"},
+            tool_response=tool_response,
+            violations=violations,
         )
 
         # Line 12 is within 3 lines of both line 10 and line 11
@@ -174,7 +199,11 @@ class TestDiffIntelligenceEdgeCases:
 
         groups = di.analyze(
             tool_name="Edit",
-            tool_input={"file_path": "/test.py", "old_string": "foo", "new_string": "bar"},
+            tool_input={
+                "file_path": "/test.py",
+                "old_string": "foo",
+                "new_string": "bar",
+            },
             tool_response=None,  # PreToolUse has no response
             violations=violations,
         )
@@ -188,12 +217,12 @@ class TestDiffIntelligenceEdgeCases:
         """Test formatting with many violations doesn't overwhelm output."""
         di = DiffIntelligence()
 
-        from ducktape_llm_common.claude_linter_v2.diff.categorizer import CategorizedViolation
-
         # Create many out-of-diff violations
         out_diff_violations = [
             CategorizedViolation(
-                violation=Violation(rule=f"E{i}", line=i * 10, column=0, message=f"Error {i}"),
+                violation=Violation(
+                    rule=f"E{i}", line=i * 10, column=0, message=f"Error {i}"
+                ),
                 category="out-of-diff",
                 distance_from_change=None,
             )

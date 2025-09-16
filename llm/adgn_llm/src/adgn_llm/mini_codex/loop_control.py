@@ -16,14 +16,15 @@ Notes / Future work (TODOs):
 """
 
 from __future__ import annotations
+
 from dataclasses import dataclass
 from typing import TypeAlias
+
 from openai.types.responses import (
-    ResponseOutputMessage,
     ResponseFunctionToolCall,
+    ResponseOutputMessage,
     ResponseReasoningItem,
 )
-
 
 # Union of concrete output item types that the agent processes
 OutputItem: TypeAlias = ResponseReasoningItem | ResponseOutputMessage | ResponseFunctionToolCall
@@ -89,10 +90,57 @@ class Abort:
 class SyntheticAction:
     """Provide synthetic model output items for this sampling step.
 
-    MiniCodex will skip calling the real LLM for this step and instead process
-    these output items (tool calls, assistant messages, reasoning items) as if
-    returned by the model. After processing, the loop continues to the next
-    sampling step where handlers can return another decision.
+    Semantics
+    - SyntheticAction tells MiniCodex: "do not call the external LLM for this
+      sampling step; instead treat `outputs` as if they were produced by the
+      model and process them locally inside the agent loop." This is an
+      in‑process primitive used to reduce latency when the action and its tool
+      effects can be executed locally.
+
+    fn -> tool -> reasoning pairing
+    - When the model normally emits a function_call, the Responses service will
+      pair it with an internal reasoning item (rs_...) and a server-side
+      function_call id (fc_...). Those server-managed ids/value pairs are
+      protected/encrypted and must not be fabricated by clients.
+    - If you want to include a function_call in the request input (to replay or
+      to bootstrap), do NOT invent rs_/fc_ ids. Instead either:
+      * Let the model produce the function_call via `tool_choice` (recommended),
+        or
+      * Include a client function_call with a client-scoped call_id and also
+        include the matching function_call_output produced locally (the agent
+        may append a function_call_output object with the same call_id into the
+        input so the server sees a tool output for that call). This is the
+        supported pattern for "local tool execution then submit the pair": the
+        input contains the function_call and the corresponding function_call_output.
+    - Do NOT fabricate server-only rs_ or fc_ ids; the API will reject those.
+
+    Testing guidance
+    - Live tests: prefer exercising the full flow via `tool_choice` so the model
+      and service produce canonical fc_/rs_ pairs.
+    - Mocked tests: you may assert on function_call + function_call_output events
+      emitted by handlers and the agent. For unit tests that need to simulate a
+      real Responses API call, compose input with a function_call plus the
+      locally-produced function_call_output (matching call_id) rather than
+      inventing rs_ ids.
+    - When writing tests, include both variants:
+      * live variant that uses tool_choice and validates end-to-end behavior;
+      * mocked/unit variant that supplies a synthetic function_call followed by
+        the corresponding function_call_output (client-scoped call_id) in the
+        agent.messages payload.
+
+    Parametric switch / behavior options
+    - Use the agent flag `parallel_tool_calls` and handler-returned SyntheticAction
+      to decide whether the model call is skipped and outputs are executed
+      locally. SyntheticAction is intended for local execution (no network).
+    - If you want to hand control to the model and let the server produce the
+      function_call/reasoning pair, use `tool_choice` in the Responses.create
+      request instead of SyntheticAction.
+
+    Summary
+    - SyntheticAction is an in-process execution primitive: process `outputs`
+      locally, do not fabricate server-only reasoning ids, and when submitting
+      function_call + tool output to the Responses API, include the tool output
+      for the same client call_id rather than inventing rs_* ids.
     """
 
     outputs: list[OutputItem]

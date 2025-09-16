@@ -5,7 +5,11 @@ from datetime import datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
-
+from ducktape_llm_common.claude_linter_v2.config.clean_models import ModularConfig
+from ducktape_llm_common.claude_linter_v2.config.models import (
+    AutofixCategory,
+    PostToolHookConfig,
+)
 from ducktape_llm_common.claude_linter_v2.hooks.handler import HookHandler
 from ducktape_llm_common.claude_linter_v2.hooks.outcomes import (
     PostToolSuccess,
@@ -61,7 +65,9 @@ class TestMCPTools:
             session_id=str(session_id),
             hook_event_name="PostToolUse",
             tool_name="mcp_puppeteer_navigate",
-            tool_input=ToolInput(url="https://example.com", allowDangerous=True, wait_for="networkidle2"),
+            tool_input=ToolInput(
+                url="https://example.com", allowDangerous=True, wait_for="networkidle2"
+            ),
             tool_result={"success": True, "screenshot": "base64_data_here"},
         )
 
@@ -74,7 +80,9 @@ class TestMCPTools:
         mock_config = MagicMock()
         mock_config.access_control = []
         mock_config.repo_rules = []
-        mock_config.hooks = {"post": MagicMock(auto_fix=False, inject_permissions=False)}
+        mock_config.hooks = {
+            "post": MagicMock(auto_fix=False, inject_permissions=False)
+        }
         mock_config.python.hard_blocks.bare_except = True
         mock_config.python.hard_blocks.getattr_setattr = True
         mock_config.python.hard_blocks.barrel_init = True
@@ -133,12 +141,12 @@ class TestMCPTools:
 
     def test_mcp_tool_post_hook_with_autofix(self, handler, session_id, tmp_path):
         """Test MCP tool in post-hook with autofix enabled."""
-        from ducktape_llm_common.claude_linter_v2.config.clean_models import ModularConfig
-        from ducktape_llm_common.claude_linter_v2.config.models import AutofixCategory, PostToolHookConfig
 
         # Create a real config model with proper nested structure
         config = ModularConfig()
-        config.hooks["post"] = PostToolHookConfig(auto_fix=True, autofix_categories=[AutofixCategory.FORMATTING])
+        config.hooks["post"] = PostToolHookConfig(
+            auto_fix=True, autofix_categories=[AutofixCategory.FORMATTING]
+        )
 
         # Replace the config loader's config
         handler.config_loader._config = config
@@ -151,7 +159,10 @@ class TestMCPTools:
             session_id=str(session_id),
             hook_event_name="PostToolUse",
             tool_name="mcp_editor_save",
-            tool_input=ToolInput(file_path=str(test_file), content="import os\nimport sys\n\n\ndef test():\n    pass"),
+            tool_input=ToolInput(
+                file_path=str(test_file),
+                content="import os\nimport sys\n\n\ndef test():\n    pass",
+            ),
             tool_result={"saved": True},
         )
 
@@ -188,13 +199,18 @@ class TestMCPTools:
             session_id=str(session_id),
             hook_event_name="PostToolUse",
             tool_name="mcp_knowledge_graph_query",
-            tool_input=ToolInput(query="MATCH (n:Node) RETURN n LIMIT 10", database="neo4j"),
+            tool_input=ToolInput(
+                query="MATCH (n:Node) RETURN n LIMIT 10", database="neo4j"
+            ),
             tool_result={
                 "nodes": [
                     {
                         "id": 1,
                         "labels": ["Person", "Developer"],
-                        "properties": {"name": "Alice", "skills": ["Python", "JavaScript"]},
+                        "properties": {
+                            "name": "Alice",
+                            "skills": ["Python", "JavaScript"],
+                        },
                     }
                 ],
                 "relationships": [],
@@ -212,7 +228,11 @@ class TestMCPTools:
             hook_event_name="PostToolUse",
             tool_name="mcp_api_call",
             tool_input=ToolInput(endpoint="/api/users", method="GET"),
-            tool_result={"error": "Connection timeout", "status_code": None, "success": False},
+            tool_result={
+                "error": "Connection timeout",
+                "status_code": None,
+                "success": False,
+            },
         )
 
         # Should still process normally - hooks don't care about tool success
@@ -230,11 +250,21 @@ class TestMCPTools:
             ("mcp_fs_write", {"file_path": "test.py", "content": "print('hi')"}, True),
             ("mcp_editor_format", {"file_path": "app.py", "content": "x=1"}, True),
             # Edge cases
-            ("mcp_tool", {"file_path": "test.js", "content": "console.log()"}, False),  # JS file
-            ("mcp_tool", {"file_path": None, "content": "print('hi')"}, False),  # No path
+            (
+                "mcp_tool",
+                {"file_path": "test.js", "content": "console.log()"},
+                False,
+            ),  # JS file
+            (
+                "mcp_tool",
+                {"file_path": None, "content": "print('hi')"},
+                False,
+            ),  # No path
         ],
     )
-    def test_mcp_tool_python_detection(self, handler, session_id, tool_name, input_fields, should_check_python):
+    def test_mcp_tool_python_detection(
+        self, handler, session_id, tool_name, input_fields, should_check_python
+    ):
         """Test that Python file detection works correctly for various MCP tools."""
         # Create request with specific fields
         tool_input_dict = {"file_path": None, "content": None, **input_fields}
@@ -277,7 +307,9 @@ class TestMCPTools:
             session_id=str(session_id),
             hook_event_name="PreToolUse",
             tool_name="mcp_file_manager_open",
-            tool_input=ToolInput(file_path="/home/user/projects/myapp/src/main.py", content="# Main file"),
+            tool_input=ToolInput(
+                file_path="/home/user/projects/myapp/src/main.py", content="# Main file"
+            ),
         )
 
         with patch.object(handler.session_manager, "track_session") as mock_track:
@@ -310,7 +342,11 @@ class TestMCPToolsUnexpectedFormats:
             hook_event_name="PreToolUse",
             tool_name="mcp_finance_get_stock_price",
             tool_input=ToolInput(
-                symbol="AAPL", date="2024-01-15", exchange="NASDAQ", include_extended_hours=True, currency="USD"
+                symbol="AAPL",
+                date="2024-01-15",
+                exchange="NASDAQ",
+                include_extended_hours=True,
+                currency="USD",
             ),
         )
 
@@ -325,13 +361,22 @@ class TestMCPToolsUnexpectedFormats:
             hook_event_name="PostToolUse",
             tool_name="mcp_weather_forecast",
             tool_input=ToolInput(
-                location={"type": "coordinates", "lat": 37.7749, "lon": -122.4194, "name": "San Francisco"},
+                location={
+                    "type": "coordinates",
+                    "lat": 37.7749,
+                    "lon": -122.4194,
+                    "name": "San Francisco",
+                },
                 forecast_days=7,
                 units="metric",
                 include_alerts=True,
             ),
             tool_result={
-                "current": {"temp": 18.5, "feels_like": 17.2, "conditions": "Partly cloudy"},
+                "current": {
+                    "temp": 18.5,
+                    "feels_like": 17.2,
+                    "conditions": "Partly cloudy",
+                },
                 "forecast": [
                     {"date": "2024-01-16", "high": 20, "low": 12},
                     {"date": "2024-01-17", "high": 19, "low": 11},
@@ -386,10 +431,18 @@ class TestMCPToolsUnexpectedFormats:
             tool_input=ToolInput(
                 device_id="light.living_room",
                 action="set_state",
-                payload={"on": True, "brightness": 75, "color": {"r": 255, "g": 200, "b": 100}, "transition_time": 2.5},
+                payload={
+                    "on": True,
+                    "brightness": 75,
+                    "color": {"r": 255, "g": 200, "b": 100},
+                    "transition_time": 2.5,
+                },
                 confirm=True,
             ),
-            tool_result={"success": True, "device_state": {"on": True, "brightness": 75}},
+            tool_result={
+                "success": True,
+                "device_state": {"on": True, "brightness": 75},
+            },
         )
 
         outcome = handler._handle_post_hook(request, session_id)
@@ -472,7 +525,10 @@ class TestMCPToolsUnexpectedFormats:
                 variables=["x", "y"],
                 initial_guess=[1.0, 1.0],
                 method="BFGS",
-                constraints=[{"type": "ineq", "fun": "x + y - 1"}, {"type": "eq", "fun": "x - 2*y"}],
+                constraints=[
+                    {"type": "ineq", "fun": "x + y - 1"},
+                    {"type": "eq", "fun": "x - 2*y"},
+                ],
                 bounds=[(-10, 10), (-10, 10)],
                 options={"maxiter": 1000, "ftol": 1e-9},
             ),
@@ -493,7 +549,10 @@ class TestMCPToolsUnexpectedFormats:
                 measurement_basis="computational",
                 shots=1024,
                 backend="simulator",
-                noise_model={"depolarizing": 0.01, "readout_error": [[0.97, 0.03], [0.02, 0.98]]},
+                noise_model={
+                    "depolarizing": 0.01,
+                    "readout_error": [[0.97, 0.03], [0.02, 0.98]],
+                },
                 optimization_level=3,
                 seed=42,
             ),
@@ -524,7 +583,11 @@ class TestMCPToolsUnexpectedFormats:
             tool_input=ToolInput(
                 required_field="value",
                 optional_field=None,
-                nested_object={"key1": "value1", "key2": None, "key3": {"nested": None}},
+                nested_object={
+                    "key1": "value1",
+                    "key2": None,
+                    "key3": {"nested": None},
+                },
                 array_with_nulls=[1, None, 3, None, 5],
                 completely_null=None,
             ),

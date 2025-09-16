@@ -9,6 +9,7 @@ import subprocess
 import tempfile
 import time
 from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
@@ -149,8 +150,6 @@ async def db_session(db_engine: AsyncEngine) -> AsyncGenerator[AsyncSession, Non
 @pytest.fixture(autouse=True)
 def _patch_get_db_session(monkeypatch, db_session: AsyncSession) -> None:
     """Override ``get_db_session`` globally for tests."""
-
-    from contextlib import asynccontextmanager
 
     @asynccontextmanager
     async def _override() -> AsyncGenerator[AsyncSession, None]:

@@ -82,10 +82,12 @@ adgn_llm = [
  test = [
   "pytest>=8",
   "pytest-asyncio>=0.23",
+  "pytest-timeout>=2.2",
 ]
  dev = [
   "pytest>=8",
   "pytest-asyncio>=0.23",
+  "pytest-timeout>=2.2",
   "ruff>=0.5",
   "mypy>=1.8",
   "types-requests",
@@ -123,6 +125,11 @@ norecursedirs = [
   "specimens",
   "src/adgn_llm/properties/specimens",
 ]
+
+# Pytest-timeout: fail tests that exceed this per-test timeout (in seconds)
+# Requires pytest-timeout present in the test extras/environment
+timeout = 30
+timeout_method = "thread"
 
 
 

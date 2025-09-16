@@ -15,7 +15,6 @@ import subprocess
 import sys
 import tempfile
 
-
 # Add the parent directory to the path so we can import the server
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from habitify_mcp_server.config import load_api_key

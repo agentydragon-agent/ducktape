@@ -11,9 +11,9 @@ from openai.types.responses import (
     ResponseOutputText,
 )
 from openai.types.responses.response_usage import (
-    ResponseUsage,
     InputTokensDetails,
     OutputTokensDetails,
+    ResponseUsage,
 )
 
 # --- Lightweight helpers for building SDK-shaped Responses ---

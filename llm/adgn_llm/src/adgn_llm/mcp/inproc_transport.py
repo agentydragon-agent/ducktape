@@ -1,10 +1,12 @@
 from __future__ import annotations
+
 from contextlib import AsyncExitStack, asynccontextmanager
+
+import anyio
+from adgn_llm.mcp.types import ServerSlotSpec
 from mcp.client.session import ClientSession
 from mcp.server.fastmcp import FastMCP
 from mcp.shared.memory import create_client_server_memory_streams
-from adgn_llm.mcp.types import ServerSlotSpec
-import anyio
 
 
 def make_inproc_slot_spec(app: FastMCP) -> ServerSlotSpec:

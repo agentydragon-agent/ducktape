@@ -1,5 +1,5 @@
-from typing import Any, Dict, Protocol
 import json
+from typing import Any, Dict, Protocol
 
 from mcp.server.fastmcp import FastMCP
 

@@ -3,7 +3,8 @@
 import logging
 import sys
 from pathlib import Path
-from typing import Any, Callable, MutableMapping, Mapping
+from typing import Any, Callable, Mapping, MutableMapping
+
 import structlog
 
 

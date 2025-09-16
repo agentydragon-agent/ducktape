@@ -16,6 +16,7 @@ import gnucash
 import xdg
 import yaml
 from absl import app, flags, logging
+
 from ducktape.finance import gnucash_util
 from ducktape.finance.reconcile import splitwise_lib, ubs_credit_card_lib, ubs_lib
 

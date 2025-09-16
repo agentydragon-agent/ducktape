@@ -8,9 +8,9 @@ import sys
 import tempfile
 from pathlib import Path
 from typing import Literal
+
 import yaml
 from pydantic import BaseModel, Field
-
 
 # -----------------------------
 # Pydantic models for policy

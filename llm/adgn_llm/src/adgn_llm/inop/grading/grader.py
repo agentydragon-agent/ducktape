@@ -3,18 +3,11 @@
 import json
 from datetime import UTC, datetime
 from typing import Any
+
 import openai
-from openai.types.responses.response_function_tool_call import ResponseFunctionToolCall
-from openai.types.responses.response_function_tool_call_item import (
-    ResponseFunctionToolCallItem,
-)
-from adgn_llm.inop.clients.logging_openai_client import (
-    LoggingOpenAIModel,
-)
+from adgn_llm.inop.clients.logging_openai_client import LoggingOpenAIModel
 from adgn_llm.inop.config import OptimizerConfig
-from adgn_llm.inop.engine.exceptions import (
-    ContextWindowExceededException,
-)
+from adgn_llm.inop.engine.exceptions import ContextWindowExceededException
 from adgn_llm.inop.engine.models import (
     ComparisonGrading,
     Criterion,
@@ -33,7 +26,10 @@ from adgn_llm.inop.grading.strategies import (
     create_grading_strategy,
 )
 from adgn_llm.inop.io.logging_utils import DualOutputLogging
-
+from openai.types.responses.response_function_tool_call import ResponseFunctionToolCall
+from openai.types.responses.response_function_tool_call_item import (
+    ResponseFunctionToolCallItem,
+)
 
 logger = DualOutputLogging.get_logger()
 

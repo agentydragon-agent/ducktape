@@ -1,9 +1,9 @@
 from __future__ import annotations
+
 import json
 from dataclasses import dataclass
-from adgn_llm.inop.clients.logging_openai_client import (
-    LoggingOpenAIModel,
-)
+
+from adgn_llm.inop.clients.logging_openai_client import LoggingOpenAIModel
 from adgn_llm.inop.engine.models import GradedRollout
 from adgn_llm.inop.io.logging_utils import DualOutputLogging
 from adgn_llm.inop.prompting.prompt_engineer import FeedbackProvider
@@ -11,7 +11,6 @@ from adgn_llm.inop.prompting.truncation_utils import (
     TruncationManager,
     extract_text_from_openai_response,
 )
-
 
 logger = DualOutputLogging.get_logger()
 

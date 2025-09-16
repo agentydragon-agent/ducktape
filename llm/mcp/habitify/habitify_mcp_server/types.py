@@ -8,6 +8,7 @@ as documented in the reference YAML files.
 import datetime
 from enum import Enum
 from typing import Any, Optional
+
 from pydantic import BaseModel
 
 

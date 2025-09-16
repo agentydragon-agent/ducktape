@@ -1,38 +1,36 @@
 from __future__ import annotations
 
-from mcp.server.fastmcp import FastMCP
-
+import json
+import logging
+import sys
 from dataclasses import dataclass
 from pathlib import Path
-from git import Repo
-import json
 
-from adgn_llm.mini_codex.event_renderer import DisplayEventsHandler
-import sys
-from pydantic import BaseModel, Field
-from openai import AsyncOpenAI
-from openai.types.responses import ResponseFunctionToolCall
-import logging
 from adgn_llm.logging_config import configure_logging
-
+from adgn_llm.mcp.git_ro.server import (
+    GIT_RO_SERVER_NAME,
+    DiffFormat,
+    DiffInput,
+    ListSlice,
+    ShowInput,
+    make_git_ro_server,
+)
+from adgn_llm.mcp.inproc_transport import make_inproc_slot_spec
 from adgn_llm.mini_codex.agent import MiniCodex
-from adgn_llm.mini_codex.mcp_manager import McpManager, build_mcp_function
 from adgn_llm.mini_codex.aggregating_handler import BaseHandler
+from adgn_llm.mini_codex.event_renderer import DisplayEventsHandler
 from adgn_llm.mini_codex.loop_control import (
-    Continue,
     Abort,
+    Continue,
     RequireAny,
     SyntheticAction,
 )
-from adgn_llm.mcp.inproc_transport import make_inproc_slot_spec
-from adgn_llm.mcp.git_ro.server import (
-    make_git_ro_server,
-    GIT_RO_SERVER_NAME,
-    DiffInput,
-    DiffFormat,
-    ListSlice,
-    ShowInput,
-)
+from adgn_llm.mini_codex.mcp_manager import McpManager, build_mcp_function
+from git import Repo
+from mcp.server.fastmcp import FastMCP
+from openai import AsyncOpenAI
+from openai.types.responses import ResponseFunctionToolCall
+from pydantic import BaseModel, Field
 
 
 def _default_bootstrap(

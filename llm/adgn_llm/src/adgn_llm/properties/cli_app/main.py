@@ -5,70 +5,71 @@ Current scope: prompt-optimize (with --context) and prompt-eval will be added ne
 """
 
 from __future__ import annotations
-from pathlib import Path
-from typing import Literal, Optional, List
+
 import asyncio
+import csv
+import functools
 import json
-from datetime import datetime
+import re
 import subprocess
 import tempfile
 import time
-from adgn_llm.properties.prompts.builder import build_check_prompt
-from adgn_llm.properties.docker_env import PropertiesDockerWiring
-import tiktoken
-import re
-import csv
-import matplotlib
-from adgn_llm.properties.prompts.builder import (
-    build_enforce_prompt,
-    build_input_schemas_json,
-)
-import matplotlib.pyplot as plt
-import typer
+from dataclasses import asdict, dataclass
+from datetime import datetime
+from pathlib import Path
+from typing import List, Literal, Optional
+
 import docker
-import functools
-from dataclasses import dataclass, asdict
+import matplotlib
+import matplotlib.pyplot as plt
+import tiktoken
+import typer
 from adgn_llm.logging_config import configure_logging
-from adgn_llm.properties.prompts.builder import build_role_prompt
-from adgn_llm.mini_codex.mcp_manager import McpManager
-from adgn_llm.mini_codex.agent import MiniCodex
-from openai import AsyncOpenAI
-from adgn_llm.mini_codex.event_renderer import DisplayEventsHandler
-from adgn_llm.mini_codex.transcript_handler import TranscriptHandler
-from adgn_llm.mini_codex.aggregating_handler import GateUntil
-from adgn_llm.properties.prop_utils import pkg_dir
+from adgn_llm.mcp._shared.constants import SLEEP_FOREVER_CMD
 from adgn_llm.mcp.inproc_transport import make_inproc_slot_spec
-from adgn_llm.properties.prompt_eval.server import (
-    build_server as build_prompt_eval_server,
-    _run_critic_for_specimen,
-)
-from adgn_llm.properties.grade_runner import grade_critic_output, _metrics_row
-from adgn_llm.properties.models.issue import Occurrence, LineRange, IssueCore
-from adgn_llm.properties.specimens.registry import (
-    find_specimens_base,
-    list_specimen_names,
-)
-from adgn_llm.properties.critic import CriticSubmitPayload
+from adgn_llm.mini_codex.agent import MiniCodex
+from adgn_llm.mini_codex.aggregating_handler import GateUntil
+from adgn_llm.mini_codex.event_renderer import DisplayEventsHandler
+from adgn_llm.mini_codex.mcp_manager import McpManager
+from adgn_llm.mini_codex.transcript_handler import TranscriptHandler
 from adgn_llm.properties.cli import (
+    BuildOptions,
+    _detect_tools,
     _run_check_minicodex_async,
     _run_specimen_minicodex_async,
     build_cmd,
-    BuildOptions,
-    _detect_tools,
 )
-from adgn_llm.properties.docker_env import (
-    properties_docker_spec,
-    ensure_critic_image,
-    build_critic_volumes,
-    PROPERTIES_DOCKER_IMAGE,
-    WORKING_DIR as CRITIC_WORKDIR,
-)
-from adgn_llm.mcp._shared.constants import SLEEP_FOREVER_CMD
-from adgn_llm.properties.specimens.registry import SpecimenRegistry
-from adgn_llm.properties.lint_issue import run_specimen_lint_issue_async
-from adgn_llm.properties.eval_harness import run_all_evals
 from adgn_llm.properties.cluster_unknowns import cluster_unknowns
-
+from adgn_llm.properties.critic import CriticSubmitPayload
+from adgn_llm.properties.docker_env import PROPERTIES_DOCKER_IMAGE
+from adgn_llm.properties.docker_env import WORKING_DIR as CRITIC_WORKDIR
+from adgn_llm.properties.docker_env import (
+    PropertiesDockerWiring,
+    build_critic_volumes,
+    ensure_critic_image,
+    properties_docker_spec,
+)
+from adgn_llm.properties.eval_harness import run_all_evals
+from adgn_llm.properties.grade_runner import _metrics_row, grade_critic_output
+from adgn_llm.properties.lint_issue import run_specimen_lint_issue_async
+from adgn_llm.properties.models.issue import IssueCore, LineRange, Occurrence
+from adgn_llm.properties.prompt_eval.server import _run_critic_for_specimen
+from adgn_llm.properties.prompt_eval.server import (
+    build_server as build_prompt_eval_server,
+)
+from adgn_llm.properties.prompts.builder import (
+    build_check_prompt,
+    build_enforce_prompt,
+    build_input_schemas_json,
+    build_role_prompt,
+)
+from adgn_llm.properties.prop_utils import pkg_dir
+from adgn_llm.properties.specimens.registry import (
+    SpecimenRegistry,
+    find_specimens_base,
+    list_specimen_names,
+)
+from openai import AsyncOpenAI
 
 app = typer.Typer(help="adgn-properties (Typer) — properties tooling")
 

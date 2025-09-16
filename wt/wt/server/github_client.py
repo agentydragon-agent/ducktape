@@ -12,11 +12,7 @@ from typing import Any
 from github import Github
 
 from ..shared.error_handling import GitHubUnavailableError, handle_github_errors
-from ..shared.github_models import (
-    GitHubPRResponse,
-    PRState,
-    PullRequestList,
-)
+from ..shared.github_models import GitHubPRResponse, PRState, PullRequestList
 
 logger = logging.getLogger(__name__)
 

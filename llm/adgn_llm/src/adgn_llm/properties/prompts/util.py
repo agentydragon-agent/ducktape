@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-
 from typing import Iterable, Type
 
-from pydantic import BaseModel
 from jinja2 import Environment, PackageLoader, select_autoescape
+from pydantic import BaseModel
 
 
 def get_templates_env() -> Environment:

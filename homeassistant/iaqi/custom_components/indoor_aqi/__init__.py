@@ -2,9 +2,10 @@
 
 import logging
 
-from homeassistant import config_entries
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+
+from homeassistant import config_entries
 
 DOMAIN = "indoor_aqi"
 PLATFORMS = ["sensor"]

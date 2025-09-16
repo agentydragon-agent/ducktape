@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-
 # Shared constants to avoid drift across Python and JS parts
 
 # System header fragment that indicates tool-use section is present

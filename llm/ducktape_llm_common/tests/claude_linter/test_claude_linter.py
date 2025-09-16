@@ -1,8 +1,8 @@
-#!/usr/bin/env python3
 """Unit tests for the unified Claude linter binary."""
 
-from click.testing import CliRunner
+from pathlib import Path
 
+from click.testing import CliRunner
 from ducktape_llm_common.claude_linter.cli import cli
 
 
@@ -59,7 +59,6 @@ class TestUnifiedLinter:
 
     def test_debug_logs_not_created_by_default(self, tmp_path, monkeypatch):
         """Test that debug logs are not created by default."""
-        from pathlib import Path
 
         # Set up a fake cache directory
         cache_dir = tmp_path / ".cache" / "claude-linter"
@@ -82,7 +81,6 @@ class TestUnifiedLinter:
 
     def test_debug_logs_created_when_enabled(self, tmp_path, monkeypatch):
         """Test that debug logs ARE created when CLAUDE_LINTER_DEBUG is set."""
-        from pathlib import Path
 
         # Set up a fake cache directory
         cache_dir = tmp_path / ".cache" / "claude-linter"

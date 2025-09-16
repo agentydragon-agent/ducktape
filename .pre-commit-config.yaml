@@ -51,6 +51,15 @@ repos:
         args: [--config=llm/adgn_llm/pyproject.toml]
         files: "^llm/adgn_llm/"
 
+  # isort: explicit import sorting for Python projects
+  - repo: https://github.com/pycqa/isort
+    rev: 5.12.0
+    hooks:
+      - id: isort
+        name: isort (python)
+        files: "\\.py$"
+        args: ["--profile", "black"]
+
   # Static type checking
   - repo: git@github.com:pre-commit/mirrors-mypy
     rev: v1.10.0

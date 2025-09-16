@@ -3,9 +3,9 @@ Integration test for MCP Starter Template server.
 Tests the actual server functionality without requiring Claude SDK.
 """
 
+import mcp.types as mcp_types
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
-import mcp.types as mcp_types
 
 
 async def test_list_tools_includes_expected(mcp_client: Client) -> None:

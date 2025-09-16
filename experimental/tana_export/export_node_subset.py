@@ -16,7 +16,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from convert import RenderContext
+from convert import _DOC_CLASS, RenderContext, UnknownNode
 from tana_lib import SUPERTAG_KEY_ID, BaseNode, NodeStore, TupleNode
 from tana_lib.supertags import attach_supertag_property
 from tana_lib.types import NodeId
@@ -229,7 +229,6 @@ def main():
         original_data = json.load(f)
 
     # Create tracking store with proper node types
-    from convert import _DOC_CLASS, UnknownNode
 
     def _make_node(raw: dict[str, Any]) -> BaseNode:
         return _DOC_CLASS.get(

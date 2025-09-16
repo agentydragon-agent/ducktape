@@ -7,6 +7,7 @@ import urllib.parse
 import splitwise
 import xdg
 from absl import logging
+
 from ducktape.finance.reconcile import external_system
 
 

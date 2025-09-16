@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-
 import pytest
-
 from adgn_llm.properties.specimens.registry import SpecimenRegistry
 
 

@@ -10,10 +10,10 @@ Keep this tiny helper so bootstraps can emit exactly what the model would.
 from __future__ import annotations
 
 import json
+import uuid
 from typing import Any, Dict
 
 from adgn_llm.mini_codex.mcp_manager import build_mcp_function
-import uuid
 from openai.types.responses import ResponseFunctionToolCall
 
 

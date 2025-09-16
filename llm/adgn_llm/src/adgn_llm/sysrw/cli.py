@@ -2,23 +2,24 @@
 
 from __future__ import annotations
 
-
 import asyncio
 import json
 from pathlib import Path
-from typing import Optional, List
+from typing import List, Optional
 
 import typer
 from rich.console import Console
 from rich.panel import Panel
 from rich.rule import Rule
-from .templates import validate_template_file
 
-from . import run_eval
-from . import compare_eval_vs_ccr
-from . import extract_dataset_ccr
-from . import extract_dataset_crush
-from . import leaderboard
+from . import (
+    compare_eval_vs_ccr,
+    extract_dataset_ccr,
+    extract_dataset_crush,
+    leaderboard,
+    run_eval,
+)
+from .templates import validate_template_file
 
 app = typer.Typer(help="System rewriter toolkit: extract datasets, run evals, and compare against CCR.")
 

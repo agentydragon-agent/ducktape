@@ -1,5 +1,4 @@
 import pytest
-
 from adgn_llm.properties.models.issue import LineRange
 from adgn_llm.properties.models.lint import (
     AnchorIncorrect,

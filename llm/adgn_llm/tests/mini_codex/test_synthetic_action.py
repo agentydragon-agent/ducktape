@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 from adgn_llm.mini_codex.agent import MiniCodex
 from adgn_llm.mini_codex.aggregating_handler import BaseHandler
-from adgn_llm.mini_codex.loop_control import SyntheticAction
+from adgn_llm.mini_codex.loop_control import Abort, SyntheticAction
 from adgn_llm.mini_codex.mcp_manager import McpManager
 
 
@@ -16,8 +16,6 @@ class SyntheticOnceHandler(BaseHandler):
 
     def on_before_sample(self):  # type: ignore[override]
         if self._done:
-            from adgn_llm.mini_codex.loop_control import Abort
-
             return Abort()
         self._done = True
         return SyntheticAction(outputs=self._outputs)

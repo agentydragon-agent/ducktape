@@ -1,6 +1,7 @@
 """Message formatting utilities for structured logging."""
 
 from typing import Any
+
 from claude_code_sdk import (
     AssistantMessage,
     ResultMessage,

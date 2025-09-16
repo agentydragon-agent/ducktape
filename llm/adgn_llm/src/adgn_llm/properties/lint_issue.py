@@ -1,55 +1,46 @@
 from __future__ import annotations
 
-
 import json
+import os
 import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
-import os
 
-from mcp.server.fastmcp import FastMCP
-from adgn_llm.properties.prompts.util import (
-    render_prompt_template,
-    build_input_schemas_json,
-)
-from .docker_env import properties_docker_spec, PropertiesDockerWiring
-from adgn_llm.mini_codex.event_renderer import DisplayEventsHandler
-from adgn_llm.properties.specimens.registry import SpecimenRegistry
-
-from rich.console import Console, Group, ConsoleRenderable
-from rich.table import Table
-from rich.panel import Panel
-from rich.markdown import Markdown
-from adgn_llm.rendering.rich_renderers import render_to_rich
-
-from openai import AsyncOpenAI
-from openai.types.responses import ResponseFunctionToolCall
-
-from adgn_llm.properties.prop_utils import pkg_dir, props_definitions_root
-from adgn_llm.mcp.docker_exec.server import (
-    SERVER_NAME as DOCKER_SERVER_NAME,
-    TOOL_EXEC_NAME as DOCKER_EXEC_TOOL_NAME,
-)
+from adgn_llm.mcp.docker_exec.server import SERVER_NAME as DOCKER_SERVER_NAME
+from adgn_llm.mcp.docker_exec.server import TOOL_EXEC_NAME as DOCKER_EXEC_TOOL_NAME
 from adgn_llm.mcp.inproc_transport import make_inproc_slot_spec
-from adgn_llm.mini_codex.agent import MiniCodex
-from adgn_llm.mini_codex.mcp_manager import McpManager, build_mcp_function
 from adgn_llm.mcp.types import ServerSlotSpec
+from adgn_llm.mini_codex.agent import MiniCodex
+from adgn_llm.mini_codex.aggregating_handler import BaseHandler, GateUntil
+from adgn_llm.mini_codex.event_renderer import DisplayEventsHandler
+from adgn_llm.mini_codex.loggers import TranscriptLoggerHandler
 from adgn_llm.mini_codex.loop_control import (
-    Continue,
     Abort,
+    Continue,
     RequireAny,
     SyntheticAction,
 )
-from adgn_llm.mini_codex.aggregating_handler import BaseHandler, GateUntil
-from adgn_llm.mini_codex.loggers import TranscriptLoggerHandler
-from adgn_llm.properties.models.issue import Occurrence, LineRange, IssueCore, IssueId
-from adgn_llm.properties.models.lint import (
-    IssueLintFindingRecord,
-    LintSubmitPayload,
+from adgn_llm.mini_codex.mcp_manager import McpManager, build_mcp_function
+from adgn_llm.properties.models.issue import IssueCore, IssueId, LineRange, Occurrence
+from adgn_llm.properties.models.lint import IssueLintFindingRecord, LintSubmitPayload
+from adgn_llm.properties.prompts.util import (
+    build_input_schemas_json,
+    render_prompt_template,
 )
+from adgn_llm.properties.prop_utils import pkg_dir, props_definitions_root
+from adgn_llm.properties.specimens.registry import SpecimenRegistry
+from adgn_llm.rendering.rich_renderers import render_to_rich
+from mcp.server.fastmcp import FastMCP
+from openai import AsyncOpenAI
+from openai.types.responses import ResponseFunctionToolCall
+from rich.console import Console, ConsoleRenderable, Group
+from rich.markdown import Markdown
+from rich.panel import Panel
+from rich.table import Table
 
+from .docker_env import PropertiesDockerWiring, properties_docker_spec
 
 # ---------------------------------------------------------------------------
 # Lint submit MCP server + shared state (accessible to controller and server)

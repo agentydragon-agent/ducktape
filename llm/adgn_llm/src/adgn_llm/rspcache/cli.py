@@ -4,12 +4,13 @@ Provides `rspcache` console script that boots the FastAPI app with uvicorn.
 """
 
 from __future__ import annotations
-import uvicorn
-from typing import Optional
-from pathlib import Path
-import os
-import typer
 
+import os
+from pathlib import Path
+from typing import Optional
+
+import typer
+import uvicorn
 
 app = typer.Typer(help="adgn-llm utilities CLI")
 

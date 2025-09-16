@@ -1,19 +1,20 @@
 import asyncio
 import json
+from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 from typing import Iterable, Optional
+
 import yaml
-from pydantic import BaseModel, Field
-from mcp.server.fastmcp import FastMCP  # type: ignore
-from openai import AsyncOpenAI
 from adgn_llm.mcp.inproc_transport import make_inproc_slot_spec
 from adgn_llm.mini_codex.agent import MiniCodex
 from adgn_llm.mini_codex.aggregating_handler import GateUntil
 from adgn_llm.mini_codex.mcp_manager import McpManager
 from adgn_llm.mini_codex.transcript_handler import TranscriptHandler
 from adgn_llm.properties.prop_utils import pkg_dir
-from collections import defaultdict
+from mcp.server.fastmcp import FastMCP  # type: ignore
+from openai import AsyncOpenAI
+from pydantic import BaseModel, Field
 
 
 class UnknownIssue(BaseModel):

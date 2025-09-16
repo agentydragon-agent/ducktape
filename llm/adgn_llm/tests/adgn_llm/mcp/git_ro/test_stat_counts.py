@@ -1,16 +1,16 @@
-import pytest
-from git import Repo
 from pathlib import Path
 
-from adgn_llm.mcp.inproc_transport import make_inproc_slot_spec
+import pytest
 from adgn_llm.mcp.git_ro.server import (
-    make_git_ro_server,
     GIT_RO_SERVER_NAME,
-    DiffInput,
     DiffFormat,
+    DiffInput,
     ListSlice,
+    make_git_ro_server,
 )
+from adgn_llm.mcp.inproc_transport import make_inproc_slot_spec
 from adgn_llm.mini_codex.mcp_manager import McpManager
+from git import Repo
 
 
 @pytest.mark.asyncio

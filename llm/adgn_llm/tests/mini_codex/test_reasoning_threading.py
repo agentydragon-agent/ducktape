@@ -4,11 +4,11 @@ import json
 from typing import Any
 
 import pytest
-from mcp.server.fastmcp import FastMCP
-
-from adgn_llm.mini_codex.agent import MiniCodex
-from adgn_llm.mini_codex.mcp_manager import McpManager
 from adgn_llm.mcp.inproc_transport import make_inproc_slot_spec
+from adgn_llm.mini_codex.agent import MiniCodex
+from adgn_llm.mini_codex.aggregating_handler import AutoHandler
+from adgn_llm.mini_codex.mcp_manager import McpManager
+from mcp.server.fastmcp import FastMCP
 
 # OpenAI Responses SDK types
 from openai.types.responses import (
@@ -17,14 +17,12 @@ from openai.types.responses import (
     ResponseOutputMessage,
     ResponseOutputText,
 )
-from openai.types.responses.response_reasoning_item import (
-    ResponseReasoningItem,
-    Summary as ReasoningSummary,
-)
+from openai.types.responses.response_reasoning_item import ResponseReasoningItem
+from openai.types.responses.response_reasoning_item import Summary as ReasoningSummary
 from openai.types.responses.response_usage import (
-    ResponseUsage,
     InputTokensDetails,
     OutputTokensDetails,
+    ResponseUsage,
 )
 
 
@@ -125,8 +123,6 @@ async def test_reasoning_threading_filters_reasoning_from_next_input() -> None:
     client = CapturingClient(seq)
 
     async with McpManager({"echo": spec}) as mcp:
-        from adgn_llm.mini_codex.aggregating_handler import AutoHandler
-
         agent = await MiniCodex.create(
             model="dummy-model",
             mcp=mcp,

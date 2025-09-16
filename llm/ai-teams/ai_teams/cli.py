@@ -7,12 +7,11 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from tabulate import tabulate
-
 from ai_teams.message_validator import validate_message_sequence
 from ai_teams.team_paths import MESSAGE_TYPES, ChannelMessage, Team
 from ai_teams.team_utils import error_exit
 from ai_teams.updates_tracker import show_direct_messages, show_updates_since_last
+from tabulate import tabulate
 
 
 def print_current_time():

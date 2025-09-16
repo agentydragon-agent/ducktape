@@ -1,18 +1,15 @@
 from __future__ import annotations
 
-
 import json
 import shlex
 from typing import Callable
 
-from openai.types.responses import (
-    ResponseReasoningItem,
-)
+from openai.types.responses import ResponseReasoningItem
 
-from .handler import UserText, AssistantText, ToolCall, FunctionCallOutput
-from .mcp_manager import parse_mcp_function
 from .aggregating_handler import BaseHandler
+from .handler import AssistantText, FunctionCallOutput, ToolCall, UserText
 from .loop_control import NoLoopDecision
+from .mcp_manager import parse_mcp_function
 
 # Shared server/tool name constants
 DOCKER_SERVER_NAME = "docker"

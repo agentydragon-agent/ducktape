@@ -24,6 +24,7 @@ Example
 """
 
 from __future__ import annotations
+
 import argparse
 import asyncio
 import contextlib
@@ -43,12 +44,12 @@ from dataclasses import dataclass
 from datetime import timedelta
 from enum import StrEnum
 from pathlib import Path
-from git import Repo
-from git.exc import GitCommandError
+
 from adgn_llm.git_commit_ai.backends.claude_backend import ClaudeAI
 from adgn_llm.git_commit_ai.backends.codex_backend import CodexAI
 from adgn_llm.git_commit_ai.minicodex_backend import generate_commit_message_minicodex
-
+from git import Repo
+from git.exc import GitCommandError
 
 # ---------------------------------------------------------------------
 

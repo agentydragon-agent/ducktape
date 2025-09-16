@@ -12,7 +12,6 @@ from tenacity import (
     wait_exponential_jitter,
 )
 
-
 # Default retry policy: 5 attempts, exponential backoff with jitter (~0.5s..60s)
 _DEFAULT_ATTEMPTS = 10
 _DEFAULT_INITIAL = 0.5

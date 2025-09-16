@@ -1,7 +1,15 @@
 from __future__ import annotations
+
+import re
+from pathlib import Path
 from typing import List
+
 import pytest
-from adgn_llm.properties.specimens.registry import find_specimens_base, list_specimen_names, SpecimenRegistry
+from adgn_llm.properties.specimens.registry import (
+    SpecimenRegistry,
+    find_specimens_base,
+    list_specimen_names,
+)
 
 
 def _all_specimens() -> List[str]:
@@ -16,8 +24,6 @@ def test_specimen_issues_and_false_positives_load(specimen: str) -> None:
     rec, errors = SpecimenRegistry.load_lenient(specimen, base=base)
     if errors:
         print(f"Specimen '{specimen}' has invalid Jsonnet files (count={len(errors)}):", flush=True)
-        import re
-        from pathlib import Path
 
         for line in errors:
             print(line, flush=True)

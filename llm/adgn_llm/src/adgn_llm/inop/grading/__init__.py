@@ -8,7 +8,6 @@ from adgn_llm.inop.grading.strategies import (
     create_grading_strategy,
 )
 
-
 __all__ = [
     "ComparisonGradingStrategy",
     "FileBasedGradingStrategy",

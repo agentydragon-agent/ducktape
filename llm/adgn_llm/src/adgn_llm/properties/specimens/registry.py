@@ -1,25 +1,25 @@
 from __future__ import annotations
 
-
-from platformdirs import user_cache_dir
+import json
+import os
+import shutil
+import subprocess
+import tarfile
+import tempfile
+import time
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import AsyncIterator
-import shutil
-import json
-import yaml
-import _jsonnet
 from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
-import os
-import tarfile
-import tempfile
-import subprocess
-import time
 
-from ..models.specimen import SpecimenDoc, GitHubSource, GitSource, LocalSource
-from ..models.issue import SpecimenIssuesLoadError, Occurrence, IssueCore
+import _jsonnet
+import yaml
+from platformdirs import user_cache_dir
+
+from ..models.issue import IssueCore, Occurrence, SpecimenIssuesLoadError
+from ..models.specimen import GitHubSource, GitSource, LocalSource, SpecimenDoc
 from ..prop_utils import pkg_dir
 
 

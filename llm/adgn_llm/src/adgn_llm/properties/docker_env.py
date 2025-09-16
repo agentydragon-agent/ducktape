@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-
 from dataclasses import dataclass
 from importlib import resources as ilres
 from pathlib import Path
 
 import docker
-
+from adgn_llm.mcp.docker_exec.server import make_container_exec_mcp
 from adgn_llm.mcp.inproc_transport import make_inproc_slot_spec
 from adgn_llm.mcp.types import ServerSlotSpec
 from adgn_llm.properties.prop_utils import props_definitions_root
@@ -105,8 +104,6 @@ def properties_docker_spec(
         workspace_mode="ro",
         extra_volumes=extra_volumes,
     )
-
-    from adgn_llm.mcp.docker_exec.server import make_container_exec_mcp
 
     server = make_container_exec_mcp(
         image=PROPERTIES_DOCKER_IMAGE,

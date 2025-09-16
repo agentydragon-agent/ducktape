@@ -5,17 +5,7 @@ import logging
 from collections.abc import Awaitable, Callable
 from datetime import datetime
 from inspect import signature
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    Protocol,
-    TypeVar,
-    get_origin,
-    get_type_hints,
-)
-
-if TYPE_CHECKING:
-    from .wt_server import WtDaemon
+from typing import Any, Protocol, TypeVar, get_origin, get_type_hints
 
 from punq import Container
 from pydantic import BaseModel, ValidationError
@@ -39,6 +29,7 @@ from .services import (
     WorktreeIndexService,
 )
 from .worktree_service import WorktreeService
+from .wt_server import WtDaemon
 
 logger = logging.getLogger(__name__)
 

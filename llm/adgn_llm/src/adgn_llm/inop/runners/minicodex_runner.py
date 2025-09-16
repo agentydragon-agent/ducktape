@@ -1,15 +1,16 @@
 from __future__ import annotations
+
 import json
 import os
+import shutil
 import tempfile
 import time
 import uuid
 from contextlib import AsyncExitStack
 from pathlib import Path
 from typing import Any
-from adgn_llm.inop.clients.logging_openai_client import (
-    LoggingOpenAIModel,
-)
+
+from adgn_llm.inop.clients.logging_openai_client import LoggingOpenAIModel
 from adgn_llm.inop.engine.models import (
     AssistantMessage,
     FinalOutput,
@@ -27,15 +28,14 @@ from adgn_llm.inop.runners.base import AgentRunner
 from adgn_llm.mcp._shared.container_session import NetworkMode
 from adgn_llm.mcp.docker_exec.server import make_container_exec_mcp
 from adgn_llm.mcp.inproc_transport import make_inproc_slot_spec
-from adgn_llm.mini_codex.agent import MiniCodex
-from adgn_llm.mini_codex.event_renderer import DisplayEventsHandler
-from adgn_llm.mini_codex.aggregating_handler import AutoHandler
-from adgn_llm.mini_codex.loggers import TranscriptLoggerHandler
-from adgn_llm.mini_codex.handler import BaseHandler
 from adgn_llm.mcp.local_exec.server import make_local_exec_mcp
-from adgn_llm.mini_codex.mcp_manager import McpManager
 from adgn_llm.mcp.types import ServerSlotSpec
-
+from adgn_llm.mini_codex.agent import MiniCodex
+from adgn_llm.mini_codex.aggregating_handler import AutoHandler
+from adgn_llm.mini_codex.event_renderer import DisplayEventsHandler
+from adgn_llm.mini_codex.handler import BaseHandler
+from adgn_llm.mini_codex.loggers import TranscriptLoggerHandler
+from adgn_llm.mini_codex.mcp_manager import McpManager
 
 """Mini Codex runner that delegates execution to the MiniCodex agent."""
 
@@ -220,8 +220,6 @@ class MiniCodexRunner(AgentRunner):
             await self._exit_stack.aclose()
             self._exit_stack = None
         if self.workspace_path and self.workspace_path.exists():
-            import shutil
-
             shutil.rmtree(self.workspace_path)
             self.workspace_path = None
 

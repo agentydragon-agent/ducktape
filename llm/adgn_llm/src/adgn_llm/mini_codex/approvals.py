@@ -2,59 +2,46 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from dataclasses import dataclass
-from typing import Any, Literal, Optional, Protocol, Callable
+from typing import Any, Callable, Literal, Optional
 
-from mcp import types as mcp_types
-
-from .mcp_manager import parse_mcp_function, build_mcp_function
-
+from adgn_llm.mini_codex.handler import (
+    AbortTurnDecision,
+    BeforeToolCallDecision,
+    BypassToolInjectOutput,
+    ContinueDecision,
+)
 
 # Control-plane exception raised when an approval decision requests aborting the turn
+from mcp import types as mcp_types
+
+from .mcp_manager import build_mcp_function, parse_mcp_function
+
+
 class TurnAbortRequested(Exception):
-    def __init__(self, call_id: str, reason: str = "approval_denied", context: Optional[dict] = None) -> None:
+    def __init__(
+        self,
+        call_id: str,
+        reason: str = "approval_denied",
+        context: Optional[dict] = None,
+    ) -> None:
         self.call_id = call_id
         self.reason = reason
         self.context = context or {}
         super().__init__(f"Turn abort requested: {reason} (call_id={call_id})")
 
 
-# Approval action space for providers / UI
-ApprovalAction = Literal["allow", "deny_abort", "deny_with_result"]
-
-
-@dataclass
-class ApprovalDecision:
-    action: ApprovalAction
-    # When action == "deny_with_result", provider may supply a CallToolResult override
-    result: Optional[mcp_types.CallToolResult] = None
-    reason: Optional[str] = None
-
-
-class ApprovalsProvider(Protocol):
-    """Pluggable approvals provider.
-
-    Implementations should return an ApprovalDecision. This model supports three outcomes:
-      - allow: proceed to execute the real tool
-      - deny_abort: abort the turn (raise TurnAbortRequested)
-      - deny_with_result: do not execute the real tool, but return the provided CallToolResult so the agent can continue
-    """
-
-    async def decide(self, payload: dict[str, Any]) -> ApprovalDecision: ...
-
-
 class ApprovalHub:
-    """In-process rendezvous for pending approval decisions.
+    """In-process rendezvous for pending approval/decision events.
 
-    - await_decision(call_id, payload) -> ApprovalDecision waits until resolve() is called
+    - await_decision(call_id, payload) -> BeforeToolCallDecision waits until resolve() is called
     - resolve(call_id, decision) resolves the pending decision
     """
 
     def __init__(self) -> None:
-        self._futures: dict[str, asyncio.Future[ApprovalDecision]] = {}
+        self._futures: dict[str, asyncio.Future[BeforeToolCallDecision]] = {}
         self._lock = asyncio.Lock()
 
-    async def await_decision(self, call_id: str, payload: dict[str, Any]) -> ApprovalDecision:
+    async def await_decision(self, call_id: str, payload: dict[str, Any]) -> BeforeToolCallDecision:
         async with self._lock:
             fut = self._futures.get(call_id)
             if fut is None:
@@ -62,7 +49,7 @@ class ApprovalHub:
                 self._futures[call_id] = fut
         return await fut
 
-    def resolve(self, call_id: str, decision: ApprovalDecision) -> None:
+    def resolve(self, call_id: str, decision: BeforeToolCallDecision) -> None:
         fut = self._futures.pop(call_id, None)
         if fut is not None and not fut.done():
             fut.set_result(decision)
@@ -84,15 +71,20 @@ class McpManagerWithApprovals:
       - call_tool(namespaced: str, arguments: dict) -> mcp_types.CallToolResult
         * If policy(payload) == "allow": delegate to inner
         * If policy(payload) == "ask": create call_id, await decision via ApprovalHub
-            - decision.action == "allow" -> delegate to inner
-            - decision.action == "deny_abort" -> raise TurnAbortRequested(call_id, reason)
-            - decision.action == "deny_with_result" -> return provided CallToolResult (or synthesize one)
+            - ContinueDecision -> delegate to inner
+            - AbortTurnDecision -> raise TurnAbortRequested(call_id, reason)
+            - BypassToolInjectOutput -> return provided CallToolResult (or synthesize one)
             - Unknown action -> crash (RuntimeError) per user instruction
 
     The wrapper exposes approval_hub for UI/drivers to resolve decisions.
     """
 
-    def __init__(self, inner: Any, hub: ApprovalHub | None = None, tool_policy: ToolPolicyFn | None = None) -> None:
+    def __init__(
+        self,
+        inner: Any,
+        hub: ApprovalHub | None = None,
+        tool_policy: ToolPolicyFn | None = None,
+    ) -> None:
         self._inner = inner
         self._hub = hub or ApprovalHub()
         self._policy = tool_policy or default_allow_all_policy
@@ -143,13 +135,18 @@ class McpManagerWithApprovals:
 
         decision = await self._hub.await_decision(call_id, payload)
 
-        if decision.action == "allow":
+        # Pattern-match on the algebraic decision type
+        if isinstance(decision, ContinueDecision):
             return await self._inner.call_tool(namespaced, arguments)
 
-        if decision.action == "deny_abort":
-            raise TurnAbortRequested(call_id=call_id, reason=decision.reason or "approval_denied", context=payload)
+        if isinstance(decision, AbortTurnDecision):
+            raise TurnAbortRequested(
+                call_id=call_id,
+                reason=decision.reason or "approval_denied",
+                context=payload,
+            )
 
-        if decision.action == "deny_with_result":
+        if isinstance(decision, BypassToolInjectOutput):
             if decision.result is not None:
                 return decision.result
             # synthesize a failure CallToolResult so agent gets a structured error
@@ -160,12 +157,12 @@ class McpManagerWithApprovals:
             )
 
         # Unknown approval decision: crash as requested by user
-        raise RuntimeError(f"Unknown approval decision action: {getattr(decision, 'action', None)!r}")
+        raise RuntimeError(f"Unknown approval decision: {decision!r}")
 
     # ---- ApprovalHub control (for UI/driver) ----
     @property
     def approval_hub(self) -> ApprovalHub:
         return self._hub
 
-    def resolve_approval(self, call_id: str, decision: ApprovalDecision) -> None:
+    def resolve_approval(self, call_id: str, decision: BeforeToolCallDecision) -> None:
         self._hub.resolve(call_id, decision)

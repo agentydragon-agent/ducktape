@@ -5,6 +5,7 @@ import decimal
 import hashlib
 
 from absl import logging
+
 from ducktape.finance.reconcile import external_system
 
 # TODO: compute hash from everything

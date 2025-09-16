@@ -20,17 +20,15 @@ Each output record has shape:
 """
 
 from __future__ import annotations
+
 import asyncio
 import json
 import time
 from pathlib import Path
-from .constants import BAD_MARKER
-from .extract_common import (
-    sys_has_tools_header,
-    find_last_user_text_from_msg as find_last_user_text,
-    write_jsonl_batches,
-)
 
+from .constants import BAD_MARKER
+from .extract_common import find_last_user_text_from_msg as find_last_user_text
+from .extract_common import sys_has_tools_header, write_jsonl_batches
 
 TRACE_DIR = Path.home() / ".claude-code-router" / "logs"
 OUTPUT_PATH = Path(__file__).parent / "data" / "dataset_ccr.jsonl"

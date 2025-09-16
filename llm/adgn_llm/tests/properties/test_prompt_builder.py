@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from adgn_llm.properties.prompts.builder import build_check_prompt, build_role_prompt
 from adgn_llm.properties.docker_env import PropertiesDockerWiring
+from adgn_llm.properties.prompts.builder import build_check_prompt, build_role_prompt
 
 
 def _dummy_wiring(defs_dir: str | None = "/props") -> PropertiesDockerWiring:

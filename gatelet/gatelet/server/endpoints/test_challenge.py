@@ -14,11 +14,11 @@ from gatelet.server.endpoints.challenge import (
     COMPUTE_OPTION_SOURCE,
     compute_correct_option,
 )
-from gatelet.server.models import (
+from gatelet.server.models import (  # type: ignore[import]
     AuthCRSession,
     AuthKey,
     AuthNonce,
-)  # type: ignore[import]
+)
 
 
 @pytest.fixture(autouse=True)

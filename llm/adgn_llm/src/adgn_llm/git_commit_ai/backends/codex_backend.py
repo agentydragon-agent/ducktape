@@ -7,7 +7,7 @@ from typing import Optional
 
 from git import Repo
 
-from ._common import run_subprocess, build_prompt_for_codex, extract_message
+from ._common import build_prompt_for_codex, extract_message, run_subprocess
 
 
 class CodexAI:

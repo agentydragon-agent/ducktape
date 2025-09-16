@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-
+from functools import lru_cache
 from importlib.resources import files
 from pathlib import Path
-from functools import lru_cache
 from typing import NewType
 
 # Public property ID type

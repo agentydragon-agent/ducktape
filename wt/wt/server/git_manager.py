@@ -7,15 +7,13 @@ import subprocess
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any, cast
 
 import pygit2
 
+from ..shared.configuration import Configuration
 from ..shared.git_utils import git_run
 from ..shared.protocol import CommitInfo
-
-if TYPE_CHECKING:
-    from ..shared.configuration import Configuration
 
 logger = logging.getLogger(__name__)
 

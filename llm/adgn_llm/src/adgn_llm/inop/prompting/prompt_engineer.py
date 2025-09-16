@@ -1,11 +1,12 @@
 from __future__ import annotations
+
 import math
 import statistics
 from enum import Enum
 from typing import Protocol
+
 from adgn_llm.inop.engine.models import GradedRollout
 from adgn_llm.inop.io.logging_utils import DualOutputLogging
-
 
 logger = DualOutputLogging.get_logger()
 

@@ -1,9 +1,9 @@
 import os
+import sys
 import time
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
-import sys
 
 import anyio
 import docker

@@ -3,7 +3,9 @@
 from unittest.mock import MagicMock, patch
 
 from ducktape_llm_common.claude_linter_v2.config.models import AutofixCategory
-from ducktape_llm_common.claude_linter_v2.linters.python_formatter import PythonFormatter
+from ducktape_llm_common.claude_linter_v2.linters.python_formatter import (
+    PythonFormatter,
+)
 
 
 class TestPythonFormatter:

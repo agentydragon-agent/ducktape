@@ -8,17 +8,15 @@ from pathlib import Path
 
 import pytest
 import yaml
+from mcp_helpers import read_line_json as _real_read
+from mcp_helpers import send_line_json as _real_send
 
 
 def _send_line_json(w, obj: dict) -> None:
-    from mcp_helpers import send_line_json as _real_send
-
     _real_send(w, obj)
 
 
 def _read_line_json(r, timeout: float) -> dict | None:
-    from mcp_helpers import read_line_json as _real_read
-
     return _real_read(r, timeout)
 
 

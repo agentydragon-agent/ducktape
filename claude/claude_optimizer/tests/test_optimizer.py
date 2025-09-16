@@ -28,10 +28,16 @@ from claude_optimizer.core.models import (
 )
 from claude_optimizer.core.optimizer import (
     ProcessingMode,
+    ResponseFunctionToolCall,
+    ResponseFunctionToolCallItem,
+    ResponseOutputMessage,
+    ResponseOutputText,
+    ResponseReasoningItem,
 )
 from claude_optimizer.core.prompt_engineer import PromptEngineer, Turn
 from claude_optimizer.core.summarizer import PatternSummarizer
 from claude_optimizer.docker.docker_manager import DockerManager
+from openai.types.responses.response import Response
 
 
 class TestPatternSummarizer:
@@ -245,13 +251,6 @@ class TestPromptEngineer:
         with patch("claude_optimizer.core.prompt_engineer.OpenAI") as mock_openai:
             mock_client = Mock()
             mock_openai.return_value = mock_client
-
-            from claude_optimizer.core.optimizer import (
-                ResponseFunctionToolCallItem,
-                ResponseOutputMessage,
-                ResponseOutputText,
-            )
-            from openai.types.responses.response import Response
 
             reasoning_msg = ResponseOutputMessage.model_construct(
                 type="message",
@@ -507,11 +506,6 @@ def create_mock_graded_code(
 
 def create_mock_pattern_response(text: str):
     """Create a mock OpenAI response for pattern analysis."""
-    from claude_optimizer.core.optimizer import (
-        ResponseOutputMessage,
-        ResponseOutputText,
-    )
-    from openai.types.responses.response import Response
 
     msg = ResponseOutputMessage.model_construct(
         type="message",
@@ -531,7 +525,6 @@ def create_mock_pattern_response(text: str):
 
 def create_mock_reasoning(content: str):
     """Create mock reasoning item."""
-    from claude_optimizer.core.optimizer import ResponseReasoningItem
 
     mock = Mock(spec=ResponseReasoningItem)
     mock.content = content
@@ -541,7 +534,6 @@ def create_mock_reasoning(content: str):
 
 def create_mock_function_call(prompt: str):
     """Create mock function call message."""
-    from claude_optimizer.core.optimizer import ResponseFunctionToolCall
 
     mock = Mock(spec=ResponseFunctionToolCall)
     mock.name = "submit_prompt"
@@ -557,8 +549,6 @@ def create_mock_function_call(prompt: str):
 
 def create_mock_function_call_item(name: str, args: dict):
     """Create mock function call item."""
-    from claude_optimizer.core.optimizer import ResponseFunctionToolCallItem
-
     mock = Mock(spec=ResponseFunctionToolCallItem)
     mock.type = "function_call"
     mock.name = name

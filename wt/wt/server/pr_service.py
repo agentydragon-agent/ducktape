@@ -4,16 +4,13 @@ import asyncio
 import logging
 from dataclasses import dataclass
 from datetime import datetime
-from typing import TYPE_CHECKING
 
+from ..shared.configuration import Configuration
 from ..shared.github_models import PRData, PRState
 from .git_manager import GitManager
+from .github_client import GitHubInterface
 from .github_refresh import DebouncedGitHubRefresh
 from .types import DiscoveredWorktree
-
-if TYPE_CHECKING:
-    from ..shared.configuration import Configuration
-    from .github_client import GitHubInterface
 
 logger = logging.getLogger(__name__)
 

@@ -1,11 +1,12 @@
 from __future__ import annotations
+
 import asyncio
 from contextlib import AsyncExitStack
 from dataclasses import dataclass, field
-from typing import Callable, AsyncContextManager
+from typing import AsyncContextManager, Callable
+
 from mcp.client.session import ClientSession
 from mcp.types import InitializeResult
-
 
 # Canonical OpenFn protocol — single lifetime boundary
 #

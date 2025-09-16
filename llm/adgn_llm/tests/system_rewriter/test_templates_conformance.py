@@ -1,16 +1,7 @@
 from __future__ import annotations
 
-from pathlib import Path
 import pytest
-
 from adgn_llm.sysrw.templates import iter_templates, validate_template_text
-
-
-def _templates_dir() -> Path:
-    # Use package templates directory (for legacy path-based checks)
-    from adgn_llm.sysrw import run_eval
-
-    return Path(run_eval.__file__).parent / "templates"
 
 
 def _iter_templates_from_package() -> list[tuple[str, str]]:

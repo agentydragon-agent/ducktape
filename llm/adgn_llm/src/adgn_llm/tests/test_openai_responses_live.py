@@ -1,6 +1,7 @@
 import os
-import pytest
+
 import openai
+import pytest
 
 
 @pytest.mark.asyncio

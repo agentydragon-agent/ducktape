@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from pathlib import Path
 import re
+from pathlib import Path
 
-from typer.testing import CliRunner
 from adgn_llm.properties.cli_app.main import app as props_app
+from typer.testing import CliRunner
 
 
 def _extract_saved_prompt_path(stdout: str) -> Path:

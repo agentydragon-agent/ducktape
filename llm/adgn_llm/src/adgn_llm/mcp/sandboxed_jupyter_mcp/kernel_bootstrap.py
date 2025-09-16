@@ -1,9 +1,11 @@
 from __future__ import annotations
-from ipykernel import kernelapp as app  # type: ignore
+
 import sys
 import traceback
-from .kernel_shim import log  # reuse shared logging helper
 
+from ipykernel import kernelapp as app  # type: ignore
+
+from .kernel_shim import log  # reuse shared logging helper
 
 # Early bootstrap to capture import/startup failures for ipykernel
 

@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 # Specimen schema (v2): source/scope live alongside items in Jsonnet docs

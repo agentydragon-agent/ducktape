@@ -5,10 +5,7 @@ from dataclasses import dataclass
 from enum import IntEnum
 
 from ..config.clean_models import ModularConfig
-from ..config.models import (
-    AccessControlRule,
-    RuleAction,
-)
+from ..config.models import AccessControlRule, RuleAction
 from ..session.manager import SessionManager
 from ..types import SessionID
 from .context import PredicateContext

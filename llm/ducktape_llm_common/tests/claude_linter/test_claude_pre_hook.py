@@ -5,7 +5,6 @@ import json
 from pathlib import Path
 
 from click.testing import CliRunner
-
 from ducktape_llm_common.claude_linter.cli import cli
 from ducktape_llm_common.claude_linter.precommit_runner import PreCommitRunner
 
@@ -53,7 +52,6 @@ class TestPreHook:
     def test_blocks_non_fixable_violations(self, tmp_path, monkeypatch):
         """Test that pre-hook blocks files with non-fixable violations like S113."""
         # Simulate a file that pre-commit keeps trying to change
-        from pathlib import Path
 
         call_count = 0
         original_content = PYTHON_MYPY_NONFIXABLE
@@ -63,11 +61,15 @@ class TestPreHook:
             call_count += 1
 
             # Both calls keep changing the file (simulating non-fixable issues)
-            Path(paths[0]).write_text(original_content + f"\n# Changed by run {call_count}")
+            Path(paths[0]).write_text(
+                original_content + f"\n# Changed by run {call_count}"
+            )
             return (2, "S113 violation", "timeout missing")
 
         monkeypatch.setattr(PreCommitRunner, "run", mock_run)
-        result = run_pre_hook(create_write_input(tmp_path / "test.py", original_content))
+        result = run_pre_hook(
+            create_write_input(tmp_path / "test.py", original_content)
+        )
 
         # Should exit with code 0 (we use JSON output)
         assert result.exit_code == 0
@@ -84,7 +86,9 @@ class TestPreHook:
     def test_allows_clean_files(self, tmp_path, monkeypatch):
         """Test that pre-hook allows files without violations."""
         # simulate clean file
-        monkeypatch.setattr(PreCommitRunner, "run", lambda self, paths, cwd=None: (0, "", ""))
+        monkeypatch.setattr(
+            PreCommitRunner, "run", lambda self, paths, cwd=None: (0, "", "")
+        )
         result = run_pre_hook(create_write_input(tmp_path / "test.py", PYTHON_OK))
 
         assert result.exit_code == 0
@@ -97,7 +101,6 @@ class TestPreHook:
         # We need to simulate the two-pass behavior:
         # 1. First call with fix=True changes the content
         # 2. Second call with fix=True shows no more changes needed
-        from pathlib import Path
 
         call_count = 0
         original_content = PYTHON_MYPY_AUTOFIXABLE
@@ -119,7 +122,9 @@ class TestPreHook:
                 return (0, "", "")
 
         monkeypatch.setattr(PreCommitRunner, "run", mock_run)
-        result = run_pre_hook(create_write_input(tmp_path / "test.py", original_content))
+        result = run_pre_hook(
+            create_write_input(tmp_path / "test.py", original_content)
+        )
 
         assert result.exit_code == 0
         assert call_count == 2  # Verify both passes ran
@@ -130,7 +135,9 @@ class TestPreHook:
     def test_ignores_non_python_files(self, tmp_path, monkeypatch):
         """Test that pre-hook ignores non-Python files."""
         # simulate ignore for non-python
-        monkeypatch.setattr(PreCommitRunner, "run", lambda self, paths, cwd=None: (0, "", ""))
+        monkeypatch.setattr(
+            PreCommitRunner, "run", lambda self, paths, cwd=None: (0, "", "")
+        )
         result = run_pre_hook(
             create_write_input(
                 file_path=tmp_path / "test.txt",
@@ -142,7 +149,9 @@ class TestPreHook:
     def test_ignores_other_tools(self, tmp_path, monkeypatch):
         """Test that pre-hook ignores non-Write tools."""
         # simulate ignore for other tools
-        monkeypatch.setattr(PreCommitRunner, "run", lambda self, paths, cwd=None: (0, "", ""))
+        monkeypatch.setattr(
+            PreCommitRunner, "run", lambda self, paths, cwd=None: (0, "", "")
+        )
         result = run_pre_hook(
             json.dumps(
                 {

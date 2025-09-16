@@ -1,6 +1,4 @@
 import re
-
-
 from typing import List
 
 from git import Repo

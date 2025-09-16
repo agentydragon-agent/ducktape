@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-from pathlib import Path
 from importlib import resources
+from pathlib import Path
 
 import pytest
+from adgn_llm.sysrw.run_eval import read_dataset  # type: ignore
+from adgn_llm.sysrw.schemas import CrushSample
 from hamcrest import (
     any_of,
     assert_that,
@@ -13,12 +15,6 @@ from hamcrest import (
     has_entries,
     has_item,
 )
-
-# from run_eval import read_dataset
-from adgn_llm.sysrw.run_eval import read_dataset  # type: ignore
-
-# from schemas import CrushSample
-from adgn_llm.sysrw.schemas import CrushSample
 
 ROOT = Path(str(resources.files("adgn_llm.sysrw")))
 DATA = ROOT / "data" / "_test"

@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-
 import logging
 import os
 from logging.config import dictConfig
-from structlog.typing import Processor
 from pathlib import Path
 
 import structlog
+from structlog.typing import Processor
 
 
 def configure_logging() -> None:

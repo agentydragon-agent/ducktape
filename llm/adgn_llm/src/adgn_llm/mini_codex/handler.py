@@ -7,10 +7,16 @@ string derived from the concrete type.
 """
 
 from __future__ import annotations
+
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Literal, TypedDict, Union
-from pydantic import BaseModel
+
 from adgn_llm.mini_codex.loop_control import NoLoopDecision
+from mcp import types as mcp_types
+from pydantic import BaseModel
+
+# BeforeToolCallDecision and decision dataclasses are defined below (handler-level, generic)
 
 
 # ---- Ground-truth usage (OpenAI upstream fields only; no derived numbers) ----
@@ -48,6 +54,41 @@ class FunctionCallOutput(BaseModel):
     type: Literal["function_call_output"] = "function_call_output"
     call_id: str
     output: str
+
+
+# ----- Generic before-tool-call decision algebra (handler-level, generic) -----
+
+
+@dataclass
+class ContinueDecision:
+    """Proceed with normal execution."""
+
+    action: Literal["continue"] = "continue"
+
+
+@dataclass
+class BypassToolInjectOutput:
+    """Bypass MCP execution and inject this tool result into the turn.
+
+    Handlers return this decision to indicate the agent should use the provided
+    mcp_types.CallToolResult as the function_call_output for the named call_id
+    and must NOT invoke the MCP call for that function.
+    """
+
+    result: mcp_types.CallToolResult
+    reason: str | None = None
+    action: Literal["bypass_inject"] = "bypass_inject"
+
+
+@dataclass
+class AbortTurnDecision:
+    """Request abort of the entire turn."""
+
+    action: Literal["abort"] = "abort"
+    reason: str | None = None
+
+
+BeforeToolCallDecision = ContinueDecision | BypassToolInjectOutput | AbortTurnDecision
 
 
 class Response(BaseModel):
@@ -113,6 +154,14 @@ class BaseHandler:
 
     def on_tool_call_event(self, evt: ToolCall) -> None:  # default no-op
         return None
+
+    async def before_tool_call(self, evt: ToolCall) -> BeforeToolCallDecision:
+        """Async hook invoked immediately before executing a tool call.
+
+        Must return a BeforeToolCallDecision (ContinueDecision | BypassToolInjectOutput | AbortTurnDecision).
+        Default implementation returns ContinueDecision() (proceed normally).
+        """
+        return ContinueDecision()
 
     def on_function_call_output_event(self, evt: FunctionCallOutput) -> None:  # default no-op
         return None

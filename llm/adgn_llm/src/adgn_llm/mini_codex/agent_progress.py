@@ -1,15 +1,13 @@
 from __future__ import annotations
 
-
-from typing import Any
-
-from time import monotonic
 from itertools import cycle
+from time import monotonic
+from typing import Any
 
 from rich.console import Console
 from rich.text import Text
 
-from .handler import BaseHandler, UserText, AssistantText, ToolCall, FunctionCallOutput
+from .handler import AssistantText, BaseHandler, FunctionCallOutput, ToolCall, UserText
 from .loop_control import NoLoopDecision
 
 

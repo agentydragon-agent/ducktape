@@ -4,18 +4,25 @@ import json
 from pathlib import Path
 
 import pytest
-from openai.types.responses import Response as ResponsesResponse
-from openai.types.responses import ResponseFunctionToolCall, ResponseOutputMessage, ResponseOutputText
-from openai.types.responses.response_usage import ResponseUsage, InputTokensDetails, OutputTokensDetails
-
-from adgn_llm.mini_codex.agent import MiniCodex
-from adgn_llm.mini_codex.mcp_manager import McpManager
-from adgn_llm.mcp.inproc_transport import make_inproc_slot_spec
 from adgn_llm.mcp.docker_exec.server import make_container_exec_mcp
+from adgn_llm.mcp.inproc_transport import make_inproc_slot_spec
+from adgn_llm.mini_codex.agent import MiniCodex
+from adgn_llm.mini_codex.event_renderer import DisplayEventsHandler
+from adgn_llm.mini_codex.mcp_manager import McpManager
 from adgn_llm.properties.docker_env import PropertiesDockerWiring
 from adgn_llm.properties.lint_issue import LinterController, LintSubmitState
-from adgn_llm.mini_codex.event_renderer import DisplayEventsHandler
 from adgn_llm.properties.models.issue import Occurrence
+from openai.types.responses import Response as ResponsesResponse
+from openai.types.responses import (
+    ResponseFunctionToolCall,
+    ResponseOutputMessage,
+    ResponseOutputText,
+)
+from openai.types.responses.response_usage import (
+    InputTokensDetails,
+    OutputTokensDetails,
+    ResponseUsage,
+)
 
 
 class _MockResponsesClient:

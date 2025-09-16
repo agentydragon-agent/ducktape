@@ -5,7 +5,6 @@ import subprocess
 from pathlib import Path
 
 import pytest
-
 from ducktape_llm_common.claude_linter_v2.hooks.handler import HookHandler
 from ducktape_llm_common.claude_linter_v2.hooks.requests import StopRequest
 from ducktape_llm_common.claude_linter_v2.types import parse_session_id

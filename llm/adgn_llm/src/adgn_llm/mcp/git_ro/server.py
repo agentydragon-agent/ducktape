@@ -14,15 +14,16 @@ Design
 """
 
 from __future__ import annotations
+
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Any, Annotated, Literal, cast
 from enum import StrEnum
+from pathlib import Path
+from typing import Annotated, Any, Literal, cast
+
 import pygit2
-from pygit2 import enums as git_enums
 from mcp.server.fastmcp import FastMCP
 from pydantic import BaseModel, Field
-
+from pygit2 import enums as git_enums
 
 # Shared server name constant for clients/tests
 GIT_RO_SERVER_NAME = "git-ro"

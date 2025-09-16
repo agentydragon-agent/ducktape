@@ -7,15 +7,20 @@ import shutil
 import subprocess
 import sys
 import time
+from contextlib import suppress
+from importlib import resources
 from pathlib import Path
 from typing import Any, cast
-from importlib import resources
-from contextlib import suppress
+
 import tiktoken
-from .constants import TOOLS_HEADER
+from adgn_llm.openai_retry import (
+    chat_create_with_retries,
+    responses_create_with_retries,
+)
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from openai import AsyncOpenAI
-from adgn_llm.openai_retry import responses_create_with_retries, chat_create_with_retries
+
+from .constants import TOOLS_HEADER
 from .schemas import (
     CCRRequest,
     CCRSample,

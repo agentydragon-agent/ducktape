@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-from pathlib import Path
 import re
+from pathlib import Path
 
 import pytest
-from typer.testing import CliRunner
-
 from adgn_llm.properties.cli_app.main import app as props_app
+from typer.testing import CliRunner
 
 SPECIMEN_NAME = "2025-09-02-ducktape_wt"
 

@@ -17,26 +17,27 @@ The script performs the following steps:
 """
 
 from __future__ import annotations
-from typing import Any
+
 import argparse
 import asyncio
+import json
 import random
-import sys
 import re
+import sys
+import time
+from dataclasses import dataclass
 from enum import Enum
+from typing import Any, Awaitable, Callable, Final, Sequence, cast
+
 from aiolimiter import AsyncLimiter
-from typing import Callable, Awaitable, Final, Sequence, cast
 from openai import AsyncOpenAI
+from openai._exceptions import APIStatusError
 from openai.types.responses.function_tool_param import FunctionToolParam
 from openai.types.responses.tool_choice_function_param import ToolChoiceFunctionParam
+from rich import box
 from rich.console import Console, Group
 from rich.live import Live
 from rich.table import Table
-from rich import box
-from dataclasses import dataclass
-from openai._exceptions import APIStatusError
-import json
-import time
 
 
 @dataclass(frozen=True)

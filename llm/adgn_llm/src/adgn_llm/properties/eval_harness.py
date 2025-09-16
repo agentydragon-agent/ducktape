@@ -1,32 +1,28 @@
 from __future__ import annotations
+
 import asyncio
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Literal, Annotated, Union
-from openai import AsyncOpenAI
-from pydantic import BaseModel, Field, ConfigDict
-from rich.console import Console
-from rich.table import Table
+from typing import Annotated, Any, Literal, Union
+
+from adgn_llm.mini_codex.agent_progress import OneLineProgressHandler
+from adgn_llm.properties.models.issue import IssueCore, IssueId, LineRange, Occurrence
+from adgn_llm.properties.models.lint import PropertyIncorrectlyAssigned
+from adgn_llm.rendering.rich_renderers import render_to_rich
 from hamcrest import assert_that, has_item
+from openai import AsyncOpenAI
 from openai.types.responses import (
+    FunctionToolParam,
     ResponseFunctionToolCall,
     ResponseFunctionToolCallItem,
-    FunctionToolParam,
     ToolChoiceFunctionParam,
 )
-from adgn_llm.rendering.rich_renderers import render_to_rich
-from adgn_llm.mini_codex.agent_progress import OneLineProgressHandler
+from pydantic import BaseModel, ConfigDict, Field
+from rich.console import Console
+from rich.table import Table
+
 from .lint_issue import lint_issue_run
-from adgn_llm.properties.models.issue import (
-    IssueCore,
-    Occurrence,
-    LineRange,
-    IssueId,
-)
-from adgn_llm.properties.models.lint import (
-    PropertyIncorrectlyAssigned,
-)
 
 
 # ---------- Expectations / Assertions ----------

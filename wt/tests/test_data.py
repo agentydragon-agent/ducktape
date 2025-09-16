@@ -1,6 +1,7 @@
 """Centralized test data to reduce duplication across test fixtures."""
 
 from typing import ClassVar
+
 import pygit2
 
 # Shared timing constants for tests

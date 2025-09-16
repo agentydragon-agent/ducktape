@@ -1,5 +1,5 @@
 from __future__ import annotations
-from adgn_llm.mcp._shared.constants import SLEEP_FOREVER_CMD
+
 import argparse
 import json
 import os
@@ -8,14 +8,16 @@ import shlex
 import shutil
 import socket
 import subprocess
-import docker
 import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+
+import docker
 import yaml
-from pydantic import BaseModel
+from adgn_llm.mcp._shared.constants import SLEEP_FOREVER_CMD
 from adgn_llm.sandboxer import Policy
+from pydantic import BaseModel
 
 
 # Legacy wrapper PolicyConfig retained only for import compatibility in older tests; wrapper no longer uses it.

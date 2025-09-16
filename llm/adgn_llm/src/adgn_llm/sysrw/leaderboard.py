@@ -8,6 +8,7 @@ Defaults to rich table output sorted by mean score desc.
 """
 
 from __future__ import annotations
+
 import argparse
 import hashlib
 import json
@@ -16,9 +17,11 @@ import sys
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
+
 from rich.console import Console
 from rich.table import Table
-from .templates import validate_template_file, load_known_templates
+
+from .templates import load_known_templates, validate_template_file
 
 
 @dataclass

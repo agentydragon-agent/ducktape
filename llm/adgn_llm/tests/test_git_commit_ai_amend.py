@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from adgn_llm.git_commit_ai import cli
 from adgn_llm.git_commit_ai.cli import ClaudeAI, get_commit_diff
 from adgn_llm.git_commit_ai.core import build_prompt
 from git import Repo
@@ -363,7 +364,6 @@ async def test_editor_comments_and_scissors_are_ignored_in_commit_message(monkey
         monkeypatch.setattr("asyncio.create_subprocess_shell", _fake_shell)
 
         # Run the tool; patch argv to avoid pytest args leaking
-        from adgn_llm.git_commit_ai import cli
 
         with patch("sys.argv", ["git-commit-ai"]), patch("sys.exit") as mock_exit:
             await cli.async_main()

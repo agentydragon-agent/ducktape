@@ -1,12 +1,11 @@
 import os
 import shutil
-import pytest
 from typing import Tuple
 
-from openai import AsyncOpenAI
-
+import pytest
 from adgn_llm.properties.lint_issue import lint_issue_run
-from adgn_llm.properties.models.issue import IssueCore, Occurrence, LineRange
+from adgn_llm.properties.models.issue import IssueCore, LineRange, Occurrence
+from openai import AsyncOpenAI
 
 
 @pytest.mark.live_llm

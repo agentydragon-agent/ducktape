@@ -8,7 +8,7 @@ from typing import Any, Callable, Optional, TypeVar, cast
 
 # Import API key getter from our config module
 from ..config import load_api_key
-
+from ..habitify_client import HabitifyClient, HabitifyError
 from .date_utils import (
     create_date_range,
     format_date_for_api,
@@ -24,8 +24,6 @@ from .error_utils import (
     create_not_found_error,
     create_validation_error,
 )
-
-# Avoid circular import by not importing from habit_resolver.py here
 
 # Define status colors mapping
 STATUS_COLORS = {
@@ -135,7 +133,6 @@ def with_api_key(func: F) -> F:
         # Get API key
         api_key = get_server_api_key()
         if not api_key:
-            from ..habitify_client import HabitifyError
 
             raise HabitifyError(
                 "API key is required. Set HABITIFY_API_KEY environment variable or configure server metadata."
@@ -170,9 +167,6 @@ def with_client(func: F) -> F:
                 return create_auth_error(
                     "API key is required. Set HABITIFY_API_KEY environment variable or configure server metadata."
                 )
-
-            # Import here to avoid circular imports
-            from ..habitify_client import HabitifyClient
 
             # Create client and call function
             async with HabitifyClient(api_key=api_key) as client:

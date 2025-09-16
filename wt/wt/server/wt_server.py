@@ -40,17 +40,13 @@ from .discovery_scanner import DiscoveryScanner
 from .git_manager import GitManager
 from .github_client import GitHubInterface
 from .gitstatus_refresh import DebouncedGitstatusRefresh
-from .gitstatusd_listener import (
-    GitstatusdListener,
-)
+from .gitstatusd_listener import GitstatusdListener
 
 # Force import of handlers to register RPC methods
-from .handlers import (
-    path_handler,  # noqa: F401
-    pr_handler,  # noqa: F401
-    status_handler,  # noqa: F401
-    worktree_handler,  # noqa: F401
-)
+from .handlers import path_handler  # noqa: F401
+from .handlers import pr_handler  # noqa: F401
+from .handlers import status_handler  # noqa: F401
+from .handlers import worktree_handler  # noqa: F401
 from .pr_service import PRService
 from .repo_status import RepoStatus
 from .rpc import rpc

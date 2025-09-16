@@ -10,10 +10,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from functools import singledispatch
 
-from .constants import (
-    EVENT_TYPE_ID,
-    MEETING_TYPE_ID,
-)
+from .constants import EVENT_TYPE_ID, MEETING_TYPE_ID
 from .filters import filter_by_field_value, filter_by_tag, filter_nodes
 from .models import BaseNode, NodeStore
 from .search_parser import (

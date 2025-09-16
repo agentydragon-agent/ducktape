@@ -1,11 +1,13 @@
 from __future__ import annotations
+
 import json
 from pathlib import Path
+
 import pytest
-from hamcrest import assert_that, has_entries, instance_of, anything, equal_to
 from adgn_llm.mcp.editor_server import make_editor_mcp
 from adgn_llm.mcp.inproc_transport import make_inproc_slot_spec
-from adgn_llm.mini_codex.mcp_manager import McpManager
+from adgn_llm.mini_codex.mcp_manager import McpManager, parse_mcp_function
+from hamcrest import anything, assert_that, equal_to, has_entries, instance_of
 
 
 @pytest.mark.asyncio
@@ -26,7 +28,7 @@ async def test_editor_inproc_basic_ops(tmp_path: Path) -> None:
         assert any(n == "mcp__editor__done" for n in names)
 
         # read_info works
-        server, tool = mcp.resolve_function("mcp__editor__read_info")
+        server, tool = parse_mcp_function("mcp__editor__read_info")
         sess = await mcp.get_session(server)
         res = await sess.call_tool(name=tool, arguments={})
         info = res.structuredContent or {}
@@ -35,7 +37,7 @@ async def test_editor_inproc_basic_ops(tmp_path: Path) -> None:
         assert_that(Path(str(info["path"])), equal_to(target))
 
         # replace_text modifies buffer (x=1 → x=2)
-        server, tool = mcp.resolve_function("mcp__editor__replace_text")
+        server, tool = parse_mcp_function("mcp__editor__replace_text")
         res = await sess.call_tool(
             name=tool,
             arguments={"old_text": "x = 1", "new_text": "x = 2"},
@@ -45,7 +47,7 @@ async def test_editor_inproc_basic_ops(tmp_path: Path) -> None:
         assert_that(sc, has_entries(ok=True))
 
         # done(success=True) runs syntax check for .py and saves
-        server, tool = mcp.resolve_function("mcp__editor__done")
+        server, tool = parse_mcp_function("mcp__editor__done")
         res = await sess.call_tool(name=tool, arguments={"payload": {"outcome": "success", "summary": ""}})
         payload = res.structuredContent
         # allow either dict or pydantic-like converted dict

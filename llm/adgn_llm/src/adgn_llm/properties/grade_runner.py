@@ -1,31 +1,29 @@
 from __future__ import annotations
 
-
 import json
 from pathlib import Path
+
 import yaml
-
-from openai import AsyncOpenAI
-
-from adgn_llm.properties.specimens.registry import SpecimenRegistry
-from adgn_llm.properties.docker_env import PropertiesDockerWiring
-from adgn_llm.mini_codex.agent import MiniCodex
-from adgn_llm.mini_codex.mcp_manager import McpManager, build_mcp_function
-from adgn_llm.mini_codex.aggregating_handler import BaseHandler, GateUntil
 from adgn_llm.mcp.inproc_transport import make_inproc_slot_spec
+from adgn_llm.mini_codex.agent import MiniCodex
+from adgn_llm.mini_codex.aggregating_handler import BaseHandler, GateUntil
+from adgn_llm.mini_codex.loggers import TranscriptLoggerHandler
+from adgn_llm.mini_codex.mcp_manager import McpManager, build_mcp_function
+from adgn_llm.mini_codex.transcript_handler import TranscriptHandler
+from adgn_llm.properties.critic import CriticSubmitPayload, ReportedIssue
+from adgn_llm.properties.docker_env import PropertiesDockerWiring
 from adgn_llm.properties.grader import (
+    CANON_FP_PREFIX,
+    CANON_TP_PREFIX,
+    CRIT_PREFIX,
+    GradeInputs,
+    GradeSubmitPayload,
     GradeSubmitState,
     make_grader_submit_server,
-    GradeInputs,
-    CANON_TP_PREFIX,
-    CANON_FP_PREFIX,
-    GradeSubmitPayload,
 )
 from adgn_llm.properties.prompts.builder import build_grade_from_json_prompt
-from adgn_llm.properties.critic import ReportedIssue, CriticSubmitPayload
-from adgn_llm.mini_codex.transcript_handler import TranscriptHandler
-from adgn_llm.properties.grader import CRIT_PREFIX
-from adgn_llm.mini_codex.loggers import TranscriptLoggerHandler
+from adgn_llm.properties.specimens.registry import SpecimenRegistry
+from openai import AsyncOpenAI
 
 
 def _metrics_row(grade: GradeSubmitPayload, *, specimen: str | None = None) -> dict:

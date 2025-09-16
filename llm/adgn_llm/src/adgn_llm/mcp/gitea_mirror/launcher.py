@@ -4,11 +4,9 @@
 
 from __future__ import annotations
 
-
 import argparse
 import os
 from pathlib import Path
-
 
 from .server import make_gitea_mirror_mcp
 

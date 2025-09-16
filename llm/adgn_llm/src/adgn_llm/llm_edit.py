@@ -10,22 +10,25 @@ Notes / Design:
 """
 
 from __future__ import annotations
-from adgn_llm.mini_codex.event_renderer import DisplayEventsHandler
-from adgn_llm.mini_codex.aggregating_handler import AutoHandler
-from adgn_llm.mini_codex.loggers import TranscriptLoggerHandler
-from openai.types.shared_params import ReasoningEffort as SDKReasoningEffort
+
 import asyncio
 import os
 import time
 from pathlib import Path
 from typing import cast
+
 import openai
 import typer
-from .openai_utils import ReasoningSummary, to_reasoning_effort
+from adgn_llm.mini_codex.aggregating_handler import AutoHandler
+from adgn_llm.mini_codex.event_renderer import DisplayEventsHandler
+from adgn_llm.mini_codex.loggers import TranscriptLoggerHandler
+from openai.types.shared_params import ReasoningEffort as SDKReasoningEffort
+
 from .mcp.editor_server import make_editor_mcp
 from .mcp.inproc_transport import make_inproc_slot_spec
 from .mini_codex.agent import MiniCodex
 from .mini_codex.mcp_manager import McpManager
+from .openai_utils import ReasoningSummary, to_reasoning_effort
 
 
 async def _execute(

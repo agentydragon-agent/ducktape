@@ -9,37 +9,38 @@ Behavior:
 """
 
 from __future__ import annotations
-from typing import Any, List, Tuple
+
 import asyncio
 import json
-import traceback
-from pathlib import Path
-from datetime import datetime
-from dataclasses import dataclass
 import logging
-from mcp.server.fastmcp import FastMCP
-from openai import AsyncOpenAI
-from adgn_llm.properties.specimens.registry import (
-    find_specimens_base,
-    list_specimen_names,
-    SpecimenRegistry,
-)
-from adgn_llm.properties.prop_utils import pkg_dir
-from adgn_llm.properties.docker_env import properties_docker_spec
-from adgn_llm.mini_codex.agent import MiniCodex
-from adgn_llm.mini_codex.mcp_manager import McpManager
-from adgn_llm.mini_codex.aggregating_handler import GateUntil
+import traceback
+from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
+from typing import Any, List, Tuple
+
 from adgn_llm.mcp.inproc_transport import make_inproc_slot_spec
-from adgn_llm.mini_codex.transcript_handler import TranscriptHandler
+from adgn_llm.mini_codex.agent import MiniCodex
+from adgn_llm.mini_codex.aggregating_handler import GateUntil
 from adgn_llm.mini_codex.loggers import TranscriptLoggerHandler
+from adgn_llm.mini_codex.mcp_manager import McpManager
+from adgn_llm.mini_codex.transcript_handler import TranscriptHandler
 from adgn_llm.properties.critic import (
-    CriticSubmitState,
     CriticSubmitPayload,
+    CriticSubmitState,
     make_critic_submit_server,
 )
-from adgn_llm.properties.grade_runner import grade_critic_output, _metrics_row
+from adgn_llm.properties.docker_env import properties_docker_spec
+from adgn_llm.properties.grade_runner import _metrics_row, grade_critic_output
 from adgn_llm.properties.prompts.util import build_scope_text, render_prompt_template
-
+from adgn_llm.properties.prop_utils import pkg_dir
+from adgn_llm.properties.specimens.registry import (
+    SpecimenRegistry,
+    find_specimens_base,
+    list_specimen_names,
+)
+from mcp.server.fastmcp import FastMCP
+from openai import AsyncOpenAI
 
 logger = logging.getLogger(__name__)
 

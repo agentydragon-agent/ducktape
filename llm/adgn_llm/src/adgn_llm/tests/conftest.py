@@ -1,17 +1,14 @@
 from __future__ import annotations
+
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
 import pytest
-from openai.types.responses import (
-    Response,
-    ResponseOutputMessage,
-    ResponseOutputText,
-)
+from openai.types.responses import Response, ResponseOutputMessage, ResponseOutputText
 from openai.types.responses.response_usage import (
-    ResponseUsage,
     InputTokensDetails,
     OutputTokensDetails,
+    ResponseUsage,
 )
 
 

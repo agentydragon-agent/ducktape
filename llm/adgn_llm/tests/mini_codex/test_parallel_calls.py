@@ -3,14 +3,14 @@ import time
 from typing import Any
 
 import pytest
-
-from adgn_llm.mini_codex.agent import MiniCodex
-from adgn_llm.mini_codex.loop_control import Abort, SyntheticAction
-from adgn_llm.mini_codex.aggregating_handler import BaseHandler
-from adgn_llm.mcp.inproc_transport import make_inproc_slot_spec
-from mcp.server.fastmcp import FastMCP
-from adgn_llm.mini_codex.mcp_manager import McpManager
 from adgn_llm.mcp.helpers import make_response_function_tool_call_full
+from adgn_llm.mcp.inproc_transport import make_inproc_slot_spec
+from adgn_llm.mini_codex.agent import MiniCodex
+from adgn_llm.mini_codex.aggregating_handler import BaseHandler
+from adgn_llm.mini_codex.loggers import RecordingHandler
+from adgn_llm.mini_codex.loop_control import Abort, SyntheticAction
+from adgn_llm.mini_codex.mcp_manager import McpManager
+from mcp.server.fastmcp import FastMCP
 
 
 class OneShotSyntheticHandler(BaseHandler):
@@ -71,8 +71,6 @@ async def test_parallel_tool_calls_reduce_wall_time():
     tc2 = make_response_function_tool_call_full("dummy", "slow2", {}, as_json=True)
 
     handler = OneShotSyntheticHandler(outputs=[tc1, tc2])
-
-    from adgn_llm.mini_codex.loggers import RecordingHandler
 
     rec = RecordingHandler()
 

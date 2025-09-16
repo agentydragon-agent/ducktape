@@ -7,11 +7,12 @@ import logging
 import shutil
 from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any, cast
 
 import psutil
 import pygit2
 
+from ..shared.configuration import Configuration
 from ..shared.error_handling import ErrorContext, validate_worktree_name
 
 # PR types are referenced by protocol layer; not needed here directly
@@ -19,12 +20,8 @@ from ..shared.models import ProcessInfo
 from ..shared.protocol import WorktreeID  # type: ignore[F401]
 from .copy_strategies import get_copy_strategy
 from .git_manager import GitManager
+from .github_client import GitHubInterface
 from .worktree_ids import wtid_to_path
-
-if TYPE_CHECKING:
-    from ..shared.configuration import Configuration
-    from .github_client import GitHubInterface
-
 
 logger = logging.getLogger(__name__)
 
@@ -167,9 +164,9 @@ class WorktreeService:
     async def run_post_creation_script(
         script_path: str,
         worktree_path: Path,
-        sink: Callable[[str, str], Awaitable[None]]
-        | Callable[[str, str], None]
-        | None = None,
+        sink: (
+            Callable[[str, str], Awaitable[None]] | Callable[[str, str], None] | None
+        ) = None,
         timeout: float = 60.0,
     ) -> dict:
         script = Path(script_path).expanduser().resolve()

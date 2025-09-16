@@ -10,9 +10,9 @@ import logging
 import os
 import sys
 
-
 # Add the parent directory to the path so we can import the server
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from habitify_mcp_server import create_habitify_mcp_server
 from habitify_mcp_server.config import load_api_key
 
 # Setup logging
@@ -69,7 +69,6 @@ def main() -> int:
         return 1
 
     # Import here so we only import after checking API key
-    from habitify_mcp_server import create_habitify_mcp_server
 
     try:
         # Create the server (with port configuration)

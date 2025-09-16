@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-
 from typing import Annotated
-from pydantic import BaseModel, ConfigDict, Field, model_validator, StringConstraints
+
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 
 class LineRange(BaseModel):

@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 from __future__ import annotations
+
 import copy
 import json
 import os
 import re
 from pathlib import Path
 from typing import Any
-from ..extract_common import iter_wire_lines
 
+from ..extract_common import iter_wire_lines
 
 PROVIDER_WIRE = Path(os.environ.get("CRUSH_WIRE_LOG", str(Path.home() / ".crush" / "logs" / "provider-wire.log")))
 DEMO_TEMPLATE = Path(__file__).parent / "demo_template.txt"

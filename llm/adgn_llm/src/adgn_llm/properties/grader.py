@@ -7,19 +7,20 @@ submit_result.
 """
 
 from __future__ import annotations
-from collections.abc import Iterable
-from adgn_llm.properties.critic import CriticSubmitPayload
-from adgn_llm.properties.specimens.registry import SpecimenRecord, IssueRecord
-from typing import Any
-from pydantic import BaseModel, ConfigDict, Field
-from mcp.server.fastmcp import FastMCP
-from dataclasses import dataclass
-from adgn_llm.rendering.rich_renderers import render_to_rich
-from rich.table import Table
-from rich.panel import Panel
-from rich.markdown import Markdown
-from rich.console import Group, RenderableType
 
+from collections.abc import Iterable
+from dataclasses import dataclass
+from typing import Any
+
+from adgn_llm.properties.critic import CriticSubmitPayload
+from adgn_llm.properties.specimens.registry import IssueRecord, SpecimenRecord
+from adgn_llm.rendering.rich_renderers import render_to_rich
+from mcp.server.fastmcp import FastMCP
+from pydantic import BaseModel, ConfigDict, Field
+from rich.console import Group, RenderableType
+from rich.markdown import Markdown
+from rich.panel import Panel
+from rich.table import Table
 
 # Shared ID prefix constants (single source of truth)
 CANON_TP_PREFIX = "canon_tp_"

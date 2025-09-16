@@ -31,9 +31,9 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
+from ansible.errors import AnsibleError
 from gi.repository import GLib
 
-from ansible.errors import AnsibleError
 from ansible.plugins.action import ActionBase
 
 

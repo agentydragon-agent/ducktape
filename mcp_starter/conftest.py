@@ -1,8 +1,8 @@
 from collections.abc import AsyncIterator
 
+import pytest_asyncio
 from fastmcp import Client
 from fastmcp.mcp_config import MCPConfig, StdioMCPServer
-import pytest_asyncio
 
 
 @pytest_asyncio.fixture

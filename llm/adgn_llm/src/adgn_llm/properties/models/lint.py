@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-
+from collections import Counter
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
-
-from collections import Counter
 from adgn_llm.properties.models.issue import LineRange
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class Correction(BaseModel):
