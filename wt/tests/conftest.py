@@ -228,9 +228,7 @@ def create_integration_test_config_file(repo_path: Path) -> Path:
 
 @pytest.fixture(scope="session", autouse=True)
 def _require_gitstatusd_on_path():
-    assert shutil.which(
-        "gitstatusd",
-    ), "gitstatusd not found on PATH - required for integration tests"
+    assert shutil.which("gitstatusd"), "integration tests require gitstatusd on PATH"
 
 
 @pytest.fixture

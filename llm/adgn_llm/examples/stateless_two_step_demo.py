@@ -35,10 +35,19 @@ MODEL = os.environ.get("RESPONSES_TEST_MODEL", "gpt-5")
 
 
 def as_dict(it: Any) -> dict[str, Any]:
-    try:
-        return it.model_dump(exclude_none=True)
-    except Exception:
-        return it if isinstance(it, dict) else {"raw": str(it)}
+    # Require SDK items or plain dicts; return dicts unchanged and otherwise
+    # use the SDK model_dump representation. Do not swallow AttributeError.
+    if isinstance(it, dict):
+        return it
+    return it.model_dump(exclude_none=True)
+
+
+# Helper to read item.type: prefer dict lookup for dicts and direct attribute access
+# for SDK objects (do not use getattr or try/except that masks missing attributes)
+def item_type(it: Any) -> Any:
+    if isinstance(it, dict):
+        return it.get("type")
+    return it.type
 
 
 # ---------- Text-only demo ----------
@@ -56,16 +65,16 @@ def run_text_demo() -> None:
     r1 = client.responses.create(
         model=MODEL, input=[{"role": "user", "content": prompt1}], reasoning={"effort": "high"}
     )
-    out1 = getattr(r1, "output", []) or []
-    print("Response 1 id:", getattr(r1, "id", None))
+    out1 = r1.output or []
+    print("Response 1 id:", r1.id)
     for it in out1:
         d = as_dict(it)
         print(" -", d.get("type") or type(it).__name__)
         print(json.dumps(d, indent=2, ensure_ascii=False))
 
     # Extract reasoning + assistant-visible message
-    reasoning_items = [as_dict(it) for it in out1 if getattr(it, "type", None) == "reasoning"]
-    assistant_msgs = [as_dict(it) for it in out1 if getattr(it, "type", None) == "message"]
+    reasoning_items = [as_dict(it) for it in out1 if item_type(it) == "reasoning"]
+    assistant_msgs = [as_dict(it) for it in out1 if item_type(it) == "message"]
 
     if not reasoning_items or not assistant_msgs:
         print(
@@ -80,8 +89,8 @@ def run_text_demo() -> None:
 
     print("\n--- TEXT DEMO: Request 2 (stateless full-input) ---")
     r2 = client.responses.create(model=MODEL, input=input2, reasoning={"effort": "high"})
-    out2 = getattr(r2, "output", []) or []
-    print("Response 2 id:", getattr(r2, "id", None))
+    out2 = r2.output or []
+    print("Response 2 id:", r2.id)
     for it in out2:
         d = as_dict(it)
         print(" -", d.get("type") or type(it).__name__)
@@ -126,17 +135,17 @@ def run_tools_demo() -> None:
         tool_choice="required",
         reasoning={"effort": "high"},
     )
-    out1 = getattr(r1, "output", []) or []
-    print("Response 1 id:", getattr(r1, "id", None))
+    out1 = r1.output or []
+    print("Response 1 id:", r1.id)
     for it in out1:
         d = as_dict(it)
         print(" -", d.get("type") or type(it).__name__)
         print(json.dumps(d, indent=2, ensure_ascii=False))
 
     # Extract pieces
-    reasoning_items = [as_dict(it) for it in out1 if getattr(it, "type", None) == "reasoning"]
-    assistant_msgs = [as_dict(it) for it in out1 if getattr(it, "type", None) == "message"]
-    func_calls = [as_dict(it) for it in out1 if getattr(it, "type", None) == "function_call"]
+    reasoning_items = [as_dict(it) for it in out1 if item_type(it) == "reasoning"]
+    assistant_msgs = [as_dict(it) for it in out1 if item_type(it) == "message"]
+    func_calls = [as_dict(it) for it in out1 if item_type(it) == "function_call"]
 
     if not func_calls:
         print("ERROR: model did not emit a function_call in request1; aborting tools demo.")
@@ -176,8 +185,8 @@ def run_tools_demo() -> None:
     r2 = client.responses.create(
         model=MODEL, input=input2, tools=TOOLS, tool_choice="required", reasoning={"effort": "high"}
     )
-    out2 = getattr(r2, "output", []) or []
-    print("Response 2 id:", getattr(r2, "id", None))
+    out2 = r2.output or []
+    print("Response 2 id:", r2.id)
     for it in out2:
         d = as_dict(it)
         print(" -", d.get("type") or type(it).__name__)
