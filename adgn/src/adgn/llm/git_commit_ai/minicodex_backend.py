@@ -218,7 +218,9 @@ async def generate_commit_message_minicodex(
         base = "You are an expert at writing high-quality git commit messages.\n\n"
         common_tail = (
             "Produce a concise, imperative subject (<=80 chars) and optional body "
-            "with wrapped lines; then call submit_commit_message."
+            "with wrapped lines; then call submit_commit_message. When reviewing changes, "
+            "use git_diff with format=name-status and format=stat to understand the file list and rename map, "
+            "then request per-file patches by passing paths=['<file>'] with format=patch and a small slice (e.g. max_chars=8000)."
         )
         if is_amend:
             middle = (

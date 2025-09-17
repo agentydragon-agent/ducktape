@@ -551,11 +551,15 @@ def make_git_ro_server(git_repo: Path, *, name: str = "git-ro") -> FastMCP:
         """
         repo = _open_repo(state.git_repo)
         # Build base diff using repository-level APIs that match type stubs
+        # Optional path filtering for large diffs (batch per file/group upstream)
+        diff_kwargs = {}
+        if payload.paths:
+            diff_kwargs["paths"] = payload.paths
         if payload.staged:
             a = None if repo.head_is_unborn else repo.head.target
-            diff = repo.diff(a, None, cached=True)
+            diff = repo.diff(a, None, cached=True, **diff_kwargs)
         else:
-            diff = repo.index.diff_to_workdir(repo)
+            diff = repo.index.diff_to_workdir(repo, **diff_kwargs)
 
         if payload.find_renames:
             diff.find_similar()

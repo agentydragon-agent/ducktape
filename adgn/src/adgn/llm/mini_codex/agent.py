@@ -305,7 +305,9 @@ class MiniCodex:
                 continue
             if (fc := task_to_call.get(t)) is not None:
                 completed_results[fc.call_id] = t.result()
-        self._emit_batch_aborted_outputs(denied_call_id, completed_results, function_calls)
+        self._emit_batch_aborted_outputs(
+            denied_call_id, completed_results, function_calls
+        )
         self.finished = True
 
     async def _run_tool_calls_sequential(self, calls, function_calls, invoker):
