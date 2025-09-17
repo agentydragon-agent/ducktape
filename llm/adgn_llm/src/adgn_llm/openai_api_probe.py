@@ -26,6 +26,7 @@ import re
 import sys
 import time
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Awaitable, Callable, Final, Sequence, cast
 
@@ -116,6 +117,7 @@ TOOL_FUNCTION = {
         "type": "object",
         "properties": {"city": {"type": "string"}},
         "required": ["city"],
+        "additionalProperties": False,
     },
 }
 REQUEST_TIMEOUT = 10
@@ -445,7 +447,387 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:  # noqa
         default=0.3,
         help="Global max QPS",
     )
+    parser.add_argument(
+        "--stream",
+        action="store_true",
+        help="Print events as a raw stream as they arrive (no table)",
+    )
     return parser.parse_args(argv)
+
+
+# Shared helpers for both output modes
+
+
+def msg_from_exc(e: BaseException | None) -> str:
+    if e is None:
+        return ""
+    if isinstance(e, APIStatusError):
+        body = e.body
+        msg = body.get("message") if isinstance(body, dict) and "message" in body else e.message
+        return msg or repr(e)
+    return str(e) or repr(e)
+
+
+def classify_error(msg: str) -> tuple[ErrorCode, str]:
+    m = msg.lower()
+    for code, (desc, pred) in ERROR_RULES.items():
+        if pred(m):
+            return (code, desc)
+    return (ErrorCode.OTHER, msg)
+
+
+async def consume_stream_jsonl(tasks: list[asyncio.Task], filtered: list[str]) -> None:
+    ok_calls = 0
+    fail_calls = 0
+
+    def iso_ts() -> str:
+        return datetime.now(timezone.utc).isoformat()
+
+    for fut in asyncio.as_completed(tasks):
+        kind, mid, res = await fut
+        rec: dict[str, Any] = {
+            "ts": iso_ts(),
+            "model": mid,
+            "family": family_of(mid).value,
+            "kind": kind,
+            "ok": res.ok,
+            "latency_s": res.latency_s,
+        }
+        if res.ok:
+            if res.content is not None:
+                rec["snippet"] = res.content
+            ok_calls += 1
+        else:
+            msg = msg_from_exc(res.exc)
+            code, _ = classify_error(msg)
+            rec["code"] = code.value
+            rec["error"] = msg
+            fail_calls += 1
+        print(json.dumps(rec), flush=True)
+
+    summary = {
+        "ts": iso_ts(),
+        "type": "summary",
+        "ok_calls": ok_calls,
+        "failed_calls": fail_calls,
+        "total_calls": ok_calls + fail_calls,
+        "models": len(filtered),
+    }
+    print(json.dumps(summary), flush=True)
+
+
+async def consume_stream_rich(tasks: list[asyncio.Task], filtered: list[str], repeats: int) -> None:
+    oks: list[ModelProbe] = []
+    fails: list[ModelProbe] = []
+    total_models = len(filtered)
+    completed_models = 0
+    acc: dict[str, dict[str, list[CallResult]]] = {mid: {"responses": [], "chat": []} for mid in filtered}
+
+    console = Console()
+
+    def classify(mid: str) -> str:
+        return family_of(mid).value
+
+    INF = 1e9
+
+    def _avg_lat(obj) -> float | None:
+        if isinstance(obj, ProbeRun):
+            return obj.avg_latency_s
+        return obj.latency_s
+
+    def _std_lat(obj) -> float | None:
+        if isinstance(obj, ProbeRun):
+            vals = [c.latency_s for c in obj.calls if c.ok and c.latency_s is not None]
+            if len(vals) >= 2:
+                m = sum(vals) / len(vals)
+                var = sum((x - m) ** 2 for x in vals) / len(vals)
+                return var**0.5
+            return 0.0 if len(vals) == 1 else None
+        return None
+
+    def make_results_table(
+        title: str,
+        *,
+        header_style: str = "bold magenta",
+        model_ratio: int = 3,
+    ) -> Table:
+        table = Table(
+            show_header=True,
+            header_style=header_style,
+            title=title,
+            expand=True,
+            box=box.SIMPLE,
+        )
+        table.add_column(
+            "Model",
+            overflow="ellipsis",
+            no_wrap=True,
+            ratio=model_ratio,
+            header_style="bold",
+        )
+        table.add_column("Responses", overflow="ellipsis", no_wrap=True, ratio=2)
+        table.add_column("Chat", overflow="ellipsis", no_wrap=True, ratio=2)
+        return table
+
+    def iter_with_break(rows, key_fn):
+        if not rows:
+            return []
+        result = []
+        for idx, row in enumerate(rows):
+            curr = key_fn(row)
+            nxt = key_fn(rows[idx + 1]) if idx + 1 < len(rows) else None
+            result.append((row, nxt is not None and nxt != curr))
+        return result
+
+    FAMILY_ORDER: list[Family] = [
+        Family.GPT_5,
+        Family.O3,
+        Family.O4_MINI,
+        Family.O1,
+        Family.GPT_41,
+    ]
+
+    def priority_index(mid: str) -> int:
+        fam = family_of(mid)
+        try:
+            return FAMILY_ORDER.index(fam)
+        except ValueError:
+            return len(FAMILY_ORDER)
+
+    def partials_sort_key(kind: str):
+        def key(item: tuple[str, str, str]):
+            mid = item[0]
+            avg = _avg_lat(ProbeRun(model_id=mid, calls=acc[mid][kind])) or INF
+            return (priority_index(mid), avg, mid)
+
+        return key
+
+    def latency_both_key(r: ModelProbe) -> float:
+        vals = [v for v in (_avg_lat(r.responses), _avg_lat(r.chat)) if v is not None]
+        return min(vals) if vals else INF
+
+    def latency_resp_key(r: ModelProbe) -> float:
+        v = _avg_lat(r.responses)
+        return v if v is not None else INF
+
+    def latency_chat_key(r: ModelProbe) -> float:
+        v = _avg_lat(r.chat)
+        return v if v is not None else INF
+
+    def probe_snippet(p) -> str | None:
+        if isinstance(p, ProbeRun):
+            return p.success_snippet
+        return p.content
+
+    def probe_exc(p) -> BaseException | None:
+        if isinstance(p, ProbeRun):
+            return p.first_error
+        return p.exc
+
+    def fmt_latency(obj) -> str:
+        v = _avg_lat(obj)
+        return f" {v:.1f}s" if v is not None else ""
+
+    def ok_cell(probe) -> str:
+        txt = (probe_snippet(probe) or "").removeprefix("✓ ").strip()
+        cell = (
+            f"[green]✓{fmt_latency(probe)}[/green]"
+            if txt == "tool OK"
+            else f"[green]✓ {txt}{fmt_latency(probe)}[/green]"
+        )
+        if isinstance(probe, ProbeRun) and txt == "tool OK":
+            s = _std_lat(probe)
+            avg = _avg_lat(probe)
+            if avg is not None:
+                cell = f"[green]✓ {avg:.1f}s[/green]"
+                if s is not None:
+                    cell += f" ±{s:.1f}s"
+        return cell
+
+    def err_cell(probe) -> str:
+        ex = probe_exc(probe)
+        if isinstance(ex, asyncio.TimeoutError):
+            return f"[red]TIMEOUT{fmt_latency(probe)}[/red]"
+        msg = msg_from_exc(ex)
+        code, desc = classify_error(msg)
+        if code != ErrorCode.OTHER:
+            used_codes.setdefault(code.value, desc)
+            return f"[red]{code.value}{fmt_latency(probe)}[/red]"
+        return f"[red]{type(ex).__name__ if ex else ''}: {_squeeze_one_line(msg)}{fmt_latency(probe)}[/red]"
+
+    WAITING_CELL = "[yellow]waiting…[/yellow]"
+
+    def _calls_for(mid: str, kind: str) -> list[CallResult]:
+        return acc[mid][kind]
+
+    def _probe_run_for(mid: str, kind: str) -> ProbeRun:
+        return ProbeRun(model_id=mid, calls=_calls_for(mid, kind))
+
+    def cell_for_kind(mid: str, kind: str) -> str:
+        calls = _calls_for(mid, kind)
+        if not calls:
+            return WAITING_CELL
+        pr = ProbeRun(model_id=mid, calls=calls)
+        return ok_cell(pr) if pr.ok else err_cell(pr)
+
+    def kind_ok(mid: str, kind: str) -> bool:
+        calls = _calls_for(mid, kind)
+        return bool(calls) and _probe_run_for(mid, kind).ok
+
+    used_codes: dict[str, str] = {}
+
+    with Live(console=console, refresh_per_second=4) as live:
+        for fut in asyncio.as_completed(tasks):
+            kind, mid, res = await fut
+            acc[mid][kind].append(CallResult(content=res.content, exc=res.exc, latency_s=res.latency_s))
+
+            if len(acc[mid]["responses"]) >= repeats and len(acc[mid]["chat"]) >= repeats:
+                completed_models += 1
+                probe = ModelProbe(
+                    model_id=mid,
+                    responses=ProbeRun(model_id=mid, calls=acc[mid]["responses"]),
+                    chat=ProbeRun(model_id=mid, calls=acc[mid]["chat"]),
+                )
+                if probe.any_ok:
+                    oks.append(probe)
+                else:
+                    fails.append(probe)
+
+            in_flight = total_models - completed_models
+            new_table = make_results_table(
+                title=f"OK models — in-flight remaining: {in_flight}",
+                header_style="bold magenta",
+                model_ratio=6,
+            )
+
+            def render_row(r: ModelProbe, end_section: bool):
+                resp_cell = ""
+                chat_cell = ""
+                if r.responses.ok and r.chat.ok:
+                    resp_cell = ok_cell(r.responses)
+                    chat_cell = ok_cell(r.chat)
+                else:
+                    resp_cell = ok_cell(r.responses) if r.responses.ok else err_cell(r.responses)
+                    chat_cell = ok_cell(r.chat) if r.chat.ok else err_cell(r.chat)
+                new_table.add_row(
+                    r.model_id,
+                    resp_cell or "",
+                    chat_cell or "",
+                    end_section=end_section,
+                )
+
+            oks_both = [r for r in oks if r.responses.ok and r.chat.ok]
+            oks_resp_only = [r for r in oks if r.responses.ok and not r.chat.ok]
+            oks_chat_only = [r for r in oks if r.chat.ok and not r.responses.ok]
+            oks_both.sort(
+                key=lambda r: (
+                    priority_index(r.model_id),
+                    latency_both_key(r),
+                    r.model_id,
+                )
+            )
+            oks_resp_only.sort(
+                key=lambda r: (
+                    priority_index(r.model_id),
+                    latency_resp_key(r),
+                    r.model_id,
+                )
+            )
+            oks_chat_only.sort(
+                key=lambda r: (
+                    priority_index(r.model_id),
+                    latency_chat_key(r),
+                    r.model_id,
+                )
+            )
+
+            for r, end_section in iter_with_break(oks_both, lambda x: classify(x.model_id)):
+                render_row(r, end_section)
+
+            resp_table = make_results_table(
+                title="Responses OK only",
+                header_style="bold magenta",
+                model_ratio=3,
+            )
+
+            chat_table = make_results_table(
+                title="Chat OK only",
+                header_style="bold magenta",
+                model_ratio=3,
+            )
+
+            partials_resp: list[tuple[str, str, str]] = []
+            partials_chat: list[tuple[str, str, str]] = []
+            for mid, pair in acc.items():
+                rpart = pair["responses"]
+                cpart = pair["chat"]
+                if len(rpart) > 0 and len(cpart) < repeats:
+                    resp_cell = cell_for_kind(mid, "responses")
+                    partials_resp.append((mid, resp_cell, WAITING_CELL))
+                if len(cpart) > 0 and len(rpart) < repeats:
+                    chat_cell = cell_for_kind(mid, "chat")
+                    partials_chat.append((mid, WAITING_CELL, chat_cell))
+
+            partials_resp.sort(key=partials_sort_key("responses"))
+            partials_chat.sort(key=partials_sort_key("chat"))
+
+            if partials_resp:
+                for (mid, rc, cc), end_section in iter_with_break(partials_resp, lambda x: classify(x[0])):
+                    resp_table.add_row(mid, rc, cc, end_section=end_section)
+            if partials_chat:
+                for (mid, rc, cc), end_section in iter_with_break(partials_chat, lambda x: classify(x[0])):
+                    chat_table.add_row(mid, rc, cc, end_section=end_section)
+
+            others_all = sorted([mid for mid in filtered if family_of(mid) == Family.OTHER])
+            others_table = make_results_table(
+                title="Other models (unclassified)",
+                header_style="bold magenta",
+                model_ratio=3,
+            )
+            for mid in others_all:
+                rc, cc = (cell_for_kind(mid, "responses"), cell_for_kind(mid, "chat"))
+                others_table.add_row(mid, rc, cc)
+
+            live.update(Group(new_table, resp_table, chat_table, others_table))
+
+    console.print()
+    if fails:
+        fails.sort(key=lambda r: (family_of(r.model_id).value, r.model_id))
+        fail_table = Table(
+            show_header=True,
+            header_style="bold red",
+            title="Failures",
+            expand=True,
+            box=box.SIMPLE,
+        )
+        fail_table.add_column("Model", overflow="ellipsis", no_wrap=True, ratio=3, header_style="bold")
+        fail_table.add_column("Responses", overflow="ellipsis", no_wrap=True, ratio=2)
+        fail_table.add_column("Chat", overflow="ellipsis", no_wrap=True, ratio=2)
+        for i, r in enumerate(fails):
+            rcell = err_cell(r.responses)
+            ccell = err_cell(r.chat)
+            nxt = family_of(fails[i + 1].model_id).value if i + 1 < len(fails) else None
+            curr = family_of(r.model_id).value
+            end_section = nxt is not None and nxt != curr
+            fail_table.add_row(r.model_id, rcell, ccell, end_section=end_section)
+        console.print(fail_table)
+        console.print()
+    bad_count = len(fails)
+    console.print(f"[green]Success (any ok):[/green] {len(oks)}  |  [red]Failed (both failed):[/red] {bad_count}")
+
+    if used_codes:
+        legend = Table(
+            show_header=True,
+            header_style="bold cyan",
+            title="Legend (error codes)",
+            expand=True,
+            box=box.SIMPLE,
+        )
+        legend.add_column("Code")
+        legend.add_column("Meaning", overflow="fold")
+        for code, meaning in sorted(used_codes.items()):
+            legend.add_row(code, meaning)
+        console.print(legend)
 
 
 async def main() -> None:
@@ -520,6 +902,13 @@ async def main() -> None:
         for mid in prioritized:
             tasks.append(asyncio.create_task(run_one(RESPONSES_SPEC, mid)))
             tasks.append(asyncio.create_task(run_one(CHAT_SPEC, mid)))
+
+    if args.stream:
+        await consume_stream_jsonl(tasks, filtered)
+        return
+
+    await consume_stream_rich(tasks, filtered, REPEATS)
+    return
 
     oks: list[ModelProbe] = []
     fails: list[ModelProbe] = []
@@ -726,88 +1115,62 @@ async def main() -> None:
                     end_section=end_section,
                 )
 
-            oks_both = [r for r in oks if r.responses.ok and r.chat.ok]
-            oks_resp_only = [r for r in oks if r.responses.ok and not r.chat.ok]
-            oks_chat_only = [r for r in oks if r.chat.ok and not r.responses.ok]
-            oks_both.sort(
+            # Build a merged live view for models that have at least one call on both kinds
+            both_arrived: list[ModelProbe] = []
+            for mid in filtered:
+                r_calls = acc[mid]["responses"]
+                c_calls = acc[mid]["chat"]
+                if len(r_calls) > 0 and len(c_calls) > 0:
+                    both_arrived.append(
+                        ModelProbe(
+                            model_id=mid,
+                            responses=ProbeRun(model_id=mid, calls=r_calls),
+                            chat=ProbeRun(model_id=mid, calls=c_calls),
+                        )
+                    )
+
+            # Sort merged rows by family priority, then latency, then model id
+            both_arrived.sort(
                 key=lambda r: (
                     priority_index(r.model_id),
                     latency_both_key(r),
                     r.model_id,
                 )
             )
-            oks_resp_only.sort(
-                key=lambda r: (
-                    priority_index(r.model_id),
-                    latency_resp_key(r),
-                    r.model_id,
-                )
-            )
-            oks_chat_only.sort(
-                key=lambda r: (
-                    priority_index(r.model_id),
-                    latency_chat_key(r),
-                    r.model_id,
-                )
-            )
 
-            # Render both-ok rows into the single-column OK table
-            for r, end_section in iter_with_break(oks_both, lambda x: classify(x.model_id)):
+            # Render merged rows (each model exactly once here)
+            for r, end_section in iter_with_break(both_arrived, lambda x: classify(x.model_id)):
                 render_row(r, end_section)
 
-            # Prepare separate tables for responses-ok-only and chat-ok-only
+            # Prepare separate tables for models where only one side has arrived
             resp_table = make_results_table(
-                title="Responses OK only",
+                title="Responses arrived; Chat waiting",
                 header_style="bold magenta",
                 model_ratio=3,
             )
 
             chat_table = make_results_table(
-                title="Chat OK only",
+                title="Chat arrived; Responses waiting",
                 header_style="bold magenta",
                 model_ratio=3,
             )
 
-            # Populate responses-ok-only
-            for r, end_section in iter_with_break(oks_resp_only, lambda x: classify(x.model_id)):
-                resp_table.add_row(
-                    r.model_id,
-                    ok_cell(r.responses),
-                    ok_cell(r.chat) if r.chat.ok else err_cell(r.chat),
-                    end_section=end_section,
-                )
-
-            # Populate chat-ok-only
-            for r, end_section in iter_with_break(oks_chat_only, lambda x: classify(x.model_id)):
-                chat_table.add_row(
-                    r.model_id,
-                    ok_cell(r.responses) if r.responses.ok else err_cell(r.responses),
-                    ok_cell(r.chat),
-                    end_section=end_section,
-                )
-
-            # Show partial (half-arrived) rows with 'waiting…'
+            # Populate single-sided arrivals (avoid duplicates from merged rows)
             partials_resp: list[tuple[str, str, str]] = []
             partials_chat: list[tuple[str, str, str]] = []
             for mid, pair in acc.items():
                 rpart = pair["responses"]
                 cpart = pair["chat"]
-                if (len(rpart) > 0 and len(cpart) < REPEATS) or (len(cpart) > 0 and len(rpart) < REPEATS):
-                    if len(rpart) > 0 and len(cpart) < REPEATS:
-                        if kind_ok(mid, "responses"):
-                            resp_cell = cell_for_kind(mid, "responses")
-                            chat_cell = WAITING_CELL
-                            partials_resp.append((mid, resp_cell, chat_cell))
-                    elif len(cpart) > 0 and len(rpart) < REPEATS:
-                        if kind_ok(mid, "chat"):
-                            chat_cell = cell_for_kind(mid, "chat")
-                            resp_cell = WAITING_CELL
-                            partials_chat.append((mid, resp_cell, chat_cell))
+                if len(rpart) > 0 and len(cpart) == 0:
+                    resp_cell = cell_for_kind(mid, "responses")
+                    partials_resp.append((mid, resp_cell, WAITING_CELL))
+                if len(cpart) > 0 and len(rpart) == 0:
+                    chat_cell = cell_for_kind(mid, "chat")
+                    partials_chat.append((mid, WAITING_CELL, chat_cell))
 
             partials_resp.sort(key=partials_sort_key("responses"))
             partials_chat.sort(key=partials_sort_key("chat"))
 
-            # Append in-flight rows to the pessimistic groups
             if partials_resp:
                 for (mid, rc, cc), end_section in iter_with_break(partials_resp, lambda x: classify(x[0])):
                     resp_table.add_row(mid, rc, cc, end_section=end_section)
@@ -815,7 +1178,7 @@ async def main() -> None:
                 for (mid, rc, cc), end_section in iter_with_break(partials_chat, lambda x: classify(x[0])):
                     chat_table.add_row(mid, rc, cc, end_section=end_section)
 
-            # Render OTHER family models at the very bottom
+            # Render OTHER family models at the very bottom (always show current state)
             others_all = sorted([mid for mid in filtered if family_of(mid) == Family.OTHER])
             others_table = make_results_table(
                 title="Other models (unclassified)",
