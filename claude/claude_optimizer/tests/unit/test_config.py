@@ -1,10 +1,10 @@
 """Tests for configuration management."""
 
-import tempfile
 from pathlib import Path
+import tempfile
 
-import yaml
 from claude_optimizer.config import OptimizerConfig
+import yaml
 
 
 def test_config_from_file():

@@ -11,11 +11,12 @@ import sys
 from datetime import datetime
 from typing import Optional
 
-import habitify_mcp_server
 import typer
 from dotenv import load_dotenv
 from rich.console import Console
 from rich.table import Table
+
+import habitify_mcp_server
 
 from .habitify_client import HabitifyClient, HabitifyError
 from .server import create_habitify_mcp_server

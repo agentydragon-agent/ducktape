@@ -8,6 +8,7 @@ from uuid import UUID
 import git
 import pytest
 import yaml
+
 from claude_hooks.config import AutofixerConfig
 from claude_hooks.inputs import HookContext, PostToolInput
 from claude_hooks.precommit_autofix import PreCommitAutoFixerHook

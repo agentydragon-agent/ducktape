@@ -1,7 +1,7 @@
 """Shell helpers for emitting 'cd' commands."""
 
-import shlex
 from pathlib import Path
+import shlex
 
 from .shell_utils import emit_command
 

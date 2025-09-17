@@ -20,21 +20,30 @@ export OPENAI_API_BASE=http://127.0.0.1:8000
 >> import asyncio
 >> from openai import AsyncOpenAI
 >> client = AsyncOpenAI()
->> asyncio.run(client.responses.create(model="o4-mini", input=[{"role":"user","content":"Hello"}]))
+>> asyncio.run(client.responses.create(
+>>     model="o4-mini",
+>>     input=[{"role":"user","content":"Hello"}],
+>> ))
 
 ### Example: streaming Python call (proxy will forward chunks as they arrive)
 
 >> async def main():
 >>    client = AsyncOpenAI()
->>    maybe_iter = await client.responses.create(model="o4-mini", input=[{"role":"user","content":"Stream 1..3"}], stream=True)
+>>    maybe_iter = await client.responses.create(
+>>        model="o4-mini",
+>>        input=[{"role":"user","content":"Stream 1..3"}],
+>>        stream=True,
+>>    )
 >>    async for event in maybe_iter:
 >>        print(event)
 >>
 >> asyncio.run(main())
 
 ## Proxy behavior notes (important)
-- Uses SQLite as store (responses + response_frames). Derives deterministic key from request fields (model, input, explicitly-included knobs).
-- Streaming: proxy *forwards chunks to client immediately as upstream sends them* (does not buffer and send only at the end).
+- Uses SQLite as store (responses + response_frames). Derives deterministic key from request fields
+  (model, input, explicitly-included knobs).
+- Streaming: proxy forwards chunks to client immediately as upstream sends them
+  (does not buffer and send only at the end).
 - NDJSON/SSE frames are parsed and persisted in DB once stream completes successfully.
 - Non-streaming: proxy forwards request, waits for full JSON response, then persists in DB.
 - Proxy requires OPENAI_API_KEY in environment to talk to backend; API key is not needed to talk to frontend.
@@ -46,16 +55,19 @@ export OPENAI_API_BASE=http://127.0.0.1:8000
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 import hashlib
 import json
 import os
 from typing import Any
 
-import httpx
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
+import httpx
 
 from adgn.rspcache.responses_db import ResponsesDB
+
+HTTP_ERROR_MIN = 400
 
 APP = FastAPI(title="adgn-llm OpenAI Responses proxy (diskcache)")
 
@@ -91,6 +103,99 @@ def make_key_from_body(body: dict[str, Any]) -> str:
     return h.hexdigest()
 
 
+SSE_PREFIX = "data:"
+
+
+def _process_complete_lines(text_buffer: str, frames: list[dict]) -> str:
+    """Process complete newline-delimited lines from text_buffer and append JSON frames.
+
+    Returns the trailing partial line (may be empty).
+    """
+    if "\n" not in text_buffer:
+        return text_buffer
+    parts = text_buffer.split("\n")
+    for part in parts[:-1]:
+        line = part.strip()
+        if not line:
+            continue
+        content = (
+            line[len(SSE_PREFIX) :].lstrip() if line.startswith(SSE_PREFIX) else line
+        )
+        if content == "[DONE]":
+            # Sentinel; skip storing
+            continue
+        try:
+            obj = json.loads(content)
+        except Exception as e:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Non-JSON NDJSON frame: {content[:200]!r}",
+            ) from e
+        frames.append(obj)
+    return parts[-1]
+
+
+def _append_remaining_buffer(remaining: str, frames: list[dict]) -> None:
+    """Append the final trailing buffer as a JSON frame if present."""
+    remaining = remaining.strip()
+    if not remaining:
+        return
+    if remaining.startswith(SSE_PREFIX):
+        remaining = remaining[len(SSE_PREFIX) :].lstrip()
+    try:
+        obj = json.loads(remaining)
+    except Exception as e:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Non-JSON trailing NDJSON partial: {remaining[:200]!r}",
+        ) from e
+    frames.append(obj)
+
+
+async def _proxy_stream(
+    upstream_url: str,
+    headers: dict[str, str],
+    body: dict[str, Any],
+    key: str,
+) -> AsyncIterator[bytes]:
+    """Proxy upstream streaming response, yielding raw bytes and persisting frames."""
+    text_buffer = ""
+    frames: list[dict] = []
+    async with httpx.AsyncClient(timeout=None) as client:
+        try:
+            async with client.stream(
+                "POST", upstream_url, json=body, headers=headers
+            ) as resp:
+                if resp.status_code >= HTTP_ERROR_MIN:
+                    t = await resp.aread()
+                    raise HTTPException(
+                        status_code=502,
+                        detail=f"Upstream error: {t.decode(errors='ignore')} (status={resp.status_code})",
+                    )
+                async for chunk in resp.aiter_bytes():
+                    if not chunk:
+                        continue
+                    yield chunk
+                    text_buffer += chunk.decode("utf-8")
+                    text_buffer = _process_complete_lines(text_buffer, frames)
+            _append_remaining_buffer(text_buffer, frames)
+        finally:
+            try:
+                if frames:
+                    db = ResponsesDB()
+                    await db.init()
+                    try:
+                        await db.finalize_response(
+                            key,
+                            response_obj=None,
+                            summary_obj={"ndjson_frames": frames},
+                        )
+                    finally:
+                        await db.close()
+            except Exception:
+                print(f"WARNING: failed to write DB entry key={key} after streaming")
+
+
 @APP.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
@@ -110,7 +215,7 @@ async def responses_endpoint(
     try:
         body = await request.json()
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Invalid JSON body: {e}")
+        raise HTTPException(status_code=400, detail=f"Invalid JSON body: {e}") from e
 
     # allow explicit cache skip via header or payload
     header_skip = x_cache_skip in ("1", "true", "True")
@@ -120,7 +225,7 @@ async def responses_endpoint(
     try:
         key = make_key_from_body(body)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
     # Cache lookup (only for non-streaming; for streaming we still check to possibly short-circuit)
     is_stream = bool(body.get("stream"))
@@ -153,105 +258,8 @@ async def responses_endpoint(
 
     # If streaming requested, stream upstream and proxy chunks through while capturing
     if is_stream:
-
-        async def stream_generator():
-            # Text buffer accumulates decoded UTF-8 text across chunk boundaries
-            text_buffer = ""
-            frames: list[dict] = []
-            async with httpx.AsyncClient(timeout=None) as client:
-                try:
-                    async with client.stream(
-                        "POST",
-                        upstream_url,
-                        json=body,
-                        headers=headers,
-                    ) as resp:
-                        if resp.status_code >= 400:
-                            # read body and raise
-                            t = await resp.aread()
-                            raise HTTPException(
-                                status_code=502,
-                                detail=f"Upstream error: {t.decode(errors='ignore')} (status={resp.status_code})",
-                            )
-
-                        # iterate raw bytes and forward them to the client while parsing NDJSON/SSE-like lines
-                        async for chunk in resp.aiter_bytes():
-                            if not chunk:
-                                continue
-                            # Forward raw bytes to client immediately
-                            yield chunk
-
-                            # Maintain a UTF-8 decoded rolling buffer for line parsing
-                            chunk_text = chunk.decode("utf-8")
-                            text_buffer += chunk_text
-
-                            # Process complete lines; leave the last partial line in buffer
-                            if "\n" in text_buffer:
-                                parts = text_buffer.split("\n")
-                                for part in parts[:-1]:
-                                    line = part.strip()
-                                    if not line:
-                                        continue
-                                    # SSE-style: lines may be 'data: {...}'
-                                    if line.startswith("data:"):
-                                        content = line[len("data:") :].lstrip()
-                                    else:
-                                        content = line
-                                    if content == "[DONE]":
-                                        # sentinel; skip storing
-                                        continue
-                                    try:
-                                        obj = json.loads(content)
-                                    except Exception:
-                                        # Non-JSON frame encountered in NDJSON stream — abort
-                                        raise HTTPException(
-                                            status_code=502,
-                                            detail=f"Non-JSON NDJSON frame: {content[:200]!r}",
-                                        )
-                                    frames.append(obj)
-                                # last part is partial
-                                text_buffer = parts[-1]
-
-                        # After stream ends, process remaining buffer if any
-                        remaining = text_buffer.strip()
-                        if remaining:
-                            if remaining.startswith("data:"):
-                                remaining = remaining[len("data:") :].lstrip()
-                            try:
-                                obj = json.loads(remaining)
-                                frames.append(obj)
-                            except Exception:
-                                # Non-JSON trailing partial — abort
-                                raise HTTPException(
-                                    status_code=502,
-                                    detail=f"Non-JSON trailing NDJSON partial: {remaining[:200]!r}",
-                                )
-
-                except Exception as e:
-                    # upstream failure during streaming
-                    print(f"Upstream streaming error: {e}")
-                    raise
-                finally:
-                    # After stream completes, store parsed frames as NDJSON list
-                    try:
-                        if frames:
-                            db = ResponsesDB()
-                            await db.init()
-                            try:
-                                await db.finalize_response(
-                                    key,
-                                    response_obj=None,
-                                    summary_obj={"ndjson_frames": frames},
-                                )
-                            finally:
-                                await db.close()
-                    except Exception:
-                        print(
-                            f"WARNING: failed to write DB entry key={key} after streaming",
-                        )
-
         return StreamingResponse(
-            stream_generator(),
+            _proxy_stream(upstream_url, headers, body, key),
             media_type="text/event-stream",
             headers={"X-Cache-Hit": "0", "X-Cache-Key": key},
         )
@@ -261,15 +269,17 @@ async def responses_endpoint(
         try:
             resp = await client.post(upstream_url, json=body, headers=headers)
         except Exception as e:
-            raise HTTPException(status_code=502, detail=f"Upstream request failed: {e}")
+            raise HTTPException(
+                status_code=502, detail=f"Upstream request failed: {e}"
+            ) from e
 
     try:
         resp_json = resp.json()
-    except Exception:
+    except Exception as e:
         raise HTTPException(
             status_code=502,
             detail="Upstream returned non-JSON response",
-        )
+        ) from e
 
     # Store into SQLite DB (authoritative single store)
     try:

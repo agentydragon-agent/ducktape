@@ -7,8 +7,8 @@ Two main types:
 2. ActionSequenceGrader - Evaluates the sequence of actions/tools Claude used
 """
 
-import json
 from dataclasses import dataclass
+import json
 from pathlib import Path
 from typing import Any
 

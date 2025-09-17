@@ -1,5 +1,5 @@
-import subprocess
 from pathlib import Path
+import subprocess
 
 from ..test_utils import run_cli_sh_command
 

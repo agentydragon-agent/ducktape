@@ -1,13 +1,15 @@
 """Pre-commit autofix hook implementation."""
 
 import ast
+from dataclasses import dataclass
+from pathlib import Path
 import subprocess
 import textwrap
 import traceback
-from dataclasses import dataclass
-from pathlib import Path
 
 import git
+from platformdirs import user_state_dir
+
 from claude_hooks.actions import (
     PostToolAction,
     PostToolContinue,
@@ -18,7 +20,6 @@ from claude_hooks.config import AutofixerConfig
 from claude_hooks.inputs import HookContext, PostToolInput
 from claude_hooks.logging_context import get_current_invocation_id
 from claude_hooks.tool_models import EditInput, MultiEditInput, WriteInput
-from platformdirs import user_state_dir
 
 PRECOMMIT_CONFIG_FILE = ".pre-commit-config.yaml"
 

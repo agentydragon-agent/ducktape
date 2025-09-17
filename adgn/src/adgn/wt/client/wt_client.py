@@ -5,17 +5,17 @@ providing both low-level daemon communication and high-level status operations.
 """
 
 import asyncio
+from collections.abc import Callable
 import contextlib
+from dataclasses import dataclass, field
 import json
 import logging
 import os
+from pathlib import Path
 import subprocess
 import sys
-import uuid
-from collections.abc import Callable
-from dataclasses import dataclass, field
-from pathlib import Path
 from typing import TypeVar, cast
+import uuid
 
 import click
 import psutil
@@ -163,11 +163,11 @@ class WtClient:
                 error_message = handshake_data.get("error", "Unknown startup error")
                 raise RuntimeError(f"Daemon startup failed:\n{error_message}")
 
-            except asyncio.TimeoutError:
+            except TimeoutError as e:
                 timeout_secs = self.config.startup_timeout.total_seconds()
                 raise RuntimeError(
                     f"Daemon startup timed out after {timeout_secs:.1f} seconds",
-                )
+                ) from e
             except (OSError, RuntimeError, ValueError) as e:
                 diag = []
                 try:
@@ -314,6 +314,66 @@ class WtClient:
         untracked_files = ["<files present>"] if result.has_untracked_files else []
         return dirty_files, untracked_files
 
+    async def _read_jsonrpc_with_events(
+        self,
+        reader: asyncio.StreamReader,
+    ) -> tuple[dict | None, list[str], list[str]]:
+        """Read a mixed event/response stream; return (response_json, stdout, stderr)."""
+        hook_stdout: list[str] = []
+        hook_stderr: list[str] = []
+        response_json: dict | None = None
+        progress_cb = self._progress_callback
+        hook_cb = self._hook_output_callback  # type: ignore[assignment]
+        while True:
+            line = await reader.readline()
+            if not line:
+                break
+            text = line.decode().strip()
+            if not text:
+                continue
+            obj = json.loads(text)
+            ev = obj.get("event") if isinstance(obj, dict) else None
+            if ev == "hook_output":
+                hook_ev: HookOutputEvent = HookOutputEvent.model_validate(obj)
+                if callable(hook_cb):
+                    hook_cb(hook_ev)
+                (
+                    hook_stdout if hook_ev.stream.value == "stdout" else hook_stderr
+                ).append(hook_ev.data)
+                continue
+            if ev == "progress":
+                prog_ev: ProgressEvent = ProgressEvent.model_validate(obj)
+                if callable(progress_cb):
+                    progress_cb(prog_ev)
+                continue
+            response_json = obj
+            break
+        return response_json, hook_stdout, hook_stderr
+
+    def _validate_post_hook(self, post) -> None:
+        """Validate and surface post-creation hook outcome; raise RuntimeError on failure."""
+
+        def _echo_io() -> None:
+            out = "\n".join(s for s in [post.stdout, post.stderr] if s)
+            if out.strip():
+                click.echo(out)
+
+        if (ec := post.exit_code) not in (None, 0):
+            _echo_io()
+            raise RuntimeError(f"Post-creation script failed with exit code {ec}")
+        if err := post.error:
+            _echo_io()
+            if err == "timeout":
+                if (ts := post.timeout_secs) is not None:
+                    raise RuntimeError(
+                        f"Post-creation script timed out after {ts:.1f}s"
+                    )
+                raise RuntimeError("Post-creation script timed out")
+            raise RuntimeError(f"Post-creation script error: {err}")
+        if not post.ran:
+            _echo_io()
+            raise RuntimeError("Post-creation script did not run")
+
     async def create_worktree(
         self,
         name: str,
@@ -325,63 +385,33 @@ class WtClient:
         if not self.config.daemon_socket_path.exists():
             raise RuntimeError("Daemon socket not available")
 
-        # Create JSON-RPC request
         request_id = uuid.uuid4()
         params = WorktreeCreateParams(name=name, source_wtid=source_wtid)
         request = Request(
-            method="worktree_create",
-            params=params.model_dump(),
-            id=request_id,
+            method="worktree_create", params=params.model_dump(), id=request_id
         )
 
         try:
             reader, writer = await asyncio.open_unix_connection(
-                self.config.daemon_socket_path,
+                self.config.daemon_socket_path
             )
+            try:
+                # Send request
+                writer.write(request.model_dump_json().encode())
+                writer.write(b"\n")
+                await writer.drain()
 
-            # Send request
-            request_data = request.model_dump_json().encode()
-            writer.write(request_data)
-            writer.write(b"\n")
-            await writer.drain()
-
-            hook_stdout: list[str] = []
-            hook_stderr: list[str] = []
-            response_json = None
-
-            progress_cb = self._progress_callback
-            hook_cb = self._hook_output_callback  # type: ignore[assignment]
-            while True:
-                line = await reader.readline()
-                if not line:
-                    break
-                text = line.decode().strip()
-                # Try to parse as JSON object
-                obj = json.loads(text)
-                # Dispatch on event type if present
-                ev = obj.get("event") if isinstance(obj, dict) else None
-                if ev == "hook_output":
-                    hook_ev: HookOutputEvent = HookOutputEvent.model_validate(obj)
-                    if callable(hook_cb):
-                        hook_cb(hook_ev)
-                    if hook_ev.stream.value == "stdout":
-                        hook_stdout.append(hook_ev.data)
-                    else:
-                        hook_stderr.append(hook_ev.data)
-                    continue
-                if ev == "progress":
-                    prog_ev: ProgressEvent = ProgressEvent.model_validate(obj)
-                    if callable(progress_cb):
-                        progress_cb(prog_ev)
-                    continue
-                # Otherwise treat as final response
-                response_json = obj
-                break
-            if not response_json:
-                raise RuntimeError("No response from daemon for worktree_create")
-
-            writer.close()
-            await writer.wait_closed()
+                (
+                    response_json,
+                    _hook_stdout,
+                    _hook_stderr,
+                ) = await self._read_jsonrpc_with_events(reader)
+                if not response_json:
+                    raise RuntimeError("No response from daemon for worktree_create")
+            finally:
+                writer.close()
+                with contextlib.suppress(Exception):
+                    await writer.wait_closed()
 
             try:
                 if "error" in response_json:
@@ -390,47 +420,20 @@ class WtClient:
                 success_response = Response.model_validate(response_json)
                 result = WorktreeCreateResult.model_validate(success_response.result)
                 if post := result.post_hook:
-
-                    def _echo_io() -> None:
-                        out = "\n".join(s for s in [post.stdout, post.stderr] if s)
-                        if out.strip():
-                            click.echo(out)
-
-                    # Non-zero exit code => fail
-                    if (ec := post.exit_code) not in (None, 0):
-                        _echo_io()
-                        raise RuntimeError(
-                            f"Post-creation script failed with exit code {ec}",
-                        )
-                    # Execution error surfaced by server (e.g. script disappeared)
-                    if err := post.error:
-                        _echo_io()
-                        if err == "timeout":
-                            if (ts := post.timeout_secs) is not None:
-                                raise RuntimeError(
-                                    f"Post-creation script timed out after {ts:.1f}s",
-                                )
-                            raise RuntimeError("Post-creation script timed out")
-                        raise RuntimeError(
-                            f"Post-creation script error: {err}",
-                        )
-                    # Ran flag false (e.g. not_found/not_file in legacy path) => fail
-                    if not post.ran:
-                        _echo_io()
-                        raise RuntimeError("Post-creation script did not run")
+                    self._validate_post_hook(post)
                 return result
             except (json.JSONDecodeError, ValidationError, TypeError, ValueError) as e:
                 logger.exception("Failed to parse daemon worktree_create response")
                 raise RuntimeError(
-                    f"Failed to parse daemon worktree_create response: {e}",
-                )
+                    "Failed to parse daemon worktree_create response"
+                ) from e
 
-        except (ConnectionError, FileNotFoundError, OSError, asyncio.TimeoutError) as e:
+        except (TimeoutError, ConnectionError, FileNotFoundError, OSError) as e:
             if self.verbose:
                 logger.exception(
-                    "Failed to communicate with daemon for worktree_create",
+                    "Failed to communicate with daemon for worktree_create"
                 )
-            raise RuntimeError(f"Daemon worktree_create communication failed: {e}")
+            raise RuntimeError("Daemon worktree_create communication failed") from e
 
     async def delete_worktree(
         self,
@@ -498,17 +501,17 @@ class WtClient:
             resp = Response.model_validate(obj)
             return result_adapter.validate_python(resp.result)
         except (
+            TimeoutError,
             ConnectionError,
             FileNotFoundError,
             OSError,
-            asyncio.TimeoutError,
             json.JSONDecodeError,
             ValidationError,
         ) as e:
             logger.error("RPC %s failed: %s", method, e)
             if isinstance(e, RpcError):
-                raise RuntimeError(f"RPC {method} failed ({e.code}): {e}")
-            raise RuntimeError(f"RPC {method} failed: {e}")
+                raise RuntimeError(f"RPC {method} failed ({e.code}): {e}") from e
+            raise RuntimeError(f"RPC {method} failed: {e}") from e
 
     async def resolve_path(self, params: WorktreeResolvePathParams) -> str:
         result: WorktreeResolvePathResult = await self._rpc(

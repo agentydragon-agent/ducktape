@@ -5,7 +5,7 @@ import sys
 
 # Pass arguments to rcup, check it didn't ask for confirmation.
 # Run rcup with a pipe to capture output
-args = ["rcup"] + sys.argv[1:]
+args = ["rcup", *sys.argv[1:]]
 proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
 
 # Give it a moment to either complete or start prompting

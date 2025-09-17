@@ -2,7 +2,9 @@
 
 from pathlib import Path
 
+from hamcrest import assert_that, contains_string
 import pytest
+
 from claude_hooks.actions import PostToolFeedbackToClaude
 from claude_hooks.config import AutofixerConfig
 from claude_hooks.precommit_autofix import (
@@ -11,7 +13,6 @@ from claude_hooks.precommit_autofix import (
     extract_file_path,
 )
 from claude_hooks.tool_models import EditInput, WriteInput
-from hamcrest import assert_that, contains_string
 
 
 @pytest.mark.parametrize(

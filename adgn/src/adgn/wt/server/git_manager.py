@@ -1,12 +1,12 @@
 """Unified Git operations manager combining all git functionality."""
 
+from dataclasses import dataclass
+from datetime import UTC, datetime
 import logging
 import os
+from pathlib import Path
 import re
 import subprocess
-from dataclasses import dataclass
-from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any, cast
 
 import pygit2
@@ -120,7 +120,7 @@ class GitManager:
             author=commit.author.name,
             date=datetime.fromtimestamp(
                 commit.commit_time,
-                timezone.utc,
+                UTC,
             ).isoformat(),
         )
 

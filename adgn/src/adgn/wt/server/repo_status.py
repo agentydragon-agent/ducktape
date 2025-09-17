@@ -39,8 +39,10 @@ class RepoStatus:
         # - We call ahead_behind on the main repo because worktrees share the object database; this guarantees
         #   both OIDs are resolvable even if the worktree's ref namespace is sparse.
         #
-        # TODO(mpokorny): Add focused tests for detached HEAD handling (worktree repo): ensure zero ahead/behind and no crashes
-        # TODO(mpokorny): Add tests for missing upstream refs (in worktree and/or main) verifying fallback to main and zero result
+        # TODO(mpokorny): Add focused tests for detached HEAD handling (worktree repo):
+        # ensure zero ahead/behind and no crashes
+        # TODO(mpokorny): Add tests for missing upstream refs (in worktree and/or main) verifying
+        # fallback to main and zero result
         ahead_behind = (0, 0)
         if (
             worktree_path != self.config.main_repo

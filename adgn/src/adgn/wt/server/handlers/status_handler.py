@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import asyncio
-import logging
-import time
 from datetime import datetime, timedelta
+import logging
 from pathlib import Path
+import time
 
 from ...shared.configuration import Configuration
 from ...shared.protocol import (
@@ -39,7 +39,7 @@ _bg_tasks: set[asyncio.Task] = set()
 
 
 @rpc.method("get_status", params=StatusParams)
-async def get_status(  # noqa: PLR0913
+async def get_status(
     status: StatusService,
     gitstat: GitstatusdService,
     prs: PRServiceProvider,
@@ -160,7 +160,7 @@ async def get_status(  # noqa: PLR0913
                 if gs_client.is_running
                 else GitstatusdState.STOPPED
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             single_time = (time.time() - single_start) * 1000
             state = GitstatusdState.STARTING
             dirty_count, untracked_count = 0, 0

@@ -1,8 +1,8 @@
 import asyncio
 import os
+from pathlib import Path
 import signal
 import sys
-from pathlib import Path
 
 import click
 import psutil

@@ -2,8 +2,8 @@
 
 import json
 
-import tiktoken
 from claude_optimizer.core.truncation_utils import TruncationManager
+import tiktoken
 
 
 class TestFileTruncation:

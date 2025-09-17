@@ -1,9 +1,9 @@
 import os
+from pathlib import Path
 import re
 import shlex
 import subprocess
 import tempfile
-from pathlib import Path
 from textwrap import dedent
 
 from inventree.api import InvenTreeAPI

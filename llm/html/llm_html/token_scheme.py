@@ -1,9 +1,9 @@
 """Token generation and verification scheme."""
 
-import hmac
-import math
 from datetime import datetime
 from hashlib import blake2b, sha256
+import hmac
+import math
 
 ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 

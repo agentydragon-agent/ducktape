@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import json
 from collections import defaultdict
 from collections.abc import Mapping
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+import json
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +14,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from .constants import LANGUAGE_KEY_ID, MEDIA_KEY_ID, SUPERTAG_KEY_ID
 from .query_core import get_tuple_value
 from .types import NodeId
+
+MIN_TUPLE_CHILDREN = 2
 
 
 class Props(BaseModel):
@@ -39,7 +41,7 @@ class Props(BaseModel):
     def created_dt(self) -> datetime | None:
         if self.created is None:
             return None
-        return datetime.fromtimestamp(self.created / 1_000, tz=timezone.utc)
+        return datetime.fromtimestamp(self.created / 1_000, tz=UTC)
 
     @property
     def is_trash(self) -> bool:
@@ -177,7 +179,7 @@ class NodeStore(Mapping[NodeId, BaseNode]):
         for n in self.values():
             if not (
                 isinstance(n, TupleNode)
-                and len(n.children) >= 2
+                and len(n.children) >= MIN_TUPLE_CHILDREN
                 and n.props.owner_id
                 and (key_node := self.get(n.children[0]))
                 and key_node.id == SUPERTAG_KEY_ID

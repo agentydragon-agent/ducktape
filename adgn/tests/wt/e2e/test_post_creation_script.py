@@ -11,7 +11,14 @@ from ..test_utils import run_cli_command
 def real_env_with_post_script(real_temp_repo, config_factory, tmp_path):
     script = tmp_path / "post_create.sh"
     script.write_text(
-        '#!/usr/bin/env bash\nset -euo pipefail\nwt=""\nfor a in "$@"; do case "$a" in --worktree_root=*) wt="${a#*=}";; esac; done\nif [[ -z "$wt" ]]; then echo "missing --worktree_root" >&2; exit 2; fi\ntouch "$wt/.post_create_ran"\n',
+        (
+            "#!/usr/bin/env bash\n"
+            "set -euo pipefail\n"
+            'wt=""\n'
+            'for a in "$@"; do case "$a" in --worktree_root=*) wt="${a#*=}";; esac; done\n'
+            'if [[ -z "$wt" ]]; then echo "missing --worktree_root" >&2; exit 2; fi\n'
+            'touch "$wt/.post_create_ran"\n'
+        ),
     )
     script.chmod(0o755)
     factory = config_factory(real_temp_repo)

@@ -1,9 +1,9 @@
 """Shared test utilities to avoid duplication across test files."""
 
-import os
-import subprocess
 from datetime import timedelta
+import os
 from pathlib import Path
+import subprocess
 
 
 def add_project_root_to_env(env: dict) -> None:

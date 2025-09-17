@@ -4,10 +4,10 @@ This test runs everything as subprocess calls, NOT through pytest fixtures or Py
 """
 
 import os
+from pathlib import Path
 import shutil
 import tempfile
 import time
-from pathlib import Path
 
 import pytest
 

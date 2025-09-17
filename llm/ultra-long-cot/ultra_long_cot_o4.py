@@ -7,14 +7,14 @@ Ultra Long 2-Level Chain of Thought for o4-mini
 - Tracks reasoning vs output tokens separately
 """
 
+from datetime import datetime
 import json
 import os
-import sys
-from datetime import datetime
 from pathlib import Path
+import sys
 
-import tiktoken
 from openai import OpenAI
+import tiktoken
 
 # Configuration for o4-mini
 MODEL = "o4-mini-2025-04-16"  # Use actual o4-mini when available

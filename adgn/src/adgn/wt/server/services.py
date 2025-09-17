@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 from collections.abc import Awaitable, Callable, Iterable
+import contextlib
 from datetime import datetime
 from pathlib import Path
 
@@ -14,8 +14,7 @@ from ..shared.protocol import (
     PRInfoOk,
     WorktreeID,
 )
-from .git_manager import GitManager
-from .git_manager import WorktreeInfo as GMWorktreeInfo
+from .git_manager import GitManager, WorktreeInfo as GMWorktreeInfo
 from .gitstatus_refresh import DebouncedGitstatusRefresh
 from .gitstatusd_listener import GitstatusdListener
 from .pr_service import PRCacheError, PRCacheOk, PRService

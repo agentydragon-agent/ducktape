@@ -14,6 +14,7 @@ Notes about hook behavior observed during testing:
 from pathlib import Path
 
 import pytest
+
 from claude_hooks.tool_models import (
     BashInput,
     GlobInput,

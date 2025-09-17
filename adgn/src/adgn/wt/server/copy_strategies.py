@@ -1,12 +1,12 @@
 """Copy strategies for worktree operations."""
 
+from abc import ABC, abstractmethod
+from enum import StrEnum
+from pathlib import Path
 import shutil
 import subprocess
 import sys
 import tempfile
-from abc import ABC, abstractmethod
-from enum import StrEnum
-from pathlib import Path
 
 from ..shared.configuration import CowMethod
 

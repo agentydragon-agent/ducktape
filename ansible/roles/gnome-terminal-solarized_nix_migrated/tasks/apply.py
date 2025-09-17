@@ -7,9 +7,9 @@ Requires:
 import argparse
 import json
 import logging
+from pathlib import Path
 import sys
 import uuid
-from pathlib import Path
 
 from gi.repository import Gio
 

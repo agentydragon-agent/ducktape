@@ -11,17 +11,17 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+from datetime import datetime, timedelta
 import json
 import logging
 import os
+from pathlib import Path
 import shutil
 import signal
 import subprocess
 import time
-import uuid
-from datetime import datetime, timedelta
-from pathlib import Path
 from typing import Any
+import uuid
 
 from ..shared.configuration import Configuration, load_config
 from ..shared.protocol import (
@@ -43,10 +43,12 @@ from .gitstatus_refresh import DebouncedGitstatusRefresh
 from .gitstatusd_listener import GitstatusdListener
 
 # Force import of handlers to register RPC methods
-from .handlers import path_handler  # noqa: F401
-from .handlers import pr_handler  # noqa: F401
-from .handlers import status_handler  # noqa: F401
-from .handlers import worktree_handler  # noqa: F401
+from .handlers import (
+    path_handler,  # noqa: F401
+    pr_handler,  # noqa: F401
+    status_handler,  # noqa: F401
+    worktree_handler,  # noqa: F401
+)
 from .pr_service import PRService
 from .repo_status import RepoStatus
 from .rpc import rpc
@@ -292,54 +294,56 @@ class WtDaemon:
         Returns:
             tuple: (gitstatusd_path, error_message) where error_message is None on success
         """
-        # Use config value if set
+        gitstatusd_path: str | None = None
+        error: str | None = None
+
         if self.config.gitstatusd_path:
-            gitstatusd_path = self.config.gitstatusd_path
+            # Prefer explicit configuration; do not fall back to PATH when set
+            path = self.config.gitstatusd_path
             try:
                 result = subprocess.run(
-                    [gitstatusd_path, "--version"],
+                    [path, "--version"],
                     check=False,
                     capture_output=True,
                     timeout=2,
                 )
                 if result.returncode == 0:
-                    logger.info("Using configured gitstatusd at: %s", gitstatusd_path)
-                    return str(gitstatusd_path), None
-                return (
-                    None,
-                    f"Configured gitstatusd path not working: {gitstatusd_path} (exit code {result.returncode})",
-                )
+                    logger.info("Using configured gitstatusd at: %s", path)
+                    gitstatusd_path = str(path)
+                else:
+                    error = f"Configured gitstatusd path not working: {path} (exit code {result.returncode})"
             except (subprocess.TimeoutExpired, FileNotFoundError, PermissionError) as e:
-                return (
-                    None,
-                    f"Configured gitstatusd path failed: {gitstatusd_path} ({e})",
+                error = f"Configured gitstatusd path failed: {path} ({e})"
+        else:
+            # Only check PATH - no hardcoded locations
+            cmd = "gitstatusd"
+            if shutil.which(cmd):
+                try:
+                    result = subprocess.run(
+                        [cmd, "--version"],
+                        check=False,
+                        capture_output=True,
+                        timeout=2,
+                    )
+                    if result.returncode == 0:
+                        logger.info("Found gitstatusd on PATH: %s", cmd)
+                        gitstatusd_path = cmd
+                    else:
+                        error = f"gitstatusd found on PATH but not working (exit code {result.returncode})"
+                except (
+                    subprocess.TimeoutExpired,
+                    FileNotFoundError,
+                    PermissionError,
+                ) as e:
+                    error = f"gitstatusd found on PATH but failed to execute: {e}"
+            else:
+                error = (
+                    "gitstatusd binary not found. Please install gitstatusd and ensure it's available on PATH, "
+                    "or configure gitstatusd_path in your config file. "
+                    "Common installation: brew install romkatv/gitstatus/gitstatus"
                 )
 
-        # Only check PATH - no hardcoded locations
-        gitstatusd_cmd = "gitstatusd"
-        if shutil.which(gitstatusd_cmd):
-            try:
-                result = subprocess.run(
-                    [gitstatusd_cmd, "--version"],
-                    check=False,
-                    capture_output=True,
-                    timeout=2,
-                )
-                if result.returncode == 0:
-                    logger.info("Found gitstatusd on PATH: %s", gitstatusd_cmd)
-                    return gitstatusd_cmd, None
-                return (
-                    None,
-                    f"gitstatusd found on PATH but not working (exit code {result.returncode})",
-                )
-            except (subprocess.TimeoutExpired, FileNotFoundError, PermissionError) as e:
-                return None, f"gitstatusd found on PATH but failed to execute: {e}"
-
-        return None, (
-            "gitstatusd binary not found. Please install gitstatusd and ensure it's available on PATH, "
-            "or configure gitstatusd_path in your config file. "
-            "Common installation: brew install romkatv/gitstatus/gitstatus"
-        )
+        return gitstatusd_path, error
 
     def _find_gitstatusd(self) -> str | None:
         gitstatusd_path, error = self._validate_gitstatusd()

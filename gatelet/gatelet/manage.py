@@ -5,9 +5,9 @@ from __future__ import annotations
 import argparse
 import asyncio
 import getpass
-import tomllib
 from collections.abc import Iterable
 
+import tomllib
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from tomlkit import dumps

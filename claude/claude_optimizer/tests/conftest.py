@@ -1,11 +1,11 @@
 """Pytest configuration and shared fixtures."""
 
-import tempfile
 from collections.abc import Generator
 from pathlib import Path
+import tempfile
 
-import pytest
 from claude_optimizer.config import OptimizerConfig
+import pytest
 
 
 @pytest.fixture

@@ -7,6 +7,7 @@ exercising the full daemon/CLI pipeline.
 
 import os
 import re
+import time
 
 import pytest
 
@@ -79,7 +80,6 @@ class Github:
     assert out2.returncode == 0
 
     # Poll until output shows #123 and open and +10/-2
-    import time
 
     deadline = time.time() + 12.0
     last = ""

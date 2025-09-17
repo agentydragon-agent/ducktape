@@ -2,13 +2,13 @@ import datetime
 import json
 import os.path
 
-import openai
-import pandas as pd
-import requests
 from absl import app, flags
+import openai
 
 # needs: pip install plotly sklearn
 from openai.embeddings_utils import cosine_similarity
+import pandas as pd
+import requests
 
 _ROOT = flags.DEFINE_string("root", "http://localhost:37840", "ETAPI root URL")
 _TOKEN = flags.DEFINE_string("token", None, "ETAPI token")
@@ -168,7 +168,7 @@ def index():
                     continue
 
                 print(attribute)
-                raise
+                raise RuntimeError(f"Unsupported attribute: {attribute!r}")
 
             if note_content:
                 content += "\n" + note_content

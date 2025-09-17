@@ -1,8 +1,8 @@
 import re
 
+from absl import app, flags
 import feedparser
 import requests
-from absl import app, flags
 from tqdm.auto import tqdm
 
 _ROOT = flags.DEFINE_string("root", "http://localhost:37840", "ETAPI root URL")

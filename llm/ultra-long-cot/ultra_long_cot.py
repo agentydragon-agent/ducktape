@@ -8,8 +8,8 @@ Ultra Long 2-Level Chain of Thought
 
 import os
 
-import tiktoken
 from openai import OpenAI
+import tiktoken
 
 # Configuration
 MODEL = "gpt-4o-mini"  # Change to "o4-mini" when available

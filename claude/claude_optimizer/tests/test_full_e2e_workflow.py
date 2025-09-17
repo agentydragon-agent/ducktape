@@ -1,11 +1,9 @@
 """Full end-to-end test with mocked OpenAI and Claude SDK APIs."""
 
-import json
 from datetime import datetime
+import json
 from unittest.mock import Mock
 
-import pytest
-import yaml
 from claude_optimizer.core.yaml_loader import YamlLoader
 from claude_optimizer.database.models import (
     GraderFacetResult,
@@ -21,6 +19,8 @@ from claude_optimizer.database.models import (
     SystemPrompt,
     create_database,
 )
+import pytest
+import yaml
 
 
 @pytest.fixture

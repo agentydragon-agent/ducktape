@@ -24,13 +24,11 @@ from gatelet.server.models import (  # type: ignore[import]
 @pytest.fixture(autouse=True)
 async def _stub_data(monkeypatch):
     async def _states():
-        import datetime
-
         return [
             {
                 "entity_id": "sensor.test",
                 "state": "on",
-                "last_changed": datetime.datetime(2020, 1, 1),
+                "last_changed": datetime(2020, 1, 1),
             },
         ]
 
@@ -68,7 +66,8 @@ async def test_start_challenge_creates_nonce(
         .scalars()
         .first()
     )
-    assert nonce and nonce.is_valid
+    assert nonce is not None
+    assert nonce.is_valid
 
 
 @pytest.mark.asyncio

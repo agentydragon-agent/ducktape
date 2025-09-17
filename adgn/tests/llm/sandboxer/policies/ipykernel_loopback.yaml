@@ -1,0 +1,31 @@
+# Reference policy for launching ipykernel in loopback-only mode via sandboxer
+# IMPORTANT: Do NOT widen sandboxer.py defaults. Iterate by editing this YAML only.
+# Start broad to converge, then narrow iteratively based on denies/logs.
+# Keep changes minimal and documented inline.
+
+env:
+  set:
+    HOME: "/Users/mpokorny/code/ducktape/adgn/examples/mcp/sandboxed_jupyter_mcp"
+    TMPDIR: "/Users/mpokorny/code/ducktape/adgn/examples/mcp/sandboxed_jupyter_mcp/tmp"
+    TMP: "/Users/mpokorny/code/ducktape/adgn/examples/mcp/sandboxed_jupyter_mcp/tmp"
+    TEMP: "/Users/mpokorny/code/ducktape/adgn/examples/mcp/sandboxed_jupyter_mcp/tmp"
+    MPLCONFIGDIR: "/Users/mpokorny/code/ducktape/adgn/examples/mcp/sandboxed_jupyter_mcp/mpl"
+    PYTHONPYCACHEPREFIX: "/Users/mpokorny/code/ducktape/adgn/examples/mcp/sandboxed_jupyter_mcp/pycache"
+    PYTHONUNBUFFERED: "1"
+  passthrough: []
+fs:
+  # TEMPORARILY BROAD for convergence; we will narrow to specific venv/stdlib/site-packages
+  read_paths:
+    - "/"
+  # Kernel writes should be constrained to workspace/run_root (when used with wrapper)
+  write_paths:
+    - "/Users/mpokorny/code/ducktape/adgn/examples/mcp/sandboxed_jupyter_mcp/ws"
+    - "/Users/mpokorny/code/ducktape/adgn/examples/mcp/sandboxed_jupyter_mcp"
+net:
+  # Kernel and Jupyter communicate over loopback only
+  mode: loopback
+platform:
+  trace: false
+  seatbelt:
+    extra_allow:
+      file_read_extra: []

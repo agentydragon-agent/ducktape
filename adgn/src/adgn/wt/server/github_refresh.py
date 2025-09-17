@@ -1,7 +1,7 @@
 import asyncio
 import logging
-import time
 from pathlib import Path
+import time
 
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer

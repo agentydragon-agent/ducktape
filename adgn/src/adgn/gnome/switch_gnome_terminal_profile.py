@@ -9,8 +9,8 @@ import uuid
 from uuid import UUID
 from xml.etree import ElementTree
 
-import dbus
 from absl import app, flags, logging
+import dbus
 from gi.repository import Gio
 
 _PROFILE = flags.DEFINE_string(

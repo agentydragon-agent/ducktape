@@ -90,3 +90,58 @@ Quick references
   - direnv exec adgn pytest tests/wt/integration/test_cli_integration.py
 - Lint/format: direnv exec adgn ruff check . --fix; direnv exec adgn ruff format .
 - Install GNOME extras: direnv exec adgn python -m pip install -e '.[gnome]'
+
+## LLM (adgn.llm) quickstart and module map
+
+This section documents the LLM toolkit that was migrated from llm/adgn_llm into the adgn package under src/adgn/llm.
+
+Environment
+- Use the same adgn direnv/devenv. No separate uv env is required.
+- OPENAI_API_KEY and any provider credentials should be exported before running tools/tests.
+
+Core CLIs (installed via adgn [project.scripts])
+- adgn-llm-edit → adgn.llm.llm_edit:app
+- adgn-sysrw → adgn.llm.sysrw.cli:app
+- adgn-properties → adgn.llm.properties.cli:main (and adgn-properties2 → adgn.llm.properties.cli_app.main:app)
+- git-commit-ai → adgn.llm.git_commit_ai.cli:main
+- sandbox-jupyter-mcp → adgn.llm.mcp.sandboxed_jupyter_mcp.wrapper:main
+- adgn-sandboxer, adgn-mcp-* as needed by workflows
+
+Specimen inspection (properties)
+- Schema (Pydantic source of truth):
+  - @src/adgn/llm/properties/models/specimen.py
+  - @src/adgn/llm/properties/models/issue.py
+- Loader/hydration: @src/adgn/llm/properties/specimen_registry.py
+- Example: adgn-properties specimen-shell <specimen-id>
+
+Testing
+- LLM tests live under repo-root: adgn/tests/llm/** (mirrors src/adgn/llm/**)
+- Typical invocations:
+  - direnv exec adgn pytest -q -m "not live_llm"
+  - direnv exec adgn pytest -q -m "not live_llm" -k "not sandboxed_jupyter_mcp"
+
+Quick usage examples
+- System rewriter (Node required for apply step):
+  - adgn-sysrw run <path-to-template>
+  - adgn-sysrw extract --source ccr | crush | …
+  - adgn-sysrw compare <runs/ts>
+- LLM edit CLI:
+  - adgn-llm-edit --help
+- Properties search:
+  - adgn-properties find /path/to/repo "all files under internal/app/**"
+
+High-level module map
+- adgn.llm.sysrw — system prompt rewrite/eval
+- adgn.llm.llm_edit — local code/text edit helper
+- adgn.llm.properties — property definitions + CLI, data under src/adgn/llm/properties/specimens/** and prompts/**
+- adgn.llm.inop — instruction optimizer (runners/engine)
+- adgn.llm.mcp — MCP utilities/launchers (e.g., sandboxed Jupyter MCP)
+- adgn.llm.mini_codex — OpenAI client helpers and agent loop
+
+Notes
+- Test/specimen data in src/adgn/llm/properties/specimens/** are excluded from linting/test discovery where configured.
+- The system rewriter’s Node script validates inputs and fails fast if Node or required helpers are missing.
+
+@instructions/jsonnet_authoring.md
+@instructions/fastmcp_pydantic.md
+@instructions/fastmcp_exceptions.md

@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, Field, validator
+import toml
 
 logger = logging.getLogger(__name__)
 
@@ -167,8 +168,6 @@ class Settings(BaseModel):
     def from_file(cls, path: Path):
         """Load settings from file at path."""
         logger.info(f"Loading settings from {path.absolute()}")
-        import toml
-
         with open(path) as f:
             config_dict = toml.load(f)
         return cls.parse_obj(config_dict)

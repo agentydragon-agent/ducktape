@@ -9,12 +9,12 @@ Handles HTML content found in Tana JSON exports including:
 
 from __future__ import annotations
 
-import html
-import json
-import re
 from collections.abc import Callable
+import html
 from html.parser import HTMLParser
 from io import StringIO
+import json
+import re
 from typing import Any
 
 from .types import NodeId

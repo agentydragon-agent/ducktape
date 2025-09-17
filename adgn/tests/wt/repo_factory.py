@@ -1,7 +1,7 @@
 """Git repository factory to eliminate fixture duplication."""
 
-import subprocess
 from pathlib import Path
+import subprocess
 
 import pygit2
 

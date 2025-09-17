@@ -12,14 +12,17 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 from pathlib import Path
+import sys
 from typing import Any
 
 from .convert import _DOC_CLASS, RenderContext, UnknownNode
 from .tana_lib import SUPERTAG_KEY_ID, BaseNode, NodeStore, TupleNode
 from .tana_lib.supertags import attach_supertag_property
 from .tana_lib.types import NodeId
+
+MIN_TUPLE_CHILDREN = 2
+PRETTY_PRINT_LIMIT = 10
 
 # Constants from convert.py
 _SUPERTAG_KEY_ID = NodeId(SUPERTAG_KEY_ID)
@@ -86,7 +89,7 @@ def collect_supertag_dependencies(store: NodeStore, node_ids: set[str]) -> set[s
             child = store[NodeId(child_id)]
             if (
                 isinstance(child, TupleNode)
-                and len(child.children) >= 2
+                and len(child.children) >= MIN_TUPLE_CHILDREN
                 and child.children[0] == _SUPERTAG_KEY_ID
             ):
                 # This tuple assigns supertags
@@ -280,7 +283,7 @@ def main():
 
     # Show first few node names if available
     node_names = []
-    for node_id in sorted(touched_nodes)[:10]:
+    for node_id in sorted(touched_nodes)[:PRETTY_PRINT_LIMIT]:
         node = tracking_store.get(node_id)
         if node and node.name:
             node_names.append(f"  - {node.name[:50]}... ({node_id})")
@@ -288,8 +291,8 @@ def main():
             node_names.append(f"  - <unnamed> ({node_id})")
 
     print("\n".join(node_names))
-    if len(touched_nodes) > 10:
-        print(f"  ... and {len(touched_nodes) - 10} more nodes")
+    if len(touched_nodes) > PRETTY_PRINT_LIMIT:
+        print(f"  ... and {len(touched_nodes) - PRETTY_PRINT_LIMIT} more nodes")
 
     return 0
 

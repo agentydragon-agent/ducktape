@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 from collections.abc import Awaitable, Callable
 from datetime import datetime
 from inspect import signature
+import logging
 from typing import Any, Protocol, TypeVar, get_origin, get_type_hints
 
 from punq import Container
@@ -74,7 +74,7 @@ class RpcRegistry:
         ] = {}
         self._stream_methods: set[str] = set()
 
-    def _build_args(  # noqa: PLR0913
+    def _build_args(
         self,
         fn,
         *,
@@ -203,7 +203,8 @@ class RpcRegistry:
 
     def method(self, name: str, *, params: type[ParamsT] | None = None):
         def deco(fn: Callable[..., Awaitable[Any]]):
-            # Allow DI-driven signatures; if params_model is provided, function must accept a matching params type somewhere
+            # Allow DI-driven signatures; if params_model is provided,
+            # function must accept a matching params type somewhere
             self._wrap_method(name, params, fn)
             return fn
 

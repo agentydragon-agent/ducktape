@@ -19,10 +19,10 @@ import contextlib
 import importlib.util
 import io
 import os
+from pathlib import Path
 import shutil
 import subprocess
 import tempfile
-from pathlib import Path
 
 import pytest
 
@@ -162,7 +162,7 @@ wt -c teleport-test
 create_exit=$?
 
 pwd_before=$(pwd)
-wt teleport-test  
+wt teleport-test
 nav_exit=$?
 pwd_after=$(pwd)
 

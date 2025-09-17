@@ -9,13 +9,13 @@ See: https://github.com/romkatv/gitstatus for full protocol specification.
 
 import asyncio
 import contextlib
+from dataclasses import dataclass
+from datetime import datetime
+from enum import StrEnum
 import logging
 import shutil
 import subprocess
 import uuid
-from dataclasses import dataclass
-from datetime import datetime
-from enum import StrEnum
 
 logger = logging.getLogger(__name__)
 
@@ -138,6 +138,9 @@ class GitStatusdResponse:
         return bool(self.commits_behind_upstream)
 
 
+SHA_HEX_LEN = 40
+
+
 class GitStatusdProtocol:
     """GitStatusd protocol handler with proper type checking and validation."""
 
@@ -179,7 +182,9 @@ class GitStatusdProtocol:
             try:
                 is_git_repository = int(fields[1]) == 1
             except (ValueError, IndexError) as e:
-                raise GitStatusdValidationError(f"Invalid git repository flag: {e}")
+                raise GitStatusdValidationError(
+                    f"Invalid git repository flag: {e}"
+                ) from e
 
             # If not a git repository, return minimal response
             if not is_git_repository:
@@ -268,7 +273,7 @@ class GitStatusdProtocol:
                 raise GitStatusdValidationError(f"Required field {index} is empty")
             return value
         except IndexError:
-            raise GitStatusdValidationError(f"Missing required field {index}")
+            raise GitStatusdValidationError(f"Missing required field {index}") from None
 
     @staticmethod
     def _safe_get_optional_string(fields: list[str], index: int) -> str | None:
@@ -285,7 +290,9 @@ class GitStatusdProtocol:
         try:
             return int(value)
         except ValueError as e:
-            raise GitStatusdValidationError(f"Invalid integer in field {index}: {e}")
+            raise GitStatusdValidationError(
+                f"Invalid integer in field {index}: {e}"
+            ) from e
 
     @staticmethod
     def _safe_get_commit_hash(fields: list[str], index: int) -> str | None:
@@ -295,7 +302,9 @@ class GitStatusdProtocol:
             return None
 
         # Validate commit hash format (40 hex characters)
-        if len(value) != 40 or not all(c in "0123456789abcdef" for c in value.lower()):
+        if len(value) != SHA_HEX_LEN or not all(
+            c in "0123456789abcdef" for c in value.lower()
+        ):
             raise GitStatusdValidationError(f"Invalid commit hash format: {value}")
 
         return value
@@ -359,8 +368,7 @@ def find_gitstatusd(config) -> tuple[str | None, str | None]:
             if result.returncode == 0:
                 return gitstatusd_path, None
             return None, (
-                f"Configured gitstatusd path not working: {gitstatusd_path} "
-                f"(exit code {result.returncode})"
+                f"Configured gitstatusd path not working: {gitstatusd_path} (exit code {result.returncode})"
             )
         except (subprocess.TimeoutExpired, FileNotFoundError, PermissionError) as e:
             return None, f"Configured gitstatusd path failed: {gitstatusd_path} ({e})"
@@ -437,7 +445,7 @@ class GitstatusdListener:
         try:
             self.process.terminate()
             await asyncio.wait_for(self.process.wait(), timeout=5.0)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             self.process.kill()
             await self.process.wait()
         self.process = None

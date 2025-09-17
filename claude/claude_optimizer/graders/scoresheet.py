@@ -5,11 +5,11 @@ Abstract interface for grader scoresheets that evaluate CLAUDE.md behavior.
 Each scoresheet defines a specific behavioral requirement and how to test it.
 """
 
-import datetime
-import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+import datetime
 from typing import Any
+import uuid
 
 
 @dataclass

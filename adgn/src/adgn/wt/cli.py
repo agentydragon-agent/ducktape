@@ -1,6 +1,7 @@
 """Thin CLI layer - just argument parsing and handler coordination."""
 
 import asyncio
+from collections.abc import Awaitable, Callable
 import inspect
 import logging
 import sys
@@ -25,6 +26,8 @@ from .client.wt_client import WtClient
 from .plugins import get_manager, get_plugin_commands
 from .shared.configuration import load_config
 from .shared.constants import COMMAND_DESCRIPTIONS, MAIN_REPO_ALIASES
+
+COPY_MAX_ARGS = 2
 
 
 def show_help() -> None:
@@ -116,7 +119,7 @@ def main(ctx, help, verbose):
         except Exception as e:
             if effective_verbose:
                 raise
-            raise click.ClickException(str(e))
+            raise click.ClickException(str(e)) from e
         return
 
 
@@ -181,10 +184,80 @@ def sh(ctx, args):
     except Exception as e:
         if verbose:
             raise
-        raise click.ClickException(str(e))
+        raise click.ClickException(str(e)) from e
 
 
-async def _async_sh_main(  # noqa: PLR0913
+async def _cmd_ls(daemon_client, formatter, **_):
+    await handle_list_worktrees(daemon_client, formatter)
+
+
+async def _cmd_rm(config, remaining_args, ctx, **_):
+    if not remaining_args:
+        click.echo("Error: rm requires a worktree name")
+        ctx.exit(1)
+    force = "--force" in remaining_args
+    try:
+        name = next(arg for arg in remaining_args if arg != "--force")
+    except StopIteration:
+        click.echo("Error: rm requires a worktree name")
+        ctx.exit(1)
+        return
+    await handle_remove_worktree(config, name, force)
+
+
+async def _cmd_cp(config, remaining_args, ctx, **_):
+    if len(remaining_args) == 1:
+        await handle_copy_worktree(config, remaining_args[0])
+        return
+    if len(remaining_args) == COPY_MAX_ARGS:
+        await handle_copy_worktree(config, remaining_args[0], remaining_args[1])
+        return
+    click.echo("Error: cp requires 1 or 2 arguments")
+    ctx.exit(1)
+
+
+async def _cmd_create(config, remaining_args, ctx, **_):
+    if not remaining_args:
+        click.echo("Error: -c requires a worktree name")
+        ctx.exit(1)
+        return
+    await handle_create_worktree(config, remaining_args[0])
+
+
+async def _cmd_path(config, remaining_args, **_):
+    worktree_name = remaining_args[0] if remaining_args else None
+    subpath = remaining_args[1] if len(remaining_args) > 1 else None
+    await handle_path_command(config, worktree_name, subpath)
+
+
+async def _cmd_status(daemon_client, formatter, remaining_args, **_):
+    if remaining_args:
+        await handle_status_single(daemon_client, formatter, remaining_args[0])
+    else:
+        await handle_status(daemon_client, formatter)
+
+
+async def _cmd_help(**_):
+    show_help()
+
+
+async def _cmd_kill(config, **_):
+    await handle_kill_daemon(config)
+
+
+_COMMAND_DISPATCH: dict[str, Callable[..., Awaitable[None]]] = {
+    "ls": _cmd_ls,
+    "rm": _cmd_rm,
+    "cp": _cmd_cp,
+    "-c": _cmd_create,
+    "path": _cmd_path,
+    "status": _cmd_status,
+    "help": _cmd_help,
+    "kill-daemon": _cmd_kill,
+}
+
+
+async def _async_sh_main(
     daemon_client,
     formatter,
     config,
@@ -192,8 +265,7 @@ async def _async_sh_main(  # noqa: PLR0913
     filtered_args,
     ctx,
 ):
-    """Async version of sh command handler."""
-    # Route to appropriate handlers
+    """Async version of sh command handler with low branching complexity."""
     if not filtered_args:
         await handle_status(daemon_client, formatter)
         return
@@ -201,8 +273,7 @@ async def _async_sh_main(  # noqa: PLR0913
     cmd, *remaining_args = filtered_args
 
     # Plugin subcommand dispatch: wt <plugin> <args>
-    plugin_callable = get_plugin_commands(plugin_manager).get(cmd)
-    if plugin_callable:
+    if (plugin_callable := get_plugin_commands(plugin_manager).get(cmd)) is not None:
         result = plugin_callable(remaining_args, daemon_client, config)
         if inspect.isawaitable(result):
             result = await result
@@ -216,53 +287,20 @@ async def _async_sh_main(  # noqa: PLR0913
         emit_cd_command(config.main_repo, main_repo=config.main_repo)
         return
 
-    # Handle commands - pure argument parsing, delegate to handlers
-    if cmd == "ls":
-        await handle_list_worktrees(daemon_client, formatter)
+    # Dispatch built-in commands
+    handler: Callable[..., Awaitable[None]] | None = _COMMAND_DISPATCH.get(cmd)
+    if handler is not None:
+        await handler(
+            daemon_client=daemon_client,
+            formatter=formatter,
+            config=config,
+            remaining_args=remaining_args,
+            ctx=ctx,
+        )
+        return
 
-    elif cmd == "rm":
-        if not remaining_args:
-            click.echo("Error: rm requires a worktree name")
-            ctx.exit(1)
-        force = "--force" in remaining_args
-        name = next(arg for arg in remaining_args if arg != "--force")
-        await handle_remove_worktree(config, name, force)
-
-    elif cmd == "cp":
-        if len(remaining_args) == 1:
-            await handle_copy_worktree(config, remaining_args[0])
-        elif len(remaining_args) == 2:
-            await handle_copy_worktree(config, remaining_args[0], remaining_args[1])
-        else:
-            click.echo("Error: cp requires 1 or 2 arguments")
-            ctx.exit(1)
-
-    elif cmd == "-c":
-        if not remaining_args:
-            click.echo("Error: -c requires a worktree name")
-            ctx.exit(1)
-        await handle_create_worktree(config, remaining_args[0])
-
-    elif cmd == "path":
-        worktree_name = remaining_args[0] if remaining_args else None
-        subpath = remaining_args[1] if len(remaining_args) > 1 else None
-        await handle_path_command(config, worktree_name, subpath)
-
-    elif cmd == "status":
-        if remaining_args:
-            await handle_status_single(daemon_client, formatter, remaining_args[0])
-        else:
-            await handle_status(daemon_client, formatter)
-
-    elif cmd == "help":
-        show_help()
-
-    elif cmd == "kill-daemon":
-        await handle_kill_daemon(config)
-
-    else:
-        # Default case: wt <x> - navigate to worktree
-        await handle_navigate_to_worktree(config, cmd)
+    # Default case: wt <x> - navigate to worktree
+    await handle_navigate_to_worktree(config, cmd)
 
 
 if __name__ == "__main__":

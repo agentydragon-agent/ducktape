@@ -1,7 +1,7 @@
 import asyncio
 import logging
-import threading
 from pathlib import Path
+import threading
 
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer

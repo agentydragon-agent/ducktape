@@ -1,12 +1,10 @@
 """End-to-end test for database integration with mocked APIs."""
 
-import json
 from datetime import datetime
+import json
 from pathlib import Path
 from unittest.mock import Mock
 
-import pytest
-import yaml
 from claude_optimizer.core.yaml_loader import YamlLoader
 from claude_optimizer.database.models import (
     GradingCriteria,
@@ -17,6 +15,8 @@ from claude_optimizer.database.models import (
     SystemPrompt,
     create_database,
 )
+import pytest
+import yaml
 
 
 @pytest.fixture

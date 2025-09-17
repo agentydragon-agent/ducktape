@@ -5,6 +5,7 @@ from datetime import datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
+
 from ducktape_llm_common.claude_linter_v2.config.clean_models import ModularConfig
 from ducktape_llm_common.claude_linter_v2.config.models import (
     AutofixCategory,

@@ -33,6 +33,9 @@ from ..shared import templates
 
 router = APIRouter(tags=["admin"])
 
+DB_SESSION = Depends(get_db_session)
+CSRF = Depends()
+
 
 class _CsrfSettings(BaseModel):
     secret_key: str = settings.security.csrf_secret
@@ -50,7 +53,7 @@ SESSION_DURATION = timedelta(hours=1)
 
 async def _get_admin_session(
     session_token: Optional[str] = Cookie(None, alias="admin_session"),
-    db_session: AsyncSession = Depends(get_db_session),
+    db_session: AsyncSession = DB_SESSION,
 ) -> AdminSession:
     if not session_token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
@@ -63,12 +66,15 @@ async def _get_admin_session(
     return admin_session
 
 
+ADMIN_SESSION = Depends(_get_admin_session)
+
+
 @router.post("/admin/login", response_class=HTMLResponse)
 async def login(
     request: Request,
     password: str = Form(...),
-    db_session: AsyncSession = Depends(get_db_session),
-    csrf_protect: CsrfProtect = Depends(),
+    db_session: AsyncSession = DB_SESSION,
+    csrf_protect: CsrfProtect = CSRF,
 ) -> Response:
     await csrf_protect.validate_csrf(request)
     if not verify_password(password, settings.admin.password_hash):
@@ -123,9 +129,9 @@ async def admin_root(request: Request, auth: Auth) -> HTMLResponse:
 @router.get("/admin/keys/", response_class=HTMLResponse)
 async def list_keys(
     request: Request,
-    admin_session: AdminSession = Depends(_get_admin_session),
-    db_session: AsyncSession = Depends(get_db_session),
-    csrf_protect: CsrfProtect = Depends(),
+    admin_session: AdminSession = ADMIN_SESSION,
+    db_session: AsyncSession = DB_SESSION,
+    csrf_protect: CsrfProtect = CSRF,
 ) -> HTMLResponse:
     keys = (
         (await db_session.execute(select(AuthKey).order_by(AuthKey.id))).scalars().all()
@@ -142,8 +148,8 @@ async def list_keys(
 @router.get("/admin/keys/new", response_class=HTMLResponse)
 async def new_key_form(
     request: Request,
-    admin_session: AdminSession = Depends(_get_admin_session),
-    csrf_protect: CsrfProtect = Depends(),
+    admin_session: AdminSession = ADMIN_SESSION,
+    csrf_protect: CsrfProtect = CSRF,
 ) -> HTMLResponse:
     token, signed = csrf_protect.generate_csrf_tokens()
     response = templates.TemplateResponse(
@@ -158,9 +164,9 @@ async def new_key_form(
 async def create_key(
     request: Request,
     description: str = Form(""),
-    admin_session: AdminSession = Depends(_get_admin_session),
-    db_session: AsyncSession = Depends(get_db_session),
-    csrf_protect: CsrfProtect = Depends(),
+    admin_session: AdminSession = ADMIN_SESSION,
+    db_session: AsyncSession = DB_SESSION,
+    csrf_protect: CsrfProtect = CSRF,
 ) -> HTMLResponse:
     await csrf_protect.validate_csrf(request)
     key = AuthKey(
@@ -183,9 +189,9 @@ async def create_key(
 async def revoke_key(
     key_id: int,
     request: Request,
-    admin_session: AdminSession = Depends(_get_admin_session),
-    db_session: AsyncSession = Depends(get_db_session),
-    csrf_protect: CsrfProtect = Depends(),
+    admin_session: AdminSession = ADMIN_SESSION,
+    db_session: AsyncSession = DB_SESSION,
+    csrf_protect: CsrfProtect = CSRF,
 ) -> Response:
     await csrf_protect.validate_csrf(request)
     stmt = select(AuthKey).where(AuthKey.id == key_id)
@@ -200,9 +206,9 @@ async def revoke_key(
 @router.get("/admin/admin-sessions/", response_class=HTMLResponse)
 async def list_admin_sessions(
     request: Request,
-    admin_session: AdminSession = Depends(_get_admin_session),
-    db_session: AsyncSession = Depends(get_db_session),
-    csrf_protect: CsrfProtect = Depends(),
+    admin_session: AdminSession = ADMIN_SESSION,
+    db_session: AsyncSession = DB_SESSION,
+    csrf_protect: CsrfProtect = CSRF,
 ) -> HTMLResponse:
     sessions = (
         (
@@ -234,9 +240,9 @@ async def list_admin_sessions(
 async def invalidate_admin_session(
     session_id: int,
     request: Request,
-    admin_session: AdminSession = Depends(_get_admin_session),
-    db_session: AsyncSession = Depends(get_db_session),
-    csrf_protect: CsrfProtect = Depends(),
+    admin_session: AdminSession = ADMIN_SESSION,
+    db_session: AsyncSession = DB_SESSION,
+    csrf_protect: CsrfProtect = CSRF,
 ) -> Response:
     await csrf_protect.validate_csrf(request)
     stmt = select(AdminSession).where(AdminSession.id == session_id)
@@ -254,9 +260,9 @@ async def invalidate_admin_session(
 @router.get("/admin/llm-sessions/", response_class=HTMLResponse)
 async def list_llm_sessions(
     request: Request,
-    admin_session: AdminSession = Depends(_get_admin_session),
-    db_session: AsyncSession = Depends(get_db_session),
-    csrf_protect: CsrfProtect = Depends(),
+    admin_session: AdminSession = ADMIN_SESSION,
+    db_session: AsyncSession = DB_SESSION,
+    csrf_protect: CsrfProtect = CSRF,
 ) -> HTMLResponse:
     sessions = (
         (
@@ -288,9 +294,9 @@ async def list_llm_sessions(
 async def invalidate_llm_session(
     session_id: int,
     request: Request,
-    admin_session: AdminSession = Depends(_get_admin_session),
-    db_session: AsyncSession = Depends(get_db_session),
-    csrf_protect: CsrfProtect = Depends(),
+    admin_session: AdminSession = ADMIN_SESSION,
+    db_session: AsyncSession = DB_SESSION,
+    csrf_protect: CsrfProtect = CSRF,
 ) -> Response:
     await csrf_protect.validate_csrf(request)
     stmt = select(AuthCRSession).where(AuthCRSession.id == session_id)
@@ -307,7 +313,7 @@ async def invalidate_llm_session(
 async def view_logs(
     request: Request,
     lines: int = 200,
-    admin_session: AdminSession = Depends(_get_admin_session),
+    admin_session: AdminSession = ADMIN_SESSION,
 ) -> HTMLResponse:
     """Display the last ``lines`` lines of the server log file."""
     log_path = Path(settings.server.log_file)

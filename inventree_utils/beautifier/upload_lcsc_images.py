@@ -1,11 +1,11 @@
 import tempfile
 
-import requests
-import structlog
 from bs4 import BeautifulSoup
 from inventree.api import InvenTreeAPI
 from inventree.company import Company, SupplierPart
 from inventree.part import Part
+import requests
+import structlog
 
 from .cli_util import choose
 from .inventree_util import part_url

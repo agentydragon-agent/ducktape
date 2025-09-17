@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 import importlib.metadata as importlib_metadata
 import logging
-from collections.abc import Callable
 
 import pluggy
 

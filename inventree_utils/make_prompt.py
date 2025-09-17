@@ -1,5 +1,5 @@
-import textwrap
 from pathlib import Path
+import textwrap
 
 import pyperclip
 

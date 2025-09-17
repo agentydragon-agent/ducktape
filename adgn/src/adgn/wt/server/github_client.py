@@ -51,7 +51,7 @@ def get_github_token(
         return None
     except (OSError, PermissionError) as e:
         # Unexpected system errors should be visible to operator
-        raise RuntimeError(f"Failed to execute GitHub CLI: {e}")
+        raise RuntimeError("Failed to execute GitHub CLI") from e
 
 
 class GitHubInterface:
@@ -69,8 +69,8 @@ class GitHubInterface:
                 self._repo = self._gh.get_repo(self.github_repo)
             except Exception as e:
                 raise GitHubUnavailableError(
-                    f"Cannot access GitHub repo {self.github_repo}: {e}",
-                )
+                    f"Cannot access GitHub repo {self.github_repo}",
+                ) from e
         return self._repo
 
     @handle_github_errors

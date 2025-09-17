@@ -19,8 +19,8 @@ Small, dependency: aiosqlite
 from __future__ import annotations
 
 import json
-import time
 from pathlib import Path
+import time
 from typing import Any
 
 import aiosqlite
@@ -95,7 +95,10 @@ class ResponsesDB:
         kwargs_json = json.dumps(kwargs_obj or {}, ensure_ascii=False)
         try:
             await self._conn.execute(
-                "INSERT INTO responses (key, model, input_json, kwargs_json, status, created_ts) VALUES (?, ?, ?, ?, 'in_progress', ?)",
+                (
+                    "INSERT INTO responses (key, model, input_json, kwargs_json, status, created_ts) "
+                    "VALUES (?, ?, ?, ?, 'in_progress', ?)"
+                ),
                 (key, model, input_json, kwargs_json, created),
             )
             await self._conn.commit()
@@ -150,12 +153,17 @@ class ResponsesDB:
         assert self._conn is not None, "DB not initialized"
         summary_json = json.dumps(summary_obj or response_obj or {}, ensure_ascii=False)
         await self._conn.execute(
-            "UPDATE responses SET status = 'complete', response_summary_json = ? WHERE key = ?",
+            (
+                "UPDATE responses SET status = 'complete', response_summary_json = ? WHERE key = ?"
+            ),
             (summary_json, key),
         )
         # In case the row didn't exist (race), ensure it's present
         await self._conn.execute(
-            "INSERT OR IGNORE INTO responses (key, model, input_json, kwargs_json, response_summary_json, status, created_ts) VALUES (?, '', '', '', ?, 'complete', ?)",
+            (
+                "INSERT OR IGNORE INTO responses (key, model, input_json, kwargs_json, "
+                "response_summary_json, status, created_ts) VALUES (?, '', '', '', ?, 'complete', ?)"
+            ),
             (key, summary_json, int(time.time())),
         )
         await self._conn.commit()
@@ -163,7 +171,7 @@ class ResponsesDB:
     async def get_frames(self, key: str) -> list[dict[str, Any]]:
         assert self._conn is not None, "DB not initialized"
         cur = await self._conn.execute(
-            "SELECT frame_json FROM response_frames WHERE key = ? ORDER BY seq",
+            ("SELECT frame_json FROM response_frames WHERE key = ? ORDER BY seq"),
             (key,),
         )
         rows = await cur.fetchall()

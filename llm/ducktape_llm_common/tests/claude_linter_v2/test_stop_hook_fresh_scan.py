@@ -4,10 +4,11 @@ import os
 from pathlib import Path
 
 import pytest
+from hamcrest import all_of, assert_that, contains_string, has_entries
+
 from ducktape_llm_common.claude_linter_v2.hooks.handler import HookHandler
 from ducktape_llm_common.claude_linter_v2.hooks.requests import StopRequest
 from ducktape_llm_common.claude_linter_v2.types import parse_session_id
-from hamcrest import all_of, assert_that, contains_string, has_entries
 
 
 @pytest.fixture

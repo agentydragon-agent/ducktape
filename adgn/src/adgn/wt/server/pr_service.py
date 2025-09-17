@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 from dataclasses import dataclass
 from datetime import datetime
+import logging
 
 from ..shared.configuration import Configuration
 from ..shared.github_models import PRData, PRState
@@ -11,6 +11,8 @@ from .git_manager import GitManager
 from .github_client import GitHubInterface
 from .github_refresh import DebouncedGitHubRefresh
 from .types import DiscoveredWorktree
+
+PR_CACHE_FRESH_SECS = 60
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +78,7 @@ class PRService:
         if (
             not force_refresh
             and self.cached is not None
-            and (now - self.cached.fetched_at).total_seconds() < 60
+            and (now - self.cached.fetched_at).total_seconds() < PR_CACHE_FRESH_SECS
         ):
             if isinstance(self.cached, PRCacheOk):
                 return self.cached.data

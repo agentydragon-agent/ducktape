@@ -5,15 +5,17 @@ Extract all #issue nodes (where Status != Done/Cancelled) from a Tana export and
 Usage: python tana_issues_to_tanapaste.py <input.json>
 """
 
-import sys
 from pathlib import Path
+import sys
 
 from .convert import RenderContext
 from .tana_lib import filter_open_issues, load_tana_export
 
+EXPECTED_ARGS = 2
+
 
 def main():
-    if len(sys.argv) != 2:
+    if len(sys.argv) != EXPECTED_ARGS:
         print("Usage: python tana_issues_to_tanapaste.py <input.json>", file=sys.stderr)
         print(
             "\nExtracts all #issue nodes (where Status != Done/Cancelled) and outputs TanaPaste to stdout",

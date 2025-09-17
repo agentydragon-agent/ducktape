@@ -1,9 +1,9 @@
 # Ported from old fix_unicode.py
 import argparse
-import sys
-import unicodedata
 from pathlib import Path
+import sys
 from typing import NamedTuple
+import unicodedata
 
 
 class UnicodeIssue(NamedTuple):

@@ -1,6 +1,6 @@
 import os
-import subprocess
 from pathlib import Path
+import subprocess
 
 import pytest
 
@@ -82,7 +82,8 @@ def test_post_creation_python_script_runs(real_env_with_python_post_script, stdi
         # Using /dev/null for stdin is a valid fd (not truly "closed").
         # Current behavior: hook inherits a valid stdin, so it should succeed too.
         assert result.returncode == 0, (
-            f"expected success with stdin=/dev/null; got rc={result.returncode}\nstdout=\n{result.stdout}\n\nstderr=\n{result.stderr}"
+            "expected success with stdin=/dev/null; got rc="
+            f"{result.returncode}\nstdout=\n{result.stdout}\n\nstderr=\n{result.stderr}"
         )
         # Keep outputs for visibility
         combined = (result.stdout or "") + (result.stderr or "")

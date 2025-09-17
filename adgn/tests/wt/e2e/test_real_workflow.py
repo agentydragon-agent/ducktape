@@ -41,9 +41,9 @@ that catch real-world deployment issues like this socket path problem.
 """
 
 import os
+from pathlib import Path
 import subprocess
 import time
-from pathlib import Path
 
 import pygit2
 import pytest

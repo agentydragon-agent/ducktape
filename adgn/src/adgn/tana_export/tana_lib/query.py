@@ -8,6 +8,8 @@ from collections.abc import Iterator
 
 from .models import BaseNode, NodeStore, TupleNode
 
+MIN_TUPLE_CHILDREN = 2
+
 
 def get_field_values(
     node: BaseNode,
@@ -28,7 +30,7 @@ def get_field_values(
     for child in node.child_nodes:
         if (
             isinstance(child, TupleNode)
-            and len(child.children) >= 2
+            and len(child.children) >= MIN_TUPLE_CHILDREN
             and (key_node := store.get(child.children[0]))
             and key_node.name == field_name
         ):

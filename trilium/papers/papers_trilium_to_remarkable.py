@@ -10,9 +10,9 @@ import re
 import subprocess
 import sys
 
+from absl import app, flags
 import click
 import requests
-from absl import app, flags
 from tqdm.auto import tqdm
 from xdg import xdg_cache_home
 

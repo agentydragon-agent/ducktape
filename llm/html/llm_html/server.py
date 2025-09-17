@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
 """FastAPI server for LLM instructions with token generation."""
 
+from datetime import datetime, timedelta
 import logging
 import os
-import sys
-from datetime import datetime, timedelta
 from pathlib import Path
+import sys
 from typing import Any
 from zoneinfo import ZoneInfo
 
-import markdown
-import uvicorn
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse
 from jinja2 import Environment, FileSystemLoader
+import markdown
 from markdownify import markdownify
+import uvicorn
 
 from .token_counter import count_tokens_for_models
 from .token_scheme import TokenScheme

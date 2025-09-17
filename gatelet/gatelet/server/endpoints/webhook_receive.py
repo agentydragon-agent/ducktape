@@ -14,6 +14,8 @@ from ..models import WebhookIntegration, WebhookPayload
 
 router = APIRouter(tags=["webhooks"])
 
+DB_SESSION = Depends(get_db_session)
+
 
 # Error handler for webhook auth errors should be registered in app.py, not at the router level
 
@@ -22,7 +24,7 @@ router = APIRouter(tags=["webhooks"])
 async def receive(
     integration_name: str,
     request: Request,
-    db_session: AsyncSession = Depends(get_db_session),
+    db_session: AsyncSession = DB_SESSION,
 ) -> Dict[str, Any]:
     """Receive webhook payload for a specific integration."""
     # Check if integration exists

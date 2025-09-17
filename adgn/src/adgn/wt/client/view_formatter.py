@@ -85,9 +85,7 @@ class ViewFormatter:
 
         # Distinguish between merged and closed based on merged_at
         if pr_state == PRState.CLOSED:
-            if merged_at:
-                return "merged"
-            return "closed"
+            return "merged" if merged_at else "closed"
         if pr_state == PRState.OPEN:
             if mergeability == "unknown":
                 return PRStatus.OPEN_UNKNOWN.display_text

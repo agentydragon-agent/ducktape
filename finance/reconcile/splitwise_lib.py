@@ -4,9 +4,9 @@ import http.server
 import json
 import urllib.parse
 
+from absl import logging
 import splitwise
 import xdg
-from absl import logging
 
 from ducktape.finance.reconcile import external_system
 

@@ -9,6 +9,8 @@ from collections import defaultdict
 from .constants import SUPERTAG_KEY_ID
 from .models import BaseNode, NodeStore, TupleNode
 
+MIN_TUPLE_CHILDREN = 2
+
 
 def _is_wrapper(node: BaseNode) -> bool:
     """Nodes that should *not* get their own bullet - just pass through."""
@@ -33,7 +35,7 @@ def attach_supertag_property(store: NodeStore) -> None:
     for n in store.values():
         if not (
             isinstance(n, TupleNode)
-            and len(n.children) >= 2
+            and len(n.children) >= MIN_TUPLE_CHILDREN
             and n.props.owner_id
             and (key_node := store.get(n.children[0]))
             and key_node.id == SUPERTAG_KEY_ID

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import os
-import subprocess
 from collections.abc import Mapping, Sequence
+import os
 from pathlib import Path
+import subprocess
 
 
 def build_sanitized_git_env(env: Mapping[str, str] | None = None) -> dict[str, str]:
@@ -15,7 +15,7 @@ def build_sanitized_git_env(env: Mapping[str, str] | None = None) -> dict[str, s
     return e
 
 
-def git_run(  # noqa: PLR0913
+def git_run(
     args: Sequence[str | os.PathLike[str]],
     cwd: Path | str,
     check: bool = True,

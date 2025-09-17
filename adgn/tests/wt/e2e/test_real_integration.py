@@ -1,8 +1,8 @@
 """Real integration tests for actual CLI."""
 
 import os
-import time
 from pathlib import Path
+import time
 
 import pytest
 

@@ -56,7 +56,7 @@ async def worktree_list(git: GitService, config: Configuration) -> WorktreeListR
 
 
 @rpc.stream("worktree_create", params=WorktreeCreateParams)
-async def worktree_create(  # noqa: PLR0913
+async def worktree_create(
     git: GitService,
     coordinator: WorktreeCoordinator,
     svc: WorktreeService,
@@ -138,7 +138,7 @@ async def worktree_create(  # noqa: PLR0913
             str(config.post_creation_script),
             worktree_path,
             _sink,
-            timeout=config.post_creation_timeout.total_seconds(),
+            deadline=config.post_creation_timeout.total_seconds(),
         )
 
     return WorktreeCreateResult(

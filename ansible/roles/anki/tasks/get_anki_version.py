@@ -1,7 +1,7 @@
 import json
+from pathlib import Path
 import re
 import subprocess
-from pathlib import Path
 
 PATTERN = re.compile("^Anki ([0-9.]+)$", flags=re.MULTILINE)
 

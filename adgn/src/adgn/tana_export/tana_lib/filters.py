@@ -1,7 +1,6 @@
 """
 Filtering and search operations for Tana nodes.
 """
-# ruff: noqa: PLR0913
 
 from __future__ import annotations
 

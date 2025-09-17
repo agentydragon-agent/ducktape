@@ -1,20 +1,20 @@
 import contextlib
+from datetime import datetime
 import importlib.util
 import io
 import os
+from pathlib import Path
 import shlex
 import shutil
 import subprocess
 import tempfile
 import time
-from datetime import datetime
-from pathlib import Path
 from unittest.mock import Mock
 
+from click.testing import CliRunner
 import pygit2
 import pytest
 import yaml
-from click.testing import CliRunner
 
 from adgn.tests.wt.mock_factory import ServiceBuilder as _ServiceBuilder
 from adgn.tests.wt.test_data import TestData as _TestData
@@ -209,7 +209,7 @@ def kill_daemon_at_wt_dir(wt_dir: Path) -> None:
         )
     except Exception as e:
         # Don't attempt any PID-based killing here; surface error
-        raise AssertionError(f"kill-daemon invocation failed for {wt_dir}: {e}")
+        raise AssertionError(f"kill-daemon invocation failed for {wt_dir}: {e}") from e
 
     # Wait up to ~1s for files to be removed by daemon shutdown
     deadline = time.time() + 1.0

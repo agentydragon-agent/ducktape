@@ -1,101 +1,56 @@
+# TODO(mpokorny): Once nested pyprojects are gone, move this Ruff config into
+# the single pyproject.toml at repo root and delete ruff.toml.
+
 [lint]
 select = [
-   # base (E,F)
-    "E",
-    "F",
-    # PL = pylint
-    # PLC = pylint convention
-    "PLC",
-    # PLE = pylint errors
-    "PLC",
-    # PLR = pylint refactor
-    "PLR",
-    # PLW = pylint warnings
-    "PLW",
-    "UP",  # pyupgrade
-    "FURB", # refurb - e.g. pathlib use etc
-
-    # isort
+    # Base
+    "E", "F",
+    # Pylint families
+    "PLC",  # convention
+    "PLE",  # errors
+    "PLR",  # refactor
+    "PLW",  # warnings
+    # Modernization / quality
+    "UP",       # pyupgrade
+    "FURB",     # refurb
+    # Imports (isort replacement)
     "I",
-    # "FAST", # FastAPI lints - not a valid rule selector
+    # Extras
     "YTT",
-    # not: "ANN" -- demands type annotations everywhere
-    "ASYNC", # flake8-async
-    # not: "S" -- flake8-bandit, pretty strict security lints
-    # maybe: "FBT" -- enforce booleans to be kwarg
-    "B", # flake8-bugbear -- common bugs
-    # not: "A" -- shadowing builtins
-    "COM", # flake8-commas -- enforce trailing commas
-    "C4", # flake8-comprehensions -- some comprehension patterns
-    "LOG", # flake8-logging stdlib logging lints
-    # "G", # logging format: use 'extra' kwarg instead
-
-    # Disabling - noisy for one-off scripts without __init__
-    # "INP", # implicit namespace pkg => add __init__.py
-
-    "PIE", # flake8-pie -- some random things
-    "PT", # pytest
-    "RSE", # one single raise thing
-    "RET", # flake8-return -- return statements
-    "SIM", # flake8-simplify -- simplify things
-    "SLOT", # flake8-slots -- enforce __slots__ usage where required
-
-    # xxx: commented out because pytest fixtures
-    # might do: [tool.ruff.lint.per-file-ignores] "tests/**" = ["ARG001"]
-    # "ARG", # flake8-arguments -- unused function arguments
-
-    "PTH", # flake8-pathlib -- pathlib usage
-    # FLY: flynt -- fstring instead of string join
-    # C90: mccabe -- "too complex" code
-    "NPY", # numpy lints
-    "PD", # pandas lints
-    "N", # pep8-naming
-
-    # DJ: Django
-    # EM: error message things
-
-    # don't want:
-    #   T10: diallow debugger
-    #   FIX: todo/fixme/... comments
-    #   INT: gettext
-    #   ISC: implicit str concat - I do this deliberately
-    #   ICN: import conventions e.g. numpy as np
-    #   DTZ: strict datetime timezones
-    #   CPY: copyright notices
-    #   T20: flake8-print - no print statements
-    #   PYI: python interfaces files
-    #   EXE: things around correct exe's
-    #   FA: future annotations, irreleevant in 3.12+
-    #   Q: flake8-quotes -- enforce single quotes
-    #   SLF: flake8-self -- private members access
-    #   TID: tidy imports
-    #   TD: flake8-todos - TODO formatting
-    #   TC: flake8-type-checking -- typecheck-only imports etc
-    #   PERF: performance lints
-    #   DOC: enforce pydoclint -- all must be documented
-    #   D: pydocstyle
-    #   PGH: pygrep-hooks
-    #   TRY: "tryceratops" - create own etc. etc
-
-    # see: ruff rule --all; ruff rule RUF052
-    #"RUF008", # dataclass mutable default
-    "RUF", # ruff specific
-
+    "ASYNC",
+    "B",        # bugbear
+    "COM",      # commas
+    "C4",       # comprehensions
+    "LOG",      # logging
+    "PIE",
+    "PT",       # pytest
+    "RSE",
+    "RET",      # returns
+    "SIM",      # simplify
+    "SLOT",
+    "PTH",      # pathlib
+    "NPY",
+    "PD",       # pandas
+    "N",        # naming
+    "RUF"       # ruff-specific
 ]
+# Keep these off globally; handled case-by-case or via constants
 ignore = [
-    # suppress “magic-value-comparison” - too noisy, flags even
-    # 'if len(sys.argv) > 2'
-    "PLR2004",
-    "PLR0912", # too many branches
-    "PLR0915", # too many statements
-    "PLR0911", # too many return statements
-    # ruff check ... --select=... --statistics
-
-    "B904", # Within an `except` clause, raise exceptions with `raise ... from err` or `raise ... from None` to distinguish them from errors in exception handling
-
-        "E501", # line too long
+    "PLR2004",  # magic value comparisons
+    "PLR0912",  # too many branches
+    "PLR0915",  # too many statements
+    "PLR0911",  # too many returns
+    "B904",     # raise from e
+    "E501"      # line length (formatter handles wrapping where needed)
 ]
-# line-length = 120
+# Avoid conflicts between ruff-format and trailing-comma rules
+extend-ignore = ["COM812"]
+
+[lint.isort]
+# Teach Ruff which packages are first-party so sectioning stays stable
+known-first-party = ["adgn", "wt", "ducktape", "claude_hooks", "homeassistant", "llm"]
+force-sort-within-sections = true
+combine-as-imports = true
 
 [lint.per-file-ignores]
 "experimental/cotrl/**" = ["PLR0913"]  # Too many arguments

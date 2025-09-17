@@ -31,7 +31,8 @@ print(indent(Path("references/xTcTNuPqb8.tanapaste").read_text(), "      "))
 print()
 print()
 print(
-    "The 'supertags for node' supertag - want to have values associated with this key for a tagged node exposed for easy access:",
+    "The 'supertags for node' supertag - want to have values associated with this key "
+    "for a tagged node exposed for easy access:",
 )
 show(by_id("SYS_A13"), 1)
 show(by_id("SYS_TA05_02"))

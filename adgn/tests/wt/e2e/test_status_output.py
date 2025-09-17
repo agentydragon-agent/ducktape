@@ -4,8 +4,8 @@ Uses the real CLI via subprocess with completely isolated WT_DIR per test
 through the existing `real_env` fixture and helpers.
 """
 
-import time
 from pathlib import Path
+import time
 
 import pytest
 

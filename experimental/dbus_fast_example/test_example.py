@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import asyncio
-import subprocess
 from collections.abc import Iterator
+import subprocess
 
 import pytest
 

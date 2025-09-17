@@ -9,10 +9,10 @@ convert.py - Convert Tana JSON dump to
 from __future__ import annotations
 
 import argparse
-import html
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
+import html
 from pathlib import Path
 
 from .tana_lib import (
@@ -36,6 +36,9 @@ from .tana_lib.html_utils import (
     html_to_markdown,
     parse_inline_date,
 )
+
+# Small constants to clarify tuple arity checks
+MIN_TUPLE_CHILDREN = 2
 
 # ──────────────────────────  Headline  ────────────────────────── #
 
@@ -154,14 +157,16 @@ class RenderContext:
     def render_tuple(self, t: TupleNode):
         """Render a tuple node with its key and value(s)."""
         # need at least key + value
-        if len(t.children) < 2 or not (key_node := self.store.get(t.children[0])):
+        if len(t.children) < MIN_TUPLE_CHILDREN or not (
+            key_node := self.store.get(t.children[0])
+        ):
             return
         prefix = (
             f"{self.indent}- {self._inline_to_text(key_node.name or key_node.id)}:: "
         )
 
         # Handle multi-value tuples (more than 2 children)
-        if len(t.children) > 2:
+        if len(t.children) > MIN_TUPLE_CHILDREN:
             # All children after the first are values
             yield prefix
             for val_node in t.child_nodes[1:]:
@@ -178,7 +183,7 @@ class RenderContext:
                         yield from self.render_node(val_node)
             return
 
-        if len(t.child_nodes) < 2:
+        if len(t.child_nodes) < MIN_TUPLE_CHILDREN:
             return
         # Binary tuple (key + single value)
         val_node = t.child_nodes[1]

@@ -1,0 +1,77 @@
+from __future__ import annotations
+
+from dataclasses import asdict, dataclass
+from datetime import datetime
+import json
+from pathlib import Path
+from typing import Any
+
+from adgn.llm.mini_codex.handler import (
+    AssistantText,
+    BaseHandler,
+    FunctionCallOutput,
+    ToolCall,
+    UserText,
+)
+from adgn.llm.mini_codex.loop_control import NoLoopDecision
+
+
+@dataclass
+class _Event:
+    ts: str
+    kind: str
+    payload: Any
+
+
+class TranscriptHandler(BaseHandler):
+    """Simple JSONL transcript writer for MiniCodex runs.
+
+    Writes events.jsonl under a destination directory with one JSON object per line:
+    {"ts": ISO8601, "kind": <event>, "payload": {...}}
+
+    Usage:
+      h = TranscriptHandler(dest_dir=Path("runs/prompt_eval/<ts>/<specimen>/grader"))
+      MiniCodex.create(..., handlers=[h, ...])
+    """
+
+    def __init__(self, *, dest_dir: Path) -> None:
+        self._root = dest_dir
+        self._root.mkdir(parents=True, exist_ok=True)
+        self._events_path = self._root / "events.jsonl"
+        # Fail fast if a transcript already exists at destination
+        if self._events_path.exists():
+            raise FileExistsError(f"Transcript already exists: {self._events_path}")
+        # Write a small metadata file once
+        (self._root / "metadata.json").write_text(
+            json.dumps({"started": datetime.utcnow().isoformat() + "Z"}, indent=2),
+            encoding="utf-8",
+        )
+
+    # ---- Event helpers ----
+    def _append(self, kind: str, payload: Any) -> None:
+        ev = _Event(ts=datetime.utcnow().isoformat() + "Z", kind=kind, payload=payload)
+        with self._events_path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(asdict(ev), ensure_ascii=False) + "\n")
+
+    # ---- BaseHandler hooks (typed) ----
+    def on_user_text_event(self, evt: UserText) -> None:  # type: ignore[override]
+        self._append("user_text", {"text": evt.text})
+
+    def on_assistant_text_event(self, evt: AssistantText) -> None:  # type: ignore[override]
+        self._append("assistant_text", {"text": evt.text})
+
+    def on_tool_call_event(self, evt: ToolCall) -> None:  # type: ignore[override]
+        payload = {"name": evt.name, "call_id": evt.call_id, "args_json": evt.args_json}
+        self._append("tool_call", payload)
+
+    def on_function_call_output_event(self, evt: FunctionCallOutput) -> None:  # type: ignore[override]
+        payload = {"call_id": evt.call_id, "output": evt.output}
+        self._append("tool_output", payload)
+
+    def on_reasoning(self, item: Any) -> None:  # type: ignore[override]
+        # Optional: keep as-is; callers can extend to capture richer content
+        self._append("reasoning", {"repr": repr(item)})
+
+    def on_before_sample(self) -> NoLoopDecision:  # type: ignore[override]
+        # Do not influence loop control
+        return NoLoopDecision()

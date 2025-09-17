@@ -1,6 +1,6 @@
+from pathlib import Path
 import shlex
 import subprocess
-from pathlib import Path
 
 from inventree.label import LabelTemplate
 from inventree.part import Part

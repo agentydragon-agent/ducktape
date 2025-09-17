@@ -16,6 +16,8 @@ from ..shared import templates
 
 router = APIRouter(tags=["webhook_view"])
 
+DB_SESSION = Depends(get_db_session)
+
 # JSON formatter for consistent output
 json_formatter = Formatter(
     indent_spaces=2,
@@ -167,7 +169,7 @@ async def list_all_payloads(
     auth: Auth,
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=100)] = DEFAULT_PAGE_SIZE,
-    db_session: AsyncSession = Depends(get_db_session),
+    db_session: AsyncSession = DB_SESSION,
 ):
     """List all webhook integrations and payloads."""
     # Get webhook integrations
@@ -211,7 +213,7 @@ async def list_integration_payloads(  # noqa: PLR0913
     auth: Auth,
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=100)] = DEFAULT_PAGE_SIZE,
-    db_session: AsyncSession = Depends(get_db_session),
+    db_session: AsyncSession = DB_SESSION,
 ):
     """List webhook payloads for a specific integration."""
     # Check if integration exists and is enabled

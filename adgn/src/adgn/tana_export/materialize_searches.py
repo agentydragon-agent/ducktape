@@ -6,13 +6,15 @@ Usage: python materialize_searches.py input.json [--search-id SEARCH_ID] [--all]
 """
 
 import argparse
-import sys
 from pathlib import Path
+import sys
 
 from .tana_lib import NodeStore
 from .tana_lib.search_materializer import compare_search_results
 from .tana_lib.search_parser import parse_search_expression
 from .tana_lib.types import NodeId
+
+PRETTY_PRINT_LIMIT = 10
 
 
 def find_all_searches(store: NodeStore) -> list[str]:
@@ -45,21 +47,21 @@ def print_search_info(store: NodeStore, search_id: str) -> None:
 
     if comparison["missing"]:
         print(f"\nMissing from materialized ({len(comparison['missing'])}):")
-        for node_id in comparison["missing"][:10]:  # Show first 10
+        for node_id in comparison["missing"][:PRETTY_PRINT_LIMIT]:  # Show first N
             node = store.get(NodeId(node_id))
             name = node.name if node else "<unknown>"
             print(f"  - {name} ({node_id})")
-        if len(comparison["missing"]) > 10:
-            print(f"  ... and {len(comparison['missing']) - 10} more")
+        if len(comparison["missing"]) > PRETTY_PRINT_LIMIT:
+            print(f"  ... and {len(comparison['missing']) - PRETTY_PRINT_LIMIT} more")
 
     if comparison["extra"]:
         print(f"\nExtra in materialized ({len(comparison['extra'])}):")
-        for node_id in comparison["extra"][:10]:  # Show first 10
+        for node_id in comparison["extra"][:PRETTY_PRINT_LIMIT]:  # Show first N
             node = store.get(NodeId(node_id))
             name = node.name if node else "<unknown>"
             print(f"  - {name} ({node_id})")
-        if len(comparison["extra"]) > 10:
-            print(f"  ... and {len(comparison['extra']) - 10} more")
+        if len(comparison["extra"]) > PRETTY_PRINT_LIMIT:
+            print(f"  ... and {len(comparison['extra']) - PRETTY_PRINT_LIMIT} more")
 
     if not comparison["missing"] and not comparison["extra"]:
         print("\n✅ Stored and materialized results match!")

@@ -31,8 +31,8 @@ Example:
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
+import sys
 
 from ansible.plugins.action import ActionBase
 

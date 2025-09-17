@@ -3,8 +3,8 @@
 from datetime import datetime
 from unittest.mock import patch
 
-import pytest
 from click.testing import CliRunner
+import pytest
 
 from adgn.wt.cli import main
 from adgn.wt.shared.constants import MAIN_WORKTREE_DISPLAY_NAME

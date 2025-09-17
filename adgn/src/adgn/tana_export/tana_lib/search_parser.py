@@ -19,6 +19,8 @@ from .constants import (
 from .models import BaseNode, NodeStore, TupleNode
 from .types import NodeId
 
+MIN_TUPLE_CHILDREN = 2
+
 
 class BooleanOperator(Enum):
     """Boolean operators for search expressions."""
@@ -107,7 +109,7 @@ def parse_search_expression(
     for child in metadata.child_nodes:
         if (
             isinstance(child, TupleNode)
-            and len(child.children) >= 2
+            and len(child.children) >= MIN_TUPLE_CHILDREN
             and child.children[0] == SEARCH_EXPRESSION_KEY_ID
         ):
             return _parse_expression_components(store, child.children[1:])
@@ -124,7 +126,7 @@ def parse_search_expression(
                 for ggchild in grandchild.child_nodes:
                     if (
                         isinstance(ggchild, TupleNode)
-                        and len(ggchild.children) >= 2
+                        and len(ggchild.children) >= MIN_TUPLE_CHILDREN
                         and ggchild.children[0] == SEARCH_EXPRESSION_KEY_ID
                     ):
                         return _parse_expression_components(store, ggchild.children[1:])
@@ -164,7 +166,7 @@ def _parse_expression_components(
 
 def _parse_tuple_operator(store: NodeStore, node: TupleNode) -> SearchExpression | None:
     """Parse a tuple node that might be a boolean operator or field search."""
-    if len(node.children) < 2:
+    if len(node.children) < MIN_TUPLE_CHILDREN:
         return None
 
     operator_map = {

@@ -1,8 +1,8 @@
 """Unit tests for MCP Starter Template server."""
 
-import pytest
 from adgn_mcp_starter.server import create_mcp_server
 from fastmcp.client import Client as FastMCPClient
+import pytest
 
 
 def test_server_creation() -> None:

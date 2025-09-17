@@ -6,12 +6,12 @@ between clients and the wt multiplexing daemon.
 
 from __future__ import annotations
 
-import json
-import uuid
 from datetime import datetime
 from enum import IntEnum, StrEnum
+import json
 from pathlib import Path
 from typing import Annotated, Literal, NewType, cast
+import uuid
 
 from pydantic import BaseModel, Field, ValidationError
 

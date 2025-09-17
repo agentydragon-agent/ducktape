@@ -4,6 +4,7 @@ import json
 
 import pytest
 from click.testing import CliRunner
+
 from ducktape_llm_common.claude_linter_v2.cli import cli
 
 

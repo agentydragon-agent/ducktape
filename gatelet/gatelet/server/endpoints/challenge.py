@@ -45,6 +45,8 @@ def _create_options(num_options: int) -> list[str]:
 
 router = APIRouter(tags=["auth"])
 
+DB_SESSION = Depends(get_db_session)
+
 
 async def _validate_key(key_id: int, db_session: AsyncSession) -> AuthKey:
     stmt = select(AuthKey).where(AuthKey.id == key_id)
@@ -77,7 +79,7 @@ async def _new_challenge(key: AuthKey, db_session: AsyncSession):
 async def start_challenge(
     key_id: int,
     request: Request,
-    db_session: AsyncSession = Depends(get_db_session),
+    db_session: AsyncSession = DB_SESSION,
 ):
     key = await _validate_key(key_id, db_session)
     nonce, _, options = await _new_challenge(key, db_session)
@@ -122,7 +124,7 @@ async def answer_challenge(
     nonce_value: str,
     answer: str,
     request: Request,
-    db_session: AsyncSession = Depends(get_db_session),
+    db_session: AsyncSession = DB_SESSION,
 ):
     key = await _validate_key(key_id, db_session)
     stmt = select(AuthNonce).where(AuthNonce.nonce_value == nonce_value)

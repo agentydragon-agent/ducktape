@@ -2,10 +2,10 @@
 
 import json
 import os
+from pathlib import Path
 import re
 import socket
 import uuid
-from pathlib import Path
 
 import pytest
 
@@ -39,7 +39,15 @@ class Github:
         pass
     def get_repo(self, full_name):
         def get_pull(number):
-            return NS(number=456, state="closed", draft=False, mergeable=True, merged_at=_dt.datetime.now(), additions=3, deletions=1)
+            return NS(
+                number=456,
+                state="closed",
+                draft=False,
+                mergeable=True,
+                merged_at=_dt.datetime.now(),
+                additions=3,
+                deletions=1,
+            )
         return NS(get_pull=get_pull)
     def search_issues(self, q):
         return [NS(number=456)]
@@ -52,7 +60,15 @@ class Github:
         pass
     def get_repo(self, full_name):
         def get_pull(number):
-            return NS(number=789, state="closed", draft=False, mergeable=False, merged_at=None, additions=4, deletions=4)
+            return NS(
+                number=789,
+                state="closed",
+                draft=False,
+                mergeable=False,
+                merged_at=None,
+                additions=4,
+                deletions=4,
+            )
         return NS(get_pull=get_pull)
     def search_issues(self, q):
         return [NS(number=789)]

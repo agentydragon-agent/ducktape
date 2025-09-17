@@ -1,13 +1,15 @@
 """Base hook framework with JSON I/O handling."""
 
+from abc import ABC, abstractmethod
 import json
 import logging
-import sys
-from abc import ABC, abstractmethod
 from pathlib import Path
+import sys
 from typing import Any, Generic, TypeVar
 
+from platformdirs import user_config_dir, user_state_dir
 import yaml
+
 from claude_hooks.actions import (
     HookAction,
     NotificationAction,
@@ -31,7 +33,6 @@ from claude_hooks.inputs import (
     UserPromptSubmitInput,
 )
 from claude_hooks.logging_context import set_hook_context, setup_hook_logging
-from platformdirs import user_config_dir, user_state_dir
 
 # Type variables for generic hook handling
 InputT = TypeVar("InputT", bound=BaseHookInput)

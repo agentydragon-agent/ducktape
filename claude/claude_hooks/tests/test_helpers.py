@@ -1,10 +1,10 @@
 """Shared test helpers for Claude Code hook input parsing tests."""
 
-import json
-import uuid
 from importlib import resources
+import json
 from pathlib import Path
 from typing import Any
+import uuid
 
 from claude_hooks.inputs import PostToolInput
 

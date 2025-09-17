@@ -1,12 +1,12 @@
 """Worktree operations orchestrator layer that performs I/O and subprocess work."""
 
 import asyncio
+from collections.abc import Awaitable, Callable
 import contextlib
 import inspect
 import logging
-import shutil
-from collections.abc import Awaitable, Callable
 from pathlib import Path
+import shutil
 from typing import Any, cast
 
 import psutil
@@ -167,7 +167,7 @@ class WorktreeService:
         sink: (
             Callable[[str, str], Awaitable[None]] | Callable[[str, str], None] | None
         ) = None,
-        timeout: float = 60.0,
+        deadline: float = 60.0,
     ) -> dict:
         script = Path(script_path).expanduser().resolve()
         if not script.exists() or not script.is_file():
@@ -184,7 +184,8 @@ class WorktreeService:
             f"--worktree_root={worktree_path}",
             f"--worktree_name={worktree_path.name}",
             cwd=worktree_path,
-            stdin=asyncio.subprocess.DEVNULL,  # guarantee valid fd 0 for hook; avoids CPython init_sys_streams crashes if parent stdin is closed
+            stdin=asyncio.subprocess.DEVNULL,  # ensure valid fd 0 for hook
+            # avoids CPython init_sys_streams crashes if parent stdin is closed
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
@@ -193,7 +194,7 @@ class WorktreeService:
             try:
                 stdout, stderr = await asyncio.wait_for(
                     proc.communicate(),
-                    timeout=timeout,
+                    timeout=deadline,
                 )
                 return {
                     "ran": True,
@@ -202,7 +203,7 @@ class WorktreeService:
                     "stderr": stderr.decode(errors="replace") if stderr else None,
                     "error": None,
                 }
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 with contextlib.suppress(Exception):
                     proc.kill()
                     await proc.wait()
@@ -212,7 +213,7 @@ class WorktreeService:
                     "stdout": None,
                     "stderr": None,
                     "error": "timeout",
-                    "timeout_secs": float(timeout),
+                    "timeout_secs": float(deadline),
                 }
 
         stdout_buf: list[str] = []
@@ -250,8 +251,8 @@ class WorktreeService:
             else None
         )
         try:
-            await asyncio.wait_for(proc.wait(), timeout=timeout)
-        except asyncio.TimeoutError:
+            await asyncio.wait_for(proc.wait(), timeout=deadline)
+        except TimeoutError:
             with contextlib.suppress(Exception):
                 proc.kill()
                 await proc.wait()
@@ -261,7 +262,7 @@ class WorktreeService:
                 "stdout": None,
                 "stderr": None,
                 "error": "timeout",
-                "timeout_secs": float(timeout),
+                "timeout_secs": float(deadline),
             }
         if t1:
             await t1

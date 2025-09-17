@@ -6,20 +6,22 @@ resolved configuration with all paths validated and computed upfront.
 
 from __future__ import annotations
 
-import os
-import sys
-import tempfile
 from dataclasses import dataclass
 from datetime import timedelta
 from enum import StrEnum
 from hashlib import md5
+import os
 from pathlib import Path
+import sys
+import tempfile
 
 import click
-import yaml
 from pydantic import ValidationError
+import yaml
 
 from .config_file import ConfigFile
+
+MAX_SOCK_PATH_LEN = 100
 
 
 class CowMethod(StrEnum):
@@ -73,7 +75,7 @@ class Configuration:
         2) Otherwise fall back to a stable short path under /tmp using a hash of WT_DIR
         """
         p = self.wt_dir / "daemon.sock"
-        if len(str(p)) <= 100:
+        if len(str(p)) <= MAX_SOCK_PATH_LEN:
             return p
         h = md5(str(self.wt_dir).encode()).hexdigest()[:12]
         return Path("/tmp") / f"wt_daemon_{h}.sock"
@@ -106,7 +108,7 @@ class Configuration:
                 yaml.safe_load(config_path.read_text()),
             )
         except ValidationError as e:
-            raise ConfigError(f"Configuration validation errors: {e}")
+            raise ConfigError("Configuration validation errors") from e
 
         # Resolve and validate all paths NOW
         main_repo = Path(config_file.main_repo).expanduser().resolve()
