@@ -41,16 +41,17 @@ def load_or_prompt_for_config() -> InstanceConfig:
     Try to load config. If it doesn't exist, ask
     user for server_url, username, password, then write it.
     """
-    INSTANCE_FILE = CONFIG_DIR / "instance.yaml"
+    instance_file = CONFIG_DIR / "instance.yaml"
 
-    if INSTANCE_FILE.exists():
-        with open(INSTANCE_FILE) as f:
+    if instance_file.exists():
+        with instance_file.open() as f:
             return InstanceConfig(**yaml.safe_load(f))
 
-    print(f"{INSTANCE_FILE} not found. Let's create it.\n")
+    print(f"{instance_file} not found. Let's create it.\n")
     # Write to file
     cfg = prompt_for_config()
-    with open(INSTANCE_FILE, "w") as f:
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    with instance_file.open("w") as f:
         yaml.safe_dump(dataclasses.asdict(cfg), f)
 
     print("\nConfiguration saved.\n")

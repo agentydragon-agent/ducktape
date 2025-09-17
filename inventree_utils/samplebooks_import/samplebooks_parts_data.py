@@ -61,10 +61,10 @@ def crunch(factory, *items):
         if isinstance(item, dict):
             state.update(item)
         elif isinstance(item, list):
-            assert all(isinstance(i, (int, float)) for i in item)
+            assert all(isinstance(i, int | float) for i in item)
             parts.extend(factory(**state, value=i) for i in item)
         else:
-            assert isinstance(item, (int, float)), item
+            assert isinstance(item, int | float), item
             parts.append(factory(**state, value=item))
     return result
 
@@ -230,14 +230,6 @@ print(len(parts), "parts")
 v = ureg.V
 
 
-def part_key(part):
-    return (part.package, type(part).__name__)
-
-
-def value_key(part):
-    return part.resistance if isinstance(part, Resistor) else part.capacitance
-
-
 def format_value(part):
     """Format resistance or capacitance values using pint for human-friendly units."""
     if isinstance(part, Resistor):
@@ -256,13 +248,21 @@ def format_value(part):
     ###return f"{value.to_compact():~P}"  # Auto-scale to nF, µF ...
 
 
+def part_key(part):
+    return (part.package, type(part).__name__)
+
+
+def value_key(part):
+    return part.resistance if isinstance(part, Resistor) else part.capacitance
+
+
 # Sort parts by (package, type) first, then by value
 parts.sort(key=lambda p: (p.package, type(p).__name__, value_key(p)))
 
 
 def eyeball_check():
-    for (package, part_type), group in groupby(parts, key=part_key):
-        group = list(group)  # Convert to list for multiple iterations
+    for (package, part_type), group_iter in groupby(parts, key=part_key):
+        group = list(group_iter)  # Convert to list for multiple iterations
 
         # Determine available fields dynamically
         has_tolerance = any(
@@ -424,23 +424,7 @@ E24 = [
 ]
 
 
-@dataclasses.dataclass
-class Part:
-    tolerance: str | None
-    package: str
-    description: str | None
-
-
-@dataclasses.dataclass
-class Resistor(Part):
-    resistance: pint.Quantity
-
-
-@dataclasses.dataclass
-class Capacitor(Part):
-    capacitance: pint.Quantity
-    dielectric: str
-    voltage_rating: float
+# Duplicate class definitions (Part/Resistor/Capacitor) removed; see top-level BasePart/Resistor/Capacitor
 
 
 def crunch(factory, *items):
@@ -451,10 +435,10 @@ def crunch(factory, *items):
         if isinstance(item, dict):
             state.update(item)
         elif isinstance(item, list):
-            assert all(isinstance(i, (int, float)) for i in item)
+            assert all(isinstance(i, int | float) for i in item)
             parts.extend(factory(**state, value=i) for i in item)
         else:
-            assert isinstance(item, (int, float)), item
+            assert isinstance(item, int | float), item
             parts.append(factory(**state, value=item))
     return result
 
@@ -619,14 +603,6 @@ crunch(
 print(len(parts), "parts")
 
 v = ureg.V
-
-
-def part_key(part):
-    return (part.package, type(part).__name__)
-
-
-def value_key(part):
-    return part.resistance if isinstance(part, Resistor) else part.capacitance
 
 
 # Sort parts by (package, type) first, then by value

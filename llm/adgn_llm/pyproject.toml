@@ -5,10 +5,8 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "adgn-llm"
 version = "0.1.0"
-description = "Rai's LLM tools: mini_codex, properties, instruction optimizer, git-commit-ai"
-readme = "README.md"
+description = "Rai's LLM tools"
 requires-python = ">=3.11"
-license = { text = "MIT" }
 authors = [{ name = "Rai (agentydragon)" }]
 dependencies = [
   "openai>=1.40.0",

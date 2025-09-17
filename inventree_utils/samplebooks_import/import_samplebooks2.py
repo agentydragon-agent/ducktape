@@ -381,7 +381,7 @@ def main():
 
     # 4) Precompute quantity checks
     #    (Your request: "make sure all rules i said above are satisfied" => crash if mismatch)
-    #    For debugging, we’ll just do it: we call get_quantity for each to confirm no exceptions.
+    #    For debugging, we'll just do it: we call get_quantity for each to confirm no exceptions.
     for p in parts:
         _ = get_quantity(p)  # Will raise if any weirdness
 

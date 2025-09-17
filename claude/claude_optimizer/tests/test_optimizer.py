@@ -6,7 +6,9 @@ from datetime import datetime
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+import pydantic
 import pytest
+import yaml
 from claude_optimizer.config import OptimizerConfig
 from claude_optimizer.core.jsonl_logger import JSONLLogger, safe_serialize
 from claude_optimizer.core.logging_openai_client import (
@@ -307,8 +309,6 @@ class TestOptimizerConfig:
             "exclude_patterns": ["*.log", "*.tmp"],
         }
         cfg_path = tmp_path / "config.yaml"
-        import yaml
-
         cfg_path.write_text(yaml.safe_dump(cfg_data))
         cfg = OptimizerConfig.from_file(cfg_path)
         assert cfg.rollouts.max_parallel == 2
@@ -317,8 +317,6 @@ class TestOptimizerConfig:
 
     def test_config_validation(self):
         """Test configuration validation."""
-        import pydantic
-
         with pytest.raises(pydantic.ValidationError):
             OptimizerConfig(invalid_field="value")
 

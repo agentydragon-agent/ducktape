@@ -602,7 +602,15 @@ class HookHandler:
             # Import here to avoid circular import
 
             try:
-                close_desktop_notification(notification_id)
+                # Try to close D-Bus notification if function available
+                try:
+                    from ..cli import close_desktop_notification as _close_fn
+                except Exception:
+                    _close_fn = None
+
+                if _close_fn:
+                    _close_fn(notification_id)
+
                 self.session_manager.clear_notification_id(session_id)
                 logger.debug(f"Cleared notification {notification_id} for session {session_id}")
             except (OSError, ImportError, AttributeError) as e:

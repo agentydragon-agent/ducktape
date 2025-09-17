@@ -16,6 +16,8 @@ import pytest
 import yaml
 from click.testing import CliRunner
 
+from adgn.tests.wt.mock_factory import ServiceBuilder as _ServiceBuilder
+from adgn.tests.wt.test_data import TestData as _TestData
 from adgn.wt.server import github_client
 from adgn.wt.server.git_manager import GitManager
 from adgn.wt.server.worktree_service import WorktreeService
@@ -84,7 +86,6 @@ def service_builder():
     Tests that previously imported ServiceBuilder from tests.mock_factory can now
     accept a ServiceBuilder fixture parameter to receive the factory class.
     """
-    from adgn.tests.wt.mock_factory import ServiceBuilder as _ServiceBuilder
 
     return _ServiceBuilder
 
@@ -96,7 +97,6 @@ def test_data():
     Tests that previously imported TestData from tests.test_data can now
     request a TestData fixture parameter to receive the class.
     """
-    from adgn.tests.wt.test_data import TestData as _TestData
 
     return _TestData
 
@@ -396,9 +396,9 @@ def shell_runner():
             cwd: Path,
             env: dict[str, str] | None = None,
         ):
-            assert importlib.util.find_spec("wt"), (
-                "wt package not installed - required for shell integration tests"
-            )
+            assert importlib.util.find_spec(
+                "wt",
+            ), "wt package not installed - required for shell integration tests"
             # Ensure env is a copy
             env = os.environ.copy() if env is None else env.copy()
 

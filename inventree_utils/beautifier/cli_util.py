@@ -6,7 +6,7 @@ def build_table(rows, header=None):
     Builds a simple space-aligned table from rows, optionally with a header row.
     """
     if header:
-        rows = [header] + rows[:]
+        rows = [header, *rows[:]]
     column_count = unwrap_singleton({len(row) for row in rows})
     column_widths = [max(len(row[i]) for row in rows) for i in range(column_count)]
 

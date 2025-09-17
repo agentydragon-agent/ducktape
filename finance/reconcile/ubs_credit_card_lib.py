@@ -35,7 +35,7 @@ _EXPECTED_CSV_COLUMNS = {
 
 def load_ubs_credit_card_csv(path) -> dict[str, external_system.ExternalExpense]:
     result = {}
-    with open(path, encoding="latin1") as f:
+    with path.open(encoding="latin1") as f:
         lines = f.readlines()
         assert lines[0] == "sep=;\n"
         for line in csv.DictReader(lines[1:], delimiter=";"):

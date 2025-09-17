@@ -1,12 +1,13 @@
 import shlex
 import subprocess
-import sys
 from pathlib import Path
 
 from inventree.label import LabelTemplate
 from inventree.part import Part
 from inventree.stock import StockItem
 from invoke import task
+
+from inventree_utils.beautifier.config import api_from_config
 
 SERVER = "root@agentydragon.com"
 
@@ -61,19 +62,16 @@ here = Path(__file__).parent
 
 
 def get_api():
-    sys.path.append(str(here))
-    from beautifier.config import api_from_config
-
     return api_from_config(timeout=1000)
 
 
 def get_template(api):
-    TEMPLATE_NAME = "Rai stock item - 1x1 SMD snap box"
+    template_name = "Rai stock item - 1x1 SMD snap box"
     templates = LabelTemplate.list(api)
     try:
-        return next(t for t in templates if t.name == TEMPLATE_NAME)
+        return next(t for t in templates if t.name == template_name)
     except StopIteration:
-        raise ValueError(f"No label template named '{TEMPLATE_NAME}' found")
+        raise ValueError(f"No label template named '{template_name}' found")
 
 
 def all_part_ids(api):
@@ -103,13 +101,8 @@ def all_part_ids(api):
 
 
 @task
-def test_template(c, api=None, template_pk=None):
-    if not api:
-        api = get_api()
-    if not template_pk:
-        template_pk = get_template(api).pk
-
-    OUTPUT_PDF = here / "all_parts_labels.pdf"
+def render_template(c, api, template_pk):
+    output_pdf = here / "all_parts_labels.pdf"
 
     all_parts = False
     if all_parts:
@@ -143,8 +136,8 @@ def test_template(c, api=None, template_pk=None):
     print(response)
 
     # {'pk': 160, 'created': '2025-03-16', 'user': 1, 'user_detail': {'pk': 1, 'username': 'root', 'first_name': '', 'last_name': '', 'email': 'agentydragon@gmail.com'}, 'model_type': 'stockitem', 'items': 181, 'complete': True, 'progress': 100, 'output': '/media/label/output/output_p5YHr9R.pdf', 'template': 7, 'plugin': 'inventreelabel'}
-    api.downloadFile(url=response["output"], destination=OUTPUT_PDF, overwrite=True)
-    print(f"Generated PDF label sheet with {len(part_ids)} parts -> {OUTPUT_PDF}")
+    api.downloadFile(url=response["output"], destination=output_pdf, overwrite=True)
+    print(f"Generated PDF label sheet with {len(part_ids)} parts -> {output_pdf}")
     # > /media/label/output/output_p5YHr9R.pdf
 
 
@@ -153,11 +146,11 @@ def deploy_template(c):
     api = get_api()
     template = get_template(api)
 
-    TEMPLATE_PATH = here / "labels/smd_1x1_stockitem_wip.html"
-    template.save(label=TEMPLATE_PATH)  # Upload the new template file
+    template_path = here / "labels/smd_1x1_stockitem_wip.html"
+    template.save(label=template_path)  # Upload the new template file
     print("Template updated")
 
-    test_template(c, api=api, template_pk=template.pk)
+    render_template(c, api=api, template_pk=template.pk)
 
 
 @task

@@ -1,15 +1,4 @@
-# Remaining follow-ups (adgn_llm properties + agents)
-
-Scope: Items identified after recent CLI/prompt refactors. Grouped by priority; each has suggested approach and file refs.
-
-## Top priority
-
-- Specimen grade: include negatives (false_positives.md)
-  - Where: src/adgn_llm/properties/cli.py:369–385
-  - Approach:
-    - If manifest_dir/false_positives.md exists, embed as a separate fenced block (or JSON list if we later formalize).
-    - Extend build_grade_prompt to accept a “negatives_text” input and adjust prompt copy accordingly.
-    - Acceptance: When false_positives.md exists, the grading prompt mentions and uses it; regression test covers both presence/absence.
+# Remaining follow-ups
 
 ## Quality/consistency
 
@@ -22,11 +11,6 @@ Scope: Items identified after recent CLI/prompt refactors. Grouped by priority; 
   - Where: src/adgn_llm/properties/cli.py:760 (TODO comment)
   - Approach: Parse to Path in argparse handling; plumb Path to downstream helpers; normalize write sites.
   - Acceptance: Type is Path end-to-end; unit smoke where possible.
-
-- Avoid duplicate tool detection in check --dry-run
-  - Where: src/adgn_llm/properties/cli.py:851–853
-  - Approach: Call _detect_tools() once; reuse local var for printing and table.
-  - Acceptance: No duplicated calls; behavior unchanged.
 
 ## Lint-issue improvements
 
@@ -90,7 +74,3 @@ Scope: Items identified after recent CLI/prompt refactors. Grouped by priority; 
 3) Lint-issue consolidation + BIG_THRESHOLD config
 4) Small CLI polish (duplicate _detect_tools)
 5) Time-boxed infra items as needed
-
-### Notes
-- Keep Markdown concise and within properties/markdown style (predicate → acceptance criteria where applicable).
-- Add small pytest(s) for newly introduced branches (negatives present/absent; big-file bootstrap).

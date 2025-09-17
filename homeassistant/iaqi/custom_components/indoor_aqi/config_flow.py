@@ -19,7 +19,7 @@ class IndoorAQIConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_import(self, user_input=None) -> FlowResult:
         """Handle YAML import."""
         # user_input might contain data we pass in from __init__.py,
-        # e.g. the entire monitors list. Let’s store it in the entry’s data.
+        # e.g. the entire monitors list. Let's store it in the entry's data.
         if user_input is None:
             user_input = {}
 

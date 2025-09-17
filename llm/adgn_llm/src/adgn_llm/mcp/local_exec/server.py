@@ -9,7 +9,6 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
-# ---- Local exec implementation (moved from mini_codex/local_tools.py) ----
 DEFAULT_TIMEOUT_S = int(os.getenv("DUCK_TIMEOUT_S", "30"))
 TRUNCATE_BYTES = 8 * 1024
 BWRAP = os.getenv("BWRAP", "bwrap")

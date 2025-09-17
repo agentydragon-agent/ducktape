@@ -22,8 +22,8 @@ from claude_optimizer.database.models import (
 @pytest.fixture
 def temp_db():
     """Create a temporary in-memory database for testing."""
-    SessionLocal = create_database("sqlite:///:memory:")
-    session = SessionLocal()
+    session_local = create_database("sqlite:///:memory:")
+    session = session_local()
     try:
         yield session
     finally:

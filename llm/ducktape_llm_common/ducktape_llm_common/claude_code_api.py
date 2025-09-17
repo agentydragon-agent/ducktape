@@ -1,6 +1,6 @@
 """Pydantic models for Claude Code hook API requests and responses per Anthropic spec."""
 
-from typing import Any, Literal, NewType, Union
+from typing import Any, Literal, NewType
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
@@ -147,11 +147,6 @@ class StopResponse(BaseResponse):
 
 
 # Union type for automatic discrimination
-HookRequest = Union[
-    PreToolUseRequest,
-    PostToolUseRequest,
-    NotificationRequest,
-    StopRequest,
-    SubagentStopRequest,
-    PreCompactRequest,
-]
+HookRequest = (
+    PreToolUseRequest | PostToolUseRequest | NotificationRequest | StopRequest | SubagentStopRequest | PreCompactRequest
+)

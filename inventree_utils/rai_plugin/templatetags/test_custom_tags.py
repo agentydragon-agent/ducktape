@@ -1,7 +1,7 @@
-import os
 import sys
+from pathlib import Path
 
-sys.path.append(os.path.join(os.path.dirname(__file__)))
+sys.path.append(str(Path(__file__).parent))
 from django.utils.safestring import SafeString
 
 from .custom_tags import ParametersProcessor, shorten

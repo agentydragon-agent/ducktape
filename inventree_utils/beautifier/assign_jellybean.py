@@ -3,6 +3,7 @@ import re
 import shlex
 import subprocess
 import tempfile
+from pathlib import Path
 from textwrap import dedent
 
 from inventree.api import InvenTreeAPI
@@ -60,8 +61,8 @@ class UserSyntaxError(Exception):
 
 
 def parse_file_lines(lines):
-    for line in lines:
-        line = line.strip()
+    for raw_line in lines:
+        line = raw_line.strip()
         if not line or line.startswith("#"):
             continue
 
@@ -80,7 +81,7 @@ def parse_jellybean_editor_file(part_lookup, file_path):
     Parse the user-edited file. Return an iterable of (Part, jellybeanPN).
     Raise UserSyntaxError if format is invalid or there's a mismatch.
     """
-    with open(file_path) as f:
+    with Path(file_path).open() as f:
         parsed = list(parse_file_lines(f))
 
     for url, jellybean_pn, part_name in parsed:
@@ -159,9 +160,10 @@ def assign_jellybean(api: InvenTreeAPI):
         return
 
     # Write to temp file
-    fd, file_path = tempfile.mkstemp(prefix="inventree_edit_", suffix=".txt")
+    fd, file_path_str = tempfile.mkstemp(prefix="inventree_edit_", suffix=".txt")
     os.close(fd)
-    with open(file_path, "w") as f:
+    file_path = Path(file_path_str)
+    with file_path.open("w") as f:
         f.write(build_editor_file(api, edited_parts))
 
     part_lookup = {part_url(api, p): p for p in edited_parts}

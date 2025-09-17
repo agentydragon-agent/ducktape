@@ -9,8 +9,8 @@ To auto-add transactions:
 # TODO: check that dates are reasonably close in matched transactions
 
 import datetime
-import glob
 import re
+from pathlib import Path
 
 import gnucash
 import xdg
@@ -166,7 +166,7 @@ def main(_):
     config_dir = xdg.xdg_config_home() / "ducktape"
     xdg.xdg_cache_home() / "ducktape"
 
-    with open(config_dir / "config.yaml") as f:
+    with (config_dir / "config.yaml").open() as f:
         config = yaml.safe_load(f)
 
     with gnucash_util.GnuCashSession(
@@ -188,7 +188,7 @@ def main(_):
                 # TODO: Make sure it is for the right IBAN.
 
                 external_transaction_by_external_id = {}
-                for csv_path in glob.glob(reconcile_config["csv_glob"]):
+                for csv_path in Path().glob(reconcile_config["csv_glob"]):
                     external_transaction_by_external_id.update(
                         ubs_lib.load_ubs_csv(csv_path),
                     )
@@ -198,7 +198,7 @@ def main(_):
                 id_regex = "([0-9A-Z]+)"
             elif "ubs_cc_account" in reconcile_config:
                 external_transaction_by_external_id = {}
-                for csv_path in glob.glob(reconcile_config["csv_glob"]):
+                for csv_path in Path().glob(reconcile_config["csv_glob"]):
                     # TODO: assert disjoint keys
                     external_transaction_by_external_id.update(
                         ubs_credit_card_lib.load_ubs_credit_card_csv(csv_path),
@@ -296,7 +296,10 @@ def main(_):
             print("Unmatched in external system:")
 
             # Sort by descending net
-            def get_abs_net(expense_id):
+            def get_abs_net(
+                expense_id,
+                external_transaction_by_external_id=external_transaction_by_external_id,
+            ):
                 return abs(external_transaction_by_external_id[expense_id].amount)
 
             for expense_id in sorted(unmatched_ids, key=get_abs_net, reverse=True):

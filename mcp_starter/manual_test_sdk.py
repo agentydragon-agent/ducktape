@@ -10,7 +10,6 @@ import errno
 import logging
 import os
 import socket
-import subprocess
 import tempfile
 import uuid
 from collections.abc import AsyncIterator
@@ -179,21 +178,19 @@ async def sse_server_manager() -> AsyncIterator[McpSSEServerConfig]:
 
     server_process = None
     try:
-        # Start server process
+        # Start server process asynchronously
         with sse_log_file.open("w") as log_file:
-            server_process = subprocess.Popen(
-                [
-                    "adgn-mcp-starter",
-                    "--transport",
-                    "sse",
-                    "--port",
-                    str(sse_port),
-                    "--host",
-                    "localhost",
-                    "--debug",
-                ],
+            server_process = await asyncio.create_subprocess_exec(
+                "adgn-mcp-starter",
+                "--transport",
+                "sse",
+                "--port",
+                str(sse_port),
+                "--host",
+                "localhost",
+                "--debug",
                 stdout=log_file,
-                stderr=subprocess.STDOUT,
+                stderr=log_file,
                 env=server_env,
             )
 
@@ -201,7 +198,7 @@ async def sse_server_manager() -> AsyncIterator[McpSSEServerConfig]:
         await asyncio.sleep(3)
 
         # Check if server failed immediately
-        if (_ := server_process.poll()) is not None:
+        if server_process.returncode is not None:
             raise RuntimeError("SSE server failed to start")
 
         # Simple startup delay - real test is whether Claude SDK can connect
@@ -209,7 +206,7 @@ async def sse_server_manager() -> AsyncIterator[McpSSEServerConfig]:
         await asyncio.sleep(2)
 
         # Final check that server is still running
-        if (_ := server_process.poll()) is not None:
+        if server_process.returncode is not None:
             raise RuntimeError("SSE server died during startup")
 
         logger.info("[green]✓ SSE server started[/green]")
@@ -230,9 +227,10 @@ async def sse_server_manager() -> AsyncIterator[McpSSEServerConfig]:
             logger.info("[blue]Stopping SSE server...[/blue]")
             server_process.terminate()
             try:
-                server_process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
+                await asyncio.wait_for(server_process.wait(), timeout=5)
+            except asyncio.TimeoutError:
                 server_process.kill()
+                await server_process.wait()
 
         logger.info(f"[blue]SSE server log file for inspection: {sse_log_file}[/blue]")
 

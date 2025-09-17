@@ -26,8 +26,8 @@ from claude_optimizer.database.models import (
 @pytest.fixture
 def temp_db():
     """Create a temporary in-memory database for testing."""
-    SessionLocal = create_database("sqlite:///:memory:")
-    session = SessionLocal()
+    session_local = create_database("sqlite:///:memory:")
+    session = session_local()
     try:
         yield session
     finally:
@@ -440,7 +440,7 @@ class ConfigLoader:
 
         return create_messages
 
-    def test_full_optimization_workflow(
+    def test_full_optimization_workflow(  # noqa: PLR0913
         self,
         temp_db,
         sample_seeds_yaml,

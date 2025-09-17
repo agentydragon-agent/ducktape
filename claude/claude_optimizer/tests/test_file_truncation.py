@@ -62,9 +62,9 @@ class TestFileTruncation:
         encoding = tiktoken.encoding_for_model(test_config.grader.model)
         files_json = json.dumps(result, indent=2)
         final_tokens = len(encoding.encode(files_json))
-        MAX_FILES_TOKENS = 150_000
-        assert final_tokens <= MAX_FILES_TOKENS, (
-            f"Result exceeds limit: {final_tokens} > {MAX_FILES_TOKENS}"
+        max_files_tokens = 150_000
+        assert final_tokens <= max_files_tokens, (
+            f"Result exceeds limit: {final_tokens} > {max_files_tokens}"
         )
 
     def test_largest_files_truncated_first(self, test_config):

@@ -28,7 +28,7 @@ from mcp.client.session import ClientSession
 from mcp.client.sse import sse_client
 from mcp.client.stdio import StdioServerParameters, stdio_client
 from mcp.types import InitializeResult
-from pydantic import AnyUrl, BaseModel, Field
+from pydantic import AnyUrl, BaseModel, Field, TypeAdapter
 
 # Shared MCP naming helpers/constants
 MCP_NAMESPACE_PREFIX = "mcp__"
@@ -221,8 +221,6 @@ class McpManager:
         This method enforces that invariant and uses pydantic.TypeAdapter to validate/parse into the provided
         Pydantic model or typing annotation (Annotated/Union). If the invariant is broken, raise ValueError.
         """
-        from pydantic import TypeAdapter
-
         res = await self.call_tool(server, name, arguments)
         structured = getattr(res, "structuredContent", None)
         if not isinstance(structured, dict) or "result" not in structured:

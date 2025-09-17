@@ -20,6 +20,7 @@ template loaders -- not useful for me
 import functools
 import inspect
 import logging
+from typing import Any, ClassVar
 
 from django import template
 from django.utils.html import escape
@@ -67,7 +68,7 @@ def apply(value, *fns):
 
 
 class ParametersProcessor:
-    _displayers = []
+    _displayers: ClassVar[list[tuple[tuple[str, ...], Any]]] = []
 
     def __init__(self, part, parameters):
         self.part = part
@@ -114,22 +115,18 @@ class ParametersProcessor:
 
         return decorator
 
-    @property
     @displayer("Package")
     def package(self, val):
         return apply(val, remove_prefix("SMD "))
 
-    @property
     @displayer("Power rating")
     def show_power_rating(self, val):
         return apply(val, shorten, prefix("P&lt;"))
 
-    @property
     @displayer("Collector-emitter voltage (V_CEO)")
     def collector_emitter_voltage(self, val):
         return apply(val, shorten, prefix("V<sub>CEO</sub>="))
 
-    @property
     @displayer("Resistance", "Tolerance")
     def show_value(self, resistance, tolerance):
         val = apply(resistance, shorten)
@@ -172,24 +169,20 @@ class ParametersProcessor:
     def is_diode(self):
         return self.under_category("Diodes")
 
-    @property
     @displayer("Minimum input voltage", "Maximum input voltage")
     def input_voltage_range(self, min, max):
         min, max = shorten(min), shorten(max)
         return apply(fmt_range(min, max), prefix("V<sub>in</sub>"))
 
-    @property
     @displayer("Reverse voltage")
     def reverse_voltage(self, val):
         # Or "V_rev"
         return apply(val, shorten, prefix("V<sub>R</sub>="))
 
-    @property
     @displayer("Power dissipation (Pd)")
     def power_dissipation(self, val):
         return apply(val, shorten, prefix("P<sub>d</sub>="))
 
-    @property
     @displayer("Forward voltage @ current")
     def forward_voltage_at_current(self, val):
         val = apply(val, shorten)
@@ -198,12 +191,10 @@ class ParametersProcessor:
         voltage, current = val.split("@")
         return f"V<sub>F</sub>={shorten(voltage)}@{shorten(current)}"
 
-    @property
     @displayer("Average rectified forward current (I_F)")
     def average_rectified_forward_current(self, val):
         return apply(val, shorten, prefix("I<sub>F</sub>="))
 
-    @property
     @displayer("Reverse leakage current @ voltage (I_R)")
     def reverse_leakage_current(self, val):
         val = apply(val, shorten)
@@ -212,35 +203,29 @@ class ParametersProcessor:
         ir, v = val.split("@")
         return f"I<sub>R</sub>={shorten(ir)}@{shorten(v)}"
 
-    @property
     @displayer("Minimum supply voltage", "Maximum supply voltage")
     def supply_voltage_range(self, min, max):
         min, max = shorten(min), shorten(max)
         return apply(fmt_range(min, max), prefix("V<sub>sup</sub>"))
 
-    @property
     @displayer("Maximum output current")
     def max_output_current(self, val):
         return apply(fmt_range(None, shorten(val)), prefix("I<sub>out</sub>"))
 
-    @property
     @displayer("Output voltage")
     def output_voltage(self, val):
         # TODO: voltage can also here be written as 'adjustable 1.2-37 V',
         # 'adjustable 0.8~5.5V'
         return shorten(val).replace("adjustable", "adj")
 
-    @property
     @displayer("BJT type")
     def bjt_type(self, val):
         return val
 
-    @property
     @displayer("Function")
     def function(self, val):
         return val
 
-    @property
     @displayer("Jellybean P/N")
     def jellybean_pn(self, val):
         return val

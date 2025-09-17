@@ -4,7 +4,6 @@ import json
 import logging
 import sys
 import uuid
-from abc import ABC
 
 from .claude_code_api import (
     HookRequest,
@@ -33,7 +32,7 @@ from .claude_outcomes import (
 from .hook_logging import InvocationID, get_session_logger
 
 
-class ClaudeCodeHookBase(ABC):
+class ClaudeCodeHookBase:
     """
     Base class for implementing Claude Code hooks.
 

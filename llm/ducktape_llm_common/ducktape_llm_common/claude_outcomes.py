@@ -2,7 +2,6 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Union
 
 from .claude_code_api import (
     BaseResponse,
@@ -58,7 +57,7 @@ class PreToolNoOpinion(HookOutcome):
         return PreToolResponse()  # undefined decision = existing permission flow
 
 
-PreToolOutcome = Union[PreToolApprove, PreToolDeny, PreToolNoOpinion]
+PreToolOutcome = PreToolApprove | PreToolDeny | PreToolNoOpinion
 
 
 # PostToolUse Outcomes
@@ -91,7 +90,7 @@ class PostToolNotifyLLM(HookOutcome):
         return PostToolResponse(decision="block", reason=self.llm_message)
 
 
-PostToolOutcome = Union[PostToolSuccess, PostToolNotifyLLM]
+PostToolOutcome = PostToolSuccess | PostToolNotifyLLM
 
 
 # Stop Hook Outcomes
@@ -124,7 +123,7 @@ class StopPrevent(HookOutcome):
         return StopResponse(decision="block", reason=self.llm_message)
 
 
-StopOutcome = Union[StopAllow, StopPrevent]
+StopOutcome = StopAllow | StopPrevent
 
 
 # SubagentStop Hook Outcomes
@@ -155,7 +154,7 @@ class SubagentStopPrevent(HookOutcome):
         return StopResponse(decision="block", reason=self.llm_message)
 
 
-SubagentStopOutcome = Union[SubagentStopAllow, SubagentStopPrevent]
+SubagentStopOutcome = SubagentStopAllow | SubagentStopPrevent
 
 
 # Notification Hook Outcomes

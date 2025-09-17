@@ -44,7 +44,7 @@ def load_ubs_csv(path) -> dict[str, external_system.ExternalExpense]:
     # Returns:
     result = {}
     # encoding='utf-8-sig' skips byte order mark
-    with open(path, encoding="utf-8-sig") as f:
+    with path.open(encoding="utf-8-sig") as f:
         reader = csv.DictReader(f, delimiter=";")
         for line in reader:
             assert set(line.keys()) == _EXPECTED_CSV_COLUMNS, (

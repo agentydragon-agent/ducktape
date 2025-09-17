@@ -22,7 +22,7 @@ def get_splitwise_net(expense, user_id):
 
 def make_client(splitwise_credentials_path):
     if splitwise_credentials_path.exists():
-        with open(splitwise_credentials_path) as f:
+        with splitwise_credentials_path.open() as f:
             splitwise_credentials = json.load(f)
     else:
         splitwise_credentials = {}
@@ -36,7 +36,7 @@ def make_client(splitwise_credentials_path):
 def assign_token(client, cache_dir):
     token_path = cache_dir / "splitwise_token.json"
     if token_path.exists():
-        with open(token_path) as f:
+        with token_path.open() as f:
             access_token = json.load(f)
             logging.info("Access token loaded from %s", access_token)
     else:
@@ -52,7 +52,7 @@ def assign_token(client, cache_dir):
         logging.info("got access token")
 
         token_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(token_path, "w") as f:
+        with token_path.open("w") as f:
             json.dump(access_token, f)
             logging.info("Access token saved to %s", access_token)
     client.setAccessToken(access_token)

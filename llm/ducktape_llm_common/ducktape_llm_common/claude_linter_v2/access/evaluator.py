@@ -40,7 +40,7 @@ class PredicateEvaluator:
         try:
             tree = ast.parse(predicate_code.strip())
         except SyntaxError as e:
-            raise ValueError(f"Invalid Python syntax: {e}")
+            raise ValueError(f"Invalid Python syntax: {e}") from e
 
         # Must contain exactly one function definition at top level
         functions = [node for node in tree.body if isinstance(node, ast.FunctionDef)]
@@ -51,7 +51,7 @@ class PredicateEvaluator:
 
         # Check for other top-level statements (imports are allowed)
         non_function_statements = [
-            node for node in tree.body if not isinstance(node, (ast.FunctionDef, ast.Import, ast.ImportFrom))
+            node for node in tree.body if not isinstance(node, ast.FunctionDef | ast.Import | ast.ImportFrom)
         ]
         if non_function_statements:
             raise ValueError(

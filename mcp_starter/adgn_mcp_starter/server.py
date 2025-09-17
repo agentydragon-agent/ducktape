@@ -46,7 +46,7 @@ def create_mcp_server(debug_mcp: bool = False) -> FastMCP[Any]:
 
     @mcp.tool
     def generate_sample_image() -> ImageContent:
-        """Generate a minimal red‑pixel PNG for binary content demo."""
+        """Generate a minimal red-pixel PNG for binary content demo."""
         return ImageContent(
             type="image",
             data="iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",

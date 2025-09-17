@@ -26,38 +26,43 @@ class EarlyBailoutChecker:
 class EarlyBailoutVisitor(ast.NodeVisitor):
     """AST visitor to detect early bailout opportunities."""
 
+    # NOTE: Method names intentionally use CamelCase to match ast.NodeVisitor
+    # dispatch (visit_<NodeClass>) so the visitor methods are invoked correctly.
+    # These method names violate normal naming conventions, so we suppress
+    # the N802 linter rule on the individual method definitions below.
+
     def __init__(self) -> None:
         self.errors: list[tuple[int, int, str, type[Any]]] = []
         self.current_function: ast.FunctionDef | ast.AsyncFunctionDef | None = None
         self.loop_depth = 0
 
-    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:  # noqa: N802
         """Track current function context."""
         old_function = self.current_function
         self.current_function = node
         self.generic_visit(node)
         self.current_function = old_function
 
-    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:  # noqa: N802
         """Track current async function context."""
         old_function = self.current_function
         self.current_function = node
         self.generic_visit(node)
         self.current_function = old_function
 
-    def visit_For(self, node: ast.For) -> None:
+    def visit_For(self, node: ast.For) -> None:  # noqa: N802
         """Track loop depth."""
         self.loop_depth += 1
         self.generic_visit(node)
         self.loop_depth -= 1
 
-    def visit_While(self, node: ast.While) -> None:
+    def visit_While(self, node: ast.While) -> None:  # noqa: N802
         """Track loop depth."""
         self.loop_depth += 1
         self.generic_visit(node)
         self.loop_depth -= 1
 
-    def visit_If(self, node: ast.If) -> None:
+    def visit_If(self, node: ast.If) -> None:  # noqa: N802
         """Check if statements for early bailout opportunities."""
         # Check if this if has an else clause
         if node.orelse:

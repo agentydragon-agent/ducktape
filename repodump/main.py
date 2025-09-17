@@ -12,21 +12,27 @@ Examples:
 import os
 import re
 import sys
+from pathlib import Path
 
 import click
 import yaml
 
+try:
+    import pyperclip  # optional dependency
+except Exception:  # pragma: no cover - optional
+    pyperclip = None  # type: ignore[assignment]
+
 from .patterns import path_match
 
-CONFIG_PATH = os.path.expanduser("~/.config/repodump.yaml")
+CONFIG_PATH = Path.home() / ".config" / "repodump.yaml"
 
 
 def load_config():
     """Load YAML config from ~/.config/repodump.yaml or exit if missing."""
-    if not os.path.isfile(CONFIG_PATH):
+    if not CONFIG_PATH.is_file():
         click.echo(f"Config not found: {CONFIG_PATH}\nPlease create it, then re-run.")
         sys.exit(1)
-    with open(CONFIG_PATH, encoding="utf-8") as f:
+    with CONFIG_PATH.open(encoding="utf-8") as f:
         return yaml.safe_load(f)
 
 
@@ -47,10 +53,9 @@ def scan_directory(root_dir, cfg_includes, cfg_excludes):
     all_files = []
     uncertain_files = []
 
-    for dirpath, dirnames, filenames in os.walk(root_dir):
-        rel_dir = os.path.relpath(dirpath, root_dir)
-        if rel_dir == ".":
-            rel_dir = ""
+    for dirpath, dirnames, filenames in os.walk(str(root_dir)):
+        rel_dir_path = Path(dirpath).relative_to(root_dir)
+        rel_dir = "" if rel_dir_path.as_posix() == "." else rel_dir_path.as_posix()
 
         # If this directory is excluded (by the entire dir path):
         if rel_dir and path_match(rel_dir, cfg_excludes):
@@ -59,7 +64,7 @@ def scan_directory(root_dir, cfg_includes, cfg_excludes):
             continue
 
         for f in filenames:
-            rel_file = f if not rel_dir else os.path.join(rel_dir, f)
+            rel_file = f if not rel_dir else f"{rel_dir}/{f}"
 
             # If it matches exclude, skip
             if path_match(rel_file, cfg_excludes):
@@ -67,7 +72,7 @@ def scan_directory(root_dir, cfg_includes, cfg_excludes):
 
             # If it matches include, we want it
             if path_match(rel_file, cfg_includes):
-                all_files.append(os.path.join(dirpath, f))
+                all_files.append(Path(dirpath) / f)
             else:
                 # Not matched by either => uncertain
                 uncertain_files.append(rel_file)
@@ -111,10 +116,10 @@ def remove_literal(text, snippet):
 
 def remove_regex(text, pattern, flags_str):
     combined_flags = 0
-    for f in flags_str.split("|"):
-        f = f.strip().upper()
-        if hasattr(re, f):
-            combined_flags |= getattr(re, f)
+    for flag_token in flags_str.split("|"):
+        name = flag_token.strip().upper()
+        if hasattr(re, name):
+            combined_flags |= getattr(re, name)
     return re.sub(pattern, "", text, flags=combined_flags)
 
 
@@ -165,7 +170,7 @@ def main(ctx, output_flag, copy_output):
 
     # Load config
     config = load_config()
-    root_dir = os.getcwd()
+    root_dir = Path.cwd()
 
     # Merge config
     if "repos" not in config:
@@ -200,9 +205,9 @@ def main(ctx, output_flag, copy_output):
     file_token_counts = []
 
     for fp in sorted(all_files):
-        relpath = os.path.relpath(fp, root_dir)
+        relpath = Path(fp).relative_to(root_dir).as_posix()
         try:
-            with open(fp, encoding="utf-8", errors="ignore") as f:
+            with Path(fp).open(encoding="utf-8", errors="ignore") as f:
                 content = f.read()
         except Exception:
             blob_lines.append(f"# Skipped unreadable file: {relpath}\n\n")
@@ -239,18 +244,16 @@ def main(ctx, output_flag, copy_output):
         click.echo("\n=== END DUMP ===")
     else:
         # -o somefile => write
-        outpath = os.path.abspath(output_file)
-        with open(outpath, "w", encoding="utf-8") as wf:
+        outpath = Path(output_file).resolve()
+        with outpath.open("w", encoding="utf-8") as wf:
             wf.write(final_text)
         click.echo(f"Dump written to: {outpath}")
 
     if copy_output:
-        try:
-            import pyperclip
-
-            pyperclip.copy(final_text)
+        if pyperclip is not None:
+            pyperclip.copy(final_text)  # type: ignore[union-attr]
             click.echo("Dump copied to clipboard.")
-        except ImportError:
+        else:
             click.echo("pyperclip not installed; cannot copy to clipboard.")
 
 
