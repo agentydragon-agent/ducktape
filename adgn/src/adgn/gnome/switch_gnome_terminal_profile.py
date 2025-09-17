@@ -76,11 +76,14 @@ class ProfileDConf:
                 return True
             if out == "false":
                 return False
-            return ast.literal_eval(out)
-        except subprocess.CalledProcessError:
+            value = ast.literal_eval(out)
+            if isinstance(value, str | bool):
+                return value
+            raise ValueError(f"Unsupported dconf value type: {type(value)}")
+        except subprocess.CalledProcessError as e:
             raise KeyError(
                 f"Reading '{property_name}' from {self.profile_uuid} failed",
-            )
+            ) from e
 
     @property
     def visible_name(self) -> str:

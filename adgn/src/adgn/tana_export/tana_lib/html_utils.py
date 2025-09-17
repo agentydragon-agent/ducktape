@@ -66,7 +66,7 @@ class HTMLToMarkdownParser(HTMLParser):
     def handle_data(self, data):
         self.output.write(data)
 
-    def get_markdown(self):
+    def get_markdown(self) -> str:
         return self.output.getvalue()
 
 

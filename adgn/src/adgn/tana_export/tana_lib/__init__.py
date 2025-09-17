@@ -34,7 +34,8 @@ from .models import (
     VisualNode,
     load_tana_export,
 )
-from .query import get_field_values, get_tuple_value, is_in_deleted_nodes
+from .query import get_field_values, is_in_deleted_nodes
+from .query_core import get_tuple_value
 from .search_evaluator import SearchEvaluator
 from .search_materializer import compare_search_results, materialize_search
 from .search_parser import (

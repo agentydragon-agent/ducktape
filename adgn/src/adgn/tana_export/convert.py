@@ -114,8 +114,8 @@ class RenderContext:
 
         # Convert HTML formatting to markdown for tana style
         if self.style == "tana":
-            return html_to_markdown(txt)
-        return html.unescape(txt)
+            return str(html_to_markdown(txt))
+        return str(html.unescape(txt))
 
     @contextmanager
     def add_indent(self):
@@ -331,7 +331,7 @@ def _export(store: NodeStore, style: str) -> str:
         if style == "md" and node_lines:
             # Transform first line from bullet to header
             hdr = node_lines[0]
-            ttl = hdr.lstrip("- ").rstrip()
+            ttl: str = str(hdr.lstrip("- ").rstrip())
             lines.append(ttl)
             lines.append("=" * len(ttl))
             ctx.visited.remove(r.id)  # show owned children again
