@@ -195,7 +195,7 @@ def _build_prompt(
         (IssueCore, Occurrence, LineRange, LintSubmitPayload, IssueLintFindingRecord),
     )
 
-    return render_prompt_template(
+    prompt_md: str = render_prompt_template(
         "lint_issue.j2.md",
         issue_json=issue_json,
         docker_tool_name=docker_tool_name,
@@ -203,6 +203,7 @@ def _build_prompt(
         wiring=wiring,
         schemas_json=schemas_json,
     )
+    return prompt_md
 
 
 BIG_THRESHOLD = 20480
@@ -406,7 +407,8 @@ async def lint_issue_run(
             await agent.run(prompt)
 
     assert submit_state.result, "submit_result somehow not called?"
-    return submit_state.result  # type: ignore[return-value]
+    result: LintSubmitPayload = submit_state.result
+    return result
 
 
 # ---------------------------------------------------------------------------

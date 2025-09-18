@@ -13,7 +13,7 @@ from openai.types.responses import (
 import pytest
 
 from adgn.llm.mini_codex.agent import MiniCodex
-from adgn.llm.mini_codex.aggregating_handler import BaseHandler
+from adgn.llm.mini_codex.aggregating_handler import AutoHandler, BaseHandler
 from adgn.llm.mini_codex.mcp_manager import McpManager, parse_mcp_function
 
 # Minimal in-proc MCP server with a single echo tool
@@ -109,7 +109,7 @@ async def test_agent_mcp_echo_tool_use(monkeypatch: pytest.MonkeyPatch) -> None:
             mcp=mgr,
             system="You are a test agent.",
             client=DummyClient(),
-            handlers=[RecordingHandler(rec)],
+            handlers=[AutoHandler(), RecordingHandler(rec)],
             parallel_tool_calls=False,
         )
         async with agent:
@@ -118,5 +118,6 @@ async def test_agent_mcp_echo_tool_use(monkeypatch: pytest.MonkeyPatch) -> None:
     # The tool output should be emitted (FunctionCallOutput) and assistant text should follow
     assert rec.tool_outputs, "No tool outputs captured"
     out0 = json.loads(rec.tool_outputs[0])
-    assert out0.get("ok") is True and out0.get("echo") == "hello"
+    assert out0.get("ok") is True
+    assert out0.get("echo") == "hello"
     assert res.text.strip() == "done"

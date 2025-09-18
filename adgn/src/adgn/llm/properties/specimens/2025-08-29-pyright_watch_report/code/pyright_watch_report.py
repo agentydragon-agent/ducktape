@@ -293,7 +293,7 @@ def main() -> int:
     print()
 
     # Dump file list if requested
-    dump_path: Path | None = (
+    dump_path: Path = (
         Path(args.dump).resolve()
         if args.dump
         else (root / "scratch/pyright_watched_files.txt")

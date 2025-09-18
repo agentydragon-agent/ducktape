@@ -17,12 +17,14 @@ Configuration (env or kwargs):
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 import os
 import time
-from typing import Any
+from typing import Any, cast
 from urllib.parse import urlparse
 
 from mcp.server.fastmcp import FastMCP
+from pydantic import BaseModel, ConfigDict, TypeAdapter
 import requests
 
 
@@ -36,6 +38,15 @@ class MirrorConfig:
 
 class MirrorError(RuntimeError):
     pass
+
+
+class EnsureMirrorAndSyncResponse(BaseModel):
+    owner: str
+    repo: str
+    mirror_path: str
+    mirror_updated: datetime  # API spec: string (date-time); parsed by Pydantic
+
+    model_config = ConfigDict(extra="forbid")
 
 
 def _headers(token: str) -> dict[str, str]:
@@ -64,7 +75,10 @@ def _post_json(
 def _get_json(url: str, token: str, *, timeout: int = 15) -> dict[str, Any]:
     resp = requests.get(url, headers=_headers(token), timeout=timeout)
     resp.raise_for_status()
-    return resp.json()
+    data = resp.json()
+    if not isinstance(data, dict):  # narrow type for mypy and correctness
+        raise MirrorError("Expected JSON object from Gitea API")
+    return cast(dict[str, Any], data)
 
 
 def _slug_component(value: str) -> str:
@@ -116,12 +130,19 @@ def _wait_for_update(cfg: MirrorConfig, owner: str, repo: str) -> dict[str, Any]
         except requests.RequestException as exc:  # pragma: no cover - transient network
             raise MirrorError("failed to fetch repository metadata") from exc
         else:
-            if not data.get("mirror"):
-                raise MirrorError("repository is not marked as a mirror")
-            updated = data.get("mirror_updated") or data.get("updated_at")
-            if updated and updated != last_updated:
+            mirror_flag = data.get("mirror")
+            if not isinstance(mirror_flag, bool) or not mirror_flag:
+                raise MirrorError(
+                    "repository is not marked as a mirror (mirror: boolean expected)"
+                )
+            updated_val = data.get("mirror_updated")
+            if not isinstance(updated_val, str):
+                raise MirrorError(
+                    "unexpected shape: Repository.mirror_updated must be a string (date-time)"
+                )
+            if updated_val != last_updated:
                 return data
-            last_updated = updated
+            last_updated = updated_val
         time.sleep(cfg.poll_interval_secs)
     raise MirrorError(f"mirror did not update within {cfg.poll_timeout_secs}s")
 
@@ -129,10 +150,10 @@ def _wait_for_update(cfg: MirrorConfig, owner: str, repo: str) -> dict[str, Any]
 def _resolve_owner(base_url: str, token: str) -> str:
     user_url = f"{base_url.rstrip('/')}/api/v1/user"
     data = _get_json(user_url, token)
-    owner = data.get("login") or data.get("username")
-    if not owner:
-        raise MirrorError("Failed to resolve token owner from Gitea")
-    return owner
+    login = data.get("login")
+    if not isinstance(login, str) or not login:
+        raise MirrorError("unexpected shape: User.login (string) required")
+    return login
 
 
 def make_gitea_mirror_mcp(
@@ -172,18 +193,23 @@ def make_gitea_mirror_mcp(
         description="Ensure a Gitea pull mirror exists and syncs",
         structured_output=True,
     )
-    def ensure_mirror_and_sync(url: str) -> dict[str, Any]:
+    def ensure_mirror_and_sync(url: str) -> EnsureMirrorAndSyncResponse:
         owner = _resolve_owner(cfg.base_url, cfg.token)
         repo = _derive_repo_name(url)
         _ensure_mirror(cfg, url, owner, repo)
         _trigger_sync(cfg, owner, repo)
         repo_data = _wait_for_update(cfg, owner, repo)
-        return {
-            "owner": owner,
-            "repo": repo,
-            "mirror_path": f"{owner}/{repo}.git",
-            "mirror_updated": repo_data.get("mirror_updated")
-            or repo_data.get("updated_at"),
-        }
+        mu = repo_data.get("mirror_updated")
+        if not isinstance(mu, str) or not mu:
+            raise MirrorError(
+                "unexpected shape: Repository.mirror_updated (string) required"
+            )
+        mirror_dt = TypeAdapter(datetime).validate_python(mu)
+        return EnsureMirrorAndSyncResponse(
+            owner=owner,
+            repo=repo,
+            mirror_path=f"{owner}/{repo}.git",
+            mirror_updated=mirror_dt,
+        )
 
     return server

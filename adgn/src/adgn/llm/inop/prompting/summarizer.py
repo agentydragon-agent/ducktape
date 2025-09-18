@@ -41,7 +41,8 @@ class PatternSummarizer(FeedbackProvider):
     )
 
     def _count_tokens(self, text: str) -> int:
-        return self.truncation_manager.count_tokens(text)
+        tokens: int = self.truncation_manager.count_tokens(text)
+        return tokens
 
     async def provide_feedback(self, rollouts: list[GradedRollout]) -> str:
         rollout_summaries: list[str] = []
@@ -114,16 +115,16 @@ class PatternSummarizer(FeedbackProvider):
             excluded_rollouts=original_count - len(rollout_summaries),
             context_utilization=f"{(final_tokens / self.model.context_window_tokens) * 100:.1f}%",
         )
-        return extract_text_from_openai_response(
-            await self.model.responses_create(
-                input=[  # OpenAI Responses API uses 'input' not 'messages'
-                    {"role": "system", "content": self._SYSTEM_MESSAGE},
-                    {"role": "user", "content": analysis_prompt},
-                ],
-                tools=[],
-                tool_choice="auto",
-            ),
+        resp = await self.model.responses_create(
+            input=[  # OpenAI Responses API uses 'input' not 'messages'
+                {"role": "system", "content": self._SYSTEM_MESSAGE},
+                {"role": "user", "content": analysis_prompt},
+            ],
+            tools=[],
+            tool_choice="auto",
         )
+        text: str = extract_text_from_openai_response(resp)
+        return text
         # TODO: store, log
 
     def verbal_description(self) -> str:

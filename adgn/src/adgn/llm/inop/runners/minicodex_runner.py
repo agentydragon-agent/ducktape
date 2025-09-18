@@ -25,7 +25,7 @@ from adgn.llm.inop.engine.models import (
 )
 from adgn.llm.inop.io.file_utils import collect_workspace_files
 from adgn.llm.inop.runners.base import AgentRunner
-from adgn.llm.mcp._shared.container_session import NetworkMode
+from adgn.llm.mcp._shared.container_session import ContainerOptions, NetworkMode
 from adgn.llm.mcp.docker_exec.server import make_container_exec_mcp
 from adgn.llm.mcp.inproc_transport import make_inproc_slot_spec
 from adgn.llm.mcp.local_exec.server import make_local_exec_mcp
@@ -126,11 +126,13 @@ class MiniCodexRunner(AgentRunner):
 
             def _make_server():
                 return make_container_exec_mcp(
-                    image=setup.docker.image,
-                    working_dir="/workspace",
-                    volumes=volumes,
-                    network_mode=network_mode,
-                    environment=setup.docker.env or {},
+                    ContainerOptions(
+                        image=setup.docker.image,
+                        working_dir="/workspace",
+                        volumes=volumes,
+                        network_mode=network_mode,
+                        environment=setup.docker.env or {},
+                    )
                 )
 
             spec = make_inproc_slot_spec(_make_server())

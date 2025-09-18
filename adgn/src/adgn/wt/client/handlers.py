@@ -32,7 +32,7 @@ async def handle_status(daemon_client, formatter) -> None:
     # Sort worktree items for display
 
     def sort_key(item):
-        name, status = item
+        name, _status = item
         # Always prioritize the main worktree
         if name == MAIN_WORKTREE_DISPLAY_NAME:
             return (0, "main")  # main worktree always first

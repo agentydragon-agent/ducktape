@@ -6,6 +6,7 @@ import asyncio
 import json
 from pathlib import Path
 
+from openai import AsyncOpenAI
 from rich.console import Console
 from rich.panel import Panel
 from rich.rule import Rule
@@ -116,6 +117,7 @@ def cmd_run(
             base_out=base_out,
             n_limit=n,
             concurrency=concurrency,
+            client=AsyncOpenAI(),
         ),
     )
 

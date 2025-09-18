@@ -6,6 +6,8 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from adgn.llm.mini_codex.mcp_manager import McpManager  # structured MCP snapshot types
+
 # --------------------------
 # Envelope and core state
 # --------------------------
@@ -171,12 +173,20 @@ class Welcome(Envelope):
     session_state: SessionState
 
 
+class McpServerInfo(BaseModel):
+    name: str
+    model_config = ConfigDict(extra="forbid")
+
+
 class Snapshot(Envelope):
     type: Literal["snapshot"] = "snapshot"
     v: str
     session_state: SessionState
     run_state: RunState | None = None
     transcript: list[TranscriptItem] = []
+    # Structured MCP state for UI and sampling (Pydantic models from McpManager)
+    sampling: McpManager.SamplingSnapshot | None = None
+    mcp_servers: list[McpServerInfo] = []
 
 
 class Accepted(BaseModel):
@@ -198,10 +208,32 @@ class ApprovalPendingEvt(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+# Approval decisions are protocol-native (distinct from handler actions)
+class ApprovalApprove(BaseModel):
+    kind: Literal["approve"] = "approve"
+    model_config = ConfigDict(extra="forbid")
+
+
+class ApprovalDenyContinue(BaseModel):
+    kind: Literal["deny_continue"] = "deny_continue"
+    model_config = ConfigDict(extra="forbid")
+
+
+class ApprovalDenyAbort(BaseModel):
+    kind: Literal["deny_abort"] = "deny_abort"
+    model_config = ConfigDict(extra="forbid")
+
+
+ApprovalDecision = Annotated[
+    ApprovalApprove | ApprovalDenyContinue | ApprovalDenyAbort,
+    Field(discriminator="kind"),
+]
+
+
 class ApprovalDecisionEvt(BaseModel):
     type: Literal["approval_decision"] = "approval_decision"
     call_id: str
-    decision: Literal["continue", "inject_result", "abort"]
+    decision: ApprovalDecision
     model_config = ConfigDict(extra="forbid")
 
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable
 import json
-from typing import Any, Literal
+from typing import Any, Literal, cast
 import uuid
 
 # Control-plane exception raised when an approval decision requests aborting the turn
@@ -109,13 +109,13 @@ class McpManagerWithApprovals:
 
     # ---- Pass-throughs ----
     async def list_tools(self, only: list[str] | None = None) -> list[dict[str, Any]]:
-        return await self._inner.list_tools(only=only)
+        return cast(list[dict[str, Any]], await self._inner.list_tools(only=only))
 
     async def list_resources(
         self,
         only: list[str] | None = None,
     ) -> list[dict[str, Any]]:
-        return await self._inner.list_resources(only=only)
+        return cast(list[dict[str, Any]], await self._inner.list_resources(only=only))
 
     async def read_resource(self, server: str, uri: str) -> Any:
         # Pass-through in MVP; resource gating can be added similarly.

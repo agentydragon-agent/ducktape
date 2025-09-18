@@ -8,7 +8,7 @@ import asyncio
 from collections.abc import Iterable
 from dataclasses import dataclass
 import json
-from typing import Any, Literal, Protocol, cast
+from typing import Any, Literal, Protocol, TypeAlias, cast
 
 from mcp import types as mcp_types
 from openai.resources.responses import AsyncResponses
@@ -47,7 +47,7 @@ from adgn.llm.openai_retry import retry_decorator
 from adgn.llm.openai_utils import ReasoningSummary
 
 from .aggregating_handler import AggregatingController, BaseHandler
-from .mcp_manager import McpManager, parse_mcp_function
+from .mcp_manager import McpManager
 
 
 @dataclass
@@ -83,12 +83,10 @@ def _extract_error_from_out_str(out_str: str) -> str | None:
         data = json.loads(out_str)
     except Exception:
         return None
-    if (
-        isinstance(data, dict)
-        and data.get("ok") is False
-        and isinstance(data.get("error"), str)
-    ):
-        return data["error"]
+    if isinstance(data, dict) and data.get("ok") is False:
+        err = data.get("error")
+        if isinstance(err, str):
+            return err
     return None
 
 
@@ -149,8 +147,13 @@ class AssistantMessage(BaseModel):
     content: str
 
 
-Message = UserMessage | AssistantMessage | FunctionCallOutput
-TranscriptItem = Message | ResponseFunctionToolCall | ResponseReasoningItem
+class SystemMessage(BaseModel):
+    role: Literal["system"]
+    content: str
+
+
+Message: TypeAlias = UserMessage | AssistantMessage | SystemMessage | FunctionCallOutput
+TranscriptItem: TypeAlias = Message | ResponseFunctionToolCall | ResponseReasoningItem
 
 
 class MiniCodex:
@@ -178,7 +181,7 @@ class MiniCodex:
         # Agent state fields
         self.assistant_text_chunks: list[str] = []
         self.pending_function_calls: list[ResponseFunctionToolCall] = []
-        self.resp_output = []
+        self._last_resp_output: list[TranscriptItem] = []
         self.finished: bool = False
         # Aggregating controller (owns handlers and loop-decision semantics)
         handlers_list = list(handlers)
@@ -192,25 +195,41 @@ class MiniCodex:
         self._system = (instructions or self._default_system).strip()
 
     async def _build_effective_instructions(self) -> str:
-        """Compose effective system instructions with an MCP banner.
+        """Compose effective system instructions with an MCP banner derived from structured snapshot.
 
-        - Summarizes available resources per server (first 5 URIs per server)
-        - Appends per-server initialize instructions when available
+        View/prompt rendering remains here; McpManager only returns structured data.
         """
         instructions = self._system
-        if banner := await self._mcp.render_banner():
+        snap = await self._mcp.sampling_snapshot()  # structured (servers, tools)
+        lines: list[str] = []
+        for s in snap.servers:
+            if s.state != "running":
+                continue
+            name = s.name
+            init = s.initialize
+            desc = init.instructions if init else None
+            entry = f"server={name}"
+            if desc:
+                # Keep brief; avoid flooding the header
+                snippet = desc.strip().splitlines()
+                if snippet:
+                    entry += f"\n  <{name} server desc>\n{snippet[0]}\n  </{name} server desc>"
+            lines.append(entry)
+        if lines:
+            banner = "FYI: MCP servers:\n- " + "\n- ".join(lines)
             instructions += f"\n\n{banner}"
         return instructions
 
     async def run(self, user_text: str) -> AgentResult:
         self._transcript.append(UserMessage(role="user", content=user_text))
-        self._controller.on_user_text(UserText(text=user_text))
+        self._controller.on_user_text(UserText(text=user_text))  # type: ignore[arg-type]
         self.assistant_text_chunks.clear()
         self.pending_function_calls.clear()
-        self.resp_output = []
+        self._last_resp_output = []
         self.finished = False
         try:
             while not self.finished:
+                # Pre-phase inserts now handled by handlers via Continue.inserts
                 await self._run_one_phase()
                 if self.pending_function_calls:
                     await self._handle_pending_tool_calls()
@@ -254,8 +273,9 @@ class MiniCodex:
             if cid and cid in local_fco_map:
                 out_str = local_fco_map[cid]
                 return out_str, _extract_error_from_out_str(out_str)
-            server, tool = parse_mcp_function(function_call.name or "")
-            res = await self._mcp.call_tool(server, tool, args_json)
+            res = await self._mcp.call_tool_namespaced(
+                function_call.name or "", args_json
+            )
             out_str = _responses_output_from_calltool(res)
             return out_str, _extract_error_from_out_str(out_str)
 
@@ -280,7 +300,7 @@ class MiniCodex:
             if exc := t.exception():
                 first_exc = exc
                 break
-        if first_exc is None:
+        if not first_exc:
             results = [t.result() for t in task_to_call]
             out_map = {
                 function_call.call_id: res
@@ -301,7 +321,7 @@ class MiniCodex:
         denied_call_id = first_exc.call_id
         completed_results = {}
         for t in done:
-            if t is None or t.cancelled() or t.exception() is first_exc:
+            if not t or t.cancelled() or t.exception() is first_exc:
                 continue
             if (fc := task_to_call.get(t)) is not None:
                 completed_results[fc.call_id] = t.result()
@@ -334,6 +354,10 @@ class MiniCodex:
         if isinstance(decision, SyntheticAction):
             resp_output = decision.outputs
         elif isinstance(decision, Continue):
+            # Inject any handler-provided pre-sample inserts into transcript
+            for msg in decision.inserts:
+                self._transcript.append(msg)
+            snap = await self._mcp.sampling_snapshot()
             resp = await _responses_create_with_retry(
                 self._client,
                 model=self._model,
@@ -343,7 +367,7 @@ class MiniCodex:
                 tool_choice=_tool_choice_from_policy(decision.tool_policy),
                 store=True,
                 parallel_tool_calls=self._parallel_tool_calls,
-                tools=await self._mcp.list_tools(),
+                tools=[t.model_dump(exclude_none=True) for t in snap.tools],
                 **reasoning_kwargs,
             )
             u = resp.usage
@@ -358,19 +382,20 @@ class MiniCodex:
                     ),
                     model=self._model,
                 ),
-            )
+            )  # type: ignore[arg-type]
             resp_output = resp.output
         else:
             raise TypeError(f"Unsupported loop decision: {type(decision).__name__}")
         self._process_resp_output(resp_output)
+        self._last_resp_output = resp_output
         if not self.pending_function_calls:
             self.finished = True
 
-    def _process_resp_output(self, resp_output):
+    def _process_resp_output(self, resp_output: list[TranscriptItem]) -> None:
         self.pending_function_calls.clear()
         for item in resp_output:
             if isinstance(item, ResponseReasoningItem):
-                self._controller.on_reasoning(item)
+                self._controller.on_reasoning(item)  # type: ignore[arg-type]
             elif isinstance(item, ResponseOutputMessage):
                 text = "\n".join(
                     part.text
@@ -378,9 +403,19 @@ class MiniCodex:
                     if isinstance(part, ResponseOutputText) and part.text
                 )
                 self.assistant_text_chunks.append(text)
-                self._controller.on_assistant_text(AssistantText(text=text))
+                self._controller.on_assistant_text(AssistantText(text=text))  # type: ignore[arg-type]
             elif isinstance(item, ResponseFunctionToolCall):
                 self.pending_function_calls.append(item)
+                # Emit a typed ToolCall event for handlers/recorders
+                self._controller.on_tool_call(
+                    ToolCall(
+                        name=item.name or "",
+                        args_json=item.arguments
+                        if isinstance(item.arguments, str)
+                        else None,
+                        call_id=item.call_id or "",
+                    )
+                )
             self._transcript.append(item)
 
     @classmethod
@@ -415,7 +450,7 @@ class MiniCodex:
         """Emit a single typed function_call_output event (no duplicates)."""
         fco = FunctionCallOutput(call_id=function_call.call_id, output=out_str)
         self._transcript.append(fco)
-        self._controller.on_function_call_output(fco)
+        self._controller.on_function_call_output(fco)  # type: ignore[arg-type]
 
     def _emit_batch_aborted_outputs(
         self,

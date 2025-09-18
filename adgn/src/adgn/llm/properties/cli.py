@@ -434,14 +434,13 @@ def main(argv: list[str] | None = None) -> int:
             ts = int(time.time())
             outfile = tmpdir / f"codex_prompt_{args.command}_{ts}.md"
             outfile.write_text(prompt, encoding="utf-8")
-            tokens = None
             enc = tiktoken.get_encoding("cl100k_base")
             tokens = len(enc.encode(prompt))
             print(" ".join(cmd))
             tools = _detect_tools()
             print(f"Detected tools: {', '.join(tools) if tools else '(none)'}")
             print(_format_tools_table(tools))
-            print(f"Saved prompt: {outfile} (~{tokens or 'n/a'} tok)")
+            print(f"Saved prompt: {outfile} (~{tokens} tok)")
             return 0
 
         # Stream to subprocess stdin for fix

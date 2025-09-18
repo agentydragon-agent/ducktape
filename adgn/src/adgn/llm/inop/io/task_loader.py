@@ -3,6 +3,7 @@
 from pathlib import Path
 from typing import Any
 
+from pydantic import TypeAdapter
 import yaml
 
 from adgn.llm.inop.engine.models import (
@@ -141,7 +142,9 @@ def load_runner_configs(file_path: Path | str) -> dict[str, dict[str, Any]]:
     with file_path.open() as f:
         data = yaml.safe_load(f)
 
-    return data["runners"]
+    runners = data.get("runners") or {}
+    # Validate and coerce to precise type to avoid Any leakage
+    return TypeAdapter(dict[str, dict[str, Any]]).validate_python(runners)
 
 
 def load_task_definitions(

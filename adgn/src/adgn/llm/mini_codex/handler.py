@@ -8,7 +8,6 @@ string derived from the concrete type.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Literal, TypedDict
 
@@ -60,15 +59,13 @@ class FunctionCallOutput(BaseModel):
 # ----- Generic before-tool-call decision algebra (handler-level, generic) -----
 
 
-@dataclass
-class ContinueDecision:
+class ContinueDecision(BaseModel):
     """Proceed with normal execution."""
 
     action: Literal["continue"] = "continue"
 
 
-@dataclass
-class BypassToolInjectOutput:
+class BypassToolInjectOutput(BaseModel):
     """Bypass MCP execution and inject this tool result into the turn.
 
     Handlers return this decision to indicate the agent should use the provided
@@ -81,8 +78,7 @@ class BypassToolInjectOutput:
     action: Literal["bypass_inject"] = "bypass_inject"
 
 
-@dataclass
-class AbortTurnDecision:
+class AbortTurnDecision(BaseModel):
     """Request abort of the entire turn."""
 
     action: Literal["abort"] = "abort"

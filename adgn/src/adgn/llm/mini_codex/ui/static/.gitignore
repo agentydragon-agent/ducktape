@@ -1,0 +1,6 @@
+# MiniCodex UI build artifacts
+web/
+
+# Legacy static files (replaced by Svelte app)
+app.js
+index.html

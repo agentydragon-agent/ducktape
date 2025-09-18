@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import statistics
 from typing import Any
+from pydantic import BaseModel
 
 import matplotlib
 import pandas as pd  # type: ignore[import-untyped]
@@ -33,32 +34,45 @@ matplotlib.use("Agg", force=True)
 logger = DualOutputLogging.get_logger()
 
 
+class Stats(BaseModel):
+    mean: float
+    stdev: float
+    min: float
+    max: float
+    count: int
+
+
+class IterationSummary(BaseModel):
+    iteration: int
+    overall: Stats
+    facets: dict[str, Stats]
+    timestamp: str
+
+
 def create_plot_data_point(
-    iter_data: dict[str, Any],
+    iter_data: IterationSummary,
     facet_name: str,
 ) -> dict[str, Any]:
     """Create a plot data point for a given iteration and facet."""
     stats = (
-        iter_data["overall"]
-        if facet_name == "overall"
-        else iter_data["facets"][facet_name]
+        iter_data.overall if facet_name == "overall" else iter_data.facets[facet_name]
     )
 
     # Calculate 69% confidence interval (approximately 1 standard error)
-    mean = stats["mean"]
-    count = stats["count"]
+    mean = stats.mean
+    count = stats.count
     if count > 1:
-        std_err = stats["stdev"] / (count**0.5)
+        std_err = stats.stdev / (count**0.5)
         ci_lower = mean - std_err
         ci_upper = mean + std_err
     else:
         ci_lower = ci_upper = mean
 
     return {
-        "iteration": iter_data["iteration"],
+        "iteration": iter_data.iteration,
         "facet": facet_name,
         "mean": mean,
-        "stdev": stats["stdev"],
+        "stdev": stats.stdev,
         "ci_lower": ci_lower,
         "ci_upper": ci_upper,
         "count": count,
@@ -101,7 +115,7 @@ class ScoreStatistics:
 class ScoreEvolutionPlotter:
     """Handles plotting of score evolution data."""
 
-    def __init__(self, iterations_data: list[dict]):
+    def __init__(self, iterations_data: list[IterationSummary]):
         self.iterations_data = iterations_data
 
     def generate_plots(self, run_dir: Path) -> tuple[Path, Path]:
@@ -115,8 +129,8 @@ class ScoreEvolutionPlotter:
             plot_data.append(create_plot_data_point(iter_data, "overall"))
 
         # Facet scores
-        if self.iterations_data[0]["facets"]:
-            for facet_name in self.iterations_data[0]["facets"]:
+        if self.iterations_data[0].facets:
+            for facet_name in self.iterations_data[0].facets:
                 for iter_data in self.iterations_data:
                     plot_data.append(create_plot_data_point(iter_data, facet_name))
 
@@ -235,7 +249,7 @@ class ScoreEvolutionPlotter:
 class ScoreEvolutionReporter:
     """Generates text reports from score evolution data."""
 
-    def __init__(self, iterations_data: list[dict]):
+    def __init__(self, iterations_data: list[IterationSummary]):
         self.iterations_data = iterations_data
 
     def generate_report(
@@ -258,25 +272,25 @@ class ScoreEvolutionReporter:
 
         # Overall scores table
         for iter_data in self.iterations_data:
-            overall = iter_data["overall"]
+            overall: Stats = iter_data.overall
             report_parts.append(
-                f"  Iteration {iter_data['iteration']:2d}: "
-                f"{overall['mean']:5.2f} ± {overall['stdev']:4.2f} "
-                f"(range: {overall['min']:4.1f}-{overall['max']:4.1f}, n={overall['count']})",
+                f"  Iteration {iter_data.iteration:2d}: "
+                f"{overall.mean:5.2f} ± {overall.stdev:4.2f} "
+                f"(range: {overall.min:4.1f}-{overall.max:4.1f}, n={overall.count})",
             )
 
         # Facet evolution
-        if self.iterations_data[0]["facets"]:
+        if self.iterations_data[0].facets:
             report_parts.extend(["", "Facet Score Evolution:"])
-            facet_names = list(self.iterations_data[0]["facets"].keys())
+            facet_names = list(self.iterations_data[0].facets.keys())
 
             for facet in facet_names:
                 report_parts.append(f"  {facet}:")
                 for iter_data in self.iterations_data:
-                    facet_stats = iter_data["facets"][facet]
+                    facet_stats = iter_data.facets[facet]
                     report_parts.append(
-                        f"    Iter {iter_data['iteration']:2d}: "
-                        f"{facet_stats['mean']:5.2f} ± {facet_stats['stdev']:4.2f}",
+                        f"    Iter {iter_data.iteration:2d}: "
+                        f"{facet_stats.mean:5.2f} ± {facet_stats.stdev:4.2f}",
                     )
 
         # Add plot paths if provided
@@ -306,24 +320,24 @@ class ScoreEvolutionTracker:
         """Add scores from an iteration."""
         overall_scores, facet_scores = self._stats.extract_scores(graded_codes)
 
-        iteration_summary = {
-            "iteration": iteration,
-            "overall": self._stats.safe_stats(overall_scores),
-            "facets": {
-                name: self._stats.safe_stats(scores)
+        iteration_summary = IterationSummary(
+            iteration=iteration,
+            overall=Stats.model_validate(self._stats.safe_stats(overall_scores)),
+            facets={
+                name: Stats.model_validate(self._stats.safe_stats(scores))
                 for name, scores in facet_scores.items()
             },
-            "timestamp": datetime.now(UTC).isoformat(),
-        }
+            timestamp=datetime.now(UTC).isoformat(),
+        )
 
         self.iterations_data.append(iteration_summary)
 
         logger.info(
             "Score evolution tracked",
             iteration=iteration,
-            overall_mean=round(iteration_summary["overall"]["mean"], 2),
-            overall_stdev=round(iteration_summary["overall"]["stdev"], 2),
-            rollout_count=iteration_summary["overall"]["count"],
+            overall_mean=round(iteration_summary.overall.mean, 2),
+            overall_stdev=round(iteration_summary.overall.stdev, 2),
+            rollout_count=iteration_summary.overall.count,
         )
 
     def generate_report(self, run_dir: Path, log_path: Path) -> str:

@@ -2,7 +2,7 @@
 
 import json
 from pathlib import Path
-from typing import cast
+from typing import Protocol, cast
 
 from openai.types.responses.response import Response
 from openai.types.responses.response_output_message import ResponseOutputMessage
@@ -13,6 +13,10 @@ from adgn.llm.inop.config import OptimizerConfig
 from adgn.llm.inop.engine.models import FileInfo
 
 
+class _Tokenizer(Protocol):
+    def encode(self, text: str) -> list[int]: ...
+
+
 class TruncationManager:
     """Unified truncation management for files, content, and messages."""
 
@@ -20,7 +24,7 @@ class TruncationManager:
 
     def __init__(self, config: OptimizerConfig):
         self.config = config
-        self._encoding = tiktoken.encoding_for_model(config.grader.model)
+        self._encoding: _Tokenizer = tiktoken.encoding_for_model(config.grader.model)
 
     def count_tokens(self, text: str) -> int:
         """Count tokens in text using the configured model encoding."""
@@ -225,6 +229,6 @@ def extract_text_from_openai_response(response: Response) -> str:
         if isinstance(item, ResponseOutputMessage) and item.type == "message":
             for content_item in item.content:
                 if isinstance(content_item, ResponseOutputText):
-                    return content_item.text
+                    return cast(str, content_item.text)
 
     raise RuntimeError("No text content found in OpenAI response")

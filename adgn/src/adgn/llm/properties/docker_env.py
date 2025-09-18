@@ -6,6 +6,7 @@ from pathlib import Path
 
 import docker
 
+from adgn.llm.mcp._shared.container_session import ContainerOptions
 from adgn.llm.mcp.docker_exec.server import make_container_exec_mcp
 from adgn.llm.mcp.inproc_transport import make_inproc_slot_spec
 from adgn.llm.mcp.types import ServerSlotSpec
@@ -107,10 +108,12 @@ def properties_docker_spec(
     )
 
     server = make_container_exec_mcp(
-        image=PROPERTIES_DOCKER_IMAGE,
-        working_dir=str(WORKING_DIR),
-        volumes=volumes,
-        describe=True,
+        ContainerOptions(
+            image=PROPERTIES_DOCKER_IMAGE,
+            working_dir=str(WORKING_DIR),
+            volumes=volumes,
+            describe=True,
+        )
     )
     return PropertiesDockerWiring(
         server_spec=make_inproc_slot_spec(server),

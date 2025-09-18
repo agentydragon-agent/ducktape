@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from contextlib import AsyncExitStack, asynccontextmanager
+import asyncio
+from contextlib import AsyncExitStack, asynccontextmanager, suppress
 
-import anyio
 from mcp.client.session import ClientSession
 from mcp.server.fastmcp import FastMCP
 from mcp.shared.memory import create_client_server_memory_streams
@@ -29,26 +29,31 @@ def make_inproc_slot_spec(app: FastMCP) -> ServerSlotSpec:
                 create_client_server_memory_streams(),
             )
 
-            # Create and register a task group under the manager stack so both
-            # server and session tasks share the same cancel scope.
-            tg = await stack.enter_async_context(anyio.create_task_group())
-            tg.start_soon(
-                app._mcp_server.run,  # type: ignore[attr-defined]
-                server_read,
-                server_write,
-                app._mcp_server.create_initialization_options(),  # type: ignore[attr-defined]
+            # Start the FastMCP server in an asyncio Task and register a cleanup
+            # callback on the manager's stack to cancel and await it on exit.
+            server_task = asyncio.create_task(
+                app._mcp_server.run(  # type: ignore[attr-defined]
+                    server_read,
+                    server_write,
+                    app._mcp_server.create_initialization_options(),  # type: ignore[attr-defined]
+                )
             )
 
-            # Enter the client session under the same stack so its task group and
-            # the server task are siblings under the manager-owned task group.
+            async def _cancel_server_task(task: asyncio.Task):
+                task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await task
+
+            stack.push_async_callback(_cancel_server_task, server_task)
+
+            # Enter the client session via the manager's AsyncExitStack so enter/exit
+            # occur within the same task/cancel scope when the stack unwinds.
             sess = await stack.enter_async_context(
-                ClientSession(read_stream=client_read, write_stream=client_write),
+                ClientSession(read_stream=client_read, write_stream=client_write)
             )
-
             try:
                 yield sess
             finally:
-                # session and task group cleanup will be handled by AsyncExitStack
                 pass
 
         return _cm()

@@ -5,12 +5,23 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Scope: This document covers the adgn Python package located in this directory. It explains how to set up the environment (direnv + devenv), run tests, lint, and the high‑level module layout so you can be productive quickly.
 
 Environment and setup (direnv + devenv)
-- Requirements: Nix + devenv, direnv (recommended), Python 3.11+, optionally uv.
+- Requirements: Nix + devenv, direnv (recommended), Python 3.11+.
 - First time in this directory:
   - cd /Users/mpokorny/code/ducktape/adgn
   - direnv allow
   - This loads .envrc → devenv, creates a Python 3.11 venv, and installs the package in editable mode with dev extras ([project.optional-dependencies].dev).
-- Re-entering the shell later: just cd into adgn; direnv will activate the same environment. To refresh after pyproject/devenv.nix edits: direnv reload
+- Re-entering the shell later: just cd into adgn; direnv will activate the same environment.
+- How to tell if direnv is active (and which env):
+  - direnv status → shows the current .envrc and whether it’s loaded
+  - echo "$VIRTUAL_ENV" → should contain …/adgn/.devenv/state/venv
+  - which python → should resolve to …/adgn/.devenv/state/venv/bin/python
+  - You’ll also see a one-line “direnv: loading/unloading” message when entering/leaving the directory
+- Raw commands vs prefixing:
+  - When direnv is active, just run tools directly: pytest, ruff check ., pre-commit run -a, rspcache, wt, etc.
+  - When running from outside the directory or in scripts, prefix with: direnv exec adgn <command>
+- Refresh the environment after edits:
+  - devenv.nix/.envrc changes → direnv reload
+  - pyproject.toml dependency changes → direnv reload (the shell will reinstall dev extras on entry); if needed: direnv exec adgn python -m pip install -e '.[dev]'
 
 Common commands
 - Run all tests (pytest discovery is configured for repo-root tests/):
@@ -30,8 +41,7 @@ Common commands
 - Install optional extras (example: GNOME console script deps):
   - direnv exec adgn python -m pip install -e '.[gnome]'
 - Build a wheel/sdist (optional):
-  - If uv is available: direnv exec adgn uv build
-  - Otherwise: direnv exec adgn python -m pip install build; direnv exec adgn python -m build
+  - direnv exec adgn python -m pip install build; direnv exec adgn python -m build
 
 Console scripts
 - switch_gnome_terminal_profile → adgn.gnome.switch_gnome_terminal_profile:run
@@ -84,7 +94,6 @@ Notes and caveats
 Quick references
 - Enter env here: direnv allow (in adgn/)
 - Run all tests: direnv exec adgn pytest tests
-- Alternative (use uv runner): uv run pytest tests
 - Single tests:
   - direnv exec adgn pytest tests/adgn/tana_export/test_convert.py::test_node_export
   - direnv exec adgn pytest tests/wt/integration/test_cli_integration.py

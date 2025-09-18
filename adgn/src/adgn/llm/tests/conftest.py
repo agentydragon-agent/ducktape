@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Any
 
@@ -18,10 +18,9 @@ import pytest
 def _mini_codex_logdir(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-) -> Iterator[None]:
+) -> None:
     log_dir = tmp_path / "mini_codex_logs"
     monkeypatch.setenv("MINICODEX_LOG_DIR", str(log_dir))
-    return
 
 
 # --- Minimal helpers/fixtures for building OpenAI Responses and fake client ---

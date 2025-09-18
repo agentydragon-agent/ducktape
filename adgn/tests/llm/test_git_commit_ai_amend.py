@@ -7,6 +7,7 @@ import tempfile
 from unittest.mock import AsyncMock, patch
 
 from git import Repo
+import pygit2
 import pytest
 
 from adgn.llm.git_commit_ai import cli
@@ -51,7 +52,13 @@ def temp_repo():
         yield repo
 
 
-def test_get_commit_diff_normal_commit(temp_repo):
+@pytest.fixture
+def pyg_repo(temp_repo) -> pygit2.Repository:
+    """Pygit2 view of the same working tree (for functions requiring pygit2)."""
+    return pygit2.Repository(temp_repo.working_dir)
+
+
+def test_get_commit_diff_normal_commit(temp_repo, pyg_repo):
     """Test get_commit_diff for a normal (non-amend) commit."""
     # Create initial file
     test_file = Path(temp_repo.working_dir) / "test.txt"
@@ -64,14 +71,14 @@ def test_get_commit_diff_normal_commit(temp_repo):
     temp_repo.index.add(["test.txt"])
 
     # Get diff without amend
-    diff = get_commit_diff(temp_repo, [], previous_message=None)
+    diff = get_commit_diff(pyg_repo, [], previous_message=None)
 
     assert "more content" in diff
     assert "@@" in diff  # Should have diff headers
     assert "=== Original commit" not in diff  # Should NOT have amend sections
 
 
-def test_get_commit_diff_amend_with_staged_changes(temp_repo):
+def test_get_commit_diff_amend_with_staged_changes(temp_repo, pyg_repo):
     """Test get_commit_diff for --amend with staged changes."""
     # Create initial commit
     test_file = Path(temp_repo.working_dir) / "test.txt"
@@ -84,7 +91,7 @@ def test_get_commit_diff_amend_with_staged_changes(temp_repo):
     temp_repo.index.add(["test.txt"])
 
     # Get diff with amend (previous_message indicates amend)
-    diff = get_commit_diff(temp_repo, [], previous_message="Initial commit")
+    diff = get_commit_diff(pyg_repo, [], previous_message="Initial commit")
 
     # Should have both sections
     assert "=== Original commit" in diff
@@ -93,7 +100,7 @@ def test_get_commit_diff_amend_with_staged_changes(temp_repo):
     assert "more content" in diff
 
 
-def test_get_commit_diff_amend_first_commit(temp_repo):
+def test_get_commit_diff_amend_first_commit(temp_repo, pyg_repo):
     """Test get_commit_diff when amending the very first commit (no HEAD^)."""
     # Create first commit
     test_file = Path(temp_repo.working_dir) / "test.txt"
@@ -106,7 +113,7 @@ def test_get_commit_diff_amend_first_commit(temp_repo):
     temp_repo.index.add(["test.txt"])
 
     # Get diff for amending first commit
-    diff = get_commit_diff(temp_repo, [], previous_message="First commit ever")
+    diff = get_commit_diff(pyg_repo, [], previous_message="First commit ever")
 
     # Should handle missing HEAD^ gracefully
     assert "=== Original commit content ===" in diff  # Uses git show instead
@@ -114,7 +121,7 @@ def test_get_commit_diff_amend_first_commit(temp_repo):
     assert "updated" in diff
 
 
-def test_get_commit_diff_amend_with_all_flag(temp_repo):
+def test_get_commit_diff_amend_with_all_flag(temp_repo, pyg_repo):
     """Test get_commit_diff for --amend -a (all tracked changes)."""
     # Create initial commit
     test_file = Path(temp_repo.working_dir) / "test.txt"
@@ -126,14 +133,14 @@ def test_get_commit_diff_amend_with_all_flag(temp_repo):
     test_file.write_text("initial\nmodified\n")
 
     # Get diff with amend and -a flag
-    diff = get_commit_diff(temp_repo, ["-a"], previous_message="Initial")
+    diff = get_commit_diff(pyg_repo, ["-a"], previous_message="Initial")
 
     assert "=== Original commit" in diff
     assert "=== New changes being added ===" in diff
     assert "modified" in diff
 
 
-def test_build_prompt_without_amend(temp_repo):
+def test_build_prompt_without_amend(temp_repo, pyg_repo):
     """Test build_prompt for regular commits."""
     # Create initial commit first (so HEAD exists)
     initial_file = Path(temp_repo.working_dir) / "initial.txt"
@@ -147,14 +154,14 @@ def test_build_prompt_without_amend(temp_repo):
     temp_repo.index.add(["test.txt"])
 
     diff = temp_repo.git.diff("--cached", "--unified=0")
-    prompt = build_prompt(temp_repo, diff, [], previous_message=None)
+    prompt = build_prompt(pyg_repo, diff, [], previous_message=None)
 
     assert "Write a concise, imperative-mood Git commit message" in prompt
     assert "Previous commit message:" not in prompt
     assert "being amended" not in prompt
 
 
-def test_build_prompt_with_amend(temp_repo):
+def test_build_prompt_with_amend(temp_repo, pyg_repo):
     """Test build_prompt for amend commits."""
     # Create initial commit
     test_file = Path(temp_repo.working_dir) / "test.txt"
@@ -166,8 +173,8 @@ def test_build_prompt_with_amend(temp_repo):
     test_file.write_text("initial\nmore\n")
     temp_repo.index.add(["test.txt"])
 
-    diff = get_commit_diff(temp_repo, [], previous_message="My original message")
-    prompt = build_prompt(temp_repo, diff, [], previous_message="My original message")
+    diff = get_commit_diff(pyg_repo, [], previous_message="My original message")
+    prompt = build_prompt(pyg_repo, diff, [], previous_message="My original message")
 
     assert "Update and refine this existing commit message" in prompt
     assert "Previous commit message:" in prompt
@@ -201,7 +208,7 @@ async def test_claude_ai_with_amend():
 
             # Test with previous message (amend)
             ai = ClaudeAI(
-                repo=repo,
+                repo=pygit2.Repository(tmpdir),
                 diff="test diff",
                 passthru=[],
                 previous_message="Original message",
@@ -241,7 +248,9 @@ async def test_full_amend_flow_integration():
         assert previous_message == "Initial implementation"
 
         # Get the diff that would be shown to AI
-        diff = get_commit_diff(repo, [], previous_message=previous_message)
+        diff = get_commit_diff(
+            pygit2.Repository(tmpdir), [], previous_message=previous_message
+        )
 
         # Verify diff contains both original and new changes
         assert "=== Original commit" in diff
@@ -250,7 +259,9 @@ async def test_full_amend_flow_integration():
         assert "version 2" in diff
 
         # Build prompt as the tool would
-        prompt = build_prompt(repo, diff, [], previous_message=previous_message)
+        prompt = build_prompt(
+            pygit2.Repository(tmpdir), diff, [], previous_message=previous_message
+        )
 
         # Verify prompt is for amending
         assert "Update and refine" in prompt

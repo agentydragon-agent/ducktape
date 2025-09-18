@@ -1,7 +1,8 @@
+from __future__ import annotations
+
 import re
 
-from git import Repo
-from git.exc import GitCommandError
+import pygit2
 
 # Shared constants used by backends and CLI
 MAX_PROMPT_CONTEXT_BYTES = 100 * 1024  # 100 KiB cap for AI context block
@@ -38,102 +39,176 @@ def _cap_append(
     return False
 
 
-def _build_ai_context(repo: Repo, include_all: bool) -> str:
-    parts: list[str] = []
-    try:
-        parts.append("$ git status --porcelain\n")
-        status_out = repo.git.status("--porcelain") + "\n"
-        _cap_append(
-            parts,
-            status_out,
-            MAX_PROMPT_CONTEXT_BYTES,
-            "[Context truncated to 100 KiB]",
-        )
-    except GitCommandError:
-        parts.append("[Could not retrieve git status]\n")
+def _head_tree(repo: pygit2.Repository) -> pygit2.Tree:
+    commit = repo.revparse_single("HEAD").peel(pygit2.Commit)
+    return commit.tree
 
-    try:
-        ns_cmd = (
-            "git diff HEAD --name-status"
-            if include_all
-            else "git diff --cached --name-status"
-        )
-        parts.append(f"$ {ns_cmd}\n")
-        ns_out = (
-            repo.git.diff("HEAD", "--name-status")
-            if include_all
-            else repo.git.diff("--cached", "--name-status")
-        ) + "\n"
-        _cap_append(
-            parts,
-            ns_out,
-            MAX_PROMPT_CONTEXT_BYTES,
-            "[Context truncated to 100 KiB]",
-        )
-    except GitCommandError:
-        parts.append("[Could not compute name-status]\n")
+
+def _index_tree(repo: pygit2.Repository) -> pygit2.Tree:
+    oid = repo.index.write_tree()
+    return repo.get(oid)
+
+
+def _diff(repo: pygit2.Repository, include_all: bool) -> pygit2.Diff:
+    a = _head_tree(repo)
+    b: pygit2.Tree | None
+    if include_all:
+        b = None  # workdir
+    else:
+        b = _index_tree(repo)
+    return repo.diff(a, b)
+
+
+def _format_name_status(repo: pygit2.Repository, include_all: bool) -> str:
+    diff = _diff(repo, include_all)
+    lines: list[str] = []
+    for d in diff.deltas:
+        st = d.status
+        if st == pygit2.GIT_DELTA_ADDED:
+            lines.append(f"A\t{d.new_file.path}")
+        elif st == pygit2.GIT_DELTA_DELETED:
+            lines.append(f"D\t{d.old_file.path}")
+        elif st == pygit2.GIT_DELTA_MODIFIED:
+            lines.append(f"M\t{d.new_file.path}")
+        elif st == pygit2.GIT_DELTA_RENAMED:
+            lines.append(f"R\t{d.old_file.path}\t{d.new_file.path}")
+        elif st == pygit2.GIT_DELTA_TYPECHANGE:
+            lines.append(f"T\t{d.new_file.path}")
+        else:
+            # Other statuses (e.g., copied, ignored) — skip for prompt brevity
+            continue
+    return "\n".join(lines)
+
+
+def _format_unified_diff(repo: pygit2.Repository, include_all: bool) -> str:
+    return _diff(repo, include_all).patch or ""
+
+
+def _format_status_porcelain(repo: pygit2.Repository) -> str:
+    """Return a minimal porcelain-like status using pygit2 flags.
+
+    Prints lines of the form 'XY path' and '?? path' for untracked.
+    """
+    out: list[str] = []
+    st = repo.status()
+    for path, flags in st.items():
+        x = " "
+        y = " "
+        # Untracked
+        if flags & pygit2.GIT_STATUS_WT_NEW and not (
+            flags
+            & (
+                pygit2.GIT_STATUS_INDEX_NEW
+                | pygit2.GIT_STATUS_INDEX_MODIFIED
+                | pygit2.GIT_STATUS_INDEX_DELETED
+                | pygit2.GIT_STATUS_INDEX_RENAMED
+                | pygit2.GIT_STATUS_INDEX_TYPECHANGE
+            )
+        ):
+            out.append(f"?? {path}")
+            continue
+        # Index (X)
+        if flags & pygit2.GIT_STATUS_INDEX_NEW:
+            x = "A"
+        elif flags & pygit2.GIT_STATUS_INDEX_MODIFIED:
+            x = "M"
+        elif flags & pygit2.GIT_STATUS_INDEX_DELETED:
+            x = "D"
+        elif flags & pygit2.GIT_STATUS_INDEX_RENAMED:
+            x = "R"
+        elif flags & pygit2.GIT_STATUS_INDEX_TYPECHANGE:
+            x = "T"
+        # Worktree (Y)
+        if flags & pygit2.GIT_STATUS_WT_MODIFIED:
+            y = "M"
+        elif flags & pygit2.GIT_STATUS_WT_DELETED:
+            y = "D"
+        elif flags & pygit2.GIT_STATUS_WT_TYPECHANGE:
+            y = "T"
+        out.append(f"{x}{y} {path}")
+    return "\n".join(out)
+
+
+def _log_subjects(repo: pygit2.Repository, n: int = 10) -> list[str]:
+    head = repo.revparse_single("HEAD").peel(pygit2.Commit)
+    out: list[str] = []
+    for i, commit in enumerate(repo.walk(head.id, pygit2.GIT_SORT_TIME)):
+        msg = commit.message or ""
+        subj = msg.splitlines()[0] if msg else ""
+        out.append(subj)
+        if i + 1 >= n:
+            break
+    return out
+
+
+def _build_ai_context(repo: pygit2.Repository, include_all: bool) -> str:
+    parts: list[str] = []
+
+    parts.append("$ git status --porcelain\n")
+    status_out = _format_status_porcelain(repo) + "\n"
+    _cap_append(
+        parts, status_out, MAX_PROMPT_CONTEXT_BYTES, "[Context truncated to 100 KiB]"
+    )
+
+    ns_header = (
+        "git diff HEAD --name-status"
+        if include_all
+        else "git diff --cached --name-status"
+    )
+    parts.append(f"$ {ns_header}\n")
+    ns_out = _format_name_status(repo, include_all) + "\n"
+    _cap_append(
+        parts, ns_out, MAX_PROMPT_CONTEXT_BYTES, "[Context truncated to 100 KiB]"
+    )
 
     parts.append(
         f"$ git log --no-color -n {RECENT_COMMITS_FOR_CONTEXT} --stat --pretty=format:%h %s\n",
     )
-    try:
-        log_out = (
-            repo.git.log(
-                "--no-color",
-                f"-n{RECENT_COMMITS_FOR_CONTEXT}",
-                "--stat",
-                "--pretty=format:%h %s",
-            )
-            + "\n"
-        )
-        _cap_append(
-            parts,
-            log_out,
-            MAX_PROMPT_CONTEXT_BYTES,
-            "[Context truncated to 100 KiB]",
-        )
-    except GitCommandError:
-        parts.append("[Could not retrieve recent commits]\n")
+    log_out = "\n".join(_log_subjects(repo, RECENT_COMMITS_FOR_CONTEXT)) + "\n"
+    _cap_append(
+        parts, log_out, MAX_PROMPT_CONTEXT_BYTES, "[Context truncated to 100 KiB]"
+    )
 
-    try:
-        diff_cmd = (
-            "git diff HEAD --unified=0"
-            if include_all
-            else "git diff --cached --unified=0"
-        )
-        parts.append(f"$ {diff_cmd}\n")
-        diff_out = (
-            repo.git.diff("HEAD", "--unified=0")
-            if include_all
-            else repo.git.diff("--cached", "--unified=0")
-        ) + "\n"
-        _cap_append(
-            parts,
-            diff_out,
-            MAX_PROMPT_CONTEXT_BYTES,
-            "[Context truncated to 100 KiB]",
-        )
-    except GitCommandError:
-        parts.append("[Could not compute diff]\n")
+    diff_header = (
+        "git diff HEAD --unified=0" if include_all else "git diff --cached --unified=0"
+    )
+    parts.append(f"$ {diff_header}\n")
+    diff_out = _format_unified_diff(repo, include_all) + "\n"
+    _cap_append(
+        parts, diff_out, MAX_PROMPT_CONTEXT_BYTES, "[Context truncated to 100 KiB]"
+    )
 
     out = "".join(parts)
     if _len_bytes(out) > MAX_PROMPT_CONTEXT_BYTES:
         out = out.encode("utf-8")[:MAX_PROMPT_CONTEXT_BYTES].decode(
-            "utf-8",
-            errors="ignore",
+            "utf-8", errors="ignore"
         )
         out += "\n[Context truncated to 100 KiB]\n"
     return out
 
 
-def diffstat(repo: Repo, passthru: list[str]) -> str:
-    if "-a" in passthru or "--all" in passthru:
-        return repo.git.diff("HEAD", "--stat")
-    return repo.git.diff("--cached", "--stat")
+def diffstat(repo: pygit2.Repository, passthru: list[str]) -> str:
+    include_all = ("-a" in passthru) or ("--all" in passthru)
+    diff = _diff(repo, include_all)
+    # Emulate a minimal --stat: path and change status
+    lines: list[str] = []
+    for d in diff.deltas:
+        st = d.status
+        if st == pygit2.GIT_DELTA_ADDED:
+            lines.append(f"{d.new_file.path} | A")
+        elif st == pygit2.GIT_DELTA_DELETED:
+            lines.append(f"{d.old_file.path} | D")
+        elif st == pygit2.GIT_DELTA_MODIFIED:
+            lines.append(f"{d.new_file.path} | M")
+        elif st == pygit2.GIT_DELTA_RENAMED:
+            lines.append(f"{d.old_file.path} -> {d.new_file.path} | R")
+        elif st == pygit2.GIT_DELTA_TYPECHANGE:
+            lines.append(f"{d.new_file.path} | T")
+    return "\n".join(lines)
 
 
 def build_prompt(
-    repo: Repo,
+    repo: pygit2.Repository,
     diff: str,
     passthru: list[str],
     previous_message: str | None = None,
@@ -195,15 +270,12 @@ Staged diff (first to {DIFF_SNIPPET_CHARS} of {len(diff)} chars)
 {diff[:DIFF_SNIPPET_CHARS]}"""
         )
     # Past commits (subjects only)
-    for i, commit in enumerate(repo.iter_commits("HEAD", max_count=10)):
+    # Append past commit subjects
+    log_subjects = _log_subjects(repo, 10)
+    for i, subj in enumerate(log_subjects):
         new_prompt = prompt
         if i == 0:
             new_prompt += """\n\nPast commits (subjects):\n\n"""
-        raw_msg = commit.message
-        if isinstance(raw_msg, bytes):
-            subj = raw_msg.decode(errors="replace").split("\n\n", 1)[0]
-        else:
-            subj = raw_msg.split("\n\n", 1)[0]
         new_prompt += f"- {subj}\n"
         if len(new_prompt) > PAST_COMMITS_MAX_CHARS:
             break

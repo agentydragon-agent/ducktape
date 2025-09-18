@@ -4,7 +4,7 @@ from datetime import timedelta
 import logging
 import subprocess
 
-from git import Repo
+import pygit2
 
 from ._common import build_prompt_for_claude, extract_message, run_subprocess
 
@@ -17,7 +17,7 @@ class ClaudeAI:
 
     def __init__(
         self,
-        repo: Repo,
+        repo: pygit2.Repository,
         diff: str,
         passthru: list[str],
         **opts,

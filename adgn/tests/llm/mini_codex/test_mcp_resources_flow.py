@@ -15,8 +15,6 @@ from openai.types.responses.response_usage import (
 )
 import pytest
 
-from adgn.llm.mcp.docker_exec.server import make_container_exec_mcp
-from adgn.llm.mcp.inproc_transport import make_inproc_slot_spec
 from adgn.llm.mini_codex.agent import MiniCodex
 from adgn.llm.mini_codex.aggregating_handler import AutoHandler
 from adgn.llm.mini_codex.event_renderer import DisplayEventsHandler
@@ -95,11 +93,10 @@ class FakeOpenAIClient:
 async def test_model_reads_container_info_with_stubbed_openai(
     reasoning_model,
     responses_factory,
+    docker_inproc_spec_alpine,
 ) -> None:
-    # Build in-proc FastMCP server spec named 'docker'
-    spec = make_inproc_slot_spec(
-        make_container_exec_mcp(image="alpine:3.19", describe=False),
-    )
+    # Use shared in-proc FastMCP spec named 'docker' for Alpine image
+    spec = docker_inproc_spec_alpine
 
     async with McpManager({"docker": spec}) as mcp:
         client = FakeOpenAIClient()

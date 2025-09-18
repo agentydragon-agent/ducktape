@@ -159,11 +159,10 @@ def process_wire(path: Path, require_bad: bool = False) -> list[dict[str, Any]]:
             continue
         # Extract messages from either Responses or Chat payloads
         messages = None
-        has_header = False
         if isinstance(payload, dict) and "input" in payload:
-            messages, has_header = _extract_input_messages(payload)
+            messages, _ = _extract_input_messages(payload)
         elif isinstance(payload, dict) and "messages" in payload:
-            messages, has_header = _extract_chat_messages(payload)
+            messages, _ = _extract_chat_messages(payload)
         else:
             continue
         last_text = find_last_user_text_from_messages(messages)

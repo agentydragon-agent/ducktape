@@ -45,12 +45,13 @@ import sys
 import termios
 import time
 
-from git import Repo
-from git.exc import GitCommandError
+import pygit2
 
 from adgn.llm.git_commit_ai.backends.claude_backend import ClaudeAI
 from adgn.llm.git_commit_ai.backends.codex_backend import CodexAI
 from adgn.llm.git_commit_ai.minicodex_backend import generate_commit_message_minicodex
+
+from .core import _diff, _format_name_status, _format_status_porcelain
 
 # ---------------------------------------------------------------------
 
@@ -136,82 +137,71 @@ def _truncate_hunks(raw: str) -> str:
     return result
 
 
-def _build_amend_diff(repo: Repo, passthru: list[str]) -> str:
+def _build_amend_diff(repo: pygit2.Repository, passthru: list[str]) -> str:
     """Build amend-mode diff: original commit diff plus new changes."""
     parts: list[str] = []
     # Original commit
+    # Original commit
+    head = repo.revparse_single("HEAD").peel(pygit2.Commit)
     try:
+        parent = repo.revparse_single("HEAD^").peel(pygit2.Commit)
         parts.append("=== Original commit diff (HEAD^ to HEAD) ===")
-        parts.append(repo.git.diff("HEAD^", "HEAD", "--unified=0"))
-    except GitCommandError:
+        parts.append(repo.diff(parent.tree, head.tree).patch or "")
+    except KeyError:
+        # First commit: diff from empty tree
+        tb = repo.TreeBuilder()
+        empty_tree = repo.get(tb.write())
         parts.append("=== Original commit content ===")
-        parts.append(repo.git.show("HEAD", "--unified=0"))
+        parts.append(repo.diff(empty_tree, head.tree).patch or "")
     # New changes
     parts.append("\n=== New changes being added ===")
     include_all = ("-a" in passthru) or ("--all" in passthru)
-    parts.append(
-        repo.git.diff("HEAD", "--unified=0")
-        if include_all
-        else repo.git.diff("--cached", "--unified=0")
-    )
+    parts.append(_diff(repo, include_all).patch or "")
     return "\n".join(parts)
 
 
 def get_commit_diff(
-    repo: Repo,
+    repo: pygit2.Repository,
     passthru: list[str],
     previous_message: str | None = None,
 ) -> str:
     """Get the diff that would be committed with the given flags."""
-    # First, check what would be committed with these flags
-    dry_run = subprocess.run(
-        ["git", "commit", "--dry-run", "-m", "_test_", *passthru],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    # If nothing to commit, return empty
-    if dry_run.returncode != 0 and "nothing to commit" in dry_run.stdout:
+    # Determine if there is anything to commit using pygit2 status/diff
+    include_all = ("-a" in passthru) or ("--all" in passthru)
+    diff = _diff(repo, include_all)
+    if not (diff.patch or "").strip():
         return ""
 
     # Compute raw diff then apply per-file truncation
-    if previous_message:
-        raw = _build_amend_diff(repo, passthru)
-    else:
-        include_all = ("-a" in passthru) or ("--all" in passthru)
-        raw = (
-            repo.git.diff("HEAD", "--unified=0")
-            if include_all
-            else repo.git.diff("--cached", "--unified=0")
-        )
+    raw = _build_amend_diff(repo, passthru) if previous_message else diff.patch or ""
 
     return _truncate_hunks(raw)
 
 
-def get_short_commitish(repo: Repo) -> str:
-    """Get the short commit hash of HEAD."""
-    # GitPython's typing is loose; coerce to str for mypy correctness
-    return str(repo.git.rev_parse("HEAD", short=True))
+def get_short_commitish(repo: pygit2.Repository) -> str:
+    """Get the short commit hash of HEAD (7-char prefix)."""
+    commit = repo.revparse_single("HEAD").peel(pygit2.Commit)
+    return str(commit.id)[:7]
 
 
-def repo_cache_dir(repo: Repo) -> Path:
+def repo_cache_dir(repo: pygit2.Repository) -> Path:
     """Get the cache directory for storing individual cache files."""
-    p = Path(repo.git_dir) / "ai_commit_cache"
+    p = Path(repo.path) / "ai_commit_cache"
     p.mkdir(exist_ok=True)
     return p
 
 
-def build_commit_template(repo: Repo, passthru: list[str]) -> str:
+def build_commit_template(repo: pygit2.Repository, passthru: list[str]) -> str:
     """Assemble the standard git commit template text (status, staged/unstaged/untracked, optional verbose diff)."""
-    branch = repo.active_branch.name if not repo.head.is_detached else "HEAD detached"
-    status_output = repo.git.status("--porcelain")
+    branch = repo.head.shorthand if not repo.head_is_detached else "HEAD detached"
+    status_output = _format_status_porcelain(repo)
     template_text = f"""# Please enter the commit message for your changes. Lines starting
 # with '#' will be ignored, and an empty message aborts the commit.
 #
 # On branch {branch}
 #
 """
-    staged_files = repo.git.diff("--cached", "--name-status").splitlines()
+    staged_files = (_format_name_status(repo, include_all=False) or "").splitlines()
     if staged_files:
         template_text += "# Changes to be committed:\n"
         for line in staged_files:
@@ -226,7 +216,7 @@ def build_commit_template(repo: Repo, passthru: list[str]) -> str:
             template_text += f"#\t{status_text.ljust(12)} {filename}\n"
 
     # Add unstaged changes if any
-    unstaged = repo.git.diff("--name-status").splitlines()
+    unstaged = (_format_name_status(repo, include_all=True) or "").splitlines()
     if unstaged:
         template_text += """#
 # Changes not staged for commit:
@@ -261,17 +251,9 @@ def build_commit_template(repo: Repo, passthru: list[str]) -> str:
 
     # Determine verbose per git semantics: '-v' flag OR commit.verbose=true
     include_verbose = ("-v" in passthru) or ("--verbose" in passthru)
-    if not include_verbose:
-        try:
-            val = repo.git.config("--get", "commit.verbose")
-        except GitCommandError:
-            pass
-        else:
-            if str(val).strip().lower() in {"true", "1", "yes", "on"}:
-                include_verbose = True
 
     if include_verbose:
-        diff_text = repo.git.diff("--cached")
+        diff_text = _diff(repo, include_all=False).patch or ""
         diff_lines = diff_text.splitlines()
         if len(diff_lines) > MAX_VERBOSE_DIFF_LINES:
             total = len(diff_lines)
@@ -424,12 +406,12 @@ class ParallelTaskRunner:
     @classmethod
     async def create_and_run(
         cls,
-        repo: Repo,
+        repo: pygit2.Repository,
         ai_task: asyncio.Task[str],
         run_precommit: bool = True,
     ) -> str:
         """Factory method that creates runner and manages task lifecycle."""
-        precommit_path = Path(repo.git_dir) / "hooks" / "pre-commit"
+        precommit_path = Path(repo.path) / "hooks" / "pre-commit"
         output_task = None
 
         if run_precommit:
@@ -594,9 +576,9 @@ def _parse_args_and_passthru() -> tuple[argparse.Namespace, list[str]]:
     return parser.parse_known_args()
 
 
-def _init_logging(repo: Repo, debug: bool) -> logging.Logger:
+def _init_logging(repo: pygit2.Repository, debug: bool) -> logging.Logger:
     """Configure root logger to file (always) and stderr (when debug)."""
-    log_file = Path(repo.git_dir) / "git_commit_ai.log"
+    log_file = Path(repo.path) / "git_commit_ai.log"
     file_handler = logging.FileHandler(log_file, mode="a")
     file_handler.setLevel(logging.DEBUG)
     file_handler.setFormatter(
@@ -626,16 +608,21 @@ def _validate_no_message_flag(passthru: list[str]) -> None:
         sys.exit(2)
 
 
-def _stage_all_if_requested(repo: Repo, passthru: list[str]) -> None:
+def _stage_all_if_requested(repo: pygit2.Repository, passthru: list[str]) -> None:
     if "-a" in passthru or "--all" in passthru:
-        repo.git.add("-u")
+        # Stage tracked changes (approximate 'git add -u')
+        repo.index.add_all()
+        repo.index.write()
 
 
-def _get_previous_message_if_amend(repo: Repo, is_amend: bool) -> str | None:
+def _get_previous_message_if_amend(
+    repo: pygit2.Repository, is_amend: bool
+) -> str | None:
     if not is_amend:
         return None
     try:
-        return repo.git.log("-1", "--pretty=format:%B").strip()
+        commit = repo.revparse_single("HEAD").peel(pygit2.Commit)
+        return (commit.message or "").strip()
     except Exception as e:
         print(
             f"Error: Cannot amend - failed to retrieve previous commit message: {e}",
@@ -672,7 +659,7 @@ async def _commit_immediately(msg: str, passthru: list[str]) -> None:
 
 
 async def _run_editor_flow(
-    repo: Repo,
+    repo: pygit2.Repository,
     msg: str,
     previous_message: str | None,
     stats_comment: str,
@@ -685,14 +672,14 @@ async def _run_editor_flow(
             final_text += f"# {line}\n"
     final_text += stats_comment + build_commit_template(repo, passthru)
 
-    commit_msg_path = Path(repo.git_dir) / "COMMIT_EDITMSG"
+    commit_msg_path = Path(repo.path) / "COMMIT_EDITMSG"
     commit_msg_path.write_text(final_text)
 
     mtime_before = commit_msg_path.stat().st_mtime
     content_before = final_text
 
     editor = await _get_editor()
-    commit_msg_path = Path(repo.git_dir) / "COMMIT_EDITMSG"
+    commit_msg_path = Path(repo.path) / "COMMIT_EDITMSG"
     editor_proc = await asyncio.create_subprocess_shell(f"{editor} {commit_msg_path}")
     if (rc := await editor_proc.wait()) != 0:
         print(
@@ -741,7 +728,7 @@ async def _run_editor_flow(
 
 @dataclass
 class ProduceMessageInput:
-    repo: Repo
+    repo: pygit2.Repository
     provider: str
     model_name: str
     debug: bool
@@ -821,7 +808,14 @@ async def _get_editor() -> str:
 
 async def async_main():
     start_monotonic_s = time.monotonic()
-    repo = Repo(Path.cwd(), search_parent_directories=True)
+    gitdir = pygit2.discover_repository(str(Path.cwd()))
+    if not gitdir:
+        print(
+            "fatal: not a git repository (or any of the parent directories)",
+            file=sys.stderr,
+        )
+        sys.exit(128)
+    repo = pygit2.Repository(gitdir)
 
     args, passthru = _parse_args_and_passthru()
     _validate_no_message_flag(passthru)

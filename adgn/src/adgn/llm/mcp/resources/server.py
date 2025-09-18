@@ -1,7 +1,7 @@
-import json
 from typing import Any, Protocol
 
 from mcp.server.fastmcp import FastMCP
+from pydantic import TypeAdapter
 
 
 class ResourcesBackend(Protocol):
@@ -49,7 +49,8 @@ def make_resources_server(
         uri_prefix: str | None = None,
     ) -> dict[str, Any]:
         payload = await backend.resources_list_json(server, uri_prefix)
-        return json.loads(payload)
+        # Parse/validate JSON into a concrete dict[str, Any] to avoid Any leaks
+        return TypeAdapter(dict[str, Any]).validate_json(payload)
 
     @mcp.tool()
     async def read(
@@ -65,6 +66,7 @@ def make_resources_server(
             start_offset=start_offset,
             max_bytes=None if max_bytes <= 0 else max_bytes,
         )
-        return json.loads(payload)
+        # Parse/validate JSON into a concrete dict[str, Any] to avoid Any leaks
+        return TypeAdapter(dict[str, Any]).validate_json(payload)
 
     return mcp

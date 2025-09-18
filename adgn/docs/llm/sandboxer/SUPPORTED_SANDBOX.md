@@ -16,6 +16,12 @@ This repo previously used `sandbox-exec` (seatbelt SBPL) to restrict Jupyter/ker
 
 Given the above, we’re moving to supported alternatives below.
 
+## Dynamic, per-invocation paths — key constraint
+
+- If you need to define allowed read/write paths dynamically at invocation time (e.g., flags like allow-read=/foo, allow-write=/bar for an arbitrary target binary), App Sandbox cannot express that purely via CLI flags. Access must be granted via entitlements plus security-scoped bookmarks obtained with prior user consent or pre-provisioned bookmarks.
+- Consequently, a sandbox-exec-style wrapper with dynamic path flags is not achievable with App Sandbox alone.
+- Recommendation: For dynamic per-run path policies, use a container/VM wrapper (Docker/Colima/Virtualization.framework) and translate flags to bind mounts (-v /foo:ro, -v /bar:rw). This yields the desired semantics reliably today.
+
 ## 1) App Sandbox (entitlements) — recommended when shipping an app/helper
 
 - What: Enable App Sandbox in an app/auxiliary helper with Hardened Runtime + specific entitlements. 
@@ -51,7 +57,7 @@ Given the above, we’re moving to supported alternatives below.
 
 ## Suggested direction for this project
 
-Short-term (fastest path):
+Short-term (required for dynamic paths; fastest path):
 - Run the kernel in a Linux VM container (Docker/Colima). Bind-mount only workspace/run_root/tmp. No other host paths. Loopback-only net.
 - We can keep YAML policy and translate:
   - `fs.read_paths` → container mounts (ro) and `fs.write_paths` → container mounts (rw)
@@ -59,6 +65,15 @@ Short-term (fastest path):
 
 Longer-term (native macOS):
 - Build a tiny App Sandbox wrapper app (`JupyterKernelLauncher.app`) with minimal entitlements and security-scoped bookmarks for the allowed dirs. Launch our Python helper inside this app. This gives Apple-supported per-process FS scoping without SBPL.
+
+### Note: Python environments across host/VM/container
+
+- Do not share a single Python venv across host/VM/container unless OS/ABI/arch/Python minor version and absolute path are identical. macOS↔Linux venvs are incompatible.
+- Recommended: rebuild the venv per environment, but share wheels/caches:
+  - Persist a per-platform wheelhouse and install from it: e.g., inside the container:
+    - pip wheel -r requirements.txt -w /shared/wheelhouse/linux-x86_64
+    - pip install --no-index --find-links=/shared/wheelhouse/linux-x86_64 -r requirements.txt
+  - Mount a shared cache to speed installs: set PIP_CACHE_DIR=/shared/pip-cache (or UV_CACHE_DIR for uv).
 
 ## Minimal Docker proof (manual)
 

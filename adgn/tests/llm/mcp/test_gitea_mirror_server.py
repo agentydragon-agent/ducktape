@@ -142,5 +142,6 @@ async def test_tool_bubbles_mirror_error(monkeypatch: pytest.MonkeyPatch) -> Non
 
 
 def test_make_mcp_requires_configuration() -> None:
-    with pytest.raises(ValueError, match="."):
+    # Use a raw regex for the generic message match
+    with pytest.raises(ValueError, match=r"."):
         gitea_server.make_gitea_mirror_mcp()

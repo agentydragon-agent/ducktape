@@ -126,7 +126,7 @@ def main():
             break
         cid = rec.get("correlation_id")
         eval_req = rec.get("request") or {}
-        if not cid or not isinstance(eval_req, dict):
+        if not isinstance(cid, str) or not isinstance(eval_req, dict):
             continue
         targets.append(rec)
         target_ids.add(cid)
@@ -139,6 +139,8 @@ def main():
     for rec in targets:
         cid = rec.get("correlation_id")
         eval_req = rec.get("request") or {}
+        if not isinstance(cid, str):
+            continue
         ccr_req = ccr_map.get(cid)
         if not ccr_req:
             continue

@@ -6,12 +6,14 @@ from datetime import UTC, datetime
 import json
 import logging
 from pathlib import Path
-from typing import Any, cast
+from typing import Annotated, Any, Literal as _Lit, cast
 import uuid
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from mcp import types as mcp_types
+from pydantic import BaseModel, Field, TypeAdapter
 import uvicorn
 
 from adgn.llm.mini_codex.agent import MiniCodex
@@ -22,27 +24,31 @@ from adgn.llm.mini_codex.approvals import (
 )
 from adgn.llm.mini_codex.handler import (
     AbortTurnDecision,
-    BaseHandler as _BaseHandler,
+    BaseHandler,
     BeforeToolCallDecision,
     BypassToolInjectOutput,
     ContinueDecision,
 )
 from adgn.llm.mini_codex.ui.protocol import (
     Accepted,
+    ApprovalApprove,
     ApprovalDecisionEvt,
+    ApprovalDenyAbort,
+    ApprovalDenyContinue,
     ApprovalPendingEvt,
-    AssistantText as ProtoAssistantText,
+    AssistantText,
     Envelope,
     ErrorCode,
     ErrorEvt,
-    FunctionCallOutput as ProtoFunctionCallOutput,
+    FunctionCallOutput,
+    McpServerInfo,
     RunState,
     RunStatusEvt,
     ServerMessage,
     SessionState,
     Snapshot,
-    ToolCall as ProtoToolCall,
-    UserText as ProtoUserText,
+    ToolCall,
+    UserText,
 )
 
 # Minimal local-only FastAPI UI for MiniCodex (v0)
@@ -72,7 +78,7 @@ async def _on_startup() -> None:
 
 
 # Simple connection manager for one UI client (v0 single-session)
-class ConnectionManager(_BaseHandler):
+class ConnectionManager(BaseHandler):
     def __init__(self) -> None:
         self._clients: dict[
             int, tuple[WebSocket, asyncio.Queue[dict[str, Any]], asyncio.Task]
@@ -155,7 +161,7 @@ class ConnectionManager(_BaseHandler):
         await asyncio.gather(*tasks, return_exceptions=True)
 
     def on_user_text_event(self, evt: Any) -> None:
-        self._spawn(self.send_payload(ProtoUserText(text=evt.text)))
+        self._spawn(self.send_payload(UserText(text=evt.text)))
 
     async def _send_direct_all(self, payload: dict[str, Any]) -> None:
         for ws, _q, _task in list(self._clients.values()):
@@ -170,18 +176,16 @@ class ConnectionManager(_BaseHandler):
             "manager: assistant_text_event",
             extra={"len": len(getattr(evt, "text", ""))},
         )
-        self._spawn(self.send_payload(ProtoAssistantText(text=evt.text)))
+        self._spawn(self.send_payload(AssistantText(text=evt.text)))
 
     def on_tool_call_event(self, evt: Any) -> None:
         self._spawn(
             self.send_payload(
-                ProtoToolCall(
-                    name=evt.name, args_json=evt.args_json, call_id=evt.call_id
-                )
+                ToolCall(name=evt.name, args_json=evt.args_json, call_id=evt.call_id)
             )
         )
 
-    async def before_tool_call(self, evt: Any) -> BeforeToolCallDecision | None:
+    async def before_tool_call(self, evt: Any) -> BeforeToolCallDecision:
         await self.send_payload(
             ApprovalPendingEvt(
                 call_id=evt.call_id, tool_key=evt.name, args_json=evt.args_json
@@ -198,21 +202,27 @@ class ConnectionManager(_BaseHandler):
             ),
         )
         decision = await self._session.approval_hub.await_decision(evt.call_id, req)
+        # Translate handler decision -> protocol-native decision for UI emission
         if isinstance(decision, ContinueDecision):
-            d = "continue"
-        elif isinstance(decision, BypassToolInjectOutput):
-            d = "inject_result"
+            proto_dec = ApprovalApprove()
         elif isinstance(decision, AbortTurnDecision):
-            d = "abort"
+            proto_dec = ApprovalDenyAbort()
+        elif isinstance(decision, BypassToolInjectOutput):
+            proto_dec = ApprovalDenyContinue()
         else:
-            d = "continue"
-        await self.send_payload(ApprovalDecisionEvt(call_id=evt.call_id, decision=d))
+            raise TypeError(
+                f"Unknown handler decision type from approval hub: {type(decision).__name__}"
+            )
+        await self.send_payload(
+            ApprovalDecisionEvt(call_id=evt.call_id, decision=proto_dec)
+        )
+        # Return the handler decision directly to the agent
         return decision
 
     def on_function_call_output_event(self, evt: Any) -> None:
         self._spawn(
             self.send_payload(
-                ProtoFunctionCallOutput(call_id=evt.call_id, output=evt.output)
+                FunctionCallOutput(call_id=evt.call_id, output=evt.output)
             )
         )
 
@@ -231,7 +241,7 @@ class AgentSession:
         self._task: asyncio.Task | None = None
         self.approval_hub = ApprovalHub()
         self._lock = asyncio.Lock()
-        # TODO: None does not make sense. consider direct bind in __init__
+        self._active_run_id: str | None = None
         self._agent: MiniCodex | None = None
 
     def attach_agent(self, agent: MiniCodex) -> None:
@@ -246,7 +256,7 @@ class AgentSession:
         manager.set_session(self)
         # Best-effort: append manager as a handler to the agent so it receives events
         with contextlib.suppress(Exception):
-            agent._controller._handlers.append(cast(_BaseHandler, manager))
+            agent._controller._handlers.append(cast(BaseHandler, manager))
 
     async def run(self, prompt: str) -> None:
         """Run a single agent turn via the attached MiniCodex instance.
@@ -297,10 +307,7 @@ class AgentSession:
                 )
             finally:
                 # Clear active run id and emit finished run_status
-                try:
-                    self._active_run_id = None
-                except Exception:
-                    pass
+                self._active_run_id = None
                 # Ensure all previously spawned payloads were sent before emitting finished
                 await manager.flush()
                 await manager.send_payload(
@@ -330,7 +337,9 @@ session = AgentSession()
 
 @app.get("/")
 async def index() -> FileResponse:
-    file_path = STATIC_DIR / "index.html"
+    # Prefer built Svelte app at static/web/index.html; fallback to legacy static/index.html
+    primary = STATIC_DIR / "web" / "index.html"
+    file_path = primary if primary.exists() else (STATIC_DIR / "index.html")
     if not file_path.exists():
         raise RuntimeError(f"Missing UI file: {file_path}")
     return FileResponse(file_path)
@@ -341,69 +350,141 @@ async def get_transcript() -> JSONResponse:
     return JSONResponse(session.transcript)
 
 
+# Pydantic-typed inbound client messages (discriminated union)
+
+
+class HelloIn(BaseModel):
+    type: _Lit["hello"]
+
+
+class ResumeIn(BaseModel):
+    type: _Lit["resume"]
+
+
+class GetSnapshotIn(BaseModel):
+    type: _Lit["get_snapshot"]
+
+
+class SendIn(BaseModel):
+    type: _Lit["send"]
+    text: str
+
+
+class ApproveIn(BaseModel):
+    type: _Lit["approve"]
+    call_id: str
+
+
+class DenyIn(BaseModel):
+    type: _Lit["deny"]
+    call_id: str
+
+
+class DenyContinueIn(BaseModel):
+    type: _Lit["deny_continue"]
+    call_id: str
+
+
+class AbortIn(BaseModel):
+    type: _Lit["abort"]
+
+
+class PingIn(BaseModel):
+    type: _Lit["ping"]
+    nonce: str | None = None
+
+
+IncomingMsg = Annotated[
+    HelloIn
+    | ResumeIn
+    | GetSnapshotIn
+    | SendIn
+    | ApproveIn
+    | DenyContinueIn
+    | DenyIn
+    | AbortIn
+    | PingIn,
+    Field(discriminator="type"),
+]
+
+
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket) -> None:
     await manager.connect(ws)
     try:
-        # Emit protocol Welcome on connect
         # Skip sending Welcome at handshake: emit nothing, strictly follow the envelope+payload protocol
         while True:
             data = await ws.receive_text()
             try:
-                msg = json.loads(data)
+                obj = json.loads(data)
             except Exception:
                 await manager.send_payload(
                     ErrorEvt(code=ErrorCode.INVALID_JSON, message="invalid_json")
                 )
                 continue
 
-            typ = msg.get("type")
-            if typ in {"hello", "resume", "get_snapshot"}:
-                await manager.send_payload(
-                    Snapshot(
-                        v=PROTOCOL_VERSION,
-                        session_state=SessionState(
-                            session_id=manager._session_id,
-                            version=PROTOCOL_VERSION,
-                            capabilities=[],
-                            last_event_id=manager._event_id or None,
-                            active_run_id=getattr(session, "_active_run_id", None),
-                            run_counter=0,
-                        ),
-                        run_state=None,
-                        transcript=[],
-                    ),
-                )
-                continue
+            im: IncomingMsg = TypeAdapter(IncomingMsg).validate_python(obj)
 
-            if typ == "send":
-                text = msg.get("text", "")
-                logger.info("ws: received send", extra={"text_len": len(text)})
+            match im:
+                case HelloIn() | ResumeIn() | GetSnapshotIn():
+                    # Build structured list of enabled MCP servers (Pydantic models) and full sampling snapshot
+                    agent = session._agent
+                    if agent is None:
+                        names = []
+                        sampling = None
+                    else:
+                        names = list(agent._mcp.server_names)
+                        sampling = await agent._mcp.sampling_snapshot()
+                    mcp_servers_list = [McpServerInfo(name=n) for n in names]
+                    await manager.send_payload(
+                        Snapshot(
+                            v=PROTOCOL_VERSION,
+                            session_state=SessionState(
+                                session_id=manager._session_id,
+                                version=PROTOCOL_VERSION,
+                                capabilities=[],
+                                last_event_id=manager._event_id or None,
+                                active_run_id=session._active_run_id,
+                                run_counter=0,
+                            ),
+                            run_state=None,
+                            transcript=[],
+                            sampling=sampling,
+                            mcp_servers=mcp_servers_list,
+                        ),
+                    )
+                    continue
+
+            if isinstance(im, SendIn):
+                logger.info("ws: received send", extra={"text_len": len(im.text)})
                 await manager.send_payload(Accepted())
                 logger.info("ws: sent ack")
                 # Only start run if no run is active
-                await session.run(text)
+                await session.run(im.text)
                 logger.info("ws: dispatched session.run")
                 continue
 
-            if typ in {"approve", "deny"}:
-                call_id = msg.get("call_id")
-                if not call_id:
-                    await manager.send_payload(
-                        ErrorEvt(
-                            code=ErrorCode.MISSING_FIELD, message="missing_call_id"
-                        )
-                    )
-                    continue
-                if typ == "approve":
-                    decision: BeforeToolCallDecision = ContinueDecision()
-                else:
-                    decision = AbortTurnDecision(reason="ui_deny")
-                # resolve via hub (decision events will be emitted by before_tool_call)
-                session.approval_hub.resolve(call_id, decision)
+            if isinstance(im, ApproveIn):
+                session.approval_hub.resolve(im.call_id, ContinueDecision())
                 continue
 
-            if typ == "abort":
+            if isinstance(im, DenyContinueIn):
+                deny_payload = {"ok": False, "error": f"User denied: {im.call_id}"}
+                denial_result = mcp_types.CallToolResult(
+                    content=[], isError=True, structuredContent=deny_payload
+                )
+                session.approval_hub.resolve(
+                    im.call_id, BypassToolInjectOutput(result=denial_result)
+                )
+                continue
+
+            if isinstance(im, DenyIn):
+                session.approval_hub.resolve(
+                    im.call_id, AbortTurnDecision(reason="ui_deny")
+                )
+                continue
+
+            if isinstance(im, AbortIn):
                 if session._task is not None and not session._task.done():
                     session._task.cancel()
                     await manager.send_payload(
@@ -421,9 +502,6 @@ async def websocket_endpoint(ws: WebSocket) -> None:
 
     except WebSocketDisconnect:
         await manager.disconnect(ws)
-
-
-# CLI-style entrypoint helper (optional)
 
 
 def run_uvicorn(host: str = "127.0.0.1", port: int = 8765) -> None:

@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 
 from openai import AsyncOpenAI
+from openai.types.responses.response import Response
 import tiktoken
 
 from adgn.llm.inop.io.jsonl_logger import JSONLLogger, safe_serialize
@@ -26,7 +27,7 @@ class LoggingOpenAIModel:
         """Count the number of tokens in a given text using the model's encoding."""
         return len(self.encoding().encode(text))
 
-    async def responses_create(self, **kwargs):
+    async def responses_create(self, **kwargs) -> Response:
         """Create a response using OpenAI Responses API with native parameters (async).
 
         Accepts all parameters that OpenAI's responses.create() accepts.

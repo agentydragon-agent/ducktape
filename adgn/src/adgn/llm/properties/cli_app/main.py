@@ -17,7 +17,7 @@ import re
 import subprocess
 import tempfile
 import time
-from typing import Literal
+from typing import Literal, Any
 
 import docker
 import matplotlib
@@ -635,9 +635,9 @@ async def prompt_eval(
 ) -> None:
     """Evaluate a critic system prompt across all known specimens and emit metrics list."""
 
-    pe_server, _state = build_prompt_eval_server(client=AsyncOpenAI())
+    _pe_server, _state = build_prompt_eval_server(client=AsyncOpenAI())
 
-    async def _run() -> list[dict]:
+    async def _run() -> list[dict[str, Any]]:
         base = find_specimens_base()
         specimens = list_specimen_names(base)
         client = AsyncOpenAI()
@@ -648,7 +648,7 @@ async def prompt_eval(
         root.mkdir(parents=True, exist_ok=True)
         (root / "prompt.txt").write_text(prompt, encoding="utf-8")
 
-        async def one(name: str) -> dict:
+        async def one(name: str) -> dict[str, Any]:
             # Reuse the in-proc tool rather than duplicating orchestration
             out_dir_spec = root / name
             out_dir_spec.mkdir(parents=True, exist_ok=True)
@@ -659,7 +659,7 @@ async def prompt_eval(
                 client,
                 transcript_out_dir=out_dir_spec,
             )
-            row = _metrics_row(grade, specimen=name)
+            row: dict[str, Any] = _metrics_row(grade, specimen=name)
             # Persist full grade.json too
             (out_dir_spec / "grade.json").write_text(
                 grade.model_dump_json(indent=2),
@@ -667,7 +667,7 @@ async def prompt_eval(
             )
             return row
 
-        rows: list[dict] = await asyncio.gather(*[one(s) for s in specimens])
+        rows: list[dict[str, Any]] = await asyncio.gather(*[one(s) for s in specimens])
         (root / "results.json").write_text(json.dumps(rows, indent=2), encoding="utf-8")
         print(json.dumps(rows, indent=2))
         return rows

@@ -12,14 +12,13 @@
   };
 
   # On shell entry, ensure the project is installed (editable) with dev extras
+  # Install into the active devenv-managed venv so `pytest`, `ruff`, etc. are on PATH
   enterShell = ''
     set -e
     python --version
-    # Require uv; fail if missing
-    uv --version >/dev/null 2>&1
 
-    # Fast, incremental dependency sync + editable install
-    uv sync --extra dev
-    uv pip install -e .
+    # Install dev extras directly into this venv (avoid uv's separate .venv)
+    python -m pip install -U pip wheel
+    python -m pip install -e '.[dev]'
   '';
 }

@@ -409,11 +409,11 @@ class OptimizeArgs:
     task_types: dict
     runner_configs: dict
     task_type: AgentTaskType  # Type of agent being optimized
+    base_dir: Path
     iterations: int = 3
     rollouts_per_task: int = 2
     max_parallel_rollouts: int | None = None
     tasks_per_iteration: int | None = None
-    base_dir: Path
 
 
 async def optimize_prompts(args: OptimizeArgs) -> Path:

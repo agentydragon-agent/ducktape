@@ -322,7 +322,7 @@ def export_node_as_tanapaste(store: NodeStore, node: BaseNode) -> str:
     lines: list[str] = []
     lines.append("%%tana%%")
     lines.extend(RenderContext(store, "tana").render_node(node))
-    return "\n".join(lines).rstrip() + "\n\n"
+    return "\n".join(lines).rstrip() + "\n"
 
 
 def _export(store: NodeStore, style: str) -> str:

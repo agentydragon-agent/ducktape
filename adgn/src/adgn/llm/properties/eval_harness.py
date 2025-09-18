@@ -317,9 +317,10 @@ async def eval_issue_spec(
         if payload.findings:
             for fr in payload.findings:
                 f: Any = fr.finding
-                if getattr(f, "kind", None) == "ANCHOR_INCORRECT":
-                    if corr := getattr(f, "correction", None):
-                        corrections.setdefault(corr.file, []).append(corr.range)
+                if (getattr(f, "kind", None) == "ANCHOR_INCORRECT") and (
+                    corr := getattr(f, "correction", None)
+                ):
+                    corrections.setdefault(corr.file, []).append(corr.range)
 
         ranges = corrections.get(path, [])
         all_ranges = [(r.start_line, r.end_line) for r in ranges]
@@ -549,7 +550,7 @@ SAMPLES: list[IssueEvalSpec] = [
             id="iss-049",
             should_flag=True,
             rationale=(
-                "Duplicate `daemon_cleanup` helper defined twice (one copy at 216–222); extract a single helper and reuse."
+                "Duplicate `daemon_cleanup` helper defined twice (one copy at 216-222); extract a single helper and reuse."
             ),
             # properties=["no-oneoff-vars-and-trivial-wrappers"],
         ),

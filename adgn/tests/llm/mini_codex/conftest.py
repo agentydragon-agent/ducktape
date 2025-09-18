@@ -22,6 +22,10 @@ from openai.types.responses.response_usage import (
 )
 import pytest
 
+from adgn.llm.mcp._shared.container_session import ContainerOptions
+from adgn.llm.mcp.docker_exec.server import make_container_exec_mcp
+from adgn.llm.mcp.inproc_transport import make_inproc_slot_spec
+
 # --- Lightweight helpers for building SDK-shaped Responses ---
 
 
@@ -140,20 +144,6 @@ def tool_call_response_factory() -> Callable[
     return _make
 
 
-@pytest.fixture
-def fake_openai_client_factory(
-    responses_factory,
-) -> Callable[[Iterable[Response]], FakeOpenAIClient]:
-    """Function-scoped factory that returns a FakeOpenAIClient built from a sequence of
-    SDK Response objects using the session-scoped responses_factory.
-    """
-
-    def _make(outputs: Iterable[Response]) -> FakeOpenAIClient:
-        return responses_factory.make_fake_client(outputs)
-
-    return _make
-
-
 # Convenience factory that bundles a model and helpers for creating SDK Responses
 class ResponsesFactory:
     def __init__(self, model: str):
@@ -252,3 +242,71 @@ def responses_factory(reasoning_model: str) -> ResponsesFactory:
           client = responses_factory.make_fake_client([r, ...])
     """
     return ResponsesFactory(reasoning_model)
+
+
+# ---- Shared ContainerOptions fixtures and in-proc docker exec specs ----
+# Kept here so all tests can reuse the same settings consistently.
+
+
+@pytest.fixture
+def container_opts_py312() -> ContainerOptions:
+    return ContainerOptions(
+        image="python:3.12-slim",
+        working_dir="/workspace",
+        volumes=None,
+        describe=False,
+    )
+
+
+@pytest.fixture
+def container_opts_py312_describe_true() -> ContainerOptions:
+    return ContainerOptions(
+        image="python:3.12-slim",
+        working_dir="/workspace",
+        volumes=None,
+        describe=True,
+    )
+
+
+@pytest.fixture
+def container_opts_alpine() -> ContainerOptions:
+    return ContainerOptions(image="alpine:3.19", describe=False)
+
+
+@pytest.fixture
+def docker_exec_server_py312(container_opts_py312) -> object:
+    return make_container_exec_mcp(container_opts_py312)
+
+
+@pytest.fixture
+def docker_exec_server_py312_describe_true(
+    container_opts_py312_describe_true,
+) -> object:
+    return make_container_exec_mcp(container_opts_py312_describe_true)
+
+
+@pytest.fixture
+def docker_exec_server_alpine(container_opts_alpine) -> object:
+    return make_container_exec_mcp(container_opts_alpine)
+
+
+@pytest.fixture
+def docker_inproc_spec_py312(docker_exec_server_py312) -> object:
+    return make_inproc_slot_spec(docker_exec_server_py312)
+
+
+@pytest.fixture
+def docker_inproc_spec_py312_describe_true(
+    docker_exec_server_py312_describe_true,
+) -> object:
+    return make_inproc_slot_spec(docker_exec_server_py312_describe_true)
+
+
+@pytest.fixture
+def docker_inproc_spec_alpine(docker_exec_server_alpine) -> object:
+    return make_inproc_slot_spec(docker_exec_server_alpine)
+
+
+@pytest.fixture
+def docker_specs_py312(docker_inproc_spec_py312) -> dict[str, object]:
+    return {"docker": docker_inproc_spec_py312}

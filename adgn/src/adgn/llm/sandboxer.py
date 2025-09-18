@@ -1,5 +1,4 @@
 import argparse
-import json
 import os
 from pathlib import Path
 import shlex
@@ -11,6 +10,18 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 import yaml
+
+from adgn.seatbelt.compile import compile_sbpl
+from adgn.seatbelt.model import (
+    FileRule,
+    MachLookupRule,
+    NetworkRule,
+    PathFilter,
+    ProcessRule,
+    SBPLPolicy,
+    SystemRule,
+    TraceConfig,
+)
 
 # -----------------------------
 # Pydantic models for policy
@@ -26,8 +37,8 @@ class EnvConfig(BaseModel):
 
 
 class FSConfig(BaseModel):
-    read_paths: list[str] = Field(default_factory=list)
-    write_paths: list[str] = Field(default_factory=list)
+    read_paths: list[Path] = Field(default_factory=list)
+    write_paths: list[Path] = Field(default_factory=list)
 
     class Config:
         extra = "forbid"
@@ -45,7 +56,7 @@ class SeatbeltExtraAllow(BaseModel):
     system_socket: bool | None = None
     sysctl_read: bool | None = None
     dev: SeatbeltDevConfig = Field(default_factory=SeatbeltDevConfig)
-    file_read_extra: list[str] = Field(default_factory=list)
+    file_read_extra: list[Path] = Field(default_factory=list)
 
     class Config:
         extra = "forbid"
@@ -96,121 +107,136 @@ class Policy(BaseModel):
 
 
 # -----------------------------
-# Seatbelt base and rendering
+# SBPL adapter via adgn.seatbelt
 # -----------------------------
 
-SEATBELT_BASE = """
-(version 1)
-(deny default)
 
-;; Process primitives (subprocess, fork/exec, signals to self)
-(allow process*)
-(allow signal (target self))
-
-;; File/device basics
-;; - /dev/null for stdio redirection
-;; - /dev/urandom, /dev/random for Python's os.urandom and secrets
-;; - /dev/tty for TTY-backed stdio when present
-(allow file-read* (literal "/dev/null"))
-(allow file-write* (literal "/dev/null"))
-(allow file-read* (literal "/dev/urandom"))
-(allow file-read* (literal "/dev/random"))
-(allow file-read* (subpath "/dev/tty"))
-(allow file-write* (subpath "/dev/tty"))
-
-;; Exec mapping and core system reads needed by dyld/loader
-;; - file-map-executable: allow mapping executable pages for dynamic loader
-;; - /System, /usr/lib: system frameworks and libraries (libSystem, CF, etc.)
-;; - /private/var/db/dyld: dyld shared cache and accelerator entries
-(allow file-map-executable)
-(allow file-read* (subpath "/System"))
-(allow file-read* (subpath "/usr/lib"))
-(allow file-read* (subpath "/private/var/db/dyld"))
-(allow file-read* (subpath "/System/Volumes/Preboot"))
-(allow file-read* (subpath "/System/Cryptexes"))
-(allow file-read* (subpath "/System/Volumes/Preboot/Cryptexes"))
-
-;; IPC and system lookups used by Python/stdlib
-;; - POSIX/System V IPC used by multiprocessing/shared memory
-;; - mach-lookup and system-socket for resolver, launch services lookups
-;; - sysctl-read for platform/system info queries
-""".strip()
+def _abs(p: str | Path) -> Path:
+    return Path(p).expanduser().absolute()
 
 
-def _abs(p: str) -> str:
-    # Preserve symlinks to allow exec via symlink paths; avoid resolve()
-    return str(Path(p).expanduser().absolute())
-
-
-def _compose_seatbelt(
-    policy: Policy,
-    trace_path: str | None,
-) -> tuple[str, dict[str, str]]:
-    lines: list[str] = [SEATBELT_BASE]
-    defs: dict[str, str] = {}
-
-    # Optional trace
-    if trace_path or policy.platform.seatbelt.trace:
-        lines.append(f'(trace "{trace_path or "<trace>"}")')
-
-    # FS rules
-    fs = policy.fs
-    raw_write = [Path(_abs(p)) for p in (fs.write_paths or [])]
-    raw_read = [Path(_abs(p)) for p in (fs.read_paths or [])]
-
-    # Normalize to directory subpaths to cover symlink/real and intermediates
-    write_dirs: list[str] = []
-    for p in raw_write:
-        d = p if p.is_dir() else p.parent
-        ap = str(d)
-        if ap not in write_dirs:
-            write_dirs.append(ap)
-    read_dirs: list[str] = []
-    for p in raw_read:
-        # allow both symlink dir and resolved real dir
-        dirs = []
-        d = p if p.is_dir() else p.parent
-        dirs.append(d)
-        rp = p.resolve(strict=False)
-        rd = rp if rp.is_dir() else rp.parent
-        dirs.append(rd)
-        for dd in dirs:
-            ap = str(dd)
-            if ap not in read_dirs:
-                read_dirs.append(ap)
-
-    # TODO(mpokorny): Prefer named seatbelt params again once param-related crashes are resolved.
-    # Context: direct sandbox-exec with `(subpath (param "WP_*"))` produced errors like
-    #   "invalid data type of path filter; expected pattern, got boolean" or exit 134 on this host.
-    # For now, we inline literal paths to keep narrow policies working; restore `param` usage when fixed.
-    lines.append(
-        ";; Writable dirs (WP_*): runtime/workspace; allow writes and exec of entrypoints within",
+def _compose_sbpl(policy: Policy, trace_path: str | None) -> str:
+    """Translate sandboxer.Policy -> SBPLPolicy and compile to SBPL text."""
+    sp = SBPLPolicy(
+        default_behavior="deny",
+        process=ProcessRule(allow_process_star=True, allow_signal_self=True),
+        system=SystemRule(
+            system_socket=bool(policy.platform.seatbelt.extra_allow.system_socket),
+            sysctl_read=bool(policy.platform.seatbelt.extra_allow.sysctl_read),
+        ),
+        mach=MachLookupRule(
+            global_names=list(policy.platform.seatbelt.extra_allow.mach_lookup or [])
+        ),
+        trace=TraceConfig(
+            enabled=bool(trace_path or policy.platform.seatbelt.trace), path=trace_path
+        ),
     )
-    for i, ap in enumerate(write_dirs):
-        key = f"WP_{i}"
-        defs[key] = ap
-        lines.append(f'(allow file-write* (subpath "{ap}") )')
-        # Exec is governed by file-map-executable and global process allowances
 
-    # TODO(mpokorny): Restore named params `(param "RP_*")` for read paths once sandbox-exec param issues are clarified.
-    # Temporary workaround: inline literal subpaths to avoid observed param parsing/abort behavior
-    # on this macOS version.
-    lines.append(";; Readable dirs (RP_*): venv roots/bin, stdlib & site-packages")
-    for i, ap in enumerate(read_dirs):
-        key = f"RP_{i}"
-        defs[key] = ap
-        lines.append(f'(allow file-read* (subpath "{ap}") )')
-        # Note: rely on global (allow file-map-executable); per-path filters are not supported uniformly
+    # Device basics
+    dev_read_literals = ["/dev/null", "/dev/urandom", "/dev/random"]
+    sp.files.append(
+        FileRule(
+            op="file-read*",
+            filters=[PathFilter(kind="literal", value=p) for p in dev_read_literals],
+        )
+    )
+    sp.files.append(
+        FileRule(
+            op="file-write*", filters=[PathFilter(kind="literal", value="/dev/null")]
+        )
+    )
+    sp.files.append(
+        FileRule(
+            op="file-read*", filters=[PathFilter(kind="subpath", value="/dev/tty")]
+        )
+    )
+    sp.files.append(
+        FileRule(
+            op="file-write*", filters=[PathFilter(kind="subpath", value="/dev/tty")]
+        )
+    )
 
-    # Parent directory metadata allowances to enable path traversal to allowed subpaths
-    meta_parents: set[str] = set()
+    # Exec mapping and dyld/system roots
+    sp.files.append(FileRule(op="file-map-executable", filters=[]))
+    for root in (
+        "/System",
+        "/usr/lib",
+        "/private/var/db/dyld",
+        "/System/Volumes/Preboot",
+        "/System/Cryptexes",
+        "/System/Volumes/Preboot/Cryptexes",
+    ):
+        sp.files.append(
+            FileRule(op="file-read*", filters=[PathFilter(kind="subpath", value=root)])
+        )
 
-    def _add_parents(p: str):
-        cur = Path(p)
-        # Ascend to root, collecting literal parents
+    # Extra file read allowances from platform extras
+    for extra_path in policy.platform.seatbelt.extra_allow.file_read_extra or []:
+        sp.files.append(
+            FileRule(
+                op="file-read*",
+                filters=[PathFilter(kind="subpath", value=_abs(extra_path).as_posix())],
+            )
+        )
+
+    # FS read/write from policy.fs
+    fs = policy.fs
+    read_dirs: list[Path] = []
+    write_dirs: list[Path] = []
+    read_seen: set[str] = set()
+    write_seen: set[str] = set()
+
+    # Write dirs
+    for p in fs.write_paths or []:
+        ap = _abs(p)
+        d = ap if ap.is_dir() else ap.parent
+        dp = d.as_posix()
+        if dp not in write_seen:
+            write_seen.add(dp)
+            write_dirs.append(d)
+
+    # Read dirs: include symlink path and resolved real path parents
+    for p in fs.read_paths or []:
+        ap = _abs(p)
+        cand: list[Path] = []
+        d = ap if ap.is_dir() else ap.parent
+        cand.append(d)
+        rp = ap.resolve(strict=False)
+        rd = rp if rp.is_dir() else rp.parent
+        cand.append(rd)
+        for dd in cand:
+            dp = dd.as_posix()
+            if dp not in read_seen:
+                read_seen.add(dp)
+                read_dirs.append(dd)
+
+    if write_dirs:
+        sp.files.append(
+            FileRule(
+                op="file-write*",
+                filters=[
+                    PathFilter(kind="subpath", value=p.as_posix()) for p in write_dirs
+                ],
+            )
+        )
+    if read_dirs:
+        sp.files.append(
+            FileRule(
+                op="file-read*",
+                filters=[
+                    PathFilter(kind="subpath", value=p.as_posix()) for p in read_dirs
+                ],
+            )
+        )
+
+    # Parent directory metadata to enable traversal
+    meta_parents: set[Path] = set()
+
+    def _add_parents(p: Path) -> None:
+        cur = p
         while True:
-            meta_parents.add(str(cur))
-            if str(cur) == "/":
+            meta_parents.add(cur)
+            if cur.as_posix() == "/":
                 break
             cur = cur.parent
 
@@ -218,52 +244,42 @@ def _compose_seatbelt(
         _add_parents(ap)
     for ap in write_dirs:
         _add_parents(ap)
-    # Also include common system roots we already rely on
     for root in ("/opt", "/usr", "/private", "/System", "/Users"):
-        meta_parents.add(root)
-    lines.append(";; Parent directory metadata allowances to enable path traversal")
-    for mp in sorted(meta_parents):
-        lines.append(f'(allow file-read-metadata (literal "{mp}") )')
+        meta_parents.add(Path(root))
+    if meta_parents:
+        sp.files.append(
+            FileRule(
+                op="file-read-metadata",
+                filters=[
+                    PathFilter(kind="literal", value=p.as_posix())
+                    for p in sorted(meta_parents, key=lambda q: q.as_posix())
+                ],
+            )
+        )
 
-    # Platform seatbelt extras
-    extra = policy.platform.seatbelt.extra_allow
-    for path_str in extra.file_read_extra or []:
-        lines.append(f'(allow file-read* (subpath "{_abs(path_str)}") )')
-    # Optional IPC/system allowances controlled by policy extras
-    if extra.system_socket:
-        lines.append("(allow system-socket)")
-    if extra.sysctl_read:
-        lines.append("(allow sysctl-read)")
-    for name in extra.mach_lookup or []:
-        # Allow lookups of specific global Mach services
-        lines.append(f'(allow mach-lookup (global-name "{name}"))')
-    # dev.allow_tty_writes could toggle /dev/tty allow in future; keep default for now
-
-    # Net rules (mode: none | loopback | all) — allowlist/proxy reserved for future
+    # Network rules
     mode = policy.net.mode
     if mode == "open":
-        lines.append(
-            ";; Net mode=open: allow outbound (HTTP, etc.) and inbound (kernel ports)",
+        sp.network.extend(
+            [
+                NetworkRule(op="network-inbound"),
+                NetworkRule(op="network-outbound"),
+                NetworkRule(op="network-bind"),
+            ]
         )
-        lines.append("(allow network-outbound)")
-        lines.append("(allow network-inbound)")
-        lines.append("(allow network-bind)")
     elif mode == "loopback":
-        # Allow ONLY local connections both directions (Jupyter↔kernel)
-        lines.append(
-            ";; Net mode=loopback: only local connections in both directions (Jupyter↔kernel)",
+        sp.network.extend(
+            [
+                NetworkRule(op="network-inbound", local_only=True),
+                NetworkRule(op="network-outbound", local_only=True),
+                NetworkRule(op="network-bind", local_only=True),
+            ]
         )
-        lines.append("(allow network-inbound (local ip))")
-        lines.append("(allow network-outbound (local ip))")
-        lines.append("(allow network-bind (local ip))")
-    elif mode == "none":
-        # No network rules → default deny inbound/outbound
-        pass
-    else:
-        # allowlist/proxy reserved for future; default to loopback behavior minimally
-        lines.append("(allow network-inbound (local ip))")
+    # mode == "none": no network rules
 
-    return "\n".join(lines) + "\n", defs
+    # Compile to SBPL text
+    sb_text: str = compile_sbpl(sp)
+    return sb_text
 
 
 # -----------------------------
@@ -346,7 +362,7 @@ def main() -> int:
         if p:
             Path(p).mkdir(parents=True, exist_ok=True)
 
-    # Compose seatbelt policy file
+    # Compose SBPL policy file
     tmpdir = tempfile.mkdtemp(prefix="sandboxer-")
     # Write trace under a writable runtime dir (prefer TMPDIR from policy.env.set, then HOME), else tmpdir
     trace_path = None
@@ -362,19 +378,15 @@ def main() -> int:
             base = Path(tmpdir)
         base.mkdir(parents=True, exist_ok=True)
         tp = base / "seatbelt.trace.log"
-        # Ensure file exists for diagnostics collection
         tp.touch(exist_ok=True)
         trace_path = str(tp)
     sb_path = Path(tmpdir) / "policy.sb"
-    sb_text, defs = _compose_seatbelt(policy, trace_path)
+    sb_text = _compose_sbpl(policy, trace_path)
     sb_path.write_text(sb_text)
     if args.debug:
         print(f"sandboxer: policy at {sb_path}", file=sys.stderr)
     if trace_path:
         print(f"sandboxer: trace to {trace_path}", file=sys.stderr)
-    if args.debug and defs:
-        for k, v in defs.items():
-            print(f"sandboxer: -D {k}={v}", file=sys.stderr)
     # Optional policy echo for observability
     echo_dir = os.environ.get("SJ_POLICY_ECHO_DIR")
     if echo_dir:
@@ -382,9 +394,8 @@ def main() -> int:
             ed = Path(echo_dir)
             ed.mkdir(parents=True, exist_ok=True)
             (ed / "policy.sb").write_text(sb_text)
-            (ed / "policy_defs.json").write_text(json.dumps(defs, indent=2))
             if args.debug:
-                print(f"sandboxer: echoed policy and defs to {ed}", file=sys.stderr)
+                print(f"sandboxer: echoed policy to {ed}", file=sys.stderr)
         except Exception as e:
             print(f"sandboxer: policy echo failed: {e}", file=sys.stderr)
 
@@ -394,10 +405,7 @@ def main() -> int:
         return 4
 
     # Execute under sandbox
-    sx_args = [sx]
-    for k, v in defs.items():
-        sx_args += ["-D", f"{k}={v}"]
-    sx_args += ["-f", str(sb_path), *cmd]
+    sx_args = [sx, "-f", str(sb_path), *cmd]
     if args.debug:
         print(
             "sandboxer: exec:",

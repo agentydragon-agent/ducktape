@@ -6,6 +6,7 @@ from mcp import types as mcp_types
 from openai import AsyncOpenAI
 import pytest
 
+from adgn.llm.mcp._shared.container_session import ContainerOptions
 from adgn.llm.mcp.docker_exec.server import (
     SERVER_NAME as DOCKER_SERVER_NAME,
     TOOL_EXEC_NAME as DOCKER_EXEC_TOOL_NAME,
@@ -22,10 +23,12 @@ ECHO_CMD = ["sh", "-lc", "printf hello"]
 def _build_specs():
     spec = make_inproc_slot_spec(
         make_container_exec_mcp(
-            image="python:3.12-slim",
-            working_dir="/workspace",
-            volumes=None,
-            describe=True,
+            ContainerOptions(
+                image="python:3.12-slim",
+                working_dir="/workspace",
+                volumes=None,
+                describe=True,
+            )
         ),
     )
     return {"docker": spec}
@@ -44,6 +47,7 @@ async def _assert_exec_echo(mcp: McpManager) -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.requires_docker
 async def test_exec_roundtrip_echo() -> None:
     """Spin up real Docker container and roundtrip an echo via exec."""
     async with McpManager(_build_specs()) as mcp:
@@ -65,11 +69,10 @@ async def test_live_llm_exec_echo() -> None:
             model=os.environ.get("OPENAI_MODEL", "gpt-5"),
             mcp=mcp,
             system=(
-                "You are testing an MCP exec tool.\n"(
-                    "Call the tool "
-                    f"{build_mcp_function(DOCKER_SERVER_NAME, DOCKER_EXEC_TOOL_NAME)} "
-                    f"with cmd={ECHO_CMD!r} and return exactly the stdout."
-                )
+                "You are testing an MCP exec tool.\n"
+                "Call the tool "
+                f"{build_mcp_function(DOCKER_SERVER_NAME, DOCKER_EXEC_TOOL_NAME)} "
+                f"with cmd={ECHO_CMD!r} and return exactly the stdout."
             ),
             client=client,
             handlers=[AutoHandler()],

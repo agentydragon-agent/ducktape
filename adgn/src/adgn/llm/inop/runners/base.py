@@ -109,7 +109,7 @@ class AgentRunner(ABC):
         for cmd in commands:
             if is_docker:
                 # Run in Docker container - subclasses must implement this
-                exit_code, stdout, stderr = await self._run_docker_command(
+                exit_code, _stdout, stderr = await self._run_docker_command(
                     cmd,
                     target_dir,
                     timeout_s=60,
@@ -123,7 +123,9 @@ class AgentRunner(ABC):
                     stderr=asyncio.subprocess.PIPE,
                 )
                 _stdout_b, _stderr_b = await proc.communicate()
-                exit_code = proc.returncode
+                rc = proc.returncode
+                assert rc is not None
+                exit_code = rc
                 stderr = _stderr_b.decode() if _stderr_b else ""
 
             if exit_code != 0:

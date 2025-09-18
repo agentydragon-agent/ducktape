@@ -31,11 +31,7 @@ TOOL_EXEC_NAME = "docker_exec"
 def make_container_exec_mcp(opts: ContainerOptions) -> FastMCP:
     """Create a generic per-session container exec FastMCP server.
 
-    Args:
-      image: Docker image to use for the session container
-      working_dir: writable directory in the container
-      volumes: Docker volumes spec (dict or list); use dict to set bind/mode
-      describe: whether to populate a human-readable description (docker history)
+    Callers must pass a fully constructed ContainerOptions (no kwargs).
     """
     lifespan = make_container_lifespan(opts)
     server = FastMCP(

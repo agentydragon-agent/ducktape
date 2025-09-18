@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from datetime import datetime
 import logging
 
+import pygit2
+
 from ..shared.configuration import Configuration
 from ..shared.github_models import PRData, PRState
 from .git_manager import GitManager
@@ -65,8 +67,17 @@ class PRService:
             await self.github_refresh.stop()
 
     async def _refresh_github_cache(self, reason: str, files_changed: list[str]):
-        repo_obj = self.git_manager.get_repo(self.worktree_info.path)
-        branch_name = repo_obj.head.shorthand
+        try:
+            repo_obj = self.git_manager.get_repo(self.worktree_info.path)
+            branch_name = repo_obj.head.shorthand or ""
+        except (pygit2.GitError, OSError, ValueError) as e:
+            logger.warning(
+                "PRService: skipping refresh for missing/invalid worktree %s: %s",
+                self.worktree_info.path,
+                e,
+            )
+            self.cached = PRCacheError(error=str(e), fetched_at=datetime.now())
+            return
         await self.get_pr_info(branch_name, force_refresh=True)
 
     async def get_pr_info(

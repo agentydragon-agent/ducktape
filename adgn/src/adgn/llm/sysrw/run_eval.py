@@ -14,6 +14,7 @@ from typing import Any, cast
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from openai import AsyncOpenAI
+from pydantic import TypeAdapter
 import tiktoken
 
 from adgn.llm.openai_retry import (
@@ -530,7 +531,11 @@ def parse_grade_from_responses(resp_obj) -> dict[str, Any]:
     out = data.get("output", []) or []
     for item in out:
         if item.get("type") == "function_call" and item.get("name") == "grade":
-            return json.loads(item.get("arguments", "{}"))
+            args = item.get("arguments", "{}")
+            # Validate/coerce into dict[str, Any] to avoid Any leakage
+            if isinstance(args, str):
+                return TypeAdapter(dict[str, Any]).validate_json(args)
+            return TypeAdapter(dict[str, Any]).validate_python(args)
     raise RuntimeError("No grade tool call in responses output")
 
 
@@ -1030,7 +1035,7 @@ async def run_eval(
 
         by_source: dict[str, Any] = {}
         for sname in ("ccr", "crush"):
-            m_s, ci_s, l_s, u_s = _mk_basic(scores_by_source[sname])
+            m_s, _ci_s, l_s, u_s = _mk_basic(scores_by_source[sname])
             ts_s = tool_stats_by_source[sname]
             total_s = ts_s["total_samples"] or 0
             fc_s = cast(dict[str, int], ts_s.get("function_counts", {}))
@@ -1276,6 +1281,8 @@ def main():
     if not dataset_paths:
         dataset_paths = [DEFAULT_DATASET_PATH]
     base_out = Path(args.out_dir) if args.out_dir else None
+    from openai import AsyncOpenAI
+
     asyncio.run(
         run_eval(
             Path(args.template),
@@ -1283,5 +1290,6 @@ def main():
             base_out,
             args.n,
             args.concurrency,
+            client=AsyncOpenAI(),
         ),
     )

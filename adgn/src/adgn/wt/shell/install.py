@@ -1,26 +1,18 @@
+from importlib import resources
 import shlex
 import sys
 
 
 def main() -> None:
     py = shlex.quote(sys.executable)
-    func = f"""wt() {{
-local wt_command_file=$(mktemp)
-trap 'rm -f "$wt_command_file"' EXIT
-{py} -m wt.cli sh "$@" 3>"$wt_command_file"
-local wt_exit_code=$?
-if [ $wt_exit_code -eq 0 ] || [ $wt_exit_code -eq 2 ]; then
-    if [ -s "$wt_command_file" ]; then
-        local wt_shell_commands="$(cat "$wt_command_file")"
-        if [ -n "$wt_shell_commands" ]; then
-            eval "$wt_shell_commands"
-        fi
-    fi
-fi
-rm -f "$wt_command_file"
-return $wt_exit_code
-}}"""
-    print(func)
+    # Load the shell function template from package resources and substitute __PY__
+    with (
+        resources.files("adgn.wt.shell")
+        .joinpath("wt.sh")
+        .open("r", encoding="utf-8") as f
+    ):
+        tpl = f.read()
+    print(tpl.replace("__PY__", py))
 
 
 if __name__ == "__main__":

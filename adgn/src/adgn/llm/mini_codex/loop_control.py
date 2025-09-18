@@ -22,6 +22,7 @@ from typing import TypeAlias
 
 from openai.types.responses import (
     ResponseFunctionToolCall,
+    ResponseInputItem,
     ResponseOutputMessage,
     ResponseReasoningItem,
 )
@@ -81,6 +82,9 @@ class NoLoopDecision:
 @dataclass(frozen=True)
 class Continue:
     tool_policy: ToolPolicy
+    # Optional pre-sampling inserts as ACTUAL Responses API input items
+    # Use ResponseInputItem (covers message, function_call, function_call_output, etc.)
+    inserts: tuple[ResponseInputItem, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -96,7 +100,7 @@ class SyntheticAction:
     - SyntheticAction tells MiniCodex: "do not call the external LLM for this
       sampling step; instead treat `outputs` as if they were produced by the
       model and process them locally inside the agent loop." This is an
-      in‑process primitive used to reduce latency when the action and its tool
+      in-process primitive used to reduce latency when the action and its tool
       effects can be executed locally.
 
     fn -> tool -> reasoning pairing

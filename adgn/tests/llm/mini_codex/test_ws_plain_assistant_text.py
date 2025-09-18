@@ -76,49 +76,48 @@ def test_ws_plain_assistant_text(monkeypatch: pytest.MonkeyPatch) -> None:
     session.attach_agent(agent)
 
     try:
-        with TestClient(app) as client:
-            with client.websocket_connect("/ws") as ws:
-                # Send a user message
-                ws.send_json({"type": "send", "text": "hi"})
+        with TestClient(app) as client, client.websocket_connect("/ws") as ws:
+            # Send a user message
+            ws.send_json({"type": "send", "text": "hi"})
 
-                # Drain until we see the protocol ack (accepted); welcome/snapshot may arrive first
-                for _ in range(10):
-                    m = ws.receive_json()
-                    envelope = Envelope.model_validate(m)
-                    env = envelope.payload
-                    print(
-                        "RECV:",
-                        getattr(env, "type", None),
-                        getattr(getattr(env, "run_state", None), "status", None),
-                    )
-                    if env.type == "accepted":
-                        break
-                else:
-                    raise AssertionError("accepted not received")
+            # Drain until we see the protocol ack (accepted); welcome/snapshot may arrive first
+            for _ in range(10):
+                m = ws.receive_json()
+                envelope = Envelope.model_validate(m)
+                env = envelope.payload
+                print(
+                    "RECV:",
+                    getattr(env, "type", None),
+                    getattr(getattr(env, "run_state", None), "status", None),
+                )
+                if env.type == "accepted":
+                    break
+            else:
+                raise AssertionError("accepted not received")
 
-                # Expect an assistant_text and a finished run_status
-                saw_text = False
-                saw_finished = False
-                for _ in range(20):
-                    m = ws.receive_json()
-                    envelope = Envelope.model_validate(m)
-                    env = envelope.payload
-                    print(
-                        "RECV2:",
-                        getattr(env, "type", None),
-                        getattr(getattr(env, "run_state", None), "status", None),
-                    )
-                    if env.type == "assistant_text":
-                        assert env.text == "plain-ok"
-                        saw_text = True
-                    if (
-                        env.type == "run_status"
-                        and getattr(env, "run_state", None)
-                        and getattr(env.run_state, "status", None) == "finished"
-                    ):
-                        saw_finished = True
-                        break
-                assert saw_text, "assistant_text not received"
-                assert saw_finished, "run_status finished not received"
+            # Expect an assistant_text and a finished run_status
+            saw_text = False
+            saw_finished = False
+            for _ in range(20):
+                m = ws.receive_json()
+                envelope = Envelope.model_validate(m)
+                env = envelope.payload
+                print(
+                    "RECV2:",
+                    getattr(env, "type", None),
+                    getattr(getattr(env, "run_state", None), "status", None),
+                )
+                if env.type == "assistant_text":
+                    assert env.text == "plain-ok"
+                    saw_text = True
+                if (
+                    env.type == "run_status"
+                    and getattr(env, "run_state", None)
+                    and getattr(env.run_state, "status", None) == "finished"
+                ):
+                    saw_finished = True
+                    break
+            assert saw_text, "assistant_text not received"
+            assert saw_finished, "run_status finished not received"
     except CancelledError:
         pass

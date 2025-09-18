@@ -73,74 +73,74 @@ def test_ws_tool_multiturn(monkeypatch: pytest.MonkeyPatch) -> None:
         )
         return agent, mcp_mgr
 
-    agent, mcp_mgr = asyncio.run(_mk_agent())
+    agent, _mcp_mgr = asyncio.run(_mk_agent())
     session.attach_agent(agent)
 
     try:
-        with TestClient(app) as client:
-            with client.websocket_connect("/ws") as ws:
-                # 1) user sends message
-                ws.send_json({"type": "send", "text": "use echo"})
+        with TestClient(app) as client, client.websocket_connect("/ws") as ws:
+            # 1) user sends message
+            ws.send_json({"type": "send", "text": "use echo"})
 
-                # Drain until accepted, but buffer any earlier events to process
-                pre_msgs = []
-                for _ in range(20):
-                    env = Envelope.model_validate(ws.receive_json())
-                    if env.payload.type == "accepted":
-                        break
-                    pre_msgs.append(env)
-                else:
-                    raise AssertionError("accepted not received")
+            # Drain until accepted, but buffer any earlier events to process
+            pre_msgs = []
+            for _ in range(20):
+                env = Envelope.model_validate(ws.receive_json())
+                if env.payload.type == "accepted":
+                    break
+                pre_msgs.append(env)
+            else:
+                raise AssertionError("accepted not received")
 
-                saw_tool_pending = False
-                call_id = None
-                saw_function_output = False
-                saw_assistant_text = False
-                saw_finished = False
+            saw_tool_pending = False
+            call_id = None
+            saw_function_output = False
+            saw_assistant_text = False
+            saw_finished = False
 
-                def process(env):
-                    nonlocal \
-                        saw_tool_pending, \
-                        call_id, \
-                        saw_function_output, \
-                        saw_assistant_text, \
-                        saw_finished
-                    p = env.payload
-                    if p.type == "approval_pending":
-                        saw_tool_pending = True
-                        call_id = p.call_id
-                        # approve
-                        ws.send_json({"type": "approve", "call_id": call_id})
-                    elif p.type == "function_call_output":
-                        body = json.loads(p.output)
-                        assert body.get("ok") is True and body.get("echo") == "hello"
-                        saw_function_output = True
-                    elif p.type == "assistant_text":
-                        assert p.text == "done"
-                        saw_assistant_text = True
-                    elif (
-                        p.type == "run_status"
-                        and getattr(p, "run_state", None)
-                        and p.run_state.status == "finished"
-                    ):
-                        saw_finished = True
+            def process(env):
+                nonlocal \
+                    saw_tool_pending, \
+                    call_id, \
+                    saw_function_output, \
+                    saw_assistant_text, \
+                    saw_finished
+                p = env.payload
+                if p.type == "approval_pending":
+                    saw_tool_pending = True
+                    call_id = p.call_id
+                    # approve
+                    ws.send_json({"type": "approve", "call_id": call_id})
+                elif p.type == "function_call_output":
+                    body = json.loads(p.output)
+                    assert body.get("ok") is True
+                    assert body.get("echo") == "hello"
+                    saw_function_output = True
+                elif p.type == "assistant_text":
+                    assert p.text == "done"
+                    saw_assistant_text = True
+                elif (
+                    p.type == "run_status"
+                    and getattr(p, "run_state", None)
+                    and p.run_state.status == "finished"
+                ):
+                    saw_finished = True
 
-                # process any buffered pre-accepted messages
-                for env in pre_msgs:
-                    process(env)
+            # process any buffered pre-accepted messages
+            for env in pre_msgs:
+                process(env)
 
-                # 2) Expect approval_pending for tool call, then approve
-                # 3) Expect function_call_output (MCP answer)
-                # 4) Expect assistant_text and run_status finished
-                for _ in range(50):
-                    env = Envelope.model_validate(ws.receive_json())
-                    process(env)
-                    if saw_finished:
-                        break
+            # 2) Expect approval_pending for tool call, then approve
+            # 3) Expect function_call_output (MCP answer)
+            # 4) Expect assistant_text and run_status finished
+            for _ in range(50):
+                env = Envelope.model_validate(ws.receive_json())
+                process(env)
+                if saw_finished:
+                    break
 
-                assert saw_tool_pending, "approval_pending not received"
-                assert saw_function_output, "function_call_output not received"
-                assert saw_assistant_text, "assistant_text not received"
-                assert saw_finished, "run_status finished not received"
+            assert saw_tool_pending, "approval_pending not received"
+            assert saw_function_output, "function_call_output not received"
+            assert saw_assistant_text, "assistant_text not received"
+            assert saw_finished, "run_status finished not received"
     except CancelledError:
         pass

@@ -3,7 +3,6 @@ import shutil
 
 import pytest
 
-from adgn.llm.mcp.docker_exec.server import make_container_exec_mcp
 from adgn.llm.mcp.inproc_transport import make_inproc_slot_spec
 from adgn.llm.mcp.local_exec.server import make_local_exec_mcp
 from adgn.llm.mini_codex.mcp_manager import McpManager
@@ -68,38 +67,24 @@ async def test_local_inprocess_server() -> None:
 
 
 @pytest.mark.asyncio
-async def test_inproc_container_exec_exposes_container_info_resource() -> None:
+async def test_inproc_container_exec_exposes_container_info_resource(
+    docker_inproc_spec_py312: object,
+) -> None:
     """Smoke test: in-proc container exec exposes a container.info resource."""
 
-    spec = make_inproc_slot_spec(
-        make_container_exec_mcp(
-            image="python:3.12-slim",
-            working_dir="/workspace",
-            volumes=None,
-            describe=False,
-        ),
-    )
-
-    async with McpManager({"docker": spec}) as mcp:
+    async with McpManager({"docker": docker_inproc_spec_py312}) as mcp:
         # Existence: can read the resource
         res = await mcp.read_resource("docker", "resource://container.info")
         assert res.contents, "container.info returned no contents"
 
 
 @pytest.mark.asyncio
-async def test_inproc_container_exec_container_info_shape() -> None:
+async def test_inproc_container_exec_container_info_shape(
+    docker_inproc_spec_py312: object,
+) -> None:
     """Read container.info resource and sanity-check shape."""
 
-    spec = make_inproc_slot_spec(
-        make_container_exec_mcp(
-            image="python:3.12-slim",
-            working_dir="/workspace",
-            volumes=None,
-            describe=False,
-        ),
-    )
-
-    async with McpManager({"docker": spec}) as mcp:
+    async with McpManager({"docker": docker_inproc_spec_py312}) as mcp:
         res = await mcp.read_resource("docker", "resource://container.info")
         contents = res.contents or []
         assert contents, "container.info returned no contents"

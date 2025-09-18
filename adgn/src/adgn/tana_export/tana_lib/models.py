@@ -113,14 +113,22 @@ class CodeBlockNode(BaseNode):
     """Node representing a code block."""
 
     def get_language(self) -> str:
-        """Get the programming language of the code block."""
+        """Get the programming language of the code block.
+
+        Looks for a child tuple whose key is LANGUAGE_KEY_ID; returns the first
+        value's name, or empty string if unavailable.
+        """
         if not self._store:
             raise RuntimeError("Node not attached to a store")
 
-        lang_node = get_tuple_value(self, LANGUAGE_KEY_ID)
-        if lang_node:
-            return getattr(lang_node, "name", "") or ""
-
+        for child in self.child_nodes:
+            # Find a tuple of the form [LANGUAGE_KEY_ID, <value>]
+            if isinstance(child, TupleNode) and len(child.children) >= 2:
+                key_id = child.children[0]
+                if key_id == LANGUAGE_KEY_ID:
+                    # First value child carries the language name
+                    val = child.child_nodes[1]
+                    return getattr(val, "name", "") or ""
         return ""
 
 

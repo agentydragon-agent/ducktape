@@ -137,7 +137,7 @@ def _create_cli_dependencies(verbose: bool = False):
 
 async def _async_main(verbose: bool = False):
     """Async main function."""
-    config, formatter, daemon_client, plugin_manager = _create_cli_dependencies(
+    _config, formatter, daemon_client, _plugin_manager = _create_cli_dependencies(
         verbose=verbose,
     )
     await handle_status(daemon_client, formatter)

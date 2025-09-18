@@ -16,7 +16,8 @@ import time
 def _pick_free_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
+        port: int = int(s.getsockname()[1])
+        return port
 
 
 def _start_jupyter_server(

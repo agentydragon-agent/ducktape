@@ -7,7 +7,7 @@ import logging
 import os
 import sys
 
-from git import Repo
+import pygit2
 
 from ..core import (
     _build_ai_context,
@@ -62,7 +62,7 @@ def truncate_prompt(prompt: str) -> str:
 
 
 def build_prompt_for_claude(
-    repo: Repo,
+    repo: pygit2.Repository,
     diff: str,
     passthru: list[str],
     previous_message: str | None,
@@ -72,7 +72,7 @@ def build_prompt_for_claude(
 
 
 def build_prompt_for_codex(
-    repo: Repo,
+    repo: pygit2.Repository,
     include_all: bool,
     previous_message: str | None,
 ) -> str:

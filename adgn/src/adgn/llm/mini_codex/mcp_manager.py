@@ -46,9 +46,11 @@ def parse_mcp_function(namespaced: str) -> tuple[str, str]:
     Mostly an implementation detail of McpManager; occasionally useful in tests
     or when composing prompts for LLMs.
     """
-    if not namespaced.startswith(MCP_NAMESPACE_PREFIX):
-        raise ValueError(f"Not an MCP tool name: {namespaced}")
-    remainder = namespaced[len(MCP_NAMESPACE_PREFIX) :]
+    # Accept both prefixed (mcp__server__tool) and bare (server__tool) forms
+    if namespaced.startswith(MCP_NAMESPACE_PREFIX):
+        remainder = namespaced[len(MCP_NAMESPACE_PREFIX) :]
+    else:
+        remainder = namespaced
     if "__" not in remainder:
         raise ValueError(f"Invalid MCP tool name: {namespaced}")
     server, tool = remainder.split("__", 1)
@@ -56,6 +58,18 @@ def parse_mcp_function(namespaced: str) -> tuple[str, str]:
 
 
 # ---- Legacy in-proc adapter removed (use FastMCP in-proc memory transport) ----
+
+
+# ---- Notification models (module-level) ----
+class ResourceUpdateEvent(BaseModel):
+    server: str
+    uri: str
+    version: int  # monotonically increasing counter per (server, uri)
+
+
+class NotificationsBatch(BaseModel):
+    resources_updated: list[ResourceUpdateEvent] = Field(default_factory=list)
+    tools_invalidated: list[str] = Field(default_factory=list)
 
 
 class McpManager:
@@ -76,6 +90,16 @@ class McpManager:
         self._lock: asyncio.Lock | None = (
             None  # bound in __aenter__ to the running loop
         )
+        # Track servers that failed to open during eager initialization
+        self._open_errors: dict[str, str] = {}
+        # Tools cache (namespaced tool defs)
+        self._tools_cache_by_server: dict[str, list[dict[str, Any]]] = {}
+        # Notification buffers and version counters
+        self._notif_tools_invalidated: set[str] = set()
+        self._notif_resource_updates: list[dict[str, Any]] = []
+        self._resource_version: dict[
+            tuple[str, str], int
+        ] = {}  # (server, uri) -> version counter
 
     async def _ensure_stack_entered(self) -> None:
         if not self._entered:
@@ -89,6 +113,11 @@ class McpManager:
             )
         async with self._lock:
             await self._ensure_stack_entered()
+            # If this server previously failed to open, surface the error immediately
+            if name in self._open_errors:
+                raise RuntimeError(
+                    f"Server '{name}' failed to open: {self._open_errors[name]}"
+                )
             slot = self._realized.get(name)
             if slot is not None:
                 return slot
@@ -105,65 +134,52 @@ class McpManager:
             self._entered = True
             # Create a lock bound to this running event loop; all ops must occur under this loop
             self._lock = asyncio.Lock()
-        # Do not eagerly open specs; let ensure_open() realize them in this loop
+            # Eagerly open all specs in the owner task; record failures immediately
+            for name, spec in self._specs.items():
+                try:
+                    if name not in self._realized:
+                        self._realized[name] = await spec.open(self._stack)
+                except Exception as e:
+                    # Record error; subsequent ensure_open/get_server_initialize will surface it
+                    self._open_errors[name] = str(e)
         return self
 
     async def __aexit__(self, exc_type, exc, tb) -> None:
-        # Gracefully shut down realized slots (servers/sessions) first so any
-        # background tasks they spawned are awaited/cancelled under this
-        # coroutine's cancel scope. This avoids the anyio "exit cancel scope in a
-        # different task" error caused when tasks are created in a different
-        # cancel scope than the one performing shutdown.
-        slots = list(self._realized.values())
-
-        for slot in slots:
-            # If the slot exposes an in-process server with a shutdown API, call it.
-            srv = getattr(slot, "server", None)
-            if srv is not None:
-                try:
-                    shutdown = getattr(srv, "shutdown", None)
-                    if shutdown is not None:
-                        if asyncio.iscoroutinefunction(shutdown):
-                            await shutdown()
-                        else:
-                            # allow sync shutdown
-                            shutdown()
-                except Exception:
-                    # Best-effort: do not fail shutdown because one server failed to stop
-                    pass
-
-            # If the slot exposes a client session, try to close it gracefully.
-            sess = getattr(slot, "session", None)
-            if sess is not None:
-                try:
-                    aclose = getattr(sess, "aclose", None)
-                    if aclose is not None:
-                        await aclose()
-                except Exception:
-                    pass
-
-        # Finally, exit the AsyncExitStack to run remaining exit callbacks.
+        # Delegate shutdown entirely to the AsyncExitStack to ensure all contexts
+        # (server task group, client session) are exited in the same task/cancel scope
+        # they were entered in. Avoid pre-shutdown; let context managers unwind.
         if self._entered:
             await self._stack.__aexit__(exc_type, exc, tb)
             self._entered = False
+        self._realized.clear()
 
     async def get_session(self, name: str) -> ClientSession:
         return (await self.ensure_open(name)).session
 
+    def invalidate_tools_cache_for(self, *servers: str) -> None:
+        """Invalidate cached tool definitions for specific servers (varargs)."""
+        for s in servers:
+            self._tools_cache_by_server.pop(s, None)
+
     async def list_tools(self, only: list[str] | None = None) -> list[dict[str, Any]]:
         out: list[dict[str, Any]] = []
-        for name in only or list(self._specs.keys()):
-            sess = await self.get_session(name)
-            res = await sess.list_tools()
-            for t in res.tools or []:
-                out.append(
+        targets = only or list(self._specs.keys())
+        for name in targets:
+            cached = self._tools_cache_by_server.get(name)
+            if cached is None:
+                sess = await self.get_session(name)
+                res = await sess.list_tools()
+                cached = [
                     {
                         "type": "function",
                         "name": build_mcp_function(name, t.name),
                         "description": t.description or "",
                         "parameters": t.inputSchema,
-                    },
-                )
+                    }
+                    for t in (res.tools or [])
+                ]
+                self._tools_cache_by_server[name] = cached
+            out.extend(cached)
         return out
 
     async def list_resources(
@@ -179,6 +195,12 @@ class McpManager:
             # Skip the synthetic 'resources' server to avoid self-recursion
             if server_name == "resources":
                 continue
+
+            # Check server capabilities from initialize; skip if resources unsupported
+            init = await self.get_server_initialize(server_name)
+            if not self._supports_resources_from_init(init):
+                continue
+
             sess = await self.get_session(server_name)
             res = await sess.list_resources()
             for r in res.resources or []:
@@ -263,10 +285,58 @@ class McpManager:
         payload = structured["result"]
         return TypeAdapter(result_model).validate_python(payload)
 
+    async def call_tool_namespaced(
+        self,
+        namespaced: str,
+        arguments: dict[str, Any] | str | None,
+    ) -> Any:
+        """Call a tool specified by namespaced form 'mcp__{server}__{tool}'."""
+        server, tool = parse_mcp_function(namespaced)
+        return await self.call_tool(server, tool, arguments)
+
     async def get_server_initialize(self, server: str) -> InitializeResult:
         """Return the InitializeResult for a server from the cached slot after opening."""
         slot = await self.ensure_open(server)
         return slot.init_result
+
+    # ---- Notifications: buffer and API ----
+
+    def notify_tools_list_changed(self, server: str) -> None:
+        """Record a tools list change and invalidate that server's cache."""
+        self._notif_tools_invalidated.add(server)
+        self.invalidate_tools_cache_for(server)
+
+    def notify_resource_updated(self, server: str, uri: str) -> None:
+        """Record a resource update and bump its per-(server, uri) version."""
+        key = (server, uri)
+        self._resource_version[key] = self._resource_version.get(key, 0) + 1
+        self._notif_resource_updates.append(
+            {"server": server, "uri": uri, "version": self._resource_version[key]}
+        )
+
+    def poll_notifications(self) -> NotificationsBatch:
+        """Return and clear buffered notifications (for agent injection as transcript FYIs)."""
+        batch = NotificationsBatch(
+            resources_updated=[
+                ResourceUpdateEvent(**e) for e in self._notif_resource_updates
+            ],
+            tools_invalidated=sorted(self._notif_tools_invalidated),
+        )
+        self._notif_resource_updates.clear()
+        self._notif_tools_invalidated.clear()
+        return batch
+
+    # ---- Capability helpers ----
+    @staticmethod
+    def _supports_resources_from_init(init: InitializeResult) -> bool:
+        """Return True if initialize.capabilities.resources is truthy.
+
+        Prefer attribute-style capabilities; support dict-capabilities explicitly.
+        """
+        caps = init.capabilities
+        if isinstance(caps, dict):
+            return bool(caps.get("resources"))
+        return bool(caps.resources)
 
     # ---- Typed Pydantic models for resources list/read ----
     class ResourceItem(BaseModel):
@@ -348,6 +418,7 @@ class McpManager:
             data: str | None
 
         parts_out: list[McpManager.ResourcePart] = []
+        contents = res.contents or []
         for part in self._iter_window_parts(contents, req.start_offset, req.max_bytes):
             if part["kind"] == "text":
                 parts_out.append(
@@ -479,7 +550,7 @@ class McpManager:
     ) -> str:
         """Return JSON string for a resource read window payload (server, uri)."""
         res = await self.read_resource(server, uri)
-        contents = getattr(res, "contents", None) or []
+        contents = res.contents or []
         payload = self._build_resource_window(contents, start_offset, max_bytes)
         return json.dumps(payload, ensure_ascii=False)
 
@@ -488,42 +559,51 @@ class McpManager:
         """Configured server names (public API)."""
         return list(self._specs.keys())
 
-    async def render_banner(self) -> str:
-        """Render a merged MCP servers/resources banner for instruction headers.
+    # ---- Structured sampling snapshot (no prompt rendering) ----
+    class InitializeView(BaseModel):
+        instructions: str | None = None
+        server_info: Any | None = None
 
-        Format:
-        FYI: MCP servers/resources:
-        - server=<name>
-          resources: [first 5 URIs] (+N more; list via mcp__resources__list)
-          <name server desc>
-          ... initialize.instructions ...
-          </name server desc>
-        """
-        # Group resources by server
-        resources = await self.list_resources()
-        by_server: dict[str, list[str]] = {}
-        for it in resources:
-            server = it.get("server")
-            uri = it.get("uri")
-            if isinstance(server, str) and isinstance(uri, str):
-                by_server.setdefault(server, []).append(uri)
-        # Build per-server entries
-        lines: list[str] = []
-        for sname in self.server_names:
-            uris = by_server.get(sname, [])
-            sample = uris[:5]
-            more = max(0, len(uris) - len(sample))
-            init_res = await self.get_server_initialize(sname)
-            desc = init_res.instructions
-            entry = f"server={sname}\n  resources: {sample}"
-            if more:
-                entry += f" (+{more} more; list via mcp__resources__list)"
-            if isinstance(desc, str) and desc:
-                entry += f"\n  <{sname} server desc>\n{desc}\n  </{sname} server desc>"
-            lines.append(entry)
-        if not lines:
-            return ""
-        return "FYI: MCP servers/resources:\n- " + "\n- ".join(lines)
+    class ServerEntry(BaseModel):
+        name: str
+        state: Literal["running", "failed"]
+        initialize: McpManager.InitializeView | None = None
+        error: str | None = None
+
+    class ToolDef(BaseModel):
+        type: Literal["function"] = "function"
+        name: str
+        description: str = ""
+        parameters: dict[str, Any] = Field(default_factory=dict)
+
+    class SamplingSnapshot(BaseModel):
+        servers: list[McpManager.ServerEntry]
+        tools: list[McpManager.ToolDef]
+
+    async def sampling_snapshot(self) -> McpManager.SamplingSnapshot:
+        servers: list[McpManager.ServerEntry] = []
+        running: list[str] = []
+        for name in self.server_names:
+            try:
+                init_res = await self.get_server_initialize(name)
+                servers.append(
+                    self.ServerEntry(
+                        name=name,
+                        state="running",
+                        initialize=self.InitializeView(
+                            instructions=init_res.instructions,
+                            server_info=init_res.serverInfo,
+                        ),
+                    )
+                )
+                running.append(name)
+            except Exception as e:
+                servers.append(
+                    self.ServerEntry(name=name, state="failed", error=str(e))
+                )
+        tools_raw = await self.list_tools(only=running)
+        tools = [self.ToolDef(**t) for t in tools_raw]
+        return self.SamplingSnapshot(servers=servers, tools=tools)
 
     @staticmethod
     def slot_from_spec(name: str, spec: Any) -> ServerSlotSpec:
@@ -577,6 +657,15 @@ class McpManager:
                 return _ctx()
 
             return ServerSlotSpec(open_uninitialized=open_uninitialized)
+
+        if transport == "inproc":
+            # Expect a FastMCP server object under key 'server'
+            server_obj = spec.get("server")
+            if server_obj is None:
+                raise ValueError(
+                    "inproc transport requires a 'server' FastMCP instance in spec",
+                )
+            return make_inproc_slot_spec(server_obj)
 
         if transport == "sse":
             url_val = spec.get("url")
@@ -637,3 +726,6 @@ class McpManager:
     # method was removed: call_tool() now accepts the single namespaced identifier and
     # parses it internally. Keep parse_mcp_function exported for callers that need to
     # parse names directly (tests and event renderers).
+
+
+# NotificationsBatch and ResourceUpdateEvent are defined at module level (above)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 from openai import AsyncOpenAI
 import yaml
@@ -27,9 +28,11 @@ from adgn.llm.properties.prompts.builder import build_grade_from_json_prompt
 from adgn.llm.properties.specimens.registry import SpecimenRegistry
 
 
-def _metrics_row(grade: GradeSubmitPayload, *, specimen: str | None = None) -> dict:
+def _metrics_row(
+    grade: GradeSubmitPayload, *, specimen: str | None = None
+) -> dict[str, Any]:
     m = grade.metrics
-    row = m.model_dump()
+    row: dict[str, Any] = m.model_dump()
     if specimen is not None:
         row["specimen"] = specimen
     row["fuzzy_precision"] = m.precision
@@ -62,27 +65,39 @@ async def grade_critic_output(
         for it in (getattr(rec, "false_positives", {}) or {}).values()
     ]
 
-    # Prefix IDs for grading context clarity
-    def _with_id_prefix(ri: ReportedIssue, prefix: str) -> dict:
-        obj = ri.model_dump(exclude_none=True)
-        core = obj.get("core", {})
-        if core.get("id"):
-            core["id"] = f"{prefix}{core['id']}"
-        obj["core"] = core
-        return obj
+    # Prefix IDs for grading context clarity (typed)
+    def _issue_with_id_prefix(ri: ReportedIssue, prefix: str) -> ReportedIssue:
+        nid = ri.core.id
+        if nid:
+            new_core = ri.core.model_copy(update={"id": f"{prefix}{nid}"})
+        else:
+            new_core = ri.core
+        return ReportedIssue(core=new_core, occurrences=list(ri.occurrences))
 
-    canonical_json_list = [_with_id_prefix(ri, CANON_TP_PREFIX) for ri in canonical_ri]
-    known_fp_json_list = [_with_id_prefix(ri, CANON_FP_PREFIX) for ri in known_fp_ri]
+    canonical_prefixed = [
+        _issue_with_id_prefix(ri, CANON_TP_PREFIX) for ri in canonical_ri
+    ]
+    known_fp_prefixed = [
+        _issue_with_id_prefix(ri, CANON_FP_PREFIX) for ri in known_fp_ri
+    ]
 
-    # Critique (for prompt rendering and unknown YAML): build a dict copy with prefixed IDs
-    critique_obj = json.loads(critic_obj.model_dump_json())
-    issues = critique_obj.get("issues") or []
-    for it in issues:
-        core = it.get("core", {})
-        if core.get("id") and not str(core["id"]).startswith(CRIT_PREFIX):
-            core["id"] = f"{CRIT_PREFIX}{core['id']}"
-        it["core"] = core
-    critique_obj["issues"] = issues
+    # Critique (for prompt rendering and unknown YAML): build a typed copy with prefixed IDs
+    critique_prefixed = CriticSubmitPayload.model_validate_json(
+        critic_obj.model_dump_json()
+    )
+    new_issues: list[ReportedIssue] = []
+    for it in critique_prefixed.issues:
+        nid = it.core.id
+        new_id = (
+            f"{CRIT_PREFIX}{nid}"
+            if nid and not str(nid).startswith(CRIT_PREFIX)
+            else nid
+        )
+        new_core = it.core.model_copy(update={"id": new_id})
+        new_issues.append(
+            ReportedIssue(core=new_core, occurrences=list(it.occurrences))
+        )
+    critique_prefixed = critique_prefixed.model_copy(update={"issues": new_issues})
 
     # Build allowed ID sets for validation and metrics counts
     allowed_critique_ids: set[str] = set()
@@ -112,9 +127,21 @@ async def grade_critic_output(
 
     prompt = build_grade_from_json_prompt(
         scope_text=f"Specimen: {specimen}",
-        canonical_json=json.dumps(canonical_json_list, ensure_ascii=False, indent=2),
-        critique_json=json.dumps(critique_obj, ensure_ascii=False, indent=2),
-        known_fp_json=json.dumps(known_fp_json_list, ensure_ascii=False, indent=2),
+        canonical_json=json.dumps(
+            [ri.model_dump(exclude_none=True) for ri in canonical_prefixed],
+            ensure_ascii=False,
+            indent=2,
+        ),
+        critique_json=json.dumps(
+            critique_prefixed.model_dump(exclude_none=True),
+            ensure_ascii=False,
+            indent=2,
+        ),
+        known_fp_json=json.dumps(
+            [ri.model_dump(exclude_none=True) for ri in known_fp_prefixed],
+            ensure_ascii=False,
+            indent=2,
+        ),
         submit_tool_name=submit_tool_name,
         wiring=wiring,
     )
@@ -146,21 +173,24 @@ async def grade_critic_output(
     if grader_state.result.unknown_critique_ids:
         unk_dir = Path(transcript_out_dir) / "unknowns"
         unk_dir.mkdir(parents=True, exist_ok=True)
-        # Build quick index from critique by id
-        crit_idx: dict[str, dict] = {}
-        for it in critique_obj.get("issues", []):
-            cid = it.get("core", {}).get("id")
-            if isinstance(cid, str):
-                crit_idx[cid] = it
+        # Build quick index from critique by id (typed)
+        crit_idx: dict[str, ReportedIssue] = {}
+        for it in critique_prefixed.issues:
+            if it.core.id:
+                crit_idx[str(it.core.id)] = it
         for cid in grader_state.result.unknown_critique_ids:
             it = crit_idx.get(cid)
             if not it:
                 continue
-            core = it.get("core", {})
-            occs = it.get("occurrences", []) or []
-            orig_id = str(core.get("id", "")).removeprefix(CRIT_PREFIX)
-            for i, occ in enumerate(occs):
-                data = {"core": core | {"id": orig_id}, "occurrence": occ}
+            orig_id = str(it.core.id or "").removeprefix(CRIT_PREFIX)
+            for i, occ in enumerate(it.occurrences or []):
+                core_dump = it.core.model_copy(update={"id": orig_id}).model_dump(
+                    exclude_none=True
+                )
+                data = {
+                    "core": core_dump,
+                    "occurrence": occ.model_dump(exclude_none=True),
+                }
                 out = unk_dir / f"{orig_id}__occ{i}.yaml"
                 out.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
 

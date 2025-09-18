@@ -96,6 +96,13 @@ include = ["adgn*"]
   "prompts/*.j2",
   "prompts/**/*.j2",
 ]
+"adgn.llm.mini_codex.ui" = [
+  "static/*",
+  "static/**/*",
+]
+"adgn.wt.shell" = [
+  "wt.sh",
+]
 
 [tool.pytest.ini_options]
 # Default timeout (seconds) for all tests via pytest-timeout
@@ -133,11 +140,14 @@ asyncio_mode = "auto"
 # Discover tests under the top-level tests/ directory
 testpaths = ["tests"]
 
+[tool.ruff.lint.per-file-ignores]
+"adgn/tests/**" = ["PLR0913"]
+
 [project.scripts]
 switch_gnome_terminal_profile = "adgn.gnome.switch_gnome_terminal_profile:run"
 rspcache = "adgn.rspcache.cli:main"
-wt = "wt.cli:main"
-wt-install = "wt.shell.install:main"
+wt = "adgn.wt.cli:main"
+wt-install = "adgn.wt.shell.install:main"
 # LLM console scripts
 adgn-sysrw = "adgn.llm.sysrw.cli:app"
 adgn-mini-codex = "adgn.llm.mini_codex.cli:main"
@@ -151,7 +161,7 @@ adgn-llm-edit = "adgn.llm.llm_edit:app"
 
 
 [project.entry-points."wt.plugins"]
-wt_demo = "wt.demo_plugin"
+wt_demo = "adgn.wt.demo_plugin"
 
 [tool.mypy]
 python_version = "3.12"
@@ -160,4 +170,16 @@ warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = false
 check_untyped_defs = true
+# Exclude specimen code from type-checking (authoring data; not production code)
+# Exclude specimen code from type-checking (authoring data; not production code)
+# Use a broad regex that matches both "src/..." and "adgn/src/..." paths
+exclude = "(^|/)(adgn/)?src/adgn/llm/properties/specimens/.*"
+
+# Ruff configuration
+[tool.ruff]
+# Extend default excludes; add specimen paths
+extend-exclude = [
+  "src/adgn/llm/properties/specimens/**",
+  "adgn/src/adgn/llm/properties/specimens/**",
+]
 

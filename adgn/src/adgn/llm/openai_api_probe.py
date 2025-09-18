@@ -554,7 +554,7 @@ async def consume_stream_rich(
         if isinstance(obj, ProbeRun):
             return obj.avg_latency_s
         lat = getattr(obj, "latency_s", None)
-        return float(lat) if isinstance(lat, (int, float)) else None
+        return float(lat) if isinstance(lat, int | float) else None
 
     def _std_lat(obj) -> float | None:
         if isinstance(obj, ProbeRun):
@@ -644,13 +644,13 @@ async def consume_stream_rich(
         if isinstance(p, ProbeRun):
             return p.success_snippet
         txt = p.content  # type: ignore[attr-defined]
-        return txt if isinstance(txt, (str, type(None))) else None
+        return txt if isinstance(txt, str | type(None)) else None
 
     def probe_exc(p) -> BaseException | None:
         if isinstance(p, ProbeRun):
             return p.first_error
         ex = p.exc  # type: ignore[attr-defined]
-        return ex if isinstance(ex, (BaseException, type(None))) else None
+        return ex if isinstance(ex, BaseException | type(None)) else None
 
     def fmt_latency(obj) -> str:
         v = _avg_lat(obj)
@@ -981,7 +981,7 @@ async def main() -> None:
         if isinstance(obj, ProbeRun):
             return obj.avg_latency_s
         lat = getattr(obj, "latency_s", None)
-        return float(lat) if isinstance(lat, (int, float)) else None
+        return float(lat) if isinstance(lat, int | float) else None
 
     def _std_lat(obj) -> float | None:
         if isinstance(obj, ProbeRun):
@@ -1069,13 +1069,13 @@ async def main() -> None:
         if isinstance(p, ProbeRun):
             return p.success_snippet
         txt = p.content  # type: ignore[attr-defined]
-        return txt if isinstance(txt, (str, type(None))) else None
+        return txt if isinstance(txt, str | type(None)) else None
 
     def probe_exc(p) -> BaseException | None:
         if isinstance(p, ProbeRun):
             return p.first_error
         ex = p.exc  # type: ignore[attr-defined]
-        return ex if isinstance(ex, (BaseException, type(None))) else None
+        return ex if isinstance(ex, BaseException | type(None)) else None
 
     def ok_cell(probe) -> str:
         txt = (probe_snippet(probe) or "").removeprefix("✓ ").strip()

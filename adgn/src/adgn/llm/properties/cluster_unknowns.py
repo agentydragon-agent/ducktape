@@ -3,6 +3,7 @@ from collections.abc import Iterable
 from datetime import datetime
 import json
 from pathlib import Path
+from typing import cast
 
 from mcp.server.fastmcp import FastMCP  # type: ignore
 from openai import AsyncOpenAI
@@ -179,11 +180,10 @@ def cluster_unknowns(
             "no unknown YAMLs found under runs/prompt_optimize/**/unknowns/",
         )
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    root = (
-        Path(out_dir).expanduser().resolve()
-        if out_dir is not None
-        else (pkg_dir() / "runs" / "cluster_unknowns" / ts)
-    )
+    if out_dir is not None:
+        root: Path = Path(out_dir).expanduser().resolve()
+    else:
+        root = cast(Path, pkg_dir()) / "runs" / "cluster_unknowns" / ts
     root.mkdir(parents=True, exist_ok=True)
 
     # Partition by specimen
@@ -199,4 +199,5 @@ def cluster_unknowns(
         await asyncio.gather(*tasks)
         return root
 
-    return asyncio.run(_run_all())
+    out_root_path: Path = asyncio.run(_run_all())
+    return out_root_path

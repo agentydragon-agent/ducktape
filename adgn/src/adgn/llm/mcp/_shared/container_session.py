@@ -5,14 +5,14 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from enum import StrEnum
 import shlex
-from typing import Any, cast
+from typing import Any
 
 import docker
 from docker.models.containers import Container
 from mcp.server.fastmcp import FastMCP
-from pydantic import BaseModel
 
 from adgn.llm.mcp._shared.constants import SLEEP_FOREVER_CMD
+from adgn.llm.mcp._shared.types import ExecResult
 
 # Exit code returned by `timeout -s TERM` on termination
 EXIT_CODE_SIGTERM = 143
@@ -106,6 +106,9 @@ def make_container_lifespan(opts: ContainerOptions):
     return lifespan
 
 
+# Module-level ExecInput to avoid ForwardRef issues during FastMCP signature introspection
+
+
 # ---- Register exec tool and resources on a FastMCP server ----
 
 
@@ -135,15 +138,8 @@ def register_container(mcp: FastMCP, *, tool_name: str = "exec") -> None:
             "image_history": s.docker_client.api.history(img.id),  # type: ignore[attr-defined]
         }
 
-    # Pydantic payload for exec tool (typed single param to satisfy PLR0913)
-    class ExecInput(BaseModel):
-        cmd: list[str]
-        cwd: str | None = None
-        env: dict[str, str] | None = None
-        user: str | None = None
-        tty: bool = False
-        shell: bool = False
-        timeout_secs: float | None = None
+    # Using module-level ExecInput (kept for reference), but expose top-level
+    # arguments in the tool signature to simplify client calls.
 
     # Tool: container exec
     @mcp.tool(
@@ -152,25 +148,29 @@ def register_container(mcp: FastMCP, *, tool_name: str = "exec") -> None:
         description="Run a shell command inside the per-session Docker container.",
         structured_output=True,
     )
-    def tool_exec(payload: ExecInput) -> dict[str, Any]:
+    def tool_exec(
+        cmd: list[str],
+        cwd: str | None = None,
+        env: dict[str, str] | None = None,
+        user: str | None = None,
+        tty: bool = False,
+        shell: bool = False,
+        timeout_secs: float | None = None,
+    ) -> ExecResult:
         ctx = mcp.get_context()
         s: ContainerSessionState = ctx.request_context.lifespan_context  # type: ignore[assignment]
         prepared_cmd: list[str] | str
-        if payload.timeout_secs and payload.timeout_secs > 0:
-            timeout_arg = f"timeout -s TERM {int(payload.timeout_secs)}"
-            if payload.shell:
-                prepared_cmd = f"{timeout_arg} {_shell_join(payload.cmd)}"
+        if timeout_secs and timeout_secs > 0:
+            timeout_arg = f"timeout -s TERM {int(timeout_secs)}"
+            if shell:
+                prepared_cmd = f"{timeout_arg} {_shell_join(cmd)}"
             else:
-                prepared_cmd = [
-                    "sh",
-                    "-lc",
-                    f"{timeout_arg} {_shell_join(payload.cmd)}",
-                ]
+                prepared_cmd = cmd
         else:
-            prepared_cmd = _shell_join(payload.cmd) if payload.shell else payload.cmd
+            prepared_cmd = _shell_join(cmd) if shell else cmd
 
         if (
-            payload.shell
+            shell
             and not (
                 isinstance(prepared_cmd, list) and prepared_cmd[:2] == ["sh", "-lc"]
             )
@@ -180,23 +180,21 @@ def register_container(mcp: FastMCP, *, tool_name: str = "exec") -> None:
         else:
             exec_cmd = prepared_cmd
 
-        cli = s.container.client
+        # Docker SDK types: container.client is a DockerClient (or None per stubs)
+        cli: docker.DockerClient | None = s.container.client
         if cli is None:  # mypy: Container.client can be Optional in stubs
             raise RuntimeError("Docker client not available on container")
-        api = cast(
-            Any,
-            cli,
-        ).api  # DockerClient.api → low-level APIClient; use Any for compatibility with stubs
+        api: docker.APIClient = cli.api  # low-level APIClient
         exec_id = api.exec_create(
             container=s.container.id,
             cmd=exec_cmd,
             stdout=True,
             stderr=True,
             stdin=False,
-            tty=payload.tty,
-            user=payload.user,
-            workdir=payload.cwd,
-            environment=payload.env,
+            tty=tty,
+            user=user,
+            workdir=cwd,
+            environment=env,
         )["Id"]
 
         stdout_buf = bytearray()
@@ -216,12 +214,12 @@ def register_container(mcp: FastMCP, *, tool_name: str = "exec") -> None:
         inspect_info = api.exec_inspect(exec_id)
         exit_code = inspect_info.get("ExitCode")
 
-        timed_out = bool(payload.timeout_secs) and exit_code == EXIT_CODE_SIGTERM
+        timed_out = bool(timeout_secs) and exit_code == EXIT_CODE_SIGTERM
         if timed_out:
             exit_code = None
-        return {
-            "exit_code": exit_code,
-            "timed_out": timed_out,
-            "stdout": stdout_buf.decode(errors="replace"),
-            "stderr": stderr_buf.decode(errors="replace"),
-        }
+        return ExecResult(
+            exit_code=exit_code,
+            timed_out=timed_out,
+            stdout=stdout_buf.decode(errors="replace"),
+            stderr=stderr_buf.decode(errors="replace"),
+        )

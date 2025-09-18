@@ -3,16 +3,15 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from typing import Any, Protocol
 
-from openai.types.responses import response_create_params as P
+from openai.types.responses.response_create_params import (
+    ResponseCreateParamsNonStreaming,
+)
 
 # Sentinel for selecting a real AsyncOpenAI client in parameterized tests
 LIVE = object()
 
-# Use SDK typed non-streaming request params
-Req = P.ResponseCreateParamsNonStreaming
-
 # Function type for a mocked OpenAI Responses API call (typed request object)
-ResponsesCreateFn = Callable[[Req], Awaitable[Any]]
+ResponsesCreateFn = Callable[[ResponseCreateParamsNonStreaming], Awaitable[Any]]
 
 
 class OpenAIClient(Protocol):
@@ -26,7 +25,7 @@ def make_mock(responses_create_fn: ResponsesCreateFn) -> OpenAIClient:
 
     class _Responses:
         async def create(self, **kwargs: Any) -> Any:  # mirror SDK surface
-            req = Req(**kwargs)
+            req = ResponseCreateParamsNonStreaming(**kwargs)
             return await responses_create_fn(req)
 
     class _Client:

@@ -231,7 +231,8 @@ def build_server(
                     f"tp={m.true_positives} fp={m.false_positive} unk={m.unknown} fn={m.false_negatives} "
                     f"fuzzy_precision={m.precision:.3f} fuzzy_recall={m.recall:.3f}",
                 )
-                return _metrics_row(grade_obj, specimen=specimen)
+                row: dict[str, Any] = _metrics_row(grade_obj, specimen=specimen)
+                return row
             except Exception as e:
                 # Persist detailed traceback per specimen; then re-raise original
                 (out_dir / "error.txt").write_text(
