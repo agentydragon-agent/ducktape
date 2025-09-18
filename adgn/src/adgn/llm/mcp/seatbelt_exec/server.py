@@ -11,7 +11,7 @@ from mcp.server.fastmcp.exceptions import ToolError
 from pydantic import BaseModel, ConfigDict
 
 from adgn.seatbelt.model import SBPLPolicy
-from adgn.seatbelt.runner import apopen
+from adgn.seatbelt.runner import apopen, collect_unified_sandbox_denies
 
 
 SERVER_NAME = "seatbelt_exec"
@@ -31,13 +31,14 @@ class SandboxExecResult(BaseModel):
     stdout_text: str | None = None
     stderr_text: str | None = None
     trace_text: str | None = None
+    unified_sandbox_denies_text: str | None = None
 
     model_config = ConfigDict(extra="forbid")
 
 
 def _validate_id(policy_id: str) -> None:
     if not isinstance(policy_id, str) or not _ID_RE.fullmatch(policy_id):
-        raise ToolError("invalid policy_id", code="INVALID_ID")
+        raise ToolError("INVALID_ID: invalid policy_id")
 
 
 def make_seatbelt_exec_mcp(name: str = SERVER_NAME) -> FastMCP:
@@ -74,7 +75,7 @@ def make_seatbelt_exec_mcp(name: str = SERVER_NAME) -> FastMCP:
         _validate_id(policy_id)
         async with lock:
             if policy_id not in store:
-                raise ToolError("policy not found", code="POLICY_NOT_FOUND")
+                raise ToolError("POLICY_NOT_FOUND: policy not found")
             return store[policy_id]
 
     @mcp.tool()
@@ -90,7 +91,7 @@ def make_seatbelt_exec_mcp(name: str = SERVER_NAME) -> FastMCP:
         _validate_id(policy_id)
         async with lock:
             if policy_id not in store:
-                raise ToolError("policy not found", code="POLICY_NOT_FOUND")
+                raise ToolError("POLICY_NOT_FOUND: policy not found")
             del store[policy_id]
         return {}
 
@@ -105,7 +106,7 @@ def make_seatbelt_exec_mcp(name: str = SERVER_NAME) -> FastMCP:
     ) -> SandboxExecResult:
         # Platform precheck
         if sys.platform != "darwin":
-            raise ToolError("sandbox available only on macOS", code="NOT_DARWIN")
+            raise ToolError("NOT_DARWIN: sandbox available only on macOS")
 
         _validate_id(policy_id)
         if (
@@ -113,14 +114,14 @@ def make_seatbelt_exec_mcp(name: str = SERVER_NAME) -> FastMCP:
             or not argv
             or not all(isinstance(a, str) for a in argv)
         ):
-            raise ToolError("argv must be a non-empty list[str]", code="INVALID_ARGV")
+            raise ToolError("INVALID_ARGV: argv must be a non-empty list[str]")
         cwd_path = Path(cwd).resolve() if isinstance(cwd, str) else None
 
         # Load policy
         async with lock:
             policy = store.get(policy_id)
         if policy is None:
-            raise ToolError("policy not found", code="POLICY_NOT_FOUND")
+            raise ToolError("POLICY_NOT_FOUND: policy not found")
 
         # Run with apopen so we can enforce timeout and kill if needed
         try:
@@ -173,6 +174,17 @@ def make_seatbelt_exec_mcp(name: str = SERVER_NAME) -> FastMCP:
                     except Exception:
                         trace_text = None
 
+                # Disabled for now: unified sandbox denies are noisy/unscoped.
+                # TODO(mpokorny): Re-enable behind a debug flag and filter to the child process.
+                unified_text: str | None = None
+                if False and (not timed_out and (proc.returncode or 0) != 0):
+                    try:
+                        _p, unified_text = collect_unified_sandbox_denies(
+                            proc.artifacts_dir
+                        )
+                    except Exception:
+                        unified_text = None
+
                 return SandboxExecResult(
                     exit_code=(None if timed_out else proc.returncode),
                     timeout=timed_out,
@@ -180,15 +192,14 @@ def make_seatbelt_exec_mcp(name: str = SERVER_NAME) -> FastMCP:
                     stdout_text=stdout_text,
                     stderr_text=stderr_text,
                     trace_text=trace_text,
+                    unified_sandbox_denies_text=unified_text,
                 )
         except FileNotFoundError as e:
             # sandbox-exec missing
-            raise ToolError(str(e), code="SANDBOX_EXEC_MISSING") from e
+            raise ToolError(f"SANDBOX_EXEC_MISSING: {e}") from e
         except ToolError:
             raise
         except Exception as e:
-            raise ToolError(
-                "launch error", code="LAUNCH_ERROR", details={"error": str(e)}
-            ) from e
+            raise ToolError(f"LAUNCH_ERROR: launch error: {e}") from e
 
     return mcp

@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import pytest
 
-from adgn.llm.mini_codex.aggregating_handler import AggregatingController, BaseHandler
-from adgn.llm.mcp.helpers import make_response_input_user_text
+from adgn.llm.mini_codex.aggregating_handler import Reducer, BaseHandler
+from tests.llm.support.openai_builders import (
+    make_input_user_text as make_response_input_user_text,
+)
 from adgn.llm.mini_codex.loop_control import Abort, Auto, Continue
 
 
@@ -14,7 +16,7 @@ class _InsertsHandler(BaseHandler):
     def on_before_sample(self):  # type: ignore[override]
         # Insert as input message (user role), not output message
         msg = make_response_input_user_text(
-            f"payload:{self._msg_id}", id=f"ins_{self._msg_id}"
+            f"payload:{self._msg_id}", id_=f"ins_{self._msg_id}"
         )
         return Continue(Auto(), inserts_input=(msg,))
 
@@ -30,7 +32,7 @@ class _AbortHandler(BaseHandler):
 
 
 def test_aggregating_merges_inserts_additively():
-    ctrl = AggregatingController([_InsertsHandler("m1"), _InsertsHandler("m2")])
+    ctrl = Reducer([_InsertsHandler("m1"), _InsertsHandler("m2")])
     dec = ctrl.on_before_sample()
     assert isinstance(dec, Continue)
     assert dec.tool_policy.__class__ is Auto
@@ -53,6 +55,6 @@ def test_aggregating_merges_inserts_additively():
 
 
 def test_aggregating_continue_and_abort_conflict():
-    ctrl = AggregatingController([_ContinueOnlyHandler(), _AbortHandler()])
+    ctrl = Reducer([_ContinueOnlyHandler(), _AbortHandler()])
     with pytest.raises(RuntimeError):
         _ = ctrl.on_before_sample()

@@ -6,10 +6,10 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 from openai.types.responses import (
-    ResponseFunctionToolCall,
     ResponseOutputMessage,
     ResponseOutputText,
 )
+from tests.llm.support.openai_builders import make_input_function_call
 import pytest
 
 from adgn.llm.mini_codex.agent import MiniCodex
@@ -61,12 +61,8 @@ async def test_agent_mcp_echo_tool_use(monkeypatch: pytest.MonkeyPatch) -> None:
 
     async def fake_create(_client, **kwargs):
         # Return a single function tool call to echo with arguments {"text": "hello"}
-        tool_call = ResponseFunctionToolCall(
-            id="fc_1",
-            type="function_call",
-            call_id="call_1",
-            name="echo__echo",
-            arguments=json.dumps({"text": "hello"}),
+        tool_call = make_input_function_call(
+            name="echo__echo", call_id="call_1", arguments={"text": "hello"}
         )
         # Assistant message to follow after tool execution
         msg = ResponseOutputMessage(

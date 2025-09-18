@@ -1,6 +1,15 @@
 from __future__ import annotations
 
-from openai.types.responses import Response, ResponseOutputMessage, ResponseOutputText
+from typing import Any
+import json
+
+from openai.types.responses import (
+    Response,
+    ResponseInputMessageItem,
+    ResponseInputTextParam,
+    ResponseOutputMessage,
+    ResponseOutputText,
+)
 from openai.types.responses.response_create_params import (
     ResponseCreateParamsNonStreaming as Req,
 )
@@ -116,3 +125,34 @@ def make_function_call_response(
         tools=[],
         usage=_usage_zeros(),
     )
+
+
+# ---- Input item builders (for agent inserts) ----
+
+
+def make_input_user_text(text: str, id_: str | None = None) -> ResponseInputMessageItem:
+    """Typed user input_text message for Responses input list.
+
+    If id_ is provided, it is set on the message; otherwise the SDK will omit it.
+    """
+    content = [ResponseInputTextParam(type="input_text", text=text)]
+    if id_ is not None:
+        return ResponseInputMessageItem(
+            id=id_, type="message", role="user", content=content
+        )
+    return ResponseInputMessageItem(type="message", role="user", content=content)
+
+
+def make_input_function_call(
+    *, name: str, call_id: str, arguments: dict[str, Any] | str
+) -> ResponseFunctionToolCall:
+    """Typed function_call input item (SDK object)."""
+    args_str = json.dumps(arguments) if isinstance(arguments, dict) else str(arguments)
+    return ResponseFunctionToolCall(
+        type="function_call", name=name, call_id=call_id, arguments=args_str
+    )
+
+
+def make_input_function_call_output(*, call_id: str, output: str) -> dict[str, Any]:
+    """function_call_output input item (API shape has no SDK class)."""
+    return {"type": "function_call_output", "call_id": call_id, "output": output}

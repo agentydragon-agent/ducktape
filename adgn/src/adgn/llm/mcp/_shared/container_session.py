@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from enum import StrEnum
 import shlex
+import math
 from typing import Any
 
 import docker
@@ -161,11 +162,14 @@ def register_container(mcp: FastMCP, *, tool_name: str = "exec") -> None:
         s: ContainerSessionState = ctx.request_context.lifespan_context  # type: ignore[assignment]
         prepared_cmd: list[str] | str
         if timeout_secs and timeout_secs > 0:
-            timeout_arg = f"timeout -s TERM {int(timeout_secs)}"
+            int_secs = max(1, int(math.ceil(timeout_secs)))
+            timeout_prefix = f"timeout -s TERM {int_secs} "
             if shell:
-                prepared_cmd = f"{timeout_arg} {_shell_join(cmd)}"
+                # Build a shell string; wrapping to sh -lc happens below if needed
+                prepared_cmd = f"{timeout_prefix}{_shell_join(cmd)}"
             else:
-                prepared_cmd = cmd
+                # No shell requested → run under sh -lc with timeout prefix
+                prepared_cmd = ["sh", "-lc", f"{timeout_prefix}{_shell_join(cmd)}"]
         else:
             prepared_cmd = _shell_join(cmd) if shell else cmd
 

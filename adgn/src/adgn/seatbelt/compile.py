@@ -54,6 +54,9 @@ def compile_sbpl(policy: SBPLPolicy) -> str:
     # Trace
     if policy.trace.enabled and policy.trace.path:
         lines.append(f'(trace "{_q(policy.trace.path)}")')
+        # Magic: ensure trace path is writable by the sandbox so the trace file can be created
+        # TODO(mpokorny): This is implicit rule injection; consider making it explicit or configurable.
+        lines.append(f'(allow file-write* (literal "{_q(policy.trace.path)}"))')
 
     # Process primitives
     if policy.process.allow_process_star:

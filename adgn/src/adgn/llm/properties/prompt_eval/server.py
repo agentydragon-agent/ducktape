@@ -89,21 +89,24 @@ async def _run_critic_for_specimen(
             class BootstrapInspectHandler(BaseHandler):
                 def __init__(self) -> None:
                     self._done: bool = False
+                    self._emitted: bool = False
 
                 def on_before_sample(self):  # type: ignore[override]
-                    if self._done:
-                        from adgn.llm.mini_codex.loop_control import NoLoopDecision
+                    from adgn.llm.mini_codex.loop_control import NoLoopDecision
 
+                    if self._done:
                         return NoLoopDecision()
+                    # First cycle: emit synthetic calls, but do NOT mark done yet
+                    if not self._emitted:
+                        self._emitted = True
+                        calls = [make_container_info_call(wiring)]
+                        calls.append(make_ls_workspace_call(wiring))
+                        return Continue(
+                            RequireAny(), inserts_input=tuple(calls), skip_sampling=True
+                        )
+                    # Second cycle: mark done and defer; subsequent cycles will continue normally
                     self._done = True
-                    # 1) Read container.info via resources.read for the docker server
-                    calls = [make_container_info_call(wiring)]
-                    # 2) List specimen root (/workspace)
-                    calls.append(make_ls_workspace_call(wiring))
-                    # Do NOT list /props since properties are not mounted in this mode
-                    return Continue(
-                        RequireAny(), inserts_input=tuple(calls), skip_sampling=True
-                    )
+                    return NoLoopDecision()
 
             bootstrap = BootstrapInspectHandler()
             handlers = [

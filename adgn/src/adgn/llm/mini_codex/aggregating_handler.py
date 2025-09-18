@@ -7,6 +7,8 @@ from typing import Any, Literal
 from mcp import types as mcp_types
 from openai.types.responses import (
     ResponseInputItem,
+    ResponseInputMessageItem,
+    ResponseInputTextParam,
 )
 from pydantic import BaseModel
 
@@ -72,8 +74,8 @@ class GateUntil(BaseHandler):
         return Continue(RequireAny())
 
 
-class AggregatingController:
-    """Single controller owning event forwarding and loop-decision semantics.
+class Reducer:
+    """Single reducer owning event forwarding and loop-decision semantics.
 
     Behavior:
       - Handlers are called in registration order. Each handler's
@@ -304,98 +306,36 @@ class NotificationsHandler(BaseHandler):
         self._msg_counter += 1
         # Insert as input-side user message, clearly tagged as a system notification
         tagged = f"<system notification>\n{payload}\n</system notification>"
-        from adgn.llm.mcp.helpers import make_response_input_user_text
-
-        msg: ResponseInputItem = make_response_input_user_text(
-            tagged, id=f"sysfyi_{self._msg_counter}"
+        msg: ResponseInputItem = ResponseInputMessageItem(
+            id=f"sysfyi_{self._msg_counter}",
+            type="message",
+            role="user",
+            content=[ResponseInputTextParam(type="input_text", text=tagged)],
         )
         return Continue(Auto(), inserts_input=(msg,))
 
     # ---- Event forwarding (typed, observer-only) ----
     def on_response(self, evt: Response) -> None:
-        for h in self._handlers:
-            h.on_response(evt)
+        return None
 
     def on_error(self, exc: Exception) -> None:
-        """Forward fatal agent errors to all handlers in registration order."""
-        for h in self._handlers:
-            h.on_error(exc)
+        return None
 
     def on_user_text(self, evt: UserText) -> None:
-        for h in self._handlers:
-            h.on_user_text_event(evt)
+        return None
 
     def on_assistant_text(self, evt: AssistantText) -> None:
-        for h in self._handlers:
-            h.on_assistant_text_event(evt)
+        return None
 
     def on_tool_call(self, evt: ToolCall) -> None:
-        for h in self._handlers:
-            h.on_tool_call_event(evt)
+        return None
 
     async def on_before_tool_call(self, evt: ToolCall) -> BeforeToolCallDecision:
-        """Ask handlers for a required before-tool-call decision.
-
-        Rules:
-        - Call handlers' async before_tool_call(evt) in registration order.
-        - Each handler MUST return a BeforeToolCallDecision.
-        - If multiple handlers return decisions that differ, crash (conflict).
-        - If handlers list is empty, crash.
-        """
-        decisions: list[BeforeToolCallDecision] = []
-        if not self._handlers:
-            raise RuntimeError(
-                "No handlers registered to make before_tool_call decisions",
-            )
-
-        for h in self._handlers:
-            # Call each handler's before_tool_call; BaseHandler provides a default ContinueDecision.
-            dec = await h.before_tool_call(evt)
-            if dec is None:
-                # Defensive: shouldn't happen because BaseHandler returns ContinueDecision(), but fail-fast if it does
-                raise TypeError(
-                    f"Handler {h!r}.before_tool_call returned None; must return a BeforeToolCallDecision",
-                )
-            # If injecting a result, ensure the result field is the concrete CallToolResult type
-
-            if isinstance(dec, BypassToolInjectOutput) and not isinstance(
-                dec.result, mcp_types.CallToolResult
-            ):
-                raise TypeError(
-                    f"Handler {h!r} returned BypassToolInjectOutput with invalid result; result must be an mcp.types.CallToolResult instance",
-                )
-            decisions.append(dec)
-
-        # Reduction rules:
-        # - If all decisions are identical -> return that decision
-        # - If there are multiple non-Continue decisions that differ -> conflict (error)
-        # - If there is exactly one non-Continue decision and others are ContinueDecision, return the non-Continue one
-        first = decisions[0]
-        if all(d == first for d in decisions):
-            return first
-
-        # Find non-ContinueDecision decisions (type-based, not string matching)
-
-        non_continue = [d for d in decisions if not isinstance(d, ContinueDecision)]
-        if len(non_continue) == 0:
-            # all continue but not identical (shouldn't happen) -> return first
-            return first
-        if len(non_continue) == 1:
-            return non_continue[0]
-
-        # Multiple non-continue decisions: they must be identical or it's a conflict
-        first_nc = non_continue[0]
-        for other in non_continue[1:]:
-            if other != first_nc:
-                raise RuntimeError(
-                    f"Conflicting before_tool_call decisions from handlers: {decisions!r}",
-                )
-        return first_nc
+        # NotificationsHandler does not participate in per-tool decisions; defer
+        return ContinueDecision()
 
     def on_function_call_output(self, evt: FunctionCallOutput) -> None:
-        for h in self._handlers:
-            h.on_function_call_output_event(evt)
+        return None
 
     def on_reasoning(self, item: Any) -> None:  # type: ignore[override]
-        for h in self._handlers:
-            h.on_reasoning(item)
+        return None

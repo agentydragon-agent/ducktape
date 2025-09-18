@@ -117,7 +117,14 @@ class ConnectionManager(BaseHandler):
             event_ts=datetime.now(UTC),
             payload=payload,
         )
-        await self.send_json(envelope.model_dump(mode="json"))
+        env_dict = envelope.model_dump(mode="json")
+        await self.send_json(env_dict)
+        # Record transcript items so snapshot on reload shows history
+        if self._session is not None:
+            if isinstance(
+                payload, (UserText, AssistantText, ToolCall, FunctionCallOutput)
+            ):
+                self._session.transcript.append(payload.model_dump(mode="json"))
 
     # ---- Handler adapter methods (so manager can be used as a BaseHandler) ----
     def set_session(self, session: AgentSession) -> None:
@@ -387,6 +394,15 @@ def create_app() -> FastAPI:
                 "index_path": str(index_path),
             },
         )
+        # If a factory to build/attach the agent was provided, run it on this loop
+        attach = getattr(app.state, "agent_factory", None)
+        if attach is not None:
+            try:
+                agent = await attach()
+                session.attach_agent(agent)
+                logger.info("agent attached on startup")
+            except Exception:
+                logger.exception("agent attach on startup failed")
         app.state.ready.set()
 
     manager = ConnectionManager()
@@ -465,7 +481,7 @@ def create_app() -> FastAPI:
                                     run_counter=0,
                                 ),
                                 run_state=None,
-                                transcript=[],
+                                transcript=session.transcript,
                                 sampling=sampling,
                                 mcp_servers=mcp_servers_list,
                             ),

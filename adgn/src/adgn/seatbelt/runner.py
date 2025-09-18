@@ -62,9 +62,14 @@ def _prepare_policy(
     return sp, policy_file, trace_file, policy_text
 
 
-def _collect_unified_sandbox_denies(
+def collect_unified_sandbox_denies(
     artifacts_dir: Path, window: str = "5m"
 ) -> tuple[Path | None, str | None]:
+    """Collect recent unified log deny messages from the macOS sandbox.
+
+    Returns (path, text) where path is the written file under artifacts_dir and
+    text is the full log output. Returns (None, None) on non-darwin.
+    """
     if sys.platform != "darwin":
         return None, None
     cmd = [
@@ -72,10 +77,12 @@ def _collect_unified_sandbox_denies(
         "show",
         "--style",
         "syslog",
+        "--info",
+        "--debug",
         "--last",
         window,
         "--predicate",
-        '(subsystem == "com.apple.sandbox") && (eventMessage CONTAINS[c] "deny")',
+        '((subsystem == "com.apple.sandbox") OR (category == "Sandbox"))',
     ]
     res = subprocess.run(cmd, capture_output=True, text=True, check=False)
     if res.returncode != 0:
@@ -84,6 +91,62 @@ def _collect_unified_sandbox_denies(
     dest = artifacts_dir / "unified_sandbox_deny.log"
     dest.write_text(text)
     return dest, text
+
+
+def _collect_unified_if_failed(
+    artifacts_dir: Path, returncode: int | None
+) -> tuple[Path | None, str | None]:
+    """Collect unified sandbox denies only when exit code is non-zero."""
+    if returncode not in (None, 0):
+        return collect_unified_sandbox_denies(artifacts_dir)
+    return None, None
+
+
+def _finalize_result(
+    *,
+    returncode: int | None,
+    stdout: bytes | None,
+    stderr: bytes | None,
+    started: datetime,
+    ended: datetime,
+    policy_file: Path,
+    policy_text: str,
+    trace_file: Path | None,
+    read_trace: bool,
+    keep_files: bool,
+    artifacts_dir: Path,
+    cmd: list[str],
+    sandbox_exec_path: str,
+) -> RunResult:
+    """Common tail: read trace, collect unified denies, build RunResult, cleanup."""
+    duration_td = ended - started
+
+    trace_text: str | None = None
+    if read_trace and trace_file and trace_file.exists():
+        trace_text = trace_file.read_text(errors="replace")
+
+    if not keep_files:
+        # Keep trace by default; only remove policy file
+        policy_file.unlink()
+
+    unified_path, unified_text = _collect_unified_if_failed(artifacts_dir, returncode)
+
+    return RunResult(
+        exit_code=(returncode if returncode is not None else -1),
+        stdout=stdout,
+        stderr=stderr,
+        cmd=cmd,
+        sandbox_exec_path=sandbox_exec_path,
+        started_at=started,
+        ended_at=ended,
+        duration=duration_td,
+        policy_path=policy_file,
+        policy_text=policy_text,
+        trace_path=trace_file,
+        trace_text=trace_text,
+        unified_sandbox_denies_path=unified_path,
+        unified_sandbox_denies_text=unified_text,
+    )
 
 
 def run_sandboxed(
@@ -119,37 +182,20 @@ def run_sandboxed(
         check=False,
     )
     ended = datetime.now(timezone.utc)
-    duration_td = ended - started
-
-    trace_text: str | None = None
-    if read_trace and trace_file and trace_file.exists():
-        # Let I/O errors propagate
-        trace_text = trace_file.read_text(errors="replace")
-
-    if not keep_files:
-        # Keep trace by default; only remove policy file
-        policy_file.unlink()
-
-    unified_path: Path | None = None
-    unified_text: str | None = None
-    if proc.returncode != 0:
-        unified_path, unified_text = _collect_unified_sandbox_denies(artifacts_dir)
-
-    return RunResult(
-        exit_code=(proc.returncode if proc.returncode is not None else -1),
+    return _finalize_result(
+        returncode=proc.returncode,
         stdout=proc.stdout,
         stderr=proc.stderr,
+        started=started,
+        ended=ended,
+        policy_file=policy_file,
+        policy_text=policy_text,
+        trace_file=trace_file,
+        read_trace=read_trace,
+        keep_files=keep_files,
+        artifacts_dir=artifacts_dir,
         cmd=cmd,
         sandbox_exec_path=sx,
-        started_at=started,
-        ended_at=ended,
-        duration=duration_td,
-        policy_path=policy_file,
-        policy_text=policy_text,
-        trace_path=trace_file,
-        trace_text=trace_text,
-        unified_sandbox_denies_path=unified_path,
-        unified_sandbox_denies_text=unified_text,
     )
 
 
@@ -194,35 +240,20 @@ async def run_sandboxed_async(
         await proc.wait()
         out_b, err_b = None, None
     ended = datetime.now(timezone.utc)
-    duration_td = ended - started
-
-    trace_text: str | None = None
-    if read_trace and trace_file and trace_file.exists():
-        trace_text = trace_file.read_text(errors="replace")
-
-    if not keep_files:
-        policy_file.unlink()
-
-    unified_path: Path | None = None
-    unified_text: str | None = None
-    if proc.returncode != 0:
-        unified_path, unified_text = _collect_unified_sandbox_denies(artifacts_dir)
-
-    return RunResult(
-        exit_code=(proc.returncode if proc.returncode is not None else -1),
+    return _finalize_result(
+        returncode=proc.returncode,
         stdout=out_b,
         stderr=err_b,
+        started=started,
+        ended=ended,
+        policy_file=policy_file,
+        policy_text=policy_text,
+        trace_file=trace_file,
+        read_trace=read_trace,
+        keep_files=keep_files,
+        artifacts_dir=artifacts_dir,
         cmd=cmd,
         sandbox_exec_path=sx,
-        started_at=started,
-        ended_at=ended,
-        duration=duration_td,
-        policy_path=policy_file,
-        policy_text=policy_text,
-        trace_path=trace_file,
-        trace_text=trace_text,
-        unified_sandbox_denies_path=unified_path,
-        unified_sandbox_denies_text=unified_text,
     )
 
 

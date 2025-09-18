@@ -155,7 +155,7 @@ Extraction logic (MiniCodex today, non‑streaming)
 API surface (for embedders)
 - No new sinks or env vars. Usage is attached inside MiniCodex core before emitting the first typed Event of the turn.
 - Handlers become strongly typed (event algebra), not bags of dicts or loosely typed args.
-  - BaseHandler methods take the event object for that kind (see below). AggregatingController forwards typed events end‑to‑end.
+  - BaseHandler methods take the event object for that kind (see below). Reducer forwards typed events end‑to‑end.
 
 Planned handler signatures (typed)
 ```python
@@ -169,9 +169,9 @@ class BaseHandler:
     def on_before_sample(self) -> LoopDecision: ...  # unchanged
 ```
 
-AggregatingController forwarding (concept)
+Reducer forwarding (concept)
 ```python
-class AggregatingController:
+class Reducer:
     def on_response(self, evt: Response) -> None:
         for h in self._handlers:
             h.on_response(evt)
@@ -284,14 +284,14 @@ class BaseHandler:
     def on_function_call_output(self, evt: FunctionCallOutput) -> None: ...
 ```
 
-- AggregatingController updated to call handlers with typed events; equality/conflict logic unchanged.
+- Reducer updated to call handlers with typed events; equality/conflict logic unchanged.
 - MiniCodex._emit_event accepts a typed Event and logs via model_dump(exclude_none=True).
 
 TranscriptLogger as a Handler
 - Feasibility: Yes. Logger writes exactly one record per event kind.
 - With Response introduced, the logger writes a distinct {kind: "response", ...usage...} line, avoiding duplication across assistant/tool events.
 - Required API changes:
-  - Add on_response(self, evt: Response) to BaseHandler and AggregatingController.
+  - Add on_response(self, evt: Response) to BaseHandler and Reducer.
   - Ensure system_note and tool_error either get their own event types or remain as raw dicts with a separate simple logger.
 - Interim approach: Keep the existing on_event sink until typed events land. Then switch TranscriptLogger to a Handler and remove the on_event path to avoid duplication.
 
@@ -337,7 +337,7 @@ Agent logging init changes (remove legacy on_event logger):
 
 Rollout order (safe):
 1) Land typed events + TranscriptLoggerHandler.
-2) Update AggregatingController and in-repo handlers to typed signatures.
+2) Update Reducer and in-repo handlers to typed signatures.
 3) Switch all callsites to pass TranscriptLoggerHandler; remove any on_event args.
 4) Delete legacy TranscriptLogger and on_event plumbing from MiniCodex._init_logging.
 
@@ -345,6 +345,6 @@ Migration plan (incremental)
 1) Implement normalize_usage_from_response(resp) and unit tests with fake responses.
 2) Introduce typed Event classes and add TranscriptLoggerHandler; provide a temporary adapter for legacy handlers if needed.
 3) Wire usage extraction and emit Response event in _single_turn() (non‑streaming only).
-4) Update BaseHandler and AggregatingController to the typed signatures; convert in‑tree handlers (AutoHandler, DisplayEventsHandler); add typed events for system_note and tool_error or a generic Event.
+4) Update BaseHandler and Reducer to the typed signatures; convert in‑tree handlers (AutoHandler, DisplayEventsHandler); add typed events for system_note and tool_error or a generic Event.
 5) Switch callsites to TranscriptLoggerHandler and remove on_event usage; then remove legacy logger from MiniCodex._init_logging.
 6) Add tests for assistant_text and tool‑call‑only turns; caching and no‑usage paths.

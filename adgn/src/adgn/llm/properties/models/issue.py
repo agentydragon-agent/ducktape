@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_vali
 
 
 class LineRange(BaseModel):
-    start_line: int = Field(..., description="1-based start line number")
+    start_line: int = Field(..., ge=1, description="1-based start line number")
     end_line: int | None = Field(
         default=None,
         description="1-based end line number (inclusive); omit for single-line anchor",
@@ -34,7 +34,9 @@ class Occurrence(BaseModel):
       Issue.rationale for the global explanation and acceptance criteria.
     """
 
-    files: dict[str, list[LineRange] | None] = Field(
+    files: dict[
+        Annotated[str, StringConstraints(pattern=r"^[^\n]+$")], list[LineRange] | None
+    ] = Field(
         description=(
             "Maps file paths -> list of LineRanges within that file or `None` to indicate an unspecified anchor in the file. "
             + "One Occurrence may reference multiple files (e.g., multi-file code fragment) but represents a single logical location instance."
@@ -77,7 +79,9 @@ class SpecimenIssuesLoadError(Exception):
 
 
 # Strongly-typed identifiers with validation
-IssueId = Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9_-]{0,200}$")]
+IssueId = Annotated[
+    str, StringConstraints(pattern=r"^[A-Za-z0-9_-]{0,200}$", min_length=1)
+]
 
 
 class IssueCore(BaseModel):

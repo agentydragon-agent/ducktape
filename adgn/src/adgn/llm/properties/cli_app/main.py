@@ -279,6 +279,7 @@ async def _run_specimen_minicodex_async(
     final_only: bool,
     output_final_message: Path | None,
     client: AsyncOpenAI,
+    model: str = "gpt-5",
 ) -> int:
     rec = SpecimenRegistry.load_strict(specimen)
     man = rec.manifest
@@ -338,7 +339,7 @@ async def _run_specimen_minicodex_async(
         }
         async with McpManager(specs) as mcp:
             agent = await MiniCodex.create(
-                model="gpt-5",
+                model=model,
                 mcp=mcp,
                 system="You are a code agent. Be concise.",
                 client=client,
@@ -389,6 +390,7 @@ async def cmd_specimen_check(
     output_final_message: Path | None = OPT_OUTPUT_FINAL_MESSAGE,
     gitconfig: Path | None = OPT_GITCONFIG,
     allow_general_findings: bool = OPT_ALLOW_GENERAL,
+    model: str = OPT_MODEL,
 ) -> None:
     """Run a property scan on a saved specimen (uses manifest.yaml)."""
     base = find_specimens_base()
@@ -414,6 +416,7 @@ async def cmd_specimen_check(
         final_only=final_only,
         output_final_message=output_final_message,
         client=AsyncOpenAI(),
+        model=model,
     )
     raise typer.Exit(code=rc)
 
@@ -488,7 +491,12 @@ async def prompt_optimize(
     system = (
         "You are an expert LLM prompt engineer.\n\n"
         "You can evaluate performance of a given prompt using prompt_eval.test_prompt(prompt: str).\n\n"
-        "You will have a given maximum budget of prompt_eval.test_prompt calls. Wisely trade off exploration and exploitation."
+        "You will have a given maximum budget of prompt_eval.test_prompt calls. Wisely trade off exploration and exploitation.\n\n"
+        "Context: The critic uses an MCP server 'critic_submit'. The critic already receives the following tool instructions at runtime (no need to repeat):\n"
+        "<critic mcp instructions>\n"
+        f"{__import__('adgn.llm.properties.critic', fromlist=['CRITIC_MCP_INSTRUCTIONS']).CRITIC_MCP_INSTRUCTIONS}"
+        "</critic mcp instructions>\n\n"
+        "Keep your prompt focused on search/analysis strategy and guardrails; avoid restating tool schemas.\n"
     )
 
     # Optional docker MCP with /props mounted
@@ -656,14 +664,20 @@ async def prompt_eval(
             out_dir if out_dir is not None else (pkg_dir() / "runs" / "prompt_eval")
         ) / ts
         root.mkdir(parents=True, exist_ok=True)
+        print(f"[logs] prompt-eval root: {root}")
         (root / "prompt.txt").write_text(prompt, encoding="utf-8")
 
         async def one(name: str) -> dict[str, Any]:
             # Reuse the in-proc tool rather than duplicating orchestration
             out_dir_spec = root / name
             out_dir_spec.mkdir(parents=True, exist_ok=True)
+            print(f"[logs] specimen: {name}")
             critic_obj = await _run_critic_for_specimen(
                 name, prompt, client, root, agent_model=model, debug=debug
+            )
+            # Log where transcripts will be
+            print(
+                f"[logs] critic: {out_dir_spec / 'critic' / 'events.jsonl'}\n[logs] grader: {out_dir_spec / 'grader' / 'events.jsonl'}"
             )
             grade = await grade_critic_output(
                 name,

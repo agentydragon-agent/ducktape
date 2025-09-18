@@ -359,7 +359,7 @@ We will add light-weight diagnostics routed through the owner (no external enter
 - [ ] Tools cache invalidation on notifications (currently API exists; auto-wiring pending)
 - [ ] Resource subscription exposure (subscribe_resource/unsubscribe_resource) with capability gating and error messages
 - [ ] Centralize namespacing usages (agent/event_renderer/approvals/helpers) to manager facade (migration plan section)
-- [x] AggregatingController support for Continue.inserts (typed OpenAI SDK message objects) and well-defined composition/ordering
+- [x] Reducer support for Continue.inserts (typed OpenAI SDK message objects) and well-defined composition/ordering
 - [x] Optional handler-based notifications delivery (replace agent pre-turn poll with a handler that returns inserts)
 - [ ] Composability improvement (see Open TODO): sub-agent loop for “do work now” hooks; two-phase execute→insert pipeline/priorities
 - [ ] Tests: unit (manager caches/notifications), integration (in-proc servers, list_changed/updated), concurrency (ensure_open dedupe)

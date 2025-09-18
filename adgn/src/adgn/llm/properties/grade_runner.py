@@ -57,22 +57,29 @@ async def grade_critic_output(
 
     # Build ReportedIssue objects to match the grader schema exactly
     canonical_ri = [
-        ReportedIssue(core=it.core, occurrences=list(it.instances))
+        ReportedIssue(
+            id=it.core.id,
+            rationale=it.core.rationale,
+            occurrences=list(it.instances),
+        )
         for it in rec.issues.values()
     ]
     known_fp_ri = [
-        ReportedIssue(core=it.core, occurrences=list(it.instances))
+        ReportedIssue(
+            id=it.core.id,
+            rationale=it.core.rationale,
+            occurrences=list(it.instances),
+        )
         for it in (getattr(rec, "false_positives", {}) or {}).values()
     ]
 
     # Prefix IDs for grading context clarity (typed)
     def _issue_with_id_prefix(ri: ReportedIssue, prefix: str) -> ReportedIssue:
-        nid = ri.core.id
-        if nid:
-            new_core = ri.core.model_copy(update={"id": f"{prefix}{nid}"})
-        else:
-            new_core = ri.core
-        return ReportedIssue(core=new_core, occurrences=list(ri.occurrences))
+        nid = ri.id
+        new_id = f"{prefix}{nid}" if nid else nid
+        return ReportedIssue(
+            id=new_id, rationale=ri.rationale, occurrences=list(ri.occurrences)
+        )
 
     canonical_prefixed = [
         _issue_with_id_prefix(ri, CANON_TP_PREFIX) for ri in canonical_ri
@@ -87,22 +94,19 @@ async def grade_critic_output(
     )
     new_issues: list[ReportedIssue] = []
     for it in critique_prefixed.issues:
-        nid = it.core.id
+        nid = it.id
         new_id = (
             f"{CRIT_PREFIX}{nid}"
             if nid and not str(nid).startswith(CRIT_PREFIX)
             else nid
         )
-        new_core = it.core.model_copy(update={"id": new_id})
-        new_issues.append(
-            ReportedIssue(core=new_core, occurrences=list(it.occurrences))
-        )
+        new_issues.append(it.model_copy(update={"id": new_id}))
     critique_prefixed = critique_prefixed.model_copy(update={"issues": new_issues})
 
     # Build allowed ID sets for validation and metrics counts
     allowed_critique_ids: set[str] = set()
     for it in critic_obj.issues:
-        cid = it.core.id
+        cid = it.id
         if cid:
             allowed_critique_ids.add(
                 cid if str(cid).startswith(CRIT_PREFIX) else f"{CRIT_PREFIX}{cid}",
@@ -176,17 +180,15 @@ async def grade_critic_output(
         # Build quick index from critique by id (typed)
         crit_idx: dict[str, ReportedIssue] = {}
         for it in critique_prefixed.issues:
-            if it.core.id:
-                crit_idx[str(it.core.id)] = it
+            if it.id:
+                crit_idx[str(it.id)] = it
         for cid in grader_state.result.unknown_critique_ids:
             it = crit_idx.get(cid)
             if not it:
                 continue
-            orig_id = str(it.core.id or "").removeprefix(CRIT_PREFIX)
+            orig_id = str(it.id or "").removeprefix(CRIT_PREFIX)
             for i, occ in enumerate(it.occurrences or []):
-                core_dump = it.core.model_copy(update={"id": orig_id}).model_dump(
-                    exclude_none=True
-                )
+                core_dump = {"id": orig_id, "rationale": it.rationale}
                 data = {
                     "core": core_dump,
                     "occurrence": occ.model_dump(exclude_none=True),

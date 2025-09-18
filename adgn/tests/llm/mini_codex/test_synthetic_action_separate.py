@@ -8,13 +8,14 @@ from typing import Any
 
 from mcp import types as mcp_types
 from mcp.server.fastmcp import FastMCP
-from openai.types.responses import ResponseFunctionToolCall
+from tests.llm.support.openai_builders import make_input_function_call
 import pytest
 
 from adgn.llm.mcp.inproc_transport import make_inproc_slot_spec
 from adgn.llm.mini_codex.agent import MiniCodex
 from adgn.llm.mini_codex.aggregating_handler import AutoHandler
 from adgn.llm.mini_codex.handler import (
+    BaseHandler,
     BypassToolInjectOutput,
     ContinueDecision,
     ToolCall,
@@ -68,18 +69,15 @@ class SyntheticInvoker(AutoHandler):
         if self._fired:
             return Continue(Auto())
         self._fired = True
-        fc = ResponseFunctionToolCall(
-            arguments=json.dumps(
-                {"old_text": "HELLO_WORLD", "new_text": "GOODBYE_WORLD"},
-            ),
-            call_id="client:replace-1",
+        fc = make_input_function_call(
             name="mcp__spy__tool1",
-            type="function_call",
+            call_id="client:replace-1",
+            arguments={"old_text": "HELLO_WORLD", "new_text": "GOODBYE_WORLD"},
         )
         return Continue(Auto(), inserts_input=(fc,), skip_sampling=True)
 
 
-class BypassInjector(AutoHandler):
+class BypassInjector(BaseHandler):
     """Handler that injects a local CallToolResult and bypasses MCP execution."""
 
     def __init__(self, result: mcp_types.CallToolResult):

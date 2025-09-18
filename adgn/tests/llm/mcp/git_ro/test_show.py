@@ -6,22 +6,19 @@ from pydantic import TypeAdapter
 import pytest
 
 from adgn.llm.mcp.git_ro.server import (
-    GIT_RO_SERVER_NAME,
     DiffFormat,
     ListSlice,
     ShowInput,
     ShowResult,
 )
-from adgn.llm.mcp.helpers import make_openai_function_call_full
 
 
 @pytest.mark.asyncio
 async def test_git_show_name_status(git_ro_session) -> None:
     async with git_ro_session() as session:
-        func = make_openai_function_call_full(
-            GIT_RO_SERVER_NAME,
-            "git_show",
-            {
+        res_ns = await session.call_tool(
+            name="git_show",
+            arguments={
                 "payload": ShowInput(
                     object="HEAD",
                     format=DiffFormat.NAME_STATUS,
@@ -29,7 +26,6 @@ async def test_git_show_name_status(git_ro_session) -> None:
                 ),
             },
         )
-        res_ns = await session.call_tool(name="git_show", arguments=func["arguments"])
         payload_ns = res_ns.structuredContent
         if isinstance(payload_ns, str):
             payload_ns = json.loads(payload_ns)

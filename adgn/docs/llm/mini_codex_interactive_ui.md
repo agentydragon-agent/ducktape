@@ -126,7 +126,7 @@ class McpManagerWithApprovals(McpManagerProtocol):
   - src/adgn/llm/mini_codex/approvals.py (policy/state/manager)
   - src/adgn/llm/mini_codex/ui/server.py (FastAPI app)
   - src/adgn/llm/mini_codex/ui/static/index.html (dumb UI)
-- No changes to AggregatingController/handlers in Phase 1.
+- No changes to Reducer/handlers in Phase 1.
 
 Data and event contracts
 - Reuse existing dict events emitted by agent._emit_event():

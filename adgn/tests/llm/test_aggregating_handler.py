@@ -1,7 +1,7 @@
 import pytest
 
 from adgn.llm.mini_codex.aggregating_handler import (
-    AggregatingController,
+    Reducer,
     BaseHandler,
     NoLoopDecision,
 )
@@ -29,25 +29,25 @@ class BadHandler(BaseHandler):
 
 
 def test_crash_on_no_decision():
-    ctrl = AggregatingController([DeferringHandler()])
+    ctrl = Reducer([DeferringHandler()])
     with pytest.raises(RuntimeError):
         ctrl.on_before_sample()
 
 
 def test_crash_on_conflicting_decisions():
-    ctrl = AggregatingController([DecisionHandlerA(), DecisionHandlerB()])
+    ctrl = Reducer([DecisionHandlerA(), DecisionHandlerB()])
     with pytest.raises(RuntimeError):
         ctrl.on_before_sample()
 
 
 def test_agreeing_decisions_ok():
     # Two handlers that return equivalent LoopDecision values should succeed
-    ctrl = AggregatingController([DecisionHandlerA(), DecisionHandlerA()])
+    ctrl = Reducer([DecisionHandlerA(), DecisionHandlerA()])
     res = ctrl.on_before_sample()
     assert isinstance(res, Continue)
 
 
 def test_invalid_return_type_raises_type_error():
-    ctrl = AggregatingController([BadHandler()])
+    ctrl = Reducer([BadHandler()])
     with pytest.raises(TypeError):
         ctrl.on_before_sample()

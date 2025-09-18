@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from adgn.llm.mini_codex.aggregating_handler import AggregatingController, BaseHandler
+from adgn.llm.mini_codex.aggregating_handler import Reducer, BaseHandler
 from adgn.llm.mini_codex.loop_control import Auto, Continue
 
 
@@ -31,7 +31,7 @@ def test_all_continue_same_policy_skip_true_merge():
         "role": "user",
         "content": [{"type": "input_text", "text": "b"}],
     }
-    ctrl = AggregatingController(
+    ctrl = Reducer(
         [
             _SkipHandler(skip=True, inserts=(m1,)),
             _SkipHandler(skip=True, inserts=(m2,)),
@@ -55,7 +55,7 @@ def test_all_continue_same_policy_no_skip_merge():
         "role": "user",
         "content": [{"type": "input_text", "text": "y"}],
     }
-    ctrl = AggregatingController(
+    ctrl = Reducer(
         [
             _SkipHandler(skip=False, inserts=(m1,)),
             _SkipHandler(skip=False, inserts=(m2,)),
@@ -69,7 +69,7 @@ def test_all_continue_same_policy_no_skip_merge():
 
 
 def test_mixed_skip_sampling_conflict_raises():
-    ctrl = AggregatingController(
+    ctrl = Reducer(
         [
             _SkipHandler(skip=True),
             _SkipHandler(skip=False),

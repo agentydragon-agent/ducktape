@@ -5,7 +5,7 @@ source:
   ref: 719a7c445c7c4101a3b554686e9ef486eb28ac74
 scope:
   include:
-    - "adgn/src/adgn/llm/git_commit_ai/**/*.py"
-    - "adgn/src/adgn/llm/mini_codex/**/*.py"
-    - "adgn/src/adgn/llm/mcp/docker_exec/**/*.py"
-    - "adgn/src/adgn/llm/mcp/sandboxed_jupyter_mcp/**/*.py"
+    - "llm/adgn_llm/src/adgn_llm/git_commit_ai/**/*.py"
+    - "llm/adgn_llm/src/adgn_llm/mini_codex/**/*.py"
+    - "llm/adgn_llm/src/adgn_llm/mcp/docker_exec/**/*.py"
+    - "llm/adgn_llm/src/adgn_llm/mcp/sandboxed_jupyter_mcp/**/*.py"

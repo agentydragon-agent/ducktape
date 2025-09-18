@@ -45,7 +45,7 @@ from adgn.llm.mini_codex.loop_control import (
 from adgn.llm.openai_retry import retry_decorator
 from adgn.llm.openai_utils.types import ReasoningSummary
 
-from .aggregating_handler import AggregatingController, BaseHandler
+from .aggregating_handler import Reducer, BaseHandler
 from .mcp_manager import McpManager
 
 
@@ -186,7 +186,7 @@ class MiniCodex:
         assert handlers_list, (
             "At least one handler required; add AutoHandler() or a control handler"
         )
-        self._controller = AggregatingController(handlers_list)
+        self._controller = Reducer(handlers_list)
 
     def set_system_instructions(self, instructions: str | None) -> None:
         """Override base system instructions for future turns."""

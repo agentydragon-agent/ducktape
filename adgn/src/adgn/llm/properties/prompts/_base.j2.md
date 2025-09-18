@@ -7,7 +7,7 @@ Identify them by their *filenames*: a property stored in `foo/bar.md` is named `
 
 Quote only what’s necessary (≤ ~15 lines) to support applicability or non‑applicability of a property.
 
-When unclear, prefer to not apply a property to an issue ver stretching the definition.
+When unclear, prefer to not apply a property to an issue over stretching the definition.
 
 ### Decide property applicability by exact wording of definition
 

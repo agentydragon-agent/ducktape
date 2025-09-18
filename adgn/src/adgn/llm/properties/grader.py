@@ -151,7 +151,7 @@ def make_grader_submit_server(
 
     allowed_critique_ids: set[str] = set()
     for it in inputs.critique.issues:
-        cid = it.core.id
+        cid = it.id
         if cid:
             allowed_critique_ids.add(
                 cid if str(cid).startswith("crit_") else f"crit_{cid}",

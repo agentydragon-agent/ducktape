@@ -126,33 +126,44 @@ async def _serve_async(
     enabled = list(specs.keys())
     print("MCP servers enabled:", ", ".join(enabled) if enabled else "<none>")
 
-    client = openai.AsyncOpenAI()
+    # Build the FastAPI app and attach an agent factory so the agent (and MCP manager)
+    # are created on the uvicorn event loop thread, avoiding cross-loop awaits.
+    app = create_app()
 
-    async with McpManager(specs) as mcp:
+    async def _agent_factory() -> MiniCodex:
+        # Create independent client/manager bound to the uvicorn loop
+        inner_client = openai.AsyncOpenAI()
+        inner_mcp = McpManager(specs)
+        await inner_mcp.__aenter__()
         agent = await MiniCodex.create(
             model=model,
-            mcp=mcp,
+            mcp=inner_mcp,
             system=system,
-            client=client,
-            handlers=[NotificationsHandler(mcp), AutoHandler(), DisplayEventsHandler()],
+            client=inner_client,
+            handlers=[
+                NotificationsHandler(inner_mcp),
+                AutoHandler(),
+                DisplayEventsHandler(),
+            ],
         )
+        # Stash for potential shutdown handling (future)
+        app.state._inner_mcp = inner_mcp
+        app.state._inner_agent = agent
+        return agent
 
-        # Build app, attach agent to its session, and start uvicorn in background
-        app = create_app()
-        app.state.session.attach_agent(agent)
+    app.state.agent_factory = _agent_factory
 
-        def _run() -> None:
-            import uvicorn
+    def _run() -> None:
+        import uvicorn
 
-            uvicorn.run(app, host=host, port=port, log_level="info")
+        uvicorn.run(app, host=host, port=port, log_level="debug")
 
-        t = threading.Thread(target=_run, daemon=True)
-        t.start()
-        print(f"UI server running at http://{host}:{port}")
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+    print(f"UI server running at http://{host}:{port}")
 
-        async with agent:
-            # In serve mode, keep process alive; UI drives runs via WebSocket
-            await asyncio.Event().wait()
+    # Keep process alive; UI drives runs via WebSocket
+    await asyncio.Event().wait()
 
 
 @app.command("serve")

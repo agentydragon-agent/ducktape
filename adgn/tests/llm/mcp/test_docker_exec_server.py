@@ -1,28 +1,11 @@
 from __future__ import annotations
 
-from contextlib import AsyncExitStack, asynccontextmanager
+from contextlib import AsyncExitStack
 import os
 
 import anyio
 from mcp import ClientSession
 import pytest
-
-from adgn.llm.mcp.docker_exec.server import make_container_exec_mcp
-from adgn.llm.mcp.inproc_transport import make_inproc_slot_spec
-
-
-@asynccontextmanager
-async def open_inproc_session() -> ClientSession:
-    """Open an in-proc FastMCP docker_exec session.
-
-    This keeps enter/exit in the same task (inside anyio.run in each test),
-    avoiding anyio cancel-scope teardown issues from cross-task fixtures.
-    """
-    server = make_container_exec_mcp(image="alpine:3.20", describe=False)
-    spec = make_inproc_slot_spec(server)
-    async with AsyncExitStack() as stack:
-        slot = await spec.open(stack)
-        yield slot.session
 
 
 def _extract_payload(resp):
@@ -49,9 +32,11 @@ async def _call_exec(
     os.environ.get("CI") == "true",
     reason="Requires local Docker engine",
 )
-def test_hello_world() -> None:
+def test_hello_world(docker_inproc_spec_alpine) -> None:
     async def inner() -> None:
-        async with open_inproc_session() as session:
+        async with AsyncExitStack() as stack:
+            slot = await docker_inproc_spec_alpine.open(stack)
+            session: ClientSession = slot.session
             tools = await session.list_tools()
             names = {t.name for t in tools.tools}
             assert "docker_exec" in names
@@ -68,9 +53,11 @@ def test_hello_world() -> None:
     os.environ.get("CI") == "true",
     reason="Requires local Docker engine",
 )
-def test_stderr_and_exit_code() -> None:
+def test_stderr_and_exit_code(docker_inproc_spec_alpine) -> None:
     async def inner() -> None:
-        async with open_inproc_session() as session:
+        async with AsyncExitStack() as stack:
+            slot = await docker_inproc_spec_alpine.open(stack)
+            session: ClientSession = slot.session
             payload = await _call_exec(
                 session,
                 ["sh", "-lc", "echo err 1>&2; exit 3"],
@@ -87,9 +74,11 @@ def test_stderr_and_exit_code() -> None:
     os.environ.get("CI") == "true",
     reason="Requires local Docker engine",
 )
-def test_timeout_flag() -> None:
+def test_timeout_flag(docker_inproc_spec_alpine) -> None:
     async def inner() -> None:
-        async with open_inproc_session() as session:
+        async with AsyncExitStack() as stack:
+            slot = await docker_inproc_spec_alpine.open(stack)
+            session: ClientSession = slot.session
             payload = await _call_exec(
                 session,
                 ["sh", "-lc", "sleep 5"],

@@ -178,7 +178,7 @@ class McpServerInfo(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class Snapshot(Envelope):
+class Snapshot(BaseModel):
     type: Literal["snapshot"] = "snapshot"
     v: str
     session_state: SessionState
@@ -187,6 +187,7 @@ class Snapshot(Envelope):
     # Structured MCP state for UI and sampling (Pydantic models from McpManager)
     sampling: McpManager.SamplingSnapshot | None = None
     mcp_servers: list[McpServerInfo] = []
+    model_config = ConfigDict(extra="forbid")
 
 
 class Accepted(BaseModel):
