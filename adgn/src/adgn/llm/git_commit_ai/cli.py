@@ -1,13 +1,13 @@
 """
 git-commit-ai
 
-* Runs an AI agent (Claude or Codex) to draft the initial commit message shown in your editor.
+* Runs an AI agent (MiniCodex) to draft the initial commit message shown in your editor.
 * Runs repo's pre-commit hook **in parallel** so you don't wait twice.
 * Caches per-repo for one week keyed by staged diff hash.
 
 Call exactly like `git commit`; every flag is forwarded. Extra wrapper flags:
 
-    --model PROVIDER:MODEL (default: claude:sonnet)
+    --model MODEL (default: o4-mini)
     --debug                Enable debug logging (shows exact AI command)
     --accept-ai            Commit immediately with the AI-drafted message (skip editor)
 
@@ -47,8 +47,6 @@ import time
 
 import pygit2
 
-from adgn.llm.git_commit_ai.backends.claude_backend import ClaudeAI
-from adgn.llm.git_commit_ai.backends.codex_backend import CodexAI
 from adgn.llm.git_commit_ai.minicodex_backend import generate_commit_message_minicodex
 
 from .core import _diff, _format_name_status, _format_status_porcelain
@@ -60,7 +58,7 @@ from .core import _diff, _format_name_status, _format_status_porcelain
 MAX_FILE_LINES = 400  # truncate each file's hunk lines (per-file preview)
 # Global cap on total diff size sent to AI (characters)
 MAX_TOTAL_DIFF_CHARS = 120_000
-DEFAULT_MODEL = "claude:sonnet"
+DEFAULT_MODEL = "o4-mini"
 SPINNER_CHARS = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 MAX_VERBOSE_DIFF_LINES = 3000  # cap verbose diff lines under scissors
 DEFAULT_AI_TIMEOUT = timedelta(seconds=60)  # shared subprocess timeout for providers
@@ -68,7 +66,6 @@ DEFAULT_AI_TIMEOUT = timedelta(seconds=60)  # shared subprocess timeout for prov
 
 @dataclass
 class AppConfig:
-    provider: str
     model_name: str
     model_str: str
     timeout: timedelta | None
@@ -92,15 +89,14 @@ class AppConfig:
 
         timeout = None if raw_timeout_secs <= 0 else timedelta(seconds=raw_timeout_secs)
 
+        # Backward-compat: allow optional "minicodex:" prefix; ignore any other
         if ":" in model_str:
-            provider, model_name = model_str.split(":", 1)
-            provider = provider.strip() or "claude"
+            prefix, model_name = model_str.split(":", 1)
             model_name = model_name.strip()
         else:
-            provider, model_name = "claude", model_str.strip()
+            model_name = model_str.strip()
 
         return AppConfig(
-            provider=provider,
             model_name=model_name,
             model_str=model_str,
             timeout=timeout,
@@ -729,7 +725,6 @@ async def _run_editor_flow(
 @dataclass
 class ProduceMessageInput:
     repo: pygit2.Repository
-    provider: str
     model_name: str
     debug: bool
     deadline: timedelta | None
@@ -741,41 +736,16 @@ class ProduceMessageInput:
 
 
 async def _produce_message(inp: ProduceMessageInput) -> tuple[str, bool]:
-    """Return (message, cached). Runs provider and pre-commit where applicable."""
+    """Return (message, cached). Runs MiniCodex and pre-commit where applicable."""
     if (msg := inp.cache.get(inp.key)) is not None:
         return msg, True
 
-    include_all = ("-a" in inp.passthru) or ("--all" in inp.passthru)
-
-    if inp.provider == "claude":
-        ai_client = ClaudeAI(
-            inp.repo,
-            diff=inp.diff,
-            passthru=inp.passthru,
+    ai_task: asyncio.Task[str] = asyncio.create_task(
+        generate_commit_message_minicodex(
+            model=inp.model_name or "o4-mini",
             debug=inp.debug,
-            timeout=inp.deadline,
-            previous_message=inp.previous_message,
-        )
-        ai_task: asyncio.Task[str] = asyncio.create_task(
-            ai_client.generate(include_all, inp.model_name)
-        )
-    elif inp.provider == "codex":
-        ai_client = CodexAI(
-            inp.repo,
-            debug=inp.debug,
-            timeout=inp.deadline,
-            previous_message=inp.previous_message,
-        )
-        ai_task = asyncio.create_task(ai_client.generate(include_all, inp.model_name))
-    elif inp.provider == "minicodex":
-        ai_task = asyncio.create_task(
-            generate_commit_message_minicodex(
-                model=inp.model_name or "gpt-5",
-                debug=inp.debug,
-            ),
-        )
-    else:
-        raise ValueError(f"Unknown AI provider: {inp.provider}")
+        ),
+    )
 
     run_precommit = "--no-verify" not in inp.passthru
     msg = await ParallelTaskRunner.create_and_run(
@@ -840,7 +810,7 @@ async def async_main():
 
     if not (diff := get_commit_diff(repo, passthru, previous_message)).strip():
         # Check if there's truly nothing to commit
-        status = repo.git.status("--porcelain")
+        status = _format_status_porcelain(repo)
         if not status:
             print("nothing to commit, working tree clean", file=sys.stderr)
         else:
@@ -851,25 +821,24 @@ async def async_main():
             )
         sys.exit(1)
 
-    # provider:model parsing handled by AppConfig.resolve
-    provider, model_name = config.provider, config.model_name
+    # Model parsing handled by AppConfig.resolve
+    model_name = config.model_name
     include_all = ("-a" in passthru) or ("--all" in passthru)
 
     # Clean old cache entries
     cache = Cache(repo_cache_dir(repo))
     cache.prune()
 
-    # Cache key by provider, model, scope, HEAD, diff, and amend status
+    # Cache key by model, scope, HEAD, diff, and amend status (fixed provider 'minicodex')
     commitish = get_short_commitish(repo)
     diff_hash = hashlib.sha256(diff.encode()).hexdigest()
     scope = "all" if include_all else "staged"
     amend_marker = "amend" if previous_message else "new"
-    key = f"{provider}:{model_name}:{scope}:{amend_marker}:{commitish}:{diff_hash}"
+    key = f"minicodex:{model_name}:{scope}:{amend_marker}:{commitish}:{diff_hash}"
 
     msg, cached = await _produce_message(
         ProduceMessageInput(
             repo=repo,
-            provider=provider,
             model_name=model_name,
             debug=args.debug,
             deadline=config.timeout,

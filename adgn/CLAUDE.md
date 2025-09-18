@@ -102,6 +102,29 @@ Quick references
 
 ## LLM (adgn.llm) quickstart and module map
 
+MiniCodex (CLI + local UI)
+- REPL: adgn-mini-codex run
+- UI server: adgn-mini-codex serve (opens WS UI at http://127.0.0.1:8765/)
+- Model/system defaults: --model (OPENAI_MODEL or o4-mini), --system (SYSTEM_INSTRUCTIONS)
+- MCP configuration:
+  - --mcp-config /path/to/.mcp.json (required to exist when provided)
+  - --extra-mcp-config /path/extra.json (repeatable; each must exist). Later files override earlier keys.
+- Behavior:
+  - On connect, server emits accepted followed by a Snapshot; Snapshot includes MCP server names and any transcript from the current process.
+  - Approvals are protocol‑native: approval_pending → approval_decision (approve | deny_continue | deny_abort); server maps them to handler decisions.
+  - Serve constructs the agent and MCP on the uvicorn loop (app.state.agent_factory) to avoid cross‑loop hangs.
+- UI dev/build:
+  - Build UI: npm --prefix src/adgn/llm/mini_codex/ui/web install; npm --prefix src/adgn/llm/mini_codex/ui/web run build
+  - Assets are published to src/adgn/llm/mini_codex/ui/static/web; FastAPI serves /static/web and /assets
+  - Layout: full‑page chat (left, bottom‑docked composer) + sidebar (WS status dot, run status, servers, approvals)
+  - Snapshot on hello restores transcript in the UI on reload
+  - Client WS diagnostics surface onerror/onclose
+- Troubleshooting:
+  - If some MCP servers fail to start, serve continues with the rest; check terminal logs for the failing server names and exceptions
+  - Server logs include “WS OUT” for every payload; serve runs uvicorn with log_level=debug
+  - Hard refresh after rebuilding UI assets
+
+
 This section documents the LLM toolkit that was migrated from llm/adgn_llm into the adgn package under src/adgn/llm.
 
 Environment

@@ -6,13 +6,13 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 import tempfile
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import pygit2
 import pytest
 
 from adgn.llm.git_commit_ai import cli
-from adgn.llm.git_commit_ai.cli import ClaudeAI, get_commit_diff
+from adgn.llm.git_commit_ai.cli import get_commit_diff
 from adgn.llm.git_commit_ai.core import build_prompt
 
 
@@ -204,47 +204,6 @@ def test_build_prompt_with_amend(temp_repo: pygit2.Repository):
 
 
 @pytest.mark.asyncio
-async def test_claude_ai_with_amend():
-    """Test ClaudeAI provider handles previous_message correctly."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        repo = _init_repo(tmpdir, name="Test", email="test@test.com")
-
-        # Create initial commit so HEAD exists
-        test_file = Path(repo.workdir) / "test.txt"
-        test_file.write_text("initial\n")
-        _stage(repo, "test.txt")
-        _commit(repo, "Initial commit")
-
-        # Mock the claude CLI command
-        with patch("asyncio.create_subprocess_exec") as mock_subprocess:
-            # Set up mock process
-            mock_proc = AsyncMock()
-            mock_proc.returncode = 0
-            mock_proc.communicate = AsyncMock(
-                return_value=(b"<message>Updated commit message</message>", b""),
-            )
-            mock_subprocess.return_value = mock_proc
-
-            # Test with previous message (amend)
-            ai = ClaudeAI(
-                repo=repo,
-                diff="test diff",
-                passthru=[],
-                previous_message="Original message",
-            )
-
-            result = await ai.generate(include_all=False, model="sonnet")
-
-            assert result == "Updated commit message"
-
-            # Verify the prompt included previous message context
-            call_args = mock_subprocess.call_args[0]
-            prompt_idx = call_args.index("-p") + 1
-            prompt = call_args[prompt_idx]
-            assert "Original message" in prompt
-
-
-@pytest.mark.asyncio
 async def test_full_amend_flow_integration(monkeypatch):
     """Integration test of the full amend flow with mocked AI."""
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -305,7 +264,7 @@ async def test_full_amend_flow_integration(monkeypatch):
             return new_message
 
         monkeypatch.setattr(
-            "adgn.llm.git_commit_ai.cli.ClaudeAI.generate",
+            "adgn.llm.git_commit_ai.minicodex_backend.generate_commit_message_minicodex",
             _fake_generate,
         )
         monkeypatch.setattr(
