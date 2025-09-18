@@ -1,18 +1,11 @@
 from __future__ import annotations
 
 import asyncio
-import shutil
 
 import pytest
 
 from adgn.seatbelt.model import FileRule, PathFilter, ProcessRule, SBPLPolicy
 from adgn.seatbelt.runner import apopen, run_sandboxed, run_sandboxed_async
-
-
-@pytest.fixture(autouse=True)
-def _seatbelt_require_sandbox_exec() -> None:
-    if not shutil.which("sandbox-exec"):
-        pytest.skip("sandbox-exec not found on PATH")
 
 
 @pytest.fixture

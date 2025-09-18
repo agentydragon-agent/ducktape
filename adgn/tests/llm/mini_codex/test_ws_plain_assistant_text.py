@@ -15,7 +15,7 @@ from adgn.llm.mini_codex.aggregating_handler import AutoHandler
 
 # Use shared protocol definitions for envelope + payload (full union)
 from adgn.llm.mini_codex.ui import protocol
-from adgn.llm.mini_codex.ui.server import app, session
+from adgn.llm.mini_codex.ui.server import create_app
 
 Envelope = protocol.Envelope
 ServerMessage = protocol.ServerMessage
@@ -73,7 +73,8 @@ def test_ws_plain_assistant_text(monkeypatch: pytest.MonkeyPatch) -> None:
         )
 
     agent = asyncio.run(_mk_agent())
-    session.attach_agent(agent)
+    app = create_app()
+    app.state.session.attach_agent(agent)
 
     try:
         with TestClient(app) as client, client.websocket_connect("/ws") as ws:

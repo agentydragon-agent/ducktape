@@ -281,20 +281,22 @@ async def test_optimize_prompts_two_iterations_async(
     monkeypatch.setenv("DUCK_ALLOW_UNSANDBOXED", "1")
 
     out_dir = await opt.optimize_prompts(
-        anthropic_log=JSONLLogger(base_dir / "anthropic.jsonl"),
-        openai_client=dummy_client,
-        seed_tasks=seed_tasks,
-        criteria=criteria,
-        cfg=cfg_two_iters,
-        runner_name="claude",
-        task_types=task_types,
-        runner_configs=runner_configs,
-        task_type=AgentTaskType.CODING,
-        iterations=2,
-        rollouts_per_task=1,
-        max_parallel_rollouts=1,
-        tasks_per_iteration=1,
-        base_dir=base_dir,
+        opt.OptimizeArgs(
+            anthropic_log=JSONLLogger(base_dir / "anthropic.jsonl"),
+            openai_client=dummy_client,
+            seed_tasks=seed_tasks,
+            criteria=criteria,
+            cfg=cfg_two_iters,
+            runner_name="claude",
+            task_types=task_types,
+            runner_configs=runner_configs,
+            task_type=AgentTaskType.CODING,
+            iterations=2,
+            rollouts_per_task=1,
+            max_parallel_rollouts=1,
+            tasks_per_iteration=1,
+            base_dir=base_dir,
+        )
     )
 
     # Iteration prompts

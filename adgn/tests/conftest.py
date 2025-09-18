@@ -1,4 +1,5 @@
 import sys
+import shutil
 
 import pytest
 import docker
@@ -11,6 +12,10 @@ def pytest_configure(config):
         "requires_docker: test requires Docker Engine (docker.from_env().ping())",
     )
     config.addinivalue_line("markers", "macos: macOS-only test")
+    config.addinivalue_line(
+        "markers",
+        "requires_sandbox_exec: test requires macOS seatbelt sandbox-exec present in PATH",
+    )
 
 
 def pytest_collection_modifyitems(config, items):
@@ -38,3 +43,25 @@ def pytest_collection_modifyitems(config, items):
         for item in items:
             if "requires_docker" in item.keywords:
                 item.add_marker(skip_docker)
+
+    # sandbox-exec gating (implies macOS)
+    for item in items:
+        if "requires_sandbox_exec" in item.keywords:
+            if sys.platform != "darwin":
+                item.add_marker(pytest.mark.skip(reason="macOS-only (sandbox-exec)"))
+            elif not shutil.which("sandbox-exec"):
+                item.add_marker(
+                    pytest.mark.skip(reason="sandbox-exec not found on PATH")
+                )
+
+
+@pytest.fixture()
+def require_sandbox_exec() -> None:
+    """Skip test unless running on macOS with sandbox-exec in PATH.
+
+    Shared fixture for seatbelt/sandboxer/MCP tests that depend on macOS seatbelt.
+    """
+    if sys.platform != "darwin":
+        pytest.skip("macOS-only (sandbox-exec)")
+    if not shutil.which("sandbox-exec"):
+        pytest.skip("sandbox-exec not found on PATH")

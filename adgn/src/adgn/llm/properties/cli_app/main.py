@@ -24,6 +24,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 from openai import AsyncOpenAI
 from rich.console import Console
+from rich.traceback import install as rich_traceback_install
 import tiktoken
 import typer
 
@@ -77,6 +78,9 @@ from adgn.llm.properties.specimens.registry import (
     list_specimen_names,
 )
 from adgn.llm.rendering.rich_renderers import render_to_rich
+
+# Reduce Rich traceback verbosity for CLI errors
+rich_traceback_install(show_locals=False, max_frames=12, extra_lines=1, width=100)
 
 app = typer.Typer(
     help="adgn-properties (Typer) — properties tooling", add_completion=False
@@ -633,11 +637,14 @@ async def prompt_eval(
     ),
     out_dir: Path | None = OPT_OUTPUT_DIR,
     model: str = OPT_MODEL,
+    debug: bool = typer.Option(
+        False, help="Log raw OpenAI HTTP to JSONL for diagnostics"
+    ),
 ) -> None:
     """Evaluate a critic system prompt across all known specimens and emit metrics list."""
 
     _pe_server, _state = build_prompt_eval_server(
-        agent_model=model, client=AsyncOpenAI()
+        agent_model=model, client=AsyncOpenAI(), debug=debug
     )
 
     async def _run() -> list[dict[str, Any]]:
@@ -656,7 +663,7 @@ async def prompt_eval(
             out_dir_spec = root / name
             out_dir_spec.mkdir(parents=True, exist_ok=True)
             critic_obj = await _run_critic_for_specimen(
-                name, prompt, client, root, agent_model=model
+                name, prompt, client, root, agent_model=model, debug=debug
             )
             grade = await grade_critic_output(
                 name,

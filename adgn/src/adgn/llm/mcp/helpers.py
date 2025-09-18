@@ -96,3 +96,20 @@ def make_response_input_user_text(
         role="user",
         content=[ResponseInputTextParam(type="input_text", text=text)],
     )
+
+
+def make_response_input_function_call(
+    *, name: str, call_id: str, arguments: dict[str, Any] | str
+) -> ResponseFunctionToolCall:
+    """Factory for a typed function_call input item (OpenAI SDK object)."""
+    args_str = json.dumps(arguments) if isinstance(arguments, dict) else str(arguments)
+    return ResponseFunctionToolCall(
+        type="function_call", name=name, call_id=call_id, arguments=args_str
+    )
+
+
+def make_response_input_function_call_output(
+    *, call_id: str, output: str
+) -> dict[str, Any]:
+    """Factory for function_call_output input item (dict shape per Responses API)."""
+    return {"type": "function_call_output", "call_id": call_id, "output": output}

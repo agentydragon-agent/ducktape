@@ -91,19 +91,22 @@ class AggregatingController:
         # Collect concrete decisions (non-NoLoopDecision) from handlers in order.
         decisions: list[LoopDecision] = []
         collected_inserts: list[ResponseInputItem] = []
-        skip_flag: bool | None = None
+        skip_value: bool | None = None
         for h in self._handlers:
             dec = h.on_before_sample()
             # Explicit deferral must be the NoLoopDecision() sentinel
             if isinstance(dec, NoLoopDecision):
                 continue
-            # Additive collection of pre-sample inserts from Continue decisions
+            # Additive collection of pre-sample inserts_input from Continue decisions
             if isinstance(dec, Continue) and dec.inserts_input:
                 collected_inserts.extend(list(dec.inserts_input))
             if isinstance(dec, Continue):
-                sf = getattr(dec, "skip_sampling", False)
-                if sf:
-                    skip_flag = True
+                if skip_value is None:
+                    skip_value = dec.skip_sampling
+                elif skip_value != dec.skip_sampling:
+                    raise RuntimeError(
+                        f"Conflicting skip_sampling flags in Continue decisions: {decisions!r}"
+                    )
             # Anything that is not one of the concrete decision classes is a programming error
             if not isinstance(dec, Continue | Abort):
                 raise TypeError(
@@ -119,15 +122,6 @@ class AggregatingController:
                 "Fix the MiniCodex instance to provide a loop handler.",
             )
 
-        # Honor any skip_sampling request globally
-        if any(
-            isinstance(d, Continue) and getattr(d, "skip_sampling", False)
-            for d in decisions
-        ):
-            return Continue(
-                Auto(), inserts_input=tuple(collected_inserts), skip_sampling=True
-            )
-
         # Reduction rules:
         # - If all decisions are identical -> return that decision
         # - Otherwise, prefer a single non-Continue decision if present (e.g., Abort)
@@ -138,7 +132,7 @@ class AggregatingController:
                 return Continue(
                     first.tool_policy,
                     inserts_input=tuple(collected_inserts),
-                    skip_sampling=bool(skip_flag),
+                    skip_sampling=bool(skip_value),
                 )
             return first
 
@@ -150,7 +144,7 @@ class AggregatingController:
                 return Continue(
                     policies[0],
                     inserts_input=tuple(collected_inserts),
-                    skip_sampling=bool(skip_flag),
+                    skip_sampling=bool(skip_value),
                 )
             # Otherwise conflicting Continue opinions
             raise RuntimeError(
@@ -279,7 +273,7 @@ class SystemMessage(BaseModel):
 
 
 class NotificationsHandler(BaseHandler):
-    """Deliver MCP notifications as one batched system message via Continue.inserts.
+    """Deliver MCP notifications as one batched system message via Continue.inserts_input.
 
     Polls McpManager for buffered notifications and, if present, returns a
     Continue(Auto()) decision with a single input-side SystemMessage insert that

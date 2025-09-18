@@ -6,7 +6,7 @@ import logging
 from pathlib import Path
 import sys
 
-from git import Repo
+import pygit2
 from mcp.server.fastmcp import FastMCP
 from openai import AsyncOpenAI
 from openai.types.responses import ResponseFunctionToolCall
@@ -206,9 +206,10 @@ async def generate_commit_message_minicodex(
 ) -> str:
     """Run MiniCodex with docker_exec + submit_commit_message MCP servers and return the commit message text."""
     # Wire an in-proc read-only Git MCP server bound to the current repo
-    worktree_dir = Repo(Path.cwd(), search_parent_directories=True).working_tree_dir
-    assert worktree_dir is not None, "Unable to locate git working tree directory"
-    repo_root = Path(worktree_dir)
+    gitdir = pygit2.discover_repository(str(Path.cwd()))
+    assert gitdir, "Unable to locate git repository"
+    repo = pygit2.Repository(gitdir)
+    repo_root = Path(repo.workdir or Path(gitdir).parent)
 
     submit_state = SubmitState()
     submit_server = make_submit_server(submit_state)

@@ -17,7 +17,7 @@ from adgn.llm.mini_codex.agent import MiniCodex
 from adgn.llm.mini_codex.aggregating_handler import AutoHandler, NotificationsHandler
 from adgn.llm.mini_codex.event_renderer import DisplayEventsHandler
 from adgn.llm.mini_codex.mcp_manager import McpManager
-from adgn.llm.mini_codex.ui.server import run_uvicorn, session
+from adgn.llm.mini_codex.ui.server import create_app
 
 # Defaults via environment with sensible fallbacks
 DEFAULT_MODEL = os.getenv("OPENAI_MODEL", "o4-mini")
@@ -137,13 +137,16 @@ async def _serve_async(
             handlers=[NotificationsHandler(mcp), AutoHandler(), DisplayEventsHandler()],
         )
 
-        # Attach agent to UI session
-        session.attach_agent(agent)
+        # Build app, attach agent to its session, and start uvicorn in background
+        app = create_app()
+        app.state.session.attach_agent(agent)
 
-        # Start uvicorn in background thread
-        t = threading.Thread(
-            target=run_uvicorn, kwargs={"host": host, "port": port}, daemon=True
-        )
+        def _run() -> None:
+            import uvicorn
+
+            uvicorn.run(app, host=host, port=port, log_level="info")
+
+        t = threading.Thread(target=_run, daemon=True)
         t.start()
         print(f"UI server running at http://{host}:{port}")
 

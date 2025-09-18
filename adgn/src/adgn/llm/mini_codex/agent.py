@@ -43,7 +43,7 @@ from adgn.llm.mini_codex.loop_control import (
     ToolPolicy as TP_Base,
 )
 from adgn.llm.openai_retry import retry_decorator
-from adgn.llm.openai_utils import ReasoningSummary
+from adgn.llm.openai_utils.types import ReasoningSummary
 
 from .aggregating_handler import AggregatingController, BaseHandler
 from .mcp_manager import McpManager
@@ -226,7 +226,7 @@ class MiniCodex:
         self.finished = False
         try:
             while not self.finished:
-                # Pre-phase inserts now handled by handlers via Continue.inserts
+                # Pre-phase inserts now handled by handlers via Continue.inserts_input
                 await self._run_one_phase()
                 if self.pending_function_calls:
                     await self._handle_pending_tool_calls()

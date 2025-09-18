@@ -373,6 +373,9 @@ def create_app() -> FastAPI:
         "/assets", StaticFiles(directory=STATIC_DIR / "web" / "assets"), name="assets"
     )
 
+    # Readiness event so async tests can await startup deterministically
+    app.state.ready = asyncio.Event()
+
     @app.on_event("startup")
     async def _on_startup() -> None:
         index_path = STATIC_DIR / "index.html"
@@ -384,6 +387,7 @@ def create_app() -> FastAPI:
                 "index_path": str(index_path),
             },
         )
+        app.state.ready.set()
 
     manager = ConnectionManager()
     session = AgentSession(manager)

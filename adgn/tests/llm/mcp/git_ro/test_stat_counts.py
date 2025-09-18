@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from git import Repo
+import pygit2
 import pytest
 
 from adgn.llm.mcp.git_ro.server import (
@@ -19,16 +19,20 @@ async def test_git_ro_stat_counts(tmp_path: Path) -> None:
     """Create a repo, make a staged change, call git_diff(format=stat) and assert additions/deletions."""
     repo_dir = tmp_path / "repo"
     repo_dir.mkdir()
-    repo = Repo.init(str(repo_dir))
+    repo = pygit2.init_repository(str(repo_dir), initial_head="main")
 
     # initial commit
     (repo_dir / "file.txt").write_text("line1\n")
-    repo.index.add(["file.txt"])
-    repo.index.commit("initial")
+    repo.index.add("file.txt")
+    repo.index.write()
+    sig = pygit2.Signature("Test", "test@example.com")
+    tree_oid = repo.index.write_tree()
+    repo.create_commit("HEAD", sig, sig, "initial", tree_oid, [])
 
     # modify and stage a non-trivial diff (add two lines)
     (repo_dir / "file.txt").write_text("line1\nline2\nline3\n")
-    repo.index.add(["file.txt"])
+    repo.index.add("file.txt")
+    repo.index.write()
 
     spec = make_inproc_slot_spec(make_git_ro_server(repo_dir))
 

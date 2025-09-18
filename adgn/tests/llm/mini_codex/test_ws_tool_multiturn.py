@@ -13,7 +13,7 @@ from adgn.llm.mini_codex.agent import MiniCodex
 from adgn.llm.mini_codex.aggregating_handler import AutoHandler
 from adgn.llm.mini_codex.mcp_manager import McpManager
 from adgn.llm.mini_codex.ui import protocol
-from adgn.llm.mini_codex.ui.server import app, session
+from adgn.llm.mini_codex.ui.server import create_app
 from tests.llm.support.openai_builders import (
     make_assistant_text_response,
     make_function_call_response,
@@ -74,7 +74,8 @@ def test_ws_tool_multiturn(monkeypatch: pytest.MonkeyPatch) -> None:
         return agent, mcp_mgr
 
     agent, _mcp_mgr = asyncio.run(_mk_agent())
-    session.attach_agent(agent)
+    app = create_app()
+    app.state.session.attach_agent(agent)
 
     try:
         with TestClient(app) as client, client.websocket_connect("/ws") as ws:

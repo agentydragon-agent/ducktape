@@ -18,6 +18,7 @@ import logging
 from pathlib import Path
 import traceback
 from typing import Annotated, Any, Literal
+from adgn.llm.openai_utils.http_logging import make_logged_async_openai
 
 from mcp.server.fastmcp import FastMCP
 from openai import AsyncOpenAI
@@ -60,6 +61,7 @@ async def _run_critic_for_specimen(
     run_dir: Path,
     *,
     agent_model: str = "gpt-5",
+    debug: bool = False,
 ) -> CriticSubmitPayload:
     """Run critic with a custom system prompt (no properties mount); return CriticSubmitPayload model and persist."""
     rec = SpecimenRegistry.load_strict(specimen)
@@ -115,11 +117,18 @@ async def _run_critic_for_specimen(
                     defer_when=lambda: not bootstrap._done,
                 ),
             ]
+            log_client = (
+                make_logged_async_openai(
+                    run_dir / specimen / "critic" / "openai_http.jsonl"
+                )
+                if debug
+                else client
+            )
             agent = await MiniCodex.create(
                 model=agent_model,
                 mcp=mcp,
                 system=system_prompt,
-                client=client,
+                client=log_client,
                 handlers=handlers,
                 parallel_tool_calls=True,
             )
@@ -185,6 +194,7 @@ def build_server(
     client: AsyncOpenAI,
     name: str = "prompt_eval",
     agent_model: str = "gpt-5",
+    debug: bool = False,
 ) -> tuple[FastMCP, PromptEvalState]:
     """Build a prompt_eval server that tracks rounds and writes under a fixed run dir.
 
@@ -239,6 +249,7 @@ def build_server(
                     client,
                     round_dir,
                     agent_model=agent_model,
+                    debug=debug,
                 )
                 # Persist grade JSON and transcript under round/specimen
                 grade_obj = await grade_critic_output(

@@ -29,7 +29,7 @@ from .mcp.editor_server import make_editor_mcp
 from .mcp.inproc_transport import make_inproc_slot_spec
 from .mini_codex.agent import MiniCodex
 from .mini_codex.mcp_manager import McpManager
-from .openai_utils import ReasoningSummary, to_reasoning_effort
+from adgn.llm.openai_utils.types import ReasoningSummary, to_reasoning_effort
 
 
 async def _execute(
