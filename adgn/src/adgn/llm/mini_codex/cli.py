@@ -39,13 +39,23 @@ SYSTEM_OPT = typer.Option(
 MCP_CONFIG_OPT = typer.Option(
     None,
     "--mcp-config",
-    exists=False,
+    exists=True,
     file_okay=True,
     dir_okay=False,
     readable=True,
     resolve_path=True,
     envvar="MCP_CONFIG",
     help="Path to .mcp.json; defaults to CWD/.mcp.json",
+)
+EXTRA_MCP_CONFIG_OPT = typer.Option(
+    [],
+    "--extra-mcp-config",
+    help="Additional .mcp.json file(s) to merge (can be passed multiple times)",
+    exists=True,
+    file_okay=True,
+    dir_okay=False,
+    readable=True,
+    resolve_path=True,
 )
 HOST_OPT = typer.Option("127.0.0.1", "--host", help="Host to bind UI server")
 PORT_OPT = typer.Option(8765, "--port", help="Port to bind UI server")
@@ -59,22 +69,31 @@ def load_mcp_file(path: Path) -> dict[str, Any]:
     return dict(servers)
 
 
-def _build_specs(mcp_config: Path | None) -> dict[str, Any]:
+def _build_specs(mcp_config: Path | None, extra: list[Path]) -> dict[str, Any]:
     cfg_path = mcp_config if mcp_config else (Path.cwd() / ".mcp.json")
     specs: dict[str, Any] = {}
+    # If user explicitly provided --mcp-config and it doesn't exist, fail fast
+    if mcp_config is not None and not cfg_path.exists():
+        raise FileNotFoundError(f"--mcp-config not found: {cfg_path}")
     if cfg_path.exists():
         specs.update(McpManager.slots_from_specs(load_mcp_file(cfg_path)))
+    for p in extra or []:
+        if not p.exists():
+            raise FileNotFoundError(f"--extra-mcp-config not found: {p}")
+        specs.update(McpManager.slots_from_specs(load_mcp_file(p)))
     return specs
 
 
-async def _run_repl_async(model: str, system: str, mcp_config: Path | None) -> None:
+async def _run_repl_async(
+    model: str, system: str, mcp_config: Path | None, extra_mcp: list[Path]
+) -> None:
     configure_logging()
     for h in logging.getLogger().handlers:
         if isinstance(h, logging.StreamHandler):
             h.setLevel(logging.INFO)
     print("mini-codex ready. Ctrl-D to exit. Type your task and press Enter.")
 
-    specs = _build_specs(mcp_config)
+    specs = _build_specs(mcp_config, extra_mcp)
     enabled = list(specs.keys())
     print("MCP servers enabled:", ", ".join(enabled) if enabled else "<none>")
 
@@ -103,9 +122,14 @@ def run(
     model: str = MODEL_OPT,
     system: str = SYSTEM_OPT,
     mcp_config: Path | None = MCP_CONFIG_OPT,
+    extra_mcp: list[Path] = EXTRA_MCP_CONFIG_OPT,
 ) -> None:
     """Start a simple stdin/stdout REPL."""
-    asyncio.run(_run_repl_async(model=model, system=system, mcp_config=mcp_config))
+    asyncio.run(
+        _run_repl_async(
+            model=model, system=system, mcp_config=mcp_config, extra_mcp=extra_mcp
+        )
+    )
 
 
 async def _serve_async(
@@ -114,6 +138,7 @@ async def _serve_async(
     model: str,
     system: str,
     mcp_config: Path | None,
+    extra_mcp: list[Path],
 ) -> None:
     configure_logging()
     for h in logging.getLogger().handlers:
@@ -122,7 +147,7 @@ async def _serve_async(
 
     print("mini-codex serve: starting agent + UI server")
 
-    specs = _build_specs(mcp_config)
+    specs = _build_specs(mcp_config, extra_mcp)
     enabled = list(specs.keys())
     print("MCP servers enabled:", ", ".join(enabled) if enabled else "<none>")
 
@@ -173,11 +198,17 @@ def serve(
     model: str = MODEL_OPT,
     system: str = SYSTEM_OPT,
     mcp_config: Path | None = MCP_CONFIG_OPT,
+    extra_mcp: list[Path] = EXTRA_MCP_CONFIG_OPT,
 ) -> None:
     """Launch the local FastAPI UI server and keep running."""
     asyncio.run(
         _serve_async(
-            host=host, port=port, model=model, system=system, mcp_config=mcp_config
+            host=host,
+            port=port,
+            model=model,
+            system=system,
+            mcp_config=mcp_config,
+            extra_mcp=extra_mcp,
         )
     )
 
