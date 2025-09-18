@@ -9,7 +9,7 @@ import yaml
 from adgn.wt.shared.config_file import ConfigFile
 from adgn.wt.shared.configuration import Configuration
 
-from .test_data import ConfigPresets, TestData
+from .test_data import ConfigPresets, TestData, WATCHER_DEBOUNCE_SECS
 
 
 class ConfigFactory:
@@ -75,7 +75,7 @@ class ConfigFactory:
             "cow_method": "copy",
             "gitstatusd_path": None,  # Will be filled by tests that need it
             "post_creation_script": None,
-            "git_watcher_debounce_delay": TestData.WATCHER_DEBOUNCE_SECS,
+            "git_watcher_debounce_delay": WATCHER_DEBOUNCE_SECS,
             # Lower debounce in tests for faster watcher reaction (prod default ~0.5s)
         }
 

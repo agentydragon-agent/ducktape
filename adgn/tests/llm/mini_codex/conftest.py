@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 import json
 import os
+import uuid
 from typing import Any
 
 from openai.types.responses import (
@@ -22,6 +23,7 @@ from openai.types.responses.response_usage import (
 )
 import pytest
 
+from adgn.llm.mini_codex.mcp_manager import McpManager
 from adgn.llm.mcp._shared.container_session import ContainerOptions
 from adgn.llm.mcp.docker_exec.server import make_container_exec_mcp
 from adgn.llm.mcp.inproc_transport import make_inproc_slot_spec
@@ -68,7 +70,7 @@ def make_tool_call_response(
 
 def make_assistant_text_response(*, model: str, text: str) -> Response:
     msg = ResponseOutputMessage(
-        id="msg1",
+        id=f"msg_{uuid.uuid4().hex[:8]}",
         type="message",
         role="assistant",
         status="completed",
@@ -148,6 +150,11 @@ def tool_call_response_factory() -> Callable[
 class ResponsesFactory:
     def __init__(self, model: str):
         self.model = model
+        self._counter = 0
+
+    def _next_id(self) -> int:
+        self._counter += 1
+        return self._counter
 
     def make_tool_call_response(
         self,
@@ -179,7 +186,7 @@ class ResponsesFactory:
             object="response",
             output=[
                 ResponseReasoningItem(
-                    id="rs_1",
+                    id=f"rs_{self._next_id()}",
                     type="reasoning",
                     summary=[ReasoningSummary(type="summary_text", text="thinking...")],
                 ),
@@ -204,7 +211,7 @@ class ResponsesFactory:
 
     def make_final_assistant(self, text: str) -> Response:
         msg = ResponseOutputMessage(
-            id="m1",
+            id=f"m{self._next_id()}",
             type="message",
             role="assistant",
             status="completed",
@@ -310,3 +317,14 @@ def docker_inproc_spec_alpine(docker_exec_server_alpine) -> object:
 @pytest.fixture
 def docker_specs_py312(docker_inproc_spec_py312) -> dict[str, object]:
     return {"docker": docker_inproc_spec_py312}
+
+
+@pytest.fixture
+async def empty_mcp() -> McpManager:
+    """A real McpManager with zero servers, entered for the test duration."""
+    mgr = McpManager({})
+    await mgr.__aenter__()
+    try:
+        yield mgr
+    finally:
+        await mgr.__aexit__(None, None, None)

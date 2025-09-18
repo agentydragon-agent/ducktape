@@ -29,7 +29,6 @@ from adgn.llm.mini_codex.loop_control import (
     Abort,
     Continue,
     RequireAny,
-    SyntheticAction,
 )
 from adgn.llm.mini_codex.mcp_manager import McpManager, build_mcp_function
 
@@ -191,7 +190,11 @@ class CommitController(BaseHandler):
             return Abort()
         self._step += 1
         if self._step == 1:
-            return SyntheticAction(outputs=self._bootstrap)
+            return Continue(
+                tool_policy=RequireAny(),
+                inserts_input=tuple(self._bootstrap),
+                skip_sampling=True,
+            )
         return Continue(RequireAny())
 
 

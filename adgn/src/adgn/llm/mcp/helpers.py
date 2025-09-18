@@ -13,7 +13,11 @@ import json
 from typing import Any
 import uuid
 
-from openai.types.responses import ResponseFunctionToolCall
+from openai.types.responses import (
+    ResponseFunctionToolCall,
+    ResponseInputMessageItem,
+    ResponseInputTextParam,
+)
 
 from adgn.llm.mini_codex.mcp_manager import build_mcp_function
 
@@ -76,4 +80,19 @@ def make_response_function_tool_call_full(
         name=ev.get("name"),
         arguments=ev.get("arguments"),
         call_id=ev.get("call_id"),
+    )
+
+
+def make_response_input_user_text(
+    text: str, *, id: str | None = None
+) -> ResponseInputMessageItem:
+    """Factory for a typed user input_text message for Responses API.
+
+    Provides required fields (id, type, role) and wraps 'text' as an input_text content item.
+    """
+    return ResponseInputMessageItem(
+        id=id or f"msg_{uuid.uuid4().hex}",
+        type="message",
+        role="user",
+        content=[ResponseInputTextParam(type="input_text", text=text)],
     )

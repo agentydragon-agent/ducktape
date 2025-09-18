@@ -60,30 +60,6 @@ repos:
           - types-toml
           - types-aiofiles
       - id: mypy
-        name: mypy (adgn_llm)
-        files: "^llm/adgn_llm/src/adgn_llm/(mini_codex|mcp/resources|mcp/git_ro|rspcache)/"
-        args: [
-          "--config-file=llm/adgn_llm/pyproject.toml",
-          "--namespace-packages",
-          "--ignore-missing-imports",
-          "--exclude",
-          "llm/adgn_llm/src/adgn_llm/mcp/git_ro/server.py"
-        ]
-        additional_dependencies:
-          - pydantic>=2
-          - types-PyYAML
-          - types-requests
-          - types-tabulate
-          # Runtime packages needed for imports in this package (pre-commit uses isolated env)
-          - openai>=1.0
-          - httpx
-          - tenacity
-          - structlog
-          - docker
-          - pygit2
-          - anyio
-          - pytest
-      - id: mypy
         name: mypy (adgn)
         files: "^adgn/src/(adgn|wt)/"
         args: ["--config-file=adgn/pyproject.toml", "--namespace-packages", "--ignore-missing-imports"]

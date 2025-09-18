@@ -39,8 +39,8 @@ def test_notifications_handler_batches_single_message():
     dec = h.on_before_sample()
     assert isinstance(dec, Continue)
     assert isinstance(dec.tool_policy, Auto)
-    assert len(dec.inserts) == 1
-    msg = dec.inserts[0]
+    assert len(dec.inserts_input) == 1
+    msg = dec.inserts_input[0]
     # Normalize to dict (some SDK items are Pydantic models)
     msgd = msg.model_dump(exclude_none=True) if hasattr(msg, "model_dump") else msg
     # Extract input_text content and parse payload (ignore role/type; we only care about content)

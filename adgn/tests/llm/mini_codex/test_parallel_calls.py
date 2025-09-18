@@ -10,7 +10,7 @@ from adgn.llm.mcp.inproc_transport import make_inproc_slot_spec
 from adgn.llm.mini_codex.agent import MiniCodex
 from adgn.llm.mini_codex.aggregating_handler import BaseHandler
 from adgn.llm.mini_codex.loggers import RecordingHandler
-from adgn.llm.mini_codex.loop_control import Abort, SyntheticAction
+from adgn.llm.mini_codex.loop_control import Abort, Continue, Auto
 from adgn.llm.mini_codex.mcp_manager import McpManager
 
 
@@ -24,7 +24,9 @@ class OneShotSyntheticHandler(BaseHandler):
     def on_before_sample(self):  # returns SyntheticAction first, then Abort
         if not self._done:
             self._done = True
-            return SyntheticAction(outputs=self._outputs)
+            return Continue(
+                Auto(), inserts_input=tuple(self._outputs), skip_sampling=True
+            )
         return Abort()
 
     # No-ops for hooks used by agent

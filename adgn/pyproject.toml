@@ -95,6 +95,8 @@ include = ["adgn*"]
   "specimens/**",
   "prompts/*.j2",
   "prompts/**/*.j2",
+  "prompts/*.j2.md",
+  "prompts/**/*.j2.md",
 ]
 "adgn.llm.mini_codex.ui" = [
   "static/*",
@@ -157,8 +159,6 @@ git-commit-ai = "adgn.llm.git_commit_ai.cli:main"
 sandbox-jupyter-mcp = "adgn.llm.mcp.sandboxed_jupyter_mcp.wrapper:main"
 adgn-sandboxer = "adgn.llm.sandboxer:main"
 adgn-llm-edit = "adgn.llm.llm_edit:app"
-
-
 
 [project.entry-points."wt.plugins"]
 wt_demo = "adgn.wt.demo_plugin"

@@ -23,14 +23,14 @@ from adgn.llm.mcp.docker_exec.server import (
 from adgn.llm.mcp.inproc_transport import make_inproc_slot_spec
 from adgn.llm.mcp.types import ServerSlotSpec
 from adgn.llm.mini_codex.agent import MiniCodex
-from adgn.llm.mini_codex.aggregating_handler import BaseHandler, GateUntil
+from adgn.llm.mini_codex.aggregating_handler import BaseHandler
 from adgn.llm.mini_codex.event_renderer import DisplayEventsHandler
 from adgn.llm.mini_codex.loggers import TranscriptLoggerHandler
 from adgn.llm.mini_codex.loop_control import (
     Abort,
     Continue,
     RequireAny,
-    SyntheticAction,
+    Auto,
 )
 from adgn.llm.mini_codex.mcp_manager import McpManager, build_mcp_function
 from adgn.llm.properties.models.issue import IssueCore, IssueId, LineRange, Occurrence
@@ -166,6 +166,42 @@ def make_nl_tool_call(
         arguments=json.dumps(
             {"cmd": ["nl", "-ba", "-w1", "-s", " ", str(container_path)]},
         ),
+    )
+
+
+def make_container_info_call(
+    wiring: PropertiesDockerWiring,
+) -> ResponseFunctionToolCall:
+    """resources.read for resource://container.info on the docker server."""
+    return ResponseFunctionToolCall(
+        type="function_call",
+        name=build_mcp_function("resources", "read"),
+        call_id="bootstrap:res",
+        arguments=json.dumps(
+            {
+                "server": wiring.server_name,
+                "uri": "resource://container.info",
+                "start_offset": 0,
+                "max_bytes": 65536,
+            }
+        ),
+    )
+
+
+def make_ls_workspace_call(
+    wiring: PropertiesDockerWiring, subpaths: list[str] | None = None
+) -> ResponseFunctionToolCall:
+    """docker_exec ls -la for /workspace or provided subpaths."""
+    targets = (
+        [str(wiring.working_dir)]
+        if not subpaths
+        else [str(wiring.working_dir / p) for p in subpaths]
+    )
+    return ResponseFunctionToolCall(
+        type="function_call",
+        name=build_mcp_function(wiring.server_name, DOCKER_EXEC_TOOL_NAME),
+        call_id="bootstrap:ls",
+        arguments=json.dumps({"cmd": ["ls", "-la", *targets]}),
     )
 
 
@@ -314,13 +350,21 @@ class LinterController(BaseHandler):
         # Bootstrap synthetic steps
         self._step += 1
         if self._step == 1:
-            return SyntheticAction(outputs=self._step1)
+            return Continue(
+                Auto(), inserts_input=tuple(self._step1), skip_sampling=True
+            )
         if self._step == 2 and self._step2:
-            return SyntheticAction(outputs=self._step2)
+            return Continue(
+                Auto(), inserts_input=tuple(self._step2), skip_sampling=True
+            )
         if self._step == 3 and self._files and not self._big_detected:
-            return SyntheticAction(outputs=self._step3)
+            return Continue(
+                Auto(), inserts_input=tuple(self._step3), skip_sampling=True
+            )
         if self._step == 4 and self._prop_calls:
-            return SyntheticAction(outputs=self._prop_calls)
+            return Continue(
+                Auto(), inserts_input=tuple(self._prop_calls), skip_sampling=True
+            )
         # After bootstrap, always require a tool call until submit_result flips the switch
         return Continue(RequireAny())
 
@@ -397,7 +441,7 @@ async def lint_issue_run(
                 system="You are a code agent. Be concise.",
                 client=client,
                 handlers=[
-                    GateUntil(lambda: submit_state.result is not None),
+                    # LinterController handles bootstrap and abort-on-submit itself
                     ctrl,
                     *(handlers or []),
                 ],

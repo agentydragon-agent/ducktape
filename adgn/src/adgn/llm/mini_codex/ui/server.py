@@ -51,33 +51,11 @@ from adgn.llm.mini_codex.ui.protocol import (
     UserText,
 )
 
-# Minimal local-only FastAPI UI for MiniCodex (v0)
-# - Single-session, in-process
-# - WebSocket /ws: duplex channel for events and control
-# - GET /transcript -> current run transcript
-# - GET / -> serves static/index.html from same dir (developer should add static file)
 
-app = FastAPI()
-logger = logging.getLogger("mini_codex.ui")
-STATIC_DIR = Path(__file__).with_name("static")
-app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 PROTOCOL_VERSION = "1.0.0"
+logger = logging.getLogger("mini_codex.ui")
 
 
-@app.on_event("startup")
-async def _on_startup() -> None:
-    index_path = STATIC_DIR / "index.html"
-    logger.info(
-        "ui startup",
-        extra={
-            "static_dir": str(STATIC_DIR),
-            "index_exists": index_path.exists(),
-            "index_path": str(index_path),
-        },
-    )
-
-
-# Simple connection manager for one UI client (v0 single-session)
 class ConnectionManager(BaseHandler):
     def __init__(self) -> None:
         self._clients: dict[
@@ -117,7 +95,6 @@ class ConnectionManager(BaseHandler):
                         "kind": payload.get("type") or payload.get("kind"),
                     },
                 )
-                # High-detail log: full envelope payload for test visibility
                 logger.warning("WS OUT: %s", json.dumps(payload))
                 await ws.send_json(payload)
             except Exception:
@@ -227,22 +204,20 @@ class ConnectionManager(BaseHandler):
         )
 
 
-manager = ConnectionManager()
-
-
 class AgentSession:
     """Single-session orchestrator for MiniCodex UI wiring.
 
     Runs a real MiniCodex instance; no simulated tool calls in this module.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, manager: ConnectionManager) -> None:
         self.transcript: list[dict[str, Any]] = []
         self._task: asyncio.Task | None = None
         self.approval_hub = ApprovalHub()
         self._lock = asyncio.Lock()
         self._active_run_id: str | None = None
         self._agent: MiniCodex | None = None
+        self._manager = manager
 
     def attach_agent(self, agent: MiniCodex) -> None:
         """Attach a MiniCodex instance and register the UI manager as a handler.
@@ -253,10 +228,10 @@ class AgentSession:
         """
         self._agent = agent
         # Tell manager about this session
-        manager.set_session(self)
+        self._manager.set_session(self)
         # Best-effort: append manager as a handler to the agent so it receives events
         with contextlib.suppress(Exception):
-            agent._controller._handlers.append(cast(BaseHandler, manager))
+            agent._controller._handlers.append(cast(BaseHandler, self._manager))
 
     async def run(self, prompt: str) -> None:
         """Run a single agent turn via the attached MiniCodex instance.
@@ -266,7 +241,7 @@ class AgentSession:
         # Guard so only one run at a time
         async with self._lock:
             if self._task is not None and not self._task.done():
-                await manager.send_payload(
+                await self._manager.send_payload(
                     ErrorEvt(code=ErrorCode.BUSY, message="agent_busy")
                 )
                 return
@@ -278,7 +253,7 @@ class AgentSession:
             # Emit run_status: starting/running
             run_id = str(uuid.uuid4())
             started = datetime.now(UTC)
-            await manager.send_payload(
+            await self._manager.send_payload(
                 RunStatusEvt(
                     run_state=RunState(
                         run_id=run_id,
@@ -297,20 +272,20 @@ class AgentSession:
                 await self._agent.run(user_text=prompt)
                 logger.info("agent.run done")
             except asyncio.CancelledError:
-                await manager.send_payload(
+                await self._manager.send_payload(
                     ErrorEvt(code=ErrorCode.ABORTED, message="aborted")
                 )
             except Exception:
                 logger.exception("agent.run error")
-                await manager.send_payload(
+                await self._manager.send_payload(
                     ErrorEvt(code=ErrorCode.AGENT_ERROR, message="agent_run_exception")
                 )
             finally:
                 # Clear active run id and emit finished run_status
                 self._active_run_id = None
                 # Ensure all previously spawned payloads were sent before emitting finished
-                await manager.flush()
-                await manager.send_payload(
+                await self._manager.flush()
+                await self._manager.send_payload(
                     RunStatusEvt(
                         run_state=RunState(
                             run_id=run_id,
@@ -325,34 +300,13 @@ class AgentSession:
             return
 
         # No agent attached; report error and return
-        await manager.send_payload(
+        await self._manager.send_payload(
             ErrorEvt(code=ErrorCode.NO_AGENT, message="no_agent_attached")
         )
         return
 
 
-# Single global session for v0
-session = AgentSession()
-
-
-@app.get("/")
-async def index() -> FileResponse:
-    # Prefer built Svelte app at static/web/index.html; fallback to legacy static/index.html
-    primary = STATIC_DIR / "web" / "index.html"
-    file_path = primary if primary.exists() else (STATIC_DIR / "index.html")
-    if not file_path.exists():
-        raise RuntimeError(f"Missing UI file: {file_path}")
-    return FileResponse(file_path)
-
-
-@app.get("/transcript")
-async def get_transcript() -> JSONResponse:
-    return JSONResponse(session.transcript)
-
-
 # Pydantic-typed inbound client messages (discriminated union)
-
-
 class HelloIn(BaseModel):
     type: _Lit["hello"]
 
@@ -408,106 +362,169 @@ IncomingMsg = Annotated[
 ]
 
 
-@app.websocket("/ws")
-async def websocket_endpoint(ws: WebSocket) -> None:
-    await manager.connect(ws)
-    try:
-        # Skip sending Welcome at handshake: emit nothing, strictly follow the envelope+payload protocol
-        while True:
-            data = await ws.receive_text()
-            try:
-                obj = json.loads(data)
-            except Exception:
-                await manager.send_payload(
-                    ErrorEvt(code=ErrorCode.INVALID_JSON, message="invalid_json")
-                )
-                continue
+# Factory to create an isolated app with fresh manager/session
 
-            im: IncomingMsg = TypeAdapter(IncomingMsg).validate_python(obj)
 
-            match im:
-                case HelloIn() | ResumeIn() | GetSnapshotIn():
-                    # Build structured list of enabled MCP servers (Pydantic models) and full sampling snapshot
-                    agent = session._agent
-                    if agent is None:
-                        names = []
-                        sampling = None
-                    else:
-                        names = list(agent._mcp.server_names)
-                        sampling = await agent._mcp.sampling_snapshot()
-                    mcp_servers_list = [McpServerInfo(name=n) for n in names]
+def create_app() -> FastAPI:
+    app = FastAPI()
+    STATIC_DIR = Path(__file__).with_name("static")
+    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+    app.mount(
+        "/assets", StaticFiles(directory=STATIC_DIR / "web" / "assets"), name="assets"
+    )
+
+    @app.on_event("startup")
+    async def _on_startup() -> None:
+        index_path = STATIC_DIR / "index.html"
+        logger.info(
+            "ui startup",
+            extra={
+                "static_dir": str(STATIC_DIR),
+                "index_exists": index_path.exists(),
+                "index_path": str(index_path),
+            },
+        )
+
+    manager = ConnectionManager()
+    session = AgentSession(manager)
+
+    # Store on app.state for external access when needed
+    app.state.manager = manager
+    app.state.session = session
+
+    @app.get("/")
+    async def index() -> FileResponse:
+        # Prefer built Svelte app at static/web/index.html; fallback to legacy static/index.html
+        primary = STATIC_DIR / "web" / "index.html"
+        file_path = primary if primary.exists() else (STATIC_DIR / "index.html")
+        if not file_path.exists():
+            raise RuntimeError(f"Missing UI file: {file_path}")
+        return FileResponse(file_path)
+
+    @app.get("/vite.svg")
+    async def vite_svg() -> FileResponse:
+        svg = STATIC_DIR / "web" / "vite.svg"
+        if not svg.exists():
+            svg = STATIC_DIR / "vite.svg"
+        return FileResponse(svg)
+
+    @app.get("/transcript")
+    async def get_transcript() -> JSONResponse:
+        return JSONResponse(session.transcript)
+
+    @app.websocket("/ws")
+    async def websocket_endpoint(ws: WebSocket) -> None:
+        await manager.connect(ws)
+        try:
+            # Ack connection so clients can verify liveness immediately
+            await manager.send_payload(Accepted())
+            while True:
+                data = await ws.receive_text()
+                try:
+                    obj = json.loads(data)
+                except Exception:
                     await manager.send_payload(
-                        Snapshot(
-                            v=PROTOCOL_VERSION,
-                            session_state=SessionState(
-                                session_id=manager._session_id,
-                                version=PROTOCOL_VERSION,
-                                capabilities=[],
-                                last_event_id=manager._event_id or None,
-                                active_run_id=session._active_run_id,
-                                run_counter=0,
-                            ),
-                            run_state=None,
-                            transcript=[],
-                            sampling=sampling,
-                            mcp_servers=mcp_servers_list,
-                        ),
+                        ErrorEvt(code=ErrorCode.INVALID_JSON, message="invalid_json")
                     )
                     continue
 
-            if isinstance(im, SendIn):
-                logger.info("ws: received send", extra={"text_len": len(im.text)})
-                await manager.send_payload(Accepted())
-                logger.info("ws: sent ack")
-                # Only start run if no run is active
-                await session.run(im.text)
-                logger.info("ws: dispatched session.run")
-                continue
-
-            if isinstance(im, ApproveIn):
-                session.approval_hub.resolve(im.call_id, ContinueDecision())
-                continue
-
-            if isinstance(im, DenyContinueIn):
-                deny_payload = {"ok": False, "error": f"User denied: {im.call_id}"}
-                denial_result = mcp_types.CallToolResult(
-                    content=[], isError=True, structuredContent=deny_payload
-                )
-                session.approval_hub.resolve(
-                    im.call_id, BypassToolInjectOutput(result=denial_result)
-                )
-                continue
-
-            if isinstance(im, DenyIn):
-                session.approval_hub.resolve(
-                    im.call_id, AbortTurnDecision(reason="ui_deny")
-                )
-                continue
-
-            if isinstance(im, AbortIn):
-                if session._task is not None and not session._task.done():
-                    session._task.cancel()
+                try:
+                    im: IncomingMsg = TypeAdapter(IncomingMsg).validate_python(obj)
+                except Exception:
                     await manager.send_payload(
-                        ErrorEvt(code=ErrorCode.ABORTING, message="aborting")
+                        ErrorEvt(
+                            code=ErrorCode.INVALID_COMMAND, message="invalid_message"
+                        )
                     )
-                else:
-                    await manager.send_payload(
-                        ErrorEvt(code=ErrorCode.NOT_RUNNING, message="no_active_run")
+                    continue
+
+                match im:
+                    case HelloIn() | ResumeIn() | GetSnapshotIn():
+                        await manager.send_payload(Accepted())
+                        agent = session._agent
+                        if agent is None:
+                            names: list[str] = []
+                            sampling = None
+                        else:
+                            names = list(agent._mcp.server_names)
+                            sampling = await agent._mcp.sampling_snapshot()
+                        mcp_servers_list = [McpServerInfo(name=n) for n in names]
+                        await manager.send_payload(
+                            Snapshot(
+                                v=PROTOCOL_VERSION,
+                                session_state=SessionState(
+                                    session_id=manager._session_id,
+                                    version=PROTOCOL_VERSION,
+                                    capabilities=[],
+                                    last_event_id=manager._event_id or None,
+                                    active_run_id=session._active_run_id,
+                                    run_counter=0,
+                                ),
+                                run_state=None,
+                                transcript=[],
+                                sampling=sampling,
+                                mcp_servers=mcp_servers_list,
+                            ),
+                        )
+                        continue
+
+                if isinstance(im, SendIn):
+                    logger.info("ws: received send", extra={"text_len": len(im.text)})
+                    await manager.send_payload(Accepted())
+                    logger.info("ws: sent ack")
+                    await session.run(im.text)
+                    logger.info("ws: dispatched session.run")
+                    continue
+
+                if isinstance(im, ApproveIn):
+                    session.approval_hub.resolve(im.call_id, ContinueDecision())
+                    continue
+
+                if isinstance(im, DenyContinueIn):
+                    deny_payload = {"ok": False, "error": f"User denied: {im.call_id}"}
+                    denial_result = mcp_types.CallToolResult(
+                        content=[], isError=True, structuredContent=deny_payload
                     )
-                continue
+                    session.approval_hub.resolve(
+                        im.call_id, BypassToolInjectOutput(result=denial_result)
+                    )
+                    continue
 
-            await manager.send_payload(
-                ErrorEvt(code=ErrorCode.INVALID_COMMAND, message="unknown_command")
-            )
+                if isinstance(im, DenyIn):
+                    session.approval_hub.resolve(
+                        im.call_id, AbortTurnDecision(reason="ui_deny")
+                    )
+                    continue
 
-    except WebSocketDisconnect:
-        await manager.disconnect(ws)
+                if isinstance(im, AbortIn):
+                    if session._task is not None and not session._task.done():
+                        session._task.cancel()
+                        await manager.send_payload(
+                            ErrorEvt(code=ErrorCode.ABORTING, message="aborting")
+                        )
+                    else:
+                        await manager.send_payload(
+                            ErrorEvt(
+                                code=ErrorCode.NOT_RUNNING, message="no_active_run"
+                            )
+                        )
+                    continue
+
+                await manager.send_payload(
+                    ErrorEvt(code=ErrorCode.INVALID_COMMAND, message="unknown_command")
+                )
+
+        except WebSocketDisconnect:
+            await manager.disconnect(ws)
+
+    return app
 
 
 def run_uvicorn(host: str = "127.0.0.1", port: int = 8765) -> None:
     uvicorn.run(
-        "adgn.llm.mini_codex.ui.server:app",
+        "adgn.llm.mini_codex.ui.server:create_app",
         host=host,
         port=port,
         log_level="info",
+        factory=True,
     )

@@ -20,11 +20,7 @@ from adgn.llm.mini_codex.handler import (
     ToolCall,
 )
 from adgn.llm.mini_codex.loggers import RecordingHandler
-from adgn.llm.mini_codex.loop_control import (
-    Auto,
-    Continue,
-    SyntheticAction as LC_SyntheticAction,
-)
+from adgn.llm.mini_codex.loop_control import Auto, Continue
 from adgn.llm.mini_codex.mcp_manager import McpManager
 
 _sdk_spec = importlib.util.spec_from_file_location(
@@ -80,7 +76,7 @@ class SyntheticInvoker(AutoHandler):
             name="mcp__spy__tool1",
             type="function_call",
         )
-        return LC_SyntheticAction(outputs=[fc])
+        return Continue(Auto(), inserts_input=(fc,), skip_sampling=True)
 
 
 class BypassInjector(AutoHandler):

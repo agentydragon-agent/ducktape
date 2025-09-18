@@ -20,7 +20,8 @@ from adgn.llm.mini_codex.handler import (
 from adgn.llm.mini_codex.loggers import RecordingHandler
 from adgn.llm.mini_codex.loop_control import (
     Abort,
-    SyntheticAction as LC_SyntheticAction,
+    Auto,
+    Continue,
 )
 from adgn.llm.mini_codex.mcp_manager import McpManager
 
@@ -64,7 +65,7 @@ class LocalInjectHandler(AutoHandler):
                 name="mcp__spy__tool1",
                 type="function_call",
             )
-            return LC_SyntheticAction(outputs=[fc])
+            return Continue(Auto(), inserts_input=(fc,), skip_sampling=True)
         # After firing once, abort the turn to avoid infinite loops in tests
         return Abort()
 

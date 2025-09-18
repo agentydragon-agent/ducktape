@@ -632,10 +632,13 @@ async def prompt_eval(
         help="Candidate critic system prompt to evaluate across specimens",
     ),
     out_dir: Path | None = OPT_OUTPUT_DIR,
+    model: str = OPT_MODEL,
 ) -> None:
     """Evaluate a critic system prompt across all known specimens and emit metrics list."""
 
-    _pe_server, _state = build_prompt_eval_server(client=AsyncOpenAI())
+    _pe_server, _state = build_prompt_eval_server(
+        agent_model=model, client=AsyncOpenAI()
+    )
 
     async def _run() -> list[dict[str, Any]]:
         base = find_specimens_base()
@@ -652,7 +655,9 @@ async def prompt_eval(
             # Reuse the in-proc tool rather than duplicating orchestration
             out_dir_spec = root / name
             out_dir_spec.mkdir(parents=True, exist_ok=True)
-            critic_obj = await _run_critic_for_specimen(name, prompt, client, root)
+            critic_obj = await _run_critic_for_specimen(
+                name, prompt, client, root, agent_model=model
+            )
             grade = await grade_critic_output(
                 name,
                 critic_obj,

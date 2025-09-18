@@ -10,17 +10,27 @@ from fastapi.testclient import TestClient
 # OpenAI typed SDK classes used by MiniCodex
 from openai.types.responses import ResponseOutputMessage, ResponseOutputText
 import pytest
+from pydantic import TypeAdapter
 
 from adgn.llm.logging_config import configure_logging
 from adgn.llm.mini_codex.agent import MiniCodex
 from adgn.llm.mini_codex.aggregating_handler import AutoHandler
 from adgn.llm.mini_codex.mcp_manager import McpManager
-from adgn.llm.mini_codex.ui.server import app, session
+from adgn.llm.mini_codex.ui.server import create_app
+from adgn.llm.mini_codex.ui.protocol import Envelope, Accepted, AssistantText
+
+
+@pytest.fixture
+def ui_app():
+    # Create a fresh FastAPI app with isolated manager/session for this test
+    return create_app()
 
 
 @pytest.mark.timeout(3)
 def test_ui_websocket_roundtrip_with_mocked_openai(
     monkeypatch: pytest.MonkeyPatch,
+    empty_mcp: McpManager,
+    ui_app,  # fresh app stack per test
 ) -> None:
     """
     Spin up the real FastAPI app in-process, attach a MiniCodex agent with a mocked
@@ -79,11 +89,8 @@ def test_ui_websocket_roundtrip_with_mocked_openai(
                 "responses.create should not be called directly in this test",
             )
 
-    # Keep McpManager alive for the duration of the test (don't close early)
-    mcp = McpManager({})
-    asyncio.run(mcp.__aenter__())
-
-    async def _mk_agent() -> MiniCodex:
+    # Build agent with the empty_mcp fixture
+    async def _mk_agent(mcp: McpManager) -> MiniCodex:
         return await MiniCodex.create(
             model="test-model",
             mcp=mcp,
@@ -93,10 +100,11 @@ def test_ui_websocket_roundtrip_with_mocked_openai(
             parallel_tool_calls=False,
         )
 
-    agent = asyncio.run(_mk_agent())
+    # Instantiate agent synchronously using the fixture-provided manager
+    agent = asyncio.run(_mk_agent(empty_mcp))
 
     # Attach agent to the UI session so websocket /ws can drive it
-    session.attach_agent(agent)
+    ui_app.state.session.attach_agent(agent)
 
     # 4) Configure logging for visibility in test, then drive the websocket protocol
     configure_logging()
@@ -106,7 +114,7 @@ def test_ui_websocket_roundtrip_with_mocked_openai(
         if isinstance(h, logging.StreamHandler):
             h.setLevel(logging.INFO)
     logging.getLogger("mini_codex.ui").setLevel(logging.INFO)
-    with TestClient(app) as client:
+    with TestClient(ui_app) as client:
         try:
             with client.websocket_connect("/ws") as ws:
                 # Send a user message
@@ -116,22 +124,25 @@ def test_ui_websocket_roundtrip_with_mocked_openai(
                 # Drain until we see the protocol ack (accepted); welcome/snapshot may arrive first
                 seen = []
                 first = None
+                env_adapter = TypeAdapter(Envelope)
                 for _ in range(10):
-                    m = ws.receive_json()
-                    seen.append(m)
-                    if m.get("type") == "accepted":
-                        first = m
+                    raw = ws.receive_json()
+                    seen.append(raw)
+                    env = env_adapter.validate_python(raw)
+                    if isinstance(env.payload, Accepted):
+                        first = env
                         break
                 if first is None:
                     raise AssertionError(f"accepted not received; got: {seen}")
 
                 # Collect a few events until we see assistant_text
-                received = [first]
+                received = [first.model_dump()] if first else []
                 for _ in range(10):
-                    msg = ws.receive_json()
-                    received.append(msg)
-                    if msg.get("type") == "assistant_text":
-                        assert msg.get("text") == "pong"
+                    raw = ws.receive_json()
+                    received.append(raw)
+                    env = env_adapter.validate_python(raw)
+                    if isinstance(env.payload, AssistantText):
+                        assert env.payload.text == "pong"
                         break
                 else:  # pragma: no cover - failure path
                     raise AssertionError(

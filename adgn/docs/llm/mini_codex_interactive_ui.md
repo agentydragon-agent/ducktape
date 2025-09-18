@@ -210,3 +210,56 @@ Progress log
 - 2025-09-14T00:00:00Z sha=6f2877fa: Drafted minimal design; next: implement approvals manager, add agent guard, scaffold FastAPI server and simple HTML UI.
 - 2025-09-14T18:55:00Z sha=6f2877fa: Refactored MiniCodex to manager-level mcp.call_tool/read_resource; added approvals wrapper scaffold (ApprovalHub + McpManagerWithApprovals); enforced handler on_reasoning; aligned ResponseUsage to SDK; updated editor_server.done to typed; tests passing (7/7).
 - 2025-09-14T19:20:00Z sha=6f2877fa: Revised abort-turn design to be UI-agnostic: introduce ApprovalsProvider and TurnAbortRequested; wrapper raises on deny; agent catches and ends the turn with synthetic events.
+
+---
+
+## Dev quickstart (UI) — two-server setup (recommended)
+
+For local development, run Vite for the frontend and FastAPI for the backend, and proxy WebSocket traffic from Vite → FastAPI.
+
+1) Add a WS proxy in src/adgn/llm/mini_codex/ui/web/vite.config.ts:
+
+```ts
+import { defineConfig } from 'vite'
+import { svelte } from '@sveltejs/vite-plugin-svelte'
+
+export default defineConfig({
+  plugins: [svelte()],
+  server: { proxy: { '/ws': { target: 'http://127.0.0.1:8765', ws: true, changeOrigin: true } } },
+  build: { outDir: '../static/web', emptyOutDir: true },
+})
+```
+
+2) Start the backend (agent + FastAPI server):
+
+```bash
+direnv exec /Users/mpokorny/code/ducktape/adgn adgn-mini-codex serve --host 127.0.0.1 --port 8765
+```
+
+3) Start the frontend (Vite dev server):
+
+```bash
+npm --prefix /Users/mpokorny/code/ducktape/adgn/src/adgn/llm/mini_codex/ui/web install
+npm --prefix /Users/mpokorny/code/ducktape/adgn/src/adgn/llm/mini_codex/ui/web run dev -- --host 127.0.0.1 --port 5173
+```
+
+4) Open http://127.0.0.1:5173. The UI connects to ws://127.0.0.1:5173/ws, which Vite proxies to the backend at 127.0.0.1:8765.
+
+## Single-CLI (serve static assets)
+
+If you prefer to serve the built UI from FastAPI (no Vite), build assets once and run the backend only:
+
+```bash
+# Build once
+npm --prefix /Users/mpokorny/code/ducktape/adgn/src/adgn/llm/mini_codex/ui/web install
+npm --prefix /Users/mpokorny/code/ducktape/adgn/src/adgn/llm/mini_codex/ui/web run build
+
+# Start backend (serves /, /assets/*, /vite.svg from static/web)
+direnv exec /Users/mpokorny/code/ducktape/adgn adgn-mini-codex serve --host 127.0.0.1 --port 8765
+# Open http://127.0.0.1:8765
+```
+
+Notes
+- The backend serves static from src/adgn/llm/mini_codex/ui/static/web. Missing assets will 404 until you build.
+- Vite dev server gives fast HMR during UI work; use single-CLI after you’re happy with the build.
+- A future flag (e.g., `--build-web`) can auto-build assets on `serve` when missing.

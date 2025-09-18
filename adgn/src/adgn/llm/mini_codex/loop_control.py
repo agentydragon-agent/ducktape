@@ -81,10 +81,34 @@ class NoLoopDecision:
 
 @dataclass(frozen=True)
 class Continue:
+    """Proceed with the agent loop under a specific tool policy.
+
+    Semantics
+    - Normal path (skip_sampling=False):
+      - inserts_input are appended to the next Responses API request as-is (input-side items),
+        then the model is sampled according to tool_policy.
+    - Synthetic path (skip_sampling=True):
+      - Do NOT call the model this phase. Instead, treat inserts_input as if they were the
+        model's output for this phase (compatibility with the old SyntheticAction).
+      - The agent will process these items immediately (e.g., execute any function_call
+        via MCP and emit function_call_output), then continue the loop per tool_policy
+        on subsequent iterations.
+
+    Compatibility notes (ex‑SyntheticAction)
+    - Previously, SyntheticAction(outputs=[...]) provided "output-side" items to process locally.
+      That behavior is now expressed by Continue(skip_sampling=True, inserts_input=(...)).
+    - When skip_sampling=True, inserts_input SHOULD be output-shaped TranscriptItems encoded as
+      valid Responses input items (e.g., ResponseFunctionToolCall dicts). The agent will treat
+      them as the current phase's resp_output and will NOT send a model request.
+    - Do not fabricate server-only rs_/fc_ ids; client-scoped call_id values are acceptable for
+      function_call/function_call_output pairs.
+    """
+
     tool_policy: ToolPolicy
-    # Optional pre-sampling inserts as ACTUAL Responses API input items
-    # Use ResponseInputItem (covers message, function_call, function_call_output, etc.)
-    inserts: tuple[ResponseInputItem, ...] = ()
+    # Input-side items to add to the next request (Responses API input items)
+    inserts_input: tuple[ResponseInputItem, ...] = ()
+    # When True: do NOT call the model this phase; execute directly from inserts_input
+    skip_sampling: bool = False
 
 
 @dataclass(frozen=True)
@@ -92,65 +116,5 @@ class Abort:
     pass
 
 
-@dataclass(frozen=True)
-class SyntheticAction:
-    """Provide synthetic model output items for this sampling step.
-
-    Semantics
-    - SyntheticAction tells MiniCodex: "do not call the external LLM for this
-      sampling step; instead treat `outputs` as if they were produced by the
-      model and process them locally inside the agent loop." This is an
-      in-process primitive used to reduce latency when the action and its tool
-      effects can be executed locally.
-
-    fn -> tool -> reasoning pairing
-    - When the model normally emits a function_call, the Responses service will
-      pair it with an internal reasoning item (rs_...) and a server-side
-      function_call id (fc_...). Those server-managed ids/value pairs are
-      protected/encrypted and must not be fabricated by clients.
-    - If you want to include a function_call in the request input (to replay or
-      to bootstrap), do NOT invent rs_/fc_ ids. Instead either:
-      * Let the model produce the function_call via `tool_choice` (recommended),
-        or
-      * Include a client function_call with a client-scoped call_id and also
-        include the matching function_call_output produced locally (the agent
-        may append a function_call_output object with the same call_id into the
-        input so the server sees a tool output for that call). This is the
-        supported pattern for "local tool execution then submit the pair": the
-        input contains the function_call and the corresponding function_call_output.
-    - Do NOT fabricate server-only rs_ or fc_ ids; the API will reject those.
-
-    Testing guidance
-    - Live tests: prefer exercising the full flow via `tool_choice` so the model
-      and service produce canonical fc_/rs_ pairs.
-    - Mocked tests: you may assert on function_call + function_call_output events
-      emitted by handlers and the agent. For unit tests that need to simulate a
-      real Responses API call, compose input with a function_call plus the
-      locally-produced function_call_output (matching call_id) rather than
-      inventing rs_ ids.
-    - When writing tests, include both variants:
-      * live variant that uses tool_choice and validates end-to-end behavior;
-      * mocked/unit variant that supplies a synthetic function_call followed by
-        the corresponding function_call_output (client-scoped call_id) in the
-        agent.messages payload.
-
-    Parametric switch / behavior options
-    - Use the agent flag `parallel_tool_calls` and handler-returned SyntheticAction
-      to decide whether the model call is skipped and outputs are executed
-      locally. SyntheticAction is intended for local execution (no network).
-    - If you want to hand control to the model and let the server produce the
-      function_call/reasoning pair, use `tool_choice` in the Responses.create
-      request instead of SyntheticAction.
-
-    Summary
-    - SyntheticAction is an in-process execution primitive: process `outputs`
-      locally, do not fabricate server-only reasoning ids, and when submitting
-      function_call + tool output to the Responses API, include the tool output
-      for the same client call_id rather than inventing rs_* ids.
-    """
-
-    outputs: list[OutputItem]
-
-
 # Union type for loop decisions (for static type checking)
-LoopDecision: TypeAlias = Continue | Abort | SyntheticAction | NoLoopDecision
+LoopDecision: TypeAlias = Continue | Abort | NoLoopDecision

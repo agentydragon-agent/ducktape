@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from adgn.llm.mini_codex.aggregating_handler import AggregatingController, BaseHandler
+from adgn.llm.mcp.helpers import make_response_input_user_text
 from adgn.llm.mini_codex.loop_control import Abort, Auto, Continue
 
 
@@ -12,14 +13,10 @@ class _InsertsHandler(BaseHandler):
 
     def on_before_sample(self):  # type: ignore[override]
         # Insert as input message (user role), not output message
-        msg = {
-            "type": "message",
-            "role": "user",
-            "content": [
-                {"type": "input_text", "text": f"payload:{self._msg_id}"},
-            ],
-        }
-        return Continue(Auto(), inserts=(msg,))
+        msg = make_response_input_user_text(
+            f"payload:{self._msg_id}", id=f"ins_{self._msg_id}"
+        )
+        return Continue(Auto(), inserts_input=(msg,))
 
 
 class _ContinueOnlyHandler(BaseHandler):
@@ -37,11 +34,11 @@ def test_aggregating_merges_inserts_additively():
     dec = ctrl.on_before_sample()
     assert isinstance(dec, Continue)
     assert dec.tool_policy.__class__ is Auto
-    assert len(dec.inserts) == 2
+    assert len(dec.inserts_input) == 2
     # Extract texts from input messages and assert ordering
     texts: list[str] = []
-    for item in dec.inserts:
-        d = item.model_dump(exclude_none=True) if hasattr(item, "model_dump") else item
+    for item in dec.inserts_input:
+        d = item.model_dump(exclude_none=True)
         contents = d.get("content") or []
         texts.extend(
             [

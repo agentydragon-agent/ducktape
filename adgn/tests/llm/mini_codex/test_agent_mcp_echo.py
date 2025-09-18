@@ -57,6 +57,8 @@ async def test_agent_mcp_echo_tool_use(monkeypatch: pytest.MonkeyPatch) -> None:
 
     # Monkeypatch Responses call to synthesize a tool call to our MCP server
 
+    state = {"n": 0}
+
     async def fake_create(_client, **kwargs):
         # Return a single function tool call to echo with arguments {"text": "hello"}
         tool_call = ResponseFunctionToolCall(
@@ -66,7 +68,7 @@ async def test_agent_mcp_echo_tool_use(monkeypatch: pytest.MonkeyPatch) -> None:
             name="echo__echo",
             arguments=json.dumps({"text": "hello"}),
         )
-        # Also include an assistant message afterwards to ensure agent emits assistant_text
+        # Assistant message to follow after tool execution
         msg = ResponseOutputMessage(
             id="msg_1",
             type="message",
@@ -76,16 +78,18 @@ async def test_agent_mcp_echo_tool_use(monkeypatch: pytest.MonkeyPatch) -> None:
                 ResponseOutputText(type="output_text", text="done", annotations=[])
             ],
         )
+        state["n"] += 1
+        out = [tool_call] if state["n"] == 1 else [msg]
         # MiniCodex consumes a list (resp.output)
         return type(
             "Resp",
             (),
             {
-                "id": "test-id",
+                "id": f"test-id-{state['n']}",
                 "usage": type(
                     "U", (), {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2}
                 )(),
-                "output": [tool_call, msg],
+                "output": out,
             },
         )()
 

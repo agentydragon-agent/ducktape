@@ -16,8 +16,8 @@ import pygit2
 import pytest
 import yaml
 
-from adgn.tests.wt.mock_factory import ServiceBuilder as _ServiceBuilder
-from adgn.tests.wt.test_data import TestData as _TestData
+from .mock_factory import ServiceBuilder
+from .test_data import TestData as _TestData
 from adgn.wt.server import github_client
 from adgn.wt.server.git_manager import GitManager
 from adgn.wt.server.worktree_service import WorktreeService
@@ -79,15 +79,10 @@ def mock_factory():
     return MockFactory
 
 
-@pytest.fixture(name="ServiceBuilder")
+@pytest.fixture
 def service_builder():
-    """Fixture exposing the ServiceBuilder factory used by tests.
-
-    Tests that previously imported ServiceBuilder from tests.mock_factory can now
-    accept a ServiceBuilder fixture parameter to receive the factory class.
-    """
-
-    return _ServiceBuilder
+    """Lowercase alias for ServiceBuilder to match legacy tests."""
+    return ServiceBuilder
 
 
 @pytest.fixture(name="TestData")

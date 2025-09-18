@@ -4,7 +4,7 @@ import pytest
 
 from adgn.llm.mini_codex.agent import MiniCodex
 from adgn.llm.mini_codex.aggregating_handler import BaseHandler
-from adgn.llm.mini_codex.loop_control import Abort, SyntheticAction
+from adgn.llm.mini_codex.loop_control import Abort, Continue, Auto
 from adgn.llm.mini_codex.mcp_manager import McpManager
 
 
@@ -19,7 +19,7 @@ class SyntheticOnceHandler(BaseHandler):
         if self._done:
             return Abort()
         self._done = True
-        return SyntheticAction(outputs=self._outputs)
+        return Continue(Auto(), inserts_input=tuple(self._outputs), skip_sampling=True)
 
 
 @pytest.mark.asyncio

@@ -5,7 +5,9 @@ import json
 from typing import Any, Literal
 
 from mcp import types as mcp_types
-from openai.types.responses import ResponseInputItem
+from openai.types.responses import (
+    ResponseInputItem,
+)
 from pydantic import BaseModel
 
 # TODO(mpokorny): Consider supporting ResponseFunctionWebSearch (type="function_web_search")
@@ -29,7 +31,6 @@ from adgn.llm.mini_codex.loop_control import (
     LoopDecision,
     NoLoopDecision,
     RequireAny,
-    SyntheticAction,
 )
 
 from .mcp_manager import McpManager
@@ -51,12 +52,21 @@ class GateUntil(BaseHandler):
     Pass an is_done callable that returns True when the external state indicates
     completion (e.g., submit_state.result is set). While not done, the handler
     enforces RequireAny so the agent keeps making tool calls.
+
+    Optional defer_when: when provided and returns True, this handler defers
+    its opinion for this phase (returns NoLoopDecision). Useful to avoid
+    conflicts with bootstrap handlers that emit Continue(skip_sampling=True).
     """
 
-    def __init__(self, is_done: Callable[[], bool]) -> None:
+    def __init__(
+        self, is_done: Callable[[], bool], defer_when: Callable[[], bool] | None = None
+    ) -> None:
         self._is_done = is_done
+        self._defer_when = defer_when
 
     def on_before_sample(self):  # type: ignore[override]
+        if self._defer_when and self._defer_when():
+            return NoLoopDecision()
         if self._is_done():
             return Abort()
         return Continue(RequireAny())
@@ -81,16 +91,21 @@ class AggregatingController:
         # Collect concrete decisions (non-NoLoopDecision) from handlers in order.
         decisions: list[LoopDecision] = []
         collected_inserts: list[ResponseInputItem] = []
+        skip_flag: bool | None = None
         for h in self._handlers:
             dec = h.on_before_sample()
             # Explicit deferral must be the NoLoopDecision() sentinel
             if isinstance(dec, NoLoopDecision):
                 continue
             # Additive collection of pre-sample inserts from Continue decisions
-            if isinstance(dec, Continue) and dec.inserts:
-                collected_inserts.extend(list(dec.inserts))
+            if isinstance(dec, Continue) and dec.inserts_input:
+                collected_inserts.extend(list(dec.inserts_input))
+            if isinstance(dec, Continue):
+                sf = getattr(dec, "skip_sampling", False)
+                if sf:
+                    skip_flag = True
             # Anything that is not one of the concrete decision classes is a programming error
-            if not isinstance(dec, Continue | Abort | SyntheticAction):
+            if not isinstance(dec, Continue | Abort):
                 raise TypeError(
                     f"Handler {h!r} returned invalid decision type: {type(dec).__name__} ({dec!r})",
                 )
@@ -104,14 +119,27 @@ class AggregatingController:
                 "Fix the MiniCodex instance to provide a loop handler.",
             )
 
+        # Honor any skip_sampling request globally
+        if any(
+            isinstance(d, Continue) and getattr(d, "skip_sampling", False)
+            for d in decisions
+        ):
+            return Continue(
+                Auto(), inserts_input=tuple(collected_inserts), skip_sampling=True
+            )
+
         # Reduction rules:
         # - If all decisions are identical -> return that decision
-        # - Otherwise, prefer a single non-Continue decision if present (e.g., SyntheticAction or Abort)
+        # - Otherwise, prefer a single non-Continue decision if present (e.g., Abort)
         # - If multiple differing non-Continue decisions are present -> conflict -> crash
         first = decisions[0]
         if all(d == first for d in decisions):
             if isinstance(first, Continue) and collected_inserts:
-                return Continue(first.tool_policy, inserts=tuple(collected_inserts))
+                return Continue(
+                    first.tool_policy,
+                    inserts_input=tuple(collected_inserts),
+                    skip_sampling=bool(skip_flag),
+                )
             return first
 
         # If all decisions are Continue, allow merging when tool_policy matches; else conflict
@@ -119,7 +147,11 @@ class AggregatingController:
             # All Continue: if tool policies are the same type/value, merge inserts additively
             policies = [d.tool_policy for d in decisions if isinstance(d, Continue)]
             if all(type(p) is type(policies[0]) and p == policies[0] for p in policies):
-                return Continue(policies[0], inserts=tuple(collected_inserts))
+                return Continue(
+                    policies[0],
+                    inserts_input=tuple(collected_inserts),
+                    skip_sampling=bool(skip_flag),
+                )
             # Otherwise conflicting Continue opinions
             raise RuntimeError(
                 f"Conflicting Continue decisions from handlers: {decisions!r}",
@@ -130,12 +162,14 @@ class AggregatingController:
         # Mixed case (at least one Continue and at least one non-Continue) is a conflict
         if non_continue and any(isinstance(d, Continue) for d in decisions):
             raise RuntimeError(
-                f"Conflicting Continue and non-Continue decisions from handlers: {decisions!r}",
+                f"Conflicting handler decisions: {decisions!r}; crashing per policy.",
             )
         if len(non_continue) == 0:
             # Fallback: return the first (attach inserts if winning decision is Continue)
             if isinstance(first, Continue) and collected_inserts:
-                return Continue(first.tool_policy, inserts=tuple(collected_inserts))
+                return Continue(
+                    first.tool_policy, inserts_input=tuple(collected_inserts)
+                )
             return first
         if len(non_continue) == 1:
             return non_continue[0]
@@ -276,14 +310,12 @@ class NotificationsHandler(BaseHandler):
         self._msg_counter += 1
         # Insert as input-side user message, clearly tagged as a system notification
         tagged = f"<system notification>\n{payload}\n</system notification>"
-        msg: ResponseInputItem = {
-            "type": "message",
-            "role": "user",
-            "content": [
-                {"type": "input_text", "text": tagged},
-            ],
-        }
-        return Continue(Auto(), inserts=(msg,))
+        from adgn.llm.mcp.helpers import make_response_input_user_text
+
+        msg: ResponseInputItem = make_response_input_user_text(
+            tagged, id=f"sysfyi_{self._msg_counter}"
+        )
+        return Continue(Auto(), inserts_input=(msg,))
 
     # ---- Event forwarding (typed, observer-only) ----
     def on_response(self, evt: Response) -> None:

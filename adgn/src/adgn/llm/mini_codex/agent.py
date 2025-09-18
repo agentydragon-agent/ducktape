@@ -40,7 +40,6 @@ from adgn.llm.mini_codex.loop_control import (
     Forbid as TP_Forbid,
     RequireAny as TP_RequireAny,
     RequireSpecific as TP_RequireSpecific,
-    SyntheticAction,
     ToolPolicy as TP_Base,
 )
 from adgn.llm.openai_retry import retry_decorator
@@ -181,7 +180,6 @@ class MiniCodex:
         # Agent state fields
         self.assistant_text_chunks: list[str] = []
         self.pending_function_calls: list[ResponseFunctionToolCall] = []
-        self._last_resp_output: list[TranscriptItem] = []
         self.finished: bool = False
         # Aggregating controller (owns handlers and loop-decision semantics)
         handlers_list = list(handlers)
@@ -225,7 +223,6 @@ class MiniCodex:
         self._controller.on_user_text(UserText(text=user_text))  # type: ignore[arg-type]
         self.assistant_text_chunks.clear()
         self.pending_function_calls.clear()
-        self._last_resp_output = []
         self.finished = False
         try:
             while not self.finished:
@@ -252,14 +249,14 @@ class MiniCodex:
 
         async def _invoke(function_call, args_json, local_fco_map=local_fco_map):
             tc = ToolCall(
-                name=function_call.name or "",
-                args_json=args_json if isinstance(args_json, str) else None,
-                call_id=function_call.call_id or "",
+                name=function_call.name,
+                args_json=args_json,
+                call_id=function_call.call_id,
             )
             decision = await self._controller.on_before_tool_call(tc)
             if isinstance(decision, AbortTurnDecision):
                 raise TurnAbortRequested(
-                    call_id=function_call.call_id or "",
+                    call_id=function_call.call_id,
                     reason=decision.reason or "handler_requested_abort",
                 )
             if isinstance(decision, BypassToolInjectOutput):
@@ -270,12 +267,10 @@ class MiniCodex:
                     f"Unknown before-tool decision: {type(decision).__name__}"
                 )
             cid = function_call.call_id
-            if cid and cid in local_fco_map:
+            if cid in local_fco_map:
                 out_str = local_fco_map[cid]
                 return out_str, _extract_error_from_out_str(out_str)
-            res = await self._mcp.call_tool_namespaced(
-                function_call.name or "", args_json
-            )
+            res = await self._mcp.call_tool_namespaced(function_call.name, args_json)
             out_str = _responses_output_from_calltool(res)
             return out_str, _extract_error_from_out_str(out_str)
 
@@ -351,12 +346,12 @@ class MiniCodex:
         if isinstance(decision, Abort):
             self.finished = True
             return
-        if isinstance(decision, SyntheticAction):
-            resp_output = decision.outputs
+        if isinstance(decision, Continue) and getattr(decision, "skip_sampling", False):
+            # Treat inserts_input as the model's output for this phase
+            resp_output = list(getattr(decision, "inserts_input", ()))
         elif isinstance(decision, Continue):
             # Inject any handler-provided pre-sample inserts into transcript
-            for msg in decision.inserts:
-                self._transcript.append(msg)
+            self._transcript.extend(decision.inserts_input)
             snap = await self._mcp.sampling_snapshot()
             resp = await _responses_create_with_retry(
                 self._client,
@@ -387,35 +382,52 @@ class MiniCodex:
         else:
             raise TypeError(f"Unsupported loop decision: {type(decision).__name__}")
         self._process_resp_output(resp_output)
-        self._last_resp_output = resp_output
         if not self.pending_function_calls:
             self.finished = True
 
     def _process_resp_output(self, resp_output: list[TranscriptItem]) -> None:
         self.pending_function_calls.clear()
+        # Skip items that are already present in our transcript (id collision).
+        # Some mocks or servers may reuse ids across calls; prefer idempotent processing.
+        existing_ids: set[str] = set()
+        for evt in self._transcript:
+            if isinstance(evt, BaseModel):
+                eid = getattr(evt, "id", None)
+                if isinstance(eid, str) and eid:
+                    existing_ids.add(eid)
+        handled_cids = {
+            evt.call_id
+            for evt in self._transcript
+            if isinstance(evt, FunctionCallOutput)
+        }
         for item in resp_output:
+            # If this item has an id and we've already recorded it, skip
+            if isinstance(item, BaseModel):
+                iid = getattr(item, "id", None)
+                if isinstance(iid, str) and iid in existing_ids:
+                    continue
             if isinstance(item, ResponseReasoningItem):
                 self._controller.on_reasoning(item)  # type: ignore[arg-type]
             elif isinstance(item, ResponseOutputMessage):
                 text = "\n".join(
                     part.text
                     for part in item.content
-                    if isinstance(part, ResponseOutputText) and part.text
+                    if isinstance(part, ResponseOutputText)
                 )
                 self.assistant_text_chunks.append(text)
                 self._controller.on_assistant_text(AssistantText(text=text))  # type: ignore[arg-type]
             elif isinstance(item, ResponseFunctionToolCall):
+                # If we already produced a local output for this call_id, this is an invalid state — fail loud
+                if item.call_id in handled_cids:
+                    raise AssertionError(f"Duplicate {item.call_id = }")
                 self.pending_function_calls.append(item)
-                # Emit a typed ToolCall event for handlers/recorders
                 self._controller.on_tool_call(
                     ToolCall(
-                        name=item.name or "",
-                        args_json=item.arguments
-                        if isinstance(item.arguments, str)
-                        else None,
-                        call_id=item.call_id or "",
+                        name=item.name, args_json=item.arguments, call_id=item.call_id
                     )
                 )
+            else:
+                raise TypeError(f"Unsupported Responses output item: {type(item)}")
             self._transcript.append(item)
 
     @classmethod
@@ -465,7 +477,7 @@ class MiniCodex:
                 out_str = res[0] if isinstance(res, tuple) else str(res)
                 self._emit_tool_result(function_call, out_str)
                 continue
-            if denied_call_id is not None and cid == denied_call_id:
+            if denied_call_id and cid == denied_call_id:
                 self._emit_tool_result(function_call, _deny_payload(denied_call_id))
                 continue
             self._emit_tool_result(function_call, ABORT_PAYLOAD)

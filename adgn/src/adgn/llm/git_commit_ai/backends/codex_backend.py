@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 import subprocess
 
-from git import Repo
+import pygit2
 
 from ._common import build_prompt_for_codex, extract_message, run_subprocess
 
@@ -17,7 +17,7 @@ class CodexAI:
 
     def __init__(
         self,
-        repo: Repo,
+        repo: pygit2.Repository,
         debug: bool = False,
         codex_bin: str | None = None,
         timeout: timedelta | None = None,
@@ -32,15 +32,15 @@ class CodexAI:
 
     async def generate(self, include_all: bool, model: str) -> str:
         """Run codex in read-only sandbox at repo root and return the commit message."""
-        last_msg_path = Path(self.repo.git_dir) / "codex_last_message.txt"
+        # Compute paths from pygit2.Repository
+        git_dir = Path(self.repo.path)
+        worktree_dir = Path(self.repo.workdir) if self.repo.workdir else None
+
+        last_msg_path = git_dir / "codex_last_message.txt"
 
         prompt = build_prompt_for_codex(self.repo, include_all, self.previous_message)
 
-        wd = (
-            Path(self.repo.working_tree_dir)
-            if self.repo.working_tree_dir
-            else Path(self.repo.git_dir)
-        )
+        wd = worktree_dir if worktree_dir else git_dir
         cmd = [
             self.codex_bin,
             "exec",

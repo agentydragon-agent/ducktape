@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+import uuid
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
@@ -91,6 +92,9 @@ def _usage(inp: int = 0, out: int = 0) -> ResponseUsage:
 
 
 def _make_reasoning_then_message(text: str) -> Response:
+    # Ensure unique item IDs per response to avoid duplicate-id assertions in agent transcript
+    rs_id = f"rs_{uuid.uuid4().hex[:8]}"
+    msg_id = f"m_{uuid.uuid4().hex[:8]}"
     return Response(
         id="r1",
         created_at=0,
@@ -98,12 +102,12 @@ def _make_reasoning_then_message(text: str) -> Response:
         object="response",
         output=[
             ResponseReasoningItem(
-                id="rs_1",
+                id=rs_id,
                 type="reasoning",
                 summary=[ReasoningSummary(type="summary_text", text="thinking...")],
             ),
             ResponseOutputMessage(
-                id="m1",
+                id=msg_id,
                 type="message",
                 role="assistant",
                 status="completed",
@@ -233,7 +237,7 @@ async def test_mixed_reasoning_fc_ordering() -> None:
             ),
             tc,
             ResponseOutputMessage(
-                id="m1",
+                id=f"m_{uuid.uuid4().hex[:8]}",
                 type="message",
                 role="assistant",
                 status="completed",

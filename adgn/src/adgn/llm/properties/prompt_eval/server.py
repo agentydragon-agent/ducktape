@@ -26,9 +26,15 @@ from pydantic import BaseModel, ConfigDict, Field
 from adgn.llm.mcp.inproc_transport import make_inproc_slot_spec
 from adgn.llm.mini_codex.agent import MiniCodex
 from adgn.llm.mini_codex.aggregating_handler import GateUntil
+from adgn.llm.mini_codex.handler import BaseHandler
+from adgn.llm.mini_codex.loop_control import Continue, RequireAny
 from adgn.llm.mini_codex.loggers import TranscriptLoggerHandler
 from adgn.llm.mini_codex.mcp_manager import McpManager
 from adgn.llm.mini_codex.transcript_handler import TranscriptHandler
+from adgn.llm.properties.lint_issue import (
+    make_container_info_call,
+    make_ls_workspace_call,
+)
 from adgn.llm.properties.critic import (
     CriticSubmitPayload,
     CriticSubmitState,
@@ -77,12 +83,36 @@ async def _run_critic_for_specimen(
             "critic_submit": make_inproc_slot_spec(critic_server),
         }
         async with McpManager(specs) as mcp:
+            # Bootstrap handler: emit synthetic function_calls without sampling to inspect mounts
+            class BootstrapInspectHandler(BaseHandler):
+                def __init__(self) -> None:
+                    self._done: bool = False
+
+                def on_before_sample(self):  # type: ignore[override]
+                    if self._done:
+                        from adgn.llm.mini_codex.loop_control import NoLoopDecision
+
+                        return NoLoopDecision()
+                    self._done = True
+                    # 1) Read container.info via resources.read for the docker server
+                    calls = [make_container_info_call(wiring)]
+                    # 2) List specimen root (/workspace)
+                    calls.append(make_ls_workspace_call(wiring))
+                    # Do NOT list /props since properties are not mounted in this mode
+                    return Continue(
+                        RequireAny(), inserts_input=tuple(calls), skip_sampling=True
+                    )
+
+            bootstrap = BootstrapInspectHandler()
             handlers = [
+                bootstrap,
                 TranscriptHandler(dest_dir=run_dir / specimen / "critic"),
                 TranscriptLoggerHandler(run_dir / specimen / "critic"),
+                # Defer gating during first bootstrap phase to avoid Continue conflicts
                 GateUntil(
                     lambda: (critic_state.result is not None)
                     or (critic_state.error is not None),
+                    defer_when=lambda: not bootstrap._done,
                 ),
             ]
             agent = await MiniCodex.create(
