@@ -1,5 +1,5 @@
 %%tana%%
 - Checkbox nodes (test reference HhxGuymRRqrR)
-  - Filled with **bold**
-  - Unfilled with _italic_
-  - Unfilled reference to filled with bold: [[Filled with **bold**^-cpuVMjVcnvN]]
+  - [X] Filled with **bold**
+  - [ ] Unfilled with _italic_
+  - [ ] Unfilled reference to filled with bold: [[Filled with bold^-cpuVMjVcnvN]]
