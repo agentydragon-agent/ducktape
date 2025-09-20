@@ -8,7 +8,13 @@
   languages.python = {
     enable = true;
     package = pkgs.python311;
-    venv.enable = true;
+    uv = {
+      enable = true;
+      sync = {
+        enable = true;
+        extras = [ "dev" ];
+      };
+    };
   };
 
   # Convenience scripts (available inside the dev shell)
@@ -26,13 +32,10 @@
 
   # On shell entry, ensure the project is installed (editable) with dev extras
   # Install into the active devenv-managed venv so `pytest`, `ruff`, etc. are on PATH
+  # Lightweight shell entry; dependency management handled by uv sync
   enterShell = ''
-    set -e
+    set -euo pipefail
     python --version
-
-    # Install dev extras directly into this venv (avoid uv's separate .venv)
-    python -m pip install -U pip wheel
-    python -m pip install -e '.[dev]'
     echo "Tip: run 'devenv up' to start the Vite UI dev server in the background, or use 'ui-dev'/'mini-codex-serve' scripts."
   '';
 }
