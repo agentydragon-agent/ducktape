@@ -62,7 +62,7 @@ repos:
       - id: mypy
         name: mypy (adgn)
         files: "^adgn/src/(adgn|wt)/"
-        args: ["--config-file=adgn/pyproject.toml", "--namespace-packages", "--ignore-missing-imports"]
+        args: ["--config-file=adgn/pyproject.toml", "--namespace-packages", "--ignore-missing-imports", "--explicit-package-bases"]
         additional_dependencies:
           - pydantic>=2
           - types-PyYAML
