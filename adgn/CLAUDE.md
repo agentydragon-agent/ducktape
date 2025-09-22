@@ -17,31 +17,31 @@ Environment and setup (direnv + devenv)
   - which python → should resolve to …/adgn/.devenv/state/venv/bin/python
   - You’ll also see a one-line “direnv: loading/unloading” message when entering/leaving the directory
 - Raw commands vs prefixing:
-  - When direnv is active, just run tools directly: pytest, ruff check ., pre-commit run -a, rspcache, wt, etc.
+  - When direnv is active, devenv puts dev tools on PATH automatically — run tools directly: pytest, ruff check ., pre-commit run -a, rspcache, wt, etc. (no prefix needed inside adgn/)
   - When running from outside the directory or in scripts, prefix with: direnv exec adgn <command>
 - Refresh the environment after edits:
   - devenv.nix/.envrc changes → direnv reload
   - pyproject.toml dependency changes → direnv reload (the shell will reinstall dev extras on entry); if needed: direnv exec adgn python -m pip install -e '.[dev]'
 
 Common commands
-- Run all tests (pytest discovery is configured for repo-root tests/):
-  - from repo root: direnv exec adgn pytest tests
-  - or from adgn/: pytest ../tests
+- Run all tests (pytest discovery is configured for adgn/tests):
+  - from repo root: direnv exec adgn pytest adgn/tests
+  - or from adgn/: pytest tests
   - Note: parallel execution via pytest-xdist is enabled by default (see Pytest configuration below).
 - Run a single test file or test:
-  - direnv exec adgn pytest tests/adgn/tana_export/test_convert.py
-  - direnv exec adgn pytest tests/adgn/tana_export/test_convert.py::test_node_export
-  - direnv exec adgn pytest tests/wt/integration/test_cli_integration.py
+  - pytest tests/tana_export/test_convert.py
+  - pytest tests/tana_export/test_convert.py::test_node_export
+  - pytest tests/wt/integration/test_cli_integration.py
 - Lint/format (ruff):
-  - direnv exec adgn ruff format .
-  - direnv exec adgn ruff check . --fix
+  - ruff format .
+  - ruff check . --fix
 - Pre-commit (optional in this subpackage):
-  - direnv exec adgn pre-commit install
-  - direnv exec adgn pre-commit run -a
+  - pre-commit install
+  - pre-commit run -a
 - Install optional extras (example: GNOME console script deps):
-  - direnv exec adgn python -m pip install -e '.[gnome]'
+  - python -m pip install -e '.[gnome]'
 - Build a wheel/sdist (optional):
-  - direnv exec adgn python -m pip install build; direnv exec adgn python -m build
+  - python -m pip install build; python -m build
 
 Console scripts
 - switch_gnome_terminal_profile → adgn.gnome.switch_gnome_terminal_profile:run
@@ -83,7 +83,7 @@ High‑level architecture
     - Purpose: Manage git worktrees and status, integrate with GitHub, and provide a local server/CLI with plugin hooks
 - Tests and data
   - Tests live under repo-root tests/, mirroring src structure
-    - tests/adgn/tana_export/test_convert.py → verifies Markdown/TanaPaste outputs using fixture JSON
+    - tests/tana_export/test_convert.py → verifies Markdown/TanaPaste outputs using fixture JSON
     - tests/wt/... includes unit, integration, and e2e coverage for worktree flows and GitHub display
 
 Notes and caveats
@@ -93,27 +93,34 @@ Notes and caveats
 
 Quick references
 - Enter env here: direnv allow (in adgn/)
-- Run all tests: direnv exec adgn pytest tests
+- Run all tests: pytest tests
 - Single tests:
-  - direnv exec adgn pytest tests/adgn/tana_export/test_convert.py::test_node_export
-  - direnv exec adgn pytest tests/wt/integration/test_cli_integration.py
-- Lint/format: direnv exec adgn ruff check . --fix; direnv exec adgn ruff format .
-- Install GNOME extras: direnv exec adgn python -m pip install -e '.[gnome]'
+  - pytest tests/tana_export/test_convert.py::test_node_export
+  - pytest tests/wt/integration/test_cli_integration.py
+- Lint/format: ruff check . --fix; ruff format .
+- Install GNOME extras: python -m pip install -e '.[gnome]'
 
 ## LLM (adgn.llm) quickstart and module map
 
 MiniCodex (CLI + local UI)
 - REPL: adgn-mini-codex run
 - UI server: adgn-mini-codex serve (opens WS UI at http://127.0.0.1:8765/)
+- Dev: adgn-mini-codex dev (starts backend + Vite HMR; auto-picks free ports)
 - Model/system defaults: --model (OPENAI_MODEL or o4-mini), --system (SYSTEM_INSTRUCTIONS)
 - MCP configuration:
-  - --mcp-config /path/to/.mcp.json (required to exist when provided)
-  - --extra-mcp-config /path/extra.json (repeatable; each must exist). Later files override earlier keys.
+  - Baseline: if present, ./.mcp.json in CWD is always loaded first
+  - --mcp-config /path/extra.json (repeatable): merge additional .mcp.json files; later files override earlier keys.
+  - In-proc servers via .mcp.json: use transport: "inproc" with either:
+    - server: a FastMCP instance (Python-only wiring), or
+    - factory: dotted path "pkg.mod:make_server" (or "pkg.mod.make_server"), plus optional args/kwargs
+    Example file at src/adgn/llm/mini_codex/example.mcp.json wires the seatbelt exec MCP in-process.
 - Behavior:
   - On connect, server emits accepted followed by a Snapshot; Snapshot includes MCP server names and any transcript from the current process.
   - Approvals are protocol‑native: approval_pending → approval_decision (approve | deny_continue | deny_abort); server maps them to handler decisions.
   - Serve constructs the agent and MCP on the uvicorn loop (app.state.agent_factory) to avoid cross‑loop hangs.
 - UI dev/build:
+  - Dev (recommended): adgn-mini-codex dev — starts FastAPI backend and Vite (frontend HMR), picks free ports; Vite proxies /ws (and /transcript)
+  - Split dev: adgn-mini-codex serve (backend) + npm --prefix src/adgn/llm/mini_codex/ui/web run dev (optionally export VITE_BACKEND_ORIGIN=http://127.0.0.1:8765)
   - Build UI: npm --prefix src/adgn/llm/mini_codex/ui/web install; npm --prefix src/adgn/llm/mini_codex/ui/web run build
   - Assets are published to src/adgn/llm/mini_codex/ui/static/web; FastAPI serves /static/web and /assets
   - Layout: full‑page chat (left, bottom‑docked composer) + sidebar (WS status dot, run status, servers, approvals)
