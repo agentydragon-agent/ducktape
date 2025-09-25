@@ -12,6 +12,8 @@
   roles:
     - role: tailscale-client
       tags: [tailscale]
+    - role: k3s_registries
+      tags: [k3s, registries]
 
   tasks:
     - name: Ensure SSH keys are properly set up
