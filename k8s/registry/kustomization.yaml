@@ -4,7 +4,5 @@ namespace: registry
 resources:
   - namespace.yaml
   - pvc.yaml
-  - sealedsecret-htpasswd.yaml
   - deployment.yaml
-  - service-nodeport.yaml
-
+  - service.yaml
