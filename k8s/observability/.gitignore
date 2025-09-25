@@ -1,0 +1,3 @@
+# Never commit unencrypted secrets
+secrets.yaml
+*.unsealed.yaml
