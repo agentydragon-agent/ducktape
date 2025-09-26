@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from typing import Any
+import functools
+from typing import Any, Awaitable, Callable, ParamSpec, TypeVar, cast
 
 import httpx
 import openai
@@ -27,24 +28,35 @@ _RETRY_ON: Iterable[type[BaseException]] = (
 )
 
 
+P = ParamSpec("P")
+T = TypeVar("T")
+
+
 def retry_decorator(
     attempts: int = _DEFAULT_ATTEMPTS,
     initial: float = _DEFAULT_INITIAL,
     maximum: float = _DEFAULT_MAX,
     retry_exceptions: Iterable[type[BaseException]] = _RETRY_ON,
 ):
-    """Return a tenacity.retry decorator with our standard settings.
+    """Return a tenacity.retry decorator with our standard settings."""
 
-    Example:
-        @retry_decorator()
-        async def fn(...):
-            ...
-    """
-    return retry(
+    tenacity_decorator = retry(
         stop=stop_after_attempt(attempts),
         wait=wait_exponential_jitter(initial=initial, max=maximum),
         retry=retry_if_exception_type(tuple(retry_exceptions)),
     )
+
+    def decorator(func: Callable[P, Awaitable[T]]) -> Callable[P, Awaitable[T]]:
+        wrapped = tenacity_decorator(func)
+
+        @functools.wraps(func)
+        async def inner(*args: P.args, **kwargs: P.kwargs) -> T:
+            call = cast(Callable[P, Awaitable[T]], wrapped)
+            return await call(*args, **kwargs)
+
+        return inner
+
+    return decorator
 
 
 @retry_decorator()
