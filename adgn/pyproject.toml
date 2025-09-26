@@ -17,6 +17,7 @@ dependencies = [
   "click",
   "psutil",
   "platformdirs",
+  "aiohttp>=3.9.0",
   "colorama",
   "PyYAML",
   "PyGithub>=1.77",
@@ -144,7 +145,7 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 
 [tool.ruff.lint.per-file-ignores]
-"adgn/tests/**" = ["PLR0913"]
+"tests/**" = ["PLR0913"]
 
 [project.scripts]
 switch_gnome_terminal_profile = "adgn.gnome.switch_gnome_terminal_profile:run"
@@ -184,4 +185,3 @@ extend-exclude = [
   "src/adgn/llm/properties/specimens/**",
   "adgn/src/adgn/llm/properties/specimens/**",
 ]
-
