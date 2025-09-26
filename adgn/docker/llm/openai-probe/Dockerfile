@@ -34,7 +34,9 @@ WORKDIR /app
 
 # Copy the repository and install from pyproject (build isolation)
 COPY . /app
-RUN pip install --no-cache-dir .
+# Upgrade pip and setuptools to ensure proper src-layout support
+RUN pip install --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir .
 
 USER 1000:1000
 

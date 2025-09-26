@@ -40,6 +40,26 @@
 
   tasks:
 
+    # Configure Nix trusted users for devenv cache management
+    - name: Configure Nix trusted users
+      ansible.builtin.lineinfile:
+        path: /etc/nix/nix.conf
+        regexp: '^trusted-users = '
+        line: 'trusted-users = root agentydragon'
+        create: false
+        backup: yes
+      become: true
+      tags: [nix]
+      register: nix_config_changed
+
+    - name: Restart nix-daemon if config changed
+      ansible.builtin.systemd:
+        name: nix-daemon
+        state: restarted
+      become: true
+      when: nix_config_changed.changed
+      tags: [nix]
+
     # Disable screensaver and screen blanking for headless VM
     - name: Disable GNOME screensaver and screen blanking
       become: true

@@ -82,6 +82,7 @@ in
     
     # Development tools
     direnv  # Per-directory environment variables
+    devenv  # Fast, declarative, reproducible developer environments
     
     # Neovim and dependencies for configuration
     unstablePkgs.neovim  # Latest neovim from unstable
