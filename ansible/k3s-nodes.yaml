@@ -12,6 +12,8 @@
   roles:
     - role: tailscale-client
       tags: [tailscale]
+    - role: k3s_dns_resolver
+      tags: [k3s, dns]
     - role: k3s_registries
       tags: [k3s, registries]
 
