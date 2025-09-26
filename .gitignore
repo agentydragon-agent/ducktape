@@ -7,24 +7,29 @@ website/_cache
 
 **/.claude/settings.local.json
 
+.DS_Store
+node_modules
+
 # Stopgap against mess trying to mix RCM & non-RCM dotfiles
 # (Those are supposed to be non-RCM)
 dotfiles/config/cronomix/**
 dotfiles/config/OrcaSlicer/**
 
+# Packaging artifacts
 **/*.egg-info
 
-.DS_Store
 
-.venv/
+# Python caches and virtualenvs
+**/__pycache__/
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+**/.venv/
 
-node_modules
-
-.direnv/
-
-# Devenv
+# direnv / devenv
 .devenv*
 devenv.local.nix
-
-# direnv
 .direnv
+.direnv/
+
+logs

@@ -13,3 +13,5 @@ resources:
   - grafana-pvc.yaml
   - grafana-deployment.yaml
   - grafana-service.yaml
+  - openai-probe-secret.yaml
+  - openai-probe-deployment.yaml

@@ -36,7 +36,11 @@ data:
                       kind: kind
                       ok: ok
                       latency_s: latency_s
-                      code: code
+                      error_code: error.code
+                      error_type: error.type
+                      error_message: error.message
+                      status_code: error.status_code
+                      request_id: error.request_id
         relabel_configs:
           - action: replace
             source_labels: [__meta_kubernetes_pod_node_name]

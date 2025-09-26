@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openai-probe
+  labels:
+    app.kubernetes.io/name: openai-probe
+    app.kubernetes.io/part-of: observability
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: openai-probe
+  template:
+    metadata:
+      labels:
+        app: openai-probe
+        app.kubernetes.io/name: openai-probe
+        app.kubernetes.io/part-of: observability
+    spec:
+      restartPolicy: Always
+      containers:
+        - name: probe
+          image: registry.local/openai-probe:dev
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: openai-api
+                  key: api_key
+          args:
+            - "--concurrency"
+            - "64"
+            - "--stream"
+            - "--continuous"
+          ports:
+            - name: health
+              containerPort: 8080
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 15

@@ -1,15 +1,9 @@
 """Probe OpenAI models via Responses and Chat APIs.
 
-Usage:
-    adgn-openai-probe [--sample N] [--concurrency C] [--repeats R] [--max-qps Q] [--stream]
-
-Behavior:
-- Lists available models, filters out non-target families, optional sampling
-- For each (model, API kind), runs up to R repeats BUT stops early on fatal errors
-- Concurrency/QPS are enforced per-call via a global semaphore + limiter
-- Streams either JSONL events or a live Rich table with grouped summaries
-
-Cells show: success rate %, avg latency among successes, and top error code (+ when multiple kinds)
+- Filters model list by family and a configurable regex to exclude noise (e.g., fine‑tunes).
+- Smart selection prioritizes models recently OK (from cache) and slowly samples others; skips very recently seen.
+- Uses fast/slow QPS and repeats; early‑stops on fatal, non‑retryable errors.
+- Emits JSONL events and persists faithful responses to XDG cache; TUI renders a live table.
 """
 
 from __future__ import annotations
@@ -19,26 +13,29 @@ import asyncio
 from collections import Counter
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from enum import Enum
 import json
 import random
+import os
 import re
 import sys
 import time
-from typing import Any, Final, cast
+from typing import Any, Final, Literal, cast
+from pathlib import Path
 
 from aiolimiter import AsyncLimiter
+from adgn.llm.client_factory import _get_async_openai as _factory_async_client
 from openai import AsyncOpenAI
 from openai._exceptions import APIStatusError
 from openai.types.responses.function_tool_param import FunctionToolParam
 from openai.types.responses.tool_choice_function_param import ToolChoiceFunctionParam
 from rich import box
-from rich.console import Console, Group
-from rich.live import Live
+from rich.console import Group
 from rich.table import Table
-
-# Textual (Rich-based TUI framework)
+from platformdirs import user_cache_dir
+from pydantic import BaseModel
+from aiohttp import web
 from textual.app import App, ComposeResult
 from textual.widgets import Header, Footer, Static
 from textual.reactive import reactive
@@ -49,6 +46,108 @@ from textual.events import Key
 
 INF: float = float("inf")
 
+# Additional exclusion regex for model IDs (beyond family drop rules)
+# Adjust this to cover fine-tunes and other unwanted variants.
+EXCLUDE_MODEL_ID_RE = re.compile(
+    r"(?i)(:ft:|\bft-\b|\b-ft\b|fine[-_ ]?tune|fine[-_ ]?tuned)"
+)
+
+# Smart policy constants (hardcoded)
+OK_LOOKBACK = timedelta(hours=24)
+MIN_INTERVAL = timedelta(minutes=10)
+SLOW_PROB = 0.1
+FAST_QPS = 0.3
+SLOW_QPS = 0.05
+FAIL_REPEATS = 1
+
+# Health server settings
+HEALTH_PORT = int(os.getenv("PROBE_HEALTH_PORT", "8080"))
+HEALTH_PATH = "/health"
+# Cache paths (XDG cache via platformdirs)
+_CACHE_DIR = Path(user_cache_dir(appname="adgn-llm", appauthor=False)) / "openai_probe"
+_CACHE_FILE = _CACHE_DIR / "history.jsonl"
+
+
+def _ensure_cache_dir() -> None:
+    _CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _iso_ts() -> str:
+    return datetime.now(UTC).isoformat()
+
+
+class ErrorInfo(BaseModel):
+    type: str | None = None
+    message: str | None = None
+    status_code: int | None = None
+    body: Any | None = None
+    request_id: str | None = None
+    code: str | None = None
+
+
+class CachedProbeError(RuntimeError):
+    """Minimal error type used when hydrating cached probe results."""
+
+    def __init__(self, info: ErrorInfo) -> None:
+        message = info.message or ""
+        super().__init__(message)
+        self.message = message
+        self.status_code = info.status_code
+        self.body = info.body
+        self.request_id = info.request_id
+        self.code = info.code
+
+
+class ProbeRecord(BaseModel):
+    ts: datetime
+    start_ts: datetime | None = None
+    end_ts: datetime | None = None
+    model: str
+    kind: str  # "responses" | "chat"
+    ok: bool
+    latency_s: float | None = None
+    response: dict[str, Any] | None = None
+    error: ErrorInfo | None = None
+
+
+def _persist_result(res: "ProbeResult") -> None:
+    """Append a single probe result to the JSONL cache."""
+    _ensure_cache_dir()
+    record = res.to_cache_record()
+    with _CACHE_FILE.open("a", encoding="utf-8") as fh:
+        fh.write(record.model_dump_json() + "\n")
+
+
+class _StreamRecordBase(BaseModel):
+    ts: datetime
+    type: str = "event"
+    source: str = "adgn-openai-probe"
+    model: str
+    family: str
+    kind: str
+    tags: dict[str, str] | None = None
+
+
+class StreamRecordOK(_StreamRecordBase):
+    ok: Literal[True]
+    latency_s: float | None = None
+    response: dict[str, Any] | None = None
+
+
+class StreamRecordError(_StreamRecordBase):
+    ok: Literal[False]
+    error: ErrorInfo
+
+
+class ModelListRecord(BaseModel):
+    ts: datetime
+    type: Literal["models"] = "models"
+    source: str = "adgn-openai-probe"
+    model: str
+    family: str
+    recent_ok: bool
+    tags: dict[str, str] | None = None
+
 
 # ---------- Data classes ----------
 
@@ -56,27 +155,156 @@ INF: float = float("inf")
 @dataclass(frozen=True)
 class ProbeResult:
     model_id: str
+    kind: str
     ok: bool
-    content: str | None = None
     exc: BaseException | None = None
-    latency_s: float | None = None
+    raw: Any | None = None
+    start_ts: datetime | None = None
+    end_ts: datetime | None = None
+    latency_override_s: float | None = None
 
+    @classmethod
+    def success(
+        cls,
+        *,
+        model_id: str,
+        kind: str,
+        raw: Any,
+        start_ts: datetime,
+        end_ts: datetime,
+    ) -> "ProbeResult":
+        return cls(
+            model_id=model_id,
+            kind=kind,
+            ok=True,
+            raw=raw,
+            start_ts=start_ts,
+            end_ts=end_ts,
+        )
 
-@dataclass(frozen=True)
-class CallResult:
-    content: str | None
-    exc: BaseException | None
-    latency_s: float | None
+    @classmethod
+    def failure(
+        cls,
+        *,
+        model_id: str,
+        kind: str,
+        exc: BaseException,
+        start_ts: datetime | None,
+        end_ts: datetime,
+    ) -> "ProbeResult":
+        return cls(
+            model_id=model_id,
+            kind=kind,
+            ok=False,
+            exc=exc,
+            start_ts=start_ts,
+            end_ts=end_ts,
+        )
 
     @property
-    def ok(self) -> bool:
-        return self.exc is None
+    def latency_s(self) -> float | None:
+        if not isinstance(self.start_ts, datetime) or not isinstance(
+            self.end_ts, datetime
+        ):
+            return self.latency_override_s
+        return float((self.end_ts - self.start_ts).total_seconds())
+
+    @property
+    def content(self) -> str | None:
+        """Derive a short snippet from the raw response or error payload."""
+        try:
+            if self.ok and self.raw is not None:
+                if self.kind == "responses":
+                    return _snippet_from_responses(self.raw)
+                if self.kind == "chat":
+                    return _snippet_from_chat(self.raw)
+            if not self.ok and self.exc is not None:
+                return _squeeze_one_line(msg_from_exc(self.exc)) or None
+        except Exception:
+            # Do not let snippet extraction break probing
+            return None
+        return None
+
+    @property
+    def error_message(self) -> str:
+        return msg_from_exc(self.exc)
+
+    @property
+    def error_classification(self) -> tuple[ErrorCode, str] | None:
+        if self.ok or self.exc is None:
+            return None
+        return classify_error(self.error_message)
+
+    def to_cache_record(self, *, ts: datetime | None = None) -> ProbeRecord:
+        payload: dict[str, Any] | Any | None = None
+        if self.ok and self.raw is not None:
+            raw_obj = self.raw
+            if hasattr(raw_obj, "model_dump"):
+                payload = raw_obj.model_dump(exclude_none=False)
+            else:
+                payload = raw_obj
+        err_info: ErrorInfo | None = None
+        if not self.ok:
+            classification = self.error_classification
+            err_info = ErrorInfo(
+                type=(type(self.exc).__name__ if self.exc is not None else None),
+                message=self.error_message,
+                status_code=(
+                    getattr(self.exc, "status_code", None)
+                    if self.exc is not None
+                    else None
+                ),
+                body=(
+                    getattr(self.exc, "body", None) if self.exc is not None else None
+                ),
+                request_id=(
+                    getattr(self.exc, "request_id", None)
+                    if self.exc is not None
+                    else None
+                ),
+                code=(classification[0].value if classification else None),
+            )
+        return ProbeRecord(
+            ts=ts or datetime.now(UTC),
+            start_ts=self.start_ts,
+            end_ts=self.end_ts,
+            model=self.model_id,
+            kind=self.kind,
+            ok=self.ok,
+            latency_s=self.latency_s,
+            response=payload if self.ok else None,
+            error=err_info,
+        )
+
+    @classmethod
+    def from_record(cls, record: ProbeRecord) -> "ProbeResult":
+        raw = record.response if record.ok else None
+        exc: BaseException | None = None
+        if not record.ok:
+            err = record.error
+            if isinstance(err, ErrorInfo):
+                info = err
+            elif isinstance(err, dict):
+                info = ErrorInfo.model_validate(err)
+            else:
+                info = ErrorInfo(message=str(err) if err is not None else None)
+            exc = CachedProbeError(info)
+        return cls(
+            model_id=record.model,
+            kind=record.kind,
+            ok=record.ok,
+            exc=exc,
+            raw=raw,
+            start_ts=record.start_ts,
+            end_ts=record.end_ts,
+            latency_override_s=record.latency_s,
+        )
 
 
 @dataclass(frozen=True)
 class ProbeRun:
     model_id: str
-    calls: list[CallResult]
+    calls: list[ProbeResult]
 
     @property
     def ok(self) -> bool:
@@ -92,13 +320,6 @@ class ProbeRun:
         for c in self.calls:
             if not c.ok:
                 return c.exc
-        return None
-
-    @property
-    def success_snippet(self) -> str | None:
-        for c in self.calls:
-            if c.ok and c.content:
-                return c.content
         return None
 
 
@@ -117,7 +338,6 @@ class ModelProbe:
 class ProbeSpec:
     name: str
     create: Callable[[AsyncOpenAI, str], Awaitable[Any]]
-    snippet: Callable[[Any], str]
 
 
 # ---------- Prompt/tools used in probe ----------
@@ -304,10 +524,18 @@ def _tool_ok_if_expected(name: str | None, args: object) -> bool:
 
 
 def _snippet_from_responses(resp) -> str:
-    if txt := resp.output_text:
-        return _squeeze_one_line(txt)
-    # Fallback: inspect model_dump for output blocks and tool/function calls
-    data = resp.model_dump(exclude_none=True)
+    # Accept typed response or plain dict
+    if hasattr(resp, "output_text"):
+        txt = getattr(resp, "output_text")
+        if txt:
+            return _squeeze_one_line(txt)
+    # Fallback: inspect for output blocks and tool/function calls
+    if hasattr(resp, "model_dump"):
+        data = resp.model_dump(exclude_none=True)
+    elif isinstance(resp, dict):
+        data = resp
+    else:
+        raise TypeError("Unsupported response type for responses snippet extraction")
     outputs = data.get("output", []) or []
     for item in outputs:
         typ = item.get("type")
@@ -343,7 +571,12 @@ def _snippet_from_responses(resp) -> str:
 
 
 def _snippet_from_chat(resp) -> str:
-    data = resp.model_dump(exclude_none=True)
+    if hasattr(resp, "model_dump"):
+        data = resp.model_dump(exclude_none=True)
+    elif isinstance(resp, dict):
+        data = resp
+    else:
+        raise TypeError("Unsupported response type for chat snippet extraction")
     choices = data.get("choices", []) or []
     if choices:
         msg = choices[0].get("message") or choices[0].get("delta") or {}
@@ -358,10 +591,11 @@ def _snippet_from_chat(resp) -> str:
             return _squeeze_one_line(snippet)
         if isinstance(msg.get("content"), str):
             return _squeeze_one_line(msg.get("content", ""))
-    # Fallback to attribute API (no swallowing)
-    content = resp.choices[0].message.content if resp.choices else None
-    if content:
-        return "✓ " + _squeeze_one_line(str(content))
+    # Fallback to attribute API if available
+    if hasattr(resp, "choices"):
+        content = resp.choices[0].message.content if resp.choices else None
+        if content:
+            return "✓ " + _squeeze_one_line(str(content))
     return "✓"
 
 
@@ -403,18 +637,32 @@ async def _probe_once(
     spec: ProbeSpec,
     limiter: AsyncLimiter,
 ) -> ProbeResult:
+    start_ts: datetime | None = None
     try:
         async with limiter:
+            start_ts = datetime.now(UTC)
             t0 = time.perf_counter()  # measure pure API latency, not queueing time
             resp = await asyncio.wait_for(
                 spec.create(client, model_id),
                 timeout=REQUEST_TIMEOUT,
             )
-        dt = time.perf_counter() - t0
-        snippet = spec.snippet(resp)
-        return ProbeResult(model_id=model_id, ok=True, content=snippet, latency_s=dt)
+        _ = time.perf_counter() - t0
+        return ProbeResult.success(
+            model_id=model_id,
+            kind=spec.name,
+            raw=resp,
+            start_ts=start_ts,
+            end_ts=datetime.now(UTC),
+        )
     except Exception as exc:
-        return ProbeResult(model_id=model_id, ok=False, exc=exc)
+        # On failure, we still record timestamps around the attempted call
+        return ProbeResult.failure(
+            model_id=model_id,
+            kind=spec.name,
+            exc=exc,
+            start_ts=start_ts,
+            end_ts=datetime.now(UTC),
+        )
 
 
 # ---------- Filtering rules -------------------------------------------------
@@ -429,7 +677,6 @@ class Family(str, Enum):
     GPT_5_MINI_NANO = "gpt-5-mini-nano"
     O_MINI = "o-mini"
     RM_MODELS = "rm-models"
-    D12_D16 = "d12-d16"
     # Kept/classifiable families
     GPT_5 = "gpt-5"
     O3 = "o3"
@@ -441,14 +688,13 @@ class Family(str, Enum):
 
 FAMILY_RULES: dict[Family, str] = {
     # Dropped families (filtered out)
-    Family.LEGACY_ENGINES: r"\b(ada|curie|babbage|davinci)\b",
+    Family.LEGACY_ENGINES: r"\b(ada|curie|babbage|davinci|d1[26])\b",
     Family.GPT_3: r"\bgpt[-_]?3(\b|[.-])",
     Family.GPT_4O: r"(?<![a-z0-9])gpt[-_]?4o(?![a-z0-9])",
     Family.GPT_41_MINI_NANO: r"\bgpt[-_]?4\.1-(mini|nano)\b",
     Family.GPT_5_MINI_NANO: r"\bgpt[-_]?5-(mini|nano)\b",
     Family.O_MINI: r"\bo[13]-mini\b",
     Family.RM_MODELS: r"-rm-",
-    Family.D12_D16: r"\b(d1[26])\b",
     # Kept/classifiable families
     Family.GPT_5: r"^gpt[-_]?5(?!-(mini|nano))",
     Family.O3: r"^o3(?!-mini)",
@@ -467,7 +713,6 @@ FAMILY_DROP: set[Family] = {
     Family.GPT_5_MINI_NANO,
     Family.O_MINI,
     Family.RM_MODELS,
-    Family.D12_D16,
 }
 
 # Global family priority for ordering
@@ -488,7 +733,11 @@ def family_of(mid: str) -> Family:
 
 
 def is_excluded(mid: str) -> bool:
-    return family_of(mid) in FAMILY_DROP
+    if family_of(mid) in FAMILY_DROP:
+        return True
+    if EXCLUDE_MODEL_ID_RE.search(mid):
+        return True
+    return False
 
 
 def priority_index(mid: str) -> int:
@@ -515,7 +764,7 @@ class CellStats:
     error_kinds: int
 
 
-def compute_cell_stats(calls: list[CallResult]) -> CellStats:
+def compute_cell_stats(calls: list[ProbeResult]) -> CellStats:
     total = len(calls)
     ok_calls = [c for c in calls if c.ok]
     ok = len(ok_calls)
@@ -542,10 +791,11 @@ def compute_cell_stats(calls: list[CallResult]) -> CellStats:
     code_desc: dict[ErrorCode, str] = {}
     for c in calls:
         if not c.ok:
-            msg = msg_from_exc(c.exc)
-            code, desc = classify_error(msg)
-            err_codes.append(code)
-            code_desc.setdefault(code, desc)
+            classification = c.error_classification
+            if classification:
+                code, desc = classification
+                err_codes.append(code)
+                code_desc.setdefault(code, desc)
     top_error_code: ErrorCode | None = None
     top_error_desc: str | None = None
     error_kinds = 0
@@ -568,7 +818,7 @@ def compute_cell_stats(calls: list[CallResult]) -> CellStats:
     )
 
 
-def build_cell(calls: list[CallResult]) -> tuple[str, ErrorCode | None, str | None]:
+def build_cell(calls: list[ProbeResult]) -> tuple[str, ErrorCode | None, str | None]:
     """Build a single rich cell with success rate, success latency, and top error."""
     if not calls:
         return ("[yellow]waiting…[/yellow]", None, None)
@@ -617,326 +867,67 @@ async def consume_stream_jsonl(
     out_q: asyncio.Queue[Event],
     total_runners: int,
     filtered: list[str],
+    *,
+    tags: dict[str, str] | None = None,
+    infinite: bool = False,
 ) -> None:
-    ok_calls = 0
-    fail_calls = 0
     finished = 0
-
-    def iso_ts() -> str:
-        return datetime.now(UTC).isoformat()
-
-    while finished < total_runners:
+    while True:
         kind, mid, res = await out_q.get()
         if res is None:
-            finished += 1
-            continue
-        rec: dict[str, Any] = {
-            "ts": iso_ts(),
-            "model": mid,
-            "family": family_of(mid).value,
-            "kind": kind,
-            "ok": res.ok,
-            "latency_s": res.latency_s,
-        }
-        if res.ok:
-            if res.content is not None:
-                rec["snippet"] = res.content
-            ok_calls += 1
-        else:
-            msg = msg_from_exc(res.exc)
-            code, _ = classify_error(msg)
-            rec["code"] = code.value
-            rec["error"] = msg
-            fail_calls += 1
-        print(json.dumps(rec), flush=True)
-
-    summary = {
-        "ts": iso_ts(),
-        "type": "summary",
-        "ok_calls": ok_calls,
-        "failed_calls": fail_calls,
-        "total_calls": ok_calls + fail_calls,
-        "models": len(filtered),
-    }
-    print(json.dumps(summary), flush=True)
-
-
-async def consume_stream_rich(
-    out_q: asyncio.Queue[Event],
-    total_runners: int,
-    filtered: list[str],
-    repeats: int,
-) -> None:
-    oks: list[ModelProbe] = []
-    fails: list[ModelProbe] = []
-    total_models = len(filtered)
-    completed_models = 0
-    finished = 0
-
-    acc: dict[str, dict[str, list[CallResult]]] = {
-        mid: {"responses": [], "chat": []} for mid in filtered
-    }
-    done_flags: dict[str, dict[str, bool]] = {
-        mid: {"responses": False, "chat": False} for mid in filtered
-    }
-    finalized: set[str] = set()  # mids we added to oks/fails
-
-    console = Console()
-
-    def _avg_lat(obj) -> float | None:
-        if isinstance(obj, ProbeRun):
-            return obj.avg_latency_s
-        lat = getattr(obj, "latency_s", None)
-        return float(lat) if isinstance(lat, (int, float)) else None
-
-    def make_results_table(
-        title: str,
-        *,
-        header_style: str = "bold magenta",
-        model_ratio: int = 3,
-    ) -> Table:
-        table = Table(
-            show_header=True,
-            header_style=header_style,
-            title=title,
-            expand=True,
-            box=box.SIMPLE,
-        )
-        table.add_column(
-            "Model",
-            overflow="ellipsis",
-            no_wrap=True,
-            ratio=model_ratio,
-            header_style="bold",
-        )
-        table.add_column("Responses", overflow="ellipsis", no_wrap=True, ratio=2)
-        table.add_column("Chat", overflow="ellipsis", no_wrap=True, ratio=2)
-        return table
-
-    def iter_with_break(rows, key_fn):
-        if not rows:
-            return []
-        result = []
-        for idx, row in enumerate(rows):
-            curr = key_fn(row)
-            nxt = key_fn(rows[idx + 1]) if idx + 1 < len(rows) else None
-            result.append((row, nxt is not None and nxt != curr))
-        return result
-
-    def partials_sort_key(kind: str):
-        def key(item: tuple[str, str, str]):
-            mid = item[0]
-            avg = _avg_lat(ProbeRun(model_id=mid, calls=acc[mid][kind])) or INF
-            return (priority_index(mid), avg, mid)
-
-        return key
-
-    def latency_both_key(r: ModelProbe) -> float:
-        vals = [v for v in (_avg_lat(r.responses), _avg_lat(r.chat)) if v is not None]
-        return min(vals) if vals else INF
-
-    used_codes: dict[str, str] = {}
-
-    with Live(console=console, refresh_per_second=4) as live:
-        while finished < total_runners:
-            kind, mid, res = await out_q.get()
-            if res is None:
-                done_flags[mid][kind] = True
-                if mid not in finalized and all(done_flags[mid].values()):
-                    completed_models += 1
-                    probe = ModelProbe(
-                        model_id=mid,
-                        responses=ProbeRun(model_id=mid, calls=acc[mid]["responses"]),
-                        chat=ProbeRun(model_id=mid, calls=acc[mid]["chat"]),
-                    )
-                    (oks if probe.any_ok else fails).append(probe)
-                    finalized.add(mid)
+            if not infinite:
                 finished += 1
-            else:
-                acc[mid][kind].append(
-                    CallResult(
-                        content=res.content, exc=res.exc, latency_s=res.latency_s
+                if finished >= total_runners:
+                    break
+            continue
+        ts_now = datetime.now(UTC)
+        if res.ok:
+            rec_ok = StreamRecordOK(
+                ts=ts_now,
+                model=mid,
+                family=family_of(mid).value,
+                kind=kind,
+                ok=True,
+                latency_s=res.latency_s,
+                tags=tags or None,
+            )
+            raw = res.raw
+            if raw is not None:
+                rec_ok.response = (
+                    raw.model_dump(exclude_none=False)
+                    if hasattr(raw, "model_dump")
+                    else raw
+                )
+            print(rec_ok.model_dump_json(), flush=True)
+        else:
+            classification = res.error_classification
+            rec_err = StreamRecordError(
+                ts=ts_now,
+                model=mid,
+                family=family_of(mid).value,
+                kind=kind,
+                ok=False,
+                error=ErrorInfo(
+                    type=(type(res.exc).__name__ if res.exc is not None else None),
+                    message=res.error_message,
+                    status_code=(
+                        getattr(res.exc, "status_code", None)
+                        if res.exc is not None
+                        else None
                     ),
-                )
-                if not res.ok:
-                    msg = msg_from_exc(res.exc)
-                    code, desc = classify_error(msg)
-                    if code != ErrorCode.OTHER:
-                        used_codes.setdefault(code.value, desc)
-
-            in_flight = total_models - completed_models
-            new_table = make_results_table(
-                title=f"OK models — in-flight remaining: {in_flight}",
-                header_style="bold magenta",
-                model_ratio=6,
-            )
-
-            def render_row(table: Table, r: ModelProbe, end_section: bool):
-                rcell, rcode, rdesc = build_cell(r.responses.calls)
-                ccell, ccode, cdesc = build_cell(r.chat.calls)
-                if rcode and rdesc:
-                    used_codes.setdefault(
-                        rcode.value if isinstance(rcode, ErrorCode) else str(rcode),
-                        rdesc,
-                    )
-                if ccode and cdesc:
-                    used_codes.setdefault(
-                        ccode.value if isinstance(ccode, ErrorCode) else str(ccode),
-                        cdesc,
-                    )
-                table.add_row(
-                    r.model_id,
-                    rcell or "",
-                    ccell or "",
-                    end_section=end_section,
-                )
-
-            # Render merged per-model rows when both kinds have any arrivals (success or error)
-            both_arrived: list[ModelProbe] = []
-            for mid2 in filtered:
-                r_calls = acc[mid2]["responses"]
-                c_calls = acc[mid2]["chat"]
-                if r_calls and c_calls:
-                    both_arrived.append(
-                        ModelProbe(
-                            model_id=mid2,
-                            responses=ProbeRun(model_id=mid2, calls=r_calls),
-                            chat=ProbeRun(model_id=mid2, calls=c_calls),
-                        ),
-                    )
-            both_arrived.sort(
-                key=lambda r: (
-                    priority_index(r.model_id),
-                    latency_both_key(r),
-                    r.model_id,
+                    body=(
+                        getattr(res.exc, "body", None) if res.exc is not None else None
+                    ),
+                    request_id=(
+                        getattr(res.exc, "request_id", None)
+                        if res.exc is not None
+                        else None
+                    ),
+                    code=(classification[0].value if classification else None),
                 ),
+                tags=tags or None,
             )
-            for r, end_section in iter_with_break(
-                both_arrived,
-                lambda x: family_of(x.model_id).value,
-            ):
-                render_row(new_table, r, end_section)
-
-            resp_table = make_results_table(
-                title="Responses arrived; Chat waiting",
-                header_style="bold magenta",
-                model_ratio=3,
-            )
-
-            chat_table = make_results_table(
-                title="Chat arrived; Responses waiting",
-                header_style="bold magenta",
-                model_ratio=3,
-            )
-
-            partials_resp: list[tuple[str, str, str]] = []
-            partials_chat: list[tuple[str, str, str]] = []
-            for mid3, pair in acc.items():
-                rpart = pair["responses"]
-                cpart = pair["chat"]
-                # Exactly one side has arrivals → partials; avoid duplicating rows present in the merged table
-                if len(rpart) > 0 and len(cpart) == 0:
-                    rc, rcode, rdesc = build_cell(rpart)
-                    if rcode and rdesc:
-                        used_codes.setdefault(
-                            rcode.value if isinstance(rcode, ErrorCode) else str(rcode),
-                            rdesc,
-                        )
-                    partials_resp.append((mid3, rc, "[yellow]waiting…[/yellow]"))
-                if len(cpart) > 0 and len(rpart) == 0:
-                    cc, ccode, cdesc = build_cell(cpart)
-                    if ccode and cdesc:
-                        used_codes.setdefault(
-                            ccode.value if isinstance(ccode, ErrorCode) else str(ccode),
-                            cdesc,
-                        )
-                    partials_chat.append((mid3, "[yellow]waiting…[/yellow]", cc))
-
-            partials_resp.sort(key=partials_sort_key("responses"))
-            partials_chat.sort(key=partials_sort_key("chat"))
-
-            if partials_resp:
-                for (mid4, rc, cc), end_section in iter_with_break(
-                    partials_resp,
-                    lambda x: family_of(x[0]).value,
-                ):
-                    resp_table.add_row(mid4, rc, cc, end_section=end_section)
-            if partials_chat:
-                for (mid5, rc, cc), end_section in iter_with_break(
-                    partials_chat,
-                    lambda x: family_of(x[0]).value,
-                ):
-                    chat_table.add_row(mid5, rc, cc, end_section=end_section)
-
-            others_all = sorted(
-                [mid6 for mid6 in filtered if family_of(mid6) == Family.OTHER],
-            )
-            others_table = make_results_table(
-                title="Other models (unclassified)",
-                header_style="bold magenta",
-                model_ratio=3,
-            )
-            for mid7 in others_all:
-                rc, _, _ = build_cell(acc[mid7]["responses"])
-                cc, _, _ = build_cell(acc[mid7]["chat"])
-                others_table.add_row(mid7, rc, cc)
-
-            live.update(Group(new_table, resp_table, chat_table, others_table))
-
-    console.print()
-    if fails:
-        fails.sort(key=lambda r: (family_of(r.model_id).value, r.model_id))
-        fail_table = Table(
-            show_header=True,
-            header_style="bold red",
-            title="Failures",
-            expand=True,
-            box=box.SIMPLE,
-        )
-        fail_table.add_column(
-            "Model",
-            overflow="ellipsis",
-            no_wrap=True,
-            ratio=3,
-            header_style="bold",
-        )
-        fail_table.add_column("Responses", overflow="ellipsis", no_wrap=True, ratio=2)
-        fail_table.add_column("Chat", overflow="ellipsis", no_wrap=True, ratio=2)
-        for i, r in enumerate(fails):
-            rcell, rcode, rdesc = build_cell(r.responses.calls)
-            ccell, ccode, cdesc = build_cell(r.chat.calls)
-            if rcode and rdesc:
-                used_codes.setdefault(
-                    rcode.value if isinstance(rcode, ErrorCode) else str(rcode), rdesc
-                )
-            if ccode and cdesc:
-                used_codes.setdefault(
-                    ccode.value if isinstance(ccode, ErrorCode) else str(ccode), cdesc
-                )
-            nxt = family_of(fails[i + 1].model_id).value if i + 1 < len(fails) else None
-            curr = family_of(r.model_id).value
-            end_section = nxt is not None and nxt != curr
-            fail_table.add_row(r.model_id, rcell, ccell, end_section=end_section)
-        console.print(fail_table)
-        console.print()
-    bad_count = len(fails)
-    console.print(
-        f"[green]Success (any ok):[/green] {len(oks)}  |  [red]Failed (both failed):[/red] {bad_count}",
-    )
-
-    if used_codes:
-        legend = Table(
-            show_header=True,
-            header_style="bold cyan",
-            title="Legend (error codes)",
-            expand=True,
-            box=box.SIMPLE,
-        )
-        legend.add_column("Code")
-        legend.add_column("Meaning", overflow="fold")
-        for code_str, meaning in sorted(used_codes.items()):
-            legend.add_row(code_str, meaning)
-        console.print(legend)
+            print(rec_err.model_dump_json(), flush=True)
 
 
 # ---------- Textual TUI (interactive, refreshing) --------------------------
@@ -986,8 +977,8 @@ class ProbeTUI(App):
             ordered.append(Family.OTHER)
         self.family_choices: list[Family | None] = [None, *ordered]  # None = ALL
         self.family_idx = 0
-        # Accumulators/state (mirrors consume_stream_rich)
-        self.acc: dict[str, dict[str, list[CallResult]]] = {
+        # Accumulators/state used for the TUI view
+        self.acc: dict[str, dict[str, list[ProbeResult]]] = {
             mid: {"responses": [], "chat": []} for mid in filtered
         }
         self.done_flags: dict[str, dict[str, bool]] = {
@@ -1008,6 +999,8 @@ class ProbeTUI(App):
         yield Footer()
 
     async def on_mount(self) -> None:
+        # Load past cached results before we start (do not swallow errors)
+        self._load_past_results()
         # Start background reader that consumes events and updates the view
         self._reader_task = asyncio.create_task(self._reader_loop())
         # Initial render
@@ -1031,21 +1024,54 @@ class ProbeTUI(App):
                     self.finalized.add(mid)
                 self.finished += 1
             else:
-                self.acc[mid][kind].append(
-                    CallResult(
-                        content=res.content, exc=res.exc, latency_s=res.latency_s
-                    ),
-                )
+                self.acc[mid][kind].append(res)
+                # Persist event to cache (raise on failure)
+                _persist_result(res)
                 if not res.ok:
-                    msg = msg_from_exc(res.exc)
-                    code, desc = classify_error(msg)
-                    if code != ErrorCode.OTHER:
-                        self.used_codes.setdefault(code.value, desc)
-                    if code in FATAL_CODES:
-                        self.fatal_by_mid[mid] = True
+                    classification = res.error_classification
+                    if classification:
+                        code, desc = classification
+                        if code != ErrorCode.OTHER:
+                            self.used_codes.setdefault(code.value, desc)
+                        if code in FATAL_CODES:
+                            self.fatal_by_mid[mid] = True
             self._render_view()
         # Final render to include failure summary and legend
         self._render_view(final=True)
+
+    def _load_past_results(self) -> None:
+        """Load past JSONL events from the cache and hydrate current view state.
+
+        Only events for models present in this run (self.filtered) are applied.
+        """
+        if not _CACHE_FILE.exists():
+            return
+        with _CACHE_FILE.open("r", encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                raw = json.loads(line)
+                try:
+                    record = ProbeRecord.model_validate(raw)
+                except Exception:
+                    continue
+                mid = record.model
+                if mid not in self.filtered:
+                    continue
+                kind = record.kind
+                if kind not in ("responses", "chat"):
+                    continue
+                result = ProbeResult.from_record(record)
+                self.acc[mid][kind].append(result)
+                if not result.ok:
+                    classification = result.error_classification
+                    if classification:
+                        code, desc = classification
+                        if code != ErrorCode.OTHER:
+                            self.used_codes.setdefault(code.value, desc)
+                        if code in FATAL_CODES:
+                            self.fatal_by_mid[mid] = True
 
     def action_toggle_fatal(self) -> None:
         self.show_fatal = not self.show_fatal
@@ -1066,10 +1092,9 @@ class ProbeTUI(App):
 
     @property
     def current_family(self) -> Family | None:
-        try:
+        if 0 <= self.family_idx < len(self.family_choices):
             return self.family_choices[self.family_idx]
-        except Exception:
-            return None
+        return None
 
     def _filter_mid(self, mid: str) -> bool:
         fam_ok = (self.current_family is None) or (
@@ -1138,7 +1163,7 @@ class ProbeTUI(App):
         return min(vals) if vals else INF
 
     def _render_view(self, final: bool = False) -> None:
-        # Build tables similar to consume_stream_rich, but apply fatal filter
+        # Build tables for the TUI view, applying fatal filter
         # Visible set counts (respect current family + fatal filter)
         visible_mids = [mid for mid in self.filtered if self._filter_mid(mid)]
         total_models = len(visible_mids)
@@ -1354,6 +1379,164 @@ async def consume_stream_textual(
     await app.run_async()
 
 
+# ---------- History index (from cache) --------------------------------------
+
+
+class ModelHistory(BaseModel):
+    last_seen: datetime | None = None
+    last_ok: datetime | None = None
+
+
+def _parse_iso_ts(s: str | None) -> datetime | None:
+    if not s or not isinstance(s, str):
+        return None
+    return datetime.fromisoformat(s)
+
+
+def load_history_index() -> dict[str, ModelHistory]:
+    """Build a history index from the JSONL cache.
+
+    Returns per-model last_seen and last_ok UTC datetimes. Missing file yields empty index.
+    """
+    idx: dict[str, ModelHistory] = {}
+    if not _CACHE_FILE.exists():
+        return idx
+    with _CACHE_FILE.open("r", encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            rec = json.loads(line)
+            if not isinstance(rec, dict) or rec.get("type") != "event":
+                continue
+            mid = rec.get("model")
+            if not isinstance(mid, str):
+                continue
+            ts = _parse_iso_ts(rec.get("ts"))
+            ok = bool(rec.get("ok", False))
+            mh = idx.setdefault(mid, ModelHistory())
+            if ts and (mh.last_seen is None or ts > mh.last_seen):
+                mh.last_seen = ts
+            if ok and ts and (mh.last_ok is None or ts > mh.last_ok):
+                mh.last_ok = ts
+    return idx
+
+
+# ---------- Selection & rate limiting helpers -------------------------------
+
+
+def classify_model(
+    mid: str, hist: dict[str, "ModelHistory"], now: datetime
+) -> tuple[bool, bool]:
+    """Return (recent_ok, seen_recent) for a model based on history and constants.
+
+    - recent_ok: last OK within OK_LOOKBACK
+    - seen_recent: any event within MIN_INTERVAL (used to skip probing)
+    """
+    mh = hist.get(mid)
+    last_seen_recent = False
+    recent_ok = False
+    if mh and mh.last_seen is not None and mh.last_seen > now - MIN_INTERVAL:
+        last_seen_recent = True
+    if mh and mh.last_ok is not None and mh.last_ok > now - OK_LOOKBACK:
+        recent_ok = True
+    return recent_ok, last_seen_recent
+
+
+def select_models(
+    filtered: list[str], hist: dict[str, "ModelHistory"], now: datetime
+) -> tuple[list[str], list[str]]:
+    """Partition filtered models into (selected_fast, selected_slow).
+
+    - Fast: models recently OK and not seen within MIN_INTERVAL
+    - Slow: sample from others with probability SLOW_PROB (ensure at least one if any)
+    """
+    selected_fast: list[str] = []
+    selected_slow: list[str] = []
+    slow_pool: list[str] = []
+    for mid in filtered:
+        recent_ok, seen_recent = classify_model(mid, hist, now)
+        if seen_recent:
+            continue
+        if recent_ok:
+            selected_fast.append(mid)
+        else:
+            slow_pool.append(mid)
+            if random.random() < SLOW_PROB:
+                selected_slow.append(mid)
+    if slow_pool and not selected_slow:
+        selected_slow.append(random.choice(slow_pool))
+
+    selected_fast.sort(key=lambda m: (priority_index(m), m))
+    selected_slow.sort(key=lambda m: (priority_index(m), m))
+    return selected_fast, selected_slow
+
+
+def make_limiter(qps: float) -> AsyncLimiter:
+    qps = max(float(qps), 0.001)
+    return AsyncLimiter(int(qps), 1.0) if qps >= 1.0 else AsyncLimiter(1, 1.0 / qps)
+
+
+def parse_tags_cli(items: list[str]) -> dict[str, str]:
+    out: dict[str, str] = {}
+    for t in items:
+        if isinstance(t, str) and "=" in t:
+            k, v = t.split("=", 1)
+            if k:
+                out[k] = v
+    return out
+
+
+def build_models_summary(
+    filtered: list[str], hist: dict[str, "ModelHistory"]
+) -> list[dict[str, Any]]:
+    now = datetime.now(UTC)
+    summary: list[dict[str, Any]] = []
+    for mid in sorted(filtered, key=lambda m: (priority_index(m), m)):
+        ro, _ = classify_model(mid, hist, now)
+        summary.append(
+            {
+                "model": mid,
+                "family": family_of(mid).value,
+                "recent_ok": ro,
+            }
+        )
+    return summary
+
+
+def list_models_json(filtered: list[str], hist: dict[str, "ModelHistory"]) -> str:
+    return json.dumps(build_models_summary(filtered, hist), indent=2)
+
+
+def emit_models_listing(
+    summary: list[dict[str, Any]],
+    *,
+    tags: dict[str, str] | None = None,
+    persist: bool = False,
+) -> None:
+    if not summary:
+        return
+    ts = datetime.now(UTC)
+    tag_payload = tags or None
+    lines: list[str] = []
+    for info in summary:
+        record = ModelListRecord(
+            ts=ts,
+            model=info.get("model", ""),
+            family=str(info.get("family", "")),
+            recent_ok=bool(info.get("recent_ok", False)),
+            tags=tag_payload,
+        )
+        line = record.model_dump_json()
+        print(line, flush=True)
+        lines.append(line)
+    if persist and lines:
+        _ensure_cache_dir()
+        with _CACHE_FILE.open("a", encoding="utf-8") as fh:
+            for line in lines:
+                fh.write(line + "\n")
+
+
 # ---------- Runner orchestration -------------------------------------------
 
 
@@ -1388,23 +1571,39 @@ async def run_probe_series(
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Filter and test OpenAI models")
+    desc = (
+        "Filter and test OpenAI models with a smart, history‑aware policy.\n\n"
+        "Default behavior: prioritize models recently OK (from cache), slowly sample others;\n"
+        "skip models seen very recently; apply fast/slow QPS and repeats.\n\n"
+        "Run modes:\n"
+        "  - TUI (default): live Rich/Textual tables with grouped stats.\n"
+        "  - --stream: print JSONL events suitable for Loki/Grafana (no summary).\n"
+        "  - --list-models: print filtered models with recent_ok flag and exit.\n"
+    )
+    epilog = (
+        "Examples:\n"
+        "  adgn-openai-probe --list-models\n"
+        "  adgn-openai-probe --stream --tag env=prod --tag job=openai-probe\n"
+        "  adgn-openai-probe -c 64 -r 5 --stream\n"
+    )
+    parser = argparse.ArgumentParser(
+        description=desc,
+        epilog=epilog,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     parser.add_argument(
         "--sample", type=int, default=0, help="Randomly sample N models (0 = use all)"
     )
     parser.add_argument(
-        "--concurrency", "-c", type=int, default=128, help="Max concurrent requests"
+        "--concurrency", type=int, default=128, help="Max concurrent requests"
     )
     parser.add_argument(
         "--repeats",
-        "-r",
         type=int,
         default=5,
         help="Repeats per probe per model (default: 5)",
     )
-    parser.add_argument(
-        "--max-qps", "-q", type=float, default=0.3, help="Global max QPS"
-    )
+    parser.add_argument("--max-qps", type=float, default=0.3, help="Global max QPS")
     parser.add_argument(
         "--family",
         type=str,
@@ -1426,101 +1625,205 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Start with models that had a fatal error visible (toggle with 'f')",
     )
+    parser.add_argument(
+        "--tag",
+        action="append",
+        default=[],
+        metavar="KEY=VALUE",
+        help="Add a tag key=value to JSON output (repeatable)",
+    )
+    parser.add_argument(
+        "--list-models",
+        action="store_true",
+        help="List models (after filters) with history classification and exit",
+    )
     return parser.parse_args(argv)
 
 
 async def _async_main() -> None:
     args = parse_args()
-    # Global limiter; support fractional QPS via the time window
-    qps = float(args.max_qps)
-    if qps <= 0:
-        qps = 1.0
-    limiter = AsyncLimiter(int(qps), 1.0) if qps >= 1.0 else AsyncLimiter(1, 1.0 / qps)
+    # Smart policy uses separate fast/slow limiters; no single global limiter here
 
-    async_client = AsyncOpenAI()
-    print("Fetching model list …", file=sys.stderr)
+    tag_map = parse_tags_cli(args.tag)
+    async_client = _factory_async_client()
+    if not args.stream:
+        print("Fetching model list …", file=sys.stderr)
     resp = await async_client.models.list()
     model_ids = [m.id for m in resp.data]
-    print(f"Total models from API: {len(model_ids)}", file=sys.stderr)
+    if not args.stream:
+        print(f"Total models from API: {len(model_ids)}", file=sys.stderr)
 
     # Filtering
     filtered = [mid for mid in model_ids if not is_excluded(mid)]
     if args.family:
         filtered = [mid for mid in filtered if family_of(mid).value == args.family]
-    print(f"After filtering rules: {len(filtered)}", file=sys.stderr)
+    if not args.stream:
+        print(f"After filtering rules: {len(filtered)}", file=sys.stderr)
+
+    # History-driven classification
+    hist = load_history_index()
+
+    if args.list_models:
+        summary = build_models_summary(filtered, hist)
+        emit_models_listing(summary, tags=tag_map, persist=True)
+        return
 
     # Optional sampling
     if args.sample and args.sample < len(filtered):
         filtered = random.sample(filtered, args.sample)
-        print(f"Sub-sampled to {len(filtered)} models (random)", file=sys.stderr)
-
-    # Probe specs
-    responses_spec = ProbeSpec(
-        name="responses", create=_create_responses, snippet=_snippet_from_responses
-    )
-    chat_spec = ProbeSpec(name="chat", create=_create_chat, snippet=_snippet_from_chat)
-
-    sem = asyncio.Semaphore(max(args.concurrency, 1))
-
-    # Prioritized order using family heuristic
-    prioritized = sorted(filtered, key=lambda mid: (priority_index(mid), mid))
-
-    # Launch one runner per (kind, model); each runner sequences repeats and stops on fatal
-    out_q: asyncio.Queue[Event] = asyncio.Queue()
-    runners: list[asyncio.Task] = []
-    repeats_effective: int | None = (
-        None if args.continuous else max(int(args.repeats), 1)
-    )
-    for mid in prioritized:
-        runners.append(
-            asyncio.create_task(
-                run_probe_series(
-                    kind="responses",
-                    model_id=mid,
-                    spec=responses_spec,
-                    repeats=repeats_effective,
-                    sem=sem,
-                    limiter=limiter,
-                    client=async_client,
-                    out_q=out_q,
-                )
-            )
-        )
-        runners.append(
-            asyncio.create_task(
-                run_probe_series(
-                    kind="chat",
-                    model_id=mid,
-                    spec=chat_spec,
-                    repeats=repeats_effective,
-                    sem=sem,
-                    limiter=limiter,
-                    client=async_client,
-                    out_q=out_q,
-                )
-            )
-        )
-
-    total_runners = len(runners)
+        if not args.stream:
+            print(f"Sub-sampled to {len(filtered)} models (random)", file=sys.stderr)
 
     if args.stream:
-        await consume_stream_jsonl(out_q, total_runners, filtered)
-    else:
-        # repeats value is not used for logic; pass a nonzero int for display
-        disp_repeats = max(int(args.repeats), 1)
-        await consume_stream_textual(
-            out_q,
-            total_runners,
-            filtered,
-            repeats=disp_repeats,
-            show_fatal=bool(getattr(args, "show_fatal", False)),
-        )
+        summary_for_stream = build_models_summary(filtered, hist)
+        emit_models_listing(summary_for_stream, tags=tag_map, persist=True)
 
-    await asyncio.gather(*runners, return_exceptions=True)
+    # Probe specs
+    responses_spec = ProbeSpec(name="responses", create=_create_responses)
+    chat_spec = ProbeSpec(name="chat", create=_create_chat)
+
+    if args.stream and args.continuous:
+        # Functional, low-state continuous schedulers
+        sem = asyncio.Semaphore(max(args.concurrency, 1))
+        limiter_fast = make_limiter(FAST_QPS)
+        limiter_slow = make_limiter(SLOW_QPS)
+        current_models = list(filtered)
+
+        async def models_refresher() -> None:
+            nonlocal current_models, hist
+            while True:
+                await asyncio.sleep(21600)  # refresh every 6 hours
+                resp2 = await async_client.models.list()
+                mids = [m.id for m in resp2.data]
+                mids = [mid for mid in mids if not is_excluded(mid)]
+                if args.family:
+                    mids = [mid for mid in mids if family_of(mid).value == args.family]
+                current_models = mids
+                hist = load_history_index()
+                summary_refresh = build_models_summary(mids, hist)
+                emit_models_listing(summary_refresh, tags=tag_map, persist=True)
+
+        def eligible(now_dt: datetime, mid: str, want_fast: bool) -> bool:
+            ro, seen_recent = classify_model(mid, hist, now_dt)
+            if seen_recent:
+                return False
+            return ro if want_fast else not ro
+
+        slow_rr: dict[str, int] = {"responses": 0, "chat": 0}
+
+        async def scheduler(kind: str, limiter: AsyncLimiter, want_fast: bool) -> None:
+            spec = responses_spec if kind == "responses" else chat_spec
+            while True:
+                async with limiter:
+                    now_dt = datetime.now(UTC)
+                    mids = [m for m in current_models if eligible(now_dt, m, want_fast)]
+                    if not mids:
+                        continue
+                    if want_fast:
+                        pick = random.choice(mids)
+                    else:
+                        mids_sorted = sorted(mids, key=lambda m: (priority_index(m), m))
+                        idx = slow_rr[kind] % len(mids_sorted)
+                        slow_rr[kind] += 1
+                        pick = mids_sorted[idx]
+                    async with sem:
+                        res = await _probe_once(
+                            async_client,
+                            model_id=pick,
+                            spec=spec,
+                            limiter=make_limiter(10_000),  # outer limiter gates QPS
+                        )
+                    # Update history index from result
+                    ts_now = datetime.now(UTC)
+                    mh = hist.setdefault(pick, ModelHistory())
+                    mh.last_seen = ts_now
+                    if res.ok:
+                        mh.last_ok = ts_now
+                    # Emit event
+                    await stream_q.put((kind, pick, res))
+
+        stream_q: asyncio.Queue[Event] = asyncio.Queue()
+        asyncio.create_task(models_refresher())
+        asyncio.create_task(scheduler("responses", limiter_fast, True))
+        asyncio.create_task(scheduler("chat", limiter_fast, True))
+        asyncio.create_task(scheduler("responses", limiter_slow, False))
+        asyncio.create_task(scheduler("chat", limiter_slow, False))
+        # Stream indefinitely
+        await consume_stream_jsonl(
+            stream_q, 0, current_models, tags=tag_map, infinite=True
+        )
+    else:
+        # Fallback to original per-model run for TUI / non-continuous
+        sem = asyncio.Semaphore(max(args.concurrency, 1))
+        prioritized = sorted(filtered, key=lambda mid: (priority_index(mid), mid))
+        event_q: asyncio.Queue[Event] = asyncio.Queue()
+        runners: list[asyncio.Task] = []
+        repeats_effective: int | None = (
+            None if args.continuous else max(int(args.repeats), 1)
+        )
+        for mid in prioritized:
+            runners.append(
+                asyncio.create_task(
+                    run_probe_series(
+                        kind="responses",
+                        model_id=mid,
+                        spec=responses_spec,
+                        repeats=repeats_effective,
+                        sem=sem,
+                        limiter=make_limiter(FAST_QPS),
+                        client=async_client,
+                        out_q=event_q,
+                    )
+                )
+            )
+            runners.append(
+                asyncio.create_task(
+                    run_probe_series(
+                        kind="chat",
+                        model_id=mid,
+                        spec=chat_spec,
+                        repeats=repeats_effective,
+                        sem=sem,
+                        limiter=make_limiter(FAST_QPS),
+                        client=async_client,
+                        out_q=event_q,
+                    )
+                )
+            )
+
+        total_runners = len(runners)
+        if args.stream:
+            await consume_stream_jsonl(event_q, total_runners, filtered, tags=tag_map)
+        else:
+            disp_repeats = max(int(args.repeats), 1)
+            await consume_stream_textual(
+                event_q,
+                total_runners,
+                filtered,
+                repeats=disp_repeats,
+                show_fatal=bool(getattr(args, "show_fatal", False)),
+            )
+
+        await asyncio.gather(*runners, return_exceptions=True)
 
 
 def main() -> None:
-    asyncio.run(_async_main())
+    async def start_health_server() -> None:
+        async def _health(request: web.Request) -> web.Response:  # type: ignore[override]
+            return web.Response(text="OK")
+
+        app = web.Application()
+        app.router.add_get(HEALTH_PATH, _health)
+        runner = web.AppRunner(app)
+        await runner.setup()
+        site = web.TCPSite(runner, host="0.0.0.0", port=HEALTH_PORT)
+        await site.start()
+
+    async def entry() -> None:
+        await start_health_server()
+        await _async_main()
+
+    asyncio.run(entry())
 
 
 if __name__ == "__main__":
