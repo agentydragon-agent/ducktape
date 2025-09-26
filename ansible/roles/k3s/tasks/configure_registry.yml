@@ -1,0 +1,58 @@
+---
+# Configure k3s nodes to use insecure registry
+
+- name: Create k3s registries config directory on all nodes
+  delegate_to: "{{ item.name }}"
+  ansible.builtin.file:
+    path: /etc/rancher/k3s
+    state: directory
+    mode: '0755'
+  become: true
+  loop: "{{ k3s_vms }}"
+  tags: [k3s, registry]
+
+- name: Configure insecure registry on all nodes
+  delegate_to: "{{ item.name }}"
+  ansible.builtin.copy:
+    content: |
+      mirrors:
+        "registry.registry.svc.cluster.local:5000":
+          endpoint:
+            - "http://registry.registry.svc.cluster.local:5000"
+    dest: /etc/rancher/k3s/registries.yaml
+    mode: '0644'
+  become: true
+  loop: "{{ k3s_vms }}"
+  register: registry_config
+  tags: [k3s, registry]
+
+- name: Restart k3s on master nodes if registry config changed
+  delegate_to: "{{ item.name }}"
+  ansible.builtin.systemd:
+    name: k3s
+    state: restarted
+  become: true
+  loop: "{{ k3s_vms | selectattr('role', 'equalto', 'master') | list }}"
+  when: registry_config.changed
+  tags: [k3s, registry]
+
+- name: Restart k3s-agent on worker nodes if registry config changed
+  delegate_to: "{{ item.name }}"
+  ansible.builtin.systemd:
+    name: k3s-agent
+    state: restarted
+  become: true
+  loop: "{{ k3s_vms | selectattr('role', 'equalto', 'worker') | list }}"
+  when: registry_config.changed
+  tags: [k3s, registry]
+
+- name: Wait for nodes to be ready after restart
+  delegate_to: "{{ (k3s_vms | selectattr('role', 'equalto', 'master') | first).name }}"
+  ansible.builtin.shell: |
+    kubectl get nodes
+  register: kubectl_result
+  until: kubectl_result.rc == 0
+  retries: 30
+  delay: 10
+  when: registry_config.changed
+  tags: [k3s, registry]

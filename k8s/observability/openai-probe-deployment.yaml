@@ -20,7 +20,7 @@ spec:
       restartPolicy: Always
       containers:
         - name: probe
-          image: registry.local/openai-probe:dev
+          image: registry.registry.svc.cluster.local:5000/openai-probe:latest
           imagePullPolicy: IfNotPresent
           env:
             - name: OPENAI_API_KEY
@@ -33,6 +33,10 @@ spec:
             - "64"
             - "--stream"
             - "--continuous"
+            - "--tag"
+            - "key_prefix=t9f"
+            - "--tag"
+            - "key_suffix=Wt5"
           ports:
             - name: health
               containerPort: 8080
