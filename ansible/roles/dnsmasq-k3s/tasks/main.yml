@@ -1,0 +1,48 @@
+---
+# Install and configure dnsmasq for k3s.local DNS resolution
+
+- name: Install dnsmasq
+  ansible.builtin.apt:
+    name: dnsmasq
+    state: present
+    update_cache: yes
+  become: true
+
+- name: Get primary network interface
+  ansible.builtin.set_fact:
+    primary_interface: "{{ ansible_default_ipv4.interface }}"
+
+- name: Configure dnsmasq for k3s.local
+  ansible.builtin.copy:
+    content: |
+      # k3s.local DNS configuration
+      # Listen only on primary interface to avoid conflicts
+      interface={{ primary_interface }}
+      bind-interfaces
+
+      # Listen on standard DNS port
+      port=53
+
+      # k3s wildcard - all services go to Traefik LoadBalancer IP
+      address=/k3s.local/10.0.200.100
+
+      # Don't forward k3s.local queries upstream
+      local=/k3s.local/
+
+      # Log DNS queries for debugging (optional)
+      # log-queries
+      # log-facility=/var/log/dnsmasq.log
+    dest: /etc/dnsmasq.d/k3s.conf
+    owner: root
+    group: root
+    mode: '0644'
+  become: true
+  notify: restart dnsmasq
+
+- name: Ensure dnsmasq is started and enabled
+  ansible.builtin.systemd:
+    name: dnsmasq
+    state: started
+    enabled: yes
+    daemon_reload: yes
+  become: true

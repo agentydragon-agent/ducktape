@@ -7,6 +7,7 @@ resources:
   - dashboard-provisioning.yaml
   - deployment.yaml
   - service.yaml
+  - ingress.yaml
 
 configMapGenerator:
   - name: grafana-dashboard-openai-probe

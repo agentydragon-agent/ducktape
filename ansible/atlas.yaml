@@ -114,6 +114,10 @@
         name: k3s
       tags: [k3s]
 
+    - import_role:
+        name: dnsmasq-k3s
+      tags: [dnsmasq, dns]
+
     # TODO
     # - import_role:
     #     name: gpu-passthrough

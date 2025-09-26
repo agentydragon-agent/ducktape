@@ -1,0 +1,43 @@
+---
+# Configure DNS forwarding for k3s.local domain
+# This uses systemd-resolved's per-interface DNS configuration via a systemd service
+
+- name: Get primary network interface
+  ansible.builtin.set_fact:
+    primary_interface: "{{ ansible_default_ipv4.interface }}"
+  when: ansible_default_ipv4 is defined
+
+- name: Create systemd service to configure DNS on boot
+  ansible.builtin.copy:
+    content: |
+      [Unit]
+      Description=Configure k3s.local DNS routing
+      After=network-online.target NetworkManager.service systemd-resolved.service
+      Wants=network-online.target
+
+      [Service]
+      Type=oneshot
+      RemainAfterExit=yes
+      ExecStart=/usr/bin/resolvectl dns {{ primary_interface }} 10.0.182.102
+      ExecStart=/usr/bin/resolvectl domain {{ primary_interface }} '~k3s.local'
+      Restart=on-failure
+      RestartSec=10
+
+      [Install]
+      WantedBy=multi-user.target
+    dest: /etc/systemd/system/k3s-dns-config.service
+    owner: root
+    group: root
+    mode: '0644'
+  become: true
+  when: primary_interface is defined
+  notify: reload systemd
+
+- name: Enable and start k3s-dns-config service
+  ansible.builtin.systemd:
+    name: k3s-dns-config
+    enabled: yes
+    state: started
+    daemon_reload: yes
+  become: true
+  when: primary_interface is defined
