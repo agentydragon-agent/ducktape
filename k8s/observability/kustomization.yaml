@@ -1,17 +1,11 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: observability
+
 resources:
-  - namespace.yaml
-  - loki-configmap.yaml
-  - loki-statefulset.yaml
-  - loki-service.yaml
-  - promtail-rbac.yaml
-  - promtail-configmap.yaml
-  - promtail-daemonset.yaml
-  - grafana-configmap-datasources.yaml
-  - grafana-pvc.yaml
-  - grafana-deployment.yaml
-  - grafana-service.yaml
-  - openai-probe-secret.yaml
-  - openai-probe-deployment.yaml
+  - base
+  - secrets
+  - loki
+  - promtail
+  - grafana
+  - openai-probe

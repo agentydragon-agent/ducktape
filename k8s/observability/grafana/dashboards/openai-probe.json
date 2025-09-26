@@ -1,0 +1,246 @@
+{
+  "dashboard": {
+    "title": "OpenAI Model Performance",
+    "uid": "openai-probe",
+    "timezone": "browser",
+    "refresh": "30s",
+    "time": {
+      "from": "now-1h",
+      "to": "now"
+    },
+    "templating": {
+      "list": [
+        {
+          "name": "family",
+          "type": "custom",
+          "current": {
+            "text": "gpt-5",
+            "value": "gpt-5"
+          },
+          "options": [
+            {"text": "gpt-5", "value": "gpt-5", "selected": true},
+            {"text": "gpt-4o", "value": "gpt-4o"},
+            {"text": "o-mini", "value": "o-mini"},
+            {"text": "o1", "value": "o1"},
+            {"text": "other", "value": "other"}
+          ],
+          "query": "gpt-5,gpt-4o,o-mini,o1,other",
+          "multi": false
+        },
+        {
+          "name": "time_range",
+          "type": "interval",
+          "current": {
+            "text": "1h",
+            "value": "1h"
+          },
+          "options": [
+            {"text": "15m", "value": "15m"},
+            {"text": "1h", "value": "1h", "selected": true},
+            {"text": "6h", "value": "6h"},
+            {"text": "24h", "value": "24h"},
+            {"text": "7d", "value": "7d"}
+          ],
+          "query": "15m,1h,6h,24h,7d",
+          "multi": false
+        }
+      ]
+    },
+    "panels": [
+      {
+        "title": "Model Performance Table - $family family",
+        "type": "table",
+        "gridPos": {"h": 12, "w": 24, "x": 0, "y": 0},
+        "targets": [
+          {
+            "refId": "ChatP50",
+            "expr": "quantile_over_time(0.5, {job=\"openai-probe\"} | json | family=\"$family\" | kind=\"chat\" | ok=\"true\" | unwrap latency_s [$time_range]) by (model)",
+            "format": "table",
+            "instant": true
+          },
+          {
+            "refId": "ChatP95",
+            "expr": "quantile_over_time(0.95, {job=\"openai-probe\"} | json | family=\"$family\" | kind=\"chat\" | ok=\"true\" | unwrap latency_s [$time_range]) by (model)",
+            "format": "table",
+            "instant": true
+          },
+          {
+            "refId": "ChatAvail",
+            "expr": "(sum by (model) (count_over_time({job=\"openai-probe\"} | json | family=\"$family\" | kind=\"chat\" | ok=\"true\" [$time_range])) / sum by (model) (count_over_time({job=\"openai-probe\"} | json | family=\"$family\" | kind=\"chat\" [$time_range]))) * 100",
+            "format": "table",
+            "instant": true
+          },
+          {
+            "refId": "RespP50",
+            "expr": "quantile_over_time(0.5, {job=\"openai-probe\"} | json | family=\"$family\" | kind=\"responses\" | ok=\"true\" | unwrap latency_s [$time_range]) by (model)",
+            "format": "table",
+            "instant": true
+          },
+          {
+            "refId": "RespP95",
+            "expr": "quantile_over_time(0.95, {job=\"openai-probe\"} | json | family=\"$family\" | kind=\"responses\" | ok=\"true\" | unwrap latency_s [$time_range]) by (model)",
+            "format": "table",
+            "instant": true
+          },
+          {
+            "refId": "RespAvail",
+            "expr": "(sum by (model) (count_over_time({job=\"openai-probe\"} | json | family=\"$family\" | kind=\"responses\" | ok=\"true\" [$time_range])) / sum by (model) (count_over_time({job=\"openai-probe\"} | json | family=\"$family\" | kind=\"responses\" [$time_range]))) * 100",
+            "format": "table",
+            "instant": true
+          },
+          {
+            "refId": "LastSeen",
+            "expr": "max by (model) (timestamp({job=\"openai-probe\"} | json | family=\"$family\" | ok=\"true\"))",
+            "format": "table",
+            "instant": true
+          }
+        ],
+        "transformations": [
+          {
+            "id": "merge"
+          },
+          {
+            "id": "organize",
+            "options": {
+              "renameByName": {
+                "model": "Model",
+                "Value #ChatP50": "Chat P50 (s)",
+                "Value #ChatP95": "Chat P95 (s)",
+                "Value #ChatAvail": "Chat Avail %",
+                "Value #RespP50": "Resp P50 (s)",
+                "Value #RespP95": "Resp P95 (s)",
+                "Value #RespAvail": "Resp Avail %",
+                "Value #LastSeen": "Last Success"
+              }
+            }
+          }
+        ],
+        "options": {
+          "sortBy": [
+            {
+              "desc": false,
+              "displayName": "Chat P50 (s)"
+            }
+          ]
+        },
+        "fieldConfig": {
+          "overrides": [
+            {
+              "matcher": {"id": "byName", "options": "Chat P50 (s)"},
+              "properties": [
+                {"id": "unit", "value": "s"},
+                {"id": "decimals", "value": 3},
+                {"id": "thresholds", "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {"color": "green", "value": null},
+                    {"color": "yellow", "value": 1},
+                    {"color": "red", "value": 3}
+                  ]
+                }}
+              ]
+            },
+            {
+              "matcher": {"id": "byName", "options": "Chat P95 (s)"},
+              "properties": [
+                {"id": "unit", "value": "s"},
+                {"id": "decimals", "value": 3}
+              ]
+            },
+            {
+              "matcher": {"id": "byName", "options": "Chat Avail %"},
+              "properties": [
+                {"id": "unit", "value": "percent"},
+                {"id": "decimals", "value": 1},
+                {"id": "thresholds", "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {"color": "red", "value": null},
+                    {"color": "yellow", "value": 80},
+                    {"color": "green", "value": 95}
+                  ]
+                }}
+              ]
+            },
+            {
+              "matcher": {"id": "byName", "options": "Resp P50 (s)"},
+              "properties": [
+                {"id": "unit", "value": "s"},
+                {"id": "decimals", "value": 3},
+                {"id": "thresholds", "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {"color": "green", "value": null},
+                    {"color": "yellow", "value": 1},
+                    {"color": "red", "value": 3}
+                  ]
+                }}
+              ]
+            },
+            {
+              "matcher": {"id": "byName", "options": "Resp P95 (s)"},
+              "properties": [
+                {"id": "unit", "value": "s"},
+                {"id": "decimals", "value": 3}
+              ]
+            },
+            {
+              "matcher": {"id": "byName", "options": "Resp Avail %"},
+              "properties": [
+                {"id": "unit", "value": "percent"},
+                {"id": "decimals", "value": 1},
+                {"id": "thresholds", "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {"color": "red", "value": null},
+                    {"color": "yellow", "value": 80},
+                    {"color": "green", "value": 95}
+                  ]
+                }}
+              ]
+            },
+            {
+              "matcher": {"id": "byName", "options": "Last Success"},
+              "properties": [
+                {"id": "unit", "value": "dateTimeFromNow"}
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "title": "Latency Trends - Top 5 Fastest Models",
+        "type": "timeseries",
+        "gridPos": {"h": 8, "w": 24, "x": 0, "y": 12},
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "topk(5, quantile_over_time(0.5, {job=\"openai-probe\"} | json | family=\"$family\" | kind=\"chat\" | ok=\"true\" | unwrap latency_s [5m]) by (model))",
+            "legendFormat": "{{model}} (chat)"
+          },
+          {
+            "refId": "B",
+            "expr": "topk(5, quantile_over_time(0.5, {job=\"openai-probe\"} | json | family=\"$family\" | kind=\"responses\" | ok=\"true\" | unwrap latency_s [5m]) by (model))",
+            "legendFormat": "{{model}} (resp)"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "s",
+            "decimals": 3,
+            "min": 0
+          }
+        },
+        "options": {
+          "legend": {
+            "displayMode": "list",
+            "placement": "right"
+          }
+        }
+      }
+    ],
+    "schemaVersion": 38,
+    "version": 1
+  },
+  "overwrite": true
+}
