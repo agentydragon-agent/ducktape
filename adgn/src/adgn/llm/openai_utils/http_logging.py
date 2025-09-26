@@ -28,7 +28,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-from openai import AsyncOpenAI, OpenAI
+from openai import AsyncOpenAI
 
 
 async def _log_write(path: Path, record: dict[str, Any]) -> None:
@@ -113,25 +113,3 @@ def make_logged_async_openai(log_path: Path | str) -> AsyncOpenAI:
         }
     )
     return AsyncOpenAI(http_client=http)
-
-
-def make_logged_openai(log_path: Path | str) -> OpenAI:
-    """Create a sync OpenAI client that logs raw HTTP traffic to log_path.
-
-    Note: This uses httpx.Client underneath; prefer the async variant in new code.
-    """
-    p = Path(log_path)
-
-    def _on_req(req: httpx.Request):  # pragma: no cover - HTTP hook
-        return httpx.run(_on_request(req, path=p))  # type: ignore[attr-defined]
-
-    def _on_resp(resp: httpx.Response):  # pragma: no cover - HTTP hook
-        return httpx.run(_on_response(resp, path=p))  # type: ignore[attr-defined]
-
-    http = httpx.Client(
-        event_hooks={
-            "request": [_on_req],
-            "response": [_on_resp],
-        }
-    )
-    return OpenAI(http_client=http)
