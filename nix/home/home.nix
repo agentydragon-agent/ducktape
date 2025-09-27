@@ -27,6 +27,9 @@ let
 
   solarizedLight = nix-colors.colorSchemes.solarized-light;
   solarizedDark = nix-colors.colorSchemes.solarized-dark;
+
+  # Custom packages
+  openai-codex = pkgs.callPackage ./packages/openai-codex.nix {};
 in
 {
   nixpkgs.config.allowUnfree = true;
@@ -71,7 +74,9 @@ in
     # Rust dev
     rustc cargo sccache
     # jscpd and madge are not in nixpkgs - install manually with: pnpm add -g jscpd madge
-    # Note: @openai/codex is not in nixpkgs - install manually with: pnpm add -g @openai/codex
+
+    # OpenAI Codex CLI
+    openai-codex
 
     # Development languages/compilers
     go
