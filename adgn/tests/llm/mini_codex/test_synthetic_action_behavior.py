@@ -6,7 +6,13 @@ from typing import Any
 
 from mcp import types as mcp_types
 from mcp.server.fastmcp import FastMCP
-from openai.types.responses import ResponseFunctionToolCall
+from adgn.llm.openai_utils.model import (
+    FunctionCallItem,
+    FakeOpenAIModel,
+    ResponsesResult,
+    Usage,
+    AssistantResponseMessage,
+)
 import pytest
 
 from adgn.llm.mcp.inproc_transport import make_inproc_slot_spec
@@ -57,13 +63,12 @@ class LocalInjectHandler(AutoHandler):
         # Produce a synthetic function_call output for this sampling step once
         if not self._fired:
             self._fired = True
-            fc = ResponseFunctionToolCall(
-                arguments=json.dumps(
-                    {"old_text": "HELLO_WORLD", "new_text": "GOODBYE_WORLD"},
-                ),
-                call_id="client:replace-1",
+            fc = FunctionCallItem(
                 name="mcp__spy__tool1",
-                type="function_call",
+                call_id="client:replace-1",
+                arguments=json.dumps(
+                    {"old_text": "HELLO_WORLD", "new_text": "GOODBYE_WORLD"}
+                ),
             )
             return Continue(Auto(), inserts_input=(fc,), skip_sampling=True)
         # After firing once, abort the turn to avoid infinite loops in tests
@@ -86,8 +91,14 @@ async def test_synthetic_function_call_local_tool(mode: str, responses_factory) 
     spec = make_inproc_slot_spec(_make_spy_server(counter))
 
     # Minimal sequence: no actual function_call from model (we use SyntheticAction)
-    seq = [responses_factory.make_assistant_text_response(text="done")]
-    client = responses_factory.make_fake_client(seq)
+    seq = [
+        ResponsesResult(
+            id="msg",
+            usage=Usage(input_tokens=0, output_tokens=1, total_tokens=1),
+            output=[AssistantResponseMessage(text="done")],
+        )
+    ]
+    client = FakeOpenAIModel(seq)
 
     injected_result = mcp_types.CallToolResult(
         content=[],

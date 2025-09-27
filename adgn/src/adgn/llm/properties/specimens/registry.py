@@ -164,15 +164,19 @@ def _repack_dir_with_mtime(src_dir: Path, out_archive: Path, mtime: int = 0) -> 
     out_archive.parent.mkdir(parents=True, exist_ok=True)
     tmp = out_archive.with_suffix(".tmp")
 
-    def _filter(ti: tarfile.TarInfo) -> tarfile.TarInfo:
+    def _filter(ti: tarfile.TarInfo) -> tarfile.TarInfo | None:
+        # Exclude VCS internals from archives to avoid permission issues and reduce size
+        # Skip any member whose path includes a '.git' segment
+        parts = ti.name.split("/")
+        if ".git" in parts:
+            return None
         ti.mtime = int(mtime)
-        ti.uid = 0
-        ti.gid = 0
-        ti.uname = ""
-        ti.gname = ""
+        # Preserve uid/gid; determinism here only requires pinned mtime
         return ti
 
     with tarfile.open(tmp, "w:gz", format=tarfile.PAX_FORMAT) as tf:
+        if os.environ.get("ADGN_DEBUG_SPECIMEN") == "1":
+            print(f"[specimen] repacking {src_dir} -> {out_archive} (filter .git, mtime={mtime})")
         tf.add(src_dir, arcname=Path(src_dir).name, filter=_filter)
     tmp.replace(out_archive)
 
@@ -231,6 +235,8 @@ def _create_archive_from_git(
         env=env,
     )
     try:
+        # Drop VCS internals to keep archives small and writable on extract
+        shutil.rmtree(tmpdir / ".git", ignore_errors=True)
         _repack_dir_with_mtime(tmpdir, out_archive, mtime=0)
         return True
     finally:
@@ -244,6 +250,8 @@ def ensure_archive_for_specimen_slug(
 ) -> Path:
     slug = manifest_path.parent.name
     out = _xdg_cache_base() / "by-slug" / f"{slug}.tar.gz"
+    if os.environ.get("ADGN_DEBUG_SPECIMEN") == "1":
+        print(f"[specimen] ensure_archive_for_specimen_slug slug={slug} out={out}")
     if out.exists():
         return out
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -381,7 +389,17 @@ class SpecimenRecord:
                     gitconfig,
                 )
                 with tarfile.open(archive, "r:gz") as tf:
-                    tf.extractall(mount_root)
+                    members = [m for m in tf.getmembers() if ".git" not in m.name.split("/")]
+                    if os.environ.get("ADGN_DEBUG_SPECIMEN") == "1":
+                        total = len(tf.getmembers())
+                        filtered = len(members)
+                        print(f"[specimen] extracting {archive} members={filtered}/{total} (filtered .git)")
+                    tf.extractall(mount_root, members=members)
+                    if os.environ.get("ADGN_DEBUG_SPECIMEN") == "1":
+                        git_dirs = list((mount_root).rglob(".git"))
+                        print(f"[specimen] post-extract .git dirs: {len(git_dirs)}")
+                        for p in git_dirs[:10]:
+                            print("   ", p)
             elif isinstance(self.manifest.source, LocalSource):
                 src = (self.manifest_path.parent / self.manifest.source.root).resolve()
                 # For local specimens, materialize directly into mount_root (no extra subdir)

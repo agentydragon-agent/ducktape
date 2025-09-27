@@ -17,14 +17,14 @@ Configuration (env or kwargs):
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
 import os
 import time
 from typing import Any, cast
 from urllib.parse import urlparse
 
-from mcp.server.fastmcp import FastMCP
-from pydantic import BaseModel, ConfigDict, TypeAdapter
+from adgn.llm.mcp._shared.fastmcp_helpers import SafeFastMCP
+from adgn.llm.mcp._shared.fastmcp_helpers import mcp_flat_model
+from pydantic import BaseModel, ConfigDict
 import requests
 
 
@@ -40,11 +40,16 @@ class MirrorError(RuntimeError):
     pass
 
 
+class EnsureMirrorAndSyncArgs(BaseModel):
+    url: str
+    model_config = ConfigDict(extra="forbid")
+
+
 class EnsureMirrorAndSyncResponse(BaseModel):
     owner: str
     repo: str
     mirror_path: str
-    mirror_updated: datetime  # API spec: string (date-time); parsed by Pydantic
+    mirror_updated: str  # API spec: string (date-time); we return as-is
 
     model_config = ConfigDict(extra="forbid")
 
@@ -162,7 +167,7 @@ def make_gitea_mirror_mcp(
     token: str | None = None,
     poll_interval_secs: float | None = None,
     poll_timeout_secs: float | None = None,
-) -> FastMCP:
+) -> SafeFastMCP:
     cfg = MirrorConfig(
         base_url=str(base_url or os.environ.get("GITEA_BASE_URL", "")),
         token=str(token or os.environ.get("GITEA_TOKEN", "")),
@@ -180,7 +185,7 @@ def make_gitea_mirror_mcp(
     if not cfg.base_url or not cfg.token:
         raise ValueError("Gitea mirror MCP requires GITEA_BASE_URL and GITEA_TOKEN")
 
-    server = FastMCP(
+    server = SafeFastMCP(
         "gitea_mirror",
         instructions=(
             "Host-side Gitea mirror manager. ensure_mirror_and_sync(url) will ensure a pull mirror "
@@ -188,15 +193,19 @@ def make_gitea_mirror_mcp(
         ),
     )
 
-    @server.tool(
+    @mcp_flat_model(
+        server,
         name="ensure_mirror_and_sync",
+        title="Ensure mirror and sync",
         description="Ensure a Gitea pull mirror exists and syncs",
         structured_output=True,
     )
-    def ensure_mirror_and_sync(url: str) -> EnsureMirrorAndSyncResponse:
+    def ensure_mirror_and_sync(
+        input: EnsureMirrorAndSyncArgs,
+    ) -> EnsureMirrorAndSyncResponse:
         owner = _resolve_owner(cfg.base_url, cfg.token)
-        repo = _derive_repo_name(url)
-        _ensure_mirror(cfg, url, owner, repo)
+        repo = _derive_repo_name(input.url)
+        _ensure_mirror(cfg, input.url, owner, repo)
         _trigger_sync(cfg, owner, repo)
         repo_data = _wait_for_update(cfg, owner, repo)
         mu = repo_data.get("mirror_updated")
@@ -204,12 +213,11 @@ def make_gitea_mirror_mcp(
             raise MirrorError(
                 "unexpected shape: Repository.mirror_updated (string) required"
             )
-        mirror_dt = TypeAdapter(datetime).validate_python(mu)
         return EnsureMirrorAndSyncResponse(
             owner=owner,
             repo=repo,
             mirror_path=f"{owner}/{repo}.git",
-            mirror_updated=mirror_dt,
+            mirror_updated=mu,
         )
 
     return server

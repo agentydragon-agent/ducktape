@@ -1,10 +1,13 @@
 from collections.abc import Iterator
 import json
 
-from mcp.server.fastmcp.exceptions import ToolError
 import pytest
 
 from adgn.llm.mcp.gitea_mirror import server as gitea_server
+from adgn.llm.mcp.gitea_mirror.server import (
+    EnsureMirrorAndSyncArgs,
+    EnsureMirrorAndSyncResponse,
+)
 
 
 class _DummyResponse:
@@ -55,7 +58,9 @@ def _extract_payload(result):
 
 
 @pytest.mark.asyncio
-async def test_tool_success_flow(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_tool_success_flow(
+    monkeypatch: pytest.MonkeyPatch, make_typed_mcp
+) -> None:
     post_calls: list[tuple[str, dict, dict]] = []
     get_sequence = iter(
         [
@@ -93,13 +98,12 @@ async def test_tool_success_flow(monkeypatch: pytest.MonkeyPatch) -> None:
         poll_timeout_secs=1,
     )
 
-    result = await server.call_tool(
-        "ensure_mirror_and_sync",
-        {"url": "https://example.com/org/repo.git"},
-    )
+    async with make_typed_mcp(server, "gitea_mirror") as (client, _):
+        res: EnsureMirrorAndSyncResponse = await client.ensure_mirror_and_sync(
+            EnsureMirrorAndSyncArgs(url="https://example.com/org/repo.git")
+        )
 
-    payload = _extract_payload(result)
-    assert payload == {
+    assert res.model_dump() == {
         "owner": "mirror-user",
         "repo": "example-com-org-repo",
         "mirror_path": "mirror-user/example-com-org-repo.git",
@@ -115,7 +119,9 @@ async def test_tool_success_flow(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_tool_bubbles_mirror_error(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_tool_bubbles_mirror_error(
+    monkeypatch: pytest.MonkeyPatch, make_typed_mcp
+) -> None:
     def fake_post(url: str, *, headers: dict, json: dict, timeout: int):  # type: ignore[override]
         if url.endswith("/repos/migrate"):
             return _DummyResponse(500, text="boom")
@@ -134,11 +140,12 @@ async def test_tool_bubbles_mirror_error(monkeypatch: pytest.MonkeyPatch) -> Non
         token="secret-token",
     )
 
-    with pytest.raises(ToolError):
-        await server.call_tool(
-            "ensure_mirror_and_sync",
-            {"url": "https://example.com/org/repo"},
+    async with make_typed_mcp(server, "gitea_mirror") as (client, _):
+        # Error assertion path: expect tool error and capture message
+        err_msg = await client.error("ensure_mirror_and_sync")(
+            EnsureMirrorAndSyncArgs(url="https://example.com/org/repo")
         )
+        assert "boom" in err_msg or "HTTP 500" in err_msg
 
 
 def test_make_mcp_requires_configuration() -> None:

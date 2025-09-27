@@ -14,7 +14,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
-from typing import TypeVar, cast
+from typing import TypeVar, cast, IO
 import uuid
 
 import click
@@ -209,23 +209,28 @@ class WtClient:
 
         env = os.environ.copy()
         env["WT_HANDSHAKE_FD"] = str(write_fd)
-        # Ensure PYTHONPATH contains project root so -m import works when running from tests
-        try:
-            project_root = str(Path(__file__).resolve().parents[2])
-            existing = env.get("PYTHONPATH", "")
-            env["PYTHONPATH"] = (
-                f"{project_root}:{existing}" if existing else project_root
-            )
-        except Exception:
-            pass
 
         # Launch daemon as a new session; do not inherit stdio; only the handshake FD is kept
+        log_file = None
+        # Explicitly annotate to satisfy mypy (Popen accepts int or IO[bytes])
+        stdout_dest: int | IO[bytes]
+        stderr_dest: int | IO[bytes]
         try:
+            # In test mode, capture daemon stdout/stderr to WT_DIR/daemon.log for diagnostics
+            if os.environ.get("WT_TEST_MODE") == "1":
+                log_path = Path(self.config.wt_dir) / "daemon.log"
+                log_file = open(log_path, "ab", buffering=0)
+                stdout_dest = log_file
+                stderr_dest = log_file
+            else:
+                stdout_dest = subprocess.DEVNULL
+                stderr_dest = subprocess.DEVNULL
+
             subprocess.Popen(  # noqa: ASYNC220
-                [sys.executable, "-m", "wt.server.wt_server"],
+                [sys.executable, "-m", "adgn.wt.server.wt_server"],
                 env=env,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+                stdout=stdout_dest,
+                stderr=stderr_dest,
                 start_new_session=True,
                 pass_fds=(write_fd,),
                 close_fds=True,
@@ -234,6 +239,10 @@ class WtClient:
             # Parent keeps only the read end; close write end in parent
             with contextlib.suppress(Exception):
                 os.close(write_fd)
+            if log_file is not None:
+                with contextlib.suppress(Exception):
+                    log_file.flush()
+                    log_file.close()
 
         # Store read pipe so _read_handshake_from_pipe can consume it
         self._handshake_pipe = read_fd

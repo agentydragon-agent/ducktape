@@ -10,6 +10,7 @@ import sys
 
 from .convert import RenderContext
 from .tana_lib import filter_open_issues, load_tana_export
+from .tana_lib.types import NodeId
 
 EXPECTED_ARGS = 2
 
@@ -37,7 +38,7 @@ def main():
     lines = ["%%tana%%"]
     ctx = RenderContext(store, "tana")
     for issue_id in issue_ids:
-        lines.extend(ctx.render_node(store[issue_id]))
+        lines.extend(ctx.render_node(store[NodeId(issue_id)]))
         lines.append("")  # Empty line between issues
 
     # Output to stdout

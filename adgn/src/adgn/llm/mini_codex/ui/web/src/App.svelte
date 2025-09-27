@@ -1,5 +1,33 @@
 <script lang="ts">
   import { onMount } from 'svelte'
+  import { marked } from 'marked'
+  import DOMPurify from 'dompurify'
+  // @ts-ignore - library ships no types
+  import JSONFormatter from 'json-formatter-js'
+
+  // Collapsible JSON view action for ToolJson items
+  function jsonView(node: HTMLElement, value: any) {
+    const prefersDark = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+    const render = (val: any) => {
+      node.innerHTML = ''
+      let parsed: any = null
+      if (val && typeof val === 'object') parsed = val
+      else if (typeof val === 'string') {
+        try { parsed = JSON.parse(val) } catch { parsed = null }
+      }
+      if (parsed && typeof parsed === 'object') {
+        const fmt = new (JSONFormatter as any)(parsed, 1, { theme: prefersDark ? 'dark' : undefined, hoverPreviewEnabled: true })
+        node.appendChild(fmt.render())
+      } else {
+        const pre = document.createElement('pre')
+        pre.className = 'pre'
+        pre.textContent = typeof val === 'string' ? val : String(val)
+        node.appendChild(pre)
+      }
+    }
+    render(value)
+    return { update: (v: any) => render(v) }
+  }
 
   type Pending = { call_id: string; tool_key: string; args_json?: string | null }
 
@@ -8,14 +36,22 @@
   let status: string = 'idle'
   let prompt = ''
   let pending = new Map<string, Pending>()
-  let transcript: any[] = []
   let mcpServers: string[] = []
   let lastError: string | null = null
   let messagesEl: HTMLDivElement | null = null
+  let promptEl: HTMLTextAreaElement | null = null
+  let renderMarkdown = true
+  let uiState: any = null
+
+  // Persist settings reactively
+  $: try { localStorage.setItem('renderMarkdown', JSON.stringify(renderMarkdown)) } catch {}
+
 
   function connect() {
-    const proto = location.protocol === 'https:' ? 'wss' : 'ws'
-    ws = new WebSocket(`${proto}://${location.host}/ws`)
+    const backend = (import.meta as any)?.env?.VITE_BACKEND_ORIGIN || window.location.origin
+    const wsProto = backend.startsWith('https') ? 'wss' : 'ws'
+    const wsUrl = backend.replace(/^https?/, wsProto) + '/ws'
+    ws = new WebSocket(wsUrl)
     ws.onopen = () => {
       connected = true
       sendJson({ type: 'hello' })
@@ -50,11 +86,29 @@
     switch (t) {
       case 'snapshot':
         mcpServers = (p.mcp_servers || []).map((s: any) => s.name)
-        if (Array.isArray(p.transcript)) {
-          transcript = p.transcript
-          requestAnimationFrame(() => { if (stickToBottom) scrollToBottom() })
-        }
         if (p.run_state?.status) status = p.run_state.status
+        // Seed pending approvals from snapshot
+        if (p.run_state?.pending_approvals?.length) {
+          const map = new Map<string, Pending>()
+          for (const a of p.run_state.pending_approvals) {
+            map.set(a.call_id, {
+              call_id: a.call_id,
+              tool_key: a.tool_key,
+              args_json: JSON.stringify(a.args)
+            })
+          }
+          pending = map
+        } else {
+          pending = new Map(pending)
+        }
+        break
+      case 'ui_state_snapshot':
+        uiState = p.state
+        requestAnimationFrame(() => { if (stickToBottom) scrollToBottom() })
+        break
+      case 'ui_state_updated':
+        uiState = p.state
+        requestAnimationFrame(() => { if (stickToBottom) scrollToBottom() })
         break
       case 'run_status':
         status = p.run_state?.status || status
@@ -64,8 +118,8 @@
       case 'tool_call':
       case 'function_call_output':
       case 'reasoning':
-        transcript = [...transcript, p]
-        requestAnimationFrame(() => { if (stickToBottom) scrollToBottom() })
+      case 'ui_message':
+        // Legacy per-event display path disabled; UiState drives rendering now
         break
       case 'approval_pending':
         pending.set(p.call_id, {
@@ -78,10 +132,7 @@
       case 'approval_decision':
         pending.delete(p.call_id)
         pending = new Map(pending)
-        transcript = [
-          ...transcript,
-          { type: 'approval_decision', call_id: p.call_id, decision: p.decision?.kind }
-        ]
+        // UiState-driven; no transcript update
         break
       case 'accepted':
         break
@@ -121,6 +172,8 @@
     }
   }
 
+  // Legacy seatbelt helpers removed; UI renders from UiState only
+
   // Track whether user is near the bottom; only autoscroll then
   let stickToBottom = true
   function onMessagesScroll() {
@@ -134,6 +187,12 @@
 
   onMount(() => {
     connect()
+    requestAnimationFrame(() => { promptEl?.focus() })
+    // Load persisted settings
+    try {
+      const s = localStorage.getItem('renderMarkdown')
+      if (s != null) renderMarkdown = JSON.parse(s) === true
+    } catch {}
   })
 </script>
 
@@ -144,25 +203,56 @@
     {/if}
 
     <div class="messages" bind:this={messagesEl} on:scroll={onMessagesScroll}>
-      {#if transcript.length === 0}
+      {#if !uiState || !(uiState.items && uiState.items.length)}
         <div class="empty">No messages yet.</div>
       {:else}
-        {#each transcript as item}
+        {#each uiState.items as it}
           <div class="msg">
-            <div class="kind">{item.type}</div>
-            {#if item.type === 'assistant_text' || item.type === 'user_text'}
-              <div class="text">{item.text}</div>
-            {:else if item.type === 'tool_call'}
-              <div class="tool">
-                <strong>{item.name}</strong>
-                {#if item.args_json}
-                  <pre class="pre">{prettyArgs(item.args_json)}</pre>
-                {/if}
-              </div>
-            {:else if item.type === 'function_call_output'}
-              <pre class="pre">{prettyArgs(item.output)}</pre>
-            {:else if item.type === 'approval_decision'}
-              <div>Decision: {item.decision}</div>
+            <div class="kind">{it.kind}</div>
+            {#if it.kind === 'UserMessage'}
+              <div class="text">{it.text}</div>
+            {:else if it.kind === 'AssistantMarkdown'}
+              {#if renderMarkdown}
+                <div class="text md">{@html DOMPurify.sanitize(marked.parse(it.md || ''))}</div>
+              {:else}
+                <div class="text">{it.md}</div>
+              {/if}
+            {:else if it.kind === 'Tool'}
+              {#if it.content?.content_kind === 'Exec'}
+                <div class="terminal">
+                  <div class="kind">{it.tool} {#if it.decision}<span class="term-approval">[{it.decision}]</span>{/if}</div>
+                  <div class="terminal-body">
+                    {#if it.content.cmd}
+                      <pre class="term-line">$ {it.content.cmd}</pre>
+                    {/if}
+                    {#if it.content.stdout}
+                      <pre class="term-stdout">{it.content.stdout}</pre>
+                    {/if}
+                    {#if it.content.stderr}
+                      <pre class="term-stderr">{it.content.stderr}</pre>
+                    {/if}
+                    {#if it.content.exit_code !== null && it.content.exit_code !== undefined}
+                      <div class="term-exit">[exit {it.content.exit_code}]</div>
+                    {/if}
+                  </div>
+                </div>
+              {:else if it.content?.content_kind === 'Json'}
+                <div class="tool">
+                  <strong>{it.tool} {#if it.decision}<span class="term-approval">[{it.decision}]</span>{/if}</strong>
+                  {#if it.content.args}
+                    <details>
+                      <summary>Arguments</summary>
+                      <div use:jsonView={it.content.args}></div>
+                    </details>
+                  {/if}
+                  {#if it.content.output}
+                    <details open>
+                      <summary>Output</summary>
+                      <div use:jsonView={it.content.output}></div>
+                    </details>
+                  {/if}
+                </div>
+              {/if}
             {/if}
           </div>
         {/each}
@@ -170,7 +260,18 @@
     </div>
 
     <form class="composer" on:submit|preventDefault={sendPrompt}>
-      <textarea bind:value={prompt} rows="3" placeholder="Type a prompt…" />
+      <textarea
+        bind:this={promptEl}
+        bind:value={prompt}
+        rows="3"
+        placeholder="Type a prompt… (Enter to send, Shift+Enter for newline)"
+        on:keydown={(e) => {
+          if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+            e.preventDefault();
+            sendPrompt();
+          }
+        }}
+      ></textarea>
       <button type="submit" disabled={!connected}>Send</button>
     </form>
   </section>
@@ -190,6 +291,14 @@
       {:else}
         <div class="empty">None</div>
       {/if}
+    </div>
+
+    <div class="settings">
+      <h4>Settings</h4>
+      <label><input type="checkbox" bind:checked={renderMarkdown}> Render assistant as Markdown</label>
+      <div class="row">
+        <button on:click={() => (lastError = null)} disabled={!lastError}>Clear error</button>
+      </div>
     </div>
 
     <div class="approvals">
@@ -218,7 +327,7 @@
 <style>
   :root { color-scheme: light dark; }
   * { box-sizing: border-box; }
-  body, html, #app { height: 100%; width: 100%; margin: 0; }
+  :global(body), :global(html), :global(#app) { height: 100%; width: 100%; margin: 0; }
 
   .shell {
     display: grid;
@@ -250,7 +359,20 @@
   .msg { border-bottom: 1px solid #eee; padding-bottom: 0.5rem; }
   .kind { font-size: 0.75rem; color: #666; }
   .text { white-space: pre-wrap; }
+  .text.md { white-space: normal; }
+  .text.md :where(pre, code) { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; }
   .pre { background: #f8f8f8; padding: 0.5rem; overflow: auto; max-height: 12rem; }
+
+  /* Terminal-style rendering */
+  .terminal .terminal-body { background: #111; color: #eee; border-radius: 6px; padding: 0.5rem; max-height: 18rem; overflow: auto; }
+  .terminal pre { margin: 0.25rem 0; white-space: pre-wrap; word-break: break-word; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.85rem; line-height: 1.35; }
+  .term-line { color: #9cdcfe; }
+  .term-stdout { color: #d4d4d4; }
+  .term-stderr { color: #f28b82; }
+  .term-exit { color: #8ab4f8; font-size: 0.75rem; margin: 0.1rem 0 0.4rem; }
+  .term-approval { color: #ffd54f; font-size: 0.8rem; margin: 0.1rem 0; }
+  .raw-toggle { margin-top: 0.5rem; }
+  .raw-label { font-size: 0.75rem; color: #aaa; margin: 0.25rem 0; }
 
   .composer {
     display: flex; gap: 0.5rem; padding: 0.5rem; border-top: 1px solid #eee;

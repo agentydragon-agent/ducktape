@@ -5,6 +5,7 @@ import pytest
 
 from ..conftest import kill_daemon_at_wt_dir
 from ..test_utils import run_cli_command
+from datetime import timedelta
 
 
 @pytest.fixture
@@ -34,7 +35,9 @@ def real_env_with_post_script(real_temp_repo, config_factory, tmp_path):
 def test_post_creation_script_runs(real_env_with_post_script):
     env, repo = real_env_with_post_script
     name = "hooked"
-    result = run_cli_command(["sh", "-c", name], env=env, timeout=15.0)
+    result = run_cli_command(
+        ["sh", "-c", name], env=env, timeout=timedelta(seconds=15.0)
+    )
     assert result.returncode == 0
     wt_path = Path(repo) / "worktrees" / name
     assert wt_path.exists()

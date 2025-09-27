@@ -1,40 +1,26 @@
 from __future__ import annotations
 
-import json
-
-from pydantic import TypeAdapter
 import pytest
 
-from adgn.llm.mcp.git_ro.server import LogInput, StatusPage, TextPage, TextSlice
+from adgn.llm.mcp.git_ro.server import LogInput, TextPage, TextSlice, StatusInput
 
 
 @pytest.mark.asyncio
-async def test_git_status_basic(git_ro_session) -> None:
-    async with git_ro_session() as session:
-        res = await session.call_tool(name="git_status", arguments={})
-        payload = res.structuredContent
-        if isinstance(payload, str):
-            payload = json.loads(payload)
-        sp = TypeAdapter(StatusPage).validate_python(payload)
-        assert isinstance(sp.entries, list)
+async def test_git_status_basic(typed_git_ro) -> None:
+    async with typed_git_ro() as (client, _):
+        sp = await client.git_status(StatusInput())
+        assert hasattr(sp, "entries") and isinstance(sp.entries, list)
 
 
 @pytest.mark.asyncio
-async def test_git_log_oneline_basic(git_ro_session) -> None:
-    async with git_ro_session() as session:
-        res = await session.call_tool(
-            name="git_log",
-            arguments={
-                "payload": LogInput(
-                    rev="HEAD",
-                    max_count=5,
-                    oneline=True,
-                    slice=TextSlice(offset_chars=0, max_chars=1000),
-                ),
-            },
+async def test_git_log_oneline_basic(typed_git_ro) -> None:
+    async with typed_git_ro() as (client, _):
+        tp: TextPage = await client.git_log(
+            LogInput(
+                rev="HEAD",
+                max_count=5,
+                oneline=True,
+                slice=TextSlice(offset_chars=0, max_chars=1000),
+            )
         )
-        payload = res.structuredContent
-        if isinstance(payload, str):
-            payload = json.loads(payload)
-        tp = TypeAdapter(TextPage).validate_python(payload)
         assert isinstance(tp.body, str)

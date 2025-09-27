@@ -1,3 +1,4 @@
+from datetime import timedelta
 import os
 from pathlib import Path
 import subprocess
@@ -21,6 +22,7 @@ def real_env_with_python_post_script(real_temp_repo, config_factory, tmp_path):
         """#!/usr/bin/env python3
 import sys, argparse
 from pathlib import Path
+from datetime import timedelta
 
 # Verify stdin is valid (raises if fd 0 is bad)
 sys.stdin.fileno()
@@ -72,7 +74,9 @@ def test_post_creation_python_script_runs(real_env_with_python_post_script, stdi
         None if stdin_mode == "open" else subprocess.DEVNULL
     )  # parent CLI stdin is /dev/null; daemon inherits this
 
-    result = run_cli_command(["sh", "-c", name], env=env, timeout=30.0, stdin=stdin)
+    result = run_cli_command(
+        ["sh", "-c", name], env=env, timeout=timedelta(seconds=30.0), stdin=stdin
+    )
 
     if stdin_mode == "open":
         assert result.returncode == 0, (

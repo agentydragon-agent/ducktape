@@ -89,8 +89,6 @@ asyncio.run(main())
 ## Notes
 - Output schemas are not always consumed by clients; still return typed models to enforce structure in tests and in‑proc flows.
 
-
-<\!-- Addendum merged from src/adgn_llm/instructions/fastmcp_pydantic.md on 2025-09-15T03:39:58Z -->
 # FastMCP + Pydantic: Typed tool I/O (canonical patterns)
 
 Scope

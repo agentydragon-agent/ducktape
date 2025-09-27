@@ -8,12 +8,20 @@
 from __future__ import annotations
 
 import asyncio
+import anyio
 from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
 import json
-from typing import Annotated, Any, Literal, Protocol, Union, cast
+import logging
+import importlib
+from mcp.server.fastmcp import FastMCP
+from typing import Annotated, Any, Literal, Union, cast
 
 from mcp import types as mcp_types
+from mcp import types as T
 from mcp.client.session import ClientSession
+from mcp import types as _mcp_types
+from mcp.shared.session import RequestResponder as _RequestResponder
+from typing import Awaitable as _Awaitable, Callable as _Callable
 from mcp.client.sse import sse_client
 from mcp.client.stdio import StdioServerParameters, stdio_client
 from mcp.types import InitializeResult
@@ -100,6 +108,11 @@ class McpManager:
         self._resource_version: dict[
             tuple[str, str], int
         ] = {}  # (server, uri) -> version counter
+        # Idle-drain accounting for client-initiated RPCs
+        self._inflight: int = 0
+        self._idle_event: asyncio.Event | None = None  # bound in __aenter__
+        # Closing latch to signal client teardown in progress
+        self._closing: bool = False
 
     async def _ensure_stack_entered(self) -> None:
         if not self._entered:
@@ -125,6 +138,17 @@ class McpManager:
             if spec is None:
                 raise KeyError(f"Unknown MCP server slot: {name}")
             slot = await spec.open(self._stack)
+            # Install transport-agnostic protocol notification handler on the client session
+            try:
+                self._install_session_message_handler(name, slot.session)
+            except Exception:
+                # Non-fatal: notifications fallback path may still work
+                pass
+            # Prime server-side session capture/flush (e.g., NotifyingFastMCP) by issuing a light list_tools
+            try:
+                await slot.session.list_tools()
+            except Exception:
+                pass
             self._realized[name] = slot
             return slot
 
@@ -134,17 +158,33 @@ class McpManager:
             self._entered = True
             # Create a lock bound to this running event loop; all ops must occur under this loop
             self._lock = asyncio.Lock()
+            self._idle_event = asyncio.Event()
+            self._idle_event.set()
             # Eagerly open all specs in the owner task; record failures immediately
             for name, spec in self._specs.items():
                 try:
                     if name not in self._realized:
-                        self._realized[name] = await spec.open(self._stack)
+                        slot = await spec.open(self._stack)
+                        try:
+                            self._install_session_message_handler(name, slot.session)
+                        except Exception:
+                            pass
+                        # Prime server-side session capture/flush (e.g., NotifyingFastMCP)
+                        try:
+                            await slot.session.list_tools()
+                        except Exception:
+                            pass
+                        self._realized[name] = slot
                 except Exception as e:
                     # Record error; subsequent ensure_open/get_server_initialize will surface it
                     self._open_errors[name] = str(e)
         return self
 
     async def __aexit__(self, exc_type, exc, tb) -> None:
+        # Mark closing and wait until no client-initiated RPCs remain before tearing down
+        # transports to avoid cancel-scope races. Block until idle to honor in-flight tool calls.
+        self._closing = True
+        await self.wait_idle(timeout=None)
         # Delegate shutdown entirely to the AsyncExitStack to ensure all contexts
         # (server task group, client session) are exited in the same task/cancel scope
         # they were entered in. Avoid pre-shutdown; let context managers unwind.
@@ -152,6 +192,42 @@ class McpManager:
             await self._stack.__aexit__(exc_type, exc, tb)
             self._entered = False
         self._realized.clear()
+
+    def is_closing(self) -> bool:
+        """Return True if manager shutdown is in progress."""
+        return self._closing
+
+    async def wait_idle(self, timeout: float | None = 1.0) -> None:
+        """Wait until there are no client-initiated RPCs in flight.
+
+        This guards against tearing down in-proc transports while background
+        request responders are unwinding their cancel scopes.
+        """
+        ev = self._idle_event
+        if ev is None:
+            return
+        if self._inflight == 0 and ev.is_set():
+            return
+        if timeout is None:
+            await ev.wait()
+            return
+        try:
+            await asyncio.wait_for(ev.wait(), timeout=timeout)
+        except asyncio.TimeoutError:
+            pass
+
+    def _inflight_begin(self) -> None:
+        ev = self._idle_event
+        self._inflight += 1
+        if ev is not None:
+            ev.clear()
+
+    def _inflight_end(self) -> None:
+        ev = self._idle_event
+        if self._inflight > 0:
+            self._inflight -= 1
+        if self._inflight == 0 and ev is not None:
+            ev.set()
 
     async def get_session(self, name: str) -> ClientSession:
         return (await self.ensure_open(name)).session
@@ -164,23 +240,27 @@ class McpManager:
     async def list_tools(self, only: list[str] | None = None) -> list[dict[str, Any]]:
         out: list[dict[str, Any]] = []
         targets = only or list(self._specs.keys())
-        for name in targets:
-            cached = self._tools_cache_by_server.get(name)
-            if cached is None:
-                sess = await self.get_session(name)
-                res = await sess.list_tools()
-                cached = [
-                    {
-                        "type": "function",
-                        "name": build_mcp_function(name, t.name),
-                        "description": t.description or "",
-                        "parameters": t.inputSchema,
-                    }
-                    for t in (res.tools or [])
-                ]
+        self._inflight_begin()
+        try:
+            for name in targets:
+                cached = self._tools_cache_by_server.get(name)
+                if cached is None:
+                    sess = await self.get_session(name)
+                    res = await sess.list_tools()
+                    cached = [
+                        {
+                            "type": "function",
+                            "name": build_mcp_function(name, t.name),
+                            "description": t.description or "",
+                            "parameters": t.inputSchema,
+                        }
+                        for t in (res.tools or [])
+                    ]
                 self._tools_cache_by_server[name] = cached
-            out.extend(cached)
-        return out
+                out.extend(cached)
+            return out
+        finally:
+            self._inflight_end()
 
     async def list_resources(
         self,
@@ -191,36 +271,42 @@ class McpManager:
         Each item: {server, uri, name?, description?, mime?, annotations?}
         """
         items: list[dict[str, Any]] = []
-        for server_name in only or list(self._specs.keys()):
-            # Skip the synthetic 'resources' server to avoid self-recursion
-            if server_name == "resources":
-                continue
-
-            # Check server capabilities from initialize; skip if resources unsupported
-            init = await self.get_server_initialize(server_name)
-            if not self._supports_resources_from_init(init):
-                continue
-
-            sess = await self.get_session(server_name)
-            res = await sess.list_resources()
-            for r in res.resources or []:
-                items.append(
-                    {
-                        "server": server_name,
-                        "uri": str(r.uri) if r.uri else None,
-                        "name": r.name,
-                        "description": r.description,
-                        "mime": r.mimeType,
-                        "annotations": r.annotations,
-                    },
-                )
-        return items
+        self._inflight_begin()
+        try:
+            for server_name in only or list(self._specs.keys()):
+                # Skip the synthetic 'resources' server to avoid self-recursion
+                if server_name == "resources":
+                    continue
+                # Check server capabilities from initialize; skip if resources unsupported
+                init = await self.get_server_initialize(server_name)
+                if not self._supports_resources_from_init(init):
+                    continue
+                sess = await self.get_session(server_name)
+                res = await sess.list_resources()
+                for r in res.resources or []:
+                    items.append(
+                        {
+                            "server": server_name,
+                            "uri": str(r.uri) if r.uri else None,
+                            "name": r.name,
+                            "description": r.description,
+                            "mime": r.mimeType,
+                            "annotations": r.annotations,
+                        },
+                    )
+            return items
+        finally:
+            self._inflight_end()
 
     async def read_resource(self, server: str, uri: str) -> Any:
         """Thin wrapper around ClientSession.read_resource(uri)."""
-        sess = await self.get_session(server)
-        # ClientSession.read_resource expects AnyUrl; inputs come as strings
-        return await sess.read_resource(cast(AnyUrl, uri))
+        self._inflight_begin()
+        try:
+            sess = await self.get_session(server)
+            # ClientSession.read_resource expects AnyUrl; inputs come as strings
+            return await sess.read_resource(cast(AnyUrl, uri))
+        finally:
+            self._inflight_end()
 
     @staticmethod
     def parse_args_json(args_json: str | None) -> dict[str, Any]:
@@ -248,20 +334,24 @@ class McpManager:
 
         Accepts either a dict (already parsed) or a raw JSON string; strings are parsed here.
         """
-        sess = await self.get_session(server)
-        if isinstance(arguments, dict):
-            args_dict = arguments
-        else:
-            try:
-                args_dict = self.parse_args_json(arguments)
-            except ValueError as e:
-                # Report as a failed tool call (structured error) instead of silently swallowing
-                return mcp_types.CallToolResult(
-                    content=[],
-                    isError=True,
-                    structuredContent={"ok": False, "error": str(e)},
-                )
-        return await sess.call_tool(name=name, arguments=args_dict)
+        self._inflight_begin()
+        try:
+            sess = await self.get_session(server)
+            if isinstance(arguments, dict):
+                args_dict = arguments
+            else:
+                try:
+                    args_dict = self.parse_args_json(arguments)
+                except ValueError as e:
+                    # Report as a failed tool call (structured error) instead of silently swallowing
+                    return mcp_types.CallToolResult(
+                        content=[],
+                        isError=True,
+                        structuredContent={"ok": False, "error": str(e)},
+                    )
+            return await sess.call_tool(name=name, arguments=args_dict)
+        finally:
+            self._inflight_end()
 
     async def call_tool_typed(
         self,
@@ -326,6 +416,49 @@ class McpManager:
         self._notif_tools_invalidated.clear()
         return batch
 
+    # ---- ClientSession message handler (transport-agnostic) ----
+    def _make_message_handler(
+        self, server_name: str
+    ) -> _Callable[
+        [
+            _RequestResponder[_mcp_types.ServerRequest, _mcp_types.ClientResult]
+            | _mcp_types.ServerNotification
+            | Exception
+        ],
+        _Awaitable[None],
+    ]:
+        async def _handler(message):
+            # Only care about server-originated notifications; forward resource updates into our buffer
+            if isinstance(message, _mcp_types.ServerNotification):
+                root = message.root
+                # ResourceUpdatedNotification (exact type) → buffer update
+                if (
+                    isinstance(root, T.ResourceUpdatedNotification)
+                    and hasattr(root, "params")
+                    and hasattr(root.params, "uri")
+                ):
+                    try:
+                        uri = str(root.params.uri)
+                        # Debug breadcrumb
+                        logger = logging.getLogger("adgn.mcp")
+                        logger.debug(
+                            "ResourceUpdatedNotification: %s %s", server_name, uri
+                        )
+                        self.notify_resource_updated(server_name, uri)
+                    except Exception as e:
+                        logging.getLogger("adgn.mcp").warning(
+                            "notify_resource_updated failed: %s", e
+                        )
+            await anyio.lowlevel.checkpoint()
+
+        return _handler
+
+    def _install_session_message_handler(
+        self, server_name: str, session: ClientSession
+    ) -> None:
+        # Fallback when not injected at construction time
+        setattr(session, "_message_handler", self._make_message_handler(server_name))
+
     # ---- Capability helpers ----
     @staticmethod
     def _supports_resources_from_init(init: InitializeResult) -> bool:
@@ -377,17 +510,6 @@ class McpManager:
         Field(discriminator="kind"),
     ]
 
-    class ResourcesReadRequest(BaseModel):
-        server: str
-        uri: str
-        start_offset: int = 0
-        max_bytes: int | None = None
-
-    class ResourcesReadResponse(BaseModel):
-        window: McpManager.Window
-        parts: list[McpManager.ResourcePart]
-        total_parts: int
-
     # ---- Resource helpers (typed) ----
     async def resources_list(
         self,
@@ -403,156 +525,6 @@ class McpManager:
             ]
         items = [self.ResourceItem(**it) for it in items_raw]
         return self.ResourcesListResponse(resources=items)
-
-    async def resources_read(
-        self,
-        req: McpManager.ResourcesReadRequest,
-    ) -> McpManager.ResourcesReadResponse:
-        res = await self.read_resource(req.server, req.uri)
-        contents = getattr(res, "contents", None) or []
-
-        # typed window build
-        class _Part(Protocol):
-            mimeType: str | None  # noqa: N815
-            text: str | None
-            data: str | None
-
-        parts_out: list[McpManager.ResourcePart] = []
-        contents = res.contents or []
-        for part in self._iter_window_parts(contents, req.start_offset, req.max_bytes):
-            if part["kind"] == "text":
-                parts_out.append(
-                    self.ResourcePartText(
-                        mime=part["mime"],
-                        text=part["text"],
-                        total_bytes=part["total_bytes"],
-                        bytes_returned=part["bytes_returned"],
-                    ),
-                )
-            else:
-                parts_out.append(
-                    self.ResourcePartBase64(
-                        mime=part["mime"],
-                        base64=part["base64"],
-                        total_bytes=part["total_bytes"],
-                        bytes_returned=part["bytes_returned"],
-                    ),
-                )
-        return self.ResourcesReadResponse(
-            window=self.Window(start_offset=req.start_offset, max_bytes=req.max_bytes),
-            parts=parts_out,
-            total_parts=len(contents),
-        )
-
-    async def resources_list_json(
-        self,
-        server_filter: str | None,
-        uri_prefix: str | None,
-    ) -> str:
-        resp = await self.resources_list(
-            self.ResourcesListRequest(server=server_filter, uri_prefix=uri_prefix),
-        )
-        return json.dumps(resp.model_dump(exclude_none=True), ensure_ascii=False)
-
-    @staticmethod
-    def _iter_window_parts(
-        contents: list[Any],
-        start_offset: int,
-        max_bytes: int | None,
-    ):
-        class _Part(Protocol):
-            mimeType: str | None  # noqa: N815
-            text: str | None
-            data: str | None
-
-        remaining: int | None = max_bytes if isinstance(max_bytes, int) else None
-        cursor = 0
-        for any_p in contents or []:
-            p = cast(_Part, any_p)
-            if isinstance(p.text, str):
-                raw = p.text.encode("utf-8")
-                total_len = len(raw)
-                if remaining is None or remaining > 0:
-                    start_in_part = max(0, start_offset - cursor)
-                    take_cap = remaining if isinstance(remaining, int) else total_len
-                    take = max(0, min(take_cap, total_len - start_in_part))
-                    if take > 0:
-                        chunk = raw[start_in_part : start_in_part + take]
-                        yield {
-                            "kind": "text",
-                            "mime": p.mimeType,
-                            "text": chunk.decode("utf-8", errors="replace"),
-                            "total_bytes": total_len,
-                            "bytes_returned": take,
-                        }
-                        if remaining is not None:
-                            remaining -= take
-            elif isinstance(p.data, str):
-                base = p.data
-                total_len = len(base)
-                if remaining is None or remaining > 0:
-                    start_in_part = max(0, start_offset - cursor)
-                    take_cap = remaining if isinstance(remaining, int) else total_len
-                    take = max(0, min(take_cap, total_len - start_in_part))
-                    if take > 0:
-                        yield {
-                            "kind": "base64",
-                            "mime": p.mimeType,
-                            "base64": base[start_in_part : start_in_part + take],
-                            "total_bytes": total_len,
-                            "bytes_returned": take,
-                        }
-                        if remaining is not None:
-                            remaining -= take
-            cursor += (
-                len(p.text.encode("utf-8"))
-                if isinstance(p.text, str)
-                else len(p.data or "")
-            )
-            if remaining is not None and remaining <= 0:
-                break
-
-    @staticmethod
-    def _build_resource_window(
-        contents: list[Any],
-        start_offset: int,
-        max_bytes: int | None,
-    ) -> dict[str, Any]:
-        parts_out: list[dict[str, Any]] = []
-        for part in McpManager._iter_window_parts(contents, start_offset, max_bytes):
-            parts_out.append(
-                {
-                    k: v
-                    for k, v in part.items()
-                    if k
-                    in {
-                        "kind",
-                        "mime",
-                        "text",
-                        "base64",
-                        "total_bytes",
-                        "bytes_returned",
-                    }
-                },
-            )
-        return {
-            "window": {"start_offset": start_offset, "max_bytes": max_bytes},
-            "parts": parts_out,
-            "total_parts": len(contents or []),
-        }
-
-    async def resources_read_json(
-        self,
-        server: str,
-        uri: str,
-        start_offset: int,
-        max_bytes: int | None,
-    ) -> str:
-        """Return JSON string for a resource read window payload (server, uri)."""
-        res = await self.read_resource(server, uri)
-        contents = res.contents or []
-        payload = self._build_resource_window(contents, start_offset, max_bytes)
-        return json.dumps(payload, ensure_ascii=False)
 
     @property
     def server_names(self) -> list[str]:
@@ -647,7 +619,11 @@ class McpManager:
                 @asynccontextmanager
                 async def _ctx():
                     read, write = await stack.enter_async_context(stdio_client(params))
-                    sess = ClientSession(read_stream=read, write_stream=write)
+                    sess = ClientSession(
+                        read_stream=read,
+                        write_stream=write,
+                        message_handler=self._make_message_handler(name),
+                    )
                     await stack.enter_async_context(sess)
                     try:
                         yield sess
@@ -659,12 +635,44 @@ class McpManager:
             return ServerSlotSpec(open_uninitialized=open_uninitialized)
 
         if transport == "inproc":
-            # Expect a FastMCP server object under key 'server'
+            # Accept either a FastMCP server object under 'server' or a dotted factory under 'factory'
             server_obj = spec.get("server")
             if server_obj is None:
+                factory_path = spec.get("factory")
+                if not isinstance(factory_path, str) or not factory_path:
+                    raise ValueError(
+                        "inproc transport requires either 'server' (FastMCP instance) or 'factory' (dotted path 'pkg.mod:make_server')",
+                    )
+                # Load callable: support 'pkg.mod:func' or 'pkg.mod.func'
+                if ":" in factory_path:
+                    mod_path, func_name = factory_path.split(":", 1)
+                else:
+                    mod_path, func_name = factory_path.rsplit(".", 1)
+                try:
+                    factory_mod = importlib.import_module(mod_path)
+                except Exception as e:
+                    raise ValueError(
+                        f"inproc factory import failed: module {mod_path!r} not importable: {e}. Hint: use 'pkg.mod:factory' or 'pkg.mod.factory'"
+                    ) from e
+                try:
+                    factory = getattr(factory_mod, func_name)
+                except Exception as e:
+                    raise ValueError(
+                        f"inproc factory missing callable {factory_path!r}: {e}. Hint: double-check the function name after ':' or '.'"
+                    ) from e
+                args = spec.get("args") or []
+                kwargs = spec.get("kwargs") or {}
+                if not isinstance(args, list) or not isinstance(kwargs, dict):
+                    raise ValueError(
+                        "inproc 'args' must be list and 'kwargs' must be object/dict when provided"
+                    )
+                server_obj = factory(*args, **kwargs)
+            # Type check: must be a FastMCP server instance
+            if not isinstance(server_obj, FastMCP):
                 raise ValueError(
-                    "inproc transport requires a 'server' FastMCP instance in spec",
+                    f"inproc server factory returned {type(server_obj).__name__}, expected FastMCP. Ensure your factory returns a FastMCP instance."
                 )
+            # Create in-proc slot; McpManager installs a transport-agnostic message handler at open-time
             return make_inproc_slot_spec(server_obj)
 
         if transport == "sse":
@@ -692,7 +700,11 @@ class McpManager:
                             sse_read_timeout=sse_read_timeout,
                         ),
                     )
-                    sess = ClientSession(read_stream=read, write_stream=write)
+                    sess = ClientSession(
+                        read_stream=read,
+                        write_stream=write,
+                        message_handler=self._make_message_handler(name),
+                    )
                     await stack.enter_async_context(sess)
                     try:
                         yield sess

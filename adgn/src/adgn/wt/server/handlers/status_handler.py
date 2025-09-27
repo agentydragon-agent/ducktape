@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 import logging
 from pathlib import Path
 import time
+import os
 
 from ...shared.configuration import Configuration
 from ...shared.protocol import (
@@ -38,6 +39,17 @@ logger = logging.getLogger(__name__)
 _bg_tasks: set[asyncio.Task] = set()
 
 
+def _log_task_done(t: asyncio.Task) -> None:
+    try:
+        exc = t.exception()
+        if exc:
+            logger.exception("background task failed", exc_info=exc)
+    except Exception:
+        logger.exception("failed to inspect background task exception")
+    finally:
+        _bg_tasks.discard(t)
+
+
 @rpc.method("get_status", params=StatusParams)
 async def get_status(
     status: StatusService,
@@ -63,7 +75,7 @@ async def get_status(
             logger.debug("Index empty; scheduling discovery run")
             t = asyncio.create_task(index.ensure_discovery())
             _bg_tasks.add(t)
-            t.add_done_callback(lambda tt: _bg_tasks.discard(tt))
+            t.add_done_callback(_log_task_done)
         worktree_paths = index.list_paths()
         if not worktree_paths:
             # Minimal safe fallback: include main repo to avoid empty UI when daemon just started
@@ -145,10 +157,24 @@ async def get_status(
                 _compute_status(worktree_path)
             )
             wt_info = index.get_by_path(worktree_path)
-            wtid_cached = (
-                wt_info.wtid if wt_info else make_worktree_id(worktree_path.name)
-            )
-            pr_info = prs.get_pr_info_cached(wtid_cached, branch_name)
+            if wt_info:
+                wtid_cached = wt_info.wtid
+            else:
+                # Fallback: find matching PR service by path when index not yet updated
+                svc_wtid = None
+                for svc in prs.values():
+                    if svc.worktree_info.path == worktree_path:
+                        svc_wtid = svc.worktree_info.wtid
+                        break
+                wtid_cached = svc_wtid or make_worktree_id(worktree_path.name)
+            pr_info = prs.get_pr_info_cached(wtid_cached)
+            # In WT_TEST_MODE, synchronously refresh once if PR cache not ready yet
+            if (
+                isinstance(pr_info, PRInfoDisabled)
+                and os.environ.get("WT_TEST_MODE") == "1"
+            ):
+                await prs.refresh_now(wtid_cached)
+                pr_info = prs.get_pr_info_cached(wtid_cached)
             prs.schedule_pr_refresh(wtid_cached, branch_name)
             is_cached = have_cache
             is_stale = bool(

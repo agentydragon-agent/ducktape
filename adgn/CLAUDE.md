@@ -1,10 +1,9 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to AI agents when working with code in the `adgn` package.
+It explains environment setup (direnv + devenv), how to run tests, lint, and the high‑level module layout.
 
-Scope: This document covers the adgn Python package located in this directory. It explains how to set up the environment (direnv + devenv), run tests, lint, and the high‑level module layout so you can be productive quickly.
-
-Environment and setup (direnv + devenv)
+## Environment and setup (direnv + devenv)
 - Requirements: Nix + devenv, direnv (recommended), Python 3.11+.
 - First time in this directory:
   - cd /Users/mpokorny/code/ducktape/adgn
@@ -12,44 +11,37 @@ Environment and setup (direnv + devenv)
   - This loads .envrc → devenv, creates a Python 3.11 venv, and installs the package in editable mode with dev extras ([project.optional-dependencies].dev).
 - Re-entering the shell later: just cd into adgn; direnv will activate the same environment.
 - How to tell if direnv is active (and which env):
-  - direnv status → shows the current .envrc and whether it’s loaded
-  - echo "$VIRTUAL_ENV" → should contain …/adgn/.devenv/state/venv
-  - which python → should resolve to …/adgn/.devenv/state/venv/bin/python
-  - You’ll also see a one-line “direnv: loading/unloading” message when entering/leaving the directory
+  - `direnv status` → shows current `.envrc` and whether it’s loaded
+  - `echo "$VIRTUAL_ENV"` → should contain …/adgn/.devenv/state/venv
+  - `which python` → should resolve to …/adgn/.devenv/state/venv/bin/python
+  - You’ll also see `direnv: loading/unloading` when entering/leaving the directory
 - Raw commands vs prefixing:
   - When direnv is active, devenv puts dev tools on PATH automatically — run tools directly: pytest, ruff check ., pre-commit run -a, rspcache, wt, etc. (no prefix needed inside adgn/)
-  - When running from outside the directory or in scripts, prefix with: direnv exec adgn <command>
+  - When running from outside the directory or in scripts, prefix with: `direnv exec adgn <command>`
 - Refresh the environment after edits:
   - devenv.nix/.envrc changes → direnv reload
   - pyproject.toml dependency changes → direnv reload (the shell will reinstall dev extras on entry); if needed: direnv exec adgn python -m pip install -e '.[dev]'
 
-Common commands
+## Common commands
 - Run all tests (pytest discovery is configured for adgn/tests):
-  - from repo root: direnv exec adgn pytest adgn/tests
-  - or from adgn/: pytest tests
-  - Note: parallel execution via pytest-xdist is enabled by default (see Pytest configuration below).
-- Run a single test file or test:
-  - pytest tests/tana_export/test_convert.py
-  - pytest tests/tana_export/test_convert.py::test_node_export
-  - pytest tests/wt/integration/test_cli_integration.py
-- Lint/format (ruff):
-  - ruff format .
-  - ruff check . --fix
+  - from repo root: `direnv exec adgn pytest adgn/tests`
+  - or from adgn/: `pytest tests`
+  - Note: parallel execution via `pytest-xdist` enabled by default (see Pytest configuration below).
+- Run a single test file or test: `pytest tests/tana_export/test_convert.py::test_node_export`
+- Lint/format (ruff): `ruff format .`, `ruff check . --fix`
 - Pre-commit (optional in this subpackage):
-  - pre-commit install
-  - pre-commit run -a
+  - `pre-commit install`
+  - `pre-commit run -a`
 - Install optional extras (example: GNOME console script deps):
-  - python -m pip install -e '.[gnome]'
-- Build a wheel/sdist (optional):
-  - python -m pip install build; python -m build
+  - `python -m pip install -e '.[gnome]'`
 
-Console scripts
+## Console scripts
 - switch_gnome_terminal_profile → adgn.gnome.switch_gnome_terminal_profile:run
 - rspcache → adgn.rspcache.cli:main
-- wt → wt.cli:main
-- wt-install → wt.shell.install:main
+- wt → adgn.wt.cli:main
+- wt-install → adgn.wt.shell.install:main
 
-Pytest configuration (from pyproject.toml)
+## Pytest configuration (from pyproject.toml)
 - timeout = 30; timeout_method = "thread" (pytest-timeout)
 - asyncio_mode = "auto" (pytest-asyncio)
 - testpaths = ["tests"]
@@ -61,7 +53,7 @@ Pytest configuration (from pyproject.toml)
 - env (pytest-env ensures hermetic git by default):
   - GIT_CONFIG_NOSYSTEM=1, GIT_CONFIG_GLOBAL=/dev/null
 
-High‑level architecture
+## High‑level architecture
 - Packaging (pyproject.toml)
   - name: adgn; requires-python: ">=3.11"; src-layout under adgn/src
   - Dev extras include pytest, pytest-asyncio, pytest-timeout, pytest-xdist, ruff, pre-commit
@@ -76,7 +68,7 @@ High‑level architecture
   - Response cache (src/adgn/rspcache/)
     - responses_db.py: Lightweight response store; CLI at adgn.rspcache.cli:main (entry point: rspcache)
   - Worktree tools (src/adgn/wt/)
-    - CLI and plugin system: wt.cli, wt.plugins, wt.demo_plugin (entry point: wt)
+    - CLI and plugin system: adgn.wt.cli, adgn.wt.plugins, adgn.wt.demo_plugin (entry point: wt)
     - Server/services: wt.server.*, handlers (PR/status/worktree), registry and discovery
     - Client: wt.client.* (formatting, shell utils, handlers)
     - Shared/types: wt.shared.* (configuration, constants, models, protocol)
@@ -86,19 +78,10 @@ High‑level architecture
     - tests/tana_export/test_convert.py → verifies Markdown/TanaPaste outputs using fixture JSON
     - tests/wt/... includes unit, integration, and e2e coverage for worktree flows and GitHub display
 
-Notes and caveats
-- The GNOME console script dependencies require system libraries and are intentionally not part of the default install; use the [gnome] extra if you need that tool.
-- Some tana_lib modules import helpers lazily to avoid circular imports (accepted pattern here).
-- Tests marked real_github talk to real GitHub/network; run them explicitly when needed.
-
-Quick references
-- Enter env here: direnv allow (in adgn/)
-- Run all tests: pytest tests
-- Single tests:
-  - pytest tests/tana_export/test_convert.py::test_node_export
-  - pytest tests/wt/integration/test_cli_integration.py
-- Lint/format: ruff check . --fix; ruff format .
-- Install GNOME extras: python -m pip install -e '.[gnome]'
+## Notes and caveats
+- GNOME console script dependencies require system libraries and are intentionally not part of the default install; use the [gnome] extra if you need that tool.
+- Some `tana_lib` modules import helpers lazily to avoid circular imports (accepted pattern here).
+- Tests marked `real_github` talk to real GitHub/network; run them explicitly when needed.
 
 ## LLM (adgn.llm) quickstart and module map
 
@@ -131,7 +114,6 @@ MiniCodex (CLI + local UI)
   - Server logs include “WS OUT” for every payload; serve runs uvicorn with log_level=debug
   - Hard refresh after rebuilding UI assets
 
-
 This section documents the LLM toolkit that was migrated from llm/adgn_llm into the adgn package under src/adgn/llm.
 
 Environment
@@ -156,18 +138,16 @@ Specimen inspection (properties)
 Testing
 - LLM tests live under repo-root: adgn/tests/llm/** (mirrors src/adgn/llm/**)
 - Typical invocations:
-  - direnv exec adgn pytest -q -m "not live_llm"
-  - direnv exec adgn pytest -q -m "not live_llm" -k "not sandboxed_jupyter_mcp"
+  - `direnv exec adgn pytest -q -m "not live_llm"`
+  - `direnv exec adgn pytest -q -m "not live_llm" -k "not sandboxed_jupyter_mcp"`
 
 Quick usage examples
 - System rewriter (Node required for apply step):
-  - adgn-sysrw run <path-to-template>
-  - adgn-sysrw extract --source ccr | crush | …
-  - adgn-sysrw compare <runs/ts>
-- LLM edit CLI:
-  - adgn-llm-edit --help
-- Properties search:
-  - adgn-properties find /path/to/repo "all files under internal/app/**"
+  - `adgn-sysrw run <path-to-template>`
+  - `adgn-sysrw extract --source ccr | crush | …`
+  - `adgn-sysrw compare <runs/ts>`
+- LLM edit CLI: `adgn-llm-edit --help`
+- Search for property violations: `adgn-properties find /path/to/repo "all files under internal/app/**"`
 
 High-level module map
 - adgn.llm.sysrw — system prompt rewrite/eval

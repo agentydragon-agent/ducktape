@@ -5,13 +5,14 @@ from typing import Any
 from mcp.server.fastmcp import FastMCP
 import pytest
 
-from tests.llm.support.openai_builders import make_input_function_call
 from adgn.llm.mcp.inproc_transport import make_inproc_slot_spec
 from adgn.llm.mini_codex.agent import MiniCodex
 from adgn.llm.mini_codex.aggregating_handler import BaseHandler
 from adgn.llm.mini_codex.loggers import RecordingHandler
 from adgn.llm.mini_codex.loop_control import Abort, Continue, Auto
 from adgn.llm.mini_codex.mcp_manager import McpManager
+from adgn.llm.openai_utils.model import FunctionCallItem
+import json
 
 
 class OneShotSyntheticHandler(BaseHandler):
@@ -70,11 +71,11 @@ async def test_parallel_tool_calls_reduce_wall_time():
     spec = make_inproc_slot_spec(_make_slow_server())
 
     # Two tool calls with ~0.30s latency each; if run in parallel, wall time ~0.30-0.45s
-    tc1 = make_input_function_call(
-        name="mcp__dummy__slow", call_id="call_1", arguments={}
+    tc1 = FunctionCallItem(
+        name="mcp__dummy__slow", call_id="call_1", arguments=json.dumps({})
     )
-    tc2 = make_input_function_call(
-        name="mcp__dummy__slow2", call_id="call_2", arguments={}
+    tc2 = FunctionCallItem(
+        name="mcp__dummy__slow2", call_id="call_2", arguments=json.dumps({})
     )
 
     handler = OneShotSyntheticHandler(outputs=[tc1, tc2])

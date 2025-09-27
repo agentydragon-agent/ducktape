@@ -11,13 +11,14 @@ import subprocess
 import sys
 import time
 from typing import Any, cast
+from openai import AsyncOpenAI
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
-from openai import AsyncOpenAI
+from adgn.llm.client_factory import get_async_openai
 from pydantic import TypeAdapter
 import tiktoken
 
-from adgn.llm.openai_retry import (
+from adgn.llm.openai_utils.retry import (
     chat_create_with_retries,
     responses_create_with_retries,
 )
@@ -1281,8 +1282,6 @@ def main():
     if not dataset_paths:
         dataset_paths = [DEFAULT_DATASET_PATH]
     base_out = Path(args.out_dir) if args.out_dir else None
-    from openai import AsyncOpenAI
-
     asyncio.run(
         run_eval(
             Path(args.template),
@@ -1290,6 +1289,6 @@ def main():
             base_out,
             args.n,
             args.concurrency,
-            client=AsyncOpenAI(),
+            client=get_async_openai(),
         ),
     )

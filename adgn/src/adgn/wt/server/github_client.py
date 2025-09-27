@@ -12,7 +12,12 @@ from typing import Any
 from github import Github
 
 from ..shared.error_handling import GitHubUnavailableError, handle_github_errors
-from ..shared.github_models import GitHubPRResponse, PRState, PullRequestList
+from ..shared.github_models import (
+    GitHubPRResponse,
+    PRState,
+    PullRequestList,
+    HasBasicPR,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +73,8 @@ class GitHubInterface:
             try:
                 self._repo = self._gh.get_repo(self.github_repo)
             except Exception as e:
+                # Boundary: wrap provider/library errors; log for diagnostics.
+                logger.exception("Failed to access GitHub repo %s", self.github_repo)
                 raise GitHubUnavailableError(
                     f"Cannot access GitHub repo {self.github_repo}",
                 ) from e
@@ -79,16 +86,18 @@ class GitHubInterface:
         return [
             PullRequestList(
                 number=pr.number,
-                headRefName=pr.head.ref,
+                head_ref_name=pr.head.ref,
                 state=PRState(pr.state),
                 title=pr.title,
-                mergedAt=pr.merged_at,
+                merged_at=(
+                    pr.merged_at.isoformat() if getattr(pr, "merged_at", None) else None
+                ),
             )
             for pr in pulls
         ]
 
     @handle_github_errors
-    def pr_search(self, branch_name: str) -> list[object]:
+    def pr_search(self, branch_name: str) -> list[HasBasicPR]:
         """Search for PRs by branch name using GitHub search API instead of paginating all PRs."""
         # Use GitHub search API to find PRs by head branch - much more efficient
         search_query = f"repo:{self.github_repo} type:pr head:{branch_name}"

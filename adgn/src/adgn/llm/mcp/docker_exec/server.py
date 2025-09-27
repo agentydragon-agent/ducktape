@@ -15,7 +15,7 @@ Use make_container_exec_mcp(...) to construct a server instance.
 
 from __future__ import annotations
 
-from mcp.server.fastmcp import FastMCP
+from adgn.llm.mcp._shared.fastmcp_helpers import SafeFastMCP
 
 from .._shared.container_session import (
     ContainerOptions,
@@ -28,13 +28,13 @@ SERVER_NAME = "docker"
 TOOL_EXEC_NAME = "docker_exec"
 
 
-def make_container_exec_mcp(opts: ContainerOptions) -> FastMCP:
+def make_container_exec_mcp(opts: ContainerOptions) -> SafeFastMCP:
     """Create a generic per-session container exec FastMCP server.
 
     Callers must pass a fully constructed ContainerOptions (no kwargs).
     """
     lifespan = make_container_lifespan(opts)
-    server = FastMCP(
+    server = SafeFastMCP(
         SERVER_NAME,
         instructions="Per-session container exec. See resource container.info for details.",
         lifespan=lifespan,

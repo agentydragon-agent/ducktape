@@ -72,11 +72,11 @@ CLI/e2e environment
   - Includes isolated_git_env
   - Sets WT_DIR to a unique per-test directory
   - Kills daemon pre- and post-test for that WT_DIR
-  - Use for: any test that runs `python -m wt.cli ...` or `wt sh ...`
+  - Use for: any test that runs `python -m adgn.wt.cli ...` or `wt sh ...`
 - real_env_with_existing_worktrees (function) → dict (and sometimes helpers): same as real_env, but pre-populates one or more worktrees using the real services; use when an initial set of worktrees is required
 
 CLI helpers
-- run_cli_command(args, cwd=None, env=None, timeout=60.0): runs `python -m wt.cli` with given args; automatically injects PYTHONPATH
+- run_cli_command(args, cwd=None, env=None, timeout=60.0): runs `python -m adgn.wt.cli` with given args; automatically injects PYTHONPATH
 - run_cli_sh_command(args, env, timeout=60.0): convenience wrapper for `wt sh ...`
 
 Other utilities

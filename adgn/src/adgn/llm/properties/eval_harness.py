@@ -7,13 +7,8 @@ from pathlib import Path
 from typing import Annotated, Any, Literal
 
 from hamcrest import assert_that, has_item
-from openai import AsyncOpenAI
-from openai.types.responses import (
-    FunctionToolParam,
-    ResponseFunctionToolCall,
-    ResponseFunctionToolCallItem,
-    ToolChoiceFunctionParam,
-)
+from adgn.llm.openai_utils.model import OpenAIModelProto
+from adgn.llm.openai_utils.model import ResponsesRequest, FunctionCallOut
 from pydantic import BaseModel, ConfigDict, Field
 from rich.console import Console
 from rich.table import Table
@@ -171,7 +166,7 @@ class EvalIndex(BaseModel):
 
 
 async def _grade_rationale_with_llm(
-    client: AsyncOpenAI,
+    client: OpenAIModelProto,
     original: str,
     proposed: str,
     *,
@@ -181,7 +176,7 @@ async def _grade_rationale_with_llm(
     """Force a tool call that returns verdict: YES | PARTIALLY | NO, with reason."""
     if not proposed or not proposed.strip():
         return {"verdict": "NO", "reason": "No suggested rationale provided by linter."}
-    tools: list[FunctionToolParam] = [
+    tools: list[dict[str, Any]] = [
         {
             "type": "function",
             "name": "grade_rationale",
@@ -199,32 +194,25 @@ async def _grade_rationale_with_llm(
         + rubric.strip()
         + "\n\nQuestion: Is the new description corrected as it should be?"
     )
-    tool_choice: ToolChoiceFunctionParam = {
-        "type": "function",
-        "name": "grade_rationale",
-    }
-    resp = await client.responses.create(
-        model=model,
-        input=[{"role": "user", "content": prompt}],
-        tools=tools,
-        tool_choice=tool_choice,
+    req = ResponsesRequest(
+        input=[{"role": "user", "content": [{"type": "input_text", "text": prompt}]}],
+        tools=tools,  # passthrough dicts are accepted
+        tool_choice={"type": "function", "name": "grade_rationale"},
     )
+    resp = await client.responses_create(req)
     # Extract function call robustly; fail fast on missing/invalid
-    call: ResponseFunctionToolCall | None = None
-    for item in resp.output:
-        if (
-            isinstance(item, ResponseFunctionToolCallItem)
-            and item.type == "function_call"
-        ) or isinstance(
-            item,
-            ResponseFunctionToolCall,
-        ):
-            call = item  # type: ignore[assignment]
-            break
-    if not call or call.name != "grade_rationale":
+    call: FunctionCallOut | None = next(
+        (
+            it
+            for it in resp.output
+            if isinstance(it, FunctionCallOut) and it.name == "grade_rationale"
+        ),
+        None,
+    )
+    if call is None:
         raise RuntimeError("grade_rationale function call not returned by model")
 
-    args = call.arguments  # type: ignore[attr-defined]
+    args = call.arguments
     if isinstance(args, str):
         try:
             args = json.loads(args)
@@ -243,7 +231,7 @@ async def eval_issue_spec(
     *,
     model: str = "gpt-5",
     gitconfig: str | None = None,
-    client: AsyncOpenAI,
+    client: OpenAIModelProto,
     out_dir: Path | str | None = None,
     id_prefix: str = "",
 ) -> SampleRunSummary:
@@ -649,7 +637,7 @@ async def run_all_evals(
     *,
     model: str = "gpt-5",
     gitconfig: str | None = None,
-    client: AsyncOpenAI,
+    client: OpenAIModelProto,
     root_out: Path | None = None,
     concurrency: int = 4,
     id_prefix: str = "",

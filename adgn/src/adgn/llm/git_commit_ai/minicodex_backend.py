@@ -7,8 +7,8 @@ from pathlib import Path
 import sys
 
 import pygit2
-from mcp.server.fastmcp import FastMCP
-from openai import AsyncOpenAI
+from adgn.llm.mcp._shared.fastmcp_helpers import SafeFastMCP
+from adgn.llm.client_factory import build_client
 from openai.types.responses import ResponseFunctionToolCall
 from pydantic import BaseModel, Field
 
@@ -41,9 +41,8 @@ def _default_bootstrap(
 ) -> list[ResponseFunctionToolCall]:
     """Build the default list of bootstrap tool calls for a commit flow.
 
-    Returns a list of ResponseFunctionToolCall objects representing the initial
-    set of MCP function calls an agent should see when composing a commit
-    message. Parameters control pagination sizes used for heavy payloads.
+    Returns initial function calls agent should start out having executed when composing
+    a commit message. Parameters control pagination sizes used for heavy payloads.
     """
     return [
         ResponseFunctionToolCall(
@@ -116,7 +115,7 @@ class SubmitState:
 
 
 def make_submit_server(state: SubmitState):
-    m = FastMCP(
+    m = SafeFastMCP(
         "submit_commit_message",
         instructions="Submit commit message (subject/body) and finish",
     )
@@ -258,7 +257,7 @@ async def generate_commit_message_minicodex(
             model=model,
             mcp=mcp,
             system="You are a code agent. Be concise.",
-            client=AsyncOpenAI(),
+            client=build_client(model),
             handlers=handlers,
             parallel_tool_calls=True,
         )

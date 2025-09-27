@@ -49,6 +49,7 @@ import pygit2
 import pytest
 
 from ..test_utils import run_cli_command
+from datetime import timedelta
 
 pytestmark = pytest.mark.timeout(10)
 
@@ -88,11 +89,13 @@ def test_real_workflow_git_repo_to_worktrees_to_status(real_temp_repo, real_env)
     This tests the ACTUAL UNMODIFIED UNMOCKED program with real git operations.
     """
     # Step 1: Initial status (should show empty or main repo only)
-    result = run_cli_command(["sh"], env=real_env, timeout=10.0)
+    result = run_cli_command(["sh"], env=real_env, timeout=timedelta(seconds=10.0))
     assert result.returncode == 0
 
     # Step 2: Create first worktree
-    result = run_cli_command(["sh", "-c", "feature1"], env=real_env, timeout=10.0)
+    result = run_cli_command(
+        ["sh", "-c", "feature1"], env=real_env, timeout=timedelta(seconds=10.0)
+    )
     assert result.returncode == 0
 
     # Verify worktree was actually created with real git
@@ -108,7 +111,9 @@ def test_real_workflow_git_repo_to_worktrees_to_status(real_temp_repo, real_env)
     )
 
     # Step 3: Create second worktree
-    result = run_cli_command(["sh", "-c", "feature2"], env=real_env, timeout=10.0)
+    result = run_cli_command(
+        ["sh", "-c", "feature2"], env=real_env, timeout=timedelta(seconds=10.0)
+    )
     assert result.returncode == 0
 
     # Verify second worktree was created
@@ -116,13 +121,15 @@ def test_real_workflow_git_repo_to_worktrees_to_status(real_temp_repo, real_env)
     assert worktree2_path.exists(), f"Worktree 2 not created at {worktree2_path}"
 
     # Step 4: Check status shows both worktrees
-    result = run_cli_command(["sh"], env=real_env, timeout=10.0)
+    result = run_cli_command(["sh"], env=real_env, timeout=timedelta(seconds=10.0))
     assert result.returncode == 0
     assert "feature1" in result.stdout
     assert "feature2" in result.stdout
 
     # Step 5: Navigate to feature1 (test cd command emission)
-    result = run_cli_command(["sh", "feature1"], env=real_env, timeout=10.0)
+    result = run_cli_command(
+        ["sh", "feature1"], env=real_env, timeout=timedelta(seconds=10.0)
+    )
     assert result.returncode == 0
     # Note: cd command is emitted to fd3, we can't easily verify it here
 
@@ -139,7 +146,7 @@ def test_real_workflow_git_repo_to_worktrees_to_status(real_temp_repo, real_env)
     )
 
     # Step 7: Final status check should show the changes
-    result = run_cli_command(["sh"], env=real_env, timeout=10.0)
+    result = run_cli_command(["sh"], env=real_env, timeout=timedelta(seconds=10.0))
     assert result.returncode == 0
 
 
@@ -210,7 +217,7 @@ def test_real_git_operations_in_worktrees(real_temp_repo, real_env):
 def test_real_daemon_startup_and_kill(real_temp_repo, real_env):
     """Test that daemon actually starts and can be killed via CLI command."""
     # Step 1: Initial command should start the daemon
-    result = run_cli_command(["sh"], env=real_env, timeout=10.0)
+    result = run_cli_command(["sh"], env=real_env, timeout=timedelta(seconds=10.0))
     print(
         f"Initial status (should start daemon) (exit={result.returncode}):\n{result.stdout}\n{result.stderr}",
     )

@@ -320,8 +320,9 @@ class GitStatusdProtocol:
         except IndexError as e:
             raise GitStatusdValidationError("Missing repository state field") from e
 
-        if not value:
-            raise GitStatusdValidationError("Empty repository state")
+        if value == "":
+            # Empty string denotes NORMAL repository state per protocol
+            return RepositoryState.NORMAL
 
         # Find matching repository state
         for state in RepositoryState:

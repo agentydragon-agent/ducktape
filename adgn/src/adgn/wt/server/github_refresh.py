@@ -44,6 +44,7 @@ class DebouncedGitHubRefresh:
             return
         self.is_running = True
         self._start_file_watcher()
+        # Initial PR cache population is handled by PRService.start(); avoid double refresh here.
         self.periodic_task = asyncio.create_task(self._periodic_refresh_loop())
         logger.info("Started GitHub refresh system for %s", self.worktree_path)
 
@@ -63,7 +64,7 @@ class DebouncedGitHubRefresh:
         self.is_running = False
         if self.observer:
             self.observer.stop()
-            self.observer.join()
+            await asyncio.to_thread(self.observer.join)
             self.observer = None
         if self.pending_refresh_task:
             self.pending_refresh_task.cancel()

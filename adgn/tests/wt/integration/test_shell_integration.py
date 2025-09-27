@@ -1,7 +1,7 @@
 """
 Integration tests for shell function interaction with the CLI.
 
-Tests the shell function installed via python -m wt.shell.install that users interact with, including fd3 redirection,
+Tests the shell function installed via `python -m adgn.wt.shell.install` that users interact with, including fd3 redirection,
 exit code semantics, and process boundary interactions.
 """
 
@@ -16,7 +16,6 @@ exit code semantics, and process boundary interactions.
 # - DON'T mock across process boundaries - create real error conditions instead
 
 import contextlib
-import importlib.util
 import io
 import os
 from pathlib import Path
@@ -39,9 +38,10 @@ def run_shell_script(
 ) -> subprocess.CompletedProcess:
     """Execute a shell script with wt function setup and return the result."""
     # Explicit requirement checks
-    assert importlib.util.find_spec("wt"), (
-        "wt package not installed - required for shell integration tests"
-    )
+    import importlib
+
+    importlib.import_module("adgn.wt")
+    ("wt package not installed - required for shell integration tests")
     assert shutil.which("wt"), (
         "wt CLI not found on PATH - required for shell integration tests"
     )

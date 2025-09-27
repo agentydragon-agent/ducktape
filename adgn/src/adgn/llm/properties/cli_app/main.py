@@ -22,7 +22,6 @@ from typing import Literal, Any
 import docker
 import matplotlib
 import matplotlib.pyplot as plt
-from openai import AsyncOpenAI
 from rich.console import Console
 from rich.traceback import install as rich_traceback_install
 import tiktoken
@@ -32,6 +31,7 @@ from adgn.llm.logging_config import configure_logging
 from adgn.llm.mcp._shared.constants import SLEEP_FOREVER_CMD
 from adgn.llm.mcp.inproc_transport import make_inproc_slot_spec
 from adgn.llm.mini_codex.agent import MiniCodex
+from adgn.llm.openai_utils.model import OpenAIModelProto
 from adgn.llm.mini_codex.aggregating_handler import GateUntil
 from adgn.llm.mini_codex.event_renderer import DisplayEventsHandler
 from adgn.llm.mini_codex.mcp_manager import McpManager
@@ -57,6 +57,7 @@ from adgn.llm.properties.docker_env import (
     properties_docker_spec,
 )
 from adgn.llm.properties.eval_harness import run_all_evals
+from adgn.llm.client_factory import build_client
 from adgn.llm.properties.grade_runner import _metrics_row, grade_critic_output
 from adgn.llm.properties.lint_issue import run_specimen_lint_issue_async
 from adgn.llm.properties.models.issue import IssueCore, LineRange, Occurrence
@@ -252,7 +253,7 @@ async def cmd_check(
         model=model,
         output_final_message=output_final_message,
         final_only=final_only,
-        client=AsyncOpenAI(),
+        client=build_client(model),
     )
     raise typer.Exit(code=rc)
 
@@ -278,7 +279,7 @@ async def _run_specimen_minicodex_async(
     mode: str,
     final_only: bool,
     output_final_message: Path | None,
-    client: AsyncOpenAI,
+    client: OpenAIModelProto | None,
     model: str = "gpt-5",
 ) -> int:
     rec = SpecimenRegistry.load_strict(specimen)
@@ -342,7 +343,7 @@ async def _run_specimen_minicodex_async(
                 model=model,
                 mcp=mcp,
                 system="You are a code agent. Be concise.",
-                client=client,
+                client=client,  # type: ignore[arg-type]
                 handlers=[
                     GateUntil(
                         lambda: (submit_state.result is not None)
@@ -415,7 +416,7 @@ async def cmd_specimen_check(
         mode=mode,
         final_only=final_only,
         output_final_message=output_final_message,
-        client=AsyncOpenAI(),
+        client=(None if dry_run else build_client(model)),
         model=model,
     )
     raise typer.Exit(code=rc)
@@ -454,7 +455,7 @@ async def cmd_specimen_discover(
         mode="discover",
         final_only=final_only,
         output_final_message=output_final_message,
-        client=AsyncOpenAI(),
+        client=(None if dry_run else build_client("gpt-5")),
     )
     raise typer.Exit(code=rc)
 
@@ -484,7 +485,7 @@ async def prompt_optimize(
     # Build base specs with prompt_eval MCP
     pe_server, pe_state = build_prompt_eval_server(
         agent_model=model,
-        client=AsyncOpenAI(),
+        client=build_client(model),
     )
     specs = {"prompt_eval": make_inproc_slot_spec(pe_server)}
 
@@ -519,7 +520,7 @@ async def prompt_optimize(
             model=model,
             mcp=mcp,
             system=system,
-            client=AsyncOpenAI(),
+            client=build_client(model),
             handlers=[
                 TranscriptHandler(dest_dir=root / "prompt_optimize"),
                 DisplayEventsHandler(max_lines=10),
@@ -651,19 +652,24 @@ async def prompt_eval(
 ) -> None:
     """Evaluate a critic system prompt across all known specimens and emit metrics list."""
 
+    # Compute run root early to route HTTP logging for a single client per run
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    root = (
+        out_dir if out_dir is not None else (pkg_dir() / "runs" / "prompt_eval")
+    ) / ts
+    root.mkdir(parents=True, exist_ok=True)
+    client = build_client(
+        model, log_http_path=(root / "openai_http.jsonl") if debug else None
+    )
     _pe_server, _state = build_prompt_eval_server(
-        agent_model=model, client=AsyncOpenAI(), debug=debug
+        agent_model=model,
+        client=client,
+        debug=debug,
     )
 
     async def _run() -> list[dict[str, Any]]:
         base = find_specimens_base()
         specimens = list_specimen_names(base)
-        client = AsyncOpenAI()
-        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        root = (
-            out_dir if out_dir is not None else (pkg_dir() / "runs" / "prompt_eval")
-        ) / ts
-        root.mkdir(parents=True, exist_ok=True)
         print(f"[logs] prompt-eval root: {root}")
         (root / "prompt.txt").write_text(prompt, encoding="utf-8")
 
@@ -719,7 +725,7 @@ async def specimen_grade(
     grade = await grade_critic_output(
         specimen,
         crit_obj,
-        AsyncOpenAI(),
+        build_client("gpt-5"),
         transcript_out_dir=critique.parent,
     )
     row = _metrics_row(grade, specimen=specimen)
@@ -788,7 +794,7 @@ async def cmd_lint_issue(
         dry_run=dry_run,
         gitconfig=(str(git_path) if git_path else None),
         occurrence_index=occurrence,
-        client=AsyncOpenAI(),
+        client=build_client(model),
     )
     raise typer.Exit(code=rc)
 
@@ -796,7 +802,7 @@ async def cmd_lint_issue(
 @app.command("eval-all")
 @async_run
 async def cmd_eval_all() -> None:
-    await run_all_evals(model="gpt-5", gitconfig=None, client=AsyncOpenAI())
+    await run_all_evals(model="gpt-5", gitconfig=None, client=build_client())
 
 
 @app.command("specimen-exec")

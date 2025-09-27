@@ -13,16 +13,15 @@ Makes switching between git worktrees feel like `git switch` while adding copy-o
 
 ## Requirements
 
-- **gitstatusd**: Must be installed and available on `PATH`. This binary provides fast git status queries.
-- **wt package**: Must be properly installed and importable (via `pip install -e .`)
-- **wt CLI**: Must be available on `PATH` after package installation
+- **gitstatusd** (for fast git status queries): installed and available on `PATH`
+- **wt package**: installed and importable including `wt` CLI
 
-**Note**: Tests explicitly check for these dependencies and will fail immediately with clear error messages if any are missing, rather than producing cryptic import or subprocess errors.
+Tests will fail immediately if deps are missing.
 
 ## Installation
 
 * Install the package: `pip install -e .`
-* Add the wt shell function in your shell init (e.g. `.bashrc` / `.zshrc`): `eval "$(python -m wt.shell.install)"`
+* Add the wt shell function in your shell init (e.g. `.bashrc` / `.zshrc`): `eval "$(python -m adgn.wt.shell.install)"`
 * Reload your shell / source the same dotfile.
 
 ## Usage
@@ -300,10 +299,10 @@ Ensure the function is installed in your shell init and reload:
 type wt
 
 # Install into current shell session
-eval "$(python -m wt.shell.install)"
+eval "$(python -m adgn.wt.shell.install)"
 
 # Add permanently to ~/.zshrc and reload
-echo 'eval "$(python -m wt.shell.install)"' >> ~/.zshrc
+echo 'eval "$(python -m adgn.wt.shell.install)"' >> ~/.zshrc
 source ~/.zshrc
 ```
 

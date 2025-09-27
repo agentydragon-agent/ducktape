@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 
-from mcp import types as mcp_types
 from openai import AsyncOpenAI
 import pytest
 
@@ -16,6 +15,8 @@ from adgn.llm.mcp.inproc_transport import make_inproc_slot_spec
 from adgn.llm.mini_codex.agent import AgentResult, MiniCodex
 from adgn.llm.mini_codex.aggregating_handler import AutoHandler
 from adgn.llm.mini_codex.mcp_manager import McpManager, build_mcp_function
+from adgn.llm.mcp.testing.typed_stubs import TypedClient
+from adgn.llm.mcp._shared.types import ExecInput, ExecResult
 
 ECHO_CMD = ["sh", "-lc", "printf hello"]
 
@@ -36,14 +37,18 @@ def _build_specs():
 
 async def _assert_exec_echo(mcp: McpManager) -> None:
     sess = await mcp.get_session("docker")
-    res = await sess.call_tool(name="docker_exec", arguments={"cmd": ECHO_CMD})
-    assert isinstance(res, mcp_types.CallToolResult)
-    sc = res.structuredContent
-    assert isinstance(sc, dict)
-    data = sc.get("result", sc)
-    assert data["exit_code"] == 0
-    assert (data["stdout"] or "") == "hello"
-    assert (data.get("stderr") or "") == ""
+    # Introspect the in-proc FastMCP server to get typed models
+    from adgn.llm.mcp.docker_exec.server import make_container_exec_mcp
+
+    typed = TypedClient.from_server(
+        make_container_exec_mcp(ContainerOptions(image="python:3.12-slim")), sess
+    )
+    ExecArgs = typed.models["docker_exec"].Input or ExecInput
+    ExecOut = typed.models["docker_exec"].Output or ExecResult
+    res: ExecOut = await typed.docker_exec(ExecArgs(cmd=ECHO_CMD))
+    assert res.exit_code == 0
+    assert (res.stdout or "") == "hello"
+    assert (res.stderr or "") == ""
 
 
 @pytest.mark.asyncio

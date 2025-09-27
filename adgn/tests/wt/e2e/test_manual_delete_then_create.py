@@ -2,14 +2,14 @@ import shutil
 
 import pytest
 
-from ..test_utils import run_cli_command
+from datetime import timedelta
 
 pytestmark = pytest.mark.integration
 
 
 def test_manual_delete_of_old_worktree_does_not_break_new_create(
     real_temp_repo,
-    real_env,
+    wt_cli,
 ):
     """
     Repro for server crash when a previously-registered worktree directory was
@@ -20,7 +20,7 @@ def test_manual_delete_of_old_worktree_does_not_break_new_create(
 
     # 1) Create an initial worktree
     name_old = "stale-old"
-    r1 = run_cli_command(["sh", "-c", name_old], env=real_env, timeout=20.0)
+    r1 = wt_cli.sh_c(name_old, timeout=timedelta(seconds=20.0))
     assert r1.returncode == 0, f"Initial create failed: {r1.stderr}"
 
     wt_old = real_temp_repo / "worktrees" / name_old
@@ -32,7 +32,7 @@ def test_manual_delete_of_old_worktree_does_not_break_new_create(
 
     # 3) Create a new worktree; previously this crashed on list_worktrees()
     name_new = "after-stale"
-    r2 = run_cli_command(["sh", "-c", name_new], env=real_env, timeout=20.0)
+    r2 = wt_cli.sh_c(name_new, timeout=timedelta(seconds=20.0))
     assert r2.returncode == 0, (
         f"New worktree creation failed (likely due to stale entry crash):\nstdout=\n{r2.stdout}\nstderr=\n{r2.stderr}"
     )
@@ -41,5 +41,5 @@ def test_manual_delete_of_old_worktree_does_not_break_new_create(
     assert wt_new.exists(), f"New worktree not created at {wt_new}"
 
     # Optional: a quick status call should succeed and not mention errors
-    r3 = run_cli_command(["sh"], env=real_env, timeout=20.0)
+    r3 = wt_cli.status(timeout=timedelta(seconds=20.0))
     assert r3.returncode == 0

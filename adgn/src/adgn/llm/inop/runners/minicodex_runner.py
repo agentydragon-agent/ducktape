@@ -103,7 +103,7 @@ class MiniCodexRunner(AgentRunner):
             model=self.model,
             system=None,
             mcp=self._mcp_manager,
-            client=self._logging_model.openai_client.openai_client,
+            client=self._logging_model,
             reasoning_effort=self.reasoning_effort,
             handlers=handlers,
         )

@@ -2,13 +2,12 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable
 import json
+import logging
 from typing import Any, Literal
 
 from mcp import types as mcp_types
-from openai.types.responses import (
-    ResponseInputItem,
-    ResponseInputMessageItem,
-    ResponseInputTextParam,
+from adgn.llm.openai_utils.model import (
+    UserMessage,
 )
 from pydantic import BaseModel
 
@@ -36,6 +35,8 @@ from adgn.llm.mini_codex.loop_control import (
 )
 
 from .mcp_manager import McpManager
+
+logger = logging.getLogger("adgn.mcp")
 
 
 class AutoHandler(BaseHandler):
@@ -92,7 +93,7 @@ class Reducer:
     def on_before_sample(self) -> LoopDecision:
         # Collect concrete decisions (non-NoLoopDecision) from handlers in order.
         decisions: list[LoopDecision] = []
-        collected_inserts: list[ResponseInputItem] = []
+        collected_inserts: list[UserMessage] = []
         skip_value: bool | None = None
         for h in self._handlers:
             dec = h.on_before_sample()
@@ -289,6 +290,7 @@ class NotificationsHandler(BaseHandler):
     def on_before_sample(self):  # type: ignore[override]
         batch = self._mcp.poll_notifications()
         if not batch.resources_updated:
+            logger.debug("NotificationsHandler: no updates")
             return NoLoopDecision()
         # Group by server -> resource_versions
         grouped: dict[str, dict[str, int]] = {}
@@ -306,12 +308,7 @@ class NotificationsHandler(BaseHandler):
         self._msg_counter += 1
         # Insert as input-side user message, clearly tagged as a system notification
         tagged = f"<system notification>\n{payload}\n</system notification>"
-        msg: ResponseInputItem = ResponseInputMessageItem(
-            id=f"sysfyi_{self._msg_counter}",
-            type="message",
-            role="user",
-            content=[ResponseInputTextParam(type="input_text", text=tagged)],
-        )
+        msg = UserMessage.text(tagged)
         return Continue(Auto(), inserts_input=(msg,))
 
     # ---- Event forwarding (typed, observer-only) ----

@@ -5,12 +5,19 @@ from pathlib import Path
 from shutil import which
 import subprocess
 import sys
-from typing import Any
 
-from mcp.server.fastmcp import FastMCP
+from adgn.llm.mcp._shared.fastmcp_helpers import SafeFastMCP
+from adgn.llm.mcp._shared.fastmcp_helpers import mcp_flat_model
+from mcp.server.fastmcp.exceptions import ToolError
+from pydantic import BaseModel, ConfigDict, Field
+
+from adgn.llm.mcp.exec_common.io_limits import (
+    validate_max_bytes,
+    clamp_stdin_bytes,
+)
+from adgn.llm.mcp.exec_common.models import StreamOut
 
 DEFAULT_TIMEOUT_S = int(os.getenv("DUCK_TIMEOUT_S", "30"))
-TRUNCATE_BYTES = 8 * 1024
 BWRAP = os.getenv("BWRAP", "bwrap")
 ALLOW_UNSHARE_NET = os.getenv("DUCK_UNSHARE_NET", "0") == "1"
 ALLOW_UNSANDBOXED = (
@@ -18,65 +25,64 @@ ALLOW_UNSANDBOXED = (
 )  # dev override on non-Linux
 
 
-def _truncate_bytes(s: str, limit: int) -> str:
-    data = s.encode("utf-8")
-    if len(data) <= limit:
-        return s
-    marker = b"\n[TRUNCATED]"
-    if limit <= len(marker):
-        return "[TRUNCATED]"
-    head = data[: limit - len(marker)]
-    return head.decode("utf-8", errors="ignore") + "\n[TRUNCATED]"
+def _emit_stream(out_b: bytes, limit: int) -> str | StreamOut:
+    total = len(out_b)
+    if total <= limit:
+        # Fully captured → return plain string
+        return out_b.decode("utf-8", errors="replace")
+    # Truncated → return structured marker with metadata
+    return StreamOut(
+        text=out_b[:limit].decode("utf-8", errors="replace"),
+        truncated=True,
+        total_bytes=total,
+    )
 
 
 def _run_proc(
     argv: list[str],
     timeout_s: int,
     cwd: str | None = None,
-) -> tuple[int, str, str]:
+    stdin_b: bytes | None = None,
+) -> tuple[int, bytes, bytes]:
     p = subprocess.Popen(
         argv,
+        stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        text=True,
+        text=False,
         cwd=cwd,
     )
     try:
-        out, err = p.communicate(timeout=timeout_s)
+        out, err = p.communicate(input=(stdin_b or b""), timeout=timeout_s)
+        return (p.returncode, out or b"", err or b"")
     except subprocess.TimeoutExpired:
         p.kill()
-        out, err = p.communicate()
-        return (
-            124,
-            _truncate_bytes(out, TRUNCATE_BYTES),
-            _truncate_bytes(err + "\n[TIMEOUT]", TRUNCATE_BYTES),
-        )
-
-    return (
-        p.returncode,
-        _truncate_bytes(out, TRUNCATE_BYTES),
-        _truncate_bytes(err, TRUNCATE_BYTES),
-    )
+        try:
+            out, err = p.communicate(timeout=5)
+        except Exception:
+            out, err = b"", b""
+        return (124, out or b"", (err or b"") + b"\n[TIMEOUT]")
 
 
 def _run_in_sandbox(
     cmd: list[str],
     timeout_s: int,
     cwd: str | None,
-) -> tuple[int, str, str]:
+    stdin_b: bytes | None,
+) -> tuple[int, bytes, bytes]:
     # Enforce sandboxing: on non-Linux, only allow with explicit override
     if sys.platform != "linux":
         if ALLOW_UNSANDBOXED:
-            return _run_proc(cmd, timeout_s=timeout_s, cwd=cwd)
+            return _run_proc(cmd, timeout_s=timeout_s, cwd=cwd, stdin_b=stdin_b)
         return (
             2,
-            "",
-            "sandbox unavailable on this platform; set DUCK_ALLOW_UNSANDBOXED=1 to override",
+            b"",
+            b"sandbox unavailable on this platform; set DUCK_ALLOW_UNSANDBOXED=1 to override",
         )
 
     # Linux: require bubblewrap
     if which(BWRAP) is None:
-        return (2, "", "bubblewrap (bwrap) not found in PATH")
+        return (2, b"", b"bubblewrap (bwrap) not found in PATH")
 
     cwd_val = cwd or str(Path.cwd())
 
@@ -111,32 +117,55 @@ def _run_in_sandbox(
     ]
 
     # chdir handled inside bwrap; pass cwd=None to subprocess
-    return _run_proc(argv, timeout_s=timeout_s, cwd=None)
+    return _run_proc(argv, timeout_s=timeout_s, cwd=None, stdin_b=stdin_b)
 
 
-def exec_handler(
-    args: dict[str, Any],
-    *,
-    sandbox_enabled: bool = True,
-) -> dict[str, Any]:
-    """Execute a shell command with optional cwd/timeout."""
-    cmd = args.get("cmd")
-    if not isinstance(cmd, list) or not all(isinstance(x, str) for x in cmd):
-        return {"exit": 2, "stdout": "", "stderr": "invalid cmd"}
+class LocalExecArgs(BaseModel):
+    cmd: list[str]
+    max_bytes: int = Field(..., description="0..100_000; applies to stdin and captures")
+    cwd: str | None = None
+    timeout_ms: int | None = None
+    stdin_text: str | None = None
 
-    timeout_ms = args.get("timeout_ms")
+    model_config = ConfigDict(extra="forbid")
+
+
+class LocalExecResult(BaseModel):
+    exit: int
+    stdout: str | StreamOut | None = None
+    stderr: str | StreamOut | None = None
+
+    model_config = ConfigDict(extra="forbid")
+
+
+def _exec_core(payload: LocalExecArgs, *, sandbox_enabled: bool) -> LocalExecResult:
+    if not payload.cmd or not all(isinstance(x, str) for x in payload.cmd):
+        raise ToolError("INVALID_CMD: cmd must be a non-empty list[str]")
+
     to = (
         DEFAULT_TIMEOUT_S
-        if not isinstance(timeout_ms, int)
-        else max(1, int(timeout_ms / 1000))
+        if not isinstance(payload.timeout_ms, int)
+        else max(1, int(payload.timeout_ms / 1000))
     )
-    cwd_val = args.get("cwd") if isinstance(args.get("cwd"), str) else None
+    cwd_val = payload.cwd if isinstance(payload.cwd, str) else None
+
+    try:
+        max_b = validate_max_bytes(payload.max_bytes)
+    except Exception as e:
+        raise ToolError(f"INVALID_MAX_BYTES: {e}") from e
+
+    stdin_b = clamp_stdin_bytes(payload.stdin_text, max_b)
 
     if sandbox_enabled:
-        code, out, err = _run_in_sandbox(cmd, to, cwd_val)
+        code, out_b, err_b = _run_in_sandbox(payload.cmd, to, cwd_val, stdin_b)
     else:
-        code, out, err = _run_proc(cmd, to, cwd_val)
-    return {"exit": code, "stdout": out, "stderr": err}
+        code, out_b, err_b = _run_proc(payload.cmd, to, cwd_val, stdin_b)
+
+    return LocalExecResult(
+        exit=code,
+        stdout=_emit_stream(out_b, max_b) if out_b is not None else "",
+        stderr=_emit_stream(err_b, max_b) if err_b is not None else "",
+    )
 
 
 def make_local_exec_mcp(
@@ -144,24 +173,31 @@ def make_local_exec_mcp(
     *,
     default_cwd: str | None = None,
     sandbox_enabled: bool = True,
-) -> FastMCP:
+) -> SafeFastMCP:
     """FastMCP server exposing a local exec tool.
 
     Tools:
-      - exec(cmd: list[str], cwd: str | None = None, timeout_ms: int | None = None)
-        → {exit:int, stdout:str, stderr:str}
+      - exec(
+          cmd: list[str],
+          max_bytes: int,  # 0..100_000; applies to stdin write and stdout/stderr capture
+          cwd: str | None = None,
+          timeout_ms: int | None = None,
+          stdin_text: str | None = None,
+        ) -> { exit: int, stdout: str|{text,truncated,total_bytes}, stderr: str|{...} }
     """
-    mcp = FastMCP(name, instructions="Local command execution")
+    mcp = SafeFastMCP(name, instructions="Local command execution")
 
-    @mcp.tool()
-    def exec(
-        cmd: list[str],
-        cwd: str | None = None,
-        timeout_ms: int | None = None,
-    ) -> dict[str, Any]:
-        return exec_handler(
-            {"cmd": cmd, "cwd": cwd or default_cwd, "timeout_ms": timeout_ms},
-            sandbox_enabled=sandbox_enabled,
-        )
+    @mcp_flat_model(
+        mcp,
+        name="exec",
+        title="Local exec",
+        description="Execute a command locally (optionally sandboxed)",
+        structured_output=True,
+    )
+    def exec(input: LocalExecArgs) -> LocalExecResult:
+        # Apply default cwd if not provided
+        if input.cwd is None and default_cwd is not None:
+            input = input.copy(update={"cwd": default_cwd})
+        return _exec_core(input, sandbox_enabled=sandbox_enabled)
 
     return mcp

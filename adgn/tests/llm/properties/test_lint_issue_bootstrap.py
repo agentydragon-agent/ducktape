@@ -2,21 +2,22 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import shutil
+import uuid
+from platformdirs import user_cache_dir
 
-from openai.types.responses import (
-    Response as ResponsesResponse,
-    ResponseFunctionToolCall,
-    ResponseOutputMessage,
-    ResponseOutputText,
-)
-from openai.types.responses.response_usage import (
-    InputTokensDetails,
-    OutputTokensDetails,
-    ResponseUsage,
+from adgn.llm.openai_utils.model import (
+    ResponsesResult,
+    Usage,
+    FunctionCallOut,
+    AssistantResponseMessage,
+    FakeOpenAIModel,
 )
 import pytest
 
 from adgn.llm.mcp.docker_exec.server import make_container_exec_mcp
+from adgn.llm.mcp._shared.container_session import ContainerOptions
+from adgn.llm.mcp._shared.types import ExecInput
 from adgn.llm.mcp.inproc_transport import make_inproc_slot_spec
 from adgn.llm.mini_codex.agent import MiniCodex
 from adgn.llm.mini_codex.event_renderer import DisplayEventsHandler
@@ -26,89 +27,48 @@ from adgn.llm.properties.lint_issue import LinterController, LintSubmitState
 from adgn.llm.properties.models.issue import Occurrence
 
 
-class _MockResponsesClient:
-    def __init__(self):
-        self._calls = 0
-
-    class _Sub:
-        def __init__(self, parent: _MockResponsesClient):
-            self._p = parent
-
-        async def create(self, model, **kwargs):
-            # 1st real LLM call: request a docker_exec tool
-            self._p._calls += 1
-            if self._p._calls == 1:
-                output = [
-                    ResponseFunctionToolCall(
-                        type="function_call",
-                        name="mcp__docker__docker_exec",
-                        call_id="llm:1",
-                        arguments=json.dumps({"cmd": ["bash", "-lc", "echo from_llm"]}),
-                    ),
-                ]
-                return ResponsesResponse(
-                    id="resp-1",
-                    object="response",
-                    model=model,
-                    created_at=0,
-                    output=output,
-                    tools=kwargs.get("tools", []),
-                    tool_choice=kwargs.get("tool_choice", "auto"),
-                    parallel_tool_calls=False,
-                    usage=ResponseUsage(
-                        input_tokens=1,
-                        input_tokens_details=InputTokensDetails(cached_tokens=0),
-                        output_tokens=0,
-                        output_tokens_details=OutputTokensDetails(reasoning_tokens=0),
-                        total_tokens=1,
+def _make_seq() -> list[ResponsesResult]:
+    return [
+        ResponsesResult(
+            id="resp-1",
+            usage=Usage(input_tokens=1, output_tokens=0, total_tokens=1),
+            output=[
+                FunctionCallOut(
+                    call_id="llm:1",
+                    name="mcp__docker__docker_exec",
+                    arguments=json.dumps(
+                        ExecInput(cmd=["bash", "-lc", "echo from_llm"]).model_dump()
                     ),
                 )
-            # 2nd real LLM call: return final assistant text
-            output = [
-                ResponseOutputMessage(
-                    id="out-msg-1",
-                    type="message",
-                    role="assistant",
-                    status="completed",
-                    content=[
-                        ResponseOutputText(
-                            type="output_text",
-                            text="FINAL",
-                            annotations=[],
-                        ),
-                    ],
-                ),
-            ]
-            return ResponsesResponse(
-                id="resp-2",
-                object="response",
-                model=model,
-                created_at=1,
-                output=output,
-                tools=kwargs.get("tools", []),
-                tool_choice=kwargs.get("tool_choice", "auto"),
-                parallel_tool_calls=False,
-                usage=ResponseUsage(
-                    input_tokens=1,
-                    input_tokens_details=InputTokensDetails(cached_tokens=0),
-                    output_tokens=5,
-                    output_tokens_details=OutputTokensDetails(reasoning_tokens=0),
-                    total_tokens=6,
-                ),
-            )
+            ],
+        ),
+        ResponsesResult(
+            id="resp-2",
+            usage=Usage(input_tokens=1, output_tokens=5, total_tokens=6),
+            output=[AssistantResponseMessage(text="FINAL")],
+        ),
+    ]
 
-    @property
-    def responses(self) -> _MockResponsesClient._Sub:
-        return _MockResponsesClient._Sub(self)
+
+@pytest.fixture
+def content_root() -> Path:
+    """Workspace under XDG cache (Colima-compatible bind mount). Cleans up after test."""
+    cache_root = Path(user_cache_dir("adgn-tests")) / "workspaces"
+    cache_root.mkdir(parents=True, exist_ok=True)
+    p = cache_root / f"repo-{uuid.uuid4().hex[:8]}"
+    try:
+        yield p
+    finally:
+        shutil.rmtree(p, ignore_errors=True)
 
 
 @pytest.mark.asyncio
-async def test_lint_issue_bootstrap_small_files(tmp_path: Path):
+@pytest.mark.requires_docker
+async def test_lint_issue_bootstrap_small_files(content_root: Path):
     # Arrange: create a tiny workspace with two small files
-    # Use pytest tmpdir (tmp_path) for repo
-    content_root = tmp_path / "repo"
+    # Colima note: bind mounts from /tmp are blocked; place workspace under XDG cache dir.
     content_root.mkdir(parents=True, exist_ok=True)
-    (content_root / "pkg").mkdir(parents=True)
+    (content_root / "pkg").mkdir(parents=True, exist_ok=True)
     f1 = content_root / "pkg" / "a.py"
     f2 = content_root / "pkg" / "b.py"
     f1.write_text("print('a')\n", encoding="utf-8")
@@ -123,13 +83,16 @@ async def test_lint_issue_bootstrap_small_files(tmp_path: Path):
     # Real MCP manager (in-proc docker exec) and mocked OpenAI client
     spec = make_inproc_slot_spec(
         make_container_exec_mcp(
-            image="python:3.12-slim",
-            working_dir="/workspace",
-            volumes={str(content_root): {"bind": "/workspace", "mode": "ro"}},
-            describe=False,
+            ContainerOptions(
+                image="python:3.12-slim",
+                working_dir="/workspace",
+                volumes={str(content_root): {"bind": "/workspace", "mode": "ro"}},
+                describe=False,
+            )
         ),
     )
-    client = _MockResponsesClient()
+    # Use our shared Pydantic-only fake OpenAI client with canned outputs
+    client = FakeOpenAIModel(_make_seq())
 
     # Now create the controller with real wiring
     wiring = PropertiesDockerWiring(
@@ -162,11 +125,39 @@ async def test_lint_issue_bootstrap_small_files(tmp_path: Path):
 
     # Inspect transcript for bootstrap then LLM tool call then final text
     messages = agent.messages
-    # Count function_call_output blocks (container.info, ls, cat a.py, cat b.py, and the LLM-triggered docker call)
-    fco = [m for m in messages if m.get("type") == "function_call_output"]
+    # Function call outputs we expect: resources.read (bootstrap:res), ls (bootstrap:ls), nl for each file (bootstrap:show:*)
+    from adgn.llm.openai_utils.model import (
+        FunctionCallOutputItem,
+        AssistantMessage,
+        InputTextPart,
+    )
+
+    fco = [m for m in messages if isinstance(m, FunctionCallOutputItem)]
+    by_id = {m.call_id: m for m in fco}
     # At least 3 bootstrap outputs + 1 LLM tool output
     assert len(fco) >= 4
-    # Ensure the last assistant message is our FINAL text
-    assert any(
-        m.get("role") == "assistant" and m.get("content") == "FINAL" for m in messages
-    )
+
+    # Verify expected bootstrap call_ids are present; transcript may not embed structuredContent here
+    assert by_id.get("bootstrap:res") is not None
+    assert by_id.get("bootstrap:ls") is not None
+    show_ids = [
+        k for k in by_id if isinstance(k, str) and k.startswith("bootstrap:show:")
+    ]
+    assert len(show_ids) >= 2
+
+    # Ensure we saw a final assistant emission with text "FINAL"
+    def _is_final(msg) -> bool:
+        # assistant message content is a list of InputTextPart blocks in our typed interface
+        if isinstance(msg, AssistantMessage):
+            for block in msg.content or []:
+                if isinstance(block, InputTextPart) and block.text.strip() == "FINAL":
+                    return True
+        return False
+
+    assert any(_is_final(m) for m in messages)
+
+    # Cleanup workspace to avoid clutter under $HOME
+    try:
+        shutil.rmtree(content_root, ignore_errors=True)
+    except Exception:
+        pass

@@ -5,9 +5,14 @@ from concurrent.futures import CancelledError
 from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
-from openai.types.responses import ResponseOutputMessage, ResponseOutputText
 import pytest
 from pydantic import TypeAdapter
+from adgn.llm.openai_utils.model import (
+    FakeOpenAIModel,
+    ResponsesResult,
+    Usage,
+    AssistantResponseMessage,
+)
 
 from adgn.llm.logging_config import configure_logging
 from adgn.llm.mini_codex.agent import MiniCodex
@@ -26,36 +31,16 @@ def test_ui_websocket_roundtrip_with_mocked_openai(
     and assert an assistant_text event is received.
     """
 
-    # 1) Monkeypatch the OpenAI Responses call used by MiniCodex to avoid network.
-    async def fake_create(
-        _client,
-        **kwargs,
-    ):
-        usage = SimpleNamespace(input_tokens=1, output_tokens=1, total_tokens=2)
-        msg = ResponseOutputMessage(
-            id="msg_1",
-            type="message",
-            status="completed",
-            role="assistant",
-            content=[
-                ResponseOutputText(type="output_text", text="pong", annotations=[])
-            ],
-        )
-        return SimpleNamespace(id="test-id", usage=usage, output=[msg])
-
-    monkeypatch.setattr(
-        "adgn.llm.mini_codex.agent._responses_create_with_retry",
-        fake_create,
-        raising=True,
-    )
-
-    # 2) Dummy OpenAI client (never called directly due to monkeypatch)
-    class DummyClient:
-        @property
-        def responses(self):  # pragma: no cover
-            raise AssertionError(
-                "responses.create should not be called directly in this test"
+    # Build a facade fake client that returns a single assistant text
+    model_client = FakeOpenAIModel(
+        [
+            ResponsesResult(
+                id="test-id",
+                usage=Usage(input_tokens=0, output_tokens=1, total_tokens=1),
+                output=[AssistantResponseMessage(text="pong")],
             )
+        ]
+    )
 
     # 3) Build a fresh app and attach a real McpManager + MiniCodex on the TestClient loop
     app = create_app()
@@ -92,7 +77,7 @@ def test_ui_websocket_roundtrip_with_mocked_openai(
                 model="test-model",
                 mcp=mcp,
                 system="You are a test agent.",
-                client=DummyClient(),
+                client=model_client,
                 handlers=[AutoHandler()],
                 parallel_tool_calls=False,
             )

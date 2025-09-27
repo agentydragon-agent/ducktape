@@ -17,6 +17,7 @@ from adgn.llm.mini_codex.handler import (
 )
 from adgn.llm.mini_codex.loggers import RecordingHandler
 from adgn.llm.mini_codex.mcp_manager import McpManager
+from adgn.llm.openai_utils.model import FakeOpenAIModel
 
 
 def _make_spy_server(counter: list[str]) -> FastMCP:
@@ -67,7 +68,7 @@ async def test_before_tool_call_inject_result_does_not_call_underlying_tool(
         ),
         responses_factory.make_assistant_text_response(text="done"),
     ]
-    client = fake_openai_client_factory(seq)
+    client = FakeOpenAIModel(seq)
 
     injected_result = mcp_types.CallToolResult(
         content=[],
@@ -123,7 +124,7 @@ async def test_before_tool_call_abort_turn_synthesizes_denied_and_aborted_output
         ),
         assistant_response_factory("dummy-model", "done"),
     ]
-    client = fake_openai_client_factory(seq)
+    client = FakeOpenAIModel(seq)
 
     async with McpManager({"spy": spec}) as mcp:
         rec = RecordingHandler()

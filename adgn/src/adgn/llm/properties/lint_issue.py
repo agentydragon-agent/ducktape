@@ -8,9 +8,8 @@ import tempfile
 import time
 from typing import Any, cast
 
-from mcp.server.fastmcp import FastMCP
-from openai import AsyncOpenAI
-from openai.types.responses import ResponseFunctionToolCall
+from adgn.llm.mcp._shared.fastmcp_helpers import SafeFastMCP
+from adgn.llm.openai_utils.model import FunctionCallOut
 from rich.console import Console, ConsoleRenderable, Group
 from rich.markdown import Markdown
 from rich.panel import Panel
@@ -21,8 +20,10 @@ from adgn.llm.mcp.docker_exec.server import (
     TOOL_EXEC_NAME as DOCKER_EXEC_TOOL_NAME,
 )
 from adgn.llm.mcp.inproc_transport import make_inproc_slot_spec
+from adgn.llm.mcp._shared.types import ExecInput
 from adgn.llm.mcp.types import ServerSlotSpec
 from adgn.llm.mini_codex.agent import MiniCodex
+from adgn.llm.openai_utils.model import OpenAIModelProto
 from adgn.llm.mini_codex.aggregating_handler import BaseHandler
 from adgn.llm.mini_codex.event_renderer import DisplayEventsHandler
 from adgn.llm.mini_codex.loggers import TranscriptLoggerHandler
@@ -126,7 +127,7 @@ def make_lint_submit_server(
     The linter agent must call this exactly once to signal completion. This flips
     shared state so the loop controller will stop the run on the next sampling step.
     """
-    mcp = FastMCP(name, instructions="Final result submission for linting run")
+    mcp = SafeFastMCP(name, instructions="Final result submission for linting run")
 
     @mcp.tool()
     async def submit_result(result: LintSubmitPayload) -> dict[str, Any]:
@@ -154,27 +155,27 @@ def make_nl_tool_call(
     server_name: str,
     container_path: Path,
     call_id: str,
-) -> ResponseFunctionToolCall:
+) -> FunctionCallOut:
     """Create a docker exec tool call to render a file with line numbers.
 
     Reads the entire file (no size cap) using `nl -ba -w1 -s ' ' <path>`.
     """
-    return ResponseFunctionToolCall(
-        type="function_call",
+    return FunctionCallOut(
         name=build_mcp_function(server_name, DOCKER_EXEC_TOOL_NAME),
         call_id=call_id,
         arguments=json.dumps(
-            {"cmd": ["nl", "-ba", "-w1", "-s", " ", str(container_path)]},
+            ExecInput(
+                cmd=["nl", "-ba", "-w1", "-s", " ", str(container_path)]
+            ).model_dump()
         ),
     )
 
 
 def make_container_info_call(
     wiring: PropertiesDockerWiring,
-) -> ResponseFunctionToolCall:
+) -> FunctionCallOut:
     """resources.read for resource://container.info on the docker server."""
-    return ResponseFunctionToolCall(
-        type="function_call",
+    return FunctionCallOut(
         name=build_mcp_function("resources", "read"),
         call_id="bootstrap:res",
         arguments=json.dumps(
@@ -190,18 +191,17 @@ def make_container_info_call(
 
 def make_ls_workspace_call(
     wiring: PropertiesDockerWiring, subpaths: list[str] | None = None
-) -> ResponseFunctionToolCall:
+) -> FunctionCallOut:
     """docker_exec ls -la for /workspace or provided subpaths."""
     targets = (
         [str(wiring.working_dir)]
         if not subpaths
         else [str(wiring.working_dir / p) for p in subpaths]
     )
-    return ResponseFunctionToolCall(
-        type="function_call",
+    return FunctionCallOut(
         name=build_mcp_function(wiring.server_name, DOCKER_EXEC_TOOL_NAME),
         call_id="bootstrap:ls",
-        arguments=json.dumps({"cmd": ["ls", "-la", *targets]}),
+        arguments=json.dumps(ExecInput(cmd=["ls", "-la", *targets]).model_dump()),
     )
 
 
@@ -279,8 +279,7 @@ class LinterController(BaseHandler):
         self._big_detected = any(size >= BIG_THRESHOLD for size in sizes.values())
         # Pre-build synthetic steps
         self._step1 = [
-            ResponseFunctionToolCall(
-                type="function_call",
+            FunctionCallOut(
                 name="mcp__resources__read",
                 call_id="bootstrap:res",
                 arguments=json.dumps(
@@ -295,8 +294,7 @@ class LinterController(BaseHandler):
         ]
         if self._dirs:
             self._step2 = [
-                ResponseFunctionToolCall(
-                    type="function_call",
+                FunctionCallOut(
                     name=build_mcp_function(
                         self._wiring.server_name,
                         DOCKER_EXEC_TOOL_NAME,
@@ -380,7 +378,7 @@ async def lint_issue_run(
     occurrence: Occurrence,
     *,
     model: str = "gpt-5",
-    client: AsyncOpenAI,
+    client: OpenAIModelProto,
     gitconfig: str | None = None,
     handlers: list[BaseHandler] | None = None,
 ) -> LintSubmitPayload:
@@ -468,7 +466,7 @@ async def run_specimen_lint_issue_async(
     dry_run: bool = False,
     gitconfig: str | None = None,
     occurrence_index: int,
-    client: AsyncOpenAI,
+    client: OpenAIModelProto,
 ) -> int:
     # Resolve specimen/issue via registry (strict load; crash on invalid specimen/issues)
     rec = SpecimenRegistry.load_strict(specimen)

@@ -7,6 +7,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from adgn.llm.mini_codex.mcp_manager import McpManager  # structured MCP snapshot types
+from adgn.llm.mini_codex.ui.state import UiState
 
 # --------------------------
 # Envelope and core state
@@ -106,8 +107,25 @@ class ReasoningChunk(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class UiMessagePayload(BaseModel):
+    mime: Literal["text/markdown"] = "text/markdown"
+    content: str
+    model_config = ConfigDict(extra="forbid")
+
+
+class UiMessageEvt(BaseModel):
+    type: Literal["ui_message"] = "ui_message"
+    message: UiMessagePayload
+    model_config = ConfigDict(extra="forbid")
+
+
 TranscriptItem = Annotated[
-    UserText | AssistantText | ToolCall | FunctionCallOutput | ReasoningChunk,
+    UserText
+    | AssistantText
+    | ToolCall
+    | FunctionCallOutput
+    | ReasoningChunk
+    | UiMessageEvt,
     Field(discriminator="type"),
 ]
 
@@ -183,10 +201,26 @@ class Snapshot(BaseModel):
     v: str
     session_state: SessionState
     run_state: RunState | None = None
-    transcript: list[TranscriptItem] = []
     # Structured MCP state for UI and sampling (Pydantic models from McpManager)
     sampling: McpManager.SamplingSnapshot | None = None
     mcp_servers: list[McpServerInfo] = []
+    model_config = ConfigDict(extra="forbid")
+
+
+# New: server-owned UiState messages
+class UiStateSnapshot(BaseModel):
+    type: Literal["ui_state_snapshot"] = "ui_state_snapshot"
+    v: Literal["ui_state_v1"] = "ui_state_v1"
+    seq: int
+    state: UiState
+    model_config = ConfigDict(extra="forbid")
+
+
+class UiStateUpdated(BaseModel):
+    type: Literal["ui_state_updated"] = "ui_state_updated"
+    v: Literal["ui_state_v1"] = "ui_state_v1"
+    seq: int
+    state: UiState
     model_config = ConfigDict(extra="forbid")
 
 
@@ -285,10 +319,13 @@ ServerMessage = Annotated[
     | HeartbeatEvt
     | BackpressureEvt
     | Snapshot
+    | UiStateSnapshot
+    | UiStateUpdated
     | UserText
     | AssistantText
     | ToolCall
     | FunctionCallOutput
-    | ReasoningChunk,
+    | ReasoningChunk
+    | UiMessageEvt,
     Field(discriminator="type"),
 ]

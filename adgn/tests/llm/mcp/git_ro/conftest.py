@@ -6,7 +6,7 @@ from pathlib import Path
 import pygit2
 import pytest
 
-from adgn.llm.mcp.git_ro.server import make_git_ro_server
+from adgn.llm.mcp.git_ro.server import make_git_ro_server, GIT_RO_SERVER_NAME
 from adgn.llm.mcp.inproc_transport import make_inproc_slot_spec
 
 
@@ -82,5 +82,17 @@ def git_ro_session(repo_git_ro: Path):
         async with AsyncExitStack() as stack:
             slot = await spec.open(stack)
             yield slot.session
+
+    return _open
+
+
+@pytest.fixture
+def typed_git_ro(repo_git_ro: Path, make_typed_mcp):
+    server = make_git_ro_server(repo_git_ro)
+
+    @asynccontextmanager
+    async def _open():
+        async with make_typed_mcp(server, GIT_RO_SERVER_NAME) as pair:
+            yield pair
 
     return _open

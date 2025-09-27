@@ -3,6 +3,12 @@ import shutil
 
 import pytest
 import docker
+from contextlib import asynccontextmanager
+from typing import AsyncIterator, Tuple
+from mcp.server.fastmcp import FastMCP
+from adgn.llm.mcp.inproc_transport import make_inproc_slot_spec
+from adgn.llm.mcp.testing.typed_stubs import TypedClient
+from adgn.llm.mini_codex.mcp_manager import McpManager
 
 
 def pytest_configure(config):
@@ -65,3 +71,29 @@ def require_sandbox_exec() -> None:
         pytest.skip("macOS-only (sandbox-exec)")
     if not shutil.which("sandbox-exec"):
         pytest.skip("sandbox-exec not found on PATH")
+
+
+# ---- Shared MCP typed client fixture ----------------------------------------
+
+
+@pytest.fixture
+def make_typed_mcp():
+    """Factory that yields (TypedClient, session) for a single in-proc MCP server.
+
+    Usage:
+        async with make_typed_mcp(server, "name") as (client, session):
+            Args = client.models["tool"].Input
+            out = await client.tool(Args(...))
+    """
+
+    @asynccontextmanager
+    async def _open(
+        server: FastMCP, name: str
+    ) -> AsyncIterator[Tuple[TypedClient, object]]:
+        spec = make_inproc_slot_spec(server)
+        async with McpManager({name: spec}) as mcp:
+            session = await mcp.get_session(name)
+            client = TypedClient.from_server(server, session)
+            yield client, session
+
+    return _open

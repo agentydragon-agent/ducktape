@@ -4,18 +4,14 @@ import json
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
-from openai.types.responses import (
-    Response,
-    ResponseFunctionToolCall,
-    ResponseOutputMessage,
-    ResponseOutputText,
-)
-from openai.types.responses.response_usage import (
-    InputTokensDetails,
-    OutputTokensDetails,
-    ResponseUsage,
-)
 import pytest
+from adgn.llm.openai_utils.model import (
+    FakeOpenAIModel,
+    ResponsesResult,
+    Usage,
+    FunctionCallOut,
+    AssistantResponseMessage,
+)
 
 from adgn.llm.mcp.inproc_transport import make_inproc_slot_spec
 from adgn.llm.mini_codex.agent import MiniCodex
@@ -35,72 +31,6 @@ def _make_failing_server() -> FastMCP:
     return mcp
 
 
-class FakeResponses:
-    def __init__(self, model: str) -> None:
-        self.model = model
-        self.calls = 0
-
-    async def create(self, **kwargs: Any) -> Response:  # type: ignore[override]
-        self.calls += 1
-        # First call: request to invoke the failing tool once
-        if self.calls == 1:
-            tc = ResponseFunctionToolCall(
-                type="function_call",
-                call_id="call1",
-                name="mcp__editor__fail",
-                arguments=json.dumps({"x": 1}),
-            )
-            return Response(
-                id="r1",
-                created_at=0,
-                model=self.model,
-                object="response",
-                output=[tc],
-                parallel_tool_calls=False,
-                tool_choice="auto",
-                tools=[],
-                usage=ResponseUsage(
-                    input_tokens=0,
-                    input_tokens_details=InputTokensDetails(cached_tokens=0),
-                    output_tokens=0,
-                    output_tokens_details=OutputTokensDetails(reasoning_tokens=0),
-                    total_tokens=0,
-                ),
-            )
-        # Second call: no further tool calls (break loop)
-        msg = ResponseOutputMessage(
-            id="m1",
-            type="message",
-            role="assistant",
-            status="completed",
-            content=[
-                ResponseOutputText(type="output_text", text="done", annotations=[]),
-            ],
-        )
-        return Response(
-            id="r2",
-            created_at=1,
-            model=self.model,
-            object="response",
-            output=[msg],
-            parallel_tool_calls=False,
-            tool_choice="auto",
-            tools=[],
-            usage=ResponseUsage(
-                input_tokens=0,
-                input_tokens_details=InputTokensDetails(cached_tokens=0),
-                output_tokens=1,
-                output_tokens_details=OutputTokensDetails(reasoning_tokens=0),
-                total_tokens=1,
-            ),
-        )
-
-
-class FakeOpenAIClient:
-    def __init__(self, model: str) -> None:
-        self.responses = FakeResponses(model)
-
-
 @pytest.mark.asyncio
 async def test_tool_error_is_surfaced_in_sequence(
     monkeypatch: pytest.MonkeyPatch,
@@ -117,11 +47,31 @@ async def test_tool_error_is_surfaced_in_sequence(
 
         rec = RecordingHandler()
 
+        client = FakeOpenAIModel(
+            [
+                ResponsesResult(
+                    id="fc",
+                    usage=Usage(input_tokens=0, output_tokens=0, total_tokens=0),
+                    output=[
+                        FunctionCallOut(
+                            call_id="call_1",
+                            name="mcp__editor__fail",
+                            arguments=json.dumps({"x": 1}),
+                        )
+                    ],
+                ),
+                ResponsesResult(
+                    id="msg",
+                    usage=Usage(input_tokens=0, output_tokens=1, total_tokens=1),
+                    output=[AssistantResponseMessage(text="done")],
+                ),
+            ]
+        )
         agent = await MiniCodex.create(
             model=responses_factory.model,
             mcp=mcp,
             system="You are a code agent.",
-            client=FakeOpenAIClient(responses_factory.model),  # type: ignore[arg-type]
+            client=client,
             handlers=[_AutoHandler(), rec],
         )
         await agent.run("call failing tool once")

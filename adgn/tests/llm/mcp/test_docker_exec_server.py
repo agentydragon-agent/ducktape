@@ -1,90 +1,65 @@
 from __future__ import annotations
 
-from contextlib import AsyncExitStack
-import os
 
 import anyio
-from mcp import ClientSession
 import pytest
 
 
-def _extract_payload(resp):
-    if getattr(resp, "structuredContent", None):
-        return resp.structuredContent
-    if hasattr(resp, "result") and isinstance(resp.result, dict):
-        return resp.result
-    raise AssertionError(f"Unexpected tool response shape: {resp!r}")
+# All tests below require structuredContent and call via the typed client
 
 
-async def _call_exec(
-    session: ClientSession,
-    cmd: list[str],
-    timeout_secs: float | None = None,
-):
-    payload: dict[str, object] = {"cmd": cmd}
-    if timeout_secs is not None:
-        payload["timeout_secs"] = timeout_secs
-    response = await session.call_tool(name="docker_exec", arguments=payload)
-    return _extract_payload(response)
-
-
-@pytest.mark.skipif(
-    os.environ.get("CI") == "true",
-    reason="Requires local Docker engine",
-)
-def test_hello_world(docker_inproc_spec_alpine) -> None:
+@pytest.mark.requires_docker
+def test_hello_world(docker_exec_server_alpine, make_typed_mcp) -> None:
     async def inner() -> None:
-        async with AsyncExitStack() as stack:
-            slot = await docker_inproc_spec_alpine.open(stack)
-            session: ClientSession = slot.session
+        async with make_typed_mcp(docker_exec_server_alpine, "docker") as (
+            client,
+            session,
+        ):
             tools = await session.list_tools()
             names = {t.name for t in tools.tools}
             assert "docker_exec" in names
 
-            payload = await _call_exec(session, ["/bin/echo", "hello"], timeout_secs=10)
-            assert payload["exit_code"] == 0
-            assert payload["timed_out"] is False
-            assert "hello" in (payload["stdout"] or "")
+            Args = client.models["docker_exec"].Input
+            res = await client.docker_exec(
+                Args(cmd=["/bin/echo", "hello"], timeout_secs=10)
+            )
+            assert res.exit_code == 0
+            assert res.timed_out is False
+            assert "hello" in (res.stdout or "")
 
     anyio.run(inner)
 
 
-@pytest.mark.skipif(
-    os.environ.get("CI") == "true",
-    reason="Requires local Docker engine",
-)
-def test_stderr_and_exit_code(docker_inproc_spec_alpine) -> None:
+@pytest.mark.requires_docker
+def test_stderr_and_exit_code(docker_exec_server_alpine, make_typed_mcp) -> None:
     async def inner() -> None:
-        async with AsyncExitStack() as stack:
-            slot = await docker_inproc_spec_alpine.open(stack)
-            session: ClientSession = slot.session
-            payload = await _call_exec(
-                session,
-                ["sh", "-lc", "echo err 1>&2; exit 3"],
-                timeout_secs=10,
+        async with make_typed_mcp(docker_exec_server_alpine, "docker") as (
+            client,
+            _session,
+        ):
+            Args = client.models["docker_exec"].Input
+            res = await client.docker_exec(
+                Args(cmd=["sh", "-lc", "echo err 1>&2; exit 3"], timeout_secs=10)
             )
-            expected_err_exit = 3  # magic number conveys exit code under test
-            assert payload["exit_code"] == expected_err_exit
-            assert "err" in (payload["stderr"] or "")
+            expected_err_exit = 3
+            assert res.exit_code == expected_err_exit
+            assert "err" in (res.stderr or "")
 
     anyio.run(inner)
 
 
-@pytest.mark.skipif(
-    os.environ.get("CI") == "true",
-    reason="Requires local Docker engine",
-)
-def test_timeout_flag(docker_inproc_spec_alpine) -> None:
+@pytest.mark.requires_docker
+def test_timeout_flag(docker_exec_server_alpine, make_typed_mcp) -> None:
     async def inner() -> None:
-        async with AsyncExitStack() as stack:
-            slot = await docker_inproc_spec_alpine.open(stack)
-            session: ClientSession = slot.session
-            payload = await _call_exec(
-                session,
-                ["sh", "-lc", "sleep 5"],
-                timeout_secs=0.5,
+        async with make_typed_mcp(docker_exec_server_alpine, "docker") as (
+            client,
+            _session,
+        ):
+            Args = client.models["docker_exec"].Input
+            res = await client.docker_exec(
+                Args(cmd=["sh", "-lc", "sleep 5"], timeout_secs=0.5)
             )
-            assert payload["timed_out"] is True
-            assert payload.get("exit_code") in (None, 124, 143, 137, 1, 255)
+            assert res.timed_out is True
+            assert res.exit_code in (None, 124, 143, 137, 1, 255)
 
     anyio.run(inner)

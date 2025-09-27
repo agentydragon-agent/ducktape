@@ -1,5 +1,5 @@
 import contextlib
-from datetime import datetime
+from datetime import datetime, timedelta as _td
 import importlib.util
 import io
 import os
@@ -10,6 +10,9 @@ import subprocess
 import tempfile
 import time
 from unittest.mock import Mock
+import json
+import socket
+import uuid
 
 from click.testing import CliRunner
 import pygit2
@@ -25,20 +28,34 @@ from adgn.wt.shared.config_file import ConfigFile
 from adgn.wt.shared.configuration import Configuration
 from adgn.wt.shared.models import CommitInfo
 from adgn.wt.shell.install import main as emit_function
+from .test_utils import run_cli_command
 
 from .config_factory import ConfigFactory
 from .mock_factory import MockFactory
 from .repo_factory import GitRepoFactory
+from typing import Mapping
+from adgn.wt.shared.fixtures import PRFixtureEntry, write_pr_fixtures_file
 
 
 @pytest.fixture(scope="session", autouse=True)
 def _project_root_on_pythonpath():
-    project_root = str(Path(__file__).resolve().parents[1])
-    existing = os.environ.get("PYTHONPATH", "")
-    os.environ["PYTHONPATH"] = (
-        f"{project_root}:{existing}" if existing else project_root
-    )
     os.environ["WT_TEST_MODE"] = "1"
+
+
+@pytest.fixture
+def write_pr_fixtures():
+    """Write typed PR fixtures to $WT_DIR/pr_fixtures.json.
+
+    Example:
+        write_pr_fixtures(config, {"feature-x": PRFixtureEntry(number=123, ...)})
+    """
+
+    def _write(
+        config: Configuration, mapping: Mapping[str, PRFixtureEntry | dict]
+    ) -> Path:
+        return write_pr_fixtures_file(config, mapping)
+
+    return _write
 
 
 @pytest.fixture(autouse=True)
@@ -195,7 +212,7 @@ def kill_daemon_at_wt_dir(wt_dir: Path) -> None:
     # Attempt graceful shutdown via CLI (succeeds even if daemon already gone)
     try:
         result = subprocess.run(
-            ["python3", "-m", "wt.cli", "sh", "kill-daemon"],
+            ["python3", "-m", "adgn.wt.cli", "sh", "kill-daemon"],
             capture_output=True,
             text=True,
             timeout=5.0,
@@ -284,6 +301,73 @@ def real_env(real_temp_repo, config_factory):
 
     # Cleanup: Kill daemon after test
     kill_daemon_at_wt_dir(config.wt_dir)
+
+
+@pytest.fixture
+def wt_cli(real_env):
+    """Convenience wrapper around run_cli_command bound to real_env.
+
+    Usage:
+      wt_cli.sh('ls'); wt_cli.sh_c('alpha'); wt_cli.status()
+    """
+
+    class _WtCLI:
+        def __init__(self, env: dict[str, str]):
+            self.env = env
+
+        def sh(
+            self, *args: str, timeout: _td = _td(seconds=30), cwd: Path | None = None
+        ):
+            return run_cli_command(
+                ["sh", *args], env=self.env, timeout=timeout, cwd=cwd
+            )
+
+        def sh_c(
+            self, cmd: str, timeout: _td = _td(seconds=30), cwd: Path | None = None
+        ):
+            return run_cli_command(
+                ["sh", "-c", cmd], env=self.env, timeout=timeout, cwd=cwd
+            )
+
+        def status(self, timeout: _td = _td(seconds=30), cwd: Path | None = None):
+            return run_cli_command(["sh"], env=self.env, timeout=timeout, cwd=cwd)
+
+        def kill(self, timeout: _td = _td(seconds=30)):
+            """Request the daemon to shut down via CLI."""
+            return run_cli_command(["sh", "kill-daemon"], env=self.env, timeout=timeout)
+
+        def rpc(self, sock_path: str | os.PathLike, method: str, params: dict):
+            """Minimal JSON-RPC helper to call the daemon directly over a UNIX socket."""
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
+                s.connect(str(sock_path))
+                with s.makefile("rwb") as f:
+                    req = {
+                        "jsonrpc": "2.0",
+                        "method": method,
+                        "params": params,
+                        "id": str(uuid.uuid4()),
+                    }
+                    f.write((json.dumps(req) + "\n").encode())
+                    f.flush()
+                    line = f.readline()
+                    return (
+                        json.loads(line.decode()) if line else {"error": "no response"}
+                    )
+
+        def wait_for(
+            self, predicate, timeout: _td = _td(seconds=5), interval: float = 0.1
+        ) -> bool:
+            """Poll a predicate until it returns True or timeout elapses."""
+            import time
+
+            deadline = time.time() + timeout.total_seconds()
+            while time.time() < deadline:
+                if predicate():
+                    return True
+                time.sleep(interval)
+            return False
+
+    return _WtCLI(real_env)
 
 
 @pytest.fixture
@@ -391,9 +475,10 @@ def shell_runner():
             cwd: Path,
             env: dict[str, str] | None = None,
         ):
+            # Ensure adgn.wt is importable (package installed) before attempting shell integration
             assert importlib.util.find_spec(
-                "wt",
-            ), "wt package not installed - required for shell integration tests"
+                "adgn.wt",
+            ), "adgn.wt package not installed - required for shell integration tests"
             # Ensure env is a copy
             env = os.environ.copy() if env is None else env.copy()
 

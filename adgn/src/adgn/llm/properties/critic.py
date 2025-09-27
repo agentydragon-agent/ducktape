@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import Any, Annotated, cast
 
-from mcp.server.fastmcp import FastMCP
+from adgn.llm.mcp._shared.fastmcp_helpers import SafeFastMCP
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 from rich.console import Group, RenderableType
 from rich.markdown import Markdown
@@ -164,7 +164,7 @@ def make_critic_submit_server(
     state: CriticSubmitState,
     *,
     name: str = "critic_submit",
-) -> FastMCP:
+) -> SafeFastMCP:
     """Create a FastMCP exposing submit_result(result: CriticSubmitPayload) -> {ok: True}.
 
     Agent must call submit_result exactly once to deliver a validated CriticSubmitPayload.
@@ -172,7 +172,7 @@ def make_critic_submit_server(
     will raise and be returned to the caller as an error.
     """
 
-    mcp = FastMCP(
+    mcp = SafeFastMCP(
         name,
         instructions=CRITIC_MCP_INSTRUCTIONS,
     )

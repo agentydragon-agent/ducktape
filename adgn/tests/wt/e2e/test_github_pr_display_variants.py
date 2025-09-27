@@ -8,8 +8,9 @@ import socket
 import uuid
 
 import pytest
+from datetime import timedelta, datetime
 
-from ..test_utils import add_project_root_to_env, run_cli_command
+from adgn.wt.shared.fixtures import PRFixtureEntry
 
 # Global conftest disables gh token via get_github_token
 
@@ -19,6 +20,7 @@ def _write_shadow_github(mock_root: Path, variant: str):
     mock_pkg.mkdir(parents=True, exist_ok=True)
     if variant == "open_mergeable":
         body = """
+from datetime import timedelta, datetime
 from types import SimpleNamespace as NS
 class Github:
     def __init__(self, *args, **kwargs):
@@ -76,6 +78,7 @@ class Github:
     elif variant == "none":
         body = """
 from types import SimpleNamespace as NS
+from datetime import timedelta, datetime
 class Github:
     def __init__(self, *args, **kwargs):
         pass
@@ -119,25 +122,63 @@ def _rpc_json(sock_path: str | os.PathLike, method: str, params: dict) -> dict:
         ("none", []),
     ],
 )
-def test_github_pr_variants(real_temp_repo, config_factory, tmp_path, variant, expects):
+def test_github_pr_variants(
+    real_temp_repo,
+    config_factory,
+    tmp_path,
+    variant,
+    expects,
+    write_pr_fixtures,
+    wt_cli,
+):
     factory = config_factory(real_temp_repo)
     config = factory.integration(github_enabled=True, github_repo="test/test")
 
-    mock_root = tmp_path / "mockpkgs"
-    _write_shadow_github(mock_root, variant)
-
     env = os.environ.copy()
     env["WT_DIR"] = str(config.wt_dir)
-    add_project_root_to_env(env)
-    existing = env.get("PYTHONPATH", "")
-    env["PYTHONPATH"] = f"{mock_root}:{existing}" if existing else str(mock_root)
+    # Bind wt_cli to this test's WT_DIR/config
+    wt_cli.env = env  # type: ignore[attr-defined]
+    # Write PR fixtures for WT_TEST_MODE to avoid PYTHONPATH hacks
+    if variant == "none":
+        pr_map = {}
+    else:
+        entry = PRFixtureEntry(
+            number=123
+            if variant == "open_mergeable"
+            else 456
+            if variant == "merged"
+            else 789
+            if variant == "closed"
+            else 0,
+            state="open" if variant == "open_mergeable" else "closed",
+            draft=False,
+            mergeable=True if variant in {"open_mergeable", "merged"} else False,
+            merged_at=None if variant != "merged" else datetime.now().isoformat(),
+            additions=10
+            if variant == "open_mergeable"
+            else 3
+            if variant == "merged"
+            else 4
+            if variant == "closed"
+            else 0,
+            deletions=2
+            if variant == "open_mergeable"
+            else 1
+            if variant == "merged"
+            else 4
+            if variant == "closed"
+            else 0,
+        )
+        pr_map = {"feature-x": entry, "*": entry}
+    # Use shared fixture helper to write Pydantic-validated map
+    write_pr_fixtures(config, pr_map)
 
     # Start daemon
-    r1 = run_cli_command(["sh"], env=env, timeout=30.0)
+    r1 = wt_cli.status(timeout=timedelta(seconds=30.0))
     assert r1.returncode == 0
 
     # Create a worktree and wait for PR display
-    r2 = run_cli_command(["sh", "-c", "feature-x"], env=env, timeout=30.0)
+    r2 = wt_cli.sh_c("feature-x", timeout=timedelta(seconds=30.0))
     assert r2.returncode == 0
 
     # Lookup wtid and force a PR refresh synchronously via RPC to avoid polling
@@ -152,7 +193,7 @@ def test_github_pr_variants(real_temp_repo, config_factory, tmp_path, variant, e
     assert refresh_res.get("result") == "ok"
 
     # Render once and assert
-    out = run_cli_command(["sh"], env=env, timeout=30.0).stdout
+    out = wt_cli.status(timeout=timedelta(seconds=30.0)).stdout
     if expects:
         for x in expects:
             assert x in out

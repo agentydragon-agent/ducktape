@@ -203,6 +203,7 @@ echo "Script executed at: $worktree_root" > "$worktree_root/script_output.txt"
         service, config = self._make_service(
             repo_factory,
             config_factory,
+            service_builder=service_builder,
             hydrate_worktrees=False,
         )
         src = service.create_worktree(config, "src")

@@ -7,10 +7,9 @@ from pathlib import Path
 import time
 from typing import Any
 
-from openai import AsyncOpenAI
-
 from adgn.llm.mcp.types import ServerSlotSpec
 from adgn.llm.mini_codex.agent import MiniCodex
+from adgn.llm.openai_utils.model import OpenAIModelProto
 from adgn.llm.mini_codex.agent_progress import OneLineProgressHandler
 from adgn.llm.mini_codex.aggregating_handler import AutoHandler
 from adgn.llm.mini_codex.loggers import TranscriptLoggerHandler
@@ -27,7 +26,7 @@ async def run_prompt_async(
     prompt: str,
     model: str,
     specs: Mapping[str, ServerSlotSpec],
-    client: AsyncOpenAI,
+    client: OpenAIModelProto,
     capture_transcript: bool = True,
     system_prompt: str = "You are a code agent. Be concise.",
 ) -> AgentResult:

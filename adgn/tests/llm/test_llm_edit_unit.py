@@ -8,21 +8,17 @@ from pathlib import Path
 import pytest
 
 from adgn.llm.mcp.editor_server import DoneInput, is_python_path, make_editor_mcp
-from adgn.llm.mcp.inproc_transport import make_inproc_slot_spec
-from adgn.llm.mini_codex.mcp_manager import McpManager
 
 
 @pytest.fixture
-def editor_session():
-    """Factory fixture yielding an in-proc FastMCP client session context manager for a given path."""
+def editor_session(make_typed_mcp):
+    """Factory fixture yielding (TypedClient, session) for a given path using shared helper."""
 
     @asynccontextmanager
     async def _open(p: Path):
-        # Open a one-off in-proc MCP session via the standard wrapper
-        spec = make_inproc_slot_spec(make_editor_mcp(p))
-        async with McpManager({"editor": spec}) as mcp:
-            sess = await mcp.get_session("editor")
-            yield sess
+        server = make_editor_mcp(p)
+        async with make_typed_mcp(server, "editor") as pair:
+            yield pair
 
     return _open
 
@@ -62,20 +58,16 @@ async def test_done_for_non_python_no_syntax_check(
     p = tmp_path / "note.md"
     p.write_text("hello\n", encoding="utf-8")
 
-    async with editor_session(p) as sess:
+    async with editor_session(p) as (client, sess):
         # Append a line after the first line (1-based after = insert at index 1)
         await sess.call_tool(
             name="add_line_after",
             arguments={"line_number": 1, "content": "world"},
         )
         # Finish successfully; should not run python syntax checks
-        res = await sess.call_tool(
-            name="done",
-            arguments={"payload": DoneInput(outcome="success", summary="ok")},
-        )
-        data = _extract_result(res)
-        assert data.get("kind") == "Success"
-        assert data.get("summary") == "ok"
+        out = await client.done(DoneInput(outcome="success", summary="ok"))
+        assert out.kind == "Success"
+        assert out.summary == "ok"
 
     # file saved with edits
     assert p.read_text(encoding="utf-8") == "hello\nworld\n"
@@ -89,19 +81,15 @@ async def test_done_python_syntax_failure_returns_structured_failure(
     p = tmp_path / "bad.py"
     p.write_text("def f():\n    return 1\n", encoding="utf-8")  # start valid
 
-    async with editor_session(p) as sess:
+    async with editor_session(p) as (client, sess):
         # Introduce a syntax error by replacing the function header
         await sess.call_tool(
             name="replace_text",
             arguments={"old_text": "def f():", "new_text": "def f(:"},
         )
-        res = await sess.call_tool(
-            name="done",
-            arguments={"payload": DoneInput(outcome="success", summary="finish")},
-        )
-        data = _extract_result(res)
-        assert data.get("kind") == "Failure"
-        assert "Cannot complete" in (data.get("summary") or "")
+        out = await client.done(DoneInput(outcome="success", summary="finish"))
+        assert out.kind == "Failure"
+        assert "Cannot complete" in (out.summary or "")
 
     # file on disk should not have been overwritten with bad content
     assert p.read_text(encoding="utf-8") == "def f():\n    return 1\n"
@@ -115,20 +103,16 @@ async def test_done_explicit_failure_reverts_in_memory(
     p = tmp_path / "file.txt"
     p.write_text("A\n", encoding="utf-8")
 
-    async with editor_session(p) as sess:
+    async with editor_session(p) as (client, sess):
         # Stage change to "B" in-memory: delete line 1 and insert B at start
         await sess.call_tool(name="delete_line", arguments={"line_number": 1})
         await sess.call_tool(
             name="add_line_after",
             arguments={"line_number": 0, "content": "B"},
         )
-        res = await sess.call_tool(
-            name="done",
-            arguments={"payload": DoneInput(outcome="failure", summary="abort")},
-        )
-        data = _extract_result(res)
-        assert data.get("kind") == "Failure"
-        assert data.get("summary") == "abort"
+        out = await client.done(DoneInput(outcome="failure", summary="abort"))
+        assert out.kind == "Failure"
+        assert out.summary == "abort"
         # Ensure in-memory state reverted by reading current first line
         rr = await sess.call_tool(
             name="read_line_range",

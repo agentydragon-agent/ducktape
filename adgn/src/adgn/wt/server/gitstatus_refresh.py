@@ -1,7 +1,6 @@
 import asyncio
 import logging
 from pathlib import Path
-import threading
 
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
@@ -20,6 +19,9 @@ class DebouncedGitstatusRefresh:
         self.refresh_callback = refresh_callback
         self.debounce_delay = debounce_delay
         self._pending: asyncio.Task | None = None
+        self._loop: asyncio.AbstractEventLoop | None = (
+            None  # Main loop captured on start()
+        )
 
         self.observer: Observer | None = None
         self.handler = _GitHandler(self)
@@ -44,6 +46,8 @@ class DebouncedGitstatusRefresh:
     async def start(self):
         if self.is_running:
             return
+        # Capture the running loop once; all scheduling goes through this loop
+        self._loop = asyncio.get_running_loop()
         self.is_running = True
         git_dir = self._resolve_git_dir()
         self.observer = Observer()
@@ -66,25 +70,27 @@ class DebouncedGitstatusRefresh:
         if self._pending:
             self._pending.cancel()
             self._pending = None
+        self._loop = None
 
     def trigger(self, reason: str):
-        if self._pending:
-            self._pending.cancel()
-        try:
-            loop = asyncio.get_running_loop()
-            self._pending = loop.create_task(self._debounced(reason))
-        except RuntimeError:
-            # No running loop (watchdog thread); schedule soon on default loop
-            def _enqueue():
-                try:
-                    loop = asyncio.get_event_loop()
-                    loop.call_soon_threadsafe(
-                        lambda: asyncio.create_task(self._debounced(reason)),
-                    )
-                except Exception:
-                    logger.exception("Failed to enqueue debounced gitstatus refresh")
+        """Schedule a debounced refresh on the main event loop, thread-safely.
 
-            threading.Thread(target=_enqueue, daemon=True).start()
+        Single mechanism: always use the loop captured in start() and submit via
+        call_soon_threadsafe. No per-thread get_event_loop fallbacks.
+        """
+        if not self._loop:
+            logger.warning(
+                "No event loop available to schedule gitstatus refresh; dropping '%s'",
+                reason,
+            )
+            return
+
+        def _schedule() -> None:
+            if self._pending:
+                self._pending.cancel()
+            self._pending = asyncio.create_task(self._debounced(reason))
+
+        self._loop.call_soon_threadsafe(_schedule)
 
     async def _debounced(self, reason: str):
         try:

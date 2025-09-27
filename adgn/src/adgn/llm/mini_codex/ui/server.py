@@ -7,10 +7,11 @@ import json
 import logging
 from pathlib import Path
 from typing import Annotated, Any, Literal as _Lit, cast
+from adgn.llm.mini_codex.ui.shared_bus import UiBus, UiMessage
 import uuid
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from mcp import types as mcp_types
 from pydantic import BaseModel, Field, TypeAdapter
@@ -32,11 +33,11 @@ from adgn.llm.mini_codex.handler import (
 from adgn.llm.mini_codex.ui.protocol import (
     Accepted,
     ApprovalApprove,
+    ApprovalBrief,
     ApprovalDecisionEvt,
     ApprovalDenyAbort,
     ApprovalDenyContinue,
     ApprovalPendingEvt,
-    AssistantText,
     Envelope,
     ErrorCode,
     ErrorEvt,
@@ -48,11 +49,18 @@ from adgn.llm.mini_codex.ui.protocol import (
     SessionState,
     Snapshot,
     ToolCall,
+    UiMessageEvt,
+    UiMessagePayload,
+    UiStateSnapshot,
+    UiStateUpdated,
     UserText,
 )
+from adgn.llm.mini_codex.ui.state import UiState, new_state
+from adgn.llm.mini_codex.ui.reducer import reduce_ui_state
 
 
 PROTOCOL_VERSION = "1.0.0"
+
 logger = logging.getLogger("mini_codex.ui")
 
 
@@ -109,6 +117,24 @@ class ConnectionManager(BaseHandler):
         for _ws, q, _task in list(self._clients.values()):
             q.put_nowait(payload)
 
+    async def _send_and_reduce(self, payload: ServerMessage) -> None:
+        await self.send_payload(payload)
+        assert self._session is not None
+        await self._session._apply_ui_event(payload)
+
+    async def _emit_ui_bus_messages(self) -> None:
+        # Drain per-agent UI bus (if any) and emit UiMessageEvt in order, reducing into UiState
+        assert self._session is not None
+        bus = getattr(self._session, "ui_bus", None)
+        if bus is None:
+            return
+        for item in bus.drain_messages():
+            if isinstance(item, UiMessage):
+                evt = UiMessageEvt(
+                    message=UiMessagePayload(mime=item.mime, content=item.content)
+                )
+                await self._send_and_reduce(evt)
+
     async def send_payload(self, payload: ServerMessage) -> None:
         evt_id = self._next_event_id()
         envelope = Envelope(
@@ -119,12 +145,6 @@ class ConnectionManager(BaseHandler):
         )
         env_dict = envelope.model_dump(mode="json")
         await self.send_json(env_dict)
-        # Record transcript items so snapshot on reload shows history
-        if self._session is not None:
-            if isinstance(
-                payload, (UserText, AssistantText, ToolCall, FunctionCallOutput)
-            ):
-                self._session.transcript.append(payload.model_dump(mode="json"))
 
     # ---- Handler adapter methods (so manager can be used as a BaseHandler) ----
     def set_session(self, session: AgentSession) -> None:
@@ -145,7 +165,8 @@ class ConnectionManager(BaseHandler):
         await asyncio.gather(*tasks, return_exceptions=True)
 
     def on_user_text_event(self, evt: Any) -> None:
-        self._spawn(self.send_payload(UserText(text=evt.text)))
+        ut = UserText(text=evt.text)
+        self._spawn(self._send_and_reduce(ut))
 
     async def _send_direct_all(self, payload: dict[str, Any]) -> None:
         for ws, _q, _task in list(self._clients.values()):
@@ -156,18 +177,15 @@ class ConnectionManager(BaseHandler):
                 raise
 
     def on_assistant_text_event(self, evt: Any) -> None:
-        logger.info(
-            "manager: assistant_text_event",
-            extra={"len": len(getattr(evt, "text", ""))},
+        # UI mode contract: assistant must not emit plain text.
+        # Agents should call ui.send_message (MCP) which becomes UiMessageEvt/AssistantMarkdown.
+        raise RuntimeError(
+            "assistant_text not allowed in UI mode; use ui.send_message tool instead"
         )
-        self._spawn(self.send_payload(AssistantText(text=evt.text)))
 
     def on_tool_call_event(self, evt: Any) -> None:
-        self._spawn(
-            self.send_payload(
-                ToolCall(name=evt.name, args_json=evt.args_json, call_id=evt.call_id)
-            )
-        )
+        tc = ToolCall(name=evt.name, args_json=evt.args_json, call_id=evt.call_id)
+        self._spawn(self._send_and_reduce(tc))
 
     async def before_tool_call(self, evt: Any) -> BeforeToolCallDecision:
         await self.send_payload(
@@ -197,18 +215,16 @@ class ConnectionManager(BaseHandler):
             raise TypeError(
                 f"Unknown handler decision type from approval hub: {type(decision).__name__}"
             )
-        await self.send_payload(
-            ApprovalDecisionEvt(call_id=evt.call_id, decision=proto_dec)
-        )
+        ade = ApprovalDecisionEvt(call_id=evt.call_id, decision=proto_dec)
+        await self._send_and_reduce(ade)
         # Return the handler decision directly to the agent
         return decision
 
     def on_function_call_output_event(self, evt: Any) -> None:
-        self._spawn(
-            self.send_payload(
-                FunctionCallOutput(call_id=evt.call_id, output=evt.output)
-            )
-        )
+        fco = FunctionCallOutput(call_id=evt.call_id, output=evt.output)
+        self._spawn(self._send_and_reduce(fco))
+        # Drain UI messages right after the function output to preserve order
+        self._spawn(self._emit_ui_bus_messages())
 
 
 class AgentSession:
@@ -218,13 +234,15 @@ class AgentSession:
     """
 
     def __init__(self, manager: ConnectionManager) -> None:
-        self.transcript: list[dict[str, Any]] = []
         self._task: asyncio.Task | None = None
         self.approval_hub = ApprovalHub()
         self._lock = asyncio.Lock()
         self._active_run_id: str | None = None
+        self._active_run_started_at: datetime | None = None
         self._agent: MiniCodex | None = None
         self._manager = manager
+        self.ui_bus: UiBus | None = None
+        self.ui_state: UiState = new_state()
 
     def attach_agent(self, agent: MiniCodex) -> None:
         """Attach a MiniCodex instance and register the UI manager as a handler.
@@ -239,6 +257,13 @@ class AgentSession:
         # Best-effort: append manager as a handler to the agent so it receives events
         with contextlib.suppress(Exception):
             agent._controller._handlers.append(cast(BaseHandler, self._manager))
+
+    async def _apply_ui_event(self, evt: Any) -> None:
+        # Reduce UiState and broadcast an update
+        self.ui_state = reduce_ui_state(self.ui_state, evt)
+        await self._manager.send_payload(
+            UiStateUpdated(v="ui_state_v1", seq=self.ui_state.seq, state=self.ui_state)
+        )
 
     async def run(self, prompt: str) -> None:
         """Run a single agent turn via the attached MiniCodex instance.
@@ -272,6 +297,9 @@ class AgentSession:
                     ),
                 ),
             )
+            # Track active run state for snapshot reconnection
+            self._active_run_id = run_id
+            self._active_run_started_at = started
             try:
                 logger.info("agent.run start", extra={"prompt_len": len(prompt)})
                 # Track active run id on session for snapshots
@@ -288,8 +316,9 @@ class AgentSession:
                     ErrorEvt(code=ErrorCode.AGENT_ERROR, message="agent_run_exception")
                 )
             finally:
-                # Clear active run id and emit finished run_status
+                # Clear active run id/state and emit finished run_status
                 self._active_run_id = None
+                self._active_run_started_at = None
                 # Ensure all previously spawned payloads were sent before emitting finished
                 await self._manager.flush()
                 await self._manager.send_payload(
@@ -383,6 +412,8 @@ def create_app() -> FastAPI:
     # Readiness event so async tests can await startup deterministically
     app.state.ready = asyncio.Event()
 
+    # (legacy duplicate) removed; use ConnectionManager._emit_ui_bus_messages
+
     @app.on_event("startup")
     async def _on_startup() -> None:
         index_path = STATIC_DIR / "index.html"
@@ -404,6 +435,28 @@ def create_app() -> FastAPI:
             except Exception:
                 logger.exception("agent attach on startup failed")
         app.state.ready.set()
+
+    @app.on_event("shutdown")
+    async def _on_shutdown() -> None:
+        """Gracefully stop inner agent/MCP when server exits (dev/serve)."""
+        inner_agent = getattr(app.state, "_inner_agent", None)
+        inner_mcp = getattr(app.state, "_inner_mcp", None)
+        # Flush any queued UI events
+        try:
+            await manager.flush()
+        except Exception:
+            logger.exception("manager.flush on shutdown failed")
+        # Close agent first (it may reference MCP), then MCP
+        try:
+            if inner_agent is not None and hasattr(inner_agent, "__aexit__"):
+                await inner_agent.__aexit__(None, None, None)  # type: ignore[func-returns-value]
+        except Exception:
+            logger.exception("agent __aexit__ on shutdown failed")
+        try:
+            if inner_mcp is not None and hasattr(inner_mcp, "__aexit__"):
+                await inner_mcp.__aexit__(None, None, None)  # type: ignore[func-returns-value]
+        except Exception:
+            logger.exception("mcp __aexit__ on shutdown failed")
 
     manager = ConnectionManager()
     session = AgentSession(manager)
@@ -428,16 +481,20 @@ def create_app() -> FastAPI:
             svg = STATIC_DIR / "vite.svg"
         return FileResponse(svg)
 
-    @app.get("/transcript")
-    async def get_transcript() -> JSONResponse:
-        return JSONResponse(session.transcript)
-
     @app.websocket("/ws")
     async def websocket_endpoint(ws: WebSocket) -> None:
         await manager.connect(ws)
+        # Ensure session is wired to the per-agent UI bus if provided by app.state
+        ui_bus_obj = getattr(app.state, "ui_bus", None)
+        if ui_bus_obj is not None:
+            session.ui_bus = ui_bus_obj  # type: ignore[assignment]
+        # Wire optional approval policy engine from app.state into this session
+        engine = getattr(app.state, "approval_engine", None)
+        if engine is not None:
+            setattr(session, "approval_engine", engine)
+        # Ack connection so clients can verify liveness immediately
+        await manager.send_payload(Accepted())
         try:
-            # Ack connection so clients can verify liveness immediately
-            await manager.send_payload(Accepted())
             while True:
                 data = await ws.receive_text()
                 try:
@@ -469,6 +526,46 @@ def create_app() -> FastAPI:
                             names = list(agent._mcp.server_names)
                             sampling = await agent._mcp.sampling_snapshot()
                         mcp_servers_list = [McpServerInfo(name=n) for n in names]
+                        # Build run_state snapshot with any in-flight approvals
+                        if session._active_run_id is not None:
+                            started_at = session._active_run_started_at or datetime.now(
+                                UTC
+                            )
+                            # Convert pending approvals from the approval hub
+                            briefs = []
+                            for req in session.approval_hub.pending():
+                                try:
+                                    args = json.loads(req.tool_call.args_json or "{}")
+                                except Exception:
+                                    args = {}
+                                briefs.append(
+                                    ApprovalBrief(
+                                        call_id=req.tool_call.call_id,
+                                        tool_key=req.tool_key,
+                                        args=args,
+                                    ).model_dump(mode="json")
+                                )
+                            run_state_snapshot = RunState(
+                                run_id=session._active_run_id,
+                                status="running",
+                                started_at=started_at,
+                                finished_at=None,
+                                pending_approvals=TypeAdapter(
+                                    list[ApprovalBrief]
+                                ).validate_python(briefs),
+                                last_event_id=manager._event_id or None,
+                            )
+                        else:
+                            run_state_snapshot = None
+                        # Drain pending UI messages, then emit UiState snapshot followed by legacy snapshot
+                        await manager._emit_ui_bus_messages()
+                        await manager.send_payload(
+                            UiStateSnapshot(
+                                v="ui_state_v1",
+                                seq=session.ui_state.seq,
+                                state=session.ui_state,
+                            )
+                        )
                         await manager.send_payload(
                             Snapshot(
                                 v=PROTOCOL_VERSION,
@@ -480,8 +577,7 @@ def create_app() -> FastAPI:
                                     active_run_id=session._active_run_id,
                                     run_counter=0,
                                 ),
-                                run_state=None,
-                                transcript=session.transcript,
+                                run_state=run_state_snapshot,
                                 sampling=sampling,
                                 mcp_servers=mcp_servers_list,
                             ),

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable, Iterable
+import pygit2
 import contextlib
 from datetime import datetime
 from pathlib import Path
@@ -154,7 +155,7 @@ class PRServiceProvider:
             with contextlib.suppress(Exception):
                 await svc.stop()
 
-    def get_pr_info_cached(self, wtid: WorktreeID, branch: str) -> PRInfo:
+    def get_pr_info_cached(self, wtid: WorktreeID) -> PRInfo:
         prsvc = self._services.get(wtid)
         if not prsvc or prsvc.cached is None:
             return PRInfoDisabled()
@@ -178,11 +179,16 @@ class PRServiceProvider:
         """Synchronously refresh PR cache for a given worktree.
 
         Uses the worktree's current branch as determined by its repository.
+        If the worktree directory was manually deleted or is no longer a git repo,
+        skip refresh gracefully.
         """
         prsvc = self._services.get(wtid)
         if not prsvc:
             return
-        repo = prsvc.git_manager.get_repo(prsvc.worktree_info.path)
+        try:
+            repo = prsvc.git_manager.get_repo(prsvc.worktree_info.path)
+        except (pygit2.GitError, OSError, ValueError, FileNotFoundError):
+            return
         branch_name = repo.head.shorthand or ""
         await prsvc.get_pr_info(branch_name, force_refresh=True)
 

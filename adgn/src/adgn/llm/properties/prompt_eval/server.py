@@ -18,17 +18,17 @@ import logging
 from pathlib import Path
 import traceback
 from typing import Annotated, Any, Literal
-from adgn.llm.openai_utils.http_logging import make_logged_async_openai
+# No local AsyncOpenAI construction here; entrypoints provide a typed client
 
-from mcp.server.fastmcp import FastMCP
-from openai import AsyncOpenAI
+from adgn.llm.mcp._shared.fastmcp_helpers import SafeFastMCP
 from pydantic import BaseModel, ConfigDict, Field
+from adgn.llm.openai_utils.model import OpenAIModelProto
 
 from adgn.llm.mcp.inproc_transport import make_inproc_slot_spec
 from adgn.llm.mini_codex.agent import MiniCodex
 from adgn.llm.mini_codex.aggregating_handler import GateUntil
 from adgn.llm.mini_codex.handler import BaseHandler
-from adgn.llm.mini_codex.loop_control import Continue, RequireAny
+from adgn.llm.mini_codex.loop_control import Continue, RequireAny, NoLoopDecision
 from adgn.llm.mini_codex.loggers import TranscriptLoggerHandler
 from adgn.llm.mini_codex.mcp_manager import McpManager
 from adgn.llm.mini_codex.transcript_handler import TranscriptHandler
@@ -57,7 +57,7 @@ logger = logging.getLogger(__name__)
 async def _run_critic_for_specimen(
     specimen: str,
     system_prompt: str,
-    client: AsyncOpenAI,
+    client: OpenAIModelProto,
     run_dir: Path,
     *,
     agent_model: str = "gpt-5",
@@ -92,8 +92,6 @@ async def _run_critic_for_specimen(
                     self._emitted: bool = False
 
                 def on_before_sample(self):  # type: ignore[override]
-                    from adgn.llm.mini_codex.loop_control import NoLoopDecision
-
                     if self._done:
                         return NoLoopDecision()
                     # First cycle: emit synthetic calls, but do NOT mark done yet
@@ -120,18 +118,13 @@ async def _run_critic_for_specimen(
                     defer_when=lambda: not bootstrap._done,
                 ),
             ]
-            log_client = (
-                make_logged_async_openai(
-                    run_dir / specimen / "critic" / "openai_http.jsonl"
-                )
-                if debug
-                else client
-            )
+            # Use the caller-provided typed client; logging is configured at the entrypoint
+            model_client: OpenAIModelProto = client
             agent = await MiniCodex.create(
                 model=agent_model,
                 mcp=mcp,
                 system=system_prompt,
-                client=log_client,
+                client=model_client,
                 handlers=handlers,
                 parallel_tool_calls=True,
             )
@@ -194,25 +187,29 @@ PromptEvalResult = Annotated[
 
 def build_server(
     *,
-    client: AsyncOpenAI,
+    client: OpenAIModelProto,
     name: str = "prompt_eval",
     agent_model: str = "gpt-5",
     debug: bool = False,
-) -> tuple[FastMCP, PromptEvalState]:
+    run_dir_base: Path | None = None,
+) -> tuple[SafeFastMCP, PromptEvalState]:
     """Build a prompt_eval server that tracks rounds and writes under a fixed run dir.
 
     Layout (per server instance):
     adgn_llm/properties/runs/prompt_optimize/<ts>/<round>/<specimen>/{critic,grader}/...
     """
-    # Freeze base run dir at server construction
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    base_run_dir = pkg_dir() / "runs" / "prompt_optimize" / ts
+    # Freeze base run dir at server construction (tests may inject a tmp dir)
+    if run_dir_base is not None:
+        base_run_dir = run_dir_base
+    else:
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        base_run_dir = pkg_dir() / "runs" / "prompt_optimize" / ts
     base_run_dir.mkdir(parents=True, exist_ok=True)
     round_idx = {"n": -1}  # mutable cell for closure
 
     state = PromptEvalState()
 
-    mcp = FastMCP(
+    mcp = SafeFastMCP(
         name,
         instructions="Prompt Evaluation server — evaluate candidate critic prompts",
     )

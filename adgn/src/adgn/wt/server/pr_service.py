@@ -4,15 +4,19 @@ import asyncio
 from dataclasses import dataclass
 from datetime import datetime
 import logging
+from typing import cast
+
+import os
+from ..shared.error_handling import GitHubUnavailableError
 
 import pygit2
-
 from ..shared.configuration import Configuration
 from ..shared.github_models import PRData, PRState
-from .git_manager import GitManager
+from adgn.wt.shared.fixtures import load_pr_fixture
 from .github_client import GitHubInterface
 from .github_refresh import DebouncedGitHubRefresh
 from .types import DiscoveredWorktree
+from .git_manager import GitManager
 
 PR_CACHE_FRESH_SECS = 60
 
@@ -37,9 +41,22 @@ class PRCacheDisabled:
     fetched_at: datetime
 
 
-@dataclass
 class PRService:
     """Manages GitHub PR cache for a single worktree (server-side)."""
+
+    def __init__(
+        self,
+        github_interface: GitHubInterface | None,
+        config: Configuration,
+        worktree_info: DiscoveredWorktree,
+        git_manager: GitManager,
+    ) -> None:
+        self.github_interface = github_interface
+        self.config = config
+        self.worktree_info = worktree_info
+        self.git_manager = git_manager
+        self.cached = None
+        self.github_refresh = None
 
     github_interface: GitHubInterface | None
     config: Configuration
@@ -57,16 +74,20 @@ class PRService:
                 periodic_interval=self.config.github_periodic_interval.total_seconds(),
             )
             await self.github_refresh.start()
-            # Immediate kick to populate cache on startup (non-blocking)
-            self._startup_task = asyncio.create_task(
-                self._refresh_github_cache("startup", []),
-            )
+            # Populate PR cache synchronously so first status already has PR info
+            await self._refresh_github_cache("startup", [])
 
     async def stop(self) -> None:
         if self.github_refresh:
             await self.github_refresh.stop()
 
     async def _refresh_github_cache(self, reason: str, files_changed: list[str]):
+        logger.debug(
+            "PRService: refresh requested (%s) for %s; files_changed=%d",
+            reason,
+            self.worktree_info.path,
+            len(files_changed),
+        )
         try:
             repo_obj = self.git_manager.get_repo(self.worktree_info.path)
             branch_name = repo_obj.head.shorthand or ""
@@ -93,11 +114,22 @@ class PRService:
         ):
             if isinstance(self.cached, PRCacheOk):
                 return self.cached.data
+            # When cache holds a non-OK state, treat as missing PR
             return None
+        # WT_TEST_MODE: optional PR fixture support, avoids PYTHONPATH/mock imports in tests
+        if os.environ.get("WT_TEST_MODE") == "1":
+            fixture_pr = load_pr_fixture(self.config, branch_name)
+            if fixture_pr is not None:
+                self.cached = PRCacheOk(data=fixture_pr, fetched_at=now)
+                return cast(PRData, fixture_pr)
+            # In test mode, absence of a fixture means "no PR" — do not hit real GitHub
+            self.cached = PRCacheDisabled(fetched_at=now)
+            return None
+
         if not self.github_interface:
             self.cached = PRCacheDisabled(fetched_at=now)
             return None
-        pr_info_data: PRData | None = None
+        pr_info: PRData | None = None
         try:
             gh = self.github_interface
             assert gh is not None
@@ -105,11 +137,11 @@ class PRService:
             def _fetch_pr_info():
                 return gh.pr_search(branch_name)
 
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             prs = await loop.run_in_executor(None, _fetch_pr_info)
             if prs:
                 pr = prs[0]
-                pr_info_data = PRData(
+                pr_info = PRData(
                     pr_number=int(pr.number),
                     pr_state=PRState(pr.state),
                     draft=bool(pr.draft),
@@ -122,9 +154,13 @@ class PRService:
             logger.warning("PR fetch failed for %s: %s", branch_name, e)
             self.cached = PRCacheError(error=str(e), fetched_at=now)
             return None
+        except GitHubUnavailableError as e:
+            logger.warning("PR fetch GitHub unavailable for %s: %s", branch_name, e)
+            self.cached = PRCacheError(error=str(e), fetched_at=now)
+            return None
         else:
-            if pr_info_data is not None:
-                self.cached = PRCacheOk(data=pr_info_data, fetched_at=now)
+            if pr_info is not None:
+                self.cached = PRCacheOk(data=pr_info, fetched_at=now)
             else:
                 self.cached = PRCacheDisabled(fetched_at=now)
-            return pr_info_data
+            return pr_info

@@ -4,12 +4,6 @@ from datetime import UTC, datetime
 import json
 from typing import Any
 
-import openai
-from openai.types.responses.response_function_tool_call import ResponseFunctionToolCall
-from openai.types.responses.response_function_tool_call_item import (
-    ResponseFunctionToolCallItem,
-)
-
 from adgn.llm.inop.clients.logging_openai_client import LoggingOpenAIModel
 from adgn.llm.inop.config import OptimizerConfig
 from adgn.llm.inop.engine.exceptions import ContextWindowExceededError
@@ -157,29 +151,16 @@ Return a JSON object with:
         "strict": True,
     }
 
-    try:
-        response = await model.responses_create(
-            input=prompt,
-            tools=[grading_tool],
-            tool_choice={"type": "function", "name": "submit_comparison_grade"},
-            reasoning={"effort": cfg.grader.reasoning_effort}
+    response = await model.responses_create(
+        input=prompt,
+        tools=[grading_tool],
+        tool_choice={"type": "function", "name": "submit_comparison_grade"},
+        reasoning=(
+            {"effort": cfg.grader.reasoning_effort}
             if cfg.grader.reasoning_effort
-            else None,
-        )
-    except openai.BadRequestError as e:
-        if "context_length_exceeded" in str(e):
-            logger.error(
-                "Context window exceeded during comparison grading",
-                task_id=task.id,
-                agent_id=rollout.agent_id,
-                error=str(e),
-            )
-            raise ContextWindowExceededError(
-                f"Context window exceeded for task {task.id}: {e!s}",
-                task_id=task.id,
-                agent_id=None,
-            ) from e
-        raise
+            else None
+        ),
+    )
 
     # Extract the function call from response
     call = None
@@ -296,29 +277,16 @@ async def _grade_with_criteria(
 
     full_prompt = f"{prompt}\n\nGrade the solution on these criteria:\n{criteria_text}"
 
-    try:
-        response = await model.responses_create(
-            input=full_prompt,
-            tools=[grading_tool],
-            tool_choice={"type": "function", "name": "submit_grades"},
-            reasoning={"effort": cfg.grader.reasoning_effort}
+    response = await model.responses_create(
+        input=full_prompt,
+        tools=[grading_tool],
+        tool_choice={"type": "function", "name": "submit_grades"},
+        reasoning=(
+            {"effort": cfg.grader.reasoning_effort}
             if cfg.grader.reasoning_effort
-            else None,
-        )
-    except openai.BadRequestError as e:
-        if "context_length_exceeded" in str(e):
-            logger.error(
-                "Context window exceeded during criteria grading",
-                task_id=task.id,
-                agent_id=rollout.agent_id,
-                error=str(e),
-            )
-            raise ContextWindowExceededError(
-                f"Context window exceeded for task {task.id}: {e!s}",
-                task_id=task.id,
-                agent_id=None,
-            ) from e
-        raise
+            else None
+        ),
+    )
 
     # Extract the function call
     call = None

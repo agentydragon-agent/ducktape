@@ -29,7 +29,10 @@ from .services import (
     WorktreeIndexService,
 )
 from .worktree_service import WorktreeService
-from .wt_server import WtDaemon
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .wt_server import WtDaemon
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +71,7 @@ class RpcRegistry:
         self._handlers: dict[
             str,
             Callable[
-                [Request, WtDaemon, Any, datetime],
+                [Request, "WtDaemon", Any, datetime],
                 Awaitable[Response | ErrorResponse],
             ],
         ] = {}
@@ -78,7 +81,7 @@ class RpcRegistry:
         self,
         fn,
         *,
-        daemon: WtDaemon,
+        daemon: "WtDaemon",
         params_obj: BaseModel | None,
         writer,
         start_time: datetime,

@@ -1,7 +1,7 @@
 # FastMCP tool exceptions and error handling
 
 ## TL;DR
-- Don’t blanket-catch exceptions inside @mcp.tool — let FastMCP surface unexpected failures as MCP errors.
+- Don’t blanket-catch exceptions inside `@mcp.tool` — let FastMCP surface unexpected failures as MCP errors.
 - Use typed, discriminated unions for expected OK/ERR flows; reserve ToolError for operational failures.
 - Prefer strict, typed inputs (Pydantic) so FastMCP returns clear validation errors automatically.
 

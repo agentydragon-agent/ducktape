@@ -10,12 +10,10 @@ from adgn.llm.mcp.git_ro.server import (
     ListSlice,
     make_git_ro_server,
 )
-from adgn.llm.mcp.inproc_transport import make_inproc_slot_spec
-from adgn.llm.mini_codex.mcp_manager import McpManager
 
 
 @pytest.mark.asyncio
-async def test_git_ro_stat_counts(tmp_path: Path) -> None:
+async def test_git_ro_stat_counts(tmp_path: Path, make_typed_mcp) -> None:
     """Create a repo, make a staged change, call git_diff(format=stat) and assert additions/deletions."""
     repo_dir = tmp_path / "repo"
     repo_dir.mkdir()
@@ -34,54 +32,31 @@ async def test_git_ro_stat_counts(tmp_path: Path) -> None:
     repo.index.add("file.txt")
     repo.index.write()
 
-    spec = make_inproc_slot_spec(make_git_ro_server(repo_dir))
+    server = make_git_ro_server(repo_dir)
 
-    async with McpManager({GIT_RO_SERVER_NAME: spec}) as mcp:
-        sess = await mcp.get_session(GIT_RO_SERVER_NAME)
+    async with make_typed_mcp(server, GIT_RO_SERVER_NAME) as (client, session):
         # Call the git_diff tool with format=stat and staged=True
-        payload = DiffInput(
-            format=DiffFormat.STAT,
-            staged=True,
-            find_renames=True,
-            list_slice=ListSlice(offset=0, limit=100),
+        result = await client.git_diff(
+            DiffInput(
+                format=DiffFormat.STAT,
+                staged=True,
+                find_renames=True,
+                list_slice=ListSlice(offset=0, limit=100),
+            )
         )
-        # Pass the Pydantic model instance directly so FastMCP can validate types natively
-        res = await sess.call_tool(name="git_diff", arguments={"payload": payload})
 
-    # Extract structured content with concrete typed shape: {result: {type, result{items}}}
-    out = res.structuredContent
-    assert isinstance(out, dict)
-    assert "result" in out
-    inner = out["result"]
-    assert isinstance(inner, dict)
-    assert inner.get("type") == "stat"
-    items = inner["result"]["items"]
-    assert isinstance(items, list)
+        # result is a flattened StatResult (DiffStatPage fields directly available)
+        items = result.items
+        assert isinstance(items, list)
 
-    assert items, "No stat items returned"
-
-    # Find our file entry and assert additions > 0
-    two_lines = 2  # test clarity: two added lines expected
-    for it in items:
-        path = it.get("path") if isinstance(it, dict) else getattr(it, "path", None)
-        if path == "file.txt":
-            additions = (
-                it.get("additions")
-                if isinstance(it, dict)
-                else getattr(it, "additions", 0)
-            )
-            deletions = (
-                it.get("deletions")
-                if isinstance(it, dict)
-                else getattr(it, "deletions", 0)
-            )
-            # Expect exactly two additions (two new lines) and zero deletions
-            assert int(additions) == two_lines, (
-                f"Expected additions==2 for file.txt, got {additions}"
-            )
-            assert int(deletions) == 0, (
-                f"Expected deletions==0 for file.txt, got {deletions}"
-            )
-            return
-
-    pytest.fail("file.txt not found in stat items")
+        for it in items:
+            if it.path == "file.txt":
+                assert int(it.additions) == 2, (
+                    f"Expected additions==2 for file.txt, got {it.additions}"
+                )
+                assert int(it.deletions) == 0, (
+                    f"Expected deletions==0 for file.txt, got {it.deletions}"
+                )
+                break
+        else:
+            pytest.fail("file.txt not found in stat items")

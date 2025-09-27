@@ -15,12 +15,14 @@ Design
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 from typing import Annotated, Any, Literal, cast
 
-from mcp.server.fastmcp import FastMCP
+from adgn.llm.mcp._shared.fastmcp_helpers import SafeFastMCP
+from adgn.llm.mcp._shared.fastmcp_helpers import mcp_flat_model
 from pydantic import BaseModel, Field
 import pygit2
 from pygit2 import enums as git_enums
@@ -81,6 +83,12 @@ def get_oid(obj: Any):
 
 
 # -------------------------- inputs ------------------------------------------
+
+
+class StatusInput(BaseModel):
+    """Empty input model for git_status (keeps single-arg typed pattern consistent)."""
+
+    pass
 
 
 class DiffFormat(StrEnum):
@@ -415,19 +423,16 @@ class LogEntriesPage(BaseModel):
 
 
 # Discriminated unions for outputs (explicit output schema)
-class PatchResult(BaseModel):
+class PatchResult(TextPage):
     type: Literal["patch"] = "patch"
-    result: TextPage
 
 
-class NameStatusResult(BaseModel):
+class NameStatusResult(ChangedFilesPage):
     type: Literal["name-status"] = "name-status"
-    result: ChangedFilesPage
 
 
-class StatResult(BaseModel):
+class StatResult(DiffStatPage):
     type: Literal["stat"] = "stat"
-    result: DiffStatPage
 
 
 DiffResult = Annotated[
@@ -437,23 +442,20 @@ DiffResult = Annotated[
 
 
 # Show discriminated union (explicit output schema)
-class ShowPatchResult(BaseModel):
+class ShowPatchResult(TextPage):
     type: Literal["patch"] = "patch"
-    result: TextPage
     commit_id: str | None = None
     author_name: str | None = None
     author_email: str | None = None
     message: str | None = None
 
 
-class ShowNameStatusResult(BaseModel):
+class ShowNameStatusResult(ChangedFilesPage):
     type: Literal["name-status"] = "name-status"
-    result: ChangedFilesPage
 
 
-class ShowStatResult(BaseModel):
+class ShowStatResult(DiffStatPage):
     type: Literal["stat"] = "stat"
-    result: DiffStatPage
 
 
 ShowResult = Annotated[
@@ -498,7 +500,7 @@ class GitRoState:
     git_repo: Path
 
 
-def make_git_ro_server(git_repo: Path, *, name: str = "git-ro") -> FastMCP:
+def make_git_ro_server(git_repo: Path, *, name: str = "git-ro") -> SafeFastMCP:
     """Create a read-only Git FastMCP server scoped to a single allowed root.
 
     Guidance:
@@ -510,10 +512,18 @@ def make_git_ro_server(git_repo: Path, *, name: str = "git-ro") -> FastMCP:
     configured root results in an error.
     """
     state = GitRoState(git_repo=git_repo.resolve())
-    mcp = FastMCP(name, instructions=f"Read-only Git tools scoped to repo: {git_repo}")
+    mcp = SafeFastMCP(
+        name, instructions=f"Read-only Git tools scoped to repo: {git_repo}"
+    )
 
-    @mcp.tool()
-    def git_status() -> StatusPage:
+    @mcp_flat_model(
+        mcp,
+        name="git_status",
+        title="Git status",
+        description="Compact status similar to porcelain v1",
+        structured_output=True,
+    )
+    def git_status(input: StatusInput) -> StatusPage:
         """Return compact status entries similar to porcelain v1 (no headers)."""
         root = state.git_repo
         repo = _open_repo(root)
@@ -542,8 +552,14 @@ def make_git_ro_server(git_repo: Path, *, name: str = "git-ro") -> FastMCP:
             entries.append(StatusEntry(path=path, index=idx, worktree=wt))
         return StatusPage(entries=entries)
 
-    @mcp.tool()
-    def git_diff(payload: DiffInput) -> DiffResult:
+    @mcp_flat_model(
+        mcp,
+        name="git_diff",
+        title="Git diff",
+        description="Diff with multiple formats",
+        structured_output=True,
+    )
+    async def git_diff(input: DiffInput) -> DiffResult:
         """Git diff with multiple formats:
         - format=patch: unified patch (TextPage)
         - format=name-status: file status listing (ChangedFilesPage)
@@ -553,73 +569,86 @@ def make_git_ro_server(git_repo: Path, *, name: str = "git-ro") -> FastMCP:
         # Build base diff using repository-level APIs that match type stubs
         # Optional path filtering for large diffs (batch per file/group upstream)
         diff_kwargs = {}
-        if payload.paths:
-            diff_kwargs["paths"] = payload.paths
-        if payload.staged:
+        if input.paths:
+            diff_kwargs["paths"] = input.paths
+        if input.staged:
             a = None if repo.head_is_unborn else repo.head.target
             diff = repo.diff(a, None, cached=True, **diff_kwargs)
         else:
             diff = repo.index.diff_to_workdir(repo, **diff_kwargs)
 
-        if payload.find_renames:
+        if input.find_renames:
             diff.find_similar()
 
-        if payload.format == DiffFormat.PATCH:
-            patch_text = diff.patch or ""
-            return PatchResult(result=apply_text_slice(patch_text, payload.slice))
-        if payload.format == DiffFormat.NAME_STATUS:
-            items = diff_to_changed_files(diff)
-            return NameStatusResult(
-                result=build_changed_files_page(items, payload.list_slice),
-            )
+        if input.format == DiffFormat.PATCH:
+            patch_text = await asyncio.to_thread(lambda: diff.patch or "")
+            page = apply_text_slice(patch_text, input.slice)
+            return PatchResult(**page.model_dump())
+        if input.format == DiffFormat.NAME_STATUS:
+            items = await asyncio.to_thread(diff_to_changed_files, diff)
+            page = build_changed_files_page(items, input.list_slice)
+            return NameStatusResult(**page.model_dump())
         # STAT
-        stats = diff_to_file_stats(diff)
-        return StatResult(result=build_diff_stat_page(stats, payload.list_slice))
+        stats = await asyncio.to_thread(diff_to_file_stats, diff)
+        page = build_diff_stat_page(stats, input.list_slice)
+        return StatResult(**page.model_dump())
 
-    @mcp.tool()
-    def git_log(payload: LogInput) -> TextPage:
+    @mcp_flat_model(
+        mcp,
+        name="git_log",
+        title="Git log text",
+        description="Return recent commits as text",
+        structured_output=True,
+    )
+    def git_log(input: LogInput) -> TextPage:
         """Return recent commits as oneline entries or multi-line blocks, with pagination."""
         root = state.git_repo
         repo = _open_repo(root)
         if repo.head_is_unborn:
-            return apply_text_slice("", payload.slice)
-        obj = repo.revparse_single(payload.rev)
+            return apply_text_slice("", input.slice)
+        obj = repo.revparse_single(input.rev)
         head_oid = get_oid(obj)
         lines: list[str] = []
         walker = repo.walk(head_oid)
         for i, c in enumerate(walker, start=1):
-            if payload.oneline:
+            if input.oneline:
                 summary = (c.message or "").splitlines()[0]
                 lines.append(f"{str(c.id)[:7]} {summary}")
             else:
                 lines.append(
                     f"commit {c.id}\nAuthor: {c.author.name} <{c.author.email}>\nDate:   {c.commit_time}\n\n{c.message or ''}\n",
                 )
-            if i >= payload.max_count:
+            if i >= input.max_count:
                 break
         body = "\n".join(lines)
         if body and not body.endswith("\n"):
             body += "\n"
-        return apply_text_slice(body, payload.slice)
+        return apply_text_slice(body, input.slice)
 
-    @mcp.tool()
-    def git_log_entries(payload: LogEntriesInput) -> LogEntriesPage:
+    @mcp_flat_model(
+        mcp,
+        name="git_log_entries",
+        title="Git log entries",
+        description="Structured commit entries with pagination",
+        structured_output=True,
+    )
+    def git_log_entries(input: LogEntriesInput) -> LogEntriesPage:
         """Return structured commit entries with offset/limit pagination (preferred for programmatic use)."""
         root = state.git_repo
         repo = _open_repo(root)
         if repo.head_is_unborn:
             return LogEntriesPage(entries=[], truncated=False, next_offset=None)
-        obj = repo.revparse_single(payload.rev)
+        obj = repo.revparse_single(input.rev)
         head_oid = get_oid(obj)
         walker = repo.walk(head_oid)
         # Skip offset
         for i, _ in enumerate(walker):
-            if i >= payload.offset:
+            if i >= input.offset:
                 break
         # Collect up to limit
         entries: list[CommitEntry] = []
         for i, c in enumerate(walker, start=1):
-            msg = (c.message or None) if payload.include_message else None
+            msg = (c.message or None) if input.include_message else None
             entries.append(
                 CommitEntry(
                     id=str(c.id),
@@ -630,20 +659,26 @@ def make_git_ro_server(git_repo: Path, *, name: str = "git-ro") -> FastMCP:
                     message=msg,
                 ),
             )
-            if i >= payload.limit:
+            if i >= input.limit:
                 break
         # Peek one more to determine truncation
         more = next(iter(walker), None)
         truncated = more is not None
-        next_offset = payload.offset + payload.limit if truncated else None
+        next_offset = input.offset + input.limit if truncated else None
         return LogEntriesPage(
             entries=entries,
             truncated=truncated,
             next_offset=next_offset,
         )
 
-    @mcp.tool()
-    def git_show(payload: ShowInput) -> ShowResult:
+    @mcp_flat_model(
+        mcp,
+        name="git_show",
+        title="Git show",
+        description="Show commit or blob with multiple formats",
+        structured_output=True,
+    )
+    async def git_show(input: ShowInput) -> ShowResult:
         """Show a commit in various formats or blob contents for REV:PATH.
         - format=patch: header + patch (TextPage) or blob text
         - format=name-status: file status listing (ChangedFilesPage)
@@ -651,7 +686,7 @@ def make_git_ro_server(git_repo: Path, *, name: str = "git-ro") -> FastMCP:
         """
         root = state.git_repo
         repo = _open_repo(root)
-        objspec = payload.object
+        objspec = input.object
         # Blob contents: REV:PATH always as text
         if ":" in objspec:
             rev, path = objspec.split(":", 1)
@@ -673,7 +708,8 @@ def make_git_ro_server(git_repo: Path, *, name: str = "git-ro") -> FastMCP:
                         text = data.decode("utf-8")
                     except UnicodeDecodeError:
                         text = f"[binary blob {len(data)} bytes]"
-                    return ShowPatchResult(result=apply_text_slice(text, payload.slice))
+                    page = apply_text_slice(text, input.slice)
+                    return ShowPatchResult(**page.model_dump())
             raise FileNotFoundError(f"Path not found: {path}")
         obj_any = repo.revparse_single(objspec)
         # Narrow runtime types explicitly and bind to a typed local variable so mypy can follow.
@@ -695,62 +731,79 @@ def make_git_ro_server(git_repo: Path, *, name: str = "git-ro") -> FastMCP:
             diff = repo.diff(None, obj)
         diff.find_similar()
 
-        if payload.format == DiffFormat.PATCH:
-            patch_text = diff.patch or ""
+        if input.format == DiffFormat.PATCH:
+            patch_text = await asyncio.to_thread(lambda: diff.patch or "")
+            page = apply_text_slice(patch_text, input.slice)
             return ShowPatchResult(
-                result=apply_text_slice(patch_text, payload.slice),
+                **page.model_dump(),
                 commit_id=str(obj.id),
                 author_name=obj.author.name,
                 author_email=obj.author.email,
                 message=obj.message or None,
             )
 
-        if payload.format == DiffFormat.NAME_STATUS:
-            items = diff_to_changed_files(diff)
-            return ShowNameStatusResult(
-                result=build_changed_files_page(items, payload.list_slice),
-            )
+        if input.format == DiffFormat.NAME_STATUS:
+            items = await asyncio.to_thread(diff_to_changed_files, diff)
+            page = build_changed_files_page(items, input.list_slice)
+            return ShowNameStatusResult(**page.model_dump())
 
         # STAT
-        stats = diff_to_file_stats(diff)
-        return ShowStatResult(result=build_diff_stat_page(stats, payload.list_slice))
+        stats = await asyncio.to_thread(diff_to_file_stats, diff)
+        page = build_diff_stat_page(stats, input.list_slice)
+        return ShowStatResult(**page.model_dump())
 
-    @mcp.tool()
-    def git_rev_parse(payload: RevParseInput) -> RevParseResult:
+    @mcp_flat_model(
+        mcp,
+        name="git_rev_parse",
+        title="Git rev-parse",
+        description="Resolve rev or show-toplevel",
+        structured_output=True,
+    )
+    def git_rev_parse(input: RevParseInput) -> RevParseResult:
         """Resolve a rev to an OID (optionally shortened) or return toplevel path for --show-toplevel."""
         root = state.git_repo
         repo = _open_repo(root)
-        if payload.arg == "--show-toplevel":
+        if input.arg == "--show-toplevel":
             return RevParseResult(
                 kind="toplevel",
                 value=str(Path(repo.workdir).resolve()),
             )
-        obj = repo.revparse_single(payload.arg)
+        obj = repo.revparse_single(input.arg)
         oid = get_oid(obj)
         s = str(oid)
-        if payload.short:
+        if input.short:
             s = s[:7]
         return RevParseResult(kind="oid", value=s)
 
-    @mcp.tool()
-    def git_ls_files(payload: LsFilesInput) -> StringListPage:
+    @mcp_flat_model(
+        mcp,
+        name="git_ls_files",
+        title="Git ls-files",
+        description="List index paths with pagination",
+        structured_output=True,
+    )
+    def git_ls_files(input: LsFilesInput) -> StringListPage:
         """List index paths, with offset/limit pagination (structured output)."""
         root = state.git_repo
         repo = _open_repo(root)
         all_paths = [e.path for e in repo.index]
-        return apply_list_slice(all_paths, payload.list_slice)
+        return apply_list_slice(all_paths, input.list_slice)
 
-    @mcp.tool()
-    def git_branch_list(payload: BranchListInput) -> StringListPage:
+    @mcp_flat_model(
+        mcp,
+        name="git_branch_list",
+        title="Git branch list",
+        description="List branches with pagination",
+        structured_output=True,
+    )
+    def git_branch_list(input: BranchListInput) -> StringListPage:
         """List local or remote branches (short names) with offset/limit pagination (structured output)."""
         root = state.git_repo
         repo = _open_repo(root)
         kind = (
-            git_enums.BranchType.REMOTE
-            if payload.remote
-            else git_enums.BranchType.LOCAL
+            git_enums.BranchType.REMOTE if input.remote else git_enums.BranchType.LOCAL
         )
         names = repo.listall_branches(kind)
-        return apply_list_slice(names, payload.list_slice)
+        return apply_list_slice(names, input.list_slice)
 
     return mcp

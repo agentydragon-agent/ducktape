@@ -1,21 +1,20 @@
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable, Iterable
+from collections.abc import Awaitable, Callable
 import os
 from pathlib import Path
 from typing import Any
 
 import openai as _openai
 from openai import AsyncOpenAI
-from openai.types.responses import Response, ResponseOutputMessage, ResponseOutputText
-from openai.types.responses.response_usage import (
-    InputTokensDetails,
-    OutputTokensDetails,
-    ResponseUsage,
-)
 import pytest
 
 from .support.openai_mock import LIVE, OpenAIClient, make_mock
+from adgn.llm.openai_utils.model import (
+    ResponsesResult,
+    AssistantResponseMessage,
+    Usage as PUsage,
+)
 from adgn.llm.mcp._shared.container_session import ContainerOptions
 from adgn.llm.mcp.docker_exec.server import make_container_exec_mcp
 from adgn.llm.mcp.inproc_transport import make_inproc_slot_spec
@@ -29,70 +28,25 @@ def _mini_codex_logdir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("MINICODEX_LOG_DIR", str(log_dir))
 
 
-# --- Minimal helpers/fixtures for building OpenAI Responses and fake client ---
+# --- Minimal helpers/fixtures for building adapter Responses (Pydantic types) ---
 
 
-def _make_usage(input_tokens: int = 0, output_tokens: int = 0) -> ResponseUsage:
-    return ResponseUsage(
-        input_tokens=input_tokens,
-        input_tokens_details=InputTokensDetails(cached_tokens=0),
-        output_tokens=output_tokens,
-        output_tokens_details=OutputTokensDetails(reasoning_tokens=0),
-        total_tokens=input_tokens + output_tokens,
-    )
-
-
-def make_assistant_text_response(*, model: str, text: str) -> Response:
-    msg = ResponseOutputMessage(
-        id="msg1",
-        type="message",
-        role="assistant",
-        status="completed",
-        content=[ResponseOutputText(type="output_text", text=text, annotations=[])],
-    )
-    return Response(
+def make_assistant_text_response(*, model: str, text: str) -> ResponsesResult:
+    return ResponsesResult(
         id="resp_msg",
-        created_at=1,
-        model=model,
-        object="response",
-        output=[msg],
-        parallel_tool_calls=False,
-        tool_choice="auto",
-        tools=[],
-        usage=_make_usage(0, max(1, len(text))),
+        usage=PUsage(
+            input_tokens=0,
+            output_tokens=max(1, len(text)),
+            total_tokens=max(1, len(text)),
+        ),
+        output=[AssistantResponseMessage(text=text)],
     )
 
 
-class _FakeResponsesSequence:
-    """Async stub for client.responses that returns a predefined sequence of Response objects."""
-
-    def __init__(self, outputs: Iterable[Response]) -> None:
-        self._outputs: list[Response] = list(outputs)
-        self.calls = 0
-
-    async def create(self, **kwargs: Any) -> Response:  # type: ignore[override]
-        idx = min(self.calls, len(self._outputs) - 1)
-        self.calls += 1
-        return self._outputs[idx]
-
-
-class FakeOpenAIClient:
-    def __init__(self, outputs: Iterable[Response]) -> None:
-        self.responses = _FakeResponsesSequence(outputs)
-
-
 @pytest.fixture
-def assistant_response_factory() -> Callable[[str, str], Response]:
-    def _make(model: str, text: str) -> Response:
+def assistant_response_factory() -> Callable[[str, str], ResponsesResult]:
+    def _make(model: str, text: str) -> ResponsesResult:
         return make_assistant_text_response(model=model, text=text)
-
-    return _make
-
-
-@pytest.fixture
-def fake_openai_client_factory() -> Callable[[Iterable[Response]], FakeOpenAIClient]:
-    def _make(outputs: Iterable[Response]) -> FakeOpenAIClient:
-        return FakeOpenAIClient(outputs)
 
     return _make
 
@@ -114,12 +68,19 @@ def _raising_async(*args, **kwargs):
 
 
 @pytest.fixture(autouse=True)
-def fail_openai_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+def fail_openai_by_default(
+    monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest
+) -> None:
     """Autouse fixture that replaces openai.AsyncOpenAI with a raising stub.
 
     Tests that need access must explicitly use the `openai_client` fixture which
     temporarily restores the real AsyncOpenAI constructor for that test.
+
+    Exemption: tests marked @pytest.mark.live_llm are allowed to construct
+    AsyncOpenAI directly (they already guard on OPENAI_API_KEY).
     """
+    if request.node.get_closest_marker("live_llm") is not None:
+        return
     monkeypatch.setattr(_openai, "AsyncOpenAI", _raising_async)
 
 
@@ -225,16 +186,6 @@ def container_opts_py312() -> ContainerOptions:
 
 
 @pytest.fixture
-def container_opts_py312_describe_true() -> ContainerOptions:
-    return ContainerOptions(
-        image="python:3.12-slim",
-        working_dir="/workspace",
-        volumes=None,
-        describe=True,
-    )
-
-
-@pytest.fixture
 def container_opts_alpine() -> ContainerOptions:
     return ContainerOptions(image="alpine:3.19", describe=False)
 
@@ -245,13 +196,6 @@ def docker_exec_server_py312(container_opts_py312) -> object:
 
 
 @pytest.fixture
-def docker_exec_server_py312_describe_true(
-    container_opts_py312_describe_true,
-) -> object:
-    return make_container_exec_mcp(container_opts_py312_describe_true)
-
-
-@pytest.fixture
 def docker_exec_server_alpine(container_opts_alpine) -> object:
     return make_container_exec_mcp(container_opts_alpine)
 
@@ -259,13 +203,6 @@ def docker_exec_server_alpine(container_opts_alpine) -> object:
 @pytest.fixture
 def docker_inproc_spec_py312(docker_exec_server_py312) -> object:
     return make_inproc_slot_spec(docker_exec_server_py312)
-
-
-@pytest.fixture
-def docker_inproc_spec_py312_describe_true(
-    docker_exec_server_py312_describe_true,
-) -> object:
-    return make_inproc_slot_spec(docker_exec_server_py312_describe_true)
 
 
 @pytest.fixture

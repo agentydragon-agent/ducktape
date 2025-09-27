@@ -8,25 +8,27 @@ from adgn.llm.properties.critic import CriticSubmitPayload
 import adgn.llm.properties.prompt_eval.server as pe
 from adgn.llm.properties.prompt_eval.server import build_server
 
-from .support.openai_builders import (
-    make_assistant_text_response,
-    make_function_call_response,
-)
 from .support.openai_mock import LIVE  # sentinel for live client
+from adgn.llm.openai_utils.model import (
+    ResponsesRequest,
+    ResponsesResult,
+    Usage,
+    FunctionCallOut,
+    AssistantResponseMessage,
+)
 
 
-# Behavior (mock): typed request, big switch on structured fields, real SDK model returned
+# Behavior (mock): our Pydantic request; return our Pydantic ResponsesResult
 async def _behavior_ok(req):
-    # Strong shape: treat request as dict (Responses.create params are TypedDict at runtime)
-    assert isinstance(req, dict), f"unexpected request type: {type(req)!r}"
+    assert isinstance(req, ResponsesRequest), f"unexpected request type: {type(req)!r}"
 
     # If grader tools are offered, simulate a function_call to submit_result
-    tools = req.get("tools")
+    tools = req.tools
     if isinstance(tools, list):
         names: list[str] = []
         for t in tools:
             if isinstance(t, dict) and isinstance(t.get("name"), str):
-                names.append(t["name"])  # exact key access (no getattr)
+                names.append(t["name"])  # exact key access
         if any(
             n in ("grader_submit__submit_result", "mcp__grader_submit__submit_result")
             for n in names
@@ -35,22 +37,31 @@ async def _behavior_ok(req):
                 '{"result": {"true_positive_ids": [], "false_positive_ids": [], '
                 '"unknown_critique_ids": [], "precision": 1.0, "recall": 1.0, "message_md": "ok"}}'
             )
-            return make_function_call_response(
-                tool_name="mcp__grader_submit__submit_result",
-                arguments_json=args,
-                request=None,
+            return ResponsesResult(
+                id="mock-fc",
+                usage=Usage(input_tokens=0, output_tokens=0, total_tokens=0),
+                output=[
+                    FunctionCallOut(
+                        call_id="call_1",
+                        name="mcp__grader_submit__submit_result",
+                        arguments=args,
+                    )
+                ],
             )
 
     # Otherwise: critic path → simple assistant text
-    inp = req.get("input")
-    assert (inp is None) or isinstance(inp, str), (
-        f"input must be str|None, got {type(inp)!r}"
+    inp = req.input
+    text = "ok"
+    if isinstance(inp, str):
+        if inp == "foo":
+            text = "ok-foo"
+        elif inp == "discover":
+            text = "ok-discover"
+    return ResponsesResult(
+        id="mock-msg",
+        usage=Usage(input_tokens=0, output_tokens=1, total_tokens=1),
+        output=[AssistantResponseMessage(text=text)],
     )
-    if inp == "foo":
-        return make_assistant_text_response(text="ok-foo")
-    if inp == "discover":
-        return make_assistant_text_response(text="ok-discover")
-    return make_assistant_text_response(text="ok")
 
 
 @pytest.mark.asyncio
@@ -67,11 +78,13 @@ async def test_prompt_eval_returns_failure_on_critic_error(
 ) -> None:
     # Build server with provided client (mock/live)
     mcp_server, _state = build_server(
-        client=openai_client_param, name="prompt_eval_test"
+        client=openai_client_param, name="prompt_eval_test", run_dir_base=tmp_path
     )
 
     # Patch _run_critic_for_specimen to raise within the server module
-    async def _fake(specimen, system_prompt, client, run_dir, *, agent_model="gpt-5"):
+    async def _fake(
+        specimen, system_prompt, client, run_dir, *, agent_model="gpt-5", **kwargs
+    ):
         raise RuntimeError("simulated critic failure")
 
     pe._run_critic_for_specimen = _fake
@@ -106,7 +119,7 @@ async def test_prompt_eval_returns_success_on_all_ok(
 ) -> None:
     # Build server with provided client (mock/live)
     mcp_server, _state = build_server(
-        client=openai_client_param, name="prompt_eval_test2"
+        client=openai_client_param, name="prompt_eval_test2", run_dir_base=tmp_path
     )
 
     # Patch _run_critic_for_specimen to return a minimal CriticSubmitPayload instance
@@ -117,6 +130,7 @@ async def test_prompt_eval_returns_success_on_all_ok(
         run_dir,
         *,
         agent_model="gpt-5",
+        **kwargs,
     ):
         return CriticSubmitPayload(issues=[], notes_md=None)
 

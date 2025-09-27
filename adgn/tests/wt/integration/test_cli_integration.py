@@ -64,11 +64,11 @@ class TestCLIIntegration:
     def teardown_method(self):
         """No global process killing; per-test fixtures handle isolation."""
 
-    def test_list_worktrees_empty(self, real_temp_repo, real_env):
+    def test_list_worktrees_empty(self, real_temp_repo, wt_cli):
         """Test listing worktrees when none exist."""
         # Kill daemon for this test's WT_DIR
 
-        result = run_cli_command(["sh", "ls"], env=real_env)
+        result = wt_cli.sh("ls")
         assert result.returncode == 0
         # When no worktrees exist, status shows main repo line; ensure no non-main entries
         # We assert absence of typical worktree parent path
@@ -93,7 +93,7 @@ class TestCLIIntegration:
         ]
         assert "refs/heads/test/new-feature" in branch_names
 
-    def test_list_worktrees_with_existing(self, real_temp_repo, real_env):
+    def test_list_worktrees_with_existing(self, real_temp_repo, real_env, wt_cli):
         """Test listing worktrees when some exist."""
 
         # Create a worktree first
@@ -101,11 +101,11 @@ class TestCLIIntegration:
         assert result.returncode == 0, f"Create failed: {result.stderr}"
 
         # List worktrees
-        result = run_cli_command(["sh", "ls"], env=real_env)
+        result = wt_cli.sh("ls")
         assert result.returncode == 0
         assert "feature1" in result.stdout
 
-    def test_status_command_shows_worktrees(self, real_temp_repo, real_env):
+    def test_status_command_shows_worktrees(self, real_temp_repo, real_env, wt_cli):
         """Test that status command shows created worktrees."""
 
         # Create worktrees
@@ -113,7 +113,7 @@ class TestCLIIntegration:
         run_cli_command(["sh", "-c", "feature2"], env=real_env)
 
         # Check status
-        result = run_cli_command(["sh"], env=real_env)
+        result = wt_cli.status()
         assert result.returncode == 0
         assert "feature1" in result.stdout
         assert "feature2" in result.stdout
@@ -240,7 +240,7 @@ class TestRealGitOperations:
         commit = worktree_repo.get(commit_id)
         assert commit.message == "Test commit"
 
-    def test_worktree_status_with_changes(self, real_temp_repo, real_env):
+    def test_worktree_status_with_changes(self, real_temp_repo, real_env, wt_cli):
         """Test that status command shows git changes in worktrees."""
 
         # Create worktree
@@ -257,7 +257,7 @@ class TestRealGitOperations:
         worktree_repo.index.write()
 
         # Check status shows the changes
-        result = run_cli_command(["sh"], env=real_env)
+        result = wt_cli.status()
         assert result.returncode == 0
         # Status should show the worktree (exact format depends on implementation)
         assert "status-test" in result.stdout

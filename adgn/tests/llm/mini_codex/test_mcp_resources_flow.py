@@ -1,92 +1,22 @@
 from __future__ import annotations
 
-from typing import Any
+import json
 
-from openai.types.responses import (
-    Response,
-    ResponseFunctionToolCall,
-    ResponseOutputMessage,
-    ResponseOutputText,
-)
-from openai.types.responses.response_usage import (
-    InputTokensDetails,
-    OutputTokensDetails,
-    ResponseUsage,
-)
 import pytest
+from adgn.llm.openai_utils.model import (
+    ResponsesResult,
+    Usage,
+    FunctionCallOut,
+    AssistantResponseMessage,
+    FakeOpenAIModel,
+)
 
 from adgn.llm.mini_codex.agent import MiniCodex
 from adgn.llm.mini_codex.aggregating_handler import AutoHandler
 from adgn.llm.mini_codex.event_renderer import DisplayEventsHandler
 from adgn.llm.mini_codex.loggers import RecordingHandler
 from adgn.llm.mini_codex.mcp_manager import McpManager
-
-
-class FakeResponses:
-    def __init__(self) -> None:
-        self.calls = 0
-        self.captured: list[dict[str, Any]] = []
-
-    async def create(self, model: str, **kwargs: Any) -> Response:  # type: ignore[override]
-        # capture kwargs for inspection by tests
-        self.captured.append(dict(kwargs))
-        self.calls += 1
-        # First call: request to read the container.info resource via built-in tool
-        if self.calls == 1:
-            tc = ResponseFunctionToolCall(
-                type="function_call",
-                id="tc1",
-                call_id="call-1",
-                name="mcp__resources__read",
-                arguments='{"server":"docker","uri":"resource://container.info","max_bytes":1024}',
-            )
-            return Response(
-                id="r1",
-                created_at=0,
-                model=model,
-                object="response",
-                output=[tc],
-                parallel_tool_calls=False,
-                tool_choice="auto",
-                tools=[],
-                usage=ResponseUsage(
-                    input_tokens=0,
-                    input_tokens_details=InputTokensDetails(cached_tokens=0),
-                    output_tokens=0,
-                    output_tokens_details=OutputTokensDetails(reasoning_tokens=0),
-                    total_tokens=0,
-                ),
-            )
-        # Second call: assistant final text
-        msg = ResponseOutputMessage(
-            id="m1",
-            type="message",
-            role="assistant",
-            status="completed",
-            content=[ResponseOutputText(type="output_text", text="ok", annotations=[])],
-        )
-        return Response(
-            id="r2",
-            created_at=1,
-            model=model,
-            object="response",
-            output=[msg],
-            parallel_tool_calls=False,
-            tool_choice="auto",
-            tools=[],
-            usage=ResponseUsage(
-                input_tokens=0,
-                input_tokens_details=InputTokensDetails(cached_tokens=0),
-                output_tokens=1,
-                output_tokens_details=OutputTokensDetails(reasoning_tokens=0),
-                total_tokens=1,
-            ),
-        )
-
-
-class FakeOpenAIClient:
-    def __init__(self) -> None:
-        self.responses = FakeResponses()
+from adgn.llm.mcp.resources.server import ResourcesReadArgs
 
 
 @pytest.mark.asyncio
@@ -99,7 +29,36 @@ async def test_model_reads_container_info_with_stubbed_openai(
     spec = docker_inproc_spec_alpine
 
     async with McpManager({"docker": spec}) as mcp:
-        client = FakeOpenAIClient()
+        # Prepare a deterministic two-step sequence: function_call then final text
+        args = ResourcesReadArgs(
+            server="docker", uri="resource://container.info", max_bytes=1024
+        )
+        seq = [
+            ResponsesResult(
+                id="fc",
+                usage=Usage(input_tokens=0, output_tokens=0, total_tokens=0),
+                output=[
+                    FunctionCallOut(
+                        call_id="call_1",
+                        name="mcp__resources__read",
+                        arguments=json.dumps(
+                            {
+                                "server": "docker",
+                                "uri": "resource://container.info",
+                                "start_offset": 0,
+                                "max_bytes": 1024,
+                            }
+                        ),
+                    )
+                ],
+            ),
+            ResponsesResult(
+                id="msg",
+                usage=Usage(input_tokens=0, output_tokens=1, total_tokens=1),
+                output=[AssistantResponseMessage(text="ok")],
+            ),
+        ]
+        client = FakeOpenAIModel(seq)
         rec = RecordingHandler()  # from adgn.llm.mini_codex.loggers
         agent = await MiniCodex.create(
             model=reasoning_model,
@@ -113,15 +72,15 @@ async def test_model_reads_container_info_with_stubbed_openai(
         kinds = [e.get("kind") for e in rec.records]
         assert "tool_call" in kinds
         assert "function_call_output" in kinds
-        assert client.responses.calls == 2
+        assert client.calls == 2
         # Verify that the second call included the function_call and function_call_output (stateless replay).
-        second = client.responses.captured[1]
-        input_items = second.get("input") or []
-        assert any(
-            isinstance(it, dict) and it.get("type") == "function_call"
-            for it in input_items
-        ), f"Expected function_call in next-turn input: {input_items}"
-        assert any(
-            isinstance(it, dict) and it.get("type") == "function_call_output"
-            for it in input_items
-        ), f"Expected function_call_output in next-turn input: {input_items}"
+        second = client.captured[1]
+        input_items = list(second.input or [])
+        from adgn.llm.openai_utils.model import FunctionCallItem, FunctionCallOutputItem
+
+        assert any(isinstance(it, FunctionCallItem) for it in input_items), (
+            f"Expected FunctionCallItem in next-turn input: {input_items}"
+        )
+        assert any(isinstance(it, FunctionCallOutputItem) for it in input_items), (
+            f"Expected FunctionCallOutputItem in next-turn input: {input_items}"
+        )

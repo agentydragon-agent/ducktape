@@ -43,7 +43,16 @@ class ClonefileCopyStrategy(CopyStrategy):
     def copy(self, src: Path, dst: Path) -> None:
         entries = _get_copyable_entries(src)
         if entries:
-            subprocess.run(["cp", "-c", "-R", *entries, dst], check=True)
+            # Prefer clonefile (-c) when available; fall back to plain recursive copy otherwise.
+            args = [
+                "cp",
+                "-R",
+                *map(str, entries),
+                str(dst),
+            ]
+            if _supports_cp_clone():
+                args = ["cp", "-c", "-R", *map(str, entries), str(dst)]
+            subprocess.run(args, check=True)
 
     @property
     def method_name(self) -> str:
@@ -121,6 +130,27 @@ def _test_reflink_support() -> bool:
             return False
 
 
+def _supports_cp_clone() -> bool:
+    """Detect at runtime whether 'cp -c' (clonefile) is supported."""
+    if not shutil.which("cp"):
+        return False
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmpdir_path = Path(tmpdir)
+        test_file = tmpdir_path / "clone_src.txt"
+        test_copy = tmpdir_path / "clone_dst.txt"
+        test_file.write_text("x")
+        try:
+            subprocess.run(
+                ["cp", "-c", test_file, test_copy],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            return True
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            return False
+
+
 def get_copy_strategy(cow_method=None) -> CopyStrategy:
     """Get copy strategy based on cow_method preference or auto-detection."""
 
@@ -130,7 +160,9 @@ def get_copy_strategy(cow_method=None) -> CopyStrategy:
 
     # Auto-detection logic (default behavior)
     if sys.platform == "darwin" and shutil.which("cp"):
-        return ClonefileCopyStrategy()
+        # Use clonefile on macOS only when supported; otherwise let detection continue.
+        if _supports_cp_clone():
+            return ClonefileCopyStrategy()
     if _test_reflink_support():
         return ReflinkCopyStrategy()
     return RsyncCopyStrategy()

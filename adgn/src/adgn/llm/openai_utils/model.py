@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from functools import singledispatch
-from typing import Any, Literal, Annotated, Protocol, cast
+from typing import Any, Literal, Annotated, Protocol, Self, cast
 from adgn.llm.openai_utils.retry import retry_decorator
 
 from openai import AsyncOpenAI
@@ -15,7 +15,7 @@ from openai.types.responses import (
 )
 from openai.types.responses.response_reasoning_item import ResponseReasoningItem
 from openai.types.shared_params import Reasoning as ReasoningParams
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 # ------------------------------
 # Typed, tolerant input items we compose into Responses API "input"
@@ -28,22 +28,34 @@ class InputTextPart(BaseModel):
     model_config = ConfigDict(extra="allow")
 
 
-class AssistantMessageItem(BaseModel):
-    role: Literal["assistant"]
+class AssistantMessage(BaseModel):
+    role: Literal["assistant"] = "assistant"
     content: list[InputTextPart] | None = None
     model_config = ConfigDict(extra="allow")
 
+    @classmethod
+    def text(cls, text: str) -> Self:
+        return cls(content=[InputTextPart(text=text)])
 
-class UserMessageItem(BaseModel):
-    role: Literal["user"]
+
+class UserMessage(BaseModel):
+    role: Literal["user"] = "user"
     content: list[InputTextPart]
     model_config = ConfigDict(extra="allow")
 
+    @classmethod
+    def text(cls, text: str) -> Self:
+        return cls(content=[InputTextPart(text=text)])
 
-class SystemMessageItem(BaseModel):
-    role: Literal["system"]
+
+class SystemMessage(BaseModel):
+    role: Literal["system"] = "system"
     content: list[InputTextPart]
     model_config = ConfigDict(extra="allow")
+
+    @classmethod
+    def text(cls, text: str) -> Self:
+        return cls(content=[InputTextPart(text=text)])
 
 
 class ReasoningItem(BaseModel):
@@ -71,9 +83,9 @@ class FunctionCallOutputItem(BaseModel):
 
 
 InputItem = (
-    AssistantMessageItem
-    | UserMessageItem
-    | SystemMessageItem
+    AssistantMessage
+    | UserMessage
+    | SystemMessage
     | ReasoningItem
     | FunctionCallItem
     | FunctionCallOutputItem
@@ -201,26 +213,59 @@ class FunctionCallOutputOut(BaseModel):
             return cls(call_id=item.call_id, output=str(output))
 
 
-class AssistantTextOut(BaseModel):
-    kind: Literal["assistant_text"] = "assistant_text"
+class AssistantMessagePart(BaseModel):
     text: str
+    annotations: list[dict[str, Any]] | None = None
+    model_config = ConfigDict(extra="allow")
 
-    def to_input_item(self) -> AssistantMessageItem:
-        return AssistantMessageItem(
-            role="assistant",
-            content=[InputTextPart(text=self.text)],
-        )
+
+class AssistantResponseMessage(BaseModel):
+    kind: Literal["assistant_text"] = "assistant_text"
+    parts: list[AssistantMessagePart]
+    model_config = ConfigDict(extra="allow")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_text(cls, data: Any) -> Any:
+        if isinstance(data, str):
+            return {"parts": [{"text": data}]}
+        if isinstance(data, dict):
+            if "parts" not in data:
+                text = data.get("text")
+                if isinstance(text, str):
+                    new_data = dict(data)
+                    new_data.pop("text", None)
+                    new_data["parts"] = [{"text": text}]
+                    return new_data
+        return data
+
+    @property
+    def text(self) -> str:
+        return "\n".join(part.text for part in self.parts if part.text)
+
+    def to_input_item(self) -> AssistantMessage:
+        content_parts: list[InputTextPart] = []
+        for part in self.parts:
+            part_data = part.model_dump(exclude_none=True)
+            part_data.setdefault("type", "input_text")
+            content_parts.append(InputTextPart.model_validate(part_data))
+        return AssistantMessage(role="assistant", content=content_parts)
 
     @classmethod
-    def from_input_item(cls, item: AssistantMessageItem) -> AssistantTextOut:
-        blocks = item.content or []
-        texts = [part.text for part in blocks if isinstance(part, InputTextPart)]
-        joined = "\n".join(texts) if texts else ""
-        return cls(text=joined)
+    def from_input_item(cls, item: AssistantMessage) -> AssistantResponseMessage:
+        parts: list[AssistantMessagePart] = []
+        for block in item.content or []:
+            if isinstance(block, InputTextPart):
+                parts.append(
+                    AssistantMessagePart.model_validate(
+                        block.model_dump(exclude_none=True)
+                    )
+                )
+        return cls(parts=parts)
 
 
 ResponseOutItem = Annotated[
-    ReasoningOut | FunctionCallOut | AssistantTextOut,
+    ReasoningOut | FunctionCallOut | AssistantResponseMessage,
     Field(discriminator="kind"),
 ]
 
@@ -241,8 +286,29 @@ def _(item: FunctionCallOut) -> InputItem:
 
 
 @response_out_item_to_input.register
-def _(item: AssistantTextOut) -> InputItem:
+def _(item: AssistantResponseMessage) -> InputItem:
     return item.to_input_item()
+
+
+def _message_output_to_assistant(
+    message: ResponseOutputMessage,
+) -> AssistantResponseMessage | None:
+    parts: list[AssistantMessagePart] = []
+    for content_item in message.content:
+        if isinstance(content_item, ResponseOutputText):
+            part = AssistantMessagePart(
+                text=content_item.text,
+                annotations=[
+                    annotation.model_dump(exclude_none=True)
+                    for annotation in content_item.annotations
+                ]
+                if content_item.annotations
+                else None,
+            )
+            parts.append(part)
+    if not parts:
+        return None
+    return AssistantResponseMessage(parts=parts)
 
 
 class ResponsesResult(BaseModel):
@@ -271,8 +337,9 @@ def convert_sdk_response(sdk_resp: Response) -> ResponsesResult:
                 )
             )
         elif isinstance(item, ResponseOutputMessage):
-            texts = [p.text for p in item.content if isinstance(p, ResponseOutputText)]
-            out_items.append(AssistantTextOut(text="\n".join(texts)))
+            converted = _message_output_to_assistant(item)
+            if converted is not None:
+                out_items.append(converted)
         else:
             continue
     u = sdk_resp.usage
@@ -327,10 +394,9 @@ class OpenAIModel:
                     )
                 )
             elif isinstance(item, ResponseOutputMessage):
-                texts = [
-                    p.text for p in item.content if isinstance(p, ResponseOutputText)
-                ]
-                out_items.append(AssistantTextOut(text="\n".join(texts)))
+                converted = _message_output_to_assistant(item)
+                if converted is not None:
+                    out_items.append(converted)
             else:
                 continue
         u = sdk_resp.usage

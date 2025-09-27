@@ -16,7 +16,8 @@ from pathlib import Path
 import sys
 from typing import Any
 
-from .convert import _DOC_CLASS, RenderContext, UnknownNode
+from .tana_lib.models import _DOC_CLASS, UnknownNode
+from .convert import RenderContext
 from .tana_lib import SUPERTAG_KEY_ID, BaseNode, NodeStore, TupleNode
 from .tana_lib.supertags import attach_supertag_property
 from .tana_lib.types import NodeId
@@ -268,7 +269,9 @@ def main():
 
     # Create and write subset JSON
     if not args.no_subset:
-        subset_data = create_subset_json(original_data, touched_nodes)
+        subset_data = create_subset_json(
+            original_data, set(str(x) for x in touched_nodes)
+        )
         subset_path = output_prefix.with_suffix(".subset.json")
 
         with subset_path.open("w", encoding="utf-8") as f:

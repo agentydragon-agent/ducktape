@@ -11,11 +11,11 @@ import tempfile
 import time
 from typing import Literal
 
-from openai import AsyncOpenAI
 import tiktoken
 
 from adgn.llm.logging_config import configure_logging
 from adgn.llm.properties.agent_runner import run_prompt_async
+from adgn.llm.openai_utils.model import OpenAIModelProto
 from adgn.llm.properties.critic import CriticSubmitPayload
 from adgn.llm.properties.docker_env import properties_docker_spec
 from adgn.llm.properties.grade_runner import _metrics_row, grade_critic_output
@@ -26,6 +26,7 @@ from adgn.llm.properties.specimens.registry import (
     find_specimens_base,
     list_specimen_names,
 )
+from adgn.llm.client_factory import build_client
 
 # --- Jinja2 template helpers ---
 
@@ -160,7 +161,7 @@ async def _run_check_minicodex_async(
     model: str,
     output_final_message: Path | None,
     final_only: bool,
-    client: AsyncOpenAI,
+    client: OpenAIModelProto,
 ) -> int:
     # Mount the provided workdir read-only and property definitions read-only
     wiring = properties_docker_spec(workdir, mount_properties=True)
@@ -182,7 +183,7 @@ async def _run_check_minicodex_async(
 
 def main(argv: list[str] | None = None) -> int:
     configure_logging()
-    client = AsyncOpenAI()
+    client = build_client("gpt-5")
 
     parser = argparse.ArgumentParser(
         description="adgn-llm codex properties CLI",

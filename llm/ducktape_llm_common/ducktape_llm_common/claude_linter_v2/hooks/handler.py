@@ -10,7 +10,7 @@ from ..access.context import PredicateContext
 from ..access.rule_engine import RuleEngine
 from ..check_python import check_python_file
 from ..checkers_v2 import filter_violations
-from ..cli import send_desktop_notification
+from ..cli import close_desktop_notification, send_desktop_notification
 from ..config import ConfigLoader
 from ..config.models import (
     AutofixCategory,
@@ -604,12 +604,9 @@ class HookHandler:
             try:
                 # Try to close D-Bus notification if function available
                 try:
-                    from ..cli import close_desktop_notification as _close_fn
+                    close_desktop_notification(notification_id)
                 except Exception:
-                    _close_fn = None
-
-                if _close_fn:
-                    _close_fn(notification_id)
+                    pass
 
                 self.session_manager.clear_notification_id(session_id)
                 logger.debug(f"Cleared notification {notification_id} for session {session_id}")

@@ -30,12 +30,14 @@ def make_edit_behavior() -> Callable[..., Awaitable[Any]]:
                 tool_name="mcp__editor__replace_text",
                 arguments_json='{"old_text":"HELLO_WORLD","new_text":"GOODBYE_WORLD"}',
                 request=None,
+                call_id="call_1",
             )
         if i == 1:
             return make_function_call_response(
                 tool_name="mcp__editor__save",
                 arguments_json="{}",
                 request=None,
+                call_id="call_2",
             )
         if i == 2:
             # Inspect buffer to verify content before done
@@ -43,12 +45,14 @@ def make_edit_behavior() -> Callable[..., Awaitable[Any]]:
                 tool_name="mcp__editor__read_line_range",
                 arguments_json='{"start":1,"end":1}',
                 request=None,
+                call_id="call_3",
             )
         if i == 3:
             return make_function_call_response(
                 tool_name="mcp__editor__done",
                 arguments_json='{"payload":{"outcome":"success","summary":"ok"}}',
                 request=None,
+                call_id="call_4",
             )
         return make_assistant_text_response(text="done")
 

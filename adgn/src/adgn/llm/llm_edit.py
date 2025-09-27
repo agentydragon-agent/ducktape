@@ -17,7 +17,6 @@ from pathlib import Path
 import time
 from typing import cast
 
-import openai
 from openai.types.shared_params import ReasoningEffort as SDKReasoningEffort
 import typer
 
@@ -28,8 +27,14 @@ from adgn.llm.mini_codex.loggers import TranscriptLoggerHandler
 from .mcp.editor_server import make_editor_mcp
 from .mcp.inproc_transport import make_inproc_slot_spec
 from .mini_codex.agent import MiniCodex
+from adgn.llm.openai_utils.model import OpenAIModelProto
 from .mini_codex.mcp_manager import McpManager
 from adgn.llm.openai_utils.types import ReasoningSummary, to_reasoning_effort
+from adgn.llm.client_factory import build_client
+
+
+def _make_openai_client(model: str) -> OpenAIModelProto:
+    return build_client(model)
 
 
 async def _execute(
@@ -39,7 +44,7 @@ async def _execute(
     model: str,
     reasoning_effort: str | None,
     reasoning_summary: str | None,
-    client: openai.AsyncOpenAI,
+    client: OpenAIModelProto,
 ) -> int:
     # Validate input path
     target_path = file_path
@@ -104,8 +109,8 @@ def _run_cli(
     reasoning_effort: str | None,
     reasoning_summary: str | None,
 ) -> None:
-    # Construct a real AsyncOpenAI client only in the top-level CLI path and pass it explicitly
-    client = openai.AsyncOpenAI()
+    # Construct the OpenAI adapter (with retries) and pass it to the agent
+    client = _make_openai_client(model)
     code = asyncio.run(
         _execute(
             file_path=file_path,

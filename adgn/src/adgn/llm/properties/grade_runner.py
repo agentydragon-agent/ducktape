@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from openai import AsyncOpenAI
+from adgn.llm.openai_utils.model import OpenAIModelProto
 import yaml
 
 from adgn.llm.mcp.inproc_transport import make_inproc_slot_spec
@@ -43,7 +43,7 @@ def _metrics_row(
 async def grade_critic_output(
     specimen: str,
     critic_obj: CriticSubmitPayload,
-    client: AsyncOpenAI,
+    client: OpenAIModelProto,
     *,
     transcript_out_dir: Path,
 ):

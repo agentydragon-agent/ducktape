@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "seatbelt": {
+      "transport": "inproc",
+      "factory": "adgn.llm.mcp.seatbelt_exec.server:make_seatbelt_exec_mcp",
+      "args": [],
+      "kwargs": {"name": "seatbelt"}
+    }
+  }
+}

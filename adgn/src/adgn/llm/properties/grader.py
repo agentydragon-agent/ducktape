@@ -12,7 +12,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
 
-from mcp.server.fastmcp import FastMCP
+from adgn.llm.mcp._shared.fastmcp_helpers import SafeFastMCP
 from pydantic import BaseModel, ConfigDict, Field
 from rich.console import Group, RenderableType
 from rich.markdown import Markdown
@@ -123,7 +123,7 @@ def make_grader_submit_server(
     *,
     name: str = "grader_submit",
     inputs: GradeInputs,
-) -> FastMCP:
+) -> SafeFastMCP:
     """Exposes submit_result(result: GradeSubmitInput) -> {ok: True}.
 
     Validates returned IDs and computes metrics server-side using specimen + critique context.
@@ -160,7 +160,7 @@ def make_grader_submit_server(
     expected_count = len(inputs.specimen.issues)
     reported_count = len(inputs.critique.issues)
 
-    mcp = FastMCP(
+    mcp = SafeFastMCP(
         name,
         instructions="Final grader submission for specimen critique evaluation",
     )
@@ -220,7 +220,7 @@ def make_grader_submit_server_from_inputs(
     *,
     name: str = "grader_submit",
     inputs: GradeInputs,
-) -> FastMCP:
+) -> SafeFastMCP:
     """Thin wrapper: pass GradeInputs through to the primary builder.
 
     The main make_grader_submit_server() derives allowed IDs and counts internally.

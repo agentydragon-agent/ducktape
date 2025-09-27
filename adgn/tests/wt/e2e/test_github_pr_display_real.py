@@ -8,12 +8,36 @@ exercising the full daemon/CLI pipeline.
 import os
 import re
 import time
+import json
+import socket
+import uuid
+
+from datetime import timedelta
+from adgn.wt.shared.fixtures import PRFixtureEntry
 
 import pytest
 
-from ..test_utils import add_project_root_to_env, run_cli_command
-
 # Global conftest disables gh token via get_github_token
+
+
+def _rpc_json(sock_path: str | os.PathLike, method: str, params: dict) -> dict:
+    """Minimal JSON-RPC 2.0 call helper for tests over UNIX socket."""
+    req = {
+        "jsonrpc": "2.0",
+        "method": method,
+        "params": params,
+        "id": str(uuid.uuid4()),
+    }
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
+        s.connect(str(sock_path))
+        with s.makefile("rwb") as f:
+            payload = (json.dumps(req) + "\n").encode()
+            f.write(payload)
+            f.flush()
+            line = f.readline()
+            if not line:
+                raise AssertionError("No response from daemon")
+            return json.loads(line.decode())
 
 
 @pytest.mark.integration
@@ -22,69 +46,59 @@ def test_github_pr_display_with_mocked_pygithub(
     real_temp_repo,
     config_factory,
     tmp_path,
+    write_pr_fixtures,
+    wt_cli,
 ):
     # Prepare config with GitHub enabled
     factory = config_factory(real_temp_repo)
     config = factory.integration(github_enabled=True, github_repo="test/test")
 
-    # Create a shadow 'github' package in a temp dir that provides Github stub
-    mock_root = tmp_path / "mockpkgs"
-    (mock_root / "github").mkdir(parents=True)
-    (mock_root / "github" / "__init__.py").write_text(
-        """
-class _MockPR:
-    def __init__(self):
-        self.number = 123
-        self.state = "open"
-        self.draft = False
-        self.mergeable = True
-        self.merged_at = None
-        self.additions = 10
-        self.deletions = 2
-
-class _MockRepo:
-    def get_pull(self, number):
-        return _MockPR()
-
-class Github:
-    def __init__(self, *args, **kwargs):
-        pass
-    def get_repo(self, full_name):
-        return _MockRepo()
-    def search_issues(self, q):
-        # Return objects with .number attribute
-        class _Issue: pass
-        i = _Issue(); i.number = 123
-        return [i]
-""",
-    )
-
     # Build environment inheriting system env to ensure click, etc. are available
     env = os.environ.copy()
     env["WT_DIR"] = str(config.wt_dir)
     # Prepend our mock to PYTHONPATH so daemon imports it; also include project root
-    existing = env.get("PYTHONPATH", "")
-    add_project_root_to_env(env)
-    env["PYTHONPATH"] = (
-        f"{mock_root}:{env['PYTHONPATH']}"
-        if existing or env.get("PYTHONPATH")
-        else str(mock_root)
+    # WT_TEST_MODE fixtures — replace PYTHONPATH shadowing
+    pr_entry = PRFixtureEntry(
+        number=123,
+        state="open",
+        draft=False,
+        mergeable=True,
+        merged_at=None,
+        additions=10,
+        deletions=2,
     )
+    pr_map = {
+        "feature-x": pr_entry,
+        "*": pr_entry,  # Allow any branch prefix (e.g., 'test/feature-x')
+    }
+    # Use shared fixture helper
+    write_pr_fixtures(config, pr_map)
 
     # Start daemon implicitly by running status once
-    out = run_cli_command(["sh"], env=env, timeout=30.0)
+    wt_cli.env = env  # type: ignore[attr-defined]
+    out = wt_cli.status(timeout=timedelta(seconds=30.0))
     assert out.returncode == 0
 
     # Create a worktree with branch 'feature-x'
-    out2 = run_cli_command(["sh", "-c", "feature-x"], env=env, timeout=30.0)
+    out2 = wt_cli.sh_c("feature-x", timeout=timedelta(seconds=30.0))
     assert out2.returncode == 0
 
-    # Poll until output shows #123 and open and +10/-2
+    # Force a PR refresh synchronously via RPC to avoid polling flakiness
+    wt_by_name = _rpc_json(
+        config.daemon_socket_path,
+        "worktree_get_by_name",
+        {"name": "feature-x"},
+    )
+    wtid = wt_by_name["result"]["wtid"]
+    assert wtid, "Server did not return wtid for created worktree"
+    refresh_res = _rpc_json(config.daemon_socket_path, "pr_refresh_now", {"wtid": wtid})
+    assert refresh_res.get("result") == "ok"
 
+    # Now poll until status shows the PR details (robust to any async)
     deadline = time.time() + 12.0
     last = ""
     while time.time() < deadline:
-        r = run_cli_command(["sh"], env=env, timeout=30.0)
+        r = wt_cli.status(timeout=timedelta(seconds=30.0))
         assert r.returncode == 0
         last = r.stdout
         if "#123" in last and re.search(r"\bcan merge\b", last) and "+10/-2" in last:

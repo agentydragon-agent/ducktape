@@ -3,11 +3,11 @@ import importlib
 from pathlib import Path
 import pkgutil
 
-ROOT = Path(__file__).resolve().parents[2] / "wt"
+ROOT = Path(importlib.import_module("adgn.wt").__file__).parent
 
-CLIENT_PREFIX = "wt.client"
-SERVER_PREFIX = "wt.server"
-SHARED_PREFIX = "wt.shared"
+CLIENT_PREFIX = "adgn.wt.client"
+SERVER_PREFIX = "adgn.wt.server"
+SHARED_PREFIX = "adgn.wt.shared"
 
 ALLOWED_PREFIXES_FOR_CLIENT = {CLIENT_PREFIX, SHARED_PREFIX}
 ALLOWED_PREFIXES_FOR_SERVER = {SERVER_PREFIX, SHARED_PREFIX}
@@ -22,9 +22,9 @@ def iter_modules(package_prefix: str):
 
 
 def _module_path(module_name: str) -> Path:
-    if not module_name.startswith("wt."):
+    if not module_name.startswith("adgn.wt."):
         raise ValueError(module_name)
-    rel = module_name.removeprefix("wt.").replace(".", "/") + ".py"
+    rel = module_name.removeprefix("adgn.wt.").replace(".", "/") + ".py"
     return ROOT / rel
 
 

@@ -5,8 +5,9 @@ import json
 from pathlib import Path
 from typing import cast
 
-from mcp.server.fastmcp import FastMCP  # type: ignore
-from openai import AsyncOpenAI
+from adgn.llm.mcp._shared.fastmcp_helpers import SafeFastMCP  # type: ignore
+from adgn.llm.openai_utils.model import OpenAIModelProto
+from adgn.llm.client_factory import build_client
 from pydantic import BaseModel, Field
 import yaml
 
@@ -79,6 +80,7 @@ async def cluster_unknowns_async(
     *,
     model: str,
     out_root: Path,
+    client: OpenAIModelProto,
 ) -> Path:
     """Run the in-proc MCP clustering agent and write clusters.json under out_root.
 
@@ -97,7 +99,7 @@ async def cluster_unknowns_async(
             self.result: list[ClusterSpec] | None = None
 
     state = ClusterSubmitState()
-    mcp = FastMCP(
+    mcp = SafeFastMCP(
         "cluster_submit",
         instructions=(
             "Submit clusters via submit_result once and only once. The payload must be "
@@ -139,7 +141,7 @@ async def cluster_unknowns_async(
             model=model,
             mcp=mcp_mgr,
             system=system,
-            client=AsyncOpenAI(),
+            client=client,
             handlers=[
                 TranscriptHandler(dest_dir=out_root),
                 GateUntil(lambda: state.result is not None),
@@ -189,12 +191,19 @@ def cluster_unknowns(
     # Partition by specimen
     by_spec = {u.specimen: [u] for u in issues}
 
+    # Construct a single typed client per invocation
+    typed_client = build_client(model)
+
     async def _run_all() -> Path:
         tasks = []
         for spec, items in by_spec.items():
             out_spec = root / spec
             out_spec.mkdir(parents=True, exist_ok=True)
-            tasks.append(cluster_unknowns_async(items, model=model, out_root=out_spec))
+            tasks.append(
+                cluster_unknowns_async(
+                    items, model=model, out_root=out_spec, client=typed_client
+                )
+            )
         # Run in parallel; await all
         await asyncio.gather(*tasks)
         return root

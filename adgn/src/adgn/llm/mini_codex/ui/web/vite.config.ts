@@ -7,13 +7,22 @@ export default defineConfig({
   server: {
     host: '127.0.0.1',
     port: 5173,
-    strictPort: false, // if 5173 is busy, Vite will bump to 5174+, proxy still applies
+    // CLI passes --strictPort and actual port; keep default flexible here
+    strictPort: false,
     proxy: {
+      // Proxy WS to backend; target from env when provided (CLI sets VITE_BACKEND_ORIGIN)
       '/ws': {
-        target: 'http://127.0.0.1:8765',
+        target: process.env.VITE_BACKEND_ORIGIN || 'http://127.0.0.1:8765',
         ws: true,
         changeOrigin: true,
+        secure: false,
       },
+      // Example JSON endpoints useful in dev
+      '/transcript': {
+        target: process.env.VITE_BACKEND_ORIGIN || 'http://127.0.0.1:8765',
+        changeOrigin: true,
+        secure: false,
+      }
     },
   },
   build: { outDir: "../static/web", emptyOutDir: true },

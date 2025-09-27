@@ -2,16 +2,12 @@
 
 from datetime import timedelta
 import os
-from pathlib import Path
 import subprocess
 
 
 def add_project_root_to_env(env: dict) -> None:
-    """Ensure the repository root is on PYTHONPATH for tests."""
-
-    project_root = str(Path(__file__).resolve().parents[1])
-    existing = env.get("PYTHONPATH", "")
-    env["PYTHONPATH"] = f"{project_root}:{existing}" if existing else project_root
+    """Deprecated: no-op. Rely on installed adgn package for imports."""
+    return
 
 
 def run_cli_command(
@@ -22,7 +18,7 @@ def run_cli_command(
     stdin=None,
 ):
     """Run the actual CLI command as subprocess."""
-    cmd = ["python3", "-m", "wt.cli", *args]
+    cmd = ["python3", "-m", "adgn.wt.cli", *args]
     if env is None:
         env = os.environ.copy()
     add_project_root_to_env(env)

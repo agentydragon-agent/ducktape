@@ -2,12 +2,10 @@ from __future__ import annotations
 
 import asyncio
 from concurrent.futures import CancelledError
-from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 
-# OpenAI typed SDK classes used by MiniCodex
-from openai.types.responses import ResponseOutputMessage, ResponseOutputText
+# OpenAI typed helpers for Responses output
 import pytest
 
 from adgn.llm.mini_codex.agent import MiniCodex
@@ -28,23 +26,21 @@ def test_ws_plain_assistant_text(monkeypatch: pytest.MonkeyPatch) -> None:
     We mock OpenAI Responses to return a single assistant message with text.
     """
 
-    async def fake_create(_client, **kwargs):
-        usage = SimpleNamespace(input_tokens=1, output_tokens=1, total_tokens=2)
-        msg = ResponseOutputMessage(
-            id="msg_1",
-            type="message",
-            status="completed",
-            role="assistant",
-            content=[
-                ResponseOutputText(type="output_text", text="plain-ok", annotations=[])
-            ],
-        )
-        return SimpleNamespace(id="test-id", usage=usage, output=[msg])
+    from adgn.llm.openai_utils.model import (
+        FakeOpenAIModel,
+        ResponsesResult,
+        AssistantResponseMessage,
+        Usage,
+    )
 
-    monkeypatch.setattr(
-        "adgn.llm.mini_codex.agent._responses_create_with_retry",
-        fake_create,
-        raising=True,
+    client = FakeOpenAIModel(
+        [
+            ResponsesResult(
+                id="test",
+                usage=Usage(input_tokens=0, output_tokens=1, total_tokens=1),
+                output=[AssistantResponseMessage(text="plain-ok")],
+            )
+        ]
     )
 
     # Minimal no-op MCP manager (no tools expected here)
@@ -55,19 +51,12 @@ def test_ws_plain_assistant_text(monkeypatch: pytest.MonkeyPatch) -> None:
         async def list_tools(self):  # no tools in this test
             return []
 
-    class DummyClient:
-        @property
-        def responses(self):  # pragma: no cover
-            raise AssertionError(
-                "responses.create should not be called directly in this test"
-            )
-
     async def _mk_agent() -> MiniCodex:
         return await MiniCodex.create(
             model="test-model",
             mcp=DummyMcp(),
             system="You are a test agent.",
-            client=DummyClient(),
+            client=client,
             handlers=[AutoHandler()],
             parallel_tool_calls=False,
         )

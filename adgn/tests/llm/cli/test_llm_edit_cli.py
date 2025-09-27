@@ -13,7 +13,6 @@ def test_typer_cli_invokes_execute_without_sys(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     assistant_response_factory,
-    fake_openai_client_factory,
 ) -> None:
     # Prepare a file path and a prompt
     p = tmp_path / "file.txt"
@@ -22,16 +21,17 @@ def test_typer_cli_invokes_execute_without_sys(
 
     called: dict[str, object] = {}
 
-    def _mk_client(*args: object, **kwargs: object):
-        called.update({"client_args": args, "client_kwargs": kwargs})
-        return fake_openai_client_factory([assistant_response_factory("o4-mini", "ok")])
+    def _mk_client(model: str):
+        called.update({"client_model": model})
+        from adgn.llm.openai_utils.model import FakeOpenAIModel
 
-    monkeypatch.setattr(mod.openai, "AsyncOpenAI", _mk_client)  # type: ignore[assignment]
+        return FakeOpenAIModel([assistant_response_factory("o4-mini", "ok")])
+
+    monkeypatch.setattr(mod, "_make_openai_client", _mk_client, raising=True)
 
     runner = CliRunner()
     result = runner.invoke(app, [str(p), prompt, "--model", "o4-mini"])  # type: ignore[list-item]
 
     assert result.exit_code == 0, result.output
-    # Ensure arguments were parsed correctly
-    assert called.get("client_kwargs") == {}
+    # Ensure arguments were parsed correctly (no extra kwargs expected)
     assert p.exists()

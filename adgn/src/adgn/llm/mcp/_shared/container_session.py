@@ -11,9 +11,10 @@ from typing import Any
 import docker
 from docker.models.containers import Container
 from mcp.server.fastmcp import FastMCP
+from adgn.llm.mcp._shared.fastmcp_helpers import mcp_flat_model
 
 from adgn.llm.mcp._shared.constants import SLEEP_FOREVER_CMD
-from adgn.llm.mcp._shared.types import ExecResult
+from adgn.llm.mcp._shared.types import ExecInput, ExecResult
 
 # Exit code returned by `timeout -s TERM` on termination
 EXIT_CODE_SIGTERM = 143
@@ -139,42 +140,36 @@ def register_container(mcp: FastMCP, *, tool_name: str = "exec") -> None:
             "image_history": s.docker_client.api.history(img.id),  # type: ignore[attr-defined]
         }
 
-    # Using module-level ExecInput (kept for reference), but expose top-level
-    # arguments in the tool signature to simplify client calls.
-
-    # Tool: container exec
-    @mcp.tool(
+    # Tool: container exec (flat MCP payload, validated via ExecInput)
+    @mcp_flat_model(
+        mcp,
         name=tool_name,
         title="Execute a command inside the container",
         description="Run a shell command inside the per-session Docker container.",
         structured_output=True,
     )
-    def tool_exec(
-        cmd: list[str],
-        cwd: str | None = None,
-        env: dict[str, str] | None = None,
-        user: str | None = None,
-        tty: bool = False,
-        shell: bool = False,
-        timeout_secs: float | None = None,
-    ) -> ExecResult:
+    def tool_exec(input: ExecInput) -> ExecResult:
         ctx = mcp.get_context()
         s: ContainerSessionState = ctx.request_context.lifespan_context  # type: ignore[assignment]
         prepared_cmd: list[str] | str
-        if timeout_secs and timeout_secs > 0:
-            int_secs = max(1, int(math.ceil(timeout_secs)))
+        if input.timeout_secs and input.timeout_secs > 0:
+            int_secs = max(1, int(math.ceil(input.timeout_secs)))
             timeout_prefix = f"timeout -s TERM {int_secs} "
-            if shell:
+            if input.shell:
                 # Build a shell string; wrapping to sh -lc happens below if needed
-                prepared_cmd = f"{timeout_prefix}{_shell_join(cmd)}"
+                prepared_cmd = f"{timeout_prefix}{_shell_join(input.cmd)}"
             else:
                 # No shell requested → run under sh -lc with timeout prefix
-                prepared_cmd = ["sh", "-lc", f"{timeout_prefix}{_shell_join(cmd)}"]
+                prepared_cmd = [
+                    "sh",
+                    "-lc",
+                    f"{timeout_prefix}{_shell_join(input.cmd)}",
+                ]
         else:
-            prepared_cmd = _shell_join(cmd) if shell else cmd
+            prepared_cmd = _shell_join(input.cmd) if input.shell else input.cmd
 
         if (
-            shell
+            input.shell
             and not (
                 isinstance(prepared_cmd, list) and prepared_cmd[:2] == ["sh", "-lc"]
             )
@@ -195,10 +190,10 @@ def register_container(mcp: FastMCP, *, tool_name: str = "exec") -> None:
             stdout=True,
             stderr=True,
             stdin=False,
-            tty=tty,
-            user=user,
-            workdir=cwd,
-            environment=env,
+            tty=input.tty,
+            user=input.user,
+            workdir=input.cwd,
+            environment=input.env,
         )["Id"]
 
         stdout_buf = bytearray()
@@ -218,7 +213,7 @@ def register_container(mcp: FastMCP, *, tool_name: str = "exec") -> None:
         inspect_info = api.exec_inspect(exec_id)
         exit_code = inspect_info.get("ExitCode")
 
-        timed_out = bool(timeout_secs) and exit_code == EXIT_CODE_SIGTERM
+        timed_out = bool(input.timeout_secs) and exit_code == EXIT_CODE_SIGTERM
         if timed_out:
             exit_code = None
         return ExecResult(

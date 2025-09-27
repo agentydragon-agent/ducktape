@@ -1,14 +1,18 @@
 from __future__ import annotations
 
 import asyncio
-import importlib.util
 import json
-import pathlib
 from typing import Any
 
 from mcp import types as mcp_types
 from mcp.server.fastmcp import FastMCP
-from tests.llm.support.openai_builders import make_input_function_call
+from adgn.llm.openai_utils.model import (
+    FunctionCallItem,
+    FakeOpenAIModel,
+    ResponsesResult,
+    Usage,
+    AssistantResponseMessage,
+)
 import pytest
 
 from adgn.llm.mcp.inproc_transport import make_inproc_slot_spec
@@ -23,15 +27,6 @@ from adgn.llm.mini_codex.handler import (
 from adgn.llm.mini_codex.loggers import RecordingHandler
 from adgn.llm.mini_codex.loop_control import Auto, Continue
 from adgn.llm.mini_codex.mcp_manager import McpManager
-
-_sdk_spec = importlib.util.spec_from_file_location(
-    "sdk_mocks",
-    str(pathlib.Path(__file__).parent / "sdk_mocks.py"),
-)
-_sdk_mod = importlib.util.module_from_spec(_sdk_spec)
-_sdk_spec.loader.exec_module(_sdk_mod)
-FakeOpenAIClient = _sdk_mod.FakeOpenAIClient
-make_assistant_text_response = _sdk_mod.make_assistant_text_response
 
 
 def _make_spy_server(counter: list[str]) -> FastMCP:
@@ -69,10 +64,12 @@ class SyntheticInvoker(AutoHandler):
         if self._fired:
             return Continue(Auto())
         self._fired = True
-        fc = make_input_function_call(
+        fc = FunctionCallItem(
             name="mcp__spy__tool1",
             call_id="client:replace-1",
-            arguments={"old_text": "HELLO_WORLD", "new_text": "GOODBYE_WORLD"},
+            arguments=json.dumps(
+                {"old_text": "HELLO_WORLD", "new_text": "GOODBYE_WORLD"}
+            ),
         )
         return Continue(Auto(), inserts_input=(fc,), skip_sampling=True)
 
@@ -97,8 +94,14 @@ async def test_synthetic_action_executes_tool_via_mcp(responses_factory):
     counter: list[str] = []
     spec = make_inproc_slot_spec(_make_spy_server(counter))
 
-    seq = [responses_factory.make_assistant_text_response(text="done")]
-    client = responses_factory.make_fake_client(seq)
+    seq = [
+        ResponsesResult(
+            id="msg",
+            usage=Usage(input_tokens=0, output_tokens=1, total_tokens=1),
+            output=[AssistantResponseMessage(text="done")],
+        )
+    ]
+    client = FakeOpenAIModel(seq)
 
     async with McpManager({"spy": spec}) as mcp:
         rec = RecordingHandler()
@@ -128,8 +131,14 @@ async def test_bypass_inject_preempts_mcp_call(responses_factory):
     counter: list[str] = []
     spec = make_inproc_slot_spec(_make_spy_server(counter))
 
-    seq = [responses_factory.make_assistant_text_response(text="done")]
-    client = responses_factory.make_fake_client(seq)
+    seq = [
+        ResponsesResult(
+            id="msg",
+            usage=Usage(input_tokens=0, output_tokens=1, total_tokens=1),
+            output=[AssistantResponseMessage(text="done")],
+        )
+    ]
+    client = FakeOpenAIModel(seq)
 
     injected_result = mcp_types.CallToolResult(
         content=[],

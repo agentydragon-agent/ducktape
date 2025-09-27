@@ -20,7 +20,7 @@ export OPENAI_API_BASE=http://127.0.0.1:8000
 >> import asyncio
 >> from openai import AsyncOpenAI
 >> client = AsyncOpenAI()
->> asyncio.run(client.responses.create(
+>> asyncio.run(client.responses_create(
 >>     model="o4-mini",
 >>     input=[{"role":"user","content":"Hello"}],
 >> ))
@@ -29,7 +29,7 @@ export OPENAI_API_BASE=http://127.0.0.1:8000
 
 >> async def main():
 >>    client = AsyncOpenAI()
->>    maybe_iter = await client.responses.create(
+>>    maybe_iter = await client.responses_create(
 >>        model="o4-mini",
 >>        input=[{"role":"user","content":"Stream 1..3"}],
 >>        stream=True,

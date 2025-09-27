@@ -8,61 +8,58 @@ import pytest
 
 from adgn.wt.shared.git_utils import git_run
 
-from ..test_utils import run_cli_command
+from datetime import timedelta
 
 pytestmark = pytest.mark.timeout(10)
 
 
-def test_real_program_workflow(real_temp_repo, real_env):
+def test_real_program_workflow(real_temp_repo, wt_cli):
     # Initial status
-    result = run_cli_command(["sh"], env=real_env, timeout=10.0)
+    result = wt_cli.status(timeout=timedelta(seconds=10.0))
     assert result.returncode == 0
 
     # Create first worktree
-    result = run_cli_command(["sh", "-c", "feature1"], env=real_env, timeout=10.0)
+    result = wt_cli.sh_c("feature1", timeout=timedelta(seconds=10.0))
     assert result.returncode == 0
     worktree1_path = real_temp_repo / "worktrees" / "feature1"
     assert worktree1_path.exists()
     assert (worktree1_path / ".git").exists()
 
     # Create second worktree
-    result = run_cli_command(["sh", "-c", "feature2"], env=real_env, timeout=10.0)
+    result = wt_cli.sh_c("feature2", timeout=timedelta(seconds=10.0))
     assert result.returncode == 0
     worktree2_path = real_temp_repo / "worktrees" / "feature2"
     assert worktree2_path.exists()
 
     # Status shows both
-    result = run_cli_command(["sh"], env=real_env, timeout=10.0)
+    result = wt_cli.status(timeout=timedelta(seconds=10.0))
     assert result.returncode == 0
     assert "feature1" in result.stdout
     assert "feature2" in result.stdout
 
     # Navigate to feature1
-    result = run_cli_command(["sh", "feature1"], env=real_env, timeout=10.0)
+    result = wt_cli.sh("feature1", timeout=timedelta(seconds=10.0))
     assert result.returncode == 0
 
     # Remove feature2
-    result = run_cli_command(
-        ["sh", "rm", "feature2", "--force"],
-        env=real_env,
-        cwd=worktree1_path,
-        timeout=10.0,
+    result = wt_cli.sh(
+        "rm", "feature2", "--force", cwd=worktree1_path, timeout=timedelta(seconds=10.0)
     )
     assert result.returncode == 0
     git_list = git_run(["worktree", "list"], cwd=real_temp_repo)
     assert str(worktree2_path) not in git_list.stdout.decode()
 
     # Final status
-    result = run_cli_command(["sh"], env=real_env, timeout=10.0)
+    result = wt_cli.status(timeout=timedelta(seconds=10.0))
     assert result.returncode == 0
 
 
-def test_real_daemon_startup_and_communication(real_temp_repo, real_env):
+def test_real_daemon_startup_and_communication(real_temp_repo, wt_cli):
     # Start daemon
-    result = run_cli_command(["sh"], env=real_env, timeout=10.0)
+    result = wt_cli.status(timeout=timedelta(seconds=10.0))
     assert result.returncode == 0
 
-    daemon_dir = Path(real_env["WT_DIR"]).resolve()
+    daemon_dir = Path(wt_cli.env["WT_DIR"]).resolve()
     assert daemon_dir.exists()
     pid_file = daemon_dir / "daemon.pid"
 
@@ -75,9 +72,9 @@ def test_real_daemon_startup_and_communication(real_temp_repo, real_env):
         pytest.fail(f"Daemon PID {pid} not found")
 
 
-def test_real_git_operations(real_temp_repo, real_env):
+def test_real_git_operations(real_temp_repo, wt_cli):
     # Create worktree
-    result = run_cli_command(["sh", "-c", "git-test"], env=real_env, timeout=10.0)
+    result = wt_cli.sh_c("git-test", timeout=timedelta(seconds=10.0))
     assert result.returncode == 0
 
     worktree_path = real_temp_repo / "worktrees" / "git-test"

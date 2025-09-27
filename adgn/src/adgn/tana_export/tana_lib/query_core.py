@@ -24,42 +24,59 @@ def _get_attr(node: Any, attr: str):
     return getattr(node, attr, None)
 
 
-def get_tuple_value(node: Any, key: str) -> Any | None:
-    """Get the tuple value for `key` from a node.
+def get_tuple_value(node: Any, key: Any) -> Any | None:
+    """Return the first value node from a tuple keyed by `key`.
 
-    Tana represents tuples as nodes whose first child is the key (a NodeId), and
-    subsequent children are the values. This helper returns the first value node
-    (raw mapping or object) corresponding to the tuple's value, or None if not
-    present.
+    Supports two shapes:
+    - node is a tuple node: children[0] is the key id, children[1:] are values
+    - node is a container: search its child tuple nodes for one where
+      tuple.children[0] == key, then return tuple.child_nodes[1]
 
-    The helper deliberately does not attempt to convert raw dicts into BaseNode
-    instances to avoid importing models here. Callers that need BaseNode objects
-    should perform that conversion using their NodeStore.
+    Requires that `node` (or the tuple children) are attached to a store to
+    resolve child ids into node objects when returning.
     """
-    # If node is a mapping, try to access props/children
-    children = _get_attr(node, "children")
-    if not children:
+    # Normalize for comparison
+    key_str = str(key)
+
+    children = _get_attr(node, "children") or []
+
+    # Case 1: node itself is a tuple — check its key
+    if children:
+        first = children[0]
+        if str(first) == key_str:
+            # Return first value if present and resolvable via store
+            if (
+                hasattr(node, "_store")
+                and node._store is not None
+                and len(children) >= 2
+            ):
+                try:
+                    return node._store[children[1]]
+                except Exception:
+                    return None
+            # Without a store, return the raw child id
+            return children[1] if len(children) >= 2 else None
+
+    # Case 2: search child tuples under this node
+    # We need a store to inspect child tuple keys/values
+    store = getattr(node, "_store", None)
+    if store is None:
         return None
 
-    # first child is the key node id
-    # key_child_id = children[0]
-
-    # iterate over the value children
-    for child in children[1:]:
-        # For callers that pass BaseNode, retrieving child nodes may already be
-        # done by the caller; here we just return the raw child id so caller can
-        # resolve via NodeStore. But to preserve previous behavior, if the
-        # caller passed a node object with indexing support (like NodeStore), try
-        # to resolve.
-        if hasattr(node, "_store") and node._store is not None:
-            store = node._store
-            if child in store:
-                # check if this child's id matches the requested key
-                # For tuple semantics the first child is the key - matching is
-                # done by the parent tuple node; so here we assume children[0]
-                # held SUPERTAG_KEY_ID in previous code. To keep this helper
-                # general, callers should check the key node separately.
-                return store[child]
-
-    # Fallback: return None (caller will resolve using NodeStore if needed)
+    for cid in children:
+        try:
+            t = store[cid]
+        except Exception:
+            continue
+        t_children = getattr(t, "children", None)
+        if not t_children:
+            continue
+        if str(t_children[0]) != key_str:
+            continue
+        # Found the right tuple: return its first value node if present
+        if len(t_children) >= 2:
+            try:
+                return store[t_children[1]]
+            except Exception:
+                return None
     return None

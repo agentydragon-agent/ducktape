@@ -55,7 +55,7 @@ def cli_runner_with_env(cli_runner, cli_test_env, monkeypatch):
 
 @pytest.mark.integration
 class TestCLIOutputFormat:
-    @patch("wt.client.wt_client.WtClient.get_status")
+    @patch("adgn.wt.client.wt_client.WtClient.get_status")
     def test_status_table_rendering(
         self,
         mock_get_status,
@@ -118,7 +118,7 @@ class TestCLIOutputFormat:
         assert "main" in output
         assert "feature-branch" in output
 
-    @patch("wt.client.wt_client.WtClient.get_status")
+    @patch("adgn.wt.client.wt_client.WtClient.get_status")
     def test_list_worktrees_empty(self, mock_get_status, cli_runner_with_env):
         """Test ls command with no worktrees."""
         status_response = create_test_status_response({})
@@ -127,7 +127,7 @@ class TestCLIOutputFormat:
         assert result.exit_code == 0
         assert "No worktrees found" in result.output
 
-    @patch("wt.client.wt_client.WtClient.get_status")
+    @patch("adgn.wt.client.wt_client.WtClient.get_status")
     def test_list_worktrees_with_data(
         self,
         mock_get_status,
@@ -183,7 +183,7 @@ class TestCLIOutputFormat:
         assert result.exit_code == 0
         assert "USAGE:" in result.output  # Custom help format
 
-    @patch("wt.client.wt_client.WtClient.get_status")
+    @patch("adgn.wt.client.wt_client.WtClient.get_status")
     def test_status_unknown_when_not_cached(self, mock_get_status, cli_runner_with_env):
         """When status isn't cached yet, show 'unknown' instead of 'clean'."""
         commit_info = CommitInfo(

@@ -10,6 +10,7 @@ import time
 import pytest
 
 from ..test_utils import run_cli_command
+from datetime import timedelta
 
 pytestmark = pytest.mark.timeout(10)
 
@@ -19,12 +20,14 @@ def test_status_lists_multiple_worktrees(real_temp_repo, real_env):
     """Create two worktrees and ensure `wt sh` status output reflects them."""
 
     # Initial status should succeed; header should include component summary
-    result = run_cli_command(["sh"], env=real_env, timeout=10.0)
+    result = run_cli_command(["sh"], env=real_env, timeout=timedelta(seconds=10.0))
     assert result.returncode == 0
     assert "gitstatusd" in result.stdout
 
     # Create first worktree
-    result = run_cli_command(["sh", "-c", "alpha"], env=real_env, timeout=10.0)
+    result = run_cli_command(
+        ["sh", "-c", "alpha"], env=real_env, timeout=timedelta(seconds=10.0)
+    )
     assert result.returncode == 0
 
     # Verify created on disk
@@ -33,7 +36,9 @@ def test_status_lists_multiple_worktrees(real_temp_repo, real_env):
     assert (wt1 / ".git").exists()
 
     # Create second worktree
-    result = run_cli_command(["sh", "-c", "beta"], env=real_env, timeout=10.0)
+    result = run_cli_command(
+        ["sh", "-c", "beta"], env=real_env, timeout=timedelta(seconds=10.0)
+    )
     assert result.returncode == 0
 
     wt2 = Path(real_temp_repo) / "worktrees" / "beta"
@@ -44,7 +49,7 @@ def test_status_lists_multiple_worktrees(real_temp_repo, real_env):
     deadline = time.time() + 5.0
     last_out = ""
     while time.time() < deadline:
-        result = run_cli_command(["sh"], env=real_env, timeout=3.0)
+        result = run_cli_command(["sh"], env=real_env, timeout=timedelta(seconds=3.0))
         assert result.returncode == 0
         out = result.stdout
         last_out = out

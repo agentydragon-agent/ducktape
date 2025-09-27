@@ -104,7 +104,8 @@ def main():
         print(f"Found {len(all_searches)} search nodes:")
         for search_id in all_searches:
             search_node = store.get(NodeId(search_id))
-            print(f"  - {search_node.name or '<unnamed>'} ({search_id})")
+            name = (search_node.name if search_node else None) or "<unnamed>"
+            print(f"  - {name} ({search_id})")
         return
 
     # Process searches

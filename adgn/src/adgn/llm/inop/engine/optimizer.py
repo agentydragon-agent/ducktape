@@ -209,9 +209,11 @@ async def optimize_prompts_mcp(args: OptimizeMcpArgs) -> Path:
             prompt: str,
             tasks: list[TaskDefinition],
         ) -> list[GradedRollout]:
+            print(f"[_Deps.run_rollouts_with_prompt] start, tasks={len(tasks)} prompt={prompt}")
             # Minimal serial implementation (can parallelize later)
             results: list[GradedRollout] = []
             for t in tasks:
+                print(f"[_Deps.run_rollouts_with_prompt] setting up runner for task {t.id}")
                 # Create runner with the configured OpenAI model
                 runner_model = LoggingOpenAIModel(
                     openai_client=args.openai_client,
@@ -232,6 +234,7 @@ async def optimize_prompts_mcp(args: OptimizeMcpArgs) -> Path:
 
                 # Single rollout per task (id=0)
                 rollout = await runner.run_task(t, agent_instructions=prompt)
+                print(f"[_Deps.run_rollouts_with_prompt] got rollout for task {t.id}")
 
                 # Grade rollout
                 _, grading_config = t.resolve_config(args.task_types)
@@ -250,9 +253,11 @@ async def optimize_prompts_mcp(args: OptimizeMcpArgs) -> Path:
                     cfg=args.cfg,
                     environment=runner.get_environment(),
                 )
+                print(f"[_Deps.run_rollouts_with_prompt] got grade for task {t.id}")
                 # Package graded rollout (include task per model schema)
                 results.append(GradedRollout(rollout=rollout, grade=grade, task=t))
                 await runner.cleanup()
+                print(f"[_Deps.run_rollouts_with_prompt] cleaned up runner for task {t.id}")
             return results
 
         def persist_all(
@@ -367,7 +372,7 @@ async def optimize_prompts_mcp(args: OptimizeMcpArgs) -> Path:
         pe = await MiniCodex.create(
             model=model.model,
             mcp=mcp,
-            client=model.openai_client.openai_client,
+            client=model,  # LoggingOpenAIModel implements OpenAIModelProto
             system=system_message,
             handlers=[
                 ProposePromptNTimes(args.iterations),
@@ -389,7 +394,8 @@ async def optimize_prompts_mcp(args: OptimizeMcpArgs) -> Path:
                 "last_feedback_preview": (last_feedback or "")[:160],
             },
         )
-        return args.base_dir
+    # Exit McpManager context before returning to avoid teardown happening under return unwinding
+    return args.base_dir
 
 
 # -----------------------------------------------------------------------------
