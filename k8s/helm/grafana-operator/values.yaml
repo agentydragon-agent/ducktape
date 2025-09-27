@@ -4,9 +4,12 @@
 # IMPORTANT: Since we use grafana as a dependency chart, all values must be under 'grafana:' key
 
 grafana:
-  # Use default admin credentials (auto-generated password)
-  adminUser: admin
-  # adminPassword: null (auto-generated if not specified)
+  # SSO authentication - no local admin
+  admin:
+    existingSecret: ""  # Disable admin password
+
+  # Environment variables for OAuth
+  envFromSecret: grafana-oauth-secret
 
   # Security context to fix permissions
   securityContext:
@@ -30,12 +33,17 @@ grafana:
   ingress:
     enabled: false
 
-  # Mount DB password secret
+  # Mount secrets
   extraSecretMounts:
     - name: db-password
       secretName: grafana-db-password
       defaultMode: 0440
       mountPath: /etc/secrets/db
+      readOnly: true
+    - name: oauth-secret
+      secretName: grafana-oauth-secret
+      defaultMode: 0440
+      mountPath: /etc/secrets/oauth
       readOnly: true
 
   # Create datasource config from mounted secret
@@ -112,3 +120,19 @@ grafana:
       mode: console
     security:
       allow_embedding: true
+      disable_initial_admin_creation: true
+    auth:
+      disable_login_form: true
+      oauth_auto_login: true
+    auth.generic_oauth:
+      enabled: true
+      name: Authentik
+      allow_sign_up: true
+      client_id: grafana
+      client_secret: $__env{client-secret}
+      scopes: openid email profile groups
+      auth_url: https://auth.k3s.agentydragon.com/application/o/authorize/
+      token_url: https://auth.k3s.agentydragon.com/application/o/token/
+      api_url: https://auth.k3s.agentydragon.com/application/o/userinfo/
+      role_attribute_path: contains(groups[*], 'grafana-admins') && 'Admin' || 'Viewer'
+      allow_assign_grafana_admin: true
