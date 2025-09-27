@@ -1,0 +1,28 @@
+# PowerDNS Authoritative Server Configuration
+
+# Backend configuration
+launch=gsqlite3
+gsqlite3-database=/var/lib/powerdns/pdns.sqlite3
+gsqlite3-dnssec
+
+# Network binding
+local-address=0.0.0.0,::
+
+# Web Server configuration
+webserver=yes
+webserver-address=0.0.0.0
+webserver-port={{ powerdns_webserver_port }}
+webserver-allow-from=0.0.0.0/0
+
+# API configuration
+api=yes
+api-key={{ powerdns_api_key }}
+
+# DNS Update configuration
+dnsupdate=yes
+allow-dnsupdate-from=127.0.0.1,172.16.0.0/12
+
+# Logging
+loglevel=6
+log-dns-queries=yes
+log-dns-details=yes

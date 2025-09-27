@@ -1,0 +1,12 @@
+services:
+  powerdns:
+    image: powerdns/pdns-auth-master:latest
+    container_name: powerdns
+    volumes:
+      - ./sqlite-data:/var/lib/powerdns
+      - ./config/pdns.conf:/etc/powerdns/pdns.conf:ro
+    ports:
+      - "53:53/tcp"
+      - "53:53/udp"
+      - "{{ powerdns_webserver_address }}:{{ powerdns_webserver_port }}:{{ powerdns_webserver_port }}"
+    restart: unless-stopped

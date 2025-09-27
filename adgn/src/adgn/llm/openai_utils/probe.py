@@ -15,6 +15,7 @@ from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import Enum
+from functools import partial
 import json
 import random
 import os
@@ -40,6 +41,7 @@ from textual.app import App, ComposeResult
 from textual.widgets import Header, Footer, Static
 from textual.reactive import reactive
 from textual.events import Key
+import asyncpg
 
 
 # ---------- Constants & utilities ----------
@@ -63,8 +65,19 @@ FAIL_REPEATS = 1
 # Health server settings
 HEALTH_PORT = int(os.getenv("PROBE_HEALTH_PORT", "8080"))
 HEALTH_PATH = "/health"
+METRICS_PATH = "/metrics"
+
+# Database settings
+DB_HOST = os.getenv("DB_HOST", "timescaledb.observability.svc.cluster.local")
+DB_PORT = int(os.getenv("DB_PORT", "5432"))
+DB_NAME = os.getenv("DB_NAME", "openai_probe")
+DB_USER = os.getenv("DB_USER", "postgres")
+DB_PASSWORD = os.getenv("DB_PASSWORD")
+if not DB_PASSWORD:
+    raise ValueError("DB_PASSWORD environment variable is required but not set")
 # Cache paths (XDG cache via platformdirs)
 _CACHE_DIR = Path(user_cache_dir(appname="adgn-llm", appauthor=False)) / "openai_probe"
+
 _CACHE_FILE = _CACHE_DIR / "history.jsonl"
 
 
@@ -118,8 +131,197 @@ def _persist_result(res: "ProbeResult") -> None:
         fh.write(record.model_dump_json() + "\n")
 
 
+# Database connection and initialization
+_db_pool: asyncpg.Pool | None = None
+
+
+async def _get_db_pool() -> asyncpg.Pool:
+    """Get or create database connection pool."""
+    global _db_pool
+    if _db_pool is None:
+        _db_pool = await asyncpg.create_pool(
+            host=DB_HOST,
+            port=DB_PORT,
+            database=DB_NAME,
+            user=DB_USER,
+            password=DB_PASSWORD,
+            min_size=1,
+            max_size=10,
+        )
+    return _db_pool
+
+
+async def _init_database() -> None:
+    """Initialize database schema if needed."""
+    pool = await _get_db_pool()
+
+    schema_sql = """
+    -- Create table if not exists
+    CREATE TABLE IF NOT EXISTS probe_results (
+      -- Timing
+      start_time TIMESTAMPTZ NOT NULL,
+      end_time TIMESTAMPTZ NOT NULL,
+      latency_s DOUBLE PRECISION NOT NULL,
+
+      -- Model info
+      model TEXT NOT NULL,
+      family TEXT NOT NULL,
+      kind TEXT NOT NULL,  -- 'chat' or 'responses'
+
+      -- Result
+      success BOOLEAN NOT NULL,
+
+      -- Error details (NULL if success)
+      error_code TEXT,
+      error_message TEXT,
+      error_status INT,
+
+      -- Chat API response fields (NULL unless kind='chat' and success=true)
+      chat_response_content TEXT,
+      chat_response_role TEXT,
+      chat_finish_reason TEXT,
+      chat_completion_tokens INT,
+      chat_prompt_tokens INT,
+
+      -- Responses API fields (NULL unless kind='responses' and success=true)
+      responses_text TEXT,
+      responses_finish_reason TEXT,
+      responses_tokens INT,
+
+      -- Request metadata
+      request_id TEXT,
+      api_key_suffix TEXT
+    );
+
+    -- Create hypertable if TimescaleDB extension is available
+    DO $$
+    BEGIN
+        IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'timescaledb') THEN
+            -- Only create hypertable if it doesn't exist
+            IF NOT EXISTS (SELECT 1 FROM timescaledb_information.hypertables WHERE hypertable_name = 'probe_results') THEN
+                PERFORM create_hypertable('probe_results', 'start_time');
+            END IF;
+        END IF;
+    END
+    $$;
+
+    -- Create indexes if they don't exist
+    CREATE INDEX IF NOT EXISTS idx_probe_results_model_time ON probe_results (model, start_time DESC);
+    CREATE INDEX IF NOT EXISTS idx_probe_results_family_kind_time ON probe_results (family, kind, start_time DESC);
+    CREATE INDEX IF NOT EXISTS idx_probe_results_error ON probe_results (success, start_time DESC) WHERE NOT success;
+    CREATE INDEX IF NOT EXISTS idx_probe_results_error_code ON probe_results (error_code, start_time DESC) WHERE error_code IS NOT NULL;
+    """
+
+    async with pool.acquire() as conn:
+        await conn.execute(schema_sql)
+
+
+async def _write_probe_result(res: "ProbeResult") -> None:
+    """Write probe result to TimescaleDB."""
+    if not res.start_ts or not res.end_ts:
+        return  # Skip if missing timing data
+
+    pool = await _get_db_pool()
+
+    # Extract response data based on API type
+    chat_content = None
+    chat_role = None
+    chat_finish_reason = None
+    chat_completion_tokens = None
+    chat_prompt_tokens = None
+    responses_text = None
+    responses_finish_reason = None
+    responses_tokens = None
+
+    if res.ok and res.raw:
+        # Store the full response JSON
+        import json
+        if hasattr(res.raw, 'model_dump'):
+            response_json = json.dumps(res.raw.model_dump(exclude_none=False), indent=None, separators=(',', ':'))
+        else:
+            response_json = json.dumps(res.raw, indent=None, separators=(',', ':'))
+
+        if res.kind == "chat":
+            # Store full JSON and extract metadata fields
+            chat_content = response_json
+            if hasattr(res.raw, 'choices') and res.raw.choices:
+                choice = res.raw.choices[0]
+                if hasattr(choice, 'message'):
+                    chat_role = choice.message.role
+                    chat_finish_reason = choice.finish_reason
+            if hasattr(res.raw, 'usage'):
+                chat_completion_tokens = res.raw.usage.completion_tokens
+                chat_prompt_tokens = res.raw.usage.prompt_tokens
+        elif res.kind == "responses":
+            # Store full JSON and extract metadata fields
+            responses_text = response_json
+            if hasattr(res.raw, 'finish_reason'):
+                responses_finish_reason = res.raw.finish_reason
+            # Note: responses API may not have token counts in the same format
+
+    # Extract error information
+    error_code = None
+    error_message = None
+    error_status = None
+    if not res.ok and res.exc:
+        error_message = str(res.exc)
+        if hasattr(res.exc, 'status_code'):
+            error_status = res.exc.status_code
+        # Classify error
+        classification = res.error_classification
+        if classification:
+            error_code = classification[0].value
+
+    # Get API key suffix
+    api_key_suffix = None
+    # Could extract from client if needed - for now skip
+
+    # Get request ID
+    request_id = None
+    if hasattr(res.exc, 'request_id'):
+        request_id = res.exc.request_id
+    elif res.ok and res.raw and hasattr(res.raw, 'id'):
+        request_id = res.raw.id
+
+    insert_sql = """
+    INSERT INTO probe_results (
+        start_time, end_time, latency_s, model, family, kind, success,
+        error_code, error_message, error_status,
+        chat_response_content, chat_response_role, chat_finish_reason,
+        chat_completion_tokens, chat_prompt_tokens,
+        responses_text, responses_finish_reason, responses_tokens,
+        request_id, api_key_suffix
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+    """
+
+    async with pool.acquire() as conn:
+        await conn.execute(
+            insert_sql,
+            res.start_ts,          # start_time
+            res.end_ts,            # end_time
+            res.latency_s,         # latency_s
+            res.model_id,          # model
+            family_of(res.model_id).value,  # family
+            res.kind,              # kind
+            res.ok,                # success
+            error_code,            # error_code
+            error_message,         # error_message
+            error_status,          # error_status
+            chat_content,          # chat_response_content
+            chat_role,             # chat_response_role
+            chat_finish_reason,    # chat_finish_reason
+            chat_completion_tokens, # chat_completion_tokens
+            chat_prompt_tokens,    # chat_prompt_tokens
+            responses_text,        # responses_text
+            responses_finish_reason, # responses_finish_reason
+            responses_tokens,      # responses_tokens
+            request_id,            # request_id
+            api_key_suffix,        # api_key_suffix
+        )
+
+
 class _StreamRecordBase(BaseModel):
-    ts: datetime
+    ts: float
     type: str = "event"
     source: str = "adgn-openai-probe"
     model: str
@@ -132,15 +334,17 @@ class StreamRecordOK(_StreamRecordBase):
     ok: Literal[True]
     latency_s: float | None = None
     response: dict[str, Any] | None = None
+    response_str: str | None = None  # JSON string representation for LogQL
 
 
 class StreamRecordError(_StreamRecordBase):
     ok: Literal[False]
     error: ErrorInfo
+    error_str: str | None = None  # Error string for LogQL (code: message)
 
 
 class ModelListRecord(BaseModel):
-    ts: datetime
+    ts: float
     type: Literal["models"] = "models"
     source: str = "adgn-openai-probe"
     model: str
@@ -602,17 +806,17 @@ def _snippet_from_chat(resp) -> str:
 # ---------- Probe spec creators ----------
 
 
-async def _create_responses(c: AsyncOpenAI, m: str):
+async def _create_responses(c: AsyncOpenAI, m: str, max_tokens: int):
     return await c.responses.create(
         model=m,
         input=PROMPT,
         tools=[GET_TIME_TOOL],
         tool_choice=GET_TIME_TOOL_CHOICE,
-        max_output_tokens=20,
+        max_output_tokens=max_tokens,
     )
 
 
-async def _create_chat(c: AsyncOpenAI, m: str):
+async def _create_chat(c: AsyncOpenAI, m: str, max_tokens: int):
     # Keep runtime-correct shapes but avoid heavy typed imports; annotate as Any for mypy
 
     messages: Any = [
@@ -626,7 +830,7 @@ async def _create_chat(c: AsyncOpenAI, m: str):
         messages=messages,
         tools=tools,
         tool_choice=tool_choice,
-        max_completion_tokens=20,
+        max_completion_tokens=max_tokens,
     )
 
 
@@ -883,7 +1087,7 @@ async def consume_stream_jsonl(
         ts_now = datetime.now(UTC)
         if res.ok:
             rec_ok = StreamRecordOK(
-                ts=ts_now,
+                ts=ts_now.timestamp(),
                 model=mid,
                 family=family_of(mid).value,
                 kind=kind,
@@ -893,16 +1097,21 @@ async def consume_stream_jsonl(
             )
             raw = res.raw
             if raw is not None:
-                rec_ok.response = (
+                response_dict = (
                     raw.model_dump(exclude_none=False)
                     if hasattr(raw, "model_dump")
                     else raw
                 )
+                rec_ok.response = response_dict
+                # Add string representation for LogQL
+                import json
+                rec_ok.response_str = json.dumps(response_dict, separators=(",", ":"))[:500]  # Truncate to 500 chars
+
             print(rec_ok.model_dump_json(), flush=True)
         else:
             classification = res.error_classification
             rec_err = StreamRecordError(
-                ts=ts_now,
+                ts=ts_now.timestamp(),
                 model=mid,
                 family=family_of(mid).value,
                 kind=kind,
@@ -927,6 +1136,12 @@ async def consume_stream_jsonl(
                 ),
                 tags=tags or None,
             )
+            # Add error string for LogQL
+            error_code = classification[0].value if classification else "UNKNOWN"
+            error_msg = res.error_message or "Unknown error"
+            rec_err.error_str = f"{error_code}: {error_msg}"[:200]  # Truncate to 200 chars
+
+
             print(rec_err.model_dump_json(), flush=True)
 
 
@@ -1027,6 +1242,8 @@ class ProbeTUI(App):
                 self.acc[mid][kind].append(res)
                 # Persist event to cache (raise on failure)
                 _persist_result(res)
+                # Write to database
+                await _write_probe_result(res)
                 if not res.ok:
                     classification = res.error_classification
                     if classification:
@@ -1521,7 +1738,7 @@ def emit_models_listing(
     lines: list[str] = []
     for info in summary:
         record = ModelListRecord(
-            ts=ts,
+            ts=ts.timestamp(),
             model=info.get("model", ""),
             family=str(info.get("family", "")),
             recent_ok=bool(info.get("recent_ok", False)),
@@ -1633,6 +1850,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="Add a tag key=value to JSON output (repeatable)",
     )
     parser.add_argument(
+        "--max-tokens",
+        type=int,
+        default=100,
+        help="Maximum number of output tokens for API calls (default: 100)",
+    )
+    parser.add_argument(
         "--list-models",
         action="store_true",
         help="List models (after filters) with history classification and exit",
@@ -1643,6 +1866,14 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 async def _async_main() -> None:
     args = parse_args()
     # Smart policy uses separate fast/slow limiters; no single global limiter here
+
+    # Initialize database connection and schema
+    try:
+        await _init_database()
+        print("Database initialized successfully", file=sys.stderr)
+    except Exception as e:
+        print(f"Warning: Database initialization failed: {e}", file=sys.stderr)
+        print("Continuing without database writes", file=sys.stderr)
 
     tag_map = parse_tags_cli(args.tag)
     async_client = _factory_async_client()
@@ -1679,8 +1910,8 @@ async def _async_main() -> None:
         emit_models_listing(summary_for_stream, tags=tag_map, persist=True)
 
     # Probe specs
-    responses_spec = ProbeSpec(name="responses", create=_create_responses)
-    chat_spec = ProbeSpec(name="chat", create=_create_chat)
+    responses_spec = ProbeSpec(name="responses", create=partial(_create_responses, max_tokens=args.max_tokens))
+    chat_spec = ProbeSpec(name="chat", create=partial(_create_chat, max_tokens=args.max_tokens))
 
     if args.stream and args.continuous:
         # Functional, low-state continuous schedulers
@@ -1739,6 +1970,8 @@ async def _async_main() -> None:
                     mh.last_seen = ts_now
                     if res.ok:
                         mh.last_ok = ts_now
+                    # Write to database
+                    await _write_probe_result(res)
                     # Emit event
                     await stream_q.put((kind, pick, res))
 
@@ -1812,8 +2045,12 @@ def main() -> None:
         async def _health(request: web.Request) -> web.Response:  # type: ignore[override]
             return web.Response(text="OK")
 
+        async def _metrics(request: web.Request) -> web.Response:  # type: ignore[override]
+            return web.Response(text="Metrics endpoint disabled (Prometheus removed)", status=404)
+
         app = web.Application()
         app.router.add_get(HEALTH_PATH, _health)
+        app.router.add_get(METRICS_PATH, _metrics)
         runner = web.AppRunner(app)
         await runner.setup()
         site = web.TCPSite(runner, host="0.0.0.0", port=HEALTH_PORT)

@@ -2,6 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: openai-probe
+  namespace: observability
   labels:
     app.kubernetes.io/name: openai-probe
     app.kubernetes.io/part-of: observability
@@ -28,11 +29,18 @@ spec:
                 secretKeyRef:
                   name: openai-api
                   key: api_key
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: timescaledb-secret
+                  key: postgres-password
           args:
             - "--concurrency"
             - "64"
             - "--stream"
             - "--continuous"
+            - "--max-tokens"
+            - "100"
             - "--tag"
             - "key_prefix=t9f"
             - "--tag"

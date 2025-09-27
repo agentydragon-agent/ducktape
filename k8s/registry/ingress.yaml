@@ -1,0 +1,29 @@
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: registry
+  namespace: registry
+  annotations:
+    # Increase body size limit for docker push (0 = unlimited)
+    nginx.ingress.kubernetes.io/proxy-body-size: "0"
+    ingress.kubernetes.io/proxy-body-size: "0"
+    # Use cert-manager to generate TLS certificate
+    cert-manager.io/cluster-issuer: "homelab-ca-issuer"
+spec:
+  ingressClassName: traefik
+  tls:
+  - hosts:
+    - registry.k3s.local
+    secretName: registry-tls
+  rules:
+  - host: registry.k3s.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: registry
+            port:
+              number: 5000

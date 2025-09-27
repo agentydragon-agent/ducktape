@@ -1,0 +1,117 @@
+# Traefik Helm Chart Values for k3s cluster
+# Migrating from manual YAML to Helm for proper TLS support
+
+# Use DaemonSet like the current deployment
+deployment:
+  kind: DaemonSet
+
+# Service configuration - reuse existing LoadBalancer IP
+service:
+  type: LoadBalancer
+  loadBalancerIP: 10.0.200.100
+  spec:
+    externalTrafficPolicy: Local
+
+# Configure ports
+ports:
+  web:
+    port: 80
+    expose:
+      default: true
+    exposedPort: 80
+    protocol: TCP
+  websecure:
+    port: 443
+    expose:
+      default: true
+    exposedPort: 443
+    protocol: TCP
+    # Enable TLS on the websecure entrypoint
+    tls:
+      enabled: true
+
+# Enable providers
+providers:
+  # Enable CRD provider for IngressRoute, Middleware, etc.
+  kubernetesCRD:
+    enabled: true
+    allowCrossNamespace: true
+    allowExternalNameServices: true
+
+  # Enable Kubernetes Ingress provider for standard Ingress resources
+  kubernetesIngress:
+    enabled: true
+    allowExternalNameServices: true
+    # Watch all namespaces
+    namespaces: []
+    ingressClass: traefik
+    # This is crucial for TLS to work with Ingress
+    ingressEndpoint:
+      publishedService: "traefik/traefik"
+
+# IngressClass configuration
+ingressClass:
+  enabled: true
+  name: traefik
+  isDefaultClass: false
+
+# Enable access logs for debugging
+logs:
+  general:
+    level: INFO
+  access:
+    enabled: false
+
+# Dashboard (optional, but useful for debugging)
+api:
+  dashboard: true
+  debug: true
+
+# Global arguments
+globalArguments:
+  - "--global.sendanonymoususage=false"
+  - "--global.checknewversion=false"
+
+# Additional arguments
+additionalArguments:
+  - "--serversTransport.insecureSkipVerify=true"
+  - "--api.insecure=true"
+
+# Resource limits similar to current deployment
+resources:
+  requests:
+    cpu: 100m
+    memory: 50Mi
+  limits:
+    cpu: 300m
+    memory: 150Mi
+
+# Security context
+securityContext:
+  capabilities:
+    drop: [ALL]
+    add: [NET_BIND_SERVICE]
+  readOnlyRootFilesystem: false
+
+# Pod security context
+podSecurityContext:
+  fsGroup: 65532
+
+# Install CRDs
+installCRDs: true
+
+# Persistence (optional for acme/letsencrypt later)
+persistence:
+  enabled: false
+
+# TLS Options
+tlsOptions:
+  default:
+    minVersion: VersionTLS12
+    sniStrict: false
+
+# TLS Store - this is important for cert management
+tlsStore:
+  default:
+    defaultCertificate:
+      secretName: ""

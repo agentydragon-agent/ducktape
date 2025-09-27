@@ -1,0 +1,75 @@
+# Wildcard proxy for k3s services
+# This configuration forwards all *.k3s.agentydragon.com requests to the k3s cluster
+# New services become automatically accessible by just adding ingresses in k3s
+
+# Redirect HTTP to HTTPS for all k3s subdomains
+server {
+    listen 80;
+    server_name *.k3s.agentydragon.com;
+    return 301 https://$host$request_uri;
+}
+
+# HTTPS proxy for all k3s subdomains
+server {
+    listen 443 ssl http2;
+    server_name *.k3s.agentydragon.com;
+
+    # Wildcard certificate (to be obtained via Let's Encrypt DNS validation)
+    ssl_certificate /etc/letsencrypt/live/k3s-wildcard/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/k3s-wildcard/privkey.pem;
+
+    # Standard SSL configuration
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES128-SHA256:ECDHE-RSA-AES256-SHA384;
+    ssl_prefer_server_ciphers off;
+
+    # Security headers
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "no-referrer-when-downgrade" always;
+    add_header Content-Security-Policy "default-src 'self' http: https: data: blob: 'unsafe-inline'" always;
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains; preload" always;
+
+    # Proxy to k3s-master via Tailscale
+    location / {
+        # Forward to k3s-master node
+        proxy_pass http://100.64.0.4;
+
+        # Preserve original hostname for k3s ingress routing
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Port $server_port;
+
+        # WebSocket support (for services that need it)
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+
+        # Timeouts
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+
+        # Handle large uploads (for container registry, etc.)
+        client_max_body_size 0;
+        proxy_buffering off;
+        proxy_request_buffering off;
+
+        # Handle redirects properly
+        proxy_redirect off;
+    }
+
+    # Logging for debugging
+    access_log /var/log/nginx/k3s.agentydragon.com.access.log;
+    error_log /var/log/nginx/k3s.agentydragon.com.error.log;
+}
+
+# WebSocket upgrade mapping
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    '' close;
+}

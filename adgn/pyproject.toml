@@ -51,6 +51,7 @@ dependencies = [
   "rich>=13.0.0",
   "textual>=0.60.0",
   "canonicaljson>=1.6.0",
+  "asyncpg>=0.29.0",
 ]
 
 [project.optional-dependencies]

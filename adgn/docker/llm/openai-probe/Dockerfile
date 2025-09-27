@@ -5,18 +5,19 @@
 #   cd /path/to/ducktape/adgn
 #   docker build -f docker/llm/openai-probe/Dockerfile -t openai-probe:latest .
 #
-# Push to k3s in-cluster registry:
-#   # Ensure port-forward to registry is active
-#   kubectl port-forward -n registry svc/registry 5000:5000 &
+# Push to k3s in-cluster registry (via HTTPS with Traefik):
+#   # Build and tag for registry
+#   docker build -f docker/llm/openai-probe/Dockerfile -t registry.k3s.local/openai-probe:latest .
 #
-#   # Build with registry tag
-#   docker build -f docker/llm/openai-probe/Dockerfile -t localhost:5000/openai-probe:latest .
-#
-#   # Push to registry
-#   docker push localhost:5000/openai-probe:latest
+#   # Push via HTTPS (cert-manager CA must be trusted on host)
+#   docker push registry.k3s.local/openai-probe:latest
 #
 #   # Use in k8s deployments as:
-#   #   image: registry:5000/openai-probe:latest
+#   #   image: registry.registry.svc.cluster.local:5000/openai-probe:latest
+#
+#   # Alternative: Direct LoadBalancer access (requires insecure-registries config)
+#   #   docker tag registry.k3s.local/openai-probe:latest 10.0.200.101:5000/openai-probe:latest
+#   #   docker push 10.0.200.101:5000/openai-probe:latest
 #
 # Run examples (local):
 #   docker run --rm -e OPENAI_API_KEY openai-probe:latest --help
@@ -35,8 +36,9 @@ WORKDIR /app
 # Copy the repository and install from pyproject (build isolation)
 COPY . /app
 # Upgrade pip and setuptools to ensure proper src-layout support
-RUN pip install --upgrade pip setuptools wheel && \
-    pip install --no-cache-dir .
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --upgrade pip setuptools wheel && \
+    pip install .
 
 USER 1000:1000
 

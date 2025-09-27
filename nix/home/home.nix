@@ -42,78 +42,65 @@ in
 
   # Packages to install (Phase 1: only actual user-level packages from Ansible)
   home.packages = with pkgs; [
-    # Tools that Ansible installs via pipx (from cli/tasks/dev-env-user.yml)
     python312Packages.autopep8
-    ruff
-    pre-commit
-    speedtest-cli
-    ansible
     python312Packages.pydeps
-    uv  # Fast Python package and project manager
+    unstablePkgs.pyright
 
-    # Tools that Ansible installs via cargo
+    ansible
+    ast-grep
+    awscli2
+    bazelisk
+    jq
+    pre-commit
+    ruff
+    speedtest-cli
+    uv
+    yq
+
+    # Tools Ansible installs via cargo
     atuin
-    sccache
 
     # Tools from GitHub releases / binary downloads
-    gh  # GitHub CLI
-    glab  # GitLab CLI
-    gitstatus
-    kubeseal
+    gh glab gitstatus
 
-    # Node/JavaScript tools
+    # Node/JS dev
+    nodejs_20  # LTS version
     nodePackages.pnpm
     bun
 
-    # NPM packages (from pnpm global installs in cli/tasks/dev-env-user.yml)
-    bazelisk  # Bazel version manager
-    ast-grep  # Semantic code queries
-    unstablePkgs.pyright  # Python static type checker/language server
+    # Rust dev
+    rustc cargo sccache
     # jscpd and madge are not in nixpkgs - install manually with: pnpm add -g jscpd madge
     # Note: @openai/codex is not in nixpkgs - install manually with: pnpm add -g @openai/codex
 
     # Development languages/compilers
     go
-    rustc
-    cargo
-    nodejs_20  # LTS version
     python312  # Python 3.12 for ML compatibility
-    leiningen  # Clojure
-    
+
     # Development tools
-    direnv  # Per-directory environment variables
-    devenv  # Fast, declarative, reproducible developer environments
-    
+    direnv devenv
+
     # Neovim and dependencies for configuration
     unstablePkgs.neovim  # Latest neovim from unstable
     tree-sitter  # For nvim-treesitter parser compilation
-    
-    # Language servers for neovim LSP
-    # pyright is already included above
-    
+
     # Formatters for conform.nvim
     stylua  # Lua formatter
     python312Packages.black  # Python formatter
     python312Packages.isort  # Python import sorter
-    # rustfmt is included with cargo above
 
     # Machine Learning packages (from wyrm.yaml dev-ml role)
     python312Packages.pandas
     python312Packages.pytorch  # PyTorch
     python312Packages.numpy
 
-    # Python dependencies for switch_gnome_terminal_profile script
-    python312Packages.absl-py
-    python312Packages.dbus-python
-    python312Packages.pygobject3
+    # Kubernetes tools
+    kubectl kubernetes-helm kubeseal
 
-    # Kubernetes tools (from wyrm.yaml k3s-client role)
-    kubectl
-
-    # For dotfile management (keeping rcm approach)
+    # Dotfile management (keeping rcm approach)
     rcm
 
-    # Zsh package only - oh-my-zsh managed via git clone in ~/.oh-my-zsh
+    # Zsh - oh-my-zsh managed via git clone in ~/.oh-my-zsh
     zsh
     # oh-my-zsh is intentionally NOT managed by Nix because:
     # 1. .zshrc expects it at ~/.oh-my-zsh (not a Nix store path)
@@ -152,8 +139,8 @@ in
   # incorrectly assigned, BUT the existing mimeapps.list has 105 lines of 
   # associations we want to preserve. Home-manager can't merge, only replace.
   # TODO: Either:
-  #   - Keep this in Ansible (which can do in-place edits)
-  #   - Write an activation script to patch these 2 entries
+  #   - Keep in Ansible (which can do in-place edits)
+  #   - Write activation script to patch these 2 entries
   #   - Import all 105 associations into Nix (tedious but complete)
   # For now, keeping in Ansible.
   # xdg.mimeApps = {

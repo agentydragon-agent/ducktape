@@ -1,0 +1,114 @@
+# Grafana Helm Chart Values
+# This file contains configuration for deploying Grafana with TimescaleDB datasource
+#
+# IMPORTANT: Since we use grafana as a dependency chart, all values must be under 'grafana:' key
+
+grafana:
+  # Use default admin credentials (auto-generated password)
+  adminUser: admin
+  # adminPassword: null (auto-generated if not specified)
+
+  # Security context to fix permissions
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 472
+    runAsGroup: 472
+    fsGroup: 472
+
+  # Persistence
+  persistence:
+    enabled: false
+    size: 5Gi
+    storageClassName: local-path
+
+  # Service configuration
+  service:
+    type: ClusterIP
+    port: 80
+
+  # Ingress is disabled here - we handle it in our own template
+  ingress:
+    enabled: false
+
+  # Mount DB password secret
+  extraSecretMounts:
+    - name: db-password
+      secretName: grafana-db-password
+      defaultMode: 0440
+      mountPath: /etc/secrets/db
+      readOnly: true
+
+  # Create datasource config from mounted secret
+  extraInitContainers:
+    - name: create-datasource-config
+      image: busybox:1.35
+      command:
+        - sh
+        - -c
+        - |
+          PASSWORD=$(cat /etc/secrets/db/password | tr -d '\n')
+          cat > /etc/grafana/provisioning/datasources/timescaledb.yaml <<EOF
+          apiVersion: 1
+          datasources:
+          - name: TimescaleDB
+            type: postgres
+            uid: timescaledb-uid
+            access: proxy
+            url: timescaledb.observability.svc.cluster.local:5432
+            user: postgres
+            database: openai_probe
+            isDefault: true
+            jsonData:
+              sslmode: disable
+              postgresVersion: 1500
+              timescaledb: true
+            secureJsonData:
+              password: "${PASSWORD}"
+            editable: false
+          EOF
+      volumeMounts:
+        - name: db-password
+          mountPath: /etc/secrets/db
+          readOnly: true
+        - name: datasources-provisioning
+          mountPath: /etc/grafana/provisioning/datasources
+
+  # Extra volume for datasource provisioning
+  extraVolumes:
+    - name: datasources-provisioning
+      emptyDir: {}
+
+  # Mount the provisioning directory in main container
+  extraVolumeMounts:
+    - name: datasources-provisioning
+      mountPath: /etc/grafana/provisioning/datasources
+
+  # Dashboard provisioning
+  dashboardProviders:
+    dashboardproviders.yaml:
+      apiVersion: 1
+      providers:
+        - name: 'default'
+          orgId: 1
+          folder: ''
+          type: file
+          disableDeletion: false
+          updateIntervalSeconds: 10
+          allowUiUpdates: true
+          options:
+            path: /var/lib/grafana/dashboards/default
+
+  # Dashboard ConfigMaps to mount
+  dashboardsConfigMaps:
+    default: "grafana-dashboards"
+
+  # Grafana configuration
+  grafana.ini:
+    server:
+      root_url: "https://grafana.k3s.agentydragon.com"
+    analytics:
+      check_for_updates: false
+    log:
+      mode: console
+    security:
+      allow_embedding: true

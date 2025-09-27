@@ -1,0 +1,23 @@
+---
+# PowerDNS configuration tasks
+
+- name: Configure firewall for PowerDNS
+  ansible.builtin.ufw:
+    rule: allow
+    port: "{{ item }}"
+    proto: "{{ 'tcp' if item == powerdns_webserver_port else 'any' }}"
+  become: true
+  loop:
+    - "53"
+    - "{{ powerdns_webserver_port }}"
+
+- name: Wait for PowerDNS to be ready
+  ansible.builtin.uri:
+    url: "http://{{ powerdns_webserver_address }}:{{ powerdns_webserver_port }}/api/v1/servers"
+    headers:
+      X-API-Key: "{{ powerdns_api_key }}"
+    method: GET
+  register: powerdns_health_check
+  until: powerdns_health_check.status == 200
+  retries: 30
+  delay: 2

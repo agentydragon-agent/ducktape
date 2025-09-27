@@ -8,4 +8,5 @@ resources:
   - loki
   - promtail
   - grafana
+  - prometheus
   - openai-probe

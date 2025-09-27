@@ -29,8 +29,30 @@
       tags: [headscale]
     - role: tailscale-client
       tags: [tailscale]
+    - role: powerdns
+      tags: [powerdns]
 
   tasks:
+    # Disable systemd-resolved to free port 53 for PowerDNS
+    - name: Disable systemd-resolved
+      ansible.builtin.systemd:
+        name: systemd-resolved
+        state: stopped
+        enabled: no
+      become: true
+      tags: [powerdns]
+
+    - name: Configure static DNS resolution
+      ansible.builtin.copy:
+        dest: /etc/resolv.conf
+        content: |
+          nameserver 1.1.1.1
+          nameserver 8.8.8.8
+        owner: root
+        group: root
+        mode: '0644'
+      become: true
+      tags: [powerdns]
     # Needs to run before Docker, which tries to install gnupg2
     - name: Update everything
       become: true
@@ -92,6 +114,16 @@
         letsencrypt_domains:
           - "atlas.agentydragon.com"
 
+    - name: "Let's Encrypt | *.k3s.agentydragon.com (wildcard)"
+      ansible.builtin.import_role:
+        name: letsencrypt-dns
+      vars:
+        letsencrypt_dns_cert_name: "k3s-wildcard"
+        letsencrypt_dns_domains:
+          - "*.k3s.agentydragon.com"
+        letsencrypt_dns_provider: "powerdns"
+      tags: [letsencrypt, k3s-wildcard]
+
     - name: nginx.conf
       ansible.builtin.copy:
         src: nginx.conf
@@ -108,6 +140,7 @@
           - agentydragon.com
           - adgn.link
           - atlas.agentydragon.com
+          - k3s.agentydragon.com
         notify:
           - Reload nginx
 
@@ -129,6 +162,7 @@
           - agentydragon.com
           - adgn.link
           - atlas.agentydragon.com
+          - k3s.agentydragon.com
         notify:
           - Reload nginx
 

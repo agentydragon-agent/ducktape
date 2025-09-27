@@ -1,0 +1,55 @@
+---
+# Let's Encrypt DNS validation tasks
+
+- name: Validate required variables
+  ansible.builtin.assert:
+    that:
+      - letsencrypt_dns_domains is defined
+      - letsencrypt_dns_domains | length > 0
+      - letsencrypt_dns_cert_name is defined
+      - letsencrypt_dns_provider is defined
+    fail_msg: "Required variables for DNS validation are missing"
+
+- name: Install certbot and DNS plugins
+  ansible.builtin.apt:
+    name:
+      - certbot
+      - "python3-certbot-dns-{{ 'rfc2136' if letsencrypt_dns_provider == 'powerdns' else letsencrypt_dns_provider }}"
+    state: present
+    update_cache: yes
+  become: true
+
+- name: Create certbot configuration directory
+  ansible.builtin.file:
+    path: /etc/letsencrypt
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  become: true
+
+- name: Configure DNS provider credentials
+  ansible.builtin.include_tasks: "{{ letsencrypt_dns_provider }}.yml"
+
+- name: Request/renew certificate via DNS validation
+  ansible.builtin.command:
+    cmd: >
+      certbot certonly --non-interactive --agree-tos --keep-until-expiring
+      --dns-{{ 'rfc2136' if letsencrypt_dns_provider == 'powerdns' else letsencrypt_dns_provider }}
+      --dns-{{ 'rfc2136' if letsencrypt_dns_provider == 'powerdns' else letsencrypt_dns_provider }}-credentials /etc/letsencrypt/{{ 'rfc2136' if letsencrypt_dns_provider == 'powerdns' else letsencrypt_dns_provider }}.ini
+      --cert-name {{ letsencrypt_dns_cert_name }}
+      {% if letsencrypt_dns_email %}--email {{ letsencrypt_dns_email }}{% else %}--register-unsafely-without-email{% endif %}
+      {{ letsencrypt_dns_domains | map('regex_replace', '^(.*)$', '-d \1') | join(' ') }}
+  become: true
+  register: certbot_result
+  changed_when: "'Certificate not yet due for renewal' not in certbot_result.stdout"
+
+- name: Set up automatic renewal
+  ansible.builtin.cron:
+    name: "Renew Let's Encrypt certificates"
+    minute: "0"
+    hour: "3"
+    job: "certbot renew --quiet"
+    user: root
+  become: true
+  when: letsencrypt_dns_auto_renew
