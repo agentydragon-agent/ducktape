@@ -15,7 +15,7 @@ from mcp import types as mcp_types
 from pydantic import BaseModel
 
 from adgn.llm.mini_codex.loop_control import NoLoopDecision
-from adgn.llm.openai_utils.model import ReasoningOut
+from adgn.llm.openai_utils.model import ReasoningItem
 
 # BeforeToolCallDecision and decision dataclasses are defined below (handler-level, generic)
 
@@ -103,7 +103,7 @@ class Response(BaseModel):
 
 # Union of all current event types (as a typing alias)
 EventType: TypeAlias = (
-    UserText | AssistantText | ToolCall | ToolCallOutput | Response | ReasoningOut
+    UserText | AssistantText | ToolCall | ToolCallOutput | Response | ReasoningItem
 )
 
 
@@ -124,7 +124,7 @@ KIND_MAP: dict[
     ToolCall: "tool_call",
     ToolCallOutput: "function_call_output",
     Response: "response",
-    ReasoningOut: "reasoning",
+    ReasoningItem: "reasoning",
 }
 
 
@@ -186,5 +186,5 @@ class BaseHandler:
     def on_tool_result_event(self, evt: ToolCallOutput) -> None:  # default no-op
         return None
 
-    def on_reasoning(self, item: ReasoningOut) -> None:  # default no-op
+    def on_reasoning(self, item: ReasoningItem) -> None:  # default no-op
         return None

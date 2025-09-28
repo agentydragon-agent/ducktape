@@ -5,7 +5,7 @@ from datetime import datetime
 import json
 from pathlib import Path
 from typing import Any
-from adgn.llm.openai_utils.model import ReasoningOut
+from adgn.llm.openai_utils.model import ReasoningItem
 
 from adgn.llm.mini_codex.handler import (
     AssistantText,
@@ -69,8 +69,8 @@ class TranscriptHandler(BaseHandler):
     def on_tool_result_event(self, evt: ToolCallOutput) -> None:
         self._write_event(evt)
 
-    def on_reasoning(self, item: ReasoningOut) -> None:
-        # Record adapter ReasoningOut via shared JSONL mapping
+    def on_reasoning(self, item: ReasoningItem) -> None:
+        # Record adapter ReasoningItem via shared JSONL mapping
         self._write_event(item)
 
     def on_before_sample(self) -> NoLoopDecision:

@@ -9,7 +9,7 @@ from adgn.llm.openai_utils.model import (
     ResponsesResult,
     AssistantMessageOut,
     FunctionCallOut,
-    ReasoningOut,
+    ReasoningItem,
     Usage as PUsage,
 )
 from adgn.llm.openai_utils import builders
@@ -50,8 +50,8 @@ class ResponsesFactory(builders.ItemFactory):
 
     # ---- Low-level item builders (compose with make(...items)) ----
 
-    def make_item_reasoning(self, id: str | None = None) -> ReasoningOut:
-        return ReasoningOut(id=id or f"rs_{self._next_reasoning_id()}")
+    def make_item_reasoning(self, id: str | None = None) -> ReasoningItem:
+        return ReasoningItem(id=id or f"rs_{self._next_reasoning_id()}")
 
     def make_item_tool_call_auto(
         self, name: str, arguments: dict | str

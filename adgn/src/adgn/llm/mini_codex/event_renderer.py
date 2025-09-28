@@ -4,7 +4,7 @@ from collections.abc import Callable
 import json
 import shlex
 from typing import Any
-from adgn.llm.openai_utils.model import ReasoningOut
+from adgn.llm.openai_utils.model import ReasoningItem
 
 from .aggregating_handler import BaseHandler
 from .handler import AssistantText, ToolCall, ToolCallOutput, UserText
@@ -75,7 +75,7 @@ class DisplayEventsHandler(BaseHandler):
         if s:
             self._write(s)
 
-    def on_reasoning(self, item: ReasoningOut) -> None:
+    def on_reasoning(self, item: ReasoningItem) -> None:
         return None
 
     def on_before_sample(self) -> NoLoopDecision:

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from itertools import cycle
 from time import monotonic
-from adgn.llm.openai_utils.model import ReasoningOut
+from adgn.llm.openai_utils.model import ReasoningItem
 
 from rich.console import Console
 from rich.text import Text
@@ -48,7 +48,7 @@ class OneLineProgressHandler(BaseHandler):
         self._last_action = "user"
         self._render()
 
-    def on_reasoning(self, item: ReasoningOut) -> None:
+    def on_reasoning(self, item: ReasoningItem) -> None:
         self._last_action = "reasoning"
         self._render()
 

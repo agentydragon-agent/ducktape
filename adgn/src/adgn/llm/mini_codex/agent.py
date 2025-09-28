@@ -27,7 +27,6 @@ from adgn.llm.openai_utils.model import (
     ToolChoiceFunction,
     OpenAIModelProto,
     ReasoningEffort,
-    ReasoningOut,
     FunctionCallOut,
     AssistantMessageOut,
 )
@@ -394,7 +393,7 @@ class MiniCodex:
                     raise RuntimeError(f"Missing tool output for call_id={cid!r}")
                 outcome = ToolCallAborted(result=_abort_result())
             self._emit_tool_result(function_call, outcome.result)
-            if isinstance(outcome, (ToolCallFailure, ToolCallAborted)):
+            if isinstance(outcome, ToolCallAborted):
                 had_error = True
         if had_error:
             self.finished = True
@@ -408,7 +407,7 @@ class MiniCodex:
         for i, (function_call, args_json) in enumerate(calls):
             outcome = await invoker(function_call, args_json)
             self._emit_tool_result(function_call, outcome.result)
-            if isinstance(outcome, (ToolCallFailure, ToolCallAborted)):
+            if isinstance(outcome, ToolCallAborted):
                 for remaining in function_calls[i + 1 :]:
                     self._emit_tool_result(remaining, _abort_result())
                 self.finished = True
@@ -455,9 +454,9 @@ class MiniCodex:
             # Skip sampling: treat handler-provided inserts_input as if they were
             # model output items for this phase and process them via the normal
             # output path (adds assistant text, enqueues tool calls, etc.).
-            out_items: list[ReasoningOut | FunctionCallOut | AssistantMessageOut] = []
+            out_items: list[ReasoningItem | FunctionCallOut | AssistantMessageOut] = []
             for it in list(decision.inserts_input):
-                if isinstance(it, (ReasoningOut, FunctionCallOut, AssistantMessageOut)):
+                if isinstance(it, (ReasoningItem, FunctionCallOut, AssistantMessageOut)):
                     out_items.append(it)
                 elif isinstance(it, FunctionCallItem):
                     out_items.append(FunctionCallOut.from_input_item(it))
@@ -517,7 +516,7 @@ class MiniCodex:
 
     def _process_resp_output(
         self,
-        resp_output: list[ReasoningOut | FunctionCallOut | AssistantMessageOut],
+        resp_output: list[ReasoningItem | FunctionCallOut | AssistantMessageOut],
     ) -> None:
         self.pending_function_calls.clear()
         # Skip items that are already present in our transcript (id collision).
@@ -535,10 +534,9 @@ class MiniCodex:
             iid = getattr(item, "id", None)
             if isinstance(iid, str) and iid in existing_ids:
                 continue
-            if isinstance(item, ReasoningOut):
-                ri = item.to_input_item()
+            if isinstance(item, ReasoningItem):
                 self._controller.on_reasoning(item)
-                self._transcript.append(ri)
+                self._transcript.append(item)
             elif isinstance(item, AssistantMessageOut):
                 text = item.text
                 self.assistant_text_chunks.append(text)

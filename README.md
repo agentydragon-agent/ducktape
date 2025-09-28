@@ -23,12 +23,3 @@ To format Bazel configuration files:
 ```bash
 bazel run //:buildifier
 ```
-
-## Spawning agents
-```
-# inside the canonical repo
-cd ~/code/ducktape
-
-# create Claude sandbox, branch agent/claude/ws1
-git worktree add -b agent/claude/ws1 ~/claude-code/ws1 HEAD
-```

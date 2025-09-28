@@ -1,0 +1,119 @@
+"""Test that tool call errors don't abort the agent turn.
+
+This test verifies that when a tool call returns an error (e.g., validation error),
+the agent continues with the next phase instead of aborting the entire turn.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from mcp.server.fastmcp import FastMCP
+import pytest
+from adgn.llm.openai_utils.model import FakeOpenAIModel
+
+from adgn.llm.mcp.inproc_transport import make_inproc_slot_spec
+from adgn.llm.mini_codex.agent import MiniCodex
+from adgn.llm.mini_codex.aggregating_handler import BaseHandler
+from adgn.llm.mini_codex.loggers import RecordingHandler
+from adgn.llm.mini_codex.loop_control import Auto, Continue
+from adgn.llm.mini_codex.mcp_manager import McpManager
+from pydantic import BaseModel, ValidationError
+
+
+from typing import Literal
+
+
+def _make_validation_server() -> FastMCP:
+    """Create a server with a tool that validates input strictly."""
+    mcp = FastMCP("validator")
+
+    @mcp.tool()
+    def send_message(
+        mime: Literal["text/markdown"],
+        content: str
+    ) -> dict[str, Any]:
+        # FastMCP will automatically validate the mime parameter
+        return {"ok": True, "message": content}
+
+    return mcp
+
+
+@pytest.mark.asyncio
+async def test_tool_error_continues_turn(
+    monkeypatch: pytest.MonkeyPatch,
+    responses_factory,
+) -> None:
+    """Test that a tool validation error doesn't abort the turn.
+
+    The agent should:
+    1. Call the tool with wrong mime type (text/plain)
+    2. Get a validation error
+    3. Continue to the next phase
+    4. Retry with correct mime type (text/markdown)
+    5. Successfully complete
+    """
+    spec = make_inproc_slot_spec(_make_validation_server())
+    async with McpManager({"validator": spec}) as mcp:
+
+        class _AutoHandler(BaseHandler):
+            def on_before_sample(self):  # type: ignore[override]
+                return Continue(Auto())
+
+        rec = RecordingHandler()
+
+        # Simulate the agent trying with wrong mime, then correcting itself
+        client = FakeOpenAIModel(
+            [
+                # First attempt with wrong mime type
+                responses_factory.make_tool_call(
+                    "mcp__validator__send_message",
+                    {"mime": "text/plain", "content": "Hello"}
+                ),
+                # After error, agent retries with correct mime type
+                responses_factory.make_tool_call(
+                    "mcp__validator__send_message",
+                    {"mime": "text/markdown", "content": "Hello"}
+                ),
+                # Final message
+                responses_factory.make_assistant_message("Successfully sent message"),
+            ]
+        )
+
+        agent = await MiniCodex.create(
+            model=responses_factory.model,
+            mcp=mcp,
+            system="You are a helpful assistant. Use the validator tools.",
+            client=client,
+            handlers=[_AutoHandler(), rec],
+        )
+
+        result = await agent.run("Send a greeting")
+
+    # Verify the sequence of events
+    tool_calls = [
+        evt for evt in rec.records if evt.get("kind") == "tool_call"
+    ]
+    outputs = [
+        evt for evt in rec.records if evt.get("kind") == "function_call_output"
+    ]
+
+    # Should have 2 tool calls
+    assert len(tool_calls) == 2, f"Expected 2 tool calls, got {len(tool_calls)}"
+
+    # First call should fail with validation error
+    first_output = outputs[0]
+    assert first_output["result"].get("isError") is True
+    error_content = first_output["result"]["content"][0]["text"]
+    assert "error" in error_content.lower()
+    # Should mention the literal constraint
+    assert "text/markdown" in error_content or "literal" in error_content.lower()
+
+    # Second call should succeed
+    second_output = outputs[1]
+    assert second_output["result"].get("isError") is False
+    structured = second_output["result"].get("structuredContent", {})
+    assert structured.get("ok") is True
+
+    # Final result should contain the success message
+    assert "Successfully sent message" in result.text

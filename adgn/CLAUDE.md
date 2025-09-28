@@ -104,8 +104,13 @@ MiniCodex (CLI + local UI)
 - UI dev/build:
   - Dev (recommended): adgn-mini-codex dev — starts FastAPI backend and Vite (frontend HMR), picks free ports; Vite proxies /ws (and /transcript)
   - Split dev: adgn-mini-codex serve (backend) + npm --prefix src/adgn/llm/mini_codex/ui/web run dev (optionally export VITE_BACKEND_ORIGIN=http://127.0.0.1:8765)
-  - Build UI: npm --prefix src/adgn/llm/mini_codex/ui/web install; npm --prefix src/adgn/llm/mini_codex/ui/web run build
+  - Build UI (REQUIRED before running serve):
+    ```bash
+    npm --prefix src/adgn/llm/mini_codex/ui/web install
+    npm --prefix src/adgn/llm/mini_codex/ui/web run build
+    ```
   - Assets are published to src/adgn/llm/mini_codex/ui/static/web; FastAPI serves /static/web and /assets
+  - Note: The UI assets MUST be built before running `adgn-mini-codex serve` or you'll get a RuntimeError about missing static directory
   - Layout: full‑page chat (left, bottom‑docked composer) + sidebar (WS status dot, run status, servers, approvals)
   - Snapshot on hello restores transcript in the UI on reload
   - Client WS diagnostics surface onerror/onclose

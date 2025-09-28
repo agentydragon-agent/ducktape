@@ -1,12 +1,21 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from enum import StrEnum
 from typing import Callable, Literal, Any, Union
 from pydantic import BaseModel
 
 
+class MimeType(StrEnum):
+    """Supported MIME types for UI messages."""
+    MARKDOWN = "text/markdown"
+    # Future expansion could include:
+    # HTML = "text/html"
+    # PLAIN = "text/plain"
+
+
 class UiMessage(BaseModel):
-    mime: Literal["text/markdown"]
+    mime: MimeType
     content: str
 
 

@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from typing import TypeAlias
 from adgn.llm.openai_utils.model import (
     InputItem,
-    ReasoningOut,
+    ReasoningItem,
     FunctionCallOut,
     FunctionCallOutputOut,
     AssistantMessageOut,
@@ -103,11 +103,11 @@ class Continue:
     # Input-side items to add to the next request (adapter-only).
     # Normal path: accept InputItem (UserMessage, AssistantMessage, SystemMessage,
     # ReasoningItem, FunctionCallItem, FunctionCallOutputItem).
-    # Skip-sampling path: accept adapter ResponseOut items (ReasoningOut,
+    # Skip-sampling path: accept adapter ResponseOut items (ReasoningItem,
     # FunctionCallOut, AssistantMessageOut).
     inserts_input: tuple[
         InputItem
-        | ReasoningOut
+        | ReasoningItem
         | FunctionCallOut
         | FunctionCallOutputOut
         | AssistantMessageOut,

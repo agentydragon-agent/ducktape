@@ -23,7 +23,7 @@ from adgn.llm.mini_codex.handler import (
     ToolCallOutput,
     UserText,
 )
-from adgn.llm.openai_utils.model import ReasoningOut
+from adgn.llm.openai_utils.model import ReasoningItem
 from adgn.llm.mini_codex.loop_control import (
     Abort,
     Auto,
@@ -264,7 +264,7 @@ class Reducer:
         for h in self._handlers:
             h.on_tool_result_event(evt)
 
-    def on_reasoning(self, item: ReasoningOut) -> None:
+    def on_reasoning(self, item: ReasoningItem) -> None:
         for h in self._handlers:
             h.on_reasoning(item)
 
@@ -333,5 +333,5 @@ class NotificationsHandler(BaseHandler):
     def on_tool_result(self, evt: ToolCallOutput) -> None:
         return None
 
-    def on_reasoning(self, item: ReasoningOut) -> None:
+    def on_reasoning(self, item: ReasoningItem) -> None:
         return None

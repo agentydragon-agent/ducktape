@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from adgn.llm.mini_codex.mcp_manager import McpManager  # structured MCP snapshot types
 from adgn.llm.mini_codex.ui.state import UiState
+from adgn.llm.mini_codex.ui.shared_bus import MimeType
 
 # --------------------------
 # Envelope and core state
@@ -108,7 +109,7 @@ class ReasoningChunk(BaseModel):
 
 
 class UiMessagePayload(BaseModel):
-    mime: Literal["text/markdown"] = "text/markdown"
+    mime: MimeType = MimeType.MARKDOWN
     content: str
     model_config = ConfigDict(extra="forbid")
 

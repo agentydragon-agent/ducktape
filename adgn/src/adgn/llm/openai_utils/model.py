@@ -66,9 +66,20 @@ class SystemMessage(BaseModel):
         return cls(content=[InputTextPart(text=text)])
 
 
+class ReasoningSummaryItem(BaseModel):
+    """Summary item within a reasoning block."""
+    text: str
+    type: Literal["summary_text"] = "summary_text"
+
+
 class ReasoningItem(BaseModel):
+    """Our internal reasoning item representation.
+
+    Gets converted to SDK format when sending to API.
+    """
     type: Literal["reasoning"] = "reasoning"
     id: str | None = None
+    summary: list[ReasoningSummaryItem] = Field(default_factory=list)  # API requires this field
     model_config = ConfigDict(extra="allow")
 
 
@@ -77,6 +88,8 @@ class FunctionCallItem(BaseModel):
     name: str
     arguments: str | dict[str, object] | list[object] | None = None
     call_id: str | None = None
+    id: str | None = None  # Preserve the function call's unique ID from the API
+    status: str | None = None  # Preserve the status field if present
     model_config = ConfigDict(extra="allow")
 
 
@@ -154,16 +167,6 @@ class Usage(BaseModel):
     total_tokens: int
 
 
-class ReasoningOut(BaseModel):
-    kind: Literal["reasoning"] = "reasoning"
-    id: str | None = None
-
-    def to_input_item(self) -> ReasoningItem:
-        return ReasoningItem(id=self.id)
-
-    @classmethod
-    def from_input_item(cls, item: ReasoningItem) -> ReasoningOut:
-        return cls(id=item.id)
 
 
 class FunctionCallOut(BaseModel):
@@ -171,10 +174,16 @@ class FunctionCallOut(BaseModel):
     name: str
     arguments: str | None = None
     call_id: str
+    id: str | None = None  # Preserve the function call's unique ID from the API
+    status: str | None = None  # Preserve the status field if present
 
     def to_input_item(self) -> FunctionCallItem:
         return FunctionCallItem(
-            name=self.name, arguments=self.arguments, call_id=self.call_id
+            name=self.name,
+            arguments=self.arguments,
+            call_id=self.call_id,
+            id=self.id,
+            status=self.status,
         )
 
     @staticmethod
@@ -198,6 +207,8 @@ class FunctionCallOut(BaseModel):
             name=item.name,
             call_id=item.call_id,
             arguments=cls._stringify_arguments(item.arguments),
+            id=item.id,
+            status=item.status,
         )
 
 
@@ -278,10 +289,7 @@ class AssistantMessageOut(BaseModel):
         return cls(parts=parts)
 
 
-ResponseOutItem = Annotated[
-    ReasoningOut | FunctionCallOut | FunctionCallOutputOut | AssistantMessageOut,
-    Field(discriminator="kind"),
-]
+ResponseOutItem = ReasoningItem | FunctionCallOut | FunctionCallOutputOut | AssistantMessageOut
 
 
 @singledispatch
@@ -290,8 +298,8 @@ def response_out_item_to_input(item: BaseModel) -> InputItem:
 
 
 @response_out_item_to_input.register
-def _(item: ReasoningOut) -> InputItem:
-    return item.to_input_item()
+def _(item: ReasoningItem) -> InputItem:
+    return item  # No conversion needed, ReasoningItem is already an InputItem
 
 
 @response_out_item_to_input.register
@@ -351,11 +359,19 @@ def convert_sdk_response(sdk_resp: Response) -> ResponsesResult:
     out_items: list[ResponseOutItem] = []
     for item in sdk_resp.output:
         if isinstance(item, ResponseReasoningItem):
-            out_items.append(ReasoningOut(id=item.id))
+            # Convert SDK Summary objects to our ReasoningSummaryItem
+            summary_items = []
+            if item.summary:
+                summary_items = [ReasoningSummaryItem(text=s.text, type=s.type) for s in item.summary]
+            out_items.append(ReasoningItem(id=item.id, summary=summary_items))
         elif isinstance(item, ResponseFunctionToolCall):
             out_items.append(
                 FunctionCallOut(
-                    name=item.name, arguments=item.arguments, call_id=item.call_id
+                    name=item.name,
+                    arguments=item.arguments,
+                    call_id=item.call_id,
+                    id=item.id,
+                    status=item.status,
                 )
             )
         elif isinstance(item, ResponseOutputMessage):
@@ -408,11 +424,19 @@ class OpenAIModel:
         out_items: list[ResponseOutItem] = []
         for item in sdk_resp.output:
             if isinstance(item, ResponseReasoningItem):
-                out_items.append(ReasoningOut(id=item.id))
+                # Convert SDK Summary objects to our ReasoningSummaryItem
+                summary_items = []
+                if item.summary:
+                    summary_items = [ReasoningSummaryItem(text=s.text, type=s.type) for s in item.summary]
+                out_items.append(ReasoningItem(id=item.id, summary=summary_items))
             elif isinstance(item, ResponseFunctionToolCall):
                 out_items.append(
                     FunctionCallOut(
-                        name=item.name, arguments=item.arguments, call_id=item.call_id
+                        name=item.name,
+                        arguments=item.arguments,
+                        call_id=item.call_id,
+                        id=item.id,
+                        status=item.status,
                     )
                 )
             elif isinstance(item, ResponseOutputMessage):
