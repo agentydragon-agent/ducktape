@@ -19,17 +19,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import TypeAlias
-
-from openai.types.responses import (
-    ResponseFunctionToolCall,
-    ResponseInputItem,
-    ResponseOutputMessage,
-    ResponseReasoningItem,
-)
-
-# Union of concrete output item types that the agent processes
-OutputItem: TypeAlias = (
-    ResponseReasoningItem | ResponseOutputMessage | ResponseFunctionToolCall
+from adgn.llm.openai_utils.model import (
+    InputItem,
+    ReasoningOut,
+    FunctionCallOut,
+    FunctionCallOutputOut,
+    AssistantMessageOut,
 )
 
 
@@ -105,8 +100,19 @@ class Continue:
     """
 
     tool_policy: ToolPolicy
-    # Input-side items to add to the next request (Responses API input items)
-    inserts_input: tuple[ResponseInputItem, ...] = ()
+    # Input-side items to add to the next request (adapter-only).
+    # Normal path: accept InputItem (UserMessage, AssistantMessage, SystemMessage,
+    # ReasoningItem, FunctionCallItem, FunctionCallOutputItem).
+    # Skip-sampling path: accept adapter ResponseOut items (ReasoningOut,
+    # FunctionCallOut, AssistantMessageOut).
+    inserts_input: tuple[
+        InputItem
+        | ReasoningOut
+        | FunctionCallOut
+        | FunctionCallOutputOut
+        | AssistantMessageOut,
+        ...,
+    ] = ()
     # When True: do NOT call the model this phase; execute directly from inserts_input
     skip_sampling: bool = False
 

@@ -1,5 +1,5 @@
 import contextlib
-from datetime import datetime, timedelta as _td
+from datetime import datetime, timedelta
 import importlib.util
 import io
 import os
@@ -20,14 +20,14 @@ import pytest
 import yaml
 
 from .mock_factory import ServiceBuilder
-from .test_data import TestData as _TestData
+from .test_data import TestData
 from adgn.wt.server import github_client
 from adgn.wt.server.git_manager import GitManager
 from adgn.wt.server.worktree_service import WorktreeService
 from adgn.wt.shared.config_file import ConfigFile
 from adgn.wt.shared.configuration import Configuration
 from adgn.wt.shared.models import CommitInfo
-from adgn.wt.shell.install import main as emit_function
+from adgn.wt.shell import install
 from .test_utils import run_cli_command
 
 from .config_factory import ConfigFactory
@@ -110,7 +110,7 @@ def test_data():
     request a TestData fixture parameter to receive the class.
     """
 
-    return _TestData
+    return TestData
 
 
 @pytest.fixture
@@ -303,71 +303,77 @@ def real_env(real_temp_repo, config_factory):
     kill_daemon_at_wt_dir(config.wt_dir)
 
 
+class WtCLI:
+    """Convenience wrapper around run_cli_command bound to real_env."""
+
+    def __init__(self, env: dict[str, str]):
+        self.env: dict[str, str] = env
+
+    def sh(
+        self,
+        *args: str,
+        timeout: timedelta = timedelta(seconds=30),
+        cwd: Path | None = None,
+    ):
+        return run_cli_command(["sh", *args], env=self.env, timeout=timeout, cwd=cwd)
+
+    def sh_c(
+        self,
+        cmd: str,
+        timeout: timedelta = timedelta(seconds=30),
+        cwd: Path | None = None,
+    ):
+        return run_cli_command(
+            ["sh", "-c", cmd], env=self.env, timeout=timeout, cwd=cwd
+        )
+
+    def status(
+        self,
+        timeout: timedelta = timedelta(seconds=30),
+        cwd: Path | None = None,
+    ):
+        return run_cli_command(["sh"], env=self.env, timeout=timeout, cwd=cwd)
+
+    def kill(self, timeout: timedelta = timedelta(seconds=30)):
+        """Request the daemon to shut down via CLI."""
+        return run_cli_command(["sh", "kill-daemon"], env=self.env, timeout=timeout)
+
+    def rpc(self, sock_path: str | os.PathLike, method: str, params: dict):
+        """Minimal JSON-RPC helper to call the daemon directly over a UNIX socket."""
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
+            s.connect(str(sock_path))
+            with s.makefile("rwb") as f:
+                req = {
+                    "jsonrpc": "2.0",
+                    "method": method,
+                    "params": params,
+                    "id": str(uuid.uuid4()),
+                }
+                f.write((json.dumps(req) + "\n").encode())
+                f.flush()
+                line = f.readline()
+                return json.loads(line.decode()) if line else {"error": "no response"}
+
+    def wait_for(
+        self,
+        predicate,
+        timeout: timedelta = timedelta(seconds=5),
+        interval: float = 0.1,
+    ) -> bool:
+        """Poll a predicate until it returns True or timeout elapses."""
+        deadline = time.monotonic() + timeout.total_seconds()
+        while time.monotonic() < deadline:
+            if predicate():
+                return True
+            time.sleep(interval)
+        return False
+
+
 @pytest.fixture
-def wt_cli(real_env):
-    """Convenience wrapper around run_cli_command bound to real_env.
+def wt_cli(real_env) -> WtCLI:
+    """Fixture returning a typed wrapper bound to the real environment."""
 
-    Usage:
-      wt_cli.sh('ls'); wt_cli.sh_c('alpha'); wt_cli.status()
-    """
-
-    class _WtCLI:
-        def __init__(self, env: dict[str, str]):
-            self.env = env
-
-        def sh(
-            self, *args: str, timeout: _td = _td(seconds=30), cwd: Path | None = None
-        ):
-            return run_cli_command(
-                ["sh", *args], env=self.env, timeout=timeout, cwd=cwd
-            )
-
-        def sh_c(
-            self, cmd: str, timeout: _td = _td(seconds=30), cwd: Path | None = None
-        ):
-            return run_cli_command(
-                ["sh", "-c", cmd], env=self.env, timeout=timeout, cwd=cwd
-            )
-
-        def status(self, timeout: _td = _td(seconds=30), cwd: Path | None = None):
-            return run_cli_command(["sh"], env=self.env, timeout=timeout, cwd=cwd)
-
-        def kill(self, timeout: _td = _td(seconds=30)):
-            """Request the daemon to shut down via CLI."""
-            return run_cli_command(["sh", "kill-daemon"], env=self.env, timeout=timeout)
-
-        def rpc(self, sock_path: str | os.PathLike, method: str, params: dict):
-            """Minimal JSON-RPC helper to call the daemon directly over a UNIX socket."""
-            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
-                s.connect(str(sock_path))
-                with s.makefile("rwb") as f:
-                    req = {
-                        "jsonrpc": "2.0",
-                        "method": method,
-                        "params": params,
-                        "id": str(uuid.uuid4()),
-                    }
-                    f.write((json.dumps(req) + "\n").encode())
-                    f.flush()
-                    line = f.readline()
-                    return (
-                        json.loads(line.decode()) if line else {"error": "no response"}
-                    )
-
-        def wait_for(
-            self, predicate, timeout: _td = _td(seconds=5), interval: float = 0.1
-        ) -> bool:
-            """Poll a predicate until it returns True or timeout elapses."""
-            import time
-
-            deadline = time.time() + timeout.total_seconds()
-            while time.time() < deadline:
-                if predicate():
-                    return True
-                time.sleep(interval)
-            return False
-
-    return _WtCLI(real_env)
+    return WtCLI(real_env)
 
 
 @pytest.fixture
@@ -484,7 +490,7 @@ def shell_runner():
 
             buf = io.StringIO()
             with contextlib.redirect_stdout(buf):
-                emit_function()
+                install.main()
             wt_fn = buf.getvalue()
 
             full_script = f"""#!/bin/bash

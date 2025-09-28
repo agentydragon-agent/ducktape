@@ -33,26 +33,82 @@
       tags: [powerdns]
 
   tasks:
-    # Disable systemd-resolved to free port 53 for PowerDNS
-    - name: Disable systemd-resolved
+    # Configure systemd-resolved with split DNS for PowerDNS and Tailscale
+    - name: Ensure systemd-resolved is enabled
       ansible.builtin.systemd:
         name: systemd-resolved
-        state: stopped
-        enabled: no
+        state: started
+        enabled: yes
       become: true
-      tags: [powerdns]
+      tags: [dns, powerdns]
 
-    - name: Configure static DNS resolution
+    - name: Create systemd-resolved config directory
+      ansible.builtin.file:
+        path: /etc/systemd/resolved.conf.d
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+      become: true
+      tags: [dns, powerdns]
+
+    - name: Configure systemd-resolved with split DNS
       ansible.builtin.copy:
-        dest: /etc/resolv.conf
+        dest: /etc/systemd/resolved.conf.d/10-split-dns.conf
         content: |
-          nameserver 1.1.1.1
-          nameserver 8.8.8.8
+          [Resolve]
+          # Primary DNS servers
+          DNS=1.1.1.1#cloudflare-dns.com
+          DNS=8.8.8.8#dns.google
+          # Fallback DNS
+          FallbackDNS=8.8.4.4#dns.google
+          # Enable stub listener for local resolution
+          DNSStubListener=yes
+          # Enable caching
+          Cache=yes
+          # Don't use LLMNR/mDNS
+          LLMNR=no
+          MulticastDNS=no
         owner: root
         group: root
         mode: '0644'
       become: true
-      tags: [powerdns]
+      notify: restart systemd-resolved
+      tags: [dns, powerdns]
+
+    - name: Remove overly broad PowerDNS network configuration
+      ansible.builtin.file:
+        path: /etc/systemd/network/10-powerdns.network
+        state: absent
+      become: true
+      tags: [dns, powerdns]
+
+    - name: Configure PowerDNS forwarding in systemd-resolved directly
+      ansible.builtin.copy:
+        dest: /etc/systemd/resolved.conf.d/10-powerdns-domains.conf
+        content: |
+          [Resolve]
+          # Forward queries for our authoritative domains to PowerDNS
+          # This will be used in addition to the global DNS servers
+          DNS={{ ansible_default_ipv4.address }}#powerdns
+          Domains=~agentydragon.com ~adgn.link ~k3s.agentydragon.com
+        owner: root
+        group: root
+        mode: '0644'
+      become: true
+      notify:
+        - restart systemd-networkd
+        - restart systemd-resolved
+      tags: [dns, powerdns]
+
+    - name: Ensure /etc/resolv.conf is symlinked to systemd-resolved
+      ansible.builtin.file:
+        src: /run/systemd/resolve/stub-resolv.conf
+        dest: /etc/resolv.conf
+        state: link
+        force: yes
+      become: true
+      tags: [dns, powerdns]
     # Needs to run before Docker, which tries to install gnupg2
     - name: Update everything
       become: true
@@ -317,6 +373,22 @@
     #   tags: [authentik]
 
   handlers:
+    - name: restart systemd-resolved
+      ansible.builtin.systemd:
+        name: systemd-resolved
+        state: restarted
+        daemon_reload: yes
+      become: true
+      tags: [dns, powerdns]
+
+    - name: restart systemd-networkd
+      ansible.builtin.systemd:
+        name: systemd-networkd
+        state: restarted
+        daemon_reload: yes
+      become: true
+      tags: [dns, powerdns]
+
     # Only triggers if nginx config files changed.
     - name: Reload nginx
       systemd:

@@ -1,17 +1,9 @@
 import json
 from pathlib import Path
-import time
 
-from openai.types.responses import Response
-from openai.types.responses.response_function_tool_call_item import (
-    ResponseFunctionToolCallItem,
-)
-from openai.types.responses.response_output_message import ResponseOutputMessage
-from openai.types.responses.response_output_text import ResponseOutputText
-from openai.types.responses.response_usage import (
-    InputTokensDetails,
-    OutputTokensDetails,
-    ResponseUsage,
+from adgn.llm.openai_utils.model import (
+    FunctionCallOut,
+    ResponsesRequest,
 )
 import pytest
 
@@ -36,104 +28,52 @@ from adgn.llm.inop.engine.models import (
 from adgn.llm.inop.io.jsonl_logger import JSONLLogger
 
 
-def mk_func_call(
-    *,
-    name: str,
-    args: dict,
-    call_id: str,
-    id: str | None = None,
-) -> ResponseFunctionToolCallItem:
-    return ResponseFunctionToolCallItem(
-        id=id or call_id,
-        type="function_call",
+def mk_func_call(*, name: str, args: dict, call_id: str) -> FunctionCallOut:
+    return FunctionCallOut(
         name=name,
         arguments=json.dumps(args),
         call_id=call_id,
     )
 
 
-def mk_msg(text: str, *, id: str = "msg-1") -> ResponseOutputMessage:
-    return ResponseOutputMessage(
-        id=id,
-        type="message",
-        role="assistant",
-        status="completed",
-        content=[ResponseOutputText(type="output_text", text=text, annotations=[])],
-    )
+class FakeModelLayer:
+    """Protocol-level fake model used via DI factory (make_model)."""
 
-
-def mk_response(
-    output: list,
-    *,
-    model: str,
-    id: str | None = None,
-    tools: list | None = None,
-    tool_choice: str | dict | None = None,
-    parallel_tool_calls: bool = False,
-) -> Response:
-    # Simple deterministic usage accounting for tests
-    out_tokens = 0
-    for item in output:
-        if isinstance(item, ResponseOutputMessage):
-            # Approximate tokens as length of text (non-zero)
-            txt_parts = [
-                p.text for p in item.content if isinstance(p, ResponseOutputText)
-            ]
-            out_tokens += sum(max(1, len(t)) for t in txt_parts)
-        else:
-            # Function tool call or other item — minimal token count
-            out_tokens += 1
-    usage = ResponseUsage(
-        input_tokens=1,
-        input_tokens_details=InputTokensDetails(cached_tokens=0),
-        output_tokens=out_tokens,
-        output_tokens_details=OutputTokensDetails(reasoning_tokens=0),
-        total_tokens=1 + out_tokens,
-    )
-    return Response(
-        id=id or f"resp-{int(time.time() * 1000)}",
-        object="response",
-        model=model,
-        created_at=int(time.time()),
-        output=output,
-        tools=tools or [],
-        tool_choice=tool_choice or "auto",
-        parallel_tool_calls=parallel_tool_calls,
-        usage=usage,
-    )
-
-
-class FakeResponsesAPI:
-    """Async responses API that returns real Pydantic type objects for Responses."""
-
-    def __init__(self):
+    def __init__(self, rf) -> None:
         self._pe_counter = 0
+        self.context_window_tokens = 200000
+        self._rf = rf
 
-    async def create(self, model, **kwargs):
-        tools = kwargs.get("tools", [])
-        tool_choice = kwargs.get("tool_choice")
-        previous_response_id = kwargs.get("previous_response_id")
-        # Prioritize tool_choice based routing
-        if tool_choice and isinstance(tool_choice, dict):
-            name = tool_choice.get("name")
-            # PromptEngineer submit_prompt path
+    async def responses_create(self, req: ResponsesRequest):
+        # Access typed fields directly (no getattr duck-typing)
+        tool_choice = req.tool_choice
+        tools = req.tools or []
+
+        def _tool_name(choice):
+            if isinstance(choice, dict):
+                return choice.get("name")
+            if hasattr(choice, "name"):
+                return getattr(choice, "name")
+            return None
+
+        name = _tool_name(tool_choice)
+        # Tool-based routing
+        if name is not None:
             if name == "submit_prompt":
                 self._pe_counter += 1
                 call = mk_func_call(
                     name="submit_prompt",
                     args={"prompt": f"PROMPT_V{self._pe_counter}"},
                     call_id=f"pe-{self._pe_counter}",
-                    id=f"call-{self._pe_counter}",
                 )
-                return mk_response(
-                    [call],
-                    model=model,
-                    tools=tools,
-                    tool_choice=tool_choice,
+                return self._rf.make(
+                    self._rf.tool_call(
+                        call_id=call.call_id,
+                        name=call.name,
+                        arguments=json.loads(call.arguments or "{}"),
+                    )
                 )
-            # Grader submit_grades path
             if name == "submit_grades":
-                # Find required keys from tool schema
                 required = []
                 if tools:
                     tool = tools[0]
@@ -144,60 +84,32 @@ class FakeResponsesAPI:
                     name="submit_grades",
                     args=payload,
                     call_id="grade-1",
-                    id="call-grade",
                 )
-                return mk_response(
-                    [call],
-                    model=model,
-                    tools=tools,
-                    tool_choice=tool_choice,
+                return self._rf.make(
+                    self._rf.tool_call(
+                        call_id=call.call_id,
+                        name=call.name,
+                        arguments=payload,
+                    )
                 )
-            # Comparison grading (not exercised here)
-        # MiniCodex PE flow: when a tool is required, always emit propose_prompt
+        # When tool is required: emit propose_prompt in outer loop; inner (runner) returns text
         if tool_choice == "required":
-            # Distinguish outer (PE) vs inner (runner) agents by model name
-            is_pe = isinstance(model, str) and ("gpt-4o" in model)
-            if is_pe:
-                self._pe_counter += 1
-                call = mk_func_call(
-                    name="mcp__prompt_feedback__propose_prompt",
-                    args={"prompt": f"PROMPT_V{self._pe_counter}"},
-                    call_id=f"pe-{self._pe_counter}",
-                    id=f"call-pe-{self._pe_counter}",
-                )
-                return mk_response(
-                    [call],
-                    model=model,
-                    tools=tools,
-                    tool_choice=tool_choice,
-                )
-            # Runner path: do not force any tool; just return assistant text
-            return mk_response(
-                [mk_msg("ok")],
-                model=model,
-                tools=tools,
-                tool_choice=tool_choice,
+            # Always propose a prompt when tool is required (outer PE agent)
+            self._pe_counter += 1
+            call = mk_func_call(
+                name="mcp__prompt_feedback__propose_prompt",
+                args={"prompt": f"PROMPT_V{self._pe_counter}"},
+                call_id=f"pe-{self._pe_counter}",
             )
-        # Subsequent turn after tool outputs: return assistant message
-        if previous_response_id is not None:
-            return mk_response(
-                [mk_msg("done", id="msg-1")],
-                model=model,
-                tools=tools,
-                tool_choice=tool_choice,
+            return self._rf.make(
+                self._rf.tool_call(
+                    call_id=call.call_id,
+                    name=call.name,
+                    arguments={"prompt": f"PROMPT_V{self._pe_counter}"},
+                )
             )
-        # Default: assistant text (shouldn't be used in our paths)
-        return mk_response(
-            [mk_msg("default", id="msg-default")],
-            model=model,
-            tools=tools,
-            tool_choice=tool_choice,
-        )
-
-
-class FakeAsyncOpenAI:
-    def __init__(self, *a, **k):
-        self.responses = FakeResponsesAPI()
+        # Default assistant text
+        return self._rf.make_assistant_message("default")
 
 
 @pytest.fixture
@@ -235,12 +147,52 @@ async def test_optimize_prompts_two_iterations_async(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     cfg_two_iters: OptimizerConfig,
+    responses_factory,
 ):
-    # Patch AsyncOpenAI everywhere to use our fake
-    import openai
+    # Provide a lightweight runner that avoids Docker and writes deterministic outputs
+    from adgn.llm.inop.engine.models import (
+        AssistantMessage as TrMsg,
+        Rollout,
+        RunnerEnvironment,
+    )
+    from adgn.llm.inop.runners.base import AgentRunner
+    from adgn.llm.inop.engine import runner_factory
 
-    monkeypatch.setattr(openai, "AsyncOpenAI", FakeAsyncOpenAI)
+    class FakeRunner(AgentRunner):
+        async def setup(self, task: TaskDefinition, task_type_config: dict) -> None:  # noqa: D401
+            self._env = RunnerEnvironment(
+                type="workspace_dir", data={"path": str(tmp_path / "ws")}
+            )
+            (tmp_path / "ws").mkdir(parents=True, exist_ok=True)
 
+        async def run_task(
+            self, task: TaskDefinition, agent_instructions: str
+        ) -> Rollout:  # noqa: D401
+            traj = [TrMsg(text="default")]
+            files = {"README.md": f"prompt: {agent_instructions}"}
+            return Rollout(
+                task_id=task.id,
+                runner_id=self.runner_id,
+                agent_id="agent_0",
+                trajectory=traj,
+                files=files,
+                success=True,
+                duration_seconds=0.01,
+            )
+
+        async def cleanup(self) -> None:  # noqa: D401
+            return None
+
+        def get_environment(self) -> RunnerEnvironment | None:  # noqa: D401
+            return getattr(self, "_env", None)
+
+    def _fake_create_runner(runner_name: str, runner_configs: dict, openai_model=None):
+        return FakeRunner(
+            runner_id=runner_name,
+            config=runner_configs.get(runner_name, {}).get("config", {}),
+        )
+
+    monkeypatch.setattr(runner_factory, "create_runner", _fake_create_runner)
     base_dir = tmp_path / "run"
     base_dir.mkdir(parents=True, exist_ok=True)
 
@@ -257,15 +209,13 @@ async def test_optimize_prompts_two_iterations_async(
     ]
     criteria = [Criterion(name="overall", description="overall quality")]
     task_types = {"coding": TaskType(name="coding", grading=None)}
-    runner_configs = {
-        "claude": {"type": "minicodex_runner", "config": {"model": "o4-mini"}},
-    }
+    runner_configs = {"claude": {"type": "claude_runner", "config": {}}}
 
-    # Logging client using fake AsyncOpenAI
+    # Logging client (openai_client is unused here); DI concrete models
     dummy_client = opt.LoggingOpenAIClient(
-        openai_client=FakeAsyncOpenAI(),
-        jsonl_logger=JSONLLogger(base_dir / "api.jsonl"),
+        openai_client=object(), jsonl_logger=JSONLLogger(base_dir / "api.jsonl")
     )
+    fake_model = FakeModelLayer(responses_factory)
 
     # Ensure logging is initialized for optimizer
     opt.DualOutputLogging.setup_logging(verbose=False)
@@ -284,6 +234,10 @@ async def test_optimize_prompts_two_iterations_async(
         opt.OptimizeArgs(
             anthropic_log=JSONLLogger(base_dir / "anthropic.jsonl"),
             openai_client=dummy_client,
+            pe_model=fake_model,
+            runner_model=fake_model,
+            grader_model=fake_model,
+            summarizer_model=fake_model,
             seed_tasks=seed_tasks,
             criteria=criteria,
             cfg=cfg_two_iters,

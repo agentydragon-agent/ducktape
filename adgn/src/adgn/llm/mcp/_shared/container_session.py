@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 import shlex
 import math
-from typing import Any
+from typing import Any, cast
 
 import docker
 from docker.models.containers import Container
@@ -61,6 +61,10 @@ class ContainerOptions:
     environment: dict[str, str] | None = None
     labels: dict[str, str] | None = None
     describe: bool = True
+
+
+def _session_state_from_ctx(ctx: Any) -> ContainerSessionState:
+    return cast(ContainerSessionState, ctx.request_context.lifespan_context)
 
 
 def _start_container(
@@ -130,14 +134,14 @@ def register_container(mcp: FastMCP, *, tool_name: str = "exec") -> None:
     )
     def container_info_json() -> dict[str, Any]:
         ctx = mcp.get_context()
-        s: ContainerSessionState = ctx.request_context.lifespan_context  # type: ignore[assignment]
+        s = _session_state_from_ctx(ctx)
         img = s.docker_client.images.get(s.image)
         return {
             "image": {"name": s.image, "id": img.id, "tags": img.tags},
             "volumes": s.volumes,
             "working_dir": s.working_dir,
             "network_mode": s.network_mode.value,
-            "image_history": s.docker_client.api.history(img.id),  # type: ignore[attr-defined]
+            "image_history": cast(Any, s.docker_client.api).history(img.id),
         }
 
     # Tool: container exec (flat MCP payload, validated via ExecInput)
@@ -150,7 +154,7 @@ def register_container(mcp: FastMCP, *, tool_name: str = "exec") -> None:
     )
     def tool_exec(input: ExecInput) -> ExecResult:
         ctx = mcp.get_context()
-        s: ContainerSessionState = ctx.request_context.lifespan_context  # type: ignore[assignment]
+        s = _session_state_from_ctx(ctx)
         prepared_cmd: list[str] | str
         if input.timeout_secs and input.timeout_secs > 0:
             int_secs = max(1, int(math.ceil(input.timeout_secs)))
@@ -168,6 +172,7 @@ def register_container(mcp: FastMCP, *, tool_name: str = "exec") -> None:
         else:
             prepared_cmd = _shell_join(input.cmd) if input.shell else input.cmd
 
+        exec_cmd: list[str] | str
         if (
             input.shell
             and not (
@@ -175,26 +180,33 @@ def register_container(mcp: FastMCP, *, tool_name: str = "exec") -> None:
             )
             and not isinstance(prepared_cmd, list)
         ):
-            exec_cmd: list[str] | str = ["sh", "-lc", prepared_cmd]  # type: ignore[list-item]
+            exec_cmd_list: list[str] = ["sh", "-lc", prepared_cmd]
+            exec_cmd = exec_cmd_list
         else:
             exec_cmd = prepared_cmd
 
-        # Docker SDK types: container.client is a DockerClient (or None per stubs)
-        cli: docker.DockerClient | None = s.container.client
+        # Docker SDK types: container.client may be DockerClient or APIClient depending on usage
+        cli = s.container.client
         if cli is None:  # mypy: Container.client can be Optional in stubs
             raise RuntimeError("Docker client not available on container")
-        api: docker.APIClient = cli.api  # low-level APIClient
-        exec_id = api.exec_create(
-            container=s.container.id,
-            cmd=exec_cmd,
-            stdout=True,
-            stderr=True,
-            stdin=False,
-            tty=input.tty,
-            user=input.user,
-            workdir=input.cwd,
-            environment=input.env,
-        )["Id"]
+        if isinstance(cli, docker.APIClient):
+            api: docker.APIClient = cli
+        else:
+            api = cli.api  # type: ignore[assignment]
+        exec_kwargs: dict[str, Any] = {
+            "container": s.container.id,
+            "cmd": exec_cmd,
+            "stdout": True,
+            "stderr": True,
+            "stdin": False,
+            "tty": input.tty,
+            "workdir": input.cwd,
+            "environment": input.env,
+        }
+        if input.user is not None:
+            exec_kwargs["user"] = input.user
+
+        exec_id = api.exec_create(**exec_kwargs)["Id"]
 
         stdout_buf = bytearray()
         stderr_buf = bytearray()

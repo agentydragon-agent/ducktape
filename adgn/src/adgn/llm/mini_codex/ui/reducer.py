@@ -89,37 +89,52 @@ def reduce_ui_state(state: UiState, evt: Any) -> UiState:
 
     # Function call output → merge stdout/stderr/exit
     if isinstance(evt, FunctionCallOutput):
+        result_dict = evt.result or {}
+        structured = result_dict.get("structuredContent")
         stdout = stderr = None
         exit_code = None
-        parsed_out: dict | None = None
-        try:
-            out = json.loads(evt.output)
-            parsed_out = out if isinstance(out, dict) else None
-            if parsed_out:
-                stdout = parsed_out.get("stdout_text") or parsed_out.get("stdout")
-                stderr = parsed_out.get("stderr_text") or parsed_out.get("stderr")
-                exit_code = parsed_out.get("exit_code")
-        except Exception:
-            parsed_out = None
-        # Prefer updating exec-style if present; else update JSON-style output
+        if isinstance(structured, dict):
+            stdout = structured.get("stdout_text") or structured.get("stdout")
+            stderr = structured.get("stderr_text") or structured.get("stderr")
+            exit_code_val = structured.get("exit_code")
+            if isinstance(exit_code_val, int):
+                exit_code = exit_code_val
+            else:
+                try:
+                    exit_code = int(exit_code_val)
+                except (TypeError, ValueError):
+                    exit_code = None
+        is_error = bool(result_dict.get("isError"))
+
         next_state = update_tool_exec_stream(
-            state, evt.call_id, stdout=stdout, stderr=stderr, exit_code=exit_code
+            state,
+            evt.call_id,
+            stdout=stdout,
+            stderr=stderr,
+            exit_code=exit_code,
+            is_error=is_error,
         )
-        if next_state is state:
-            # Locate tool to decide how to handle JSON output
-            tool_name = None
-            for it in reversed(state.items):
-                if (
-                    getattr(it, "kind", None) == "Tool"
-                    and getattr(it, "call_id", None) == evt.call_id
-                ):
-                    tool_name = getattr(it, "tool", None)
-                    break
-            # For ui.send_message: do NOT attach JSON output; UiMessageEvt will surface as AssistantMarkdown
-            if isinstance(tool_name, str) and tool_name == "mcp__ui__send_message":
-                return state
-            return update_tool_json_output(state, evt.call_id, output=parsed_out)
-        return next_state
+        if next_state is not state:
+            return next_state
+
+        tool_name = None
+        for it in reversed(state.items):
+            if (
+                getattr(it, "kind", None) == "Tool"
+                and getattr(it, "call_id", None) == evt.call_id
+            ):
+                tool_name = getattr(it, "tool", None)
+                break
+        if isinstance(tool_name, str) and tool_name == "mcp__ui__send_message":
+            return state
+
+        result_payload = result_dict if result_dict else None
+        return update_tool_json_output(
+            state,
+            evt.call_id,
+            result=result_payload,
+            is_error=is_error,
+        )
 
     # Unknown event → no-op
     return state

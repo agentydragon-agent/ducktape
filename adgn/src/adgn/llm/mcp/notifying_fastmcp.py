@@ -1,25 +1,24 @@
 from __future__ import annotations
 
-import logging
 import asyncio
+import logging
+from contextlib import AsyncExitStack
+from typing import Any, Callable, cast
 from weakref import WeakSet
 
-from mcp.server.fastmcp import FastMCP
-from mcp.server.lowlevel.server import (
-    InitializationOptions as _InitOpts,
-)
-from mcp.server.session import ServerSession as _ServerSession
-from mcp.shared.message import SessionMessage as _SessionMessage
-from anyio.streams.memory import (
-    MemoryObjectReceiveStream as _Recv,
-    MemoryObjectSendStream as _Send,
-)
-from contextlib import AsyncExitStack as _AsyncExitStack
 import anyio
+from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStream
+from mcp.server.fastmcp import FastMCP
+from mcp.server.lowlevel.server import InitializationOptions
+from mcp.server.session import ServerSession
+from mcp.shared.message import SessionMessage
+from pydantic import AnyUrl, TypeAdapter
 
 from adgn.llm.mcp._shared.fastmcp_helpers import FlatModelToolMixin, SafeDispatchServer
 
 logger = logging.getLogger("adgn.mcp")
+
+_ANY_URL: TypeAdapter[AnyUrl] = TypeAdapter(AnyUrl)
 
 
 class _CapturingServer(SafeDispatchServer):
@@ -29,23 +28,28 @@ class _CapturingServer(SafeDispatchServer):
     so protocol notifications can be emitted before any request arrives.
     """
 
-    def __init__(self, *a, on_session_created: callable | None = None, **kw):
+    def __init__(
+        self,
+        *a,
+        on_session_created: "Callable[[ServerSession], None] | None" = None,
+        **kw,
+    ):
         super().__init__(*a, **kw)
         self._on_session_created = on_session_created
 
     async def run(
         self,
-        read_stream: _Recv[_SessionMessage | Exception],
-        write_stream: _Send[_SessionMessage],
-        initialization_options: _InitOpts,
+        read_stream: MemoryObjectReceiveStream[SessionMessage | Exception],
+        write_stream: MemoryObjectSendStream[SessionMessage],
+        initialization_options: InitializationOptions,
         raise_exceptions: bool = False,
         stateless: bool = False,
     ):
         # Leverage SafeDispatchServer.run but intercept the moment the session is created.
-        async with _AsyncExitStack() as stack:
+        async with AsyncExitStack() as stack:
             lifespan_context = await stack.enter_async_context(self.lifespan(self))
             session = await stack.enter_async_context(
-                _ServerSession(
+                ServerSession(
                     read_stream,
                     write_stream,
                     initialization_options,
@@ -80,26 +84,28 @@ class NotifyingFastMCP(FlatModelToolMixin, FastMCP):
 
     def __init__(self, name: str, *, instructions: str | None = None) -> None:
         super().__init__(name=name, instructions=instructions)
-        self._sessions: WeakSet = WeakSet()
+        self._sessions: WeakSet[ServerSession] = WeakSet()
         self._pending_uris: list[str] = []
         # Replace the low-level server with a capturing variant and re-register handlers
-        name0 = self._mcp_server.name
-        instr0 = self._mcp_server.instructions
+        server = cast(Any, getattr(self, "_mcp_server"))
+        name0 = getattr(server, "name", name)
+        instr0 = getattr(server, "instructions", instructions)
 
-        async def _on_created(sess):
+        async def _on_created(sess: ServerSession) -> None:
             # Register and flush any queued notifications
             self._sessions.add(sess)
             await self.flush_pending()
 
         # Wrap in a small adapter because low-level server expects a sync callable
-        def _adapter(sess):
+        def _adapter(sess: ServerSession) -> None:
             asyncio.create_task(_on_created(sess))
 
-        self._mcp_server = _CapturingServer(
+        capturing_server = _CapturingServer(
             name=name0,
             instructions=instr0,
             on_session_created=_adapter,
         )
+        self._mcp_server = cast(SafeDispatchServer, capturing_server)
         # Re-install FastMCP handlers on the new low-level server
         self._setup_handlers()
 
@@ -114,7 +120,7 @@ class NotifyingFastMCP(FlatModelToolMixin, FastMCP):
             self._sessions.add(sess)
 
     # Wrap tools to auto-capture a session when tools run
-    def tool(self, *args, **kwargs):  # type: ignore[override]
+    def tool(self, *args: Any, **kwargs: Any):
         base_decorator = super().tool(*args, **kwargs)
 
         def _decorator(fn):
@@ -129,13 +135,13 @@ class NotifyingFastMCP(FlatModelToolMixin, FastMCP):
 
         return _decorator
 
-    async def list_tools(self):  # type: ignore[override]
+    async def list_tools(self) -> Any:
         res = await super().list_tools()
         self._capture_session_if_any()
         await self.flush_pending()
         return res
 
-    async def list_resources(self):  # type: ignore[override]
+    async def list_resources(self) -> Any:
         res = await super().list_resources()
         self._capture_session_if_any()
         await self.flush_pending()
@@ -153,7 +159,8 @@ class NotifyingFastMCP(FlatModelToolMixin, FastMCP):
         logger.debug(
             "broadcast_resource_updated: uri=%s sessions=%d", uri, len(sessions)
         )
-        send_tasks = [s.send_resource_updated(uri) for s in sessions]
+        uri_value = _ANY_URL.validate_python(uri)
+        send_tasks = [s.send_resource_updated(uri_value) for s in sessions]
         results = await asyncio.gather(*send_tasks, return_exceptions=True)
         logger.debug("broadcast done: results=%s", [repr(r) for r in results])
         # Best-effort: drop sessions that errored
@@ -176,6 +183,10 @@ class NotifyingFastMCP(FlatModelToolMixin, FastMCP):
         self._pending_uris.clear()
         # send each queued URI to all sessions
         await asyncio.gather(
-            *[s.send_resource_updated(uri) for s in sessions for uri in uris],
+            *[
+                s.send_resource_updated(_ANY_URL.validate_python(uri))
+                for s in sessions
+                for uri in uris
+            ],
             return_exceptions=True,
         )

@@ -4,7 +4,8 @@
 - name: restart powerdns
   community.docker.docker_compose_v2:
     project_src: /opt/powerdns
-    state: present
-    restart: true
+    state: restarted
+    services:
+      - powerdns
   become: true
   when: powerdns_state == "present"

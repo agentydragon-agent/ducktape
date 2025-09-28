@@ -3,18 +3,13 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
-import openai as _openai
+import openai
 from openai import AsyncOpenAI
 import pytest
 
 from .support.openai_mock import LIVE, OpenAIClient, make_mock
-from adgn.llm.openai_utils.model import (
-    ResponsesResult,
-    AssistantResponseMessage,
-    Usage as PUsage,
-)
 from adgn.llm.mcp._shared.container_session import ContainerOptions
 from adgn.llm.mcp.docker_exec.server import make_container_exec_mcp
 from adgn.llm.mcp.inproc_transport import make_inproc_slot_spec
@@ -28,27 +23,7 @@ def _mini_codex_logdir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("MINICODEX_LOG_DIR", str(log_dir))
 
 
-# --- Minimal helpers/fixtures for building adapter Responses (Pydantic types) ---
-
-
-def make_assistant_text_response(*, model: str, text: str) -> ResponsesResult:
-    return ResponsesResult(
-        id="resp_msg",
-        usage=PUsage(
-            input_tokens=0,
-            output_tokens=max(1, len(text)),
-            total_tokens=max(1, len(text)),
-        ),
-        output=[AssistantResponseMessage(text=text)],
-    )
-
-
-@pytest.fixture
-def assistant_response_factory() -> Callable[[str, str], ResponsesResult]:
-    def _make(model: str, text: str) -> ResponsesResult:
-        return make_assistant_text_response(model=model, text=text)
-
-    return _make
+## Adapter response builders and responses_factory are provided by tests.fixtures.responses
 
 
 # --- Opt-in OpenAI client policy for tests ---
@@ -56,7 +31,7 @@ def assistant_response_factory() -> Callable[[str, str], ResponsesResult]:
 # constructor with a raising stub so tests must explicitly opt-in via the
 # `openai_client` fixture when they need a real (or mocked) AsyncOpenAI instance.
 
-_orig_async = getattr(_openai, "AsyncOpenAI", None)
+_orig_async = getattr(openai, "AsyncOpenAI", None)
 
 
 def _raising_async(*args, **kwargs):
@@ -81,7 +56,7 @@ def fail_openai_by_default(
     """
     if request.node.get_closest_marker("live_llm") is not None:
         return
-    monkeypatch.setattr(_openai, "AsyncOpenAI", _raising_async)
+    monkeypatch.setattr(openai, "AsyncOpenAI", _raising_async)
 
 
 @pytest.fixture
@@ -98,7 +73,7 @@ async def openai_client(monkeypatch: pytest.MonkeyPatch):
         )
 
     # restore the original constructor for this test
-    monkeypatch.setattr(_openai, "AsyncOpenAI", _orig_async)
+    monkeypatch.setattr(openai, "AsyncOpenAI", _orig_async)
     client = _orig_async()
     try:
         yield client
@@ -110,7 +85,7 @@ async def openai_client(monkeypatch: pytest.MonkeyPatch):
                 await aclose()
         finally:
             # ensure we put back the raising stub
-            monkeypatch.setattr(_openai, "AsyncOpenAI", _raising_async)
+            monkeypatch.setattr(openai, "AsyncOpenAI", _raising_async)
 
 
 # --- Minimal, function-shaped mock for responses.create ---
@@ -124,7 +99,7 @@ ResponsesCreateFn = Callable[..., Awaitable[Any]]
 def responses_create_fn(
     request,
 ) -> ResponsesCreateFn:  # provided via indirect parametrize
-    return request.param  # type: ignore[no-any-return]
+    return cast(ResponsesCreateFn, request.param)
 
 
 @pytest.fixture

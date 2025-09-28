@@ -17,7 +17,7 @@ repos:
       - id: check-ast  # valid Python parse
       - id: check-yaml
         args: ["--allow-multiple-documents"]
-        exclude: ansible/host_vars/.*\.yml$|^claude/claude_optimizer/config\.example\.yaml$
+        exclude: ansible/host_vars/.*\.yml$|^claude/claude_optimizer/config\.example\.yaml$|^k8s/helm/.*/templates/.*\.ya?ml$
       - id: check-toml
 
       # TODO: this one should NOT fix within dotfiles e.g. OrcaSlicer
@@ -57,6 +57,7 @@ repos:
           - types-PyYAML
           - types-requests
           - types-tabulate
+          - types-docker
           - types-toml
           - types-aiofiles
       - id: mypy
@@ -73,6 +74,7 @@ repos:
           - types-colorama
           - types-psutil
           - types-tabulate
+          - types-docker
 
   # Buildifier for Bazel files
   - repo: git@github.com:keith/pre-commit-buildifier

@@ -14,14 +14,11 @@ import json
 import logging
 import importlib
 from mcp.server.fastmcp import FastMCP
-from typing import Annotated, Any, Literal, Union, cast
+from typing import Annotated, Any, Awaitable, Callable, Literal, Union, cast
 
 from mcp import types as mcp_types
-from mcp import types as T
 from mcp.client.session import ClientSession
-from mcp import types as _mcp_types
-from mcp.shared.session import RequestResponder as _RequestResponder
-from typing import Awaitable as _Awaitable, Callable as _Callable
+from mcp.shared.session import RequestResponder
 from mcp.client.sse import sse_client
 from mcp.client.stdio import StdioServerParameters, stdio_client
 from mcp.types import InitializeResult
@@ -30,6 +27,8 @@ from pydantic import AnyUrl, BaseModel, Field, TypeAdapter
 from adgn.llm.mcp.inproc_transport import make_inproc_slot_spec
 from adgn.llm.mcp.resources.server import make_resources_server
 from adgn.llm.mcp.types import ServerSlot, ServerSlotSpec
+
+logger = logging.getLogger("adgn.mcp")
 
 # Shared MCP naming helpers/constants
 MCP_NAMESPACE_PREFIX = "mcp__"
@@ -152,7 +151,7 @@ class McpManager:
             self._realized[name] = slot
             return slot
 
-    async def __aenter__(self) -> McpManager:  # type: ignore[name-defined]
+    async def __aenter__(self) -> "McpManager":
         if not self._entered:
             await self._stack.__aenter__()
             self._entered = True
@@ -419,36 +418,33 @@ class McpManager:
     # ---- ClientSession message handler (transport-agnostic) ----
     def _make_message_handler(
         self, server_name: str
-    ) -> _Callable[
+    ) -> Callable[
         [
-            _RequestResponder[_mcp_types.ServerRequest, _mcp_types.ClientResult]
-            | _mcp_types.ServerNotification
+            RequestResponder[mcp_types.ServerRequest, mcp_types.ClientResult]
+            | mcp_types.ServerNotification
             | Exception
         ],
-        _Awaitable[None],
+        Awaitable[None],
     ]:
         async def _handler(message):
             # Only care about server-originated notifications; forward resource updates into our buffer
-            if isinstance(message, _mcp_types.ServerNotification):
+            if isinstance(message, mcp_types.ServerNotification):
                 root = message.root
                 # ResourceUpdatedNotification (exact type) → buffer update
                 if (
-                    isinstance(root, T.ResourceUpdatedNotification)
+                    isinstance(root, mcp_types.ResourceUpdatedNotification)
                     and hasattr(root, "params")
                     and hasattr(root.params, "uri")
                 ):
                     try:
                         uri = str(root.params.uri)
                         # Debug breadcrumb
-                        logger = logging.getLogger("adgn.mcp")
                         logger.debug(
                             "ResourceUpdatedNotification: %s %s", server_name, uri
                         )
                         self.notify_resource_updated(server_name, uri)
                     except Exception as e:
-                        logging.getLogger("adgn.mcp").warning(
-                            "notify_resource_updated failed: %s", e
-                        )
+                        logger.warning("notify_resource_updated failed: %s", e)
             await anyio.lowlevel.checkpoint()
 
         return _handler
@@ -622,7 +618,6 @@ class McpManager:
                     sess = ClientSession(
                         read_stream=read,
                         write_stream=write,
-                        message_handler=self._make_message_handler(name),
                     )
                     await stack.enter_async_context(sess)
                     try:
@@ -703,7 +698,6 @@ class McpManager:
                     sess = ClientSession(
                         read_stream=read,
                         write_stream=write,
-                        message_handler=self._make_message_handler(name),
                     )
                     await stack.enter_async_context(sess)
                     try:

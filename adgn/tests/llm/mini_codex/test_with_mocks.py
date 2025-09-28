@@ -1,66 +1,45 @@
 from __future__ import annotations
 
-import json
-from typing import Any
-
-from mcp.server.fastmcp import FastMCP
 import pytest
 
-from adgn.llm.mcp.inproc_transport import make_inproc_slot_spec
 from adgn.llm.mini_codex.agent import MiniCodex
 from adgn.llm.mini_codex.aggregating_handler import AutoHandler
 from adgn.llm.mini_codex.loggers import RecordingHandler
 from adgn.llm.mini_codex.mcp_manager import McpManager
-from adgn.llm.openai_utils.model import (
-    FakeOpenAIModel,
-    ResponsesResult,
-    Usage,
-    FunctionCallOut,
-    AssistantResponseMessage,
+from adgn.llm.openai_utils.model import FakeOpenAIModel, BoundOpenAIModel
+from tests.llm.support.openai_mock import LIVE
+
+@pytest.mark.parametrize(
+    "client_mode",
+    [
+        pytest.param("mock", id="mock"),
+        pytest.param(LIVE, id="live", marks=pytest.mark.live_llm),
+    ],
 )
-
-
-def _make_echo_server() -> FastMCP:
-    mcp = FastMCP("echo")
-
-    @mcp.tool()
-    def echo(text: str) -> dict[str, Any]:
-        return {"ok": True, "echo": text}
-
-    return mcp
-
-
 @pytest.mark.asyncio
 async def test_minicodex_with_sdk_mocks_executes_tool_and_returns_text(
     responses_factory,
+    live_openai,
+    client_mode,
+    make_echo_spec,
 ) -> None:
     # Build in-proc FastMCP server spec named 'echo'
-    spec = make_inproc_slot_spec(_make_echo_server())
+    specs = make_echo_spec()
 
     # Responses sequence:
     # 1) Model asks to call mcp__echo__echo with {"text": "hi"}
     # 2) Model returns a final assistant message "done"
-    seq = [
-        ResponsesResult(
-            id="fc",
-            usage=Usage(input_tokens=0, output_tokens=0, total_tokens=0),
-            output=[
-                FunctionCallOut(
-                    call_id="call_1",
-                    name="mcp__echo__echo",
-                    arguments=json.dumps({"text": "hi"}),
-                )
-            ],
-        ),
-        ResponsesResult(
-            id="msg",
-            usage=Usage(input_tokens=0, output_tokens=1, total_tokens=1),
-            output=[AssistantResponseMessage(text="done")],
-        ),
-    ]
-    client = FakeOpenAIModel(seq)
+    if client_mode is not LIVE:
+        client = FakeOpenAIModel(
+            [
+                responses_factory.make_tool_call("mcp__echo__echo", {"text": "hi"}),
+                responses_factory.make_assistant_message("done"),
+            ]
+        )
+    else:
+        client = BoundOpenAIModel(client=live_openai, model=responses_factory.model)
 
-    async with McpManager({"echo": spec}) as mcp:
+    async with McpManager(specs) as mcp:
         # Minimal handler stack: use a RecordingHandler to capture function_call_output events
 
         rec = RecordingHandler()
@@ -69,7 +48,7 @@ async def test_minicodex_with_sdk_mocks_executes_tool_and_returns_text(
             model=responses_factory.model,
             mcp=mcp,
             system="test",
-            client=client,  # type: ignore[arg-type]
+            client=client,
             handlers=[AutoHandler(), rec],
         )
 
@@ -80,12 +59,6 @@ async def test_minicodex_with_sdk_mocks_executes_tool_and_returns_text(
     # Verify the handler saw a function_call_output
     fcos = [e for e in rec.records if e.get("kind") == "function_call_output"]
     assert fcos, f"no function_call_output event found: {rec.records}"
-    payload = (
-        json.loads(fcos[-1]["output"])
-        if isinstance(fcos[-1].get("output"), str)
-        else fcos[-1]["output"]
-    )
-    assert isinstance(payload, dict)
-    # Our echo server returns {ok: True, echo: "hi"}
-    assert payload.get("ok") is True
-    assert payload.get("echo") == "hi"
+    payload = fcos[-1].get("result") or {}
+    structured = payload.get("structuredContent") or {}
+    assert structured == {"ok": True, "echo": "hi"}

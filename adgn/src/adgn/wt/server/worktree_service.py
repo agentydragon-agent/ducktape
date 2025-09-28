@@ -7,7 +7,7 @@ import inspect
 import logging
 from pathlib import Path
 import shutil
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import psutil
 import pygit2
@@ -17,7 +17,9 @@ from ..shared.error_handling import ErrorContext, validate_worktree_name
 
 # PR types are referenced by protocol layer; not needed here directly
 from ..shared.models import ProcessInfo
-from ..shared.protocol import WorktreeID  # type: ignore[F401]
+
+if TYPE_CHECKING:
+    from ..shared.protocol import WorktreeID
 from .copy_strategies import get_copy_strategy
 from .git_manager import GitManager
 from .github_client import GitHubInterface

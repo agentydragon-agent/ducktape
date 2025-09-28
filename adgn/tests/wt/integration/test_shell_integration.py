@@ -25,7 +25,7 @@ import tempfile
 
 import pytest
 
-from adgn.wt.shell.install import main as emit_function
+from adgn.wt.shell import install
 
 # Global constants for paths
 PROJECT_ROOT = Path(__file__).parent.parent.parent
@@ -54,7 +54,7 @@ def run_shell_script(
 
     buf = io.StringIO()
     with contextlib.redirect_stdout(buf):
-        emit_function()
+        install.main()
     wt_fn = buf.getvalue()
 
     full_script = f"""#!/bin/bash

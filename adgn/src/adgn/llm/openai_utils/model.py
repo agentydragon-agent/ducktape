@@ -4,6 +4,7 @@ import json
 from dataclasses import dataclass
 from functools import singledispatch
 from typing import Any, Literal, Annotated, Protocol, Self, cast
+from enum import Enum
 from adgn.llm.openai_utils.retry import retry_decorator
 
 from openai import AsyncOpenAI
@@ -16,6 +17,13 @@ from openai.types.responses import (
 from openai.types.responses.response_reasoning_item import ResponseReasoningItem
 from openai.types.shared_params import Reasoning as ReasoningParams
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+
+class ReasoningEffort(str, Enum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
 
 # ------------------------------
 # Typed, tolerant input items we compose into Responses API "input"
@@ -98,7 +106,7 @@ class ToolChoiceFunction(BaseModel):
     model_config = ConfigDict(extra="allow")
 
 
-ToolChoice = Literal["auto", "required"] | ToolChoiceFunction
+ToolChoice = Literal["auto", "required", "none"] | ToolChoiceFunction
 
 
 class ResponsesRequest(BaseModel):
@@ -129,8 +137,9 @@ class ResponsesRequest(BaseModel):
             return x
 
         payload = self.model_dump(exclude_none=True)
-        if isinstance(payload.get("input"), list):
-            payload["input"] = [norm_item(it) for it in payload["input"]]  # type: ignore[index]
+        input_value = payload.get("input")
+        if isinstance(input_value, list):
+            payload["input"] = [norm_item(it) for it in input_value]
         return payload
 
 
@@ -213,15 +222,22 @@ class FunctionCallOutputOut(BaseModel):
             return cls(call_id=item.call_id, output=str(output))
 
 
-class AssistantMessagePart(BaseModel):
+class OutputText(BaseModel):
     text: str
     annotations: list[dict[str, Any]] | None = None
     model_config = ConfigDict(extra="allow")
 
 
-class AssistantResponseMessage(BaseModel):
-    kind: Literal["assistant_text"] = "assistant_text"
-    parts: list[AssistantMessagePart]
+class AssistantMessageOut(BaseModel):
+    """Adapter-level assistant message output (text parts only for now).
+
+    Matches the SDK's message content shape we actually use: a list of text parts
+    with optional annotations. This keeps a stable, Pydantic-validated shape
+    for downstream use and can be extended if we support non-text parts later.
+    """
+
+    kind: Literal["assistant_message"] = "assistant_message"
+    parts: list[OutputText]
     model_config = ConfigDict(extra="allow")
 
     @model_validator(mode="before")
@@ -252,20 +268,18 @@ class AssistantResponseMessage(BaseModel):
         return AssistantMessage(role="assistant", content=content_parts)
 
     @classmethod
-    def from_input_item(cls, item: AssistantMessage) -> AssistantResponseMessage:
-        parts: list[AssistantMessagePart] = []
+    def from_input_item(cls, item: AssistantMessage) -> "AssistantMessageOut":
+        parts: list[OutputText] = []
         for block in item.content or []:
             if isinstance(block, InputTextPart):
                 parts.append(
-                    AssistantMessagePart.model_validate(
-                        block.model_dump(exclude_none=True)
-                    )
+                    OutputText.model_validate(block.model_dump(exclude_none=True))
                 )
         return cls(parts=parts)
 
 
 ResponseOutItem = Annotated[
-    ReasoningOut | FunctionCallOut | AssistantResponseMessage,
+    ReasoningOut | FunctionCallOut | FunctionCallOutputOut | AssistantMessageOut,
     Field(discriminator="kind"),
 ]
 
@@ -286,17 +300,22 @@ def _(item: FunctionCallOut) -> InputItem:
 
 
 @response_out_item_to_input.register
-def _(item: AssistantResponseMessage) -> InputItem:
+def _(item: FunctionCallOutputOut) -> InputItem:
+    return item.to_input_item()
+
+
+@response_out_item_to_input.register
+def _(item: AssistantMessageOut) -> InputItem:
     return item.to_input_item()
 
 
 def _message_output_to_assistant(
     message: ResponseOutputMessage,
-) -> AssistantResponseMessage | None:
-    parts: list[AssistantMessagePart] = []
+) -> AssistantMessageOut | None:
+    parts: list[OutputText] = []
     for content_item in message.content:
         if isinstance(content_item, ResponseOutputText):
-            part = AssistantMessagePart(
+            part = OutputText(
                 text=content_item.text,
                 annotations=[
                     annotation.model_dump(exclude_none=True)
@@ -308,7 +327,10 @@ def _message_output_to_assistant(
             parts.append(part)
     if not parts:
         return None
-    return AssistantResponseMessage(parts=parts)
+    return AssistantMessageOut(parts=parts)
+
+
+# Removed legacy aliases; use AssistantMessageOut and OutputText explicitly
 
 
 class ResponsesResult(BaseModel):
@@ -418,9 +440,9 @@ class OpenAIModel:
 
 @dataclass
 class RetryingOpenAIModel:
-    """Retry-decorated wrapper around an OpenAIModel (our Pydantic interface)."""
+    """Retry-decorated wrapper around an OpenAIModel-like base implementing our protocol."""
 
-    base: OpenAIModel
+    base: OpenAIModelProto
 
     @retry_decorator()
     async def responses_create(self, req: ResponsesRequest) -> ResponsesResult:
@@ -437,14 +459,14 @@ class BoundOpenAIModel:
 
     client: AsyncOpenAI
     model: str
-    reasoning_effort: str | None = None
+    reasoning_effort: ReasoningEffort | None = None
 
     async def responses_create(self, req: ResponsesRequest) -> ResponsesResult:
         kwargs = req.to_kwargs()
-        if "model" not in kwargs:
-            kwargs["model"] = self.model
+        # Enforce bound-model contract: always use the instance's model
+        kwargs["model"] = self.model
         if self.reasoning_effort and "reasoning" not in kwargs:
-            kwargs["reasoning"] = {"effort": self.reasoning_effort}
+            kwargs["reasoning"] = {"effort": self.reasoning_effort.value}
         sdk_resp: Response = await self.client.responses.create(**kwargs)
         return convert_sdk_response(sdk_resp)
 
@@ -458,11 +480,11 @@ class OpenAIModelProto(Protocol):  # pragma: no cover - structural typing only
     async def responses_create(self, req: ResponsesRequest) -> ResponsesResult: ...
 
 
-class FakeOpenAIModel:
+class FakeOpenAIModel(OpenAIModelProto):
     def __init__(
         self, outputs: list[ResponsesResult] | tuple[ResponsesResult, ...]
     ) -> None:
-        self._outputs = list(outputs)
+        self._outputs: list[ResponsesResult] = list(outputs)
         self.calls = 0
         self.captured: list[ResponsesRequest] = []
 

@@ -5,6 +5,7 @@ from importlib import resources as ilres
 from pathlib import Path
 
 import docker
+from docker.errors import ImageNotFound
 
 from adgn.llm.mcp._shared.container_session import ContainerOptions
 from adgn.llm.mcp.docker_exec.server import make_container_exec_mcp
@@ -46,12 +47,13 @@ def build_critic_build_hint() -> str:
 
 def ensure_critic_image() -> None:
     """Ensure the default properties critic image exists; raise with build hint if missing."""
+
     dclient = docker.from_env()
     try:
         dclient.images.get(PROPERTIES_DOCKER_IMAGE)
-    except docker.errors.ImageNotFound as e:
+    except ImageNotFound as e:
         hint = build_critic_build_hint()
-        raise docker.errors.ImageNotFound(
+        raise ImageNotFound(
             f"Docker image not found: {PROPERTIES_DOCKER_IMAGE}.\nBuild it first:\n{hint}",
         ) from e
 

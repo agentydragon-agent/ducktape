@@ -2,12 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from adgn.llm.mcp.git_ro.server import (
-    DiffInput,
-    PatchResult,
-    TextPage,
-    TextSlice,
-)
+from adgn.llm.mcp.git_ro.server import DiffInput, TextPage, TextSlice
 
 
 @pytest.mark.asyncio
@@ -20,7 +15,7 @@ async def test_git_diff_patch_first_page(typed_git_ro) -> None:
                 slice=TextSlice(offset_chars=0, max_chars=2000),
             )
         )
-        assert isinstance(union, PatchResult)
+        assert isinstance(union, TextPage)
         # Page fields are on the union directly
         assert union.truncated is True
         assert isinstance(union.next_offset, int)

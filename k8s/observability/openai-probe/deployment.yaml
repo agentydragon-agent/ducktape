@@ -41,6 +41,12 @@ spec:
             - "--continuous"
             - "--max-tokens"
             - "100"
+            - "--fast-qps"
+            - "0.3"
+            - "--slow-qps"
+            - "0.05"
+            - "--drop-regex"
+            - '(?i)(:ft:|\bft-\b|\b-ft\b|fine[-_ ]?tune|fine[-_ ]?tuned)|^ft:|\b(ada|curie|babbage|davinci|d1[26])\b|\bgpt[-_ ]?3(\b|[.-])|(?<![a-z0-9])gpt[-_ ]?4o(?![a-z0-9])|\bgpt[-_ ]?4\.1-(mini|nano)\b|\bgpt[-_ ]?5-(mini|nano)\b|\bo[13]-mini\b|-rm-'
             - "--tag"
             - "key_prefix=t9f"
             - "--tag"

@@ -2,21 +2,15 @@ from __future__ import annotations
 
 import logging
 from concurrent.futures import CancelledError
-from types import SimpleNamespace
-
 from fastapi.testclient import TestClient
 import pytest
 from pydantic import TypeAdapter
-from adgn.llm.openai_utils.model import (
-    FakeOpenAIModel,
-    ResponsesResult,
-    Usage,
-    AssistantResponseMessage,
-)
+from adgn.llm.openai_utils.model import FakeOpenAIModel
 
 from adgn.llm.logging_config import configure_logging
 from adgn.llm.mini_codex.agent import MiniCodex
 from adgn.llm.mini_codex.aggregating_handler import AutoHandler
+from adgn.llm.mini_codex.mcp_manager import McpManager
 from adgn.llm.mini_codex.ui.protocol import Envelope, Accepted, AssistantText
 from adgn.llm.mini_codex.ui.server import create_app
 
@@ -24,6 +18,7 @@ from adgn.llm.mini_codex.ui.server import create_app
 @pytest.mark.timeout(5)
 def test_ui_websocket_roundtrip_with_mocked_openai(
     monkeypatch: pytest.MonkeyPatch,
+    responses_factory,
 ) -> None:
     """
     Use FastAPI TestClient against a fresh create_app() instance. Attach a MiniCodex
@@ -32,18 +27,10 @@ def test_ui_websocket_roundtrip_with_mocked_openai(
     """
 
     # Build a facade fake client that returns a single assistant text
-    model_client = FakeOpenAIModel(
-        [
-            ResponsesResult(
-                id="test-id",
-                usage=Usage(input_tokens=0, output_tokens=1, total_tokens=1),
-                output=[AssistantResponseMessage(text="pong")],
-            )
-        ]
-    )
+    model_client = FakeOpenAIModel([responses_factory.make_assistant_message("pong")])
 
     # 3) Build a fresh app and attach a real McpManager + MiniCodex on the TestClient loop
-    app = create_app()
+    app = create_app(require_static_assets=False)
 
     configure_logging()
     for h in logging.getLogger().handlers:
@@ -52,30 +39,13 @@ def test_ui_websocket_roundtrip_with_mocked_openai(
     logging.getLogger("mini_codex.ui").setLevel(logging.INFO)
 
     with TestClient(app) as client:
-        # Enter/exit the async manager on the TestClient's anyio portal loop
-        # Minimal in-proc MCP stub for this UI roundtrip (no tool calls expected)
-        class DummyMcp:
-            @property
-            def server_names(self) -> list[str]:
-                return []
-
-            async def sampling_snapshot(self):
-                return SimpleNamespace(servers=[], tools=[])
-
-            async def list_tools(self):  # pragma: no cover
-                return []
-
-            async def call_tool_namespaced(
-                self, name: str, args_json: str | None
-            ):  # pragma: no cover
-                raise AssertionError("call_tool should not be invoked in this test")
-
-        mcp = DummyMcp()
+        mgr = McpManager({})
         try:
+            client.portal.call(mgr.__aenter__)
             agent = client.portal.call(
                 MiniCodex.create,
                 model="test-model",
-                mcp=mcp,
+                mcp=mgr,
                 system="You are a test agent.",
                 client=model_client,
                 handlers=[AutoHandler()],
@@ -121,3 +91,8 @@ def test_ui_websocket_roundtrip_with_mocked_openai(
         except Exception:  # pragma: no cover
             # Ignore unexpected teardown errors from TestClient/portal
             pass
+        finally:
+            try:
+                client.portal.call(mgr.__aexit__, None, None, None)
+            except Exception:  # pragma: no cover
+                pass

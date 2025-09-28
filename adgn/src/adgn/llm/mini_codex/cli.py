@@ -345,9 +345,9 @@ def dev(
         app_fastapi.state.agent_factory = _agent_factory
 
         # Run uvicorn (restart this command when backend changes for now)
-        import uvicorn as _uv
+        import uvicorn
 
-        _uv.run(app_fastapi, host=host, port=backend_port, log_level="debug")
+        uvicorn.run(app_fastapi, host=host, port=backend_port, log_level="debug")
     finally:
         with contextlib.suppress(Exception):
             vite_proc.terminate()

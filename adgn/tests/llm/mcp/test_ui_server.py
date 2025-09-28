@@ -25,10 +25,11 @@ async def test_ui_send_message_and_end_turn_bus(bus) -> None:
         client = TypedClient.from_server(server, sess)
 
         # Send a markdown message
-        UiMsgIn = client.models["send_message"].Input or UiMessage  # type: ignore[attr-defined]
-        UiMsgOut = client.models["send_message"].Output or UiMessage  # type: ignore[attr-defined]
+        send_models = client.models["send_message"]
+        UiMsgIn = send_models.Input or UiMessage
+        UiMsgOut = send_models.Output or UiMessage
         msg = UiMsgIn(mime="text/markdown", content="**hello**")
-        out: UiMsgOut = await client.send_message(msg)  # type: ignore[attr-defined]
+        out: UiMsgOut = await client.send_message(msg)
         assert out.mime == "text/markdown" and out.content == "**hello**"
 
         drained = bus.drain_messages()
@@ -36,8 +37,10 @@ async def test_ui_send_message_and_end_turn_bus(bus) -> None:
         assert drained[0].content == "**hello**"
 
         # Request end_turn
-        EndIn = client.models["end_turn"].Input  # type: ignore[attr-defined]
-        await client.end_turn(EndIn())  # type: ignore[attr-defined]
+        end_models = client.models["end_turn"]
+        EndIn = end_models.Input
+        assert EndIn is not None
+        await client.end_turn(EndIn())
         # bus flag is set and an UiEndTurn item was queued
         assert bus.end_turn_requested is True
         assert any(isinstance(x, UiEndTurn) for x in bus.drain_messages())

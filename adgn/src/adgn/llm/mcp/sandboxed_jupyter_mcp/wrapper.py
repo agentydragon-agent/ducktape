@@ -35,8 +35,9 @@ def _ensure_dir(p: Path) -> None:
 
 
 def _ensure_document_id(workspace: Path, document_id: str | None) -> str:
-    if document_id:
-        p = workspace / document_id
+    if document_id is not None:
+        resolved_id = document_id
+        target_path = workspace / document_id
     else:
         rel = (
             Path(".mcp")
@@ -48,13 +49,13 @@ def _ensure_document_id(workspace: Path, document_id: str | None) -> str:
                 + ".ipynb"
             )
         )
-        p = workspace / rel
-        document_id = str(rel)
-    p.parent.mkdir(parents=True, exist_ok=True)
-    if p.exists():
-        raise FileExistsError(f"Notebook already exists: {p}")
+        resolved_id = str(rel)
+        target_path = workspace / rel
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    if target_path.exists():
+        raise FileExistsError(f"Notebook already exists: {target_path}")
     kernelspec = {"name": "python3", "display_name": "Python 3", "language": "python"}
-    p.write_text(
+    target_path.write_text(
         json.dumps(
             {
                 "cells": [],
@@ -66,7 +67,7 @@ def _ensure_document_id(workspace: Path, document_id: str | None) -> str:
             },
         ),
     )
-    return document_id  # type: ignore[return-value]
+    return resolved_id
 
 
 # Docker mode helper (unchanged behavior aside from workspace/run_root coming from CLI)

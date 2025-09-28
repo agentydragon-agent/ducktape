@@ -9,6 +9,8 @@ import pluggy
 PROJECT_NAME = "wt"
 ENTRYPOINT_GROUP = "wt.plugins"
 
+logger = logging.getLogger(__name__)
+
 
 class _Spec:
     @pluggy.HookspecMarker(PROJECT_NAME)
@@ -43,8 +45,7 @@ def get_manager(config) -> pluggy.PluginManager:
     pm.add_hookspecs(_Spec)
     pm.register(_Impl())
 
-    logger = logging.getLogger(__name__)
-    for ep in importlib_metadata.entry_points().select(group=ENTRYPOINT_GROUP):  # type: ignore[attr-defined]
+    for ep in importlib_metadata.entry_points(group=ENTRYPOINT_GROUP):
         # Only catch expected plugin loading errors; let programming errors crash
         try:
             pm.register(ep.load())

@@ -1,13 +1,9 @@
 from __future__ import annotations
 
-import json
-from typing import Any
-
-from mcp import types as mcp_types
-from mcp.server.fastmcp import FastMCP
 import pytest
 
-from adgn.llm.mcp.inproc_transport import make_inproc_slot_spec
+from mcp import types as mcp_types
+
 from adgn.llm.mini_codex.agent import MiniCodex
 from adgn.llm.mini_codex.aggregating_handler import AutoHandler
 from adgn.llm.mini_codex.handler import (
@@ -18,17 +14,6 @@ from adgn.llm.mini_codex.handler import (
 from adgn.llm.mini_codex.loggers import RecordingHandler
 from adgn.llm.mini_codex.mcp_manager import McpManager
 from adgn.llm.openai_utils.model import FakeOpenAIModel
-
-
-def _make_spy_server(counter: list[str]) -> FastMCP:
-    mcp = FastMCP("spy")
-
-    @mcp.tool()
-    def echo(text: str) -> dict[str, Any]:
-        counter.append(text)
-        return {"ok": True, "echo": text}
-
-    return mcp
 
 
 class InjectHandler(AutoHandler):
@@ -53,20 +38,15 @@ class AbortHandler(AutoHandler):
 @pytest.mark.asyncio
 async def test_before_tool_call_inject_result_does_not_call_underlying_tool(
     fake_openai_client_factory,
-    tool_call_response_factory,
-    assistant_response_factory,
     responses_factory,
+    make_spy_spec,
 ) -> None:
     counter: list[str] = []
-    spec = make_inproc_slot_spec(_make_spy_server(counter))
+    specs = make_spy_spec(counter)
 
     seq = [
-        responses_factory.make_tool_call_response(
-            call_id="call-1",
-            name="mcp__spy__echo",
-            arguments={"text": "hi"},
-        ),
-        responses_factory.make_assistant_text_response(text="done"),
+        responses_factory.make_tool_call("mcp__spy__echo", {"text": "hi"}),
+        responses_factory.make_assistant_message("done"),
     ]
     client = FakeOpenAIModel(seq)
 
@@ -76,7 +56,7 @@ async def test_before_tool_call_inject_result_does_not_call_underlying_tool(
         structuredContent={"ok": True, "injected": "yes"},
     )
 
-    async with McpManager({"spy": spec}) as mcp:
+    async with McpManager(specs) as mcp:
         rec = RecordingHandler()
         inj = InjectHandler(result=injected_result)
 
@@ -84,7 +64,7 @@ async def test_before_tool_call_inject_result_does_not_call_underlying_tool(
             model=responses_factory.model,
             mcp=mcp,
             system="test",
-            client=client,  # type: ignore[arg-type]
+            client=client,
             handlers=[inj, rec],
         )
 
@@ -96,37 +76,27 @@ async def test_before_tool_call_inject_result_does_not_call_underlying_tool(
     # Verify the handler saw a function_call_output with our injected payload
     fcos = [e for e in rec.records if e.get("kind") == "function_call_output"]
     assert fcos, f"no function_call_output event found: {rec.records}"
-    payload = (
-        json.loads(fcos[-1]["output"])
-        if isinstance(fcos[-1].get("output"), str)
-        else fcos[-1]["output"]
-    )
-    assert payload.get("ok") is True
-    assert payload.get("injected") == "yes"
+    payload = fcos[-1].get("result") or {}
+    structured = payload.get("structuredContent") or {}
+    assert structured == {"ok": True, "injected": "yes"}
 
 
 @pytest.mark.asyncio
 async def test_before_tool_call_abort_turn_synthesizes_denied_and_aborted_outputs(
     fake_openai_client_factory,
-    tool_call_response_factory,
-    assistant_response_factory,
     responses_factory,
+    make_spy_spec,
 ) -> None:
     counter: list[str] = []
-    spec = make_inproc_slot_spec(_make_spy_server(counter))
+    specs = make_spy_spec(counter)
 
     seq = [
-        tool_call_response_factory(
-            "dummy-model",
-            "call-1",
-            "mcp__spy__echo",
-            {"text": "hi"},
-        ),
-        assistant_response_factory("dummy-model", "done"),
+        responses_factory.make_tool_call("mcp__spy__echo", {"text": "hi"}),
+        responses_factory.make_assistant_message("done"),
     ]
     client = FakeOpenAIModel(seq)
 
-    async with McpManager({"spy": spec}) as mcp:
+    async with McpManager(specs) as mcp:
         rec = RecordingHandler()
         abort = AbortHandler()
 
@@ -134,7 +104,7 @@ async def test_before_tool_call_abort_turn_synthesizes_denied_and_aborted_output
             model=responses_factory.model,
             mcp=mcp,
             system="test",
-            client=client,  # type: ignore[arg-type]
+            client=client,
             handlers=[abort, rec],
         )
 
@@ -145,13 +115,9 @@ async def test_before_tool_call_abort_turn_synthesizes_denied_and_aborted_output
     assert fcos, f"no function_call_output event found: {rec.records}"
 
     # The denied payload should be the last emitted (only call)
-    payload = (
-        json.loads(fcos[-1]["output"])
-        if isinstance(fcos[-1].get("output"), str)
-        else fcos[-1]["output"]
-    )
-    assert payload.get("ok") is False
-    assert "User denied" in payload.get("error", "")
+    payload = fcos[-1].get("result") or {}
+    structured = payload.get("structuredContent") or {}
+    assert structured == {"ok": False, "error": "test-deny"}
 
     # Underlying tool should not have been called
     assert counter == []

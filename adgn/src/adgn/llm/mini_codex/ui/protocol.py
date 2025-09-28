@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -95,7 +95,7 @@ class ToolCall(BaseModel):
 class FunctionCallOutput(BaseModel):
     type: Literal["function_call_output"] = "function_call_output"
     call_id: str
-    output: str  # JSON string of MCP CallToolResult
+    result: dict[str, Any]
 
     model_config = ConfigDict(extra="forbid")
 

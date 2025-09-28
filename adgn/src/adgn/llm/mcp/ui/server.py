@@ -41,7 +41,7 @@ def make_ui_mcp(name: str, bus: UiBus) -> SafeFastMCP:
         description="Send a message to the UI",
         structured_output=True,
     )
-    def send_message(input: SendMessageInput) -> UiMessage:  # type: ignore[valid-type]
+    def send_message(input: SendMessageInput) -> UiMessage:
         msg = UiMessage(mime=input.mime, content=input.content)
         bus.push_message(msg)
         return msg
@@ -53,10 +53,10 @@ def make_ui_mcp(name: str, bus: UiBus) -> SafeFastMCP:
         description="Tell the UI to end the current turn",
         structured_output=True,
     )
-    def end_turn(input: EndTurnInput) -> UiEndTurn:  # type: ignore[valid-type]
+    def end_turn(input: EndTurnInput) -> UiEndTurn:
         bus.push_end_turn()
         return UiEndTurn()
 
     # Expose the bus for wiring (agent factory can stash it)
-    mcp._ui_bus = bus  # type: ignore[attr-defined]
+    setattr(mcp, "_ui_bus", bus)
     return mcp

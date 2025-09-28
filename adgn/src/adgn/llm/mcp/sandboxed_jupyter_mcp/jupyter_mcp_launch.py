@@ -10,6 +10,7 @@ import shutil
 import socket
 import subprocess
 import sys
+from typing import IO
 import time
 
 
@@ -57,13 +58,15 @@ def _start_jupyter_server(
         str(config_dir / "jupyter_server_config.py"),
     ]
 
+    out_f: IO[str] | int
+    err_f: IO[str] | int
     if log_dir:
         log_dir.mkdir(parents=True, exist_ok=True)
         out_f = (log_dir / "jupyter_server.out").open("a", buffering=1)
         err_f = (log_dir / "jupyter_server.err").open("a", buffering=1)
     else:
-        out_f = subprocess.DEVNULL  # type: ignore[assignment]
-        err_f = subprocess.DEVNULL  # type: ignore[assignment]
+        out_f = subprocess.DEVNULL
+        err_f = subprocess.DEVNULL
 
     proc = subprocess.Popen(cmd, stdout=out_f, stderr=err_f, env=env)
 

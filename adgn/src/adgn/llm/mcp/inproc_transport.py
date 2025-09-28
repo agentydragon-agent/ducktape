@@ -1,32 +1,20 @@
 from __future__ import annotations
 
 from contextlib import AsyncExitStack, asynccontextmanager
-import anyio
+from typing import cast
 
-from mcp.client.session import ClientSession
+import anyio
+from mcp.client.session import ClientSession, MessageHandlerFnT
 from mcp.server.fastmcp import FastMCP
-from mcp.server.lowlevel.server import NotificationOptions
+from mcp.server.lowlevel.server import NotificationOptions, Server
 from mcp.shared.memory import create_client_server_memory_streams
 
 from adgn.llm.mcp.types import ServerSlotSpec
 
 
-from typing import Awaitable as _Awaitable, Callable as _Callable
-from mcp.shared.session import RequestResponder as _RequestResponder
-from mcp import types as _types
-
-
 def make_inproc_slot_spec(
     app: FastMCP,
-    message_handler: _Callable[
-        [
-            _RequestResponder[_types.ServerRequest, _types.ClientResult]
-            | _types.ServerNotification
-            | Exception
-        ],
-        _Awaitable[None],
-    ]
-    | None = None,
+    message_handler: MessageHandlerFnT | None = None,
 ) -> ServerSlotSpec:
     """Create a ServerSlotSpec for an in-proc FastMCP server.
 
@@ -51,11 +39,12 @@ def make_inproc_slot_spec(
             # startup and shutdown occur within the same cancel scope as the
             # client session, avoiding cross-task scope mismatches.
             tg = await stack.enter_async_context(anyio.create_task_group())
-            init_opts = app._mcp_server.create_initialization_options(  # type: ignore[attr-defined]
+            low_server = cast(Server, getattr(app, "_mcp_server"))
+            init_opts = low_server.create_initialization_options(
                 notification_options=NotificationOptions(resources_changed=True)
             )
             tg.start_soon(
-                app._mcp_server.run,  # type: ignore[attr-defined]
+                low_server.run,
                 server_read,
                 server_write,
                 init_opts,

@@ -11,7 +11,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 from collections import Counter
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import Enum
@@ -23,10 +23,11 @@ import re
 import sys
 import time
 from typing import Any, Final, Literal, cast
+from types import MappingProxyType
 from pathlib import Path
 
 from aiolimiter import AsyncLimiter
-from adgn.llm.client_factory import _get_async_openai as _factory_async_client
+from adgn.llm.client_factory import _get_async_openai
 from openai import AsyncOpenAI
 from openai._exceptions import APIStatusError
 from openai.types.responses.function_tool_param import FunctionToolParam
@@ -35,7 +36,7 @@ from rich import box
 from rich.console import Group
 from rich.table import Table
 from platformdirs import user_cache_dir
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from aiohttp import web
 from textual.app import App, ComposeResult
 from textual.widgets import Header, Footer, Static
@@ -48,18 +49,12 @@ import asyncpg
 
 INF: float = float("inf")
 
-# Additional exclusion regex for model IDs (beyond family drop rules)
-# Adjust this to cover fine-tunes and other unwanted variants.
-EXCLUDE_MODEL_ID_RE = re.compile(
-    r"(?i)(:ft:|\bft-\b|\b-ft\b|fine[-_ ]?tune|fine[-_ ]?tuned)"
-)
+# Compiled at startup from --drop-regex (see _async_main). If None, no drops by regex.
+DROP_MODEL_ID_RE: re.Pattern[str] | None = None
 
 # Smart policy constants (hardcoded)
 OK_LOOKBACK = timedelta(hours=24)
 MIN_INTERVAL = timedelta(minutes=10)
-SLOW_PROB = 0.1
-FAST_QPS = 0.3
-SLOW_QPS = 0.05
 FAIL_REPEATS = 1
 
 # Health server settings
@@ -87,6 +82,15 @@ def _ensure_cache_dir() -> None:
 
 def _iso_ts() -> str:
     return datetime.now(UTC).isoformat()
+
+
+def _log_event(event_type: str, **fields: Any) -> None:
+    try:
+        payload = {"ts": datetime.now(UTC).timestamp(), "type": event_type, **fields}
+        print(json.dumps(payload, separators=(",", ":")), flush=True)
+    except Exception:
+        # Never let logging crash the probe
+        pass
 
 
 class ErrorInfo(BaseModel):
@@ -152,68 +156,8 @@ async def _get_db_pool() -> asyncpg.Pool:
 
 
 async def _init_database() -> None:
-    """Initialize database schema if needed."""
-    pool = await _get_db_pool()
-
-    schema_sql = """
-    -- Create table if not exists
-    CREATE TABLE IF NOT EXISTS probe_results (
-      -- Timing
-      start_time TIMESTAMPTZ NOT NULL,
-      end_time TIMESTAMPTZ NOT NULL,
-      latency_s DOUBLE PRECISION NOT NULL,
-
-      -- Model info
-      model TEXT NOT NULL,
-      family TEXT NOT NULL,
-      kind TEXT NOT NULL,  -- 'chat' or 'responses'
-
-      -- Result
-      success BOOLEAN NOT NULL,
-
-      -- Error details (NULL if success)
-      error_code TEXT,
-      error_message TEXT,
-      error_status INT,
-
-      -- Chat API response fields (NULL unless kind='chat' and success=true)
-      chat_response_content TEXT,
-      chat_response_role TEXT,
-      chat_finish_reason TEXT,
-      chat_completion_tokens INT,
-      chat_prompt_tokens INT,
-
-      -- Responses API fields (NULL unless kind='responses' and success=true)
-      responses_text TEXT,
-      responses_finish_reason TEXT,
-      responses_tokens INT,
-
-      -- Request metadata
-      request_id TEXT,
-      api_key_suffix TEXT
-    );
-
-    -- Create hypertable if TimescaleDB extension is available
-    DO $$
-    BEGIN
-        IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'timescaledb') THEN
-            -- Only create hypertable if it doesn't exist
-            IF NOT EXISTS (SELECT 1 FROM timescaledb_information.hypertables WHERE hypertable_name = 'probe_results') THEN
-                PERFORM create_hypertable('probe_results', 'start_time');
-            END IF;
-        END IF;
-    END
-    $$;
-
-    -- Create indexes if they don't exist
-    CREATE INDEX IF NOT EXISTS idx_probe_results_model_time ON probe_results (model, start_time DESC);
-    CREATE INDEX IF NOT EXISTS idx_probe_results_family_kind_time ON probe_results (family, kind, start_time DESC);
-    CREATE INDEX IF NOT EXISTS idx_probe_results_error ON probe_results (success, start_time DESC) WHERE NOT success;
-    CREATE INDEX IF NOT EXISTS idx_probe_results_error_code ON probe_results (error_code, start_time DESC) WHERE error_code IS NOT NULL;
-    """
-
-    async with pool.acquire() as conn:
-        await conn.execute(schema_sql)
+    """Ensure database connectivity; schema managed externally (k8s migration)."""
+    await _get_db_pool()
 
 
 async def _write_probe_result(res: "ProbeResult") -> None:
@@ -224,49 +168,48 @@ async def _write_probe_result(res: "ProbeResult") -> None:
     pool = await _get_db_pool()
 
     # Extract response data based on API type
-    chat_content = None
-    chat_role = None
-    chat_finish_reason = None
-    chat_completion_tokens = None
-    chat_prompt_tokens = None
-    responses_text = None
-    responses_finish_reason = None
-    responses_tokens = None
+    chat_json: Any | None = None
+    responses_json: Any | None = None
 
     if res.ok and res.raw:
-        # Store the full response JSON
-        import json
-        if hasattr(res.raw, 'model_dump'):
-            response_json = json.dumps(res.raw.model_dump(exclude_none=False), indent=None, separators=(',', ':'))
-        else:
-            response_json = json.dumps(res.raw, indent=None, separators=(',', ':'))
+
+        def _as_json_dict(obj: Any) -> dict[str, Any] | None:
+            # If SDK returns Pydantic models, unconditionally model_dump
+            if hasattr(obj, "model_dump") and callable(getattr(obj, "model_dump")):
+                return cast(dict[str, Any], obj.model_dump(exclude_none=False))
+            if isinstance(obj, dict):
+                return obj
+            return None
 
         if res.kind == "chat":
-            # Store full JSON and extract metadata fields
-            chat_content = response_json
-            if hasattr(res.raw, 'choices') and res.raw.choices:
-                choice = res.raw.choices[0]
-                if hasattr(choice, 'message'):
-                    chat_role = choice.message.role
-                    chat_finish_reason = choice.finish_reason
-            if hasattr(res.raw, 'usage'):
-                chat_completion_tokens = res.raw.usage.completion_tokens
-                chat_prompt_tokens = res.raw.usage.prompt_tokens
+            chat_json = _as_json_dict(res.raw)
         elif res.kind == "responses":
-            # Store full JSON and extract metadata fields
-            responses_text = response_json
-            if hasattr(res.raw, 'finish_reason'):
-                responses_finish_reason = res.raw.finish_reason
+            responses_json = _as_json_dict(res.raw)
             # Note: responses API may not have token counts in the same format
 
     # Extract error information
     error_code = None
-    error_message = None
     error_status = None
+    error_body_json: Any | None = None
     if not res.ok and res.exc:
-        error_message = str(res.exc)
-        if hasattr(res.exc, 'status_code'):
+        if hasattr(res.exc, "status_code"):
             error_status = res.exc.status_code
+        # Strict: prefer HTTP response JSON from OpenAI SDK when available
+        if isinstance(res.exc, APIStatusError):
+            resp = getattr(res.exc, "response", None)
+            if resp is not None:
+                try:
+                    parsed = resp.json()
+                    # Store full JSON from HTTP body (commonly {'error': {...}})
+                    if isinstance(parsed, dict):
+                        error_body_json = parsed
+                except Exception:
+                    pass
+            if error_body_json is None:
+                # Fallback to SDK-provided body when it is already a dict
+                body = res.exc.body
+                if isinstance(body, dict):
+                    error_body_json = body
         # Classify error
         classification = res.error_classification
         if classification:
@@ -278,46 +221,70 @@ async def _write_probe_result(res: "ProbeResult") -> None:
 
     # Get request ID
     request_id = None
-    if hasattr(res.exc, 'request_id'):
-        request_id = res.exc.request_id
-    elif res.ok and res.raw and hasattr(res.raw, 'id'):
-        request_id = res.raw.id
+    exc = res.exc
+    if exc is not None and hasattr(exc, "request_id"):
+        request_id = exc.request_id
+    elif res.ok:
+        # Prefer the JSON payload if available
+        if isinstance(chat_json, dict) and chat_json.get("id"):
+            request_id = str(chat_json.get("id"))
+        elif isinstance(responses_json, dict) and responses_json.get("id"):
+            request_id = str(responses_json.get("id"))
 
     insert_sql = """
     INSERT INTO probe_results (
         start_time, end_time, latency_s, model, family, kind, success,
-        error_code, error_message, error_status,
-        chat_response_content, chat_response_role, chat_finish_reason,
-        chat_completion_tokens, chat_prompt_tokens,
-        responses_text, responses_finish_reason, responses_tokens,
+        error_code, error_status, error_body,
+        chat_response,
+        responses_body,
         request_id, api_key_suffix
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+    ) VALUES (
+        $1, $2, $3, $4, $5, $6, $7,
+        $8, $9, $10::jsonb,
+        $11::jsonb,
+        $12::jsonb, $13, $14
+    )
     """
 
     async with pool.acquire() as conn:
-        await conn.execute(
-            insert_sql,
-            res.start_ts,          # start_time
-            res.end_ts,            # end_time
-            res.latency_s,         # latency_s
-            res.model_id,          # model
-            family_of(res.model_id).value,  # family
-            res.kind,              # kind
-            res.ok,                # success
-            error_code,            # error_code
-            error_message,         # error_message
-            error_status,          # error_status
-            chat_content,          # chat_response_content
-            chat_role,             # chat_response_role
-            chat_finish_reason,    # chat_finish_reason
-            chat_completion_tokens, # chat_completion_tokens
-            chat_prompt_tokens,    # chat_prompt_tokens
-            responses_text,        # responses_text
-            responses_finish_reason, # responses_finish_reason
-            responses_tokens,      # responses_tokens
-            request_id,            # request_id
-            api_key_suffix,        # api_key_suffix
-        )
+        # JSON encode dicts for jsonb columns
+        eb = json.dumps(error_body_json) if error_body_json is not None else None
+        cj = json.dumps(chat_json) if chat_json is not None else None
+        rj = json.dumps(responses_json) if responses_json is not None else None
+
+        try:
+            await conn.execute(
+                insert_sql,
+                res.start_ts,  # start_time
+                res.end_ts,  # end_time
+                res.latency_s,  # latency_s
+                res.model_id,  # model
+                family_of(res.model_id).value,  # family
+                res.kind,  # kind
+                res.ok,  # success
+                error_code,  # error_code
+                error_status,  # error_status
+                eb,  # error_body (as JSON string, cast to jsonb)
+                cj,  # chat_response (as JSON string, cast to jsonb)
+                rj,  # responses_body (as JSON string, cast to jsonb)
+                request_id,  # request_id
+                api_key_suffix,  # api_key_suffix
+            )
+            _log_event(
+                "db_write",
+                model=res.model_id,
+                kind=res.kind,
+                ok=res.ok,
+                has_error_body=bool(error_body_json),
+            )
+        except Exception as e:
+            _log_event(
+                "db_write_error",
+                model=res.model_id,
+                kind=res.kind,
+                error=str(e),
+            )
+            raise
 
 
 class _StreamRecordBase(BaseModel):
@@ -343,6 +310,20 @@ class StreamRecordError(_StreamRecordBase):
     error_str: str | None = None  # Error string for LogQL (code: message)
 
 
+class KindStatusEntry(BaseModel):
+    kind: str
+    recent_ok: bool
+
+
+class ModelSummary(BaseModel):
+    model: str
+    family: str
+    recent_ok: bool
+    recent_ok_by_kind: tuple[KindStatusEntry, ...]
+
+    model_config = ConfigDict(frozen=True)
+
+
 class ModelListRecord(BaseModel):
     ts: float
     type: Literal["models"] = "models"
@@ -350,6 +331,7 @@ class ModelListRecord(BaseModel):
     model: str
     family: str
     recent_ok: bool
+    recent_ok_by_kind: list[KindStatusEntry] | None = None
     tags: dict[str, str] | None = None
 
 
@@ -874,14 +856,7 @@ async def _probe_once(
 
 # Model family heuristic
 class Family(str, Enum):
-    LEGACY_ENGINES = "legacy-engines"
-    GPT_3 = "gpt-3"
-    GPT_4O = "gpt-4o"
-    GPT_41_MINI_NANO = "gpt-4.1-mini-nano"
-    GPT_5_MINI_NANO = "gpt-5-mini-nano"
-    O_MINI = "o-mini"
-    RM_MODELS = "rm-models"
-    # Kept/classifiable families
+    # Kept/classifiable families only
     GPT_5 = "gpt-5"
     O3 = "o3"
     O4_MINI = "o4-mini"
@@ -891,14 +866,6 @@ class Family(str, Enum):
 
 
 FAMILY_RULES: dict[Family, str] = {
-    # Dropped families (filtered out)
-    Family.LEGACY_ENGINES: r"\b(ada|curie|babbage|davinci|d1[26])\b",
-    Family.GPT_3: r"\bgpt[-_]?3(\b|[.-])",
-    Family.GPT_4O: r"(?<![a-z0-9])gpt[-_]?4o(?![a-z0-9])",
-    Family.GPT_41_MINI_NANO: r"\bgpt[-_]?4\.1-(mini|nano)\b",
-    Family.GPT_5_MINI_NANO: r"\bgpt[-_]?5-(mini|nano)\b",
-    Family.O_MINI: r"\bo[13]-mini\b",
-    Family.RM_MODELS: r"-rm-",
     # Kept/classifiable families
     Family.GPT_5: r"^gpt[-_]?5(?!-(mini|nano))",
     Family.O3: r"^o3(?!-mini)",
@@ -909,15 +876,7 @@ FAMILY_RULES: dict[Family, str] = {
 FAMILY_RES = {
     fam: re.compile(pattern, re.IGNORECASE) for fam, pattern in FAMILY_RULES.items()
 }
-FAMILY_DROP: set[Family] = {
-    Family.LEGACY_ENGINES,
-    Family.GPT_3,
-    Family.GPT_4O,
-    Family.GPT_41_MINI_NANO,
-    Family.GPT_5_MINI_NANO,
-    Family.O_MINI,
-    Family.RM_MODELS,
-}
+FAMILY_DROP: set[Family] = set()  # drop now handled by DROP_MODEL_ID_RE
 
 # Global family priority for ordering
 FAMILY_PRIORITY: list[Family] = [
@@ -937,11 +896,8 @@ def family_of(mid: str) -> Family:
 
 
 def is_excluded(mid: str) -> bool:
-    if family_of(mid) in FAMILY_DROP:
-        return True
-    if EXCLUDE_MODEL_ID_RE.search(mid):
-        return True
-    return False
+    global DROP_MODEL_ID_RE
+    return bool(DROP_MODEL_ID_RE.search(mid)) if DROP_MODEL_ID_RE is not None else False
 
 
 def priority_index(mid: str) -> int:
@@ -1105,7 +1061,10 @@ async def consume_stream_jsonl(
                 rec_ok.response = response_dict
                 # Add string representation for LogQL
                 import json
-                rec_ok.response_str = json.dumps(response_dict, separators=(",", ":"))[:500]  # Truncate to 500 chars
+
+                rec_ok.response_str = json.dumps(response_dict, separators=(",", ":"))[
+                    :500
+                ]  # Truncate to 500 chars
 
             print(rec_ok.model_dump_json(), flush=True)
         else:
@@ -1139,8 +1098,9 @@ async def consume_stream_jsonl(
             # Add error string for LogQL
             error_code = classification[0].value if classification else "UNKNOWN"
             error_msg = res.error_message or "Unknown error"
-            rec_err.error_str = f"{error_code}: {error_msg}"[:200]  # Truncate to 200 chars
-
+            rec_err.error_str = f"{error_code}: {error_msg}"[
+                :200
+            ]  # Truncate to 200 chars
 
             print(rec_err.model_dump_json(), flush=True)
 
@@ -1167,8 +1127,8 @@ class ProbeTUI(App):
         ("q", "quit", "Quit"),
     ]
 
-    show_fatal: bool = reactive(False)
-    family_idx: int = reactive(0)
+    show_fatal = reactive(False)
+    family_idx = reactive(0)
 
     def __init__(
         self,
@@ -1294,7 +1254,7 @@ class ProbeTUI(App):
         self.show_fatal = not self.show_fatal
         self._render_view()
 
-    def action_quit(self) -> None:
+    async def action_quit(self) -> None:
         self.exit()
 
     def action_next_family(self) -> None:
@@ -1310,7 +1270,7 @@ class ProbeTUI(App):
     @property
     def current_family(self) -> Family | None:
         if 0 <= self.family_idx < len(self.family_choices):
-            return self.family_choices[self.family_idx]
+            return cast(Family | None, self.family_choices[self.family_idx])
         return None
 
     def _filter_mid(self, mid: str) -> bool:
@@ -1596,97 +1556,86 @@ async def consume_stream_textual(
     await app.run_async()
 
 
-# ---------- History index (from cache) --------------------------------------
+# ---------- History lookups (Postgres-backed) --------------------------------------
 
 
-class ModelHistory(BaseModel):
+@dataclass(frozen=True)
+class KindHistory:
     last_seen: datetime | None = None
     last_ok: datetime | None = None
 
 
-def _parse_iso_ts(s: str | None) -> datetime | None:
-    if not s or not isinstance(s, str):
-        return None
-    return datetime.fromisoformat(s)
+HistoryKey = tuple[str, str]
 
 
-def load_history_index() -> dict[str, ModelHistory]:
-    """Build a history index from the JSONL cache.
+@dataclass(frozen=True)
+class HistorySnapshot:
+    data: Mapping[HistoryKey, KindHistory]
 
-    Returns per-model last_seen and last_ok UTC datetimes. Missing file yields empty index.
+    def get(self, model: str, kind: str) -> KindHistory | None:
+        return self.data.get((model, kind))
+
+
+PROBE_KINDS: tuple[str, ...] = ("responses", "chat")
+HISTORY_LOOKBACK = max(OK_LOOKBACK, MIN_INTERVAL)
+
+
+async def fetch_model_history(
+    models: Sequence[str],
+    *,
+    kinds: Sequence[str] | None = None,
+    now: datetime | None = None,
+) -> HistorySnapshot:
+    """Fetch per-model, per-kind history windows directly from Postgres."""
+
+    if not models:
+        return HistorySnapshot(MappingProxyType({}))
+
+    kinds = tuple(kinds or PROBE_KINDS)
+    if not kinds:
+        return HistorySnapshot(MappingProxyType({}))
+
+    now = now or datetime.now(UTC)
+    window_start = now - HISTORY_LOOKBACK
+
+    pool = await _get_db_pool()
+    query = """
+        SELECT
+            model,
+            kind,
+            max(start_time) AS last_seen,
+            max(start_time) FILTER (WHERE success) AS last_ok
+        FROM probe_results
+        WHERE model = ANY($1::text[])
+          AND kind = ANY($2::text[])
+          AND start_time >= $3
+        GROUP BY model, kind
     """
-    idx: dict[str, ModelHistory] = {}
-    if not _CACHE_FILE.exists():
-        return idx
-    with _CACHE_FILE.open("r", encoding="utf-8") as fh:
-        for line in fh:
-            line = line.strip()
-            if not line:
-                continue
-            rec = json.loads(line)
-            if not isinstance(rec, dict) or rec.get("type") != "event":
-                continue
-            mid = rec.get("model")
-            if not isinstance(mid, str):
-                continue
-            ts = _parse_iso_ts(rec.get("ts"))
-            ok = bool(rec.get("ok", False))
-            mh = idx.setdefault(mid, ModelHistory())
-            if ts and (mh.last_seen is None or ts > mh.last_seen):
-                mh.last_seen = ts
-            if ok and ts and (mh.last_ok is None or ts > mh.last_ok):
-                mh.last_ok = ts
-    return idx
+
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(query, list(models), list(kinds), window_start)
+
+    history: dict[HistoryKey, KindHistory] = {}
+    for row in rows:
+        history[(row["model"], row["kind"])] = KindHistory(
+            last_seen=row["last_seen"],
+            last_ok=row["last_ok"],
+        )
+    return HistorySnapshot(MappingProxyType(history))
 
 
-# ---------- Selection & rate limiting helpers -------------------------------
-
-
-def classify_model(
-    mid: str, hist: dict[str, "ModelHistory"], now: datetime
+def classify_status(
+    info: KindHistory | None,
+    *,
+    now: datetime,
 ) -> tuple[bool, bool]:
-    """Return (recent_ok, seen_recent) for a model based on history and constants.
+    """Return (recent_ok, seen_recent) flags for a given history record."""
 
-    - recent_ok: last OK within OK_LOOKBACK
-    - seen_recent: any event within MIN_INTERVAL (used to skip probing)
-    """
-    mh = hist.get(mid)
-    last_seen_recent = False
-    recent_ok = False
-    if mh and mh.last_seen is not None and mh.last_seen > now - MIN_INTERVAL:
-        last_seen_recent = True
-    if mh and mh.last_ok is not None and mh.last_ok > now - OK_LOOKBACK:
-        recent_ok = True
-    return recent_ok, last_seen_recent
-
-
-def select_models(
-    filtered: list[str], hist: dict[str, "ModelHistory"], now: datetime
-) -> tuple[list[str], list[str]]:
-    """Partition filtered models into (selected_fast, selected_slow).
-
-    - Fast: models recently OK and not seen within MIN_INTERVAL
-    - Slow: sample from others with probability SLOW_PROB (ensure at least one if any)
-    """
-    selected_fast: list[str] = []
-    selected_slow: list[str] = []
-    slow_pool: list[str] = []
-    for mid in filtered:
-        recent_ok, seen_recent = classify_model(mid, hist, now)
-        if seen_recent:
-            continue
-        if recent_ok:
-            selected_fast.append(mid)
-        else:
-            slow_pool.append(mid)
-            if random.random() < SLOW_PROB:
-                selected_slow.append(mid)
-    if slow_pool and not selected_slow:
-        selected_slow.append(random.choice(slow_pool))
-
-    selected_fast.sort(key=lambda m: (priority_index(m), m))
-    selected_slow.sort(key=lambda m: (priority_index(m), m))
-    return selected_fast, selected_slow
+    last_seen = info.last_seen if info else None
+    last_ok = info.last_ok if info else None
+    seen_recent = bool(last_seen and last_seen > now - MIN_INTERVAL)
+    recent_ok = bool(last_ok and last_ok > now - OK_LOOKBACK)
+    return recent_ok, seen_recent
 
 
 def make_limiter(qps: float) -> AsyncLimiter:
@@ -1696,37 +1645,51 @@ def make_limiter(qps: float) -> AsyncLimiter:
 
 def parse_tags_cli(items: list[str]) -> dict[str, str]:
     out: dict[str, str] = {}
-    for t in items:
-        if isinstance(t, str) and "=" in t:
-            k, v = t.split("=", 1)
-            if k:
-                out[k] = v
+    for value in items:
+        if isinstance(value, str) and "=" in value:
+            key, val = value.split("=", 1)
+            if key:
+                out[key] = val
     return out
 
 
 def build_models_summary(
-    filtered: list[str], hist: dict[str, "ModelHistory"]
-) -> list[dict[str, Any]]:
-    now = datetime.now(UTC)
-    summary: list[dict[str, Any]] = []
+    filtered: Sequence[str],
+    history: HistorySnapshot,
+    *,
+    now: datetime,
+) -> list[ModelSummary]:
+    summary: list[ModelSummary] = []
     for mid in sorted(filtered, key=lambda m: (priority_index(m), m)):
-        ro, _ = classify_model(mid, hist, now)
+        per_kind: list[KindStatusEntry] = []
+        for kind in PROBE_KINDS:
+            recent_ok, _ = classify_status(history.get(mid, kind), now=now)
+            per_kind.append(KindStatusEntry(kind=kind, recent_ok=recent_ok))
         summary.append(
-            {
-                "model": mid,
-                "family": family_of(mid).value,
-                "recent_ok": ro,
-            }
+            ModelSummary(
+                model=mid,
+                family=family_of(mid).value,
+                recent_ok=any(entry.recent_ok for entry in per_kind),
+                recent_ok_by_kind=tuple(per_kind),
+            )
         )
     return summary
 
 
-def list_models_json(filtered: list[str], hist: dict[str, "ModelHistory"]) -> str:
-    return json.dumps(build_models_summary(filtered, hist), indent=2)
+def list_models_json(
+    filtered: Sequence[str],
+    history: HistorySnapshot,
+    *,
+    now: datetime,
+) -> str:
+    records = [
+        entry.model_dump() for entry in build_models_summary(filtered, history, now=now)
+    ]
+    return json.dumps(records, indent=2)
 
 
 def emit_models_listing(
-    summary: list[dict[str, Any]],
+    summary: Sequence[ModelSummary],
     *,
     tags: dict[str, str] | None = None,
     persist: bool = False,
@@ -1739,9 +1702,10 @@ def emit_models_listing(
     for info in summary:
         record = ModelListRecord(
             ts=ts.timestamp(),
-            model=info.get("model", ""),
-            family=str(info.get("family", "")),
-            recent_ok=bool(info.get("recent_ok", False)),
+            model=info.model,
+            family=info.family,
+            recent_ok=info.recent_ok,
+            recent_ok_by_kind=list(info.recent_ok_by_kind) or None,
             tags=tag_payload,
         )
         line = record.model_dump_json()
@@ -1856,9 +1820,30 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="Maximum number of output tokens for API calls (default: 100)",
     )
     parser.add_argument(
+        "--fast-qps",
+        type=float,
+        required=True,
+        help="Requests per second for fast scheduler loops",
+    )
+    parser.add_argument(
+        "--slow-qps",
+        type=float,
+        required=True,
+        help="Requests per second for slow scheduler loops",
+    )
+    parser.add_argument(
         "--list-models",
         action="store_true",
         help="List models (after filters) with history classification and exit",
+    )
+    parser.add_argument(
+        "--drop-regex",
+        type=str,
+        default=None,
+        help=(
+            "Regex for excluding model IDs (e.g., use (?i) for case-insensitive). "
+            "If omitted, no regex-based dropping is applied."
+        ),
     )
     return parser.parse_args(argv)
 
@@ -1867,16 +1852,24 @@ async def _async_main() -> None:
     args = parse_args()
     # Smart policy uses separate fast/slow limiters; no single global limiter here
 
-    # Initialize database connection and schema
+    # Initialize database connection — fail fast if unavailable
     try:
         await _init_database()
         print("Database initialized successfully", file=sys.stderr)
     except Exception as e:
-        print(f"Warning: Database initialization failed: {e}", file=sys.stderr)
-        print("Continuing without database writes", file=sys.stderr)
+        print(f"ERROR: Database initialization failed: {e}", file=sys.stderr)
+        sys.exit(1)
 
     tag_map = parse_tags_cli(args.tag)
-    async_client = _factory_async_client()
+    # Compile drop regex from CLI (no default; explicit only)
+    global DROP_MODEL_ID_RE
+    if args.drop_regex:
+        try:
+            DROP_MODEL_ID_RE = re.compile(args.drop_regex)
+        except re.error as re_err:
+            print(f"Invalid --drop-regex: {re_err}", file=sys.stderr)
+            sys.exit(2)
+    async_client = _get_async_openai()
     if not args.stream:
         print("Fetching model list …", file=sys.stderr)
     resp = await async_client.models.list()
@@ -1891,11 +1884,10 @@ async def _async_main() -> None:
     if not args.stream:
         print(f"After filtering rules: {len(filtered)}", file=sys.stderr)
 
-    # History-driven classification
-    hist = load_history_index()
-
     if args.list_models:
-        summary = build_models_summary(filtered, hist)
+        now_summary = datetime.now(UTC)
+        history = await fetch_model_history(filtered, now=now_summary)
+        summary = build_models_summary(filtered, history, now=now_summary)
         emit_models_listing(summary, tags=tag_map, persist=True)
         return
 
@@ -1906,81 +1898,121 @@ async def _async_main() -> None:
             print(f"Sub-sampled to {len(filtered)} models (random)", file=sys.stderr)
 
     if args.stream:
-        summary_for_stream = build_models_summary(filtered, hist)
+        now_summary = datetime.now(UTC)
+        history = await fetch_model_history(filtered, now=now_summary)
+        summary_for_stream = build_models_summary(filtered, history, now=now_summary)
         emit_models_listing(summary_for_stream, tags=tag_map, persist=True)
 
     # Probe specs
-    responses_spec = ProbeSpec(name="responses", create=partial(_create_responses, max_tokens=args.max_tokens))
-    chat_spec = ProbeSpec(name="chat", create=partial(_create_chat, max_tokens=args.max_tokens))
+    responses_spec = ProbeSpec(
+        name="responses", create=partial(_create_responses, max_tokens=args.max_tokens)
+    )
+    chat_spec = ProbeSpec(
+        name="chat", create=partial(_create_chat, max_tokens=args.max_tokens)
+    )
 
     if args.stream and args.continuous:
         # Functional, low-state continuous schedulers
         sem = asyncio.Semaphore(max(args.concurrency, 1))
-        limiter_fast = make_limiter(FAST_QPS)
-        limiter_slow = make_limiter(SLOW_QPS)
+        limiter_fast = make_limiter(args.fast_qps)
+        limiter_slow = make_limiter(args.slow_qps)
         current_models = list(filtered)
 
         async def models_refresher() -> None:
-            nonlocal current_models, hist
+            nonlocal current_models
             while True:
-                await asyncio.sleep(21600)  # refresh every 6 hours
-                resp2 = await async_client.models.list()
-                mids = [m.id for m in resp2.data]
-                mids = [mid for mid in mids if not is_excluded(mid)]
-                if args.family:
-                    mids = [mid for mid in mids if family_of(mid).value == args.family]
-                current_models = mids
-                hist = load_history_index()
-                summary_refresh = build_models_summary(mids, hist)
-                emit_models_listing(summary_refresh, tags=tag_map, persist=True)
-
-        def eligible(now_dt: datetime, mid: str, want_fast: bool) -> bool:
-            ro, seen_recent = classify_model(mid, hist, now_dt)
-            if seen_recent:
-                return False
-            return ro if want_fast else not ro
+                try:
+                    await asyncio.sleep(21600)  # refresh every 6 hours
+                    resp2 = await async_client.models.list()
+                    mids = [m.id for m in resp2.data]
+                    mids = [mid for mid in mids if not is_excluded(mid)]
+                    if args.family:
+                        mids = [
+                            mid for mid in mids if family_of(mid).value == args.family
+                        ]
+                    current_models = mids
+                    now_refresh = datetime.now(UTC)
+                    history_refresh = await fetch_model_history(mids, now=now_refresh)
+                    summary_refresh = build_models_summary(
+                        mids, history_refresh, now=now_refresh
+                    )
+                    emit_models_listing(summary_refresh, tags=tag_map, persist=True)
+                    _log_event("models_refresh", count=len(mids))
+                except Exception as e:
+                    _log_event("models_refresh_error", error=str(e))
+                    await asyncio.sleep(10)
 
         slow_rr: dict[str, int] = {"responses": 0, "chat": 0}
 
         async def scheduler(kind: str, limiter: AsyncLimiter, want_fast: bool) -> None:
             spec = responses_spec if kind == "responses" else chat_spec
             while True:
-                async with limiter:
-                    now_dt = datetime.now(UTC)
-                    mids = [m for m in current_models if eligible(now_dt, m, want_fast)]
-                    if not mids:
-                        continue
-                    if want_fast:
-                        pick = random.choice(mids)
-                    else:
-                        mids_sorted = sorted(mids, key=lambda m: (priority_index(m), m))
-                        idx = slow_rr[kind] % len(mids_sorted)
-                        slow_rr[kind] += 1
-                        pick = mids_sorted[idx]
-                    async with sem:
-                        res = await _probe_once(
-                            async_client,
-                            model_id=pick,
-                            spec=spec,
-                            limiter=make_limiter(10_000),  # outer limiter gates QPS
+                try:
+                    async with limiter:
+                        now_dt = datetime.now(UTC)
+                        models_snapshot = list(current_models)
+                        if not models_snapshot:
+                            await asyncio.sleep(1)
+                            continue
+                        history_kind = await fetch_model_history(
+                            models_snapshot, kinds=(kind,), now=now_dt
                         )
-                    # Update history index from result
-                    ts_now = datetime.now(UTC)
-                    mh = hist.setdefault(pick, ModelHistory())
-                    mh.last_seen = ts_now
-                    if res.ok:
-                        mh.last_ok = ts_now
-                    # Write to database
-                    await _write_probe_result(res)
-                    # Emit event
-                    await stream_q.put((kind, pick, res))
+                        eligible_models: list[str] = []
+                        for mid in models_snapshot:
+                            recent_ok, seen_recent = classify_status(
+                                history_kind.get(mid, kind), now=now_dt
+                            )
+                            if seen_recent:
+                                continue
+                            if want_fast:
+                                if recent_ok:
+                                    eligible_models.append(mid)
+                            else:
+                                if not recent_ok:
+                                    eligible_models.append(mid)
+                        if not eligible_models:
+                            await asyncio.sleep(0.25)
+                            continue
+                        if want_fast:
+                            pick = random.choice(eligible_models)
+                        else:
+                            mids_sorted = sorted(
+                                eligible_models, key=lambda m: (priority_index(m), m)
+                            )
+                            idx = slow_rr[kind] % len(mids_sorted)
+                            slow_rr[kind] += 1
+                            pick = mids_sorted[idx]
+                        _log_event("call_start", kind=kind, model=pick)
+                        async with sem:
+                            res = await _probe_once(
+                                async_client,
+                                model_id=pick,
+                                spec=spec,
+                                limiter=make_limiter(10_000),  # outer limiter gates QPS
+                            )
+                        _log_event("call_end", kind=kind, model=pick, ok=res.ok)
+                        # Write to database
+                        await _write_probe_result(res)
+                        # Emit event
+                        await stream_q.put((kind, pick, res))
+                except Exception as e:
+                    _log_event("scheduler_error", kind=kind, error=str(e))
+                    await asyncio.sleep(1)
 
         stream_q: asyncio.Queue[Event] = asyncio.Queue()
-        asyncio.create_task(models_refresher())
-        asyncio.create_task(scheduler("responses", limiter_fast, True))
-        asyncio.create_task(scheduler("chat", limiter_fast, True))
-        asyncio.create_task(scheduler("responses", limiter_slow, False))
-        asyncio.create_task(scheduler("chat", limiter_slow, False))
+        tasks = [
+            asyncio.create_task(models_refresher()),
+            asyncio.create_task(scheduler("responses", limiter_fast, True)),
+            asyncio.create_task(scheduler("chat", limiter_fast, True)),
+            asyncio.create_task(scheduler("responses", limiter_slow, False)),
+            asyncio.create_task(scheduler("chat", limiter_slow, False)),
+        ]
+        for t in tasks:
+            t.add_done_callback(
+                lambda fut: _log_event(
+                    "task_done", error=str(fut.exception()) if fut.exception() else None
+                )
+            )
         # Stream indefinitely
         await consume_stream_jsonl(
             stream_q, 0, current_models, tags=tag_map, infinite=True
@@ -2003,7 +2035,7 @@ async def _async_main() -> None:
                         spec=responses_spec,
                         repeats=repeats_effective,
                         sem=sem,
-                        limiter=make_limiter(FAST_QPS),
+                        limiter=make_limiter(args.fast_qps),
                         client=async_client,
                         out_q=event_q,
                     )
@@ -2017,7 +2049,7 @@ async def _async_main() -> None:
                         spec=chat_spec,
                         repeats=repeats_effective,
                         sem=sem,
-                        limiter=make_limiter(FAST_QPS),
+                        limiter=make_limiter(args.fast_qps),
                         client=async_client,
                         out_q=event_q,
                     )
@@ -2046,7 +2078,9 @@ def main() -> None:
             return web.Response(text="OK")
 
         async def _metrics(request: web.Request) -> web.Response:  # type: ignore[override]
-            return web.Response(text="Metrics endpoint disabled (Prometheus removed)", status=404)
+            return web.Response(
+                text="Metrics endpoint disabled (Prometheus removed)", status=404
+            )
 
         app = web.Application()
         app.router.add_get(HEALTH_PATH, _health)

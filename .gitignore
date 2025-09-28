@@ -33,3 +33,4 @@ devenv.local.nix
 .direnv/
 
 logs
+k8s/helm/*/charts/*.tgz

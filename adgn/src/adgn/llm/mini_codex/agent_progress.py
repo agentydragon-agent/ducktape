@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from itertools import cycle
 from time import monotonic
-from typing import Any
+from adgn.llm.openai_utils.model import ReasoningOut
 
 from rich.console import Console
 from rich.text import Text
 
-from .handler import AssistantText, BaseHandler, FunctionCallOutput, ToolCall, UserText
+from .handler import AssistantText, BaseHandler, ToolCall, ToolCallOutput, UserText
 from .loop_control import NoLoopDecision
 
 
@@ -34,7 +34,7 @@ class OneLineProgressHandler(BaseHandler):
         self._last_action = f"tool:{evt.name}"
         self._render()
 
-    def on_function_call_output_event(self, evt: FunctionCallOutput) -> None:
+    def on_tool_result_event(self, evt: ToolCallOutput) -> None:
         self._last_action = f"fco:{evt.call_id}"
         self._render()
 
@@ -48,7 +48,7 @@ class OneLineProgressHandler(BaseHandler):
         self._last_action = "user"
         self._render()
 
-    def on_reasoning(self, item: Any) -> None:
+    def on_reasoning(self, item: ReasoningOut) -> None:
         self._last_action = "reasoning"
         self._render()
 

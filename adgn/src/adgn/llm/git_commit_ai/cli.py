@@ -142,13 +142,13 @@ def _build_amend_diff(repo: pygit2.Repository, passthru: list[str]) -> str:
     try:
         parent = repo.revparse_single("HEAD^").peel(pygit2.Commit)
         parts.append("=== Original commit diff (HEAD^ to HEAD) ===")
-        parts.append(repo.diff(parent.tree, head.tree).patch or "")
+        parts.append(repo.diff(parent.id, head.id).patch or "")
     except KeyError:
         # First commit: diff from empty tree
         tb = repo.TreeBuilder()
-        empty_tree = repo.get(tb.write())
+        empty_tree_oid = tb.write()
         parts.append("=== Original commit content ===")
-        parts.append(repo.diff(empty_tree, head.tree).patch or "")
+        parts.append(repo.diff(empty_tree_oid, head.id).patch or "")
     # New changes
     parts.append("\n=== New changes being added ===")
     include_all = ("-a" in passthru) or ("--all" in passthru)

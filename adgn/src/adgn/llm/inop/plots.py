@@ -8,7 +8,7 @@ from typing import Any
 from pydantic import BaseModel
 
 import matplotlib
-import pandas as pd  # type: ignore[import-untyped]
+import pandas as pd
 from plotnine import (
     aes,
     element_text,
@@ -121,28 +121,20 @@ class ScoreEvolutionPlotter:
     def generate_plots(self, run_dir: Path) -> tuple[Path, Path]:
         """Generate score evolution plots using plotnine."""
 
-        # Prepare data for plotting
-        plot_data = []
-
-        # Overall scores
+        plot_data: list[dict[str, Any]] = []
         for iter_data in self.iterations_data:
             plot_data.append(create_plot_data_point(iter_data, "overall"))
 
-        # Facet scores
-        if self.iterations_data[0].facets:
+        if self.iterations_data and self.iterations_data[0].facets:
             for facet_name in self.iterations_data[0].facets:
                 for iter_data in self.iterations_data:
                     plot_data.append(create_plot_data_point(iter_data, facet_name))
 
         plot_df = pd.DataFrame(plot_data)
 
-        # Create combined plot
         combined_plot = self._create_combined_plot(plot_df)
-
-        # Create faceted plot
         faceted_plot = self._create_faceted_plot(plot_df)
 
-        # Save both plots
         combined_plot_path = run_dir / "score_evolution.png"
         faceted_plot_path = run_dir / "score_evolution_faceted.png"
 
@@ -151,103 +143,108 @@ class ScoreEvolutionPlotter:
 
         return combined_plot_path, faceted_plot_path
 
-    def _create_combined_plot(self, plot_df):
+    def _create_combined_plot(self, plot_df: pd.DataFrame) -> ggplot:
         """Create combined plot with position dodging."""
 
         dodge_width = 0.3
 
-        # Separate overall and other facets for different styling
         df_overall = plot_df[plot_df["facet"] == "overall"]
         df_other = plot_df[plot_df["facet"] != "overall"]
 
-        return (
-            ggplot()
-            +
-            # Other facets - thinner lines
-            geom_line(
-                df_other,
-                aes(x="iteration", y="mean", color="facet"),
-                size=0.8,
-                alpha=0.7,
-            )
-            + geom_point(
-                df_other,
-                aes(x="iteration", y="mean", color="facet"),
-                size=1.5,
-                position=position_dodge(width=dodge_width),
-                alpha=0.7,
-            )
-            + geom_errorbar(
-                df_other,
-                aes(x="iteration", ymin="ci_lower", ymax="ci_upper", color="facet"),
-                width=0.1,
-                position=position_dodge(width=dodge_width),
-                alpha=0.7,
-            )
-            +
-            # Overall facet - bold solid line
-            geom_line(df_overall, aes(x="iteration", y="mean"), color="black", size=2.5)
-            + geom_point(
-                df_overall,
-                aes(x="iteration", y="mean"),
-                color="black",
-                size=3,
-                position=position_dodge(width=dodge_width),
-            )
-            + geom_errorbar(
-                df_overall,
-                aes(x="iteration", ymin="ci_lower", ymax="ci_upper"),
-                width=0.1,
-                position=position_dodge(width=dodge_width),
-                color="black",
-                size=1,
-            )
-            + theme_minimal()
-            + labs(
-                title="Score Evolution Across Iterations",
-                x="Iteration",
-                y="Score",
-                color="Facet",
-                caption="Error bars show 69% confidence interval of the mean",
-            )
-            + theme(
-                plot_title=element_text(size=14, ha="center"),
-                legend_position="right",
-            )
+        plot: ggplot = ggplot()
+        plot = plot + geom_line(
+            mapping=aes(x="iteration", y="mean", color="facet"),
+            data=df_other,
+            size=0.8,
+            alpha=0.7,
+        )
+        plot = plot + geom_point(
+            mapping=aes(x="iteration", y="mean", color="facet"),
+            data=df_other,
+            size=1.5,
+            position=position_dodge(width=dodge_width),
+            alpha=0.7,
+        )
+        plot = plot + geom_errorbar(
+            mapping=aes(
+                x="iteration",
+                ymin="ci_lower",
+                ymax="ci_upper",
+                color="facet",
+            ),
+            data=df_other,
+            width=0.1,
+            position=position_dodge(width=dodge_width),
+            alpha=0.7,
+        )
+        plot = plot + geom_line(
+            mapping=aes(x="iteration", y="mean"),
+            data=df_overall,
+            color="black",
+            size=2.5,
+        )
+        plot = plot + geom_point(
+            mapping=aes(x="iteration", y="mean"),
+            data=df_overall,
+            color="black",
+            size=3,
+            position=position_dodge(width=dodge_width),
+        )
+        plot = plot + geom_errorbar(
+            mapping=aes(x="iteration", ymin="ci_lower", ymax="ci_upper"),
+            data=df_overall,
+            width=0.1,
+            position=position_dodge(width=dodge_width),
+            color="black",
+            size=1,
+        )
+        plot = plot + theme_minimal()
+        plot = plot + labs(
+            title="Score Evolution Across Iterations",
+            x="Iteration",
+            y="Score",
+            color="Facet",
+            caption="Error bars show 69% confidence interval of the mean",
+        )
+        plot = plot + theme(
+            plot_title=element_text(size=14, ha="center"),
+            legend_position="right",
         )
 
-    def _create_faceted_plot(self, plot_df):
+        return plot
+
+    def _create_faceted_plot(self, plot_df: pd.DataFrame) -> ggplot:
         """Create faceted plot - separate subplot for each facet."""
 
-        return (
-            ggplot(plot_df, aes(x="iteration", y="mean"))
-            + geom_line(size=1, color="steelblue")
-            + geom_point(size=2, color="steelblue")
-            + geom_errorbar(
-                aes(ymin="ci_lower", ymax="ci_upper"),
-                width=0.1,
-                color="steelblue",
-            )
-            + facet_wrap("facet", scales="free_y", ncol=2)
-            + theme_minimal()
-            + labs(
-                title="Score Evolution Across Iterations by Facet",
-                x="Iteration",
-                y="Score",
-                caption="Error bars show 69% confidence interval of the mean",
-            )
-            + theme(
-                plot_title=element_text(size=14, ha="center"),
-                strip_text=element_text(size=10, margin={"t": 6, "b": 6}),
-                axis_text_x=element_text(angle=0),
-                panel_spacing=0.5,
-                figure_size=(16, 12),
-            )
+        plot: ggplot = ggplot(plot_df, aes(x="iteration", y="mean"))
+        plot = plot + geom_line(size=1, color="steelblue")
+        plot = plot + geom_point(size=2, color="steelblue")
+        plot = plot + geom_errorbar(
+            mapping=aes(ymin="ci_lower", ymax="ci_upper"),
+            width=0.1,
+            color="steelblue",
         )
+        plot = plot + facet_wrap("facet", scales="free_y", ncol=2)
+        plot = plot + theme_minimal()
+        plot = plot + labs(
+            title="Score Evolution Across Iterations by Facet",
+            x="Iteration",
+            y="Score",
+            caption="Error bars show 69% confidence interval of the mean",
+        )
+        plot = plot + theme(
+            plot_title=element_text(size=14, ha="center"),
+            strip_text=element_text(size=10, margin={"t": 6, "b": 6}),
+            axis_text_x=element_text(angle=0),
+            panel_spacing=0.5,
+            figure_size=(16, 12),
+        )
+
+        return plot
 
 
 class ScoreEvolutionReporter:
-    """Generates text reports from score evolution data."""
+    """Builds textual reports describing score evolution."""
 
     def __init__(self, iterations_data: list[IterationSummary]):
         self.iterations_data = iterations_data
@@ -270,7 +267,6 @@ class ScoreEvolutionReporter:
             "Overall Score Evolution:",
         ]
 
-        # Overall scores table
         for iter_data in self.iterations_data:
             overall: Stats = iter_data.overall
             report_parts.append(
@@ -279,8 +275,7 @@ class ScoreEvolutionReporter:
                 f"(range: {overall.min:4.1f}-{overall.max:4.1f}, n={overall.count})",
             )
 
-        # Facet evolution
-        if self.iterations_data[0].facets:
+        if self.iterations_data and self.iterations_data[0].facets:
             report_parts.extend(["", "Facet Score Evolution:"])
             facet_names = list(self.iterations_data[0].facets.keys())
 
@@ -293,7 +288,6 @@ class ScoreEvolutionReporter:
                         f"{facet_stats.mean:5.2f} ± {facet_stats.stdev:4.2f}",
                     )
 
-        # Add plot paths if provided
         if plot_paths:
             combined_path, faceted_path = plot_paths
             report_parts.extend(
@@ -307,6 +301,8 @@ class ScoreEvolutionReporter:
 
         report_parts.append("=" * 50)
         return "\n".join(report_parts)
+
+
 
 
 class ScoreEvolutionTracker:

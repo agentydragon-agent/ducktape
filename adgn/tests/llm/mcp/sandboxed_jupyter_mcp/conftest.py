@@ -4,7 +4,6 @@ import json
 import os
 from pathlib import Path
 import secrets
-import select
 import shutil
 import socket
 import subprocess
@@ -12,7 +11,8 @@ import sys
 import threading
 import time
 
-from policy_fixture import write_policy as _write_policy
+from .policy_fixture import write_policy
+from . import _helpers
 import pytest
 
 
@@ -256,7 +256,7 @@ def pytest_runtest_makereport(item, call):
 
 @pytest.fixture
 def policy_factory():
-    return _write_policy
+    return write_policy
 
 
 def provision_ws(request, artifacts_base: Path):
@@ -284,7 +284,7 @@ def provision_ws_with_policy(request, artifacts_base: Path):
     else:
         marker = request.node.get_closest_marker("policy_args")
         kwargs = marker.kwargs if marker else {}
-    _write_policy(ws, run_root, **kwargs)
+    write_policy(ws, run_root, **kwargs)
     return ws, run_root
 
 
@@ -295,50 +295,17 @@ def gen_token() -> str:
 
 @pytest.fixture
 def pick_free_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
+    return _helpers.pick_free_port()
 
 
 @pytest.fixture
 def send_line_json_fn():
-    def _send_line_json(w, obj: dict) -> None:
-        w.write((json.dumps(obj) + "\n").encode("utf-8"))
-        w.flush()
-
-    return _send_line_json
+    return _helpers.send_line_json
 
 
 @pytest.fixture
 def read_line_json_fn():
-    def _read_line_json(r, timeout: float) -> dict | None:
-        fd = r.fileno()
-        os.set_blocking(fd, False)
-        buf = bytearray()
-        deadline = time.time() + timeout
-        while time.time() < deadline:
-            ready, _, _ = select.select([fd], [], [], 0.05)
-            if not ready:
-                continue
-            try:
-                b = os.read(fd, 1)
-            except BlockingIOError:
-                time.sleep(0.01)
-                continue
-            if not b:
-                time.sleep(0.01)
-                continue
-            if b == b"\n":
-                break
-            buf.extend(b)
-        if not buf:
-            return None
-        try:
-            return json.loads(bytes(buf).decode("utf-8", errors="ignore").rstrip("\r"))
-        except Exception:
-            return None
-
-    return _read_line_json
+    return _helpers.read_line_json
 
 
 @pytest.fixture
@@ -478,6 +445,24 @@ def mcp_call_tool(send_line_json_fn, read_line_json_fn, collect_mcp_logs_fn):
         init_timeout: float = 25.0,
         call_timeout: float = 60.0,
     ):
+        def _fail(stage: str, response: object) -> None:
+            out, err = collect_mcp_logs_fn()
+            stderr_tail = b""
+            stdout_tail = b""
+            try:
+                if proc.stderr:
+                    stderr_tail = proc.stderr.read(20000)
+                if proc.stdout:
+                    stdout_tail = proc.stdout.read(20000)
+            except Exception:
+                pass
+            pytest.fail(
+                f"{stage} failed: "
+                f"{response}\nstdout tail:\n{stdout_tail[-2000:]}\n"
+                f"stderr tail:\n{stderr_tail[-2000:]}\n"
+                f"tee stdout:\n{out}\ntee stderr:\n{err}",
+            )
+
         send_line_json_fn(
             proc.stdin,
             {
@@ -493,22 +478,7 @@ def mcp_call_tool(send_line_json_fn, read_line_json_fn, collect_mcp_logs_fn):
         )
         resp = _read_until(proc.stdout, 1, init_timeout)
         if not (resp and resp.get("id") == 1 and "result" in resp):
-            out, err = collect_mcp_logs_fn()
-            stderr_tail = b""
-            stdout_tail = b""
-            try:
-                if proc.stderr:
-                    stderr_tail = proc.stderr.read(20000)
-                if proc.stdout:
-                    stdout_tail = proc.stdout.read(20000)
-            except Exception:
-                pass
-            pytest.fail(
-                "initialize failed: "
-                f"{resp}\nstdout tail:\n{stdout_tail[-2000:]}\n"
-                f"stderr tail:\n{stderr_tail[-2000:]}\n"
-                f"tee stdout:\n{out}\ntee stderr:\n{err}",
-            )
+            _fail("initialize", resp)
         send_line_json_fn(
             proc.stdin,
             {"jsonrpc": "2.0", "method": "notifications/initialized"},
@@ -525,22 +495,7 @@ def mcp_call_tool(send_line_json_fn, read_line_json_fn, collect_mcp_logs_fn):
         )
         resp2 = _read_until(proc.stdout, 2, call_timeout)
         if not (resp2 and resp2.get("id") == 2 and "result" in resp2):
-            out, err = collect_mcp_logs_fn()
-            stderr_tail = b""
-            stdout_tail = b""
-            try:
-                if proc.stderr:
-                    stderr_tail = proc.stderr.read(20000)
-                if proc.stdout:
-                    stdout_tail = proc.stdout.read(20000)
-            except Exception:
-                pass
-            pytest.fail(
-                "tool call failed: "
-                f"{resp2}\nstdout tail:\n{stdout_tail[-2000:]}\n"
-                f"stderr tail:\n{stderr_tail[-2000:]}\n"
-                f"tee stdout:\n{out}\ntee stderr:\n{err}",
-            )
+            _fail("tool call", resp2)
         return resp2["result"]
 
     return _call

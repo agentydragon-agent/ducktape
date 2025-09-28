@@ -4,33 +4,82 @@ metadata:
   name: grafana-dashboards
   namespace: observability
 data:
-  openai-probe.json: |
+  openai-probe-responses.json: |
     {
-      "title": "OpenAI Probe Metrics",
-      "uid": "openai-probe",
+      "title": "OpenAI Probe - Responses",
+      "uid": "openai-probe-resp",
       "timezone": "browser",
       "refresh": "30s",
-      "time": {
-        "from": "now-1h",
-        "to": "now"
-      },
+      "time": { "from": "now-1h", "to": "now" },
       "templating": {
         "list": [
           {
             "name": "family",
-            "type": "custom",
-            "current": {
-              "text": "All",
-              "value": "%"
-            },
-            "options": [
-              {"text": "All", "value": "%", "selected": true},
-              {"text": "gpt-5", "value": "gpt-5"},
-              {"text": "gpt-4o", "value": "gpt-4o"},
-              {"text": "o-mini", "value": "o-mini"},
-              {"text": "o1", "value": "o1"}
-            ],
-            "multi": false
+            "type": "query",
+            "datasource": { "type": "postgres", "uid": "timescaledb-uid" },
+            "query": {{ .Files.Get "sql/families.sql" | quote }},
+            "refresh": 2,
+            "includeAll": true,
+            "allValue": "ALL",
+            "multi": false,
+            "current": { "text": "All", "value": "ALL" }
+          }
+        ]
+      },
+      "panels": [
+        {
+          "title": "Responses API Performance",
+          "type": "table",
+          "gridPos": {"h": 24, "w": 24, "x": 0, "y": 0},
+          "datasource": { "type": "postgres", "uid": "timescaledb-uid" },
+          "targets": [
+            { "rawSql": {{ .Files.Get "sql/responses-api-performance.sql" | quote }}, "format": "table", "refId": "A" }
+          ],
+          "fieldConfig": {
+            "defaults": { "custom": { "align": "left", "cellOptions": { "type": "auto" }, "inspect": false } },
+            "overrides": [
+              { "matcher": {"id": "byName", "options": "success_rate"}, "properties": [
+                {"id": "unit", "value": "percent"}, {"id": "decimals", "value": 1}, {"id": "custom.width", "value": 85},
+                {"id": "thresholds", "value": { "mode": "absolute", "steps": [
+                  {"color": "red", "value": null}, {"color": "yellow", "value": 80}, {"color": "green", "value": 95}
+                ]}}, {"id": "custom.cellOptions", "value": {"type": "color-background"}}
+              ]},
+              { "matcher": {"id": "byName", "options": "p50_latency"}, "properties": [ {"id": "unit", "value": "s"}, {"id": "decimals", "value": 2}, {"id": "custom.width", "value": 95} ] },
+              { "matcher": {"id": "byName", "options": "p90_latency"}, "properties": [ {"id": "unit", "value": "s"}, {"id": "decimals", "value": 2}, {"id": "custom.width", "value": 95} ] },
+              { "matcher": {"id": "byName", "options": "requests"}, "properties": [ {"id": "custom.width", "value": 75} ] },
+              { "matcher": {"id": "byName", "options": "last_attempt"}, "properties": [ {"id": "unit", "value": "dateTimeFromNow"}, {"id": "custom.width", "value": 100} ] },
+              { "matcher": {"id": "byName", "options": "success_example"}, "properties": [ {"id": "custom.width", "value": 350} ] },
+              { "matcher": {"id": "byName", "options": "error_example"}, "properties": [ {"id": "custom.width", "value": 350} ] }
+            ]
+          },
+          "transformations": [ { "id": "organize", "options": { "renameByName": {
+            "model": "Model", "success_rate": "Success %", "p50_latency": "P50 Latency", "p90_latency": "P90 Latency",
+            "requests": "Requests", "last_attempt": "Last Attempt", "success_example": "Success Response JSON", "error_example": "Error Example"
+          } } } ]
+        }
+      ],
+      "schemaVersion": 38,
+      "version": 1
+    }
+  openai-probe-chat.json: |
+    {
+      "title": "OpenAI Probe - Chat",
+      "uid": "openai-probe-chat",
+      "timezone": "browser",
+      "refresh": "30s",
+      "time": { "from": "now-1h", "to": "now" },
+      "templating": {
+        "list": [
+          {
+            "name": "family",
+            "type": "query",
+            "datasource": { "type": "postgres", "uid": "timescaledb-uid" },
+            "query": {{ .Files.Get "sql/families.sql" | quote }},
+            "refresh": 2,
+            "includeAll": true,
+            "allValue": "ALL",
+            "multi": false,
+            "current": { "text": "All", "value": "ALL" }
           }
         ]
       },
@@ -38,208 +87,34 @@ data:
         {
           "title": "Chat API Performance",
           "type": "table",
-          "gridPos": {"h": 12, "w": 24, "x": 0, "y": 0},
-          "datasource": {
-            "type": "postgres",
-            "uid": "timescaledb-uid"
-          },
+          "gridPos": {"h": 24, "w": 24, "x": 0, "y": 0},
+          "datasource": { "type": "postgres", "uid": "timescaledb-uid" },
           "targets": [
-            {
-              "rawSql": {{ .Files.Get "sql/chat-api-performance.sql" | quote }},
-              "format": "table",
-              "refId": "A"
-            }
+            { "rawSql": {{ .Files.Get "sql/chat-api-performance.sql" | quote }}, "format": "table", "refId": "A" }
           ],
           "fieldConfig": {
-            "defaults": {
-              "custom": {
-                "align": "left",
-                "cellOptions": {"type": "auto"},
-                "inspect": false
-              }
-            },
+            "defaults": { "custom": { "align": "left", "cellOptions": { "type": "auto" }, "inspect": false } },
             "overrides": [
-              {
-                "matcher": {"id": "byName", "options": "success_rate"},
-                "properties": [
-                  {"id": "unit", "value": "percent"},
-                  {"id": "decimals", "value": 1},
-                  {"id": "custom.width", "value": 85},
-                  {"id": "thresholds", "value": {
-                    "mode": "absolute",
-                    "steps": [
-                      {"color": "red", "value": null},
-                      {"color": "yellow", "value": 80},
-                      {"color": "green", "value": 95}
-                    ]
-                  }},
-                  {"id": "custom.cellOptions", "value": {"type": "color-background"}}
-                ]
-              },
-              {
-                "matcher": {"id": "byName", "options": "p50_latency"},
-                "properties": [
-                  {"id": "unit", "value": "s"},
-                  {"id": "decimals", "value": 2},
-                  {"id": "custom.width", "value": 95}
-                ]
-              },
-              {
-                "matcher": {"id": "byName", "options": "p90_latency"},
-                "properties": [
-                  {"id": "unit", "value": "s"},
-                  {"id": "decimals", "value": 2},
-                  {"id": "custom.width", "value": 95}
-                ]
-              },
-              {
-                "matcher": {"id": "byName", "options": "requests"},
-                "properties": [
-                  {"id": "custom.width", "value": 75}
-                ]
-              },
-              {
-                "matcher": {"id": "byName", "options": "last_attempt"},
-                "properties": [
-                  {"id": "unit", "value": "dateTimeFromNow"},
-                  {"id": "custom.width", "value": 100}
-                ]
-              },
-              {
-                "matcher": {"id": "byName", "options": "success_example"},
-                "properties": [
-                  {"id": "custom.width", "value": 350}
-                ]
-              },
-              {
-                "matcher": {"id": "byName", "options": "error_example"},
-                "properties": [
-                  {"id": "custom.width", "value": 350}
-                ]
-              }
+              { "matcher": {"id": "byName", "options": "success_rate"}, "properties": [
+                {"id": "unit", "value": "percent"}, {"id": "decimals", "value": 1}, {"id": "custom.width", "value": 85},
+                {"id": "thresholds", "value": { "mode": "absolute", "steps": [
+                  {"color": "red", "value": null}, {"color": "yellow", "value": 80}, {"color": "green", "value": 95}
+                ]}}, {"id": "custom.cellOptions", "value": {"type": "color-background"}}
+              ]},
+              { "matcher": {"id": "byName", "options": "p50_latency"}, "properties": [ {"id": "unit", "value": "s"}, {"id": "decimals", "value": 2}, {"id": "custom.width", "value": 95} ] },
+              { "matcher": {"id": "byName", "options": "p90_latency"}, "properties": [ {"id": "unit", "value": "s"}, {"id": "decimals", "value": 2}, {"id": "custom.width", "value": 95} ] },
+              { "matcher": {"id": "byName", "options": "requests"}, "properties": [ {"id": "custom.width", "value": 75} ] },
+              { "matcher": {"id": "byName", "options": "last_attempt"}, "properties": [ {"id": "unit", "value": "dateTimeFromNow"}, {"id": "custom.width", "value": 100} ] },
+              { "matcher": {"id": "byName", "options": "success_example"}, "properties": [ {"id": "custom.width", "value": 350} ] },
+              { "matcher": {"id": "byName", "options": "error_example"}, "properties": [ {"id": "custom.width", "value": 350} ] }
             ]
           },
-          "transformations": [
-            {
-              "id": "organize",
-              "options": {
-                "renameByName": {
-                  "model": "Model",
-                  "success_rate": "Success %",
-                  "p50_latency": "P50 Latency",
-                  "p90_latency": "P90 Latency",
-                  "requests": "Requests",
-                  "last_attempt": "Last Attempt",
-                  "success_example": "Success Response JSON",
-                  "error_example": "Error Example"
-                }
-              }
-            }
-          ]
-        },
-        {
-          "title": "Responses API Performance",
-          "type": "table",
-          "gridPos": {"h": 12, "w": 24, "x": 0, "y": 12},
-          "datasource": {
-            "type": "postgres",
-            "uid": "timescaledb-uid"
-          },
-          "targets": [
-            {
-              "rawSql": {{ .Files.Get "sql/responses-api-performance.sql" | quote }},
-              "format": "table",
-              "refId": "A"
-            }
-          ],
-          "fieldConfig": {
-            "defaults": {
-              "custom": {
-                "align": "left",
-                "cellOptions": {"type": "auto"},
-                "inspect": false
-              }
-            },
-            "overrides": [
-              {
-                "matcher": {"id": "byName", "options": "success_rate"},
-                "properties": [
-                  {"id": "unit", "value": "percent"},
-                  {"id": "decimals", "value": 1},
-                  {"id": "custom.width", "value": 85},
-                  {"id": "thresholds", "value": {
-                    "mode": "absolute",
-                    "steps": [
-                      {"color": "red", "value": null},
-                      {"color": "yellow", "value": 80},
-                      {"color": "green", "value": 95}
-                    ]
-                  }},
-                  {"id": "custom.cellOptions", "value": {"type": "color-background"}}
-                ]
-              },
-              {
-                "matcher": {"id": "byName", "options": "p50_latency"},
-                "properties": [
-                  {"id": "unit", "value": "s"},
-                  {"id": "decimals", "value": 2},
-                  {"id": "custom.width", "value": 95}
-                ]
-              },
-              {
-                "matcher": {"id": "byName", "options": "p90_latency"},
-                "properties": [
-                  {"id": "unit", "value": "s"},
-                  {"id": "decimals", "value": 2},
-                  {"id": "custom.width", "value": 95}
-                ]
-              },
-              {
-                "matcher": {"id": "byName", "options": "requests"},
-                "properties": [
-                  {"id": "custom.width", "value": 75}
-                ]
-              },
-              {
-                "matcher": {"id": "byName", "options": "last_attempt"},
-                "properties": [
-                  {"id": "unit", "value": "dateTimeFromNow"},
-                  {"id": "custom.width", "value": 100}
-                ]
-              },
-              {
-                "matcher": {"id": "byName", "options": "success_example"},
-                "properties": [
-                  {"id": "custom.width", "value": 350}
-                ]
-              },
-              {
-                "matcher": {"id": "byName", "options": "error_example"},
-                "properties": [
-                  {"id": "custom.width", "value": 350}
-                ]
-              }
-            ]
-          },
-          "transformations": [
-            {
-              "id": "organize",
-              "options": {
-                "renameByName": {
-                  "model": "Model",
-                  "success_rate": "Success %",
-                  "p50_latency": "P50 Latency",
-                  "p90_latency": "P90 Latency",
-                  "requests": "Requests",
-                  "last_attempt": "Last Attempt",
-                  "success_example": "Success Response JSON",
-                  "error_example": "Error Example"
-                }
-              }
-            }
-          ]
+          "transformations": [ { "id": "organize", "options": { "renameByName": {
+            "model": "Model", "success_rate": "Success %", "p50_latency": "P50 Latency", "p90_latency": "P90 Latency",
+            "requests": "Requests", "last_attempt": "Last Attempt", "success_example": "Success Response JSON", "error_example": "Error Example"
+          } } } ]
         }
       ],
       "schemaVersion": 38,
-      "version": 2
+      "version": 1
     }

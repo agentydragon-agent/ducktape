@@ -1,4 +1,5 @@
 from collections.abc import Iterator
+from typing import Any
 import json
 
 import pytest
@@ -69,15 +70,17 @@ async def test_tool_success_flow(
         ],
     )
 
-    def fake_post(url: str, *, headers: dict, json: dict, timeout: int):  # type: ignore[override]
-        post_calls.append((url, headers, json))
+    def fake_post(url: str, **kwargs: Any):
+        headers = kwargs.get("headers", {})
+        payload = kwargs.get("json", {})
+        post_calls.append((url, headers, payload))
         if url.endswith("/repos/migrate"):
             return _DummyResponse(201)
         if url.endswith("/mirror-sync"):
             return _DummyResponse(200)
         raise AssertionError(f"Unexpected POST {url}")
 
-    def fake_get(url: str, *, headers: dict, timeout: int):  # type: ignore[override]
+    def fake_get(url: str, **kwargs: Any):
         try:
             payload = next(get_sequence)
         except StopIteration as exc:  # pragma: no cover - defensive fallback
@@ -122,7 +125,7 @@ async def test_tool_success_flow(
 async def test_tool_bubbles_mirror_error(
     monkeypatch: pytest.MonkeyPatch, make_typed_mcp
 ) -> None:
-    def fake_post(url: str, *, headers: dict, json: dict, timeout: int):  # type: ignore[override]
+    def fake_post(url: str, **kwargs: Any):
         if url.endswith("/repos/migrate"):
             return _DummyResponse(500, text="boom")
         raise AssertionError("mirror-sync should not be called")

@@ -9,6 +9,7 @@ import time
 from typing import Any, cast
 
 from adgn.llm.mcp._shared.fastmcp_helpers import SafeFastMCP
+from adgn.llm.openai_utils.builders import make_item_tool_call
 from adgn.llm.openai_utils.model import FunctionCallOut
 from rich.console import Console, ConsoleRenderable, Group
 from rich.markdown import Markdown
@@ -121,7 +122,7 @@ def make_lint_submit_server(
     state: LintSubmitState,
     *,
     name: str = "lint_submit",
-) -> FastMCP:
+) -> SafeFastMCP:
     """Tiny FastMCP server exposing a single tool: submit_result.
 
     The linter agent must call this exactly once to signal completion. This flips
@@ -160,14 +161,12 @@ def make_nl_tool_call(
 
     Reads the entire file (no size cap) using `nl -ba -w1 -s ' ' <path>`.
     """
-    return FunctionCallOut(
-        name=build_mcp_function(server_name, DOCKER_EXEC_TOOL_NAME),
+    return make_item_tool_call(
         call_id=call_id,
-        arguments=json.dumps(
-            ExecInput(
-                cmd=["nl", "-ba", "-w1", "-s", " ", str(container_path)]
-            ).model_dump()
-        ),
+        name=build_mcp_function(server_name, DOCKER_EXEC_TOOL_NAME),
+        arguments=ExecInput(
+            cmd=["nl", "-ba", "-w1", "-s", " ", str(container_path)]
+        ).model_dump(),
     )
 
 
@@ -175,17 +174,15 @@ def make_container_info_call(
     wiring: PropertiesDockerWiring,
 ) -> FunctionCallOut:
     """resources.read for resource://container.info on the docker server."""
-    return FunctionCallOut(
-        name=build_mcp_function("resources", "read"),
+    return make_item_tool_call(
         call_id="bootstrap:res",
-        arguments=json.dumps(
-            {
-                "server": wiring.server_name,
-                "uri": "resource://container.info",
-                "start_offset": 0,
-                "max_bytes": 65536,
-            }
-        ),
+        name=build_mcp_function("resources", "read"),
+        arguments={
+            "server": wiring.server_name,
+            "uri": "resource://container.info",
+            "start_offset": 0,
+            "max_bytes": 65536,
+        },
     )
 
 
@@ -198,10 +195,10 @@ def make_ls_workspace_call(
         if not subpaths
         else [str(wiring.working_dir / p) for p in subpaths]
     )
-    return FunctionCallOut(
-        name=build_mcp_function(wiring.server_name, DOCKER_EXEC_TOOL_NAME),
+    return make_item_tool_call(
         call_id="bootstrap:ls",
-        arguments=json.dumps(ExecInput(cmd=["ls", "-la", *targets]).model_dump()),
+        name=build_mcp_function(wiring.server_name, DOCKER_EXEC_TOOL_NAME),
+        arguments=ExecInput(cmd=["ls", "-la", *targets]).model_dump(),
     )
 
 
@@ -279,40 +276,36 @@ class LinterController(BaseHandler):
         self._big_detected = any(size >= BIG_THRESHOLD for size in sizes.values())
         # Pre-build synthetic steps
         self._step1 = [
-            FunctionCallOut(
-                name="mcp__resources__read",
+            make_item_tool_call(
                 call_id="bootstrap:res",
-                arguments=json.dumps(
-                    {
-                        "server": self._wiring.server_name,
-                        "uri": "resource://container.info",
-                        "start_offset": 0,
-                        "max_bytes": 65536,
-                    },
-                ),
+                name="mcp__resources__read",
+                arguments={
+                    "server": self._wiring.server_name,
+                    "uri": "resource://container.info",
+                    "start_offset": 0,
+                    "max_bytes": 65536,
+                },
             ),
         ]
         if self._dirs:
             self._step2 = [
-                FunctionCallOut(
+                make_item_tool_call(
+                    call_id="bootstrap:ls",
                     name=build_mcp_function(
                         self._wiring.server_name,
                         DOCKER_EXEC_TOOL_NAME,
                     ),
-                    call_id="bootstrap:ls",
-                    arguments=json.dumps(
-                        {
-                            "cmd": ["ls", "-la"]
-                            + [str(self._wiring.working_dir / d) for d in self._dirs],
-                        },
-                    ),
+                    arguments={
+                        "cmd": ["ls", "-la"]
+                        + [str(self._wiring.working_dir / d) for d in self._dirs]
+                    },
                 ),
             ]
         else:
             self._step2 = []
 
-        def _content_calls() -> list[ResponseFunctionToolCall]:
-            out: list[ResponseFunctionToolCall] = []
+        def _content_calls() -> list[FunctionCallOut]:
+            out: list[FunctionCallOut] = []
             for q in self._files:
                 if sizes[q] > BIG_THRESHOLD:
                     continue
@@ -327,7 +320,7 @@ class LinterController(BaseHandler):
 
         self._step3 = _content_calls()
         # Property definition reads (full files, no cap)
-        self._prop_calls: list[ResponseFunctionToolCall] = []
+        self._prop_calls: list[FunctionCallOut] = []
         if docker_wiring and prop_host_paths:
             defs_dir = props_definitions_root().resolve()
             for i, host_p in enumerate(prop_host_paths):

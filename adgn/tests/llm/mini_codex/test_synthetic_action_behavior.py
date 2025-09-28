@@ -9,9 +9,6 @@ from mcp.server.fastmcp import FastMCP
 from adgn.llm.openai_utils.model import (
     FunctionCallItem,
     FakeOpenAIModel,
-    ResponsesResult,
-    Usage,
-    AssistantResponseMessage,
 )
 import pytest
 
@@ -83,21 +80,14 @@ class LocalInjectHandler(AutoHandler):
         return ContinueDecision()
 
 
-@pytest.mark.parametrize("mode", ["mock", "live"])
 @pytest.mark.asyncio
-async def test_synthetic_function_call_local_tool(mode: str, responses_factory) -> None:
-    # Mock mode uses FakeOpenAIClient and an inproc MCP; live mode is a placeholder
+async def test_synthetic_function_call_local_tool(responses_factory) -> None:
+    # Mock mode uses an in-proc MCP and a local fake client; live mode is a placeholder
     counter: list[str] = []
     spec = make_inproc_slot_spec(_make_spy_server(counter))
 
     # Minimal sequence: no actual function_call from model (we use SyntheticAction)
-    seq = [
-        ResponsesResult(
-            id="msg",
-            usage=Usage(input_tokens=0, output_tokens=1, total_tokens=1),
-            output=[AssistantResponseMessage(text="done")],
-        )
-    ]
+    seq = [responses_factory.make_assistant_message("done")]
     client = FakeOpenAIModel(seq)
 
     injected_result = mcp_types.CallToolResult(
@@ -114,7 +104,7 @@ async def test_synthetic_function_call_local_tool(mode: str, responses_factory) 
             model=responses_factory.model,
             mcp=mcp,
             system="test",
-            client=client,  # type: ignore[arg-type]
+            client=client,
             handlers=[inj, rec],
             parallel_tool_calls=False,
         )
@@ -126,13 +116,9 @@ async def test_synthetic_function_call_local_tool(mode: str, responses_factory) 
         # Verify the recorded handler captured a function_call_output with our injected payload
         fcos = [e for e in rec.records if e.get("kind") == "function_call_output"]
         assert fcos, f"no function_call_output event found: {rec.records}"
-        payload = (
-            json.loads(fcos[-1]["output"])
-            if isinstance(fcos[-1].get("output"), str)
-            else fcos[-1]["output"]
-        )
-        assert payload.get("ok") is True
-        assert payload.get("injected") == "yes"
+        payload = fcos[-1].get("result") or {}
+        structured = payload.get("structuredContent") or {}
+        assert structured == {"ok": True, "injected": "yes"}
 
         # Underlying tool (mcp) must NOT have been called because we injected local result
         assert counter == []

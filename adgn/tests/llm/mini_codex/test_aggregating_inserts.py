@@ -3,9 +3,7 @@ from __future__ import annotations
 import pytest
 
 from adgn.llm.mini_codex.aggregating_handler import Reducer, BaseHandler
-from tests.llm.support.openai_builders import (
-    make_input_user_text as make_response_input_user_text,
-)
+from adgn.llm.openai_utils.model import UserMessage, InputTextPart
 from adgn.llm.mini_codex.loop_control import Abort, Auto, Continue
 
 
@@ -15,8 +13,8 @@ class _InsertsHandler(BaseHandler):
 
     def on_before_sample(self):  # type: ignore[override]
         # Insert as input message (user role), not output message
-        msg = make_response_input_user_text(
-            f"payload:{self._msg_id}", id_=f"ins_{self._msg_id}"
+        msg = UserMessage(
+            role="user", content=[InputTextPart(text=f"payload:{self._msg_id}")]
         )
         return Continue(Auto(), inserts_input=(msg,))
 

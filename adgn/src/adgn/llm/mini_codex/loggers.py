@@ -7,9 +7,9 @@ from typing import Any
 from adgn.llm.mini_codex.handler import (
     AssistantText,
     BaseHandler,
-    FunctionCallOutput,
     Response,
     ToolCall,
+    ToolCallOutput,
     UserText,
     to_jsonl_record,
 )
@@ -26,19 +26,19 @@ class TranscriptLoggerHandler(BaseHandler):
             f.write(json.dumps(rec, ensure_ascii=False) + "\n")
 
     # Typed hook implementations
-    def on_response(self, evt: Response) -> None:  # type: ignore[override]
+    def on_response(self, evt: Response) -> None:
         self._write(to_jsonl_record(evt))
 
-    def on_user_text_event(self, evt: UserText) -> None:  # type: ignore[override]
+    def on_user_text_event(self, evt: UserText) -> None:
         self._write(to_jsonl_record(evt))
 
-    def on_assistant_text_event(self, evt: AssistantText) -> None:  # type: ignore[override]
+    def on_assistant_text_event(self, evt: AssistantText) -> None:
         self._write(to_jsonl_record(evt))
 
-    def on_tool_call_event(self, evt: ToolCall) -> None:  # type: ignore[override]
+    def on_tool_call_event(self, evt: ToolCall) -> None:
         self._write(to_jsonl_record(evt))
 
-    def on_function_call_output_event(self, evt: FunctionCallOutput) -> None:  # type: ignore[override]
+    def on_tool_result_event(self, evt: ToolCallOutput) -> None:
         self._write(to_jsonl_record(evt))
 
 
@@ -53,8 +53,8 @@ class RecordingHandler(BaseHandler):
         self.records: list[dict[str, Any]] = []
 
     # Minimal subset used by tests; extend as needed
-    def on_tool_call_event(self, evt: ToolCall) -> None:  # type: ignore[override]
+    def on_tool_call_event(self, evt: ToolCall) -> None:
         self.records.append(to_jsonl_record(evt))
 
-    def on_function_call_output_event(self, evt: FunctionCallOutput) -> None:  # type: ignore[override]
+    def on_tool_result_event(self, evt: ToolCallOutput) -> None:
         self.records.append(to_jsonl_record(evt))

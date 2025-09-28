@@ -11,6 +11,9 @@ from adgn.llm.mcp.testing.typed_stubs import TypedClient
 from adgn.llm.mini_codex.mcp_manager import McpManager
 
 
+pytest_plugins = ["tests.fixtures.responses"]
+
+
 def pytest_configure(config):
     # Register custom markers to avoid PytestUnknownMarkWarning
     config.addinivalue_line(

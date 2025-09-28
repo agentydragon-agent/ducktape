@@ -9,9 +9,6 @@ from mcp.server.fastmcp import FastMCP
 from adgn.llm.openai_utils.model import (
     FunctionCallItem,
     FakeOpenAIModel,
-    ResponsesResult,
-    Usage,
-    AssistantResponseMessage,
 )
 import pytest
 
@@ -94,13 +91,7 @@ async def test_synthetic_action_executes_tool_via_mcp(responses_factory):
     counter: list[str] = []
     spec = make_inproc_slot_spec(_make_spy_server(counter))
 
-    seq = [
-        ResponsesResult(
-            id="msg",
-            usage=Usage(input_tokens=0, output_tokens=1, total_tokens=1),
-            output=[AssistantResponseMessage(text="done")],
-        )
-    ]
+    seq = [responses_factory.make_assistant_message("done")]
     client = FakeOpenAIModel(seq)
 
     async with McpManager({"spy": spec}) as mcp:
@@ -111,7 +102,7 @@ async def test_synthetic_action_executes_tool_via_mcp(responses_factory):
             model=responses_factory.model,
             mcp=mcp,
             system="test",
-            client=client,  # type: ignore[arg-type]
+            client=client,
             handlers=[inv, rec],
             parallel_tool_calls=False,
         )
@@ -131,13 +122,7 @@ async def test_bypass_inject_preempts_mcp_call(responses_factory):
     counter: list[str] = []
     spec = make_inproc_slot_spec(_make_spy_server(counter))
 
-    seq = [
-        ResponsesResult(
-            id="msg",
-            usage=Usage(input_tokens=0, output_tokens=1, total_tokens=1),
-            output=[AssistantResponseMessage(text="done")],
-        )
-    ]
+    seq = [responses_factory.make_assistant_message("done")]
     client = FakeOpenAIModel(seq)
 
     injected_result = mcp_types.CallToolResult(
@@ -155,7 +140,7 @@ async def test_bypass_inject_preempts_mcp_call(responses_factory):
             model=responses_factory.model,
             mcp=mcp,
             system="test",
-            client=client,  # type: ignore[arg-type]
+            client=client,
             handlers=[inv, inj, rec],
             parallel_tool_calls=False,
         )
@@ -165,13 +150,9 @@ async def test_bypass_inject_preempts_mcp_call(responses_factory):
         # Verify injected function_call_output was emitted
         fcos = [e for e in rec.records if e.get("kind") == "function_call_output"]
         assert fcos, f"no function_call_output event found: {rec.records}"
-        payload = (
-            json.loads(fcos[-1]["output"])
-            if isinstance(fcos[-1].get("output"), str)
-            else fcos[-1]["output"]
-        )
-        assert payload.get("ok") is True
-        assert payload.get("injected") == "yes"
+        payload = fcos[-1].get("result") or {}
+        structured = payload.get("structuredContent") or {}
+        assert structured == {"ok": True, "injected": "yes"}
 
         # Assert no MCP tool invocation occurred
         assert not any(item.startswith("tool1:") for item in counter), (

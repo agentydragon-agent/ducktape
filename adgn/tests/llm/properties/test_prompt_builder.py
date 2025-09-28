@@ -2,16 +2,20 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from mcp.server.fastmcp import FastMCP
+
+from adgn.llm.mcp.inproc_transport import make_inproc_slot_spec
 from adgn.llm.properties.docker_env import PropertiesDockerWiring
 from adgn.llm.properties.prompts.builder import build_check_prompt, build_role_prompt
 
 
-def _dummy_wiring(defs_dir: str | None = "/props") -> PropertiesDockerWiring:
+def _dummy_wiring(defs_dir: Path | None = Path("/props")) -> PropertiesDockerWiring:
     # Minimal wiring sufficient for env line; no MCP servers used in prompt-only compose
+    dummy_server = FastMCP("dummy")
     return PropertiesDockerWiring(
-        server_spec=None,  # type: ignore[arg-type]
+        server_spec=make_inproc_slot_spec(dummy_server),
         working_dir=Path("/"),
-        definitions_container_dir=Path(defs_dir),
+        definitions_container_dir=defs_dir,
         image_name="n/a",
     )
 

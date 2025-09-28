@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Iterable
-from typing import Any, Protocol, Awaitable, Callable
+from typing import Any, Protocol
 from pydantic import BaseModel, ConfigDict
-from adgn.llm.openai_utils.model import ResponsesRequest, ResponsesResult
+from adgn.llm.openai_utils.model import (
+    OpenAIModelProto,
+    ResponsesRequest,
+    ResponsesResult,
+)
 
 
 # Sentinel for selecting a real AsyncOpenAI client in parameterized tests
@@ -42,22 +46,8 @@ class _CapturingResponses:
         return self._outputs[idx]
 
 
-class FakeOpenAIClient:
-    """Minimal fake OpenAI client exposing .responses.create(...).
-
-    Use for non-streaming tests that need to return a predetermined sequence
-    of Response-like objects and inspect call counts/inputs.
-    """
-
-    def __init__(self, outputs: Iterable[Any]) -> None:
-        self.responses = _CapturingResponses(outputs)
-
-    async def responses_create(self, req: ResponsesRequest) -> ResponsesResult:
-        return await self.responses.create(req)
-
-
-class CapturingClient:
-    """Shared test helper mirroring FakeOpenAIClient, named to match test intent.
+class CapturingClient(OpenAIModelProto):
+    """Shared test helper exposing a minimal responses.create stub for captures.
 
     Provides .responses with a create(**kwargs) method that records typed
     ResponseCreateParamsNonStreaming requests under .captured and returns a
@@ -83,7 +73,7 @@ def make_mock(responses_create_fn: ResponsesCreateFn) -> OpenAIClient:
         async def create(self, req: ResponsesRequest) -> ResponsesResult:
             return await responses_create_fn(req)
 
-    class _Client:
+    class _Client(OpenAIModelProto):
         def __init__(self) -> None:
             self.responses = _Responses()
 

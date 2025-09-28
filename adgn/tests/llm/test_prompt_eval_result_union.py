@@ -11,16 +11,16 @@ from adgn.llm.properties.prompt_eval.server import build_server
 from .support.openai_mock import LIVE  # sentinel for live client
 from adgn.llm.openai_utils.model import (
     ResponsesRequest,
-    ResponsesResult,
-    Usage,
-    FunctionCallOut,
-    AssistantResponseMessage,
 )
+from tests.fixtures.responses import (
+    ResponsesFactory,
+)  # single factory for adapter responses
 
 
 # Behavior (mock): our Pydantic request; return our Pydantic ResponsesResult
 async def _behavior_ok(req):
     assert isinstance(req, ResponsesRequest), f"unexpected request type: {type(req)!r}"
+    rf = ResponsesFactory("gpt-5-nano")
 
     # If grader tools are offered, simulate a function_call to submit_result
     tools = req.tools
@@ -33,21 +33,17 @@ async def _behavior_ok(req):
             n in ("grader_submit__submit_result", "mcp__grader_submit__submit_result")
             for n in names
         ):
-            args = (
-                '{"result": {"true_positive_ids": [], "false_positive_ids": [], '
-                '"unknown_critique_ids": [], "precision": 1.0, "recall": 1.0, "message_md": "ok"}}'
-            )
-            return ResponsesResult(
-                id="mock-fc",
-                usage=Usage(input_tokens=0, output_tokens=0, total_tokens=0),
-                output=[
-                    FunctionCallOut(
-                        call_id="call_1",
-                        name="mcp__grader_submit__submit_result",
-                        arguments=args,
-                    )
-                ],
-            )
+            args = {
+                "result": {
+                    "true_positive_ids": [],
+                    "false_positive_ids": [],
+                    "unknown_critique_ids": [],
+                    "precision": 1.0,
+                    "recall": 1.0,
+                    "message_md": "ok",
+                }
+            }
+            return rf.make(rf.tool_call("mcp__grader_submit__submit_result", args))
 
     # Otherwise: critic path → simple assistant text
     inp = req.input
@@ -57,11 +53,7 @@ async def _behavior_ok(req):
             text = "ok-foo"
         elif inp == "discover":
             text = "ok-discover"
-    return ResponsesResult(
-        id="mock-msg",
-        usage=Usage(input_tokens=0, output_tokens=1, total_tokens=1),
-        output=[AssistantResponseMessage(text=text)],
-    )
+    return rf.make_assistant_message(text)
 
 
 @pytest.mark.asyncio

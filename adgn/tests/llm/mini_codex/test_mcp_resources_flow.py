@@ -1,14 +1,11 @@
 from __future__ import annotations
 
-import json
 
 import pytest
 from adgn.llm.openai_utils.model import (
-    ResponsesResult,
-    Usage,
-    FunctionCallOut,
-    AssistantResponseMessage,
     FakeOpenAIModel,
+    FunctionCallItem,
+    FunctionCallOutputItem,
 )
 
 from adgn.llm.mini_codex.agent import MiniCodex
@@ -20,6 +17,7 @@ from adgn.llm.mcp.resources.server import ResourcesReadArgs
 
 
 @pytest.mark.asyncio
+@pytest.mark.requires_docker
 async def test_model_reads_container_info_with_stubbed_openai(
     reasoning_model,
     responses_factory,
@@ -30,33 +28,20 @@ async def test_model_reads_container_info_with_stubbed_openai(
 
     async with McpManager({"docker": spec}) as mcp:
         # Prepare a deterministic two-step sequence: function_call then final text
-        args = ResourcesReadArgs(
+        ResourcesReadArgs(
             server="docker", uri="resource://container.info", max_bytes=1024
         )
         seq = [
-            ResponsesResult(
-                id="fc",
-                usage=Usage(input_tokens=0, output_tokens=0, total_tokens=0),
-                output=[
-                    FunctionCallOut(
-                        call_id="call_1",
-                        name="mcp__resources__read",
-                        arguments=json.dumps(
-                            {
-                                "server": "docker",
-                                "uri": "resource://container.info",
-                                "start_offset": 0,
-                                "max_bytes": 1024,
-                            }
-                        ),
-                    )
-                ],
+            responses_factory.make_tool_call(
+                "mcp__resources__read",
+                {
+                    "server": "docker",
+                    "uri": "resource://container.info",
+                    "start_offset": 0,
+                    "max_bytes": 1024,
+                },
             ),
-            ResponsesResult(
-                id="msg",
-                usage=Usage(input_tokens=0, output_tokens=1, total_tokens=1),
-                output=[AssistantResponseMessage(text="ok")],
-            ),
+            responses_factory.make_assistant_message("ok"),
         ]
         client = FakeOpenAIModel(seq)
         rec = RecordingHandler()  # from adgn.llm.mini_codex.loggers
@@ -76,8 +61,6 @@ async def test_model_reads_container_info_with_stubbed_openai(
         # Verify that the second call included the function_call and function_call_output (stateless replay).
         second = client.captured[1]
         input_items = list(second.input or [])
-        from adgn.llm.openai_utils.model import FunctionCallItem, FunctionCallOutputItem
-
         assert any(isinstance(it, FunctionCallItem) for it in input_items), (
             f"Expected FunctionCallItem in next-turn input: {input_items}"
         )

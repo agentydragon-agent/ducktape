@@ -1,5 +1,8 @@
 -- OpenAI Probe Results Schema for TimescaleDB
 
+-- Recreate table with JSONB payloads (drop old data)
+DROP TABLE IF EXISTS probe_results;
+
 CREATE TABLE probe_results (
   -- Timing
   start_time TIMESTAMPTZ NOT NULL,
@@ -16,20 +19,14 @@ CREATE TABLE probe_results (
 
   -- Error details (NULL if success)
   error_code TEXT,      -- 'TIMEOUT', 'NO-CAP', 'NOT-CHAT', 'SERVER-ERROR', etc
-  error_message TEXT,   -- Full error text
   error_status INT,     -- HTTP status code
+  error_body JSONB,     -- Raw error body from API (structured)
 
   -- Chat API response fields (NULL unless kind='chat' and success=true)
-  chat_response_content TEXT,    -- Assistant's response content
-  chat_response_role TEXT,        -- Should be 'assistant'
-  chat_finish_reason TEXT,        -- 'stop', 'length', etc
-  chat_completion_tokens INT,     -- Tokens in response
-  chat_prompt_tokens INT,         -- Tokens in prompt
+  chat_response JSONB,           -- Full chat API response payload
 
   -- Responses API fields (NULL unless kind='responses' and success=true)
-  responses_text TEXT,            -- The generated text
-  responses_finish_reason TEXT,   -- 'stop', 'length', etc
-  responses_tokens INT,           -- Tokens generated
+  responses_body JSONB,           -- Full responses API payload
 
   -- Request metadata
   request_id TEXT,

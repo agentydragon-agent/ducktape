@@ -4,11 +4,10 @@ from collections.abc import Callable
 import json
 import shlex
 from typing import Any
-
-from openai.types.responses import ResponseReasoningItem
+from adgn.llm.openai_utils.model import ReasoningOut
 
 from .aggregating_handler import BaseHandler
-from .handler import AssistantText, FunctionCallOutput, ToolCall, UserText
+from .handler import AssistantText, ToolCall, ToolCallOutput, UserText
 from .loop_control import NoLoopDecision
 from .mcp_manager import parse_mcp_function
 
@@ -70,16 +69,16 @@ class DisplayEventsHandler(BaseHandler):
         if s:
             self._write(s)
 
-    def on_function_call_output_event(self, evt: FunctionCallOutput) -> None:
+    def on_tool_result_event(self, evt: ToolCallOutput) -> None:
         c = self._calls.get(evt.call_id)
-        s = self._render_function_call_output(c, evt)
+        s = self._render_tool_result(c, evt)
         if s:
             self._write(s)
 
-    def on_reasoning(self, item: ResponseReasoningItem) -> None:  # type: ignore[override]
+    def on_reasoning(self, item: ReasoningOut) -> None:
         return None
 
-    def on_before_sample(self) -> NoLoopDecision:  # type: ignore[override]
+    def on_before_sample(self) -> NoLoopDecision:
         return NoLoopDecision()
 
     # Rendering helpers ------------------------------------------------------
@@ -95,19 +94,21 @@ class DisplayEventsHandler(BaseHandler):
         header = f"▶ {name} input:"
         return f"{header}\n{self._pp_json(args)}"
 
-    def _render_function_call_output(
+    def _render_tool_result(
         self,
         call: ToolCall | None,
-        output: FunctionCallOutput,
+        output: ToolCallOutput,
     ) -> str:
-        # Try structured JSON; fall back to raw text
-        try:
-            data = json.loads(output.output)
-        except Exception:
-            return f"◀ tool_output (raw):\n{self._truncate_text(output.output)}"
+        result = output.result
+        structured = result.structuredContent
+        if structured is not None:
+            data: Any = structured
+        elif result.content:
+            data = [block.model_dump(by_alias=True) for block in result.content]
+        else:
+            data = {"isError": result.isError}
 
         if call:
-            # Prefer specialized docker_exec rendering when identifiable
             try:
                 server, tool = parse_mcp_function(call.name or "")
             except Exception:

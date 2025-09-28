@@ -75,7 +75,7 @@ def test_github_pr_display_with_mocked_pygithub(
     write_pr_fixtures(config, pr_map)
 
     # Start daemon implicitly by running status once
-    wt_cli.env = env  # type: ignore[attr-defined]
+    wt_cli.env = env
     out = wt_cli.status(timeout=timedelta(seconds=30.0))
     assert out.returncode == 0
 

@@ -7,7 +7,7 @@ import subprocess
 import sys
 import time
 
-from mcp_helpers import read_line_json as _real_read, send_line_json as _real_send
+from mcp_helpers import read_line_json, send_line_json
 import pytest
 import yaml
 
@@ -18,14 +18,6 @@ TOOLS_LIST_ID = 99
 EXEC_OK_ID = 2
 EXEC_NET_ID = 4
 EXEC_DENIED_ID = 3
-
-
-def _send_line_json(w, obj: dict) -> None:
-    _real_send(w, obj)
-
-
-def _read_line_json(r, timeout: float) -> dict | None:
-    return _real_read(r, timeout)
 
 
 @pytest.mark.macos
@@ -151,7 +143,7 @@ def test_example_bundle_and_launch(tmp_path):
 
     # MCP stdio protocol: initialize, then execute a code cell
     try:
-        _send_line_json(
+        send_line_json(
             p.stdin,
             {
                 "jsonrpc": "2.0",
@@ -167,24 +159,24 @@ def test_example_bundle_and_launch(tmp_path):
         init_resp = None
         deadline = time.time() + 45.0
         while time.time() < deadline and not init_resp:
-            m = _read_line_json(p.stdout, 1.0)
+            m = read_line_json(p.stdout, 1.0)
             if m and m.get("id") == INIT_ID and ("result" in m or "error" in m):
                 init_resp = m
         assert init_resp is not None, f"initialize failed: {init_resp}"
         assert "result" in init_resp, f"initialize failed: {init_resp}"
-        _send_line_json(
+        send_line_json(
             p.stdin,
             {"jsonrpc": "2.0", "method": "notifications/initialized"},
         )
         time.sleep(0.3)
         # List available tools (sanity)
-        _send_line_json(
+        send_line_json(
             p.stdin, {"jsonrpc": "2.0", "id": TOOLS_LIST_ID, "method": "tools/list"}
         )
         tools_resp = None
         deadline = time.time() + 45.0
         while time.time() < deadline and not tools_resp:
-            m = _read_line_json(p.stdout, 1.0)
+            m = read_line_json(p.stdout, 1.0)
             if m and m.get("id") == TOOLS_LIST_ID and ("result" in m or "error" in m):
                 tools_resp = m
         assert tools_resp is not None, f"tools/list failed: {tools_resp}"
@@ -192,7 +184,7 @@ def test_example_bundle_and_launch(tmp_path):
 
         # Happy-path execution
         code_ok = "print('OK:', 2+2)"
-        _send_line_json(
+        send_line_json(
             p.stdin,
             {
                 "jsonrpc": "2.0",
@@ -207,7 +199,7 @@ def test_example_bundle_and_launch(tmp_path):
         exec_ok = None
         deadline = time.time() + 45.0
         while time.time() < deadline and not exec_ok:
-            m = _read_line_json(p.stdout, 1.0)
+            m = read_line_json(p.stdout, 1.0)
             if m and m.get("id") == EXEC_OK_ID and ("result" in m or "error" in m):
                 exec_ok = m
         assert exec_ok is not None, f"code exec failed: {exec_ok}"
@@ -223,7 +215,7 @@ def test_example_bundle_and_launch(tmp_path):
             "except Exception as e:\n"
             "    print('NET_FAIL:', type(e).__name__, str(e)[:80])\n"
         )
-        _send_line_json(
+        send_line_json(
             p.stdin,
             {
                 "jsonrpc": "2.0",
@@ -238,7 +230,7 @@ def test_example_bundle_and_launch(tmp_path):
         exec_net = None
         deadline = time.time() + 45.0
         while time.time() < deadline and not exec_net:
-            m = _read_line_json(p.stdout, 1.0)
+            m = read_line_json(p.stdout, 1.0)
             if m and m.get("id") == EXEC_NET_ID and ("result" in m or "error" in m):
                 exec_net = m
         assert exec_net is not None, f"no network response: {exec_net}"
@@ -259,7 +251,7 @@ def test_example_bundle_and_launch(tmp_path):
             tmp_path.parent / (tmp_path.name + "_outside") / "denied.txt"
         ).as_posix()
         code_denied = f"import pathlib\npathlib.Path('{outside_file}').write_text('x')"
-        _send_line_json(
+        send_line_json(
             p.stdin,
             {
                 "jsonrpc": "2.0",
@@ -274,7 +266,7 @@ def test_example_bundle_and_launch(tmp_path):
         exec_bad = None
         deadline = time.time() + 45.0
         while time.time() < deadline and not exec_bad:
-            m = _read_line_json(p.stdout, 1.0)
+            m = read_line_json(p.stdout, 1.0)
             if m and m.get("id") == EXEC_DENIED_ID and ("result" in m or "error" in m):
                 exec_bad = m
         # Expect denial reflected as an error or failure text in results
@@ -390,7 +382,7 @@ def test_network_open_allows_http(tmp_path):
         sys.stderr.write("[stderr] " + line.decode(errors="ignore"))
 
     try:
-        _send_line_json(
+        send_line_json(
             p.stdin,
             {
                 "jsonrpc": "2.0",
@@ -406,12 +398,12 @@ def test_network_open_allows_http(tmp_path):
         init = None
         deadline = time.time() + 45.0
         while time.time() < deadline and not init:
-            m = _read_line_json(p.stdout, 1.0)
+            m = read_line_json(p.stdout, 1.0)
             if m and m.get("id") == INIT_ID and ("result" in m or "error" in m):
                 init = m
         assert init is not None, init
         assert "result" in init, init
-        _send_line_json(
+        send_line_json(
             p.stdin,
             {"jsonrpc": "2.0", "method": "notifications/initialized"},
         )
@@ -424,7 +416,7 @@ def test_network_open_allows_http(tmp_path):
             "    data = r.read(200).decode('utf-8', 'ignore')\n"
             "print('NET_OK:', 'Example Domain' in data, len(data))\n"
         )
-        _send_line_json(
+        send_line_json(
             p.stdin,
             {
                 "jsonrpc": "2.0",
@@ -439,7 +431,7 @@ def test_network_open_allows_http(tmp_path):
         resp = None
         deadline = time.time() + 45.0
         while time.time() < deadline and not resp:
-            m = _read_line_json(p.stdout, 1.0)
+            m = read_line_json(p.stdout, 1.0)
             if m and m.get("id") == EXEC_OK_ID and ("result" in m or "error" in m):
                 resp = m
         assert resp is not None, resp

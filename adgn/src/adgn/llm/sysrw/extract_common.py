@@ -4,7 +4,7 @@ from collections.abc import Iterator
 import gzip
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, TextIO
 
 from .constants import TOOLS_HEADER
 
@@ -66,14 +66,16 @@ def iter_wire_lines(path: Path) -> Iterator[str]:
     if not path.exists():
         return
 
-    def _gzip_open(p: Path):
+    def _gzip_open(p: Path) -> TextIO:
         return gzip.open(p, "rt", encoding="utf-8", errors="ignore")
 
-    def _plain_open(p: Path):
+    def _plain_open(p: Path) -> TextIO:
         return p.open(encoding="utf-8", errors="ignore")
 
-    opener = _gzip_open if str(path).endswith(".gz") else _plain_open
-    with opener(path) as f:  # type: ignore[misc]
+    opener: Callable[[Path], TextIO] = (
+        _gzip_open if str(path).endswith(".gz") else _plain_open
+    )
+    with opener(path) as f:
         yield from f
 
 

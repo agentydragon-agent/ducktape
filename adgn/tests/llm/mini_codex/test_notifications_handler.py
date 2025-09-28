@@ -10,8 +10,8 @@ from adgn.llm.mini_codex.mcp_manager import (
 
 
 class _FakeMcp(McpManager):
-    def __init__(self):  # type: ignore[no-untyped-def]
-        # Bypass base init; only need poll_notifications()
+    def __init__(self) -> None:
+        super().__init__({})
         self._batch = NotificationsBatch(
             resources_updated=[
                 ResourceUpdateEvent(server="git-ro", uri="http://a.txt", version=2),
@@ -20,13 +20,13 @@ class _FakeMcp(McpManager):
             tools_invalidated=[],
         )
 
-    async def __aenter__(self):  # pragma: no cover
+    async def __aenter__(self) -> "_FakeMcp":  # pragma: no cover
         return self
 
-    async def __aexit__(self, exc_type, exc, tb):  # pragma: no cover
+    async def __aexit__(self, exc_type, exc, tb) -> None:  # pragma: no cover
         return None
 
-    def poll_notifications(self) -> NotificationsBatch:  # type: ignore[override]
+    def poll_notifications(self) -> NotificationsBatch:
         b = self._batch
         # Return once, then empty
         self._batch = NotificationsBatch()

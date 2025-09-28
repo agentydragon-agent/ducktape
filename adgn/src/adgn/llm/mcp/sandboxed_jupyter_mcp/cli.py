@@ -1,10 +1,10 @@
 import sys
 
-from .wrapper import main as _main
+from . import wrapper
 
 
 def main() -> int:
-    return _main()
+    return wrapper.main()
 
 
 if __name__ == "__main__":

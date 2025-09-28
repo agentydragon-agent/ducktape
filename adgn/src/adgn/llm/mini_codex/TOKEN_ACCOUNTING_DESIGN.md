@@ -184,9 +184,9 @@ class Reducer:
     def on_tool_call(self, evt: ToolCall) -> None:
         for h in self._handlers:
             h.on_tool_call(evt)
-    def on_function_call_output(self, evt: FunctionCallOutput) -> None:
+    def on_tool_result(self, evt: ToolCallOutput) -> None:
         for h in self._handlers:
-            h.on_function_call_output(evt)
+            h.on_tool_result_event(evt)
 ```
 
 DisplayEventsHandler (shape)
@@ -201,8 +201,8 @@ class DisplayEventsHandler(BaseHandler):
     def on_tool_call(self, evt: ToolCall) -> None:
         # access evt.name, evt.args, evt.call_id; usage (if attached) is evt.usage
         ...
-    def on_function_call_output(self, evt: FunctionCallOutput) -> None:
-        # access evt.call_id, evt.output
+    def on_tool_result_event(self, evt: ToolCallOutput) -> None:
+        # access evt.call_id, evt.result
         ...
 ```
 
@@ -217,7 +217,7 @@ class TranscriptLoggerHandler(BaseHandler):
     def on_user_text(self, evt: UserText) -> None: self._emit(evt)
     def on_assistant_text(self, evt: AssistantText) -> None: self._emit(evt)
     def on_tool_call(self, evt: ToolCall) -> None: self._emit(evt)
-    def on_function_call_output(self, evt: FunctionCallOutput) -> None: self._emit(evt)
+    def on_tool_result_event(self, evt: ToolCallOutput) -> None: self._emit(evt)
 ```
 
 Usage in MiniCodex.create (example)

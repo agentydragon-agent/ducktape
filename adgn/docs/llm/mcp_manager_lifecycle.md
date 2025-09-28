@@ -473,16 +473,17 @@ OpenAI Responses will return function calls with a namespaced tool name and argu
 Example (raw call + raw serialization):
 
 ```python
+from mcp import types as mcp_types
 from adgn.llm.mini_codex.mcp_manager import parse_mcp_function
-from adgn.llm.mini_codex.agent import _responses_output_from_calltool  # reuse exact serializer
 
-async def handle_responses_tool_call(mcp: McpManager, name: str, arguments: dict | str | None) -> str:
-    """Return the output string to emit as function_call_output for Responses replay."""
+async def handle_responses_tool_call(
+    mcp: McpManager, name: str, arguments: dict | str | None
+) -> mcp_types.CallToolResult:
+    """Return the typed CallToolResult to emit for a namespaced MCP tool call."""
+
     server, tool = parse_mcp_function(name)  # e.g., "mcp__git-ro__git_diff" -> ("git-ro", "git_diff")
     # Note: call_tool accepts either a dict or JSON string and validates object shape
-    call_result = await mcp.call_tool(server, tool, arguments)
-    # Convert MCP CallToolResult to the output string that Responses expects
-    return _responses_output_from_calltool(call_result)
+    return await mcp.call_tool(server, tool, arguments)
 ```
 
 Typed variant (servers that return `structuredContent['result']`):

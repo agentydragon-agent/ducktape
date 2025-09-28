@@ -1,31 +1,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import json
 from typing import Any
 
-from mcp.server.fastmcp import FastMCP
+from mcp import types as mcp_types
 import pytest
-from adgn.llm.openai_utils.model import (
-    FakeOpenAIModel,
-    ResponsesResult,
-    Usage,
-    FunctionCallOut,
-    AssistantResponseMessage,
-)
+from adgn.llm.openai_utils.model import FakeOpenAIModel
 
 from adgn.llm.mini_codex.agent import MiniCodex
 from adgn.llm.mini_codex.aggregating_handler import AutoHandler, BaseHandler
 from adgn.llm.mini_codex.mcp_manager import McpManager, parse_mcp_function
-
-# Minimal in-proc MCP server with a single echo tool
-mcp = FastMCP("echo")
-
-
-@mcp.tool()
-def echo(text: str) -> dict:
-    return {"ok": True, "echo": text}
-
 
 class DummyClient:
     @property
@@ -38,7 +22,7 @@ class DummyClient:
 @dataclass
 class Record:
     assistant_text: list[str]
-    tool_outputs: list[str]
+    tool_outputs: list[dict[str, Any]]
 
 
 class RecordingHandler(BaseHandler):
@@ -48,46 +32,35 @@ class RecordingHandler(BaseHandler):
     def on_assistant_text_event(self, evt: Any) -> None:  # evt has .text
         self.rec.assistant_text.append(getattr(evt, "text", ""))
 
-    def on_function_call_output_event(self, evt: Any) -> None:  # evt has .output
-        self.rec.tool_outputs.append(getattr(evt, "output", ""))
+    def on_tool_result_event(self, evt) -> None:
+        self.rec.tool_outputs.append(
+            evt.result.model_dump(mode="json", exclude_none=True)
+        )
 
 
 @pytest.mark.asyncio
-async def test_agent_mcp_echo_tool_use(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_agent_mcp_echo_tool_use(
+    monkeypatch: pytest.MonkeyPatch,
+    responses_factory,
+    make_echo_spec,
+) -> None:
     # Patch parse_mcp_function to use our naming convention if needed (no-op here)
     assert parse_mcp_function("echo__echo") == ("echo", "echo") or True
 
     # Provide a two-step sequence via our shared Pydantic fake client
     client = FakeOpenAIModel(
         [
-            ResponsesResult(
-                id="test-id-1",
-                usage=Usage(input_tokens=1, output_tokens=0, total_tokens=1),
-                output=[
-                    FunctionCallOut(
-                        name="echo__echo",
-                        arguments='{"text":"hello"}',
-                        call_id="call_1",
-                    ),
-                ],
-            ),
-            ResponsesResult(
-                id="test-id-2",
-                usage=Usage(input_tokens=0, output_tokens=1, total_tokens=1),
-                output=[AssistantResponseMessage(text="done")],
-            ),
+            responses_factory.make_tool_call("echo__echo", {"text": "hello"}),
+            responses_factory.make_assistant_message("done"),
         ]
     )
 
     # Build in-proc slot spec for our FastMCP server
-    spec = McpManager.slot_from_spec(
-        "echo",
-        {"transport": "inproc", "server": mcp},
-    )
+    specs = make_echo_spec()
 
     rec = Record(assistant_text=[], tool_outputs=[])
 
-    async with McpManager({"echo": spec}) as mgr:
+    async with McpManager(specs) as mgr:
         agent = await MiniCodex.create(
             model="test-model",
             mcp=mgr,
@@ -99,9 +72,10 @@ async def test_agent_mcp_echo_tool_use(monkeypatch: pytest.MonkeyPatch) -> None:
         async with agent:
             res = await agent.run(user_text="use echo")
 
-    # The tool output should be emitted (FunctionCallOutput) and assistant text should follow
+    # The tool output should be emitted (ToolCallOutput) and assistant text should follow
     assert rec.tool_outputs, "No tool outputs captured"
-    out0 = json.loads(rec.tool_outputs[0])
-    assert out0.get("ok") is True
-    assert out0.get("echo") == "hello"
+    out0 = rec.tool_outputs[0]
+    result = mcp_types.CallToolResult.model_validate(out0)
+    structured = result.structuredContent or {}
+    assert structured == {"ok": True, "echo": "hello"}
     assert res.text.strip() == "done"

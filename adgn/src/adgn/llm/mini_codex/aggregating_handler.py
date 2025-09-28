@@ -3,12 +3,10 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 import json
 import logging
-from typing import Any, Literal
+from typing import Literal
 
 from mcp import types as mcp_types
-from adgn.llm.openai_utils.model import (
-    UserMessage,
-)
+from adgn.llm.openai_utils.model import UserMessage
 from pydantic import BaseModel
 
 # TODO(mpokorny): Consider supporting ResponseFunctionWebSearch (type="function_web_search")
@@ -20,11 +18,12 @@ from adgn.llm.mini_codex.handler import (
     BeforeToolCallDecision,
     BypassToolInjectOutput,
     ContinueDecision,
-    FunctionCallOutput,
     Response,
     ToolCall,
+    ToolCallOutput,
     UserText,
 )
+from adgn.llm.openai_utils.model import ReasoningOut
 from adgn.llm.mini_codex.loop_control import (
     Abort,
     Auto,
@@ -67,7 +66,7 @@ class GateUntil(BaseHandler):
         self._is_done = is_done
         self._defer_when = defer_when
 
-    def on_before_sample(self):  # type: ignore[override]
+    def on_before_sample(self):
         if self._defer_when and self._defer_when():
             return NoLoopDecision()
         if self._is_done():
@@ -261,11 +260,11 @@ class Reducer:
                 )
         return first_nc
 
-    def on_function_call_output(self, evt: FunctionCallOutput) -> None:
+    def on_tool_result(self, evt: ToolCallOutput) -> None:
         for h in self._handlers:
-            h.on_function_call_output_event(evt)
+            h.on_tool_result_event(evt)
 
-    def on_reasoning(self, item: Any) -> None:  # type: ignore[override]
+    def on_reasoning(self, item: ReasoningOut) -> None:
         for h in self._handlers:
             h.on_reasoning(item)
 
@@ -287,7 +286,7 @@ class NotificationsHandler(BaseHandler):
         self._mcp = mcp
         self._msg_counter = 0
 
-    def on_before_sample(self):  # type: ignore[override]
+    def on_before_sample(self):
         batch = self._mcp.poll_notifications()
         if not batch.resources_updated:
             logger.debug("NotificationsHandler: no updates")
@@ -331,8 +330,8 @@ class NotificationsHandler(BaseHandler):
         # NotificationsHandler does not participate in per-tool decisions; defer
         return ContinueDecision()
 
-    def on_function_call_output(self, evt: FunctionCallOutput) -> None:
+    def on_tool_result(self, evt: ToolCallOutput) -> None:
         return None
 
-    def on_reasoning(self, item: Any) -> None:  # type: ignore[override]
+    def on_reasoning(self, item: ReasoningOut) -> None:
         return None

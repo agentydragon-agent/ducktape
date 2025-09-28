@@ -2,34 +2,23 @@ from __future__ import annotations
 
 import asyncio
 from concurrent.futures import CancelledError
-import json
 
 from fastapi.testclient import TestClient
-from mcp.server.fastmcp import FastMCP
+from mcp import types as mcp_types
 import pytest
 
-from adgn.llm.mcp.inproc_transport import make_inproc_slot_spec
 from adgn.llm.mini_codex.agent import MiniCodex
 from adgn.llm.mini_codex.aggregating_handler import AutoHandler
 from adgn.llm.mini_codex.mcp_manager import McpManager
 from adgn.llm.mini_codex.ui import protocol
 from adgn.llm.mini_codex.ui.server import create_app
-from tests.llm.support.openai_builders import (
-    make_assistant_text_response,
-    make_function_call_response,
-)
+from adgn.llm.mini_codex.ui.shared_bus import UiBus
+from adgn.llm.mini_codex.ui.ui_handler import UiAutoHandler
+from adgn.llm.mcp.inproc_transport import make_inproc_slot_spec
+from adgn.llm.mcp.ui.server import make_ui_mcp
 from tests.llm.support.openai_mock import make_mock
 
 Envelope = protocol.Envelope
-
-
-# Minimal in-proc MCP server with a single echo tool
-mcp = FastMCP("echo")
-
-
-@mcp.tool()
-def echo(text: str) -> dict:
-    return {"ok": True, "echo": text}
 
 
 class DummyClient:
@@ -41,107 +30,109 @@ class DummyClient:
 
 
 @pytest.mark.timeout(5)
-def test_ws_tool_multiturn(monkeypatch: pytest.MonkeyPatch) -> None:
-    """WS multi-turn: user -> function_call -> MCP result -> assistant text."""
+def test_ws_tool_multiturn(
+    responses_factory,
+    make_echo_spec,
+) -> None:
+    """WS multi-turn: user -> echo tool -> typed MCP result -> UI message."""
 
-    # Two-step mock via shared OpenAI mock: 1) function_call; 2) assistant message
     state = {"step": 0}
 
-    async def responses_create(req):
-        if state["step"] == 0:
-            state["step"] += 1
-            return make_function_call_response(
-                tool_name="mcp__echo__echo",
-                arguments_json=json.dumps({"text": "hello"}),
+    async def responses_create(_req):
+        step = state["step"]
+        state["step"] += 1
+        if step == 0:
+            return responses_factory.make_tool_call(
+                "mcp__echo__echo", {"text": "hello"}, call_id="call_echo"
             )
-        return make_assistant_text_response(text="done")
+        if step == 1:
+            return responses_factory.make_tool_call(
+                "mcp__ui__send_message",
+                {"mime": "text/markdown", "content": "**hello**"},
+                call_id="call_ui_msg",
+            )
+        return responses_factory.make_tool_call(
+            "mcp__ui__end_turn", {}, call_id="call_ui_end"
+        )
 
     client = make_mock(responses_create)
+    bus = UiBus()
 
-    spec = make_inproc_slot_spec(mcp)
+    specs = make_echo_spec()
+    specs["ui"] = make_inproc_slot_spec(make_ui_mcp("ui", bus))
 
-    async def _mk_agent() -> tuple[MiniCodex, McpManager]:
-        mcp_mgr = McpManager({"echo": spec})
-        await mcp_mgr.__aenter__()
-        agent = await MiniCodex.create(
-            model="test-model",
-            mcp=mcp_mgr,
-            system="You are a test agent.",
-            client=client,
-            handlers=[AutoHandler()],
-            parallel_tool_calls=False,
-        )
-        return agent, mcp_mgr
+    # Create a separate async function to handle both creation and test execution
+    async def _run_test():
+        async with McpManager(specs) as mcp_mgr:
+            agent = await MiniCodex.create(
+                model="test-model",
+                mcp=mcp_mgr,
+                system="You are a test agent.",
+                client=client,
+                handlers=[UiAutoHandler(bus=bus)],
+                parallel_tool_calls=False,
+            )
+            return agent
 
-    agent, _mcp_mgr = asyncio.run(_mk_agent())
-    app = create_app()
+    agent = asyncio.run(_run_test())
+
+    app = create_app(require_static_assets=False)
+    app.state.ui_bus = bus
     app.state.session.attach_agent(agent)
 
     try:
-        with TestClient(app) as client, client.websocket_connect("/ws") as ws:
-            # 1) user sends message
+        with TestClient(app) as client_ws, client_ws.websocket_connect("/ws") as ws:
             ws.send_json({"type": "send", "text": "use echo"})
 
-            # Drain until accepted, but buffer any earlier events to process
-            pre_msgs = []
             for _ in range(20):
                 env = Envelope.model_validate(ws.receive_json())
                 if env.payload.type == "accepted":
                     break
-                pre_msgs.append(env)
-            else:
+            else:  # pragma: no cover - defensive
                 raise AssertionError("accepted not received")
 
-            saw_tool_pending = False
-            call_id = None
-            saw_function_output = False
-            saw_assistant_text = False
+            saw_echo_output = False
+            saw_ui_message = False
+            saw_ui_end = False
             saw_finished = False
 
-            def process(env):
-                nonlocal \
-                    saw_tool_pending, \
-                    call_id, \
-                    saw_function_output, \
-                    saw_assistant_text, \
-                    saw_finished
-                p = env.payload
-                if p.type == "approval_pending":
-                    saw_tool_pending = True
-                    call_id = p.call_id
-                    # approve
-                    ws.send_json({"type": "approve", "call_id": call_id})
-                elif p.type == "function_call_output":
-                    body = json.loads(p.output)
-                    assert body.get("ok") is True
-                    assert body.get("echo") == "hello"
-                    saw_function_output = True
-                elif p.type == "assistant_text":
-                    assert p.text == "done"
-                    saw_assistant_text = True
-                elif (
-                    p.type == "run_status"
-                    and getattr(p, "run_state", None)
-                    and p.run_state.status == "finished"
-                ):
+            for _ in range(100):
+                payload = Envelope.model_validate(ws.receive_json()).payload
+                if payload.type == "approval_pending":
+                    ws.send_json({"type": "approve", "call_id": payload.call_id})
+                    continue
+
+                if payload.type == "function_call_output":
+                    result = mcp_types.CallToolResult.model_validate(payload.result)
+                    if payload.call_id == "call_echo":
+                        structured = result.structuredContent or {}
+                        assert structured == {"ok": True, "echo": "hello"}
+                        saw_echo_output = True
+                    elif payload.call_id == "call_ui_msg":
+                        structured = result.structuredContent or {}
+                        assert structured == {
+                            "mime": "text/markdown",
+                            "content": "**hello**",
+                        }
+                    elif payload.call_id == "call_ui_end":
+                        structured = result.structuredContent or {}
+                        assert structured == {"kind": "EndTurn"}
+                        saw_ui_end = True
+                    continue
+
+                if payload.type == "ui_message":
+                    assert payload.message.mime == "text/markdown"
+                    assert payload.message.content == "**hello**"
+                    saw_ui_message = True
+                    continue
+
+                if payload.type == "run_status" and payload.run_state.status == "finished":
                     saw_finished = True
-
-            # process any buffered pre-accepted messages
-            for env in pre_msgs:
-                process(env)
-
-            # 2) Expect approval_pending for tool call, then approve
-            # 3) Expect function_call_output (MCP answer)
-            # 4) Expect assistant_text and run_status finished
-            for _ in range(50):
-                env = Envelope.model_validate(ws.receive_json())
-                process(env)
-                if saw_finished:
                     break
 
-            assert saw_tool_pending, "approval_pending not received"
-            assert saw_function_output, "function_call_output not received"
-            assert saw_assistant_text, "assistant_text not received"
-            assert saw_finished, "run_status finished not received"
+            assert saw_echo_output, "echo tool output not emitted"
+            assert saw_ui_message, "UiMessageEvt not emitted"
+            assert saw_ui_end, "ui end_turn result not emitted"
+            assert saw_finished, "run_status finished not emitted"
     except CancelledError:
         pass

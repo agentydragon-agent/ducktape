@@ -40,7 +40,7 @@ class OneShotSyntheticHandler(BaseHandler):
     def on_tool_call(self, *_a, **_k):  # pragma: no cover - not used here
         return None
 
-    def on_function_call_output(self, *_a, **_k):  # pragma: no cover - not used here
+    def on_tool_result_event(self, *_a, **_k):  # pragma: no cover - not used here
         return None
 
 
@@ -72,10 +72,14 @@ async def test_parallel_tool_calls_reduce_wall_time():
 
     # Two tool calls with ~0.30s latency each; if run in parallel, wall time ~0.30-0.45s
     tc1 = FunctionCallItem(
-        name="mcp__dummy__slow", call_id="call_1", arguments=json.dumps({})
+        name="mcp__dummy__slow",
+        call_id="call_1",
+        arguments=json.dumps({}),
     )
     tc2 = FunctionCallItem(
-        name="mcp__dummy__slow2", call_id="call_2", arguments=json.dumps({})
+        name="mcp__dummy__slow2",
+        call_id="call_2",
+        arguments=json.dumps({}),
     )
 
     handler = OneShotSyntheticHandler(outputs=[tc1, tc2])

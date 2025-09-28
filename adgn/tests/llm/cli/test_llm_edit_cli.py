@@ -5,14 +5,14 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from adgn.llm import llm_edit as mod
 from adgn.llm.llm_edit import app
+from adgn.llm import client_factory
 
 
 def test_typer_cli_invokes_execute_without_sys(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    assistant_response_factory,
+    responses_factory,
 ) -> None:
     # Prepare a file path and a prompt
     p = tmp_path / "file.txt"
@@ -25,9 +25,9 @@ def test_typer_cli_invokes_execute_without_sys(
         called.update({"client_model": model})
         from adgn.llm.openai_utils.model import FakeOpenAIModel
 
-        return FakeOpenAIModel([assistant_response_factory("o4-mini", "ok")])
+        return FakeOpenAIModel([responses_factory.make_assistant_message("ok")])
 
-    monkeypatch.setattr(mod, "_make_openai_client", _mk_client, raising=True)
+    monkeypatch.setattr(client_factory, "build_client", _mk_client, raising=True)
 
     runner = CliRunner()
     result = runner.invoke(app, [str(p), prompt, "--model", "o4-mini"])  # type: ignore[list-item]

@@ -38,13 +38,15 @@ class ExecContent(BaseModel):
     stdout: str | None = None
     stderr: str | None = None
     exit_code: int | None = None
+    is_error: bool | None = None
     model_config = ConfigDict(extra="forbid")
 
 
 class JsonContent(BaseModel):
     content_kind: Literal["Json"] = "Json"
     args: Any | None = None
-    output: Any | None = None
+    result: dict | None = None
+    is_error: bool | None = None
     model_config = ConfigDict(extra="forbid")
 
 
@@ -130,6 +132,7 @@ def update_tool_exec_stream(
     stdout: str | None,
     stderr: str | None,
     exit_code: int | None,
+    is_error: bool | None = None,
 ) -> UiState:
     idx = _find_last_tool_index(state, call_id)
     if idx is None:
@@ -143,6 +146,7 @@ def update_tool_exec_stream(
                 "stdout": stdout if stdout is not None else content.stdout,
                 "stderr": stderr if stderr is not None else content.stderr,
                 "exit_code": exit_code if exit_code is not None else content.exit_code,
+                "is_error": is_error if is_error is not None else content.is_error,
             }
         )
         updated = it.model_copy(update={"content": content})
@@ -153,7 +157,11 @@ def update_tool_exec_stream(
 
 
 def update_tool_json_output(
-    state: UiState, call_id: str, *, output: Any | None
+    state: UiState,
+    call_id: str,
+    *,
+    result: dict | None,
+    is_error: bool | None,
 ) -> UiState:
     idx = _find_last_tool_index(state, call_id)
     if idx is None:
@@ -163,7 +171,10 @@ def update_tool_json_output(
     content = it.content
     if isinstance(content, JsonContent):
         content = content.model_copy(
-            update={"output": output if output is not None else content.output}
+            update={
+                "result": result if result is not None else content.result,
+                "is_error": is_error if is_error is not None else content.is_error,
+            }
         )
         updated = it.model_copy(update={"content": content})
         items = list(state.items)

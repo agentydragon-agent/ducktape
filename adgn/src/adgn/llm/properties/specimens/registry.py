@@ -18,9 +18,11 @@ from urllib.request import urlopen
 import _jsonnet
 from platformdirs import user_cache_dir
 import yaml
+from typing import Any, Callable, cast
 
 from ..models.issue import IssueCore, Occurrence, SpecimenIssuesLoadError
 from ..models.specimen import GitHubSource, GitSource, LocalSource, SpecimenDoc
+from ..prop_utils import pkg_dir
 
 
 @dataclass(frozen=True)
@@ -72,7 +74,8 @@ def _jsonnet_load_dir(
         stem = p.stem
         try:
             # NOTE: _jsonnet type stubs omit jpathdir/import_callback; runtime supports them.
-            raw = _jsonnet.evaluate_file(  # type: ignore[call-arg]
+            eval_file = cast(Callable[..., Any], _jsonnet.evaluate_file)
+            raw_obj = eval_file(
                 str(p),
                 jpathdir=[str(JSONNET_LIBDIR)],
                 import_callback=_jsonnet_importer,
@@ -80,11 +83,12 @@ def _jsonnet_load_dir(
         except Exception as e:  # pragma: no cover
             errors.append(f"{p}: Jsonnet evaluation error: {e}")
             continue
-        if not isinstance(raw, str):
+        if not isinstance(raw_obj, str):
             errors.append(
                 f"{p}: Jsonnet evaluator returned non-string (expected JSON text)",
             )
             continue
+        raw = raw_obj
         try:
             obj = json.loads(raw)
         except Exception as e:
@@ -188,6 +192,11 @@ def _repack_tar_with_mtime(archive: Path, mtime: int = 0) -> Path:
     return archive
 
 
+def _default_gitconfig() -> Path | None:
+    cfg = pkg_dir() / "gitconfig.local"
+    return cfg if cfg.exists() else None
+
+
 def _download_github_to(owner: str, repo: str, ref: str, dest: Path) -> bool:
     dest.parent.mkdir(parents=True, exist_ok=True)
     url = f"https://codeload.github.com/{owner}/{repo}/tar.gz/{ref}"
@@ -248,6 +257,7 @@ def ensure_archive_for_specimen_slug(
     manifest_path: Path,
     gitconfig: Path | None,
 ) -> Path:
+    gitconfig = gitconfig or _default_gitconfig()
     slug = manifest_path.parent.name
     out = _xdg_cache_base() / "by-slug" / f"{slug}.tar.gz"
     if os.environ.get("ADGN_DEBUG_SPECIMEN") == "1":
@@ -304,6 +314,7 @@ def resolve_source_root(
     manifest_path: Path,
     gitconfig: Path | None,
 ) -> Path:
+    gitconfig = gitconfig or _default_gitconfig()
     if isinstance(man.source, GitHubSource | GitSource):
         archive = ensure_archive_for_specimen_slug(man, manifest_path, gitconfig)
         return _extract_tar_gz_to_temp(archive)
@@ -372,6 +383,7 @@ class SpecimenRecord:
         On macOS/Docker Desktop, mounts must be under $HOME to be shared with the VM. We therefore extract/copy under
         ~/.cache/adgn-llm/workspaces/<slug>_<ts>/ and yield the single extracted top-level directory.
         """
+        gitconfig = gitconfig or _default_gitconfig()
         # Build a Docker-friendly mount root under $HOME
         mount_base = Path.home() / ".cache" / "adgn-llm" / "workspaces"
         mount_base.mkdir(parents=True, exist_ok=True)

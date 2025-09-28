@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from contextlib import AsyncExitStack
-import json
 import os
 from pathlib import Path
 import shutil
@@ -12,14 +11,11 @@ import uuid
 
 from adgn.llm.inop.clients.logging_openai_client import LoggingOpenAIModel
 from adgn.llm.inop.engine.models import (
-    AssistantMessage,
     FinalOutput,
     Rollout,
     RunnerEnvironment,
     TaskDefinition,
     TaskType,
-    ToolCall,
-    ToolResult,
     TrajectoryItem,
     UserInput,
 )
@@ -51,7 +47,10 @@ class MiniCodexRunner(AgentRunner):
         openai_model: LoggingOpenAIModel,
     ) -> None:
         super().__init__(runner_id, config)
-        self.model = config.get("model", openai_model.model)
+        configured_model = config.get("model")
+        self.model = (
+            configured_model if isinstance(configured_model, str) else openai_model.model_id
+        )
         self.reasoning_effort = config.get("reasoning_effort")
         self.workspace_path: Path | None = None
         self._exit_stack: AsyncExitStack | None = None
@@ -166,47 +165,8 @@ class MiniCodexRunner(AgentRunner):
         )
 
         trajectory: list[TrajectoryItem] = [UserInput(text=task.prompt)]
-        # TODO(mpokorny): Tests needing event capture must pass handlers=[...] with their own capture handler.
-        # This runner does not reconstruct events; result.sequence was dropped.
-        events_iter: list[dict[str, Any]] = []
-        for evt in events_iter:
-            kind = evt.get("kind")
-            if kind == "assistant_text":
-                trajectory.append(
-                    AssistantMessage(text=evt.get("text", ""), original=evt),
-                )
-            elif kind == "tool_call":
-                trajectory.append(
-                    ToolCall(
-                        tool_name=evt.get("name", ""),
-                        arguments=evt.get("args", {}),
-                        original=evt,
-                    ),
-                )
-            elif kind == "function_call_output":
-                raw_output = evt.get("output")
-                parsed_output: Any = raw_output
-                if isinstance(raw_output, str):
-                    try:
-                        parsed_output = json.loads(raw_output)
-                    except json.JSONDecodeError:
-                        parsed_output = raw_output
-                trajectory.append(
-                    ToolResult(
-                        tool_name=evt.get("name", ""),
-                        result=parsed_output,
-                        original=evt,
-                    ),
-                )
-            elif kind == "tool_error":
-                trajectory.append(
-                    ToolResult(
-                        tool_name=evt.get("name", ""),
-                        result=None,
-                        error=evt.get("error"),
-                        original=evt,
-                    ),
-                )
+        # MiniCodex intentionally does not expose its internal event sequence; callers requiring
+        # fine-grained events must install a RecordingHandler when creating the agent.
 
         if result.text:
             trajectory.append(FinalOutput(text=result.text))

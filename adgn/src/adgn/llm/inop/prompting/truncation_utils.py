@@ -4,13 +4,14 @@ import json
 from pathlib import Path
 from typing import Protocol, cast
 
-from openai.types.responses.response import Response
-from openai.types.responses.response_output_message import ResponseOutputMessage
-from openai.types.responses.response_output_text import ResponseOutputText
 import tiktoken
 
 from adgn.llm.inop.config import OptimizerConfig
 from adgn.llm.inop.engine.models import FileInfo
+from adgn.llm.openai_utils.model import (
+    AssistantMessageOut,
+    ResponsesResult,
+)
 
 
 class _Tokenizer(Protocol):
@@ -213,7 +214,7 @@ class TruncationManager:
             return "<<not a plaintext file>>"
 
 
-def extract_text_from_openai_response(response: Response) -> str:
+def extract_text_from_openai_response(response: ResponsesResult) -> str:
     """Extract text content from OpenAI response, handling nested message structure.
 
     Args:
@@ -226,9 +227,9 @@ def extract_text_from_openai_response(response: Response) -> str:
         RuntimeError: If no text content is found
     """
     for item in response.output:
-        if isinstance(item, ResponseOutputMessage) and item.type == "message":
-            for content_item in item.content:
-                if isinstance(content_item, ResponseOutputText):
-                    return cast(str, content_item.text)
+        if isinstance(item, AssistantMessageOut):
+            text = item.text
+            if text:
+                return cast(str, text)
 
     raise RuntimeError("No text content found in OpenAI response")

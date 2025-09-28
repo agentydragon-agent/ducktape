@@ -3,6 +3,7 @@ import logging
 from pathlib import Path
 
 from watchdog.events import FileSystemEventHandler
+from typing import Any
 from watchdog.observers import Observer
 
 logger = logging.getLogger(__name__)
@@ -23,7 +24,7 @@ class DebouncedGitstatusRefresh:
             None  # Main loop captured on start()
         )
 
-        self.observer: Observer | None = None
+        self.observer: Any | None = None
         self.handler = _GitHandler(self)
         self.is_running = False
 

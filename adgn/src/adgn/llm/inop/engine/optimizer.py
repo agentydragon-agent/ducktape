@@ -42,10 +42,8 @@ from pathlib import Path
 import signal
 import sys
 
-from adgn.llm.inop.clients.logging_openai_client import (
-    LoggingOpenAIClient,
-    LoggingOpenAIModel,
-)
+from adgn.llm.inop.clients.logging_openai_client import LoggingOpenAIClient
+from adgn.llm.openai_utils.model import OpenAIModelProto
 from adgn.llm.inop.config import OptimizerConfig
 from adgn.llm.inop.engine.models import (
     AgentTaskType,
@@ -53,7 +51,7 @@ from adgn.llm.inop.engine.models import (
     GradedRollout,
     TaskDefinition,
 )
-from adgn.llm.inop.engine.runner_factory import create_runner
+from adgn.llm.inop.engine import runner_factory
 from adgn.llm.inop.grading.grader import grade_rollout
 from adgn.llm.inop.io.jsonl_logger import JSONLLogger
 from adgn.llm.inop.io.logging_utils import DualOutputLogging
@@ -80,6 +78,8 @@ from adgn.llm.mcp.inproc_transport import make_inproc_slot_spec
 from adgn.llm.mini_codex.agent import MiniCodex
 from adgn.llm.mini_codex.loggers import TranscriptLoggerHandler
 from adgn.llm.mini_codex.mcp_manager import McpManager
+from adgn.llm.inop.model_factory import create_optimizer_models
+from openai import AsyncOpenAI
 
 # TODO: consider showing grader text Assistant messages, not just code
 # TODO: track exact OpenAI & Anthropic model used in database tables
@@ -158,6 +158,10 @@ def setup_signal_handlers():
 class OptimizeMcpArgs:
     anthropic_log: JSONLLogger
     openai_client: LoggingOpenAIClient
+    pe_model: OpenAIModelProto
+    runner_model: OpenAIModelProto
+    grader_model: OpenAIModelProto
+    summarizer_model: OpenAIModelProto
     seed_tasks: list[TaskDefinition]
     criteria: list[Criterion]
     cfg: OptimizerConfig
@@ -181,11 +185,7 @@ async def optimize_prompts_mcp(args: OptimizeMcpArgs) -> Path:
     feedback_mode = FeedbackMode(args.cfg.prompt_engineer.feedback_mode)
     if feedback_mode == FeedbackMode.SUMMARY:
         feedback_provider: FeedbackProvider = PatternSummarizer(
-            model=LoggingOpenAIModel(
-                openai_client=args.openai_client,
-                model=args.cfg.grader.model,
-                context_window_tokens=args.cfg.tokens.max_context_tokens,
-            ),
+            model=args.summarizer_model,
             truncation_manager=TruncationManager(args.cfg),
             max_file_size_pattern_analysis=args.cfg.truncation.max_file_size_pattern_analysis,
         )
@@ -209,19 +209,18 @@ async def optimize_prompts_mcp(args: OptimizeMcpArgs) -> Path:
             prompt: str,
             tasks: list[TaskDefinition],
         ) -> list[GradedRollout]:
-            print(f"[_Deps.run_rollouts_with_prompt] start, tasks={len(tasks)} prompt={prompt}")
+            print(
+                f"[_Deps.run_rollouts_with_prompt] start, tasks={len(tasks)} prompt={prompt}"
+            )
             # Minimal serial implementation (can parallelize later)
             results: list[GradedRollout] = []
             for t in tasks:
-                print(f"[_Deps.run_rollouts_with_prompt] setting up runner for task {t.id}")
-                # Create runner with the configured OpenAI model
-                runner_model = LoggingOpenAIModel(
-                    openai_client=args.openai_client,
-                    model=args.cfg.prompt_engineer.model,
-                    context_window_tokens=args.cfg.tokens.max_context_tokens,
-                    reasoning_effort=args.cfg.grader.reasoning_effort,
+                print(
+                    f"[_Deps.run_rollouts_with_prompt] setting up runner for task {t.id}"
                 )
-                runner = create_runner(
+                # Create runner with the configured OpenAI model
+                runner_model = args.runner_model
+                runner = runner_factory.create_runner(
                     args.runner_name,
                     args.runner_configs,
                     openai_model=runner_model,
@@ -244,12 +243,7 @@ async def optimize_prompts_mcp(args: OptimizeMcpArgs) -> Path:
                     rollout=rollout,
                     task=t,
                     grading_config=grading_config,
-                    model=LoggingOpenAIModel(
-                        openai_client=args.openai_client,
-                        model=args.cfg.grader.model,
-                        context_window_tokens=args.cfg.tokens.max_context_tokens,
-                        reasoning_effort=args.cfg.grader.reasoning_effort,
-                    ),
+                    model=args.grader_model,
                     cfg=args.cfg,
                     environment=runner.get_environment(),
                 )
@@ -257,7 +251,9 @@ async def optimize_prompts_mcp(args: OptimizeMcpArgs) -> Path:
                 # Package graded rollout (include task per model schema)
                 results.append(GradedRollout(rollout=rollout, grade=grade, task=t))
                 await runner.cleanup()
-                print(f"[_Deps.run_rollouts_with_prompt] cleaned up runner for task {t.id}")
+                print(
+                    f"[_Deps.run_rollouts_with_prompt] cleaned up runner for task {t.id}"
+                )
             return results
 
         def persist_all(
@@ -335,12 +331,7 @@ async def optimize_prompts_mcp(args: OptimizeMcpArgs) -> Path:
         # Session will be initialized on first access via McpManager ensure_open
 
         # Create MiniCodex PE with system prompt at init
-        model = LoggingOpenAIModel(
-            openai_client=args.openai_client,
-            model=args.cfg.prompt_engineer.model,
-            context_window_tokens=args.cfg.tokens.max_context_tokens,
-            reasoning_effort=args.cfg.grader.reasoning_effort,
-        )
+        model = args.pe_model
         # Build the expert prompt-engineer system message (same wording formerly in PromptEngineer.prompt_messages)
         agent_description = "a coding agent"
         task_description = (
@@ -370,7 +361,7 @@ async def optimize_prompts_mcp(args: OptimizeMcpArgs) -> Path:
         # parallel_tool_calls if multiple calls are in flight when the budget flips. Centralize budget
         # accounting at the server boundary or serialize within 1 of the limit to enforce a hard cap.
         pe = await MiniCodex.create(
-            model=model.model,
+            model=args.cfg.prompt_engineer.model,
             mcp=mcp,
             client=model,  # LoggingOpenAIModel implements OpenAIModelProto
             system=system_message,
@@ -408,6 +399,11 @@ async def optimize_prompts_mcp(args: OptimizeMcpArgs) -> Path:
 class OptimizeArgs:
     anthropic_log: JSONLLogger
     openai_client: LoggingOpenAIClient
+    # Required DI: adapter model instances for specific roles.
+    pe_model: OpenAIModelProto
+    runner_model: OpenAIModelProto
+    grader_model: OpenAIModelProto
+    summarizer_model: OpenAIModelProto
     seed_tasks: list[TaskDefinition]
     criteria: list[Criterion]
     cfg: OptimizerConfig
@@ -461,6 +457,10 @@ async def optimize_prompts(args: OptimizeArgs) -> Path:
         OptimizeMcpArgs(
             anthropic_log=args.anthropic_log,
             openai_client=args.openai_client,
+            pe_model=args.pe_model,
+            runner_model=args.runner_model,
+            grader_model=args.grader_model,
+            summarizer_model=args.summarizer_model,
             seed_tasks=args.seed_tasks,
             criteria=args.criteria,
             cfg=args.cfg,
@@ -568,7 +568,7 @@ Examples:
     # Load task types and runner configurations from explicit directory
     config_dir = Path(args.config_dir)
     task_types = load_task_types(config_dir / "task_types.yaml")
-    _ = load_runner_configs(config_dir / "runners.yaml")
+    runner_configs = load_runner_configs(config_dir / "runners.yaml")
 
     # Load tasks from seeds file - now using TaskDefinition format
     all_tasks = load_task_definitions(cfg.seeds_file, task_types)
@@ -607,21 +607,28 @@ Examples:
     base_dir = (Path("./agent_output") / run_prefix).resolve()
     base_dir.mkdir(parents=True, exist_ok=True)
 
-    # Create OpenAI client for both grading and mini_codex runner
-    # LoggingOpenAIClient for run_eval now comes from args in OptimizeArgs; no local client needed here.
-    # Run the optimisation loop
+    # Create OpenAI client and DI models
     anthropic_log = JSONLLogger(base_dir / "anthropic_api_log.jsonl")
+    openai_client = LoggingOpenAIClient(
+        openai_client=AsyncOpenAI(),
+        jsonl_logger=JSONLLogger(base_dir / "openai_api_log.jsonl"),
+    )
+    models = create_optimizer_models(cfg, openai_client)
     run_dir = asyncio.run(
         optimize_prompts(
             OptimizeArgs(
                 anthropic_log=anthropic_log,
-                openai_client=args.openai_client,
+                openai_client=openai_client,
+                pe_model=models.pe_model,
+                runner_model=models.runner_model,
+                grader_model=models.grader_model,
+                summarizer_model=models.summarizer_model,
                 seed_tasks=seed_tasks,
                 criteria=criteria,
-                cfg=args.cfg,
+                cfg=cfg,
                 runner_name=args.runner,
                 task_types=task_types,
-                runner_configs=args.runner_configs,
+                runner_configs=runner_configs,
                 task_type=task_type_enum,
                 iterations=args.iterations,
                 rollouts_per_task=args.rollouts_per_task,

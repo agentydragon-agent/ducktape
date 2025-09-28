@@ -9,12 +9,13 @@ string derived from the concrete type.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal, TypedDict
+from typing import Any, Literal, TypedDict, TypeAlias
 
 from mcp import types as mcp_types
 from pydantic import BaseModel
 
 from adgn.llm.mini_codex.loop_control import NoLoopDecision
+from adgn.llm.openai_utils.model import ReasoningOut
 
 # BeforeToolCallDecision and decision dataclasses are defined below (handler-level, generic)
 
@@ -50,10 +51,9 @@ class ToolCall(BaseModel):
     call_id: str
 
 
-class FunctionCallOutput(BaseModel):
-    type: Literal["function_call_output"] = "function_call_output"
+class ToolCallOutput(BaseModel):
     call_id: str
-    output: str
+    result: mcp_types.CallToolResult
 
 
 # ----- Generic before-tool-call decision algebra (handler-level, generic) -----
@@ -101,8 +101,15 @@ class Response(BaseModel):
     idempotency_key: str | None = None
 
 
-# Union of all current event types
-EventType = UserText | AssistantText | ToolCall | FunctionCallOutput | Response
+# Union of all current event types (as a typing alias)
+EventType: TypeAlias = (
+    UserText
+    | AssistantText
+    | ToolCall
+    | ToolCallOutput
+    | Response
+    | ReasoningOut
+)
 
 
 # ---- Transcript JSONL serialization ----
@@ -114,13 +121,15 @@ KIND_MAP: dict[
         "tool_call",
         "function_call_output",
         "response",
+        "reasoning",
     ],
 ] = {
     UserText: "user_text",
     AssistantText: "assistant_text",
     ToolCall: "tool_call",
-    FunctionCallOutput: "function_call_output",
+    ToolCallOutput: "function_call_output",
     Response: "response",
+    ReasoningOut: "reasoning",
 }
 
 
@@ -137,9 +146,9 @@ class JsonlRecord(TypedDict, total=False):
 
 def to_jsonl_record(evt: EventType) -> dict[str, Any]:
     kind = KIND_MAP[type(evt)]
-    out: dict[str, Any] = {"kind": kind}
-    out.update(evt.model_dump(exclude_none=True))
-    return out
+    data = evt.model_dump(mode="json", exclude_none=True)
+    data["kind"] = kind
+    return data
 
 
 class BaseHandler:
@@ -179,11 +188,8 @@ class BaseHandler:
         """
         return ContinueDecision()
 
-    def on_function_call_output_event(
-        self,
-        evt: FunctionCallOutput,
-    ) -> None:  # default no-op
+    def on_tool_result_event(self, evt: ToolCallOutput) -> None:  # default no-op
         return None
 
-    def on_reasoning(self, item: Any) -> None:  # default no-op
+    def on_reasoning(self, item: ReasoningOut) -> None:  # default no-op
         return None

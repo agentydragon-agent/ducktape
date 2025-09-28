@@ -8,53 +8,46 @@ from typing import Any
 import pytest
 
 from adgn.llm.llm_edit import _execute
+from adgn.llm.openai_utils.model import ResponsesRequest
 
-from ..support.openai_builders import (
-    make_assistant_text_response,
-    make_function_call_response,
-)
+from tests.fixtures.responses import ResponsesFactory
 from ..support.openai_mock import LIVE
 
 
 def make_edit_behavior() -> Callable[..., Awaitable[Any]]:
     """Behavior that drives editor: replace_text -> save -> done(success)."""
     step = {"i": 0}
+    rf = ResponsesFactory(os.getenv("OPENAI_MODEL", "o4-mini"))
 
-    async def behavior(req: dict) -> Any:
-        # Assert hard shape: dict with optional tools/input
-        assert isinstance(req, dict)
+    async def behavior(req: Any) -> Any:
+        # Accept either raw dicts (legacy) or our typed ResponsesRequest
+        assert isinstance(req, (dict, ResponsesRequest)), (
+            f"unexpected request type: {type(req)!r}"
+        )
         i = step["i"]
         step["i"] = i + 1
         if i == 0:
-            return make_function_call_response(
-                tool_name="mcp__editor__replace_text",
-                arguments_json='{"old_text":"HELLO_WORLD","new_text":"GOODBYE_WORLD"}',
-                request=None,
-                call_id="call_1",
+            return rf.make(
+                rf.tool_call(
+                    "mcp__editor__replace_text",
+                    {"old_text": "HELLO_WORLD", "new_text": "GOODBYE_WORLD"},
+                )
             )
         if i == 1:
-            return make_function_call_response(
-                tool_name="mcp__editor__save",
-                arguments_json="{}",
-                request=None,
-                call_id="call_2",
-            )
+            return rf.make(rf.tool_call("mcp__editor__save", {}))
         if i == 2:
             # Inspect buffer to verify content before done
-            return make_function_call_response(
-                tool_name="mcp__editor__read_line_range",
-                arguments_json='{"start":1,"end":1}',
-                request=None,
-                call_id="call_3",
+            return rf.make(
+                rf.tool_call("mcp__editor__read_line_range", {"start": 1, "end": 1})
             )
         if i == 3:
-            return make_function_call_response(
-                tool_name="mcp__editor__done",
-                arguments_json='{"payload":{"outcome":"success","summary":"ok"}}',
-                request=None,
-                call_id="call_4",
+            return rf.make(
+                rf.tool_call(
+                    "mcp__editor__done",
+                    {"payload": {"outcome": "success", "summary": "ok"}},
+                )
             )
-        return make_assistant_text_response(text="done")
+        return rf.make_assistant_message("done")
 
     return behavior
 

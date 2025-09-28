@@ -8,12 +8,7 @@ from adgn.llm.mini_codex.mcp_manager import McpManager
 from adgn.llm.mcp.inproc_transport import make_inproc_slot_spec
 from adgn.llm.mcp.approval_policy.server import ApprovalPolicyServer
 from adgn.llm.mini_codex.approvals import ApprovalPolicyEngine
-from adgn.llm.openai_utils.model import (
-    FakeOpenAIModel,
-    ResponsesResult,
-    Usage,
-    AssistantResponseMessage,
-)
+from adgn.llm.openai_utils.model import FakeOpenAIModel
 
 
 @pytest.mark.asyncio
@@ -47,15 +42,10 @@ async def test_resources_list_and_read_policy_and_proposal():
         assert contents and (contents[0].get("text") or "").startswith("def decide(")
 
         # Smoke: run a tiny agent turn and ensure nothing crashes while resources server is present
-        client = FakeOpenAIModel(
-            [
-                ResponsesResult(
-                    id="ok",
-                    usage=Usage(input_tokens=0, output_tokens=1, total_tokens=1),
-                    output=[AssistantResponseMessage(text="ok")],
-                )
-            ]
-        )
+        from tests.fixtures.responses import ResponsesFactory
+
+        rf = ResponsesFactory("gpt-5-nano")
+        client = FakeOpenAIModel([rf.make_assistant_message("ok")])
 
         agent = await MiniCodex.create(
             model="test-model",

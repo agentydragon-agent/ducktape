@@ -8,36 +8,40 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass
 import json
-from typing import Any, TypeAlias, cast
+from typing import Any, TypeAlias, TYPE_CHECKING, cast
 import anyio
 
 from mcp import types as mcp_types
-from openai.types.shared_params import Reasoning as ReasoningParams, ReasoningEffort
 from pydantic import BaseModel
 from adgn.llm.openai_utils.model import (
     ResponsesRequest,
-    InputTextPart,
     UserMessage,
     AssistantMessage,
     SystemMessage,
     ReasoningItem,
     FunctionCallItem,
     FunctionCallOutputItem,
+    FunctionCallOutputOut,
     InputItem,
+    ToolChoice,
     ToolChoiceFunction,
     OpenAIModelProto,
+    ReasoningEffort,
+    ReasoningOut,
+    FunctionCallOut,
+    AssistantMessageOut,
 )
 
-from adgn.llm.mini_codex.approvals import TurnAbortRequested, ApprovalPolicyHandler
+from adgn.llm.mini_codex.approvals import ApprovalPolicyHandler
 from adgn.llm.mini_codex.handler import (
     AbortTurnDecision,
     AssistantText,
     BypassToolInjectOutput,
     ContinueDecision,
-    FunctionCallOutput,
     GroundTruthUsage,
     Response,
     ToolCall,
+    ToolCallOutput,
     UserText,
 )
 from adgn.llm.mini_codex.loop_control import (
@@ -49,16 +53,13 @@ from adgn.llm.mini_codex.loop_control import (
     RequireSpecific as TP_RequireSpecific,
     ToolPolicy as TP_Base,
 )
-from adgn.llm.openai_utils.types import ReasoningSummary
-from adgn.llm.openai_utils.model import (
-    ReasoningOut,
-    FunctionCallOut,
-    AssistantResponseMessage,
-)
+from adgn.llm.openai_utils.types import ReasoningSummary, build_reasoning_params
 
 from .aggregating_handler import Reducer, BaseHandler
 from .mcp_manager import McpManager
 
+if TYPE_CHECKING:
+    from adgn.llm.mini_codex.approvals import ApprovalPolicyEngine, ApprovalHub
 
 @dataclass
 class AgentResult:
@@ -67,46 +68,114 @@ class AgentResult:
     # Tests or callers that need access to the event sequence should register a handler
     # (e.g. a test-only RecordingHandler) and pass it via `handlers` argument to MiniCodex.create().
 
+@dataclass(slots=True)
+class ToolCallSuccess:
+    """Successful MCP tool invocation."""
 
-def _responses_output_from_calltool(res: mcp_types.CallToolResult) -> str:
-    assert isinstance(res, mcp_types.CallToolResult)
-    # 1) Preferred: servers return structuredContent; pass it through as JSON string
-    if res.structuredContent:
-        return json.dumps(res.structuredContent)
-    # 2) If there is exactly one TextContent block, emit its text directly (no duck typing on dicts)
-    content = res.content or []
-    if len(content) == 1 and isinstance(content[0], mcp_types.TextContent):  # type: ignore[attr-defined]
-        txt = content[0].text  # type: ignore[union-attr]
-        if isinstance(txt, str):
-            return txt
-    # 3) Otherwise, fall back to a JSON object that preserves the blocks
-    return json.dumps({"content": [c.model_dump(by_alias=True) for c in content]})
+    result: mcp_types.CallToolResult
 
 
-def _extract_error_from_out_str(out_str: str) -> str | None:
-    """Parse a tool output string and return error message if ok==False.
+@dataclass(slots=True)
+class ToolCallFailure:
+    """MCP invocation failed; carries the structured tool result."""
 
-    Expects JSON object with keys {"ok": bool, "error": str}. Returns the
-    error string when found; otherwise None. Safe on non-JSON inputs.
-    """
-    try:
-        data = json.loads(out_str)
-    except Exception:
+    result: mcp_types.CallToolResult
+    reason: str | None = None
+
+
+@dataclass(slots=True)
+class ToolCallAborted:
+    """Invocation aborted (policy/UI); embeds synthetic structured error."""
+
+    result: mcp_types.CallToolResult
+    reason: str | None = None
+
+
+ToolCallOutcome = ToolCallSuccess | ToolCallFailure | ToolCallAborted
+
+
+def _copy_result(res: mcp_types.CallToolResult) -> mcp_types.CallToolResult:
+    """Return a deep copy of a CallToolResult to avoid downstream mutation."""
+
+    return res.model_copy(deep=True)
+
+
+def _require_call_id(function_call: FunctionCallItem) -> str:
+    call_id = function_call.call_id
+    if not isinstance(call_id, str) or not call_id:
+        raise RuntimeError("FunctionCallItem missing call_id")
+    return call_id
+
+
+def _dump_call_tool_result(res: mcp_types.CallToolResult, tool_call_info: str | None = None) -> str:
+    """Serialize an MCP CallToolResult to a JSON string for Responses input."""
+
+    data = res.model_dump(mode="json", exclude_none=True)
+    result = json.dumps(data)
+
+    # Safety check: OpenAI has a 10MB limit for input strings
+    # Fail fast if tool output is too large to prevent API errors
+    MAX_SIZE = 10 * 1024 * 1024  # 10MB
+    if len(result) > MAX_SIZE:
+        error_msg = (
+            f"Tool output too large: {len(result) / (1024 * 1024):.1f}MB "
+            f"exceeds max {MAX_SIZE / (1024 * 1024):.0f}MB. "
+        )
+        if tool_call_info:
+            error_msg += f" Tool call: {tool_call_info}."
+        error_msg += " MCP server returned oversized result - check slicing/pagination."
+        raise RuntimeError(error_msg)
+
+    return result
+
+
+def _maybe_error_message(res: mcp_types.CallToolResult) -> str | None:
+    if not res.isError:
         return None
-    if isinstance(data, dict) and data.get("ok") is False:
-        err = data.get("error")
-        if isinstance(err, str):
+    structured = res.structuredContent
+    if isinstance(structured, dict):
+        err = structured.get("error")
+        if isinstance(err, str) and err:
             return err
+    for block in res.content or []:
+        text = getattr(block, "text", None)
+        if isinstance(text, str) and text.strip():
+            return text.strip()
     return None
 
 
-# Common payload helpers
-ABORT_PAYLOAD = json.dumps({"ok": False, "error": "turn aborted"})
-MISSING_OUTPUT_PAYLOAD = json.dumps({"ok": False, "error": "missing tool output"})
+def _make_error_result(message: str) -> mcp_types.CallToolResult:
+    return mcp_types.CallToolResult(
+        content=[], structuredContent={"ok": False, "error": message}, isError=True
+    )
 
 
-def _deny_payload(call_id: str) -> str:
-    return json.dumps({"ok": False, "error": f"User denied: {call_id}"})
+DEFAULT_ABORT_ERROR = "tool execution aborted"
+
+
+def _abort_result(reason: str | None = None) -> mcp_types.CallToolResult:
+    return _make_error_result(reason or DEFAULT_ABORT_ERROR)
+
+
+def _normalize_call_arguments(arguments: Any) -> str | None:
+    if arguments is None or isinstance(arguments, str):
+        return arguments
+    try:
+        return json.dumps(arguments)
+    except TypeError:
+        return str(arguments)
+
+
+def _call_tool_result_from_json(output: str) -> mcp_types.CallToolResult:
+    try:
+        data = json.loads(output)
+    except json.JSONDecodeError as exc:  # pragma: no cover - defensive
+        raise ValueError("invalid CallToolResult JSON") from exc
+    if not isinstance(data, dict):
+        raise ValueError("CallToolResult JSON must be an object")
+    if data.get("content") is None:
+        data["content"] = []
+    return mcp_types.CallToolResult.model_validate(data)
 
 
 # Namespaced tool form: mcp__{server}__{tool}
@@ -135,8 +204,10 @@ def _tool_choice_from_policy(policy: TP_Base) -> str | dict[str, Any]:
     raise TypeError(f"Unknown ToolPolicy: {type(policy).__name__}")
 
 
-Message: TypeAlias = UserMessage | AssistantMessage | SystemMessage | FunctionCallOutput
-TranscriptItem: TypeAlias = Message | FunctionCallItem | ReasoningItem
+Message: TypeAlias = UserMessage | AssistantMessage | SystemMessage
+TranscriptItem: TypeAlias = (
+    Message | FunctionCallItem | ReasoningItem | ToolCallOutput
+)
 
 
 class MiniCodex:
@@ -165,6 +236,8 @@ class MiniCodex:
         self.assistant_text_chunks: list[str] = []
         self.pending_function_calls: list[FunctionCallItem] = []
         self.finished: bool = False
+        # Track function calls for debugging
+        self._function_call_map: dict[str, FunctionCallItem] = {}
         # Aggregating controller (owns handlers and loop-decision semantics)
         handlers_list = list(handlers)
         assert handlers_list, (
@@ -219,49 +292,54 @@ class MiniCodex:
             self._controller.on_error(exc)
             raise
 
-    async def _handle_pending_tool_calls(self):
-        function_calls = self.pending_function_calls
-        calls: list[tuple[FunctionCallItem, str | None]] = []
-        for function_call in function_calls:
-            calls.append((function_call, function_call.arguments))
+    async def _handle_pending_tool_calls(self) -> None:
+        function_calls: list[FunctionCallItem] = list(self.pending_function_calls)
+        calls: list[tuple[FunctionCallItem, str | None]] = [
+            (function_call, _normalize_call_arguments(function_call.arguments))
+            for function_call in function_calls
+        ]
 
-        local_fco_map = {
-            evt.call_id: evt.output
+        local_result_map: dict[str, mcp_types.CallToolResult] = {
+            evt.call_id: evt.result
             for evt in self._transcript
-            if isinstance(evt, FunctionCallOutput)
+            if isinstance(evt, ToolCallOutput)
         }
 
-        async def _invoke(function_call, args_json, local_fco_map=local_fco_map):
-            tc = ToolCall(
-                name=function_call.name,
-                args_json=args_json,
-                call_id=function_call.call_id,
-            )
+        async def _invoke(
+            function_call: FunctionCallItem,
+            args_json: str | None,
+            local_map: dict[str, mcp_types.CallToolResult] = local_result_map,
+        ) -> ToolCallOutcome:
+            cid = _require_call_id(function_call)
+            tc = ToolCall(name=function_call.name, args_json=args_json, call_id=cid)
             decision = await self._controller.on_before_tool_call(tc)
             if isinstance(decision, AbortTurnDecision):
-                raise TurnAbortRequested(
-                    call_id=function_call.call_id,
-                    reason=decision.reason or "handler_requested_abort",
-                )
+                failure = _make_error_result(decision.reason or DEFAULT_ABORT_ERROR)
+                return ToolCallAborted(result=failure, reason=decision.reason)
             if isinstance(decision, BypassToolInjectOutput):
-                out_str = _responses_output_from_calltool(decision.result)
-                return out_str, _extract_error_from_out_str(out_str)
+                res = _copy_result(decision.result)
+                if res.isError:
+                    return ToolCallFailure(result=res, reason=_maybe_error_message(res))
+                return ToolCallSuccess(result=res)
             if not isinstance(decision, ContinueDecision):
                 raise RuntimeError(
                     f"Unknown before-tool decision: {type(decision).__name__}"
                 )
-            cid = function_call.call_id
-            if cid in local_fco_map:
-                out_str = local_fco_map[cid]
-                return out_str, _extract_error_from_out_str(out_str)
-            res = await self._mcp.call_tool_namespaced(function_call.name, args_json)
-            # Detect FastMCP tool errors (server-side exceptions) explicitly
-            is_err = bool(getattr(res, "isError", False))
-            out_str = _responses_output_from_calltool(res)
-            err = _extract_error_from_out_str(out_str)
-            if is_err and not err:
-                err = "MCP tool error"
-            return out_str, err
+            if cid in local_map:
+                cached = _copy_result(local_map[cid])
+                if cached.isError:
+                    return ToolCallFailure(result=cached, reason=_maybe_error_message(cached))
+                return ToolCallSuccess(result=cached)
+
+            raw = await self._mcp.call_tool_namespaced(function_call.name, args_json)
+            if not isinstance(raw, mcp_types.CallToolResult):
+                raise TypeError(
+                    f"Expected CallToolResult from MCP, got {type(raw).__name__}"
+                )
+            res = _copy_result(raw)
+            if res.isError:
+                return ToolCallFailure(result=res, reason=_maybe_error_message(res))
+            return ToolCallSuccess(result=res)
 
         if self._parallel_tool_calls:
             await self._run_tool_calls_parallel(calls, function_calls, _invoke)
@@ -269,98 +347,98 @@ class MiniCodex:
             await self._run_tool_calls_sequential(calls, function_calls, _invoke)
         self.pending_function_calls.clear()
 
-    async def _run_tool_calls_parallel(self, calls, function_calls, invoker):
-        results: dict[str, tuple[str, object] | str] = {}
+    async def _run_tool_calls_parallel(
+        self,
+        calls: list[tuple[FunctionCallItem, str | None]],
+        function_calls: list[FunctionCallItem],
+        invoker,
+    ) -> None:
+        results: dict[str, ToolCallOutcome] = {}
+        abort_triggered = False
 
-        async def runner(fc: FunctionCallItem, aj: str | None):
-            res = await invoker(fc, aj)
-            results[fc.call_id] = res
+        async with anyio.create_task_group() as tg:
+            cancelled_exc = anyio.get_cancelled_exc_class()
 
-        try:
-            async with anyio.create_task_group() as tg:
-                for function_call, args_json in calls:
-                    tg.start_soon(runner, function_call, args_json)
-        except TurnAbortRequested as e:
-            # Task group cancelled siblings; emit completed tool outputs and
-            # mark the denied call. Finish the turn.
-            completed = {cid: results[cid] for cid in results}
-            self._emit_batch_aborted_outputs(e.call_id, completed, function_calls)
-            self.finished = True
-            return
+            async def runner(fc: FunctionCallItem, aj: str | None) -> None:
+                nonlocal abort_triggered
+                try:
+                    outcome = await invoker(fc, aj)
+                except cancelled_exc:
+                    return
+                except Exception as exc:
+                    cid = _require_call_id(fc)
+                    failure = _make_error_result(f"internal error: {exc}")
+                    results[cid] = ToolCallFailure(
+                        result=failure, reason=str(exc)
+                    )
+                    abort_triggered = True
+                    tg.cancel_scope.cancel()
+                    return
+                cid = _require_call_id(fc)
+                results[cid] = outcome
+                if isinstance(outcome, ToolCallAborted):
+                    abort_triggered = True
+                    tg.cancel_scope.cancel()
 
-        # Success path: all tool calls completed and results collected
-        out_map = results
+            for function_call, args_json in calls:
+                tg.start_soon(runner, function_call, args_json)
+
         had_error = False
         for function_call in function_calls:
-            out_str, err = out_map.get(
-                function_call.call_id, (MISSING_OUTPUT_PAYLOAD, None)
-            )
-            self._emit_tool_result(function_call, out_str)
-            if err:
+            cid = _require_call_id(function_call)
+            outcome = results.get(cid)
+            if outcome is None:
+                if not abort_triggered:
+                    raise RuntimeError(f"Missing tool output for call_id={cid!r}")
+                outcome = ToolCallAborted(result=_abort_result())
+            self._emit_tool_result(function_call, outcome.result)
+            if isinstance(outcome, (ToolCallFailure, ToolCallAborted)):
                 had_error = True
         if had_error:
-            # Abort the turn when any MCP tool error occurs
             self.finished = True
 
-    async def _run_tool_calls_sequential(self, calls, function_calls, invoker):
+    async def _run_tool_calls_sequential(
+        self,
+        calls: list[tuple[FunctionCallItem, str | None]],
+        function_calls: list[FunctionCallItem],
+        invoker,
+    ) -> None:
         for i, (function_call, args_json) in enumerate(calls):
-            out_str, seq_error = await invoker(function_call, args_json)
-            self._emit_tool_result(function_call, out_str)
-            if seq_error:
+            outcome = await invoker(function_call, args_json)
+            self._emit_tool_result(function_call, outcome.result)
+            if isinstance(outcome, (ToolCallFailure, ToolCallAborted)):
                 for remaining in function_calls[i + 1 :]:
-                    self._emit_tool_result(remaining, ABORT_PAYLOAD)
+                    self._emit_tool_result(remaining, _abort_result())
                 self.finished = True
                 break
 
-    def _to_openai_input_items(self) -> list[BaseModel]:
+    def _to_openai_input_items(self) -> list[InputItem]:
         """Convert transcript to typed OpenAI Responses input items."""
-        items: list[BaseModel] = []
+        items: list[InputItem] = []
         for item in self._transcript:
             if isinstance(item, (UserMessage, AssistantMessage, SystemMessage)):
                 items.append(item.model_copy(deep=True))
                 continue
             if isinstance(item, ReasoningItem):
-                items.append(item.model_copy(deep=True))
+                items.append(item)
                 continue
             if isinstance(item, FunctionCallItem):
-                items.append(item.model_copy(deep=True))
+                items.append(item)
                 continue
-            if isinstance(item, FunctionCallOutput):
+            if isinstance(item, ToolCallOutput):
+                # Look up the function call from our map for debugging info
+                tool_info = f"call_id={item.call_id}"
+                if item.call_id in self._function_call_map:
+                    fc = self._function_call_map[item.call_id]
+                    tool_info = f"{fc.name}(call_id={item.call_id})"
+
                 items.append(
-                    FunctionCallOutputItem(call_id=item.call_id, output=item.output)
+                    FunctionCallOutputItem(
+                        call_id=item.call_id,
+                        output=_dump_call_tool_result(item.result, tool_info),
+                    )
                 )
                 continue
-            # Fallback: handle SDK input message items by duck-typing via model_dump
-            if hasattr(item, "model_dump"):
-                try:
-                    d = item.model_dump(exclude_none=True)  # type: ignore[attr-defined]
-                except Exception:
-                    d = None
-                if isinstance(d, dict):
-                    role = d.get("role")
-                    content = d.get("content")
-                    if role in {"user", "assistant", "system"} and isinstance(
-                        content, list
-                    ):
-                        parts: list[InputTextPart] = []
-                        for p in content:
-                            if isinstance(p, dict):
-                                t = p.get("type")
-                                text = p.get("text")
-                                if t in {
-                                    "input_text",
-                                    "output_text",
-                                    "text",
-                                } and isinstance(text, str):
-                                    parts.append(InputTextPart(text=text))
-                        if role == "user":
-                            items.append(UserMessage(content=parts))
-                        elif role == "assistant":
-                            items.append(AssistantMessage(content=parts))
-                        else:
-                            items.append(SystemMessage(content=parts))
-                        continue
-            # If we get here, it's an unsupported type
             raise TypeError(
                 f"Unsupported transcript item for OpenAI input: {type(item)}"
             )
@@ -376,11 +454,11 @@ class MiniCodex:
             # model output items for this phase and process them via the normal
             # output path (adds assistant text, enqueues tool calls, etc.).
             out_items: list[
-                ReasoningOut | FunctionCallOut | AssistantResponseMessage
+                ReasoningOut | FunctionCallOut | AssistantMessageOut
             ] = []
             for it in list(decision.inserts_input):
                 if isinstance(
-                    it, (ReasoningOut, FunctionCallOut, AssistantResponseMessage)
+                    it, (ReasoningOut, FunctionCallOut, AssistantMessageOut)
                 ):
                     out_items.append(it)
                 elif isinstance(it, FunctionCallItem):
@@ -400,25 +478,18 @@ class MiniCodex:
                 and raw_tc.get("type") == "function"
                 and isinstance(raw_tc.get("name"), str)
             ):
-                tool_choice_typed: str | ToolChoiceFunction = ToolChoiceFunction(
-                    name=raw_tc["name"]
-                )  # type: ignore[assignment]
+                tool_choice_typed: ToolChoice = ToolChoiceFunction(name=raw_tc["name"])
             else:
-                tool_choice_typed = cast(str, raw_tc)
-            reasoning_param: ReasoningParams | None = None
-            if self._reasoning_effort or self._reasoning_summary:
-                reasoning_param = cast(
-                    ReasoningParams,
-                    {
-                        "effort": self._reasoning_effort,
-                        "summary": self._reasoning_summary,
-                    },
-                )
+                tool_choice_typed = cast(ToolChoice, raw_tc)
+
+            reasoning_param = build_reasoning_params(
+                self._reasoning_effort, self._reasoning_summary
+            )
             req = ResponsesRequest(
                 input=self._to_openai_input_items(),
                 instructions=await self._build_effective_instructions(),
                 stream=False,
-                tool_choice=tool_choice_typed,  # type: ignore[arg-type]
+                tool_choice=tool_choice_typed,
                 store=True,
                 parallel_tool_calls=self._parallel_tool_calls,
                 tools=[t.model_dump(exclude_none=True) for t in snap.tools],
@@ -448,7 +519,7 @@ class MiniCodex:
 
     def _process_resp_output(
         self,
-        resp_output: list[ReasoningOut | FunctionCallOut | AssistantResponseMessage],
+        resp_output: list[ReasoningOut | FunctionCallOut | AssistantMessageOut],
     ) -> None:
         self.pending_function_calls.clear()
         # Skip items that are already present in our transcript (id collision).
@@ -461,7 +532,7 @@ class MiniCodex:
         handled_cids = {
             evt.call_id
             for evt in self._transcript
-            if isinstance(evt, FunctionCallOutput)
+            if isinstance(evt, ToolCallOutput)
         }
         for item in resp_output:
             # If this item has an id and we've already recorded it, skip
@@ -472,24 +543,40 @@ class MiniCodex:
                 ri = item.to_input_item()
                 self._controller.on_reasoning(item)
                 self._transcript.append(ri)
-            elif isinstance(item, AssistantResponseMessage):
+            elif isinstance(item, AssistantMessageOut):
                 text = item.text
                 self.assistant_text_chunks.append(text)
-                self._controller.on_assistant_text(AssistantText(text=text))  # type: ignore[arg-type]
+                self._controller.on_assistant_text(AssistantText(text=text))
                 # Store assistant as our input item type to avoid secondary translation
                 self._transcript.append(item.to_input_item())
+            elif isinstance(item, FunctionCallOutputOut):
+                try:
+                    result = _call_tool_result_from_json(item.output)
+                except Exception as exc:  # pragma: no cover - defensive
+                    raise ValueError(
+                        f"Failed to parse CallToolResult for call_id={item.call_id}"
+                    ) from exc
+                event = ToolCallOutput(call_id=item.call_id, result=result)
+                handled_cids.add(item.call_id)
+                self._controller.on_tool_result(event)
+                self._transcript.append(event)
+                if self.pending_function_calls:
+                    self.pending_function_calls = [
+                        fc for fc in self.pending_function_calls if fc.call_id != item.call_id
+                    ]
             elif isinstance(item, FunctionCallOut):
-                # If we already produced a local output for this call_id, this is an invalid state — fail loud
-                if item.call_id in handled_cids:
-                    raise AssertionError(f"Duplicate {item.call_id = }")
                 fc_local = item.to_input_item()
-                self.pending_function_calls.append(fc_local)
                 self._controller.on_tool_call(
                     ToolCall(
                         name=item.name, args_json=item.arguments, call_id=item.call_id
                     )
                 )
                 self._transcript.append(fc_local)
+                # Store in map for quick lookup when processing outputs
+                self._function_call_map[fc_local.call_id] = fc_local
+                if item.call_id in handled_cids:
+                    continue
+                self.pending_function_calls.append(fc_local)
             else:
                 # Crash fast on unknown items to surface mismatches early
                 raise TypeError(f"Unsupported Responses output item: {type(item)}")
@@ -510,7 +597,6 @@ class MiniCodex:
         approval_engine: "ApprovalPolicyEngine | None" = None,
         approval_hub: "ApprovalHub | None" = None,
     ) -> MiniCodex:
-        print(f"[MiniCodex.create] client_type={type(client)}")
         # Optionally inject ApprovalPolicyHandler at the front of the handlers chain
         handlers_list = list(handlers)
         if approval_engine is not None and approval_hub is not None:
@@ -532,30 +618,14 @@ class MiniCodex:
     def _emit_tool_result(
         self,
         function_call: FunctionCallItem,
-        out_str: str,
+        result: mcp_types.CallToolResult,
     ) -> None:
-        """Emit a single typed function_call_output event (no duplicates)."""
-        fco = FunctionCallOutput(call_id=function_call.call_id, output=out_str)
-        self._transcript.append(fco)
-        self._controller.on_function_call_output(fco)  # type: ignore[arg-type]
+        """Emit a ToolCallOutput event and notify handlers."""
 
-    def _emit_batch_aborted_outputs(
-        self,
-        denied_call_id: str | None,
-        completed_results: dict[str, tuple[str, object] | str],
-        function_calls: list[FunctionCallItem],
-    ) -> None:
-        for function_call in function_calls:
-            cid = function_call.call_id
-            if cid in completed_results:
-                res = completed_results[cid]
-                out_str = res[0] if isinstance(res, tuple) else str(res)
-                self._emit_tool_result(function_call, out_str)
-                continue
-            if denied_call_id and cid == denied_call_id:
-                self._emit_tool_result(function_call, _deny_payload(denied_call_id))
-                continue
-            self._emit_tool_result(function_call, ABORT_PAYLOAD)
+        call_id = _require_call_id(function_call)
+        event = ToolCallOutput(call_id=call_id, result=_copy_result(result))
+        self._transcript.append(event)
+        self._controller.on_tool_result(event)
 
     @property
     def messages(self) -> list[InputItem]:
@@ -587,29 +657,7 @@ class MiniCodex:
         approach to preserve reproducibility and avoid server-side state. Keep this
         behavior in mind when modifying messages()/transcript serialization.
         """
-        # Build a map of locally-emitted function_call_output by call_id (these are produced by local tool execution)
-        fco_map: dict[str, str] = {
-            evt.call_id: evt.output
-            for evt in self._transcript
-            if isinstance(evt, FunctionCallOutput)
-        }
-        out: list[InputItem] = []
-        for item in self._transcript:
-            if isinstance(item, FunctionCallItem):
-                out.append(item)
-                cid = item.call_id
-                if cid and cid in fco_map:
-                    out.append(FunctionCallOutputItem(call_id=cid, output=fco_map[cid]))
-            elif isinstance(item, (UserMessage, AssistantMessage, SystemMessage)):
-                out.append(item.model_copy(deep=True))
-            elif isinstance(item, ReasoningItem):
-                out.append(item)
-            elif isinstance(item, FunctionCallOutput):
-                # already emitted alongside its function_call
-                continue
-            else:
-                raise TypeError(f"Unsupported transcript item type: {type(item)!r}")
-        return out
+        return self._to_openai_input_items()
 
     async def __aenter__(self) -> MiniCodex:
         return self

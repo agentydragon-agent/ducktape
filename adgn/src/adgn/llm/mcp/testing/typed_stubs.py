@@ -196,9 +196,9 @@ class TypedClient:
         session = self._session
 
         async def _err(payload: BaseModel) -> str:
-            if not isinstance(payload, models.Input):
+            if models.Input is None or not isinstance(payload, models.Input):
                 raise TypeError(
-                    f"{name} expects {models.Input.__name__}, got {type(payload).__name__}"
+                    f"{name} expects {(models.Input.__name__ if models.Input else 'None')}, got {type(payload).__name__}"
                 )
             if models._wrapper_field and models._arg_model:
                 args_dict = {
@@ -222,9 +222,9 @@ class TypedClient:
         session = self._session
 
         async def _call(payload: BaseModel) -> Any:
-            if not isinstance(payload, models.Input):
+            if models.Input is None or not isinstance(payload, models.Input):
                 raise TypeError(
-                    f"{name} expects {models.Input.__name__}, got {type(payload).__name__}"
+                    f"{name} expects {(models.Input.__name__ if models.Input else 'None')}, got {type(payload).__name__}"
                 )
             # If FastMCP wrapped the single argument under a field (e.g., 'payload'), rebuild the arg_model
             if models._wrapper_field and models._arg_model:

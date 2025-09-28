@@ -19,7 +19,7 @@ import asyncio
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import Annotated, Any, Literal, cast
+from typing import Any, cast
 
 from adgn.llm.mcp._shared.fastmcp_helpers import SafeFastMCP
 from adgn.llm.mcp._shared.fastmcp_helpers import mcp_flat_model
@@ -86,9 +86,12 @@ def get_oid(obj: Any):
 
 
 class StatusInput(BaseModel):
-    """Empty input model for git_status (keeps single-arg typed pattern consistent)."""
+    """Input model for git_status with optional pagination."""
 
-    pass
+    list_slice: ListSlice = Field(
+        default_factory=lambda: ListSlice(),
+        description="Pagination for status entries (limit<=5000)"
+    )
 
 
 class DiffFormat(StrEnum):
@@ -316,6 +319,17 @@ def build_diff_stat_page(stats: list[DiffFileStat], sl: ListSlice) -> DiffStatPa
     )
 
 
+def build_status_page(entries: list[StatusEntry], sl: ListSlice) -> StatusPage:
+    """Paginate StatusEntry items into a StatusPage."""
+    sliced, page = paginate_items((entries, [e.path for e in entries]), sl)
+    return StatusPage(
+        entries=sliced,
+        truncated=page.truncated,
+        next_offset=page.next_offset,
+        total_count=page.total_count,
+    )
+
+
 class RevParseResult(BaseModel):
     kind: str  # "oid" | "toplevel"
     value: str
@@ -423,45 +437,12 @@ class LogEntriesPage(BaseModel):
 
 
 # Discriminated unions for outputs (explicit output schema)
-class PatchResult(TextPage):
-    type: Literal["patch"] = "patch"
+# For git_diff we return the complete page models directly
+DiffResult = TextPage | ChangedFilesPage | DiffStatPage
 
 
-class NameStatusResult(ChangedFilesPage):
-    type: Literal["name-status"] = "name-status"
-
-
-class StatResult(DiffStatPage):
-    type: Literal["stat"] = "stat"
-
-
-DiffResult = Annotated[
-    PatchResult | NameStatusResult | StatResult,
-    Field(discriminator="type"),
-]
-
-
-# Show discriminated union (explicit output schema)
-class ShowPatchResult(TextPage):
-    type: Literal["patch"] = "patch"
-    commit_id: str | None = None
-    author_name: str | None = None
-    author_email: str | None = None
-    message: str | None = None
-
-
-class ShowNameStatusResult(ChangedFilesPage):
-    type: Literal["name-status"] = "name-status"
-
-
-class ShowStatResult(DiffStatPage):
-    type: Literal["stat"] = "stat"
-
-
-ShowResult = Annotated[
-    ShowPatchResult | ShowNameStatusResult | ShowStatResult,
-    Field(discriminator="type"),
-]
+# For git_show we also return the underlying page models directly
+ShowResult = TextPage | ChangedFilesPage | DiffStatPage
 
 # -------------------------- outputs -----------------------------------------
 
@@ -490,6 +471,9 @@ class StatusEntry(BaseModel):
 
 class StatusPage(BaseModel):
     entries: list[StatusEntry]
+    truncated: bool
+    next_offset: int | None = None
+    total_count: int
 
 
 # -------------------------- server ------------------------------------------
@@ -550,7 +534,7 @@ def make_git_ro_server(git_repo: Path, *, name: str = "git-ro") -> SafeFastMCP:
             elif flags & pygit2.GIT_STATUS_WT_NEW:
                 wt = WorktreeStatus.UNTRACKED
             entries.append(StatusEntry(path=path, index=idx, worktree=wt))
-        return StatusPage(entries=entries)
+        return build_status_page(entries, input.list_slice)
 
     @mcp_flat_model(
         mcp,
@@ -567,31 +551,25 @@ def make_git_ro_server(git_repo: Path, *, name: str = "git-ro") -> SafeFastMCP:
         """
         repo = _open_repo(state.git_repo)
         # Build base diff using repository-level APIs that match type stubs
-        # Optional path filtering for large diffs (batch per file/group upstream)
-        diff_kwargs = {}
-        if input.paths:
-            diff_kwargs["paths"] = input.paths
+        # Note: pygit2 stubs do not expose 'paths' filtering; filter results downstream if needed.
+        a = None if repo.head_is_unborn else repo.head.target
         if input.staged:
-            a = None if repo.head_is_unborn else repo.head.target
-            diff = repo.diff(a, None, cached=True, **diff_kwargs)
+            diff = repo.diff(a, None, cached=True)
         else:
-            diff = repo.index.diff_to_workdir(repo, **diff_kwargs)
+            diff = repo.diff(a, None, cached=False)
 
         if input.find_renames:
             diff.find_similar()
 
         if input.format == DiffFormat.PATCH:
             patch_text = await asyncio.to_thread(lambda: diff.patch or "")
-            page = apply_text_slice(patch_text, input.slice)
-            return PatchResult(**page.model_dump())
+            return apply_text_slice(patch_text, input.slice)
         if input.format == DiffFormat.NAME_STATUS:
             items = await asyncio.to_thread(diff_to_changed_files, diff)
-            page = build_changed_files_page(items, input.list_slice)
-            return NameStatusResult(**page.model_dump())
+            return build_changed_files_page(items, input.list_slice)
         # STAT
         stats = await asyncio.to_thread(diff_to_file_stats, diff)
-        page = build_diff_stat_page(stats, input.list_slice)
-        return StatResult(**page.model_dump())
+        return build_diff_stat_page(stats, input.list_slice)
 
     @mcp_flat_model(
         mcp,
@@ -708,8 +686,7 @@ def make_git_ro_server(git_repo: Path, *, name: str = "git-ro") -> SafeFastMCP:
                         text = data.decode("utf-8")
                     except UnicodeDecodeError:
                         text = f"[binary blob {len(data)} bytes]"
-                    page = apply_text_slice(text, input.slice)
-                    return ShowPatchResult(**page.model_dump())
+                    return apply_text_slice(text, input.slice)
             raise FileNotFoundError(f"Path not found: {path}")
         obj_any = repo.revparse_single(objspec)
         # Narrow runtime types explicitly and bind to a typed local variable so mypy can follow.
@@ -733,24 +710,15 @@ def make_git_ro_server(git_repo: Path, *, name: str = "git-ro") -> SafeFastMCP:
 
         if input.format == DiffFormat.PATCH:
             patch_text = await asyncio.to_thread(lambda: diff.patch or "")
-            page = apply_text_slice(patch_text, input.slice)
-            return ShowPatchResult(
-                **page.model_dump(),
-                commit_id=str(obj.id),
-                author_name=obj.author.name,
-                author_email=obj.author.email,
-                message=obj.message or None,
-            )
+            return apply_text_slice(patch_text, input.slice)
 
         if input.format == DiffFormat.NAME_STATUS:
             items = await asyncio.to_thread(diff_to_changed_files, diff)
-            page = build_changed_files_page(items, input.list_slice)
-            return ShowNameStatusResult(**page.model_dump())
+            return build_changed_files_page(items, input.list_slice)
 
         # STAT
         stats = await asyncio.to_thread(diff_to_file_stats, diff)
-        page = build_diff_stat_page(stats, input.list_slice)
-        return ShowStatResult(**page.model_dump())
+        return build_diff_stat_page(stats, input.list_slice)
 
     @mcp_flat_model(
         mcp,

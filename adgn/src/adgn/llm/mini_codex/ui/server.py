@@ -6,11 +6,11 @@ from datetime import UTC, datetime
 import json
 import logging
 from pathlib import Path
-from typing import Annotated, Any, Literal as _Lit, cast
+from typing import Annotated, Any, Literal, cast
 from adgn.llm.mini_codex.ui.shared_bus import UiBus, UiMessage
 import uuid
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Response, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from mcp import types as mcp_types
@@ -29,6 +29,10 @@ from adgn.llm.mini_codex.handler import (
     BeforeToolCallDecision,
     BypassToolInjectOutput,
     ContinueDecision,
+    ToolCall,
+    ToolCallOutput,
+    UserText,
+    AssistantText,
 )
 from adgn.llm.mini_codex.ui.protocol import (
     Accepted,
@@ -41,19 +45,19 @@ from adgn.llm.mini_codex.ui.protocol import (
     Envelope,
     ErrorCode,
     ErrorEvt,
-    FunctionCallOutput,
     McpServerInfo,
     RunState,
     RunStatusEvt,
     ServerMessage,
     SessionState,
     Snapshot,
-    ToolCall,
+    ToolCall as UiToolCall,
+    FunctionCallOutput as UiFunctionCallOutput,
     UiMessageEvt,
     UiMessagePayload,
     UiStateSnapshot,
     UiStateUpdated,
-    UserText,
+    UserText as UiUserText,
 )
 from adgn.llm.mini_codex.ui.state import UiState, new_state
 from adgn.llm.mini_codex.ui.reducer import reduce_ui_state
@@ -164,8 +168,8 @@ class ConnectionManager(BaseHandler):
         tasks = list(self._bg_tasks)
         await asyncio.gather(*tasks, return_exceptions=True)
 
-    def on_user_text_event(self, evt: Any) -> None:
-        ut = UserText(text=evt.text)
+    def on_user_text_event(self, evt: UserText) -> None:
+        ut = UiUserText(text=evt.text)
         self._spawn(self._send_and_reduce(ut))
 
     async def _send_direct_all(self, payload: dict[str, Any]) -> None:
@@ -176,18 +180,18 @@ class ConnectionManager(BaseHandler):
                 logger.exception("WebSocket direct send failed")
                 raise
 
-    def on_assistant_text_event(self, evt: Any) -> None:
+    def on_assistant_text_event(self, evt: AssistantText) -> None:
         # UI mode contract: assistant must not emit plain text.
         # Agents should call ui.send_message (MCP) which becomes UiMessageEvt/AssistantMarkdown.
         raise RuntimeError(
             "assistant_text not allowed in UI mode; use ui.send_message tool instead"
         )
 
-    def on_tool_call_event(self, evt: Any) -> None:
-        tc = ToolCall(name=evt.name, args_json=evt.args_json, call_id=evt.call_id)
+    def on_tool_call_event(self, evt: ToolCall) -> None:
+        tc = UiToolCall(name=evt.name, args_json=evt.args_json, call_id=evt.call_id)
         self._spawn(self._send_and_reduce(tc))
 
-    async def before_tool_call(self, evt: Any) -> BeforeToolCallDecision:
+    async def before_tool_call(self, evt: ToolCall) -> BeforeToolCallDecision:
         await self.send_payload(
             ApprovalPendingEvt(
                 call_id=evt.call_id, tool_key=evt.name, args_json=evt.args_json
@@ -220,10 +224,11 @@ class ConnectionManager(BaseHandler):
         # Return the handler decision directly to the agent
         return decision
 
-    def on_function_call_output_event(self, evt: Any) -> None:
-        fco = FunctionCallOutput(call_id=evt.call_id, output=evt.output)
+    def on_tool_result_event(self, evt: ToolCallOutput) -> None:
+        payload = evt.result.model_dump(mode="json", exclude_none=True)
+        fco = UiFunctionCallOutput(call_id=evt.call_id, result=payload)
         self._spawn(self._send_and_reduce(fco))
-        # Drain UI messages right after the function output to preserve order
+        # Drain UI messages right after the tool result to preserve order
         self._spawn(self._emit_ui_bus_messages())
 
 
@@ -344,43 +349,43 @@ class AgentSession:
 
 # Pydantic-typed inbound client messages (discriminated union)
 class HelloIn(BaseModel):
-    type: _Lit["hello"]
+    type: Literal["hello"]
 
 
 class ResumeIn(BaseModel):
-    type: _Lit["resume"]
+    type: Literal["resume"]
 
 
 class GetSnapshotIn(BaseModel):
-    type: _Lit["get_snapshot"]
+    type: Literal["get_snapshot"]
 
 
 class SendIn(BaseModel):
-    type: _Lit["send"]
+    type: Literal["send"]
     text: str
 
 
 class ApproveIn(BaseModel):
-    type: _Lit["approve"]
+    type: Literal["approve"]
     call_id: str
 
 
 class DenyIn(BaseModel):
-    type: _Lit["deny"]
+    type: Literal["deny"]
     call_id: str
 
 
 class DenyContinueIn(BaseModel):
-    type: _Lit["deny_continue"]
+    type: Literal["deny_continue"]
     call_id: str
 
 
 class AbortIn(BaseModel):
-    type: _Lit["abort"]
+    type: Literal["abort"]
 
 
 class PingIn(BaseModel):
-    type: _Lit["ping"]
+    type: Literal["ping"]
     nonce: str | None = None
 
 
@@ -401,13 +406,25 @@ IncomingMsg = Annotated[
 # Factory to create an isolated app with fresh manager/session
 
 
-def create_app() -> FastAPI:
+def create_app(*, require_static_assets: bool = True) -> FastAPI:
     app = FastAPI()
     STATIC_DIR = Path(__file__).with_name("static")
-    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
-    app.mount(
-        "/assets", StaticFiles(directory=STATIC_DIR / "web" / "assets"), name="assets"
-    )
+
+    def _mount_static(path: str, directory: Path, name: str) -> None:
+        if not directory.exists():
+            if require_static_assets:
+                raise RuntimeError(
+                    f"Static directory missing: {directory}. Build MiniCodex UI assets before running."
+                )
+            logger.warning(
+                "Skipping mount for missing static directory",
+                extra={"path": path, "directory": str(directory)},
+            )
+            return
+        app.mount(path, StaticFiles(directory=directory, check_dir=True), name=name)
+
+    _mount_static("/static", STATIC_DIR, "static")
+    _mount_static("/assets", STATIC_DIR / "web" / "assets", "assets")
 
     # Readiness event so async tests can await startup deterministically
     app.state.ready = asyncio.Event()
@@ -449,12 +466,12 @@ def create_app() -> FastAPI:
         # Close agent first (it may reference MCP), then MCP
         try:
             if inner_agent is not None and hasattr(inner_agent, "__aexit__"):
-                await inner_agent.__aexit__(None, None, None)  # type: ignore[func-returns-value]
+                await inner_agent.__aexit__(None, None, None)
         except Exception:
             logger.exception("agent __aexit__ on shutdown failed")
         try:
             if inner_mcp is not None and hasattr(inner_mcp, "__aexit__"):
-                await inner_mcp.__aexit__(None, None, None)  # type: ignore[func-returns-value]
+                await inner_mcp.__aexit__(None, None, None)
         except Exception:
             logger.exception("mcp __aexit__ on shutdown failed")
 
@@ -465,20 +482,30 @@ def create_app() -> FastAPI:
     app.state.manager = manager
     app.state.session = session
 
-    @app.get("/")
-    async def index() -> FileResponse:
+    @app.get("/", response_model=None)
+    async def index() -> Response:
         # Prefer built Svelte app at static/web/index.html; fallback to legacy static/index.html
         primary = STATIC_DIR / "web" / "index.html"
         file_path = primary if primary.exists() else (STATIC_DIR / "index.html")
         if not file_path.exists():
-            raise RuntimeError(f"Missing UI file: {file_path}")
+            if require_static_assets:
+                raise RuntimeError(f"Missing UI file: {file_path}")
+            return Response(
+                content="MiniCodex UI assets not built",
+                media_type="text/plain",
+                status_code=200,
+            )
         return FileResponse(file_path)
 
-    @app.get("/vite.svg")
-    async def vite_svg() -> FileResponse:
+    @app.get("/vite.svg", response_model=None)
+    async def vite_svg() -> Response:
         svg = STATIC_DIR / "web" / "vite.svg"
         if not svg.exists():
             svg = STATIC_DIR / "vite.svg"
+        if not svg.exists():
+            if require_static_assets:
+                raise RuntimeError("Missing vite.svg asset")
+            return Response(content="", media_type="image/svg+xml", status_code=404)
         return FileResponse(svg)
 
     @app.websocket("/ws")
@@ -487,7 +514,7 @@ def create_app() -> FastAPI:
         # Ensure session is wired to the per-agent UI bus if provided by app.state
         ui_bus_obj = getattr(app.state, "ui_bus", None)
         if ui_bus_obj is not None:
-            session.ui_bus = ui_bus_obj  # type: ignore[assignment]
+            session.ui_bus = ui_bus_obj
         # Wire optional approval policy engine from app.state into this session
         engine = getattr(app.state, "approval_engine", None)
         if engine is not None:

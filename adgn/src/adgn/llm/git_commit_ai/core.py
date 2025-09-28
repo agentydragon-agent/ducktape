@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 
 import pygit2
+from typing import cast, Any
 
 # Shared constants used by backends and CLI
 MAX_PROMPT_CONTEXT_BYTES = 100 * 1024  # 100 KiB cap for AI context block
@@ -39,24 +40,23 @@ def _cap_append(
     return False
 
 
-def _head_tree(repo: pygit2.Repository) -> pygit2.Tree:
+def _head_commit_oid(repo: pygit2.Repository) -> pygit2.Oid:
     commit = repo.revparse_single("HEAD").peel(pygit2.Commit)
-    return commit.tree
+    return commit.id
 
 
-def _index_tree(repo: pygit2.Repository) -> pygit2.Tree:
+def _index_tree_oid(repo: pygit2.Repository) -> pygit2.Oid:
     oid = repo.index.write_tree()
-    return repo.get(oid)
+    return cast(pygit2.Oid, oid)
 
 
 def _diff(repo: pygit2.Repository, include_all: bool) -> pygit2.Diff:
-    a = _head_tree(repo)
-    b: pygit2.Tree | None
+    a = _head_commit_oid(repo)
     if include_all:
-        b = None  # workdir
-    else:
-        b = _index_tree(repo)
-    return repo.diff(a, b)
+        # Compare HEAD vs working tree
+        return repo.diff(a, None, cached=False)
+    # Compare HEAD vs index (staged)
+    return repo.diff(a, None, cached=True)
 
 
 def _format_name_status(repo: pygit2.Repository, include_all: bool) -> str:
@@ -132,7 +132,7 @@ def _format_status_porcelain(repo: pygit2.Repository) -> str:
 def _log_subjects(repo: pygit2.Repository, n: int = 10) -> list[str]:
     head = repo.revparse_single("HEAD").peel(pygit2.Commit)
     out: list[str] = []
-    for i, commit in enumerate(repo.walk(head.id, pygit2.GIT_SORT_TIME)):
+    for i, commit in enumerate(repo.walk(head.id, cast(Any, pygit2.GIT_SORT_TIME))):
         msg = commit.message or ""
         subj = msg.splitlines()[0] if msg else ""
         out.append(subj)

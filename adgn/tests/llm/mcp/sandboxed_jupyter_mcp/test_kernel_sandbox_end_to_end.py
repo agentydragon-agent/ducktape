@@ -2,7 +2,7 @@ from pathlib import Path
 import shutil
 import sys
 
-import policy_fixture as policy
+from . import policy_fixture as policy
 import pytest
 
 # These tests use the same explicit YAML policy used by the wrapper.

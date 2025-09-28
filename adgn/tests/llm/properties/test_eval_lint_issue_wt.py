@@ -1,11 +1,11 @@
 import os
 import shutil
 
-from openai import AsyncOpenAI
 import pytest
 
 from adgn.llm.properties.lint_issue import lint_issue_run
 from adgn.llm.properties.models.issue import IssueCore, LineRange, Occurrence
+from adgn.llm.client_factory import build_client
 
 
 @pytest.mark.live_llm
@@ -63,7 +63,7 @@ async def test_iss014_anchor_windows(
         occurrence=occ,
         model="gpt-5",
         gitconfig=None,
-        client=AsyncOpenAI(),
+        client=build_client("gpt-5"),
     )
 
     ca = payload.corrected_anchors

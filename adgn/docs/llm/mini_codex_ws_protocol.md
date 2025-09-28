@@ -50,7 +50,7 @@ Transcript items (subset)
 - UserText: {type: "user_text", text: str}
 - AssistantText: {type: "assistant_text", text: str}
 - ToolCall: {type: "tool_call", name: str, args: dict, call_id: str}
-- FunctionCallOutput: {type: "function_call_output", call_id: str, output: string}
+- FunctionCallOutput: {type: "function_call_output", call_id: str, result: object}
 - ReasoningChunk (optional): {type: "reasoning", text: str}
 
 Client → Server messages (commands)
@@ -164,7 +164,7 @@ class ToolCall(BaseModel):
 class FunctionCallOutput(BaseModel):
     type: Literal["function_call_output"] = "function_call_output"
     call_id: str
-    output: str  # JSON string from MCP CallToolResult
+    result: dict  # Serialized MCP CallToolResult (structured + content)
 
 class ReasoningChunk(BaseModel):
     type: Literal["reasoning"] = "reasoning"

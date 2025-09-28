@@ -28,7 +28,7 @@ Design overview
 - Event inputs for reducer
   - UserText (on_user_text_event)
   - ToolCall (on_tool_call_event)
-  - FunctionCallOutput (on_function_call_output_event)
+  - FunctionCallOutput (on_tool_result_event)
   - ApprovalDecision (approval_decision)
   - UiMessage (from ui.send_message)
   - EndTurn (from ui.end_turn)

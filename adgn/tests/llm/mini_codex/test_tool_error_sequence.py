@@ -1,17 +1,10 @@
 from __future__ import annotations
 
-import json
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 import pytest
-from adgn.llm.openai_utils.model import (
-    FakeOpenAIModel,
-    ResponsesResult,
-    Usage,
-    FunctionCallOut,
-    AssistantResponseMessage,
-)
+from adgn.llm.openai_utils.model import FakeOpenAIModel
 
 from adgn.llm.mcp.inproc_transport import make_inproc_slot_spec
 from adgn.llm.mini_codex.agent import MiniCodex
@@ -49,22 +42,8 @@ async def test_tool_error_is_surfaced_in_sequence(
 
         client = FakeOpenAIModel(
             [
-                ResponsesResult(
-                    id="fc",
-                    usage=Usage(input_tokens=0, output_tokens=0, total_tokens=0),
-                    output=[
-                        FunctionCallOut(
-                            call_id="call_1",
-                            name="mcp__editor__fail",
-                            arguments=json.dumps({"x": 1}),
-                        )
-                    ],
-                ),
-                ResponsesResult(
-                    id="msg",
-                    usage=Usage(input_tokens=0, output_tokens=1, total_tokens=1),
-                    output=[AssistantResponseMessage(text="done")],
-                ),
+                responses_factory.make_tool_call("mcp__editor__fail", {"x": 1}),
+                responses_factory.make_assistant_message("done"),
             ]
         )
         agent = await MiniCodex.create(
@@ -81,7 +60,7 @@ async def test_tool_error_is_surfaced_in_sequence(
         evt for evt in rec.records if evt.get("kind") == "function_call_output"
     ]
     assert fco_items, "No function_call_output captured"
-    payload = json.loads(fco_items[-1]["output"])  # output is JSON-serialized string
+    payload = fco_items[-1].get("result", {}) or {}
+    structured = payload.get("structuredContent") or {}
 
-    assert payload.get("ok") is False
-    assert payload.get("error") == "boom"
+    assert structured == {"ok": False, "error": "boom"}

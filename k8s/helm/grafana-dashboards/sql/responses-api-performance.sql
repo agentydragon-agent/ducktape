@@ -10,15 +10,15 @@ WITH responses_stats AS (
   FROM probe_results
   WHERE $__timeFilter(start_time)
     AND kind = 'responses'
-    AND family LIKE '$family'
+    AND ( '${family:raw}' = 'ALL' OR family LIKE '${family:raw}' )
   GROUP BY model
 ),
 success_samples AS (
   SELECT DISTINCT ON (model)
     model,
     CASE
-      WHEN responses_text::jsonb ? 'model' AND (responses_text::jsonb->>'model') != model THEN
-        '[' || (responses_text::jsonb->>'model') || '] ' || LEFT(
+      WHEN responses_body ? 'model' AND (responses_body->>'model') != model THEN
+        '[' || (responses_body->>'model') || '] ' || LEFT(
           (
             SELECT jsonb_agg(
               (
@@ -27,7 +27,7 @@ success_samples AS (
                 WHERE key NOT IN ('id', 'call_id') AND value != 'null'::jsonb AND NOT (jsonb_typeof(value) = 'array' AND jsonb_array_length(value) = 0)
               )
             )
-            FROM jsonb_array_elements(responses_text::jsonb->'output') AS item
+            FROM jsonb_array_elements(responses_body->'output') AS item
           )::text, 350)
       ELSE
         LEFT(
@@ -39,28 +39,32 @@ success_samples AS (
                 WHERE key NOT IN ('id', 'call_id') AND value != 'null'::jsonb AND NOT (jsonb_typeof(value) = 'array' AND jsonb_array_length(value) = 0)
               )
             )
-            FROM jsonb_array_elements(responses_text::jsonb->'output') AS item
+            FROM jsonb_array_elements(responses_body->'output') AS item
           )::text, 400)
     END as success_example
   FROM probe_results
   WHERE $__timeFilter(start_time)
     AND kind = 'responses'
-    AND family LIKE '$family'
+    AND ( '${family:raw}' = 'ALL' OR family LIKE '${family:raw}' )
     AND success = true
-    AND responses_text IS NOT NULL
-    AND responses_text != ''
-    AND responses_text::jsonb ? 'output'
+    AND responses_body IS NOT NULL
+    AND responses_body ? 'output'
   ORDER BY model, start_time DESC
 ),
 error_samples AS (
   SELECT DISTINCT ON (model)
     model,
-    LEFT(COALESCE(error_code, 'UNKNOWN') || ' ' || COALESCE(error_status::text, '?') || ' ' ||
-      COALESCE(error_message, 'Unknown error'), 200) as error_example
+    LEFT(
+      CASE
+        WHEN error_body IS NOT NULL THEN COALESCE((error_body->'error')::text, error_body::text)
+        ELSE COALESCE(error_code, 'UNKNOWN') || ' ' || COALESCE(error_status::text, '?')
+      END,
+      200
+    ) AS error_example
   FROM probe_results
   WHERE $__timeFilter(start_time)
     AND kind = 'responses'
-    AND family LIKE '$family'
+    AND ( '${family:raw}' = 'ALL' OR family LIKE '${family:raw}' )
     AND success = false
   ORDER BY model, start_time DESC
 )

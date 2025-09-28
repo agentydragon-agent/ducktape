@@ -21,48 +21,48 @@ def _write_shadow_github(mock_root: Path, variant: str):
     if variant == "open_mergeable":
         body = """
 from datetime import timedelta, datetime
-from types import SimpleNamespace as NS
+from types import SimpleNamespace
 class Github:
     def __init__(self, *args, **kwargs):
         pass
     def get_repo(self, full_name):
         def get_pull(number):
-            return NS(number=123, state="open", draft=False, mergeable=True, merged_at=None, additions=10, deletions=2)
-        return NS(get_pull=get_pull)
+            return SimpleNamespace(number=123, state="open", draft=False, mergeable=True, merged_at=None, additions=10, deletions=2)
+        return SimpleNamespace(get_pull=get_pull)
     def search_issues(self, q):
-        return [NS(number=123)]
+        return [SimpleNamespace(number=123)]
 """
     elif variant == "merged":
         body = """
-from types import SimpleNamespace as NS
-import datetime as _dt
+from types import SimpleNamespace
+import datetime
 class Github:
     def __init__(self, *args, **kwargs):
         pass
     def get_repo(self, full_name):
         def get_pull(number):
-            return NS(
+            return SimpleNamespace(
                 number=456,
                 state="closed",
                 draft=False,
                 mergeable=True,
-                merged_at=_dt.datetime.now(),
+                merged_at=datetime.datetime.now(),
                 additions=3,
                 deletions=1,
             )
-        return NS(get_pull=get_pull)
+        return SimpleNamespace(get_pull=get_pull)
     def search_issues(self, q):
-        return [NS(number=456)]
+        return [SimpleNamespace(number=456)]
 """
     elif variant == "closed":
         body = """
-from types import SimpleNamespace as NS
+from types import SimpleNamespace
 class Github:
     def __init__(self, *args, **kwargs):
         pass
     def get_repo(self, full_name):
         def get_pull(number):
-            return NS(
+            return SimpleNamespace(
                 number=789,
                 state="closed",
                 draft=False,
@@ -71,19 +71,19 @@ class Github:
                 additions=4,
                 deletions=4,
             )
-        return NS(get_pull=get_pull)
+        return SimpleNamespace(get_pull=get_pull)
     def search_issues(self, q):
-        return [NS(number=789)]
+        return [SimpleNamespace(number=789)]
 """
     elif variant == "none":
         body = """
-from types import SimpleNamespace as NS
+from types import SimpleNamespace
 from datetime import timedelta, datetime
 class Github:
     def __init__(self, *args, **kwargs):
         pass
     def get_repo(self, full_name):
-        return NS()
+        return SimpleNamespace()
     def search_issues(self, q):
         return []
 """
@@ -137,7 +137,7 @@ def test_github_pr_variants(
     env = os.environ.copy()
     env["WT_DIR"] = str(config.wt_dir)
     # Bind wt_cli to this test's WT_DIR/config
-    wt_cli.env = env  # type: ignore[attr-defined]
+    wt_cli.env = env
     # Write PR fixtures for WT_TEST_MODE to avoid PYTHONPATH hacks
     if variant == "none":
         pr_map = {}

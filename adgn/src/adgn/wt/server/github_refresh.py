@@ -4,6 +4,7 @@ from pathlib import Path
 import time
 
 from watchdog.events import FileSystemEventHandler
+from typing import Any
 from watchdog.observers import Observer
 
 logger = logging.getLogger(__name__)
@@ -34,7 +35,7 @@ class DebouncedGitHubRefresh:
         self.pending_refresh_task: asyncio.Task | None = None
         self.last_refresh_time = 0.0
         self.pending_files: set[str] = set()
-        self.observer: Observer | None = None
+        self.observer: Any | None = None
         self.event_handler = GitFileHandler(self)
         self.periodic_task: asyncio.Task | None = None
         self.is_running = False

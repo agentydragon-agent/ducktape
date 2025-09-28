@@ -4,7 +4,7 @@ import asyncio
 import json
 
 import pytest
-from adgn.llm.openai_utils.model import ResponsesResult, Usage, FunctionCallOut
+from tests.fixtures.responses import ResponsesFactory
 from adgn.llm.mini_codex.agent import MiniCodex
 from adgn.llm.mini_codex.ui.server import ConnectionManager, AgentSession
 from adgn.llm.mini_codex.ui.ui_handler import UiAutoHandler
@@ -16,41 +16,35 @@ from adgn.llm.mcp.ui.server import make_ui_mcp
 from tests.llm.support.openai_mock import make_mock
 
 
-def _make_ui_behavior():
+def _make_ui_behavior(rf: ResponsesFactory):
     calls = {"n": 0}
 
     async def _behavior(req):
         calls["n"] += 1
         if calls["n"] == 1:
             args_json = json.dumps({"mime": "text/markdown", "content": "**hello**"})
-            return ResponsesResult(
-                id="resp_fc1",
-                usage=Usage(input_tokens=0, output_tokens=0, total_tokens=0),
-                output=[
-                    FunctionCallOut(
-                        name="mcp__ui__send_message",
-                        call_id="call_1",
-                        arguments=args_json,
-                    )
-                ],
-            )
-        return ResponsesResult(
-            id="resp_fc2",
-            usage=Usage(input_tokens=0, output_tokens=0, total_tokens=0),
-            output=[
-                FunctionCallOut(
-                    name="mcp__ui__end_turn",
-                    call_id="call_2",
-                    arguments=json.dumps({}),
+            return rf.make(
+                rf.tool_call(
+                    call_id="call_1",
+                    name="mcp__ui__send_message",
+                    arguments=json.loads(args_json),
                 )
-            ],
+            )
+        return rf.make(
+            rf.tool_call(
+                call_id="call_2",
+                name="mcp__ui__end_turn",
+                arguments={},
+            )
         )
 
     return _behavior
 
 
 @pytest.mark.asyncio
-async def test_ui_server_with_mock_agent_produces_ui_state_updates():
+async def test_ui_server_with_mock_agent_produces_ui_state_updates(
+    responses_factory: ResponsesFactory,
+):
     # Per-agent bus and UI MCP server
     bus = UiBus()
     ui_server = make_ui_mcp("ui", bus)
@@ -61,7 +55,7 @@ async def test_ui_server_with_mock_agent_produces_ui_state_updates():
     mgr = ConnectionManager()
     sess = AgentSession(mgr)
     # Wire the per-agent bus so manager drains it on function outputs
-    sess.ui_bus = bus  # type: ignore[attr-defined]
+    sess.ui_bus = bus
 
     # Patch send_json to capture envelopes
     orig_send_json = mgr.send_json
@@ -82,7 +76,7 @@ async def test_ui_server_with_mock_agent_produces_ui_state_updates():
             pass
         await orig_send_json(payload)
 
-    mgr.send_json = _capture  # type: ignore[assignment]
+    setattr(mgr, "send_json", _capture)
 
     async with McpManager(specs) as mcp:
         handlers = [UiAutoHandler(bus=bus)]
@@ -90,7 +84,7 @@ async def test_ui_server_with_mock_agent_produces_ui_state_updates():
             model="test-model",
             mcp=mcp,
             handlers=handlers,
-            client=make_mock(_make_ui_behavior()),
+            client=make_mock(_make_ui_behavior(responses_factory)),
             system="Use ui tools",
         )
         sess.attach_agent(agent)
@@ -98,14 +92,15 @@ async def test_ui_server_with_mock_agent_produces_ui_state_updates():
         # Kick off a run and wait for it to finish (end_turn triggers Abort)
         await sess.run("hello")
         # Wait for the background run task to complete
-        if getattr(sess, "_task", None) is not None:
-            await sess._task  # type: ignore[attr-defined]
+        task = sess._task
+        if task is not None:
+            await task
         # Ensure any queued manager tasks are flushed and bus drained
         await mgr.flush()
-        await mgr._emit_ui_bus_messages()  # type: ignore[attr-defined]
+        await mgr._emit_ui_bus_messages()
 
     # Verify directly on session state: AssistantMarkdown '**hello**' present
-    items = sess.ui_state.items if hasattr(sess, "ui_state") else []  # type: ignore[attr-defined]
+    items = sess.ui_state.items
     assert any(
         getattr(it, "kind", None) == "AssistantMarkdown"
         and getattr(it, "md", None) == "**hello**"

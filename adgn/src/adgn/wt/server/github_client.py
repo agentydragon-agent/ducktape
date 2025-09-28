@@ -86,10 +86,10 @@ class GitHubInterface:
         return [
             PullRequestList(
                 number=pr.number,
-                head_ref_name=pr.head.ref,
+                headRefName=pr.head.ref,
                 state=PRState(pr.state),
                 title=pr.title,
-                merged_at=(
+                mergedAt=(
                     pr.merged_at.isoformat() if getattr(pr, "merged_at", None) else None
                 ),
             )

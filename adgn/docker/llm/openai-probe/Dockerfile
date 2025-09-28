@@ -15,10 +15,6 @@
 #   # Use in k8s deployments as:
 #   #   image: registry.registry.svc.cluster.local:5000/openai-probe:latest
 #
-#   # Alternative: Direct LoadBalancer access (requires insecure-registries config)
-#   #   docker tag registry.k3s.local/openai-probe:latest 10.0.200.101:5000/openai-probe:latest
-#   #   docker push 10.0.200.101:5000/openai-probe:latest
-#
 # Run examples (local):
 #   docker run --rm -e OPENAI_API_KEY openai-probe:latest --help
 #   docker run --rm -e OPENAI_API_KEY openai-probe:latest continuous --interval 300
@@ -33,12 +29,23 @@ RUN useradd -m -u 1000 appuser
 
 WORKDIR /app
 
-# Copy the repository and install from pyproject (build isolation)
-COPY . /app
-# Upgrade pip and setuptools to ensure proper src-layout support
+# 1) Install runtime dependencies first (cacheable) using pyproject.toml
+COPY pyproject.toml /app/pyproject.toml
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --upgrade pip setuptools wheel && \
-    pip install .
+    python - <<'PY'
+import subprocess, tomllib
+from pathlib import Path
+data = tomllib.loads(Path('pyproject.toml').read_text('utf-8'))
+deps = data.get('project', {}).get('dependencies', []) or []
+if deps:
+    subprocess.run(['pip','install','--no-cache-dir', *deps], check=True)
+PY
+
+# 2) Copy the rest of the source and install the package without deps
+COPY . /app
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --no-cache-dir --no-deps .
 
 USER 1000:1000
 

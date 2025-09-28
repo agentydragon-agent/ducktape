@@ -1,28 +1,20 @@
 from __future__ import annotations
 
-import json
-import uuid
 from typing import Any
-
-from mcp.server.fastmcp import FastMCP
 import pytest
+
 from adgn.llm.openai_utils.model import (
-    ResponsesResult,
-    Usage,
-    ReasoningOut,
-    AssistantResponseMessage,
-    FunctionCallOut,
+    AssistantMessage,
     FakeOpenAIModel,
     FunctionCallItem,
     FunctionCallOutputItem,
     ReasoningItem,
-    AssistantMessage,
+    ResponsesResult,
 )
-
-from adgn.llm.mcp.inproc_transport import make_inproc_slot_spec
 from adgn.llm.mini_codex.agent import MiniCodex
 from adgn.llm.mini_codex.aggregating_handler import AutoHandler
 from adgn.llm.mini_codex.mcp_manager import McpManager
+from tests.fixtures.responses import ResponsesFactory
 # Use our shared Pydantic-only fake model client
 
 # Examples and references:
@@ -33,57 +25,37 @@ from adgn.llm.mini_codex.mcp_manager import McpManager
 #   - reasoning_function_calls.ipynb: https://github.com/openai/openai-cookbook/blob/main/examples/reasoning_function_calls.ipynb
 
 
-# Simple inproc echo server used by tests
-def _make_echo_server() -> FastMCP:
-    mcp = FastMCP("echo")
-
-    @mcp.tool()
-    def echo(text: str) -> dict[str, Any]:
-        return {"ok": True, "echo": text}
-
-    return mcp
+_rf = ResponsesFactory("gpt-5-nano")
 
 
-def _usage(inp: int = 0, out: int = 0) -> Usage:
-    return Usage(input_tokens=inp, output_tokens=out, total_tokens=inp + out)
-
-
-def _make_reasoning_then_message(text: str) -> ResponsesResult:
+def _make_reasoning_then_message(text: str):
     # Ensure unique item IDs per response to avoid duplicate-id assertions in agent transcript
-    rs_id = f"rs_{uuid.uuid4().hex[:8]}"
-    return ResponsesResult(
-        id="r1",
-        usage=_usage(0, max(1, len(text))),
-        output=[ReasoningOut(id=rs_id), AssistantResponseMessage(text=text)],
+    return _rf.make(
+        _rf.make_item_reasoning(),
+        _rf.assistant_text(text),
     )
 
 
 def _make_tool_call_resp(
-    call_id: str, name: str, args: dict[str, Any]
+    name: str, args: dict[str, Any], *, call_id: str | None = None
 ) -> ResponsesResult:
-    return ResponsesResult(
-        id="r_tc",
-        usage=_usage(0, 0),
-        output=[
-            FunctionCallOut(call_id=call_id, name=name, arguments=json.dumps(args))
-        ],
-    )
+    return _rf.make_tool_call(name, args, call_id)
 
 
 @pytest.mark.asyncio
-async def test_stateless_reasoning_forwarding() -> None:
+async def test_stateless_reasoning_forwarding(make_echo_spec) -> None:
     """Request1 produces reasoning+assistant; Request2 should include reasoning in input."""
-    spec = make_inproc_slot_spec(_make_echo_server())
+    specs = make_echo_spec()
 
     seq = [_make_reasoning_then_message("ok")]
     client = FakeOpenAIModel(seq)
 
-    async with McpManager({"echo": spec}) as mcp:
+    async with McpManager(specs) as mcp:
         agent = await MiniCodex.create(
             model="test-model",
             mcp=mcp,
             system="test",
-            client=client,  # type: ignore[arg-type]
+            client=client,
             handlers=[AutoHandler()],
         )
 
@@ -91,7 +63,6 @@ async def test_stateless_reasoning_forwarding() -> None:
 
         # Reasoning should be present in the agent transcript/messages for stateless forwarding
         msgs = agent.messages
-        from adgn.llm.openai_utils.model import ReasoningItem, AssistantMessage
 
         # We forward reasoning items as typed ReasoningItem
         assert any(isinstance(it, ReasoningItem) for it in msgs)
@@ -100,22 +71,22 @@ async def test_stateless_reasoning_forwarding() -> None:
 
 
 @pytest.mark.asyncio
-async def test_function_call_and_fco_replay() -> None:
+async def test_function_call_and_fco_replay(make_echo_spec) -> None:
     """Request1 produces a function_call; after local execution, messages() must include fc and fco."""
-    spec = make_inproc_slot_spec(_make_echo_server())
+    specs = make_echo_spec()
 
     seq = [
-        _make_tool_call_resp("call-1", "mcp__echo__echo", {"text": "hi"}),
+        _make_tool_call_resp("mcp__echo__echo", {"text": "hi"}),
         _make_reasoning_then_message("done"),
     ]
     client = FakeOpenAIModel(seq)
 
-    async with McpManager({"echo": spec}) as mcp:
+    async with McpManager(specs) as mcp:
         agent = await MiniCodex.create(
             model="test-model",
             mcp=mcp,
             system="test",
-            client=client,  # type: ignore[arg-type]
+            client=client,
             handlers=[AutoHandler()],
         )
 
@@ -131,30 +102,22 @@ async def test_function_call_and_fco_replay() -> None:
 
 
 @pytest.mark.asyncio
-async def test_mixed_reasoning_fc_ordering() -> None:
+async def test_mixed_reasoning_fc_ordering(make_echo_spec) -> None:
     """Resp1 returns reasoning, function_call, assistant; after fco, messages preserves order
     reasoning, fc, fco, assistant.
     """
-    spec = make_inproc_slot_spec(_make_echo_server())
+    specs = make_echo_spec()
 
     # Build a response with reasoning then function_call then assistant (our facade types)
-    resp = ResponsesResult(
-        id="r_mix",
-        usage=_usage(0, 1),
-        output=[
-            ReasoningOut(id="rs_x"),
-            FunctionCallOut(
-                call_id="call-1",
-                name="mcp__echo__echo",
-                arguments=json.dumps({"text": "hi"}),
-            ),
-            AssistantResponseMessage(text="done"),
-        ],
+    resp = _rf.make(
+        _rf.make_item_reasoning(),
+        _rf.tool_call("mcp__echo__echo", {"text": "hi"}),
+        _rf.assistant_text("done"),
     )
     # Use a final assistant message on the second call to avoid infinite tool-call loops
     client = FakeOpenAIModel([resp, _make_reasoning_then_message("ok")])
 
-    async with McpManager({"echo": spec}) as mcp:
+    async with McpManager(specs) as mcp:
         agent = await MiniCodex.create(
             model="test-model",
             mcp=mcp,
@@ -174,18 +137,18 @@ async def test_mixed_reasoning_fc_ordering() -> None:
 
 
 @pytest.mark.asyncio
-async def test_no_synthesized_reasoning_items() -> None:
+async def test_no_synthesized_reasoning_items(make_echo_spec) -> None:
     """Ensure agent does not fabricate reasoning rs_* items when missing."""
-    spec = make_inproc_slot_spec(_make_echo_server())
+    specs = make_echo_spec()
 
     # Response with only a function_call (no reasoning)
     seq = [
-        _make_tool_call_resp("call-1", "mcp__echo__echo", {"text": "hi"}),
+        _make_tool_call_resp("mcp__echo__echo", {"text": "hi"}),
         _make_reasoning_then_message("done"),
     ]
     client = FakeOpenAIModel(seq)
 
-    async with McpManager({"echo": spec}) as mcp:
+    async with McpManager(specs) as mcp:
         agent = await MiniCodex.create(
             model="test-model",
             mcp=mcp,
@@ -199,3 +162,37 @@ async def test_no_synthesized_reasoning_items() -> None:
     input_items = list(client.captured[idx].input or [])
     # No synthesized ReasoningItem entries should be present
     assert not any(isinstance(it, ReasoningItem) for it in input_items)
+
+
+@pytest.mark.asyncio
+async def test_model_provided_tool_output_records_without_execution(
+    responses_factory: ResponsesFactory,
+    make_echo_spec,
+) -> None:
+    """If the model supplies tool output inline, agent should not run the tool again."""
+
+    specs = make_echo_spec()
+    seq = [
+        responses_factory.make_tool_call_with_output(
+            "mcp__echo__echo",
+            {"text": "hi"},
+            {"ok": True, "echo": "hi"},
+        )
+    ]
+    client = FakeOpenAIModel(seq)
+
+    async with McpManager(specs) as mcp:
+        agent = await MiniCodex.create(
+            model="test-model",
+            mcp=mcp,
+            system="test",
+            client=client,
+            handlers=[AutoHandler()],
+        )
+
+        await agent.run("say hi")
+
+    msgs = agent.messages
+    assert any(isinstance(it, FunctionCallOutputItem) for it in msgs)
+    assert not agent.pending_function_calls
+    assert client.calls == 1

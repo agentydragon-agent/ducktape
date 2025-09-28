@@ -6,7 +6,6 @@ from typing import Any
 
 from adgn.llm.inop.clients.logging_openai_client import LoggingOpenAIModel
 from adgn.llm.inop.config import OptimizerConfig
-from adgn.llm.inop.engine.exceptions import ContextWindowExceededError
 from adgn.llm.inop.engine.models import (
     ComparisonGrading,
     Criterion,
@@ -25,6 +24,12 @@ from adgn.llm.inop.grading.strategies import (
     create_grading_strategy,
 )
 from adgn.llm.inop.io.logging_utils import DualOutputLogging
+from adgn.llm.openai_utils.model import (
+    FunctionCallOut,
+    ResponsesRequest,
+    ToolChoiceFunction,
+)
+from adgn.llm.openai_utils.types import build_reasoning_params
 
 logger = DualOutputLogging.get_logger()
 
@@ -151,27 +156,19 @@ Return a JSON object with:
         "strict": True,
     }
 
-    response = await model.responses_create(
+    req = ResponsesRequest(
         input=prompt,
         tools=[grading_tool],
-        tool_choice={"type": "function", "name": "submit_comparison_grade"},
-        reasoning=(
-            {"effort": cfg.grader.reasoning_effort}
-            if cfg.grader.reasoning_effort
-            else None
-        ),
+        tool_choice=ToolChoiceFunction(name="submit_comparison_grade"),
+        reasoning=build_reasoning_params(cfg.grader.reasoning_effort),
     )
 
+    response = await model.responses_create(req)
+
     # Extract the function call from response
-    call = None
+    call: FunctionCallOut | None = None
     for item in response.output:
-        if (
-            isinstance(item, ResponseFunctionToolCallItem)
-            and item.type == "function_call"
-        ) or isinstance(
-            item,
-            ResponseFunctionToolCall,
-        ):
+        if isinstance(item, FunctionCallOut):
             call = item
             break
 
@@ -184,7 +181,7 @@ Return a JSON object with:
 
     # Parse the grading result
     try:
-        parsed = json.loads(call.arguments)
+        parsed = json.loads(call.arguments or "{}")
     except json.JSONDecodeError as e:
         logger.error(
             "Failed to parse comparison grading",
@@ -277,27 +274,19 @@ async def _grade_with_criteria(
 
     full_prompt = f"{prompt}\n\nGrade the solution on these criteria:\n{criteria_text}"
 
-    response = await model.responses_create(
+    req = ResponsesRequest(
         input=full_prompt,
         tools=[grading_tool],
-        tool_choice={"type": "function", "name": "submit_grades"},
-        reasoning=(
-            {"effort": cfg.grader.reasoning_effort}
-            if cfg.grader.reasoning_effort
-            else None
-        ),
+        tool_choice=ToolChoiceFunction(name="submit_grades"),
+        reasoning=build_reasoning_params(cfg.grader.reasoning_effort),
     )
 
-    # Extract the function call
+    response = await model.responses_create(req)
+
+    # Extract the function call (accept SDK or adapter types)
     call = None
     for item in response.output:
-        if (
-            isinstance(item, ResponseFunctionToolCallItem)
-            and item.type == "function_call"
-        ) or isinstance(
-            item,
-            ResponseFunctionToolCall,
-        ):
+        if isinstance(item, FunctionCallOut):
             call = item
             break
 
@@ -310,7 +299,13 @@ async def _grade_with_criteria(
 
     # Parse the grades
     try:
-        parsed = json.loads(call.arguments)
+        # Adapter-only: SDK types are not accepted in this layer
+        assert isinstance(call, FunctionCallOut), (
+            f"Unexpected function call item type: {type(call).__name__}. "
+            "Only adapter FunctionCallOut is supported in this layer."
+        )
+        arguments_str = call.arguments or ""
+        parsed = json.loads(arguments_str or "{}")
     except json.JSONDecodeError as e:
         logger.error("Failed to parse grades", task_id=task.id, error=str(e))
         raise RuntimeError("Failed to parse grades") from e

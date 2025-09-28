@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import json
 import logging
 from pathlib import Path
 import sys
@@ -9,7 +8,6 @@ import sys
 import pygit2
 from adgn.llm.mcp._shared.fastmcp_helpers import SafeFastMCP
 from adgn.llm.client_factory import build_client
-from openai.types.responses import ResponseFunctionToolCall
 from pydantic import BaseModel, Field
 
 from adgn.llm.logging_config import configure_logging
@@ -19,6 +17,7 @@ from adgn.llm.mcp.git_ro.server import (
     DiffInput,
     ListSlice,
     ShowInput,
+    TextSlice,
     make_git_ro_server,
 )
 from adgn.llm.mcp.inproc_transport import make_inproc_slot_spec
@@ -31,6 +30,8 @@ from adgn.llm.mini_codex.loop_control import (
     RequireAny,
 )
 from adgn.llm.mini_codex.mcp_manager import McpManager, build_mcp_function
+from adgn.llm.openai_utils.builders import ItemFactory
+from adgn.llm.openai_utils.model import FunctionCallOut
 
 
 def _default_bootstrap(
@@ -38,63 +39,48 @@ def _default_bootstrap(
     *,
     staged_limit: int = 2000,
     patch_slice_chars: int = 50000,
-) -> list[ResponseFunctionToolCall]:
+) -> list[FunctionCallOut]:
     """Build the default list of bootstrap tool calls for a commit flow.
 
     Returns initial function calls agent should start out having executed when composing
     a commit message. Parameters control pagination sizes used for heavy payloads.
     """
+    f = ItemFactory(call_id_prefix="bootstrap")
     return [
-        ResponseFunctionToolCall(
-            type="function_call",
+        f.tool_call(
             name=build_mcp_function(server, "git_status"),
+            arguments=StatusInput(list_slice=ListSlice(offset=0, limit=1000)).model_dump(),
             call_id="bootstrap:status",
-            arguments=json.dumps({}),
         ),
-        ResponseFunctionToolCall(
-            type="function_call",
+        f.tool_call(
             name=build_mcp_function(server, "git_diff"),
+            arguments=DiffInput(
+                format=DiffFormat.NAME_STATUS,
+                staged=True,
+                find_renames=True,
+                list_slice=ListSlice(offset=0, limit=staged_limit),
+            ).model_dump(),
             call_id="bootstrap:diff-name-status",
-            arguments=json.dumps(
-                {
-                    "payload": DiffInput(
-                        format=DiffFormat.NAME_STATUS,
-                        staged=True,
-                        find_renames=True,
-                        list_slice=ListSlice(offset=0, limit=staged_limit),
-                    ).model_dump(),
-                },
-            ),
         ),
-        ResponseFunctionToolCall(
-            type="function_call",
+        f.tool_call(
             name=build_mcp_function(server, "git_diff"),
+            arguments=DiffInput(
+                format=DiffFormat.STAT,
+                staged=True,
+                find_renames=True,
+                list_slice=ListSlice(offset=0, limit=staged_limit),
+            ).model_dump(),
             call_id="bootstrap:diff-stat",
-            arguments=json.dumps(
-                {
-                    "payload": DiffInput(
-                        format=DiffFormat.STAT,
-                        staged=True,
-                        find_renames=True,
-                        list_slice=ListSlice(offset=0, limit=staged_limit),
-                    ).model_dump(),
-                },
-            ),
         ),
-        ResponseFunctionToolCall(
-            type="function_call",
+        f.tool_call(
             name=build_mcp_function(server, "git_diff"),
+            arguments=DiffInput(
+                format=DiffFormat.PATCH,
+                staged=True,
+                unified=0,
+                slice=TextSlice(offset_chars=0, max_chars=patch_slice_chars),
+            ).model_dump(),
             call_id="bootstrap:diff-patch",
-            arguments=json.dumps(
-                {
-                    "payload": {
-                        "format": "patch",
-                        "staged": True,
-                        "unified": 0,
-                        "slice": {"offset_chars": 0, "max_chars": patch_slice_chars},
-                    },
-                },
-            ),
         ),
     ]
 
@@ -150,36 +136,27 @@ class CommitController(BaseHandler):
 
         # If amending, append dedicated bootstrap calls for the amended commit and its original diff
         if amend:
+            f = ItemFactory(call_id_prefix="bootstrap")
             extra_boots = [
-                ResponseFunctionToolCall(
-                    type="function_call",
+                f.tool_call(
                     name=build_mcp_function(self._server, "git_show"),
+                    arguments=ShowInput(
+                        object="HEAD",
+                        format=DiffFormat.PATCH,
+                        slice=TextSlice(offset_chars=0, max_chars=50000),
+                    ).model_dump(),
                     call_id="bootstrap:show-head",
-                    arguments=json.dumps(
-                        {
-                            "payload": ShowInput(
-                                object="HEAD",
-                                format=DiffFormat.PATCH,
-                                slice=ListSlice(offset=0, max_chars=50000),
-                            ).model_dump(),
-                        },
-                    ),
                 ),
-                ResponseFunctionToolCall(
-                    type="function_call",
+                f.tool_call(
                     name=build_mcp_function(self._server, "git_diff"),
+                    arguments=DiffInput(
+                        format=DiffFormat.PATCH,
+                        rev_a="HEAD^",
+                        rev_b="HEAD",
+                        unified=0,
+                        slice=TextSlice(offset_chars=0, max_chars=50000),
+                    ).model_dump(),
                     call_id="bootstrap:orig-diff",
-                    arguments=json.dumps(
-                        {
-                            "payload": DiffInput(
-                                format=DiffFormat.PATCH,
-                                rev_a="HEAD^",
-                                rev_b="HEAD",
-                                unified=0,
-                                slice=ListSlice(offset=0, max_chars=50000),
-                            ).model_dump(),
-                        },
-                    ),
                 ),
             ]
             self._bootstrap.extend(extra_boots)

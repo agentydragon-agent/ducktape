@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
-import platform as _platform
+import platform
 import shutil
 
 from .model import SBPLPolicy
@@ -24,7 +24,7 @@ class ValidationContext:
 
 
 def make_runtime_context() -> ValidationContext:
-    ver, _, _ = _platform.mac_ver()
+    ver, _, _ = platform.mac_ver()
     return ValidationContext(
         macos_version=ver or None,
         sandbox_exec_present=bool(shutil.which("sandbox-exec")),

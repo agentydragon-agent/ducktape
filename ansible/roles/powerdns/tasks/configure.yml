@@ -11,6 +11,10 @@
     - "53"
     - "{{ powerdns_webserver_port }}"
 
+# Ensure any pending handlers (like restart powerdns) are run before health check
+- name: Flush handlers to ensure PowerDNS is restarted if needed
+  ansible.builtin.meta: flush_handlers
+
 - name: Wait for PowerDNS to be ready
   ansible.builtin.uri:
     url: "http://{{ powerdns_webserver_address }}:{{ powerdns_webserver_port }}/api/v1/servers"

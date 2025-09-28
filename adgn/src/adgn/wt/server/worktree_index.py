@@ -6,7 +6,7 @@ from pathlib import Path
 
 from ..shared.constants import MAIN_WORKTREE_DISPLAY_NAME
 from .types import DiscoveredWorktree
-from .worktree_ids import make_worktree_id as _mk
+from .worktree_ids import make_worktree_id
 
 
 @dataclass
@@ -33,7 +33,7 @@ class WorktreeIndex:
             main = DiscoveredWorktree(
                 main_repo,
                 MAIN_WORKTREE_DISPLAY_NAME,
-                _mk(MAIN_WORKTREE_DISPLAY_NAME),
+                make_worktree_id(MAIN_WORKTREE_DISPLAY_NAME),
             )
             by_path.setdefault(main_repo, main)
             by_name.setdefault(MAIN_WORKTREE_DISPLAY_NAME, main)

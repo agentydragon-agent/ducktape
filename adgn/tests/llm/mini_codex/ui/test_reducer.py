@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 
+from mcp import types as mcp_types
+
 from adgn.llm.mini_codex.ui.reducer import reduce_ui_state
 from adgn.llm.mini_codex.ui.state import UiState, new_state
 from adgn.llm.mini_codex.ui.protocol import (
@@ -82,8 +84,17 @@ def test_function_output_updates_exec_stream():
             call_id="c4",
         ),
     )
-    out = {"stdout_text": "ok", "stderr_text": "", "exit_code": 0}
-    s2 = reduce_ui_state(s1, FunctionCallOutput(call_id="c4", output=json.dumps(out)))
+    result = mcp_types.CallToolResult(
+        content=[],
+        structuredContent={"stdout": "ok", "stderr": "", "exit_code": 0},
+        isError=False,
+    )
+    s2 = reduce_ui_state(
+        s1,
+        FunctionCallOutput(
+            call_id="c4", result=result.model_dump(mode="json", exclude_none=True)
+        ),
+    )
     it = s2.items[0]
     assert it.kind == "Tool"
     assert it.content.content_kind == "Exec"
@@ -98,13 +109,14 @@ def test_function_output_updates_json_output_when_not_exec():
         ToolCall(name="mcp__kv__get", args_json=json.dumps({"key": "k"}), call_id="c5"),
     )
     payload = {"value": {"a": 1}}
-    s2 = reduce_ui_state(
-        s1, FunctionCallOutput(call_id="c5", output=json.dumps(payload))
-    )
+    result = mcp_types.CallToolResult(
+        content=[], structuredContent=payload, isError=False
+    ).model_dump(mode="json", exclude_none=True)
+    s2 = reduce_ui_state(s1, FunctionCallOutput(call_id="c5", result=result))
     it = s2.items[0]
     assert it.kind == "Tool"
     assert it.content.content_kind == "Json"
-    assert it.content.output == payload
+    assert it.content.result == result
 
 
 def test_ui_message_becomes_assistant_markdown():

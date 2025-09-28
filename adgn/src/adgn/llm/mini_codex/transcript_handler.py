@@ -1,17 +1,19 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from datetime import datetime
 import json
 from pathlib import Path
 from typing import Any
+from adgn.llm.openai_utils.model import ReasoningOut
 
 from adgn.llm.mini_codex.handler import (
     AssistantText,
     BaseHandler,
-    FunctionCallOutput,
+    ToolCallOutput,
     ToolCall,
     UserText,
+    to_jsonl_record,
 )
 from adgn.llm.mini_codex.loop_control import NoLoopDecision
 
@@ -48,30 +50,29 @@ class TranscriptHandler(BaseHandler):
         )
 
     # ---- Event helpers ----
-    def _append(self, kind: str, payload: Any) -> None:
-        ev = _Event(ts=datetime.utcnow().isoformat() + "Z", kind=kind, payload=payload)
+    def _write_event(self, evt: Any) -> None:
+        rec = to_jsonl_record(evt)
+        out = {"ts": datetime.utcnow().isoformat() + "Z", **rec}
         with self._events_path.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(asdict(ev), ensure_ascii=False) + "\n")
+            f.write(json.dumps(out, ensure_ascii=False) + "\n")
 
     # ---- BaseHandler hooks (typed) ----
-    def on_user_text_event(self, evt: UserText) -> None:  # type: ignore[override]
-        self._append("user_text", {"text": evt.text})
+    def on_user_text_event(self, evt: UserText) -> None:
+        self._write_event(evt)
 
-    def on_assistant_text_event(self, evt: AssistantText) -> None:  # type: ignore[override]
-        self._append("assistant_text", {"text": evt.text})
+    def on_assistant_text_event(self, evt: AssistantText) -> None:
+        self._write_event(evt)
 
-    def on_tool_call_event(self, evt: ToolCall) -> None:  # type: ignore[override]
-        payload = {"name": evt.name, "call_id": evt.call_id, "args_json": evt.args_json}
-        self._append("tool_call", payload)
+    def on_tool_call_event(self, evt: ToolCall) -> None:
+        self._write_event(evt)
 
-    def on_function_call_output_event(self, evt: FunctionCallOutput) -> None:  # type: ignore[override]
-        payload = {"call_id": evt.call_id, "output": evt.output}
-        self._append("tool_output", payload)
+    def on_tool_result_event(self, evt: ToolCallOutput) -> None:
+        self._write_event(evt)
 
-    def on_reasoning(self, item: Any) -> None:  # type: ignore[override]
-        # Optional: keep as-is; callers can extend to capture richer content
-        self._append("reasoning", {"repr": repr(item)})
+    def on_reasoning(self, item: ReasoningOut) -> None:
+        # Record adapter ReasoningOut via shared JSONL mapping
+        self._write_event(item)
 
-    def on_before_sample(self) -> NoLoopDecision:  # type: ignore[override]
+    def on_before_sample(self) -> NoLoopDecision:
         # Do not influence loop control
         return NoLoopDecision()

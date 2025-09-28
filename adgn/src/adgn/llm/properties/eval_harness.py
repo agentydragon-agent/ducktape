@@ -7,8 +7,13 @@ from pathlib import Path
 from typing import Annotated, Any, Literal
 
 from hamcrest import assert_that, has_item
-from adgn.llm.openai_utils.model import OpenAIModelProto
-from adgn.llm.openai_utils.model import ResponsesRequest, FunctionCallOut
+from adgn.llm.openai_utils.model import (
+    OpenAIModelProto,
+    ResponsesRequest,
+    FunctionCallOut,
+    UserMessage,
+    ToolChoiceFunction,
+)
 from pydantic import BaseModel, ConfigDict, Field
 from rich.console import Console
 from rich.table import Table
@@ -195,9 +200,9 @@ async def _grade_rationale_with_llm(
         + "\n\nQuestion: Is the new description corrected as it should be?"
     )
     req = ResponsesRequest(
-        input=[{"role": "user", "content": [{"type": "input_text", "text": prompt}]}],
+        input=[UserMessage.text(prompt)],
         tools=tools,  # passthrough dicts are accepted
-        tool_choice={"type": "function", "name": "grade_rationale"},
+        tool_choice=ToolChoiceFunction(name="grade_rationale"),
     )
     resp = await client.responses_create(req)
     # Extract function call robustly; fail fast on missing/invalid
@@ -212,15 +217,29 @@ async def _grade_rationale_with_llm(
     if call is None:
         raise RuntimeError("grade_rationale function call not returned by model")
 
-    args = call.arguments
-    if isinstance(args, str):
-        try:
-            args = json.loads(args)
-        except Exception as e:
-            raise RuntimeError("grade_rationale arguments not valid JSON") from e
+    raw_args = call.arguments
+    if raw_args is None:
+        parsed_args: GradeRationaleArgs = GradeRationaleArgs(verdict="NO", reason="")
+    else:
+        if isinstance(raw_args, str):
+            try:
+                loaded = json.loads(raw_args)
+            except Exception as e:  # pragma: no cover - defensive error surfacing
+                raise RuntimeError("grade_rationale arguments not valid JSON") from e
+        elif isinstance(raw_args, dict):
+            loaded = raw_args
+        else:
+            raise RuntimeError(
+                f"grade_rationale arguments unsupported type: {type(raw_args).__name__}"
+            )
 
-    verdict = str(args.get("verdict", "")).upper()
-    reason = str(args.get("reason", "")).strip()
+        try:
+            parsed_args = GradeRationaleArgs.model_validate(loaded)
+        except Exception as e:
+            raise RuntimeError("grade_rationale payload failed validation") from e
+
+    verdict = parsed_args.verdict
+    reason = parsed_args.reason.strip()
     if verdict not in ("YES", "PARTIALLY", "NO"):
         raise RuntimeError("grade_rationale returned unexpected verdict")
     return {"verdict": verdict, "reason": reason}

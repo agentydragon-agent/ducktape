@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import os
-
-from openai import AsyncOpenAI
 import pytest
 
 from adgn.llm.mcp._shared.container_session import ContainerOptions
@@ -17,6 +15,7 @@ from adgn.llm.mini_codex.aggregating_handler import AutoHandler
 from adgn.llm.mini_codex.mcp_manager import McpManager, build_mcp_function
 from adgn.llm.mcp.testing.typed_stubs import TypedClient
 from adgn.llm.mcp._shared.types import ExecInput, ExecResult
+from adgn.llm.client_factory import build_client
 
 ECHO_CMD = ["sh", "-lc", "printf hello"]
 
@@ -38,8 +37,6 @@ def _build_specs():
 async def _assert_exec_echo(mcp: McpManager) -> None:
     sess = await mcp.get_session("docker")
     # Introspect the in-proc FastMCP server to get typed models
-    from adgn.llm.mcp.docker_exec.server import make_container_exec_mcp
-
     typed = TypedClient.from_server(
         make_container_exec_mcp(ContainerOptions(image="python:3.12-slim")), sess
     )
@@ -69,9 +66,10 @@ async def test_live_llm_exec_echo() -> None:
     """End-to-end: real LLM is instructed to call docker exec to print hello and return exactly it."""
 
     async with McpManager(_build_specs()) as mcp:
-        client = AsyncOpenAI()
+        model_name = os.environ.get("OPENAI_MODEL", "gpt-5")
+        client = build_client(model_name)
         agent = await MiniCodex.create(
-            model=os.environ.get("OPENAI_MODEL", "gpt-5"),
+            model=model_name,
             mcp=mcp,
             system=(
                 "You are testing an MCP exec tool.\n"

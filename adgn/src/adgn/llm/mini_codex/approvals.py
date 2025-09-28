@@ -3,12 +3,14 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable
 import json
-from typing import Any, Literal, cast
+from typing import Any, Literal, Optional, cast
 import uuid
+from dataclasses import dataclass
+from datetime import datetime, timezone
 
 # Control-plane exception raised when an approval decision requests aborting the turn
 from mcp import types as mcp_types
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from adgn.llm.mini_codex.handler import (
     AbortTurnDecision,
@@ -212,20 +214,33 @@ class McpManagerWithApprovals:
 
 
 # ---- Approval Policy Engine (decoupled, in-memory; optional) ----
-from dataclasses import dataclass
-from datetime import datetime, timezone
-from typing import Optional, Callable as _Callable
-import uuid as _uuid
 
 
 @dataclass
 class Proposal:
     id: str
     source: str
-    status: str  # "open" | "approved" | "rejected" | "withdrawn"
+    status: Literal["open", "approved", "rejected", "withdrawn"]
     created_at: datetime
     decided_at: Optional[datetime] = None
     rationale: Optional[str] = None
+
+
+class ProposalSnapshot(BaseModel):
+    id: str
+    status: Literal["open", "withdrawn", "approved", "rejected"]
+    created_at: datetime
+    decided_at: datetime | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ApprovalStatus(BaseModel):
+    version: int
+    open_proposal: str | None
+    proposals: list[ProposalSnapshot]
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ApprovalPolicyEngine:
@@ -235,7 +250,7 @@ class ApprovalPolicyEngine:
     to notifications via an optional notifier callback.
     """
 
-    def __init__(self, notifier: _Callable[[str], None] | None = None) -> None:
+    def __init__(self, notifier: Callable[[str], None] | None = None) -> None:
         self._policy_source: str = ""
         self._policy_version: int = 0
         self._proposals: dict[str, Proposal] = {}
@@ -243,7 +258,7 @@ class ApprovalPolicyEngine:
         # Notifier receives a resource URI (e.g., "approval-policy://policy.py" or proposals/{id}.json)
         self._notify = notifier
 
-    def set_notifier(self, notifier: _Callable[[str], None]) -> None:
+    def set_notifier(self, notifier: Callable[[str], None]) -> None:
         """Install/replace the out-of-band notifier for resource changes.
 
         Contract: notifier(uri) is sync and non-blocking (may schedule async work).
@@ -281,7 +296,7 @@ class ApprovalPolicyEngine:
             if callable(fn):
                 out = fn(dict(ctx))
                 if out in {"allow", "deny_continue", "deny_abort", "ask"}:
-                    return out
+                    return cast(str, out)
         except Exception:
             # Fail fast so tests surface policy errors instead of hanging in ask-mode
             raise
@@ -291,7 +306,7 @@ class ApprovalPolicyEngine:
     def create_proposal(self, source: str, rationale: str | None = None) -> str:
         if self._open_id is not None:
             raise RuntimeError("a proposal is already open")
-        pid = f"p-{_uuid.uuid4().hex}"
+        pid = f"p-{uuid.uuid4().hex}"
         now = datetime.now(timezone.utc)
         self._proposals[pid] = Proposal(
             id=pid, source=source, status="open", created_at=now, rationale=rationale
@@ -329,34 +344,22 @@ class ApprovalPolicyEngine:
         if self._notify:
             self._notify(f"approval-policy://proposals/{pid}.json")
 
-    def get_status(self) -> dict[str, Any]:
-        return {
-            "version": self._policy_version,
-            "open_proposal": self._open_id,
-            "proposals": [
-                {
-                    "id": pr.id,
-                    "status": pr.status,
-                    "created_at": pr.created_at.isoformat(),
-                    "decided_at": pr.decided_at.isoformat() if pr.decided_at else None,
-                }
-                for pr in self._proposals.values()
-            ],
-        }
+    def get_status(self) -> ApprovalStatus:
+        proposals = [
+            ProposalSnapshot.model_validate(p) for p in self._proposals.values()
+        ]
+        return ApprovalStatus(
+            version=self._policy_version,
+            open_proposal=self._open_id,
+            proposals=proposals,
+        )
 
     # Proposal getters (server constructs resource URIs; engine provides data only)
-    def get_proposal(self, pid: str) -> dict[str, Any]:
+    def get_proposal(self, pid: str) -> ProposalSnapshot:
         p = self._proposals.get(pid)
         if not p:
             raise KeyError(pid)
-        return {
-            "id": p.id,
-            "source": p.source,
-            "status": p.status,
-            "created_at": p.created_at.isoformat(),
-            "decided_at": p.decided_at.isoformat() if p.decided_at else None,
-            "rationale": p.rationale,
-        }
+        return ProposalSnapshot.model_validate(p)
 
 
 # ---- Agent handler for approvals (before_tool_call) ----
@@ -381,7 +384,7 @@ class ApprovalPolicyHandler(BaseHandler):
         if self._hub is None:
             raise ValueError("ApprovalPolicyHandler requires a non-None ApprovalHub")
 
-    async def before_tool_call(self, evt: ToolCall) -> BeforeToolCallDecision:  # type: ignore[override]
+    async def before_tool_call(self, evt: ToolCall) -> BeforeToolCallDecision:
         # If no engine configured, pass through
         if not self._engine:
             return ContinueDecision()

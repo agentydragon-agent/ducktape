@@ -102,7 +102,7 @@ grafana:
           type: file
           disableDeletion: false
           updateIntervalSeconds: 10
-          allowUiUpdates: true
+          allowUiUpdates: false
           options:
             path: /var/lib/grafana/dashboards/default
 

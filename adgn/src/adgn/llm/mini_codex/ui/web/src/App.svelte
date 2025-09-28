@@ -234,6 +234,9 @@
                     {#if it.content.exit_code !== null && it.content.exit_code !== undefined}
                       <div class="term-exit">[exit {it.content.exit_code}]</div>
                     {/if}
+                    {#if it.content.is_error}
+                      <div class="term-error">[error]</div>
+                    {/if}
                   </div>
                 </div>
               {:else if it.content?.content_kind === 'Json'}
@@ -245,10 +248,10 @@
                       <div use:jsonView={it.content.args}></div>
                     </details>
                   {/if}
-                  {#if it.content.output}
+                  {#if it.content.result}
                     <details open>
-                      <summary>Output</summary>
-                      <div use:jsonView={it.content.output}></div>
+                      <summary>Output {#if it.content.is_error}<span class="term-error">[error]</span>{/if}</summary>
+                      <div use:jsonView={it.content.result}></div>
                     </details>
                   {/if}
                 </div>
@@ -370,6 +373,7 @@
   .term-stdout { color: #d4d4d4; }
   .term-stderr { color: #f28b82; }
   .term-exit { color: #8ab4f8; font-size: 0.75rem; margin: 0.1rem 0 0.4rem; }
+  .term-error { color: #ffb4ab; font-size: 0.75rem; margin: 0.2rem 0; }
   .term-approval { color: #ffd54f; font-size: 0.8rem; margin: 0.1rem 0; }
   .raw-toggle { margin-top: 0.5rem; }
   .raw-label { font-size: 0.75rem; color: #aaa; margin: 0.25rem 0; }

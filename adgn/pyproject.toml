@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "adgn"
 version = "0.0.0"
 authors = [{name = "Rai"}]
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.14"
 dependencies = [
   "pydantic>=2.0.0",
   "fastapi>=0.111.0",
@@ -70,10 +70,20 @@ dev = [
   "pre-commit>=3.5",
   'types-colorama',
   'types-psutil',
+  'types-PyYAML',
+  'types-requests',
+  'types-tabulate',
+  'types-docker',
+  'pandas-stubs',
 ]
 typing = [
     'types-colorama',
     'types-psutil',
+    'types-PyYAML',
+    'types-requests',
+    'types-tabulate',
+    'types-docker',
+    'pandas-stubs',
 ]
 # GNOME console script deps (install when needed)
 gnome = [
@@ -115,13 +125,14 @@ timeout = 30
 timeout_method = "thread"
 # Run tests in parallel using xdist by default
 addopts = [
-    "-n8",
+    "-n=16",
+    "-m",
+    "not live_llm",
     "-v",
     "--tb=short",
     "--strict-markers",
     "--disable-warnings",
-    "--durations=25",
-    "-n=auto"
+    "--durations=25"
 ]
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
@@ -171,6 +182,8 @@ wt_demo = "adgn.wt.demo_plugin"
 python_version = "3.12"
 ignore_missing_imports = true
 warn_return_any = true
+mypy_path = ["src"]
+packages = ["adgn"]
 warn_unused_configs = true
 disallow_untyped_defs = false
 check_untyped_defs = true

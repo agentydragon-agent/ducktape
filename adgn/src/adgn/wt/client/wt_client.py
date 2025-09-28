@@ -332,7 +332,7 @@ class WtClient:
         hook_stderr: list[str] = []
         response_json: dict | None = None
         progress_cb = self._progress_callback
-        hook_cb = self._hook_output_callback  # type: ignore[assignment]
+        hook_cb: Callable[[HookOutputEvent], None] | None = self._hook_output_callback
         while True:
             line = await reader.readline()
             if not line:

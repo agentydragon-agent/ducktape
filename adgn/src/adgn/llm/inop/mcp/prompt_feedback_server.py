@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 import logging
 from contextvars import ContextVar, Token
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 from mcp.server.fastmcp import FastMCP
 
@@ -88,7 +88,7 @@ def make_prompt_feedback_server_with_handle(
         logger.info("propose_prompt: start", extra={"prompt": prompt})
         # Use request context lifespan to get per-session state; avoids cross-task ContextVar issues
         ctx = mcp.get_context()
-        state = ctx.request_context.lifespan_context  # type: ignore[assignment]
+        state = cast(PromptFeedbackState, ctx.request_context.lifespan_context)
         state.iteration += 1
         state.last_prompt = prompt
         tasks = await deps.select_seed_tasks()

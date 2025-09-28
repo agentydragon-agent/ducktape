@@ -135,7 +135,13 @@ def coerce_prdata(src: Any) -> PRData:
     if isinstance(src, dict):
         num = src["pr_number"] if "pr_number" in src else src["number"]
         st = src.get("pr_state")
-        state = st if isinstance(st, PRState) else PRState(src["state"])  # type: ignore[arg-type]
+        raw_state = st if st is not None else src.get("state")
+        if raw_state is None:
+            raise KeyError("state")
+        if isinstance(raw_state, PRState):
+            state = raw_state
+        else:
+            state = PRState(str(raw_state))
         return PRData(
             pr_number=int(num),
             pr_state=state,

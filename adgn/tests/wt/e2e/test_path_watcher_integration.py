@@ -86,7 +86,7 @@ def test_path_watcher_full_lifecycle(wt_cli):
     """
 
     # Resolve config to locate filesystem paths
-    wt_dir = Path(wt_cli.env["WT_DIR"])  # type: ignore[attr-defined]
+    wt_dir = Path(wt_cli.env["WT_DIR"])
     config = Configuration.resolve(wt_dir)
     repo_path = Path(config.main_repo)
 
@@ -145,7 +145,7 @@ def test_path_watcher_multiple_worktrees(wt_cli):
     """
 
     # Resolve config for filesystem checks
-    wt_dir = Path(wt_cli.env["WT_DIR"])  # type: ignore[attr-defined]
+    wt_dir = Path(wt_cli.env["WT_DIR"])
     config = Configuration.resolve(wt_dir)
     repo_path = Path(config.main_repo)
 

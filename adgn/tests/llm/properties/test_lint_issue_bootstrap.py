@@ -1,18 +1,14 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 import shutil
 import uuid
 from platformdirs import user_cache_dir
 
 from adgn.llm.openai_utils.model import (
-    ResponsesResult,
-    Usage,
-    FunctionCallOut,
-    AssistantResponseMessage,
     FakeOpenAIModel,
 )
+from tests.fixtures.responses import ResponsesFactory
 import pytest
 
 from adgn.llm.mcp.docker_exec.server import make_container_exec_mcp
@@ -27,26 +23,16 @@ from adgn.llm.properties.lint_issue import LinterController, LintSubmitState
 from adgn.llm.properties.models.issue import Occurrence
 
 
-def _make_seq() -> list[ResponsesResult]:
+def _make_seq() -> list:
+    rf = ResponsesFactory("gpt-5-nano")
     return [
-        ResponsesResult(
-            id="resp-1",
-            usage=Usage(input_tokens=1, output_tokens=0, total_tokens=1),
-            output=[
-                FunctionCallOut(
-                    call_id="llm:1",
-                    name="mcp__docker__docker_exec",
-                    arguments=json.dumps(
-                        ExecInput(cmd=["bash", "-lc", "echo from_llm"]).model_dump()
-                    ),
-                )
-            ],
+        rf.make(
+            rf.tool_call(
+                "mcp__docker__docker_exec",
+                ExecInput(cmd=["bash", "-lc", "echo from_llm"]).model_dump(),
+            )
         ),
-        ResponsesResult(
-            id="resp-2",
-            usage=Usage(input_tokens=1, output_tokens=5, total_tokens=6),
-            output=[AssistantResponseMessage(text="FINAL")],
-        ),
+        rf.make_assistant_message("FINAL"),
     ]
 
 

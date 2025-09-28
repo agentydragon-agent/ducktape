@@ -2,23 +2,30 @@ from __future__ import annotations
 
 import functools
 import inspect
-from typing import Annotated, Any, Callable, get_type_hints, get_origin, get_args
+import logging
+from typing import (
+    Annotated,
+    Any,
+    Awaitable,
+    Callable,
+    TypeVar,
+    cast,
+    get_args,
+    get_origin,
+    get_type_hints,
+)
 
 from pydantic import BaseModel, Field
 from pydantic_core import PydanticUndefined
-from mcp.server.fastmcp import FastMCP
-from mcp.server.lowlevel.server import (
-    Server as _LowServer,
-    InitializationOptions as _InitOpts,
-)
-from mcp.server.session import ServerSession as _ServerSession
-from mcp.shared.message import SessionMessage as _SessionMessage
-from anyio.streams.memory import (
-    MemoryObjectReceiveStream as _Recv,
-    MemoryObjectSendStream as _Send,
-)
-from contextlib import AsyncExitStack as _AsyncExitStack
 import anyio
+from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStream
+from contextlib import AbstractAsyncContextManager, AsyncExitStack
+from mcp.server.fastmcp import FastMCP
+from mcp.server.lowlevel.server import InitializationOptions, Server
+from mcp.server.session import ServerSession
+from mcp.shared.message import SessionMessage
+
+logger = logging.getLogger("adgn.mcp")
 
 # Intentionally no __all__; internal helpers are available for local imports.
 
@@ -51,8 +58,13 @@ def _make_flat_signature_from_model(
         df = getattr(fld, "default_factory", None)
         if df is not None:
             field_kwargs["default_factory"] = df
+        annotated_type: Any
+        if ann in (inspect._empty, None):
+            annotated_type = Any
+        else:
+            annotated_type = ann
         annotated = Annotated[
-            ann,
+            annotated_type,
             Field(**field_kwargs),
         ]
         # Parameter default mirrors model: required if no default/default_factory
@@ -75,6 +87,8 @@ def _make_flat_signature_from_model(
     return inspect.Signature(parameters=params, return_annotation=return_type)
 
 
+InputModelT = TypeVar("InputModelT", bound=BaseModel)
+
 RegisterTool = Callable[[Callable[..., Any], dict[str, Any]], Callable[..., Any]]
 
 
@@ -89,7 +103,9 @@ def _flat_model_decorator(
     input_model: type[BaseModel] | None = None,
     output_model: type[BaseModel] | None = None,
 ):
-    def outer(fn):
+    def outer(
+        fn: Callable[[InputModelT], Any],
+    ) -> Callable[[InputModelT], Any]:
         sig = inspect.signature(fn)
         params = list(sig.parameters.values())
         if len(params) != 1:
@@ -133,6 +149,10 @@ def _flat_model_decorator(
         # Resolve forward refs in input/output models before schema/signature building
         try:
             model_in.model_rebuild()
+        except AttributeError as exc:
+            raise TypeError(
+                "Input model must be a Pydantic BaseModel with model_rebuild()"
+            ) from exc
         except Exception:
             pass
         # If model_out is Annotated[Model, Field(...)] or similar, extract the model for rebuild
@@ -141,29 +161,39 @@ def _flat_model_decorator(
             # Annotated[T, ...] → take T
             rt = get_args(rt)[0]
         if isinstance(rt, type) and issubclass(rt, BaseModel):
+            rebuild = getattr(rt, "model_rebuild", None)
+            if rebuild is None:
+                raise TypeError(
+                    "Output model must expose model_rebuild(); ensure it is a Pydantic model"
+                )
             try:
-                rt.model_rebuild()  # type: ignore[attr-defined]
+                rebuild()
             except Exception:
                 pass
 
         # Preserve async/sync nature to keep FastMCP is_async detection correct
-        def _coerce_payload(kwargs: dict[str, Any]) -> BaseModel:
+        def _coerce_payload(kwargs: dict[str, Any]) -> InputModelT:
             # Flat-only: require flat keyword args matching the Input model
             # (legacy nested {"payload": {...}} is not accepted)
-            return model_in(**kwargs)
+            return cast(InputModelT, model_in(**kwargs))
 
-        if inspect.iscoroutinefunction(fn):
+        is_async = inspect.iscoroutinefunction(fn)
+        if is_async:
 
             @functools.wraps(fn)
-            async def _flat_wrapper(**kwargs):
+            async def _flat_wrapper(**kwargs: Any) -> Any:
                 payload = _coerce_payload(kwargs)
-                return await fn(payload)
+                return await cast(Callable[[InputModelT], Awaitable[Any]], fn)(
+                    cast(InputModelT, payload)
+                )
         else:
 
             @functools.wraps(fn)
-            def _flat_wrapper(**kwargs):
+            def _flat_wrapper(**kwargs: Any) -> Any:
                 payload = _coerce_payload(kwargs)
-                return fn(payload)
+                return cast(Callable[[InputModelT], Any], fn)(
+                    cast(InputModelT, payload)
+                )
 
         # Advertise original input/output models for typed clients
         setattr(_flat_wrapper, "_mcp_flat_input_model", model_in)
@@ -171,10 +201,11 @@ def _flat_model_decorator(
             setattr(_flat_wrapper, "_mcp_flat_output_model", model_out)
 
         # Synthesize a flat signature so FastMCP emits a flat input schema
-        _flat_wrapper.__signature__ = _make_flat_signature_from_model(  # type: ignore[attr-defined]
+        signature = _make_flat_signature_from_model(
             model_in,
             return_type=model_out,
         )
+        setattr(_flat_wrapper, "__signature__", signature)
         # Also set return annotation so FastMCP picks up structured output schema
         try:
             anns = dict(getattr(_flat_wrapper, "__annotations__", {}) or {})
@@ -191,7 +222,8 @@ def _flat_model_decorator(
             annotations=annotations,
             structured_output=structured_output,
         )
-        return register_tool(_flat_wrapper, tool_kwargs)
+        registered = register_tool(_flat_wrapper, tool_kwargs)
+        return cast(Callable[[InputModelT], Any], registered)
 
     return outer
 
@@ -200,7 +232,7 @@ class FlatModelToolMixin:
     """Mixin that lets ``@mcp.tool`` flatten Pydantic models with new keywords."""
 
     def tool(
-        self: FastMCP,
+        self,
         name: str | None = None,
         title: str | None = None,
         description: str | None = None,
@@ -210,39 +242,53 @@ class FlatModelToolMixin:
         flat: bool = False,
         flat_input_model: type[BaseModel] | None = None,
         flat_output_model: type[BaseModel] | None = None,
-    ):
+    ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
         """Extend FastMCP.tool with ``flat_*`` keywords for Pydantic helpers."""
 
         wants_flat = (
             flat or flat_input_model is not None or flat_output_model is not None
         )
         if not wants_flat:
-            return super().tool(  # type: ignore[misc]
-                name=name,
-                title=title,
-                description=description,
-                annotations=annotations,
-                structured_output=structured_output,
+            base_tool = super().tool  # type: ignore[attr-defined]
+            return cast(
+                Callable[[Callable[..., Any]], Callable[..., Any]],
+                base_tool(
+                    name=name,
+                    title=title,
+                    description=description,
+                    annotations=annotations,
+                    structured_output=structured_output,
+                ),
             )
 
         effective_structured_output = (
             structured_output if structured_output is not None else True
         )
 
-        base_tool = super().tool  # type: ignore[misc]
+        def _register(
+            fn: Callable[..., Any], mcp_tool_kwargs: dict[str, Any]
+        ) -> Callable[..., Any]:
+            # Nested helper runs outside method descriptor context; pass explicit
+            # class + instance so ``super`` resolves correctly during runtime.
+            base_tool = super(FlatModelToolMixin, self).tool  # type: ignore[attr-defined]
+            decorator = cast(
+                Callable[[Callable[..., Any]], Callable[..., Any]],
+                base_tool(**mcp_tool_kwargs),
+            )
+            return decorator(fn)
 
-        def _register(fn: Callable[..., Any], mcp_tool_kwargs: dict[str, Any]):
-            return base_tool(**mcp_tool_kwargs)(fn)
-
-        return _flat_model_decorator(
-            _register,
-            name=name,
-            title=title,
-            description=description,
-            annotations=annotations,
-            structured_output=effective_structured_output,
-            input_model=flat_input_model,
-            output_model=flat_output_model,
+        return cast(
+            Callable[[Callable[..., Any]], Callable[..., Any]],
+            _flat_model_decorator(
+                _register,
+                name=name,
+                title=title,
+                description=description,
+                annotations=annotations,
+                structured_output=effective_structured_output,
+                input_model=flat_input_model,
+                output_model=flat_output_model,
+            ),
         )
 
 
@@ -269,33 +315,45 @@ def mcp_flat_model(
     """
 
     if isinstance(mcp, FlatModelToolMixin):
-        return mcp.tool(
+        return cast(
+            Callable[[Callable[..., Any]], Callable[..., Any]],
+            mcp.tool(
+                name=name,
+                title=title,
+                description=description,
+                annotations=annotations,
+                structured_output=structured_output,
+                flat=True,
+                flat_input_model=input_model,
+                flat_output_model=output_model,
+            ),
+        )
+
+    def _register(
+        fn: Callable[..., Any], mcp_tool_kwargs: dict[str, Any]
+    ) -> Callable[..., Any]:
+        decorator = cast(
+            Callable[[Callable[..., Any]], Callable[..., Any]],
+            mcp.tool(**mcp_tool_kwargs),
+        )
+        return decorator(fn)
+
+    return cast(
+        Callable[[Callable[..., Any]], Callable[..., Any]],
+        _flat_model_decorator(
+            _register,
             name=name,
             title=title,
             description=description,
             annotations=annotations,
             structured_output=structured_output,
-            flat=True,
-            flat_input_model=input_model,
-            flat_output_model=output_model,
-        )
-
-    def _register(fn: Callable[..., Any], mcp_tool_kwargs: dict[str, Any]):
-        return mcp.tool(**mcp_tool_kwargs)(fn)
-
-    return _flat_model_decorator(
-        _register,
-        name=name,
-        title=title,
-        description=description,
-        annotations=annotations,
-        structured_output=structured_output,
-        input_model=input_model,
-        output_model=output_model,
+            input_model=input_model,
+            output_model=output_model,
+        ),
     )
 
 
-class SafeDispatchServer(_LowServer):
+class SafeDispatchServer(Server):
     """Low-level Server that dispatches each request in a child task.
 
     Ensures a request responder's enter/exit occur within the same task, avoiding
@@ -305,16 +363,16 @@ class SafeDispatchServer(_LowServer):
 
     async def run(
         self,
-        read_stream: _Recv[_SessionMessage | Exception],
-        write_stream: _Send[_SessionMessage],
-        initialization_options: _InitOpts,
+        read_stream: MemoryObjectReceiveStream[SessionMessage | Exception],
+        write_stream: MemoryObjectSendStream[SessionMessage],
+        initialization_options: InitializationOptions,
         raise_exceptions: bool = False,
         stateless: bool = False,
     ):
-        async with _AsyncExitStack() as stack:
+        async with AsyncExitStack() as stack:
             lifespan_context = await stack.enter_async_context(self.lifespan(self))
             session = await stack.enter_async_context(
-                _ServerSession(
+                ServerSession(
                     read_stream,
                     write_stream,
                     initialization_options,
@@ -333,11 +391,7 @@ class SafeDispatchServer(_LowServer):
                                 raise_exceptions,
                             )
                         except BaseException as exc:  # do not cancel siblings
-                            import logging as _logging
-
-                            _logging.getLogger("adgn.mcp").exception(
-                                "Server responder error: %s", exc
-                            )
+                            logger.exception("Server responder error: %s", exc)
 
                     tg.start_soon(_serve, message)
 
@@ -349,9 +403,15 @@ class SafeFastMCP(FlatModelToolMixin, FastMCP):
     re-install handlers so all registered tools are bound to the safe server.
     """
 
-    def __init__(self, name: str, *, instructions: str | None = None, lifespan=None):  # type: ignore[no-untyped-def]
+    def __init__(
+        self,
+        name: str,
+        *,
+        instructions: str | None = None,
+        lifespan: Callable[[FastMCP], AbstractAsyncContextManager[Any]] | None = None,
+    ) -> None:
         super().__init__(name=name, instructions=instructions, lifespan=lifespan)
-        cur = self._mcp_server  # type: ignore[attr-defined]
+        cur = cast(Server, getattr(self, "_mcp_server"))
         if not isinstance(cur, SafeDispatchServer):
             name0 = getattr(cur, "name", name)
             instr0 = getattr(cur, "instructions", instructions)
@@ -363,5 +423,5 @@ class SafeFastMCP(FlatModelToolMixin, FastMCP):
                     setattr(new_server, "lifespan", prev_lifespan)
                 except Exception:
                     pass
-            self._mcp_server = new_server  # type: ignore[attr-defined]
-            self._setup_handlers()  # type: ignore[attr-defined]
+            setattr(self, "_mcp_server", new_server)
+            self._setup_handlers()
