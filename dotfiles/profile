@@ -77,4 +77,8 @@ fi
 # GCC colored warnings and errors
 export GCC_COLORS='error=01;31:warning=01;35:note=01;36:caret=01;32:locus=01:quote=01'
 
+# Bat theme environment variables for light/dark mode switching
+export BAT_THEME_DARK="Solarized (dark)"
+export BAT_THEME_LIGHT="Solarized (light)"
+
 export EDITOR="nvim"
