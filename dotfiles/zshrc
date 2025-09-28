@@ -74,6 +74,11 @@ ZSH_ALIAS_FINDER_AUTOMATIC=true
 #
 # removed but I had them on:
 #   ag
+# Configure zsh-autosuggestions before oh-my-zsh loads it
+ZSH_AUTOSUGGEST_STRATEGY=(history completion)
+ZSH_AUTOSUGGEST_USE_ASYNC=1
+ZSH_AUTOSUGGEST_HIGHLIGHT_STYLE='fg=244'
+
 # 2025-01-28: disabling gcloud, seems slow
 plugins=(
     alias-finder bazel aliases colored-man-pages command-not-found docker git gpg-agent isodate lein python rust screen
@@ -90,6 +95,16 @@ DEFAULT_USER='agentydragon'
 ZSH_THEME='powerlevel10k/powerlevel10k'
 
 source $ZSH/oh-my-zsh.sh
+
+# Load Nix-installed zsh plugins
+# These are installed via home-manager in ~/code/ducktape/nix/home/home.nix
+if [ -f ${HOME}/.nix-profile/share/zsh-autosuggestions/zsh-autosuggestions.zsh ]; then
+  source ${HOME}/.nix-profile/share/zsh-autosuggestions/zsh-autosuggestions.zsh
+fi
+
+if [ -f ${HOME}/.nix-profile/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh ]; then
+  source ${HOME}/.nix-profile/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
+fi
 
 # Nechci completion automaticky kdyz je to ambiguous
 unsetopt menu_complete
@@ -131,3 +146,24 @@ eval "$(atuin init zsh --disable-up-arrow)"
 
 # Initialize direnv for per-directory environment management
 eval "$(direnv hook zsh)"
+
+# Enable zoxide (smart cd)
+if command -v zoxide >/dev/null 2>&1; then
+  eval "$(zoxide init zsh --cmd cd)"
+fi
+
+# Custom keybindings for zsh-autosuggestions (after oh-my-zsh loads the plugin)
+# Ctrl-E: accept autosuggestion if present; else move to end of line
+accept_or_end() {
+  if (( $+widgets[autosuggest-accept] )) && [[ -n "$POSTDISPLAY" ]]; then
+    zle autosuggest-accept
+    zle reset-prompt
+    return
+  fi
+  zle end-of-line
+}
+zle -N accept-or-end accept_or_end
+bindkey -M emacs '^E' accept-or-end
+bindkey -M viins '^E' accept-or-end
+ZSH_AUTOSUGGEST_ACCEPT_WIDGETS+=(accept-or-end)
+(( $+widgets[autosuggest-accept-word] )) && bindkey '^F' autosuggest-accept-word

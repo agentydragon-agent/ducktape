@@ -113,6 +113,19 @@ in
     # 3. Custom themes/plugins go in ~/.oh-my-zsh/custom/
     # 4. Ansible's cli role handles the git clone for all systems
 
+    # Modern ls replacement with colors and icons
+    eza
+
+    # Smarter cd command that learns your habits
+    zoxide
+
+    # Command-line fuzzy finder
+    fzf
+
+    # Zsh enhancements
+    zsh-syntax-highlighting
+    zsh-autosuggestions
+
     # GNOME Shell Extensions (migrated from Ansible gui role)
     # These extensions were installed via petermosmans.customize-gnome role:
     # gnomeExtensions.desaturated-tray-icons  # ID 1102: Not currently used
@@ -376,6 +389,107 @@ in
         };
       };
     };
+  };
+
+  # Tmux configuration with plugins (migrated from dotfiles/tmux.conf)
+  programs.tmux = {
+    enable = true;
+
+    # Basic settings
+    mouse = true;
+    historyLimit = 100000;
+    baseIndex = 1;  # Start windows at 1
+    escapeTime = 0;  # No delay for escape key
+    keyMode = "vi";  # Vi mode keys
+
+    # Use C-b as prefix (default)
+    prefix = "C-b";
+
+    # Terminal settings - enable true color (24-bit RGB)
+    terminal = "tmux-256color";  # Better terminal type for modern tmux
+
+    # Plugins from TPM configuration
+    plugins = with pkgs.tmuxPlugins; [
+      resurrect       # Save/restore sessions
+      continuum       # Auto-save sessions periodically
+      yank           # System clipboard integration
+      prefix-highlight  # Show prefix/copy/sync modes in status
+    ];
+
+    # Main tmux configuration (migrated from tmux.conf)
+    extraConfig = ''
+      # Pane border titles - show pane title or current command
+      set -g pane-border-status top
+      set -g pane-border-format ' #{?pane_title,#{pane_title},#{pane_current_command}} '
+
+      # Window/Pane titles
+      set -g set-titles on
+      set -g set-titles-string '#S:#I.#P #W'
+      set -g allow-rename on
+      set -g automatic-rename on
+
+      # Status bar update interval
+      set -g status-interval 2
+
+      # Start panes at 1 (like windows)
+      setw -g pane-base-index 1
+
+      # Enable vi mode in copy mode
+      setw -g mode-keys vi
+
+      # Split bindings (| for horizontal, - for vertical)
+      bind | split-window -h
+      bind - split-window -v
+      unbind '"'
+      unbind %
+
+      # Pane navigation with vim keys (h/j/k/l) - repeatable with prefix
+      unbind -n C-h
+      unbind -n C-j
+      unbind -n C-k
+      unbind -n C-l
+      set -g repeat-time 400
+      bind -T prefix -r h select-pane -L
+      bind -T prefix -r j select-pane -D
+      bind -T prefix -r k select-pane -U
+      bind -T prefix -r l select-pane -R
+
+      # Resize panes with Alt + arrows
+      bind -n M-Left  resize-pane -L 5
+      bind -n M-Right resize-pane -R 5
+      bind -n M-Up    resize-pane -U 2
+      bind -n M-Down  resize-pane -D 2
+
+      # Clipboard integration
+      set -g set-clipboard on
+
+      # Copy mode (vi) key bindings
+      bind -T copy-mode-vi v send -X begin-selection
+      bind -T copy-mode-vi y send -X copy-selection-and-cancel
+      bind -T copy-mode-vi Y send -X copy-line
+
+      # Status bar configuration
+      set -g status-left-length 60
+      set -g status-right-length 60
+      set -g status-left "#S #[fg=cyan]| #[default]#I:#W"
+      set -g status-right "#{prefix_highlight} #(whoami) #[fg=cyan]| %Y-%m-%d %H:%M"
+
+      # Plugin settings
+      # prefix-highlight configuration
+      set -g @prefix_highlight_show_copy_mode on
+      set -g @prefix_highlight_show_sync_mode on
+
+      # tmux-resurrect settings
+      set -g @resurrect-strategy-nvim 'session'
+      set -g @resurrect-strategy-vim 'session'
+
+      # tmux-continuum settings
+      set -g @continuum-restore 'on'
+
+      # Force proper terminal and enable true color support
+      set -g default-terminal "tmux-256color"
+      set -ag terminal-overrides ",xterm-256color:RGB"
+    '';
   };
 
   # Claude Code MCP configuration - SKIPPED
