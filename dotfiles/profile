@@ -65,7 +65,7 @@ export BASIC_MEMORY_HOME="$HOME/.syncthing/pkm/basic-memory"
 export NVM_DIR="$HOME/.nvm"
 export BUN_INSTALL="$HOME/.bun"
 
-export MC_SKIN="$HOME/.config/mc/solarized.ini"
+# MC_SKIN moved to Nix home.sessionVariables
 export DEFAULT_CHARSET="utf8"
 export AIDER_MODEL="o1"
 

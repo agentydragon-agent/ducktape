@@ -57,6 +57,16 @@ in
     userName = "Rai";
     userEmail = "agentydragon@gmail.com";
 
+    # Global gitignore file (migrated from dotfiles/config/git/ignore)
+    ignores = [
+      ".aider*"
+      "__pycache__"
+      "*.sw[op]"
+      "**/.claude/settings.local.json"
+      "**/CLAUDE.local.md"
+      "oneoff__*"  # Temporary one-off scripts
+    ];
+
     extraConfig = {
       core.autocrlf = false;
       color.ui = "auto";
@@ -129,6 +139,11 @@ in
     enable = true;
     # Use the Solarized Light theme
     extraConfig = builtins.readFile ./dircolors-solarized;
+  };
+
+  # Midnight Commander configuration (migrated from dotfiles/config/mc/solarized.ini)
+  xdg.configFile."mc/solarized.ini" = {
+    source = ./mc-solarized.ini;
   };
 
   # Packages to install (Phase 1: only actual user-level packages from Ansible)
@@ -234,6 +249,9 @@ in
     BAT_THEME_LIGHT = "Solarized (light)";
     # Default to dark theme
     BAT_THEME = "Solarized (dark)";
+
+    # Midnight Commander skin
+    MC_SKIN = "$HOME/.config/mc/solarized.ini";
   };
 
   # Wyrm-specific pip configuration for tankshare storage
