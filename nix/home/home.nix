@@ -43,6 +43,94 @@ in
   # Let Home Manager install and manage itself.
   programs.home-manager.enable = true;
 
+  # Bat configuration with Solarized themes
+  programs.bat = {
+    enable = true;
+    config = {
+      # Theme will be set via environment variables for dynamic switching
+      theme = "\${BAT_THEME}";  # Escaped to use environment variable
+    };
+  };
+
+  programs.git = {
+    enable = true;
+    userName = "Rai";
+    userEmail = "agentydragon@gmail.com";
+
+    extraConfig = {
+      core.autocrlf = false;
+      color.ui = "auto";
+      push.default = "upstream";
+      log = {
+        abbrevCommit = true;
+        decorate = "short";
+        date = "local";
+      };
+      format.pretty = "short";
+      advice = {
+        pushNonFastForward = false;
+        statusHints = false;
+        commitBeforeMerge = false;
+      };
+      clean.requireForce = true;
+      branch.autosetuprebase = "always";
+      rebase.autostash = true;
+      rerere.enabled = true;
+      init.defaultBranch = "main";
+      merge.tool = "vimdiff";
+      "url \"git@github.com:\"" = {
+        insteadOf = [
+          "https://github.com"
+          "https://github.com/"
+        ];
+      };
+      # nbdime difftool configuration
+      "difftool \"nbdime\"".cmd = "git-nbdifftool diff \"$LOCAL\" \"$REMOTE\" \"$BASE\"";
+      difftool.prompt = false;
+      "mergetool \"nbdime\"".cmd = "git-nbmergetool merge \"$BASE\" \"$LOCAL\" \"$REMOTE\" \"$MERGED\"";
+      mergetool.prompt = false;
+    };
+  };
+
+  # Delta - better git diffs
+  programs.git.delta = {
+    enable = true;
+    options = {
+      navigate = true;
+      light = false;  # Default to dark theme
+      side-by-side = true;
+      line-numbers = true;
+      syntax-theme = "\${BAT_THEME}";  # Use same theme as bat
+      features = "decorations";
+      decorations = {
+        commit-decoration-style = "bold yellow box ul";
+        file-style = "bold yellow ul";
+        file-decoration-style = "none";
+        hunk-header-decoration-style = "cyan box ul";
+      };
+      line-numbers-left-style = "cyan";
+      line-numbers-right-style = "cyan";
+      line-numbers-minus-style = "124";
+      line-numbers-plus-style = "28";
+    };
+  };
+
+  # Readline configuration (migrated from dotfiles/inputrc)
+  programs.readline = {
+    enable = true;
+    variables = {
+      # Show all completion matches immediately on first tab (instead of requiring second tab)
+      show-all-if-ambiguous = true;
+    };
+  };
+
+  # Dircolors configuration (migrated from dotfiles/dir_colors/dircolors)
+  programs.dircolors = {
+    enable = true;
+    # Use the Solarized Light theme
+    extraConfig = builtins.readFile ./dircolors-solarized;
+  };
+
   # Packages to install (Phase 1: only actual user-level packages from Ansible)
   home.packages = with pkgs; [
     python312Packages.autopep8
@@ -138,6 +226,15 @@ in
     # Get comby from older nixpkgs where it's not broken
     oldPkgs.comby
   ];
+
+  # Session variables (migrated from dotfiles/profile)
+  home.sessionVariables = {
+    # Bat theme environment variables for light/dark mode switching
+    BAT_THEME_DARK = "Solarized (dark)";
+    BAT_THEME_LIGHT = "Solarized (light)";
+    # Default to dark theme
+    BAT_THEME = "Solarized (dark)";
+  };
 
   # Wyrm-specific pip configuration for tankshare storage
   # This creates ~/.config/pip/pip.conf to use shared cache
@@ -394,19 +491,16 @@ in
   # Tmux configuration with plugins (migrated from dotfiles/tmux.conf)
   programs.tmux = {
     enable = true;
+    sensibleOnTop = true;
 
     # Basic settings
     mouse = true;
     historyLimit = 100000;
     baseIndex = 1;  # Start windows at 1
-    escapeTime = 0;  # No delay for escape key
     keyMode = "vi";  # Vi mode keys
-
-    # Use C-b as prefix (default)
+    clock24 = true;
     prefix = "C-b";
-
-    # Terminal settings - enable true color (24-bit RGB)
-    terminal = "tmux-256color";  # Better terminal type for modern tmux
+    # terminal = "tmux-256color";  # Better terminal type for modern tmux
 
     # Plugins from TPM configuration
     plugins = with pkgs.tmuxPlugins; [

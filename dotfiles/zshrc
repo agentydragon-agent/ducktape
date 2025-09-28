@@ -96,6 +96,20 @@ ZSH_THEME='powerlevel10k/powerlevel10k'
 
 source $ZSH/oh-my-zsh.sh
 
+# Override oh-my-zsh aliases with eza (must come AFTER oh-my-zsh)
+if command -v eza >/dev/null 2>&1; then
+  alias ls='eza --icons=auto --group-directories-first --color=auto --classify'
+  alias ll='eza -l --icons=auto --group-directories-first --git --header'
+  alias la='eza -la --icons=auto --group-directories-first --git --header'
+  alias l='eza -la --header'
+  alias lg='eza -la --git --header'
+  alias lt='eza -l --tree --level=2 --icons=auto --group-directories-first'
+  alias lS='eza -l --sort=size --reverse --icons=auto --group-directories-first'
+  alias ld='eza -l --only-dirs --icons=auto --group-directories-first'
+  alias l1='eza -1 --icons=auto'
+  alias lm='eza -l --sort=modified --reverse --icons=auto --group-directories-first'
+fi
+
 # Load Nix-installed zsh plugins
 # These are installed via home-manager in ~/code/ducktape/nix/home/home.nix
 if [ -f ${HOME}/.nix-profile/share/zsh-autosuggestions/zsh-autosuggestions.zsh ]; then

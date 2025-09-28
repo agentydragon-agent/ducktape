@@ -17,9 +17,10 @@ export LESS="-F -X -R"  # -F: exit if one screen, -X: no clear screen, -R: raw A
 export PYTHONSTARTUP="$HOME/.config/pythonstartup.py"
 
 # Setup dircolors if available
+# Now managed by Nix home-manager (creates ~/.dir_colors)
 if [ -x /usr/bin/dircolors ]; then
-    if [ -r ~/.dir_colors/dircolors ]; then
-        eval "$(dircolors -b ~/.dir_colors/dircolors)"
+    if [ -r ~/.dir_colors ]; then
+        eval "$(dircolors -b ~/.dir_colors)"
     elif [ -r ~/.dircolors ]; then
         eval "$(dircolors -b ~/.dircolors)"
     else
@@ -57,8 +58,10 @@ reload-env() {
 # ALIASES
 # ==============================================================================
 
-# eza aliases (smart ls)
-if command -v eza >/dev/null 2>&1; then
+# eza aliases moved to ~/.zshrc after oh-my-zsh source line
+# (oh-my-zsh's aliases plugin was overriding these)
+# For bash, eza aliases are still defined here:
+if [ -n "$BASH_VERSION" ] && command -v eza >/dev/null 2>&1; then
   alias ls='eza --icons=auto --group-directories-first --color=auto --classify'
   alias ll='eza -l --icons=auto --group-directories-first --git --header'
   alias la='eza -la --icons=auto --group-directories-first --git --header'
