@@ -11,6 +11,7 @@ from adgn.llm.mini_codex.agent import MiniCodex
 from adgn.llm.mini_codex.aggregating_handler import AutoHandler, BaseHandler
 from adgn.llm.mini_codex.mcp_manager import McpManager, parse_mcp_function
 
+
 class DummyClient:
     @property
     def responses(self):  # pragma: no cover

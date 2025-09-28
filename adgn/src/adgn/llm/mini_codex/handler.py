@@ -103,12 +103,7 @@ class Response(BaseModel):
 
 # Union of all current event types (as a typing alias)
 EventType: TypeAlias = (
-    UserText
-    | AssistantText
-    | ToolCall
-    | ToolCallOutput
-    | Response
-    | ReasoningOut
+    UserText | AssistantText | ToolCall | ToolCallOutput | Response | ReasoningOut
 )
 
 

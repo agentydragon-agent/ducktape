@@ -303,8 +303,6 @@ class ScoreEvolutionReporter:
         return "\n".join(report_parts)
 
 
-
-
 class ScoreEvolutionTracker:
     """Tracks how scores evolve across optimization iterations."""
 

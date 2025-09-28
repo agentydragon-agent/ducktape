@@ -17,6 +17,7 @@ from adgn.llm.mcp.git_ro.server import (
     DiffInput,
     ListSlice,
     ShowInput,
+    StatusInput,
     TextSlice,
     make_git_ro_server,
 )
@@ -49,7 +50,9 @@ def _default_bootstrap(
     return [
         f.tool_call(
             name=build_mcp_function(server, "git_status"),
-            arguments=StatusInput(list_slice=ListSlice(offset=0, limit=1000)).model_dump(),
+            arguments=StatusInput(
+                list_slice=ListSlice(offset=0, limit=1000)
+            ).model_dump(),
             call_id="bootstrap:status",
         ),
         f.tool_call(

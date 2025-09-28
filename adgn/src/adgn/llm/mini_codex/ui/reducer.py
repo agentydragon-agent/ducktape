@@ -99,7 +99,7 @@ def reduce_ui_state(state: UiState, evt: Any) -> UiState:
             exit_code_val = structured.get("exit_code")
             if isinstance(exit_code_val, int):
                 exit_code = exit_code_val
-            else:
+            elif exit_code_val is not None:
                 try:
                     exit_code = int(exit_code_val)
                 except (TypeError, ValueError):

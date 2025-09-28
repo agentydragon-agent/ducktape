@@ -8,7 +8,6 @@ from mcp import types as mcp_types
 import pytest
 
 from adgn.llm.mini_codex.agent import MiniCodex
-from adgn.llm.mini_codex.aggregating_handler import AutoHandler
 from adgn.llm.mini_codex.mcp_manager import McpManager
 from adgn.llm.mini_codex.ui import protocol
 from adgn.llm.mini_codex.ui.server import create_app
@@ -126,7 +125,10 @@ def test_ws_tool_multiturn(
                     saw_ui_message = True
                     continue
 
-                if payload.type == "run_status" and payload.run_state.status == "finished":
+                if (
+                    payload.type == "run_status"
+                    and payload.run_state.status == "finished"
+                ):
                     saw_finished = True
                     break
 

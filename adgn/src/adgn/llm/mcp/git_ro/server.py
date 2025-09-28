@@ -90,7 +90,7 @@ class StatusInput(BaseModel):
 
     list_slice: ListSlice = Field(
         default_factory=lambda: ListSlice(),
-        description="Pagination for status entries (limit<=5000)"
+        description="Pagination for status entries (limit<=5000)",
     )
 
 

@@ -9,6 +9,7 @@ from adgn.llm.mini_codex.mcp_manager import McpManager
 from adgn.llm.openai_utils.model import FakeOpenAIModel, BoundOpenAIModel
 from tests.llm.support.openai_mock import LIVE
 
+
 @pytest.mark.parametrize(
     "client_mode",
     [

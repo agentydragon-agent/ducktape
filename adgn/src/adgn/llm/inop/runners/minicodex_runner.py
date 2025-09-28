@@ -49,7 +49,9 @@ class MiniCodexRunner(AgentRunner):
         super().__init__(runner_id, config)
         configured_model = config.get("model")
         self.model = (
-            configured_model if isinstance(configured_model, str) else openai_model.model_id
+            configured_model
+            if isinstance(configured_model, str)
+            else openai_model.model_id
         )
         self.reasoning_effort = config.get("reasoning_effort")
         self.workspace_path: Path | None = None

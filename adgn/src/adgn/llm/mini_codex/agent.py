@@ -61,12 +61,14 @@ from .mcp_manager import McpManager
 if TYPE_CHECKING:
     from adgn.llm.mini_codex.approvals import ApprovalPolicyEngine, ApprovalHub
 
+
 @dataclass
 class AgentResult:
     text: str
     # NOTE: We intentionally do NOT return transcript/events in agent result.
     # Tests or callers that need access to the event sequence should register a handler
     # (e.g. a test-only RecordingHandler) and pass it via `handlers` argument to MiniCodex.create().
+
 
 @dataclass(slots=True)
 class ToolCallSuccess:
@@ -107,7 +109,9 @@ def _require_call_id(function_call: FunctionCallItem) -> str:
     return call_id
 
 
-def _dump_call_tool_result(res: mcp_types.CallToolResult, tool_call_info: str | None = None) -> str:
+def _dump_call_tool_result(
+    res: mcp_types.CallToolResult, tool_call_info: str | None = None
+) -> str:
     """Serialize an MCP CallToolResult to a JSON string for Responses input."""
 
     data = res.model_dump(mode="json", exclude_none=True)
@@ -205,9 +209,7 @@ def _tool_choice_from_policy(policy: TP_Base) -> str | dict[str, Any]:
 
 
 Message: TypeAlias = UserMessage | AssistantMessage | SystemMessage
-TranscriptItem: TypeAlias = (
-    Message | FunctionCallItem | ReasoningItem | ToolCallOutput
-)
+TranscriptItem: TypeAlias = Message | FunctionCallItem | ReasoningItem | ToolCallOutput
 
 
 class MiniCodex:
@@ -328,7 +330,9 @@ class MiniCodex:
             if cid in local_map:
                 cached = _copy_result(local_map[cid])
                 if cached.isError:
-                    return ToolCallFailure(result=cached, reason=_maybe_error_message(cached))
+                    return ToolCallFailure(
+                        result=cached, reason=_maybe_error_message(cached)
+                    )
                 return ToolCallSuccess(result=cached)
 
             raw = await self._mcp.call_tool_namespaced(function_call.name, args_json)
@@ -368,9 +372,7 @@ class MiniCodex:
                 except Exception as exc:
                     cid = _require_call_id(fc)
                     failure = _make_error_result(f"internal error: {exc}")
-                    results[cid] = ToolCallFailure(
-                        result=failure, reason=str(exc)
-                    )
+                    results[cid] = ToolCallFailure(result=failure, reason=str(exc))
                     abort_triggered = True
                     tg.cancel_scope.cancel()
                     return
@@ -453,13 +455,9 @@ class MiniCodex:
             # Skip sampling: treat handler-provided inserts_input as if they were
             # model output items for this phase and process them via the normal
             # output path (adds assistant text, enqueues tool calls, etc.).
-            out_items: list[
-                ReasoningOut | FunctionCallOut | AssistantMessageOut
-            ] = []
+            out_items: list[ReasoningOut | FunctionCallOut | AssistantMessageOut] = []
             for it in list(decision.inserts_input):
-                if isinstance(
-                    it, (ReasoningOut, FunctionCallOut, AssistantMessageOut)
-                ):
+                if isinstance(it, (ReasoningOut, FunctionCallOut, AssistantMessageOut)):
                     out_items.append(it)
                 elif isinstance(it, FunctionCallItem):
                     out_items.append(FunctionCallOut.from_input_item(it))
@@ -530,9 +528,7 @@ class MiniCodex:
                 if isinstance(eid, str) and eid:
                     existing_ids.add(eid)
         handled_cids = {
-            evt.call_id
-            for evt in self._transcript
-            if isinstance(evt, ToolCallOutput)
+            evt.call_id for evt in self._transcript if isinstance(evt, ToolCallOutput)
         }
         for item in resp_output:
             # If this item has an id and we've already recorded it, skip
@@ -562,7 +558,9 @@ class MiniCodex:
                 self._transcript.append(event)
                 if self.pending_function_calls:
                     self.pending_function_calls = [
-                        fc for fc in self.pending_function_calls if fc.call_id != item.call_id
+                        fc
+                        for fc in self.pending_function_calls
+                        if fc.call_id != item.call_id
                     ]
             elif isinstance(item, FunctionCallOut):
                 fc_local = item.to_input_item()

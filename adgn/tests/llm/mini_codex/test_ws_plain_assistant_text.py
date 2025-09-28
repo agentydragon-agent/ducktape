@@ -58,7 +58,6 @@ def test_ws_plain_assistant_text(
     app.state.session.attach_agent(agent)
 
     with TestClient(app) as test_client:
-
         try:
             with test_client.websocket_connect("/ws") as ws:
                 ws.send_json({"type": "send", "text": "hi"})

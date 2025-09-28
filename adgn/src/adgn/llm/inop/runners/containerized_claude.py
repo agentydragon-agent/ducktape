@@ -142,9 +142,10 @@ class TaskClaude:
         )
 
         # Find docker path for wrapper creation
-        self._docker_path = shutil.which("docker")
-        if not self._docker_path:
+        docker_path = shutil.which("docker")
+        if not docker_path:
             raise RuntimeError("Docker binary not found in PATH")
+        self._docker_path: str = docker_path
 
     @property
     def container_id(self) -> str:
@@ -198,7 +199,7 @@ class TaskClaude:
 
         return volumes
 
-    def _create_container(self, volumes: dict):
+    def _create_container(self, volumes: dict) -> Container:
         """Create Docker container with standardized configuration.
 
         Centralizes container creation to eliminate duplication and ensure
@@ -266,8 +267,10 @@ class TaskClaude:
 
         # Set up environment variables for wrapper script execution
         c = self._container_or_raise()
-        wrapper_env = {
-            "CLAUDE_CONTAINER_ID": c.id,
+        container_id = c.id
+        assert container_id is not None, "Container must have an ID"
+        wrapper_env: dict[str, str] = {
+            "CLAUDE_CONTAINER_ID": container_id,
             "DOCKER_BINARY": self._docker_path,
         }
 
@@ -470,9 +473,11 @@ class TaskClaude:
 
         # Debug: Log the exact command being executed
         c = self._container_or_raise()
+        container_id = c.id
+        assert container_id is not None, "Container must have an ID"
         cmd_args = [
             str(setup_script),
-            c.id,
+            container_id,
             self.task_id,
             str(self._output_dir),
         ]
@@ -488,7 +493,7 @@ class TaskClaude:
 
         process = await asyncio.create_subprocess_exec(
             str(setup_script),
-            c.id,
+            container_id,
             self.task_id,
             str(self._output_dir),
             stdout=asyncio.subprocess.PIPE,
@@ -565,9 +570,11 @@ class TaskClaude:
             return
 
         c = self._container_or_raise()
+        container_id = c.id
+        assert container_id is not None, "Container must have an ID"
         self._logger.info(
             "Running pre-task commands",
-            container_id=c.id,
+            container_id=container_id,
             commands_preview=commands[:100],
         )
 
@@ -575,7 +582,7 @@ class TaskClaude:
         process = await asyncio.create_subprocess_exec(
             "docker",
             "exec",
-            c.id,
+            container_id,
             "/bin/bash",
             "-c",
             commands,

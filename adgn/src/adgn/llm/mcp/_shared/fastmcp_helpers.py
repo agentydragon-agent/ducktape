@@ -229,7 +229,10 @@ def _flat_model_decorator(
 
 
 class FlatModelToolMixin:
-    """Mixin that lets ``@mcp.tool`` flatten Pydantic models with new keywords."""
+    """Mixin that lets ``@mcp.tool`` flatten Pydantic models with new keywords.
+
+    This mixin expects to be mixed with FastMCP or a class that has a tool method.
+    """
 
     def tool(
         self,
@@ -249,7 +252,7 @@ class FlatModelToolMixin:
             flat or flat_input_model is not None or flat_output_model is not None
         )
         if not wants_flat:
-            base_tool = super().tool  # type: ignore[attr-defined]
+            base_tool = super().tool  # type: ignore[misc]
             return cast(
                 Callable[[Callable[..., Any]], Callable[..., Any]],
                 base_tool(
@@ -270,7 +273,7 @@ class FlatModelToolMixin:
         ) -> Callable[..., Any]:
             # Nested helper runs outside method descriptor context; pass explicit
             # class + instance so ``super`` resolves correctly during runtime.
-            base_tool = super(FlatModelToolMixin, self).tool  # type: ignore[attr-defined]
+            base_tool = super(FlatModelToolMixin, self).tool  # type: ignore[misc]
             decorator = cast(
                 Callable[[Callable[..., Any]], Callable[..., Any]],
                 base_tool(**mcp_tool_kwargs),
