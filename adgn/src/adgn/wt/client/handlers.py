@@ -95,7 +95,14 @@ async def handle_status_single(daemon_client, formatter, worktree_name: str) -> 
     formatter.render_worktree_status_single(worktree_name, status, status.pr_info)
 
 
-async def handle_create_worktree(config, name: str, from_default: bool = True) -> None:
+async def handle_create_worktree(
+    config,
+    name: str,
+    from_default: bool = True,
+    from_branch: str | None = None,
+    from_worktree: str | None = None,
+    confirm: bool = False,
+) -> None:
     """Handle worktree creation."""
     daemon_client = WtClient(config)
 
@@ -120,9 +127,30 @@ async def handle_create_worktree(config, name: str, from_default: bool = True) -
     daemon_client.set_progress_callback(on_progress)
     daemon_client.set_hook_output_callback(on_hook)
 
+    # Optional preview + confirmation
+    if confirm:
+        worktree_path = config.worktrees_dir / name
+        if from_worktree:
+            msg = (
+                f"Create worktree '{name}' hydrated from existing worktree '{from_worktree}'\n"
+                f"→ path: {worktree_path}"
+            )
+        else:
+            base = from_branch or config.upstream_branch
+            msg = (
+                f"Create branch '{config.branch_prefix}{name}' from base '{base}'\n"
+                f"→ path: {worktree_path}"
+            )
+        click.echo(msg)
+        if not click.confirm("Proceed?", default=True):
+            click.echo("Cancelled.")
+            return
+
     new_path = await daemon_client.create_worktree_convenience(
         name,
-        from_default=from_default,
+        source_name=from_worktree,
+        from_default=from_default and not bool(from_worktree),
+        from_branch=from_branch,
     )
     emit_cd_command(new_path, main_repo=config.main_repo)
 
@@ -220,7 +248,7 @@ async def handle_navigate_to_worktree(config, worktree_name: str) -> None:
         return
 
     if click.confirm(
-        f"Worktree '{worktree_name}' does not exist. Create it?",
+        f"Worktree '{worktree_name}' does not exist. Create branch '{config.branch_prefix}{worktree_name}' from base '{config.upstream_branch}'?",
         default=False,
     ):
         # Delegate to shared create handler to reuse progress/hook streaming

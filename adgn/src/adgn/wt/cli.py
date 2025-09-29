@@ -77,7 +77,7 @@ def show_help() -> None:
     examples = [
         ("wt", "Show all worktrees with PR status"),
         ("wt feature-branch", "Navigate to feature-branch worktree"),
-        ("wt -c new-feature", "Create new worktree for new-feature"),
+        ("wt create new-feature", "Create new worktree for new-feature"),
         ("wt cp experiment", "Copy current worktree to 'experiment'"),
         ("wt rm old-branch", "Remove old-branch worktree"),
     ]
@@ -159,9 +159,7 @@ def sh(ctx, args):
         show_help()
         return
     filtered_args = [
-        a
-        for a in [*args, *ctx.args]
-        if (a in {"-c", "--force"} or not a.startswith("-"))
+        a for a in [*args, *ctx.args] if (a in {"--force"} or not a.startswith("-"))
     ]
 
     verbose = bool((ctx.obj or {}).get("verbose", False))
@@ -216,12 +214,7 @@ async def _cmd_cp(config, remaining_args, ctx, **_):
     ctx.exit(1)
 
 
-async def _cmd_create(config, remaining_args, ctx, **_):
-    if not remaining_args:
-        click.echo("Error: -c requires a worktree name")
-        ctx.exit(1)
-        return
-    await handle_create_worktree(config, remaining_args[0])
+# (legacy -c handler removed; use `wt create` instead)
 
 
 async def _cmd_path(config, remaining_args, **_):
@@ -249,7 +242,6 @@ _COMMAND_DISPATCH: dict[str, Callable[..., Awaitable[None]]] = {
     "ls": _cmd_ls,
     "rm": _cmd_rm,
     "cp": _cmd_cp,
-    "-c": _cmd_create,
     "path": _cmd_path,
     "status": _cmd_status,
     "help": _cmd_help,
@@ -301,6 +293,52 @@ async def _async_sh_main(
 
     # Default case: wt <x> - navigate to worktree
     await handle_navigate_to_worktree(config, cmd)
+
+
+@main.command("create", context_settings={"help_option_names": ["-h", "--help"]})
+@click.argument("name")
+@click.option(
+    "--from-branch",
+    "from_branch",
+    "-b",
+    required=False,
+    help="Base branch to create from",
+)
+@click.option(
+    "--from-worktree",
+    "from_worktree",
+    "-w",
+    required=False,
+    help="Hydrate from existing worktree",
+)
+@click.option("--yes", "yes", "-y", is_flag=True, help="Skip confirmation prompt")
+@click.pass_context
+def cmd_create(ctx, name, from_branch, from_worktree, yes):
+    """Create a new worktree.
+
+    Examples:
+      wt create foo -b release/2025-09-29
+      wt create foo -w dev
+    """
+    verbose = bool((ctx.obj or {}).get("verbose", False))
+    config, formatter, _daemon_client, _plugin_manager = _create_cli_dependencies(
+        verbose=verbose
+    )
+    try:
+        asyncio.run(
+            handle_create_worktree(
+                config,
+                name,
+                from_default=from_worktree is None,
+                from_branch=from_branch,
+                from_worktree=from_worktree,
+                confirm=not yes,
+            )
+        )
+    except Exception as e:
+        if verbose:
+            raise
+        raise click.ClickException(str(e)) from e
 
 
 if __name__ == "__main__":

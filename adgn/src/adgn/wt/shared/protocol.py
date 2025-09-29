@@ -129,6 +129,10 @@ class WorktreeCreateParams(BaseModel):
         default=None,
         description="Server-minted WorktreeID of source worktree to copy from (determines source commit)",
     )
+    source_branch: str | None = Field(
+        default=None,
+        description="Optional base branch to create from (overrides upstream when provided)",
+    )
 
 
 class WorktreeDeleteParams(BaseModel):

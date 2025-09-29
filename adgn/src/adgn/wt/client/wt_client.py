@@ -387,6 +387,7 @@ class WtClient:
         self,
         name: str,
         source_wtid: WorktreeID | None = None,
+        source_branch: str | None = None,
     ) -> WorktreeCreateResult:
         """Create a new worktree via RPC."""
         await self._start_daemon_if_needed()
@@ -395,7 +396,11 @@ class WtClient:
             raise RuntimeError("Daemon socket not available")
 
         request_id = uuid.uuid4()
-        params = WorktreeCreateParams(name=name, source_wtid=source_wtid)
+        params = WorktreeCreateParams(
+            name=name,
+            source_wtid=source_wtid,
+            source_branch=source_branch,
+        )
         request = Request(
             method="worktree_create", params=params.model_dump(), id=request_id
         )
@@ -568,16 +573,21 @@ class WtClient:
         *,
         source_name: str | None = None,
         from_default: bool = True,
+        from_branch: str | None = None,
     ) -> Path:
         validate_worktree_name(name)
         if source_name:
             src = await self.get_worktree_by_name(source_name)
             if not src.exists or not src.wtid:
                 raise RuntimeError(f"Worktree '{source_name}' not found")
-            result = await self.create_worktree(name, source_wtid=src.wtid)
+            result = await self.create_worktree(
+                name,
+                source_wtid=src.wtid,
+                source_branch=from_branch,
+            )
             return Path(result.absolute_path)
         if from_default:
-            result = await self.create_worktree(name)
+            result = await self.create_worktree(name, source_branch=from_branch)
             return Path(result.absolute_path)
         raise RuntimeError(
             "Invalid create_worktree request: no source and from_default=False",

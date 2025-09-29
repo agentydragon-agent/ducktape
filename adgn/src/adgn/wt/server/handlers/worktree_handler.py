@@ -86,6 +86,8 @@ async def worktree_create(
                 message=f"Source worktree {source_path} not found",
             )
         src_branch = git.get_repo_head_shorthand(source_path)
+    elif params.source_branch:
+        src_branch = params.source_branch
     else:
         src_branch = config.upstream_branch
 
