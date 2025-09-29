@@ -24,7 +24,7 @@ server {
     }
 
     location /furry-rationalists-telegram {
-        return 302 https://t.me/+KTmU37JO3Wk0OTQ0;
+        return 302 https://furryrationalists.proofgrid.tech/;
     }
 
     location /effective-anthropomorphism-discord {
