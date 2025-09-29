@@ -10,7 +10,7 @@ from typing import Any, cast
 
 from adgn.llm.mcp._shared.fastmcp_helpers import SafeFastMCP
 from adgn.llm.openai_utils.builders import make_item_tool_call
-from adgn.llm.openai_utils.model import FunctionCallOut
+from adgn.llm.openai_utils.model import FunctionCallItem
 from rich.console import Console, ConsoleRenderable, Group
 from rich.markdown import Markdown
 from rich.panel import Panel
@@ -156,7 +156,7 @@ def make_nl_tool_call(
     server_name: str,
     container_path: Path,
     call_id: str,
-) -> FunctionCallOut:
+) -> FunctionCallItem:
     """Create a docker exec tool call to render a file with line numbers.
 
     Reads the entire file (no size cap) using `nl -ba -w1 -s ' ' <path>`.
@@ -172,7 +172,7 @@ def make_nl_tool_call(
 
 def make_container_info_call(
     wiring: PropertiesDockerWiring,
-) -> FunctionCallOut:
+) -> FunctionCallItem:
     """resources.read for resource://container.info on the docker server."""
     return make_item_tool_call(
         call_id="bootstrap:res",
@@ -188,7 +188,7 @@ def make_container_info_call(
 
 def make_ls_workspace_call(
     wiring: PropertiesDockerWiring, subpaths: list[str] | None = None
-) -> FunctionCallOut:
+) -> FunctionCallItem:
     """docker_exec ls -la for /workspace or provided subpaths."""
     targets = (
         [str(wiring.working_dir)]
@@ -304,8 +304,8 @@ class LinterController(BaseHandler):
         else:
             self._step2 = []
 
-        def _content_calls() -> list[FunctionCallOut]:
-            out: list[FunctionCallOut] = []
+        def _content_calls() -> list[FunctionCallItem]:
+            out: list[FunctionCallItem] = []
             for q in self._files:
                 if sizes[q] > BIG_THRESHOLD:
                     continue
@@ -320,7 +320,7 @@ class LinterController(BaseHandler):
 
         self._step3 = _content_calls()
         # Property definition reads (full files, no cap)
-        self._prop_calls: list[FunctionCallOut] = []
+        self._prop_calls: list[FunctionCallItem] = []
         if docker_wiring and prop_host_paths:
             defs_dir = props_definitions_root().resolve()
             for i, host_p in enumerate(prop_host_paths):

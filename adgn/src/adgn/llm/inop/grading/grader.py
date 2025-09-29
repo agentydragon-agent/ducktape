@@ -25,7 +25,7 @@ from adgn.llm.inop.grading.strategies import (
 )
 from adgn.llm.inop.io.logging_utils import DualOutputLogging
 from adgn.llm.openai_utils.model import (
-    FunctionCallOut,
+    FunctionCallItem,
     ResponsesRequest,
     ToolChoiceFunction,
 )
@@ -166,9 +166,9 @@ Return a JSON object with:
     response = await model.responses_create(req)
 
     # Extract the function call from response
-    call: FunctionCallOut | None = None
+    call: FunctionCallItem | None = None
     for item in response.output:
-        if isinstance(item, FunctionCallOut):
+        if isinstance(item, FunctionCallItem):
             call = item
             break
 
@@ -286,7 +286,7 @@ async def _grade_with_criteria(
     # Extract the function call (accept SDK or adapter types)
     call = None
     for item in response.output:
-        if isinstance(item, FunctionCallOut):
+        if isinstance(item, FunctionCallItem):
             call = item
             break
 
@@ -300,9 +300,9 @@ async def _grade_with_criteria(
     # Parse the grades
     try:
         # Adapter-only: SDK types are not accepted in this layer
-        assert isinstance(call, FunctionCallOut), (
+        assert isinstance(call, FunctionCallItem), (
             f"Unexpected function call item type: {type(call).__name__}. "
-            "Only adapter FunctionCallOut is supported in this layer."
+            "Only adapter FunctionCallItem is supported in this layer."
         )
         arguments_str = call.arguments or ""
         parsed = json.loads(arguments_str or "{}")

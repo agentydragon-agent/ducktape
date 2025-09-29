@@ -10,7 +10,7 @@ from hamcrest import assert_that, has_item
 from adgn.llm.openai_utils.model import (
     OpenAIModelProto,
     ResponsesRequest,
-    FunctionCallOut,
+    FunctionCallItem,
     UserMessage,
     ToolChoiceFunction,
 )
@@ -206,11 +206,11 @@ async def _grade_rationale_with_llm(
     )
     resp = await client.responses_create(req)
     # Extract function call robustly; fail fast on missing/invalid
-    call: FunctionCallOut | None = next(
+    call: FunctionCallItem | None = next(
         (
             it
             for it in resp.output
-            if isinstance(it, FunctionCallOut) and it.name == "grade_rationale"
+            if isinstance(it, FunctionCallItem) and it.name == "grade_rationale"
         ),
         None,
     )

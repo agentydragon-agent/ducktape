@@ -32,7 +32,7 @@ from adgn.llm.mini_codex.loop_control import (
 )
 from adgn.llm.mini_codex.mcp_manager import McpManager, build_mcp_function
 from adgn.llm.openai_utils.builders import ItemFactory
-from adgn.llm.openai_utils.model import FunctionCallOut
+from adgn.llm.openai_utils.model import FunctionCallItem
 
 
 def _default_bootstrap(
@@ -40,7 +40,7 @@ def _default_bootstrap(
     *,
     staged_limit: int = 2000,
     patch_slice_chars: int = 50000,
-) -> list[FunctionCallOut]:
+) -> list[FunctionCallItem]:
     """Build the default list of bootstrap tool calls for a commit flow.
 
     Returns initial function calls agent should start out having executed when composing

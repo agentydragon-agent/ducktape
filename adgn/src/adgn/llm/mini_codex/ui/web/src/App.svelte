@@ -37,11 +37,18 @@
   let prompt = ''
   let pending = new Map<string, Pending>()
   let mcpServers: string[] = []
+  let mcpTools: any[] = []
+  let serverExpandedState = new Map<string, boolean>()
+  let toolExpandedState = new Map<string, boolean>()
   let lastError: string | null = null
   let messagesEl: HTMLDivElement | null = null
   let promptEl: HTMLTextAreaElement | null = null
   let renderMarkdown = true
   let uiState: any = null
+  let approvalPolicy: { content: string; version: number } | null = null
+  let policyProposal: { id: string; content: string; rationale?: string } | null = null
+  let showPolicyEditor = false
+  let editingPolicy = ''
 
   // Persist settings reactively
   $: try { localStorage.setItem('renderMarkdown', JSON.stringify(renderMarkdown)) } catch {}
@@ -86,6 +93,7 @@
     switch (t) {
       case 'snapshot':
         mcpServers = (p.mcp_servers || []).map((s: any) => s.name)
+        mcpTools = p.sampling?.tools || []
         if (p.run_state?.status) status = p.run_state.status
         // Seed pending approvals from snapshot
         if (p.run_state?.pending_approvals?.length) {
@@ -100,6 +108,10 @@
           pending = map
         } else {
           pending = new Map(pending)
+        }
+        // Update approval policy
+        if (p.approval_policy) {
+          approvalPolicy = p.approval_policy
         }
         break
       case 'ui_state_snapshot':
@@ -154,6 +166,21 @@
 
   function deny(call_id: string) {
     sendJson({ type: 'deny', call_id })
+  }
+
+  function setPolicy(content: string) {
+    sendJson({ type: 'set_policy', content })
+    showPolicyEditor = false
+  }
+
+  function startEditingPolicy() {
+    editingPolicy = approvalPolicy?.content || ''
+    showPolicyEditor = true
+  }
+
+  function cancelEditingPolicy() {
+    showPolicyEditor = false
+    editingPolicy = ''
   }
 
   function sendPrompt() {
@@ -217,6 +244,8 @@
               {:else}
                 <div class="text">{it.md}</div>
               {/if}
+            {:else if it.kind === 'EndTurn'}
+              <div class="end-turn-separator"></div>
             {:else if it.kind === 'Tool'}
               {#if it.content?.content_kind === 'Exec'}
                 <div class="terminal">
@@ -288,8 +317,45 @@
     <div class="servers">
       <h4>Servers</h4>
       {#if mcpServers.length}
-        {#each mcpServers as n}
-          <div class="server">{n}</div>
+        {#each mcpServers as serverName}
+          {@const serverTools = mcpTools.filter(t => t.name.startsWith(`mcp__${serverName}__`))}
+          <div class="server-item">
+            <div class="server-header" on:click={() => {
+              serverExpandedState.set(serverName, !serverExpandedState.get(serverName))
+              serverExpandedState = serverExpandedState
+            }}>
+              <span class="disclosure">{serverExpandedState.get(serverName) ? '▼' : '▶'}</span>
+              <span class="server-name">{serverName}</span>
+              <span class="tool-count">({serverTools.length} tools)</span>
+            </div>
+            {#if serverExpandedState.get(serverName)}
+              <div class="tools-list">
+                {#each serverTools as tool}
+                  {@const toolKey = tool.name}
+                  <div class="tool-item">
+                    <div class="tool-header" on:click={() => {
+                      toolExpandedState.set(toolKey, !toolExpandedState.get(toolKey))
+                      toolExpandedState = toolExpandedState
+                    }}>
+                      <span class="disclosure">{toolExpandedState.get(toolKey) ? '▼' : '▶'}</span>
+                      <span class="tool-name">{tool.name.replace(`mcp__${serverName}__`, '')}</span>
+                    </div>
+                    {#if toolExpandedState.get(toolKey)}
+                      <div class="tool-details">
+                        {#if tool.description}
+                          <div class="tool-description">{tool.description}</div>
+                        {/if}
+                        <div class="tool-schema">
+                          <div class="schema-label">Parameters:</div>
+                          <div use:jsonView={tool.parameters}></div>
+                        </div>
+                      </div>
+                    {/if}
+                  </div>
+                {/each}
+              </div>
+            {/if}
+          </div>
         {/each}
       {:else}
         <div class="empty">None</div>
@@ -302,6 +368,29 @@
       <div class="row">
         <button on:click={() => (lastError = null)} disabled={!lastError}>Clear error</button>
       </div>
+    </div>
+
+    <div class="policy">
+      <h4>Approval Policy {#if approvalPolicy}<small>(v{approvalPolicy.version})</small>{/if}</h4>
+      {#if !showPolicyEditor}
+        {#if approvalPolicy}
+          <pre class="policy-content">{approvalPolicy.content}</pre>
+          <button on:click={startEditingPolicy}>Edit Policy</button>
+        {:else}
+          <div class="empty">No policy loaded</div>
+        {/if}
+      {:else}
+        <textarea
+          bind:value={editingPolicy}
+          rows="15"
+          placeholder="def decide(ctx): ..."
+          class="policy-editor"
+        ></textarea>
+        <div class="row">
+          <button on:click={() => setPolicy(editingPolicy)}>Save</button>
+          <button on:click={cancelEditingPolicy}>Cancel</button>
+        </div>
+      {/if}
     </div>
 
     <div class="approvals">
@@ -366,6 +455,15 @@
   .text.md :where(pre, code) { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; }
   .pre { background: #f8f8f8; padding: 0.5rem; overflow: auto; max-height: 12rem; }
 
+  /* End turn separator - thick horizontal rule */
+  .end-turn-separator {
+    height: 4px;
+    background: #666;
+    border: none;
+    margin: 1rem 0;
+    border-radius: 2px;
+  }
+
   /* Terminal-style rendering */
   .terminal .terminal-body { background: #111; color: #eee; border-radius: 6px; padding: 0.5rem; max-height: 18rem; overflow: auto; }
   .terminal pre { margin: 0.25rem 0; white-space: pre-wrap; word-break: break-word; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.85rem; line-height: 1.35; }
@@ -401,4 +499,65 @@
   .server { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.85rem; }
   .approval { border: 1px solid #ddd; padding: 0.5rem; margin: 0.25rem 0; }
   .row { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+
+  /* Server and tool disclosure styles */
+  .server-item { margin: 0.25rem 0; }
+  .server-header, .tool-header {
+    cursor: pointer;
+    padding: 0.25rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    user-select: none;
+  }
+  .server-header:hover, .tool-header:hover { background: rgba(0,0,0,0.05); }
+  .disclosure {
+    font-size: 0.75rem;
+    width: 1rem;
+    flex-shrink: 0;
+  }
+  .server-name {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+    font-size: 0.85rem;
+    font-weight: 500;
+  }
+  .tool-count {
+    color: #666;
+    font-size: 0.75rem;
+    margin-left: auto;
+  }
+  .tools-list {
+    margin-left: 1rem;
+    border-left: 1px solid #e0e0e0;
+    padding-left: 0.5rem;
+  }
+  .tool-item { margin: 0.25rem 0; }
+  .tool-name {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+    font-size: 0.8rem;
+  }
+  .tool-details {
+    margin-left: 1.5rem;
+    margin-top: 0.25rem;
+    padding: 0.5rem;
+    background: rgba(0,0,0,0.02);
+    border-radius: 0.25rem;
+  }
+  .tool-description {
+    color: #555;
+    font-size: 0.8rem;
+    margin-bottom: 0.5rem;
+  }
+  .schema-label {
+    font-weight: 500;
+    font-size: 0.75rem;
+    margin-bottom: 0.25rem;
+    color: #666;
+  }
+  .tool-schema {
+    font-size: 0.75rem;
+  }
+  .policy h4, .settings h4 { margin: 0.25rem 0; }
+  .policy-content { background: #f8f8f8; padding: 0.5rem; overflow: auto; max-height: 12rem; font-size: 0.75rem; }
+  .policy-editor { width: 100%; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 0.75rem; resize: vertical; }
 </style>

@@ -22,8 +22,8 @@ from typing import TypeAlias
 from adgn.llm.openai_utils.model import (
     InputItem,
     ReasoningItem,
-    FunctionCallOut,
-    FunctionCallOutputOut,
+    FunctionCallItem,
+    FunctionCallOutputItem,
     AssistantMessageOut,
 )
 
@@ -104,12 +104,12 @@ class Continue:
     # Normal path: accept InputItem (UserMessage, AssistantMessage, SystemMessage,
     # ReasoningItem, FunctionCallItem, FunctionCallOutputItem).
     # Skip-sampling path: accept adapter ResponseOut items (ReasoningItem,
-    # FunctionCallOut, AssistantMessageOut).
+    # FunctionCallItem, AssistantMessageOut).
     inserts_input: tuple[
         InputItem
         | ReasoningItem
-        | FunctionCallOut
-        | FunctionCallOutputOut
+        | FunctionCallItem
+        | FunctionCallOutputItem
         | AssistantMessageOut,
         ...,
     ] = ()

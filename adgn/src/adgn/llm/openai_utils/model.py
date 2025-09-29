@@ -86,7 +86,7 @@ class ReasoningItem(BaseModel):
 class FunctionCallItem(BaseModel):
     type: Literal["function_call"] = "function_call"
     name: str
-    arguments: str | dict[str, object] | list[object] | None = None
+    arguments: str | None = None  # Must be string (JSON) if provided
     call_id: str | None = None
     id: str | None = None  # Preserve the function call's unique ID from the API
     status: str | None = None  # Preserve the status field if present
@@ -97,8 +97,8 @@ class FunctionCallOutputItem(BaseModel):
     # Responses API prefers the payload under "output".
     type: Literal["function_call_output"] = "function_call_output"
     call_id: str
-    output: object | None = Field(
-        default=None, description="Structured payload returned from the tool"
+    output: str | None = Field(
+        default=None, description="Tool output as string (JSON if structured)"
     )
     model_config = ConfigDict(extra="allow")
 
@@ -167,72 +167,6 @@ class Usage(BaseModel):
     total_tokens: int
 
 
-
-
-class FunctionCallOut(BaseModel):
-    kind: Literal["function_call"] = "function_call"
-    name: str
-    arguments: str | None = None
-    call_id: str
-    id: str | None = None  # Preserve the function call's unique ID from the API
-    status: str | None = None  # Preserve the status field if present
-
-    def to_input_item(self) -> FunctionCallItem:
-        return FunctionCallItem(
-            name=self.name,
-            arguments=self.arguments,
-            call_id=self.call_id,
-            id=self.id,
-            status=self.status,
-        )
-
-    @staticmethod
-    def _stringify_arguments(
-        args: str | dict[str, object] | list[object] | None,
-    ) -> str | None:
-        if args is None:
-            return None
-        if isinstance(args, str):
-            return args
-        try:
-            return json.dumps(args)
-        except TypeError:
-            return str(args)
-
-    @classmethod
-    def from_input_item(cls, item: FunctionCallItem) -> FunctionCallOut:
-        if item.call_id is None:
-            raise ValueError("FunctionCallItem missing call_id")
-        return cls(
-            name=item.name,
-            call_id=item.call_id,
-            arguments=cls._stringify_arguments(item.arguments),
-            id=item.id,
-            status=item.status,
-        )
-
-
-class FunctionCallOutputOut(BaseModel):
-    kind: Literal["function_call_output"] = "function_call_output"
-    call_id: str
-    output: str
-
-    def to_input_item(self) -> FunctionCallOutputItem:
-        return FunctionCallOutputItem(call_id=self.call_id, output=self.output)
-
-    @classmethod
-    def from_input_item(cls, item: FunctionCallOutputItem) -> FunctionCallOutputOut:
-        output = item.output
-        if output is None:
-            return cls(call_id=item.call_id, output="")
-        if isinstance(output, str):
-            return cls(call_id=item.call_id, output=output)
-        try:
-            return cls(call_id=item.call_id, output=json.dumps(output))
-        except TypeError:
-            return cls(call_id=item.call_id, output=str(output))
-
-
 class OutputText(BaseModel):
     text: str
     annotations: list[dict[str, Any]] | None = None
@@ -289,7 +223,7 @@ class AssistantMessageOut(BaseModel):
         return cls(parts=parts)
 
 
-ResponseOutItem = ReasoningItem | FunctionCallOut | FunctionCallOutputOut | AssistantMessageOut
+ResponseOutItem = ReasoningItem | FunctionCallItem | FunctionCallOutputItem | AssistantMessageOut
 
 
 @singledispatch
@@ -303,13 +237,13 @@ def _(item: ReasoningItem) -> InputItem:
 
 
 @response_out_item_to_input.register
-def _(item: FunctionCallOut) -> InputItem:
-    return item.to_input_item()
+def _(item: FunctionCallItem) -> InputItem:
+    return item  # No conversion needed, FunctionCallItem is already an InputItem
 
 
 @response_out_item_to_input.register
-def _(item: FunctionCallOutputOut) -> InputItem:
-    return item.to_input_item()
+def _(item: FunctionCallOutputItem) -> InputItem:
+    return item  # No conversion needed, FunctionCallOutputItem is already an InputItem
 
 
 @response_out_item_to_input.register
@@ -366,9 +300,9 @@ def convert_sdk_response(sdk_resp: Response) -> ResponsesResult:
             out_items.append(ReasoningItem(id=item.id, summary=summary_items))
         elif isinstance(item, ResponseFunctionToolCall):
             out_items.append(
-                FunctionCallOut(
+                FunctionCallItem(
                     name=item.name,
-                    arguments=item.arguments,
+                    arguments=item.arguments,  # Already string from SDK
                     call_id=item.call_id,
                     id=item.id,
                     status=item.status,
@@ -431,9 +365,9 @@ class OpenAIModel:
                 out_items.append(ReasoningItem(id=item.id, summary=summary_items))
             elif isinstance(item, ResponseFunctionToolCall):
                 out_items.append(
-                    FunctionCallOut(
+                    FunctionCallItem(
                         name=item.name,
-                        arguments=item.arguments,
+                        arguments=item.arguments,  # Already string from SDK
                         call_id=item.call_id,
                         id=item.id,
                         status=item.status,

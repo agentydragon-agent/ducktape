@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 
 from adgn.llm.openai_utils.model import (
-    FunctionCallOut,
+    FunctionCallItem,
     ResponsesRequest,
 )
 import pytest
@@ -28,8 +28,8 @@ from adgn.llm.inop.engine.models import (
 from adgn.llm.inop.io.jsonl_logger import JSONLLogger
 
 
-def mk_func_call(*, name: str, args: dict, call_id: str) -> FunctionCallOut:
-    return FunctionCallOut(
+def mk_func_call(*, name: str, args: dict, call_id: str) -> FunctionCallItem:
+    return FunctionCallItem(
         name=name,
         arguments=json.dumps(args),
         call_id=call_id,

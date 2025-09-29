@@ -7,6 +7,10 @@ from adgn.llm.mini_codex.mcp_manager import McpManager
 from adgn.llm.openai_utils.model import (
     FakeOpenAIModel,
     ReasoningItem,
+    FunctionCallItem,
+    FunctionCallOutputItem,
+    UserMessage,
+    SystemMessage,
 )
 
 
@@ -20,15 +24,14 @@ async def test_reasoning_threading_filters_reasoning_from_next_input(
     specs = make_echo_spec()
 
     # Create function calls with explicit id and status to verify preservation
-    from adgn.llm.openai_utils.model import FunctionCallOut
-    fc1 = FunctionCallOut(
+    fc1 = FunctionCallItem(
         name="mcp__echo__echo",
         arguments='{"text": "hi"}',
         call_id="call_1",
         id="fc_id_1",  # Must be preserved
         status="completed",  # Must be preserved
     )
-    fc2 = FunctionCallOut(
+    fc2 = FunctionCallItem(
         name="mcp__echo__echo",
         arguments='{"text": "bye"}',
         call_id="call_2",
@@ -70,13 +73,6 @@ async def test_reasoning_threading_filters_reasoning_from_next_input(
     # Assertions
     assert res.text.strip() == "done"
     assert client.calls == 3, f"Expected 3 API calls, got {client.calls}"
-
-    from adgn.llm.openai_utils.model import (
-        UserMessage,
-        SystemMessage,
-        FunctionCallItem,
-        FunctionCallOutputItem,
-    )
 
     # Helper to get item types and match by id/call_id
     def get_sequence_summary(items):

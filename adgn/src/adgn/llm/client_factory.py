@@ -22,7 +22,7 @@ from adgn.llm.openai_utils.model import (
     RetryingOpenAIModel,
     OpenAIModelProto,
 )
-from adgn.llm.openai_utils.http_logging import make_logged_async_openai
+from adgn.llm.openai_utils.http_logging import make_logged_async_openai, make_logger_logged_async_openai
 
 
 _ASYNC_CLIENTS: Dict[Tuple[str | None], AsyncOpenAI] = {}
@@ -55,14 +55,22 @@ def build_client(
     model: str,
     *,
     log_http_path: Path | str | None = None,
+    enable_debug_logging: bool = False,
 ) -> OpenAIModelProto:
     """Create a typed, retrying Responses client for the given model.
 
     - Respects ADGN_OPENAI_HTTP_LOG if log_http_path is not provided
+    - If enable_debug_logging=True, logs HTTP traffic to Python logger at DEBUG level
     """
-    if log_http_path is None:
+    if enable_debug_logging:
+        inner = make_logger_logged_async_openai()
+    elif log_http_path is None:
         env_path = os.environ.get("ADGN_OPENAI_HTTP_LOG")
-        log_http_path = Path(env_path) if env_path else None
-    inner = _get_async_openai(log_path=log_http_path)
+        if env_path:
+            inner = _get_async_openai(log_path=Path(env_path))
+        else:
+            inner = _get_async_openai()
+    else:
+        inner = _get_async_openai(log_path=log_http_path)
     base = BoundOpenAIModel(client=inner, model=model)
     return RetryingOpenAIModel(base=base)

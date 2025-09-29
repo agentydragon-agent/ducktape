@@ -7,7 +7,7 @@ from adgn.llm.mini_codex.mcp_manager import McpManager
 from adgn.llm.mcp.testing.typed_stubs import TypedClient
 from adgn.llm.mcp.ui.server import make_ui_mcp
 from adgn.llm.mini_codex.ui.shared_bus import UiBus, UiMessage, UiEndTurn
-from adgn.llm.mini_codex.ui.ui_handler import UiAutoHandler
+from adgn.llm.mini_codex.ui.ui_handler import UiModeHandler
 from adgn.llm.mini_codex.loop_control import Abort, Continue, RequireAny
 
 
@@ -47,7 +47,9 @@ async def test_ui_send_message_and_end_turn_bus(bus) -> None:
 
 
 def test_ui_handler_abort_on_end_turn(bus) -> None:
-    h = UiAutoHandler(bus=bus)
+    def dummy_poll():
+        return type('NotificationsBatch', (), {'resources_updated': []})()
+    h = UiModeHandler(bus=bus, poll_notifications=dummy_poll)
 
     # No end_turn pending -> RequireAny tool usage
     dec = h.on_before_sample()

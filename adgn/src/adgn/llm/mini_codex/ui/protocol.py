@@ -46,6 +46,14 @@ class ApprovalBrief(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class ApprovalPolicyInfo(BaseModel):
+    """Current approval policy state."""
+    content: str
+    version: int
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class RunState(BaseModel):
     run_id: str
     status: Literal[
@@ -120,13 +128,19 @@ class UiMessageEvt(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class UiEndTurnEvt(BaseModel):
+    type: Literal["ui_end_turn"] = "ui_end_turn"
+    model_config = ConfigDict(extra="forbid")
+
+
 TranscriptItem = Annotated[
     UserText
     | AssistantText
     | ToolCall
     | FunctionCallOutput
     | ReasoningChunk
-    | UiMessageEvt,
+    | UiMessageEvt
+    | UiEndTurnEvt,
     Field(discriminator="type"),
 ]
 
@@ -205,6 +219,8 @@ class Snapshot(BaseModel):
     # Structured MCP state for UI and sampling (Pydantic models from McpManager)
     sampling: McpManager.SamplingSnapshot | None = None
     mcp_servers: list[McpServerInfo] = []
+    # Approval policy (Python code and version)
+    approval_policy: ApprovalPolicyInfo | None = None
     model_config = ConfigDict(extra="forbid")
 
 
@@ -327,6 +343,7 @@ ServerMessage = Annotated[
     | ToolCall
     | FunctionCallOutput
     | ReasoningChunk
-    | UiMessageEvt,
+    | UiMessageEvt
+    | UiEndTurnEvt,
     Field(discriminator="type"),
 ]

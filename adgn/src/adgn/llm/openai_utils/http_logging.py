@@ -23,6 +23,7 @@ client = make_logged_async_openai(Path("./openai_http.jsonl"))
 from __future__ import annotations
 
 import json
+import logging
 from functools import partial
 from pathlib import Path
 from typing import Any
@@ -99,6 +100,61 @@ async def _on_response(
     )
 
 
+async def _log_request_to_logger(
+    req: httpx.Request, *, logger: logging.Logger
+) -> None:  # pragma: no cover - HTTP hook
+    headers = {
+        k: ("***" if k.lower() == "authorization" else v)
+        for k, v in req.headers.items()
+    }
+    try:
+        body = getattr(req, "content", b"") or b""
+    except Exception:
+        body = b""
+
+    logger.debug(
+        "OpenAI Request: %s %s\nHeaders: %s\nBody: %s",
+        req.method,
+        str(req.url),
+        json.dumps(headers, ensure_ascii=False),
+        body.decode("utf-8", errors="ignore")
+    )
+
+
+async def _log_response_to_logger(
+    resp: httpx.Response, *, logger: logging.Logger
+) -> None:  # pragma: no cover - HTTP hook
+    req = resp.request
+    headers = {
+        k: ("***" if k.lower() == "authorization" else v)
+        for k, v in req.headers.items()
+    }
+    try:
+        req_body = getattr(req, "content", b"") or b""
+    except Exception:
+        req_body = b""
+
+    # Safely read response body for streaming responses
+    resp_body_bytes: bytes = b""
+    try:
+        resp_body_bytes = await resp.aread()
+    except Exception:
+        try:
+            resp_body_bytes = resp.content
+        except Exception:
+            resp_body_bytes = b""
+
+    logger.debug(
+        "OpenAI Response: %d %s\nRequest Headers: %s\nRequest Body: %s\nResponse Headers: %s\nResponse Body: %s",
+        resp.status_code,
+        str(req.url),
+        json.dumps(headers, ensure_ascii=False),
+        req_body.decode("utf-8", errors="ignore"),
+        json.dumps(dict(resp.headers), ensure_ascii=False),
+        resp_body_bytes.decode("utf-8", errors="ignore")
+    )
+
+
 def make_logged_async_openai(log_path: Path | str) -> AsyncOpenAI:
     """Create an AsyncOpenAI client that logs raw HTTP traffic to log_path.
 
@@ -110,6 +166,22 @@ def make_logged_async_openai(log_path: Path | str) -> AsyncOpenAI:
         event_hooks={
             "request": [partial(_on_request, path=p)],
             "response": [partial(_on_response, path=p)],
+        }
+    )
+    return AsyncOpenAI(http_client=http)
+
+
+def make_logger_logged_async_openai(logger_name: str = "openai.http") -> AsyncOpenAI:
+    """Create an AsyncOpenAI client that logs raw HTTP traffic to a Python logger at DEBUG level.
+
+    The returned client owns an httpx.AsyncClient with event hooks installed.
+    The caller is responsible for closing the OpenAI client when done.
+    """
+    logger = logging.getLogger(logger_name)
+    http = httpx.AsyncClient(
+        event_hooks={
+            "request": [partial(_log_request_to_logger, logger=logger)],
+            "response": [partial(_log_response_to_logger, logger=logger)],
         }
     )
     return AsyncOpenAI(http_client=http)

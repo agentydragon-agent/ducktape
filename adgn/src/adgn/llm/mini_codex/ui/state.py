@@ -28,6 +28,14 @@ class AssistantMarkdownItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class EndTurnItem(BaseModel):
+    kind: Literal["EndTurn"] = "EndTurn"
+    id: str = Field(default_factory=lambda: uuid.uuid4().hex)
+    ts: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+    model_config = ConfigDict(extra="forbid")
+
+
 ApprovalKind = Literal["approve", "deny_continue", "deny_abort"]
 
 
@@ -65,7 +73,7 @@ class ToolItem(BaseModel):
 
 
 DisplayItem = Annotated[
-    UserMessageItem | AssistantMarkdownItem | ToolItem,  # noqa: E721
+    UserMessageItem | AssistantMarkdownItem | EndTurnItem | ToolItem,  # noqa: E721
     Field(discriminator="kind"),
 ]
 

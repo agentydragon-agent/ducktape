@@ -7,7 +7,7 @@ import json
 import logging
 from pathlib import Path
 from typing import Annotated, Any, Literal, cast
-from adgn.llm.mini_codex.ui.shared_bus import UiBus, UiMessage
+from adgn.llm.mini_codex.ui.shared_bus import UiBus, UiMessage, UiEndTurn
 import uuid
 
 from fastapi import FastAPI, Response, WebSocket, WebSocketDisconnect
@@ -20,6 +20,7 @@ import uvicorn
 from adgn.llm.mini_codex.agent import MiniCodex
 from adgn.llm.mini_codex.approvals import (
     ApprovalHub,
+    ApprovalPolicyEngine,
     ApprovalRequest,
     ApprovalToolCall,
 )
@@ -42,6 +43,7 @@ from adgn.llm.mini_codex.ui.protocol import (
     ApprovalDenyAbort,
     ApprovalDenyContinue,
     ApprovalPendingEvt,
+    ApprovalPolicyInfo,
     Envelope,
     ErrorCode,
     ErrorEvt,
@@ -55,6 +57,7 @@ from adgn.llm.mini_codex.ui.protocol import (
     FunctionCallOutput as UiFunctionCallOutput,
     UiMessageEvt,
     UiMessagePayload,
+    UiEndTurnEvt,
     UiStateSnapshot,
     UiStateUpdated,
     UserText as UiUserText,
@@ -129,14 +132,17 @@ class ConnectionManager(BaseHandler):
     async def _emit_ui_bus_messages(self) -> None:
         # Drain per-agent UI bus (if any) and emit UiMessageEvt in order, reducing into UiState
         assert self._session is not None
-        bus = getattr(self._session, "ui_bus", None)
-        if bus is None:
+        if self._session.ui_bus is None:
             return
+        bus = self._session.ui_bus
         for item in bus.drain_messages():
             if isinstance(item, UiMessage):
                 evt = UiMessageEvt(
                     message=UiMessagePayload(mime=item.mime, content=item.content)
                 )
+                await self._send_and_reduce(evt)
+            elif isinstance(item, UiEndTurn):
+                evt = UiEndTurnEvt()
                 await self._send_and_reduce(evt)
 
     async def send_payload(self, payload: ServerMessage) -> None:
@@ -192,37 +198,28 @@ class ConnectionManager(BaseHandler):
         self._spawn(self._send_and_reduce(tc))
 
     async def before_tool_call(self, evt: ToolCall) -> BeforeToolCallDecision:
+        # Only handle UI communication for approvals that are actually pending
+        # ApprovalPolicyHandler has already evaluated the policy and registered with hub if needed
+        if self._session is None:
+            return ContinueDecision()
+
+        # Check if this call is actually pending approval
+        # Access the approval hub's internal requests directly
+        pending_calls = set(self._session.approval_hub._requests.keys())
+        if evt.call_id not in pending_calls:
+            # Not pending - policy already decided (probably "allow")
+            return ContinueDecision()
+
+        # This call is pending approval - send UI event and let ApprovalPolicyHandler handle the decision
         await self.send_payload(
             ApprovalPendingEvt(
                 call_id=evt.call_id, tool_key=evt.name, args_json=evt.args_json
             )
         )
-        if self._session is None:
-            return ContinueDecision()
-        req = ApprovalRequest(
-            tool_key=evt.name,
-            tool_call=ApprovalToolCall(
-                name=evt.name,
-                call_id=evt.call_id,
-                args_json=evt.args_json,
-            ),
-        )
-        decision = await self._session.approval_hub.await_decision(evt.call_id, req)
-        # Translate handler decision -> protocol-native decision for UI emission
-        if isinstance(decision, ContinueDecision):
-            proto_dec = ApprovalApprove()
-        elif isinstance(decision, AbortTurnDecision):
-            proto_dec = ApprovalDenyAbort()
-        elif isinstance(decision, BypassToolInjectOutput):
-            proto_dec = ApprovalDenyContinue()
-        else:
-            raise TypeError(
-                f"Unknown handler decision type from approval hub: {type(decision).__name__}"
-            )
-        ade = ApprovalDecisionEvt(call_id=evt.call_id, decision=proto_dec)
-        await self._send_and_reduce(ade)
-        # Return the handler decision directly to the agent
-        return decision
+
+        # Don't call await_decision() here - ApprovalPolicyHandler is already waiting
+        # Just pass through and let the approval flow continue normally
+        return ContinueDecision()
 
     def on_tool_result_event(self, evt: ToolCallOutput) -> None:
         payload = evt.result.model_dump(mode="json", exclude_none=True)
@@ -238,16 +235,64 @@ class AgentSession:
     Runs a real MiniCodex instance; no simulated tool calls in this module.
     """
 
-    def __init__(self, manager: ConnectionManager) -> None:
+    def __init__(self, manager: ConnectionManager, approval_hub: ApprovalHub | None = None) -> None:
         self._task: asyncio.Task | None = None
-        self.approval_hub = ApprovalHub()
+        self.approval_hub = approval_hub or ApprovalHub()
         self._lock = asyncio.Lock()
-        self._active_run_id: str | None = None
-        self._active_run_started_at: datetime | None = None
+        # Unified run state
+        self.active_run: RunState | None = None
+        self._run_counter = 0
         self._agent: MiniCodex | None = None
         self._manager = manager
         self.ui_bus: UiBus | None = None
         self.ui_state: UiState = new_state()
+        self.approval_engine: ApprovalPolicyEngine | None = None
+
+    def build_snapshot(self, sampling=None) -> Snapshot:
+        """Build a complete snapshot with all current state.
+
+        Note: sampling must be passed in separately as it requires async.
+        """
+        # Get MCP servers from agent if available
+        mcp_servers_list = []
+        if self._agent is not None:
+            servers = self._agent._mcp.server_names
+            mcp_servers_list = [McpServerInfo(name=s) for s in servers]
+
+        # Update run state with pending approvals if active
+        if self.active_run:
+            self.active_run.pending_approvals = [
+                ApprovalBrief(
+                    call_id=req.tool_call.call_id,
+                    tool_key=req.tool_key,
+                    args=json.loads(req.tool_call.args_json or "{}"),
+                    )
+                    for req in self.approval_hub._requests.values()
+                ]
+
+        # Get approval policy if available
+        approval_policy = None
+        if self.approval_engine:
+            content, version = self.approval_engine.get_policy()
+            approval_policy = ApprovalPolicyInfo(
+                content=content, version=version
+            )
+
+        return Snapshot(
+            v=PROTOCOL_VERSION,
+            session_state=SessionState(
+                session_id=self._manager._session_id,
+                version=PROTOCOL_VERSION,
+                capabilities=[],
+                last_event_id=self._manager._event_id or None,
+                active_run_id=self.active_run.run_id if self.active_run else None,
+                run_counter=self._run_counter,
+            ),
+            run_state=self.active_run,
+            sampling=sampling,
+            mcp_servers=mcp_servers_list,
+            approval_policy=approval_policy,
+        )
 
     def attach_agent(self, agent: MiniCodex) -> None:
         """Attach a MiniCodex instance and register the UI manager as a handler.
@@ -302,13 +347,17 @@ class AgentSession:
                     ),
                 ),
             )
-            # Track active run state for snapshot reconnection
-            self._active_run_id = run_id
-            self._active_run_started_at = started
+            # Track active run state
+            self.active_run = RunState(
+                run_id=run_id,
+                status="running",
+                started_at=started,
+                pending_approvals=[],
+                last_event_id=None,
+            )
+            self._run_counter += 1
             try:
                 logger.info("agent.run start", extra={"prompt_len": len(prompt)})
-                # Track active run id on session for snapshots
-                self._active_run_id = run_id
                 await self._agent.run(user_text=prompt)
                 logger.info("agent.run done")
             except asyncio.CancelledError:
@@ -321,9 +370,11 @@ class AgentSession:
                     ErrorEvt(code=ErrorCode.AGENT_ERROR, message="agent_run_exception")
                 )
             finally:
-                # Clear active run id/state and emit finished run_status
-                self._active_run_id = None
-                self._active_run_started_at = None
+                # Update run state to finished
+                if self.active_run:
+                    self.active_run.status = "finished"
+                    self.active_run.finished_at = datetime.now(UTC)
+                self.active_run = None
                 # Ensure all previously spawned payloads were sent before emitting finished
                 await self._manager.flush()
                 await self._manager.send_payload(
@@ -389,6 +440,19 @@ class PingIn(BaseModel):
     nonce: str | None = None
 
 
+class SetPolicyIn(BaseModel):
+    """User directly sets the approval policy (privileged operation)."""
+    type: Literal["set_policy"]
+    content: str
+
+
+class ApplyProposalIn(BaseModel):
+    """User approves or rejects a policy proposal (privileged operation)."""
+    type: Literal["apply_proposal"]
+    proposal_id: str
+    decision: Literal["approve", "reject"]
+
+
 IncomingMsg = Annotated[
     HelloIn
     | ResumeIn
@@ -398,7 +462,9 @@ IncomingMsg = Annotated[
     | DenyContinueIn
     | DenyIn
     | AbortIn
-    | PingIn,
+    | PingIn
+    | SetPolicyIn
+    | ApplyProposalIn,
     Field(discriminator="type"),
 ]
 
@@ -442,6 +508,12 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
                 "index_path": str(index_path),
             },
         )
+
+        # Create session with approval_hub from app.state if available
+        approval_hub = getattr(app.state, "approval_hub", None)
+        session = AgentSession(manager, approval_hub=approval_hub)
+        app.state.session = session
+
         # If a factory to build/attach the agent was provided, run it on this loop
         attach = getattr(app.state, "agent_factory", None)
         if attach is not None:
@@ -476,11 +548,10 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
             logger.exception("mcp __aexit__ on shutdown failed")
 
     manager = ConnectionManager()
-    session = AgentSession(manager)
 
-    # Store on app.state for external access when needed
+    # Store manager on app.state for external access when needed
     app.state.manager = manager
-    app.state.session = session
+    # Note: session will be created during startup with proper approval_hub
 
     @app.get("/", response_model=None)
     async def index() -> Response:
@@ -510,15 +581,18 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
 
     @app.websocket("/ws")
     async def websocket_endpoint(ws: WebSocket) -> None:
+        # Get the session created during startup
+        session = getattr(app.state, "session")
+
         await manager.connect(ws)
+        # Wire the session to the manager so it can access it for UI operations
+        manager._session = session
         # Ensure session is wired to the per-agent UI bus if provided by app.state
         ui_bus_obj = getattr(app.state, "ui_bus", None)
         if ui_bus_obj is not None:
             session.ui_bus = ui_bus_obj
         # Wire optional approval policy engine from app.state into this session
-        engine = getattr(app.state, "approval_engine", None)
-        if engine is not None:
-            setattr(session, "approval_engine", engine)
+        session.approval_engine = getattr(app.state, "approval_engine", None)
         # Ack connection so clients can verify liveness immediately
         await manager.send_payload(Accepted())
         try:
@@ -545,45 +619,22 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
                 match im:
                     case HelloIn() | ResumeIn() | GetSnapshotIn():
                         await manager.send_payload(Accepted())
-                        agent = session._agent
-                        if agent is None:
-                            names: list[str] = []
-                            sampling = None
-                        else:
-                            names = list(agent._mcp.server_names)
-                            sampling = await agent._mcp.sampling_snapshot()
-                        mcp_servers_list = [McpServerInfo(name=n) for n in names]
-                        # Build run_state snapshot with any in-flight approvals
-                        if session._active_run_id is not None:
-                            started_at = session._active_run_started_at or datetime.now(
-                                UTC
-                            )
-                            # Convert pending approvals from the approval hub
-                            briefs = []
-                            for req in session.approval_hub.pending():
-                                try:
-                                    args = json.loads(req.tool_call.args_json or "{}")
-                                except Exception:
-                                    args = {}
-                                briefs.append(
-                                    ApprovalBrief(
-                                        call_id=req.tool_call.call_id,
-                                        tool_key=req.tool_key,
-                                        args=args,
-                                    ).model_dump(mode="json")
+
+                        # Get async sampling data if agent available
+                        sampling = None
+                        if session._agent is not None:
+                            sampling = await session._agent._mcp.sampling_snapshot()
+
+                        # Update run state with current pending approvals if active
+                        if session.active_run:
+                            session.active_run.pending_approvals = [
+                                ApprovalBrief(
+                                    call_id=req.tool_call.call_id,
+                                    tool_key=req.tool_key,
+                                    args=json.loads(req.tool_call.args_json or "{}") if req.tool_call.args_json else {}
                                 )
-                            run_state_snapshot = RunState(
-                                run_id=session._active_run_id,
-                                status="running",
-                                started_at=started_at,
-                                finished_at=None,
-                                pending_approvals=TypeAdapter(
-                                    list[ApprovalBrief]
-                                ).validate_python(briefs),
-                                last_event_id=manager._event_id or None,
-                            )
-                        else:
-                            run_state_snapshot = None
+                                for req in session.approval_hub._requests.values()
+                            ]
                         # Drain pending UI messages, then emit UiState snapshot followed by legacy snapshot
                         await manager._emit_ui_bus_messages()
                         await manager.send_payload(
@@ -593,22 +644,9 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
                                 state=session.ui_state,
                             )
                         )
-                        await manager.send_payload(
-                            Snapshot(
-                                v=PROTOCOL_VERSION,
-                                session_state=SessionState(
-                                    session_id=manager._session_id,
-                                    version=PROTOCOL_VERSION,
-                                    capabilities=[],
-                                    last_event_id=manager._event_id or None,
-                                    active_run_id=session._active_run_id,
-                                    run_counter=0,
-                                ),
-                                run_state=run_state_snapshot,
-                                sampling=sampling,
-                                mcp_servers=mcp_servers_list,
-                            ),
-                        )
+                        # Build and send complete snapshot
+                        snapshot = session.build_snapshot(sampling=sampling)
+                        await manager.send_payload(snapshot)
                         continue
 
                 if isinstance(im, SendIn):
@@ -621,6 +659,10 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
 
                 if isinstance(im, ApproveIn):
                     session.approval_hub.resolve(im.call_id, ContinueDecision())
+                    # Send approval decision event to UI
+                    await manager.send_payload(
+                        ApprovalDecisionEvt(call_id=im.call_id, decision=ApprovalApprove())
+                    )
                     continue
 
                 if isinstance(im, DenyContinueIn):
@@ -631,11 +673,19 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
                     session.approval_hub.resolve(
                         im.call_id, BypassToolInjectOutput(result=denial_result)
                     )
+                    # Send approval decision event to UI
+                    await manager.send_payload(
+                        ApprovalDecisionEvt(call_id=im.call_id, decision=ApprovalDenyContinue())
+                    )
                     continue
 
                 if isinstance(im, DenyIn):
                     session.approval_hub.resolve(
                         im.call_id, AbortTurnDecision(reason="ui_deny")
+                    )
+                    # Send approval decision event to UI
+                    await manager.send_payload(
+                        ApprovalDecisionEvt(call_id=im.call_id, decision=ApprovalDenyAbort())
                     )
                     continue
 
@@ -651,6 +701,31 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
                                 code=ErrorCode.NOT_RUNNING, message="no_active_run"
                             )
                         )
+                    continue
+
+                if isinstance(im, SetPolicyIn):
+                    # User directly sets the approval policy
+                    if session.approval_engine:
+                        session.approval_engine.set_policy(im.content)
+                        await manager.send_payload(Accepted())
+                        # Send updated snapshot with new policy
+                        await manager.send_payload(session.build_snapshot())
+                    continue
+
+                if isinstance(im, ApplyProposalIn):
+                    # User approves or rejects a proposal
+                    if session.approval_engine:
+                        try:
+                            session.approval_engine.apply(im.proposal_id, im.decision)
+                            await manager.send_payload(Accepted())
+                            # Send updated snapshot with new policy if approved
+                            if im.decision == "approve":
+                                await manager.send_payload(session.build_snapshot())
+                        except KeyError as e:
+                            logger.warning(f"Proposal not found: {e}")
+                            await manager.send_payload(
+                                ErrorEvt(code=ErrorCode.INVALID_COMMAND, message=f"Proposal not found: {im.proposal_id}")
+                            )
                     continue
 
                 await manager.send_payload(

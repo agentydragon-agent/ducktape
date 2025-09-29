@@ -9,12 +9,15 @@ from adgn.llm.mini_codex.ui.protocol import (
     FunctionCallOutput,
     ApprovalDecisionEvt,
     UiMessageEvt,
+    UiEndTurnEvt,
 )
 
 from .state import (
     UiState,
     UserMessageItem,
     AssistantMarkdownItem,
+    EndTurnItem,
+    append_item,
     start_tool,
     update_tool_decision,
     update_tool_exec_stream,
@@ -31,6 +34,7 @@ def reduce_ui_state(state: UiState, evt: Any) -> UiState:
     - FunctionCallOutput
     - ApprovalDecisionEvt
     - UiMessageEvt
+    - UiEndTurnEvt
     """
     # User message
     if isinstance(evt, UserText):
@@ -44,6 +48,10 @@ def reduce_ui_state(state: UiState, evt: Any) -> UiState:
         return UiState(
             seq=state.seq + 1, items=[*state.items, AssistantMarkdownItem(md=md)]
         )
+
+    # End turn separator (from ui.end_turn)
+    if isinstance(evt, UiEndTurnEvt):
+        return append_item(state, EndTurnItem())
 
     # Tool call start → begin a group (attempt to derive cmd from args_json for exec tools)
     if isinstance(evt, ToolCall):
@@ -75,8 +83,8 @@ def reduce_ui_state(state: UiState, evt: Any) -> UiState:
             except Exception:
                 cmd = None
                 parsed_args = None
-        # For ui.send_message: do not create a ToolItem; UiMessageEvt after execution will surface AssistantMarkdown
-        if evt.name == "mcp__ui__send_message":
+        # For ui.send_message and ui.end_turn: do not create a ToolItem; UiMessageEvt/UiEndTurnEvt after execution will surface AssistantMarkdown/EndTurn
+        if evt.name in ("mcp__ui__send_message", "mcp__ui__end_turn"):
             return state
         return start_tool(
             state, tool=evt.name, call_id=evt.call_id, cmd=cmd, args=parsed_args
@@ -125,7 +133,7 @@ def reduce_ui_state(state: UiState, evt: Any) -> UiState:
             ):
                 tool_name = getattr(it, "tool", None)
                 break
-        if isinstance(tool_name, str) and tool_name == "mcp__ui__send_message":
+        if isinstance(tool_name, str) and tool_name in ("mcp__ui__send_message", "mcp__ui__end_turn"):
             return state
 
         result_payload = result_dict if result_dict else None

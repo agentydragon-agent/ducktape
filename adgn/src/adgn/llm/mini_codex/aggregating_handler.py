@@ -274,6 +274,35 @@ class SystemMessage(BaseModel):
     content: str
 
 
+
+def format_notifications_message(batch) -> UserMessage | None:
+    """Format MCP notifications as a system message.
+
+    Returns None if no notifications to format.
+    """
+    if not batch.resources_updated:
+        return None
+
+    # Group by server -> resource_versions
+    grouped: dict[str, dict[str, int]] = {}
+    for ev in batch.resources_updated:
+        resmap = grouped.setdefault(ev.server, {})
+        resmap[ev.uri] = ev.version
+
+    payload = json.dumps(
+        {
+            "servers": {
+                server: {"resource_versions": resmap}
+                for server, resmap in grouped.items()
+            }
+        }
+    )
+
+    # Insert as input-side user message, clearly tagged as a system notification
+    tagged = f"<system notification>\n{payload}\n</system notification>"
+    return UserMessage.text(tagged)
+
+
 class NotificationsHandler(BaseHandler):
     """Deliver MCP notifications as one batched system message via Continue.inserts_input.
 
@@ -288,26 +317,18 @@ class NotificationsHandler(BaseHandler):
 
     def on_before_sample(self):
         batch = self._mcp.poll_notifications()
-        if not batch.resources_updated:
+        msg = format_notifications_message(batch)
+
+        if msg is None:
             logger.debug("NotificationsHandler: no updates")
             return NoLoopDecision()
-        # Group by server -> resource_versions
-        grouped: dict[str, dict[str, int]] = {}
-        for ev in batch.resources_updated:
-            resmap = grouped.setdefault(ev.server, {})
-            resmap[ev.uri] = ev.version
-        payload = json.dumps(
-            {
-                "servers": {
-                    server: {"resource_versions": resmap}
-                    for server, resmap in grouped.items()
-                }
-            }
-        )
+
         self._msg_counter += 1
-        # Insert as input-side user message, clearly tagged as a system notification
-        tagged = f"<system notification>\n{payload}\n</system notification>"
-        msg = UserMessage.text(tagged)
+        logger.info(
+            "NotificationsHandler: delivering %d updates (msg #%d)",
+            len(batch.resources_updated),
+            self._msg_counter,
+        )
         return Continue(Auto(), inserts_input=(msg,))
 
     # ---- Event forwarding (typed, observer-only) ----

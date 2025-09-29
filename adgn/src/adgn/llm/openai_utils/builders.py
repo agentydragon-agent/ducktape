@@ -14,16 +14,16 @@ import json
 from .model import (
     AssistantMessageOut,
     OutputText,
-    FunctionCallOut,
-    FunctionCallOutputOut,
+    FunctionCallItem,
+    FunctionCallOutputItem,
 )
 
 
 def make_item_tool_call(
     *, call_id: str, name: str, arguments: dict[str, Any] | str
-) -> FunctionCallOut:
+) -> FunctionCallItem:
     args_json = json.dumps(arguments) if isinstance(arguments, dict) else str(arguments)
-    return FunctionCallOut(call_id=call_id, name=name, arguments=args_json)
+    return FunctionCallItem(call_id=call_id, name=name, arguments=args_json)
 
 
 def make_item_assistant_text(text: str) -> AssistantMessageOut:
@@ -50,7 +50,7 @@ class ItemFactory:
         name: str,
         arguments: dict[str, Any] | str,
         call_id: str | None = None,
-    ) -> FunctionCallOut:
+    ) -> FunctionCallItem:
         cid = call_id or self.next_call_id()
         return make_item_tool_call(call_id=cid, name=name, arguments=arguments)
 
@@ -63,13 +63,13 @@ class ItemFactory:
         arguments: dict[str, Any] | str,
         output: Any,
         call_id: str | None = None,
-    ) -> tuple[FunctionCallOut, FunctionCallOutputOut]:
+    ) -> tuple[FunctionCallItem, FunctionCallOutputItem]:
         call = self.tool_call(name, arguments, call_id)
-        if isinstance(output, FunctionCallOutputOut):
+        if isinstance(output, FunctionCallOutputItem):
             if output.call_id == call.call_id:
                 out = output
             else:  # keep payload but align call_id
-                out = FunctionCallOutputOut(call_id=call.call_id, output=output.output)
+                out = FunctionCallOutputItem(call_id=call.call_id, output=output.output)
         else:
             if isinstance(output, str):
                 out_str = output
@@ -78,5 +78,5 @@ class ItemFactory:
                     out_str = json.dumps(output)
                 except TypeError:
                     out_str = str(output)
-            out = FunctionCallOutputOut(call_id=call.call_id, output=out_str)
+            out = FunctionCallOutputItem(call_id=call.call_id, output=out_str)
         return call, out

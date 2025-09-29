@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import json
 import logging
 import re
@@ -7,13 +5,14 @@ from typing import Iterable, Literal, cast
 from urllib.parse import urlparse
 
 from adgn.llm.mcp.notifying_fastmcp import NotifyingFastMCP
+from adgn.llm.mcp._shared.fastmcp_helpers import mcp_flat_model
 from adgn.llm.mini_codex.approvals import (
     ApprovalPolicyEngine,
     ApprovalStatus,
     ProposalSnapshot,
 )
 from mcp.server.fastmcp.server import MCPResource, ReadResourceContents
-from pydantic import AnyUrl, BaseModel, TypeAdapter
+from pydantic import AnyUrl, BaseModel, ConfigDict, Field, TypeAdapter
 
 # Approval policy resource scheme and helpers
 APPROVAL_SCHEME = "approval-policy"
@@ -29,10 +28,20 @@ POLICY_URI: AnyUrl = _AnyUrlAdapter.validate_python(
 logger = logging.getLogger("adgn.mcp")
 
 
-def make_proposal_uri(pid: str) -> AnyUrl:
-    return _AnyUrlAdapter.validate_python(
-        f"{APPROVAL_SCHEME}://{PROPOSALS_HOST}/{pid}{PROPOSAL_SUFFIX}"
-    )
+class ProposeInput(BaseModel):
+    source: str = Field(description="Source code for the proposal")
+    rationale: str | None = Field(default=None, description="Optional rationale for the proposal")
+    model_config = ConfigDict(extra="forbid")
+
+
+class WithdrawInput(BaseModel):
+    proposal_id: str = Field(description="ID of the proposal to withdraw")
+    model_config = ConfigDict(extra="forbid")
+
+
+class GetStatusInput(BaseModel):
+    """Empty input for get_status (keeps single-arg typed pattern consistent)."""
+    model_config = ConfigDict(extra="forbid")
 
 
 class ProposalCreated(BaseModel):
@@ -42,6 +51,12 @@ class ProposalCreated(BaseModel):
 class OperationResult(BaseModel):
     ok: bool
     error: str | None = None
+
+
+def make_proposal_uri(pid: str) -> AnyUrl:
+    return _AnyUrlAdapter.validate_python(
+        f"{APPROVAL_SCHEME}://{PROPOSALS_HOST}/{pid}{PROPOSAL_SUFFIX}"
+    )
 
 
 class ApprovalPolicyServer(NotifyingFastMCP):
@@ -61,8 +76,10 @@ class ApprovalPolicyServer(NotifyingFastMCP):
     Tools:
       - propose(source: str, rationale?: str) -> { proposal_id }
       - withdraw(proposal_id: str) -> { ok }
-      - apply(proposal_id: str, decision: "approve"|"reject") -> { ok }
       - get_status() -> engine status dict
+
+    Note: apply() is intentionally NOT exposed as a tool. Only humans should
+    approve/reject proposals through the UI or other control interfaces.
 
     Notes:
       - On engine changes, ResourceUpdatedNotification is emitted via broadcast_resource_updated(uri)
@@ -75,7 +92,13 @@ class ApprovalPolicyServer(NotifyingFastMCP):
     ) -> None:
         super().__init__(
             name=name,
-            instructions="Editable approval policy controlling auto-approvals",
+            instructions=(
+                "Approval policy system controlling which tools are auto-approved, denied, or require manual approval.\n"
+                "- Read approval-policy://policy.py to see the current policy code\n"
+                "- Use propose() to submit policy changes for review\n"
+                "- Policy decides: 'allow' (auto-approve), 'ask' (manual approval), 'deny_continue' (deny but continue), 'deny_abort' (deny and abort)\n"
+                "- Default policy allows UI tools and approval management, asks for everything else"
+            ),
         )
         self._engine = engine
 
@@ -91,29 +114,61 @@ class ApprovalPolicyServer(NotifyingFastMCP):
         # Install notifier hook on the engine (required wiring)
         self._engine.set_notifier(_notify)
 
-        # Tools
-        @self.tool()
-        async def propose(source: str, rationale: str | None = None) -> ProposalCreated:
-            pid = self._engine.create_proposal(source=source, rationale=rationale)
-            # Engine will trigger _notify(proposals/{id}.json)
-            return ProposalCreated(proposal_id=pid)
+        # Register tools
+        self._register_tools()
 
-        @self.tool()
-        async def withdraw(proposal_id: str) -> OperationResult:
-            self._engine.withdraw(proposal_id)
-            return OperationResult(ok=True)
+    def _register_tools(self) -> None:
+        """Register tools with proper type annotations."""
+        # Register the instance methods as tools
+        self.tool(
+            name="propose",
+            title="Propose policy change",
+            description="Submit a new proposal for approval policy changes",
+            structured_output=True,
+        )(self.propose_tool)
 
-        @self.tool()
-        async def apply(
-            proposal_id: str, decision: Literal["approve", "reject"]
-        ) -> OperationResult:
-            self._engine.apply(proposal_id, decision)
-            # On approve, engine.set_policy() is called which will trigger _notify(policy.py)
-            return OperationResult(ok=True)
+        self.tool(
+            name="withdraw",
+            title="Withdraw proposal",
+            description="Withdraw an existing proposal",
+            structured_output=True,
+        )(self.withdraw_tool)
 
-        @self.tool()
-        async def get_status() -> ApprovalStatus:
-            return self._engine.get_status()
+        self.tool(
+            name="get_status",
+            title="Get approval status",
+            description="Get current approval policy status and proposals",
+            structured_output=True,
+        )(self.get_status_tool)
+
+    async def propose_tool(self, source: str, rationale: str | None = None) -> ProposalCreated:
+        return await self._propose(source, rationale)
+
+    async def withdraw_tool(self, proposal_id: str) -> OperationResult:
+        return await self._withdraw(proposal_id)
+
+    async def get_status_tool(self) -> ApprovalStatus:
+        return await self._get_status()
+
+    # Tool implementations
+    async def _propose(self, source: str, rationale: str | None = None) -> ProposalCreated:
+        pid = self._engine.create_proposal(source=source, rationale=rationale)
+        # Engine will trigger _notify(proposals/{id}.json)
+        return ProposalCreated(proposal_id=pid)
+
+    async def _withdraw(self, proposal_id: str) -> OperationResult:
+        self._engine.withdraw(proposal_id)
+        return OperationResult(ok=True)
+
+    async def _apply(
+        self, proposal_id: str, decision: Literal["approve", "reject"]
+    ) -> OperationResult:
+        self._engine.apply(proposal_id, decision)
+        # On approve, engine.set_policy() is called which will trigger _notify(policy.py)
+        return OperationResult(ok=True)
+
+    async def _get_status(self) -> ApprovalStatus:
+        return self._engine.get_status()
 
     # ---- Resources (dynamic, backed by engine) ----
     async def list_resources(self) -> list[MCPResource]:

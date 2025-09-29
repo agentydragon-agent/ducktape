@@ -18,11 +18,13 @@ from adgn.llm.client_factory import build_client
 from adgn.llm.logging_config import configure_logging
 from adgn.llm.mini_codex.agent import MiniCodex
 from adgn.llm.mini_codex.aggregating_handler import AutoHandler, NotificationsHandler
+from adgn.llm.mini_codex.approvals import ApprovalHub, ApprovalPolicyEngine
 from adgn.llm.mini_codex.event_renderer import DisplayEventsHandler
-from adgn.llm.mini_codex.ui.ui_handler import UiAutoHandler
+from adgn.llm.mini_codex.ui.ui_handler import UiModeHandler
 from adgn.llm.mini_codex.mcp_manager import McpManager
 from adgn.llm.mini_codex.ui.server import create_app
 from adgn.llm.mini_codex.ui.system_message import get_ui_system_message
+from adgn.llm.mcp.approval_policy.server import ApprovalPolicyServer
 from adgn.llm.mcp.inproc_transport import make_inproc_slot_spec
 from adgn.llm.mcp.ui.server import make_ui_mcp
 from adgn.llm.mini_codex.ui.shared_bus import UiBus
@@ -106,12 +108,22 @@ def _configure_logging_info() -> None:
             h.setLevel(logging.INFO)
 
 
+def _configure_logging_debug() -> None:
+    """Configure logging with DEBUG level on console for UI commands to show OpenAI traffic."""
+    configure_logging()
+    # Set root logger level to DEBUG
+    logging.getLogger().setLevel(logging.DEBUG)
+    # Set console handler to DEBUG
+    for h in logging.getLogger().handlers:
+        if isinstance(h, logging.StreamHandler):
+            h.setLevel(logging.DEBUG)
+
+
 def _make_handlers(mcp: McpManager, ui_bus: UiBus | None = None) -> list[Any]:
-    # UI mode: force tool use + bus-driven end_turn
+    # UI mode: single handler for notifications + RequireAny
     if ui_bus is not None:
         return [
-            UiAutoHandler(bus=ui_bus),
-            NotificationsHandler(mcp),
+            UiModeHandler(bus=ui_bus, poll_notifications=mcp.poll_notifications),
             DisplayEventsHandler(),
         ]
     # Headless/default: allow agent to sample normally via AutoHandler
@@ -188,7 +200,7 @@ async def _serve_async(
     system: str | None,
     mcp_configs: list[Path],
 ) -> None:
-    _configure_logging_info()
+    _configure_logging_debug()  # Enable DEBUG logging to show OpenAI traffic
 
     print("mini-codex serve: starting agent + UI server")
 
@@ -197,15 +209,26 @@ async def _serve_async(
     ui_bus = UiBus()
     specs["ui"] = make_inproc_slot_spec(make_ui_mcp("ui", ui_bus))
 
+    # Create approval system components
+    approval_engine = ApprovalPolicyEngine()
+    approval_hub = ApprovalHub()
+
+    # Add the approval policy MCP server so the agent can manage policies
+    approval_server = ApprovalPolicyServer(approval_engine)
+    specs["approval_policy"] = make_inproc_slot_spec(approval_server)
+
     # Build the FastAPI app and attach an agent factory so the agent (and MCP manager)
     # are created on the uvicorn event loop thread, avoiding cross-loop awaits.
     app = create_app()
     # expose per-agent UI bus to the UI server for draining/snapshotting
     app.state.ui_bus = ui_bus
+    # Wire approval engine so the UI can access it
+    app.state.approval_engine = approval_engine
+    app.state.approval_hub = approval_hub
 
     async def _agent_factory() -> MiniCodex:
         # Create independent client/manager bound to the uvicorn loop
-        inner_client = build_client(model)
+        inner_client = build_client(model, enable_debug_logging=True)
         inner_mcp = McpManager(specs)
         await inner_mcp.__aenter__()
         agent = await MiniCodex.create(
@@ -214,6 +237,8 @@ async def _serve_async(
             system=_effective_ui_system(system),
             client=inner_client,
             handlers=_make_handlers(inner_mcp, ui_bus=ui_bus),
+            approval_engine=approval_engine,
+            approval_hub=approval_hub,
         )
         # Stash for potential shutdown handling (future)
         app.state._inner_mcp = inner_mcp
@@ -270,7 +295,7 @@ def dev(
     open_browser: bool = typer.Option(True, "--open-browser/--no-open-browser"),
 ) -> None:
     """Run dev mode: Vite frontend (HMR) + backend in one command."""
-    _configure_logging_info()
+    _configure_logging_debug()  # Enable DEBUG logging to show OpenAI traffic
 
     web_dir = Path(__file__).parent / "ui" / "web"
     if not (web_dir / "package.json").exists():
@@ -322,13 +347,24 @@ def dev(
             with contextlib.suppress(Exception):
                 subprocess.Popen(["open", url])
 
+        # Create approval system components
+        approval_engine = ApprovalPolicyEngine()
+        approval_hub = ApprovalHub()
+
+        # Add the approval policy MCP server
+        approval_server = ApprovalPolicyServer(approval_engine)
+        specs["approval_policy"] = make_inproc_slot_spec(approval_server)
+
         # Build FastAPI app and attach an agent factory created on the uvicorn loop
         app_fastapi = create_app()
         # expose per-agent UI bus to the UI server for draining/snapshotting
         app_fastapi.state.ui_bus = ui_bus
+        # Wire approval system
+        app_fastapi.state.approval_engine = approval_engine
+        app_fastapi.state.approval_hub = approval_hub
 
         async def _agent_factory() -> MiniCodex:
-            inner_client = build_client(model)
+            inner_client = build_client(model, enable_debug_logging=True)
             inner_mcp = McpManager(specs)
             await inner_mcp.__aenter__()
             agent = await MiniCodex.create(
@@ -337,6 +373,8 @@ def dev(
                 system=_effective_ui_system(system),
                 client=inner_client,
                 handlers=_make_handlers(inner_mcp, ui_bus=ui_bus),
+                approval_engine=approval_engine,
+                approval_hub=approval_hub,
             )
             app_fastapi.state._inner_mcp = inner_mcp
             app_fastapi.state._inner_agent = agent

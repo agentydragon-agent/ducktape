@@ -8,7 +8,7 @@ import pytest
 from adgn.llm.openai_utils.model import (
     ResponsesResult,
     AssistantMessageOut,
-    FunctionCallOut,
+    FunctionCallItem,
     ReasoningItem,
     Usage as PUsage,
 )
@@ -55,7 +55,7 @@ class ResponsesFactory(builders.ItemFactory):
 
     def make_item_tool_call_auto(
         self, name: str, arguments: dict | str
-    ) -> FunctionCallOut:
+    ) -> FunctionCallItem:
         return self.tool_call(name, arguments)
 
     # ---- Message/response constructors (compose items) ----

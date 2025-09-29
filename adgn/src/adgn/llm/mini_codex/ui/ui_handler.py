@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-
 from pydantic import BaseModel
+from typing import Callable, TYPE_CHECKING
 
+from adgn.llm.mini_codex.aggregating_handler import format_notifications_message
 from adgn.llm.mini_codex.handler import (
     BaseHandler,
     BeforeToolCallDecision,
@@ -12,17 +13,38 @@ from adgn.llm.mini_codex.handler import (
 from adgn.llm.mini_codex.loop_control import Continue, Abort, RequireAny
 from adgn.llm.mini_codex.ui.shared_bus import UiBus
 
+# Import just the NotificationsBatch type - it's a lightweight Pydantic model
+from adgn.llm.mini_codex.mcp_manager import NotificationsBatch
 
-class UiAutoHandler(BaseModel, BaseHandler):
-    """Combine tool-required loop control with bus-driven end_turn (no name parsing)."""
+
+class UiModeHandler(BaseModel, BaseHandler):
+    """UI mode handler combining notifications delivery and RequireAny policy.
+
+    Single handler that:
+    1. Checks for end_turn signal and aborts if set
+    2. Delivers any pending MCP notifications as system messages
+    3. Enforces RequireAny tool policy for UI interaction
+    """
 
     bus: UiBus
+    poll_notifications: Callable[[], NotificationsBatch]  # Light dependency - just a function
 
     def on_before_sample(self):
+        # First check end_turn
         if self.bus.consume_end_turn():
             return Abort()
-        # Always require tool use; agent must produce UI via ui.send_message and end via ui.end_turn
+
+        # Check for and deliver notifications using shared logic
+        batch = self.poll_notifications()
+        msg = format_notifications_message(batch)
+
+        if msg is not None:
+            # Return Continue with RequireAny policy AND the notification message
+            return Continue(RequireAny(), inserts_input=(msg,))
+
+        # No notifications - just require tool use
         return Continue(RequireAny())
+
 
     async def before_tool_call(self, evt: ToolCall) -> BeforeToolCallDecision:
         # No per-tool interception needed; end-turn is handled via BUS in on_before_sample

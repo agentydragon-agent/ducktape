@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable
 import json
+import logging
 from typing import Any, Literal, Optional, cast
 import uuid
 from dataclasses import dataclass
@@ -11,6 +12,8 @@ from datetime import datetime, timezone
 # Control-plane exception raised when an approval decision requests aborting the turn
 from mcp import types as mcp_types
 from pydantic import BaseModel, ConfigDict
+
+logger = logging.getLogger("mini_codex.approvals")
 
 from adgn.llm.mini_codex.handler import (
     AbortTurnDecision,
@@ -243,6 +246,49 @@ class ApprovalStatus(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+DEFAULT_APPROVAL_POLICY = '''def decide(ctx):
+    """Default approval policy.
+
+    Always allows:
+    - UI communication tools (send_message, end_turn)
+    - Approval policy management (get_status, propose, withdraw)
+    - All resource operations (list, read) including policy.py and proposals
+    - All operations on the approval_policy server
+
+    Asks for approval on everything else.
+
+    Args:
+        ctx: Dict with keys: server, tool, tool_key, arguments
+
+    Returns:
+        "allow" | "ask" | "deny_continue" | "deny_abort"
+    """
+    tool_key = ctx.get("tool_key", "")
+    server = ctx.get("server", "")
+
+    # Always allow UI communication
+    if tool_key in ("mcp__ui__send_message", "mcp__ui__end_turn"):
+        return "allow"
+
+    # Always allow approval policy management operations
+    if tool_key in ("mcp__approval_policy__get_status",
+                    "mcp__approval_policy__propose",
+                    "mcp__approval_policy__withdraw"):
+        return "allow"
+
+    # Always allow reading and listing resources (including policy.py and proposals)
+    if tool_key.startswith("mcp__resources__"):
+        return "allow"
+
+    # Allow reading resources directly from approval_policy server
+    if server == "approval_policy":
+        return "allow"
+
+    # Ask for everything else by default
+    return "ask"
+'''
+
+
 class ApprovalPolicyEngine:
     """Holds editable policy source and a single open proposal (in memory).
 
@@ -251,8 +297,8 @@ class ApprovalPolicyEngine:
     """
 
     def __init__(self, notifier: Callable[[str], None] | None = None) -> None:
-        self._policy_source: str = ""
-        self._policy_version: int = 0
+        self._policy_source: str = DEFAULT_APPROVAL_POLICY
+        self._policy_version: int = 1  # Start at 1 since we have default content
         self._proposals: dict[str, Proposal] = {}
         self._open_id: str | None = None
         # Notifier receives a resource URI (e.g., "approval-policy://policy.py" or proposals/{id}.json)
@@ -279,15 +325,11 @@ class ApprovalPolicyEngine:
     def decide(self, ctx: dict[str, Any]) -> str:
         """Evaluate policy; returns one of: allow|deny_continue|deny_abort|ask.
 
-        Safe default: allow ui.send_message, ask otherwise. Executes user policy if present.
+        Executes the current policy if present, otherwise returns "ask".
         """
-        try:
-            if ctx.get("tool_key") == build_mcp_function("ui", "send_message"):
-                return "allow"
-        except Exception:
-            pass
         src = (self._policy_source or "").strip()
         if not src:
+            logger.debug("ApprovalPolicyEngine.decide: no policy source, returning 'ask'")
             return "ask"
         ns: dict[str, Any] = {}
         try:
@@ -295,6 +337,11 @@ class ApprovalPolicyEngine:
             fn = ns.get("decide")
             if callable(fn):
                 out = fn(dict(ctx))
+                logger.debug(
+                    "ApprovalPolicyEngine.decide: tool_key=%s, result=%s",
+                    ctx.get("tool_key"),
+                    out
+                )
                 if out in {"allow", "deny_continue", "deny_abort", "ask"}:
                     return cast(str, out)
         except Exception:
@@ -403,6 +450,11 @@ class ApprovalPolicyHandler(BaseHandler):
         }
 
         mode = self._engine.decide(ctx)
+        logger.debug(
+            "ApprovalPolicyHandler decision: tool_key=%s, mode=%s",
+            ctx.get("tool_key"),
+            mode
+        )
         if mode == "allow":
             return ContinueDecision()
         if mode == "deny_abort":

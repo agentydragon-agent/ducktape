@@ -21,13 +21,11 @@ from adgn.llm.openai_utils.model import (
     ReasoningItem,
     FunctionCallItem,
     FunctionCallOutputItem,
-    FunctionCallOutputOut,
     InputItem,
     ToolChoice,
     ToolChoiceFunction,
     OpenAIModelProto,
     ReasoningEffort,
-    FunctionCallOut,
     AssistantMessageOut,
 )
 
@@ -257,22 +255,63 @@ class MiniCodex:
         """
         instructions = self._system
         snap = await self._mcp.sampling_snapshot()  # structured (servers, tools)
-        lines: list[str] = []
+
+        # Get resources for all running servers
+        try:
+            all_resources = await self._mcp.list_resources()
+            resources_by_server = {}
+            for res in all_resources:
+                server_name = res.get("server", "unknown")
+                if server_name not in resources_by_server:
+                    resources_by_server[server_name] = []
+                resources_by_server[server_name].append(res)
+        except Exception:
+            # If resources fail to load, continue without them
+            resources_by_server = {}
+
+        server_blocks: list[str] = []
         for s in snap.servers:
             if s.state != "running":
                 continue
             name = s.name
             init = s.initialize
             desc = init.instructions if init else None
-            entry = f"server={name}"
+
+            # Start server block with XML-like tag
+            block_lines = [f"<server name=\"{name}\">"]
+
+            # Add instructions/description
             if desc:
-                # Keep brief; avoid flooding the header
-                snippet = desc.strip().splitlines()
-                if snippet:
-                    entry += f"\n  <{name} server desc>\n{snippet[0]}\n  </{name} server desc>"
-            lines.append(entry)
-        if lines:
-            banner = "FYI: MCP servers:\n- " + "\n- ".join(lines)
+                desc_lines = desc.strip().splitlines()
+                block_lines.append("  <instructions>")
+                for line in desc_lines:
+                    block_lines.append(f"    {line}")
+                block_lines.append("  </instructions>")
+
+            # Add resources if available
+            server_resources = resources_by_server.get(name, [])
+            if server_resources:
+                block_lines.append("  <resources>")
+                for res in server_resources[:5]:  # Limit to first 5 resources
+                    uri = res.get("uri", "")
+                    res_name = res.get("name", "")
+                    mime_type = res.get("mimeType", "")
+                    if uri:
+                        res_desc = f"uri=\"{uri}\""
+                        if res_name and res_name != uri:
+                            res_desc += f" name=\"{res_name}\""
+                        if mime_type:
+                            res_desc += f" type=\"{mime_type}\""
+                        block_lines.append(f"    <resource {res_desc} />")
+                if len(server_resources) > 5:
+                    block_lines.append(f"    ... and {len(server_resources) - 5} more")
+                block_lines.append("  </resources>")
+
+            block_lines.append(f"</server>")
+            server_blocks.append("\n".join(block_lines))
+
+        if server_blocks:
+            banner = "FYI: MCP servers:\n\n" + "\n\n".join(server_blocks)
             instructions += f"\n\n{banner}"
         return instructions
 
@@ -454,12 +493,12 @@ class MiniCodex:
             # Skip sampling: treat handler-provided inserts_input as if they were
             # model output items for this phase and process them via the normal
             # output path (adds assistant text, enqueues tool calls, etc.).
-            out_items: list[ReasoningItem | FunctionCallOut | AssistantMessageOut] = []
+            out_items: list[ReasoningItem | FunctionCallItem | AssistantMessageOut] = []
             for it in list(decision.inserts_input):
-                if isinstance(it, (ReasoningItem, FunctionCallOut, AssistantMessageOut)):
+                if isinstance(it, (ReasoningItem, FunctionCallItem, AssistantMessageOut)):
                     out_items.append(it)
                 elif isinstance(it, FunctionCallItem):
-                    out_items.append(FunctionCallOut.from_input_item(it))
+                    out_items.append(it)  # No conversion needed anymore
                 else:
                     raise TypeError(
                         f"Unsupported skip_sampling inserts_input item type: {type(it).__name__}"
@@ -516,7 +555,7 @@ class MiniCodex:
 
     def _process_resp_output(
         self,
-        resp_output: list[ReasoningItem | FunctionCallOut | AssistantMessageOut],
+        resp_output: list[ReasoningItem | FunctionCallItem | AssistantMessageOut],
     ) -> None:
         self.pending_function_calls.clear()
         # Skip items that are already present in our transcript (id collision).
@@ -543,7 +582,7 @@ class MiniCodex:
                 self._controller.on_assistant_text(AssistantText(text=text))
                 # Store assistant as our input item type to avoid secondary translation
                 self._transcript.append(item.to_input_item())
-            elif isinstance(item, FunctionCallOutputOut):
+            elif isinstance(item, FunctionCallOutputItem):
                 try:
                     result = _call_tool_result_from_json(item.output)
                 except Exception as exc:  # pragma: no cover - defensive
@@ -560,8 +599,8 @@ class MiniCodex:
                         for fc in self.pending_function_calls
                         if fc.call_id != item.call_id
                     ]
-            elif isinstance(item, FunctionCallOut):
-                fc_local = item.to_input_item()
+            elif isinstance(item, FunctionCallItem):
+                fc_local = item  # No conversion needed anymore
                 self._controller.on_tool_call(
                     ToolCall(
                         name=item.name, args_json=item.arguments, call_id=item.call_id

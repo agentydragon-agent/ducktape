@@ -124,6 +124,9 @@ class NotifyingFastMCP(FlatModelToolMixin, FastMCP):
         base_decorator = super().tool(*args, **kwargs)
 
         def _decorator(fn):
+            import functools
+
+            @functools.wraps(fn)
             async def _wrapped(*a, **kw):
                 result = await fn(*a, **kw)
                 # Capture after handler ran to ensure request_context is populated
