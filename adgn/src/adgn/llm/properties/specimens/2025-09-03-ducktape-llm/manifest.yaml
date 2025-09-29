@@ -2,7 +2,7 @@ source:
   vcs: github
   org: agentydragon
   repo: ducktape
-  ref: 719a7c445c7c4101a3b554686e9ef486eb28ac74
+  ref: 4ad330138e1dd0de43f86ceb65e037663636e2f9
 scope:
   include:
     - "llm/adgn_llm/src/adgn_llm/git_commit_ai/**/*.py"
