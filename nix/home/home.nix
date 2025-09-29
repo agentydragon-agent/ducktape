@@ -17,7 +17,7 @@
 #
 # Tools where Nix takes precedence (moved to cli_nix_migrated in Ansible):
 #   - neovim (Nix: unstable version)
-#   - Node.js (Nix: nodejs_20)
+#   - Node.js (Nix: nodejs_22)
 #   - Rust (Nix: rustc/cargo packages)
 
 let
@@ -170,7 +170,7 @@ in
     gh glab gitstatus
 
     # Node/JS dev
-    nodejs_20  # LTS version
+    nodejs_22  # LTS version (v22 is the current LTS as of Nov 2024)
     nodePackages.pnpm
     bun
 
