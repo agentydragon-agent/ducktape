@@ -45,13 +45,44 @@
   let promptEl: HTMLTextAreaElement | null = null
   let renderMarkdown = true
   let uiState: any = null
-  let approvalPolicy: { content: string; version: number } | null = null
+  let approvalPolicy: { content: string; version: number; proposals?: Array<{id: string, status: string, rationale?: string, source: string}> } | null = null
   let policyProposal: { id: string; content: string; rationale?: string } | null = null
   let showPolicyEditor = false
+  let activeTab = 'approvals'
   let editingPolicy = ''
+  let sidebarWidth = 280
 
   // Persist settings reactively
   $: try { localStorage.setItem('renderMarkdown', JSON.stringify(renderMarkdown)) } catch {}
+  $: try { localStorage.setItem('sidebarWidth', JSON.stringify(sidebarWidth)) } catch {}
+
+  // Load saved sidebar width
+  onMount(() => {
+    try {
+      const saved = localStorage.getItem('sidebarWidth')
+      if (saved) sidebarWidth = JSON.parse(saved)
+    } catch {}
+  })
+
+  // Resize functionality
+  let isResizing = false
+  function startResize() {
+    isResizing = true
+    document.addEventListener('mousemove', handleResize)
+    document.addEventListener('mouseup', stopResize)
+  }
+
+  function handleResize(e: MouseEvent) {
+    if (!isResizing) return
+    const newWidth = window.innerWidth - e.clientX
+    sidebarWidth = Math.max(200, Math.min(500, newWidth))
+  }
+
+  function stopResize() {
+    isResizing = false
+    document.removeEventListener('mousemove', handleResize)
+    document.removeEventListener('mouseup', stopResize)
+  }
 
 
   function connect() {
@@ -168,6 +199,14 @@
     sendJson({ type: 'deny', call_id })
   }
 
+  function approveProposal(proposalId: string) {
+    sendJson({ type: 'apply_proposal', proposal_id: proposalId, decision: 'approve' })
+  }
+
+  function rejectProposal(proposalId: string) {
+    sendJson({ type: 'apply_proposal', proposal_id: proposalId, decision: 'reject' })
+  }
+
   function setPolicy(content: string) {
     sendJson({ type: 'set_policy', content })
     showPolicyEditor = false
@@ -223,7 +262,7 @@
   })
 </script>
 
-<main class="shell">
+<main class="shell" style="grid-template-columns: 1fr {sidebarWidth}px">
   <section class="chat">
     {#if lastError}
       <div class="error">Error: {lastError}</div>
@@ -309,108 +348,160 @@
   </section>
 
   <aside class="sidebar">
-    <div class="ws">
-      <span class="dot {connected ? 'on' : 'off'}"></span>
-      <span>{connected ? 'connected' : 'disconnected'}</span>
+    <div class="resize-handle" on:mousedown={startResize}></div>
+
+    <div class="sidebar-header">
+      <div class="ws">
+        <span class="dot {connected ? 'on' : 'off'}"></span>
+        <span>{connected ? 'connected' : 'disconnected'}</span>
+      </div>
+      <div class="status">Status: {status}</div>
     </div>
-    <div class="status">Status: {status}</div>
-    <div class="servers">
-      <h4>Servers</h4>
-      {#if mcpServers.length}
-        {#each mcpServers as serverName}
-          {@const serverTools = mcpTools.filter(t => t.name.startsWith(`mcp__${serverName}__`))}
-          <div class="server-item">
-            <div class="server-header" on:click={() => {
-              serverExpandedState.set(serverName, !serverExpandedState.get(serverName))
-              serverExpandedState = serverExpandedState
-            }}>
-              <span class="disclosure">{serverExpandedState.get(serverName) ? '▼' : '▶'}</span>
-              <span class="server-name">{serverName}</span>
-              <span class="tool-count">({serverTools.length} tools)</span>
-            </div>
-            {#if serverExpandedState.get(serverName)}
-              <div class="tools-list">
-                {#each serverTools as tool}
-                  {@const toolKey = tool.name}
-                  <div class="tool-item">
-                    <div class="tool-header" on:click={() => {
-                      toolExpandedState.set(toolKey, !toolExpandedState.get(toolKey))
-                      toolExpandedState = toolExpandedState
-                    }}>
-                      <span class="disclosure">{toolExpandedState.get(toolKey) ? '▼' : '▶'}</span>
-                      <span class="tool-name">{tool.name.replace(`mcp__${serverName}__`, '')}</span>
-                    </div>
-                    {#if toolExpandedState.get(toolKey)}
-                      <div class="tool-details">
-                        {#if tool.description}
-                          <div class="tool-description">{tool.description}</div>
-                        {/if}
-                        <div class="tool-schema">
-                          <div class="schema-label">Parameters:</div>
-                          <div use:jsonView={tool.parameters}></div>
-                        </div>
-                      </div>
-                    {/if}
-                  </div>
-                {/each}
+
+    <div class="tabs">
+      <button class="tab {activeTab === 'approvals' ? 'active' : ''}" on:click={() => activeTab = 'approvals'}>
+        Approvals
+        {#if pending.size > 0}<span class="badge">{pending.size}</span>{/if}
+      </button>
+      <button class="tab {activeTab === 'servers' ? 'active' : ''}" on:click={() => activeTab = 'servers'}>
+        Servers ({mcpServers.length})
+      </button>
+      <button class="tab {activeTab === 'settings' ? 'active' : ''}" on:click={() => activeTab = 'settings'}>
+        Settings
+      </button>
+    </div>
+
+    <div class="tab-content">
+      {#if activeTab === 'approvals'}
+        <div class="approvals-tab">
+          <div class="policy">
+            <h4>Approval Policy {#if approvalPolicy}<small>(v{approvalPolicy.version})</small>{/if}</h4>
+            {#if !showPolicyEditor}
+              {#if approvalPolicy}
+                <pre class="policy-content">{approvalPolicy.content}</pre>
+                <button on:click={startEditingPolicy}>Edit Policy</button>
+              {:else}
+                <div class="empty">No policy loaded</div>
+              {/if}
+            {:else}
+              <textarea
+                bind:value={editingPolicy}
+                rows="15"
+                placeholder="def decide(ctx): ..."
+                class="policy-editor"
+              ></textarea>
+              <div class="row">
+                <button on:click={() => setPolicy(editingPolicy)}>Save</button>
+                <button on:click={cancelEditingPolicy}>Cancel</button>
               </div>
             {/if}
           </div>
-        {/each}
-      {:else}
-        <div class="empty">None</div>
-      {/if}
-    </div>
 
-    <div class="settings">
-      <h4>Settings</h4>
-      <label><input type="checkbox" bind:checked={renderMarkdown}> Render assistant as Markdown</label>
-      <div class="row">
-        <button on:click={() => (lastError = null)} disabled={!lastError}>Clear error</button>
-      </div>
-    </div>
-
-    <div class="policy">
-      <h4>Approval Policy {#if approvalPolicy}<small>(v{approvalPolicy.version})</small>{/if}</h4>
-      {#if !showPolicyEditor}
-        {#if approvalPolicy}
-          <pre class="policy-content">{approvalPolicy.content}</pre>
-          <button on:click={startEditingPolicy}>Edit Policy</button>
-        {:else}
-          <div class="empty">No policy loaded</div>
-        {/if}
-      {:else}
-        <textarea
-          bind:value={editingPolicy}
-          rows="15"
-          placeholder="def decide(ctx): ..."
-          class="policy-editor"
-        ></textarea>
-        <div class="row">
-          <button on:click={() => setPolicy(editingPolicy)}>Save</button>
-          <button on:click={cancelEditingPolicy}>Cancel</button>
-        </div>
-      {/if}
-    </div>
-
-    <div class="approvals">
-      <h4>Pending approvals ({pending.size})</h4>
-      {#if pending.size === 0}
-        <div class="empty">None</div>
-      {:else}
-        {#each Array.from(pending.values()) as p}
-          <div class="approval">
-            <div><code>{p.tool_key}</code> <small>({p.call_id})</small></div>
-            {#if p.args_json}
-              <pre class="pre">{prettyArgs(p.args_json)}</pre>
-            {/if}
-            <div class="row">
-              <button on:click={() => approve(p.call_id)}>Approve</button>
-              <button on:click={() => denyContinue(p.call_id)}>Deny (continue)</button>
-              <button on:click={() => deny(p.call_id)}>Deny (abort)</button>
+          <!-- Policy Proposals Section -->
+          {#if approvalPolicy?.proposals && approvalPolicy.proposals.length > 0}
+            <div class="proposals">
+              <h4>Policy Proposals ({approvalPolicy.proposals.length})</h4>
+              {#each approvalPolicy.proposals as proposal}
+                <div class="proposal">
+                  <div class="proposal-header">
+                    <strong>#{proposal.id}</strong>
+                    <span class="proposal-status status-{proposal.status}">{proposal.status}</span>
+                  </div>
+                  {#if proposal.rationale}
+                    <div class="proposal-rationale">{proposal.rationale}</div>
+                  {/if}
+                  <details class="proposal-source">
+                    <summary>View proposed policy code</summary>
+                    <pre class="policy-content">{proposal.source}</pre>
+                  </details>
+                  {#if proposal.status === 'open'}
+                    <div class="row">
+                      <button on:click={() => approveProposal(proposal.id)}>Approve</button>
+                      <button on:click={() => rejectProposal(proposal.id)}>Reject</button>
+                    </div>
+                  {/if}
+                </div>
+              {/each}
             </div>
+          {/if}
+
+          <div class="approvals">
+            <h4>Pending Approvals ({pending.size})</h4>
+            {#if pending.size === 0}
+              <div class="empty">None</div>
+            {:else}
+              {#each Array.from(pending.values()) as p}
+                <div class="approval">
+                  <div><code>{p.tool_key}</code> <small>({p.call_id})</small></div>
+                  {#if p.args_json}
+                    <pre class="pre">{prettyArgs(p.args_json)}</pre>
+                  {/if}
+                  <div class="row">
+                    <button on:click={() => approve(p.call_id)}>Approve</button>
+                    <button on:click={() => denyContinue(p.call_id)}>Deny (continue)</button>
+                    <button on:click={() => deny(p.call_id)}>Deny (abort)</button>
+                  </div>
+                </div>
+              {/each}
+            {/if}
           </div>
-        {/each}
+        </div>
+      {:else if activeTab === 'servers'}
+        <div class="servers">
+          <h4>MCP Servers</h4>
+          {#if mcpServers.length}
+            {#each mcpServers as serverName}
+              {@const serverTools = mcpTools.filter(t => t.name.startsWith(`mcp__${serverName}__`))}
+              <div class="server-item">
+                <div class="server-header" on:click={() => {
+                  serverExpandedState.set(serverName, !serverExpandedState.get(serverName))
+                  serverExpandedState = serverExpandedState
+                }}>
+                  <span class="disclosure">{serverExpandedState.get(serverName) ? '▼' : '▶'}</span>
+                  <span class="server-name">{serverName}</span>
+                  <span class="tool-count">({serverTools.length} tools)</span>
+                </div>
+                {#if serverExpandedState.get(serverName)}
+                  <div class="tools-list">
+                    {#each serverTools as tool}
+                      {@const toolKey = tool.name}
+                      <div class="tool-item">
+                        <div class="tool-header" on:click={() => {
+                          toolExpandedState.set(toolKey, !toolExpandedState.get(toolKey))
+                          toolExpandedState = toolExpandedState
+                        }}>
+                          <span class="disclosure">{toolExpandedState.get(toolKey) ? '▼' : '▶'}</span>
+                          <span class="tool-name">{tool.name.replace(`mcp__${serverName}__`, '')}</span>
+                        </div>
+                        {#if toolExpandedState.get(toolKey)}
+                          <div class="tool-details">
+                            {#if tool.description}
+                              <div class="tool-description">{tool.description}</div>
+                            {/if}
+                            <div class="tool-schema">
+                              <div class="schema-label">Parameters:</div>
+                              <div use:jsonView={tool.parameters}></div>
+                            </div>
+                          </div>
+                        {/if}
+                      </div>
+                    {/each}
+                  </div>
+                {/if}
+              </div>
+            {/each}
+          {:else}
+            <div class="empty">None</div>
+          {/if}
+        </div>
+      {:else if activeTab === 'settings'}
+        <div class="settings">
+          <h4>Settings</h4>
+          <label><input type="checkbox" bind:checked={renderMarkdown}> Render assistant as Markdown</label>
+          <div class="row">
+            <button on:click={() => (lastError = null)} disabled={!lastError}>Clear error</button>
+          </div>
+        </div>
       {/if}
     </div>
   </aside>
@@ -484,11 +575,138 @@
 
   .sidebar {
     border-left: 1px solid #eee;
-    padding: 0.75rem;
+    padding: 0;
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    overflow: hidden;
+    position: relative;
+  }
+
+  /* Resize handle */
+  .resize-handle {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 4px;
+    cursor: ew-resize;
+    background: transparent;
+    z-index: 10;
+  }
+  .resize-handle:hover {
+    background: #007acc;
+  }
+
+  /* Sidebar header (connection status) */
+  .sidebar-header {
+    padding: 0.75rem;
+    border-bottom: 1px solid #eee;
+    flex-shrink: 0;
+  }
+
+  /* Tabs */
+  .tabs {
+    display: flex;
+    border-bottom: 1px solid #eee;
+    flex-shrink: 0;
+  }
+  .tab {
+    flex: 1;
+    padding: 0.5rem 0.25rem;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    font-size: 0.75rem;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.25rem;
+  }
+  .tab:hover {
+    background: rgba(0,0,0,0.05);
+  }
+  .tab.active {
+    background: #f0f8ff;
+    border-bottom: 2px solid #007acc;
+  }
+  .badge {
+    background: #ff4444;
+    color: white;
+    font-size: 0.6rem;
+    padding: 0.1rem 0.3rem;
+    border-radius: 0.8rem;
+    line-height: 1;
+  }
+
+  /* Tab content */
+  .tab-content {
+    flex: 1;
     overflow-y: auto;
+    padding: 0.75rem;
+  }
+
+  /* Approvals tab specific styling */
+  .approvals-tab {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  /* Policy Proposals */
+  .proposals h4 { margin: 0.25rem 0; }
+  .proposal {
+    border: 1px solid #ddd;
+    padding: 0.75rem;
+    margin: 0.5rem 0;
+    border-radius: 4px;
+  }
+  .proposal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+  }
+  .proposal-status {
+    font-size: 0.75rem;
+    padding: 0.2rem 0.4rem;
+    border-radius: 0.75rem;
+    text-transform: uppercase;
+    font-weight: 500;
+  }
+  .status-open {
+    background: #e3f2fd;
+    color: #1976d2;
+  }
+  .status-approved {
+    background: #e8f5e8;
+    color: #2e7d32;
+  }
+  .status-rejected {
+    background: #ffebee;
+    color: #c62828;
+  }
+  .status-withdrawn {
+    background: #f5f5f5;
+    color: #757575;
+  }
+  .proposal-rationale {
+    color: #555;
+    font-style: italic;
+    margin-bottom: 0.5rem;
+    font-size: 0.9rem;
+  }
+  .proposal-source {
+    margin: 0.5rem 0;
+  }
+  .proposal-source summary {
+    cursor: pointer;
+    font-size: 0.85rem;
+    color: #666;
+    margin-bottom: 0.25rem;
+  }
+  .proposal-source summary:hover {
+    color: #333;
   }
   .ws { display: flex; align-items: center; gap: 0.5rem; }
   .dot { width: 10px; height: 10px; border-radius: 50%; background: #bbb; display: inline-block; }

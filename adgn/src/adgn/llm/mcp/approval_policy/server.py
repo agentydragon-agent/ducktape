@@ -29,7 +29,7 @@ logger = logging.getLogger("adgn.mcp")
 
 
 class ProposeInput(BaseModel):
-    source: str = Field(description="Source code for the proposal")
+    source: str = Field(description="Python source code for the approval policy proposal")
     rationale: str | None = Field(default=None, description="Optional rationale for the proposal")
     model_config = ConfigDict(extra="forbid")
 
@@ -96,6 +96,7 @@ class ApprovalPolicyServer(NotifyingFastMCP):
                 "Approval policy system controlling which tools are auto-approved, denied, or require manual approval.\n"
                 "- Read approval-policy://policy.py to see the current policy code\n"
                 "- Use propose() to submit policy changes for review\n"
+                "- Policy must be valid Python code defining a decide(ctx) function\n"
                 "- Policy decides: 'allow' (auto-approve), 'ask' (manual approval), 'deny_continue' (deny but continue), 'deny_abort' (deny and abort)\n"
                 "- Default policy allows UI tools and approval management, asks for everything else"
             ),
@@ -123,7 +124,7 @@ class ApprovalPolicyServer(NotifyingFastMCP):
         self.tool(
             name="propose",
             title="Propose policy change",
-            description="Submit a new proposal for approval policy changes",
+            description="Submit a new proposal for approval policy changes. Policy must be valid Python code.",
             structured_output=True,
         )(self.propose_tool)
 

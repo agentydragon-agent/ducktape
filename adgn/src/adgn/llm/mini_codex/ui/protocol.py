@@ -46,10 +46,21 @@ class ApprovalBrief(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class ProposalInfo(BaseModel):
+    """Policy proposal information for UI."""
+    id: str
+    status: str
+    rationale: str | None = None
+    source: str
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class ApprovalPolicyInfo(BaseModel):
     """Current approval policy state."""
     content: str
     version: int
+    proposals: list[ProposalInfo] = []
 
     model_config = ConfigDict(extra="forbid")
 

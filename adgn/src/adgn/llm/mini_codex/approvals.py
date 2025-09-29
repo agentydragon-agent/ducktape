@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import asyncio
 from collections.abc import Callable
 import json
@@ -11,7 +12,7 @@ from datetime import datetime, timezone
 
 # Control-plane exception raised when an approval decision requests aborting the turn
 from mcp import types as mcp_types
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 logger = logging.getLogger("mini_codex.approvals")
 
@@ -219,14 +220,27 @@ class McpManagerWithApprovals:
 # ---- Approval Policy Engine (decoupled, in-memory; optional) ----
 
 
+def validate_policy_python(source: str) -> None:
+    """Validate that policy source is valid Python code.
+
+    Raises ValueError if the source cannot be compiled as Python.
+    """
+    try:
+        ast.parse(source)
+    except SyntaxError as e:
+        raise ValueError(f"Policy contains invalid Python syntax: {e}")
+    except Exception as e:
+        raise ValueError(f"Policy validation failed: {e}")
+
+
 @dataclass
 class Proposal:
     id: str
-    source: str
+    source: str  # Python code defining the approval policy
     status: Literal["open", "approved", "rejected", "withdrawn"]
     created_at: datetime
     decided_at: Optional[datetime] = None
-    rationale: Optional[str] = None
+    rationale: Optional[str] = None  # Human-readable explanation for the policy change
 
 
 class ProposalSnapshot(BaseModel):
@@ -234,6 +248,8 @@ class ProposalSnapshot(BaseModel):
     status: Literal["open", "withdrawn", "approved", "rejected"]
     created_at: datetime
     decided_at: datetime | None = None
+    source: str = Field(description="Python code defining the approval policy")
+    rationale: str | None = Field(default=None, description="Human-readable explanation for the policy change")
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -316,6 +332,8 @@ class ApprovalPolicyEngine:
         return self._policy_source, self._policy_version
 
     def set_policy(self, source: str) -> int:
+        # Validate policy is valid Python before applying
+        validate_policy_python(source)
         self._policy_source = source
         self._policy_version += 1
         if self._notify:
@@ -351,6 +369,8 @@ class ApprovalPolicyEngine:
 
     # --- Proposals ---
     def create_proposal(self, source: str, rationale: str | None = None) -> str:
+        # Validate proposed policy is valid Python before creating proposal
+        validate_policy_python(source)
         if self._open_id is not None:
             raise RuntimeError("a proposal is already open")
         pid = f"p-{uuid.uuid4().hex}"

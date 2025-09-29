@@ -44,6 +44,7 @@ from adgn.llm.mini_codex.ui.protocol import (
     ApprovalDenyContinue,
     ApprovalPendingEvt,
     ApprovalPolicyInfo,
+    ProposalInfo,
     Envelope,
     ErrorCode,
     ErrorEvt,
@@ -274,8 +275,18 @@ class AgentSession:
         approval_policy = None
         if self.approval_engine:
             content, version = self.approval_engine.get_policy()
+            status = self.approval_engine.get_status()
+            proposals = [
+                ProposalInfo(
+                    id=p.id,
+                    status=p.status,
+                    rationale=p.rationale,
+                    source=p.source
+                )
+                for p in status.proposals
+            ]
             approval_policy = ApprovalPolicyInfo(
-                content=content, version=version
+                content=content, version=version, proposals=proposals
             )
 
         return Snapshot(
@@ -706,8 +717,13 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
                 if isinstance(im, SetPolicyIn):
                     # User directly sets the approval policy
                     if session.approval_engine:
-                        session.approval_engine.set_policy(im.content)
-                        await manager.send_payload(Accepted())
+                        try:
+                            session.approval_engine.set_policy(im.content)
+                            await manager.send_payload(Accepted())
+                        except ValueError as e:
+                            await manager.send_payload(
+                                ErrorEvt(code=ErrorCode.INVALID_COMMAND, message=f"Invalid policy: {e}")
+                            )
                         # Send updated snapshot with new policy
                         await manager.send_payload(session.build_snapshot())
                     continue
