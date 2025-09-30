@@ -174,6 +174,8 @@ sandbox-jupyter-mcp = "adgn.mcp.sandboxed_jupyter_mcp.wrapper:main"
 adgn-sandboxer = "adgn.llm.sandboxer:main"
 adgn-llm-edit = "adgn.llm.llm_edit:app"
 adgn-openai-probe = "adgn.openai_utils.probe:main"
+adgn-mcp-docker-exec = "adgn.mcp.docker_exec.launcher:main"
+adgn-mcp-gitea-mirror = "adgn.mcp.gitea_mirror.launcher:main"
 
 [project.entry-points."wt.plugins"]
 wt_demo = "adgn.wt.demo_plugin"
